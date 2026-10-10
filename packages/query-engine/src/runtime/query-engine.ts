@@ -920,7 +920,7 @@ const annotateWarehouseError = <A, Error extends { readonly _tag: string; readon
 	)
 
 /** A query `compile` accepts, for helpers generic over its output. */
-type SelectQuery<Output extends Record<string, unknown>> = CH.CHQuery<any, Output> & CH.NeedsSelect<Output>
+type SelectQuery<Output extends object> = CH.CHQuery<any, Output> & CH.NeedsSelect<Output>
 
 /**
  * Compile a CHQuery, execute it via the warehouse SQL executor, and return typed rows.
@@ -929,8 +929,8 @@ type SelectQuery<Output extends Record<string, unknown>> = CH.CHQuery<any, Outpu
  * SqlQueryOptions so it lands on the same span instead of an extra wrapper.
  */
 const executeCHQuery = Effect.fnUntraced(function* <
-	Output extends Record<string, any>,
-	Params extends Record<string, any>,
+	Output extends object,
+	Params extends Record<string, unknown>,
 	T extends QueryTenant,
 >(
 	warehouse: QueryEngineWarehouse<T>,
@@ -1111,8 +1111,8 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 
 /** Same as executeCHQuery but for union queries. */
 const executeCHUnionQuery = Effect.fnUntraced(function* <
-	Output extends Record<string, any>,
-	Params extends Record<string, any>,
+	Output extends object,
+	Params extends Record<string, unknown>,
 	T extends QueryTenant,
 >(
 	warehouse: QueryEngineWarehouse<T>,

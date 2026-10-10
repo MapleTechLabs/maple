@@ -276,7 +276,7 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 						.compiledQuery(
 							systemTenant(orgId),
 							CH.compile(CH.auditLogEntriesQuery(opts), values),
-							{ profile: "list", context: "auditLog.list" },
+							{ profile: "list", context: "auditLogEntries" },
 						)
 						.pipe(Effect.mapError(toPersistenceError))
 					const entries = yield* Effect.forEach(rows, (row) =>

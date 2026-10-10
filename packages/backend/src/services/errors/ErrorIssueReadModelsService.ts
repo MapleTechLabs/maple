@@ -207,6 +207,7 @@ const make: Effect.Effect<
 				},
 			)
 			const fingerprintRows = yield* warehouse.compiledQuery(systemTenant(orgId), compiled, {
+				profile: "aggregation",
 				context: "errorIssueEnvFingerprints",
 			})
 			return fingerprintRows.map((row) => row.fingerprintHash).filter((hash) => hash.length > 0)
@@ -406,6 +407,7 @@ const make: Effect.Effect<
 		})
 		const timeseriesEffect = isErrorKind
 			? warehouse.compiledQuery(tenant, timeseriesCompiled, {
+					profile: "aggregation",
 					context: "errorIssueTimeseries",
 				})
 			: Effect.succeed([])
@@ -418,6 +420,7 @@ const make: Effect.Effect<
 		})
 		const samplesEffect = isErrorKind
 			? warehouse.compiledQuery(tenant, samplesCompiled, {
+					profile: "list",
 					context: "errorIssueSampleTraces",
 				})
 			: Effect.succeed([])
@@ -430,6 +433,7 @@ const make: Effect.Effect<
 		})
 		const environmentsEffect = isErrorKind
 			? warehouse.compiledQuery(tenant, environmentsCompiled, {
+					profile: "aggregation",
 					context: "errorIssueEnvironments",
 				})
 			: Effect.succeed([])

@@ -94,6 +94,7 @@ export class ServiceMapRollupService extends Context.Service<
 
 			const existingCompiled = CH.serviceMapEdgesExistingHoursSQL(windowParams)
 			const existingRows = yield* warehouse.compiledQuery(tenant, existingCompiled, {
+				profile: "aggregation",
 				context: "serviceMapRollupExistingHours",
 			})
 			const existing = CH.serviceMapHourSet(existingRows)
@@ -113,6 +114,7 @@ export class ServiceMapRollupService extends Context.Service<
 
 						const rollup = CH.serviceMapEdgesRollupSQL(hourParams)
 						const rows = yield* warehouse.compiledQuery(tenant, rollup, {
+							profile: "aggregation",
 							context: "serviceMapRollup",
 						})
 						if (rows.length > 0) {
@@ -133,6 +135,7 @@ export class ServiceMapRollupService extends Context.Service<
 						// not leave a permanent address-resolution gap.
 						const resolutionsRollup = CH.serviceMapResolutionsRollupSQL(hourParams)
 						const resolutionsRows = yield* warehouse.compiledQuery(tenant, resolutionsRollup, {
+							profile: "aggregation",
 							context: "serviceMapResolutionsRollup",
 						})
 						resolutionHoursChecked += 1
@@ -162,7 +165,7 @@ export class ServiceMapRollupService extends Context.Service<
 			const resolvedRows = yield* warehouse.compiledQuery(
 				tenant,
 				CH.serviceMapResolutionsExistingHoursSQL(windowParams),
-				{ context: "serviceMapResolutionsExistingHours" },
+				{ profile: "aggregation", context: "serviceMapResolutionsExistingHours" },
 			)
 			const resolved = CH.serviceMapHourSet(resolvedRows)
 
@@ -173,7 +176,7 @@ export class ServiceMapRollupService extends Context.Service<
 						const resolutionsRows = yield* warehouse.compiledQuery(
 							tenant,
 							CH.serviceMapResolutionsRollupSQL(CH.serviceMapRollupHourParams(orgId, hourMs)),
-							{ context: "serviceMapResolutionsRepair" },
+							{ profile: "aggregation", context: "serviceMapResolutionsRepair" },
 						)
 						resolutionHoursChecked += 1
 						if (resolutionsRows.length === 0) {

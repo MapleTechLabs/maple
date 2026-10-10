@@ -13,11 +13,21 @@ import {
 	OrgId,
 	UserId,
 	RoleName,
-	WarehouseQueryResponse,
 } from "@maple/domain/http"
 import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { createClerkClient } from "@clerk/backend"
-import { Clock, Array as Arr, Cause, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
+import {
+	Clock,
+	Array as Arr,
+	Cause,
+	DateTime,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Context,
+} from "effect"
 import {
 	computeDelta,
 	deriveDigestStatus,
@@ -40,6 +50,7 @@ import {
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import * as CH from "@maple/query-engine/ch"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -65,11 +76,7 @@ interface ServiceOverviewRow {
 	p95LatencyMs: number
 }
 
-interface ServiceOverviewCompareRow extends ServiceOverviewRow {
-	period: "current" | "previous"
-}
-
-/** `custom_traces_breakdown` with `group_by_all` — one row for the whole window. */
+/** `tracesBreakdownQuery` grouped by `"all"`: one row for the whole window. */
 interface TracesBreakdownRow {
 	name: string
 	count: number
@@ -92,24 +99,6 @@ interface ServiceUsageRow {
 	totalExpHistogramMetricCount: number
 	totalExpHistogramMetricSizeBytes: number
 	totalSizeBytes: number
-}
-
-interface ServiceUsageCompareRow extends ServiceUsageRow {
-	period: "current" | "previous"
-}
-
-interface ErrorsByTypeRow {
-	fingerprintHash: string
-	errorLabel: string
-	sampleMessage: string
-	count: number
-	affectedServicesCount: number
-}
-
-interface TracesTimeseriesRow {
-	bucket: string
-	count: number
-	errorRate: number
 }
 
 /** Empty arrays mean "the whole org", which is every pre-existing subscription. */
@@ -135,8 +124,10 @@ const decodeScopeColumn = Schema.decodeUnknownOption(StoredScopeColumn)
 const parseScopeColumn = (raw: string | null): ReadonlyArray<string> =>
 	raw == null || raw === "" ? [] : Option.getOrElse(decodeScopeColumn(raw), () => [])
 
-const csv = (values: ReadonlyArray<string>): string | undefined =>
-	values.length === 0 ? undefined : values.join(",")
+const nonEmpty = (values: ReadonlyArray<string>): ReadonlyArray<string> | undefined => {
+	const kept = values.filter((value) => value !== "")
+	return kept.length > 0 ? kept : undefined
+}
 
 /**
  * The grain `serviceOverviewQuery` actually returns: it groups by
@@ -257,7 +248,7 @@ function buildBreakdown(
 }
 
 /**
- * Breakdown rows straight off a `custom_traces_breakdown` grouped by a real
+ * Breakdown rows straight off a `tracesBreakdownQuery` grouped by a real
  * dimension. `count` is the sample-weighted request count and `errorRate` a
  * fraction, matching the summary cards.
  */
@@ -494,22 +485,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				authMode: "self_hosted" as const,
 			}
 
-			// Filter params are omitted rather than sent empty: an empty string is a
-			// filter for the empty environment, not the absence of a filter.
-			const environmentsParam = csv(scope.environments)
-			const namespacesParam = csv(scope.namespaces)
-			const withScope = <T extends object>(params: T) => ({
-				...params,
-				...(environmentsParam === undefined ? undefined : { environments: environmentsParam }),
-				...(namespacesParam === undefined ? undefined : { namespaces: namespacesParam }),
-			})
-
-			/** `errors_by_type` scopes by environment only — `error_events` has no
-			 * `ServiceNamespace` column. */
-			const withErrorScope = <T extends object>(params: T) => ({
-				...params,
-				...(environmentsParam === undefined ? undefined : { deployment_envs: environmentsParam }),
-			})
+			// Filter lists are omitted rather than sent empty: an empty list would be
+			// a filter that matches nothing, not the absence of a filter.
+			const environments = nonEmpty(scope.environments)
+			const namespaces = nonEmpty(scope.namespaces)
+			const window = (startTime: string, endTime: string) => ({ orgId, startTime, endTime })
+			// A weekly background job over two 7-day windows: the aggregation budget.
+			const run = <T>(compiled: CH.CompiledQueryInput<T>, context: string) =>
+				warehouse.compiledQuery(systemTenant, compiled, { profile: "aggregation", context })
 
 			// Warm the route once before the fan-out, so the org-config read isn't
 			// racing concurrent warehouse fetches for a connection slot.
@@ -520,130 +503,141 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 					message: `Failed to fetch digest data from the warehouse: ${error instanceof Error ? error.message : String(error)}`,
 				})
 
-			// `service_overview_compare` and `get_service_usage_compare` UNION ALL
-			// current + previous into one query, tagging rows with `period`. The two
-			// `custom_traces_breakdown` calls collapse to a single row each
-			// (`group_by_all`) so the P95 is a real merged quantile rather than a
-			// throughput-weighted mean of per-service P95s, which is not a quantile.
-			const namespaceBreakdownQuery = (start: string, end: string) =>
-				warehouse.query(systemTenant, {
-					pipeName: "custom_traces_breakdown",
-					params: withScope({
-						start_time: start,
-						end_time: end,
-						group_by_namespace: "1",
-						root_only: "1",
-						limit: DIGEST_BREAKDOWN_LIMIT,
-					}),
-				})
+			// The overview and usage compares UNION ALL current + previous into one
+			// query, tagging rows with `period`. The two summary breakdowns collapse
+			// to a single row each (`groupBy: "all"`) so the P95 is a real merged
+			// quantile rather than a throughput-weighted mean of per-service P95s.
+			const tracesBreakdown = (
+				groupBy: "all" | "namespace",
+				limit: number,
+				startTime: string,
+				endTime: string,
+				context: string,
+			) =>
+				run(
+					CH.compile(
+						CH.tracesBreakdownQuery({
+							metric: "count",
+							allMetrics: true,
+							groupBy,
+							limit,
+							rootOnly: true,
+							environments,
+							namespaces,
+						}),
+						window(startTime, endTime),
+					),
+					context,
+				)
 
-			const [overviewResponse, curSummary, prevSummary, seriesResponse, curNamespaces, prevNamespaces] =
+			const [overviewRows, curSummary, prevSummary, seriesRows, curNamespaces, prevNamespaces] =
 				yield* Effect.all(
 					[
-						warehouse.query(systemTenant, {
-							pipeName: "service_overview_compare",
-							params: withScope({
-								current_start_time: currentStart,
-								current_end_time: currentEnd,
-								previous_start_time: previousStart,
-								previous_end_time: previousEnd,
-							}),
-						}),
-						warehouse.query(systemTenant, {
-							pipeName: "custom_traces_breakdown",
-							params: withScope({
-								start_time: currentStart,
-								end_time: currentEnd,
-								group_by_all: "1",
-								root_only: "1",
-								limit: 1,
-							}),
-						}),
-						warehouse.query(systemTenant, {
-							pipeName: "custom_traces_breakdown",
-							params: withScope({
-								start_time: previousStart,
-								end_time: previousEnd,
-								group_by_all: "1",
-								root_only: "1",
-								limit: 1,
-							}),
-						}),
-						warehouse.query(systemTenant, {
-							pipeName: "custom_traces_timeseries",
-							params: withScope({
-								start_time: currentStart,
-								end_time: currentEnd,
-								bucket_seconds: 86_400,
-								root_only: "1",
-							}),
-						}),
-						namespaceBreakdownQuery(currentStart, currentEnd),
-						namespaceBreakdownQuery(previousStart, previousEnd),
+						run(
+							CH.compilePeriodCompare(
+								CH.serviceOverviewQuery({ environments, namespaces }),
+								{ orgId, currentStart, currentEnd, previousStart, previousEnd },
+								CH.serviceOverviewRowSchema,
+							),
+							"digestServiceOverviewCompare",
+						),
+						tracesBreakdown("all", 1, currentStart, currentEnd, "digestTracesSummary"),
+						tracesBreakdown("all", 1, previousStart, previousEnd, "digestTracesSummary"),
+						run(
+							CH.compile(
+								CH.tracesTimeseriesQuery({
+									metric: "count",
+									allMetrics: true,
+									needsSampling: true,
+									groupBy: [],
+									rootOnly: true,
+									environments,
+									namespaces,
+								}),
+								{ ...window(currentStart, currentEnd), bucketSeconds: 86_400 },
+							),
+							"digestDailySeries",
+						),
+						tracesBreakdown(
+							"namespace",
+							DIGEST_BREAKDOWN_LIMIT,
+							currentStart,
+							currentEnd,
+							"digestNamespaceBreakdown",
+						),
+						tracesBreakdown(
+							"namespace",
+							DIGEST_BREAKDOWN_LIMIT,
+							previousStart,
+							previousEnd,
+							"digestNamespaceBreakdown",
+						),
 					],
 					{ concurrency: 6 },
 				).pipe(Effect.mapError(warehouseFailure))
 
 			// Split UNION ALL'd rows by period discriminator
-			const overviewRows = overviewResponse.data as Array<ServiceOverviewCompareRow>
-			const curOverviewData: Array<ServiceOverviewRow> = overviewRows.filter(
-				(r) => r.period === "current",
-			)
-			const prevOverviewData: Array<ServiceOverviewRow> = overviewRows.filter(
-				(r) => r.period === "previous",
-			)
+			const curOverviewData = overviewRows.filter((r) => r.period === "current")
+			const prevOverviewData = overviewRows.filter((r) => r.period === "previous")
 
 			// Neither `service_usage` nor `error_events` carries an environment or
 			// namespace column, so a scoped digest narrows both by the service
 			// membership the scope resolved to — the same approximation the web app
 			// makes in `scopeServicesToNamespaces`. A service emitting under two
 			// namespaces stays counted in both.
-			const scopedServiceNames = [...new Set(curOverviewData.map((r) => r.serviceName))]
 			const isScoped = scope.environments.length > 0 || scope.namespaces.length > 0
-			const membership = csv(scopedServiceNames)
+			const membership = nonEmpty([...new Set(curOverviewData.map((r) => r.serviceName))])
 
 			// A scope that matched no services means "no data", not "no filter".
 			// Falling through to an unfiltered query would have shown org-wide
 			// ingestion and org-wide errors inside a digest that claims to cover one
 			// namespace.
 			const scopeIsEmpty = isScoped && membership === undefined
+			const serviceFilter = isScoped ? membership : undefined
 
-			const withMembership = <T extends object>(params: T) => ({
-				...params,
-				...(isScoped && membership !== undefined ? { services: membership } : undefined),
-			})
+			const errorsByType = (
+				startTime: string,
+				endTime: string,
+				limit: number,
+				fingerprintHashes: ReadonlyArray<string> | undefined,
+				context: string,
+			) =>
+				run(
+					CH.compile(
+						CH.errorsByTypeQuery({
+							services: serviceFilter,
+							// `error_events` has no `ServiceNamespace` column, so errors scope
+							// by environment only (plus the service membership above).
+							deploymentEnvs: environments,
+							fingerprintHashes,
+							limit,
+						}),
+						window(startTime, endTime),
+					),
+					context,
+				)
 
-			const [usageResponse, topErrors] = yield* Effect.all(
+			const [usageRows, topErrors] = yield* Effect.all(
 				[
 					scopeIsEmpty
-						? Effect.succeed(new WarehouseQueryResponse({ data: [] }))
-						: warehouse.query(systemTenant, {
-								pipeName: "get_service_usage_compare",
-								params: withMembership({
-									current_start_time: currentStart,
-									current_end_time: currentEnd,
-									previous_start_time: previousStart,
-									previous_end_time: previousEnd,
-								}),
-							}),
-					scopeIsEmpty
-						? Effect.succeed(new WarehouseQueryResponse({ data: [] }))
-						: warehouse.query(systemTenant, {
-								pipeName: "errors_by_type",
-								params: withErrorScope(
-									withMembership({
-										start_time: currentStart,
-										end_time: currentEnd,
-										limit: 5,
-									}),
+						? Effect.succeed([])
+						: run(
+								CH.compilePeriodCompare(
+									CH.serviceUsageQuery({ serviceNames: serviceFilter }),
+									{ orgId, currentStart, currentEnd, previousStart, previousEnd },
+									CH.serviceUsageRowSchema,
 								),
-							}),
+								"digestServiceUsageCompare",
+							),
+					scopeIsEmpty
+						? Effect.succeed([])
+						: errorsByType(currentStart, currentEnd, 5, undefined, "digestTopErrors"),
 				],
 				{ concurrency: 2 },
 			).pipe(Effect.mapError(warehouseFailure))
 
-			const summaryRow = (response: { data: unknown }): TracesBreakdownRow => {
-				const row = (response.data as Array<TracesBreakdownRow>)[0]
+			const summaryRow = (rows: ReadonlyArray<TracesBreakdownRow>): TracesBreakdownRow => {
+				const row = rows[0]
 				return {
 					name: "all",
 					count: row?.count || 0,
@@ -662,10 +656,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const prevTotalErrors = Math.round(prev.count * prev.errorRate)
 
 			// Data volume — split UNION ALL'd rows by period discriminator
-			const usageRows = usageResponse.data as Array<ServiceUsageCompareRow>
-			const curUsageData: Array<ServiceUsageRow> = usageRows.filter((r) => r.period === "current")
-			const prevUsageData: Array<ServiceUsageRow> = usageRows.filter((r) => r.period === "previous")
-			const sumUsage = (data: Array<ServiceUsageRow>) => ({
+			const curUsageData = usageRows.filter((r) => r.period === "current")
+			const prevUsageData = usageRows.filter((r) => r.period === "previous")
+			const sumUsage = (data: ReadonlyArray<ServiceUsageRow>) => ({
 				logs: data.reduce((s, r) => s + (r.totalLogCount || 0), 0),
 				traces: data.reduce((s, r) => s + (r.totalTraceCount || 0), 0),
 				metrics: data.reduce(
@@ -727,49 +720,33 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const environmentGroups = groupServicesByEnvironment(services, curOverviewData, prevOverviewData)
 			const breakdown = {
 				environments: buildBreakdown(curOverviewData, prevOverviewData, (r) => r.environment),
-				namespaces: buildBreakdownFromRows(
-					curNamespaces.data as Array<TracesBreakdownRow>,
-					prevNamespaces.data as Array<TracesBreakdownRow>,
-				),
+				namespaces: buildBreakdownFromRows(curNamespaces, prevNamespaces),
 			}
 
-			// `errors_by_type` returns `min(Timestamp)` *within the window*, which is
+			// `errorsByTypeQuery` returns `min(Timestamp)` *within the window*, which is
 			// always inside it — so newness has to be asked of the previous window
 			// directly. Filtering to the five fingerprints we actually render makes
 			// that exact, unlike diffing against the previous week's top 100.
-			const currentErrors = (topErrors.data as Array<ErrorsByTypeRow>).slice(0, 5)
+			const currentErrors = topErrors.slice(0, 5)
 			const currentFingerprints = currentErrors
 				.map((e) => e.fingerprintHash)
 				.filter((hash) => hash !== "")
 			const prevErrorFingerprints = yield* currentFingerprints.length === 0
 				? Effect.succeed(new Set<string>())
-				: warehouse
-						.query(systemTenant, {
-							pipeName: "errors_by_type",
-							params: withErrorScope(
-								withMembership({
-									start_time: previousStart,
-									end_time: previousEnd,
-									fingerprint_hashes: currentFingerprints.join(","),
-									limit: currentFingerprints.length,
-								}),
-							),
-						})
-						.pipe(
-							Effect.map(
-								(response) =>
-									new Set(
-										(response.data as Array<ErrorsByTypeRow>).map(
-											(e) => e.fingerprintHash,
-										),
-									),
-							),
-							// A failed lookup must not invent NEW badges: falling back to an
-							// empty set would mark every current error as first-seen during a
-							// warehouse blip. Assume all of them existed last week instead —
-							// the badge is lost, nothing is misreported.
-							Effect.orElseSucceed(() => new Set(currentFingerprints)),
-						)
+				: errorsByType(
+						previousStart,
+						previousEnd,
+						currentFingerprints.length,
+						currentFingerprints,
+						"digestPreviousErrors",
+					).pipe(
+						Effect.map((rows) => new Set(rows.map((e) => e.fingerprintHash))),
+						// A failed lookup must not invent NEW badges: falling back to an
+						// empty set would mark every current error as first-seen during a
+						// warehouse blip. Assume all of them existed last week instead —
+						// the badge is lost, nothing is misreported.
+						Effect.orElseSucceed(() => new Set(currentFingerprints)),
+					)
 
 			const errorsData = currentErrors.map((e) => ({
 				message: e.errorLabel || e.sampleMessage || "Unknown error",
@@ -779,13 +756,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			}))
 
 			// Daily request/error buckets (one row per UTC day) for the sparkline.
-			const weekdayInitial = (bucket: string) => {
-				const d = new Date(`${bucket.slice(0, 10)}T00:00:00Z`)
-				return Number.isNaN(d.getTime()) ? "" : ["S", "M", "T", "W", "T", "F", "S"][d.getUTCDay()]
-			}
-			const series = (seriesResponse.data as Array<TracesTimeseriesRow>)
+			const weekdayInitial = (bucket: DateTime.Utc) =>
+				["S", "M", "T", "W", "T", "F", "S"][DateTime.getPartUtc(bucket, "weekDay")] ?? ""
+			const series = seriesRows
 				.slice()
-				.sort((a, b) => a.bucket.localeCompare(b.bucket))
+				.sort((a, b) => DateTime.toEpochMillis(a.bucket) - DateTime.toEpochMillis(b.bucket))
 				// Guard against any boundary off-by-one — keep the 7 most recent days.
 				.slice(-7)
 				.map((r) => {
