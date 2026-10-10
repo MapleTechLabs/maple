@@ -21,7 +21,7 @@ export type WorstCaseMode = "demo" | "worst"
 export const LONG_SERVICE = "checkout-service-payments-reconciliation-worker-eu-west-1"
 export const LONG_HOST = "ip-10-142-87-203.eu-central-1.compute.internal"
 export const LONG_URL =
-	"https://grafana.example.com/d/abcdef123/checkout-latency?orgId=1&var-service=checkout-service-payments-reconciliation-worker-eu-west-1&from=now-6h&to=now"
+	"https://dashboards.example.com/d/abcdef123/checkout-latency?orgId=1&var-service=checkout-service-payments-reconciliation-worker-eu-west-1&from=now-6h&to=now"
 export const LONG_IMAGE =
 	"123456789012.dkr.ecr.eu-west-1.amazonaws.com/platform/checkout-service@sha256:9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e"
 
