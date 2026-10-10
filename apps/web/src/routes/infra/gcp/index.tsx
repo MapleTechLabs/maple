@@ -211,6 +211,9 @@ function GcpInfra({
 	const tabs = gcpInfraTabs(reporting, requested, connectors.length > 0)
 	const tab = tabs.find((candidate) => candidate === requested) ?? tabs[0]
 
+	// An empty param in a hand-edited address is no filter.
+	const place = { project: search.project || undefined, region: search.region || undefined }
+	const assetType = search.type || undefined
 	// The project and region filters cover every service tab, and so does the band above them.
 	const places = fleet.flatMap(({ service, workloads }) =>
 		workloads.map((workload) => ({
@@ -224,10 +227,10 @@ function GcpInfra({
 		...entry,
 		workloads: entry.workloads.filter(
 			(workload) =>
-				(search.project === undefined ||
-					gcpWorkloadProject(entry.service, workload.keys) === search.project) &&
-				(search.region === undefined ||
-					gcpWorkloadRegion(entry.service, workload.keys) === search.region),
+				(place.project === undefined ||
+					gcpWorkloadProject(entry.service, workload.keys) === place.project) &&
+				(place.region === undefined ||
+					gcpWorkloadRegion(entry.service, workload.keys) === place.region),
 		),
 	}))
 	const timeSearch = pickTimeRangeSearch(search)
@@ -290,8 +293,7 @@ function GcpInfra({
 											// The place and scope carry over; a name search and the asset type do not.
 											search={{
 												...timeSearch,
-												project: search.project,
-												region: search.region,
+												...place,
 												scope: search.scope,
 												tab: candidate,
 											}}
@@ -319,8 +321,7 @@ function GcpInfra({
 					</Tabs>
 					{tab === GCP_RESOURCES_TAB ? (
 						<GcpResources
-							// An empty param in a hand-edited address is no filter.
-							filter={{ type: search.type || undefined, project: search.project || undefined }}
+							filter={{ type: assetType, project: place.project }}
 							onFilterChange={onSearchChange}
 							timeSearch={timeSearch}
 							syncError={gcpResourcesError(connectors)}
@@ -335,7 +336,7 @@ function GcpInfra({
 							failed={fleet.some((entry) => entry.service === tab && entry.failed)}
 							query={search.q ?? ""}
 							scope={search.scope}
-							place={{ project: search.project, region: search.region }}
+							place={place}
 							projects={options(places.map((place) => place.project))}
 							regions={options(places.map((place) => place.region))}
 							onQueryChange={(q) => onSearchChange({ q: q || undefined })}
