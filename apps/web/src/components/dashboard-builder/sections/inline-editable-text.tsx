@@ -10,6 +10,14 @@ interface InlineEditableTextProps {
 	ariaLabel: string
 	/** Start in edit mode — used when a group or tab is created and wants naming. */
 	autoEdit?: boolean
+	/** Controlled edit state, for a parent that starts editing itself (F2 on a tab). */
+	editing?: boolean
+	onEditingChange?: (editing: boolean) => void
+	/**
+	 * `false` when rendered inside another control (the tab button): a focusable
+	 * role="button" can't nest in a button, so the parent owns the keyboard path.
+	 */
+	focusable?: boolean
 }
 
 /**
@@ -20,7 +28,7 @@ interface InlineEditableTextProps {
  * serve both would have put the dashboard's page title one prop away from
  * rendering at section size.
  *
- * Commits on Enter and on blur; Escape reverts. An empty or whitespace-only
+ * Starts on double-click, or Enter/F2 when focused. Commits on Enter and on blur; Escape reverts. An empty or whitespace-only
  * value is discarded rather than saved — an untitled group is unclickable.
  */
 export function InlineEditableText({
@@ -31,8 +39,19 @@ export function InlineEditableText({
 	inputClassName,
 	ariaLabel,
 	autoEdit = false,
+	editing,
+	onEditingChange,
+	focusable = true,
 }: InlineEditableTextProps) {
-	const [isEditing, setIsEditing] = useState(autoEdit && !readOnly)
+	const [localEditing, setLocalEditing] = useState(autoEdit && !readOnly)
+	const isEditing = editing ?? localEditing
+	const setIsEditing = useCallback(
+		(next: boolean) => {
+			setLocalEditing(next)
+			onEditingChange?.(next)
+		},
+		[onEditingChange],
+	)
 	const [draft, setDraft] = useState(value)
 	const inputRef = useRef<HTMLInputElement>(null)
 
@@ -44,7 +63,7 @@ export function InlineEditableText({
 		if (readOnly) return
 		setDraft(value)
 		setIsEditing(true)
-	}, [readOnly, value])
+	}, [readOnly, value, setIsEditing])
 
 	const commit = () => {
 		const trimmed = draft.trim()
@@ -84,11 +103,25 @@ export function InlineEditableText({
 		)
 	}
 
+	const keyboardRename = !readOnly && focusable
 	return (
 		<span
 			onDoubleClick={startEditing}
 			className={cn(className, !readOnly && "cursor-text")}
-			title={readOnly ? undefined : "Double-click to rename"}
+			title={readOnly ? value : `${value}\nDouble-click to rename`}
+			tabIndex={keyboardRename ? 0 : undefined}
+			role={keyboardRename ? "button" : undefined}
+			aria-label={keyboardRename ? ariaLabel : undefined}
+			onKeyDown={
+				keyboardRename
+					? (event) => {
+							if (event.key === "Enter" || event.key === "F2") {
+								event.preventDefault()
+								startEditing()
+							}
+						}
+					: undefined
+			}
 		>
 			{value}
 		</span>

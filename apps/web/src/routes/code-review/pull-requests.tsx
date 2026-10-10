@@ -252,18 +252,23 @@ function ReviewTable({
 										<span className="shrink-0 text-muted-foreground">
 											#{review.number}
 										</span>
-										<span className="truncate font-medium">
+										<span
+											className="truncate font-medium"
+											title={review.title ?? "Untitled pull request"}
+										>
 											{review.title ?? "Untitled pull request"}
 										</span>
 									</button>
 									<div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-										<span className="truncate">{review.repositoryFullName}</span>
+										<span className="min-w-0 truncate" title={review.repositoryFullName}>
+											{review.repositoryFullName}
+										</span>
 										{review.authorLogin ? (
 											<>
 												<span className="shrink-0">·</span>
 												<AuthorLabel
 													login={review.authorLogin}
-													className="shrink-0"
+													className="max-w-[40%] min-w-0"
 												/>
 											</>
 										) : null}

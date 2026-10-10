@@ -92,11 +92,6 @@ const ATTR_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["metrics", "product_
 /** Sources that also group by a resource attribute, `resource.<key>` (host.name, k8s.pod.name). */
 const RESOURCE_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["metrics"])
 
-const prefixedGroupBys = (source: string): string[] => [
-	...(ATTR_GROUP_BY_SOURCES.has(source) ? ["attr.<key>"] : []),
-	...(RESOURCE_GROUP_BY_SOURCES.has(source) ? ["resource.<key>"] : []),
-]
-
 /** query_data's group_by spellings, accepted here too so one vocabulary works in both tools. */
 const QUERY_DATA_GROUP_BY_ALIASES: ReadonlyMap<string, string> = new Map([
 	["service", "service.name"],
@@ -121,10 +116,14 @@ function validateGroupBy(rawGroupBy: string, source: string, widgetTitle: string
 
 	if (validOptions.includes(rawGroupBy)) return null
 	if (allowsAttr && rawGroupBy.startsWith("attr.") && rawGroupBy.length > 5) return null
-	if (RESOURCE_GROUP_BY_SOURCES.has(source) && rawGroupBy.startsWith("resource.") && rawGroupBy.length > 9)
-		return null
+	const allowsResource = RESOURCE_GROUP_BY_SOURCES.has(source)
+	if (allowsResource && rawGroupBy.startsWith("resource.") && rawGroupBy.length > 9) return null
 
-	const optsList = [...validOptions, ...prefixedGroupBys(source)]
+	const optsList = [
+		...validOptions,
+		...(allowsAttr ? ["attr.<key>"] : []),
+		...(allowsResource ? ["resource.<key>"] : []),
+	]
 	return `Widget "${widgetTitle}": invalid group_by "${rawGroupBy}" for source=${source}. Valid: ${optsList.join(", ")}. ${allowsAttr ? "Example: attr.signal" : ""}`
 }
 
@@ -324,7 +323,11 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 	// (`listTemplateMetadata`); only the separator is this tool's.
 	const templateList = DASHBOARD_TEMPLATES.map((t) => `  ${t.id}: ${t.description}`).join("\n")
 	const groupByDoc = (source: keyof typeof VALID_GROUP_BY) =>
-		[...(VALID_GROUP_BY[source] ?? []), ...prefixedGroupBys(source)].join("|")
+		[
+			...(VALID_GROUP_BY[source] ?? []),
+			...(ATTR_GROUP_BY_SOURCES.has(source) ? ["attr.<key>"] : []),
+			...(RESOURCE_GROUP_BY_SOURCES.has(source) ? ["resource.<key>"] : []),
+		].join("|")
 
 	server.define({
 		name: TOOL,
@@ -336,6 +339,8 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			"Create a dashboard one of three ways: a `template`, simplified `widgets` specs, or full `dashboard_json`.\n\n" +
 			"Templates:\n" +
 			templateList +
+			"\n\nTemplates chart one service or host at a time. To compare entities in one chart (CPU per host, memory per pod), " +
+			"use `widgets` on source=metrics with group_by `resource.host.name` / `resource.k8s.pod.name`; list_infra names the metrics." +
 			"\n\nCreated widgets are inspected (up to 12) and returned with a verdict " +
 			"(looks_healthy / suspicious / broken). Use inspect_chart_data beyond the cap, or validate=false to skip.",
 		parameters: Schema.Struct({

@@ -37,7 +37,7 @@ import {
 	type PlotTooltipSeries,
 	type TooltipFocusStore,
 } from "./plot-tooltip"
-import { computeSeriesStats, sortZeroSeriesLast, type SeriesStats } from "./series-stats"
+import { computeSeriesStats, sortZeroSeriesLast, type SeriesStatsMap } from "./series-stats"
 import { useSeriesVisibility } from "./series-visibility"
 import { usePlotChromeColors, useResolvedSeriesColors, type PlotChromeColors } from "./theme"
 
@@ -102,6 +102,8 @@ export interface TimeseriesSeriesDefinition {
 export interface NormalisedTimeseries {
 	rows: TimeseriesRow[]
 	seriesDefinitions: TimeseriesSeriesDefinition[]
+	/** Series discovered before `HARD_SERIES_LIMIT`, so the chart can say what it dropped. */
+	totalSeriesCount: number
 }
 
 /**
@@ -147,7 +149,7 @@ export function normaliseTimeseriesRows(
 		return [next]
 	})
 
-	return { rows: normalised, seriesDefinitions: definitions }
+	return { rows: normalised, seriesDefinitions: definitions, totalSeriesCount: rawSeriesKeys.length }
 }
 
 /**
@@ -243,7 +245,7 @@ export interface TimeseriesModel {
 	hidden: ReadonlySet<string>
 	toggle: (key: string) => void
 	/** Min/Max/Mean/Last per series key, over ALL series. */
-	stats: Record<string, SeriesStats>
+	stats: SeriesStatsMap
 	bucketSeconds: number | undefined
 	axisContext: TimeseriesAxisContext
 	chromeColors: PlotChromeColors
@@ -253,6 +255,8 @@ export interface TimeseriesModel {
 	containerRef: React.RefObject<HTMLDivElement | null>
 	containerWidth: number
 	containerHeight: number
+	/** Series cut by `HARD_SERIES_LIMIT`; 0 when everything is drawn. */
+	droppedSeriesCount: number
 }
 
 /**
@@ -265,7 +269,11 @@ export interface TimeseriesModel {
  * this sits on the hover hot path, and a dropped boundary is a real regression.
  */
 export function useTimeseriesModel({ data, unit, mapSeries }: TimeseriesModelOptions): TimeseriesModel {
-	const { rows, seriesDefinitions } = React.useMemo(() => normaliseTimeseriesRows(data), [data])
+	const { rows, seriesDefinitions, totalSeriesCount } = React.useMemo(
+		() => normaliseTimeseriesRows(data),
+		[data],
+	)
+	const droppedSeriesCount = totalSeriesCount - seriesDefinitions.length
 
 	const allKeys = React.useMemo(
 		() => seriesDefinitions.map((definition) => definition.chartKey),
@@ -371,6 +379,7 @@ export function useTimeseriesModel({ data, unit, mapSeries }: TimeseriesModelOpt
 			containerRef,
 			containerWidth,
 			containerHeight,
+			droppedSeriesCount,
 		}),
 		[
 			scaledRows,
@@ -387,6 +396,7 @@ export function useTimeseriesModel({ data, unit, mapSeries }: TimeseriesModelOpt
 			tooltipSeries,
 			containerWidth,
 			containerHeight,
+			droppedSeriesCount,
 		],
 	)
 }
@@ -782,8 +792,16 @@ function TimeseriesLegend({ mode, seriesStats, unit }: TimeseriesLegendProps) {
 		[model.series, model.stats],
 	)
 
-	if (hoist) return null
-	return (
+	const dropped = model.droppedSeriesCount
+	const note =
+		dropped > 0 ? (
+			<div className="shrink-0 pt-1 text-3xs text-muted-foreground">
+				Showing {HARD_SERIES_LIMIT} of {HARD_SERIES_LIMIT + dropped} series
+			</div>
+		) : null
+
+	if (hoist) return note
+	const legend = (
 		<QueryBuilderLegend
 			series={sorted}
 			stats={model.stats}
@@ -794,6 +812,13 @@ function TimeseriesLegend({ mode, seriesStats, unit }: TimeseriesLegendProps) {
 			variant={seriesStats ? "stats" : "compact"}
 			maxHeight={mode === "right" ? model.containerHeight : undefined}
 		/>
+	)
+	if (!note) return legend
+	return (
+		<div className="flex h-full min-h-0 flex-col">
+			<div className="min-h-0 flex-1">{legend}</div>
+			{note}
+		</div>
 	)
 }
 

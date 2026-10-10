@@ -203,3 +203,35 @@ describe("formatRate", () => {
 		expect(formatRate(1234)).toBe("1.2K")
 	})
 })
+
+describe("worst-case inputs", () => {
+	it("formatDuration keeps sign, rolls up at rounding edges, reaches days and guards NaN", () => {
+		expect(formatDuration(-42.5)).toBe("-42.5ms")
+		expect(formatDuration(0.000001)).toBe("1ns")
+		expect(formatDuration(0)).toBe("0μs")
+		expect(formatDuration(999.96)).toBe("1.00s")
+		expect(formatDuration(59_999)).toBe("1.0min")
+		expect(formatDuration(259_200_000)).toBe("3.0d")
+		expect(formatDuration(Number.NaN)).toBe("—")
+		expect(formatDuration(Number.POSITIVE_INFINITY)).toBe("—")
+	})
+
+	it("formatNumber does not print InfinityT", () => {
+		expect(formatNumber(Number.POSITIVE_INFINITY)).toBe("—")
+		expect(formatNumber(Number.NaN)).toBe("—")
+	})
+
+	it("byte formatters reach PB", () => {
+		expect(formatStorageBytes(5e15)).toBe("5.0 PB")
+		expect(formatBytes(5 * 1024 ** 5)).toBe("5.0 PB")
+	})
+
+	it("formatUptime has a sub-minute and a years tier", () => {
+		expect(formatUptime(4)).toBe("<1m")
+		expect(formatUptime(3 * 365 * 86_400)).toBe("3y 0d")
+	})
+
+	it("formatErrorRate guards non-finite input", () => {
+		expect(formatErrorRate(Number.NaN)).toBe(EMPTY_VALUE)
+	})
+})

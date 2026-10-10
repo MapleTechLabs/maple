@@ -28,6 +28,7 @@ import {
 	type SessionTokenReporting,
 } from "./session-summary"
 import {
+	finalTurnIndex,
 	isCountedToolCall,
 	isLlmCall,
 	spanModel,
@@ -143,6 +144,7 @@ export function buildSessionChecks(
 
 	const checks = [
 		...completionCheck(of("incomplete")),
+		agentLimitCheck(of("agentLimit"), turns),
 		contextWindowCheck(of("contextExceeded"), llmCalls),
 		rateLimitCheck(of("rateLimited")),
 		providerCheck(of("providerError"), of("providerRetry"), summary.work.llmCalls),
@@ -189,6 +191,29 @@ function reportHeadline(
 	if (report.verdict.status === "failed") {
 		const cause = report.findings.find((finding) => finding.terminal)
 		return `the final ${word} ${cause === undefined ? "did not close cleanly" : causeText(cause)}`
+	}
+	// A fan-out whose sub-agents failed has not completed the way its verdict word
+	// suggests: the runs that did the work are what the headline names.
+	const final = turns[finalTurnIndex(turns)]
+	const subRuns =
+		final === undefined
+			? []
+			: turns.filter(
+					(turn) =>
+						turn !== final &&
+						turn.anchorKind === "agent-root" &&
+						turn.startMs >= final.startMs &&
+						turn.startMs <= final.endMs,
+				)
+	const failedSubRuns = subRuns.filter((turn) => turn.failed).length
+	if (failedSubRuns > 0) {
+		const which =
+			failedSubRuns === subRuns.length
+				? failedSubRuns === 1
+					? "its sub-agent run"
+					: `all ${plural(failedSubRuns, "sub-agent run")}`
+				: `${failedSubRuns} of ${plural(subRuns.length, "sub-agent run")}`
+		return `but ${which} failed`
 	}
 	if (counts.failed > 0) return `but ${plural(counts.failed, "check")} failed`
 	if (counts.warning > 0) return `with ${plural(counts.warning, "warning")}`
@@ -287,6 +312,7 @@ const CAUSE_TEXT = {
 	refusal: () => "ended on a refusal",
 	invalidOutput: () => "died on a reply that did not match its schema",
 	incomplete: (finding) => finding.detail ?? "ended without calling its completion tool",
+	agentLimit: (finding) => `was stopped on its ${limitName(finding)}`,
 	toolUnavailable: (finding) => `died with ${toolName(finding)} unable to run`,
 	toolTimeout: (finding) => `died on ${toolName(finding)} timing out`,
 	toolArguments: (finding) => `died on ${toolName(finding)} rejecting its arguments`,
@@ -298,6 +324,38 @@ const isFailureKind = (kind: SessionFindingKind): kind is SessionFailureKind => 
 
 function causeText(finding: SessionFinding): string {
 	return isFailureKind(finding.kind) ? CAUSE_TEXT[finding.kind](finding) : "did not close cleanly"
+}
+
+/** `duration limit`, from an `agent_limit · duration limit` label. */
+const limitName = (finding: SessionFinding): string => finding.label.replace(/^agent_limit · /, "")
+
+/** Agent runs the framework stopped on a budget. A sub-agent stopped this way
+ *  returns nothing to its parent, so its work is lost even when the session
+ *  carried on. */
+function agentLimitCheck(findings: readonly SessionFinding[], turns: readonly SessionTurn[]): SessionCheck {
+	const identity: CheckIdentity = { id: "agent-limits", name: "Agent limits", fixArea: "prompt" }
+	if (findings.length === 0) {
+		const runs = turns.filter((turn) => turn.anchorKind === "agent-root").length
+		return check(
+			identity,
+			"passed",
+			runs > 1
+				? `None of the ${plural(runs, "agent run")} was stopped on a limit`
+				: "No agent run was stopped on a limit",
+		)
+	}
+	const n = total(findings)
+	return check(
+		identity,
+		foundStatus(findings),
+		`${plural(n, "agent run")} ${n === 1 ? "was" : "were"} stopped on a limit: ${clauses(
+			findings,
+			(finding) =>
+				`${limitName(finding)} ${times(finding.count)} on ${where(finding)}${detailText(finding)}`,
+		)}${endedTheRun(findings) ? "" : "; whatever those runs had found was lost"}`,
+		"Raise the limit, or give each run less to do: split the work, or tell the agent to stop and report before the limit.",
+		findings,
+	)
 }
 
 function contextWindowCheck(

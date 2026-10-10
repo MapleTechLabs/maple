@@ -207,12 +207,17 @@ export function failureDetailText(span: AiSessionSpan): string | undefined {
 	return clipDetail(oneLine(stripped === "" ? raw : stripped))
 }
 
-/** A multi-line message on one line: the first line, as the ledger has always
- *  shown it, since what follows is a stack or a path the row cannot hold. */
+/** A multi-line message on one line: the first line, since what follows is
+ *  usually a stack or a path the row cannot hold. A first line ending in `:`
+ *  only introduces the reason (`Invalid parameters for \`x\`:` over a list of
+ *  what was wrong), so the lines under it join it. */
 function oneLine(text: string): string {
-	const line = text
+	const lines = text
 		.split("\n")
 		.map((raw) => raw.trim())
-		.find((raw) => raw.length > 0)
-	return line ?? text
+		.filter((raw) => raw.length > 0)
+	const [first, ...rest] = lines
+	if (first === undefined) return text
+	if (!first.endsWith(":") || rest.length === 0) return first
+	return [first, ...rest.map((line) => line.replace(/^[-*•]\s+/, ""))].join(" ")
 }

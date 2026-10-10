@@ -259,7 +259,7 @@ function IssueIdCopy({ id }: { id: string }) {
 				<CopyIndicator
 					status={status}
 					iconSize={12}
-					className="opacity-0 transition-opacity group-hover/copy:opacity-100 data-[copy-status=copied]:opacity-100"
+					className="opacity-0 transition-opacity group-hover/copy:opacity-100 data-[copy-status=copied]:opacity-100 pointer-coarse:opacity-100"
 				/>
 			</TooltipTrigger>
 			<TooltipContent>Copy issue ID</TooltipContent>

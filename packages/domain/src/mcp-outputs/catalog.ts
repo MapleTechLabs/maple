@@ -3,6 +3,7 @@
  * each tool declares exactly this schema) and the chat UI's `StructuredToolOutput` derive from.
  */
 import { SendMapleFeedbackOutput } from "./feedback"
+import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import {
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
@@ -58,6 +59,7 @@ import {
 } from "./services"
 import {
 	GetAgentSessionOutput,
+	GetAgentSessionTranscriptOutput,
 	GetAgentToolErrorOutput,
 	GetAgentToolsOverviewOutput,
 	GetSessionTracesOutput,
@@ -115,6 +117,7 @@ export const McpToolOutputs = {
 	find_errors: FindErrorsOutput,
 	find_slow_traces: FindSlowTracesOutput,
 	get_agent_session: GetAgentSessionOutput,
+	get_agent_session_transcript: GetAgentSessionTranscriptOutput,
 	get_agent_tool_error: GetAgentToolErrorOutput,
 	get_agent_tools_overview: GetAgentToolsOverviewOutput,
 	get_alert_rule: GetAlertRuleOutput,
@@ -127,6 +130,7 @@ export const McpToolOutputs = {
 	ingest_freshness: IngestFreshnessOutput,
 	ingest_usage: IngestUsageOutput,
 	inspect_chart_data: InspectChartDataOutput,
+	inspect_infra: InspectInfraOutput,
 	inspect_span: InspectSpanOutput,
 	inspect_trace: InspectTraceOutput,
 	link_pull_request: LinkPullRequestOutput,
@@ -140,6 +144,7 @@ export const McpToolOutputs = {
 	list_error_incidents: ListErrorIncidentsOutput,
 	list_error_issue_events: ListErrorIssueEventsOutput,
 	list_error_issues: ListErrorIssuesOutput,
+	list_infra: ListInfraOutput,
 	list_metrics: ListMetricsOutput,
 	list_product_events: ListProductEventsOutput,
 	list_services: ListServicesOutput,

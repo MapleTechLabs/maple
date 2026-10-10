@@ -3,7 +3,7 @@ import { useMemo } from "react"
 import type { CloudflareZoneRow, CloudflareZoneTimeseriesRow } from "@/api/warehouse/cloudflare-infra"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatNumber } from "@maple/ui/lib/format"
-import { formatBytes, formatPercent } from "@maple/ui/lib/format"
+import { formatBytes, formatErrorRate, formatPercent } from "@maple/ui/lib/format"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 
 interface CloudflareKpiCardsProps {
@@ -66,7 +66,7 @@ export function CloudflareKpiCards({ zones, buckets }: CloudflareKpiCardsProps) 
 			/>
 			<StatRailItem
 				eyebrow="5xx error rate"
-				value={formatPercent(totals.errorRate)}
+				value={formatErrorRate(totals.errorRate)}
 				tone={errorRateLevel(totals.errorRate)}
 				spark={sparks?.errorRate}
 			/>

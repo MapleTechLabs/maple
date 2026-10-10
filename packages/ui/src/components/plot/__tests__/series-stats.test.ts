@@ -23,9 +23,9 @@ describe("computeSeriesStats", () => {
 		expect(stats["demo-api"]).toEqual({ min: 4, max: 6, mean: 5, last: 6 })
 	})
 
-	it("reports zeros for a series with no numeric values", () => {
+	it("reports no data (null) for a series with no numeric values", () => {
 		const stats = computeSeriesStats(ROWS, ["absent"])
-		expect(stats.absent).toEqual({ min: 0, max: 0, mean: 0, last: 0 })
+		expect(stats.absent).toBeNull()
 	})
 })
 

@@ -160,6 +160,7 @@ export function OrganizationSection() {
 							id="org-name"
 							value={name}
 							onChange={(e) => setName(e.target.value)}
+							maxLength={100}
 							disabled={!isAdmin || isSavingName}
 							placeholder="Organization name"
 						/>

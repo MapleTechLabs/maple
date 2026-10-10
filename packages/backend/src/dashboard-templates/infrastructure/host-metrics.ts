@@ -106,7 +106,8 @@ function widgets(hostName?: string): WidgetDef[] {
 				name: "Filesystem",
 				metricName: "system.filesystem.utilization",
 				metricType: "gauge",
-				whereClause: where,
+				// Without the state pin each mount averages used/free/reserved.
+				whereClause: combineWhere(where, `attr.state = "used"`),
 				groupBy: ["attr.mountpoint"],
 			}),
 			display: { title: "Filesystem Utilization", ...CHART_DISPLAY_LINE, unit: "percent" },

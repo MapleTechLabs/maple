@@ -74,6 +74,8 @@ function Root({ children }: { children: React.ReactNode }) {
  * cluster (AI chat, connection status, the mobile filter trigger). `children` are
  * extra page-specific actions, appended to that cluster.
  */
+const CRUMB_LABEL = "block max-w-[40ch] truncate"
+
 function Breadcrumbs({
 	items,
 	children,
@@ -85,18 +87,22 @@ function Breadcrumbs({
 		<header data-slot="app-topbar" className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
 			<SidebarTrigger className="-ml-1" />
 			<Separator orientation="vertical" className="mr-2 h-4" />
-			<Breadcrumb>
-				<BreadcrumbList>
+			{/* One line inside the fixed h-16 bar: long names truncate instead of wrapping under it. */}
+			<Breadcrumb className="min-w-0 flex-1">
+				<BreadcrumbList className="flex-nowrap">
 					{items.map((item, index) => (
-						<React.Fragment key={item.label}>
-							{index > 0 && <BreadcrumbSeparator />}
-							<BreadcrumbItem>
+						<React.Fragment key={index}>
+							{index > 0 && <BreadcrumbSeparator className="shrink-0" />}
+							<BreadcrumbItem className="min-w-0" title={item.label}>
 								{item.href ? (
 									(() => {
 										const { pathname, search } = parseSearchFromHref(item.href)
 										if (!search) {
 											return (
-												<BreadcrumbLink render={<Link to={pathname} />}>
+												<BreadcrumbLink
+													render={<Link to={pathname} />}
+													className={CRUMB_LABEL}
+												>
 													{item.label}
 												</BreadcrumbLink>
 											)
@@ -104,13 +110,14 @@ function Breadcrumbs({
 										return (
 											<BreadcrumbLink
 												render={<Link to={pathname} search={search as never} />}
+												className={CRUMB_LABEL}
 											>
 												{item.label}
 											</BreadcrumbLink>
 										)
 									})()
 								) : (
-									<BreadcrumbPage>{item.label}</BreadcrumbPage>
+									<BreadcrumbPage className={CRUMB_LABEL}>{item.label}</BreadcrumbPage>
 								)}
 							</BreadcrumbItem>
 						</React.Fragment>

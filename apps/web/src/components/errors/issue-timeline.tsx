@@ -5,7 +5,8 @@ import type {
 	IssueEscalationAttemptDocument,
 } from "@maple/domain/http"
 import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
+import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -228,6 +229,9 @@ function formatSpokenDuration(ms: number): string {
 	return countLabel(days, "day")
 }
 
+/** Rows mounted before "Show earlier". */
+const RECENT_ITEMS = 50
+
 type TimelineItem =
 	| { kind: "event"; key: string; createdAt: string; event: ErrorIssueEventDocument }
 	| { kind: "escalation"; key: string; createdAt: string; escalation: IssueEscalationAttemptDocument }
@@ -259,6 +263,13 @@ export function IssueTimeline({
 		})),
 	].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
 
+	// A busy agent thread can carry hundreds of rows; mount the recent ones and
+	// render earlier markdown in lightweight mode once revealed.
+	const [showEarlier, setShowEarlier] = useState(false)
+	const recentStart = Math.max(0, items.length - RECENT_ITEMS)
+	const hiddenCount = showEarlier ? 0 : recentStart
+	const visible = items.slice(hiddenCount)
+
 	if (items.length === 0) {
 		return (
 			<EmptyMessage dashed className="py-10">
@@ -276,7 +287,15 @@ export function IssueTimeline({
 		// width the page happened to be: in the narrower tab column the times ran off
 		// the left edge of the scroll area. Here the gutter IS a column.
 		<ol className="flex flex-col">
-			{items.map((item, index) => {
+			{hiddenCount > 0 ? (
+				<li className="flex justify-center pb-2">
+					<Button variant="ghost" size="sm" onClick={() => setShowEarlier(true)}>
+						Show {countLabel(hiddenCount, "earlier event")}
+					</Button>
+				</li>
+			) : null}
+			{visible.map((item, visibleIndex) => {
+				const index = hiddenCount + visibleIndex
 				if (item.kind === "escalation") {
 					const escalation = item.escalation
 					const destinations = escalation.deliveries
@@ -302,7 +321,7 @@ export function IssueTimeline({
 										{escalation.severity} · {escalation.status}
 									</span>
 								</div>
-								<div className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+								<div className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground [overflow-wrap:anywhere]">
 									{body}
 								</div>
 							</div>
@@ -320,6 +339,7 @@ export function IssueTimeline({
 							body={body}
 							continued={isSameAuthorWithin(previous, event)}
 							event={event}
+							lightweight={index < recentStart}
 							identity={event.actor ? resolveActorIdentity(event.actor, directory) : null}
 							key={item.key}
 						/>
@@ -343,7 +363,7 @@ export function IssueTimeline({
 								<AuthorLabel actor={event.actor} directory={directory} />
 							</div>
 							{body ? (
-								<div className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+								<div className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground [overflow-wrap:anywhere]">
 									{body}
 								</div>
 							) : null}
@@ -389,11 +409,13 @@ function MessageRow({
 	identity,
 	body,
 	continued,
+	lightweight,
 }: {
 	event: ErrorIssueEventDocument
 	identity: ActorIdentity | null
 	body: string
 	continued: boolean
+	lightweight: boolean
 }) {
 	const isAgent = identity?.kind === "agent"
 	const verb = MESSAGE_VERB[event.type]
@@ -403,7 +425,10 @@ function MessageRow({
 			<RelativeTime
 				value={event.createdAt}
 				tooltip="title"
-				className={cn(STAMP, continued && "opacity-0 group-hover/row:opacity-100")}
+				className={cn(
+					STAMP,
+					continued && "opacity-0 group-hover/row:opacity-100 pointer-coarse:opacity-100",
+				)}
 			/>
 			<Rail>
 				{continued ? (
@@ -444,7 +469,9 @@ function MessageRow({
 						isAgent ? AGENT_ACCENT.surface : "border-border/70 bg-muted/40",
 					)}
 				>
-					<MessageResponse className="text-sm leading-relaxed">{body}</MessageResponse>
+					<MessageResponse className="text-sm leading-relaxed" lightweight={lightweight}>
+						{body}
+					</MessageResponse>
 				</div>
 			</div>
 		</li>

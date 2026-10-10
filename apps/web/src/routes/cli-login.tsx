@@ -210,7 +210,12 @@ function CliLoginPage() {
 					<div className="space-y-4">
 						<div className="space-y-1 border border-border bg-muted/30 p-3">
 							<p className="text-xs text-muted-foreground">Requesting device</p>
-							<p className="font-medium">{state.info.deviceName}</p>
+							<p
+								className="line-clamp-2 font-medium [overflow-wrap:anywhere]"
+								title={state.info.deviceName}
+							>
+								{state.info.deviceName}
+							</p>
 							<p className="font-mono text-sm text-muted-foreground">{state.info.userCode}</p>
 							<p className="text-xs text-muted-foreground">
 								Expires at {new Date(state.info.expiresAt).toLocaleTimeString()}

@@ -16,7 +16,9 @@ export function AuthorLabel({ login, className }: { login: string; className?: s
 	return (
 		<span className={cn("inline-flex min-w-0 items-center gap-1.5", className)}>
 			<AuthorAvatar login={login} />
-			<span className="truncate">{login}</span>
+			<span className="truncate" title={login}>
+				{login}
+			</span>
 		</span>
 	)
 }

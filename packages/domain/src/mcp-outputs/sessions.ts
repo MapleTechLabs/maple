@@ -218,23 +218,11 @@ export const ListProductEventsOutput = Schema.Struct({
 export const ListAgentSessionsFilters = Schema.Struct({
 	vendors: Schema.optionalKey(StringList),
 	services: Schema.optionalKey(StringList),
-	environments: Schema.optionalKey(StringList),
 	models: Schema.optionalKey(StringList),
 	agents: Schema.optionalKey(StringList),
 	tools: Schema.optionalKey(StringList),
 	search: Schema.optionalKey(Schema.String),
 	hasErrors: Schema.optionalKey(Schema.Boolean),
-	excludeTraceSessions: Schema.optionalKey(Schema.Boolean),
-	durationMinMs: Schema.optionalKey(Schema.Number),
-	durationMaxMs: Schema.optionalKey(Schema.Number),
-	costMin: Schema.optionalKey(Schema.Number),
-	costMax: Schema.optionalKey(Schema.Number),
-	tokensMin: Schema.optionalKey(Schema.Number),
-	tokensMax: Schema.optionalKey(Schema.Number),
-	llmCallsMin: Schema.optionalKey(Schema.Number),
-	llmCallsMax: Schema.optionalKey(Schema.Number),
-	toolCallsMin: Schema.optionalKey(Schema.Number),
-	toolCallsMax: Schema.optionalKey(Schema.Number),
 	sortBy: Schema.Literals(AI_SESSION_SORT_KEYS),
 	sortDir: Schema.Literals(["asc", "desc"]),
 })
@@ -296,6 +284,8 @@ export const GetAgentSessionOutput = Schema.Struct({
 			fixArea: Schema.optionalKey(Schema.String),
 		}),
 	),
+	/** The names of the checks that passed; `checks` holds the rest, each with its sentence. */
+	passedChecks: StringList,
 	findingCount: Schema.Number,
 	/** The first findings: failures first, the terminal one leading, then anomalies. */
 	findings: Schema.Array(
@@ -349,30 +339,99 @@ export const GetAgentSessionOutput = Schema.Struct({
 			slowestMs: Schema.Number,
 		}),
 	),
-	failureGroups: Schema.Array(
-		Schema.Struct({ kind: Schema.String, label: Schema.String, count: Schema.Number }),
-	),
 	turnCount: Schema.Number,
-	/** The first turns, in start order. */
-	turns: Schema.Array(
-		Schema.Struct({
-			/** `Turn 3`, or `Segment 3` for a trace-anchored turn. */
-			ordinal: Schema.String,
-			anchorKind: Schema.Literals(["conversation", "agent-root", "trace"]),
-			agentName: Schema.optionalKey(Schema.String),
-			/** From the session's first span. */
-			offsetMs: Schema.Number,
-			durationMs: Schema.Number,
-			spanCount: Schema.Number,
-			failed: Schema.Boolean,
-			/** The turn's newest user message, when captured. */
-			label: Schema.optionalKey(Schema.String),
-		}),
-	),
+	failedTurnCount: Schema.Number,
 	/** The span behind the verdict (or the first finding), to open with inspect_span. */
 	evidence: Schema.optionalKey(
 		Schema.Struct({ traceId: Schema.String, spanId: Schema.String, timestamp: Schema.String }),
 	),
+})
+
+const TranscriptRowKind = Schema.Literals([
+	"turn",
+	"user",
+	"system",
+	"assistant",
+	"prompt",
+	"tool",
+	"lane-open",
+	"lane-close",
+	"parallel",
+	"structure",
+	"note",
+])
+
+/** One row of an agent session read as a conversation, flattened for the wire. */
+export const AgentTranscriptRow = Schema.Struct({
+	kind: TranscriptRowKind,
+	/** Lanes deep: 0 is the turn's own thread, 1 a sub-agent or concurrent lane under it. */
+	depth: Schema.Number,
+	/** The 1-based turn the row belongs to. */
+	turn: Schema.Number,
+	/** From the session's first span. */
+	offsetMs: Schema.optionalKey(Schema.Number),
+	durationMs: Schema.optionalKey(Schema.Number),
+	agentName: Schema.optionalKey(Schema.String),
+	/** What was said: a message, a turn's opening prompt, a note. */
+	text: Schema.optionalKey(Schema.String),
+	/** A model call's facts (`model · 6.4K → 512 tok · stop tool_calls`), a structure row's label. */
+	meta: Schema.optionalKey(Schema.String),
+	toolName: Schema.optionalKey(Schema.String),
+	args: Schema.optionalKey(Schema.String),
+	result: Schema.optionalKey(Schema.String),
+	failed: Schema.optionalKey(Schema.Boolean),
+	/** The span behind the row, for inspect_span. */
+	spanId: Schema.optionalKey(Schema.String),
+	traceId: Schema.optionalKey(Schema.String),
+	/** The span's start, ISO: what `inspect_span timestamp` narrows its scan by. */
+	timestamp: Schema.optionalKey(Schema.String),
+	/** On a failed `turn` row: why its run ended. */
+	reason: Schema.optionalKey(Schema.String),
+	/** On a `turn` row: its work. */
+	llmCalls: Schema.optionalKey(Schema.Number),
+	toolCalls: Schema.optionalKey(Schema.Number),
+	/** On a `parallel` row: the lanes that ran at once. */
+	lanes: Schema.optionalKey(StringList),
+})
+
+export const GetAgentSessionTranscriptOutput = Schema.Struct({
+	sessionId: Schema.String,
+	window: Schema.optionalKey(OutputTimeRange),
+	load: Schema.Struct({
+		spans: Schema.Number,
+		truncated: Schema.Literals(["none", "cap", "too_large"]),
+		resumeStartTime: Schema.optionalKey(Schema.String),
+	}),
+	/** Every turn of the session, the index a `turn` parameter picks from. */
+	turns: Schema.Array(
+		Schema.Struct({
+			turn: Schema.Number,
+			anchorKind: Schema.Literals(["conversation", "agent-root", "trace"]),
+			agentName: Schema.optionalKey(Schema.String),
+			offsetMs: Schema.Number,
+			durationMs: Schema.Number,
+			failed: Schema.Boolean,
+			label: Schema.optionalKey(Schema.String),
+			/** Why a failed turn's run ended. */
+			stopReason: Schema.optionalKey(Schema.String),
+		}),
+	),
+	selection: Schema.Struct({
+		turn: Schema.optionalKey(Schema.Number),
+		failedOnly: Schema.optionalKey(Schema.Boolean),
+		search: Schema.optionalKey(Schema.String),
+		payloadChars: Schema.Number,
+	}),
+	/** Rows matching the selection, before paging. */
+	rowCount: Schema.Number,
+	rows: Schema.Array(AgentTranscriptRow),
+	pagination: OutputPagination,
+	/** The selection's earliest failure in time (a stopped run counts when it stopped), on any page. */
+	firstFailure: Schema.optionalKey(
+		Schema.Struct({ traceId: Schema.String, spanId: Schema.String, timestamp: Schema.String }),
+	),
+	/** Model calls that captured their messages, of all model calls read. */
+	capture: Schema.Struct({ capturedCalls: Schema.Number, llmCalls: Schema.Number }),
 })
 
 /** What a tool-analytics read was narrowed to. `tool` absent means every tool. */
@@ -380,7 +439,6 @@ export const AgentToolSelection = Schema.Struct({
 	tool: Schema.optionalKey(Schema.String),
 	model: Schema.optionalKey(Schema.String),
 	service: Schema.optionalKey(Schema.String),
-	environment: Schema.optionalKey(Schema.String),
 	toolContains: Schema.optionalKey(Schema.String),
 })
 
@@ -404,7 +462,8 @@ export const GetAgentToolsOverviewOutput = Schema.Struct({
 	/** Every agent session in the window, before the selection. */
 	allSessions: Schema.optionalKey(Schema.Number),
 	/** Every tool in the window, busiest first; ignores a selected `tool`. */
-	tools: Schema.Array(AiToolsBreakdownItem),
+	/** Every tool, busiest first; absent when one tool is selected. */
+	tools: Schema.optionalKey(Schema.Array(AiToolsBreakdownItem)),
 	/** Only when a tool is selected: its failure groups, most failed calls first. */
 	failureGroups: Schema.optionalKey(
 		Schema.Struct({

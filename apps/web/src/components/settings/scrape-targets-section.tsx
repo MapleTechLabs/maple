@@ -604,13 +604,15 @@ function ScrapeTargetRow({
 
 			<div className="min-w-0 flex-1">
 				<div className="flex min-w-0 items-center gap-2">
-					<span className="truncate text-sm font-medium">{target.name}</span>
+					<span className="min-w-16 truncate text-sm font-medium" title={target.name}>
+						{target.name}
+					</span>
 					<Badge variant={status.tone === "neutral" ? "outline" : status.tone} className="shrink-0">
 						{status.label}
 					</Badge>
 					{target.service_name && (
-						<Badge variant="outline" className="shrink-0">
-							{target.service_name}
+						<Badge variant="outline" className="min-w-0 max-w-40" title={target.service_name}>
+							<span className="truncate">{target.service_name}</span>
 						</Badge>
 					)}
 					{target.auth_type !== "none" && (
@@ -620,7 +622,9 @@ function ScrapeTargetRow({
 					)}
 				</div>
 				<div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-					<span className="max-w-[280px] truncate font-mono">{hostnameFromUrl(target.url)}</span>
+					<span className="max-w-[280px] truncate font-mono" title={target.url}>
+						{hostnameFromUrl(target.url)}
+					</span>
 					<span>{target.scrape_interval_seconds}s interval</span>
 					<span>{status.detail}</span>
 					{target.last_scrape_at && (
@@ -731,9 +735,16 @@ function ScrapeTargetDetails({
 					<div className="min-w-0">
 						<div className="flex items-center gap-2">
 							<StatusDot tone={status.tone} size="lg" />
-							<h3 className="truncate text-sm font-semibold">{target.name}</h3>
+							<h3 className="truncate text-sm font-semibold" title={target.name}>
+								{target.name}
+							</h3>
 						</div>
-						<p className="text-muted-foreground mt-1 truncate font-mono text-xs">{target.url}</p>
+						<p
+							className="text-muted-foreground mt-1 line-clamp-2 break-all font-mono text-xs"
+							title={target.url}
+						>
+							{target.url}
+						</p>
 					</div>
 					<Badge variant={status.tone === "neutral" ? "outline" : status.tone}>
 						{status.label}

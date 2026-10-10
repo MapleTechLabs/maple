@@ -411,7 +411,7 @@ function FilterSectionBase({
 												className={cn(
 													"text-xs text-muted-foreground tabular-nums transition-opacity",
 													onExcludedChange &&
-														"group-hover/option:opacity-0 group-focus-within/option:opacity-0",
+														"group-hover/option:opacity-0 group-focus-within/option:opacity-0 pointer-coarse:opacity-0",
 												)}
 												title={option.count.toLocaleString()}
 											>
@@ -425,7 +425,7 @@ function FilterSectionBase({
 											// path, a versioned service name) they landed as text on
 											// text. Occluding is the honest read: the label is
 											// truncated anyway, and `title` still carries it in full.
-											<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 bg-background opacity-0 transition-opacity before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-6 before:bg-gradient-to-r before:from-transparent before:to-background group-hover/option:pointer-events-auto group-hover/option:opacity-100 group-focus-within/option:pointer-events-auto group-focus-within/option:opacity-100">
+											<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 bg-background opacity-0 transition-opacity before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-6 before:bg-gradient-to-r before:from-transparent before:to-background group-hover/option:pointer-events-auto group-hover/option:opacity-100 group-focus-within/option:pointer-events-auto group-focus-within/option:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100">
 												<FilterRowAction
 													onClick={() => selectOnly(option.name)}
 													label={`Show only ${label}`}
