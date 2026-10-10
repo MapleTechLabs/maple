@@ -240,7 +240,7 @@ export function GcpOpenCloudShellButton({
 			render={
 				<a href={cloudShellUrl(projectId)} target="_blank" rel="noreferrer">
 					Open Cloud Shell
-					<ExternalLinkIcon size={14} />
+					<ExternalLinkIcon />
 				</a>
 			}
 		/>
@@ -284,14 +284,18 @@ function Script({
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
 				{children}
 				<GcpCopyScriptButton script={script} label={label} />
-				<button
-					type="button"
+				<Button
+					variant="link"
+					size="xs"
 					aria-expanded={shown}
 					onClick={() => setShown(!shown)}
-					className={cn(GCP_LINK, "text-xs text-muted-foreground hover:text-foreground")}
+					className={cn(
+						"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground",
+						GCP_LINK,
+					)}
 				>
 					{shown ? "Hide the script" : "Read the script"}
-				</button>
+				</Button>
 			</div>
 			{failure === null ? null : (
 				<div className="flex flex-wrap items-center gap-2">
