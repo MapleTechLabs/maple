@@ -541,6 +541,7 @@ export function GcpIntegrationCard() {
 	useIntervalRefresh(refreshStatus, {
 		intervalMs: settling ? GCP_SETTLING_REFRESH_MS : STEADY_REFRESH_MS,
 		enabled: connectors.length > 0,
+		catchUp: true,
 	})
 
 	if (Result.isInitial(statusResult)) {

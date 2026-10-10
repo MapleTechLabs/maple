@@ -103,7 +103,16 @@ function GcpPage() {
 			}),
 		)
 		.orElse(() => false)
-	useIntervalRefresh(refreshStatus, { intervalMs: SETTLING_REFRESH_MS, enabled: settling })
+	// A healthy connection is followed too: its states turn on the clock, so a status read once
+	// would age into "stalled" on a page left open.
+	const connected = Result.builder(statusResult)
+		.onSuccess((status) => status.connectors.length > 0)
+		.orElse(() => false)
+	useIntervalRefresh(refreshStatus, {
+		intervalMs: settling ? SETTLING_REFRESH_MS : STEADY_REFRESH_MS,
+		enabled: connected,
+		catchUp: true,
+	})
 
 	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
@@ -175,6 +184,8 @@ function GcpPage() {
 
 /** Fast enough to see the setup script confirmed and the first read land. */
 const SETTLING_REFRESH_MS = 10_000
+/** Keeps the time of the last read current: Maple reads every 5 minutes. */
+const STEADY_REFRESH_MS = 60_000
 /** Re-reads while nothing has arrived, so the page fills in without a reload. */
 const WAITING_REFRESH_MS = 30_000
 
