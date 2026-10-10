@@ -61,27 +61,42 @@ export const describeParity = (
 	const ormEntities = Effect.runSync(S.pgEntitiesOf(list))
 	const ormTables = new Set(list.map((table) => table.name))
 
+	const SNAPSHOT_READ_TIMEOUT_MS = 30_000
+
 	describe(`effect-orm tables (${[...ormTables].sort().join(", ")})`.slice(0, 120), () => {
-		it.runIf(options.complete)("leave the migrations folder consistent", async () => {
-			const analysis = await folder()
-			expect(analysis.problems).toEqual([])
-			expect(analysis.leaves).toHaveLength(1)
-		})
+		// Reads every migration's snapshot, so it grows with the folder; the default 5 s is too tight on CI.
+		it.runIf(options.complete)(
+			"leave the migrations folder consistent",
+			async () => {
+				const analysis = await folder()
+				expect(analysis.problems).toEqual([])
+				expect(analysis.leaves).toHaveLength(1)
+			},
+			SNAPSHOT_READ_TIMEOUT_MS,
+		)
 
-		it.runIf(options.complete)("cover every table the head snapshot knows", async () => {
-			const snapshotTables = new Set(
-				(await headEntities()).filter((e) => e.kind === "table").map((e) => e.name),
-			)
-			expect([...snapshotTables].filter((name) => !ormTables.has(name)).sort()).toEqual([])
-			expect([...ormTables].filter((name) => !snapshotTables.has(name)).sort()).toEqual([])
-		})
+		it.runIf(options.complete)(
+			"cover every table the head snapshot knows",
+			async () => {
+				const snapshotTables = new Set(
+					(await headEntities()).filter((e) => e.kind === "table").map((e) => e.name),
+				)
+				expect([...snapshotTables].filter((name) => !ormTables.has(name)).sort()).toEqual([])
+				expect([...ormTables].filter((name) => !snapshotTables.has(name)).sort()).toEqual([])
+			},
+			SNAPSHOT_READ_TIMEOUT_MS,
+		)
 
-		it("match the head snapshot entity for entity, so generate has nothing to write", async () => {
-			const head = (await headEntities()).filter((entity) => ormTables.has(tableOf(entity)))
-			const diff = S.diffPgSchemas(head, ormEntities)
-			expect(diff.ops).toEqual([])
-			expect(diff.missingHints).toEqual([])
-		})
+		it(
+			"match the head snapshot entity for entity, so generate has nothing to write",
+			async () => {
+				const head = (await headEntities()).filter((entity) => ormTables.has(tableOf(entity)))
+				const diff = S.diffPgSchemas(head, ormEntities)
+				expect(diff.ops).toEqual([])
+				expect(diff.missingHints).toEqual([])
+			},
+			SNAPSHOT_READ_TIMEOUT_MS,
+		)
 
 		describe("against the migrated database", () => {
 			const migrated = new PGlite()
