@@ -7,6 +7,8 @@ import {
 	ChevronRightIcon,
 	CloudflareIcon,
 	GithubIcon,
+	GoogleCloudIcon,
+	GoogleCloudMonoIcon,
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
@@ -27,6 +29,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
+import { GCP_CONNECTION_LABEL, gcpConnectionState, gcpScopeLabel, gcpWorstState } from "./gcp-connector-state"
 
 /**
  * A chat connector's catalog id. The connector half is data from
@@ -39,6 +42,7 @@ export type IntegrationId =
 	| "cloudflare"
 	| "prometheus"
 	| "planetscale"
+	| "gcp"
 	| "railway"
 	| "warpstream"
 	| "hazel"
@@ -94,6 +98,7 @@ export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
+export const GCP_ACCENT = "#4285F4"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -173,6 +178,16 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		docsUrl: docsUrl("planetscale"),
 	},
 	{
+		id: "gcp",
+		category: "infrastructure",
+		isNew: true,
+		name: "Google Cloud",
+		description: "Logs, metrics and resources from a project, folder or organization.",
+		icon: GoogleCloudIcon,
+		monoIcon: GoogleCloudMonoIcon,
+		accent: GCP_ACCENT,
+	},
+	{
 		id: "railway",
 		category: "infrastructure",
 		isNew: true,
@@ -217,6 +232,13 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 	...CHAT_ENTRIES,
 ]
+
+/**
+ * The Google Cloud status read, shared by the catalog and the card. Called in a render body, like
+ * every `retainedQueryV2`: the atom it returns is memoized per organization.
+ */
+export const gcpStatusQuery = () =>
+	retainedQueryV2("gcpIntegration", "status", { reactivityKeys: ["gcpIntegration"] })
 
 export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((entry) => entry.id === id)!
 
@@ -293,6 +315,15 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
+	const gcpResult = useAtomValue(gcpStatusQuery())
+
+	const gcp: CardStatus | null = Result.builder(gcpResult)
+		.onSuccess((status): CardStatus => {
+			if (status.connectors.length === 0) return NOT_CONNECTED
+			return { label: countLabel(status.connectors.length, "connection"), variant: "ok" }
+		})
+		.onInitial(() => null)
+		.orElse(() => STATUS_UNAVAILABLE)
 
 	const railway: CardStatus | null = Result.builder(railwayResult)
 		.onSuccess((status): CardStatus => {
@@ -394,6 +425,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		cloudflare,
 		prometheus: scrapeStatus("prometheus"),
 		planetscale,
+		gcp,
 		railway,
 		// WarpStream rides the generic Prometheus pipeline — no own target type.
 		warpstream: { label: "Via Prometheus", variant: "outline" },
@@ -465,7 +497,8 @@ export function IntegrationIconPlate({
 
 interface ConnectedOverview {
 	readonly kind: "connected"
-	readonly health: "healthy" | "attention"
+	/** `pending` waits on the owner or on first data: neutral, and not counted as needing attention. */
+	readonly health: "healthy" | "attention" | "pending"
 	/** Short state word next to the health dot ("Healthy", "Needs attention", "Suspended"). */
 	readonly stateLabel: string
 	/** Second line under the name ("Acme Corp", "@acme-corp · GitHub App"). */
@@ -474,7 +507,7 @@ interface ConnectedOverview {
 	readonly stat: string | null
 	/** "synced 2m ago" — null when the integration has no sync concept (Hazel). */
 	readonly lastSyncLabel: string | null
-	/** Warning chip ("1 zone erroring") — presence implies `health: "attention"` visuals. */
+	/** Chip ("1 zone erroring", "Run setup script"): a warning, or an outline while `pending`. */
 	readonly issue: string | null
 }
 
@@ -537,6 +570,60 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 	const chatResult = useAtomValue(
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
+	const gcpResult = useAtomValue(gcpStatusQuery())
+
+	const gcp: IntegrationOverview = Result.builder(gcpResult)
+		.onSuccess((status): IntegrationOverview => {
+			const connectors = status.connectors
+			if (connectors.length === 0) return SET_UP
+			const now = Date.now()
+			const states = connectors.map((connector) => gcpConnectionState(connector, now))
+			const count = (state: (typeof states)[number]) => states.filter((entry) => entry === state).length
+			const worst = gcpWorstState(states)
+			return {
+				kind: "connected",
+				health: worst === "attention" || worst === "healthy" ? worst : "pending",
+				stateLabel: GCP_CONNECTION_LABEL[worst],
+				context:
+					connectors.length === 1
+						? gcpScopeLabel(connectors[0])
+						: countLabel(connectors.length, "connection"),
+				// What the connections collect: true in every state, unlike a count of healthy ones.
+				stat: [
+					connectors.some((connector) => connector.logs_enabled) ? "Logs" : null,
+					connectors.some((connector) => connector.metrics_enabled)
+						? "Metrics and resources"
+						: null,
+				]
+					.filter((part) => part !== null)
+					.join(" · "),
+				// Not next to "Waiting for data": the two would contradict each other.
+				lastSyncLabel:
+					worst === "waiting"
+						? null
+						: syncedLabel(
+								maxMs(
+									connectors
+										.flatMap((connector) => [
+											connector.logs_enabled ? connector.last_log_received_at : null,
+											connector.metrics_enabled
+												? connector.last_metrics_received_at
+												: null,
+										])
+										.map((iso) => (iso ? Date.parse(iso) : null)),
+								),
+								"last data",
+							),
+				issue:
+					worst === "attention"
+						? `${countLabel(count("attention"), "connection")} failing`
+						: worst === "setup-pending" || worst === "changes-pending"
+							? "Run setup script"
+							: null,
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => UNAVAILABLE)
 
 	const railway: IntegrationOverview = Result.builder(railwayResult)
 		.onSuccess((status): IntegrationOverview => {
@@ -754,6 +841,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		cloudflare,
 		prometheus: scrapeOverview("prometheus"),
 		planetscale,
+		gcp,
 		railway,
 		// WarpStream rides the generic Prometheus pipeline — always a set-up card.
 		warpstream: SET_UP,
@@ -784,17 +872,20 @@ export function IntegrationsSummary() {
 			{attention > 0 && (
 				<Badge variant="warn" pill className="gap-1.5 px-2.5 font-normal">
 					<StatusDot tone="warn" />
-					{attention} need attention
+					{attention} {attention === 1 ? "needs" : "need"} attention
 				</Badge>
 			)}
 		</div>
 	)
 }
 
-function HealthDot({ health }: { health: "healthy" | "attention" | "unavailable" }) {
-	if (health === "unavailable") return <StatusDot tone="neutral" />
-	return <StatusDot tone={health === "healthy" ? "ok" : "warn"} />
-}
+/** Dot tone per health. The integration's page header uses it too. */
+export const HEALTH_TONE = {
+	healthy: "ok",
+	attention: "warn",
+	pending: "neutral",
+	unavailable: "neutral",
+} as const
 
 function ConnectedRow({
 	entry,
@@ -825,8 +916,8 @@ function ConnectedRow({
 					<span className="truncate text-xs text-muted-foreground">{connected.context}</span>
 				)}
 			</span>
-			<span className="flex w-28 shrink-0 items-center gap-2">
-				<HealthDot health={connected?.health ?? "unavailable"} />
+			<span className="flex w-36 shrink-0 items-center gap-2">
+				<StatusDot tone={HEALTH_TONE[connected?.health ?? "unavailable"]} />
 				<span className="truncate text-xs">{connected?.stateLabel ?? "Status unavailable"}</span>
 			</span>
 			{connected?.stat && (
@@ -841,7 +932,11 @@ function ConnectedRow({
 					</span>
 				)}
 				{connected?.issue && (
-					<Badge variant="warn" size="sm" className="hidden sm:inline-flex">
+					<Badge
+						variant={connected.health === "pending" ? "outline" : "warn"}
+						size="sm"
+						className="hidden sm:inline-flex"
+					>
 						{connected.issue}
 					</Badge>
 				)}

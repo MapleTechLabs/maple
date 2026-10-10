@@ -9,12 +9,14 @@ import {
 	CloudflareAccountCard,
 	CloudflareHeaderActions,
 } from "@/components/integrations/cloudflare-account-card"
+import { GcpIntegrationCard } from "@/components/integrations/gcp-integration-card"
 import { GithubIntegrationCard } from "@/components/integrations/github-integration-card"
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscale-integration-card"
 import { RailwayIntegrationCard } from "@/components/integrations/railway-integration-card"
 import { ChatIntegrationCard } from "@/components/integrations/chat-integration-card"
 import {
+	HEALTH_TONE,
 	IntegrationCatalog,
 	IntegrationIconPlate,
 	IntegrationsSummary,
@@ -230,6 +232,8 @@ function IntegrationsPage() {
 					<GithubIntegrationCard />
 				) : integration === "planetscale" ? (
 					<PlanetScaleIntegrationCard />
+				) : integration === "gcp" ? (
+					<GcpIntegrationCard />
 				) : integration === "railway" ? (
 					<RailwayIntegrationCard />
 				) : (
@@ -281,7 +285,7 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				</div>
 				{connected && statusLine ? (
 					<div className="flex items-center gap-1.5">
-						<StatusDot tone={connected.health === "healthy" ? "ok" : "warn"} />
+						<StatusDot tone={HEALTH_TONE[connected.health]} />
 						<span className="truncate text-xs text-muted-foreground">{statusLine}</span>
 					</div>
 				) : null}
