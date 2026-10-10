@@ -15,6 +15,7 @@ import "@xyflow/react/dist/style.css"
 import { EyeIcon } from "../icons"
 
 import { Button } from "../ui/button"
+import { EmptyMessage } from "../ui/empty"
 import { cn } from "../../lib/utils"
 import { getServiceColor } from "../../lib/colors"
 import { describeSpan, SPAN_CATEGORIES } from "../../lib/span-category"
@@ -138,9 +139,7 @@ export function TraceFlowView({
 
 	if (rootSpans.length === 0) {
 		return (
-			<div className="border p-8 text-center">
-				<p className="text-muted-foreground">No spans found for this trace</p>
-			</div>
+			<EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
 		)
 	}
 
@@ -157,8 +156,8 @@ export function TraceFlowView({
 						void rfInstance?.fitView({ padding: 0.2, maxZoom: 1.5 })
 					}}
 				>
-					<EyeIcon size={12} />
-					Fit View
+					<EyeIcon />
+					Fit view
 				</Button>
 			</div>
 
@@ -228,7 +227,7 @@ export function TraceFlowView({
 								<div key={category.id} className="flex items-center gap-1.5">
 									<span
 										className={cn(
-											"flex size-3.5 items-center justify-center rounded-[4px]",
+											"flex size-3.5 items-center justify-center rounded-sm",
 											category.accent.soft,
 											category.accent.text,
 										)}
@@ -243,7 +242,7 @@ export function TraceFlowView({
 				)}
 				<span className="flex-1" />
 				<div className="flex items-center gap-1.5">
-					<span className="size-3.5 rounded-[4px] bg-severity-error/15 ring-1 ring-inset ring-severity-error/40" />
+					<span className="size-3.5 rounded-sm bg-severity-error/15 ring-1 ring-inset ring-severity-error/40" />
 					<span className="font-medium">Error</span>
 				</div>
 			</div>

@@ -122,7 +122,7 @@ export function ApiKeysSection() {
 		const result = await revokeMutation({ params: { id: revokingKey.id } })
 		// ConfirmDialog closes on `true` (`revokingKey` stays set so the copy doesn't swap mid-animation);
 		// `false` keeps it open so the user can retry.
-		const ok = toastExit(result, { success: "API key revoked", error: "Couldn't revoke API key" })
+		const ok = toastExit(result, { success: "API key revoked", error: "Failed to revoke API key" })
 		if (Exit.isSuccess(result)) void reconcileTxid(result.value.txid)
 		return ok
 	}
@@ -608,12 +608,12 @@ function ApiKeyRow({
 					<RowActionsMenu label={`Actions for ${apiKey.name}`}>
 						{onRoll && (
 							<DropdownMenuItem onClick={onRoll}>
-								<ArrowPathIcon size={14} />
+								<ArrowPathIcon />
 								Roll key
 							</DropdownMenuItem>
 						)}
 						<DropdownMenuItem variant="destructive" onClick={onRevoke}>
-							<TrashIcon size={14} />
+							<TrashIcon />
 							Revoke key
 						</DropdownMenuItem>
 					</RowActionsMenu>

@@ -1,5 +1,5 @@
 /**
- * Plain-drizzle severity helpers used by investigation diagnosis persistence.
+ * Severity helpers used by investigation diagnosis persistence, run on the caller's database.
  * Every write is idempotent: deterministic runId-derived ids plus
  * onConflictDoNothing, or guarded UPDATEs.
  */
@@ -13,21 +13,19 @@ import {
 	IssueEscalationId,
 	OrgId,
 } from "@maple/domain/primitives"
-import { actors, errorIssues, errorIssueEvents, issueEscalations } from "@maple/db"
-import type { MapleDbLike } from "@maple/db/client"
-import { and, eq, ne, isNull, or } from "drizzle-orm"
-import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
+import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
 import { Effect, Schema } from "effect"
 import { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 
 export { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 
 /**
- * Accepts either a top-level client or an open transaction so callers can run
- * the severity write atomically alongside their own writes (e.g. the
- * `submit_diagnosis` timeline event) in a single transaction.
+ * effect-orm over the caller's client; inside `orm.transaction` the writes join
+ * it, so callers can run the severity write atomically alongside their own.
  */
-export type TriageSeverityDb = MapleDbLike
+export type TriageSeverityDb = MapleDb
 
 /**
  * The triage-agent actor row was neither found nor insertable. Only reachable
@@ -89,37 +87,33 @@ const ensureTriageAgentActor = (
 	db: TriageSeverityDb,
 	orgId: OrgId,
 	timestamp: number,
-): Effect.Effect<ActorId, EffectDrizzleQueryError | TriageActorMissingError> =>
+): Effect.Effect<ActorId, MapleDbError | TriageActorMissingError> =>
 	Effect.gen(function* () {
 		const select = () =>
-			db
-				.select()
-				.from(actors)
-				.where(
-					and(
-						eq(actors.orgId, orgId),
-						eq(actors.type, "agent"),
-						eq(actors.agentName, TRIAGE_AGENT_NAME),
-					),
-				)
-				.limit(1)
+			db.run(
+				PG.from(Actors)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.type.eq("agent"), $.agentName.eq(TRIAGE_AGENT_NAME)])
+					.limit(1),
+			)
 		const existing = yield* select()
 		if (existing[0]) return existing[0].id
-		yield* db
-			.insert(actors)
-			.values({
-				id: decodeActorId(randomUUID()),
-				orgId,
-				type: "agent",
-				userId: null,
-				agentName: TRIAGE_AGENT_NAME,
-				model: null,
-				capabilitiesJson: ["auto-triage"],
-				createdBy: null,
-				createdAt: new Date(timestamp),
-				lastActiveAt: new Date(timestamp),
-			})
-			.onConflictDoNothing()
+		yield* db.run(
+			PG.insertInto(Actors)
+				.values({
+					id: decodeActorId(randomUUID()),
+					orgId,
+					type: "agent",
+					userId: null,
+					agentName: TRIAGE_AGENT_NAME,
+					model: null,
+					capabilitiesJson: ["auto-triage"],
+					createdBy: null,
+					createdAt: timestamp,
+					lastActiveAt: timestamp,
+				})
+				.onConflictDoNothing(),
+		)
 		const after = yield* select()
 		const row = after[0]
 		if (!row) {
@@ -163,13 +157,14 @@ export interface ApplyTriageSeverityOutcome {
 export const applyTriageSeverity = (
 	db: TriageSeverityDb,
 	input: ApplyTriageSeverityInput,
-): Effect.Effect<ApplyTriageSeverityOutcome, EffectDrizzleQueryError | TriageActorMissingError> =>
+): Effect.Effect<ApplyTriageSeverityOutcome, MapleDbError | TriageActorMissingError> =>
 	Effect.gen(function* () {
-		const issueRows = yield* db
-			.select()
-			.from(errorIssues)
-			.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, input.issueId)))
-			.limit(1)
+		const issueRows = yield* db.run(
+			PG.from(ErrorIssues)
+				.select()
+				.where(($) => [$.orgId.eq(input.orgId), $.id.eq(input.issueId)])
+				.limit(1),
+		)
 		const issue = issueRows[0]
 		if (!issue) return { applied: false, actorId: null }
 
@@ -189,78 +184,80 @@ export const applyTriageSeverity = (
 
 		// Guard repeated in SQL so a concurrent manual write between the read above
 		// and this update still wins.
-		const updated = yield* db
-			.update(errorIssues)
-			.set({ severity, severitySource: "ai", updatedAt: new Date(input.timestamp) })
-			.where(
-				and(
-					eq(errorIssues.orgId, input.orgId),
-					eq(errorIssues.id, input.issueId),
-					or(isNull(errorIssues.severitySource), ne(errorIssues.severitySource, "manual")),
-				),
-			)
-			// The returned row is the guard outcome: empty means a concurrent
-			// manual severity write won.
-			.returning({ id: errorIssues.id })
+		const updated = yield* db.run(
+			PG.update(ErrorIssues)
+				.set({ severity, severitySource: "ai", updatedAt: input.timestamp })
+				.where(($) => [
+					$.orgId.eq(input.orgId),
+					$.id.eq(input.issueId),
+					PG.or($.severitySource.isNull(), $.severitySource.neq("manual")),
+				])
+				// The returned row is the guard outcome: empty means a concurrent
+				// manual severity write won.
+				.returning("id"),
+		)
 		if (updated.length === 0) {
 			return { applied: false, actorId }
 		}
 
 		if (from !== severity) {
-			yield* db
-				.insert(errorIssueEvents)
-				.values({
-					id: decodeEventId(deterministicUuid(`ai-triage-severity:${input.runId}`)),
-					orgId: input.orgId,
-					issueId: input.issueId,
-					actorId,
-					type: "severity_change",
-					fromState: null,
-					toState: null,
-					payloadJson: {
-						from,
-						to: severity,
-						source: "ai",
-						runId: input.runId,
-						confidence: input.confidence,
-					},
-					createdAt: new Date(input.timestamp),
-				})
-				.onConflictDoNothing()
+			yield* db.run(
+				PG.insertInto(ErrorIssueEvents)
+					.values({
+						id: decodeEventId(deterministicUuid(`ai-triage-severity:${input.runId}`)),
+						orgId: input.orgId,
+						issueId: input.issueId,
+						actorId,
+						type: "severity_change",
+						fromState: null,
+						toState: null,
+						payloadJson: {
+							from,
+							to: severity,
+							source: "ai",
+							runId: input.runId,
+							confidence: input.confidence,
+						},
+						createdAt: input.timestamp,
+					})
+					.onConflictDoNothing(),
+			)
 		}
 
 		const reason = escalationReasonFor(from, severity)
 		if (reason !== null) {
-			yield* db
-				.insert(issueEscalations)
-				.values({
-					id: decodeEscalationId(deterministicUuid(`ai-triage-escalation:${input.runId}`)),
-					orgId: input.orgId,
-					issueId: input.issueId,
-					severity,
-					source: "ai",
-					reason,
-					runId: input.runId,
-					investigationId: input.investigationId ?? null,
-					payloadJson: {
-						confidence: input.confidence,
-						...(input.result ? { triage: input.result } : undefined),
-					},
-					deliveryResultsJson: [],
-					status: "queued",
-					attempts: 0,
-					dedupeKey: escalationDedupeKey(input.orgId, input.issueId, severity),
-					error: null,
-					createdAt: new Date(input.timestamp),
-					processedAt: null,
-				})
-				.onConflictDoNothing()
+			yield* db.run(
+				PG.insertInto(IssueEscalations)
+					.values({
+						id: decodeEscalationId(deterministicUuid(`ai-triage-escalation:${input.runId}`)),
+						orgId: input.orgId,
+						issueId: input.issueId,
+						severity,
+						source: "ai",
+						reason,
+						runId: input.runId,
+						investigationId: input.investigationId ?? null,
+						payloadJson: {
+							confidence: input.confidence,
+							...(input.result ? { triage: input.result } : undefined),
+						},
+						deliveryResultsJson: [],
+						status: "queued",
+						attempts: 0,
+						dedupeKey: escalationDedupeKey(input.orgId, input.issueId, severity),
+						error: null,
+						createdAt: input.timestamp,
+						processedAt: null,
+					})
+					.onConflictDoNothing(),
+			)
 		}
 
-		yield* db
-			.update(actors)
-			.set({ lastActiveAt: new Date(input.timestamp) })
-			.where(eq(actors.id, actorId))
+		yield* db.run(
+			PG.update(Actors)
+				.set({ lastActiveAt: input.timestamp })
+				.where(($) => [$.id.eq(actorId)]),
+		)
 
 		return { applied: true, actorId }
 	})
@@ -291,41 +288,37 @@ const confidenceLabel = (probability: number): AiTriageResult["confidence"] =>
 export const applyClassifierSeverity = (
 	db: TriageSeverityDb,
 	input: ApplyClassifierSeverityInput,
-): Effect.Effect<{ readonly applied: boolean }, EffectDrizzleQueryError | TriageActorMissingError> =>
+): Effect.Effect<{ readonly applied: boolean }, MapleDbError | TriageActorMissingError> =>
 	Effect.gen(function* () {
-		const updated = yield* db
-			.update(errorIssues)
-			.set({ severity: input.severity, severitySource: "ai", updatedAt: new Date(input.timestamp) })
-			.where(
-				and(
-					eq(errorIssues.orgId, input.orgId),
-					eq(errorIssues.id, input.issueId),
-					isNull(errorIssues.severity),
-				),
-			)
-			.returning({ id: errorIssues.id })
+		const updated = yield* db.run(
+			PG.update(ErrorIssues)
+				.set({ severity: input.severity, severitySource: "ai", updatedAt: input.timestamp })
+				.where(($) => [$.orgId.eq(input.orgId), $.id.eq(input.issueId), $.severity.isNull()])
+				.returning("id"),
+		)
 		if (updated.length === 0) return { applied: false }
 
 		const actorId = yield* ensureTriageAgentActor(db, input.orgId, input.timestamp)
-		yield* db
-			.insert(errorIssueEvents)
-			.values({
-				id: decodeEventId(deterministicUuid(`classifier-severity:${input.incidentId}`)),
-				orgId: input.orgId,
-				issueId: input.issueId,
-				actorId,
-				type: "severity_change",
-				fromState: null,
-				toState: null,
-				payloadJson: {
-					from: null,
-					to: input.severity,
-					source: "ai",
-					runId: input.incidentId,
-					confidence: confidenceLabel(input.confidence),
-				},
-				createdAt: new Date(input.timestamp),
-			})
-			.onConflictDoNothing()
+		yield* db.run(
+			PG.insertInto(ErrorIssueEvents)
+				.values({
+					id: decodeEventId(deterministicUuid(`classifier-severity:${input.incidentId}`)),
+					orgId: input.orgId,
+					issueId: input.issueId,
+					actorId,
+					type: "severity_change",
+					fromState: null,
+					toState: null,
+					payloadJson: {
+						from: null,
+						to: input.severity,
+						source: "ai",
+						runId: input.incidentId,
+						confidence: confidenceLabel(input.confidence),
+					},
+					createdAt: input.timestamp,
+				})
+				.onConflictDoNothing(),
+		)
 		return { applied: true }
 	})

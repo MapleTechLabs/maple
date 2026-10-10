@@ -32,6 +32,7 @@ export function SearchToolbar({
 		<div className={cn("flex flex-wrap items-center justify-between gap-3", className)}>
 			<div className="flex flex-wrap items-center gap-2">
 				<SearchInput
+					size="default"
 					className="w-64"
 					placeholder={placeholder}
 					value={value}

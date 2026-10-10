@@ -1,7 +1,9 @@
 import { Option } from "effect"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { useState } from "react"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Item, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
@@ -41,6 +43,7 @@ export function HazelIntegrationCard() {
 		{ success: "Hazel disconnected", error: "Failed to disconnect Hazel" },
 	)
 	const actionBusy = connectFlow.busy || disconnectBusy
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	// Keep the last loaded status if a refetch fails.
 	const status = Option.getOrNull(AsyncResult.value(statusResult))
@@ -49,7 +52,7 @@ export function HazelIntegrationCard() {
 
 	const isConnected = status?.connected === true
 	if (isLoading) {
-		return <Skeleton className="h-32 w-full rounded-lg" />
+		return <Skeleton className="h-32 w-full rounded-md" />
 	}
 	if (loadFailed) {
 		return (
@@ -87,7 +90,7 @@ export function HazelIntegrationCard() {
 						Alert destinations will appear here after connecting your workspace.
 					</IntegrationEmptyHint>
 					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
-						<HazelIcon size={16} />
+						<HazelIcon />
 						Connect Hazel
 					</Button>
 					<IntegrationEmptyFooter>
@@ -143,13 +146,24 @@ export function HazelIntegrationCard() {
 					<Button
 						size="sm"
 						variant="outline"
-						onClick={handleDisconnect}
+						onClick={() => setConfirmingDisconnect(true)}
 						disabled={actionBusy}
 						loading={disconnectBusy}
 					>
 						Disconnect
 					</Button>
 				</div>
+				<ConfirmDialog
+					open={confirmingDisconnect}
+					onOpenChange={setConfirmingDisconnect}
+					title="Disconnect Hazel"
+					description="Alerts routed to Hazel stop being delivered until you reconnect."
+					confirmLabel="Disconnect"
+					onConfirm={() => {
+						setConfirmingDisconnect(false)
+						void handleDisconnect()
+					}}
+				/>
 			</ItemContent>
 		</Item>
 	)

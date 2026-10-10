@@ -211,21 +211,21 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	opts: MetricsRateTimeseriesOpts,
 ): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
 	const bucket = CH.toStartOfInterval(
-		CH.toDateTime(param.dateTime("startTime")),
+		CH.toDateTime(utcSecondsParam("startTime")),
 		param.int("bucketSeconds"),
 	)
 	const previousBucket = CH.intervalSub(bucket, param.int("bucketSeconds"))
 	const endBucket = CH.toStartOfInterval(
-		CH.toDateTime(param.dateTime("endTime")),
+		CH.toDateTime(utcSecondsParam("endTime")),
 		param.int("bucketSeconds"),
 	)
 	// The same bounds for the CTE columns below, which decode as `DateTime.Utc`.
 	const bucketUtc = CH.toStartOfInterval(
-		CH.toDateTime(param.dateTime("startTime")),
+		CH.toDateTime(utcSecondsParam("startTime")),
 		param.int("bucketSeconds"),
 	)
 	const endBucketUtc = CH.toStartOfInterval(
-		CH.toDateTime(param.dateTime("endTime")),
+		CH.toDateTime(utcSecondsParam("endTime")),
 		param.int("bucketSeconds"),
 	)
 
@@ -452,11 +452,11 @@ export function metricsTimeseriesRateQuery(
 			)
 			const coveredSeconds = CH.least_(
 				bucketStart.add(param.int("bucketSeconds")),
-				CH.toUnixTimestamp(CH.toDateTime(param.dateTimeString("endTime"))),
+				CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("endTime"))),
 			).sub(
 				CH.greatest_(
 					bucketStart,
-					CH.toUnixTimestamp(CH.toDateTime(param.dateTimeString("startTime"))),
+					CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("startTime"))),
 				),
 			)
 			return {
@@ -651,7 +651,7 @@ export function listMetricsQuery(opts: ListMetricsOpts) {
 			$.OrgId.eq(orgIdParam),
 			// Floor the start bound to the hour so the oldest catalog bucket
 			// (Hour is already hour-truncated) isn't dropped for mid-hour ranges.
-			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(param.dateTime("startTime")), 3600)),
+			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.metricType, (v: string) => $.MetricType.eq(v)),
@@ -685,7 +685,7 @@ export function metricsSummaryQuery(opts?: MetricsSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(param.dateTime("startTime")), 3600)),
+			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.when(opts?.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])

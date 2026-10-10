@@ -2,15 +2,14 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { Button } from "@maple/ui/components/ui/button"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import { ErrorState } from "@/components/common/error-state"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { DockerIcon, MagnifierIcon } from "@/components/icons"
 import { PageHero } from "@/components/common/page-hero"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
@@ -114,20 +113,20 @@ function ContainersPage() {
 	const searchText = search.q ?? ""
 	const debouncedSearch = useDebouncedValue(searchText, 300)
 
-	const containersResult = useAtomValue(
-		listContainersResultAtom({
-			data: {
-				startTime,
-				endTime,
-				...filters,
-				search: debouncedSearch.trim() || undefined,
-				scope,
-				sortBy,
-				sortDir,
-				limit: PAGE_SIZE,
-			},
-		}),
-	)
+	const containersAtom = listContainersResultAtom({
+		data: {
+			startTime,
+			endTime,
+			...filters,
+			search: debouncedSearch.trim() || undefined,
+			scope,
+			sortBy,
+			sortDir,
+			limit: PAGE_SIZE,
+		},
+	})
+	const containersResult = useAtomValue(containersAtom)
+	const refreshContainers = useAtomRefresh(containersAtom)
 
 	// Scope-only: the band tells you how much of the fleet the filters above hid,
 	// so narrowing it by those same filters would defeat the point.
@@ -198,7 +197,7 @@ function ContainersPage() {
 	return (
 		<DashboardPage
 			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Containers" }]}
-			titleContent={<HostsViewTabs view="containers" timeSearch={search} />}
+			tabs={<HostsViewTabs view="containers" timeSearch={search} />}
 			time={{ search, startTime, endTime, defaultPreset: "12h", onChange: handleTimeChange }}
 			filters={
 				<ContainersFilterSidebarView
@@ -244,7 +243,9 @@ function ContainersPage() {
 
 			{Result.builder(containersResult)
 				.onInitial(() => <ContainerTableLoading />)
-				.onError((err) => <ErrorState error={err} />)
+				.onError((err) => (
+					<ErrorState error={err} title="Failed to load containers" onRetry={refreshContainers} />
+				))
 				.onSuccess((response, result) => {
 					const containers = response.data
 					const total = response.totalCount
@@ -275,22 +276,18 @@ function ContainersPage() {
 							/>
 
 							{containers.length === 0 ? (
-								<Empty className="py-12">
-									<EmptyHeader>
-										<EmptyMedia variant="icon">
-											<MagnifierIcon size={16} />
-										</EmptyMedia>
-										<EmptyTitle>No containers match these filters</EmptyTitle>
-										<EmptyDescription>
-											{scope
-												? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
-												: "Try a different name, or clear the filters to see the whole fleet."}
-										</EmptyDescription>
-									</EmptyHeader>
-									<Button variant="outline" size="sm" onClick={onClearFilters}>
-										Clear all filters
-									</Button>
-								</Empty>
+								<FilteredEmpty
+									noun="containers"
+									icon={<MagnifierIcon size={16} />}
+									description={
+										scope
+											? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
+											: "Try a different name, or clear the filters to see the whole fleet."
+									}
+									onClear={onClearFilters}
+									clearLabel="Clear all filters"
+									className="py-12"
+								/>
 							) : (
 								<ContainerTable
 									containers={containers}

@@ -58,5 +58,5 @@ description = "Start the dev Postgres (docker, port 5499)"
 run = "bun db:up"
 
 [tasks."db:migrate"]
-description = "Apply drizzle migrations to the dev Postgres"
+description = "Apply migrations to the dev Postgres"
 run = "bun db:migrate:local"

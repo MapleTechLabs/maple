@@ -76,7 +76,7 @@
 			"ignoreBinaries": ["duckdb"]
 		},
 		"packages/db": {
-			"entry": ["scripts/**/*.ts"],
+			"entry": ["scripts/**/*.ts", "effect-orm.config.ts"],
 			"ignoreBinaries": ["pscale"]
 		},
 		"packages/email": {

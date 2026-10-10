@@ -610,7 +610,7 @@ function MobileGroup({
 							<MobileListRow key={endpoint.spanName} onClick={() => onSelect(endpoint)}>
 								<span className="flex min-w-0 items-center gap-2">
 									<MethodLabel method={endpoint.method} />
-									<span className="truncate font-mono text-[13px]">
+									<span className="truncate font-mono text-ui">
 										{head.length > 0 && (
 											<span className="text-muted-foreground/50">{head}</span>
 										)}
@@ -643,10 +643,10 @@ function MobileGroup({
 function ApiEmptyState({ serviceName }: { serviceName: string }) {
 	return (
 		<Panel className="items-center gap-3.5 px-[18px] py-11 text-center">
-			<span className="font-mono text-[15px] font-medium text-foreground/90">
+			<span className="font-mono text-title font-medium text-foreground/90">
 				No HTTP endpoints in this window
 			</span>
-			<span className="max-w-[620px] text-[13px] leading-[21px] text-muted-foreground">
+			<span className="max-w-[620px] text-ui leading-[21px] text-muted-foreground">
 				<span className="font-mono text-foreground/80">{serviceName}</span> reported spans in this
 				range, but none are HTTP server spans with a route. An endpoint needs a server span carrying{" "}
 				<span className="font-mono text-foreground/80">http.route</span> or{" "}

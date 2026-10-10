@@ -263,12 +263,14 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			resolveTriageModel,
 		},
 		{ McpToolExecutor },
+		{ withSandboxBreaker },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
 		import("@maple/backend/platform/DatabasePgLive"),
 		import("@maple/backend/platform/pg-connection-source"),
 		import("../platform/Llm"),
 		import("../mcp/dispatcher"),
+		import("./sandbox-breaker"),
 	])
 	const { InvestigationService } = await import("@maple/backend/services/errors/InvestigationService")
 	const { PrReviewService } = await import("@maple/backend/services/pr-review/PrReviewService")
@@ -321,7 +323,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const investigations = yield* InvestigationService
 		const reviews = yield* PrReviewService
 		const conversations = yield* PrReviewConversationService
-		const toolExecutor = yield* McpToolExecutor
+		// Shared by the kickoff's clone, every pass of the turn and its review_files children.
+		const toolExecutor = yield* withSandboxBreaker(yield* McpToolExecutor)
 		const runTenant = yield* withConnectorActor(tenant, origin)
 		if (prReviewId !== undefined && input.abandoned === true) {
 			observability.outcome = "abandoned"

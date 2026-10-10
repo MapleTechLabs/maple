@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react"
 import "./service-map.css"
+import { Eyebrow } from "../ui/eyebrow"
 
 /**
  * Loading state for the service map.
@@ -207,15 +208,8 @@ export function ServiceMapLoading() {
 							/>
 							{/* Left accent stripe (3px), clipped to the card's left edge */}
 							<rect x={n.x} y={n.y + 0.5} width={3} height={NODE_H - 1} fill={n.color} />
-							{/* Health dot — green, breathing ("coming online") */}
-							<circle
-								className="sm-load-dot"
-								cx={n.x + 13}
-								cy={dotY}
-								r={2.4}
-								fill="var(--severity-info)"
-								style={{ animationDelay: `${0.4 + i * 0.12}s` } as CSSProperties}
-							/>
+							{/* Health dot, static green */}
+							<circle cx={n.x + 13} cy={dotY} r={2.4} fill="var(--severity-info)" />
 							{/* Service-name skeleton bar */}
 							<rect
 								x={n.x + 22}
@@ -244,14 +238,14 @@ export function ServiceMapLoading() {
 				})}
 			</svg>
 
-			<div className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+			<Eyebrow as="div" variant="mono" className="flex items-center gap-2">
 				<span>Mapping service connections</span>
 				<span className="inline-flex" aria-hidden>
 					<span className="pulse-dot">.</span>
 					<span className="pulse-dot">.</span>
 					<span className="pulse-dot">.</span>
 				</span>
-			</div>
+			</Eyebrow>
 		</div>
 	)
 }

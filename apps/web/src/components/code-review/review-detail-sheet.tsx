@@ -17,7 +17,8 @@ import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
-import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, countLabel, formatErrorRate } from "@maple/ui/lib/format"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 import { MessageResponse } from "@/components/ai-elements/message-response"
 import { ErrorState } from "@/components/common/error-state"
@@ -294,29 +295,31 @@ function FindingCard({
 	tracked: CodeReviewFinding | undefined
 }) {
 	return (
-		<li className="flex flex-col gap-2 rounded-lg border px-3.5 py-3">
-			<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-				<span className={cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]])}>
-					{SEVERITY_LABELS[finding.severity]}
-				</span>
-				<span className="text-muted-foreground">{CATEGORY_LABELS[finding.category]}</span>
-				{finding.handle ? (
-					<span className="font-mono text-muted-foreground">{finding.handle}</span>
-				) : null}
-				{tracked ? (
-					<Badge variant="outline" size="sm" className="ml-auto">
-						{FINDING_STATUS_LABELS[tracked.status]}
-					</Badge>
-				) : null}
-			</div>
-			<p className="text-sm font-medium">{finding.title}</p>
-			<p className="font-mono text-xs text-muted-foreground">
-				{finding.path}:{finding.line}
-				{finding.endLine && finding.endLine !== finding.line ? `-${finding.endLine}` : null}
-			</p>
-			<MessageResponse mode="static" lightweight className="text-sm text-muted-foreground">
-				{finding.body}
-			</MessageResponse>
+		<li>
+			<Panel padded="sm" className="gap-2">
+				<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+					<span className={cn("font-medium", TONE_TEXT[SEVERITY_TONE[finding.severity]])}>
+						{SEVERITY_LABELS[finding.severity]}
+					</span>
+					<span className="text-muted-foreground">{CATEGORY_LABELS[finding.category]}</span>
+					{finding.handle ? (
+						<span className="font-mono text-muted-foreground">{finding.handle}</span>
+					) : null}
+					{tracked ? (
+						<Badge variant="outline" size="sm" className="ml-auto">
+							{FINDING_STATUS_LABELS[tracked.status]}
+						</Badge>
+					) : null}
+				</div>
+				<p className="text-sm font-medium">{finding.title}</p>
+				<p className="font-mono text-xs text-muted-foreground">
+					{finding.path}:{finding.line}
+					{finding.endLine && finding.endLine !== finding.line ? `-${finding.endLine}` : null}
+				</p>
+				<MessageResponse mode="static" lightweight className="text-sm text-muted-foreground">
+					{finding.body}
+				</MessageResponse>
+			</Panel>
 		</li>
 	)
 }
@@ -406,7 +409,7 @@ function PostMergeSection({ postMerge }: { postMerge: PrReviewPostMerge }) {
 						.filter((operation) => operation.regressed)
 						.map(
 							(operation) =>
-								`${operation.spanName}: errors ${(operation.before.errorRate * 100).toFixed(1)}% → ${(operation.after.errorRate * 100).toFixed(1)}%, p95 ${operation.before.p95Ms} → ${operation.after.p95Ms} ms`,
+								`${operation.spanName}: errors ${formatErrorRate(operation.before.errorRate)} → ${formatErrorRate(operation.after.errorRate)}, p95 ${operation.before.p95Ms} → ${operation.after.p95Ms} ms`,
 						),
 				]}
 			/>
@@ -437,7 +440,7 @@ function LinkButton({ href, children }: { href: string; children: React.ReactNod
 	return (
 		<Button variant="outline" size="xs" render={<a href={href} target="_blank" rel="noreferrer" />}>
 			{children}
-			<ExternalLinkIcon size={12} aria-hidden />
+			<ExternalLinkIcon aria-hidden />
 		</Button>
 	)
 }

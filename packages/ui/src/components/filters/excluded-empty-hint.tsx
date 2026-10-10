@@ -1,4 +1,5 @@
 import { cn } from "../../lib/utils"
+import { Button } from "../ui/button"
 
 /** Values past this collapse into a "+N" suffix rather than running the line long. */
 const MAX_NAMED_VALUES = 4
@@ -38,13 +39,9 @@ export function ExcludedEmptyHint({ excluded, onClear, className }: ExcludedEmpt
 				{excluded.length === 1 ? "1 value is" : `${excluded.length} values are`} being excluded:{" "}
 				<span className="text-destructive">{summary}</span>
 			</span>
-			<button
-				type="button"
-				onClick={onClear}
-				className="font-medium text-foreground underline-offset-2 hover:underline"
-			>
+			<Button variant="link" size="xs" onClick={onClear}>
 				Remove exclusions
-			</button>
+			</Button>
 		</div>
 	)
 }

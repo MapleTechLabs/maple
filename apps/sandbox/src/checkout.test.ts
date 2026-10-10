@@ -1,5 +1,11 @@
 import { assert, describe, it } from "@effect/vitest"
-import { SANDBOX_TRAILER, SandboxExecRequest, shellCommand, shellQuote } from "@maple/domain/sandbox"
+import {
+	SANDBOX_CHECKOUT_GRACE_MINUTES,
+	SANDBOX_TRAILER,
+	SandboxExecRequest,
+	shellCommand,
+	shellQuote,
+} from "@maple/domain/sandbox"
 import { Effect, Option } from "effect"
 import {
 	CLONE_TOKEN_ENV,
@@ -177,10 +183,19 @@ describe("cloneScript", () => {
 		assert.isTrue(script.indexOf("core.symlinks false") < script.indexOf("checkout --quiet --detach"))
 	})
 
-	it("evicts the oldest checkouts, scratch directories included, so the disk cannot fill", () => {
+	it("evicts the least recently used checkouts, so the disk cannot fill", () => {
 		const script = cloneScript(checkout)
 		assert.include(script, "tail -n +4")
-		assert.include(script, ".clone-*/")
+	})
+
+	it("never evicts a checkout or another clone's scratch directory still in use", () => {
+		const script = cloneScript(checkout)
+		// Six reviews of one repository at once each held a commit; evicting by count alone deleted
+		// checkouts and in-flight clones out from under them.
+		assert.include(script, `-maxdepth 0 -mmin +${SANDBOX_CHECKOUT_GRACE_MINUTES}`)
+		// A scratch directory goes only once the clone that made it is no longer running.
+		assert.include(script, `/.clone-'"$$"-XXXXXX`)
+		assert.include(script, `if ! kill -0 "$pid"`)
 	})
 })
 
@@ -226,6 +241,11 @@ describe("checkoutStatusScript", () => {
 	const script = checkoutStatusScript(SHA)
 	it("answers ready before it looks at any clone state", () => {
 		assert.isTrue(script.indexOf(`${checkoutDir(SHA)}'/.git`) < script.indexOf("exit-code"))
+	})
+
+	it("marks a ready checkout as used, so eviction keeps it", () => {
+		assert.include(script, `touch -c '${checkoutDir(SHA)}'`)
+		assert.isTrue(script.indexOf("touch -c") < script.indexOf("echo ready"))
 	})
 
 	it("claims with a mkdir that fails when another caller got there first", () => {

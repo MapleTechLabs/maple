@@ -117,7 +117,7 @@ export function ServiceMap3DViewport({
 					disabled={Boolean(reducedMotion)}
 					onClick={() => setTraffic((current) => !current)}
 				>
-					{flowing ? <MediaPauseIcon size={12} /> : <MediaPlayIcon size={12} />}
+					{flowing ? <MediaPauseIcon /> : <MediaPlayIcon />}
 					{reducedMotion ? "Reduced motion" : flowing ? "Pause traffic" : "Resume traffic"}
 				</Button>
 			</div>
@@ -252,7 +252,7 @@ export function ServiceMap3DViewport({
 						+
 					</IconButton>
 					<IconButton size="icon-xs" label="Reset camera" onClick={() => camera("reset")}>
-						<ArrowRotateAnticlockwiseIcon size={14} />
+						<ArrowRotateAnticlockwiseIcon />
 					</IconButton>
 				</fieldset>
 			</section>

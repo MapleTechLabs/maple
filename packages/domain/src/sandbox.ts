@@ -72,6 +72,9 @@ export type SandboxIsolationState = typeof SandboxIsolationState.Type
 /** How many checkouts a container keeps before the least recently used are dropped. */
 export const SANDBOX_MAX_CHECKOUTS = 3
 
+/** A checkout used within this many minutes is kept past the count, so a running review keeps its commit. */
+export const SANDBOX_CHECKOUT_GRACE_MINUTES = 15
+
 /** Bounded so a container's diagnostic can never overflow the agent contract's own limits. */
 const BoundedMessage = Schema.String.check(Schema.isMaxLength(4 * 1024))
 
