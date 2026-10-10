@@ -1,8 +1,10 @@
 import { useMemo } from "react"
+import type React from "react"
 import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import type { GcpResource } from "@maple/domain/http"
 import { ChartLoading } from "@maple/ui/components/charts"
 import { Button } from "@maple/ui/components/ui/button"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
@@ -14,6 +16,7 @@ import { CHART_HEIGHT } from "@/components/common/chart-card"
 import { ErrorState } from "@/components/common/error-state"
 import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { SectionHeading } from "@/components/common/section-heading"
+import { ExternalLinkIcon } from "@/components/icons"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
@@ -23,9 +26,9 @@ import {
 	type GcpBucketPoint,
 	type GcpChartWindow,
 } from "@/components/infra/gcp/charts"
-import { GcpResourceCard } from "@/components/infra/gcp/gcp-resource-card"
 import { GcpWorkloadCharts } from "@/components/infra/gcp/gcp-workload-charts"
 import {
+	gcpConsolePage,
 	gcpExplorerWhere,
 	gcpMatchResource,
 	gcpResourceQuery,
@@ -34,6 +37,7 @@ import {
 import {
 	GCP_INFRA_COLUMNS,
 	formatGcpValue,
+	gcpStateLabel,
 	gcpWorkload,
 	gcpWorkloadKeys,
 	gcpWorkloadName,
@@ -83,18 +87,6 @@ const DEFAULT_PRESET = "1h"
 /** Stable empty fallback so memos don't recompute on every render. */
 const NO_POINTS: ReadonlyArray<GcpBucketPoint> = []
 
-/** What a page says it charts, per service. */
-const DESCRIPTIONS: Record<GcpInfraServiceId, string> = {
-	cloudRun:
-		"Requests, latency and container instances of this Cloud Run service, summed over its revisions.",
-	cloudFunctions: "Executions, duration and instances of this Cloud Function.",
-	gke: "CPU, memory and restarts of this container, over every pod that runs it, and the nodes of its cluster.",
-	computeEngine: "CPU, memory, network and disk of this Compute Engine instance.",
-	cloudSql: "Utilization, connections and disk operations of this Cloud SQL instance.",
-	pubsub: "Backlog and delivery of this Pub/Sub subscription.",
-	loadBalancing: "Requests, latency and traffic of this URL map on one backend.",
-} satisfies Record<GcpInfraServiceId, string>
-
 function GcpWorkloadRoute() {
 	const { service, name } = Route.useParams()
 	const id = GCP_INFRA_SERVICE_IDS.find((candidate) => candidate === service)
@@ -135,7 +127,7 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 	const windowPoints = useMemo(() => gcpWindowPoints(points), [points])
 	const workload = gcpWorkload(service, keys, windowPoints)
 
-	// The one inventory resource this workload is, by its identity; none leaves the rail out.
+	// The one inventory resource this workload is, by its identity; none leaves its facts out.
 	const inventoryResult = useAtomValue(
 		retainedInternalQuery("integrations", "gcpResources", {
 			query: gcpResourceQuery(service, keys),
@@ -146,6 +138,7 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 		.onSuccess((inventory) => gcpMatchResource(service, keys, inventory.resources))
 		.orElse(() => undefined)
 
+	const consolePage = resource === undefined ? undefined : gcpConsolePage(resource)
 	const telemetry = gcpWorkloadTelemetry(service, keys)
 	const columns = GCP_INFRA_COLUMNS[service].slice(0, 4)
 
@@ -158,20 +151,26 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 				{ label: gcpWorkloadName(service, keys) },
 			]}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
-			rightPanel={resource === undefined ? undefined : <GcpResourceCard resource={resource} />}
 			gap="lg"
 		>
 			<PageHero
 				title={<span className="font-mono">{gcpWorkloadName(service, keys)}</span>}
 				trailing={<HeroChip>{title}</HeroChip>}
-				description={DESCRIPTIONS[service]}
-				meta={identity.slice(1).map(([label], index) =>
-					keys[index + 1] ? (
-						<HeroChip key={label}>
-							{label.toLowerCase()} {keys[index + 1]}
-						</HeroChip>
-					) : null,
-				)}
+				meta={
+					<dl className="flex flex-wrap items-center gap-x-7 gap-y-1.5 text-xs/5">
+						{identity
+							.slice(1)
+							.map(([label], index) =>
+								keys[index + 1] ? (
+									<Fact key={label} label={label} value={keys[index + 1]} />
+								) : null,
+							)}
+						{/* A container's inventory resource is its cluster: that state and those labels are not the container's. */}
+						{resource === undefined || service === "gke" ? null : (
+							<ResourceFacts resource={resource} />
+						)}
+					</dl>
+				}
 				actions={
 					<>
 						<Button
@@ -201,6 +200,23 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 								timeSearch={timeSearch}
 							/>
 						) : null}
+						{consolePage === undefined ? null : (
+							<Button
+								size="sm"
+								variant="outline"
+								render={
+									<a
+										href={consolePage.href}
+										target="_blank"
+										rel="noreferrer"
+										title={`${consolePage.label} in Google Cloud`}
+									>
+										Google Cloud
+										<ExternalLinkIcon />
+									</a>
+								}
+							/>
+						)}
 					</>
 				}
 			/>
@@ -262,6 +278,54 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 				/>
 			) : null}
 		</DashboardPage>
+	)
+}
+
+function Fact({ label, value }: { label: string; value: React.ReactNode }) {
+	return (
+		<div className="flex items-center gap-2">
+			<dt className="text-muted-foreground">{label}</dt>
+			<dd className="flex min-w-0 items-center gap-2 text-foreground">{value}</dd>
+		</div>
+	)
+}
+
+/** Shown in full; the rest is a count that lists them on hover. */
+const LABELS_SHOWN = 3
+
+/** What the inventory adds to a workload's identity: its state and its labels. */
+function ResourceFacts({ resource }: { resource: GcpResource }) {
+	const labels = Object.entries(resource.labels).map(([key, value]) => `${key}=${value}`)
+	return (
+		<>
+			{resource.state === null ? null : <Fact label="State" value={gcpStateLabel(resource.state)} />}
+			{labels.length === 0 ? null : (
+				<Fact
+					label="Labels"
+					value={
+						<>
+							{labels.slice(0, LABELS_SHOWN).map((label) => (
+								<span
+									key={label}
+									title={label}
+									className="max-w-64 truncate rounded-sm bg-muted px-1.5 font-mono text-2xs/[18px]"
+								>
+									{label}
+								</span>
+							))}
+							{labels.length > LABELS_SHOWN ? (
+								<span
+									title={labels.slice(LABELS_SHOWN).join("\n")}
+									className="text-2xs text-muted-foreground"
+								>
+									+{labels.length - LABELS_SHOWN}
+								</span>
+							) : null}
+						</>
+					}
+				/>
+			)}
+		</>
 	)
 }
 
