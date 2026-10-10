@@ -41,6 +41,13 @@ function datapointAttrCondition(column: CH.Expr<string>, value: string | undefin
 	return value === undefined ? column.neq("") : column.eq(value)
 }
 
+/** WHERE conditions for `attributeFilters`: any mode or negation on the datapoint Attributes map. */
+function datapointFilterConditions(
+	filters: readonly AttributeFilter[] | undefined,
+): ReadonlyArray<CH.Condition> {
+	return (filters ?? []).map((af) => buildAttrFilterCondition(af, "Attributes"))
+}
+
 // Shared options & output types
 
 interface MetricsQueryOpts {
@@ -53,6 +60,8 @@ interface MetricsQueryOpts {
 	groupByResourceAttributeKey?: string
 	attributeKey?: string
 	attributeValue?: string
+	/** Datapoint Attributes predicates, AND-ed with `attributeKey`/`attributeValue`. */
+	attributeFilters?: readonly AttributeFilter[]
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	groupBy?: readonly string[]
 	seriesLimit?: number
@@ -120,6 +129,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
+			...datapointFilterConditions(opts.attributeFilters),
 			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 
@@ -153,6 +163,8 @@ export interface MetricsRateTimeseriesOpts {
 	groupByResourceAttributeKey?: string
 	attributeKey?: string
 	attributeValue?: string
+	/** Datapoint Attributes predicates, AND-ed with `attributeKey`/`attributeValue`. */
+	attributeFilters?: readonly AttributeFilter[]
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	groupBy?: readonly string[]
 	seriesLimit?: number
@@ -184,6 +196,15 @@ const metricsRateTimeseriesColumns = {
 // from both sides, so the rollup held 0 rows and every read took the raw path.
 const SPAN_METRICS_CALLS_NAMES = new Set(["span.metrics.calls", "calls", "traces.span.metrics.calls"])
 
+// The value of a lone, plain `span.kind = X` filter, else undefined.
+function spanKindEqualsValue(filters: readonly AttributeFilter[] | undefined): string | undefined {
+	const [only, ...rest] = filters ?? []
+	if (only === undefined || rest.length > 0) return undefined
+	return only.key === "span.kind" && only.mode === "equals" && !only.negated && !only.or?.length
+		? only.value
+		: undefined
+}
+
 function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean {
 	return (
 		// The hourly MV is keyed by a single MetricName; an `IN (...)` candidate set
@@ -198,6 +219,9 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 		(opts.attributeValue === undefined || opts.attributeKey !== undefined) &&
 		(opts.attributeKey === undefined || opts.attributeKey === "span.kind") &&
 		(opts.groupByAttributeKey === undefined || opts.groupByAttributeKey === "span.kind") &&
+		// The hourly MV keeps only SpanKind of the datapoint labels.
+		((opts.attributeFilters?.length ?? 0) === 0 ||
+			spanKindEqualsValue(opts.attributeFilters) !== undefined) &&
 		// The hourly MV folds ResourceAttributes into a fingerprint — it cannot
 		// serve resource-attribute filters or group-bys, and `deployment.environment`
 		// lives in that same map, so an environment filter also drops to the raw path.
@@ -249,6 +273,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 			CH.when(opts.attributeKey === "span.kind" ? opts.attributeValue : undefined, (v: string) =>
 				$.SpanKind.eq(v),
 			),
+			CH.when(spanKindEqualsValue(opts.attributeFilters), (v: string) => $.SpanKind.eq(v)),
 		])
 		.groupBy(
 			"Hour",
@@ -427,6 +452,7 @@ export function metricsTimeseriesRateQuery(
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
+			...datapointFilterConditions(opts.attributeFilters),
 			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 
@@ -543,6 +569,7 @@ export interface MetricsBreakdownOpts {
 	environments?: readonly string[]
 	attributeKey?: string
 	attributeValue?: string
+	attributeFilters?: readonly AttributeFilter[]
 	/** Aggregate that ranks groups before `limit` applies. Default: count. */
 	rankBy?: "avg" | "sum" | "min" | "max" | "count"
 	limit?: number
@@ -604,6 +631,7 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
+			...datapointFilterConditions(opts.attributeFilters),
 			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 		.groupBy("name")

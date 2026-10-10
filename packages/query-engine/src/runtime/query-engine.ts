@@ -972,14 +972,12 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 	const groupByResourceAttributeKey = query.groupBy?.includes("resource_attribute")
 		? query.filters.groupByResourceAttributeKey
 		: undefined
-	const attributeFilter = query.filters.attributeFilters?.[0]
 	const options = {
 		serviceName: query.filters.serviceName,
 		environments: query.filters.environments,
 		groupByAttributeKey,
 		groupByResourceAttributeKey,
-		attributeKey: attributeFilter?.key,
-		attributeValue: attributeFilter?.value,
+		attributeFilters: query.filters.attributeFilters,
 		resourceAttributeFilters: query.filters.resourceAttributeFilters,
 		groupBy: query.groupBy,
 		seriesLimit: query.seriesLimit,
@@ -1034,14 +1032,12 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 	const groupByAttributeKey = query.groupBy === "attribute" ? filters.groupByAttributeKey : undefined
 	const groupByResourceAttributeKey =
 		query.groupBy === "resource_attribute" ? filters.groupByResourceAttributeKey : undefined
-	const attributeFilter = filters.attributeFilters?.[0]
 	const shared = {
 		serviceName: filters.serviceName,
 		environments: filters.environments,
 		groupByAttributeKey,
 		groupByResourceAttributeKey,
-		attributeKey: attributeFilter?.key,
-		attributeValue: attributeFilter?.value,
+		attributeFilters: filters.attributeFilters,
 		resourceAttributeFilters: filters.resourceAttributeFilters,
 	}
 	const params = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { normalizeGroupBy } from "./create-dashboard"
+import { buildSimpleWidgets, normalizeGroupBy } from "./create-dashboard"
 
 describe("normalizeGroupBy", () => {
 	it("accepts query_data spellings", () => {
@@ -12,5 +12,38 @@ describe("normalizeGroupBy", () => {
 		expect(normalizeGroupBy("service.name", "traces")).toBe("service.name")
 		expect(normalizeGroupBy("span_name", "logs")).toBe("span_name")
 		expect(normalizeGroupBy("attr.signal", "metrics")).toBe("attr.signal")
+	})
+})
+
+describe("buildSimpleWidgets", () => {
+	const cpu = {
+		title: "Idle CPU by host",
+		source: "metrics" as const,
+		metric_name: "system.cpu.utilization",
+		metric_type: "gauge" as const,
+		group_by: "resource.host.name",
+		where: 'attr.state = "idle"',
+		unit: "percent",
+	}
+
+	it("accepts a resource.<key> group_by for metrics", () => {
+		expect(typeof buildSimpleWidgets([cpu])).not.toBe("string")
+		expect(buildSimpleWidgets([{ ...cpu, source: "logs" }])).toContain(
+			'invalid group_by "resource.host.name"',
+		)
+	})
+
+	it("AND-s a where clause with service_name into the query draft", () => {
+		const widgets = buildSimpleWidgets([{ ...cpu, group_by: "attr.cpu", service_name: "node" }])
+		expect(typeof widgets).not.toBe("string")
+		expect(JSON.stringify(widgets)).toContain(
+			JSON.stringify('service.name = "node" AND attr.state = "idle"'),
+		)
+	})
+
+	it("rejects a where clause on a list widget instead of dropping it", () => {
+		const { group_by: _groupBy, ...rest } = cpu
+		const result = buildSimpleWidgets([{ ...rest, source: "logs", visualization: "list" }])
+		expect(result).toContain("where is not supported on list widgets")
 	})
 })

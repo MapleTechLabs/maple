@@ -327,6 +327,30 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).not.toContain("span_metrics_calls_hourly")
 	})
 
+	it("serves a lone span.kind attribute filter from the hourly rollup", () => {
+		const q = metricsTimeseriesRateQuery({
+			metricName: "span.metrics.calls",
+			bucketSeconds: 3600,
+			attributeFilters: [{ key: "span.kind", mode: "equals", value: "SPAN_KIND_SERVER" }],
+		})
+		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
+		expect(sql).toContain("span_metrics_calls_hourly")
+		expect(sql).toContain("SpanKind = 'SPAN_KIND_SERVER'")
+	})
+
+	it("falls back to raw metrics_sum for a negated attribute filter", () => {
+		const q = metricsTimeseriesRateQuery({
+			metricName: "span.metrics.calls",
+			bucketSeconds: 3600,
+			attributeFilters: [
+				{ key: "span.kind", mode: "equals", value: "SPAN_KIND_SERVER", negated: true },
+			],
+		})
+		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
+		expect(sql).toContain("FROM metrics_sum")
+		expect(sql).toContain("NOT (Attributes['span.kind'] = 'SPAN_KIND_SERVER')")
+	})
+
 	it("falls back to raw metrics_sum when attributeValue has no attributeKey", () => {
 		const q = metricsTimeseriesRateQuery({
 			metricName: "span.metrics.calls",
@@ -461,6 +485,20 @@ describe("metricsBreakdownQuery", () => {
 		expect(sql).toContain("metrics_sum.ServiceName = 'api'")
 		expect(sql).toContain("'production'")
 		expect(sql).toContain("metrics_sum.Attributes['state'] = 'idle'")
+	})
+
+	it("applies negated and IN attribute filters on the datapoint labels", () => {
+		const q = metricsBreakdownQuery({
+			metricType: "gauge",
+			groupByResourceAttributeKey: "host.name",
+			attributeFilters: [
+				{ key: "state", mode: "equals", value: "idle", negated: true },
+				{ key: "cpu", mode: "in", values: ["cpu0", "cpu1"] },
+			],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("NOT (Attributes['state'] = 'idle')")
+		expect(sql).toContain("Attributes['cpu'] IN ('cpu0', 'cpu1')")
 	})
 
 	it("ranks groups by the requested aggregate before the limit", () => {

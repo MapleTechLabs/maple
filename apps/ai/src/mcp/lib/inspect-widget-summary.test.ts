@@ -37,6 +37,34 @@ describe("summarizeOutcome", () => {
 		expect(slow.note).toContain("may time out")
 	})
 
+	it("reports how many series a query-builder widget returned", () => {
+		const query = (queryId: string, status: "ok" | "error", seriesCount: number) => ({
+			queryId,
+			queryName: queryId,
+			status,
+			stats: { rowCount: 10, seriesCount, seriesStats: [] },
+			flags: [],
+		})
+		const entry = summarizeOutcome(widget, {
+			kind: "supported",
+			data: {
+				widget: {
+					id: "w-1",
+					visualization: "chart",
+					endpoint: "custom_query_builder_timeseries",
+					hasFormulaWarning: false,
+					hasUnsupportedTransform: false,
+				},
+				timeRange,
+				queries: [query("A", "ok", 4), query("B", "ok", 2), query("C", "error", 9)],
+				verdict: "looks_healthy",
+				flags: [],
+				notes: [],
+			},
+		})
+		expect(entry.seriesCount).toBe(6)
+	})
+
 	it("scores a funnel widget from its query instead of skipping it", () => {
 		const funnel = (first: number): InspectionOutcome => ({
 			kind: "unsupported",
