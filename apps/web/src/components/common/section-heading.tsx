@@ -16,6 +16,8 @@ interface SectionHeadingProps {
 	hint?: string
 	/** A mono count rendered inside the heading ("Zones 12"). */
 	count?: ReactNode
+	/** Inline element right after the title, e.g. a status `Badge` (title variant). */
+	badge?: ReactNode
 	/** Right-aligned controls or meta; the row wraps under the title on narrow widths. */
 	actions?: ReactNode
 	as?: "h2" | "h3"
@@ -29,6 +31,7 @@ export function SectionHeading({
 	id,
 	hint,
 	count,
+	badge,
 	actions,
 	as: Heading = "h2",
 	className,
@@ -47,6 +50,7 @@ export function SectionHeading({
 						<span className="ml-2 font-mono text-xs text-muted-foreground">{count}</span>
 					) : null}
 				</Heading>
+				{badge}
 				{hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
 			</div>
 		)

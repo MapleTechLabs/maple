@@ -15,8 +15,10 @@ import {
 	PR_REVIEW_FAILURE_COPY,
 	PrReviewFinding,
 	PrReviewId,
+	PrReviewMergeStep,
 	PrReviewReport,
 	PrReviewContractBreak,
+	type PullRequestFile,
 	PrReviewRepositoryConfig,
 	PrReviewTelemetry,
 	PrReviewTelemetryReference,
@@ -24,8 +26,8 @@ import {
 	VcsRepoUnavailableError,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { prReviewFindingEmbeddings, prReviewFindings, prReviews } from "@maple/db"
-import { eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { PrReviewFindingEmbeddings, PrReviewFindings, PrReviews } from "@maple/db/tables"
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -119,6 +121,10 @@ const layerFor = (
 		readonly sourceFiles?: Readonly<Record<string, string>>
 		/** Paths code search returns for any query. */
 		readonly searchHits?: ReadonlyArray<string>
+		/** One hit per query listed here, with these snippets; a query not listed finds nothing. */
+		readonly searchSnippets?: Readonly<Record<string, ReadonlyArray<string>>>
+		/** The pull request's changed files. */
+		readonly prFiles?: ReadonlyArray<PullRequestFile>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -135,7 +141,7 @@ const layerFor = (
 		fetchCommit: unused,
 		fetchPullRequests: unused,
 		fetchPullRequest: unused,
-		fetchPullRequestFiles: () => Effect.succeed([]),
+		fetchPullRequestFiles: () => Effect.succeed(options.prFiles ?? []),
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
 		resolveReviewThread: (_installation, _repo, input) =>
@@ -148,12 +154,25 @@ const layerFor = (
 		reactToComment: unused,
 		fetchCommenterPermission: unused,
 		commitFiles: unused,
-		searchCode: () =>
-			options.searchHits === undefined
-				? unused()
-				: Effect.succeed(
-						options.searchHits.map((path) => ({ path, sha: "s", htmlUrl: "", snippets: [] })),
-					),
+		searchCode: (_installation, _repo, query) =>
+			options.searchSnippets !== undefined
+				? Effect.succeed(
+						options.searchSnippets[query] === undefined
+							? []
+							: [
+									{
+										path: "a.ts",
+										sha: "s",
+										htmlUrl: "",
+										snippets: options.searchSnippets[query] ?? [],
+									},
+								],
+					)
+				: options.searchHits === undefined
+					? unused()
+					: Effect.succeed(
+							options.searchHits.map((path) => ({ path, sha: "s", htmlUrl: "", snippets: [] })),
+						),
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
 		fetchSourceFile: (_installation, _repo, path) =>
@@ -993,47 +1012,51 @@ const seedVotes = (
 ) =>
 	Effect.gen(function* () {
 		const database = yield* Database
-		const now = new Date(0)
+		const now = 0
 		const rows = votes.map((vote, i) => ({ vote, id: `vote-${repositoryId}-${i}` }))
 		yield* database.execute((db) =>
-			db.insert(prReviewFindings).values(
-				rows.map(({ vote, id }, i) => ({
-					id,
-					orgId,
-					repositoryId,
-					number: 1,
-					reviewId: UNKNOWN_REVIEW,
-					handle: `F${i + 1}`,
-					path: "old.ts",
-					line: 1,
-					category: "convention" as const,
-					severity: "info" as const,
-					title: "noisy log line",
-					status: vote.status,
-					reactionsUp: vote.up ?? 0,
-					reactionsDown: vote.down ?? 0,
-					createdAt: now,
-					updatedAt: now,
-				})),
+			db.run(
+				PG.insertInto(PrReviewFindings).values(
+					rows.map(({ vote, id }, i) => ({
+						id,
+						orgId,
+						repositoryId,
+						number: 1,
+						reviewId: UNKNOWN_REVIEW,
+						handle: `F${i + 1}`,
+						path: "old.ts",
+						line: 1,
+						category: "convention" as const,
+						severity: "info" as const,
+						title: "noisy log line",
+						status: vote.status,
+						reactionsUp: vote.up ?? 0,
+						reactionsDown: vote.down ?? 0,
+						createdAt: now,
+						updatedAt: now,
+					})),
+				),
 			),
 		)
 		yield* database.execute((db) =>
-			db.insert(prReviewFindingEmbeddings).values(
-				rows.map(({ vote, id }) => ({
-					findingId: id,
-					orgId,
-					repositoryId,
-					model: vote.model ?? EMBEDDING_MODEL,
-					embedding: [...(vote.embedding ?? NOISE)],
-					createdAt: now,
-				})),
+			db.run(
+				PG.insertInto(PrReviewFindingEmbeddings).values(
+					rows.map(({ vote, id }) => ({
+						findingId: id,
+						orgId,
+						repositoryId,
+						model: vote.model ?? EMBEDDING_MODEL,
+						embedding: [...(vote.embedding ?? NOISE)],
+						createdAt: now,
+					})),
+				),
 			),
 		)
 	})
 
 const storedEmbeddings = Effect.gen(function* () {
 	const database = yield* Database
-	return yield* database.execute((db) => db.select().from(prReviewFindingEmbeddings))
+	return yield* database.execute((db) => db.run(PG.from(PrReviewFindingEmbeddings).select()))
 })
 
 const ELSEWHERE = Schema.decodeSync(VcsRepositoryId)("99999999-9999-4999-8999-999999999999")
@@ -1810,18 +1833,17 @@ describe("PrReviewService telemetry", () => {
 			yield* reviews.onPullRequestEvent(orgId, merged)
 			const db = yield* Database
 			const rows = yield* db.execute((client) =>
-				client
-					.select({
-						status: prReviews.postMergeStatus,
-						after: prReviews.postMergeAfter,
-						sha: prReviews.mergeCommitSha,
-					})
-					.from(prReviews)
-					.where(eq(prReviews.id, started.reviewId!)),
+				client.run(
+					PG.from(PrReviews)
+						.select(($) => ({
+							status: $.postMergeStatus,
+							after: $.postMergeAfter,
+							sha: $.mergeCommitSha,
+						}))
+						.where(($) => [$.id.eq(started.reviewId!)]),
+				),
 			)
-			assert.deepStrictEqual(rows, [
-				{ status: "waiting", after: new Date(1_000 + 15 * 60_000), sha: "ccc" },
-			])
+			assert.deepStrictEqual(rows, [{ status: "waiting", after: 1_000 + 15 * 60_000, sha: "ccc" }])
 		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
 	})
 })
@@ -1899,14 +1921,121 @@ describe("PrReviewService telemetry, unchanged code and late merges", () => {
 			)
 			const db = yield* Database
 			yield* db.execute((client) =>
-				client
-					.update(prReviews)
-					.set({ postMergeStatus: "reported" })
-					.where(eq(prReviews.id, started.reviewId!)),
+				client.run(
+					PG.update(PrReviews)
+						.set({ postMergeStatus: "reported" })
+						.where(($) => [$.id.eq(started.reviewId!)]),
+				),
 			)
 			yield* reviews.reviewNow(orgId, job())
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 			assert.isNull(stored.postMergeStatus ?? null)
 		}).pipe(Effect.provide(layerFor(testDb, { telemetry: breakingTelemetry })))
+	})
+})
+
+describe("PrReviewService before-merge checklist", () => {
+	const envFile: PullRequestFile = {
+		path: "apps/api/src/env.ts",
+		previousPath: null,
+		status: "modified",
+		additions: 3,
+		deletions: 0,
+		patch: [
+			"@@ -1,1 +1,4 @@",
+			" export const env = merge(",
+			'+\toptionalSecret("BILLING_TOKEN"),',
+			'+\toptionalPlain("BILLING_URL"),',
+			'+\toptionalPlain("BILLING_REGION"),',
+		].join("\n"),
+	}
+	const migration: PullRequestFile = {
+		path: "packages/db/drizzle/20261008_billing/migration.sql",
+		previousPath: null,
+		status: "added",
+		additions: 1,
+		deletions: 0,
+		patch: "@@ -0,0 +1 @@\n+ALTER TABLE orgs ADD billing text",
+	}
+
+	it.effect(
+		"lists new names and file steps, drops names on the default branch, lets the reviewer say where",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const published: Array<PullRequestReviewPublication> = []
+			return Effect.gen(function* () {
+				yield* seed(true)
+				const reviews = yield* PrReviewService
+				const started = yield* reviews.onPullRequestEvent(orgId, job())
+				yield* reviews.submitReview(
+					orgId,
+					started.reviewId!,
+					new SubmitPrReviewRequest({
+						report: new PrReviewReport({
+							...report([]),
+							beforeMerge: [
+								new PrReviewMergeStep({
+									kind: "manual",
+									title: "Add `BILLING_TOKEN` to the prd and dev secret stores",
+									source: "reviewer",
+								}),
+							],
+						}),
+					}),
+				)
+				const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+				// BILLING_URL is already read on main; BILLING_REGION only matched a longer name there.
+				assert.deepStrictEqual(
+					stored.report?.beforeMerge?.map((step) => [step.kind, step.subject ?? step.title]),
+					[
+						["env", "BILLING_REGION"],
+						["migration", "packages/db/drizzle/20261008_billing/migration.sql"],
+						["manual", "Add `BILLING_TOKEN` to the prd and dev secret stores"],
+					],
+				)
+				assert.include(published[0]!.summaryComment.body, "### Before merge")
+			}).pipe(
+				Effect.provide(
+					layerFor(testDb, {
+						published,
+						prFiles: [envFile, migration],
+						searchSnippets: {
+							'"BILLING_URL"': ['const url = optionalPlain("BILLING_URL")'],
+							'"BILLING_REGION"': ["BILLING_REGION_FALLBACK"],
+						},
+					}),
+				),
+			)
+		},
+	)
+
+	it.effect("posts the reviewer's steps alone when the diff implies none", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: new PrReviewReport({
+						...report([]),
+						beforeMerge: [
+							new PrReviewMergeStep({
+								kind: "manual",
+								title: "Create the flag",
+								source: "reviewer",
+							}),
+						],
+					}),
+				}),
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepStrictEqual(
+				stored.report?.beforeMerge?.map((step) => step.title),
+				["Create the flag"],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, {})))
 	})
 })

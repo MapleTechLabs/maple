@@ -1,11 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto"
-import {
-	gcpConnectors,
-	gcpResources,
-	hashIngestKey,
-	parseIngestKeyLookupHmacKey,
-	type GcpConnectorRow,
-} from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
 	GcpMetricsUnavailableError,
@@ -23,13 +19,11 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
 
 export interface GcpConnector {
@@ -124,13 +118,13 @@ const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConne
 	projectId: row.projectId,
 	logsEnabled: row.logsEnabled,
 	metricsEnabled: row.metricsEnabled,
-	createdAt: dateToMs(row.createdAt),
-	lastLogReceivedAt: dateToMs(row.lastReceivedAt),
+	createdAt: row.createdAt,
+	lastLogReceivedAt: row.lastReceivedAt,
 	lastLogError: row.lastError,
 	appliedLogsEnabled: row.appliedLogsEnabled,
 	appliedMetricsEnabled: row.appliedMetricsEnabled,
-	setupReportedAt: dateToMs(row.setupReportedAt),
-	lastMetricsReceivedAt: dateToMs(row.lastMetricsReceivedAt),
+	setupReportedAt: row.setupReportedAt,
+	lastMetricsReceivedAt: row.lastMetricsReceivedAt,
 	lastMetricsError: row.lastMetricsError,
 	discoveredProjectCount,
 	lastResourcesError: row.lastResourcesError,
@@ -181,11 +175,12 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 
 			const selectRow = (orgId: OrgId, connectorId: GcpConnectorId) =>
 				dbExecute((db) =>
-					db
-						.select()
-						.from(gcpConnectors)
-						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
-						.limit(1),
+					db.run(
+						PG.from(GcpConnectors)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)])
+							.limit(1),
+					),
 				).pipe(
 					Effect.flatMap(([row]) =>
 						row === undefined ? Effect.fail(notFound()) : Effect.succeed(row),
@@ -195,28 +190,28 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			/** Projects in each connector's inventory. One the poller has not synced yet is absent. */
 			const projectCounts = (connectorIds: ReadonlyArray<GcpConnectorId>) =>
 				dbExecute((db) =>
-					db
-						.select({ connectorId: gcpResources.connectorId, count: sql<number>`count(*)::int` })
-						.from(gcpResources)
-						.where(
-							and(
-								inArray(gcpResources.connectorId, [...connectorIds]),
-								eq(gcpResources.assetType, GCP_PROJECT_ASSET_TYPE),
-							),
-						)
-						.groupBy(gcpResources.connectorId),
+					db.run(
+						PG.from(GcpResources)
+							.select(($) => ({ connectorId: $.connectorId, count: PG.count() }))
+							.where(($) => [
+								$.connectorId.in_(...connectorIds),
+								$.assetType.eq(GCP_PROJECT_ASSET_TYPE),
+							])
+							.groupBy("connectorId"),
+					),
 				).pipe(Effect.map((rows) => new Map(rows.map((row) => [row.connectorId, row.count]))))
 
 			const status = Effect.fn("GcpConnectorService.status")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(gcpConnectors)
-						.where(eq(gcpConnectors.orgId, orgId))
-						.orderBy(asc(gcpConnectors.createdAt), asc(gcpConnectors.id)),
+					db.run(
+						PG.from(GcpConnectors)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.orderBy(["createdAt", "asc"], ["id", "asc"]),
+					),
 				)
-				// An empty `IN ()` is not valid SQL.
+				// No connectors, nothing to count.
 				const counts =
 					rows.length === 0
 						? new Map<GcpConnectorId, number>()
@@ -247,26 +242,25 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					(message) => new IntegrationsPersistenceError({ message }),
 					secretAad(id),
 				)
-				const now = msToDate(yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
 				const [row] = yield* dbExecute((db) =>
-					db
-						.insert(gcpConnectors)
-						.values({
-							id,
-							orgId,
-							...input,
-							secretCiphertext: encrypted.ciphertext,
-							secretIv: encrypted.iv,
-							secretTag: encrypted.tag,
-							secretHash: hashIngestKey(secret, lookupHmacKey),
-							createdBy: userId,
-							createdAt: now,
-							updatedAt: now,
-						})
-						.onConflictDoNothing({
-							target: [gcpConnectors.orgId, gcpConnectors.scopeType, gcpConnectors.scopeId],
-						})
-						.returning(),
+					db.run(
+						PG.insertInto(GcpConnectors)
+							.values({
+								id,
+								orgId,
+								...input,
+								secretCiphertext: encrypted.ciphertext,
+								secretIv: encrypted.iv,
+								secretTag: encrypted.tag,
+								secretHash: hashIngestKey(secret, lookupHmacKey),
+								createdBy: userId,
+								createdAt: now,
+								updatedAt: now,
+							})
+							.onConflictDoNothing({ target: ["orgId", "scopeType", "scopeId"] })
+							.returning(),
+					),
 				)
 				if (row === undefined) {
 					return yield* new GcpScopeAlreadyConnectedError({
@@ -287,17 +281,18 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
-				const updatedAt = msToDate(yield* Clock.currentTimeMillis)
+				const updatedAt = yield* Clock.currentTimeMillis
 				const outcome = yield* dbExecute((db) =>
-					db.transaction((tx) =>
+					db.transaction(
 						Effect.gen(function* () {
 							// The row lock keeps one capability on when two updates race.
-							const [current] = yield* tx
-								.select()
-								.from(gcpConnectors)
-								.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
-								.limit(1)
-								.for("update")
+							const [current] = yield* db.run(
+								PG.from(GcpConnectors)
+									.select()
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)])
+									.limit(1)
+									.forUpdate(),
+							)
 							if (current === undefined) return undefined
 							const flags = {
 								logsEnabled: patch.logsEnabled ?? current.logsEnabled,
@@ -317,10 +312,11 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 									: undefined),
 							}
 							if (invalid === undefined) {
-								yield* tx
-									.update(gcpConnectors)
-									.set({ ...changes, updatedAt })
-									.where(eq(gcpConnectors.id, connectorId))
+								yield* db.run(
+									PG.update(GcpConnectors)
+										.set({ ...changes, updatedAt })
+										.where(($) => [$.id.eq(connectorId)]),
+								)
 							}
 							return { row: { ...current, ...changes }, invalid }
 						}),
@@ -374,10 +370,11 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
 				const [row] = yield* dbExecute((db) =>
-					db
-						.delete(gcpConnectors)
-						.where(and(eq(gcpConnectors.orgId, orgId), eq(gcpConnectors.id, connectorId)))
-						.returning(),
+					db.run(
+						PG.deleteFrom(GcpConnectors)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)])
+							.returning(),
+					),
 				)
 				if (row === undefined) return yield* notFound()
 				return {

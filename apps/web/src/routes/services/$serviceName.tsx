@@ -13,7 +13,7 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import { APDEX_HINT } from "@/components/dashboard/chart-hints"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import {
 	getServiceDetailOverviewResultAtom,
 	getServiceDetailThroughputRefinementResultAtom,
@@ -114,6 +114,13 @@ const SERVICE_CHARTS: ServiceChartConfig[] = [
 	},
 ]
 
+const SERVICE_TABS: ReadonlyArray<{ value: ServiceDetailTabValue; label: string }> = [
+	{ value: "overview", label: "Overview" },
+	{ value: "api", label: "API" },
+	{ value: "operations", label: "Operations" },
+	{ value: "dependencies", label: "Dependencies" },
+]
+
 function ServiceDetailPage() {
 	const { serviceName } = Route.useParams()
 	const search = Route.useSearch()
@@ -199,11 +206,11 @@ function ServiceDetailPage() {
 					/>
 					<Button
 						variant="outline"
-						aria-label="Create Alert"
+						aria-label="Create alert"
 						render={<Link to="/alerts/create" search={{ serviceName }} />}
 					>
-						<BellIcon size={14} />
-						<span className="hidden sm:inline">Create Alert</span>
+						<BellIcon />
+						<span className="hidden sm:inline">Create alert</span>
 					</Button>
 				</>
 			}
@@ -215,14 +222,24 @@ function ServiceDetailPage() {
 				maxRangeSeconds: ONE_YEAR_SECONDS,
 			}}
 			tabs={
-				<Tabs value={activeTab} onValueChange={handleTabChange}>
-					<TabsList variant="underline">
-						<TabsTrigger value="overview">Overview</TabsTrigger>
-						<TabsTrigger value="api">API</TabsTrigger>
-						<TabsTrigger value="operations">Operations</TabsTrigger>
-						<TabsTrigger value="dependencies">Dependencies</TabsTrigger>
-					</TabsList>
-				</Tabs>
+				<UnderlineTabStrip navigation label="Service sections">
+					{SERVICE_TABS.map((tab) => (
+						<Link
+							key={tab.value}
+							to="/services/$serviceName"
+							params={{ serviceName }}
+							replace
+							search={(prev: Record<string, unknown>) => ({
+								...prev,
+								tab: tab.value === "overview" ? undefined : tab.value,
+							})}
+							aria-current={tab.value === activeTab ? "page" : undefined}
+							className={underlineTabClass(tab.value === activeTab)}
+						>
+							{tab.label}
+						</Link>
+					))}
+				</UnderlineTabStrip>
 			}
 		>
 			{activeTab === "overview" && (
@@ -357,9 +374,14 @@ function OverviewTab({
 	// generic `Record<string, unknown>[]`. Each point's fields are all primitive,
 	// so this is a safe widening (no `as unknown` round-trip needed). The exact
 	// SpanMetrics throughput overlay (when present) is merged by ISO bucket here.
-	const detailPoints: Record<string, unknown>[] = useMemo(() => {
-		return mergeExactThroughput(basePoints, exactThroughputByBucket).map((point) => ({ ...point }))
-	}, [basePoints, exactThroughputByBucket])
+	const mergedPoints = useMemo(
+		() => mergeExactThroughput(basePoints, exactThroughputByBucket),
+		[basePoints, exactThroughputByBucket],
+	)
+	const detailPoints: Record<string, unknown>[] = useMemo(
+		() => mergedPoints.map((point) => ({ ...point })),
+		[mergedPoints],
+	)
 
 	// Commit deploy markers (dashed verticals + labels) drawn over every chart.
 	// Derived from the overview's release timeline and snapped onto the chart's
@@ -371,7 +393,7 @@ function OverviewTab({
 				.orElse(() => EMPTY_RELEASES),
 		[overviewResult],
 	)
-	const chartBuckets = useMemo(() => detailPoints.map((point) => String(point.bucket)), [detailPoints])
+	const chartBuckets = useMemo(() => mergedPoints.map((point) => point.bucket), [mergedPoints])
 	const commitMarkers = useCommitMarkers(releases, chartBuckets)
 
 	// Stable identity so the memoized chart components under MetricsGrid skip
@@ -408,7 +430,7 @@ function OverviewTab({
 		<div className="flex flex-col gap-3">
 			<MetricsGrid
 				items={metrics}
-				waiting={!!isWaiting}
+				waiting={isWaiting}
 				syncId={`service-${serviceName}`}
 				overlay={commitMarkers}
 				// Pin every chart's plot to one left edge so the commit markers group the

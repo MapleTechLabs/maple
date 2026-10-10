@@ -211,14 +211,14 @@ export function ProvenanceCanvasLoading() {
 				<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 					what produced this investigation, and what it produced
 				</span>
-				<span className="flex shrink-0 items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+				<Eyebrow variant="mono" className="flex shrink-0 items-center gap-1.5">
 					<span>Mapping the chain</span>
 					<span className="inline-flex" aria-hidden>
 						<span className="pulse-dot">.</span>
 						<span className="pulse-dot">.</span>
 						<span className="pulse-dot">.</span>
 					</span>
-				</span>
+				</Eyebrow>
 			</div>
 
 			<svg

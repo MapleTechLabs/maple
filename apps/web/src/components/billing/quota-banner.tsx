@@ -73,7 +73,7 @@ export function QuotaBanner() {
 					</Button>
 					{!isOver && (
 						<IconButton label="Dismiss" onClick={dismissApproaching}>
-							<XmarkIcon size={16} />
+							<XmarkIcon />
 						</IconButton>
 					)}
 				</AlertAction>

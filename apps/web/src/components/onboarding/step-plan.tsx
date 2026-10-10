@@ -36,7 +36,7 @@ export function StepPlanLayout({ onBack, children }: { onBack?: () => void; chil
 				{onBack && (
 					<div className="mt-8 flex items-center justify-start">
 						<Button variant="ghost" onClick={onBack} className="gap-2">
-							<ArrowLeftIcon size={14} />
+							<ArrowLeftIcon />
 							Back
 						</Button>
 					</div>

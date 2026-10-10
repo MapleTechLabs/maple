@@ -23,7 +23,7 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Meter } from "@maple/ui/components/ui/meter"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
@@ -125,6 +125,11 @@ function groupByNamespace(services: ServiceOverview[]): [string, [string, Servic
 		})
 		.map(([ns, nsServices]) => [ns, groupByEnvironment(nsServices)])
 }
+
+const GROUP_BY_OPTIONS: ReadonlyArray<SegmentedOption<ServicesGroupBy>> = [
+	{ value: "namespace", label: "Namespace" },
+	{ value: "environment", label: "Environment" },
+]
 
 /**
  * Unset `groupBy` in the URL means auto: group by namespace as soon as the
@@ -590,7 +595,7 @@ const SERVICES_SKELETON_COLUMNS = [
 	{ header: "P50", headClassName: "w-[6%]", skeleton: "w-12" },
 	{ header: "P95", headClassName: "w-[9%]", skeleton: "w-14" },
 	{ header: "P99", headClassName: "w-[7%]", skeleton: "w-12" },
-	{ header: "Error Rate", headClassName: "w-[12%]", skeleton: "h-8 w-full" },
+	{ header: "Error rate", headClassName: "w-[12%]", skeleton: "h-8 w-full" },
 	{ header: "Throughput", headClassName: "w-[12%]", skeleton: "h-8 w-full" },
 	{ header: "Last deploy", headClassName: "w-[18%]", skeleton: "w-24" },
 ]
@@ -776,25 +781,19 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 						    that says anything. */}
 						{hasNamespaces && (
 							<div className="flex items-center justify-end">
-								<ToggleGroup
-									value={[groupBy]}
-									onValueChange={(values) => {
-										const next = values.find((value) => value !== groupBy)
-										if (next === "namespace" || next === "environment") {
-											navigate({
-												to: "/services",
-												search: (prev) => ({ ...prev, groupBy: next }),
-											})
-										}
-									}}
-									variant="outline"
+								<SegmentedSelect
+									options={GROUP_BY_OPTIONS}
+									value={groupBy}
+									onChange={(next) =>
+										navigate({
+											to: "/services",
+											search: (prev) => ({ ...prev, groupBy: next }),
+										})
+									}
 									size="sm"
 									aria-label="Group services by"
 									className="shrink-0"
-								>
-									<ToggleGroupItem value="namespace">Namespace</ToggleGroupItem>
-									<ToggleGroupItem value="environment">Environment</ToggleGroupItem>
-								</ToggleGroup>
+								/>
 							</div>
 						)}
 						{/* Desktop: full metrics table. Below md the fixed-width columns and
@@ -814,7 +813,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 										<TableHead className="hidden lg:table-cell w-[6%]">P50</TableHead>
 										<TableHead className="w-[9%]">P95</TableHead>
 										<TableHead className="hidden lg:table-cell w-[7%]">P99</TableHead>
-										<TableHead className="w-[12%]">Error Rate</TableHead>
+										<TableHead className="w-[12%]">Error rate</TableHead>
 										<TableHead className="hidden md:table-cell w-[12%]">
 											Throughput
 										</TableHead>

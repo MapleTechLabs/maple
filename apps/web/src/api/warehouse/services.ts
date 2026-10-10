@@ -450,8 +450,8 @@ const getServiceApdexTimeSeriesEffect = Effect.fn("QueryEngine.getServiceApdexTi
 
 	const points = result.data.map((row) => ({
 		bucket: toIsoBucket(row.bucket),
-		apdexScore: Number(row.apdexScore),
-		totalCount: Number(row.totalCount),
+		apdexScore: row.apdexScore,
+		totalCount: row.totalCount,
 	}))
 
 	return {

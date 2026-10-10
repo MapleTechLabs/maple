@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { Panel } from "@maple/ui/components/ui/panel"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import {
 	Dialog,
@@ -283,7 +284,7 @@ export function AnalyticsBreakdownPanel({
 								value={query}
 								onChange={setQuery}
 								nounPlural={dimension.nounPlural}
-								className="h-7 w-56 text-xs"
+								className="w-56"
 								autoFocus
 							/>
 						</div>
@@ -354,18 +355,16 @@ function FilterInput({
 	autoFocus?: boolean
 }) {
 	return (
-		<input
-			type="search"
+		<SearchInput
+			size="sm"
 			value={value}
-			onChange={(event) => onChange(event.target.value)}
+			onValueChange={onChange}
 			placeholder={`Filter ${nounPlural}`}
+			aria-label={`Filter ${nounPlural}`}
 			// Set only by the dialog: someone who expanded the table is one keystroke
 			// from searching it, and the card's own input must never steal the page.
 			autoFocus={autoFocus}
-			className={cn(
-				"h-6 rounded-sm border bg-background px-2 text-2xs placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-				className,
-			)}
+			className={className}
 		/>
 	)
 }

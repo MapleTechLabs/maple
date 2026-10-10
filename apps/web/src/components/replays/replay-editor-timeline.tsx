@@ -308,11 +308,11 @@ const TracesTrack = React.memo(function TracesTrack({
 		return (
 			<div>
 				{header(0)}
-				<p className="px-3 py-4 text-xs leading-relaxed text-muted-foreground">
+				<EmptyMessage className="leading-relaxed">
 					No backend traces were linked to this session. Correlation populates automatically when
 					the page is instrumented with <span className="font-mono">@maple-dev/browser</span>{" "}
 					tracing.
-				</p>
+				</EmptyMessage>
 			</div>
 		)
 	}
@@ -392,9 +392,9 @@ function TraceRow({ summary, seek }: { summary: SessionTraceSummary; seek: SeekC
 						className="size-5 text-muted-foreground sm:size-5"
 					>
 						{expanded ? (
-							<ChevronDownIcon className="size-3.5" />
+							<ChevronDownIcon />
 						) : (
-							<ChevronRightIcon className="size-3.5" />
+							<ChevronRightIcon />
 						)}
 					</IconButton>
 					<Tooltip>
@@ -540,9 +540,9 @@ function TraceSpanLane({
 			const spans: ReadonlyArray<SpanRow> = res.spans
 			if (spans.length === 0) {
 				return (
-					<div className="bg-muted/10 px-3 py-2 text-2xs text-muted-foreground">
+					<EmptyMessage className="bg-muted/10 py-2 text-2xs">
 						No spans found for this trace.
-					</div>
+					</EmptyMessage>
 				)
 			}
 			const sorted = [...spans].sort(

@@ -317,27 +317,31 @@ export const buildReplyCompletion = (
 /** `parameters` is the lenient {@link PrReviewSubmission}, for the reason `diagnosisTool`'s is. */
 export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
-		"Record your review of THIS pull request. Call it exactly once, after you have " +
-		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, coverage, line-anchored findings and the " +
+		"Record your review of THIS pull request. Call it once, after you have " +
+		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, before-merge steps, coverage, line-anchored findings and the " +
 		"handles of earlier findings this head fixes. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
 		"pass that location in telemetryDismissals. It " +
-		"persists the review and posts it to the pull request. After calling it, stop.",
+		"persists the review and posts it to the pull request. A refusal says what to do before calling " +
+		"it again; once it answers that the review is recorded, stop.",
 	parameters: PrReviewSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	// A refusal (files unread, a post that failed) is an answer the model acts on, not the run's end.
+	failureMode: "return",
 })
 
 /** Same lenient finding shape `submit_review` takes, one at a time. */
 export const recordFindingTool = Tool.make(RECORD_FINDING, {
 	description:
 		"Save one finding the moment you have established it: path, new-side line, category, " +
-		"severity, title, body, and suggestion or replacement. Saved findings are posted with your " +
-		"review even if the pass stops before submit_review, and submit_review adds them for you, so " +
+		"severity, title, body, and suggestion or replacement. Saved findings are kept even if the " +
+		"pass stops before submit_review, and submit_review adds them for you, so " +
 		"never repeat one there or save the same issue twice. There is no way to edit or remove a " +
 		"saved finding: check it against the code before you save it.",
 	parameters: PrReviewFindingSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	failureMode: "return",
 })
 
 /** What the model reads back after a `record_finding` call. */

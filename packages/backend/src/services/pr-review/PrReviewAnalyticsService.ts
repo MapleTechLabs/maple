@@ -22,12 +22,11 @@ import {
 	type VcsRepositoryId,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
-import { prReviewFindings, prReviews, vcsRepositories } from "@maple/db"
-import { and, type Column, desc, eq, gte, lt, or, sql } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 
 export interface PrReviewAnalyticsServiceApi {
 	readonly analytics: (
@@ -69,16 +68,6 @@ const decodeReport = Schema.decodeUnknownOption(PrReviewReport)
 const decodePostMerge = Schema.decodeUnknownOption(PrReviewPostMerge)
 const decodeTotals = Schema.decodeUnknownEffect(CodeReviewTotals)
 
-const MergeRow = Schema.Struct({ merged: Schema.Number, avg_seconds: Schema.NullOr(Schema.Number) })
-const MergeResult = Schema.Union([Schema.Array(MergeRow), Schema.Struct({ rows: Schema.Array(MergeRow) })])
-const decodeMergeResult = Schema.decodeUnknownOption(MergeResult)
-/** `db.execute` returns the driver's `{ rows }` under the Effect drivers, whatever drizzle declares. */
-const decodeMergeRows = (result: unknown) =>
-	Option.match(decodeMergeResult(result), {
-		onNone: () => [],
-		onSome: (decoded) => ("rows" in decoded ? decoded.rows : decoded),
-	})
-
 const decodeRows = <I, A>(rows: ReadonlyArray<I>, decode: (row: I) => Effect.Effect<A, Schema.SchemaError>) =>
 	Effect.forEach(rows, decode).pipe(
 		Effect.mapError((error) => new PrReviewPersistenceError({ message: error.message })),
@@ -87,90 +76,77 @@ const decodeRows = <I, A>(rows: ReadonlyArray<I>, decode: (row: I) => Effect.Eff
 const encodeCursor = (createdAtMs: number, id: string) => `${createdAtMs}_${id}`
 const decodeCursor = (cursor: string) => {
 	const at = cursor.indexOf("_")
-	return { createdAt: msToDate(Number(cursor.slice(0, at))), id: cursor.slice(at + 1) }
+	return { createdAt: Number(cursor.slice(0, at)), id: cursor.slice(at + 1) }
 }
 
-const num = (value: unknown) => (typeof value === "number" ? value : Number(value ?? 0))
-const numOrNull = (value: unknown) => (value === null || value === undefined ? null : Number(value))
+type Reviews = PG.ColumnAccessor<typeof PrReviews.columns>
+type Findings = PG.ColumnAccessor<typeof PrReviewFindings.columns>
 
 // Read from the stored report in SQL so a list never loads the reports themselves.
-const verdictSql = sql<string | null>`${prReviews.reportJson}->>'verdict'`
-const confidenceSql = sql<number | null>`(${prReviews.reportJson}->>'confidence')::float8`
-const findingsCountSql = sql<number>`coalesce(jsonb_array_length(${prReviews.reportJson}->'findings'), 0)::int`
-const pullRequestCount = sql<number>`count(distinct ${prReviews.repositoryId} || ':' || ${prReviews.number})::int`
-const criticalCountSql = sql<number>`coalesce((select count(*) from jsonb_array_elements(${prReviews.reportJson}->'findings') as f where f->>'severity' = 'critical'), 0)::int`
+const verdictOf = ($: Reviews) => PG.jsonText($.reportJson, "verdict")
+const confidenceOf = ($: Reviews) => PG.sql(PG.nullable(PG.float8))`(${$.reportJson}->>'confidence')::float8`
+const findingsCountOf = ($: Reviews) =>
+	PG.sql(PG.int4)`coalesce(jsonb_array_length(${$.reportJson}->'findings'), 0)::int`
+const pullRequestCountOf = ($: Reviews) =>
+	PG.sql(PG.int4)`count(distinct ${$.repositoryId} || ':' || ${$.number})::int`
+const criticalCountOf = ($: Reviews) =>
+	PG.sql(
+		PG.int4,
+	)`coalesce((select count(*) from jsonb_array_elements(${$.reportJson}->'findings') as f where f->>'severity' = 'critical'), 0)::int`
 
-const listColumns = {
-	id: prReviews.id,
-	repositoryId: prReviews.repositoryId,
-	repositoryFullName: vcsRepositories.fullName,
-	number: prReviews.number,
-	title: prReviews.title,
-	url: prReviews.url,
-	authorLogin: prReviews.authorLogin,
-	headSha: prReviews.headSha,
-	status: prReviews.status,
-	skipReason: prReviews.skipReason,
-	verdict: verdictSql,
-	score: prReviews.score,
-	confidence: confidenceSql,
-	findings: findingsCountSql,
-	criticalFindings: criticalCountSql,
-	commentUrl: prReviews.commentUrl,
-	publishError: prReviews.publishError,
-	error: prReviews.error,
-	model: prReviews.model,
-	createdAt: prReviews.createdAt,
-	finishedAt: prReviews.finishedAt,
-	mergedAt: prReviews.mergedAt,
-}
-
-type ListRow = {
-	readonly createdAt: Date
-	readonly finishedAt: Date | null
-	readonly mergedAt: Date | null
-	readonly confidence: unknown
-	readonly [key: string]: unknown
-}
-
-const listItemInput = (row: ListRow) => ({
-	...row,
-	confidence: numOrNull(row.confidence),
-	createdAt: dateToMs(row.createdAt),
-	finishedAt: row.finishedAt === null ? null : dateToMs(row.finishedAt),
-	mergedAt: row.mergedAt === null ? null : dateToMs(row.mergedAt),
+const listColumns = ($: Reviews, repositoryFullName: PG.Expr<string>) => ({
+	id: $.id,
+	repositoryId: $.repositoryId,
+	repositoryFullName,
+	number: $.number,
+	title: $.title,
+	url: $.url,
+	authorLogin: $.authorLogin,
+	headSha: $.headSha,
+	status: $.status,
+	skipReason: $.skipReason,
+	verdict: verdictOf($),
+	score: $.score,
+	confidence: confidenceOf($),
+	findings: findingsCountOf($),
+	criticalFindings: criticalCountOf($),
+	commentUrl: $.commentUrl,
+	publishError: $.publishError,
+	error: $.error,
+	model: $.model,
+	createdAt: $.createdAt,
+	finishedAt: $.finishedAt,
+	mergedAt: $.mergedAt,
 })
 
-const findingColumns = {
-	id: prReviewFindings.id,
-	reviewId: prReviewFindings.reviewId,
-	repositoryId: prReviewFindings.repositoryId,
-	repositoryFullName: vcsRepositories.fullName,
-	number: prReviewFindings.number,
-	pullRequestTitle: prReviews.title,
-	pullRequestUrl: prReviews.url,
-	handle: prReviewFindings.handle,
-	path: prReviewFindings.path,
-	line: prReviewFindings.line,
-	category: prReviewFindings.category,
-	severity: prReviewFindings.severity,
-	title: prReviewFindings.title,
-	status: prReviewFindings.status,
-	reactionsUp: prReviewFindings.reactionsUp,
-	reactionsDown: prReviewFindings.reactionsDown,
-	createdAt: prReviewFindings.createdAt,
-}
-
-const findingInput = (row: { readonly createdAt: Date; readonly [key: string]: unknown }) => ({
-	...row,
-	pullRequestTitle: row.pullRequestTitle ?? null,
-	pullRequestUrl: row.pullRequestUrl ?? null,
-	createdAt: dateToMs(row.createdAt),
+const findingColumns = (
+	$: Findings,
+	review: { readonly title: PG.Expr<string | null>; readonly url: PG.Expr<string | null> },
+	repositoryFullName: PG.Expr<string>,
+) => ({
+	id: $.id,
+	reviewId: $.reviewId,
+	repositoryId: $.repositoryId,
+	repositoryFullName,
+	number: $.number,
+	pullRequestTitle: review.title,
+	pullRequestUrl: review.url,
+	handle: $.handle,
+	path: $.path,
+	line: $.line,
+	category: $.category,
+	severity: $.severity,
+	title: $.title,
+	status: $.status,
+	reactionsUp: $.reactionsUp,
+	reactionsDown: $.reactionsDown,
+	createdAt: $.createdAt,
 })
 
+/** Epoch milliseconds. */
 interface Window {
-	readonly start: Date
-	readonly end: Date
+	readonly start: number
+	readonly end: number
 }
 
 export class PrReviewAnalyticsService extends Context.Service<
@@ -182,38 +158,47 @@ export class PrReviewAnalyticsService extends Context.Service<
 		const dbExecute = makeDbExecute(database, "PrReviewAnalyticsService", toPersistence)
 
 		// The filters shared by every read; the author lives on the review, so findings join it.
-		const reviewFilter = (
-			orgId: OrgId,
-			window: Window,
-			query: {
-				readonly repositoryId?: VcsRepositoryId | undefined
-				readonly author?: string | undefined
-			},
-		) =>
-			and(
-				eq(prReviews.orgId, orgId),
-				gte(prReviews.createdAt, window.start),
-				lt(prReviews.createdAt, window.end),
-				query.repositoryId === undefined ? undefined : eq(prReviews.repositoryId, query.repositoryId),
-				query.author === undefined ? undefined : eq(prReviews.authorLogin, query.author),
+		const reviewFilter =
+			(
+				orgId: OrgId,
+				window: Window,
+				query: {
+					readonly repositoryId?: VcsRepositoryId | undefined
+					readonly author?: string | undefined
+				},
+			) =>
+			($: Reviews) => [
+				$.orgId.eq(orgId),
+				$.createdAt.gte(window.start),
+				$.createdAt.lt(window.end),
+				query.repositoryId === undefined ? undefined : $.repositoryId.eq(query.repositoryId),
+				query.author === undefined ? undefined : $.authorLogin.eq(query.author),
+			]
+		const findingFilter =
+			(
+				orgId: OrgId,
+				window: Window,
+				query: {
+					readonly repositoryId?: VcsRepositoryId | undefined
+					readonly author?: string | undefined
+				},
+			) =>
+			($: Findings, reviewAuthor: PG.Expr<string | null>) => [
+				$.orgId.eq(orgId),
+				$.createdAt.gte(window.start),
+				$.createdAt.lt(window.end),
+				query.repositoryId === undefined ? undefined : $.repositoryId.eq(query.repositoryId),
+				query.author === undefined ? undefined : reviewAuthor.eq(query.author),
+			]
+
+		const reviewsWithRepositories = () =>
+			PG.from(PrReviews).innerJoin(VcsRepositories, "repo", (review, repo) =>
+				repo.id.eq(review.repositoryId),
 			)
-		const findingFilter = (
-			orgId: OrgId,
-			window: Window,
-			query: {
-				readonly repositoryId?: VcsRepositoryId | undefined
-				readonly author?: string | undefined
-			},
-		) =>
-			and(
-				eq(prReviewFindings.orgId, orgId),
-				gte(prReviewFindings.createdAt, window.start),
-				lt(prReviewFindings.createdAt, window.end),
-				query.repositoryId === undefined
-					? undefined
-					: eq(prReviewFindings.repositoryId, query.repositoryId),
-				query.author === undefined ? undefined : eq(prReviews.authorLogin, query.author),
-			)
+		const findingsWithRepositories = () =>
+			PG.from(PrReviewFindings)
+				.leftJoin(PrReviews, "r", (finding, review) => review.id.eq(finding.reviewId))
+				.innerJoin(VcsRepositories, "repo", (finding, repo) => repo.id.eq(finding.repositoryId))
 
 		const totals = Effect.fn("PrReviewAnalyticsService.totals")(function* (
 			orgId: OrgId,
@@ -221,59 +206,76 @@ export class PrReviewAnalyticsService extends Context.Service<
 			query: CodeReviewAnalyticsQuery,
 		) {
 			const where = reviewFilter(orgId, window, query)
-			const completed = sql`${prReviews.status} = 'completed'`
 			const [reviewRows, findingRows, mergeRows] = yield* Effect.all(
 				[
 					dbExecute((db) =>
-						db
-							.select({
-								reviews: sql<number>`count(*)::int`,
-								pullRequests: pullRequestCount,
-								completedReviews: sql<number>`(count(*) filter (where ${completed}))::int`,
-								failedReviews: sql<number>`(count(*) filter (where ${prReviews.status} = 'failed'))::int`,
-								skippedReviews: sql<number>`(count(*) filter (where ${prReviews.status} = 'skipped'))::int`,
-								avgReviewSeconds: sql<
-									number | null
-								>`(avg(extract(epoch from (${prReviews.finishedAt} - ${prReviews.createdAt}))) filter (where ${completed} and ${prReviews.finishedAt} is not null))::float8`,
-								avgConfidence: sql<
-									number | null
-								>`(avg(${confidenceSql}) filter (where ${completed}))::float8`,
-								avgScore: sql<
-									number | null
-								>`(avg(${prReviews.score}) filter (where ${completed}))::float8`,
-								inputTokens: sql<number>`coalesce(sum(${prReviews.inputTokens}), 0)::float8`,
-								outputTokens: sql<number>`coalesce(sum(${prReviews.outputTokens}), 0)::float8`,
-							})
-							.from(prReviews)
-							.where(where),
+						db.run(
+							PG.from(PrReviews)
+								.select(($) => {
+									const completed = $.status.eq("completed")
+									return {
+										reviews: PG.count(),
+										pullRequests: pullRequestCountOf($),
+										completedReviews: PG.countIf(completed),
+										failedReviews: PG.countIf($.status.eq("failed")),
+										skippedReviews: PG.countIf($.status.eq("skipped")),
+										avgReviewSeconds: PG.sql(
+											PG.nullable(PG.float8),
+										)`(avg(extract(epoch from (${$.finishedAt} - ${$.createdAt}))) filter (where ${completed} and ${$.finishedAt} is not null))::float8`,
+										avgConfidence: PG.sql(
+											PG.nullable(PG.float8),
+										)`(avg(${confidenceOf($)}) filter (where ${completed}))::float8`,
+										avgScore: PG.sql(
+											PG.nullable(PG.float8),
+										)`(avg(${$.score}) filter (where ${completed}))::float8`,
+										inputTokens: PG.sql(
+											PG.float8,
+										)`coalesce(sum(${$.inputTokens}), 0)::float8`,
+										outputTokens: PG.sql(
+											PG.float8,
+										)`coalesce(sum(${$.outputTokens}), 0)::float8`,
+									}
+								})
+								.where(where),
+						),
 					),
 					dbExecute((db) =>
-						db
-							.select({
-								findings: sql<number>`count(*)::int`,
-								criticalFindings: sql<number>`(count(*) filter (where ${prReviewFindings.severity} = 'critical'))::int`,
-								resolvedFindings: sql<number>`(count(*) filter (where ${prReviewFindings.status} = 'resolved'))::int`,
-								dismissedFindings: sql<number>`(count(*) filter (where ${prReviewFindings.status} = 'dismissed'))::int`,
-								repositoriesWithFindings: sql<number>`count(distinct ${prReviewFindings.repositoryId})::int`,
-							})
-							.from(prReviewFindings)
-							.leftJoin(prReviews, eq(prReviews.id, prReviewFindings.reviewId))
-							.where(findingFilter(orgId, window, query)),
+						db.run(
+							PG.from(PrReviewFindings)
+								.leftJoin(PrReviews, "r", (finding, review) => review.id.eq(finding.reviewId))
+								.select(($) => ({
+									findings: PG.count(),
+									criticalFindings: PG.countIf($.severity.eq("critical")),
+									resolvedFindings: PG.countIf($.status.eq("resolved")),
+									dismissedFindings: PG.countIf($.status.eq("dismissed")),
+									repositoriesWithFindings: PG.countDistinct($.repositoryId),
+								}))
+								.where(($) => findingFilter(orgId, window, query)($, $.r.authorLogin)),
+						),
 					),
 					// Per pull request: its first review in the window to its merge.
 					dbExecute((db) =>
-						db
-							.execute(
-								sql`select count(*)::int as merged, avg(extract(epoch from (merged_at - first_at)))::float8 as avg_seconds
-								from (
-									select min(${prReviews.createdAt}) as first_at, max(${prReviews.mergedAt}) as merged_at
-									from ${prReviews}
-									where ${where ?? sql`true`}
-									group by ${prReviews.repositoryId}, ${prReviews.number}
-								) as pr
-								where merged_at is not null`,
+						db.run(
+							PG.fromQuery(
+								PG.from(PrReviews)
+									.select(($) => ({
+										repositoryId: $.repositoryId,
+										number: $.number,
+										firstAt: PG.min($.createdAt),
+										mergedAt: PG.max($.mergedAt),
+									}))
+									.where(where)
+									.groupBy("repositoryId", "number"),
+								"pr",
 							)
-							.pipe(Effect.map(decodeMergeRows)),
+								.select(($) => ({
+									merged: PG.count(),
+									avgSeconds: PG.sql(
+										PG.nullable(PG.float8),
+									)`avg(extract(epoch from (${$.mergedAt} - ${$.firstAt})))::float8`,
+								}))
+								.where(($) => [$.mergedAt.isNotNull()]),
+						),
 					),
 				],
 				{ concurrency: 3 },
@@ -282,23 +284,23 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const findings = findingRows[0]
 			const merge = mergeRows[0]
 			return yield* decodeTotals({
-				pullRequests: num(reviews?.pullRequests),
-				reviews: num(reviews?.reviews),
-				completedReviews: num(reviews?.completedReviews),
-				failedReviews: num(reviews?.failedReviews),
-				skippedReviews: num(reviews?.skippedReviews),
-				findings: num(findings?.findings),
-				criticalFindings: num(findings?.criticalFindings),
-				resolvedFindings: num(findings?.resolvedFindings),
-				dismissedFindings: num(findings?.dismissedFindings),
-				repositoriesWithFindings: num(findings?.repositoriesWithFindings),
-				mergedPullRequests: num(merge?.merged),
-				avgReviewSeconds: numOrNull(reviews?.avgReviewSeconds),
-				avgMergeSeconds: numOrNull(merge?.avg_seconds),
-				avgConfidence: numOrNull(reviews?.avgConfidence),
-				avgScore: numOrNull(reviews?.avgScore),
-				inputTokens: num(reviews?.inputTokens),
-				outputTokens: num(reviews?.outputTokens),
+				pullRequests: reviews?.pullRequests ?? 0,
+				reviews: reviews?.reviews ?? 0,
+				completedReviews: reviews?.completedReviews ?? 0,
+				failedReviews: reviews?.failedReviews ?? 0,
+				skippedReviews: reviews?.skippedReviews ?? 0,
+				findings: findings?.findings ?? 0,
+				criticalFindings: findings?.criticalFindings ?? 0,
+				resolvedFindings: findings?.resolvedFindings ?? 0,
+				dismissedFindings: findings?.dismissedFindings ?? 0,
+				repositoriesWithFindings: findings?.repositoriesWithFindings ?? 0,
+				mergedPullRequests: merge?.merged ?? 0,
+				avgReviewSeconds: reviews?.avgReviewSeconds ?? null,
+				avgMergeSeconds: merge?.avgSeconds ?? null,
+				avgConfidence: reviews?.avgConfidence ?? null,
+				avgScore: reviews?.avgScore ?? null,
+				inputTokens: reviews?.inputTokens ?? 0,
+				outputTokens: reviews?.outputTokens ?? 0,
 			}).pipe(Effect.mapError(toPersistence))
 		})
 
@@ -309,8 +311,8 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const startTime = Math.max(query.startTime, query.endTime - MAX_SPAN_MS)
 			const spanMs = Math.max(query.endTime - startTime, 60_000)
 			const bucketSeconds = codeReviewBucketSeconds(spanMs)
-			const window: Window = { start: msToDate(startTime), end: msToDate(query.endTime) }
-			const previous: Window = { start: msToDate(startTime - spanMs), end: window.start }
+			const window: Window = { start: startTime, end: query.endTime }
+			const previous: Window = { start: startTime - spanMs, end: window.start }
 			yield* Effect.annotateCurrentSpan({
 				orgId,
 				"maple.code_review.span_ms": spanMs,
@@ -318,15 +320,18 @@ export class PrReviewAnalyticsService extends Context.Service<
 				"maple.code_review.filtered": query.repositoryId !== undefined || query.author !== undefined,
 			})
 
-			// Inlined, not bound: a GROUP BY over an expression with placeholders never matches the
-			// SELECT's own placeholders. The value is computed here, never taken from the request.
-			const width = sql.raw(String(bucketSeconds))
-			const bucketOf = (column: Column) =>
-				sql<number>`(floor(extract(epoch from ${column}) / ${width}) * ${width} * 1000)::float8`
-			const reviewBucket = bucketOf(prReviews.createdAt)
-			const findingBucket = bucketOf(prReviewFindings.createdAt)
+			// Inlined, not bound: a number in the template is written as a literal. The value is
+			// computed here, never taken from the request.
+			const bucketOf = (column: PG.Expr<number>) =>
+				PG.sql(
+					PG.float8,
+				)`(floor(extract(epoch from ${column}) / ${bucketSeconds}) * ${bucketSeconds} * 1000)::float8`
 			const reviewWhere = reviewFilter(orgId, window, query)
 			const findingWhere = findingFilter(orgId, window, query)
+			const findingsWithReviews = () =>
+				PG.from(PrReviewFindings).leftJoin(PrReviews, "r", (finding, review) =>
+					review.id.eq(finding.reviewId),
+				)
 
 			const [
 				current,
@@ -344,92 +349,106 @@ export class PrReviewAnalyticsService extends Context.Service<
 					totals(orgId, window, query),
 					totals(orgId, previous, query),
 					dbExecute((db) =>
-						db
-							.select({
-								bucket: reviewBucket,
-								reviews: sql<number>`count(*)::int`,
-								pullRequests: pullRequestCount,
-							})
-							.from(prReviews)
-							.where(reviewWhere)
-							.groupBy(reviewBucket),
+						db.run(
+							PG.from(PrReviews)
+								.select(($) => ({
+									bucket: bucketOf($.createdAt),
+									reviews: PG.count(),
+									pullRequests: pullRequestCountOf($),
+								}))
+								.where(reviewWhere)
+								.groupBy("bucket"),
+						),
 					),
 					dbExecute((db) =>
-						db
-							.select({
-								bucket: findingBucket,
-								severity: prReviewFindings.severity,
-								findings: sql<number>`count(*)::int`,
-							})
-							.from(prReviewFindings)
-							.leftJoin(prReviews, eq(prReviews.id, prReviewFindings.reviewId))
-							.where(findingWhere)
-							.groupBy(findingBucket, prReviewFindings.severity),
+						db.run(
+							findingsWithReviews()
+								.select(($) => ({
+									bucket: bucketOf($.createdAt),
+									severity: $.severity,
+									findings: PG.count(),
+								}))
+								.where(($) => findingWhere($, $.r.authorLogin))
+								.groupBy("bucket", "severity"),
+						),
 					),
 					dbExecute((db) =>
-						db
-							.select({
-								category: prReviewFindings.category,
-								findings: sql<number>`count(*)::int`,
-							})
-							.from(prReviewFindings)
-							.leftJoin(prReviews, eq(prReviews.id, prReviewFindings.reviewId))
-							.where(findingWhere)
-							.groupBy(prReviewFindings.category)
-							.orderBy(desc(sql`count(*)`)),
+						db.run(
+							findingsWithReviews()
+								.select(($) => ({ category: $.category, findings: PG.count() }))
+								.where(($) => findingWhere($, $.r.authorLogin))
+								.groupBy("category")
+								.orderBy(["findings", "desc"]),
+						),
 					),
 					dbExecute((db) =>
-						db
-							.select({ verdict: verdictSql, reviews: sql<number>`count(*)::int` })
-							.from(prReviews)
-							.where(and(reviewWhere, eq(prReviews.status, "completed")))
-							.groupBy(verdictSql),
+						db.run(
+							PG.from(PrReviews)
+								.select(($) => ({ verdict: verdictOf($), reviews: PG.count() }))
+								.where(($) => [...reviewWhere($), $.status.eq("completed")])
+								.groupBy("verdict"),
+						),
 					),
 					dbExecute((db) =>
-						db
-							.select({
-								repositoryId: prReviews.repositoryId,
-								fullName: vcsRepositories.fullName,
-								reviews: sql<number>`count(*)::int`,
-							})
-							.from(prReviews)
-							.innerJoin(vcsRepositories, eq(vcsRepositories.id, prReviews.repositoryId))
-							.where(reviewWhere)
-							.groupBy(prReviews.repositoryId, vcsRepositories.fullName)
-							.orderBy(desc(sql`count(*)`))
-							.limit(TOP),
+						db.run(
+							PG.from(PrReviews)
+								.innerJoin(VcsRepositories, "repo", (review, repo) =>
+									repo.id.eq(review.repositoryId),
+								)
+								.select(($) => ({
+									repositoryId: $.repositoryId,
+									fullName: $.repo.fullName,
+									reviews: PG.count(),
+								}))
+								.where(reviewWhere)
+								.groupBy("repositoryId", "fullName")
+								.orderBy(["reviews", "desc"])
+								.limit(TOP),
+						),
 					),
 					dbExecute((db) =>
-						db
-							.select({
-								repositoryId: prReviewFindings.repositoryId,
-								fullName: vcsRepositories.fullName,
-								findings: sql<number>`count(*)::int`,
-							})
-							.from(prReviewFindings)
-							.leftJoin(prReviews, eq(prReviews.id, prReviewFindings.reviewId))
-							.innerJoin(vcsRepositories, eq(vcsRepositories.id, prReviewFindings.repositoryId))
-							.where(findingWhere)
-							.groupBy(prReviewFindings.repositoryId, vcsRepositories.fullName)
-							.orderBy(desc(sql`count(*)`))
-							.limit(TOP),
+						db.run(
+							findingsWithReviews()
+								.innerJoin(VcsRepositories, "repo", (finding, repo) =>
+									repo.id.eq(finding.repositoryId),
+								)
+								.select(($) => ({
+									repositoryId: $.repositoryId,
+									fullName: $.repo.fullName,
+									findings: PG.count(),
+								}))
+								.where(($) => findingWhere($, $.r.authorLogin))
+								.groupBy("repositoryId", "fullName")
+								.orderBy(["findings", "desc"])
+								.limit(TOP),
+						),
 					),
 					dbExecute((db) =>
-						db
-							.select({ author: prReviews.authorLogin, pullRequests: pullRequestCount })
-							.from(prReviews)
-							.where(and(reviewWhere, sql`${prReviews.authorLogin} is not null`))
-							.groupBy(prReviews.authorLogin)
-							.orderBy(desc(pullRequestCount), prReviews.authorLogin)
-							.limit(TOP),
+						db.run(
+							PG.from(PrReviews)
+								.select(($) => ({
+									author: $.authorLogin,
+									pullRequests: pullRequestCountOf($),
+								}))
+								.where(($) => [...reviewWhere($), $.authorLogin.isNotNull()])
+								.groupBy("author")
+								.orderBy(["pullRequests", "desc"], ["author", "asc"])
+								.limit(TOP),
+						),
 					),
 					dbExecute((db) =>
-						db
-							.select({ author: prReviews.authorLogin, findings: sql<number>`count(*)::int` })
-							.from(prReviewFindings)
-							.innerJoin(prReviews, eq(prReviews.id, prReviewFindings.reviewId))
-							.where(and(findingWhere, sql`${prReviews.authorLogin} is not null`))
-							.groupBy(prReviews.authorLogin),
+						db.run(
+							PG.from(PrReviewFindings)
+								.innerJoin(PrReviews, "r", (finding, review) =>
+									review.id.eq(finding.reviewId),
+								)
+								.select(($) => ({ author: $.r.authorLogin, findings: PG.count() }))
+								.where(($) => [
+									...findingWhere($, $.r.authorLogin),
+									$.r.authorLogin.isNotNull(),
+								])
+								.groupBy("author"),
+						),
 					),
 				],
 				{ concurrency: 4 },
@@ -445,23 +464,23 @@ export class PrReviewAnalyticsService extends Context.Service<
 			for (let at = first; at < query.endTime; at += bucketMs)
 				series.set(at, { reviews: 0, pullRequests: 0, critical: 0, warn: 0, info: 0 })
 			for (const row of reviewSeries) {
-				const slot = series.get(num(row.bucket))
+				const slot = series.get(row.bucket)
 				if (slot === undefined) continue
-				slot.reviews = num(row.reviews)
-				slot.pullRequests = num(row.pullRequests)
+				slot.reviews = row.reviews
+				slot.pullRequests = row.pullRequests
 			}
 			for (const row of findingSeries) {
-				const slot = series.get(num(row.bucket))
+				const slot = series.get(row.bucket)
 				if (slot === undefined) continue
-				slot[row.severity] += num(row.findings)
+				slot[row.severity] += row.findings
 			}
 
 			const verdictCount = (verdict: string) =>
-				num(verdicts.find((row) => row.verdict === verdict)?.reviews)
+				verdicts.find((row) => row.verdict === verdict)?.reviews ?? 0
 			const findingsByRepo = new Map(repoFindings.map((row) => [row.repositoryId, row]))
 			const reviewsByRepo = new Map(repoReviews.map((row) => [row.repositoryId, row]))
 			const repositoryIds = [...new Set([...reviewsByRepo.keys(), ...findingsByRepo.keys()])]
-			const findingsByAuthor = new Map(authorFindings.map((row) => [row.author, num(row.findings)]))
+			const findingsByAuthor = new Map(authorFindings.map((row) => [row.author, row.findings]))
 
 			return new CodeReviewAnalytics({
 				bucketSeconds,
@@ -469,8 +488,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 				previous: before,
 				series: [...series].map(([bucket, slot]) => new CodeReviewBucket({ bucket, ...slot })),
 				categories: categories.map(
-					(row) =>
-						new CodeReviewCategoryCount({ category: row.category, findings: num(row.findings) }),
+					(row) => new CodeReviewCategoryCount({ category: row.category, findings: row.findings }),
 				),
 				verdicts: new CodeReviewVerdicts({
 					clean: verdictCount("clean"),
@@ -483,8 +501,8 @@ export class PrReviewAnalyticsService extends Context.Service<
 					return new CodeReviewRepositoryCount({
 						repositoryId,
 						fullName: reviewed?.fullName ?? found?.fullName ?? "",
-						reviews: num(reviewed?.reviews),
-						findings: num(found?.findings),
+						reviews: reviewed?.reviews ?? 0,
+						findings: found?.findings ?? 0,
 					})
 				}),
 				authors: authorReviews.flatMap((row) =>
@@ -493,7 +511,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 						: [
 								new CodeReviewAuthorCount({
 									author: row.author,
-									pullRequests: num(row.pullRequests),
+									pullRequests: row.pullRequests,
 									findings: findingsByAuthor.get(row.author) ?? 0,
 								}),
 							],
@@ -507,41 +525,37 @@ export class PrReviewAnalyticsService extends Context.Service<
 		) {
 			const limit = query.limit ?? DEFAULT_PAGE
 			const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor)
-			const window: Window = { start: msToDate(query.startTime), end: msToDate(query.endTime) }
+			const window: Window = { start: query.startTime, end: query.endTime }
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.code_review.limit": limit })
 			const rows = yield* dbExecute((db) =>
-				db
-					.select(listColumns)
-					.from(prReviews)
-					.innerJoin(vcsRepositories, eq(vcsRepositories.id, prReviews.repositoryId))
-					.where(
-						and(
-							reviewFilter(orgId, window, query),
-							query.status === undefined ? undefined : eq(prReviews.status, query.status),
-							query.verdict === undefined ? undefined : sql`${verdictSql} = ${query.verdict}`,
+				db.run(
+					reviewsWithRepositories()
+						.select(($) => listColumns($, $.repo.fullName))
+						.where(($) => [
+							...reviewFilter(orgId, window, query)($),
+							query.status === undefined ? undefined : $.status.eq(query.status),
+							query.verdict === undefined ? undefined : verdictOf($).eq(query.verdict),
 							cursor === undefined
 								? undefined
-								: or(
-										lt(prReviews.createdAt, cursor.createdAt),
-										and(
-											eq(prReviews.createdAt, cursor.createdAt),
-											sql`${prReviews.id} < ${cursor.id}`,
+								: PG.or(
+										$.createdAt.lt(cursor.createdAt),
+										PG.and(
+											$.createdAt.eq(cursor.createdAt),
+											PG.undecoded($.id).lt(cursor.id),
 										),
 									),
-						),
-					)
-					.orderBy(desc(prReviews.createdAt), desc(prReviews.id))
-					.limit(limit + 1),
+						])
+						.orderBy(["createdAt", "desc"], ["id", "desc"])
+						.limit(limit + 1),
+				),
 			)
 			const page = rows.slice(0, limit)
-			const reviews = yield* decodeRows(page.map(listItemInput), decodeListItem)
+			const reviews = yield* decodeRows(page, decodeListItem)
 			const last = page.at(-1)
 			return new CodeReviewListResponse({
 				reviews,
 				nextCursor:
-					rows.length > limit && last !== undefined
-						? encodeCursor(dateToMs(last.createdAt), last.id)
-						: null,
+					rows.length > limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
 			})
 		})
 
@@ -551,21 +565,22 @@ export class PrReviewAnalyticsService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": reviewId })
 			const rows = yield* dbExecute((db) =>
-				db
-					.select({
-						...listColumns,
-						report: prReviews.reportJson,
-						checkRunUrl: prReviews.checkRunUrl,
-						reviewUrl: prReviews.reviewUrl,
-						inputTokens: prReviews.inputTokens,
-						outputTokens: prReviews.outputTokens,
-						startedAt: prReviews.startedAt,
-						postMerge: prReviews.postMergeJson,
-					})
-					.from(prReviews)
-					.innerJoin(vcsRepositories, eq(vcsRepositories.id, prReviews.repositoryId))
-					.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
-					.limit(1),
+				db.run(
+					reviewsWithRepositories()
+						.select(($) => ({
+							...listColumns($, $.repo.fullName),
+							// As stored, so a document from an older shape is decoded leniently below.
+							report: PG.undecoded($.reportJson),
+							checkRunUrl: $.checkRunUrl,
+							reviewUrl: $.reviewUrl,
+							inputTokens: $.inputTokens,
+							outputTokens: $.outputTokens,
+							startedAt: $.startedAt,
+							postMerge: PG.undecoded($.postMergeJson),
+						}))
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
+						.limit(1),
+				),
 			)
 			const row = rows[0]
 			if (row === undefined)
@@ -587,41 +602,36 @@ export class PrReviewAnalyticsService extends Context.Service<
 			const [historyRows, findingRows] = yield* Effect.all(
 				[
 					dbExecute((db) =>
-						db
-							.select(listColumns)
-							.from(prReviews)
-							.innerJoin(vcsRepositories, eq(vcsRepositories.id, prReviews.repositoryId))
-							.where(
-								and(
-									eq(prReviews.orgId, orgId),
-									eq(prReviews.repositoryId, row.repositoryId),
-									eq(prReviews.number, row.number),
-								),
-							)
-							.orderBy(desc(prReviews.createdAt))
-							.limit(50),
+						db.run(
+							reviewsWithRepositories()
+								.select(($) => listColumns($, $.repo.fullName))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.repositoryId.eq(row.repositoryId),
+									$.number.eq(row.number),
+								])
+								.orderBy(["createdAt", "desc"])
+								.limit(50),
+						),
 					),
 					dbExecute((db) =>
-						db
-							.select(findingColumns)
-							.from(prReviewFindings)
-							.leftJoin(prReviews, eq(prReviews.id, prReviewFindings.reviewId))
-							.innerJoin(vcsRepositories, eq(vcsRepositories.id, prReviewFindings.repositoryId))
-							.where(
-								and(
-									eq(prReviewFindings.orgId, orgId),
-									eq(prReviewFindings.repositoryId, row.repositoryId),
-									eq(prReviewFindings.number, row.number),
-								),
-							)
-							.orderBy(prReviewFindings.createdAt),
+						db.run(
+							findingsWithRepositories()
+								.select(($) => findingColumns($, $.r, $.repo.fullName))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.repositoryId.eq(row.repositoryId),
+									$.number.eq(row.number),
+								])
+								.orderBy(["createdAt", "asc"]),
+						),
 					),
 				],
 				{ concurrency: 2 },
 			)
-			const [review] = yield* decodeRows([listItemInput(listRow)], decodeListItem)
-			const history = yield* decodeRows(historyRows.map(listItemInput), decodeListItem)
-			const findings = yield* decodeRows(findingRows.map(findingInput), decodeFinding)
+			const [review] = yield* decodeRows([listRow], decodeListItem)
+			const history = yield* decodeRows(historyRows, decodeListItem)
+			const findings = yield* decodeRows(findingRows, decodeFinding)
 			if (review === undefined)
 				return yield* new PrReviewNotFoundError({
 					message: "Pull request review not found",
@@ -635,7 +645,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 				reviewUrl,
 				inputTokens,
 				outputTokens,
-				startedAt: startedAt === null ? null : dateToMs(startedAt),
+				startedAt,
 				history,
 				findings,
 				postMerge: Option.getOrNull(decodePostMerge(postMerge)),
@@ -648,49 +658,35 @@ export class PrReviewAnalyticsService extends Context.Service<
 		) {
 			const limit = query.limit ?? DEFAULT_PAGE
 			const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor)
-			const window: Window = { start: msToDate(query.startTime), end: msToDate(query.endTime) }
+			const window: Window = { start: query.startTime, end: query.endTime }
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.code_review.limit": limit })
 			const rows = yield* dbExecute((db) =>
-				db
-					.select(findingColumns)
-					.from(prReviewFindings)
-					.leftJoin(prReviews, eq(prReviews.id, prReviewFindings.reviewId))
-					.innerJoin(vcsRepositories, eq(vcsRepositories.id, prReviewFindings.repositoryId))
-					.where(
-						and(
-							findingFilter(orgId, window, query),
-							query.severity === undefined
-								? undefined
-								: eq(prReviewFindings.severity, query.severity),
-							query.category === undefined
-								? undefined
-								: eq(prReviewFindings.category, query.category),
-							query.status === undefined
-								? undefined
-								: eq(prReviewFindings.status, query.status),
+				db.run(
+					findingsWithRepositories()
+						.select(($) => findingColumns($, $.r, $.repo.fullName))
+						.where(($) => [
+							...findingFilter(orgId, window, query)($, $.r.authorLogin),
+							query.severity === undefined ? undefined : $.severity.eq(query.severity),
+							query.category === undefined ? undefined : $.category.eq(query.category),
+							query.status === undefined ? undefined : $.status.eq(query.status),
 							cursor === undefined
 								? undefined
-								: or(
-										lt(prReviewFindings.createdAt, cursor.createdAt),
-										and(
-											eq(prReviewFindings.createdAt, cursor.createdAt),
-											lt(prReviewFindings.id, cursor.id),
-										),
+								: PG.or(
+										$.createdAt.lt(cursor.createdAt),
+										PG.and($.createdAt.eq(cursor.createdAt), $.id.lt(cursor.id)),
 									),
-						),
-					)
-					.orderBy(desc(prReviewFindings.createdAt), desc(prReviewFindings.id))
-					.limit(limit + 1),
+						])
+						.orderBy(["createdAt", "desc"], ["id", "desc"])
+						.limit(limit + 1),
+				),
 			)
 			const page = rows.slice(0, limit)
-			const findings = yield* decodeRows(page.map(findingInput), decodeFinding)
+			const findings = yield* decodeRows(page, decodeFinding)
 			const last = page.at(-1)
 			return new CodeReviewFindingsResponse({
 				findings,
 				nextCursor:
-					rows.length > limit && last !== undefined
-						? encodeCursor(dateToMs(last.createdAt), last.id)
-						: null,
+					rows.length > limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
 			})
 		})
 

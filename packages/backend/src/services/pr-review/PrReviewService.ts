@@ -21,6 +21,7 @@ import {
 	type OrgId,
 	PrReview,
 	PrReviewFinding,
+	type PrReviewMergeStep,
 	PrReviewId,
 	PrReviewNotFoundError,
 	PrReviewPersistenceError,
@@ -54,19 +55,18 @@ import {
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReviewSessionId } from "@maple/domain/chat-session"
 import { UserId } from "@maple/domain/primitives"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	prReviewFindingEmbeddings,
-	prReviewFindings,
-	prReviews,
+	PrReviewFindingEmbeddings,
+	PrReviewFindings,
+	PrReviews,
 	type PrReviewFindingRow,
 	type PrReviewRow,
-} from "@maple/db"
-import { and, count, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm"
+} from "@maple/db/tables"
 import { Cause, Clock, Context, Duration, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
@@ -83,6 +83,14 @@ import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
 import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
+import {
+	buildChecklist,
+	checklistAttributes,
+	detectMergeSteps,
+	NO_DETECTED_STEPS,
+	type NameVerdict,
+	searchVerdict,
+} from "./merge-checklist"
 import {
 	fixedContractBreaks,
 	lineStillEmits,
@@ -118,6 +126,8 @@ export const PR_REVIEW_PUSH_DEBOUNCE_SECONDS = 90
 
 /** Removed names the service searches the repository for before the review starts. */
 const MAX_CONFIRMED_BREAKS = 8
+/** Names searched for on the default branch per review; the rest are listed unverified. */
+const MAX_CHECKLIST_SEARCHES = 10
 
 /** Bounds on what the kickoff message carries; the agent fetches the rest through its tools. */
 const KICKOFF_BODY_CHARS = 4_000
@@ -233,10 +243,10 @@ const rowToReview = (row: PrReviewRow): PrReview =>
 		model: row.model ?? null,
 		inputTokens: row.inputTokens ?? null,
 		outputTokens: row.outputTokens ?? null,
-		startedAt: dateToMs(row.startedAt),
-		finishedAt: dateToMs(row.finishedAt),
-		createdAt: dateToMs(row.createdAt),
-		updatedAt: dateToMs(row.updatedAt),
+		startedAt: row.startedAt,
+		finishedAt: row.finishedAt,
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt,
 		postMergeStatus: row.postMergeStatus ?? null,
 		postMerge: row.postMergeJson ?? null,
 	})
@@ -621,6 +631,38 @@ const copyAllFindings = (findings: ReadonlyArray<PrReviewFinding>, headSha: stri
 		),
 	].join("\n\n---\n\n")
 
+const MERGE_STEP_LABEL = {
+	secret: "Secret",
+	env: "Env var",
+	migration: "Migration",
+	warehouse: "Warehouse",
+	infra: "Infra",
+	manual: "Manual",
+} as const satisfies Record<PrReviewMergeStep["kind"], string>
+
+/**
+ * What has to happen outside the diff before merge, as a task list people tick off on the comment.
+ * Right under the summary: it is what gets forgotten, and it is not a finding against the code.
+ */
+export const renderBeforeMerge = (
+	steps: ReadonlyArray<PrReviewMergeStep>,
+	fileUrl: (path: string, line?: number) => string,
+): ReadonlyArray<string> =>
+	steps.length === 0
+		? []
+		: [
+				"### Before merge",
+				"",
+				...steps.map((step) => {
+					const where =
+						step.path === undefined
+							? ""
+							: ` · [\`${step.line === undefined ? step.path : `${step.path}:${step.line}`}\`](${fileUrl(step.path, step.line)})`
+					return `- [ ] **${MERGE_STEP_LABEL[step.kind]}** · ${step.title}${where}`
+				}),
+				"",
+			]
+
 /**
  * The review as markdown, most important first: the confidence and what decides it, a short summary
  * and what the change does, then each finding by severity as a collapsed entry whose title reads as
@@ -636,6 +678,11 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			.split("/")
 			.map(encodeURIComponent)
 			.join("/")}#L${finding.line}${finding.endLine === undefined ? "" : `-L${finding.endLine}`}`
+	const fileUrl = (path: string, line?: number) =>
+		`${input.repositoryUrl.replace(/\/+$/, "")}/blob/${input.headSha}/${path
+			.split("/")
+			.map(encodeURIComponent)
+			.join("/")}${line === undefined ? "" : `#L${line}`}`
 	const observable = report.coverage.filter((unit) => unit.instrumented).length
 
 	const confidence = confidencePrReview(report, carried.open, input.partial)
@@ -660,6 +707,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	if (report.keyChanges !== undefined && report.keyChanges.length > 0) {
 		lines.push(...report.keyChanges.map((change) => `- ${change}`), "")
 	}
+	lines.push(...renderBeforeMerge(report.beforeMerge ?? [], fileUrl))
 	if (report.findings.length > 0) {
 		lines.push("### Findings", "")
 		for (const finding of bySeverity(report.findings)) {
@@ -950,11 +998,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				function* (orgId, reviewId) {
 					const rows = yield* database
 						.execute((db) =>
-							db
-								.select()
-								.from(prReviews)
-								.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
-								.limit(1),
+							db.run(
+								PG.from(PrReviews)
+									.select()
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
+									.limit(1),
+							),
 						)
 						.pipe(Effect.mapError(toPersistence))
 					return Option.fromUndefinedOr(rows[0]).pipe(Option.map(rowToReview))
@@ -965,34 +1014,28 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				orgId: OrgId,
 				reviewId: PrReviewId,
 				fromStatuses: ReadonlyArray<PrReviewStatus> | undefined,
-				values: Partial<typeof prReviews.$inferInsert>,
+				values: PG.UpdateSetOf<typeof PrReviews>,
 			) =>
 				database
 					.execute((db) =>
-						db
-							.update(prReviews)
-							.set(values)
-							.where(
-								and(
-									eq(prReviews.orgId, orgId),
-									eq(prReviews.id, reviewId),
-									...(fromStatuses === undefined
-										? []
-										: [inArray(prReviews.status, [...fromStatuses])]),
-								),
-							)
-							.returning({ id: prReviews.id }),
+						db.run(
+							PG.update(PrReviews)
+								.set(values)
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(reviewId),
+									fromStatuses === undefined ? undefined : $.status.in_(...fromStatuses),
+								])
+								.returning("id"),
+						),
 					)
 					.pipe(
 						Effect.mapError(toPersistence),
 						Effect.map((rows) => rows.length > 0),
 					)
 
-			const update = (
-				orgId: OrgId,
-				reviewId: PrReviewId,
-				values: Partial<typeof prReviews.$inferInsert>,
-			) => updateWhere(orgId, reviewId, undefined, values)
+			const update = (orgId: OrgId, reviewId: PrReviewId, values: PG.UpdateSetOf<typeof PrReviews>) =>
+				updateWhere(orgId, reviewId, undefined, values)
 
 			const toTracked = (row: PrReviewFindingRow): TrackedFinding => ({
 				id: row.id,
@@ -1010,16 +1053,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const loadTracked = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
 				database
 					.execute((db) =>
-						db
-							.select()
-							.from(prReviewFindings)
-							.where(
-								and(
-									eq(prReviewFindings.orgId, orgId),
-									eq(prReviewFindings.repositoryId, repositoryId),
-									eq(prReviewFindings.number, number),
-								),
-							),
+						db.run(
+							PG.from(PrReviewFindings)
+								.select()
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.repositoryId.eq(repositoryId),
+									$.number.eq(number),
+								]),
+						),
 					)
 					.pipe(
 						Effect.mapError(toPersistence),
@@ -1028,16 +1070,17 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 			const setFindingStatus = (
 				ids: ReadonlyArray<string>,
-				values: Partial<typeof prReviewFindings.$inferInsert>,
+				values: PG.UpdateSetOf<typeof PrReviewFindings>,
 			) =>
 				ids.length === 0
 					? Effect.void
 					: database
 							.execute((db) =>
-								db
-									.update(prReviewFindings)
-									.set(values)
-									.where(inArray(prReviewFindings.id, [...ids])),
+								db.run(
+									PG.update(PrReviewFindings)
+										.set(values)
+										.where(($) => [$.id.in_(...ids)]),
+								),
 							)
 							.pipe(Effect.mapError(toPersistence), Effect.asVoid)
 
@@ -1052,35 +1095,31 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) =>
 				database
 					.execute((db) =>
-						db
-							.select({
-								status: prReviewFindings.status,
-								reactionsUp: prReviewFindings.reactionsUp,
-								reactionsDown: prReviewFindings.reactionsDown,
-								embedding: prReviewFindingEmbeddings.embedding,
-							})
-							.from(prReviewFindingEmbeddings)
-							.innerJoin(
-								prReviewFindings,
-								eq(prReviewFindings.id, prReviewFindingEmbeddings.findingId),
-							)
-							.where(
-								and(
-									eq(prReviewFindingEmbeddings.orgId, orgId),
-									eq(prReviewFindingEmbeddings.model, model),
-									eq(prReviewFindings.orgId, orgId),
-									...(repositoryId === undefined
-										? []
-										: [eq(prReviewFindingEmbeddings.repositoryId, repositoryId)]),
-									or(
-										inArray(prReviewFindings.status, ["dismissed", "resolved"]),
-										gt(prReviewFindings.reactionsUp, 0),
-										gt(prReviewFindings.reactionsDown, 0),
+						db.run(
+							PG.from(PrReviewFindingEmbeddings)
+								.innerJoin(PrReviewFindings, "finding", (embedding, finding) =>
+									finding.id.eq(embedding.findingId),
+								)
+								.select(($) => ({
+									status: $.finding.status,
+									reactionsUp: $.finding.reactionsUp,
+									reactionsDown: $.finding.reactionsDown,
+									embedding: $.embedding,
+								}))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.model.eq(model),
+									$.finding.orgId.eq(orgId),
+									repositoryId === undefined ? undefined : $.repositoryId.eq(repositoryId),
+									PG.or(
+										$.finding.status.in_("dismissed", "resolved"),
+										$.finding.reactionsUp.gt(0),
+										$.finding.reactionsDown.gt(0),
 									),
-								),
-							)
-							.orderBy(desc(prReviewFindingEmbeddings.createdAt))
-							.limit(FEEDBACK_EXAMPLE_LIMIT),
+								])
+								.orderBy(($) => [[$.createdAt, "desc"]])
+								.limit(FEEDBACK_EXAMPLE_LIMIT),
+						),
 					)
 					.pipe(
 						Effect.mapError(toPersistence),
@@ -1236,6 +1275,42 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 
 			/**
+			 * The reads behind the "before merge" checklist, at submit: the diff's candidates, and a
+			 * verdict for each name from a search of the default branch (5 hits, so a whole-word match
+			 * can be found among token matches). A failed search leaves the name unverified.
+			 * `undefined` when the files cannot be read; the review posts without diff steps.
+			 */
+			const mergeStepsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
+				Effect.gen(function* () {
+					const target = yield* providerFor(orgId, repo)
+					if (Option.isNone(target)) return undefined
+					const { provider, installation, ref } = target.value
+					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
+					const detected = detectMergeSteps(files)
+					const verdicts = yield* Effect.forEach(
+						detected.names.slice(0, MAX_CHECKLIST_SEARCHES),
+						({ name }) =>
+							provider.searchCode(installation, ref, `"${name}"`, { limit: 5 }).pipe(
+								Effect.map((hits) => [[name, searchVerdict(name, hits)] as const]),
+								Effect.catchCause(() => Effect.succeed([])),
+							),
+						{ concurrency: 2 },
+					)
+					return { detected, verdicts: new Map<string, NameVerdict>(verdicts.flat()) }
+				}).pipe(
+					Effect.timeout("15 seconds"),
+					Effect.withSpan("PrReviewService.mergeStepsFor"),
+					Effect.catchCause((cause) =>
+						Effect.logWarning(
+							"[PrReview] could not read the diff for the before-merge steps",
+						).pipe(
+							Effect.annotateLogs({ orgId, number, cause: summarizeCause(cause) }),
+							Effect.as(undefined),
+						),
+					),
+				)
+
+			/**
 			 * The repository's rule files at the base, for the kickoff. Best effort: `undefined` when
 			 * any read fails, and the agent reads them itself as it did before.
 			 */
@@ -1270,11 +1345,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const commentAttemptOf = (orgId: OrgId, reviewId: PrReviewId) =>
 				database
 					.execute((db) =>
-						db
-							.select({ commentAttempt: prReviews.commentAttempt })
-							.from(prReviews)
-							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
-							.limit(1),
+						db.run(
+							PG.from(PrReviews)
+								.select("commentAttempt")
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
+								.limit(1),
+						),
 					)
 					.pipe(
 						Effect.map((rows) => rows[0]?.commentAttempt ?? 0),
@@ -1375,6 +1451,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				number: number,
 				tracked: ReadonlyArray<TrackedFinding>,
 				nowMs: number,
+				/** Files changed since the last review; unknown leaves resolved threads to the reviewer. */
+				changedPaths: ReadonlySet<string> | undefined,
 			) {
 				const open = tracked.filter((finding) => finding.status === "open")
 				const commented = tracked.filter((finding) => finding.commentId !== null)
@@ -1395,19 +1473,20 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						down += first.thumbsDown
 						return database
 							.execute((db) =>
-								db
-									.update(prReviewFindings)
-									.set({ reactionsUp: first.thumbsUp, reactionsDown: first.thumbsDown })
-									.where(eq(prReviewFindings.id, finding.id)),
+								db.run(
+									PG.update(PrReviewFindings)
+										.set({ reactionsUp: first.thumbsUp, reactionsDown: first.thumbsDown })
+										.where(($) => [$.id.eq(finding.id)]),
+								),
 							)
 							.pipe(Effect.mapError(toPersistence))
 					},
 					{ discard: true },
 				)
-				const dismissed = dismissedFindings(open, threads)
+				const dismissed = dismissedFindings(open, threads, changedPaths)
 				yield* setFindingStatus(
 					dismissed.map((finding) => finding.id),
-					{ status: "dismissed", updatedAt: msToDate(nowMs) },
+					{ status: "dismissed", updatedAt: nowMs },
 				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.dismissed": dismissed.length,
@@ -1419,9 +1498,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 			/**
 			 * What a later push's kickoff says: the last reviewed head, what changed since, and the
-			 * findings still open. Threads a person resolved or answered "won't fix" are marked
-			 * dismissed first, so the reviewer never re-raises them. Provider reads that fail degrade
-			 * to less context, never to a failed review.
+			 * findings still open. Threads answered "won't fix", or resolved on a file this push left
+			 * alone, are marked dismissed first, so the reviewer never re-raises them. Provider reads
+			 * that fail degrade to less context, never to a failed review.
 			 */
 			const followUpFor = Effect.fn("PrReviewService.followUpFor")(function* (
 				orgId: OrgId,
@@ -1433,25 +1512,23 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) {
 				const previous = yield* database
 					.execute((db) =>
-						db
-							.select({ headSha: prReviews.headSha })
-							.from(prReviews)
-							.where(
-								and(
-									eq(prReviews.repositoryId, repo.id),
-									eq(prReviews.number, number),
-									eq(prReviews.status, "completed"),
-									ne(prReviews.headSha, headSha),
-								),
-							)
-							.orderBy(desc(prReviews.finishedAt))
-							.limit(1),
+						db.run(
+							PG.from(PrReviews)
+								.select("headSha")
+								.where(($) => [
+									$.repositoryId.eq(repo.id),
+									$.number.eq(number),
+									$.status.eq("completed"),
+									$.headSha.neq(headSha),
+								])
+								.orderBy(($) => [[$.finishedAt, "desc"]])
+								.limit(1),
+						),
 					)
 					.pipe(Effect.mapError(toPersistence))
 				const previousSha = previous[0]?.headSha
 				if (previousSha === undefined) return undefined
 				const tracked = yield* loadTracked(orgId, repo.id, number)
-				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs)
 				const upstream = yield* providerFor(orgId, repo)
 				let changes: PullRequestDelta | undefined
 				if (Option.isSome(upstream)) {
@@ -1467,6 +1544,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							Effect.orElseSucceed(() => undefined),
 						)
 				}
+				// A rewritten history has no trustworthy delta, so resolved threads stay with the reviewer.
+				const changedPaths =
+					changes?.paths === undefined || changes.rewritten ? undefined : new Set(changes.paths)
+				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs, changedPaths)
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.carried_open": open.length,
 					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
@@ -1485,20 +1566,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db
-							.select({
-								id: prReviews.id,
-								sessionId: prReviews.sessionId,
-								headSha: prReviews.headSha,
-							})
-							.from(prReviews)
-							.where(
-								and(
-									eq(prReviews.repositoryId, repo.id),
-									eq(prReviews.number, number),
-									inArray(prReviews.status, ["queued", "running"]),
-								),
-							),
+						db.run(
+							PG.from(PrReviews)
+								.select("id", "sessionId", "headSha")
+								.where(($) => [
+									$.repositoryId.eq(repo.id),
+									$.number.eq(number),
+									$.status.in_("queued", "running"),
+								]),
+						),
 					)
 					.pipe(Effect.mapError(toPersistence))
 				for (const row of rows) {
@@ -1519,8 +1595,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* update(orgId, row.id, {
 						status: "skipped",
 						skipReason: "superseded",
-						finishedAt: msToDate(nowMs),
-						updatedAt: msToDate(nowMs),
+						finishedAt: nowMs,
+						updatedAt: nowMs,
 					})
 					// Its comment and check run would otherwise say it is reviewing forever.
 					yield* postReviewStatus(orgId, row.id, repo, number, {
@@ -1554,38 +1630,40 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db
-							.update(prReviews)
-							.set({
-								status: "queued",
-								error: null,
-								// A reclaimed skipped or completed row must not carry its old outcome forward.
-								skipReason: null,
-								publishError: null,
-								// A finished review asked for again is a new review, so it gets a new comment;
-								// a failed one retries in place and replaces its own failure notice.
-								commentAttempt: sql`case when ${prReviews.status} in ('completed', 'skipped') then ${prReviews.commentAttempt} + 1 else ${prReviews.commentAttempt} end`,
-								reportJson: null,
-								score: null,
-								// The new review reads production again and earns its own post-merge look.
-								telemetryJson: null,
-								postMergeStatus: null,
-								postMergeAfter: null,
-								postMergeJson: null,
-								startedAt: null,
-								finishedAt: null,
-								updatedAt: msToDate(nowMs),
-							})
-							.where(
-								and(
-									eq(prReviews.orgId, orgId),
-									eq(prReviews.repositoryId, repositoryId),
-									eq(prReviews.number, number),
-									eq(prReviews.headSha, headSha),
-									inArray(prReviews.status, [...statuses]),
-								),
-							)
-							.returning({ id: prReviews.id }),
+						db.run(
+							PG.update(PrReviews)
+								.set(($) => ({
+									status: "queued",
+									error: null,
+									// A reclaimed skipped or completed row must not carry its old outcome forward.
+									skipReason: null,
+									publishError: null,
+									// A finished review asked for again is a new review, so it gets a new comment;
+									// a failed one retries in place and replaces its own failure notice.
+									commentAttempt: PG.caseWhen(
+										[[$.status.in_("completed", "skipped"), $.commentAttempt.add(1)]],
+										$.commentAttempt,
+									),
+									reportJson: null,
+									score: null,
+									// The new review reads production again and earns its own post-merge look.
+									telemetryJson: null,
+									postMergeStatus: null,
+									postMergeAfter: null,
+									postMergeJson: null,
+									startedAt: null,
+									finishedAt: null,
+									updatedAt: nowMs,
+								}))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.repositoryId.eq(repositoryId),
+									$.number.eq(number),
+									$.headSha.eq(headSha),
+									$.status.in_(...statuses),
+								])
+								.returning("id"),
+						),
 					)
 					.pipe(Effect.mapError(toPersistence))
 				return rows[0]?.id
@@ -1620,8 +1698,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
 						error: AGENT_UNAVAILABLE_ERROR,
-						finishedAt: msToDate(nowMs),
-						updatedAt: msToDate(nowMs),
+						finishedAt: nowMs,
+						updatedAt: nowMs,
 					})
 					yield* annotate("failed", { "maple.pr_review.skip_reason": "agent_unavailable" })
 					return { reviewId, outcome: "failed" as const, skipReason: "agent_unavailable" as const }
@@ -1706,8 +1784,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const failed = yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
 						error: START_FAILED_ERROR,
-						finishedAt: msToDate(nowMs),
-						updatedAt: msToDate(nowMs),
+						finishedAt: nowMs,
+						updatedAt: nowMs,
 					})
 					// Not ours to report when the turn already finished or a newer head took over.
 					if (failed)
@@ -1723,8 +1801,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// been superseded) by the time `beginTurn` returns.
 				yield* updateWhere(orgId, reviewId, ["queued"], {
 					status: "running",
-					startedAt: msToDate(nowMs),
-					updatedAt: msToDate(nowMs),
+					startedAt: nowMs,
+					updatedAt: nowMs,
 				})
 				yield* annotate("started", { "maple.pr_review.superseded": superseded })
 				return { reviewId, outcome: "started" as const }
@@ -1750,35 +1828,34 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const config = yield* repositories.getEffectivePrReviewConfig(orgId, repositoryId)
 					if (config.postMergeCheck === false) return
 					const latest = yield* database.execute((db) =>
-						db
-							.select({ id: prReviews.id, postMergeStatus: prReviews.postMergeStatus })
-							.from(prReviews)
-							.where(
-								and(
-									eq(prReviews.orgId, orgId),
-									eq(prReviews.repositoryId, repositoryId),
-									eq(prReviews.number, merge.number),
-									eq(prReviews.status, "completed"),
-									isNotNull(prReviews.telemetryJson),
-								),
-							)
-							.orderBy(desc(prReviews.finishedAt))
-							.limit(1),
+						db.run(
+							PG.from(PrReviews)
+								.select("id", "postMergeStatus")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.repositoryId.eq(repositoryId),
+									$.number.eq(merge.number),
+									$.status.eq("completed"),
+									$.telemetryJson.isNotNull(),
+								])
+								.orderBy(($) => [[$.finishedAt, "desc"]])
+								.limit(1),
+						),
 					)
 					const row = latest[0]
 					if (row === undefined || row.postMergeStatus !== null) return
 					yield* database.execute((db) =>
-						db
-							.update(prReviews)
-							.set({
-								mergeCommitSha: merge.mergeCommitSha,
-								postMergeStatus: "waiting",
-								postMergeAfter: msToDate(
-									merge.mergedAtMs + Duration.toMillis(POST_MERGE_FIRST_LOOK),
-								),
-								updatedAt: msToDate(nowMs),
-							})
-							.where(and(eq(prReviews.id, row.id), isNull(prReviews.postMergeStatus))),
+						db.run(
+							PG.update(PrReviews)
+								.set({
+									mergeCommitSha: merge.mergeCommitSha,
+									postMergeStatus: "waiting",
+									postMergeAfter:
+										merge.mergedAtMs + Duration.toMillis(POST_MERGE_FIRST_LOOK),
+									updatedAt: nowMs,
+								})
+								.where(($) => [$.id.eq(row.id), $.postMergeStatus.isNull()]),
+						),
 					)
 					yield* Effect.annotateCurrentSpan("maple.pr_review.post_merge_scheduled", row.id)
 				}).pipe(
@@ -1816,20 +1893,19 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							const repositoryId = closedRepo.value.id
 							yield* database
 								.execute((db) =>
-									db
-										.update(prReviews)
-										.set({
-											mergedAt: msToDate(job.mergedAtMs ?? nowMs),
-											// Kept on every row, for a review still running to schedule its own look.
-											mergeCommitSha: job.mergeCommitSha,
-										})
-										.where(
-											and(
-												eq(prReviews.orgId, orgId),
-												eq(prReviews.repositoryId, repositoryId),
-												eq(prReviews.number, job.number),
-											),
-										),
+									db.run(
+										PG.update(PrReviews)
+											.set({
+												mergedAt: job.mergedAtMs ?? nowMs,
+												// Kept on every row, for a review still running to schedule its own look.
+												mergeCommitSha: job.mergeCommitSha,
+											})
+											.where(($) => [
+												$.orgId.eq(orgId),
+												$.repositoryId.eq(repositoryId),
+												$.number.eq(job.number),
+											]),
+									),
 								)
 								.pipe(Effect.mapError(toPersistence))
 							yield* schedulePostMerge(
@@ -1845,7 +1921,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						}
 						const tracked = yield* loadTracked(orgId, closedRepo.value.id, job.number)
 						if (tracked.length > 0) {
-							yield* syncThreads(orgId, closedRepo.value, job.number, tracked, nowMs)
+							// No delta on close: reactions and dismissal replies only.
+							yield* syncThreads(orgId, closedRepo.value, job.number, tracked, nowMs, undefined)
 							yield* annotate("synced", { "maple.pr_review.merged": job.merged })
 						}
 					}
@@ -1890,19 +1967,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (job.deferredReview === true) {
 					const queued = yield* database
 						.execute((db) =>
-							db
-								.select({ id: prReviews.id })
-								.from(prReviews)
-								.where(
-									and(
-										eq(prReviews.orgId, orgId),
-										eq(prReviews.repositoryId, repo.id),
-										eq(prReviews.number, job.number),
-										eq(prReviews.headSha, headSha),
-										eq(prReviews.status, "queued"),
-									),
-								)
-								.limit(1),
+							db.run(
+								PG.from(PrReviews)
+									.select("id")
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.repositoryId.eq(repo.id),
+										$.number.eq(job.number),
+										$.headSha.eq(headSha),
+										$.status.eq("queued"),
+									])
+									.limit(1),
+							),
 						)
 						.pipe(Effect.mapError(toPersistence))
 					const row = queued[0]
@@ -1927,37 +2003,35 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					// it would overwrite that review's own check.
 					const existingHead = yield* database
 						.execute((db) =>
-							db
-								.select({ id: prReviews.id })
-								.from(prReviews)
-								.where(
-									and(
-										eq(prReviews.orgId, orgId),
-										eq(prReviews.repositoryId, repo.id),
-										eq(prReviews.number, job.number),
-										eq(prReviews.headSha, headSha),
-									),
-								)
-								.limit(1),
+							db.run(
+								PG.from(PrReviews)
+									.select("id")
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.repositoryId.eq(repo.id),
+										$.number.eq(job.number),
+										$.headSha.eq(headSha),
+									])
+									.limit(1),
+							),
 						)
 						.pipe(Effect.mapError(toPersistence))
 					const earlier = yield* database
 						.execute((db) =>
-							db
-								.select({ total: count() })
-								.from(prReviews)
-								.where(
-									and(
-										eq(prReviews.orgId, orgId),
-										eq(prReviews.repositoryId, repo.id),
-										eq(prReviews.number, job.number),
-										ne(prReviews.headSha, headSha),
-										inArray(prReviews.status, ["completed", "failed"]),
-									),
-								),
+							db.run(
+								PG.from(PrReviews)
+									.select(() => ({ total: PG.count() }))
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.repositoryId.eq(repo.id),
+										$.number.eq(job.number),
+										$.headSha.neq(headSha),
+										$.status.in_("completed", "failed"),
+									]),
+							),
 						)
 						.pipe(Effect.mapError(toPersistence))
-					if (existingHead[0] === undefined && Number(earlier[0]?.total ?? 0) >= limit) {
+					if (existingHead[0] === undefined && (earlier[0]?.total ?? 0) >= limit) {
 						yield* postPausedCheck(orgId, repo, headSha, limit)
 						yield* annotate("skipped", {
 							"maple.pr_review.skip_reason": "automatic_limit",
@@ -1969,18 +2043,17 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (config.dailyLimit !== undefined) {
 					const repoToday = yield* database
 						.execute((db) =>
-							db
-								.select({ total: count() })
-								.from(prReviews)
-								.where(
-									and(
-										eq(prReviews.repositoryId, repo.id),
-										gte(prReviews.createdAt, msToDate(utcDayStart(nowMs))),
-									),
-								),
+							db.run(
+								PG.from(PrReviews)
+									.select(() => ({ total: PG.count() }))
+									.where(($) => [
+										$.repositoryId.eq(repo.id),
+										$.createdAt.gte(utcDayStart(nowMs)),
+									]),
+							),
 						)
 						.pipe(Effect.mapError(toPersistence))
-					if (Number(repoToday[0]?.total ?? 0) >= config.dailyLimit) {
+					if ((repoToday[0]?.total ?? 0) >= config.dailyLimit) {
 						yield* annotate("skipped", {
 							"maple.pr_review.skip_reason": "quota",
 							"maple.pr_review.repository_limit": config.dailyLimit,
@@ -1996,27 +2069,26 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// head is a duplicate, and so is a `synchronize` that carries the head we already have.
 				const inserted = yield* database
 					.execute((db) =>
-						db
-							.insert(prReviews)
-							.values({
-								id: reviewId,
-								orgId,
-								repositoryId: repo.id,
-								number: job.number,
-								headSha,
-								baseSha: job.baseSha ?? null,
-								url: job.url,
-								title: job.title,
-								authorLogin: job.authorLogin,
-								status: "queued",
-								sessionId: prReviewSessionId(orgId, reviewId),
-								createdAt: msToDate(nowMs),
-								updatedAt: msToDate(nowMs),
-							})
-							.onConflictDoNothing({
-								target: [prReviews.repositoryId, prReviews.number, prReviews.headSha],
-							})
-							.returning({ id: prReviews.id }),
+						db.run(
+							PG.insertInto(PrReviews)
+								.values({
+									id: reviewId,
+									orgId,
+									repositoryId: repo.id,
+									number: job.number,
+									headSha,
+									baseSha: job.baseSha ?? null,
+									url: job.url,
+									title: job.title,
+									authorLogin: job.authorLogin,
+									status: "queued",
+									sessionId: prReviewSessionId(orgId, reviewId),
+									createdAt: nowMs,
+									updatedAt: nowMs,
+								})
+								.onConflictDoNothing({ target: ["repositoryId", "number", "headSha"] })
+								.returning("id"),
+						),
 					)
 					.pipe(Effect.mapError(toPersistence))
 				if (inserted.length > 0) {
@@ -2054,19 +2126,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					if (requested) {
 						const active = yield* database
 							.execute((db) =>
-								db
-									.select({ id: prReviews.id })
-									.from(prReviews)
-									.where(
-										and(
-											eq(prReviews.orgId, orgId),
-											eq(prReviews.repositoryId, repo.id),
-											eq(prReviews.number, job.number),
-											eq(prReviews.headSha, headSha),
-											inArray(prReviews.status, [...ACTIVE_STATUSES]),
-										),
-									)
-									.limit(1),
+								db.run(
+									PG.from(PrReviews)
+										.select("id")
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.repositoryId.eq(repo.id),
+											$.number.eq(job.number),
+											$.headSha.eq(headSha),
+											$.status.in_(...ACTIVE_STATUSES),
+										])
+										.limit(1),
+								),
 							)
 							.pipe(Effect.mapError(toPersistence))
 						if (active[0] !== undefined) {
@@ -2134,11 +2205,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			) {
 				const rows = yield* database
 					.execute((db) =>
-						db
-							.select({ telemetryJson: prReviews.telemetryJson })
-							.from(prReviews)
-							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
-							.limit(1),
+						db.run(
+							PG.from(PrReviews)
+								// As stored, so a document from an older shape reads as none below.
+								.select(($) => ({
+									telemetryJson: PG.undecoded($.telemetryJson),
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
+								.limit(1),
+						),
 					)
 					.pipe(Effect.mapError(toPersistence))
 				const stored = rows[0]?.telemetryJson
@@ -2207,15 +2282,39 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.getEffectivePrReviewConfig(orgId, review.repositoryId)
 					.pipe(Effect.mapError(toPersistence))
 
-				// The facts read at start, with the dismissals the reviewer could prove.
-				const telemetry = yield* telemetryAtSubmit(
-					orgId,
-					reviewId,
-					review.headSha,
-					request.telemetryDismissals ?? [],
-					repository,
-					installation,
+				// The telemetry facts read at start, with the dismissals the reviewer could prove, and the
+				// checklist's reads; independent, so neither waits on the other.
+				const [telemetry, read] = yield* Effect.all(
+					[
+						telemetryAtSubmit(
+							orgId,
+							reviewId,
+							review.headSha,
+							request.telemetryDismissals ?? [],
+							repository,
+							installation,
+						),
+						Option.isNone(repository)
+							? Effect.succeed(undefined)
+							: mergeStepsFor(orgId, repository.value, review.number),
+					],
+					{ concurrency: "unbounded" },
 				)
+				const checklist = buildChecklist({
+					detected: read?.detected ?? NO_DETECTED_STEPS,
+					verdicts: read?.verdicts ?? new Map(),
+					reviewer: request.report.beforeMerge ?? [],
+					isIgnored: (path) => pathIgnored(path, config.ignorePaths),
+				})
+				const beforeMerge = checklist.steps
+				const checklistTrace = checklistAttributes(read === undefined ? "unread" : "read", checklist)
+				yield* Effect.annotateCurrentSpan(checklistTrace)
+				// One line per review that found anything, so a missed or spurious step can be traced.
+				if (checklist.trace.names.length > 0 || beforeMerge.length > 0) {
+					yield* Effect.logInfo("[PrReview] before-merge checklist").pipe(
+						Effect.annotateLogs({ orgId, reviewId, ...checklistTrace }),
+					)
+				}
 
 				// Earlier findings: the ones this head fixes, and the ones still open.
 				const tracked = yield* loadTracked(orgId, review.repositoryId, review.number)
@@ -2268,9 +2367,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					(finding, i) => new PrReviewFinding({ ...finding, handle: handles[i] ?? "" }),
 				)
 				const hasIssues = [...findings, ...stillOpen].some((finding) => finding.severity !== "info")
+				// The reviewer's steps are already merged into `beforeMerge`.
+				const { beforeMerge: _reviewerSteps, ...submitted } = request.report
 				const settled = new PrReviewReport({
-					...request.report,
+					...submitted,
 					...(telemetry === undefined ? undefined : { telemetry }),
+					...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
 					findings,
 					verdict: hasIssues
 						? "issues"
@@ -2319,8 +2421,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					model: request.model ?? null,
 					inputTokens: request.inputTokens ?? null,
 					outputTokens: request.outputTokens ?? null,
-					finishedAt: msToDate(nowMs),
-					updatedAt: msToDate(nowMs),
+					finishedAt: nowMs,
+					updatedAt: nowMs,
 					...(Option.isNone(repository)
 						? { publishError: "repository is no longer connected" }
 						: Option.isNone(installation)
@@ -2340,18 +2442,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// The pull request merged while this review ran: the merge found nothing to schedule.
 				const merged = yield* database
 					.execute((db) =>
-						db
-							.select({
-								mergedAt: prReviews.mergedAt,
-								mergeCommitSha: prReviews.mergeCommitSha,
-							})
-							.from(prReviews)
-							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
-							.limit(1),
+						db.run(
+							PG.from(PrReviews)
+								.select("mergedAt", "mergeCommitSha")
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)])
+								.limit(1),
+						),
 					)
 					.pipe(Effect.mapError(toPersistence))
-				const mergedAtMs = dateToMs(merged[0]?.mergedAt ?? null)
-				if (mergedAtMs !== null && mergedAtMs !== undefined) {
+				const mergedAtMs = merged[0]?.mergedAt ?? null
+				if (mergedAtMs !== null) {
 					yield* schedulePostMerge(
 						orgId,
 						review.repositoryId,
@@ -2371,23 +2471,25 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (tracksFindings) {
 					yield* database
 						.execute((db) =>
-							db.insert(prReviewFindings).values(
-								findings.map((finding) => ({
-									id: keys.get(finding.handle ?? "") ?? randomUUID(),
-									orgId,
-									repositoryId: review.repositoryId,
-									number: review.number,
-									reviewId,
-									handle: finding.handle ?? "",
-									path: finding.path,
-									line: finding.line,
-									category: finding.category,
-									severity: finding.severity,
-									title: finding.title,
-									status: "open" as const,
-									createdAt: msToDate(nowMs),
-									updatedAt: msToDate(nowMs),
-								})),
+							db.run(
+								PG.insertInto(PrReviewFindings).values(
+									findings.map((finding) => ({
+										id: keys.get(finding.handle ?? "") ?? randomUUID(),
+										orgId,
+										repositoryId: review.repositoryId,
+										number: review.number,
+										reviewId,
+										handle: finding.handle ?? "",
+										path: finding.path,
+										line: finding.line,
+										category: finding.category,
+										severity: finding.severity,
+										title: finding.title,
+										status: "open" as const,
+										createdAt: nowMs,
+										updatedAt: nowMs,
+									})),
+								),
 							),
 						)
 						.pipe(Effect.mapError(toPersistence))
@@ -2398,19 +2500,20 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (embedder !== undefined && vectors !== undefined && tracksFindings) {
 					yield* database
 						.execute((db) =>
-							db
-								.insert(prReviewFindingEmbeddings)
-								.values(
-									findings.map((finding, i) => ({
-										findingId: keys.get(finding.handle ?? "") ?? randomUUID(),
-										orgId,
-										repositoryId: review.repositoryId,
-										model: embedder.model,
-										embedding: [...(vectors[i] ?? [])],
-										createdAt: msToDate(nowMs),
-									})),
-								)
-								.onConflictDoNothing(),
+							db.run(
+								PG.insertInto(PrReviewFindingEmbeddings)
+									.values(
+										findings.map((finding, i) => ({
+											findingId: keys.get(finding.handle ?? "") ?? randomUUID(),
+											orgId,
+											repositoryId: review.repositoryId,
+											model: embedder.model,
+											embedding: [...(vectors[i] ?? [])],
+											createdAt: nowMs,
+										})),
+									)
+									.onConflictDoNothing(),
+							),
 						)
 						.pipe(
 							Effect.catch((error) =>
@@ -2422,7 +2525,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}
 				yield* setFindingStatus(
 					resolved.map((finding) => finding.id),
-					{ status: "resolved", resolvedSha: review.headSha, updatedAt: msToDate(nowMs) },
+					{ status: "resolved", resolvedSha: review.headSha, updatedAt: nowMs },
 				)
 
 				if (Option.isNone(repository) || Option.isNone(installation)) return
@@ -2432,7 +2535,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (Result.isFailure(provider)) {
 					yield* update(orgId, reviewId, {
 						publishError: provider.failure.message.slice(0, 500),
-						updatedAt: msToDate(nowMs),
+						updatedAt: nowMs,
 					})
 					return
 				}
@@ -2459,7 +2562,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						...(config.minInlineSeverity === undefined
 							? undefined
 							: { minInlineSeverity: config.minInlineSeverity }),
-						...(config.blockOnContractBreaks === true ? { blockOnContractBreaks: true } : undefined),
+						...(config.blockOnContractBreaks === true
+							? { blockOnContractBreaks: true }
+							: undefined),
 					})
 					const published = yield* provider.success
 						.publishPullRequestReview(installation.value, ref, publication)
@@ -2467,13 +2572,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					if (Result.isFailure(published)) {
 						// Recorded, not retried: the usual cause is the installation not having
 						// accepted `checks: write` yet, and the report itself is already safe.
-						yield* Effect.logWarning("[PrReview] could not publish the review to the provider").pipe(
-							Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }),
-						)
+						yield* Effect.logWarning(
+							"[PrReview] could not publish the review to the provider",
+						).pipe(Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }))
 						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": false })
 						yield* update(orgId, reviewId, {
 							publishError: published.failure.message.slice(0, 500),
-							updatedAt: msToDate(nowMs),
+							updatedAt: nowMs,
 						})
 					} else {
 						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": true })
@@ -2482,17 +2587,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							commentUrl: published.success.commentUrl,
 							reviewUrl: published.success.reviewUrl,
 							publishError: null,
-							updatedAt: msToDate(nowMs),
+							updatedAt: nowMs,
 						})
 						yield* Effect.forEach(
 							published.success.inlineComments,
 							({ key, commentId }) =>
 								database
 									.execute((db) =>
-										db
-											.update(prReviewFindings)
-											.set({ commentId })
-											.where(eq(prReviewFindings.id, key)),
+										db.run(
+											PG.update(PrReviewFindings)
+												.set({ commentId })
+												.where(($) => [$.id.eq(key)]),
+										),
 									)
 									.pipe(Effect.mapError(toPersistence)),
 							{ discard: true },
@@ -2546,8 +2652,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const failed = yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
 						error,
-						finishedAt: msToDate(nowMs),
-						updatedAt: msToDate(nowMs),
+						finishedAt: nowMs,
+						updatedAt: nowMs,
 					})
 					if (!failed) return
 					// The comment still says the review is running; say it stopped.

@@ -167,8 +167,8 @@ describe("deployRequestNumber", () => {
 describe("truncateToSecond", () => {
 	it("collapses the webhook's second precision and the backfill's millisecond precision", () => {
 		// Same transition, two sources — must produce one dedupe key.
-		assert.strictEqual(truncateToSecond(1_698_252_879_000).getTime(), 1_698_252_879_000)
-		assert.strictEqual(truncateToSecond(1_698_252_879_412).getTime(), 1_698_252_879_000)
+		assert.strictEqual(truncateToSecond(1_698_252_879_000), 1_698_252_879_000)
+		assert.strictEqual(truncateToSecond(1_698_252_879_412), 1_698_252_879_000)
 	})
 })
 

@@ -1,7 +1,7 @@
 import { HttpRouter, HttpServerResponse, type HttpServerRequest } from "effect/http"
 import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
-import { planetscaleConnections } from "@maple/db"
-import { eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { PlanetscaleConnections } from "@maple/db/tables"
 import { Clock, Effect, Option, Redacted, Schema } from "effect"
 import { decryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -85,11 +85,12 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 
 			const rows = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(planetscaleConnections)
-						.where(eq(planetscaleConnections.id, connectionId))
-						.limit(1),
+					db.run(
+						PG.from(PlanetscaleConnections)
+							.select()
+							.where(($) => [$.id.eq(connectionId)])
+							.limit(1),
+					),
 				)
 				.pipe(
 					Effect.mapError(

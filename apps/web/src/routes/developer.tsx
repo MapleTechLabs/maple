@@ -1,13 +1,12 @@
-import { useNavigate, createFileRoute } from "@tanstack/react-router"
+import { Link, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { ApiKeysSection } from "@/components/settings/api-keys-section"
 import { IngestionSection } from "@/components/settings/ingestion-section"
 
 const DeveloperTab = Schema.Literals(["ingestion", "api-keys"])
-const isDeveloperTab = Schema.is(DeveloperTab)
 
 const DeveloperSearch = Schema.Struct({
 	tab: Schema.optional(DeveloperTab),
@@ -18,26 +17,32 @@ export const Route = createFileRoute("/developer")({
 	validateSearch: Schema.toStandardSchemaV1(DeveloperSearch),
 })
 
+const DEVELOPER_TABS = [
+	{ value: "ingestion", label: "Ingestion" },
+	{ value: "api-keys", label: "API keys" },
+] as const
+
 function DeveloperPage() {
 	const search = Route.useSearch()
-	const navigate = useNavigate({ from: Route.fullPath })
 	const tab = search.tab ?? "ingestion"
 
 	return (
 		<DashboardPage
 			breadcrumbs={[{ label: "Developer" }]}
 			tabs={
-				<Tabs
-					value={tab}
-					onValueChange={(next) => {
-						if (isDeveloperTab(next)) void navigate({ search: { tab: next } })
-					}}
-				>
-					<TabsList variant="underline">
-						<TabsTrigger value="ingestion">Ingestion</TabsTrigger>
-						<TabsTrigger value="api-keys">API Keys</TabsTrigger>
-					</TabsList>
-				</Tabs>
+				<UnderlineTabStrip navigation label="Developer sections">
+					{DEVELOPER_TABS.map((item) => (
+						<Link
+							key={item.value}
+							to="/developer"
+							search={{ tab: item.value }}
+							aria-current={item.value === tab ? "page" : undefined}
+							className={underlineTabClass(item.value === tab)}
+						>
+							{item.label}
+						</Link>
+					))}
+				</UnderlineTabStrip>
 			}
 		>
 			{tab === "ingestion" ? <IngestionSection /> : <ApiKeysSection />}

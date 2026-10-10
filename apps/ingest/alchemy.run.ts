@@ -1,8 +1,14 @@
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
+import { adopt } from "alchemy/AdoptPolicy"
 import * as AWS from "alchemy/AWS"
+import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
+import * as RemovalPolicy from "alchemy/RemovalPolicy"
+import * as Config from "effect/Config"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import * as SchemaTransformation from "effect/SchemaTransformation"
 import {
 	COLLECTOR_DNS_LABEL,
 	COLLECTOR_OTLP_HTTP_PORT,
@@ -18,7 +24,9 @@ import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
 import { cloudflareIpv4Ranges, issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
 import type { MapleDbLogin, MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
 import {
+	MAPLE_REGIONS,
 	resolveDeploymentEnvironment,
+	resolveMapleDomains,
 	resolveStorageJurisdiction,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
@@ -107,6 +115,65 @@ const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion, ena
 			permissions: ["Workers R2 Storage Bucket Item Write"],
 		})
 		return { ...credentials, bucket }
+	})
+
+/** The zone every prd ingest hostname lives in. */
+const PRD_ZONE = "maple.dev"
+
+/**
+ * `INGEST_BLOCKED_KEYS`, comma-separated. Keys are `maple_pk_`/`maple_sk_` + base64url,
+ * so a value can never break out of the WAF expression.
+ */
+const blockedIngestKeys = Config.schema(
+	Schema.String.pipe(
+		Schema.decodeTo(
+			Schema.Array(Schema.String.check(Schema.isPattern(/^maple_(pk|sk)_[A-Za-z0-9_-]+$/))),
+			SchemaTransformation.transform<ReadonlyArray<string>, string>({
+				decode: (raw) =>
+					raw
+						.split(",")
+						.map((key) => key.trim())
+						.filter((key) => key !== ""),
+				encode: (keys) => keys.join(","),
+			}),
+		),
+	),
+	"INGEST_BLOCKED_KEYS",
+).pipe(Config.withDefault([]))
+
+/**
+ * Edge block for abusive ingest keys (`INGEST_BLOCKED_KEYS`), so their
+ * traffic never reaches the ALB. This owns the zone's whole custom-WAF phase: a rule added
+ * in the dashboard is overwritten, so add it here instead. One owner (us) covers both regions.
+ */
+const blockIngestKeys = (stage: MapleStage) =>
+	Effect.gen(function* () {
+		const keys = yield* blockedIngestKeys
+		const hosts = MAPLE_REGIONS.flatMap((region) => resolveMapleDomains({ stage, region }).ingest ?? [])
+		const set = (values: ReadonlyArray<string>) => `{${values.map((value) => `"${value}"`).join(" ")}}`
+
+		const zone = yield* Cloudflare.Zone.Zone("maple-dev-zone", { name: PRD_ZONE }).pipe(
+			adopt(true),
+			RemovalPolicy.retain(),
+		)
+		return yield* Cloudflare.Ruleset.Ruleset("waf-custom-rules", {
+			zone,
+			phase: "http_request_firewall_custom",
+			description: "Managed by alchemy (apps/ingest/alchemy.run.ts)",
+			rules:
+				keys.length === 0
+					? []
+					: [
+							{
+								description: "Block revoked ingest keys",
+								action: "block",
+								expression:
+									`http.host in ${set(hosts)} and (` +
+									`any(http.request.headers["authorization"][*] in ${set(keys.map((key) => `Bearer ${key}`))}) or ` +
+									`any(http.request.headers["x-maple-ingest-key"][*] in ${set(keys)}))`,
+							},
+						],
+		})
 	})
 
 /**
@@ -579,6 +646,8 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				serviceUrl: service.url,
 			})
 		}
+
+		if (stage.kind === "prd" && region === "us") yield* blockIngestKeys(stage)
 
 		return {
 			// The ALB. A PR preview has no ingest domain and is reached here.

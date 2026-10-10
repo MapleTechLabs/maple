@@ -110,7 +110,7 @@ const hasRealCalendarFields = (value: string): boolean => {
 	const month = Number(mo)
 	if (month < 1 || month > 12) return false
 
-	const maxDay = month === 2 && isLeapYear(Number(y)) ? 29 : (DAYS_IN_MONTH[month - 1] as number)
+	const maxDay = month === 2 && isLeapYear(Number(y)) ? 29 : DAYS_IN_MONTH[month - 1]
 	const day = Number(d)
 	if (day < 1 || day > maxDay) return false
 
@@ -244,7 +244,11 @@ const warehouseWireToUtc = SchemaGetter.transformEffect<DateTime.Utc, string>((v
 	Option.match(parseUtc(value), {
 		onNone: () =>
 			Effect.fail(
-				new SchemaIssue.InvalidValue({ message: `\`${value}\` is not a warehouse DateTime` }, value, options),
+				new SchemaIssue.InvalidValue(
+					{ message: `\`${value}\` is not a warehouse DateTime` },
+					value,
+					options,
+				),
 			),
 		onSome: Effect.succeed,
 	}),

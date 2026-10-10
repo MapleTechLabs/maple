@@ -1,4 +1,4 @@
-import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import { Result } from "@/lib/effect-atom"
 import { ResultView } from "@/components/common/result-view"
 import { Delta } from "@maple/ui/components/ui/delta"
@@ -84,7 +84,7 @@ export function ServiceUsageCards({ startTime, endTime }: ServiceUsageCardsProps
 						<StatRailItem
 							key={card.key}
 							eyebrow={card.title}
-							value="—"
+							value={EMPTY_VALUE}
 							subline="Couldn't load"
 							compact
 						/>

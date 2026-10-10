@@ -92,7 +92,7 @@ function AgentSessionsBody() {
 	// back: the hook keys its accumulated pages on these inputs, and a fresh
 	// object per render would reset them every time.
 	const searchKey = JSON.stringify(search)
-	const { refreshVersion } = usePageRefreshContext()
+	const { refreshVersion, reload } = usePageRefreshContext()
 	// Resolved in the selected zone, as `useEffectiveTimeRange` does on the Tools
 	// tab: `7d` starts at that zone's midnight.
 	const { effectiveTimezone } = useTimezonePreference()
@@ -186,7 +186,7 @@ function AgentSessionsBody() {
 		>
 			{Result.builder(firstPageResult)
 				.onInitial(() => <AgentSessionsListSkeleton />)
-				.onError((error) => <ErrorState error={error} title="Failed to load agent sessions" />)
+				.onError((error) => <ErrorState error={error} title="Failed to load agent sessions" onRetry={reload} />)
 				.onSuccess(() => (
 					<AgentSessionsList
 						sessions={allData}

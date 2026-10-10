@@ -110,7 +110,7 @@ const spanLevelSearch = (
 				spanId: Schema.decodeSync(SpanId)(row.spanId),
 				spanName: row.spanName,
 				serviceName: row.serviceName,
-				durationMs: Number(row.durationMs),
+				durationMs: row.durationMs,
 				statusCode: row.statusCode,
 				statusMessage: row.statusMessage ?? "",
 				attributes: row.spanAttributes ?? {},

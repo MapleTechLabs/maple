@@ -39,7 +39,7 @@ export function SettingRow({
 			data-slot="setting-row"
 			className={cn(
 				"flex flex-col gap-3",
-				framed && "rounded-lg border p-4 transition-colors",
+				framed && "rounded-md border p-4 transition-colors",
 				framed && active && "border-primary/20 bg-primary/[0.02]",
 				className,
 			)}

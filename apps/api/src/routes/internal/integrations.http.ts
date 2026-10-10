@@ -40,9 +40,9 @@ import {
 	VcsCommitRangesResponse,
 	VcsPullRequestsResponse,
 } from "@maple/domain/http"
-import { cloudflareAnalyticsState } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { CloudflareAnalyticsState } from "@maple/db/tables"
 import { EdgeCacheService } from "@maple/cache"
-import { and, desc, eq, ne } from "drizzle-orm"
 import { Effect, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -274,30 +274,26 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							// is minted for the right connection when several accounts are connected.
 							const zoneRows = yield* database
 								.execute((db) =>
-									db
-										.select({
-											zoneId: cloudflareAnalyticsState.zoneId,
-											accountId: cloudflareAnalyticsState.accountId,
-										})
-										.from(cloudflareAnalyticsState)
-										.where(
-											and(
-												eq(cloudflareAnalyticsState.orgId, tenant.orgId),
-												eq(cloudflareAnalyticsState.dataset, HTTP_DATASET),
-												eq(cloudflareAnalyticsState.zoneName, payload.zoneName),
+									db.run(
+										PG.from(CloudflareAnalyticsState)
+											.select("zoneId", "accountId")
+											.where(($) => [
+												$.orgId.eq(tenant.orgId),
+												$.dataset.eq(HTTP_DATASET),
+												$.zoneName.eq(payload.zoneName),
 												// A zone that moved between accounts (or belongs to one
 												// the grant no longer covers) leaves a disabled row
 												// behind; picking it would address the token to an
 												// account outside the grant and hard-fail the request.
-												eq(cloudflareAnalyticsState.enabled, true),
+												$.enabled.eq(true),
 												// "" is a pre-multi-account orphan (its org had no
 												// connection when the backfill ran) and names no
 												// account to address the token to.
-												ne(cloudflareAnalyticsState.accountId, ""),
-											),
-										)
-										.orderBy(desc(cloudflareAnalyticsState.updatedAt))
-										.limit(1),
+												$.accountId.neq(""),
+											])
+											.orderBy(($) => [[$.updatedAt, "desc"]])
+											.limit(1),
+									),
 								)
 								.pipe(
 									Effect.mapError(

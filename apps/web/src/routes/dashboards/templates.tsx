@@ -162,7 +162,7 @@ function TemplatesPage() {
 				}
 				headerActions={
 					<Button variant="outline" size="sm" onClick={() => navigate({ to: "/dashboards" })}>
-						<ArrowLeftIcon size={14} data-icon="inline-start" />
+						<ArrowLeftIcon data-icon="inline-start" />
 						Back to dashboards
 					</Button>
 				}
