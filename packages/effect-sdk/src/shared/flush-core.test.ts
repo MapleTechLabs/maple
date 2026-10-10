@@ -3,6 +3,7 @@ import { afterEach, expect, it as vitestIt, vi } from "vitest"
 import { Effect, Metric, Redacted } from "effect"
 import {
 	buildResolved,
+	fetchTransport,
 	makeSerializedFlush,
 	runFlush,
 	type FlushTransport,
@@ -117,6 +118,45 @@ describe("runFlush", () => {
 		}),
 	)
 
+	vitestIt("aborts a default-transport POST that never answers after 10s and keeps its batch", async () => {
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const signals: Array<AbortSignal | null | undefined> = []
+		const original = globalThis.fetch
+		globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+			signals.push(init?.signal)
+			// Ignores the abort, like a request whose owner was cancelled.
+			return new Promise<Response>(() => {})
+		}) as typeof fetch
+		const spans = makeSpanBuffer()
+		await Effect.runPromise(recordSpan(spans, "slow"))
+		vi.useFakeTimers()
+		const tracesState: SignalState = { disabledUntil: 0 }
+		let settled = false
+		const flushed = runFlush({
+			resolved,
+			spans,
+			logs: makeLogBuffer(),
+			metrics: makeMetricBuffer(),
+			tracesState,
+			logsState: { disabledUntil: 0 },
+			metricsState: { disabledUntil: 0 },
+			transport: fetchTransport,
+			logPrefix: "[test]",
+		}).then(() => {
+			settled = true
+		})
+
+		await vi.advanceTimersByTimeAsync(9_999)
+		expect(settled).toBe(false)
+		await vi.advanceTimersByTimeAsync(1)
+		await flushed
+		globalThis.fetch = original
+		errorSpy.mockRestore()
+		expect(signals.map((signal) => signal?.aborted)).toEqual([true])
+		expect(spans.size()).toBe(1)
+		expect(tracesState.disabledUntil).toBeGreaterThan(Date.now())
+	})
+
 	vitestIt("serializes overlapping flush calls", async () => {
 		let active = 0
 		let peak = 0
@@ -140,46 +180,34 @@ describe("runFlush", () => {
 		expect(peak).toBe(1)
 	})
 
-	vitestIt("coalesces queued calls but drains again for arrivals during export", async () => {
-		let release!: () => void
-		const gate = new Promise<void>((resolve) => {
-			release = resolve
-		})
-		let calls = 0
-		const env = { id: "fixture" }
-		const run = makeSerializedFlush(
-			async (_env: typeof env) => {
-				calls++
-				if (calls === 1) await gate
-			},
-			{ coalesceSameArguments: true },
-		)
-		const first = run(env)
-		expect(run(env)).toBe(first)
-		await Promise.resolve()
-		const trailing = run(env)
-		expect(trailing).not.toBe(first)
-		expect(run(env)).toBe(trailing)
-		release()
-		await Promise.all([first, trailing])
-		expect(calls).toBe(2)
-	})
-
-	vitestIt("does not coalesce different arguments and recovers after a rejected drain", async () => {
+	vitestIt("recovers after a rejected drain", async () => {
 		const seen: number[] = []
-		const run = makeSerializedFlush(
-			async (value: number) => {
-				seen.push(value)
-				if (value === 1) throw new Error("fixture failure")
-			},
-			{ coalesceSameArguments: true },
-		)
+		const run = makeSerializedFlush(async (value: number) => {
+			seen.push(value)
+			if (value === 1) throw new Error("fixture failure")
+		})
 		const first = run(1)
 		const second = run(2)
 		await expect(first).rejects.toThrow("fixture failure")
 		await second
 		await run(3)
 		expect(seen).toEqual([1, 2, 3])
+	})
+
+	vitestIt("starts the next drain when the one before it never settles", async () => {
+		vi.useFakeTimers()
+		const seen: number[] = []
+		const run = makeSerializedFlush(async (value: number) => {
+			seen.push(value)
+			if (value === 1) await new Promise<never>(() => {})
+		})
+		void run(1)
+		const second = run(2)
+		await vi.advanceTimersByTimeAsync(14_999)
+		expect(seen).toEqual([1])
+		await vi.advanceTimersByTimeAsync(1)
+		await second
+		expect(seen).toEqual([1, 2])
 	})
 
 	it.live("sends the newest items first and restores both failed requests once, in drain order", () =>

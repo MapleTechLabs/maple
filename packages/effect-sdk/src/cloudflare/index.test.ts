@@ -331,22 +331,17 @@ describe("MapleCloudflareSDK.make", () => {
 		expect(body.resourceSpans[0].scopeSpans[0].spans.map((s) => s.name)).toEqual(["deferred-op"])
 	})
 
-	it("serializes overlapping flushes without losing or duplicating spans", async () => {
-		let inFlight = 0
-		let maxInFlight = 0
+	it("overlapping flushes export every span exactly once", async () => {
 		const calls: Array<{ url: string; body: unknown }> = []
 		const original = globalThis.fetch
 		restore = () => void (globalThis.fetch = original)
 		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			inFlight += 1
-			maxInFlight = Math.max(maxInFlight, inFlight)
-			await new Promise<void>((resolve) => setTimeout(resolve, 5))
-			inFlight -= 1
 			calls.push({
 				url,
 				body: init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined,
 			})
+			await new Promise<void>((resolve) => setTimeout(resolve, 5))
 			return new Response(null, { status: 200 })
 		}) as typeof fetch
 
@@ -356,16 +351,17 @@ describe("MapleCloudflareSDK.make", () => {
 			Effect.succeed(undefined).pipe(Effect.withSpan("overlap-a"), Effect.provide(telemetry.layer)),
 		)
 		const first = telemetry.flush(env)
+		// Let the first flush drain and start its POST before the second span ends.
+		await new Promise<void>((resolve) => setTimeout(resolve, 1))
 		await Effect.runPromise(
 			Effect.succeed(undefined).pipe(Effect.withSpan("overlap-b"), Effect.provide(telemetry.layer)),
 		)
 		const second = telemetry.flush(env)
 		await Promise.all([first, second])
 
-		expect(maxInFlight, "flushes must not interleave their exports").toBe(1)
 		const exported = calls
 			.filter((c) => c.url.endsWith("/v1/traces"))
-			.flatMap((c) => {
+			.map((c) => {
 				const body = c.body as {
 					resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 				}
@@ -373,7 +369,48 @@ describe("MapleCloudflareSDK.make", () => {
 					rs.scopeSpans.flatMap((ss) => ss.spans.map((s) => s.name)),
 				)
 			})
-		expect(exported.slice().sort()).toEqual(["overlap-a", "overlap-b"])
+		expect(exported).toEqual([["overlap-a"], ["overlap-b"]])
+	})
+
+	// workerd cancels the outstanding I/O of an invocation that has ended, so a
+	// flush it started can stay pending forever. A later invocation's flush must
+	// still export its own spans.
+	it("exports a later invocation's spans while an earlier flush never settles", async () => {
+		const calls: Array<{ url: string; body: unknown }> = []
+		const original = globalThis.fetch
+		restore = () => void (globalThis.fetch = original)
+		globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+			const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
+			calls.push({ url, body })
+			// The first POST belongs to the cancelled invocation and never settles.
+			return calls.length === 1 ? new Promise<Response>(() => {}) : Promise.resolve(new Response(null))
+		}) as typeof fetch
+		const telemetry = make({ serviceName: "unit-test" })
+
+		await Effect.runPromise(
+			Effect.succeed(undefined).pipe(Effect.withSpan("stuck-op"), Effect.provide(telemetry.layer)),
+		)
+		void telemetry.flush(env)
+		await new Promise<void>((resolve) => setTimeout(resolve, 5))
+		await Effect.runPromise(
+			Effect.succeed(undefined).pipe(Effect.withSpan("later-op"), Effect.provide(telemetry.layer)),
+		)
+		const settled = await Promise.race([
+			telemetry.flush(env).then(() => true),
+			new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+		])
+
+		expect(settled, "the later flush must not wait on the stuck one").toBe(true)
+		const names = calls
+			.filter((c) => c.url.endsWith("/v1/traces"))
+			.map((c) => {
+				const body = c.body as {
+					resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
+				}
+				return body.resourceSpans[0]?.scopeSpans[0]?.spans.map((s) => s.name)
+			})
+		expect(names).toEqual([["stuck-op"], ["later-op"]])
 	})
 
 	it("layer is stable across calls (same Tracer instance)", () => {
