@@ -54,13 +54,13 @@ Include GKE container logs when the workloads don't send their logs over OpenTel
 
 ## Change the filter
 
-On the connection, click **Show setup script**, click **Change** next to **Log filter** and choose one, then copy the script and run it in Cloud Shell again.
+On the connection's card, click **Configure** and choose a filter under **Log filter**. Click **Continue to the script**, then copy the script and run it in Cloud Shell again.
 
 | Log filter                             | The sink forwards                                                                                     |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | **Recommended: no GKE container logs** | Platform logs. Leaves out GKE container logs and the [other exclusions](/docs/integrations/gcp#logs). |
-| **Include GKE container logs**         | The same, plus GKE container logs. Maple asks you to confirm before it shows the script.              |
-| **Keep the sink's current filter**     | What it forwards now. Offered once a run has set log forwarding up.                                   |
+| **Include GKE container logs**         | The same, plus GKE container logs. Maple asks you to acknowledge the duplicates before you continue.  |
+| **Keep the sink's current filter**     | What it forwards now. Offered, and preselected, once a run has set log forwarding up.                 |
 
 For any other filter, paste the script into an editor, edit `LOG_FILTER` near its top, set `LOG_FILTER_MODE` to `set` and run it. To also leave out Cloud Run container output, for services that send their logs over OpenTelemetry, add this at the end of `LOG_FILTER`, inside the quotes:
 
