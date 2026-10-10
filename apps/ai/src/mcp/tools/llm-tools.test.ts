@@ -221,6 +221,22 @@ describe("buildMapleToolkit", () => {
 		assert.equal(dispatched(), 6)
 	})
 
+	it("counts the same arguments in another key order as the same call", async () => {
+		const { executor, dispatched } = countingExecutor()
+		const handler = handlerFor(executor, "list_services")
+		const orders = [
+			{ limit: 10, offset: 0 },
+			{ offset: 0, limit: 10 },
+			{ limit: 10, offset: 0 },
+		]
+
+		for (const params of orders) await Effect.runPromise(handler(params, {} as never))
+		const fourth = await Effect.runPromise(Effect.result(handler({ offset: 0, limit: 10 }, {} as never)))
+
+		assert.isTrue(Result.isFailure(fourth))
+		assert.equal(dispatched(), 3)
+	})
+
 	it("counts per build, so the next turn may ask the same question again", async () => {
 		const { executor, dispatched } = countingExecutor()
 

@@ -12,7 +12,7 @@
  * The tenant is provided per call rather than ambiently so an agent can never widen its own scope:
  * every tool executes under exactly the org the run was started for.
  */
-import { Cause, Effect, Option, Schema } from "effect"
+import { Cause, Effect, MutableHashMap, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { AgentSpawner } from "@yielded/agent/agent-runtime"
 import type { McpToolExecutorApi } from "../dispatcher"
@@ -169,13 +169,18 @@ const IDENTICAL_CALL_LIMIT = 3
 /**
  * How many times this exact call has been dispatched in this run, counting the one being asked about.
  *
- * Keyed on the encoded arguments, so a repeat with one field changed is a different call and does
- * not count. The arguments came off the wire as JSON, so re-encoding them cannot fail.
+ * Keyed structurally on the arguments (`Equal`/`Hash` compare plain objects by value), so a repeat
+ * with one field changed is a different call, and the same arguments in another key order are not.
  */
-const repeats = (dispatched: Map<string, number>, runId: string, name: string, params: unknown): number => {
-	const key = `${runId}:${name}:${JSON.stringify(params)}`
-	const seen = (dispatched.get(key) ?? 0) + 1
-	dispatched.set(key, seen)
+interface CallKey {
+	readonly runId: string
+	readonly tool: string
+	readonly params: unknown
+}
+
+const repeats = (dispatched: MutableHashMap.MutableHashMap<CallKey, number>, key: CallKey): number => {
+	const seen = Option.getOrElse(MutableHashMap.get(dispatched, key), () => 0) + 1
+	MutableHashMap.set(dispatched, key, seen)
 	return seen
 }
 
@@ -223,7 +228,7 @@ export const buildMapleToolkit = (
 	// Per build and per run: two turns of one conversation are two builds, so a model may ask the
 	// same question again in a later turn. The `review_files` children share the parent's build, and
 	// each one asking for the changed files is not a loop, so the count is per engine run.
-	const dispatched = new Map<string, number>()
+	const dispatched = MutableHashMap.empty<CallKey, number>()
 	const handlers = Object.fromEntries(
 		definitions.map((definition) => {
 			const gated = options.gate?.(definition.name) ?? false
@@ -253,7 +258,7 @@ export const buildMapleToolkit = (
 					)
 				}
 				return Effect.flatMap(currentRunId, (runId) =>
-					repeats(dispatched, runId, definition.name, params) > IDENTICAL_CALL_LIMIT
+					repeats(dispatched, { runId, tool: definition.name, params }) > IDENTICAL_CALL_LIMIT
 						? fail(
 								`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
 									"exact arguments in this turn. Read the result you already have, or call it differently.",
