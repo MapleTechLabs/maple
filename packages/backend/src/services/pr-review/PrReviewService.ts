@@ -1443,23 +1443,22 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const threads = yield* provider
 					.fetchReviewThreads(installation, ref, number)
 					.pipe(Effect.orElseSucceed(() => []))
-				let up = 0
-				let down = 0
+				const reacted = commented.flatMap((finding) => {
+					const first = threadForFinding(finding, threads)?.comments[0]
+					return first === undefined ? [] : [{ finding, first }]
+				})
+				const up = reacted.reduce((sum, { first }) => sum + first.thumbsUp, 0)
+				const down = reacted.reduce((sum, { first }) => sum + first.thumbsDown, 0)
 				yield* Effect.forEach(
-					commented,
-					(finding) => {
-						const first = threadForFinding(finding, threads)?.comments[0]
-						if (first === undefined) return Effect.void
-						up += first.thumbsUp
-						down += first.thumbsDown
-						return dbExecute((db) =>
+					reacted,
+					({ finding, first }) =>
+						dbExecute((db) =>
 							db.run(
 								PG.update(PrReviewFindings)
 									.set({ reactionsUp: first.thumbsUp, reactionsDown: first.thumbsDown })
 									.where(($) => [$.id.eq(finding.id)]),
 							),
-						)
-					},
+						),
 					{ discard: true },
 				)
 				const dismissed = dismissedFindings(open, threads, changedPaths)
@@ -1553,33 +1552,37 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							]),
 					),
 				)
-				for (const row of rows) {
-					if (row.headSha === headSha) continue
-					if (row.sessionId !== null && chatSessions !== undefined) {
-						const stub = chatSessions.session(row.sessionId)
-						yield* stub.abort().pipe(
-							Effect.catchCause((cause) =>
-								Effect.logWarning("Could not abort a superseded review turn").pipe(
-									Effect.annotateLogs({
-										reviewId: row.id,
-										cause: summarizeCause(cause),
-									}),
-								),
-							),
-						)
-					}
-					yield* update(orgId, row.id, {
-						status: "skipped",
-						skipReason: "superseded",
-						finishedAt: nowMs,
-						updatedAt: nowMs,
-					})
-					// Its comment and check run would otherwise say it is reviewing forever.
-					yield* postReviewStatus(orgId, row.id, repo, number, {
-						kind: "superseded",
-						headSha: row.headSha,
-					})
-				}
+				yield* Effect.forEach(
+					rows.filter((row) => row.headSha !== headSha),
+					(row) =>
+						Effect.gen(function* () {
+							if (row.sessionId !== null && chatSessions !== undefined) {
+								const stub = chatSessions.session(row.sessionId)
+								yield* stub.abort().pipe(
+									Effect.catchCause((cause) =>
+										Effect.logWarning("Could not abort a superseded review turn").pipe(
+											Effect.annotateLogs({
+												reviewId: row.id,
+												cause: summarizeCause(cause),
+											}),
+										),
+									),
+								)
+							}
+							yield* update(orgId, row.id, {
+								status: "skipped",
+								skipReason: "superseded",
+								finishedAt: nowMs,
+								updatedAt: nowMs,
+							})
+							// Its comment and check run would otherwise say it is reviewing forever.
+							yield* postReviewStatus(orgId, row.id, repo, number, {
+								kind: "superseded",
+								headSha: row.headSha,
+							})
+						}),
+					{ discard: true },
+				)
 				return rows.length
 			})
 
