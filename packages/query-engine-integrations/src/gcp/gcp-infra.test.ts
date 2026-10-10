@@ -157,7 +157,7 @@ describe("gcpInfraPresenceSQL", () => {
 			expect(sql, service).toContain(`'${gcpInfraMetrics(service)[0]?.name}'`)
 		}
 		expect(sql).toContain(
-			"Hour >= toStartOfInterval(toDateTime('2026-07-02 00:00:00.000'), INTERVAL 3600 SECOND)",
+			"Hour >= toStartOfInterval(toDateTime('2026-07-02 00:00:00'), INTERVAL 3600 SECOND)",
 		)
 		expect(sql).toContain("Hour <= '2026-07-03 00:00:00'")
 		expect(sql).toContain("GROUP BY metric")

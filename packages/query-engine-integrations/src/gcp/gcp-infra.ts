@@ -154,7 +154,7 @@ export function gcpInfraPresenceSQL() {
 				),
 			),
 			// `Hour` is hour-truncated: floor the start so a mid-hour range keeps its first bucket.
-			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(param.dateTime("startTime")), 3600)),
+			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
 			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("metric")
