@@ -132,6 +132,8 @@ describe("React Native client telemetry", () => {
 			)
 			for (const { request } of posts) {
 				expect(request.headers.get("authorization")).toBe("Bearer test-key")
+				// Same entry as the browser: the runtime's own `user-agent` goes out.
+				expect(request.headers.has("user-agent")).toBe(false)
 			}
 		},
 	)

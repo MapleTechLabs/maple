@@ -274,6 +274,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		logsPath: config.logsPath,
 		metricsPath: config.metricsPath,
 		userAgent: `maple-effect-sdk-client/${SDK_VERSION}`,
+		sendUserAgent: false,
 		keyless: "send",
 	})
 

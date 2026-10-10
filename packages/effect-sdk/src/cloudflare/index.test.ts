@@ -62,6 +62,8 @@ describe("MapleCloudflareSDK.make", () => {
 		expect(traceCall).toBeDefined()
 		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
 		expect(traceCall!.headers.authorization).toBe("Bearer secret")
+		expect(traceCall!.headers["user-agent"]).toMatch(/^maple-effect-sdk-cloudflare\//)
+		expect(traceCall!.headers["x-maple-sdk"]).toBe(traceCall!.headers["user-agent"])
 		const body = traceCall!.body as {
 			resourceSpans: Array<{
 				resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }

@@ -10,7 +10,7 @@ export const SDK_VERSION = "0.10.0"
 
 /**
  * `x-maple-sdk` value for the browser client entry — the header equivalent of
- * the `user-agent` above, because a page cannot set `user-agent`. Ingest
+ * the `user-agent` above, which a page leaves to the browser. Ingest
  * records it as `maple.sdk`. Server/Cloudflare presets send the same value
  * (their `user-agent` string) so every ingest request carries the hint.
  */

@@ -9,9 +9,16 @@ import { layer } from "./layer.js"
 // (That the decorator also stamps `session.id` onto the OTLP span is asserted
 // robustly — off the actual exported body — in flushable.test.ts.)
 
+// Shared by every mock: Effect reads `globalThis.fetch` once and keeps it, so
+// later tests' requests still reach the first test's mock.
+const requests: Array<Request> = []
+
 const setupFetch = () => {
 	const original = globalThis.fetch
-	globalThis.fetch = (async () => new Response(null, { status: 200 })) as typeof fetch
+	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		requests.push(new Request(input, init))
+		return new Response(null, { status: 200 })
+	}) as typeof fetch
 	return () => void (globalThis.fetch = original)
 }
 
@@ -59,5 +66,24 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 
 		// Just has to run without throwing — proves the layer still composes.
 		await Effect.runPromise(Effect.void.pipe(Effect.withSpan("page-load"), Effect.provide(TracerLive)))
+	})
+
+	it("leaves user-agent to the browser on its OTLP requests", async () => {
+		// A script-set `user-agent` needs CORS approval where the browser sends it.
+		restore = setupFetch()
+		requests.length = 0
+
+		const TracerLive = layer({
+			serviceName: "web-test",
+			endpoint: "https://collector.test",
+			ingestKey: "secret",
+		})
+		await Effect.runPromise(Effect.void.pipe(Effect.withSpan("page-load"), Effect.provide(TracerLive)))
+
+		expect(requests.map((request) => request.url)).toContain("https://collector.test/v1/traces")
+		for (const request of requests) {
+			expect(request.headers.get("authorization")).toBe("Bearer secret")
+			expect(request.headers.has("user-agent")).toBe(false)
+		}
 	})
 })
