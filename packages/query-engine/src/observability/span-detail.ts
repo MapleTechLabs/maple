@@ -1,8 +1,8 @@
-import { Array as Arr, Effect, Option, Schema, pipe } from "effect"
+import { Array as Arr, Clock, Effect, Option, Schema, pipe } from "effect"
 import * as CH from "../ch"
+import { lookupByTraceId } from "./trace-lookup"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 
-import { formatWarehouseDateTime } from "../datetime"
 const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
 
 const parseAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
@@ -17,19 +17,14 @@ const parseAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
 		Effect.orElseSucceed(() => ({})),
 	)
 
-const DEFAULT_RANGE_HOURS = 1
-
 export interface SpanDetailInput {
 	readonly traceId: string
 	readonly spanId: string
 	/**
-	 * Approximate timestamp of the span. The point lookup is O(log N) on the
-	 * `(OrgId, TraceId, SpanId)` sort key even without it, but passing it lets
-	 * ClickHouse prune partitions to a window around the span.
+	 * Approximate timestamp of the span. The hour around it is read first, which
+	 * prunes the lookup to a partition or two; without it the recent days are.
 	 */
 	readonly timestampHint?: Date
-	/** Half-width of the time window when `timestampHint` is set. Defaults to 1h. */
-	readonly rangeHours?: number
 }
 
 export interface SpanDetailResult {
@@ -39,7 +34,7 @@ export interface SpanDetailResult {
 	/** Full span attribute map (not the trimmed set the trace tree renders). */
 	readonly spanAttributes: Record<string, string>
 	readonly resourceAttributes: Record<string, string>
-	/** True when the hinted window missed and the lookup was retried unbounded. */
+	/** True when the hinted window missed and the lookup went on past it. */
 	readonly widened?: boolean
 }
 
@@ -55,31 +50,26 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 		spanId: input.spanId,
 	})
 
-	const narrowByTime = input.timestampHint != null
-	const range = input.timestampHint
-		? (() => {
-				const halfWidthMs = (input.rangeHours ?? DEFAULT_RANGE_HOURS) * 60 * 60 * 1000
-				return {
-					startTime: formatWarehouseDateTime(input.timestampHint.getTime() - halfWidthMs),
-					endTime: formatWarehouseDateTime(input.timestampHint.getTime() + halfWidthMs),
-				}
-			})()
-		: undefined
-
-	const lookup = (bounded: boolean) =>
-		executor.compiledQueryFirst(
-			CH.compile(
-				CH.spanDetailQuery({ traceId: input.traceId, spanId: input.spanId, narrowByTime: bounded }),
-				bounded && range
-					? { orgId: executor.orgId, startTime: range.startTime, endTime: range.endTime }
-					: { orgId: executor.orgId },
+	const { rows, stage } = yield* lookupByTraceId({
+		nowMs: yield* Clock.currentTimeMillis,
+		hintMs: input.timestampHint?.getTime(),
+		read: (window) =>
+			executor.compiledQuery(
+				CH.compile(
+					CH.spanDetailQuery({
+						traceId: input.traceId,
+						spanId: input.spanId,
+						narrowByTime: window !== undefined,
+					}),
+					window ? { orgId: executor.orgId, ...window } : { orgId: executor.orgId },
+				),
+				// The unbounded read seeks every partition; the list budget lets it finish.
+				{ profile: window ? "discovery" : "list", context: "spanDetail" },
 			),
-			{ profile: "discovery", context: "spanDetail" },
-		)
-	const firstRow = yield* lookup(narrowByTime)
-	// A wrong hint should not hide the span: retry once without the time bound.
-	const widened = Option.isNone(firstRow) && narrowByTime
-	const maybeRow = widened ? yield* lookup(false) : firstRow
+	})
+	// A wrong hint should not hide the span.
+	const widened = input.timestampHint != null && stage !== "hint"
+	const maybeRow = Arr.head(rows)
 	yield* Effect.annotateCurrentSpan("widened", widened)
 
 	if (Option.isNone(maybeRow)) {

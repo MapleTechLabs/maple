@@ -1,6 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { formatDurationFromMs, formatNumber, truncate } from "../lib/format"
+import { formatDurationFromMs, formatNumber, toSecondTimestamp, truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
@@ -414,21 +414,27 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 							]),
 				],
 				next: [
-					...output.traces
-						.slice(0, 3)
-						.map((t) =>
-							t.errorSpan === undefined
-								? doc.next(
-										"inspect_trace",
-										{ trace_id: t.traceId, errors_only: true },
-										"the failing spans only",
-									)
-								: doc.next(
-										"inspect_span",
-										{ trace_id: t.traceId, span_id: t.errorSpan.spanId },
-										"the failing span's full attributes",
-									),
-						),
+					...output.traces.slice(0, 3).map((t) =>
+						t.errorSpan === undefined
+							? doc.next(
+									"inspect_trace",
+									{
+										trace_id: t.traceId,
+										timestamp: toSecondTimestamp(t.startTime),
+										errors_only: true,
+									},
+									"the failing spans only",
+								)
+							: doc.next(
+									"inspect_span",
+									{
+										trace_id: t.traceId,
+										span_id: t.errorSpan.spanId,
+										timestamp: toSecondTimestamp(t.startTime),
+									},
+									"the failing span's full attributes",
+								),
+					),
 					...(output.related ?? [])
 						.slice(0, 1)
 						.map((r) =>
