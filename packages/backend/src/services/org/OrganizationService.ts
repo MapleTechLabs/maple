@@ -33,6 +33,7 @@ import {
 	ChatWorkspaces,
 	CliDeviceAuthorizations,
 	CloudflareLogpushConnectors,
+	GcpConnectors,
 	Dashboards,
 	DashboardShares,
 	DashboardVersions,
@@ -120,6 +121,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	ChatIdentities,
 	DigestSubscriptions,
 	CloudflareLogpushConnectors,
+	// A surviving push secret would keep the ingest gateway accepting logs for a deleted org.
+	GcpConnectors,
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,

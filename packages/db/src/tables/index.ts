@@ -35,6 +35,7 @@ import {
 	ErrorIssueVerifications,
 } from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
+import { GcpConnectors } from "./gcp-connectors"
 import { Investigations } from "./investigations"
 import { LiveActivities } from "./live-activities"
 import { McpOAuthClients, McpOAuthAuthorizations, McpOAuthRefreshTokens } from "./mcp-oauth"
@@ -87,6 +88,7 @@ export * from "./dashboards"
 export * from "./digest"
 export * from "./errors"
 export * from "./escalations"
+export * from "./gcp-connectors"
 export * from "./investigations"
 export * from "./live-activities"
 export * from "./mcp-oauth"
@@ -144,6 +146,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	ErrorIssueVerifications,
 	IssueEscalationPolicies,
 	IssueEscalations,
+	GcpConnectors,
 	Investigations,
 	LiveActivities,
 	McpOAuthClients,
