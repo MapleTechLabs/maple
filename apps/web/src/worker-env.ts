@@ -28,6 +28,7 @@ export interface WebWorkerEnv {
 	 * through the public domain.
 	 */
 	readonly API?: { fetch: (request: Request) => Promise<Response> }
+	readonly [key: string]: unknown
 }
 
 /**

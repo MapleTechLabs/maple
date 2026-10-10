@@ -55,6 +55,7 @@ export default defineConfig(({ mode }) => {
 	// override the Vite default with `define` to make process.env win.
 	const overrideKeys = [
 		"VITE_API_BASE_URL",
+		"VITE_API_PUBLIC_URL",
 		"VITE_INGEST_URL",
 		"VITE_MAPLE_SELF_INGEST_URL",
 		"VITE_ELECTRIC_SYNC_URL",

@@ -206,7 +206,7 @@ the shared `ManagedMapleDb` or `WorkersObservabilityDestinations` (alchemy regis
 resource by id, so a second module yielding the same one gets the first's). `impl` runs once
 per isolate on the first event and returns the handlers. No hand-written `export default
 { fetch }`, no factory arguments. A Worker that binds another (web's `API` service binding to
-the api, api's and alerting's `AI_WORKER`) takes it as a service the root provides after
+the api, which also carries the browser's same-origin `/_api/*` calls, api's and alerting's `AI_WORKER`) takes it as a service the root provides after
 yielding it (`ApiWorker`, `AiWorker` in `@maple/infra/cloudflare`). A `Worker.ref` reads
 stored state and cannot see a sibling the same deploy creates.
 

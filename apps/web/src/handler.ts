@@ -1,3 +1,6 @@
+import { Effect } from "effect"
+import { apiProxyPath } from "./api-proxy"
+import { forwardToApi } from "./api-proxy-forward"
 import { ogIdFromPath, shareTokenFromPath } from "./og/share-links"
 import { chartRequestFromPath, renderChartImage } from "./og/chart-image"
 import { fetchShareOgMeta, renderShareOgImage, shareOgMetaRewriter } from "./og/share-preview"
@@ -76,9 +79,20 @@ const applyShareOgMeta = async (
 }
 
 /** One request against the built SPA: OG images, the share preview, security headers, the shell fallback. */
-export const handleRequest = async (request: Request, env: WebWorkerEnv): Promise<Response> => {
+export const handleRequest = async (
+	request: Request,
+	env: WebWorkerEnv,
+	runTraced: (effect: Effect.Effect<Response>) => Promise<Response> = Effect.runPromise,
+): Promise<Response> => {
 	const url = new URL(request.url)
 	const api = apiTarget(env)
+
+	const apiPath = apiProxyPath(url.pathname)
+	if (apiPath !== undefined) {
+		// Binding only: a public `fetch` would replace the browser's `cf-connecting-ip`.
+		const proxyTarget = env.API === undefined ? undefined : api
+		return runTraced(forwardToApi(request, url, proxyTarget, apiPath))
+	}
 
 	// Ahead of the assets lookup: this path has no asset behind it, and the
 	// 404 the assets layer returns for it would fall through to the SPA shell.
