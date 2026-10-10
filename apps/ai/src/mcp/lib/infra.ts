@@ -246,6 +246,9 @@ const containerRow = (row: CH.ListContainersOutput): InfraEntityRow => ({
 	uptimeSeconds: row.uptimeSeconds,
 })
 
+/** Pod names repeat across namespaces (`redis-0` in staging and prod), so restarts key on both. */
+const podKey = (namespace: string | undefined, podName: string) => `${namespace ?? ""}/${podName}`
+
 /** Container restarts per pod in the window; pods the k8s_cluster receiver does not report are absent. */
 const podRestarts = (podNames: ReadonlyArray<string>, params: ReturnType<typeof compileParams>) =>
 	Effect.gen(function* () {
@@ -256,10 +259,9 @@ const podRestarts = (podNames: ReadonlyArray<string>, params: ReturnType<typeof 
 			{ profile: "aggregation", context: "podRestarts" },
 		)
 		return new Map(
-			Object.entries(Arr.groupBy(rows, (row) => row.podName)).map(([pod, containers]) => [
-				pod,
-				containers.reduce((sum, row) => sum + row.restarts, 0),
-			]),
+			Object.entries(Arr.groupBy(rows, (row) => podKey(row.namespace, row.podName))).map(
+				([pod, containers]) => [pod, containers.reduce((sum, row) => sum + row.restarts, 0)],
+			),
 		)
 	})
 
@@ -347,7 +349,7 @@ const fetchKind = (kind: InfraKind, options: ListKindOptions) =>
 				return {
 					rows: rows.map((row) => {
 						const pod = podRow(row)
-						const restarted = restarts.get(row.podName)
+						const restarted = restarts.get(podKey(row.namespace, row.podName))
 						return restarted === undefined ? pod : { ...pod, restarts: restarted }
 					}),
 					summary:

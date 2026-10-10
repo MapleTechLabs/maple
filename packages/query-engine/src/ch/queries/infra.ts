@@ -262,6 +262,7 @@ export interface PodRestartsOpts {
 }
 
 export interface PodRestartsOutput {
+	readonly namespace: string
 	readonly podName: string
 	readonly containerName: string
 	readonly restarts: number
@@ -271,6 +272,7 @@ export interface PodRestartsOutput {
 export function podRestartsQuery(opts: PodRestartsOpts) {
 	return from(MetricsGauge)
 		.select(($) => ({
+			namespace: $.ResourceAttributes.get("k8s.namespace.name"),
 			podName: $.ResourceAttributes.get("k8s.pod.name"),
 			containerName: $.ResourceAttributes.get("k8s.container.name"),
 			restarts: CH.ifNotFinite(CH.max_($.Value).sub(CH.min_($.Value)), 0),
@@ -290,7 +292,7 @@ export function podRestartsQuery(opts: PodRestartsOpts) {
 				$.ResourceAttributes.get(workloadAttrKey(opts.workloadKind ?? "deployment")).eq(v),
 			),
 		])
-		.groupBy("podName", "containerName")
+		.groupBy("namespace", "podName", "containerName")
 		.orderBy(["restarts", "desc"])
 		.limit(opts.limit ?? 50)
 		.format("JSON")

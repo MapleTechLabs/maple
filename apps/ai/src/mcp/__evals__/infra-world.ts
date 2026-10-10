@@ -575,6 +575,7 @@ export const infraFixtureRules = (): FixtureRule[] => [
 		match: (sql) => has(sql, "totalRestarts"),
 		rows: (sql) =>
 			podsFor(sql).map((p) => ({
+				namespace: p.namespace,
 				podName: p.podName,
 				containerName: p.owner[1],
 				restarts: RESTARTS.get(p.podName) ?? 0,

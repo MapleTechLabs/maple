@@ -67,6 +67,31 @@ describe("list_infra", () => {
 		expect(output.sections[0]?.rows.find((r) => r.name === INFRA_WORLD.oomPod)?.restarts).toBe(1)
 	})
 
+	it("keys pod restarts by namespace as well as name", async () => {
+		rules.unshift({
+			match: (sql) => sql.includes(" AS totalRestarts"),
+			rows: [
+				{
+					namespace: "shop",
+					podName: INFRA_WORLD.oomPod,
+					containerName: "checkout",
+					restarts: 1,
+					totalRestarts: 3,
+				},
+				{
+					namespace: "staging",
+					podName: INFRA_WORLD.oomPod,
+					containerName: "checkout",
+					restarts: 7,
+					totalRestarts: 9,
+				},
+			],
+		})
+		const output = decode(ListInfraOutput, await call("list_infra", { kind: "pods" }))
+		rules.shift()
+		expect(output.sections[0]?.rows.find((r) => r.name === INFRA_WORLD.oomPod)?.restarts).toBe(1)
+	})
+
 	it("lists only pods without limits", async () => {
 		const output = decode(
 			ListInfraOutput,
