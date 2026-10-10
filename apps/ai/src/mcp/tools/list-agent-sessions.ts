@@ -42,6 +42,8 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 		title: "List Agent Sessions",
 		description:
 			"List AI agent sessions: LLM agent traces carrying gen_ai/maple_ai attributes. Not browser session replays: those are `search_sessions`. One row per session with its agent, vendor, models, LLM and tool calls, failures, tokens and reported cost. Open one with the `get_agent_session` call the result suggests; it carries the session's window, which makes that read a seek.",
+		// Agents sort rather than bound: the page's numeric range, trace-session and environment
+		// filters stay off the tool.
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			vendors: P.optionalList(
@@ -63,7 +65,6 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 25, max: 100, noun: "sessions" }),
 			offset: P.offset({ max: 10_000 }),
 		}),
-		// Agents sort rather than bound: the page's min/max and environment filters stay off the tool.
 		aliases: { service: "services" },
 		output: ListAgentSessionsOutput,
 		hints: { readOnly: true },

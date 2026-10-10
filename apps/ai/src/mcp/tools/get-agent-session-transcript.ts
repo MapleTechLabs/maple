@@ -254,21 +254,21 @@ function toRow(
 	}
 }
 
-/** The turn a row belongs to: the nearest turn header at or above it. A parallel-turns
- *  marker precedes the turns it names, so it takes the first of them. */
-function turnOfRow(
+/** The turn each row belongs to, in one pass: the nearest turn header at or above it. A
+ *  parallel-turns marker precedes the turns it names, so it takes the first of them. */
+function turnsOfRows(
 	rows: ReadonlyArray<TranscriptRow>,
-	index: number,
 	selected: ReadonlyArray<SessionTurn>,
-): number {
-	const row = rows[index]
-	if (row?.kind === "parallel-turns") return row.turns[0]?.turn.index ?? selected[0]?.index ?? 1
-	const header = rows.findLast(
-		(candidate, at) => at <= index && (candidate.kind === "turn" || candidate.kind === "empty-turn"),
-	)
-	return header?.kind === "turn" || header?.kind === "empty-turn"
-		? header.turn.index
-		: (selected[0]?.index ?? 1)
+): ReadonlyArray<number> {
+	const fallback = selected[0]?.index ?? 1
+	return rows.reduce<{ readonly current: number; readonly turns: Array<number> }>(
+		(acc, row) => {
+			const current = row.kind === "turn" || row.kind === "empty-turn" ? row.turn.index : acc.current
+			acc.turns.push(row.kind === "parallel-turns" ? (row.turns[0]?.turn.index ?? current) : current)
+			return { current, turns: acc.turns }
+		},
+		{ current: fallback, turns: [] },
+	).turns
 }
 
 /** Rows that matter to a failure read: every failed row, under the header of its turn. */
@@ -465,13 +465,9 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 					collapsedTurns: new Set(),
 				})
 
+				const rowTurns = turnsOfRows(transcript, selected)
 				const allRows = transcript.flatMap((row, index) => {
-					const mapped = toRow(
-						row,
-						turnOfRow(transcript, index, selected),
-						sessionStartMs,
-						payloadChars,
-					)
+					const mapped = toRow(row, rowTurns[index] ?? 1, sessionStartMs, payloadChars)
 					return mapped === undefined ? [] : [mapped]
 				})
 				const searched = search === undefined ? allRows : searchRows(allRows, search)
@@ -492,7 +488,9 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 				const llmSpans = selected.flatMap((turn) => turn.spans).filter(isLlmCall)
 				const capturedCalls = llmSpans.filter(
 					(span) =>
-						span.genAi.inputMessages !== undefined || span.genAi.outputMessages !== undefined,
+						// A `null` an emitter wrote decodes as `null`, not a missing key, and captured nothing.
+						(span.genAi.inputMessages ?? undefined) !== undefined ||
+						(span.genAi.outputMessages ?? undefined) !== undefined,
 				).length
 
 				const output: Output = {

@@ -98,7 +98,7 @@ const MCP_TOOLS = [
 	{
 		name: "get_agent_session",
 		description:
-			"Read one AI agent session: verdict and findings, active/idle time, token and cost breakdown, models and tools used, failure groups, and turns.",
+			"Read one AI agent session: verdict and findings, active/idle time, token and cost breakdown, models and tools used, and turn counts. The transcript tool reads it turn by turn.",
 	},
 	{
 		name: "get_agent_session_transcript",
