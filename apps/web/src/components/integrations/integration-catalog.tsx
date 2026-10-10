@@ -186,6 +186,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: GoogleCloudIcon,
 		monoIcon: GoogleCloudMonoIcon,
 		accent: GCP_ACCENT,
+		docsUrl: docsUrl("gcp"),
 	},
 	{
 		id: "railway",

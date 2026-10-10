@@ -40,6 +40,7 @@ import {
 } from "@/components/icons"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { docsUrl } from "@/lib/docs"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage, showErrorToast } from "@/lib/error-toast"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
@@ -75,6 +76,9 @@ const SCRIPT_REACTIVITY_KEYS = ["gcpSetupScripts"]
 /** Fast enough to see a script run confirmed, the first data land, or an error clear. */
 export const GCP_SETTLING_REFRESH_MS = 10_000
 
+const DOCS = docsUrl("gcp")
+const OTEL_DOCS = docsUrl("gcpOpenTelemetry")
+const GKE_LOGS_DOCS = `${OTEL_DOCS}#gke-container-logs`
 const MANAGE_RESOURCES_URL = "https://console.cloud.google.com/cloud-resource-manager"
 
 const PROJECT_ID_RULE =
@@ -528,7 +532,13 @@ function FilterField({
 			: choice.selected === "default"
 				? ([
 						["Forwards", "Request logs, audit logs and managed-service logs."],
-						["Leaves out", <>GKE container logs and high-volume noise such as health checks.</>],
+						[
+							"Leaves out",
+							<>
+								<GcpExternalLink href={GKE_LOGS_DOCS}>GKE container logs</GcpExternalLink> and
+								high-volume noise such as health checks.
+							</>,
+						],
 					] as const)
 				: ([
 						["Forwards", "The recommended logs and GKE container logs."],
@@ -573,6 +583,9 @@ function FilterField({
 						</Fragment>
 					))}
 				</dl>
+				<p className="text-xs/5 text-muted-foreground">
+					<GcpExternalLink href={`${DOCS}#log-filter`}>Write a filter of your own</GcpExternalLink>
+				</p>
 			</Field>
 			{choice.selected !== "include_gke_container_logs" ? null : (
 				<Alert variant="warn" size="sm" role="group" aria-label="GKE container logs">
@@ -584,7 +597,10 @@ function FilterField({
 						</p>
 						<p>
 							Forwarding the same container logs from Google Cloud stores each line twice, and
-							the copy from Google Cloud has no trace link.
+							the copy from Google Cloud has no trace link.{" "}
+							<GcpExternalLink href={OTEL_DOCS}>
+								Google Cloud with OpenTelemetry
+							</GcpExternalLink>
 						</p>
 						<div className="flex items-start gap-2 pt-1 text-foreground">
 							<Checkbox
@@ -1109,7 +1125,10 @@ function ApplyStage({
 											{role(name)}
 										</Fragment>
 									))}
-									{scopeRoles.length > 0 ? ` on the ${scopeName}` : null}.
+									{scopeRoles.length > 0 ? ` on the ${scopeName}` : null}.{" "}
+									<GcpExternalLink href={`${DOCS}#roles-for-running-the-script`}>
+										Roles if you aren&apos;t an Owner
+									</GcpExternalLink>
 								</>
 							}
 						>
@@ -1162,6 +1181,13 @@ function ApplyStage({
 										be changed.
 									</li>
 								</ul>
+							) : null}
+							{overdue ? (
+								<p className="text-xs/5">
+									<GcpExternalLink href={`${DOCS}#troubleshooting`}>
+										Troubleshooting
+									</GcpExternalLink>
+								</p>
 							) : null}
 						</Step>
 					</ol>

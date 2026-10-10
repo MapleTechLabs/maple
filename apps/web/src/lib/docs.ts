@@ -32,6 +32,8 @@ export const DOCS = {
 	docker: "/docs/infrastructure/docker",
 	kubernetes: "/docs/infrastructure/kubernetes",
 	cloudflare: "/docs/integrations/cloudflare",
+	gcp: "/docs/integrations/gcp",
+	gcpOpenTelemetry: "/docs/integrations/gcp-opentelemetry",
 	planetscale: "/docs/integrations/planetscale",
 	prometheus: "/docs/integrations/prometheus",
 	warpstream: "/docs/integrations/warpstream",
