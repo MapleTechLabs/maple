@@ -127,6 +127,8 @@ export interface SignalEmptyStateProps {
 	 */
 	readonly purpose?: string
 	readonly guideDocs?: DocsPage
+	/** The pre-data "Setup guide" link, when the page has its own setup docs. */
+	readonly setupDocs?: DocsPage
 	/** The setup button's label, when the page's job is narrower than the signal's. */
 	readonly action?: string
 	readonly className?: string
@@ -144,6 +146,7 @@ export function SignalEmptyStateView({
 	detail,
 	purpose,
 	guideDocs,
+	setupDocs,
 	action,
 	className,
 }: SignalEmptyStateProps & { readonly presence: SignalPresence }): React.ReactElement {
@@ -185,7 +188,7 @@ export function SignalEmptyStateView({
 						</Button>
 						{/* One link, not two: before any data the setup guide is the only docs page
 						    that helps, and a third action wraps onto its own line. */}
-						<DocsLink page={copy.setupDocs}>Setup guide</DocsLink>
+						<DocsLink page={setupDocs ?? copy.setupDocs}>Setup guide</DocsLink>
 					</EmptyActions>
 				</EmptyContent>
 			</Empty>
