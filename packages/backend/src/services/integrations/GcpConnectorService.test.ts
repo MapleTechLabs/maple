@@ -244,6 +244,97 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("reports what the poller recorded and how many projects it found", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, organizationScope)
+			assert.deepInclude(connector, {
+				lastMetricsReceivedAt: null,
+				lastMetricsError: null,
+				discoveredProjectCount: 0,
+				lastResourcesError: null,
+			})
+			const other = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
+			// What the poller writes: its state on the connector, and the scope's inventory.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE gcp_connectors
+					 SET metrics_watermark_at = $1, last_metrics_received_at = $1, last_metrics_error = $2,
+					     resources_synced_at = $1, last_resources_error = $3
+					 WHERE id = $4`,
+					[
+						"2026-10-08T09:10:00.000Z",
+						"2 of 46 metric queries failed.",
+						"incomplete",
+						connector.id,
+					],
+				),
+			)
+			for (const [name, assetType] of [
+				[
+					"//cloudresourcemanager.googleapis.com/projects/111",
+					"cloudresourcemanager.googleapis.com/Project",
+				],
+				[
+					"//cloudresourcemanager.googleapis.com/projects/222",
+					"cloudresourcemanager.googleapis.com/Project",
+				],
+				[
+					"//run.googleapis.com/projects/shop/locations/eu/services/api",
+					"run.googleapis.com/Service",
+				],
+			]) {
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO gcp_resources (connector_id, org_id, name, asset_type, project_id, labels, last_seen_at)
+						 VALUES ($1, $2, $3, $4, 'shop', '{}', now())`,
+						[connector.id, orgId, name, assetType],
+					),
+				)
+			}
+			const polled = {
+				...connector,
+				lastMetricsReceivedAt: Date.parse("2026-10-08T09:10:00.000Z"),
+				lastMetricsError: "2 of 46 metric queries failed.",
+				discoveredProjectCount: 2,
+				lastResourcesError: "incomplete",
+			}
+			// Both were created in the same test-clock instant, so their order is by id.
+			assert.sameDeepMembers([...(yield* gcp.status(orgId)).connectors], [polled, other])
+
+			// Switching metrics off leaves the poller's state as it is.
+			assert.deepStrictEqual(yield* gcp.update(orgId, connector.id, { metricsEnabled: false }), {
+				...polled,
+				metricsEnabled: false,
+			})
+			// Back on, the connection waits for its first metrics again; the poller continues
+			// from its watermark.
+			assert.deepStrictEqual(yield* gcp.update(orgId, connector.id, { metricsEnabled: true }), {
+				...polled,
+				lastMetricsReceivedAt: null,
+				lastMetricsError: null,
+			})
+			const kept = yield* Effect.promise(() =>
+				queryFirstRow<{ metrics_watermark_at: Date | null }>(
+					testDb,
+					"SELECT metrics_watermark_at FROM gcp_connectors WHERE id = $1",
+					[connector.id],
+				),
+			)
+			assert.strictEqual(kept?.metrics_watermark_at?.getTime(), Date.parse("2026-10-08T09:10:00.000Z"))
+
+			// The inventory goes with its connector.
+			yield* gcp.delete(orgId, connector.id)
+			const left = yield* Effect.promise(() =>
+				queryFirstRow<{ count: number }>(testDb, "SELECT count(*)::int AS count FROM gcp_resources"),
+			)
+			assert.strictEqual(left?.count, 0)
+		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+	})
+
 	it.effect("refuses to render a secret that was moved onto another connector's row", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

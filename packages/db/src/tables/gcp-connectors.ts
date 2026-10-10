@@ -36,6 +36,19 @@ export const GcpConnectors = PG.table("gcp_connectors", {
 		appliedLogsEnabled: PG.column(PG.nullable(PG.bool), { name: "applied_logs_enabled" }),
 		appliedMetricsEnabled: PG.column(PG.nullable(PG.bool), { name: "applied_metrics_enabled" }),
 		setupReportedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "setup_reported_at" }),
+		// Metrics poller: end of the last minute it ingested. Null until the first successful poll.
+		metricsWatermarkAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "metrics_watermark_at" }),
+		lastMetricsReceivedAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "last_metrics_received_at",
+		}),
+		lastMetricsError: PG.column(PG.nullable(PG.text), { name: "last_metrics_error" }),
+		// A tick claims the connector by moving this past now, and it is never cleared: it also
+		// orders the next tick, least recently polled first.
+		metricsLeaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "metrics_lease_until" }),
+		// Last sync of `gcp_resources` that Google answered, whole or cut short at a cap; the next
+		// one is due an hour later. The error says why the latest attempt fell short.
+		resourcesSyncedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resources_synced_at" }),
+		lastResourcesError: PG.column(PG.nullable(PG.text), { name: "last_resources_error" }),
 		createdBy: PG.column(PG.text, { name: "created_by" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),

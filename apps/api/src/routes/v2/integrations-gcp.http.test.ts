@@ -158,6 +158,10 @@ describe("v2 gcp integration over HTTP", () => {
 			applied_logs_enabled: null,
 			applied_metrics_enabled: null,
 			setup_reported_at: null,
+			last_metrics_received_at: null,
+			last_metrics_error: null,
+			discovered_project_count: 0,
+			last_resources_error: null,
 		})
 
 		// A project is its own host project, and forwards logs only unless asked otherwise.

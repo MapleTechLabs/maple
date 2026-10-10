@@ -4,7 +4,17 @@ import { env as workerEnv } from "../test/stubs/cloudflare-workers"
 import { buildLayer, catchTickFailure, selectScheduledProgram, type ScheduledTickPrograms } from "./scheduled"
 
 const cronCases = [
-	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale", "railwayMetrics", "prReviewPostMerge"]],
+	[
+		"*/5 * * * *",
+		[
+			"anomaly",
+			"cloudflareAnalytics",
+			"gcpMetrics",
+			"planetScale",
+			"railwayMetrics",
+			"prReviewPostMerge",
+		],
+	],
 	["*/15 * * * *", ["digest"]],
 	["0 * * * *", ["serviceMapRollup"]],
 	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
@@ -27,6 +37,7 @@ describe("alerting Effect root", () => {
 				error: tick("error"),
 				escalation: tick("escalation"),
 				fixVerification: tick("fixVerification"),
+				gcpMetrics: tick("gcpMetrics"),
 				planetScale: tick("planetScale"),
 				prReviewPostMerge: tick("prReviewPostMerge"),
 				railwayMetrics: tick("railwayMetrics"),
@@ -58,6 +69,7 @@ describe("alerting Effect root", () => {
 				error: errorGate.await.pipe(Effect.andThen(record("error"))),
 				escalation: record("escalation"),
 				fixVerification: record("fixVerification"),
+				gcpMetrics: record("gcpMetrics"),
 				planetScale: record("planetScale"),
 				prReviewPostMerge: record("prReviewPostMerge"),
 				railwayMetrics: record("railwayMetrics"),
@@ -85,6 +97,7 @@ describe("alerting Effect root", () => {
 			error: tick("error"),
 			escalation: tick("escalation"),
 			fixVerification: tick("fixVerification"),
+			gcpMetrics: tick("gcpMetrics"),
 			planetScale: tick("planetScale"),
 			prReviewPostMerge: tick("prReviewPostMerge"),
 			railwayMetrics: tick("railwayMetrics"),

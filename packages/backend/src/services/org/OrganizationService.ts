@@ -34,6 +34,7 @@ import {
 	CliDeviceAuthorizations,
 	CloudflareLogpushConnectors,
 	GcpConnectors,
+	GcpResources,
 	Dashboards,
 	DashboardShares,
 	DashboardVersions,
@@ -123,6 +124,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	CloudflareLogpushConnectors,
 	// A surviving push secret would keep the ingest gateway accepting logs for a deleted org.
 	GcpConnectors,
+	// Also removed with its connector, by the foreign key.
+	GcpResources,
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,

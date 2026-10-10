@@ -34,6 +34,10 @@ const toV2Connector = (connector: GcpConnector): V2GcpConnector => ({
 	applied_logs_enabled: connector.appliedLogsEnabled,
 	applied_metrics_enabled: connector.appliedMetricsEnabled,
 	setup_reported_at: isoTimestampOrNull(connector.setupReportedAt),
+	last_metrics_received_at: isoTimestampOrNull(connector.lastMetricsReceivedAt),
+	last_metrics_error: connector.lastMetricsError,
+	discovered_project_count: connector.discoveredProjectCount,
+	last_resources_error: connector.lastResourcesError,
 })
 
 const auditMetadata = (connector: GcpConnector) => ({
