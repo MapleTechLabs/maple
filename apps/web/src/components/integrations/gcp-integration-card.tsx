@@ -431,7 +431,7 @@ function Attention({
 		needed === "setup-pending"
 			? [
 					connector.setup_reported_at === null
-						? "Google Cloud has nothing of Maple's yet. The setup script creates it in about a minute."
+						? "Google Cloud has nothing of Maple's yet. Running the setup script takes about a minute."
 						: "The last run stopped part of the way. Run the script again: it continues where it stopped.",
 				]
 			: needed === "changes-pending"
@@ -702,7 +702,7 @@ export function GcpIntegrationCard() {
 				</h3>
 				<p className="text-xs/5 text-pretty text-muted-foreground">
 					{entry.reported
-						? "Google Cloud still holds what the setup script created, and bills for it."
+						? "Google Cloud still holds what the setup script created, and bills for it. Dismiss this once the cleanup script has run."
 						: "If the setup script ran part of the way, the cleanup script removes what it created."}
 				</p>
 			</div>
