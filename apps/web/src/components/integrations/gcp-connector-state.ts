@@ -436,10 +436,10 @@ export const isGcpProjectId = Schema.is(GcpProjectId)
 export const isGcpResourceNumber = Schema.is(GcpResourceNumber)
 
 const LOG_FILTERS = [
-	{ value: "default", label: "Recommended", hint: "Request, audit and managed-service logs" },
+	{ value: "default", label: "Recommended", hint: "Everything but GKE container output and noise" },
 	{
 		value: "include_gke_container_logs",
-		label: "Recommended + GKE container logs",
+		label: "Include GKE container logs",
 		hint: "Adds container stdout and stderr",
 	},
 	{ value: "keep", label: "Keep current filter", hint: "Leaves the sink as it is" },

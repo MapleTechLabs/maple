@@ -144,15 +144,15 @@ A connection collects at least one of the two: the last one that is on can't be 
 
 **Log filter** decides which filter the script writes onto the sink. It is in the first stage of **Connect Google Cloud** and of **Configure**, below **Collect**, while **Log forwarding** is ticked. To change it on a connection, click **Configure**, choose a filter, click **Continue to the script** and run the script again.
 
-| Log filter                           | The script                                                                                                                                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Recommended**                      | Sets the [recommended filter](#logs). Preselected for a connection that has no sink yet.                                                                                                                |
-| **Recommended + GKE container logs** | Sets the recommended filter without its GKE container clause. Maple asks you to accept the duplicates before you continue.                                                                              |
-| **Keep current filter**              | Leaves an existing sink's filter as it is. Offered, and preselected, once a run has set log forwarding up. Maple can't see the sink's filter: **Current filter in Log Router** opens it in the console. |
+| Log filter                     | The script                                                                                                                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Recommended**                | Sets the [recommended filter](#logs). Preselected for a connection that has no sink yet.                                                                                                                |
+| **Include GKE container logs** | Sets the recommended filter without its GKE container clause. Maple asks you to confirm before you continue.                                                                                            |
+| **Keep current filter**        | Leaves an existing sink's filter as it is. Offered, and preselected, once a run has set log forwarding up. Maple can't see the sink's filter: **Current filter in Log Router** opens it in the console. |
 
 Include GKE container logs only for workloads that don't send their logs to Maple over OpenTelemetry. Otherwise each line is stored twice: see [GKE container logs](/docs/integrations/gcp-opentelemetry#gke-container-logs).
 
-Choosing **Recommended + GKE container logs** shows the checkbox **Accept duplicate logs from instrumented workloads**. The button that continues stays disabled until you tick it. To back out, choose another filter.
+Choosing **Include GKE container logs** shows the notice **Not recommended if your GKE workloads already send logs to Maple**. Maple does not check whether they do. The button that continues stays disabled until you tick **Include GKE container logs anyway**. To back out, choose another filter.
 
 For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep current filter** leave your filter in place, while the other two options replace it.
 
@@ -271,7 +271,7 @@ AND NOT logName:"serialconsole.googleapis.com"
 AND NOT resource.type="k8s_container"
 ```
 
-**Recommended + GKE container logs** sets the filter without the last clause. To forward different logs, see [Log filter](#log-filter).
+**Include GKE container logs** sets the filter without the last clause. To forward different logs, see [Log filter](#log-filter).
 
 The script reports to Maple through a log named `maple-setup`. Maple reads that entry as the report and does not store it, so don't write your own logs under that name.
 
@@ -462,7 +462,7 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 | **Rejected**: "Maple could not store an entry just now."                                   | Nothing to do. Pub/Sub retries the entry for up to a day, and the status returns to **Receiving** with the next accepted entry.                                                                                                      |
 | **Rejected**: "This Maple organization is over its plan limit, so Maple refuses new logs." | Raise the plan limit under **Settings → Billing**. Pub/Sub retries refused entries for up to a day.                                                                                                                                  |
 | GKE container logs appear twice                                                            | The sink forwards GKE container logs and the workloads also send them over OpenTelemetry. In **Configure**, choose **Recommended** as the [log filter](#log-filter) and run the script again.                                        |
-| GKE container logs are missing                                                             | The recommended filter leaves them out. If the workloads don't send their logs over OpenTelemetry, choose **Recommended + GKE container logs** as the [log filter](#log-filter) in **Configure** and run the script again.           |
+| GKE container logs are missing                                                             | The recommended filter leaves them out. If the workloads don't send their logs over OpenTelemetry, choose **Include GKE container logs** as the [log filter](#log-filter) in **Configure** and run the script again.                 |
 
 ### Metrics and resources
 

@@ -544,27 +544,42 @@ function FilterField({
 				</SelectContent>
 			</Select>
 			{choice.selected !== "include_gke_container_logs" ? null : (
+				// Maple does not know whether the workloads send their logs another way: the notice says
+				// when they would arrive twice, and leaves the call to the admin.
 				<fieldset
 					aria-label="GKE container logs"
-					className="flex items-start gap-3 rounded-md border border-transparent bg-severity-warn/8 px-3.5 py-2.5 text-xs/[18px]"
+					className="flex flex-col gap-2 rounded-md border border-transparent bg-severity-warn/8 px-3.5 py-2.5 text-xs/[18px]"
 				>
-					<Checkbox
-						id={checkboxId}
-						className="mt-px"
-						checked={filter.acknowledged}
-						onCheckedChange={(checked) => onFilter({ ...filter, acknowledged: checked === true })}
-					/>
-					<div className="flex min-w-0 flex-1 flex-col gap-0.5">
-						<label htmlFor={checkboxId} className="font-medium text-pretty">
-							Accept duplicate logs from instrumented workloads
-						</label>
-						<p className="text-pretty text-muted-foreground">
-							They already send their logs over OpenTelemetry, linked to traces.
-						</p>
+					<div className="flex items-start gap-3">
+						<AlertWarningIcon
+							size={14}
+							className="mt-0.5 w-4 shrink-0 text-severity-warn"
+							aria-hidden
+						/>
+						<div className="flex min-w-0 flex-1 flex-col gap-0.5">
+							<p className="font-medium text-pretty">
+								Not recommended if your GKE workloads already send logs to Maple
+							</p>
+							<p className="text-pretty text-muted-foreground">
+								If they export logs over OpenTelemetry, or a collector reads their pod logs,
+								you get every line twice. Both copies count toward your plan, and the one from
+								Google Cloud has no trace link.{" "}
+								<GcpExternalLink href={GKE_LOGS_DOCS}>Details</GcpExternalLink>
+							</p>
+						</div>
 					</div>
-					<span className="shrink-0 text-muted-foreground">
-						<GcpExternalLink href={GKE_LOGS_DOCS}>Why</GcpExternalLink>
-					</span>
+					<div className="flex items-center gap-3">
+						<Checkbox
+							id={checkboxId}
+							checked={filter.acknowledged}
+							onCheckedChange={(checked) =>
+								onFilter({ ...filter, acknowledged: checked === true })
+							}
+						/>
+						<label htmlFor={checkboxId} className="font-medium">
+							Include GKE container logs anyway
+						</label>
+					</div>
 				</fieldset>
 			)}
 		</Field>
