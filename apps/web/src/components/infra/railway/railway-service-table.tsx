@@ -211,10 +211,20 @@ export function RailwayServiceTable({
 						<MetaLine items={[row.projectName, row.environmentName]} />
 					</div>
 					<div className="w-[140px] text-right">
-						<AvgPeak avg={row.cpuAvg} peak={row.cpuMax} format={formatVcpu} />
+						<AvgPeak
+							avg={row.cpuAvg}
+							peak={row.cpuMax}
+							format={formatVcpu}
+							note="Summed across replicas."
+						/>
 					</div>
 					<div className="w-[150px] text-right">
-						<AvgPeak avg={row.memoryAvg} peak={row.memoryMax} format={formatBytes} />
+						<AvgPeak
+							avg={row.memoryAvg}
+							peak={row.memoryMax}
+							format={formatBytes}
+							note="Summed across replicas."
+						/>
 					</div>
 					<div className="hidden w-[160px] lg:block">
 						<MeterRows
