@@ -9534,7 +9534,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:filtered:baseline  [83e29d35]
+-- pipe:list_traces:filtered:baseline  [94af76b5]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -9559,7 +9559,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND ((traces.SpanName = 'GET /v1/x' OR traces.SpanName IN ('http.server GET', 'GET')) AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -9574,7 +9574,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND ((traces.SpanName = 'GET /v1/x' OR traces.SpanName IN ('http.server GET', 'GET')) AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -9588,7 +9588,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:bloom  [915ef51d]
+-- pipe:list_traces:filtered:bloom  [6c25c64d]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -9613,7 +9613,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND ((traces.SpanName = 'GET /v1/x' OR traces.SpanName IN ('http.server GET', 'GET')) AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -9628,7 +9628,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND ((traces.SpanName = 'GET /v1/x' OR traces.SpanName IN ('http.server GET', 'GET')) AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -9642,7 +9642,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:text  [157d158d]
+-- pipe:list_traces:filtered:text  [664a233d]
 SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS startTime,
@@ -9667,7 +9667,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND ((traces.SpanName = 'GET /v1/x' OR traces.SpanName IN ('http.server GET', 'GET')) AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -9682,7 +9682,7 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'api'
-          AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x')
+          AND ((traces.SpanName = 'GET /v1/x' OR traces.SpanName IN ('http.server GET', 'GET')) AND (traces.SpanName = 'GET /v1/x' OR if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) = 'GET /v1/x'))
           AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
           AND traces.StatusCode = 'Error'
           AND traces.Duration >= 5000000
@@ -9694,6 +9694,46 @@ SELECT
         LIMIT 25))
         ORDER BY startTime DESC
         LIMIT 25
+        FORMAT JSON
+
+-- pipe:list_traces:span-name-contains:baseline  [cfc0ed85]
+SELECT
+          traces.TraceId AS traceId,
+          traces.Timestamp AS startTime,
+          traces.Timestamp AS endTime,
+          intDiv(traces.Duration, 1000) AS durationMicros,
+          toUInt64(1) AS spanCount,
+          [traces.ServiceName] AS services,
+          traces.SpanId AS rootSpanId,
+          traces.SpanName AS rootSpanName,
+          traces.SpanKind AS rootSpanKind,
+          traces.StatusCode AS rootSpanStatusCode,
+          traces.StatusMessage AS rootSpanStatusMessage,
+          if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']) AS rootHttpMethod,
+          traces.SpanAttributes['http.route'] AS rootHttpRoute,
+          if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']) AS rootHttpStatusCode,
+          toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])) AS rootSpanAttributes,
+          coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) AS rootDeploymentEnv,
+          traces.ResourceAttributes['service.version'] AS rootServiceVersion,
+          if(traces.StatusCode = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0)
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0)
+          AND (traces.SpanKind IN ('Server', 'Consumer') OR traces.ParentSpanId = '')
+        ORDER BY ts DESC
+        LIMIT 100))
+        ORDER BY startTime DESC
+        LIMIT 100
         FORMAT JSON
 
 -- pipe:logs_count:default:baseline  [fa7ccb7f]
@@ -11336,6 +11376,897 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
         ORDER BY ts DESC
         LIMIT 20))
+        ORDER BY timestamp DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- pipe:span_search:span-name-contains-one-service:baseline  [21d2771f]
+SELECT
+          span_matches.traceId AS traceId,
+          span_matches.spanId AS spanId,
+          span_matches.spanName AS spanName,
+          span_matches.serviceName AS serviceName,
+          span_matches.durationMs AS durationMs,
+          span_matches.statusCode AS statusCode,
+          span_matches.statusMessage AS statusMessage,
+          span_matches.spanAttributes AS spanAttributes,
+          span_matches.resourceAttributes AS resourceAttributes,
+          span_matches.timestamp AS timestamp
+        FROM (
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND (NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0)
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND (NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0)
+        ORDER BY ts DESC
+        LIMIT 40
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 40
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 40))
+        ORDER BY timestamp DESC
+        LIMIT 40
+UNION ALL
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND (NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0)
+        ORDER BY ts DESC
+        LIMIT 40
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 40
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 40))
+        ORDER BY timestamp DESC
+        LIMIT 40
+) AS span_matches
+        ORDER BY timestamp DESC
+        LIMIT 20
+        OFFSET 20
+        FORMAT JSON
+
+-- pipe:span_search:span-name-contains-one-service:bloom  [ca996c11]
+SELECT
+          span_matches.traceId AS traceId,
+          span_matches.spanId AS spanId,
+          span_matches.spanName AS spanName,
+          span_matches.serviceName AS serviceName,
+          span_matches.durationMs AS durationMs,
+          span_matches.statusCode AS statusCode,
+          span_matches.statusMessage AS statusMessage,
+          span_matches.spanAttributes AS spanAttributes,
+          span_matches.resourceAttributes AS resourceAttributes,
+          span_matches.timestamp AS timestamp
+        FROM (
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+        ORDER BY ts DESC
+        LIMIT 40
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 40
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 40))
+        ORDER BY timestamp DESC
+        LIMIT 40
+UNION ALL
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+        ORDER BY ts DESC
+        LIMIT 40
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 40
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 40))
+        ORDER BY timestamp DESC
+        LIMIT 40
+) AS span_matches
+        ORDER BY timestamp DESC
+        LIMIT 20
+        OFFSET 20
+        FORMAT JSON
+
+-- pipe:span_search:span-name-contains-one-service:text  [ca996c11]
+SELECT
+          span_matches.traceId AS traceId,
+          span_matches.spanId AS spanId,
+          span_matches.spanName AS spanName,
+          span_matches.serviceName AS serviceName,
+          span_matches.durationMs AS durationMs,
+          span_matches.statusCode AS statusCode,
+          span_matches.statusMessage AS statusMessage,
+          span_matches.spanAttributes AS spanAttributes,
+          span_matches.resourceAttributes AS resourceAttributes,
+          span_matches.timestamp AS timestamp
+        FROM (
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+        ORDER BY ts DESC
+        LIMIT 40
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 40
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 40))
+        ORDER BY timestamp DESC
+        LIMIT 40
+UNION ALL
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+        ORDER BY ts DESC
+        LIMIT 40
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 40
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 40))
+        ORDER BY timestamp DESC
+        LIMIT 40
+) AS span_matches
+        ORDER BY timestamp DESC
+        LIMIT 20
+        OFFSET 20
+        FORMAT JSON
+
+-- pipe:span_search:span-name-contains:baseline  [486d078b]
+SELECT
+          span_matches.traceId AS traceId,
+          span_matches.spanId AS spanId,
+          span_matches.spanName AS spanName,
+          span_matches.serviceName AS serviceName,
+          span_matches.durationMs AS durationMs,
+          span_matches.statusCode AS statusCode,
+          span_matches.statusMessage AS statusMessage,
+          span_matches.spanAttributes AS spanAttributes,
+          span_matches.resourceAttributes AS resourceAttributes,
+          span_matches.timestamp AS timestamp
+        FROM (
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0)
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0)
+        ORDER BY ts DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 20
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 20))
+        ORDER BY timestamp DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0)
+        ORDER BY ts DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 20
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 20))
+        ORDER BY timestamp DESC
+        LIMIT 20
+) AS span_matches
+        ORDER BY timestamp DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- pipe:span_search:span-name-contains:bloom  [41fc9f63]
+SELECT
+          span_matches.traceId AS traceId,
+          span_matches.spanId AS spanId,
+          span_matches.spanName AS spanName,
+          span_matches.serviceName AS serviceName,
+          span_matches.durationMs AS durationMs,
+          span_matches.statusCode AS statusCode,
+          span_matches.statusMessage AS statusMessage,
+          span_matches.spanAttributes AS spanAttributes,
+          span_matches.resourceAttributes AS resourceAttributes,
+          span_matches.timestamp AS timestamp
+        FROM (
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+        ORDER BY ts DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 20
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 20))
+        ORDER BY timestamp DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+        ORDER BY ts DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 20
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 20))
+        ORDER BY timestamp DESC
+        LIMIT 20
+) AS span_matches
+        ORDER BY timestamp DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- pipe:span_search:span-name-contains:text  [41fc9f63]
+SELECT
+          span_matches.traceId AS traceId,
+          span_matches.spanId AS spanId,
+          span_matches.spanName AS spanName,
+          span_matches.serviceName AS serviceName,
+          span_matches.durationMs AS durationMs,
+          span_matches.statusCode AS statusCode,
+          span_matches.statusMessage AS statusMessage,
+          span_matches.spanAttributes AS spanAttributes,
+          span_matches.resourceAttributes AS resourceAttributes,
+          span_matches.timestamp AS timestamp
+        FROM (
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+        ORDER BY ts DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 20
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 20))
+        ORDER BY timestamp DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          traces.SpanAttributes AS spanAttributes,
+          traces.ResourceAttributes AS resourceAttributes,
+          traces.Timestamp AS timestamp
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+          AND traces.Timestamp >= (SELECT min(ts) FROM (SELECT
+          newest.ts AS ts
+        FROM (
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((NOT ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))) AND positionCaseInsensitive(traces.SpanName, '/v1/') > 0) AND (traces.SpanName IN (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001) OR NOT (((SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+        LIMIT 1)) > 0 AND (SELECT count() FROM (SELECT DISTINCT
+          service_operations_hourly.SpanName AS spanName
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_operations_hourly.Hour <= toDateTime64('2026-01-03 14:15:00', 0)
+          AND positionCaseInsensitive(service_operations_hourly.SpanName, '/v1/') > 0
+        LIMIT 10001)) <= 10000))))
+        ORDER BY ts DESC
+        LIMIT 20
+UNION ALL
+SELECT
+          traces.Timestamp AS ts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND ((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (positionCaseInsensitive(traces.SpanName, '/v1/') > 0 OR positionCaseInsensitive(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '/v1/') > 0))
+        ORDER BY ts DESC
+        LIMIT 20
+) AS newest
+        ORDER BY ts DESC
+        LIMIT 20))
+        ORDER BY timestamp DESC
+        LIMIT 20
+) AS span_matches
         ORDER BY timestamp DESC
         LIMIT 20
         FORMAT JSON

@@ -43,8 +43,10 @@ import {
 	canUseServiceOverviewMv,
 	canUseTracesAggregatesMv,
 	errorsOnlyCondition,
+	httpSpanNameContains,
 	inclusionValues,
 	serviceOverviewWhereConditions,
+	storedSpanNameContains,
 	tracesAggregatesWhereConditions,
 	tracesBaseWhereConditions,
 	type TracesBaseWhereOpts,
@@ -1169,6 +1171,11 @@ export interface SpanSearchOpts extends TracesQueryOpts {
 	traceId?: string
 	limit?: number
 	offset?: number
+	/**
+	 * `service_operations_hourly` is on this warehouse (`hasSpanNameRollup`), so
+	 * a `contains` span-name search may resolve its names there.
+	 */
+	spanNameRollup?: boolean
 }
 
 export interface SpanSearchOutput {
@@ -1241,10 +1248,23 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 	// the filter is a sort-key prefix and the row set is one trace, so the whole
 	// Maps are cheap to read directly.
 	if (opts.traceId) {
-		return spanSearchFrom(TraceDetailSpans, opts, limit, offset)
+		const one = spanSearchFrom(TraceDetailSpans, opts, limit, offset)
+		return one as CHQuery<ColumnDefs, SpanSearchOutput, {}>
 	}
 
-	// Without one, this reads raw `traces`, whose sort key
+	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
+	const needle =
+		opts.matchModes?.spanName === "contains" && spanNames !== undefined ? soleValue(spanNames) : undefined
+	if (needle !== undefined) {
+		const byName = spanSearchByNameQuery(opts, needle, limit, offset)
+		return byName as CHQuery<ColumnDefs, SpanSearchOutput, {}>
+	}
+	const raw = spanSearchRawQuery(opts, limit, offset)
+	return raw as CHQuery<ColumnDefs, SpanSearchOutput, {}>
+}
+
+function spanSearchRawQuery(opts: SpanSearchOpts, limit: number, offset: number) {
+	// Without a trace id, this reads raw `traces`, whose sort key
 	// `(OrgId, ServiceName, SpanName, toDateTime(Timestamp))` cannot serve
 	// `ORDER BY Timestamp DESC` — so a single-stage query materialized both
 	// attribute Maps for every matching row in range before `LIMIT` discarded
@@ -1253,15 +1273,91 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 	// stage 2 reads the Maps only at/after it.
 	const cutoffInner = from(Traces)
 		.select(($) => ({ ts: $.Timestamp }))
-		.where(($) => [
-			...tracesBaseWhereConditions($, opts),
-			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
-		])
+		.where(($) => tracesBaseWhereConditions($, opts))
 		.orderBy(["ts", "desc"])
 		.limit(limit + offset)
 	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
 
 	return spanSearchFrom(Traces, opts, limit, offset, cutoff)
+}
+
+/**
+ * A `contains` span-name search over raw `traces`.
+ *
+ * The match is stored name OR display name, and as one predicate that `OR`
+ * reads `SpanAttributes` for every row the scan touches. Here it is two scans
+ * of disjoint rows instead: spans that are their own display name, matched on
+ * `SpanName` alone, and HTTP-named spans, the only rows whose Map is read.
+ * Each half keeps the two stages of {@link spanSearchRawQuery}; the cutoff is
+ * the page-th newest timestamp across both.
+ */
+function spanSearchByNameQuery(opts: SpanSearchOpts, needle: string, limit: number, offset: number) {
+	const rest: SpanSearchOpts = { ...opts, spanName: undefined, spanNames: undefined }
+	const rollup = opts.spanNameRollup
+		? {
+				// The rollup's sorting key starts `(OrgId, ServiceName)`.
+				services:
+					opts.matchModes?.serviceName === "contains"
+						? undefined
+						: inclusionValues(opts.serviceName, opts.serviceNames),
+			}
+		: undefined
+	const halves = [
+		($: ColumnAccessor<typeof Traces.columns>) => storedSpanNameContains($, needle, rollup),
+		($: ColumnAccessor<typeof Traces.columns>) => httpSpanNameContains($, needle),
+	] as const
+	const page = limit + offset
+
+	const newest = (half: (typeof halves)[number]) =>
+		from(Traces)
+			.select(($) => ({ ts: $.Timestamp }))
+			.where(($) => [...tracesBaseWhereConditions($, rest), half($)])
+			.orderBy(["ts", "desc"])
+			.limit(page)
+	const cutoff = subqueryExpr(
+		fromUnion(unionAll(newest(halves[0]), newest(halves[1])), "newest")
+			.select(($) => ({ ts: $.ts }))
+			.orderBy(["ts", "desc"])
+			.limit(page),
+		T.dateTime64,
+		(sql) => `(SELECT min(ts) FROM (${sql}))`,
+	)
+
+	const matches = (half: (typeof halves)[number]) =>
+		from(Traces)
+			.select(($) => ({
+				traceId: $.TraceId,
+				spanId: $.SpanId,
+				spanName: $.SpanName,
+				serviceName: $.ServiceName,
+				durationMs: $.Duration.div(1000000),
+				statusCode: $.StatusCode,
+				statusMessage: $.StatusMessage,
+				spanAttributes: $.SpanAttributes,
+				resourceAttributes: $.ResourceAttributes,
+				timestamp: $.Timestamp,
+			}))
+			.where(($) => [...tracesBaseWhereConditions($, rest), half($), $.Timestamp.gte(cutoff)])
+			.orderBy(["timestamp", "desc"])
+			.limit(page)
+	const q = fromUnion(unionAll(matches(halves[0]), matches(halves[1])), "span_matches")
+		.select(($) => ({
+			traceId: $.traceId,
+			spanId: $.spanId,
+			spanName: $.spanName,
+			serviceName: $.serviceName,
+			durationMs: $.durationMs,
+			statusCode: $.statusCode,
+			statusMessage: $.statusMessage,
+			spanAttributes: $.spanAttributes,
+			resourceAttributes: $.resourceAttributes,
+			timestamp: $.timestamp,
+		}))
+		.orderBy(["timestamp", "desc"])
+		.limit(limit)
+		.format("JSON")
+
+	return offset > 0 ? q.offset(offset) : q
 }
 
 // Root trace list query (aggregated root-span-level, for trace list UI)

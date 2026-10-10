@@ -25,7 +25,7 @@ import {
  */
 
 /** The tables `deriveWarehouseCapabilities` reasons about. */
-const CAPABILITY_TABLES = ["logs", "traces"] as const
+const CAPABILITY_TABLES = ["logs", "traces", "service_operations_hourly"] as const
 
 /**
  * `INDEX <name> <expr> TYPE <type> [GRANULARITY <n>]`. Both `<expr>` and

@@ -7,7 +7,7 @@ import type { DateTime } from "effect"
 import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { param } from "@maple-dev/effect-orm/clickhouse"
+import { compileFnCall, from, inSubquery, param, subqueryCond } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import type { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
 import {
@@ -15,10 +15,16 @@ import {
 	MetricsGauge,
 	MetricsHistogram,
 	MetricsExpHistogram,
+	ServiceOperationsHourly,
 	orgIdParam,
 	utcSecondsParam,
 } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
+import {
+	HTTP_METHOD_SPAN_NAMES,
+	HTTP_SERVER_SPAN_PREFIX,
+	isHttpSpanName,
+} from "@maple/domain/tinybird/span-display-name"
 import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 import type { AttributeIndexMode } from "../../capabilities"
 import * as T from "@maple-dev/effect-orm/clickhouse"
@@ -254,6 +260,125 @@ export function errorsOnlyCondition(
 	return undefined
 }
 
+type SpanNameColumns = Pick<typeof Traces.columns, "SpanName" | "SpanAttributes">
+
+// The "Root Span" facet and trace_list_mv expose the *display* name
+// ("GET /api/users"); the raw traces table stores "http.server GET". A span-name
+// filter matches either spelling so a facet click actually selects rows.
+const displaySpanName = ($: ColumnAccessor<SpanNameColumns>) =>
+	httpDisplaySpanName($.SpanName, $.SpanAttributes.get("http.route"), $.SpanAttributes.get("url.path"))
+
+/** Past this many derived names, every HTTP-named span is a candidate instead. */
+const MAX_HTTP_STORED_NAMES = 16
+
+/**
+ * Stored names an HTTP span can carry when its display name is one of `values`:
+ * `"GET /users"` is shown for `"http.server GET"` or `"GET"` plus a route. A
+ * value with no `method route` split has none.
+ */
+function httpSpanNamesDisplayedAs(values: readonly string[]): readonly string[] {
+	const stored = new Set<string>()
+	for (const value of values) {
+		// The route is never empty, so a trailing space is not a split point.
+		for (let i = value.indexOf(" "); i !== -1 && i < value.length - 1; i = value.indexOf(" ", i + 1)) {
+			const method = value.slice(0, i)
+			stored.add(HTTP_SERVER_SPAN_PREFIX + method)
+			if (HTTP_METHOD_SPAN_NAMES.some((name) => name === method)) stored.add(method)
+		}
+	}
+	return [...stored]
+}
+
+/**
+ * Spans whose stored or display name is one of `values`. Only an HTTP span has
+ * a display name of its own, so a value with no `method route` split is a
+ * sorting-key lookup on `SpanName`. Otherwise the stored names that can display
+ * as a value go in front as their own condition: ClickHouse filters on
+ * `SpanName` first and reads the attribute Map only where a candidate row
+ * survives, where the bare `OR` reads it for the whole org and window.
+ */
+function spanNameIn($: ColumnAccessor<SpanNameColumns>, values: readonly string[]): CH.Condition {
+	const stored = inclusionCondition($.SpanName, values)
+	const httpNames = httpSpanNamesDisplayedAs(values)
+	if (httpNames.length === 0) return stored
+	// A value with many spaces derives a name per space; the statement must stay small.
+	const displaysAsValue =
+		httpNames.length > MAX_HTTP_STORED_NAMES
+			? isHttpSpanName($.SpanName)
+			: CH.inList($.SpanName, httpNames)
+	return stored.or(displaysAsValue).and(stored.or(inclusionCondition(displaySpanName($), values)))
+}
+
+const spanNameContains = (name: CH.Expr<string>, needle: string): CH.Condition =>
+	CH.positionCaseInsensitive(name, CH.lit(needle)).gt(0)
+
+/**
+ * HTTP-named spans whose stored or display name contains `needle`: one half of
+ * a `contains` match, with {@link storedSpanNameContains}. A conjunction, so
+ * the attribute Map is read for HTTP-named spans only.
+ */
+export const httpSpanNameContains = ($: ColumnAccessor<SpanNameColumns>, needle: string): CH.Condition =>
+	isHttpSpanName($.SpanName).and(
+		spanNameContains($.SpanName, needle).or(spanNameContains(displaySpanName($), needle)),
+	)
+
+/** A lookup past this many names is not built; the names are compared on the row. */
+const MAX_LOOKUP_NAMES = 10_000
+
+/**
+ * Spans that are their own display name (not HTTP-named) and contain `needle`.
+ * Reads no attribute Map.
+ *
+ * With `rollup`, the names come from `service_operations_hourly`, which keeps
+ * every display name per hour, and the sorting key prunes to them. The lookup
+ * is used only when both hold, each a scalar subquery that is a constant by
+ * the time the read is planned:
+ *
+ *   - the rollup has a row older than the window, so it was being written for
+ *     the whole of it;
+ *   - at most {@link MAX_LOOKUP_NAMES} names match.
+ *
+ * Otherwise, and without `rollup` (the table is not on this warehouse), the
+ * name is compared on every row: correct everywhere, one `SpanName` scan.
+ */
+export function storedSpanNameContains(
+	$: ColumnAccessor<SpanNameColumns>,
+	needle: string,
+	rollup: { readonly services: readonly string[] | undefined } | undefined,
+): CH.Condition {
+	const onRow = spanNameContains($.SpanName, needle)
+	if (rollup === undefined) return CH.not(isHttpSpanName($.SpanName)).and(onRow)
+
+	const names = from(ServiceOperationsHourly)
+		.select((hourly) => ({ spanName: hourly.SpanName }))
+		.where((hourly) => [
+			hourly.OrgId.eq(orgIdParam),
+			CH.when(rollup.services, (v: readonly string[]) => inclusionCondition(hourly.ServiceName, v)),
+			hourly.Hour.gte(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
+			// `Hour` is a 32-bit DateTime: a bare literal past 2106 would wrap.
+			hourly.Hour.lte(compileFnCall<DateTime.Utc>("toDateTime64", utcSecondsParam("endTime"), 0)),
+			spanNameContains(hourly.SpanName, needle),
+		])
+		.distinct()
+		.limit(MAX_LOOKUP_NAMES + 1)
+	const olderThanWindow = from(ServiceOperationsHourly)
+		.select((hourly) => ({ spanName: hourly.SpanName }))
+		.where((hourly) => [
+			hourly.OrgId.eq(orgIdParam),
+			hourly.Hour.lt(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
+		])
+		.distinct()
+		.limit(1)
+	const usable = subqueryCond(olderThanWindow, (sql) => `(SELECT count() FROM (${sql})) > 0`).and(
+		subqueryCond(names, (sql) => `(SELECT count() FROM (${sql})) <= ${MAX_LOOKUP_NAMES}`),
+	)
+	// Every looked-up name contains the needle, so `onRow` changes nothing when
+	// the lookup is used and is the whole answer when it is not.
+	return CH.not(isHttpSpanName($.SpanName))
+		.and(onRow)
+		.and(inSubquery($.SpanName, names).or(CH.not(usable)))
+}
+
 type TracesBaseWhereColumns = Pick<
 	typeof Traces.columns,
 	| "OrgId"
@@ -291,20 +416,10 @@ export function tracesBaseWhereConditions(
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
 		CH.when(spanNames, (v: readonly string[]) => {
-			// The "Root Span" facet and trace_list_mv expose the *display* name
-			// ("GET /api/users"); the raw traces table stores "http.server GET".
-			// Match either spelling so a facet click actually selects rows.
-			const display = httpDisplaySpanName(
-				$.SpanName,
-				$.SpanAttributes.get("http.route"),
-				$.SpanAttributes.get("url.path"),
-			)
 			const needle = mm?.spanName === "contains" ? soleValue(v) : undefined
 			return needle === undefined
-				? inclusionCondition($.SpanName, v).or(inclusionCondition(display, v))
-				: CH.positionCaseInsensitive($.SpanName, CH.lit(needle))
-						.gt(0)
-						.or(CH.positionCaseInsensitive(display, CH.lit(needle)).gt(0))
+				? spanNameIn($, v)
+				: spanNameContains($.SpanName, needle).or(spanNameContains(displaySpanName($), needle))
 		}),
 		CH.when(opts.statusCode, (v: string) => $.StatusCode.eq(v)),
 		CH.whenTrue(!!opts.rootOnly, () => $.SpanKind.in_("Server", "Consumer").or($.ParentSpanId.eq(""))),
@@ -359,17 +474,7 @@ export function tracesBaseWhereConditions(
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
 	if (opts.excludedSpanNames?.length) {
-		// Display-name aware: exclude rows matching either the raw or rewritten span name.
-		const display = httpDisplaySpanName(
-			$.SpanName,
-			$.SpanAttributes.get("http.route"),
-			$.SpanAttributes.get("url.path"),
-		)
-		conditions.push(
-			CH.not(
-				CH.inList($.SpanName, opts.excludedSpanNames).or(CH.inList(display, opts.excludedSpanNames)),
-			),
-		)
+		conditions.push(CH.not(spanNameIn($, opts.excludedSpanNames)))
 	}
 	if (opts.excludedEnvironments?.length) {
 		conditions.push(CH.notInList(deploymentEnvExpr($.ResourceAttributes), opts.excludedEnvironments))

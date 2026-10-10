@@ -120,6 +120,13 @@ query never trips it, and a deliberately-approximate one (`serviceHealthSnapshot
 the hour on purpose) reads only its rollup and never trips it either. If a new query seems to
 need an exemption, the gate has found a bug.
 
+One read is outside the rule by construction rather than by name: a subquery that selects only
+`DISTINCT service_operations_hourly.SpanName` (the span-name lookup of a `contains` span
+search, `storedSpanNameContains`). It can say which names exist and nothing else, so it has no
+measure to add to a raw tier and nothing to tile. The gate strips exactly that subquery and
+judges the rest of the statement as before; any other rollup read beside a raw table,
+including one inside a scalar or `IN` subquery, is still a tier.
+
 ### A routing guard must be tested on the tier it selects, not on a table name
 
 `canUseAnnualServiceOverview` required `allMetrics === true`. Alert evaluation

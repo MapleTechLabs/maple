@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { attributeIndexMode, logBodySearchMode } from "../capabilities"
+import {
+	attributeIndexMode,
+	baselineWarehouseCapabilities,
+	hasSpanNameRollup,
+	logBodySearchMode,
+} from "../capabilities"
 import { managedWarehouseCapabilities } from "./managed-capabilities"
 
 describe("managed warehouse capabilities", () => {
@@ -18,6 +23,12 @@ describe("managed warehouse capabilities", () => {
 		expect(attributeIndexMode(capabilities, "logs")).toBe("bloom")
 		expect(attributeIndexMode(capabilities, "traces")).toBe("bloom")
 		expect(logBodySearchMode(capabilities)).toBe("tokenbf")
+	})
+
+	it("knows the span-name rollup is deployed, and assumes nothing without metadata", () => {
+		expect(hasSpanNameRollup(managedWarehouseCapabilities())).toBe(true)
+		// A self-hosted cluster whose metadata could not be read may lack the table.
+		expect(hasSpanNameRollup(baselineWarehouseCapabilities())).toBe(false)
 	})
 
 	it("parses the generated snapshot rather than a hand-maintained list", () => {
