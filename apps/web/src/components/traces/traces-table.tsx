@@ -588,8 +588,8 @@ export function TracesTable({ filters, facetsOmitRootless = false }: TracesTable
 		fetchNextPage,
 	} = useInfiniteTraces(filters)
 
-	// Said only where it applies: the list could not look for them here, or it
-	// shows some that the sidebar's counts leave out.
+	// Whatever this range leaves out is said: the list could not look for them
+	// here, or the sidebar's counts could not include them.
 	const rootlessNote =
 		rootlessTraces === "omitted" ? (
 			<>
@@ -604,7 +604,7 @@ export function TracesTable({ filters, facetsOmitRootless = false }: TracesTable
 				</Button>
 				.
 			</>
-		) : rootlessTraces === "listed" && facetsOmitRootless ? (
+		) : facetsOmitRootless ? (
 			"The filter counts leave out traces without a root span. Shorten the range to count them."
 		) : undefined
 
