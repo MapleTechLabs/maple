@@ -63,13 +63,40 @@ const workspaces: ReadonlyArray<Candidate> = rootManifest.workspaces.flatMap((pa
 const isOnNpm = ({ name, version }: Manifest) =>
 	run(["npm", "view", `${name}@${version}`, "version"], root, true).stdout.trim() === version
 
-const pending = workspaces.filter(
+const isTagged = (tag: string) =>
+	run(["git", "ls-remote", "--tags", "origin", `refs/tags/${tag}`], root, true).stdout.trim() !== ""
+
+const outputFile = process.env.CHANGESETS_OUTPUT
+
+// Tags the release locally and reports it so the action pushes the tag and cuts the GitHub release.
+const reportRelease = ({ name, version }: Manifest) => {
+	const tag = `${name}@${version}`
+	if (!run(["git", "tag", "-a", tag, "-m", tag]).ok) fail(`git tag failed for ${tag}`)
+	console.log(`New tag: ${tag}`)
+	if (outputFile) {
+		appendFileSync(outputFile, `${JSON.stringify({ type: "git-tag", tag, packageName: name })}\n`)
+	}
+}
+
+const publishable = workspaces.filter(
 	({ manifest }) =>
 		manifest.private !== true &&
 		manifest.publishConfig?.access === "public" &&
-		!ignored.has(manifest.name) &&
-		!isOnNpm(manifest),
+		!ignored.has(manifest.name),
 )
+const [published, pending] = publishable.reduce<[Array<Candidate>, Array<Candidate>]>(
+	([onNpm, notOnNpm], candidate) =>
+		isOnNpm(candidate.manifest) ? [[...onNpm, candidate], notOnNpm] : [onNpm, [...notOnNpm, candidate]],
+	[[], []],
+)
+
+// A rerun after a publish whose tag push or release failed: npm already has the version, so only
+// the tag and release are still owed.
+if (!dryRun) {
+	for (const { manifest } of published) {
+		if (!isTagged(`${manifest.name}@${manifest.version}`)) reportRelease(manifest)
+	}
+}
 
 if (pending.length === 0) {
 	console.log("Nothing to publish: every public package version is already on npm.")
@@ -94,7 +121,6 @@ if (
 }
 
 const packDir = mkdtempSync(join(tmpdir(), "maple-publish-"))
-const outputFile = process.env.CHANGESETS_OUTPUT
 
 for (const { dir, manifest } of ordered) {
 	const tag = `${manifest.name}@${manifest.version}`
@@ -107,13 +133,5 @@ for (const { dir, manifest } of ordered) {
 	if (!run(dryRun ? [...publishArgs, "--dry-run"] : [...publishArgs, "--provenance"]).ok) {
 		fail(`npm publish failed for ${tag}`)
 	}
-	if (dryRun) continue
-	if (!run(["git", "tag", "-a", tag, "-m", tag]).ok) fail(`git tag failed for ${tag}`)
-	console.log(`New tag: ${tag}`)
-	if (outputFile) {
-		appendFileSync(
-			outputFile,
-			`${JSON.stringify({ type: "git-tag", tag, packageName: manifest.name })}\n`,
-		)
-	}
+	if (!dryRun) reportRelease(manifest)
 }
