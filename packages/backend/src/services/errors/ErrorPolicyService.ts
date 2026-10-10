@@ -156,7 +156,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		})
 
 	const loadNotificationPolicyRow: ErrorPolicyServiceApi["loadNotificationPolicyRow"] = Effect.fn(
-		"ErrorsService.loadPolicyRow",
+		"ErrorPolicyService.loadPolicyRow",
 	)(function* (orgId) {
 		const rows = yield* dbExecute((db) =>
 			db.run(
@@ -170,7 +170,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	})
 
 	const getNotificationPolicy: ErrorPolicyServiceApi["getNotificationPolicy"] = Effect.fn(
-		"ErrorsService.getNotificationPolicy",
+		"ErrorPolicyService.getNotificationPolicy",
 	)(function* (orgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const row = yield* loadNotificationPolicyRow(orgId)
@@ -179,7 +179,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	})
 
 	const upsertNotificationPolicy: ErrorPolicyServiceApi["upsertNotificationPolicy"] = Effect.fn(
-		"ErrorsService.upsertNotificationPolicy",
+		"ErrorPolicyService.upsertNotificationPolicy",
 	)(function* (orgId, userId, roles, request) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		yield* requireAdmin(
@@ -255,7 +255,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 			updatedBy: row == null || row.updatedBy === "system" ? null : decodeUserIdSync(row.updatedBy),
 		})
 
-	const loadEscalationPolicyRow = Effect.fn("ErrorsService.loadEscalationPolicyRow")(function* (
+	const loadEscalationPolicyRow = Effect.fn("ErrorPolicyService.loadEscalationPolicyRow")(function* (
 		orgId: OrgId,
 	) {
 		const rows = yield* dbExecute((db) =>
@@ -270,14 +270,14 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	})
 
 	const getEscalationPolicy: ErrorPolicyServiceApi["getEscalationPolicy"] = Effect.fn(
-		"ErrorsService.getEscalationPolicy",
+		"ErrorPolicyService.getEscalationPolicy",
 	)(function* (orgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		return escalationRowToDocument(yield* loadEscalationPolicyRow(orgId))
 	})
 
 	const upsertEscalationPolicy: ErrorPolicyServiceApi["upsertEscalationPolicy"] = Effect.fn(
-		"ErrorsService.upsertEscalationPolicy",
+		"ErrorPolicyService.upsertEscalationPolicy",
 	)(function* (orgId, userId, request) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const existing = yield* loadEscalationPolicyRow(orgId)
@@ -372,7 +372,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		})
 
 	const evaluatePolicy: ErrorPolicyServiceApi["evaluateEscalationPolicy"] = Effect.fn(
-		"ErrorsService.evaluateEscalationPolicy",
+		"ErrorPolicyService.evaluateEscalationPolicy",
 	)(function* (orgId, request) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const policy = yield* loadEscalationPolicyRow(orgId)
@@ -411,7 +411,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	})
 
 	const listIssueEscalations: ErrorPolicyServiceApi["listIssueEscalations"] = Effect.fn(
-		"ErrorsService.listIssueEscalations",
+		"ErrorPolicyService.listIssueEscalations",
 	)(function* (orgId, issueId) {
 		yield* Effect.annotateCurrentSpan({ orgId, issueId })
 		const rows = yield* dbExecute((db) =>
@@ -426,7 +426,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	})
 
 	const listRecentEscalations: ErrorPolicyServiceApi["listRecentEscalations"] = Effect.fn(
-		"ErrorsService.listRecentEscalations",
+		"ErrorPolicyService.listRecentEscalations",
 	)(function* (orgId, limit) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* dbExecute((db) =>

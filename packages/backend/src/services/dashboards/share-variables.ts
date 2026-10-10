@@ -101,7 +101,7 @@ export const preservesClauseStructure = (template: string, value: string): boole
  * definitions rather than from the submission — the submission only chooses
  * *which* allowed value, never introduces a variable of its own.
  */
-export const resolveShareVariables = Effect.fn("resolveShareVariables")(function* (
+export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVariables")(function* (
 	definitions: ReadonlyArray<ShareVariableDefinition>,
 	submitted: Readonly<Record<string, string>>,
 	/** Option lists for `query` variables, resolved by the caller. */

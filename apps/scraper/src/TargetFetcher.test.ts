@@ -107,7 +107,7 @@ describe("TargetFetcher", () => {
 				Effect.provide(tracer.layer),
 				Effect.flip,
 			)
-			const [span] = endedSpansNamed(tracer.ended, "scraper.fetch_target")
+			const [span] = endedSpansNamed(tracer.ended, "TargetFetcher.fetchTarget")
 			assert.isTrue(Exit.isSuccess(span!.exit))
 			assert.strictEqual(span!.attributes.get("http.response.status_code"), 429)
 		}).pipe(Effect.provide(FetcherLive)),
@@ -231,7 +231,7 @@ describe("TargetFetcher", () => {
 					Effect.provide(tracer.layer),
 				)
 
-			const [span] = endedSpansNamed(tracer.ended, "scraper.fetch_target")
+			const [span] = endedSpansNamed(tracer.ended, "TargetFetcher.fetchTarget")
 			assert.isDefined(span)
 			if (!span) return
 			assert.strictEqual(span.attributes.get("peer.service"), "planetscale-metrics")

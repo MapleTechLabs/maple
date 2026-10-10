@@ -133,7 +133,7 @@ export const processAuditEventsBatch = (batch: QueueBatch) =>
 								for (const { message } of group) message.ack()
 							}),
 						),
-						Effect.withSpan("auditEvents.writeOrgBatch", {
+						Effect.withSpan("AuditEvents.writeOrgBatch", {
 							attributes: { orgId, rows: group.length },
 						}),
 						// A failure or a defect is a failed attempt and retries. Interruption
@@ -155,4 +155,4 @@ export const processAuditEventsBatch = (batch: QueueBatch) =>
 					),
 			{ concurrency: 3, discard: true },
 		)
-	}).pipe(Effect.withSpan("auditEvents.processBatch"))
+	}).pipe(Effect.withSpan("AuditEvents.processBatch"))

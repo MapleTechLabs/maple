@@ -173,7 +173,7 @@ const HALVE: "halve" = "halve"
  * The window is resolved once, not per page: every page's bounds must cover
  * the session, not the first page.
  */
-export const loadAgentSessionSpans = Effect.fn("loadAgentSessionSpans")(function* (
+export const loadAgentSessionSpans = Effect.fn("McpAgentSessions.loadAgentSessionSpans")(function* (
 	tenant: TenantContext,
 	opts: { readonly sessionId: string; readonly window: SessionWindow | undefined },
 ) {

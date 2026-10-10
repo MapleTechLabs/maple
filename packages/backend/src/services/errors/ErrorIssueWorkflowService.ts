@@ -271,7 +271,7 @@ const make: Effect.Effect<
 		})
 
 	const requireIssue: ErrorIssueWorkflowServiceApi["requireIssue"] = Effect.fn(
-		"ErrorsService.requireIssue",
+		"ErrorIssueWorkflowService.requireIssue",
 	)(function* (orgId, issueId) {
 		const rows = yield* dbExecute((db) =>
 			db.run(
@@ -389,7 +389,7 @@ const make: Effect.Effect<
 		})
 
 	const hydrateIssue: ErrorIssueWorkflowServiceApi["hydrateIssue"] = Effect.fn(
-		"ErrorsService.hydrateIssue",
+		"ErrorIssueWorkflowService.hydrateIssue",
 	)(function* (orgId, row) {
 		const hydrated = yield* hydrateIssueRows(orgId, [row])
 		return hydrated[0]!
@@ -496,18 +496,18 @@ const make: Effect.Effect<
 			),
 		)
 
-	const recordEvent: ErrorIssueWorkflowServiceApi["recordEvent"] = Effect.fn("ErrorsService.recordEvent")(
-		function* (orgId, issueId, actorId, type, opts = {}) {
-			const timestamp = opts.timestamp ?? (yield* Clock.currentTimeMillis)
-			const insert = buildEventInsert(orgId, issueId, actorId ?? null, type, timestamp, opts)
-			const inserted = yield* dbExecute((db) => db.run(PG.insertInto(ErrorIssueEvents).values(insert)))
-			// System/sweep events carry no actor and stay out of the audit log.
-			if (actorId !== null) {
-				yield* recordEventAudit(orgId, issueId, actorId, type, opts)
-			}
-			return inserted
-		},
-	)
+	const recordEvent: ErrorIssueWorkflowServiceApi["recordEvent"] = Effect.fn(
+		"ErrorIssueWorkflowService.recordEvent",
+	)(function* (orgId, issueId, actorId, type, opts = {}) {
+		const timestamp = opts.timestamp ?? (yield* Clock.currentTimeMillis)
+		const insert = buildEventInsert(orgId, issueId, actorId ?? null, type, timestamp, opts)
+		const inserted = yield* dbExecute((db) => db.run(PG.insertInto(ErrorIssueEvents).values(insert)))
+		// System/sweep events carry no actor and stay out of the audit log.
+		if (actorId !== null) {
+			yield* recordEventAudit(orgId, issueId, actorId, type, opts)
+		}
+		return inserted
+	})
 
 	/**
 	 * The message is half the point. "Illegal transition from 'triage' to
@@ -536,7 +536,7 @@ const make: Effect.Effect<
 	}
 
 	const applyTransition: ErrorIssueWorkflowServiceApi["applyTransition"] = Effect.fn(
-		"ErrorsService.applyTransition",
+		"ErrorIssueWorkflowService.applyTransition",
 	)(function* (orgId, actorId, row, toState, opts = {}) {
 		const timestamp = opts.timestamp ?? (yield* Clock.currentTimeMillis)
 		const fromState = row.workflowState
@@ -641,7 +641,7 @@ const make: Effect.Effect<
 		})
 
 	const heartbeatIssue: ErrorIssueWorkflowServiceApi["heartbeatIssue"] = Effect.fn(
-		"ErrorsService.heartbeatIssue",
+		"ErrorIssueWorkflowService.heartbeatIssue",
 	)(function* (orgId, actorId, issueId) {
 		const timestamp = yield* Clock.currentTimeMillis
 		const current = yield* requireIssue(orgId, issueId)
@@ -678,7 +678,7 @@ const make: Effect.Effect<
 	 * Silent by design: a no-op for a non-holder (the caller's own conflict check
 	 * owns that decision) and never a reason to fail the action it accompanies.
 	 */
-	const refreshLeaseIfHolder = Effect.fn("ErrorsService.refreshLeaseIfHolder")(function* (
+	const refreshLeaseIfHolder = Effect.fn("ErrorIssueWorkflowService.refreshLeaseIfHolder")(function* (
 		orgId: OrgId,
 		actorId: ActorId,
 		issueId: ErrorIssueId,
@@ -700,7 +700,7 @@ const make: Effect.Effect<
 	})
 
 	const releaseIssue: ErrorIssueWorkflowServiceApi["releaseIssue"] = Effect.fn(
-		"ErrorsService.releaseIssue",
+		"ErrorIssueWorkflowService.releaseIssue",
 	)(function* (orgId, actorId, issueId, opts) {
 		const timestamp = yield* Clock.currentTimeMillis
 		const current = yield* requireIssue(orgId, issueId)
@@ -736,37 +736,37 @@ const make: Effect.Effect<
 		return yield* hydrateIssue(orgId, next)
 	})
 
-	const assignIssue: ErrorIssueWorkflowServiceApi["assignIssue"] = Effect.fn("ErrorsService.assignIssue")(
-		function* (orgId, byActorId, issueId, toActorId) {
-			const timestamp = yield* Clock.currentTimeMillis
-			const current = yield* requireIssue(orgId, issueId)
-			if (toActorId !== null && !(yield* actorsService.actorExists(orgId, toActorId))) {
-				return yield* Effect.fail(
-					new ActorNotFoundError({
-						message: `Actor '${toActorId}' not found`,
-						actorId: toActorId,
-					}),
-				)
-			}
-			const assignedRows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(ErrorIssues)
-						.set({ assignedActorId: toActorId, updatedAt: timestamp })
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
-						.returning(() => ({ txid: currentTxid })),
-				),
+	const assignIssue: ErrorIssueWorkflowServiceApi["assignIssue"] = Effect.fn(
+		"ErrorIssueWorkflowService.assignIssue",
+	)(function* (orgId, byActorId, issueId, toActorId) {
+		const timestamp = yield* Clock.currentTimeMillis
+		const current = yield* requireIssue(orgId, issueId)
+		if (toActorId !== null && !(yield* actorsService.actorExists(orgId, toActorId))) {
+			return yield* Effect.fail(
+				new ActorNotFoundError({
+					message: `Actor '${toActorId}' not found`,
+					actorId: toActorId,
+				}),
 			)
-			yield* recordEvent(orgId, issueId, byActorId, "assignment", {
-				payload: { fromActorId: current.assignedActorId, toActorId },
-				timestamp,
-			})
-			yield* actorsService.touchActor(orgId, byActorId, timestamp)
-			const next = yield* requireIssue(orgId, issueId)
-			const doc = yield* hydrateIssue(orgId, next)
-			const txid = readTxid(assignedRows)
-			return txid === undefined ? doc : new ErrorIssueDocument({ ...doc, txid })
-		},
-	)
+		}
+		const assignedRows = yield* dbExecute((db) =>
+			db.run(
+				PG.update(ErrorIssues)
+					.set({ assignedActorId: toActorId, updatedAt: timestamp })
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
+					.returning(() => ({ txid: currentTxid })),
+			),
+		)
+		yield* recordEvent(orgId, issueId, byActorId, "assignment", {
+			payload: { fromActorId: current.assignedActorId, toActorId },
+			timestamp,
+		})
+		yield* actorsService.touchActor(orgId, byActorId, timestamp)
+		const next = yield* requireIssue(orgId, issueId)
+		const doc = yield* hydrateIssue(orgId, next)
+		const txid = readTxid(assignedRows)
+		return txid === undefined ? doc : new ErrorIssueDocument({ ...doc, txid })
+	})
 
 	/** The outbox row a severity change owes, or none when the change does not escalate. */
 	const severityEscalationInsert = (
@@ -796,78 +796,78 @@ const make: Effect.Effect<
 			processedAt: null,
 		}))
 
-	const setSeverity: ErrorIssueWorkflowServiceApi["setSeverity"] = Effect.fn("ErrorsService.setSeverity")(
-		function* (orgId, actorId, issueId, severity, opts) {
-			const timestamp = yield* Clock.currentTimeMillis
-			const source = opts?.source ?? "manual"
-			yield* Effect.annotateCurrentSpan({
-				orgId,
-				issueId,
-				severity: severity ?? "null",
-				source,
-			})
-			const current = yield* requireIssue(orgId, issueId)
-			if (source === "ai" && current.severitySource === "manual") {
-				return yield* hydrateIssue(orgId, current)
-			}
-			yield* refreshLeaseIfHolder(orgId, actorId, issueId, current, timestamp)
-			const nextSource: IssueSeveritySource | null = severity === null ? null : source
-			const changed = current.severity !== severity || current.severitySource !== nextSource
-			if (!changed) return yield* hydrateIssue(orgId, current)
+	const setSeverity: ErrorIssueWorkflowServiceApi["setSeverity"] = Effect.fn(
+		"ErrorIssueWorkflowService.setSeverity",
+	)(function* (orgId, actorId, issueId, severity, opts) {
+		const timestamp = yield* Clock.currentTimeMillis
+		const source = opts?.source ?? "manual"
+		yield* Effect.annotateCurrentSpan({
+			orgId,
+			issueId,
+			severity: severity ?? "null",
+			source,
+		})
+		const current = yield* requireIssue(orgId, issueId)
+		if (source === "ai" && current.severitySource === "manual") {
+			return yield* hydrateIssue(orgId, current)
+		}
+		yield* refreshLeaseIfHolder(orgId, actorId, issueId, current, timestamp)
+		const nextSource: IssueSeveritySource | null = severity === null ? null : source
+		const changed = current.severity !== severity || current.severitySource !== nextSource
+		if (!changed) return yield* hydrateIssue(orgId, current)
 
-			const payload: StoredJsonRecord = opts?.note
-				? { from: current.severity, to: severity, source, note: opts.note }
-				: { from: current.severity, to: severity, source }
-			const eventInsert =
-				current.severity !== severity
-					? Option.some(
-							buildEventInsert(orgId, issueId, actorId, "severity_change", timestamp, {
-								payload,
-							}),
+		const payload: StoredJsonRecord = opts?.note
+			? { from: current.severity, to: severity, source, note: opts.note }
+			: { from: current.severity, to: severity, source }
+		const eventInsert =
+			current.severity !== severity
+				? Option.some(
+						buildEventInsert(orgId, issueId, actorId, "severity_change", timestamp, {
+							payload,
+						}),
+					)
+				: Option.none()
+		// Clearing the severity (null) never escalates; a set severity may.
+		const escalationInsert = Option.flatMap(Option.fromNullOr(severity), (next) =>
+			severityEscalationInsert(orgId, issueId, current.severity, next, source, timestamp),
+		)
+		// One transaction: a severity that committed without its escalation row
+		// could never page anyone — a retry sees the severity already stored and
+		// returns before reaching the outbox insert.
+		const severityRows = yield* dbExecute((db) =>
+			db.transaction(
+				Effect.gen(function* () {
+					const rows = yield* db.run(
+						PG.update(ErrorIssues)
+							.set({ severity, severitySource: nextSource, updatedAt: timestamp })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
+							.returning(() => ({ txid: currentTxid })),
+					)
+					if (Option.isSome(eventInsert))
+						yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert.value))
+					if (Option.isSome(escalationInsert)) {
+						yield* db.run(
+							PG.insertInto(IssueEscalations)
+								.values(escalationInsert.value)
+								.onConflictDoNothing(),
 						)
-					: Option.none()
-			// Clearing the severity (null) never escalates; a set severity may.
-			const escalationInsert = Option.flatMap(Option.fromNullOr(severity), (next) =>
-				severityEscalationInsert(orgId, issueId, current.severity, next, source, timestamp),
-			)
-			// One transaction: a severity that committed without its escalation row
-			// could never page anyone — a retry sees the severity already stored and
-			// returns before reaching the outbox insert.
-			const severityRows = yield* dbExecute((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						const rows = yield* db.run(
-							PG.update(ErrorIssues)
-								.set({ severity, severitySource: nextSource, updatedAt: timestamp })
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
-								.returning(() => ({ txid: currentTxid })),
-						)
-						if (Option.isSome(eventInsert))
-							yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert.value))
-						if (Option.isSome(escalationInsert)) {
-							yield* db.run(
-								PG.insertInto(IssueEscalations)
-									.values(escalationInsert.value)
-									.onConflictDoNothing(),
-							)
-						}
-						return rows
-					}),
-				),
-			)
-			if (Option.isSome(eventInsert)) {
-				yield* recordEventAudit(orgId, issueId, actorId, "severity_change", {})
-			}
-			yield* actorsService.touchActor(orgId, actorId, timestamp)
-			const next = yield* requireIssue(orgId, issueId)
-			const doc = yield* hydrateIssue(orgId, next)
-			const txid = readTxid(severityRows)
-			return txid === undefined ? doc : new ErrorIssueDocument({ ...doc, txid })
-		},
-	)
+					}
+					return rows
+				}),
+			),
+		)
+		if (Option.isSome(eventInsert)) {
+			yield* recordEventAudit(orgId, issueId, actorId, "severity_change", {})
+		}
+		yield* actorsService.touchActor(orgId, actorId, timestamp)
+		const next = yield* requireIssue(orgId, issueId)
+		const doc = yield* hydrateIssue(orgId, next)
+		const txid = readTxid(severityRows)
+		return txid === undefined ? doc : new ErrorIssueDocument({ ...doc, txid })
+	})
 
 	const commentOnIssue: ErrorIssueWorkflowServiceApi["commentOnIssue"] = Effect.fn(
-		"ErrorsService.commentOnIssue",
+		"ErrorIssueWorkflowService.commentOnIssue",
 	)(function* (orgId, actorId, issueId, body, opts) {
 		const timestamp = yield* Clock.currentTimeMillis
 		const current = yield* requireIssue(orgId, issueId)
@@ -901,7 +901,7 @@ const make: Effect.Effect<
 	})
 
 	const listIssueEvents: ErrorIssueWorkflowServiceApi["listIssueEvents"] = Effect.fn(
-		"ErrorsService.listIssueEvents",
+		"ErrorIssueWorkflowService.listIssueEvents",
 	)(function* (orgId, issueId, opts) {
 		yield* Effect.annotateCurrentSpan({ orgId, issueId })
 		yield* requireIssue(orgId, issueId)

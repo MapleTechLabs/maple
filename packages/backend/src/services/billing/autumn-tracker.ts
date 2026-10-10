@@ -89,7 +89,7 @@ const trackerConfig = Config.all({
 })
 
 /** The tracker's settings, or `undefined` when this org must not be metered. */
-const resolveTracker = Effect.fn("resolveTracker")(function* (orgId: string) {
+const resolveTracker = Effect.fn("AutumnTracker.resolveTracker")(function* (orgId: string) {
 	const config = yield* trackerConfig.pipe(Effect.orElseSucceed(() => undefined))
 	if (config === undefined || Option.isNone(config.secretKey)) return undefined
 	if (Option.contains(config.defaultOrgId, orgId)) return undefined
@@ -160,7 +160,7 @@ const postAll = (orgId: string, requests: ReadonlyArray<UsageRequest>) =>
 	})
 
 /** Legacy raw token counts, kept beside {@link trackAiCredits} until the credit system is trusted. */
-export const trackTokenUsage = Effect.fn("trackTokenUsage")(function* ({
+export const trackTokenUsage = Effect.fn("AutumnTracker.trackTokenUsage")(function* ({
 	orgId,
 	inputTokens,
 	outputTokens,
@@ -201,7 +201,7 @@ const spendsAnything = (spend: AiModelSpend) =>
  * on the feature, so a cache read or a cheap model costs what it actually costs. The default
  * overage behaviour is kept on purpose: `overflow` would ignore the org's spend limit.
  */
-export const trackAiCredits = Effect.fn("trackAiCredits")(function* ({
+export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function* ({
 	orgId,
 	spends,
 	idempotencyKey,

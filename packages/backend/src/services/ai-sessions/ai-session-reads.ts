@@ -98,7 +98,7 @@ const DETAILS_SLICE_CONCURRENCY = 6
  * bounds: every read has to be partition-pruned on both levels rather than fan
  * out unpruned — see `aiSessionSpansQuery`.
  */
-export const resolveAiSessionWindow = Effect.fn("aiSessions.resolveWindow")(function* (
+export const resolveAiSessionWindow = Effect.fn("AiSessionReads.resolveWindow")(function* (
 	tenant: TenantContext,
 	sessionId: string,
 ) {
@@ -173,7 +173,7 @@ type PageBounds = {
 	readonly endTime: string
 }
 
-export const listAiSessions = Effect.fn("aiSessions.list")(function* (
+export const listAiSessions = Effect.fn("AiSessionReads.list")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionsRequest,
 ) {
@@ -281,7 +281,7 @@ export const listAiSessions = Effect.fn("aiSessions.list")(function* (
 	})
 })
 
-export const readAiSessionDetails = Effect.fn("aiSessions.details")(function* (
+export const readAiSessionDetails = Effect.fn("AiSessionReads.details")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionDetailsRequest,
 ) {
@@ -327,7 +327,7 @@ export const readAiSessionDetails = Effect.fn("aiSessions.details")(function* (
 	return new ListAiSessionDetailsResponse({ data: rows })
 })
 
-export const readAiSessionFacets = Effect.fn("aiSessions.facets")(function* (
+export const readAiSessionFacets = Effect.fn("AiSessionReads.facets")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionsFacetsRequest,
 ) {
@@ -355,7 +355,7 @@ export const readAiSessionFacets = Effect.fn("aiSessions.facets")(function* (
 	})
 })
 
-export const readAiSessionDistributions = Effect.fn("aiSessions.distributions")(function* (
+export const readAiSessionDistributions = Effect.fn("AiSessionReads.distributions")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionsDistributionsRequest,
 ) {
@@ -393,7 +393,7 @@ export const readAiSessionDistributions = Effect.fn("aiSessions.distributions")(
 	})
 })
 
-export const readAiSessionSpans = Effect.fn("aiSessions.spans")(function* (
+export const readAiSessionSpans = Effect.fn("AiSessionReads.spans")(function* (
 	tenant: TenantContext,
 	payload: GetAiSessionSpansRequest,
 ) {
@@ -477,7 +477,7 @@ export const readAiSessionSpans = Effect.fn("aiSessions.spans")(function* (
 	})
 })
 
-export const readAiSessionSummary = Effect.fn("aiSessions.summary")(function* (
+export const readAiSessionSummary = Effect.fn("AiSessionReads.summary")(function* (
 	tenant: TenantContext,
 	payload: GetAiSessionSummaryRequest,
 ) {
@@ -529,7 +529,7 @@ export const readAiSessionSummary = Effect.fn("aiSessions.summary")(function* (
 	return summary
 })
 
-export const readAiToolsSeries = Effect.fn("aiSessions.toolsSeries")(function* (
+export const readAiToolsSeries = Effect.fn("AiSessionReads.toolsSeries")(function* (
 	tenant: TenantContext,
 	payload: AiToolsSeriesRequest,
 ) {
@@ -556,7 +556,7 @@ export const readAiToolsSeries = Effect.fn("aiSessions.toolsSeries")(function* (
 	return new AiToolsSeriesResponse({ data: rows, seriesKind })
 })
 
-export const readAiToolsTotals = Effect.fn("aiSessions.toolsTotals")(function* (
+export const readAiToolsTotals = Effect.fn("AiSessionReads.toolsTotals")(function* (
 	tenant: TenantContext,
 	payload: AiToolsTotalsRequest,
 ) {
@@ -625,7 +625,7 @@ export const readAiToolsTotals = Effect.fn("aiSessions.toolsTotals")(function* (
 	})
 })
 
-export const readAiToolsBreakdowns = Effect.fn("aiSessions.toolsBreakdowns")(function* (
+export const readAiToolsBreakdowns = Effect.fn("AiSessionReads.toolsBreakdowns")(function* (
 	tenant: TenantContext,
 	payload: AiToolsBreakdownsRequest,
 ) {
@@ -647,7 +647,7 @@ export const readAiToolsBreakdowns = Effect.fn("aiSessions.toolsBreakdowns")(fun
 	return new AiToolsBreakdownsResponse({ tools: rows.map(breakdownItem) })
 })
 
-export const readAiToolErrors = Effect.fn("aiSessions.toolErrors")(function* (
+export const readAiToolErrors = Effect.fn("AiSessionReads.toolErrors")(function* (
 	tenant: TenantContext,
 	payload: AiToolErrorsRequest,
 ) {
@@ -685,7 +685,7 @@ export const readAiToolErrors = Effect.fn("aiSessions.toolErrors")(function* (
 	})
 })
 
-export const readAiToolErrorDetail = Effect.fn("aiSessions.toolErrorDetail")(function* (
+export const readAiToolErrorDetail = Effect.fn("AiSessionReads.toolErrorDetail")(function* (
 	tenant: TenantContext,
 	payload: AiToolErrorDetailRequest,
 ) {
@@ -733,7 +733,7 @@ export const readAiToolErrorDetail = Effect.fn("aiSessions.toolErrorDetail")(fun
 	return new AiToolErrorDetailResponse({ sessions, variants, breakdown })
 })
 
-export const readAiToolErrorSamples = Effect.fn("aiSessions.toolErrorSamples")(function* (
+export const readAiToolErrorSamples = Effect.fn("AiSessionReads.toolErrorSamples")(function* (
 	tenant: TenantContext,
 	payload: AiToolErrorSamplesRequest,
 ) {

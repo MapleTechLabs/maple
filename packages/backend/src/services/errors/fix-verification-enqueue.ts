@@ -61,7 +61,7 @@ export type EnqueueFixVerificationResult =
 export const enqueueFixVerification: (
 	input: EnqueueFixVerificationInput,
 ) => Effect.Effect<EnqueueFixVerificationResult, DatabaseError, Database> = Effect.fn(
-	"enqueueFixVerification",
+	"FixVerificationEnqueue.enqueueFixVerification",
 )(function* (input) {
 	const database = yield* Database
 	const nowMs = yield* Clock.currentTimeMillis

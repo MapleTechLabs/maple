@@ -221,7 +221,7 @@ const undecoded = (reason: string) => Effect.succeed({ _tag: "undecoded" as cons
  */
 const DECODE_LOOKAHEAD_MS = 24 * 60 * 60_000
 
-const decodeAiSpan = Effect.fn("decodeAiSpan")(
+const decodeAiSpan = Effect.fn("McpInspectSpan.decodeAiSpan")(
 	function* (opts: {
 		readonly traceId: string
 		readonly spanId: string

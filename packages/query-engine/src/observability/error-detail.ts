@@ -339,7 +339,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 })
 
 /** Fingerprints that fired inside the sampled traces too, read over just those traces' span. */
-const relatedFingerprints = Effect.fn("Observability.errorDetail.related")(function* (
+const relatedFingerprints = Effect.fn("Observability.relatedFingerprints")(function* (
 	fingerprintHash: string,
 	traces: ReadonlyArray<ErrorDetailTracesOutput>,
 ) {

@@ -56,7 +56,7 @@ const rejectNonFingerprint = (rawFingerprint: string): McpInvalidInputError => {
 const decodeIssueId = Schema.decodeUnknownEffect(ErrorIssueId)
 
 /** The fingerprint to read, from `fingerprint`, or from `issue_id` (or a UUID passed as fingerprint). */
-const resolveTarget = Effect.fn("McpTool.errorDetail.resolveTarget")(function* (params: {
+const resolveTarget = Effect.fn("McpErrorDetail.resolveTarget")(function* (params: {
 	readonly fingerprint?: string | undefined
 	readonly issue_id?: string | undefined
 }) {

@@ -51,7 +51,7 @@ export type StartInvestigationTurnResult =
 export const startInvestigationTurn: (
 	input: StartInvestigationTurnInput,
 ) => Effect.Effect<StartInvestigationTurnResult, DatabaseError, Database> = Effect.fn(
-	"startInvestigationTurn",
+	"InvestigationStart.startInvestigationTurn",
 )(function* (input) {
 	const database = yield* Database
 	const { orgId, investigationId, nowMs } = input
