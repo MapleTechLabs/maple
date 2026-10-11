@@ -6,6 +6,7 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import {
 	DashboardTemplateParameterKey,
 	PortableDashboardDocument,
+	WIDGET_UNIT_TOKENS,
 	defaultWidgetLayout,
 	findNextPosition,
 } from "@maple/domain/http"
@@ -55,7 +56,9 @@ const SimpleWidgetSpec = Schema.Struct({
 	metric_type: Schema.optionalKey(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	service_name: Schema.optionalKey(Schema.String),
 	group_by: Schema.optionalKey(Schema.String),
-	unit: Schema.optionalKey(Schema.String),
+	/** A whereClause in the query-builder grammar, AND-ed with `service_name`. */
+	where: Schema.optionalKey(Schema.String),
+	unit: Schema.optionalKey(Schema.Literals(WIDGET_UNIT_TOKENS)),
 })
 type SimpleWidgetSpec = typeof SimpleWidgetSpec.Type
 
@@ -140,7 +143,10 @@ function simpleSpecToWidget(
 	const metricType = spec.metric_type
 
 	const metric = spec.metric ?? (source === "metrics" ? "avg" : "count")
-	const where = spec.service_name ? `service.name = "${spec.service_name}"` : ""
+	const extraWhere = spec.where?.trim() ?? ""
+	const where = [spec.service_name ? `service.name = "${spec.service_name}"` : "", extraWhere]
+		.filter((clause) => clause !== "")
+		.join(" AND ")
 
 	let groupBy: string[]
 	if (spec.group_by) {
@@ -192,6 +198,9 @@ function simpleSpecToWidget(
 	}
 
 	if (viz === "list") {
+		if (extraWhere !== "") {
+			return `Widget "${spec.title}": where is not supported on list widgets; use service_name, or a chart/table.`
+		}
 		if (source === "logs") {
 			return {
 				id,
@@ -277,7 +286,7 @@ function computeAutoLayout(
 	return placed.map((widget) => widget.layout)
 }
 
-function buildSimpleWidgets(specs: ReadonlyArray<SimpleWidgetSpec>): WidgetDef[] | string {
+export function buildSimpleWidgets(specs: ReadonlyArray<SimpleWidgetSpec>): WidgetDef[] | string {
 	const layouts = computeAutoLayout(specs)
 	const widgets: WidgetDef[] = []
 	const errors: string[] = []
@@ -354,9 +363,11 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			),
 			widgets: P.optionalJson(
 				Schema.Array(SimpleWidgetSpec),
-				`Simplified widget specs, one per widget: { title, visualization?: ${SIMPLE_SPEC_VISUALIZATIONS.join("|")}, source: ${QUERY_BUILDER_DATA_SOURCES.join("|")}, metric?, metric_name?, metric_type?, service_name?, group_by?, unit? }. ` +
+				`Simplified widget specs, one per widget: { title, visualization?: ${SIMPLE_SPEC_VISUALIZATIONS.join("|")}, source: ${QUERY_BUILDER_DATA_SOURCES.join("|")}, metric?, metric_name?, metric_type?, service_name?, group_by?, where?, unit?: ${WIDGET_UNIT_TOKENS.join("|")} }. ` +
 					`Not the query_data vocabulary: group_by is ${groupByDoc("traces")} for traces, ${groupByDoc("logs")} for logs, ${groupByDoc("metrics")} for metrics, ${groupByDoc("product_events")} for product_events. ` +
-					"table needs a group_by; list shows recent traces or logs. Charts default to group_by service.name.",
+					"table needs a group_by; list shows recent traces or logs. Charts default to group_by service.name. " +
+					'where is a whereClause (describe_dashboard_schema "queries"), e.g. attr.state = "idle" to read one state of a per-state metric like system.cpu.utilization (unscoped it averages to about 1/states). ' +
+					"unit percent expects a 0-1 fraction, percent_100 a 0-100 value.",
 			),
 			dashboard_json: optionalJsonText(
 				PortableDashboardDocument,

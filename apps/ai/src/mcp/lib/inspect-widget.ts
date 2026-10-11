@@ -842,6 +842,16 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 		// change, so it rides along on the mutation-tool summary rather than only
 		// appearing in a full `inspect_chart_data` response.
 		const actionableNote = outcome.data.notes.find((note) => note.startsWith('unit "percent'))
+		// A breakdown's groups are its rows. The largest query, not the sum, so hidden
+		// operands and the formula built from them are not counted twice.
+		const isBreakdown = dataSourceQuerySet(widget.dataSource)?.resultShape === "breakdown"
+		const seriesCount = outcome.data.queries.reduce(
+			(largest, query) =>
+				query.status === "ok"
+					? Math.max(largest, isBreakdown ? query.stats.rowCount : query.stats.seriesCount)
+					: largest,
+			0,
+		)
 		return {
 			widgetId: widget.id,
 			...(widget.display.title !== undefined ? { title: widget.display.title } : undefined),
@@ -849,6 +859,7 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 			verdict: outcome.data.verdict satisfies WidgetInspectionVerdict,
 			flags: [...outcome.data.flags],
 			...(actionableNote !== undefined ? { note: actionableNote } : undefined),
+			seriesCount,
 		}
 	}
 	if (outcome.kind === "unsupported" && outcome.funnel !== undefined) {
@@ -1062,8 +1073,9 @@ export function validationDoc(
 	const single = options.single && summary.inspected.length === 1 ? summary.inspected[0] : undefined
 	if (single !== undefined) {
 		const flagPart = single.flags.length > 0 ? `  (${single.flags.join(", ")})` : ""
+		const seriesPart = single.seriesCount !== undefined ? `, ${single.seriesCount} series` : ""
 		const lines = [
-			`${verdictIcon(single.verdict)} "${single.title ?? single.widgetId}": ${single.verdict}${flagPart}`,
+			`${verdictIcon(single.verdict)} "${single.title ?? single.widgetId}": ${single.verdict}${seriesPart}${flagPart}`,
 		]
 		if (single.note) lines.push(single.note)
 		if (single.verdict === "suspicious" || single.verdict === "broken") {
@@ -1093,8 +1105,9 @@ export function validationDoc(
 		doc.list(
 			summary.inspected.map((entry) => {
 				const flagPart = entry.flags.length > 0 ? `  (${entry.flags.join(", ")})` : ""
+				const seriesPart = entry.seriesCount !== undefined ? `, ${entry.seriesCount} series` : ""
 				const notePart = entry.note ? `: ${entry.note}` : ""
-				return `${verdictIcon(entry.verdict)} ${entry.widgetId} "${entry.title ?? ""}": ${entry.verdict}${flagPart}${notePart}`
+				return `${verdictIcon(entry.verdict)} ${entry.widgetId} "${entry.title ?? ""}": ${entry.verdict}${seriesPart}${flagPart}${notePart}`
 			}),
 		),
 	)

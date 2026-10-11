@@ -57,6 +57,8 @@ export const WidgetInspectionEntry = Schema.Struct({
 	verdict: WidgetInspectionVerdict,
 	flags: Schema.Array(InspectChartFlag),
 	note: Schema.optionalKey(Schema.String),
+	/** Series (groups, for a breakdown) in the widget's largest query, so a `group_by` split is visible. */
+	seriesCount: Schema.optionalKey(Schema.Number),
 })
 
 /** The automatic check the mutation tools run on the widgets they wrote. */
