@@ -19,6 +19,7 @@ import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
+import { finiteOrZero } from "./format"
 
 const HOSTMETRIC_NAMES = [
 	"system.cpu.utilization",
@@ -817,10 +818,22 @@ export function podGaugeTimeseriesQuery(opts: PodGaugeTimeseriesOpts) {
 
 // Kubernetes — node aggregations over k8s.node.* metrics from the kubelet
 // stats + k8s_cluster receivers.
-//   k8s.node.cpu.usage    gauge, cores
-//   k8s.node.uptime       gauge, seconds
+//   k8s.node.cpu.usage             gauge, cores (kubeletstats)
+//   k8s.node.uptime                gauge, seconds (kubeletstats)
+//   k8s.node.memory.working_set    gauge, bytes (kubeletstats)
+//   k8s.node.allocatable_cpu       gauge, cores (k8s_cluster, allocatable_types_to_report)
+//   k8s.node.allocatable_memory    gauge, bytes (k8s_cluster, allocatable_types_to_report)
 
-const NODE_METRIC_NAMES = ["k8s.node.cpu.usage", "k8s.node.uptime"] as const
+const NODE_ALLOCATABLE_CPU_METRIC = "k8s.node.allocatable_cpu" as const
+const NODE_ALLOCATABLE_MEMORY_METRIC = "k8s.node.allocatable_memory" as const
+
+const NODE_METRIC_NAMES = [
+	"k8s.node.cpu.usage",
+	"k8s.node.uptime",
+	"k8s.node.memory.working_set",
+	NODE_ALLOCATABLE_CPU_METRIC,
+	NODE_ALLOCATABLE_MEMORY_METRIC,
+] as const
 
 // Single representative metric for node facets — see POD_FACET_PROBE_METRIC.
 const NODE_FACET_PROBE_METRIC = "k8s.node.cpu.usage" as const
@@ -834,16 +847,55 @@ export interface ListNodesOpts {
 	offset?: number
 }
 
-export interface ListNodesOutput {
+/** Usage, allocatable capacity, usage/allocatable fractions and uptime; 0 when not collected. */
+export interface NodeCapacityOutput {
+	readonly cpuUsage: number
+	readonly cpuAllocatable: number
+	readonly cpuUtilization: number
+	readonly memoryUsage: number
+	readonly memoryAllocatable: number
+	readonly memoryUtilization: number
+	readonly uptime: number
+}
+
+export interface ListNodesOutput extends NodeCapacityOutput {
 	readonly nodeName: string
 	readonly nodeUid: string
 	readonly clusterName: string
 	readonly environment: string
 	readonly kubeletVersion: string
 	readonly lastSeen: DateTime.Utc
-	readonly cpuUsage: number
-	readonly uptime: number
 }
+
+/** `usage / allocatable`; 0 when allocatable was not collected (x/0 is non-finite). */
+const ratioOrZero = (usage: CH.Expr<number>, allocatable: CH.Expr<number>): CH.Expr<number> =>
+	finiteOrZero(usage.div(allocatable))
+
+// The node row merges two receivers: kubeletstats (usage) and k8s_cluster (allocatable,
+// kubelet version). String attributes skip the receiver that leaves them empty.
+const nodeCapacityColumns = ($: ColumnAccessor<typeof MetricsGauge.columns>) => {
+	const cpuUsage = avgIfOrZero($.Value, $.MetricName.eq("k8s.node.cpu.usage"))
+	const cpuAllocatable = maxIfOrZero($.Value, $.MetricName.eq(NODE_ALLOCATABLE_CPU_METRIC))
+	const memoryUsage = avgIfOrZero($.Value, $.MetricName.eq("k8s.node.memory.working_set"))
+	const memoryAllocatable = maxIfOrZero($.Value, $.MetricName.eq(NODE_ALLOCATABLE_MEMORY_METRIC))
+	return {
+		cpuUsage,
+		cpuAllocatable,
+		cpuUtilization: ratioOrZero(cpuUsage, cpuAllocatable),
+		memoryUsage,
+		memoryAllocatable,
+		memoryUtilization: ratioOrZero(memoryUsage, memoryAllocatable),
+		uptime: maxIfOrZero($.Value, $.MetricName.eq("k8s.node.uptime")),
+	}
+}
+
+const nonEmptyAttr = ($: ColumnAccessor<typeof MetricsGauge.columns>, key: string) =>
+	CH.anyIf($.ResourceAttributes.get(key), $.ResourceAttributes.get(key).neq(""))
+
+// Nodes that only k8s_cluster reports (EKS Fargate virtual nodes, nodes the DaemonSet
+// does not run on) carry capacity but no usage; the list and facets both require kubelet data.
+const hasKubeletUsage = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+	CH.countIf($.MetricName.eq(NODE_FACET_PROBE_METRIC)).gt(0)
 
 const nodeBaseConditions = (
 	$: ColumnAccessor<typeof MetricsGauge.columns>,
@@ -877,16 +929,19 @@ export function listNodesQuery(opts: ListNodesOpts = {}) {
 	return from(MetricsGauge)
 		.select(($) => ({
 			nodeName: $.ResourceAttributes.get("k8s.node.name"),
-			nodeUid: CH.any_($.ResourceAttributes.get("k8s.node.uid")),
-			clusterName: CH.any_($.ResourceAttributes.get("k8s.cluster.name")),
-			environment: CH.any_(deploymentEnvExpr($.ResourceAttributes)),
-			kubeletVersion: CH.any_($.ResourceAttributes.get("k8s.kubelet.version")),
+			nodeUid: nonEmptyAttr($, "k8s.node.uid"),
+			clusterName: nonEmptyAttr($, "k8s.cluster.name"),
+			environment: CH.anyIf(
+				deploymentEnvExpr($.ResourceAttributes),
+				deploymentEnvExpr($.ResourceAttributes).neq(""),
+			),
+			kubeletVersion: nonEmptyAttr($, "k8s.kubelet.version"),
 			lastSeen: CH.max_($.TimeUnix),
-			cpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.node.cpu.usage")),
-			uptime: maxIfOrZero($.Value, $.MetricName.eq("k8s.node.uptime")),
+			...nodeCapacityColumns($),
 		}))
 		.where(($) => [...nodeBaseConditions($), ...nodeFilterConditions($, opts)])
 		.groupBy("nodeName")
+		.having(($) => [hasKubeletUsage($)])
 		.orderBy(["lastSeen", "desc"])
 		.limit(opts.limit ?? 200)
 		.offset(opts.offset ?? 0)
@@ -897,28 +952,28 @@ export interface NodeDetailSummaryOpts {
 	nodeName: string
 }
 
-export interface NodeDetailSummaryOutput {
+export interface NodeDetailSummaryOutput extends NodeCapacityOutput {
 	readonly nodeName: string
 	readonly nodeUid: string
 	readonly kubeletVersion: string
 	readonly containerRuntime: string
 	readonly firstSeen: DateTime.Utc
 	readonly lastSeen: DateTime.Utc
-	readonly cpuUsage: number
-	readonly uptime: number
 }
 
 export function nodeDetailSummaryQuery(opts: NodeDetailSummaryOpts) {
 	return from(MetricsGauge)
 		.select(($) => ({
 			nodeName: $.ResourceAttributes.get("k8s.node.name"),
-			nodeUid: CH.any_($.ResourceAttributes.get("k8s.node.uid")),
-			kubeletVersion: CH.any_($.ResourceAttributes.get("k8s.kubelet.version")),
-			containerRuntime: CH.any_(containerRuntimeExpr($.ResourceAttributes)),
+			nodeUid: nonEmptyAttr($, "k8s.node.uid"),
+			kubeletVersion: nonEmptyAttr($, "k8s.kubelet.version"),
+			containerRuntime: CH.anyIf(
+				containerRuntimeExpr($.ResourceAttributes),
+				containerRuntimeExpr($.ResourceAttributes).neq(""),
+			),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
-			cpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.node.cpu.usage")),
-			uptime: maxIfOrZero($.Value, $.MetricName.eq("k8s.node.uptime")),
+			...nodeCapacityColumns($),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -935,14 +990,22 @@ export function nodeDetailSummaryQuery(opts: NodeDetailSummaryOpts) {
 export interface NodeGaugeTimeseriesOpts {
 	nodeName: string
 	metricName: string
+	/** Plot `metricName / capacityMetricName` per bucket (a 0-1 fraction) instead of the raw gauge. */
+	capacityMetricName?: string
 }
 
 export function nodeGaugeTimeseriesQuery(opts: NodeGaugeTimeseriesOpts) {
+	const capacityMetricName = opts.capacityMetricName
 	return from(MetricsGauge)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: CH.lit(""),
-			avgValue: CH.avg($.Value),
+			avgValue: capacityMetricName
+				? ratioOrZero(
+						avgIfOrZero($.Value, $.MetricName.eq(opts.metricName)),
+						maxIfOrZero($.Value, $.MetricName.eq(capacityMetricName)),
+					)
+				: CH.avg($.Value),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -950,7 +1013,9 @@ export function nodeGaugeTimeseriesQuery(opts: NodeGaugeTimeseriesOpts) {
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("k8s.node.name").eq(opts.nodeName),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
-			$.MetricName.eq(opts.metricName),
+			capacityMetricName
+				? $.MetricName.in_(opts.metricName, capacityMetricName)
+				: $.MetricName.eq(opts.metricName),
 		])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])

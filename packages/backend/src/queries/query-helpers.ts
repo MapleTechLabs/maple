@@ -93,6 +93,20 @@ export const nodeMetricSpec = (metric: NodeInfraTimeseriesRequest["metric"]) => 
 	switch (metric) {
 		case "cpu_usage":
 			return { metricName: "k8s.node.cpu.usage", unit: "cores" as const }
+		case "cpu_utilization":
+			return {
+				metricName: "k8s.node.cpu.usage",
+				capacityMetricName: "k8s.node.allocatable_cpu",
+				unit: "percent" as const,
+			}
+		case "memory_usage":
+			return { metricName: "k8s.node.memory.working_set", unit: "bytes" as const }
+		case "memory_utilization":
+			return {
+				metricName: "k8s.node.memory.working_set",
+				capacityMetricName: "k8s.node.allocatable_memory",
+				unit: "percent" as const,
+			}
 		case "uptime":
 			return { metricName: "k8s.node.uptime", unit: "seconds" as const }
 	}

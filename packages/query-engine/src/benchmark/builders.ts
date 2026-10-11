@@ -1290,6 +1290,33 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "infra",
+		name: "listNodesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.listNodesQuery(), window),
+	},
+	{
+		module: "infra",
+		name: "nodeDetailSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.nodeDetailSummaryQuery({ nodeName: "ip-10-0-1-42.ec2.internal" }), window),
+	},
+	{
+		module: "infra",
+		name: "nodeGaugeTimeseriesQuery",
+		label: "utilization",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.nodeGaugeTimeseriesQuery({
+					nodeName: "ip-10-0-1-42.ec2.internal",
+					metricName: "k8s.node.memory.working_set",
+					capacityMetricName: "k8s.node.allocatable_memory",
+				}),
+				{ ...window, bucketSeconds: 300 },
+			),
+	},
+	{
+		module: "infra",
 		name: "nodeGaugeTimeseriesQuery",
 		label: "default",
 		compile: () =>

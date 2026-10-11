@@ -301,6 +301,8 @@ presets:
             - DiskPressure
             - PIDPressure
             - NetworkUnavailable
+        # Emits k8s.node.allocatable_cpu (cores) and k8s.node.allocatable_memory (bytes);
+        # the Nodes view divides kubelet usage by these for CPU/memory utilization.
         allocatableTypesToReport:
             - cpu
             - memory

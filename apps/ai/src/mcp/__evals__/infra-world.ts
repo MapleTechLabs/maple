@@ -98,9 +98,26 @@ const PODS: ReadonlyArray<Pod> = [
 	pod("otel-agent-q4w9e", "observability", "ip-10-0-3-57", ["daemonset", "otel-agent"], 0.27, 0, () => 0),
 ]
 
+const GIB = 1024 ** 3
 const NODES = [
-	{ nodeName: "ip-10-0-3-21", nodeUid: "4f1c-21", kubeletVersion: "v1.31.2", uptime: 1_814_400 },
-	{ nodeName: "ip-10-0-3-57", nodeUid: "9a7e-57", kubeletVersion: "v1.31.2", uptime: 86_400 },
+	{
+		nodeName: "ip-10-0-3-21",
+		nodeUid: "4f1c-21",
+		kubeletVersion: "v1.31.2",
+		uptime: 1_814_400,
+		cpuAllocatable: 3.92,
+		memoryUsage: 9.4 * GIB,
+		memoryAllocatable: 14.6 * GIB,
+	},
+	{
+		nodeName: "ip-10-0-3-57",
+		nodeUid: "9a7e-57",
+		kubeletVersion: "v1.31.2",
+		uptime: 86_400,
+		cpuAllocatable: 3.92,
+		memoryUsage: 11.8 * GIB,
+		memoryAllocatable: 14.6 * GIB,
+	},
 ]
 /** System daemons outside any pod. */
 const NODE_OVERHEAD_CORES = 0.3
@@ -641,6 +658,8 @@ export const infraFixtureRules = (): FixtureRule[] => [
 				(n) => ({
 					...n,
 					cpuUsage: avgOf(nodeCpu(n.nodeName)),
+					cpuUtilization: avgOf(nodeCpu(n.nodeName)) / n.cpuAllocatable,
+					memoryUtilization: n.memoryUsage / n.memoryAllocatable,
 					clusterName: INFRA_WORLD.cluster,
 					environment: INFRA_WORLD.environment,
 					containerRuntime: "containerd://1.7.22",
