@@ -51,6 +51,7 @@ import {
 	OAuthConnections,
 	OrgClickHouseSettings,
 	OrgIngestKeys,
+	OrgOpenRouterKeys,
 	PlanetscaleConnections,
 	PlanetscaleIssueReceipts,
 	RailwayConnections,
@@ -157,6 +158,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	RailwayConnections,
 	RailwayEnvironments,
+	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
+	OrgOpenRouterKeys,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	LiveActivities,

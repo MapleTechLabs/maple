@@ -1,6 +1,7 @@
 import { customerHasFlag, OPENROUTER_BYOK_FEATURE_ID } from "@maple/domain/billing"
 import {
 	IsoDateTimeString,
+	OPENROUTER_KEY_MAX_LENGTH,
 	OpenRouterKeyAddOnRequiredError,
 	OpenRouterKeyDocument,
 	OpenRouterKeyPersistenceError,
@@ -20,8 +21,14 @@ import { Env } from "@maple/backend/platform/Env"
 import { ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 
-/** OpenRouter's "who is this key" endpoint: 200 for a live key, 401 for anything else. */
-const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
+/**
+ * OpenRouter's "who is this key" endpoint: 200 for a live key, 401 for anything else. The EU
+ * instance asks the in-region host its turns use, so a key that host refuses never saves.
+ */
+const OPENROUTER_KEY_URLS = {
+	us: "https://openrouter.ai/api/v1/key",
+	eu: "https://eu.openrouter.ai/api/v1/key",
+} as const
 const VALIDATE_TIMEOUT = Duration.seconds(10)
 
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -119,12 +126,14 @@ export class OrgOpenRouterKeyService extends Context.Service<
 				updatedBy: Option.match(row, { onNone: () => null, onSome: (r) => r.updatedBy }),
 			})
 
+		const keyUrl = env.MAPLE_REGION === "eu" ? OPENROUTER_KEY_URLS.eu : OPENROUTER_KEY_URLS.us
+
 		const validateWithOpenRouter = (apiKey: string) =>
 			httpClient
-				.execute(
-					HttpClientRequest.get(OPENROUTER_KEY_URL).pipe(HttpClientRequest.bearerToken(apiKey)),
-				)
+				.execute(HttpClientRequest.get(keyUrl).pipe(HttpClientRequest.bearerToken(apiKey)))
 				.pipe(
+					// A redirect is not OpenRouter vouching for the key, so it is not followed.
+					Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
 					Effect.timeout(VALIDATE_TIMEOUT),
 					Effect.mapError(
 						() =>
@@ -153,6 +162,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 											}),
 										),
 					),
+					Effect.withSpan("OrgOpenRouterKeyService.validateWithOpenRouter"),
 				)
 
 		const get = Effect.fn("OrgOpenRouterKeyService.get")(function* (orgId: OrgId) {
@@ -170,7 +180,11 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const apiKey = rawKey.trim()
-			if (!apiKey.startsWith("sk-or-") || apiKey.length < 20) {
+			if (
+				!apiKey.startsWith("sk-or-") ||
+				apiKey.length < 20 ||
+				apiKey.length > OPENROUTER_KEY_MAX_LENGTH
+			) {
 				return yield* new OpenRouterKeyValidationError({
 					message: "That is not an OpenRouter API key. They start with sk-or-.",
 				})

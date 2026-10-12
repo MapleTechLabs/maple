@@ -111,7 +111,63 @@ export function AiProviderSection() {
 							</p>
 						</div>
 
-						{!current.entitled ? (
+						{current.configured ? (
+							<SettingRow
+								label="Current key"
+								description={
+									!current.entitled
+										? "Not in use: the add-on has lapsed, so Maple's own key runs your AI."
+										: current.updatedAt === null
+											? undefined
+											: `Saved ${new Date(current.updatedAt).toLocaleString()}`
+								}
+								control={
+									<div className="flex items-center gap-3">
+										<code className="font-mono text-sm">sk-or-...{current.keyHint}</code>
+										<Button
+											variant="outline"
+											disabled={busy}
+											onClick={() => setConfirmRemove(true)}
+										>
+											Remove
+										</Button>
+									</div>
+								}
+							/>
+						) : null}
+
+						{current.entitled ? (
+							<form
+								className="flex flex-col gap-3 sm:flex-row sm:items-end"
+								onSubmit={(event) => {
+									event.preventDefault()
+									const apiKey = draft.trim()
+									if (apiKey !== "") saveKey(apiKey)
+								}}
+							>
+								<Field className="flex-1">
+									<FieldLabel htmlFor="openrouter-api-key">
+										{current.configured ? "Replace key" : "OpenRouter API key"}
+									</FieldLabel>
+									<Input
+										id="openrouter-api-key"
+										type="password"
+										autoComplete="off"
+										placeholder="sk-or-v1-..."
+										value={draft}
+										disabled={busy}
+										onChange={(event) => setDraft(event.target.value)}
+									/>
+									<FieldDescription>
+										Create one at openrouter.ai/settings/keys. Maple checks it with
+										OpenRouter, then stores it encrypted.
+									</FieldDescription>
+								</Field>
+								<Button type="submit" disabled={busy || draft.trim() === ""}>
+									{isSaving ? "Checking..." : "Save key"}
+								</Button>
+							</form>
+						) : (
 							<SettingRow
 								label={`Add-on, ${ADD_ON_PRICE}`}
 								description="Billed with your plan. Cancel any time from billing, and Maple's own key takes over again."
@@ -121,64 +177,6 @@ export function AiProviderSection() {
 									</Button>
 								}
 							/>
-						) : (
-							<>
-								{current.configured ? (
-									<SettingRow
-										label="Current key"
-										description={
-											current.updatedAt === null
-												? undefined
-												: `Saved ${new Date(current.updatedAt).toLocaleString()}`
-										}
-										control={
-											<div className="flex items-center gap-3">
-												<code className="font-mono text-sm">
-													sk-or-...{current.keyHint}
-												</code>
-												<Button
-													variant="outline"
-													disabled={busy}
-													onClick={() => setConfirmRemove(true)}
-												>
-													Remove
-												</Button>
-											</div>
-										}
-									/>
-								) : null}
-
-								<form
-									className="flex flex-col gap-3 sm:flex-row sm:items-end"
-									onSubmit={(event) => {
-										event.preventDefault()
-										const apiKey = draft.trim()
-										if (apiKey !== "") saveKey(apiKey)
-									}}
-								>
-									<Field className="flex-1">
-										<FieldLabel htmlFor="openrouter-api-key">
-											{current.configured ? "Replace key" : "OpenRouter API key"}
-										</FieldLabel>
-										<Input
-											id="openrouter-api-key"
-											type="password"
-											autoComplete="off"
-											placeholder="sk-or-v1-..."
-											value={draft}
-											disabled={busy}
-											onChange={(event) => setDraft(event.target.value)}
-										/>
-										<FieldDescription>
-											Create one at openrouter.ai/settings/keys. Maple checks it with
-											OpenRouter, then stores it encrypted.
-										</FieldDescription>
-									</Field>
-									<Button type="submit" disabled={busy || draft.trim() === ""}>
-										{isSaving ? "Checking..." : "Save key"}
-									</Button>
-								</form>
-							</>
 						)}
 
 						<ConfirmDialog

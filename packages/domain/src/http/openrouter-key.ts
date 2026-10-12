@@ -3,6 +3,8 @@ import { Schema } from "effect"
 import { IsoDateTimeString, UserId } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 
+export const OPENROUTER_KEY_MAX_LENGTH = 256
+
 /**
  * The org's own OpenRouter key, as the settings page sees it. The key itself never comes back:
  * `keyHint` is its last four characters.
@@ -19,7 +21,8 @@ export class OpenRouterKeyDocument extends Schema.Class<OpenRouterKeyDocument>("
 export class OpenRouterKeyUpdateRequest extends Schema.Class<OpenRouterKeyUpdateRequest>(
 	"OpenRouterKeyUpdateRequest",
 )({
-	apiKey: Schema.String,
+	// OpenRouter keys are about 75 characters; the cap keeps an oversized body from reaching OpenRouter.
+	apiKey: Schema.String.check(Schema.isMaxLength(OPENROUTER_KEY_MAX_LENGTH)),
 }) {}
 
 export class OpenRouterKeyPersistenceError extends Schema.TaggedError<OpenRouterKeyPersistenceError>()(
