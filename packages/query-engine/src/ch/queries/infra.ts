@@ -736,7 +736,7 @@ export function podDetailSummaryQuery(opts: PodDetailSummaryOpts) {
 }
 
 // Pod container restarts, from the k8s_cluster receiver's `k8s.container.restarts`
-// (a running total per container). The window's restarts are max - min per container;
+// (a running total per container). The window's restarts are last - first, floored at 0:
 // a kubelet that prunes dead containers can reset the total, so this undercounts, never over.
 
 export interface PodRestartsOpts {
@@ -763,8 +763,11 @@ export function podRestartsQuery(opts: PodRestartsOpts) {
 			podName: $.ResourceAttributes.get("k8s.pod.name"),
 			namespace: $.ResourceAttributes.get("k8s.namespace.name"),
 			containerName: $.ResourceAttributes.get("k8s.container.name"),
-			restarts: CH.ifNotFinite(CH.max_($.Value).sub(CH.min_($.Value)), 0),
-			totalRestarts: CH.ifNotFinite(CH.max_($.Value), 0),
+			restarts: CH.ifNotFinite(
+				CH.greatest_(CH.argMax($.Value, $.TimeUnix).sub(CH.argMin($.Value, $.TimeUnix)), CH.lit(0)),
+				0,
+			),
+			totalRestarts: CH.ifNotFinite(CH.argMax($.Value, $.TimeUnix), 0),
 			// The attribute rides on the resource, so the newest sample carries the newest reason.
 			lastTerminatedReason: CH.argMax(
 				$.ResourceAttributes.get("k8s.container.status.last_terminated_reason"),

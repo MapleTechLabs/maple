@@ -342,7 +342,9 @@ describe("podRestartsQuery", () => {
 		const { sql } = compileUnsafe(podRestartsQuery({}), baseParams)
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("MetricName = 'k8s.container.restarts'")
-		expect(sql).toContain("max(metrics_gauge.Value) - min(metrics_gauge.Value)")
+		expect(sql).toContain(
+			"greatest(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix) - argMin(metrics_gauge.Value, metrics_gauge.TimeUnix), 0)",
+		)
 		expect(sql).toContain("ResourceAttributes['k8s.container.status.last_terminated_reason']")
 		expect(sql).toMatch(/GROUP BY podName, namespace, containerName/)
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
