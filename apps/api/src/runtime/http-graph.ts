@@ -8,6 +8,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
+import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/billing-public.http"
@@ -127,7 +128,15 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAiModelsInternalLive,
 		),
 	),
-	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpBillingLive, HttpDemoLive, HttpDigestLive)),
+	Layer.provide(
+		Layer.mergeAll(
+			HttpAiTriageLive,
+			HttpBillingLive,
+			HttpDemoLive,
+			HttpDigestLive,
+			HttpOpenRouterKeyLive,
+		),
+	),
 	Layer.provide(
 		Layer.mergeAll(
 			HttpCodeReviewLive,

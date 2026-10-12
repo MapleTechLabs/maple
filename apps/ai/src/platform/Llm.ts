@@ -578,6 +578,30 @@ const openRouterHttp = Layer.effect(HttpClient.HttpClient)(
 	),
 )
 
+/** The OpenRouter client on the settings' key and region. */
+export const layerOpenRouterClient = (
+	settings: LlmSettings,
+	http: Layer.Layer<HttpClient.HttpClient> = FetchHttpClient.layer,
+): Layer.Layer<OpenRouterClient.OpenRouterClient> =>
+	OpenRouterClient.layer({
+		apiKey: readSecret(settings, "OPENROUTER_API_KEY") ?? Redacted.make(""),
+		apiUrl: openRouterApiUrl(settings),
+		transformClient: withPerCallFields,
+	}).pipe(Layer.provide(openRouterHttp.pipe(Layer.provide(http))))
+
+/**
+ * Settings for an org that brought its own OpenRouter key: that key, and OpenRouter whatever this
+ * deploy's provider is, since the key is only good there.
+ */
+export const withOrgOpenRouterKey = (
+	settings: LlmSettings,
+	apiKey: Redacted.Redacted<string>,
+): LlmSettings => ({
+	...settings,
+	OPENROUTER_API_KEY: apiKey,
+	MAPLE_LLM_PROVIDER: "openrouter",
+})
+
 /**
  * The runnable LLM stack — both provider clients, so the switch stays a pure env flip.
  *
@@ -594,11 +618,7 @@ export const layerLlm = (
 	// reaches it, and everything else goes out over the network as usual.
 	const http = layerWorkersAi(workersAi).pipe(Layer.provide(FetchHttpClient.layer))
 	return Layer.mergeAll(
-		OpenRouterClient.layer({
-			apiKey: readSecret(settings, "OPENROUTER_API_KEY") ?? Redacted.make(""),
-			apiUrl: openRouterApiUrl(settings),
-			transformClient: withPerCallFields,
-		}).pipe(Layer.provide(openRouterHttp.pipe(Layer.provide(http)))),
+		layerOpenRouterClient(settings, http),
 		// The URL the shim already matches: `.../ai/v1/chat/completions`.
 		OpenAiClient.layer({
 			apiKey: readSecret(settings, "CLOUDFLARE_API_KEY") ?? Redacted.make(BINDING_PLACEHOLDER),
