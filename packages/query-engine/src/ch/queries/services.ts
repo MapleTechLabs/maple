@@ -75,10 +75,9 @@ export interface ServiceWindowFilters {
  * `bucketSeconds` is not a multiple of 3600 — an hour-floored row landing in a
  * sub-hour bucket puts a whole hour of traffic on the bucket containing `:00`
  * and leaves the rest of the hour reading zero.
+ *
+ * The hour grain always splices the hourly tier; only the minute grain can drop it.
  */
-export type OverviewGrain = "hour" | "minute"
-
-/** The hour grain always splices the hourly tier; only the minute grain can drop it. */
 export type ServiceWindowTiers =
 	| { readonly grain?: "hour"; readonly includeHourly?: true }
 	| {
