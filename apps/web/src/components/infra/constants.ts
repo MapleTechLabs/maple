@@ -1,8 +1,5 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// Shared controls for the infra detail routes. Per-resource metric tabs/strips
-// stay in their own routes (genuinely page-specific); only the bucket ladder is common.
-
 /**
  * Bucket widths a kubelet-sampled series can honestly be drawn at. The floor is
  * the scrape interval — anything finer would draw gaps, not resolution.
@@ -24,8 +21,7 @@ const BUCKET_LADDER: ReadonlyArray<number> = [
 
 /**
  * Chart bucket for an arbitrary window: about a hundred points, snapped up to
- * the ladder. The preset table above can't serve a page whose window lives in
- * the URL, where a custom range has no preset to look up.
+ * the ladder, so a custom range in the URL needs no preset to look up.
  */
 export function bucketSecondsForRange(startTime: string, endTime: string): number {
 	const windowSeconds = Math.max((toEpochMs(endTime) - toEpochMs(startTime)) / 1000, 60)

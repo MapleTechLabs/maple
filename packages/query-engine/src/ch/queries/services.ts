@@ -63,7 +63,7 @@ export interface ServiceWindowFilters {
 }
 
 /**
- * The bucket grain a service-history stream is reconstructed at.
+ * The bucket grain (`grain`) a service-history stream is reconstructed at.
  *
  * `"hour"` is the two-tier splice: raw partial boundary hours + the hourly
  * rollup's interior. Correct for any query that aggregates the whole window, and
