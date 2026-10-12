@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from "react"
+import { memo, useMemo, useRef, useState } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import { useMountEffect } from "@/hooks/use-mount-effect"
@@ -10,14 +10,18 @@ import type { FactoryLink } from "./factory-routing"
 import type { SpatialLayout } from "./spatial-layout"
 import type { Vec3 } from "./types"
 
-/** A flat, double-sided triangle with an ink edge: pennants, bunting, pinwheel blades. */
-function Flag({ corners, color, ink }: { corners: [Vec3, Vec3, Vec3]; color: string; ink: string }) {
-	const key = corners.flat().join(",")
-	const geometry = useMemo(() => {
+/** A flat, double-sided triangle with an ink edge: pennants, bunting, pinwheel blades.
+ * Keyed on its corners, so moved corners remount rather than leak the old buffer. */
+function Flag(props: { corners: [Vec3, Vec3, Vec3]; color: string; ink: string }) {
+	return <FlagBody key={props.corners.flat().join(",")} {...props} />
+}
+
+function FlagBody({ corners, color, ink }: { corners: [Vec3, Vec3, Vec3]; color: string; ink: string }) {
+	const [geometry] = useState(() => {
 		const flag = new THREE.BufferGeometry()
-		flag.setAttribute("position", new THREE.Float32BufferAttribute(key.split(",").map(Number), 3))
+		flag.setAttribute("position", new THREE.Float32BufferAttribute(corners.flat(), 3))
 		return flag
-	}, [key])
+	})
 	useMountEffect(() => () => geometry.dispose())
 	const [a, b, c] = corners
 	return (

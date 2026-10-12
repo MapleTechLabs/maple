@@ -87,8 +87,8 @@ Dark mode is a blue-green night forest with warm lantern glow.
   own `sign`/`signInk` colours so they read in both themes.
 - The forest (`maple-scenery*.tsx`) is one merged drawing: maples, birches,
   pines, undergrowth, a creek with a footbridge, a fence, a deer, a fox and
-  songbirds. It stays 0.9+ units outside every zone and thins toward its outer
-  edge. Leaves fall and drift; dark mode adds steady fireflies. All motion
+  songbirds. Clearances are listed under "No box" below; it thins toward its
+  outer edge. Leaves fall and drift; dark mode adds steady fireflies. All motion
   stops with the traffic toggle, and nothing pulses or blinks.
 
 ### Maple shows live state
@@ -112,9 +112,11 @@ The Maple world follows the zones, not their bounding box. A distance field to
 the union of zone rectangles plus seeded noise drives planting
 (`maple-scenery-field.tsx`, `maple-scenery-plan.tsx`): groves hug some zones,
 meadow bays open by others, and trees thin into the paper past an irregular
-meadow edge. Planting fills the gaps between zones while keeping 0.75 units
-from every belt sample and 0.35 outside every zone; plans rebuild only when
-zone or belt geometry changes. Atlas zones are wobbly moss mats with grass
+meadow edge. Clearances, from `maple-scenery-plan.tsx`: small planting
+(grass, bushes, rocks, saplings) keeps 0.35 outside every zone and 0.75 from
+every belt sample; full trees need 0.9 from zones and 1.1 from belts; landforms
+(creek, hill, lake, fence) keep 0.9 from zones and 0.75 from belts. Plans
+rebuild only when zone or belt geometry changes. Atlas zones are wobbly moss mats with grass
 along the edge; the creek meanders along the meadow and widens into a pond.
 
 ### Landforms and individuality

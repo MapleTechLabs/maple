@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useState } from "react"
 import * as THREE from "three"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { FACE_TONE } from "./appearance"
@@ -56,22 +56,24 @@ export function InkOutline({ geometry, ink }: { geometry: THREE.BufferGeometry; 
 	)
 }
 
-export function InkBox({
-	size,
-	position = [0, 0, 0],
-	color,
-	ink,
-	cell,
-}: {
+interface InkBoxProps {
 	size: [number, number, number]
 	position?: Vec3
 	color: string
 	ink: string
 	/** Draw module seams every `cell` units, like stacked crates. */
 	cell?: number
-}) {
-	const [w, h, d] = size
-	const { faces, lines } = useMemo(() => {
+}
+
+/** Geometry is built once per mount; a new size remounts the body (see the
+ * keys below), so live metrics never leave replaced GPU buffers behind. */
+export function InkBox(props: InkBoxProps) {
+	return <InkBoxBody key={`${props.size.join(":")}:${props.cell ?? 0}`} {...props} />
+}
+
+function InkBoxBody({ size, position = [0, 0, 0], color, ink, cell }: InkBoxProps) {
+	const [{ faces, lines }] = useState(() => {
+		const [w, h, d] = size
 		const faces = shadeFaces(new THREE.BoxGeometry(w, h, d))
 		const edges = new THREE.EdgesGeometry(faces)
 		const points = [...edges.getAttribute("position").array, ...(cell ? seams([w, h, d], cell) : [])]
@@ -79,7 +81,7 @@ export function InkBox({
 		const lines = new THREE.BufferGeometry()
 		lines.setAttribute("position", new THREE.Float32BufferAttribute(points, 3))
 		return { faces, lines }
-	}, [w, h, d, cell])
+	})
 	useMountEffect(() => () => {
 		faces.dispose()
 		lines.dispose()
@@ -94,26 +96,27 @@ export function InkBox({
 	)
 }
 
-/** Any solid outlined at its creases: octagonal tanks, pitched roofs. */
-export function InkSolid({
-	geometry,
-	position = [0, 0, 0],
-	rotation = [0, 0, 0],
-	color,
-	ink,
-}: {
+interface InkSolidProps {
 	geometry: THREE.BufferGeometry
 	position?: Vec3
 	rotation?: Vec3
 	color: string
 	ink: string
-}) {
-	const { faces, lines } = useMemo(() => {
+}
+
+/** Any solid outlined at its creases: octagonal tanks, pitched roofs. Takes
+ * ownership of `geometry`; a new geometry remounts the body. */
+export function InkSolid(props: InkSolidProps) {
+	return <InkSolidBody key={props.geometry.uuid} {...props} />
+}
+
+function InkSolidBody({ geometry, position = [0, 0, 0], rotation = [0, 0, 0], color, ink }: InkSolidProps) {
+	const [{ faces, lines }] = useState(() => {
 		// Flat normals per facet, so an octagonal tank reads as eight drawn panels.
 		const faces = geometry.index ? geometry.toNonIndexed() : geometry.clone()
 		faces.computeVertexNormals()
 		return { faces: shadeFaces(faces), lines: new THREE.EdgesGeometry(geometry, 20) }
-	}, [geometry])
+	})
 	useMountEffect(() => () => {
 		faces.dispose()
 		lines.dispose()
@@ -129,27 +132,26 @@ export function InkSolid({
 	)
 }
 
-/** A flat outlined plate lying on a face, for doors, windows and decals. */
-export function InkPlate({
-	size,
-	position,
-	normal,
-	color,
-	ink,
-}: {
+interface InkPlateProps {
 	size: [number, number]
 	position: Vec3
 	normal: "x" | "y" | "z"
 	color: string
 	ink: string
-}) {
+}
+
+/** A flat outlined plate lying on a face, for doors, windows and decals. */
+export function InkPlate(props: InkPlateProps) {
+	return <InkPlateBody key={props.size.join(":")} {...props} />
+}
+
+function InkPlateBody({ size, position, normal, color, ink }: InkPlateProps) {
 	const rotation: Vec3 =
 		normal === "y" ? [-Math.PI / 2, 0, 0] : normal === "x" ? [0, Math.PI / 2, 0] : [0, 0, 0]
-	const [width, height] = size
-	const { faces, lines } = useMemo(() => {
-		const faces = new THREE.PlaneGeometry(width, height)
+	const [{ faces, lines }] = useState(() => {
+		const faces = new THREE.PlaneGeometry(size[0], size[1])
 		return { faces, lines: new THREE.EdgesGeometry(faces) }
-	}, [width, height])
+	})
 	useMountEffect(() => () => {
 		faces.dispose()
 		lines.dispose()
@@ -171,12 +173,15 @@ export function InkPlate({
 
 /** Free ink strokes as point pairs: ladders, railings, louvres, mullions. */
 export function InkLines({ points, ink }: { points: number[]; ink: string }) {
-	const key = points.join(",")
-	const geometry = useMemo(() => {
+	return <InkLinesBody key={points.join(",")} points={points} ink={ink} />
+}
+
+function InkLinesBody({ points, ink }: { points: number[]; ink: string }) {
+	const [geometry] = useState(() => {
 		const lines = new THREE.BufferGeometry()
-		lines.setAttribute("position", new THREE.Float32BufferAttribute(key.split(",").map(Number), 3))
+		lines.setAttribute("position", new THREE.Float32BufferAttribute(points, 3))
 		return lines
-	}, [key])
+	})
 	useMountEffect(() => () => geometry.dispose())
 	return <InkOutline geometry={geometry} ink={ink} />
 }

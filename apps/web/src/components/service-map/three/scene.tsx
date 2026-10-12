@@ -48,7 +48,11 @@ function CameraRig({
 	labels,
 	selectedId,
 	command,
-}: Pick<SceneProps, "topology" | "layout" | "links" | "view" | "labels" | "selectedId" | "command">) {
+	palette,
+}: Pick<
+	SceneProps,
+	"topology" | "layout" | "links" | "view" | "labels" | "selectedId" | "command" | "palette"
+>) {
 	const { camera, gl, invalidate, size } = useThree()
 	const controls = useRef<OrbitControls | null>(null)
 	const lastFrame = useRef("")
@@ -66,15 +70,18 @@ function CameraRig({
 		[topology.nodes, links],
 	)
 	const layoutKey = useMemo(() => JSON.stringify([...layout.positions]), [layout])
+	// Maple frames a little meadow around the zones, so a small topology still
+	// shows the forest edge on reset without shrinking a large map much.
+	const margin = palette.style === "maple" ? 2.5 : 0
 	const bounds = useMemo(() => {
 		const points = layout.districts.flatMap((district) =>
 			[-1, 1].flatMap((x) =>
 				[-1, 1].map(
 					(z) =>
 						new THREE.Vector3(
-							district.position[0] + (x * district.width) / 2,
+							district.position[0] + x * (district.width / 2 + margin),
 							district.position[1],
-							district.position[2] + (z * district.depth) / 2,
+							district.position[2] + z * (district.depth / 2 + margin),
 						),
 				),
 			),
@@ -82,7 +89,7 @@ function CameraRig({
 		for (const point of layout.positions.values())
 			points.push(vector(point).add(new THREE.Vector3(0, 4, 0)))
 		return { points, center: new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3()) }
-	}, [layout])
+	}, [layout, margin])
 	useMountEffect(() => {
 		const orbit = new OrbitControls(camera, gl.domElement)
 		// The projection is part of the drawing: pan and zoom, never orbit.
@@ -107,7 +114,7 @@ function CameraRig({
 	useFrame(() => {
 		const orbit = controls.current
 		if (!orbit || !(camera instanceof THREE.OrthographicCamera)) return
-		const frameKey = `${view}:${size.width}:${size.height}:${layoutKey}`
+		const frameKey = `${view}:${size.width}:${size.height}:${layoutKey}:${margin}`
 		const newCommand = lastCommand.current !== command.serial
 		if (lastFrame.current !== frameKey || (newCommand && command.action === "reset")) {
 			lastFrame.current = frameKey
@@ -318,7 +325,8 @@ function meadowOutline({ id, width, depth }: District) {
 function MeadowMat({ district, palette }: { district: District; palette: InkPalette }) {
 	const [x, y, z] = district.position
 	const top = y + 0.16
-	const { faces, lines, tufts } = useMemo(() => {
+	// Built once; the caller keys MeadowMat on the zone's shape, so a moved zone remounts.
+	const [{ faces, lines, tufts }] = useState(() => {
 		const edge = meadowOutline(district)
 		const faces = new THREE.ExtrudeGeometry(edge, { depth: top - PLINTH_FLOOR, bevelEnabled: false })
 		// Shape y becomes world -z, extrusion becomes height.
@@ -327,7 +335,7 @@ function MeadowMat({ district, palette }: { district: District; palette: InkPale
 		const lines = new THREE.EdgesGeometry(faces, 35)
 		const tufts = meadowTufts(edge, x, top, z, district.id)
 		return { faces, lines, tufts }
-	}, [district, x, z, top])
+	})
 	useMountEffect(() => () => {
 		faces.dispose()
 		lines.dispose()
@@ -530,7 +538,11 @@ function MapScene(props: SceneProps) {
 					return view === "cascade" ? (
 						<StoneTerrace key={`${view}:${district.id}`} district={district} palette={palette} />
 					) : (
-						<MeadowMat key={`${view}:${district.id}`} district={district} palette={palette} />
+						<MeadowMat
+							key={`${view}:${district.id}:${district.position.join(",")}:${district.width}:${district.depth}`}
+							district={district}
+							palette={palette}
+						/>
 					)
 				return (
 					<InkBox
