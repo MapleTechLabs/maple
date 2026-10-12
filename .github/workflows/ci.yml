@@ -216,7 +216,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.
@@ -348,7 +348,7 @@ jobs:
             matrix: ${{ fromJSON(needs.changes.outputs.tests) }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.
@@ -416,7 +416,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.
@@ -461,7 +461,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.
@@ -536,7 +536,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
 
             - uses: ./.github/actions/bun-install
 
@@ -589,7 +589,7 @@ jobs:
             # whose evidence matters most.
             - name: Upload checkpoint failure evidence
               if: ${{ failure() || cancelled() }}
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: native-checkpoint-failure-${{ github.run_id }}
                   # Both probes' roots: the migration probe used to fail without
@@ -641,7 +641,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
 
             - uses: ./.github/actions/bun-install
 
@@ -690,7 +690,7 @@ jobs:
             # otherwise collide on a single name, failing the upload.
             - name: Upload archive failure evidence
               if: ${{ failure() }}
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: native-archive-failure-${{ matrix.leg }}-${{ github.run_id }}
                   path: ${{ runner.temp }}/archive-${{ matrix.leg }}
@@ -743,7 +743,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
               with:
                   # Rust and Python are for the ingest and Tinybird workflows; skipping
                   # them keeps this job off their ~1 GB of toolchain cache.
