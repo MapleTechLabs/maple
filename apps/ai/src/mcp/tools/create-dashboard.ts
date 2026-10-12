@@ -1,6 +1,7 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { CreateDashboardOutput } from "@maple/domain/mcp-outputs"
+import { quoteWhereValue } from "@maple/domain/where-clause"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import {
@@ -144,7 +145,10 @@ function simpleSpecToWidget(
 
 	const metric = spec.metric ?? (source === "metrics" ? "avg" : "count")
 	const extraWhere = spec.where?.trim() ?? ""
-	const where = [spec.service_name ? `service.name = "${spec.service_name}"` : "", extraWhere]
+	const where = [
+		spec.service_name ? `service.name = ${quoteWhereValue(spec.service_name)}` : "",
+		extraWhere,
+	]
 		.filter((clause) => clause !== "")
 		.join(" AND ")
 

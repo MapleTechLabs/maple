@@ -41,6 +41,12 @@ describe("buildSimpleWidgets", () => {
 		expect(draft?.queries[0]?.whereClause).toBe('service.name = "node" AND attr.state = "idle"')
 	})
 
+	it("quotes service_name so a double quote cannot open a second clause", () => {
+		const widgets = buildSimpleWidgets([{ ...cpu, where: undefined, service_name: 'x" AND attr.a = "1' }])
+		const draft = typeof widgets === "string" ? undefined : dataSourceQuerySet(widgets[0]?.dataSource)
+		expect(draft?.queries[0]?.whereClause).toBe(`service.name = 'x" AND attr.a = "1'`)
+	})
+
 	it("rejects a where clause on a list widget instead of dropping it", () => {
 		const result = buildSimpleWidgets([
 			{ title: "Recent logs", source: "logs", visualization: "list", where: 'attr.a = "1"' },

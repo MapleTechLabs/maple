@@ -487,6 +487,16 @@ describe("metricsBreakdownQuery", () => {
 		expect(sql).toContain("Attributes['cpu'] IN ('cpu0', 'cpu1')")
 	})
 
+	it("excludes datapoints missing the label from numeric filters", () => {
+		const q = metricsBreakdownQuery({
+			metricType: "gauge",
+			attributeFilters: [{ key: "cpu", mode: "lt", value: "4" }],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("Attributes['cpu'] != ''")
+		expect(sql).toContain("toFloat64OrZero(Attributes['cpu']) < 4")
+	})
+
 	it("ranks groups by the requested aggregate before the limit", () => {
 		const { sql } = compileUnsafe(metricsBreakdownQuery({ metricType: "sum", rankBy: "max" }), baseParams)
 		expect(sql).toContain("ORDER BY maxValue DESC")
