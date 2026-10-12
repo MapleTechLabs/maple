@@ -2181,6 +2181,18 @@ export class ListNodesRequest extends Schema.Class<ListNodesRequest>("ListNodesR
 	offset: Schema.optional(Schema.Number),
 }) {}
 
+// Allocatable is 0 when the k8s_cluster receiver did not report it; utilizations are
+// usage / allocatable fractions (0-1) and are 0 in that case.
+const NodeCapacityFields = {
+	cpuUsage: Schema.Number,
+	cpuAllocatable: Schema.Number,
+	cpuUtilization: Schema.Number,
+	memoryUsage: Schema.Number,
+	memoryAllocatable: Schema.Number,
+	memoryUtilization: Schema.Number,
+	uptime: Schema.Number,
+}
+
 const NodeRow = Schema.Struct({
 	nodeName: Schema.String,
 	nodeUid: Schema.String,
@@ -2188,8 +2200,7 @@ const NodeRow = Schema.Struct({
 	environment: Schema.String,
 	kubeletVersion: Schema.String,
 	lastSeen: Schema.String,
-	cpuUsage: Schema.Number,
-	uptime: Schema.Number,
+	...NodeCapacityFields,
 })
 
 export class ListNodesResponse extends Schema.Class<ListNodesResponse>("ListNodesResponse")({
@@ -2232,8 +2243,7 @@ export class NodeDetailSummaryResponse extends Schema.Class<NodeDetailSummaryRes
 			containerRuntime: Schema.String,
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
-			cpuUsage: Schema.Number,
-			uptime: Schema.Number,
+			...NodeCapacityFields,
 		}),
 	),
 }) {}
@@ -2244,7 +2254,7 @@ export class NodeInfraTimeseriesRequest extends Schema.Class<NodeInfraTimeseries
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	nodeName: Schema.String,
-	metric: Schema.Literals(["cpu_usage", "uptime"]),
+	metric: Schema.Literals(["cpu_usage", "cpu_utilization", "memory_usage", "memory_utilization", "uptime"]),
 	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
@@ -2258,7 +2268,7 @@ export class NodeInfraTimeseriesResponse extends Schema.Class<NodeInfraTimeserie
 			value: Schema.Number,
 		}),
 	),
-	unit: Schema.Literals(["cores", "seconds"]),
+	unit: Schema.Literals(["cores", "percent", "bytes", "seconds"]),
 }) {}
 
 export class ListWorkloadsRequest extends Schema.Class<ListWorkloadsRequest>("ListWorkloadsRequest")({

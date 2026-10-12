@@ -73,9 +73,11 @@ export { formatSessionDuration } from "@maple/domain/format"
 export function formatClock(ms: number): string {
 	if (!Number.isFinite(ms) || ms < 0) ms = 0
 	const totalSeconds = Math.floor(ms / 1000)
-	const minutes = Math.floor(totalSeconds / 60)
-	const seconds = totalSeconds % 60
-	return `${minutes}:${seconds.toString().padStart(2, "0")}`
+	const hours = Math.floor(totalSeconds / 3600)
+	const minutes = Math.floor(totalSeconds / 60) % 60
+	const seconds = (totalSeconds % 60).toString().padStart(2, "0")
+	if (hours === 0) return `${minutes}:${seconds}`
+	return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds}`
 }
 
 // Relative-time formatting lives in `./time-format` — import `formatRelativeFrom`

@@ -102,7 +102,12 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						tenant,
 						new AiToolsTotalsRequest({ ...scope, periods: ["current", "previous", "window"] }),
 					),
-					readAiToolsBreakdowns(tenant, new AiToolsBreakdownsRequest(scope)),
+					// Every tool, to compare or pick from: a selected tool's read is about that tool.
+					selected === undefined
+						? readAiToolsBreakdowns(tenant, new AiToolsBreakdownsRequest(scope)).pipe(
+								Effect.map((response) => response.tools),
+							)
+						: Effect.succeed(undefined),
 					// The groups are fingerprints of ONE tool's failures, and "every tool's groups" is a
 					// list with no question behind it.
 					selected === undefined
@@ -121,7 +126,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_tools_overview")))
 
 			yield* Effect.annotateCurrentSpan({
-				"result.rowCount": breakdowns.tools.length,
+				...(breakdowns !== undefined && { "result.rowCount": breakdowns.length }),
 				...(errorGroups !== undefined && { "result.errorGroupCount": errorGroups.length }),
 			})
 
@@ -134,7 +139,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 				current: totals.current,
 				...(totals.previous === undefined ? undefined : { previous: totals.previous }),
 				...(totals.allSessions === undefined ? undefined : { allSessions: totals.allSessions }),
-				tools: breakdowns.tools,
+				...(breakdowns === undefined ? undefined : { tools: breakdowns }),
 				...(selected === undefined || errorGroups === undefined
 					? undefined
 					: {
@@ -277,10 +282,11 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						)
 			// The tool worth looking at next is the one failing most, not the busiest; a tool with
 			// no failures has nothing to open.
-			const worst = [...output.tools]
+			const tools = output.tools ?? []
+			const worst = [...tools]
 				.filter((item) => item.errors > 0)
 				.sort((a, b) => b.errors / b.calls - a.errors / a.calls)[0]
-			const busiest = output.tools[0]
+			const busiest = selection.tool === undefined ? tools[0]?.key : selection.tool
 
 			return {
 				title: "Agent tool calls",
@@ -329,34 +335,35 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						],
 					),
 					...sessionShare,
-					// The breakdown ignores a selected `tool` on purpose: it is how a caller picks another.
-					doc.heading(
-						`Tools (busiest first, top ${output.tools.length}${failureGroups === undefined ? "" : ", every tool in the window, not just the selected one"})`,
-					),
-					doc.table(
-						[
-							"Tool",
-							"Calls",
-							"Sessions",
-							"Errors",
-							"Err %",
-							"p50",
-							"p95",
-							"First seen",
-							"Last seen",
-						],
-						output.tools.map((item) => [
-							truncate(item.key === "" ? "(unnamed)" : item.key, 60),
-							formatNumber(item.calls),
-							formatNumber(item.sessions),
-							formatNumber(item.errors),
-							percentOf(item.errors, item.calls),
-							formatNanos(item.p50),
-							formatNanos(item.p95),
-							formatSeen(item.firstSeen),
-							formatSeen(item.lastSeen),
-						]),
-					),
+					...(output.tools === undefined
+						? []
+						: [
+								doc.heading(`Tools (busiest first, top ${output.tools.length})`),
+								doc.table(
+									[
+										"Tool",
+										"Calls",
+										"Sessions",
+										"Errors",
+										"Err %",
+										"p50",
+										"p95",
+										"First seen",
+										"Last seen",
+									],
+									output.tools.map((item) => [
+										truncate(item.key === "" ? "(unnamed)" : item.key, 60),
+										formatNumber(item.calls),
+										formatNumber(item.sessions),
+										formatNumber(item.errors),
+										percentOf(item.errors, item.calls),
+										formatNanos(item.p50),
+										formatNanos(item.p95),
+										formatSeen(item.firstSeen),
+										formatSeen(item.lastSeen),
+									]),
+								),
+							]),
 					...groupBlocks,
 				],
 				next: [
@@ -375,8 +382,10 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						: [
 								doc.next(
 									"list_agent_sessions",
-									{ ...window, tools: [busiest.key] },
-									"the sessions that ran the busiest tool",
+									{ ...window, tools: [busiest] },
+									selection.tool === undefined
+										? "the sessions that ran the busiest tool"
+										: "the sessions that ran this tool",
 								),
 							]),
 				],

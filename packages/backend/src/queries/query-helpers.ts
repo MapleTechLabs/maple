@@ -93,6 +93,20 @@ export const nodeMetricSpec = (metric: NodeInfraTimeseriesRequest["metric"]) => 
 	switch (metric) {
 		case "cpu_usage":
 			return { metricName: "k8s.node.cpu.usage", unit: "cores" as const }
+		case "cpu_utilization":
+			return {
+				metricName: "k8s.node.cpu.usage",
+				capacityMetricName: "k8s.node.allocatable_cpu",
+				unit: "percent" as const,
+			}
+		case "memory_usage":
+			return { metricName: "k8s.node.memory.working_set", unit: "bytes" as const }
+		case "memory_utilization":
+			return {
+				metricName: "k8s.node.memory.working_set",
+				capacityMetricName: "k8s.node.allocatable_memory",
+				unit: "percent" as const,
+			}
 		case "uptime":
 			return { metricName: "k8s.node.uptime", unit: "seconds" as const }
 	}
@@ -129,6 +143,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.utilization",
 				groupByAttributeKey: "state",
+				attributeEquals: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -136,6 +151,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.memory.utilization",
 				groupByAttributeKey: "state",
+				attributeEquals: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -143,6 +159,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.filesystem.utilization",
 				groupByAttributeKey: "mountpoint",
+				// Per-mount disk usage is the `used` share; free and reserved are its complement.
+				attributeEquals: { key: "state", value: "used" },
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -150,6 +168,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.load_average.15m",
 				groupByAttributeKey: undefined,
+				attributeEquals: undefined,
 				unit: "load" as const,
 				isNetwork: false,
 			}
@@ -157,6 +176,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.network.io",
 				groupByAttributeKey: "direction",
+				attributeEquals: undefined,
 				unit: "bytes_per_second" as const,
 				isNetwork: true,
 			}

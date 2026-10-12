@@ -41,6 +41,9 @@ const POD_METRIC_LABELS: Record<PodInfraMetric, string> = {
 
 const NODE_METRIC_LABELS: Record<NodeInfraMetric, string> = {
 	cpu_usage: "CPU usage",
+	cpu_utilization: "CPU / allocatable",
+	memory_usage: "Memory working set",
+	memory_utilization: "Memory / allocatable",
 	uptime: "Uptime",
 } satisfies Record<NodeInfraMetric, string>
 

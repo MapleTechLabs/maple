@@ -16,6 +16,7 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
+import { withRunSessionAttributes } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
@@ -156,12 +157,13 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		: undefined
 	// A call's UI payload, held until its result event is written. Never part of what the model reads.
 	const uiByCall = new Map<string, ToolUiPayload>()
+	const sessionAttributes = agentSessionSpanAttributes(input.model.tags)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,
 		profile.ruleset,
 		profile.surface,
-		agentSessionSpanAttributes(input.model.tags),
+		sessionAttributes,
 		coverage?.observe,
 		(toolCallId, ui) => uiByCall.set(toolCallId, ui),
 	)
@@ -176,7 +178,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			input.usage,
 			input.model.name,
 			input.closeOut === true,
-			agentSessionSpanAttributes(input.model.tags),
+			sessionAttributes,
 		) ??
 		(input.submitReview === undefined
 			? undefined
@@ -188,7 +190,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					input.usage,
 					input.model.name,
 					input.closeOut === true,
-					agentSessionSpanAttributes(input.model.tags),
+					sessionAttributes,
 					coverage,
 					input.review?.ledger,
 				)) ??
@@ -200,7 +202,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					input.origin,
 					input.submitReply,
 					input.stageEdit,
-					agentSessionSpanAttributes(input.model.tags),
+					sessionAttributes,
 				))
 
 	// A review's own pass may hand groups of a large pull request's files to child reviewers.
@@ -298,6 +300,12 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// client stays in the requirements channel, where the Durable Object's runtime answers it.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layer)),
+		// The `review_files` children run on threads of their own; their spans still belong to this
+		// session, so one review is one session.
+		(run) =>
+			Effect.flatMap(Effect.tracer, (tracer) =>
+				Effect.withTracer(run, withRunSessionAttributes(tracer, sessionAttributes)),
+			),
 	)
 }
 

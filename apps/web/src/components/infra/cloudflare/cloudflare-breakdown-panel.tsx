@@ -47,7 +47,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatBytes, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatDateInTimezone } from "@/lib/timezone-format"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
 import { CACHE_STATUS_COLORS, CACHE_STATUS_ORDER, STATUS_CLASS_COLORS, STATUS_CLASS_ORDER } from "./constants"
@@ -366,7 +366,7 @@ function BreakdownTable({
 								errorRateClass(row.errorRate),
 							)}
 						>
-							{formatPercent(row.errorRate)}
+							{formatErrorRate(row.errorRate)}
 						</div>
 						<div className="hidden w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 							{formatBytes(row.bytes)}

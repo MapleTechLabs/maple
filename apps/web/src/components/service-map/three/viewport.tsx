@@ -3,6 +3,7 @@ import { useReducedMotion } from "motion/react"
 import { useTheme } from "@maple/ui/hooks/use-theme"
 import { Button } from "@maple/ui/components/ui/button"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import {
 	ArrowRotateAnticlockwiseIcon,
@@ -155,7 +156,7 @@ export function ServiceMap3DViewport({
 									else labels.current.delete(node.id)
 								}}
 								title={badge ? `${node.label} · ${badge.label}` : node.label}
-								className={`pointer-events-auto absolute top-0 left-0 max-w-40 truncate rounded px-1.5 py-1 text-3xs leading-none whitespace-nowrap transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-ring ${selectedId === node.id ? "bg-background text-foreground ring-1 ring-primary" : "text-foreground/90"}`}
+								className={`pointer-events-auto absolute top-0 left-0 flex max-w-40 rounded px-1.5 py-1 text-3xs leading-none whitespace-nowrap transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-ring ${selectedId === node.id ? "bg-background text-foreground ring-1 ring-primary" : "text-foreground/90"}`}
 								style={{
 									visibility: "hidden",
 									opacity: node.dimmed || (related && !related.has(node.id)) ? 0.25 : 1,
@@ -166,7 +167,7 @@ export function ServiceMap3DViewport({
 								aria-label={`Select ${node.label}${badge ? `, ${badge.label}` : ""}`}
 								aria-pressed={selectedId === node.id}
 							>
-								{node.label}
+								<MiddleTruncate text={node.label} tail={10} />
 							</button>
 						)
 					})}
@@ -187,7 +188,7 @@ export function ServiceMap3DViewport({
 								}}
 								className="pointer-events-auto absolute top-0 left-0 flex h-5 min-w-14 cursor-pointer items-center justify-center gap-1 rounded-[3px] border-2 border-[#747766] bg-[#e1d5a9] px-2 font-mono text-4xs font-bold text-[#30362c] shadow-[0_2px_0_#3a4034] hover:bg-[#f4e8bc] focus-visible:outline-2 focus-visible:outline-ring"
 								style={{ visibility: "hidden" }}
-								title={`${nodesById.get(link.edge.source)?.label} → ${nodesById.get(link.edge.target)?.label} · ${link.edge.callsPerSecond} calls/s · ${edgeLatency(link.edge)}`}
+								title={`${nodesById.get(link.edge.source)?.label} → ${nodesById.get(link.edge.target)?.label} · ${formatRate(link.edge.callsPerSecond, link.edge.hasSampling)} calls · ${edgeLatency(link.edge)}`}
 								aria-label={`Inspect connection to ${nodesById.get(link.edge.target)?.label}, ${formatRate(link.edge.callsPerSecond, link.edge.hasSampling)}`}
 								onClick={() => onSelect(link.edge.target)}
 							>

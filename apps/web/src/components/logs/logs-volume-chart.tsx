@@ -81,7 +81,7 @@ function LogsVolumePlot({
 			seriesKeys.map((key) => ({
 				key,
 				label: key.toUpperCase(),
-				color: SEVERITY_COLORS[key.toUpperCase()] ?? "--muted-foreground",
+				color: SEVERITY_COLORS[key.toUpperCase()] ?? "var(--color-muted-foreground)",
 				// Read off the bucket ROW, so hovering one band still prints every
 				// severity at that bucket.
 				value: (cell: SeverityCell) => {

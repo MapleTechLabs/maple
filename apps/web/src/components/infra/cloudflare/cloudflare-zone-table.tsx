@@ -12,7 +12,7 @@ import {
 	ROW_LINK_CLASS,
 	useTableSort,
 } from "@/components/common/data-table"
-import { EMPTY_VALUE, formatBytes, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatBytes, formatErrorRate, formatPercent } from "@maple/ui/lib/format"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 
 // Zone latency percentiles are plan-dependent (the poller only gets quantiles
@@ -167,14 +167,17 @@ export function CloudflareZoneTable({ zones, waiting, emptyMessage }: Cloudflare
 					params={{ zoneName: zone.zoneName }}
 					className={ROW_LINK_CLASS}
 				>
-					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
+					<div
+						className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+						title={zone.zoneName}
+					>
 						{zone.zoneName}
 					</div>
 					{numCell(formatNumber(zone.requests))}
 					<div
 						className={`w-[90px] text-right font-mono text-xs tabular-nums ${errorRateClass(zone.errorRate)}`}
 					>
-						{formatPercent(zone.errorRate)}
+						{formatErrorRate(zone.errorRate)}
 					</div>
 					{numCell(formatPercent(zone.cacheHitRate), true)}
 					{numCell(formatBytes(zone.bytes), true)}

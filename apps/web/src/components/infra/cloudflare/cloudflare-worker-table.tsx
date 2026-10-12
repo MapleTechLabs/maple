@@ -4,7 +4,7 @@ import { LatencyValue } from "@maple/ui/components/latency-value"
 import type { CloudflareWorkerRow } from "@/api/warehouse/cloudflare-infra"
 import { formatNumber } from "@maple/ui/lib/format"
 import { ColumnHead, DataTable, type SortControls, useTableSort } from "@/components/common/data-table"
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatErrorRate } from "@maple/ui/lib/format"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 
 type SortKey =
@@ -136,7 +136,7 @@ export function CloudflareWorkerTable({ workers, waiting }: CloudflareWorkerTabl
 					<div
 						className={`w-[90px] text-right font-mono text-xs tabular-nums ${errorRateClass(worker.errorRate)}`}
 					>
-						{formatPercent(worker.errorRate)}
+						{formatErrorRate(worker.errorRate)}
 					</div>
 					<div className="hidden w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80 lg:block">
 						{formatNumber(worker.subrequests)}

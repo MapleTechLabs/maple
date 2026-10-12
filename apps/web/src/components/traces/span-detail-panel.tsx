@@ -27,7 +27,12 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 import type { SpanNode, SpanDetailResult } from "@/api/warehouse/traces"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { getSpanDetailResultAtom, listLogsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { CopyableValue, AttributesSection, ResourceAttributesSection } from "@/components/attributes"
+import {
+	CopyableValue,
+	SelectableValue,
+	AttributesSection,
+	ResourceAttributesSection,
+} from "@/components/attributes"
 import { TraceAttributeFilterProvider } from "./trace-attribute-filter-provider"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
@@ -76,7 +81,17 @@ function SpanPositionBar({
 				/>
 			</div>
 			<div className="mt-1 flex justify-between text-3xs text-muted-foreground tabular-nums">
-				<span>+{formatDuration(Math.max(offsetMs, 0))}</span>
+				{offsetMs < 0 ? (
+					<span
+						className="text-severity-warn"
+						title="Starts before the trace root: the clocks disagree"
+					>
+						{"\u2212"}
+						{formatDuration(Math.abs(offsetMs))} (clock skew)
+					</span>
+				) : (
+					<span>+{formatDuration(offsetMs)}</span>
+				)}
 				<span>{formatDuration(totalDurationMs)} total</span>
 			</div>
 		</div>
@@ -230,24 +245,27 @@ export function SpanDetailPanel({
 					style={{ backgroundColor: serviceColor }}
 				/>
 				<div className="flex-1 min-w-0 mr-2 overflow-hidden">
-					<CopyableValue value={span.spanName} className="block min-w-0 overflow-hidden">
-						<div className="min-w-0">
-							<HttpSpanLabel
-								spanName={span.spanName}
-								spanAttributes={span.spanAttributes}
-								spanKind={span.spanKind}
-								textClassName="font-semibold text-sm"
-							/>
-						</div>
-					</CopyableValue>
-					<div className="flex items-center gap-1.5 mt-0.5">
+					<SelectableValue
+						value={span.spanName}
+						label="span name"
+						className="flex min-w-0 items-center"
+						textClassName="min-w-0 flex-1"
+					>
+						<HttpSpanLabel
+							spanName={span.spanName}
+							spanAttributes={span.spanAttributes}
+							spanKind={span.spanKind}
+							textClassName="font-semibold text-sm"
+						/>
+					</SelectableValue>
+					<div className="flex min-w-0 items-center gap-1.5 mt-0.5">
 						<ServiceDot serviceName={span.serviceName} size="sm" />
-						<CopyableValue value={span.serviceName}>
+						<CopyableValue value={span.serviceName} className="min-w-0 truncate">
 							<span className="font-mono text-3xs" style={{ color: serviceColor }}>
 								{span.serviceName}
 							</span>
 						</CopyableValue>
-						<span className="text-3xs text-muted-foreground">{kindLabel}</span>
+						<span className="shrink-0 text-3xs text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-0.5">

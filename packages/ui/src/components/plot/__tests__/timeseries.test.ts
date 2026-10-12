@@ -53,9 +53,12 @@ describe("normaliseTimeseriesRows", () => {
 		const wide = new Map<string, unknown>([["bucket", bucketAt(0)]])
 		for (let index = 0; index < HARD_SERIES_LIMIT + 25; index += 1) wide.set(`k${index}`, index)
 
-		const { rows, seriesDefinitions } = normaliseTimeseriesRows([Object.fromEntries(wide)])
+		const { rows, seriesDefinitions, totalSeriesCount } = normaliseTimeseriesRows([
+			Object.fromEntries(wide),
+		])
 
 		expect(seriesDefinitions).toHaveLength(HARD_SERIES_LIMIT)
+		expect(totalSeriesCount).toBe(HARD_SERIES_LIMIT + 25)
 		expect(seriesDefinitions.at(-1)).toEqual({
 			rawKey: `k${HARD_SERIES_LIMIT - 1}`,
 			chartKey: `s${HARD_SERIES_LIMIT}`,
@@ -90,7 +93,11 @@ describe("normaliseTimeseriesRows", () => {
 	it("yields nothing at all when handed something that is not an array", () => {
 		// A share page handing over an envelope where an array belongs must draw an
 		// empty plot, not sample curves labelled "A" and "B".
-		expect(normaliseTimeseriesRows(undefined)).toEqual({ rows: [], seriesDefinitions: [] })
+		expect(normaliseTimeseriesRows(undefined)).toEqual({
+			rows: [],
+			seriesDefinitions: [],
+			totalSeriesCount: 0,
+		})
 	})
 })
 

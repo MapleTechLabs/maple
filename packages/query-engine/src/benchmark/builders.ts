@@ -1228,6 +1228,12 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	// Infra gauge timeseries and facet unions.
 	{
 		module: "infra",
+		name: "hostFilesystemsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.hostFilesystemsQuery({ hostName: "ip-10-0-1-42" }), window),
+	},
+	{
+		module: "infra",
 		name: "hostGaugeTimeseriesQuery",
 		label: "default",
 		compile: () =>
@@ -1292,6 +1298,33 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					podName: "api-7d9f8b6c5-x2n4k",
 					namespace: "backend",
 					metricName: "k8s.pod.cpu.utilization",
+				}),
+				{ ...window, bucketSeconds: 300 },
+			),
+	},
+	{
+		module: "infra",
+		name: "listNodesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.listNodesQuery(), window),
+	},
+	{
+		module: "infra",
+		name: "nodeDetailSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.nodeDetailSummaryQuery({ nodeName: "ip-10-0-1-42.ec2.internal" }), window),
+	},
+	{
+		module: "infra",
+		name: "nodeGaugeTimeseriesQuery",
+		label: "utilization",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.nodeGaugeTimeseriesQuery({
+					nodeName: "ip-10-0-1-42.ec2.internal",
+					metricName: "k8s.node.memory.working_set",
+					capacityMetricName: "k8s.node.allocatable_memory",
 				}),
 				{ ...window, bucketSeconds: 300 },
 			),

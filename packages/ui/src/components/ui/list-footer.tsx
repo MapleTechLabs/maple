@@ -32,6 +32,7 @@ export function ListFooter({
 	shown,
 	total,
 	noun,
+	singular,
 	hasMore = false,
 	loading = false,
 	failed = false,
@@ -45,6 +46,8 @@ export function ListFooter({
 	total?: number
 	/** Plural noun for the count copy ("logs", "traces"). */
 	noun?: string
+	/** Singular for a count of exactly one; defaults to `noun` minus a trailing "s". */
+	singular?: string
 	hasMore?: boolean
 	loading?: boolean
 	/** The last page failed; the button becomes a retry. */
@@ -56,16 +59,18 @@ export function ListFooter({
 	/** Extra trailing content (a source note, a deep link). */
 	children?: React.ReactNode
 }): React.ReactElement | null {
+	const one = singular ?? (noun && /[^s]s$/.test(noun) && !noun.endsWith("ies") ? noun.slice(0, -1) : noun)
+	const nounFor = (n: number) => (n === 1 ? one : noun)
 	const count =
 		shown === undefined || !noun
 			? null
 			: total !== undefined && total > shown
-				? `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} ${noun}`
+				? `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} ${nounFor(total)}`
 				: capped
-					? `Showing first ${shown.toLocaleString()} ${noun}, narrow the filters to see more`
+					? `Showing first ${shown.toLocaleString()} ${nounFor(shown)}, narrow the filters to see more`
 					: hasMore
-						? `Showing ${shown.toLocaleString()} ${noun}, more available`
-						: `${shown.toLocaleString()} ${noun}`
+						? `Showing ${shown.toLocaleString()} ${nounFor(shown)}, more available`
+						: `${shown.toLocaleString()} ${nounFor(shown)}`
 
 	const button =
 		onLoadMore && (hasMore || failed) ? (
@@ -91,10 +96,19 @@ export function ListFooter({
 }
 
 /** In-table "Loading more…" row for virtualized/infinite lists. */
-export function LoadingMoreRow({ label = "Loading more…", className }: { label?: string; className?: string }) {
+export function LoadingMoreRow({
+	label = "Loading more…",
+	className,
+}: {
+	label?: string
+	className?: string
+}) {
 	return (
 		<div
-			className={cn("flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground", className)}
+			className={cn(
+				"flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground",
+				className,
+			)}
 			role="status"
 		>
 			<Spinner className="size-3.5" />

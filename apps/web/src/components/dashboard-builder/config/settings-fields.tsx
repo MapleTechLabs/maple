@@ -26,6 +26,7 @@ import { PANEL_TYPES, fromPanelType, toPanelType } from "@/lib/query-builder/pan
 import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import {
 	STAT_AGGREGATES,
+	parsePositiveNumber,
 	toSeriesFieldOptions,
 	type QueryBuilderWidgetState,
 	type StatAggregate,
@@ -550,6 +551,14 @@ function Thresholds() {
 	)
 }
 
+/** Rows a table/list widget may request; the input says so and the parse clamps old configs. */
+export const ROW_LIMIT_MAX = 1000
+
+export function parseRowLimit(raw: string): number | undefined {
+	const parsed = parsePositiveNumber(raw)
+	return parsed === undefined ? undefined : Math.min(parsed, ROW_LIMIT_MAX)
+}
+
 function RowLimit() {
 	const { state, set } = useSettings()
 	return (
@@ -560,6 +569,7 @@ function RowLimit() {
 				placeholder="50"
 				type="number"
 				min={1}
+				max={ROW_LIMIT_MAX}
 			/>
 		</RailSetting>
 	)

@@ -7,7 +7,11 @@ import { aiSpanRow } from "../../__evals__/fixtures"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import type { McpToolResult } from "../types"
 import { Schema } from "effect"
-import { GetAgentSessionOutput, ListAgentSessionsOutput } from "@maple/domain/mcp-outputs"
+import {
+	GetAgentSessionOutput,
+	GetAgentSessionTranscriptOutput,
+	ListAgentSessionsOutput,
+} from "@maple/domain/mcp-outputs"
 
 const SESSION_ID = "wrun_01KZTEST"
 const EMPTY_SESSION_ID = "wrun_01KZEMPTY"
@@ -33,6 +37,7 @@ const AGENT_SESSION_TOOLS: ReadonlyArray<{
 		enums: { sort_dir: ["asc", "desc"] },
 	},
 	{ name: "get_agent_session", required: ["session_id"], enums: {} },
+	{ name: "get_agent_session_transcript", required: ["session_id"], enums: {} },
 ]
 
 describe("agent session tool registration", () => {
@@ -255,25 +260,17 @@ describe("agent session parameter validation", () => {
 		)
 	})
 
-	// The bounds reach a column comparison, so a negative or fractional one is a
-	// malformed request rather than a silently clamped filter.
-	it("rejects a negative range bound and a fractional count bound", async () => {
-		expect(markdown(await result("list_agent_sessions", { cost_min: -5 }))).toContain(
-			"Invalid parameters",
-		)
-		expect(markdown(await result("list_agent_sessions", { tokens_min: 1.5 }))).toContain(
-			"Invalid parameters",
-		)
+	// Agents reach for the singular more often than the list.
+	it("takes `service` as the `services` list", async () => {
+		const output = await rendered("list_agent_sessions", { ...WINDOW, service: "agent-runner" })
+		expect(rowCells(output, SESSION_ID)).toBeDefined()
+		expect(output).not.toContain("Invalid parameters")
 	})
 
-	// The bounds publish as number-or-numeric-string, like limit/offset — and the
-	// bound applies to the string branch too.
-	it("takes a bound as a numeric string, still bounded", async () => {
-		const output = await rendered("list_agent_sessions", { ...WINDOW, tokens_min: "1000" })
-		expect(rowCells(output, SESSION_ID)).toBeDefined()
-		expect(markdown(await result("list_agent_sessions", { cost_min: "-5" }))).toContain(
-			"Invalid parameters",
-		)
+	it("does not publish the min/max bounds the page filters on", () => {
+		const definition = mapleToolCatalog.find((entry) => entry.name === "list_agent_sessions")!
+		const properties = Object.keys(toInputSchema(definition.schema).properties ?? {})
+		expect(properties.filter((name) => /_(min|max)(_ms)?$/.test(name))).toEqual([])
 	})
 })
 
@@ -334,12 +331,15 @@ describe("get_agent_session rendering", () => {
 		expect(output).toContain("### Verdict")
 		// The checks are the reading: a heading with the counts even when nothing
 		// needs attention, the failed tool as a row with what to do, and the
-		// checks that passed as bullets with the fact each measured.
+		// checks that passed named on one line.
 		expect(output).toMatch(/### Checks \(\d+ failed · \d+ warnings? · \d+ passed · \d+ not checked\)/)
 		expect(output).toMatch(
 			/^\| (failed|warning) \| Tool errors \| .+ \| Fix the tool, or make its error text say what to do next\. \|$/m,
 		)
-		expect(output).toMatch(/^- Rate limits \(passed\): No model call was rate-limited$/m)
+		// A passed check is its name, on one line with the others that passed.
+		expect(output).toMatch(/^Passed: .*Rate limits.*\.$/m)
+		expect(structured.checks.every((check) => check.status !== "passed")).toBe(true)
+		expect(structured.passedChecks).toContain("Rate limits")
 		expect(output).toContain("tool_error")
 		expect(output).toContain("### Tokens")
 		expect(rowCells(output, "run_sql")?.[2]).toBe("1")
@@ -400,5 +400,110 @@ describe("get_agent_session rendering", () => {
 		const answer = await result("get_agent_session", { session_id: BIG_SESSION_ID, ...WINDOW })
 		expect(answer.isError).toBe(true)
 		expect(markdown(answer)).toContain("start_time/end_time")
+	})
+})
+
+describe("get_agent_session_transcript", () => {
+	it("reads the session step by step: prompt, the call that asked for a tool, the failed tool with its result", async () => {
+		const answer = await result("get_agent_session_transcript", { session_id: SESSION_ID, ...WINDOW })
+		const structured = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(answer.structuredContent)
+		const kinds = structured.rows.map((row) => row.kind)
+		expect(kinds[0]).toBe("turn")
+		expect(kinds).toContain("user")
+		const tool = structured.rows.find((row) => row.kind === "tool")
+		expect(tool?.toolName).toBe("run_sql")
+		expect(tool?.failed).toBe(true)
+		expect(tool?.result).toContain("table orders does not exist")
+		expect(tool?.spanId).toBe("3333333333333333")
+		expect(tool?.traceId).toBe(TRACE_ID)
+
+		const output = markdown(answer)
+		expect(output).toContain("user: why is checkout failing?")
+		expect(output).toMatch(/tool run_sql FAILED .*table orders does not exist.* · span 3333333333333333/)
+		expect(output).toContain(`inspect_span trace_id="${TRACE_ID}" span_id="3333333333333333"`)
+	})
+
+	it("lists the session's failures in time order when asked, each tagged with its turn", async () => {
+		const answer = await result("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			failed_only: true,
+		})
+		const structured = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(answer.structuredContent)
+		expect(structured.rows.filter((row) => row.kind !== "turn").map((row) => row.kind)).toEqual(["tool"])
+		const output = markdown(answer)
+		expect(output).toContain("### Failures in time order")
+		expect(output).toMatch(/turn 1 · \[\+2\.0s\] tool run_sql FAILED/)
+	})
+
+	it("keeps a turn's failures under its header when one turn is asked for", async () => {
+		const answer = await result("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			failed_only: true,
+			turn: 1,
+		})
+		const structured = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(answer.structuredContent)
+		expect(structured.rows.at(-1)?.kind).toBe("tool")
+		expect(markdown(answer)).not.toContain("Failures in time order")
+	})
+
+	it("does not call the first page a continuation", async () => {
+		expect(
+			await rendered("get_agent_session_transcript", { session_id: SESSION_ID, ...WINDOW }),
+		).not.toContain("(continued)")
+		const second = await rendered("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			limit: 2,
+			offset: 2,
+		})
+		expect(second).toContain("Turn 1 of 1 (continued)")
+	})
+
+	it("filters by text, and says so when nothing matches", async () => {
+		const hit = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(
+			(
+				await result("get_agent_session_transcript", {
+					session_id: SESSION_ID,
+					...WINDOW,
+					search: "ORDERS",
+				})
+			).structuredContent,
+		)
+		expect(hit.rows.some((row) => row.kind === "tool")).toBe(true)
+		const miss = await rendered("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			search: "no such words",
+		})
+		expect(miss).toContain('No step mentions "no such words"')
+	})
+
+	it("pages the steps and hands over the call for the next page", async () => {
+		const output = await rendered("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			limit: 2,
+		})
+		expect(output).toMatch(/get_agent_session_transcript session_id="wrun_01KZTEST" .*limit=2 offset=2/)
+	})
+
+	it("rejects a turn the session does not have, naming the range", async () => {
+		const answer = await result("get_agent_session_transcript", {
+			session_id: SESSION_ID,
+			...WINDOW,
+			turn: 9,
+		})
+		expect(answer.isError).toBe(true)
+		expect(markdown(answer)).toContain("numbered 1 to 1")
+	})
+
+	it("answers an unknown session without inventing one", async () => {
+		const output = await rendered("get_agent_session_transcript", {
+			session_id: EMPTY_SESSION_ID,
+			...WINDOW,
+		})
+		expect(output).toContain("No spans for AI agent session")
 	})
 })

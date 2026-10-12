@@ -494,7 +494,7 @@ export function nodeDetailSummary({ data }: { data: NodeDetailSummaryInput }) {
 	)
 }
 
-export type NodeInfraMetric = "cpu_usage" | "uptime"
+export type NodeInfraMetric = NodeInfraTimeseriesRequest["metric"]
 
 export interface NodeInfraTimeseriesInput {
 	startTime: string

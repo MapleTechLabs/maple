@@ -10,7 +10,16 @@ import { FormDialog } from "@maple/ui/components/ui/form-dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { FingerprintIcon, PencilIcon, PlusIcon, TrashIcon } from "@/components/icons"
 import { settleClerk } from "@/components/account/account-errors"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
@@ -122,17 +131,18 @@ export function PasskeysSection() {
 						<TableBody>
 							{passkeys.map((passkey) => (
 								<TableRow key={passkey.id}>
-									<TableCell>
+									<TruncatedCell>
 										<div className="flex items-center gap-2.5">
 											<FingerprintIcon
 												size={16}
 												className="shrink-0 text-muted-foreground"
 											/>
-											<span className="text-xs font-medium">
-												{passkey.name ?? "Unnamed passkey"}
-											</span>
+											<TruncatedText
+												text={passkey.name || "Unnamed passkey"}
+												className="text-xs font-medium"
+											/>
 										</div>
-									</TableCell>
+									</TruncatedCell>
 									<TableCell className="text-muted-foreground text-xs">
 										{formatDate(passkey.createdAt)}
 									</TableCell>

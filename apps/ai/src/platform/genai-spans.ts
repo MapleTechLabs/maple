@@ -547,6 +547,33 @@ export const withReturnedToolFailuresOk = (tracer: Tracer.Tracer): Tracer.Tracer
 		},
 	})
 
+const INVOKE_AGENT_SPAN_PREFIX = "invoke_agent "
+
+/**
+ * Stamp one run's session identity on every engine agent and tool span opened under it.
+ *
+ * The engine labels those spans with the thread they ran on, and a `review_files` child runs on a
+ * thread of its own: the gateway filed its `invoke_agent` span (and any tool call it rejected
+ * before a handler ran) under that thread, splitting one review across several sessions.
+ */
+export const withRunSessionAttributes = (
+	tracer: Tracer.Tracer,
+	sessionAttributes: Readonly<Record<string, string>>,
+): Tracer.Tracer =>
+	Tracer.make({
+		...(tracer.context === undefined ? undefined : { context: tracer.context }),
+		span(options) {
+			const span = tracer.span(options)
+			if (
+				options.name.startsWith(INVOKE_AGENT_SPAN_PREFIX) ||
+				options.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
+			) {
+				for (const [key, value] of Object.entries(sessionAttributes)) span.attribute(key, value)
+			}
+			return span
+		},
+	})
+
 /** Wraps the current tracer; put it over the telemetry layer with `Layer.provideMerge`. */
 export const ReturnedToolFailuresOkLive = Layer.effect(
 	Tracer.Tracer,
