@@ -1,14 +1,8 @@
 /** Screenshots for the feature thread. Same seeded stack and anchor as `shots.ts`. */
 import type { Page } from "playwright"
-import type { Shot } from "./shots"
+import { RELABEL, type Shot } from "./shots"
 
-import { RELABEL as BASE_RELABEL } from "./shots"
-export { TIMEZONE, VIEWPORT, type Shot } from "./shots"
-
-export const RELABEL = { ...BASE_RELABEL, "Verdict Lab": "Investigation" } as const
-
-/** Runs after load: the error and issue pages read "now", so those shots pin the clock. */
-type ThreadShot = Shot & { readonly fakeNowMinutes?: number }
+export const THREAD_RELABEL = { ...RELABEL, "Verdict Lab": "Investigation" } as const
 
 const zoomIn = async (page: Page, times: number) => {
 	const button = page.locator(".react-flow__controls-zoomin").first()
@@ -50,7 +44,7 @@ const openTrace = async (page: Page) => {
 	await followLink(page, href, ["peek", "peekT"])
 }
 
-export const SHOTS: ReadonlyArray<ThreadShot> = [
+export const THREAD_SHOTS: ReadonlyArray<Shot> = [
 	{ id: "01-service-map", route: "/service-map", range: lastMinutes(60), setup: (page) => zoomIn(page, 1) },
 	{
 		id: "02-traces-peek",
@@ -69,7 +63,10 @@ export const SHOTS: ReadonlyArray<ThreadShot> = [
 		range: lastMinutes(90),
 		setup: async (page) => {
 			await openTrace(page)
-			await page.getByRole("tab", { name: /waterfall/i }).first().click()
+			await page
+				.getByRole("tab", { name: /waterfall/i })
+				.first()
+				.click()
 		},
 	},
 	{
@@ -127,6 +124,10 @@ export const SHOTS: ReadonlyArray<ThreadShot> = [
 		setup: (page) => hideByText(page, ["Clean", "Capture off"]),
 	},
 	{ id: "15-mcp", route: "/mcp" },
-	{ id: "17-infra", route: "/lab/infra", setup: (page) => hideByText(page, ["/infra overview", "/INFRA OVERVIEW"]) },
+	{
+		id: "17-infra",
+		route: "/lab/infra",
+		setup: (page) => hideByText(page, ["/infra overview", "/INFRA OVERVIEW"]),
+	},
 	{ id: "18-service-map-3d", route: "/service-map", search: { view: "3d" }, range: lastMinutes(60) },
 ]
