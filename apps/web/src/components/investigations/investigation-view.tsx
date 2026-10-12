@@ -1,15 +1,14 @@
 import { useMemo } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { Exit } from "effect"
 import { useAtomSet } from "@/lib/effect-atom"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
-import { displayError } from "@/lib/error-messages"
+import { toastExit } from "@/lib/error-toast"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { ChatConversation } from "@/components/chat/chat-conversation"
 import type { InvestigationContext } from "@/components/chat/investigation-context"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { EvidenceTab } from "./evidence-tab"
 import { ProvenanceCanvas } from "./flow/provenance-canvas"
@@ -145,19 +144,12 @@ export function InvestigationView({
 
 	const [handleRestart, restarting] = useAsyncAction(async () => {
 		const result = await restart({ params: { id: investigation.id }, reactivityKeys })
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: isResolved ? "Investigation reopened" : "Investigation restarted",
-				type: "success",
-			})
-			// No refetch: the row this page renders is an Electric shape, so the
-			// restart's writes arrive on their own.
-		} else {
-			// The server's reason is the whole message — a daily-budget 429 says which
-			// ceiling was hit and when it resets, and a fixed title threw all of it away.
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
-		}
+		// No refetch on success: the row this page renders is an Electric shape. On failure the
+		// server's message (a daily-budget 429 names the ceiling and reset) is the description.
+		toastExit(result, {
+			success: isResolved ? "Investigation reopened" : "Investigation restarted",
+			error: isResolved ? "Failed to reopen investigation" : "Failed to restart investigation",
+		})
 	})
 
 	const [handleResolve, resolving] = useAsyncAction(async () => {
@@ -166,12 +158,7 @@ export function InvestigationView({
 			payload: { status: "resolved" },
 			reactivityKeys,
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Investigation resolved", type: "success" })
-		} else {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
-		}
+		toastExit(result, { success: "Investigation resolved", error: "Failed to resolve investigation" })
 	})
 	const busy = restarting || resolving
 
@@ -222,92 +209,84 @@ export function InvestigationView({
 	const isConversation = tab === "chat" || tab === "transcript"
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[
-					{ label: "Investigations", href: "/investigations" },
-					{ label: breadcrumbLabel(investigationHeadline(investigation)) },
-				]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<InvestigationHeader
-							investigation={investigation}
-							busy={busy}
-							onResolve={handleResolve}
-							onRestart={handleRestart}
-						/>
-						<InvestigationTabs investigation={investigation} active={tab} />
-					</DashboardLayout.Sticky>
-					{isConversation ? (
-						<DashboardLayout.Fill>
-							<ChatConversation
-								tabId={`inv-${investigation.id}`}
-								isActive={tab === "chat"}
-								mode="investigation"
-								investigationContext={context}
-								subjectSeededByServer
-								showAttachmentCard={false}
-								readOnly={
-									tab === "transcript" ? "transcript" : isResolved ? "resolved" : false
-								}
-								fallbackDiagnosis={investigation.report}
-							/>
-						</DashboardLayout.Fill>
-					) : (
-						<>
-							<DashboardLayout.Scroll>
-								<div className="flex flex-col gap-7">
-									{tab === "evidence" ? (
-										<EvidenceTab investigation={investigation} />
-									) : (
-										<>
-											{/*
-											 * The verdict leads. The canvas led for a while, on the
-											 * reasoning that a verdict qualifies a chain better
-											 * once the reader has seen the chain. In practice a
-											 * reader arrives with one question, and answering it
-											 * below a 330px graph meant scrolling past the
-											 * provenance of an answer they had not read yet. The
-											 * graph is how the run got there, which is the second
-											 * question, so it sits where the second question does.
-											 */}
-											<VerdictCard investigation={investigation} />
-											<ProvenanceCanvas
-												investigation={investigation}
-												openActionIndex={openActionIndex}
-												onOpenAction={handleOpenAction}
-											/>
-											<ImpactStrip investigation={investigation} />
-											<SignalsCard investigation={investigation} />
-										</>
-									)}
+		<DashboardPage
+			breadcrumbs={[
+				{ label: "Investigations", href: "/investigations" },
+				{ label: breadcrumbLabel(investigationHeadline(investigation)) },
+			]}
+			header={
+				<InvestigationHeader
+					investigation={investigation}
+					busy={busy}
+					onResolve={handleResolve}
+					onRestart={handleRestart}
+				/>
+			}
+			sticky={<InvestigationTabs investigation={investigation} active={tab} />}
+			fill
+		>
+			{isConversation ? (
+				<ChatConversation
+					tabId={`inv-${investigation.id}`}
+					isActive={tab === "chat"}
+					mode="investigation"
+					investigationContext={context}
+					subjectSeededByServer
+					showAttachmentCard={false}
+					readOnly={tab === "transcript" ? "transcript" : isResolved ? "resolved" : false}
+					fallbackDiagnosis={investigation.report}
+				/>
+			) : (
+				<>
+					<DashboardLayout.Scroll>
+						<div className="flex flex-col gap-7">
+							{tab === "evidence" ? (
+								<EvidenceTab investigation={investigation} />
+							) : (
+								<>
 									{/*
-									 * The audit trail, under the finding rather than beside it.
-									 * This is what was left of the right rail once the canvas took
-									 * over the run and the checks — not enough to keep a 320px
-									 * column standing next to a graph that wanted the width.
+									 * The verdict leads. The canvas led for a while, on the
+									 * reasoning that a verdict qualifies a chain better
+									 * once the reader has seen the chain. In practice a
+									 * reader arrives with one question, and answering it
+									 * below a 330px graph meant scrolling past the
+									 * provenance of an answer they had not read yet. The
+									 * graph is how the run got there, which is the second
+									 * question, so it sits where the second question does.
 									 */}
-									<InvestigationMeta investigation={investigation} />
-								</div>
-							</DashboardLayout.Scroll>
-							{/*
-							 * A sibling of `Scroll`, not its last child. Inside it, `mt-auto` only
-							 * reached the bottom while the tab was shorter than the viewport — on
-							 * any real diagnosis the composer sat below the fold and scrolled away,
-							 * which is the opposite of docked. `Content` is a flex column, so a
-							 * `shrink-0` footer here is the same shape as the sticky header above.
-							 */}
-							{isResolved ? null : (
-								<div className="shrink-0 px-4 pb-4">
-									<FollowUpComposer onSubmit={handleFollowUp} />
-								</div>
+									<VerdictCard investigation={investigation} />
+									<ProvenanceCanvas
+										investigation={investigation}
+										openActionIndex={openActionIndex}
+										onOpenAction={handleOpenAction}
+									/>
+									<ImpactStrip investigation={investigation} />
+									<SignalsCard investigation={investigation} />
+								</>
 							)}
-						</>
+							{/*
+							 * The audit trail, under the finding rather than beside it.
+							 * This is what was left of the right rail once the canvas took
+							 * over the run and the checks — not enough to keep a 320px
+							 * column standing next to a graph that wanted the width.
+							 */}
+							<InvestigationMeta investigation={investigation} />
+						</div>
+					</DashboardLayout.Scroll>
+					{/*
+					 * A sibling of `Scroll`, not its last child. Inside it, `mt-auto` only
+					 * reached the bottom while the tab was shorter than the viewport — on
+					 * any real diagnosis the composer sat below the fold and scrolled away,
+					 * which is the opposite of docked. `Content` is a flex column, so a
+					 * `shrink-0` footer here is the same shape as the sticky header above.
+					 */}
+					{isResolved ? null : (
+						<div className="shrink-0 px-4 pb-4">
+							<FollowUpComposer onSubmit={handleFollowUp} />
+						</div>
 					)}
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+				</>
+			)}
+		</DashboardPage>
 	)
 }

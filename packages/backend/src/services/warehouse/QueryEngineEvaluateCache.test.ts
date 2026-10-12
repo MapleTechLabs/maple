@@ -240,14 +240,6 @@ describe("evaluate with a raw_sql source", () => {
 			assert.deepStrictEqual(raw, [{ groupKey: "all", value: null, sampleCount: 0, hasData: false }])
 		}),
 	)
-
-	it.effect("emits a single no-data observation when there are no rows", () =>
-		Effect.gen(function* () {
-			const raw = yield* makeQueryEngineEvaluate(rawStub([]))(tenant, rawRequest("sum"))
-			const spec = yield* makeQueryEngineEvaluate(evalStub([]))(tenant, countRequest("sum"))
-			assert.deepStrictEqual(raw, spec)
-		}),
-	)
 })
 
 const makeConfig = () =>

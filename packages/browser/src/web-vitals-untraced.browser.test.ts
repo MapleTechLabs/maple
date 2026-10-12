@@ -3,8 +3,9 @@ import type { ReadableLogRecord } from "@opentelemetry/sdk-logs"
 import { describe, expect, it, vi } from "vitest"
 
 const exportedLogs: ReadableLogRecord[] = []
-vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
-	OTLPLogExporter: class {
+vi.mock("./otlp", async (original) => ({
+	...(await original<typeof import("./otlp")>()),
+	OtlpExporter: class {
 		export(items: ReadableLogRecord[], callback: (result: { code: number }) => void): void {
 			exportedLogs.push(...items)
 			callback({ code: 0 })

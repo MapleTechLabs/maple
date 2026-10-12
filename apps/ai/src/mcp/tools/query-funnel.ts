@@ -142,10 +142,10 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				steps: steps.length,
-				keyBy,
-				windowSeconds,
-				breakdownBy: breakdownBy ?? "none",
+				"maple.ai.steps": steps.length,
+				"maple.ai.key_by": keyBy,
+				"maple.ai.window_seconds": windowSeconds,
+				"maple.ai.breakdown_by": breakdownBy ?? "none",
 			})
 
 			const definition = { steps, keyBy, windowSeconds, filters, startTime: st, endTime: et }
@@ -164,7 +164,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					),
 				),
 			)
-			const counts = new Map(outcome.map((row) => [Number(row.step), Number(row.count) || 0]))
+			const counts = new Map(outcome.map((row) => [row.step, row.count || 0]))
 
 			const first = counts.get(1) ?? 0
 			const stepData = steps.map((step, index) => {
@@ -190,9 +190,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					: yield* withTenantExecutor(
 							productEventsFunnel({ ...definition, keyBy: "session" }),
 						).pipe(
-							Effect.map(
-								(rows) => Number(rows.find((row) => Number(row.step) === 1)?.count) || 0,
-							),
+							Effect.map((rows) => Number(rows.find((row) => row.step === 1)?.count) || 0),
 							Effect.orElseSucceed(() => undefined),
 						)
 			const identityNote =
@@ -219,14 +217,13 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 							Effect.map((groupRows) => {
 								const byGroup = new Map<string, number[]>()
 								for (const row of groupRows) {
-									const group = String(row.group)
+									const group = row.group
 									const arr =
 										byGroup.get(group) ??
 										Array.from<number>({ length: steps.length }).fill(0)
 									byGroup.set(group, arr)
-									const index = Number(row.step) - 1
-									if (index >= 0 && index < steps.length)
-										arr[index] = Number(row.count) || 0
+									const index = row.step - 1
+									if (index >= 0 && index < steps.length) arr[index] = row.count || 0
 								}
 								const groups = [...byGroup.entries()].map(([group, groupCounts]) => ({
 									group,

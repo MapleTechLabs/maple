@@ -16,10 +16,12 @@ import { resetUrlSanitizersForTests } from "../../browser-session/src/platform/u
 // What the batch processor hands to the exporter, so assertions are on the
 // spans that would actually leave the page.
 const exported: ReadableSpan[] = []
-vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
-	OTLPTraceExporter: class {
+vi.mock("./otlp", async (original) => ({
+	...(await original<typeof import("./otlp")>()),
+	OtlpExporter: class {
+		constructor(private readonly url: string) {}
 		export(spans: ReadableSpan[], callback: (result: { code: number }) => void): void {
-			exported.push(...spans)
+			if (this.url.endsWith("/v1/traces")) exported.push(...spans)
 			callback({ code: 0 })
 		}
 		forceFlush(): Promise<void> {

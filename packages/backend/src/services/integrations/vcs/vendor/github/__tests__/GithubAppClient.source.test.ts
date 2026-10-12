@@ -4,9 +4,9 @@ import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import {
-	GithubHttp,
-	type GithubHttpApi,
-} from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+	fakeGithubHttp,
+	type FakeGithubRequest,
+} from "@maple/backend/services/integrations/vcs/__tests__/harness"
 
 const privateKey = generateKeyPairSync("rsa", {
 	modulusLength: 2048,
@@ -49,12 +49,10 @@ describe("GithubAppClient source access", () => {
 			}),
 		]
 		let nextResponse = 0
-		const http = Layer.succeed(GithubHttp, {
-			fetch: async (url) => {
-				requests.push({ url })
-				return responses[nextResponse++]!
-			},
-		} satisfies GithubHttpApi)
+		const http = fakeGithubHttp(({ url }) => {
+			requests.push({ url })
+			return responses[nextResponse++]!
+		})
 		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 			Layer.provide(http),
 			Layer.provide(env),
@@ -71,15 +69,13 @@ describe("GithubAppClient source access", () => {
 	})
 
 	it.effect("mints a clone credential scoped to one repository, apart from the remote URL", () => {
-		const requests: Array<{ url: string; init?: RequestInit }> = []
+		const requests: Array<FakeGithubRequest> = []
 		const responses = [jsonResponse({ token: "ghs_scoped", expires_at: "2099-01-01T00:00:00Z" })]
 		let nextResponse = 0
-		const http = Layer.succeed(GithubHttp, {
-			fetch: async (url, init) => {
-				requests.push({ url, ...(init ? { init } : undefined) })
-				return responses[nextResponse++]!
-			},
-		} satisfies GithubHttpApi)
+		const http = fakeGithubHttp((request) => {
+			requests.push(request)
+			return responses[nextResponse++]!
+		})
 		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 			Layer.provide(http),
 			Layer.provide(env),
@@ -97,14 +93,14 @@ describe("GithubAppClient source access", () => {
 					repositories: Schema.Array(Schema.String),
 					permissions: Schema.Record(Schema.String, Schema.String),
 				}),
-			)(JSON.parse(String(requests[0]!.init?.body)))
+			)(JSON.parse(requests[0]!.body ?? ""))
 			assert.deepStrictEqual([...body.repositories], ["shop"])
 			assert.deepStrictEqual({ ...body.permissions }, { contents: "read", metadata: "read" })
 		}).pipe(Effect.provide(layer))
 	})
 
 	it.effect("searches code and reads a file with the installation token", () => {
-		const requests: Array<{ url: string; init?: RequestInit }> = []
+		const requests: Array<FakeGithubRequest> = []
 		const responses = [
 			jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" }),
 			jsonResponse({
@@ -128,12 +124,10 @@ describe("GithubAppClient source access", () => {
 			}),
 		]
 		let nextResponse = 0
-		const http = Layer.succeed(GithubHttp, {
-			fetch: async (url, init) => {
-				requests.push({ url, ...(init ? { init } : undefined) })
-				return responses[nextResponse++]!
-			},
-		} satisfies GithubHttpApi)
+		const http = fakeGithubHttp((request) => {
+			requests.push(request)
+			return responses[nextResponse++]!
+		})
 		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 			Layer.provide(http),
 			Layer.provide(env),
@@ -153,10 +147,7 @@ describe("GithubAppClient source access", () => {
 			assert.strictEqual(requests.length, 3, "the cached installation token should be reused")
 			assert.match(requests[1]!.url, /\/search\/code\?/)
 			assert.match(requests[1]!.url, /repo%3Aocto%2Fshop/)
-			assert.strictEqual(
-				(requests[1]!.init?.headers as Record<string, string>).accept,
-				"application/vnd.github.text-match+json",
-			)
+			assert.strictEqual(requests[1]!.headers.accept, "application/vnd.github.text-match+json")
 			assert.match(requests[2]!.url, /\/repos\/octo\/shop\/contents\/src\/checkout\.ts\?ref=main/)
 		}).pipe(Effect.provide(layer))
 	})

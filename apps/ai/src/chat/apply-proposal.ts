@@ -169,7 +169,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 
 	// `ErrorActorsService` is deliberately absent: `./turn-actor` already puts it in this module's
 	// static graph, so deferring it would only re-resolve a module that is loaded anyway.
-	const [{ ChatApplyServicesLive }, { layerPg }, { mapleDbConnectionLayer }, { McpToolExecutor }] =
+	const [{ ChatApplyServicesLive }, { DatabasePgLive }, { layerMapleDbConnection }, { McpToolExecutor }] =
 		await Promise.all([
 			import("../runtime/mcp-service-graph"),
 			import("@maple/backend/platform/DatabasePgLive"),
@@ -179,8 +179,8 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 
 	const runtime = ManagedRuntime.make(
 		ChatApplyServicesLive.pipe(
-			Layer.provideMerge(layerPg),
-			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
+			Layer.provideMerge(DatabasePgLive),
+			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
 			Layer.provideMerge(telemetry.layer),

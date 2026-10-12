@@ -935,7 +935,7 @@ export function QueryBuilderHeatmapChart({
 				<div className="absolute inset-0 grid place-items-center">
 					<div className="flex flex-col items-center gap-2.5">
 						<div
-							className="grid grid-cols-8 gap-[2px] rounded-[4px] p-[3px]"
+							className="grid grid-cols-8 gap-[2px] rounded-sm p-[3px]"
 							style={{ background: chrome.grout }}
 						>
 							{Array.from({ length: 32 }).map((_, i) => (
@@ -994,7 +994,7 @@ export function QueryBuilderHeatmapChart({
 				footer={
 					footnote ? (
 						<p
-							className="pt-1 text-right text-3xs leading-[12px] tabular-nums text-muted-foreground/70"
+							className="pt-1 text-right text-3xs leading-3 tabular-nums text-muted-foreground/70"
 							style={{
 								height: FOOTNOTE_BLOCK_H,
 								paddingLeft: layout.gutter,

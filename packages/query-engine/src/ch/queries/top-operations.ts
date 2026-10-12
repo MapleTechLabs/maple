@@ -85,8 +85,8 @@ export function topOperationsQuery(opts: TopOperationsOpts) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(param.string("serviceName")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 		.groupBy("name")
 		.orderBy(["value", "desc"])

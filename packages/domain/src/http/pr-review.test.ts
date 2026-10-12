@@ -335,6 +335,7 @@ describe("confidencePrReview", () => {
 			readonly risk?: "low" | "medium" | "high"
 			readonly verdict?: "clean" | "issues" | "not_applicable"
 			readonly unobservable?: boolean
+			readonly unreviewed?: ReadonlyArray<string>
 		} = {},
 	) =>
 		new PrReviewReport({
@@ -347,6 +348,7 @@ describe("confidencePrReview", () => {
 			findings,
 			...(extra.tests === undefined ? undefined : { tests: extra.tests }),
 			...(extra.risk === undefined ? undefined : { risk: extra.risk }),
+			...(extra.unreviewed === undefined ? undefined : { unreviewed: extra.unreviewed }),
 			...(extra.confidence === undefined
 				? undefined
 				: { confidence: extra.confidence, confidenceReason: "why" }),
@@ -396,6 +398,23 @@ describe("confidencePrReview", () => {
 		)
 		assert.equal(score([finding("warn", "security")]), 6)
 		assert.equal(confidencePrReview(reportWith([]), [], true)?.confidence, 6)
+	})
+
+	// A pass that skipped files cannot vouch for them, whatever it found in the rest.
+	it("caps on reviewed files left unread", () => {
+		const one = confidencePrReview(reportWith([], { unreviewed: ["src/b.ts"] }))
+		assert.equal(one?.confidence, 8)
+		assert.equal(one?.cappedBy, "unread")
+		assert.equal(one?.reason, "Held at 8 because 1 reviewed file was not read.")
+		assert.include(one?.factors ?? [], "1 file not read")
+		const many = confidencePrReview(reportWith([], { unreviewed: ["a.ts", "b.ts", "c.ts"] }))
+		assert.equal(many?.confidence, 6)
+		assert.equal(many?.reason, "Held at 6 because 3 reviewed files were not read.")
+		// A tighter cap still says what binds.
+		assert.equal(
+			confidencePrReview(reportWith([finding("critical")], { unreviewed: ["a.ts"] }))?.cappedBy,
+			"critical",
+		)
 	})
 
 	it("lets the reviewer lower the number by two points or raise it by one, never past a cap", () => {

@@ -1,4 +1,5 @@
 import { FactLane, FactStrip } from "./fact-strip"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
@@ -64,12 +65,9 @@ export function IssueFactStrip({
 			) : null}
 			{issue.resolvedVersions.length > 0 ? (
 				<FactLane label="Resolved in">
-					<span
-						className="block truncate font-mono text-xs text-foreground"
-						title={issue.resolvedVersions.join(", ")}
-					>
+					<TruncatedText mono className="text-xs text-foreground">
 						{issue.resolvedVersions.join(", ")}
-					</span>
+					</TruncatedText>
 				</FactLane>
 			) : null}
 			{issue.snoozeUntil ? (

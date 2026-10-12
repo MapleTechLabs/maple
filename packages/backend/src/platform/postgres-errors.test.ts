@@ -1,6 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
-import { Cause } from "effect"
+import * as Orm from "@maple-dev/effect-orm/database"
 import {
 	ConnectionError,
 	DeadlockError,
@@ -20,9 +19,11 @@ import {
 /** A pg error the way node-postgres raises it: the class hangs off `code`. */
 const pgError = (code: string, message: string): Error => Object.assign(new Error(message), { code })
 
-/** A statement failure the way drizzle's effect session raises it. */
-const queryFailure = (query: string, reason: SqlError["reason"]): EffectDrizzleQueryError =>
-	new EffectDrizzleQueryError({ query, params: [], cause: Cause.fail(new SqlError({ reason })) })
+/** A statement failure the way effect-orm raises it: the driver's `SqlError` is its cause. */
+const queryFailure = (query: string, reason: SqlError["reason"]): Orm.DatabaseError => {
+	const cause = new SqlError({ reason })
+	return new Orm.DatabaseError({ message: cause.message, sql: query, reason: reason._tag, cause })
+}
 
 describe("postgresErrorType", () => {
 	it("reports the socket code for a dial that was refused", () => {
@@ -142,7 +143,7 @@ describe("postgresErrorType", () => {
 			error.message,
 			'duplicate key value violates unique constraint "api_keys_pkey" [while: insert into "api_keys" ("id") values ($1)]',
 		)
-		// The SqlError, not the drizzle error: that one's message carries the params.
+		// The SqlError itself, kept as the cause for classification.
 		assert.instanceOf(error.cause, SqlError)
 	})
 

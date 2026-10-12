@@ -28,6 +28,9 @@ export const API_CORS_RESPONSE_HEADERS = {
 	"access-control-expose-headers": API_CORS_OPTIONS.exposedHeaders.join(","),
 } as const
 
+/** Without it the browser reports every cross-origin timing phase as 0. */
+export const API_TIMING_ALLOW_ORIGIN = API_CORS_OPTIONS.allowedOrigins.join(",")
+
 /**
  * Bootstrap-safe equivalent of Effect's global CORS middleware for OPTIONS.
  *

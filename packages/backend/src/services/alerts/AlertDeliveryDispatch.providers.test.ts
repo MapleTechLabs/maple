@@ -1,5 +1,5 @@
-import type { AlertDestinationRow } from "@maple/db"
-import { AlertDeliveryError, AlertDestinationId } from "@maple/domain/http"
+import type { AlertDestinationRow } from "@maple/db/tables"
+import { AlertDeliveryError, AlertDestinationId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { createHmac } from "node:crypto"
 import { Effect, Schema } from "effect"
@@ -48,7 +48,7 @@ const CHAT = "https://web.localhost/chat?mode=alert"
 
 const destinationRow = (overrides: Partial<AlertDestinationRow> = {}): AlertDestinationRow => ({
 	id: DESTINATION_ID,
-	orgId: "org_1" as AlertDestinationRow["orgId"],
+	orgId: Schema.decodeUnknownSync(OrgId)("org_1"),
 	name: "Destination",
 	type: "webhook",
 	enabled: true,
@@ -58,8 +58,12 @@ const destinationRow = (overrides: Partial<AlertDestinationRow> = {}): AlertDest
 	secretTag: "",
 	lastTestedAt: null,
 	lastTestError: null,
-	createdAt: new Date(0),
-	updatedAt: new Date(0),
+	consecutiveFailures: 0,
+	lastFailureAt: null,
+	disabledAt: null,
+	disabledReason: null,
+	createdAt: 0,
+	updatedAt: 0,
 	createdBy: "user_1",
 	updatedBy: "user_1",
 	...overrides,

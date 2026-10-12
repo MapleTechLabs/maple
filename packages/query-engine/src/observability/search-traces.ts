@@ -1,6 +1,10 @@
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
-import type { SpanSearchOutput, TracesRootListOutput } from "../ch"
+import type { SpanSearchOutput } from "../ch"
+
+/** A `span_search` row as the pipe returns it: pipes re-encode timestamps to the wire string. */
+type SpanSearchWireRow = Omit<SpanSearchOutput, "timestamp"> & { readonly timestamp: string }
+import type { ListTracesOutput } from "@maple/domain/tinybird"
 import { WarehouseValidationError } from "@maple/domain/http/warehouse-errors"
 import {
 	WarehouseExecutor,
@@ -36,11 +40,11 @@ export const searchTraces = Effect.fn("Observability.searchTraces")(function* (i
 	const offset = safeUInt(input.offset, 0, MAX_OFFSET)
 
 	yield* Effect.annotateCurrentSpan(
-		"searchMode",
+		"maple.query.search_mode",
 		input.spanName && !input.rootOnly ? "span_level" : "root_level",
 	)
-	if (input.service) yield* Effect.annotateCurrentSpan("service", input.service)
-	if (input.spanName) yield* Effect.annotateCurrentSpan("spanName", input.spanName)
+	if (input.service) yield* Effect.annotateCurrentSpan("maple.query.service", input.service)
+	if (input.spanName) yield* Effect.annotateCurrentSpan("maple.query.span_name", input.spanName)
 
 	// Root-level search is backed by the `list_traces` pipe, which only takes a
 	// single attribute filter. Reject N>1 filters so callers know to switch to
@@ -99,19 +103,19 @@ const spanLevelSearch = (
 	} satisfies Record<string, unknown>
 
 	return Effect.map(
-		executor.query<SpanSearchOutput>("span_search", params, { profile: "list" }),
+		executor.query<SpanSearchWireRow>("span_search", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> =>
 			result.data.map((row): SpanResult => ({
 				traceId: Schema.decodeSync(TraceId)(row.traceId),
 				spanId: Schema.decodeSync(SpanId)(row.spanId),
 				spanName: row.spanName,
 				serviceName: row.serviceName,
-				durationMs: Number(row.durationMs),
+				durationMs: row.durationMs,
 				statusCode: row.statusCode,
 				statusMessage: row.statusMessage ?? "",
 				attributes: row.spanAttributes ?? {},
 				resourceAttributes: row.resourceAttributes ?? {},
-				timestamp: String(row.timestamp),
+				timestamp: row.timestamp,
 			})),
 	)
 }
@@ -155,7 +159,7 @@ const rootLevelSearch = (
 	}
 
 	return Effect.map(
-		executor.query<TracesRootListOutput>("list_traces", params, { profile: "list" }),
+		executor.query<ListTracesOutput>("list_traces", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> => pipe(result.data, Arr.map(toSpanResult)),
 	)
 }

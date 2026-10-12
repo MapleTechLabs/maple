@@ -2,9 +2,10 @@
 import { getSession } from "@maple/browser-session"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
-	OTLPTraceExporter: class {
-		export(_spans: unknown[], callback: (result: { code: number }) => void): void {
+vi.mock("./otlp", async (original) => ({
+	...(await original<typeof import("./otlp")>()),
+	OtlpExporter: class {
+		export(_items: unknown[], callback: (result: { code: number }) => void): void {
 			callback({ code: 0 })
 		}
 		forceFlush(): Promise<void> {

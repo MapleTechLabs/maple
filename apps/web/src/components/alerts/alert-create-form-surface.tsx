@@ -20,7 +20,7 @@ import { RuleTemplatesOverlay } from "@/components/alerts/rule-templates-overlay
 import { ScopeSection } from "@/components/alerts/scope-section"
 import { SignalAndThresholdSection } from "@/components/alerts/signal-and-threshold-section"
 import { WidgetPrefillNoticeBanner } from "@/components/alerts/widget-prefill-notice-banner"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import { trackProduct } from "@/lib/analytics"
 import { useAlertRulePreview } from "@/hooks/use-alert-rule-preview"
@@ -198,99 +198,94 @@ export function AlertCreateFormSurface({
 	const freshPreviewResult = previewResult?.key === currentPreviewKey ? previewResult : null
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[
+		<>
+			<DashboardPage
+				breadcrumbs={[
 					{ label: "Alerts", href: "/alerts" },
-					{ label: editingRule ? "Edit Rule" : "New Rule" },
+					{ label: editingRule ? "Edit rule" : "New rule" },
 				]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Scroll>
-						<div className={cn("mx-auto w-full space-y-4", RULE_FORM_MAX_WIDTH)}>
-							<WidgetPrefillNoticeBanner notices={prefillNotices} />
-							{/* The preview rides beside the form, pinned, so every edit to the signal,
+			>
+				<div className={cn("mx-auto w-full space-y-4", RULE_FORM_MAX_WIDTH)}>
+					<WidgetPrefillNoticeBanner notices={prefillNotices} />
+					{/* The preview rides beside the form, pinned, so every edit to the signal,
 							    scope or threshold redraws where you can see it. Stacked above below lg. */}
-							<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
-								<div className="lg:sticky lg:top-0 lg:order-2">
-									<RuleLiveChartHero
-										form={ruleForm}
-										preview={preview}
-										previewLoading={previewLoading}
-										previewError={previewError}
-										onTestRule={() => void previewRule()}
-										testing={previewingRule}
-										previewResult={freshPreviewResult}
-										range={previewRange}
-										timeRange={previewTimeRange}
-										onTimeRangeChange={setPreviewTimeRange}
-									/>
-								</div>
-								<div className="min-w-0 space-y-4 lg:order-1">
-									<SignalAndThresholdSection
-										form={ruleForm}
-										onChange={setRuleForm}
-										autocompleteValues={autocompleteValues}
-									/>
-									{showScope && (
-										<ScopeSection
-											form={ruleForm}
-											onChange={setRuleForm}
-											serviceNameOptions={serviceNameOptions}
-											environmentOptions={environmentOptions}
-											autocompleteValues={autocompleteValues}
-										/>
-									)}
-									<NotificationsSection
-										form={ruleForm}
-										onChange={setRuleForm}
-										destinations={destinations}
-										onSendTest={() => void sendTestNotification()}
-										testing={sendingTestNotification}
-										onAddDestination={
-											isAdmin
-												? (preset) => destinationManager.openDialog(undefined, preset)
-												: undefined
-										}
-										onQuickCreate={isAdmin ? destinationManager.quickCreate : undefined}
-									/>
-									<DetailsSection
-										form={ruleForm}
-										onChange={setRuleForm}
-										suggestedName={suggestedName}
-										tagSuggestions={tagSuggestions}
-									/>
-								</div>
-							</div>
+					<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
+						<div className="lg:sticky lg:top-0 lg:order-2">
+							<RuleLiveChartHero
+								form={ruleForm}
+								preview={preview}
+								previewLoading={previewLoading}
+								previewError={previewError}
+								onTestRule={() => void previewRule()}
+								testing={previewingRule}
+								previewResult={freshPreviewResult}
+								range={previewRange}
+								timeRange={previewTimeRange}
+								onTimeRangeChange={setPreviewTimeRange}
+							/>
 						</div>
+						<div className="min-w-0 space-y-4 lg:order-1">
+							<SignalAndThresholdSection
+								form={ruleForm}
+								onChange={setRuleForm}
+								autocompleteValues={autocompleteValues}
+							/>
+							{showScope && (
+								<ScopeSection
+									form={ruleForm}
+									onChange={setRuleForm}
+									serviceNameOptions={serviceNameOptions}
+									environmentOptions={environmentOptions}
+									autocompleteValues={autocompleteValues}
+								/>
+							)}
+							<NotificationsSection
+								form={ruleForm}
+								onChange={setRuleForm}
+								destinations={destinations}
+								onSendTest={() => void sendTestNotification()}
+								testing={sendingTestNotification}
+								onAddDestination={
+									isAdmin
+										? (preset) => destinationManager.openDialog(undefined, preset)
+										: undefined
+								}
+								onQuickCreate={isAdmin ? destinationManager.quickCreate : undefined}
+							/>
+							<DetailsSection
+								form={ruleForm}
+								onChange={setRuleForm}
+								suggestedName={suggestedName}
+								tagSuggestions={tagSuggestions}
+							/>
+						</div>
+					</div>
+				</div>
 
-						<RuleActionBar
-							editing={!!editingRule}
-							saving={savingRule}
-							validationIssues={validationIssues}
-							onCancel={() => navigate({ to: "/alerts" })}
-							onSave={() => void handleSave()}
-							onShowTemplates={editingRule ? undefined : () => setTemplatesOpen(true)}
-							cancelSlot={
-								<Button type="button" variant="outline" render={<Link to="/alerts" />}>
-									Cancel
-								</Button>
-							}
-						/>
+				<RuleActionBar
+					editing={!!editingRule}
+					saving={savingRule}
+					validationIssues={validationIssues}
+					onCancel={() => navigate({ to: "/alerts" })}
+					onSave={() => void handleSave()}
+					onShowTemplates={editingRule ? undefined : () => setTemplatesOpen(true)}
+					cancelSlot={
+						<Button type="button" variant="outline" render={<Link to="/alerts" />}>
+							Cancel
+						</Button>
+					}
+				/>
 
-						<RuleTemplatesOverlay
-							open={templatesOpen}
-							onOpenChange={setTemplatesOpen}
-							onPick={(template) => {
-								setRuleForm((current) => applyTemplate(template, current))
-								setTemplatesOpen(false)
-							}}
-							onStartBlank={() => setTemplatesOpen(false)}
-						/>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
+				<RuleTemplatesOverlay
+					open={templatesOpen}
+					onOpenChange={setTemplatesOpen}
+					onPick={(template) => {
+						setRuleForm((current) => applyTemplate(template, current))
+						setTemplatesOpen(false)
+					}}
+					onStartBlank={() => setTemplatesOpen(false)}
+				/>
+			</DashboardPage>
 			<DestinationDialog
 				open={destinationManager.dialogOpen}
 				onOpenChange={destinationManager.setDialogOpen}
@@ -302,7 +297,7 @@ export function AlertCreateFormSurface({
 				providerLocked={destinationManager.providerLocked}
 				onUnlockProvider={destinationManager.unlockProvider}
 			/>
-		</DashboardLayout.Root>
+		</>
 	)
 }
 

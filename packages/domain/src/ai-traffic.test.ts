@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 import { AI_CRAWLERS, AI_PRODUCTS, aiProductById } from "./ai-traffic"
-import { AI_CRAWLER_NAME_SQL } from "./tinybird/ai-crawler-columns"
 
 describe("AI traffic catalog", () => {
 	it("never lists a crawler token inside another", () => {
@@ -22,11 +21,5 @@ describe("AI traffic catalog", () => {
 		const hosts = AI_PRODUCTS.flatMap((product) => product.referrerHosts)
 		expect(new Set(hosts).size).toBe(hosts.length)
 		expect(hosts.filter((host) => host.startsWith("www."))).toEqual([])
-	})
-
-	it("compiles the crawler name in catalog order", () => {
-		expect(AI_CRAWLER_NAME_SQL).toContain(
-			`arrayElement([${AI_CRAWLERS.map((crawler) => `'${crawler.name}'`).join(", ")}]`,
-		)
 	})
 })

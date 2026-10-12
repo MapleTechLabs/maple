@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 
+import { Button } from "../ui/button"
 import { ScrollArea } from "../ui/scroll-area"
 import { Separator } from "../ui/separator"
 import { Skeleton } from "../ui/skeleton"
@@ -45,13 +46,14 @@ export function FilterSidebarHeader({
 				{title}
 			</Eyebrow>
 			{canClear && onClear && (
-				<button
-					type="button"
+				<Button
+					variant="link"
+					size="xs"
 					onClick={onClear}
-					className="text-xs text-muted-foreground hover:text-foreground"
+					className="text-muted-foreground hover:text-foreground"
 				>
 					Clear all
-				</button>
+				</Button>
 			)}
 		</div>
 	)
@@ -105,7 +107,7 @@ export function FilterSidebarLoading({ sectionCount = 3 }: FilterSidebarLoadingP
 							<div className="space-y-2">
 								{Array.from({ length: section === 0 ? 2 : 4 }, (_, row) => (
 									<div key={row} className="flex h-4 items-center gap-2">
-										<Skeleton className="size-3.5 shrink-0 rounded-[4px]" />
+										<Skeleton className="size-3.5 shrink-0 rounded-sm" />
 										<Skeleton
 											className={cn(
 												"h-2.5",

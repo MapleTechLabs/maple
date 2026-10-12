@@ -216,7 +216,7 @@ export function buildSpendModel({
 	const spend = cycleSpend({ baseDollars, features: pricing })
 
 	const features: FeatureSpend[] = SPEND_FEATURES.map((featureId) => {
-		const entry = pricing[featureId] as FeatureUsagePricing
+		const entry = pricing[featureId]
 		const overUnits =
 			entry.unlimited || entry.included == null ? 0 : Math.max(0, entry.used - entry.included)
 		return {

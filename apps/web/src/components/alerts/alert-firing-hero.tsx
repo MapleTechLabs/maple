@@ -1,8 +1,7 @@
 import { Card, CardContent } from "@maple/ui/components/ui/card"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { pluralize } from "@maple/ui/lib/format"
-import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
 
 /* -------------------------------------------------------------------------- */
 /*  Status bar — flat one-row treatment that leads the Monitor / dashboard     */
@@ -39,7 +38,7 @@ export function AlertFiringHero({
 			<Card>
 				<CardContent className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5">
 					<div className="flex min-w-0 items-center gap-3">
-						<StatusDot tone="ok" />
+						<StatusDot tone="ok" size="lg" />
 						<div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
 							<span className="text-base font-semibold tracking-tight">All clear</span>
 							<span className="text-muted-foreground text-sm">
@@ -69,7 +68,7 @@ export function AlertFiringHero({
 		<Card className="border-severity-error/30 bg-severity-error/[0.04]">
 			<CardContent className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5">
 				<div className="flex min-w-0 items-center gap-3">
-					<StatusDot tone="crit" />
+					<StatusDot tone="crit" size="lg" />
 					<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
 						<Eyebrow variant="label" className="text-severity-error">
 							Firing now
@@ -97,14 +96,5 @@ export function AlertFiringHero({
 				</div>
 			</CardContent>
 		</Card>
-	)
-}
-
-/** Severity beacon: a static dot in the stat's tone. */
-function StatusDot({ tone }: { tone: Extract<Tone, "ok" | "crit"> }) {
-	return (
-		<span className="relative flex size-3 shrink-0 items-center justify-center">
-			<span className={cn("relative size-2 rounded-full", TONE_FILL[tone])} />
-		</span>
 	)
 }

@@ -32,7 +32,7 @@ export function ConnectButton() {
 			<PopoverTrigger
 				render={
 					<Button variant="default" size="sm" className="gap-2">
-						<ConnectionIcon size={14} />
+						<ConnectionIcon />
 						Connect
 					</Button>
 				}

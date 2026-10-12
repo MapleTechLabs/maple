@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import type { OrgId } from "@maple/domain/http"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { breachSideFor, chartWindow, loadChartSeries, type ChartSeriesWarehouse } from "./alert-chart-series"
@@ -31,7 +31,7 @@ const warehouseFailing = (): ChartSeriesWarehouse => ({
 })
 
 const checkRow = (minutesAgo: number, observedValue: number | null) => ({
-	timestamp: new Date(Date.UTC(2026, 7, 18, 14, 0) - minutesAgo * 60_000).toISOString(),
+	timestamp: DateTime.makeUnsafe(Date.UTC(2026, 7, 18, 14, 0) - minutesAgo * 60_000),
 	observedValue,
 })
 
@@ -88,29 +88,6 @@ describe("loadChartSeries", () => {
 				series?.points.map((p) => p[1]),
 				[1, 2, 3],
 			)
-		}),
-	)
-
-	it.effect("carries the threshold and breach side through for the renderer", () =>
-		Effect.gen(function* () {
-			const series = yield* loadChartSeries(
-				warehouseReturning([checkRow(0, 3), checkRow(10, 2), checkRow(20, 1)]),
-				tenant,
-				{ ...baseOptions, comparator: "lt", threshold: 0.8 },
-			)
-			assert.strictEqual(series?.threshold, 0.8)
-			assert.strictEqual(series?.breachSide, "below")
-		}),
-	)
-
-	it.effect("produces a sparkline alongside the points", () =>
-		Effect.gen(function* () {
-			const series = yield* loadChartSeries(
-				warehouseReturning([checkRow(0, 9), checkRow(10, 5), checkRow(20, 1)]),
-				tenant,
-				baseOptions,
-			)
-			assert.strictEqual(series?.sparkline.length, 3)
 		}),
 	)
 

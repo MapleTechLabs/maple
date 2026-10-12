@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
@@ -120,9 +121,12 @@ export function ContainerTable({
 				>
 					<div className="w-0 min-w-[260px] flex-1">
 						<div className="flex items-center gap-2">
-							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
-								{container.containerName}
-							</span>
+							<MiddleTruncate
+								text={container.containerName}
+								tail={12}
+								mono
+								className="text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+							/>
 							<HostStatusBadge
 								quiet
 								lastSeen={container.lastSeen}
@@ -131,9 +135,9 @@ export function ContainerTable({
 						</div>
 						<MetaLine
 							items={[
-								container.imageName && `image ${container.imageName}`,
 								container.hostName && `host ${container.hostName}`,
 								container.composeProject && `compose ${container.composeProject}`,
+								container.imageName && `image ${container.imageName}`,
 							]}
 						/>
 					</div>

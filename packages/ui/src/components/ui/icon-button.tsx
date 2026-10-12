@@ -5,7 +5,7 @@ import { Button, type ButtonProps } from "./button"
 import { Kbd } from "./kbd"
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip"
 
-type IconSize = "icon" | "icon-xs" | "icon-sm" | "icon-lg" | "icon-xl"
+type IconSize = "icon" | "icon-2xs" | "icon-xs" | "icon-sm" | "icon-lg" | "icon-xl"
 
 export interface IconButtonProps extends Omit<ButtonProps, "size" | "aria-label"> {
 	/** Accessible name, also shown as the tooltip. */

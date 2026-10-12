@@ -235,20 +235,20 @@ describe("trace-completeness joins", () => {
  */
 describe("row schemas decode both ClickHouse and Tinybird numeric encodings", () => {
 	/** Decoding the quoted form must equal decoding the native form, field for field. */
-	const expectBothEncodings = (
+	const decodeBothEncodings = (
 		decode: (input: unknown) => unknown,
 		strings: Record<string, unknown>,
 		numbers: Record<string, number>,
-	) => {
+	): readonly [unknown, unknown] => {
 		const quoted = Object.fromEntries(Object.entries(numbers).map(([key, value]) => [key, String(value)]))
-		expect(decode({ ...strings, ...quoted })).toEqual(decode({ ...strings, ...numbers }))
+		return [decode({ ...strings, ...quoted }), decode({ ...strings, ...numbers })]
 	}
 
-	const cases: ReadonlyArray<readonly [string, () => void]> = [
+	const cases: ReadonlyArray<readonly [string, () => readonly [unknown, unknown]]> = [
 		[
 			"attributeKeyInventory",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditAttributeKeyInventoryRowSchema),
 					{ scope: "span", attributeKey: "http.method" },
 					{ usageCount: 12 },
@@ -257,7 +257,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"spanShape",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditSpanProfileRowSchema),
 					{ serviceName: "api", badStatusCodes: ["ERROR"], badSpanKinds: [] },
 					{
@@ -275,7 +275,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"sampling",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditSamplingRowSchema),
 					{ serviceName: "api" },
 					{ spanCount: 10, estimatedSpanCount: 100, commitTaggedSpanCount: 10 },
@@ -284,7 +284,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"logSeverity",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditLogSeverityRowSchema),
 					{ serviceName: "api", severityText: "INFO" },
 					{ logCount: 42 },
@@ -293,7 +293,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"metricLabel",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditMetricLabelRowSchema),
 					{ attributeKey: "user_id" },
 					{ valueCardinality: 90_000, usageCount: 90_000 },
@@ -302,7 +302,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"peerValue",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditPeerValueRowSchema),
 					{ attributeKey: "peer.service", attributeValue: "tinybird" },
 					{ usageCount: 7 },
@@ -311,7 +311,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"dbEdge",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditDbEdgeRowSchema),
 					{ serviceName: "api", dbSystem: "postgresql" },
 					{ callCount: 500, unknownNamespaceCallCount: 500 },
@@ -320,7 +320,7 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		[
 			"logCorrelation",
 			() =>
-				expectBothEncodings(
+				decodeBothEncodings(
 					Schema.decodeUnknownSync(auditLogCorrelationRowSchema),
 					{ serviceName: "api" },
 					{ logCount: 100, uncorrelatedCount: 99, errorLogCount: 5, uncorrelatedErrorCount: 5 },
@@ -328,5 +328,8 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		],
 	]
 
-	it.each(cases)("%s", (_name, run) => run())
+	it.each(cases)("%s", (_name, run) => {
+		const [quoted, numeric] = run()
+		expect(quoted).toEqual(numeric)
+	})
 })

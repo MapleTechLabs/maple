@@ -121,7 +121,7 @@ function InvestigationActions({
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end">
 					<DropdownMenuItem onClick={onRestart} disabled={busy}>
-						<ArrowPathIcon size={14} />
+						<ArrowPathIcon />
 						Run again
 					</DropdownMenuItem>
 					{status === "resolved" ? null : (

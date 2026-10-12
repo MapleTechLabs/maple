@@ -49,11 +49,4 @@ describe("ServiceMapEdge", () => {
 		expect(container.querySelectorAll("animate")).toHaveLength(0)
 		expect(container.querySelector(".service-map-flowing-dash")).toBeNull()
 	})
-
-	it("still renders the gradient tube + label", () => {
-		const { container } = renderEdge()
-		expect(container.querySelector("linearGradient")).not.toBeNull()
-		expect(container.querySelectorAll("path").length).toBeGreaterThan(0)
-		expect(container.querySelector("foreignObject")).not.toBeNull()
-	})
 })

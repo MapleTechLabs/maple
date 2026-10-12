@@ -1,4 +1,5 @@
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
+import { OrgId } from "@maple/domain/primitives"
 import {
 	AlertDeliveryError,
 	AlertDeliveryRejectedError,
@@ -226,7 +227,7 @@ describe("buildDiscordEmbedsFromTemplate", () => {
 describe("dispatchDelivery", () => {
 	const destinationRow: AlertDestinationRow = {
 		id: DESTINATION_ID,
-		orgId: "org_1" as AlertDestinationRow["orgId"],
+		orgId: Schema.decodeSync(OrgId)("org_1"),
 		name: "PagerDuty",
 		type: "pagerduty",
 		enabled: true,
@@ -236,8 +237,12 @@ describe("dispatchDelivery", () => {
 		secretTag: "",
 		lastTestedAt: null,
 		lastTestError: null,
-		createdAt: new Date(0),
-		updatedAt: new Date(0),
+		consecutiveFailures: 0,
+		lastFailureAt: null,
+		disabledAt: null,
+		disabledReason: null,
+		createdAt: 0,
+		updatedAt: 0,
 		createdBy: "user_1",
 		updatedBy: "user_1",
 	}

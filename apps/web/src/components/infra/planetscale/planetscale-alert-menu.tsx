@@ -44,7 +44,7 @@ export function PlanetScaleAlertMenu({
 				<TooltipTrigger
 					render={
 						<Button variant="outline" size="sm" disabled>
-							<BellIcon size={14} />
+							<BellIcon />
 							Alert on this
 						</Button>
 					}

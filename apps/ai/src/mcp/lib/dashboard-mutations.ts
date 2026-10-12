@@ -263,7 +263,7 @@ export { findNextPosition as findNextWidgetPosition }
  * receives a `DashboardConcurrencyError` (mapped here to `McpQueryError`),
  * which is preferable to a silent lost update.
  */
-export const withDashboardMutation = Effect.fn("withDashboardMutation")(function* (
+export const withDashboardMutation = Effect.fn("McpDashboardMutations.withDashboardMutation")(function* (
 	dashboardId: string,
 	tool: string,
 	transform: (

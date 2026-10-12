@@ -1,9 +1,8 @@
 import type { ScrapeTargetId } from "@maple/domain"
-import { scrapeTargetChecks, scrapeTargets } from "@maple/db"
-import { and, desc, eq, inArray, lt } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ScrapeTargetChecks, ScrapeTargets } from "@maple/db/tables"
 import { Clock, Effect } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
 
 /**
  * Check-history retention for `scrape_target_checks`.
@@ -60,49 +59,53 @@ export const canExceedRowCap = (target: RetentionTarget): boolean => {
 export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTargets")(function* (
 	targets: ReadonlyArray<RetentionTarget>,
 ) {
-	if (targets.length === 0) return
+	const [firstId, ...restIds] = targets.map((target) => target.id)
+	if (firstId === undefined) return
 	const now = yield* Clock.currentTimeMillis
-	const cutoff = msToDate(now - CHECK_RETENTION_MS)
-	const ids = targets.map((target) => target.id)
+	const cutoff = now - CHECK_RETENTION_MS
 	const capCandidates = targets.filter(canExceedRowCap)
 	const database = yield* Database
 
 	yield* database.execute((db) =>
 		Effect.gen(function* () {
-			yield* db
-				.delete(scrapeTargetChecks)
-				.where(
-					and(inArray(scrapeTargetChecks.targetId, ids), lt(scrapeTargetChecks.checkedAt, cutoff)),
-				)
+			yield* db.run(
+				PG.deleteFrom(ScrapeTargetChecks).where(($) => [
+					$.targetId.in_(firstId, ...restIds),
+					$.checkedAt.lt(cutoff),
+				]),
+			)
 
 			// Cap backstop for misconfigured/very short intervals: drop everything
 			// older than the Nth-newest row per target. The OFFSET probe rides the
 			// (target_id, checked_at) index, so it stays cheaper than a window
 			// function over the target's full history.
-			for (const target of capCandidates) {
-				const capBoundary = yield* db
-					.select({ checkedAt: scrapeTargetChecks.checkedAt })
-					.from(scrapeTargetChecks)
-					.where(eq(scrapeTargetChecks.targetId, target.id))
-					.orderBy(desc(scrapeTargetChecks.checkedAt))
-					.limit(1)
-					.offset(CHECK_MAX_ROWS_PER_TARGET - 1)
-				const boundary = capBoundary[0]
-				if (boundary === undefined) continue
-				yield* db
-					.delete(scrapeTargetChecks)
-					.where(
-						and(
-							eq(scrapeTargetChecks.targetId, target.id),
-							lt(scrapeTargetChecks.checkedAt, boundary.checkedAt),
-						),
-					)
-			}
+			yield* Effect.forEach(
+				capCandidates,
+				(target) =>
+					Effect.gen(function* () {
+						const [boundary] = yield* db.run(
+							PG.from(ScrapeTargetChecks)
+								.select("checkedAt")
+								.where(($) => [$.targetId.eq(target.id)])
+								.orderBy(["checkedAt", "desc"])
+								.limit(1)
+								.offset(CHECK_MAX_ROWS_PER_TARGET - 1),
+						)
+						if (boundary === undefined) return
+						yield* db.run(
+							PG.deleteFrom(ScrapeTargetChecks).where(($) => [
+								$.targetId.eq(target.id),
+								$.checkedAt.lt(boundary.checkedAt),
+							]),
+						)
+					}),
+				{ discard: true },
+			)
 		}),
 	)
 	yield* Effect.annotateCurrentSpan({
-		"scrape.retention.targets": targets.length,
-		"scrape.retention.cap_probed": capCandidates.length,
+		"maple.scrape.retention.targets": targets.length,
+		"maple.scrape.retention.cap_probed": capCandidates.length,
 	})
 })
 
@@ -110,18 +113,12 @@ export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTar
 export const runScrapeCheckRetention = Effect.gen(function* () {
 	const database = yield* Database
 	const rows = yield* database.execute((db) =>
-		db
-			.select({
-				id: scrapeTargets.id,
-				targetType: scrapeTargets.targetType,
-				scrapeIntervalSeconds: scrapeTargets.scrapeIntervalSeconds,
-			})
-			.from(scrapeTargets),
+		db.run(PG.from(ScrapeTargets).select("id", "targetType", "scrapeIntervalSeconds")),
 	)
 	yield* pruneChecksForTargets(rows)
 	yield* Effect.annotateCurrentSpan({
-		"scrape.retention.targets": rows.length,
-		"scrape.retention.outcome": "completed",
+		"maple.scrape.retention.targets": rows.length,
+		"maple.scrape.retention.outcome": "completed",
 	})
 	yield* Effect.logInfo("[scrape] check retention tick complete").pipe(
 		Effect.annotateLogs({ targets: rows.length }),
@@ -129,7 +126,7 @@ export const runScrapeCheckRetention = Effect.gen(function* () {
 }).pipe(
 	// tapCause lets the cause propagate so `withSpan` marks the tick as Error.
 	Effect.tapCause((cause) =>
-		Effect.annotateCurrentSpan({ "scrape.retention.outcome": "failed" }).pipe(
+		Effect.annotateCurrentSpan({ "maple.scrape.retention.outcome": "failed" }).pipe(
 			Effect.flatMap(() =>
 				Effect.logError("[scrape] check retention tick failed").pipe(
 					Effect.annotateLogs({ error: String(cause) }),

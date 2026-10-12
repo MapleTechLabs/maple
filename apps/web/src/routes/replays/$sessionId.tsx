@@ -1,12 +1,12 @@
 import { warmAtoms } from "@effect-router/core"
 import { shortId } from "@maple/ui/lib/ids"
 import { useMemo } from "react"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { ResultPage } from "@/components/layout/result-page"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { ReplayStudio } from "@/components/replays/replay-studio"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
@@ -67,10 +67,17 @@ function ReplayDetailPage() {
 			errorTitle="Failed to load session replay"
 			loading={<ReplayDetailSkeleton />}
 			notFound={
-				<EmptyMessage dashed className="p-12">
-					No metadata for session <InlineCode>{sessionId}</InlineCode>. It may have expired or not
-					been ingested yet.
-				</EmptyMessage>
+				<ResourceNotFound
+					title="Session not found"
+					description={
+						<>
+							No metadata for session <InlineCode>{sessionId}</InlineCode>. It may have expired or
+							not been ingested yet.
+						</>
+					}
+					backLink={<Link to="/replays" />}
+					backLabel="Back to replays"
+				/>
 			}
 		>
 			{/* No sticky page header: the studio's identity bar is the header, and `Fill`

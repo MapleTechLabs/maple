@@ -1,7 +1,7 @@
 import { Effect, Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { useAtomSet } from "@/lib/effect-atom"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import {
 	ErrorIssueClaimRequest,
 	ErrorIssueReleaseRequest,
@@ -28,12 +28,12 @@ function logFailure(label: string, result: Exit.Exit<unknown, unknown>) {
 
 // Bulk actions are one atom run each (see `forEachIssue` for why N writes to
 // the per-issue mutation atoms silently moved only one issue).
-const transitionManyAtom = MapleApiAtomClient.runtime.fn<{
+const transitionManyAtom = MapleInternalAtomClient.runtime.fn<{
 	readonly issueIds: ReadonlyArray<ErrorIssueId>
 	readonly toState: WorkflowState
 }>()(
 	Effect.fnUntraced(function* ({ issueIds, toState }) {
-		const client = yield* MapleApiAtomClient
+		const client = yield* MapleInternalAtomClient
 		return yield* forEachIssue(issueIds, (issueId) =>
 			client.errors.transitionIssue({
 				params: { issueId },
@@ -43,21 +43,23 @@ const transitionManyAtom = MapleApiAtomClient.runtime.fn<{
 	}),
 )
 
-const claimManyAtom = MapleApiAtomClient.runtime.fn<{ readonly issueIds: ReadonlyArray<ErrorIssueId> }>()(
+const claimManyAtom = MapleInternalAtomClient.runtime.fn<{
+	readonly issueIds: ReadonlyArray<ErrorIssueId>
+}>()(
 	Effect.fnUntraced(function* ({ issueIds }) {
-		const client = yield* MapleApiAtomClient
+		const client = yield* MapleInternalAtomClient
 		return yield* forEachIssue(issueIds, (issueId) =>
 			client.errors.claimIssue({ params: { issueId }, payload: new ErrorIssueClaimRequest({}) }),
 		)
 	}),
 )
 
-const setSeverityManyAtom = MapleApiAtomClient.runtime.fn<{
+const setSeverityManyAtom = MapleInternalAtomClient.runtime.fn<{
 	readonly issueIds: ReadonlyArray<ErrorIssueId>
 	readonly severity: IssueSeverity | null
 }>()(
 	Effect.fnUntraced(function* ({ issueIds, severity }) {
-		const client = yield* MapleApiAtomClient
+		const client = yield* MapleInternalAtomClient
 		return yield* forEachIssue(issueIds, (issueId) =>
 			client.errors.setIssueSeverity({
 				params: { issueId },
@@ -68,12 +70,16 @@ const setSeverityManyAtom = MapleApiAtomClient.runtime.fn<{
 )
 
 export function useIssueMutations(onSuccess?: () => void) {
-	const transition = useAtomSet(MapleApiAtomClient.mutation("errors", "transitionIssue"), {
+	const transition = useAtomSet(MapleInternalAtomClient.mutation("errors", "transitionIssue"), {
 		mode: "promiseExit",
 	})
-	const claim = useAtomSet(MapleApiAtomClient.mutation("errors", "claimIssue"), { mode: "promiseExit" })
-	const release = useAtomSet(MapleApiAtomClient.mutation("errors", "releaseIssue"), { mode: "promiseExit" })
-	const severity = useAtomSet(MapleApiAtomClient.mutation("errors", "setIssueSeverity"), {
+	const claim = useAtomSet(MapleInternalAtomClient.mutation("errors", "claimIssue"), {
+		mode: "promiseExit",
+	})
+	const release = useAtomSet(MapleInternalAtomClient.mutation("errors", "releaseIssue"), {
+		mode: "promiseExit",
+	})
+	const severity = useAtomSet(MapleInternalAtomClient.mutation("errors", "setIssueSeverity"), {
 		mode: "promiseExit",
 	})
 	const transitionBatch = useAtomSet(transitionManyAtom, { mode: "promiseExit" })

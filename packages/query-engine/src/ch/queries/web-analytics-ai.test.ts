@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	webAnalyticsAiCrawledPagesQuery,
 	webAnalyticsAiCrawlerFormatsQuery,
@@ -93,4 +94,36 @@ describe("AI crawler queries", () => {
 		expect(flat).toContain("AND ai_crawler_requests.HttpStatus < 400")
 		expect(flat).toContain("ORDER BY requests DESC LIMIT 10")
 	})
+})
+
+// Rows reach callers through `decodeRows`; an underived row schema would leave
+// timestamps strings behind a `DateTime.Utc` type.
+describe("AI traffic rows decode timestamps to DateTime.Utc", () => {
+	it.effect("webAnalyticsAiReferralsQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(webAnalyticsAiReferralsQuery({ bucketSeconds: 86_400 }), params)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{ bucket: "2026-09-19 00:00:00.000000000", product: "chatgpt", sessions: "3" },
+			])
+			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2026, 8, 19))
+		}),
+	)
+
+	it.effect("webAnalyticsAiCrawlersQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(webAnalyticsAiCrawlersQuery(), params)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{
+					crawler: "GPTBot",
+					requests: "2",
+					failedRequests: "0",
+					pages: "2",
+					lastSeen: "2026-09-20 08:00:00.500000000",
+				},
+			])
+			expect(DateTime.formatIso(row!.lastSeen)).toBe("2026-09-20T08:00:00.500Z")
+		}),
+	)
 })

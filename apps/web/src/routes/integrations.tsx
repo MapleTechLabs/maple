@@ -262,9 +262,9 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 		: null
 
 	return (
-		<div className="flex items-center gap-3">
+		<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
 			<IconButton label="Back to integrations" onClick={() => navigate({ search: {} })}>
-				<ArrowLeftIcon size={16} />
+				<ArrowLeftIcon />
 			</IconButton>
 			<IntegrationIconPlate
 				icon={entry.icon}
@@ -273,7 +273,7 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				size={18}
 				plateClassName="size-9 rounded-lg"
 			/>
-			<div className="flex min-w-0 flex-col gap-0.5">
+			<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 				<div className="flex items-center gap-2">
 					<h1 className="text-lg/6 font-semibold">{entry.name}</h1>
 					{/* The badge covers the non-connected states; connected reads as the status line. */}
@@ -282,11 +282,13 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				{connected && statusLine ? (
 					<div className="flex items-center gap-1.5">
 						<StatusDot tone={connected.health === "healthy" ? "ok" : "warn"} />
-						<span className="truncate text-xs text-muted-foreground">{statusLine}</span>
+						<span className="truncate text-xs text-muted-foreground" title={statusLine}>
+							{statusLine}
+						</span>
 					</div>
 				) : null}
 			</div>
-			<div className="ml-auto flex shrink-0 items-center gap-3">
+			<div className="ml-auto flex shrink-0 basis-full items-center justify-end gap-3 sm:basis-auto">
 				{entry.docsUrl ? (
 					<a
 						href={entry.docsUrl}
@@ -302,7 +304,7 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 				{showConnect ? (
 					<Button size="sm" onClick={connectFlow.connect} loading={connectFlow.busy}>
 						{/* No iconClassName: the glyph inherits the button's text color, like the in-card buttons. */}
-						<EntryIcon size={14} />
+						<EntryIcon />
 						Connect {entry.name}
 					</Button>
 				) : null}

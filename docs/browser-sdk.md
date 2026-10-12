@@ -123,6 +123,11 @@ session**. Sessions are never shared across them. When `sessionStorage` is unava
 some private-browsing modes), the SDK falls back to an in-memory record for the life of the
 page.
 
+The replay chunk a page is still sending when it unloads is kept in `sessionStorage` under
+`maple.replay.pending` and sent by the next page of the same session in that tab, if that page
+starts recording within ten minutes. Revoking consent removes it; with `privacy.requireConsent`,
+it is sent once consent is granted on that next page, unless it was revoked in between.
+
 SPA route changes do **not** start a new session: navigation spans (see
 [React integration](#react-integration)) stay within it. Session boundaries are purely
 time-based (see below).
@@ -152,7 +157,11 @@ The SDK writes a small session-metadata row at these points:
 The `ended` row carries the session duration, the click count, and the **trace ids observed
 during the session**. Those ids power trace↔replay correlation and the user/session
 columns in Maple's session list and detail views. The unload write uses `keepalive`, so it
-survives the page going away.
+survives the page going away as long as it fits the browser's limit: 64 KiB of in-flight
+`keepalive` bodies per document, shared with every other request the page sends that way. The
+SDK's own span and log exports count against the same allowance and leave room for this row: on
+the way out the newest spans and logs go first with `keepalive`, and older ones follow in a
+second request that a closing page may not complete.
 
 ### Accessing the session id
 

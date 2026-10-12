@@ -6,6 +6,7 @@ import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import type { CloudflareZoneCacheBucket } from "@/api/warehouse/cloudflare-infra"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { Panel } from "@maple/ui/components/ui/panel"
+import { StatFigure } from "@/components/common/stat-rail"
 import { EDGE_SERVED_STATUSES } from "./constants"
 
 /**
@@ -50,12 +51,7 @@ export function CloudflareEdgeShareBand({ cacheBuckets, className }: CloudflareE
 	return (
 		<Panel className={cn("block px-5 py-4", className)}>
 			<div className="flex items-baseline justify-between gap-3">
-				<div className="flex items-baseline gap-2">
-					<span className="font-mono text-xl font-semibold tabular-nums leading-none text-foreground">
-						{formatPercent(edgeShare)}
-					</span>
-					<span className="text-2xs font-medium text-muted-foreground">served at the edge</span>
-				</div>
+				<StatFigure size="sm" value={formatPercent(edgeShare)} unit="served at the edge" />
 				<div className="flex items-baseline gap-2">
 					<span className="text-2xs font-medium text-muted-foreground">from origin</span>
 					<span className="font-mono text-xs font-medium tabular-nums text-foreground/80">

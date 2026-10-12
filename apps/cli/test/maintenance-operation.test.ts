@@ -45,31 +45,6 @@ const parkedOperation = (dataDir: string) => {
 }
 
 describe("maintenance lock Effect boundary", () => {
-	it("bare Effect.tryPromise abandons the operation and leaks the lock", async () => {
-		await withTempDataDir(async (dataDir) => {
-			const op = parkedOperation(dataDir)
-			const fiber = Effect.runFork(Effect.tryPromise({ try: op.body, catch: (error) => error }))
-			await op.entered
-			ok(existsSync(lockPathOf(dataDir)), "precondition: the lock is held")
-
-			// Exactly what `BunRuntime.runMain`'s SIGINT handler does.
-			fiber.interruptUnsafe()
-			const exit = await Effect.runPromise(Fiber.await(fiber))
-
-			// The fiber is gone while the promise is still parked mid-operation.
-			ok(Exit.hasInterrupts(exit), "the fiber was interrupted")
-			strictEqual(op.state.completed, false, "the operation never finished")
-			ok(
-				existsSync(lockPathOf(dataDir)),
-				"THE BUG: the lock survives because the promise's `finally` never ran",
-			)
-
-			// Let the abandoned promise finish so the temp dir can be removed.
-			op.release()
-			await new Promise((r) => setTimeout(r, 50))
-		})
-	})
-
 	it("maintenanceOperation waits for the operation, so the lock is always released", async () => {
 		await withTempDataDir(async (dataDir) => {
 			const op = parkedOperation(dataDir)

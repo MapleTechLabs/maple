@@ -133,7 +133,7 @@ function OpenInSlack({ url }: { url: string }) {
 			render={<a aria-label="Open in Slack" href={url} target="_blank" rel="noopener noreferrer" />}
 		>
 			Open in Slack
-			<ExternalLinkIcon size={14} />
+			<ExternalLinkIcon />
 		</Button>
 	)
 }

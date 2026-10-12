@@ -3,8 +3,9 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Link } from "@tanstack/react-router"
 
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
-import { formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 
 import { severityLevel } from "@/components/infra/format"
@@ -118,7 +119,8 @@ function RailRow({
 			search={timeSearch}
 			className={cn(
 				"flex h-[34px] items-center gap-2.5 rounded-md px-2 transition-colors",
-				active ? "bg-accent" : "hover:bg-accent/50",
+				rowSelectedClass(active),
+				!active && "hover:bg-accent/50",
 			)}
 		>
 			<ServiceDot serviceName={service.serviceName} size="sm" />
@@ -132,7 +134,7 @@ function RailRow({
 				{service.serviceName}
 			</span>
 			<span className={cn("w-[38px] shrink-0 text-right font-mono text-2xs tabular-nums", tone)}>
-				{utilization == null ? "—" : formatPercent(utilization)}
+				{utilization == null ? EMPTY_VALUE : formatPercent(utilization)}
 			</span>
 			<span className="w-[22px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground">
 				{service.podCount}

@@ -196,9 +196,9 @@ export class ScrapeTargetStoredConfigInvalidError extends HttpTaggedError<Scrape
 ) {}
 
 /**
- * Legacy v1 scrape-auth envelope. V2 preserves managed OAuth failures as their
- * exact integration tags; this remains for v1 compatibility and direct manual
- * credential rejection on the internal scrape proxy.
+ * Generic scrape-auth envelope. V2 preserves managed OAuth failures as their
+ * exact integration tags; this remains for direct manual credential rejection
+ * on the internal scrape proxy.
  */
 export class ScrapeTargetAuthError extends HttpTaggedError<ScrapeTargetAuthError>()(
 	"@maple/http/errors/ScrapeTargetAuthError",

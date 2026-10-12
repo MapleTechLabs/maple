@@ -57,12 +57,12 @@ export function aggregateEdges(
 			target: row.TargetService,
 			t: { callCount: 0, errorCount: 0, durationSumMs: 0, maxDurationMs: 0, estimatedSpanCount: 0 },
 		}
-		const callCount = Number(row.CallCount)
-		const sampleRateSum = Number(row.SampleRateSum)
+		const callCount = row.CallCount
+		const sampleRateSum = row.SampleRateSum
 		entry.t.callCount += callCount
-		entry.t.errorCount += Number(row.ErrorCount)
-		entry.t.durationSumMs += Number(row.DurationSumMs)
-		entry.t.maxDurationMs = Math.max(entry.t.maxDurationMs, Number(row.MaxDurationMs))
+		entry.t.errorCount += row.ErrorCount
+		entry.t.durationSumMs += row.DurationSumMs
+		entry.t.maxDurationMs = Math.max(entry.t.maxDurationMs, row.MaxDurationMs)
 		entry.t.estimatedSpanCount += sampleRateSum > 0 ? sampleRateSum : callCount
 		totals.set(key, entry)
 	}
@@ -84,9 +84,9 @@ export function aggregateEdges(
 }
 
 function toDbEdge(row: CH.ServiceDbEdgesOutput, durationSeconds: number): ServiceMapDbEdgeRow {
-	const callCount = Number(row.callCount)
-	const errorCount = Number(row.errorCount)
-	const estimatedSpanCount = Number(row.estimatedSpanCount)
+	const callCount = row.callCount
+	const errorCount = row.errorCount
+	const estimatedSpanCount = row.estimatedSpanCount
 	const sampling = summarizeSampling(estimatedSpanCount, callCount, durationSeconds)
 	return {
 		sourceService: row.sourceService,
@@ -96,9 +96,9 @@ function toDbEdge(row: CH.ServiceDbEdgesOutput, durationSeconds: number): Servic
 		estimatedCallCount: sampling.hasSampling ? Math.round(estimatedSpanCount) : callCount,
 		errorCount,
 		errorRate: callCount > 0 ? errorCount / callCount : 0,
-		avgDurationMs: Number(row.avgDurationMs),
-		maxDurationMs: Number(row.maxDurationMs),
-		p95DurationMs: Number(row.p95DurationMs),
+		avgDurationMs: row.avgDurationMs,
+		maxDurationMs: row.maxDurationMs,
+		p95DurationMs: row.p95DurationMs,
 		hasSampling: sampling.hasSampling,
 		samplingWeight: sampling.weight,
 	}

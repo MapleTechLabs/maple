@@ -4,6 +4,7 @@
 // side of the same table, and it keeps the `/analytics` session filters by
 // reusing `replaysWhere` so the two agree on what a filtered population is.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param, from, inSubquery } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery, ColumnAccessor, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
@@ -58,7 +59,7 @@ export interface ProductEventsTimeseriesOpts extends ProductEventsQueryOpts {
 }
 
 export interface ProductEventsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly groupName: string
 	readonly value: number
 	/** Rows behind `value` — the alert sample count, which a `uniq` metric cannot stand in for. */
@@ -81,7 +82,7 @@ export interface ProductEventsListOpts extends ProductEventsQueryOpts {
 }
 
 export interface ProductEventsListOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly eventName: string
 	readonly kind: string
 	readonly source: string
@@ -137,8 +138,8 @@ function sessionSemiJoin($: EventsAccessor, opts: ProductEventsQueryOpts): CH.Co
 function eventConditions($: EventsAccessor, opts: ProductEventsQueryOpts): Array<CH.Condition | undefined> {
 	return [
 		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		inListOpt($.EventName, opts.eventNames),
 		inListOpt($.Kind, opts.kinds),
 		inListOpt($.Source, opts.sources),
@@ -218,7 +219,7 @@ function groupNameExpr($: EventsAccessor, opts: ProductEventsTimeseriesOpts): CH
 }
 
 const TS_COLUMNS: ColumnDefs = {
-	bucket: T.string,
+	bucket: T.dateTime64,
 	groupName: T.string,
 	value: T.float64,
 	eventCount: T.float64,

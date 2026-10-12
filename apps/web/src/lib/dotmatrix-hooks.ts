@@ -35,7 +35,7 @@ export function useDotMatrixPhases({
 	speed = 1,
 }: UseDotMatrixPhasesOptions): DotMatrixPhasesResult {
 	const safeSpeed = speed > 0 ? speed : 1
-	const autoRun = Boolean(animated && !hoverAnimated)
+	const autoRun = animated && !hoverAnimated
 	const [hoverPhase, setHoverPhase] = useState<DotMatrixPhase>("idle")
 	const timeouts = useRef<number[]>([])
 	const hoverGen = useRef(0)

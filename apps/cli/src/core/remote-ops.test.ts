@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "bun:test"
 import { Effect, Exit, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import * as Remote from "./remote-ops"
-import { makeV2Client, toV2Timestamp } from "./v2-client"
+import { makeV2Client } from "./v2-client"
 
 // These tests exist because the endpoint this replaced broke silently.
 //
@@ -240,11 +240,5 @@ describe("remote-ops request shapes", () => {
 				"p99Duration",
 			].sort(),
 		)
-	})
-})
-
-describe("toV2Timestamp", () => {
-	it("converts the CLI's ClickHouse-style UTC to the v2 wire format", () => {
-		expect(toV2Timestamp("2026-08-15 12:00:00")).toBe("2026-08-15T12:00:00.000Z")
 	})
 })

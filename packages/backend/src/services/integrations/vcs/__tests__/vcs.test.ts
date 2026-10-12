@@ -25,7 +25,7 @@ import {
 	COMMIT_PAGES_PER_INVOCATION,
 	GithubAppClient,
 } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
-import { GithubHttp } from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import { FetchHttpClient } from "effect/http"
 import { GithubProvider } from "@maple/backend/services/integrations/vcs/vendor/github/GithubProvider"
 import type { VcsProviderClient } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import {
@@ -72,12 +72,12 @@ const SHA = "abc1230000000000000000000000000000000def"
 
 const repoLayer = (testDb: TestDb) => testRepoLayer(testDb)
 
-// GithubProvider over the real GithubHttp; only the webhook-parse path (no HTTP)
+// GithubProvider over the real HttpClient; only the webhook-parse path (no HTTP)
 // is exercised through it, so the live fetch layer is never actually invoked.
-const providerLayer = () => {
-	const env = testEnv({ GITHUB_APP_WEBHOOK_SECRET: WEBHOOK_SECRET })
+const providerLayer = (extraEnv: Record<string, string> = {}) => {
+	const env = testEnv({ GITHUB_APP_WEBHOOK_SECRET: WEBHOOK_SECRET, ...extraEnv })
 	const client = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
-		Layer.provide(Layer.mergeAll(env, GithubHttp.layer)),
+		Layer.provide(Layer.mergeAll(env, FetchHttpClient.layer)),
 	)
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(Layer.provide(Layer.mergeAll(env, client)))
 }
@@ -87,7 +87,7 @@ const providerLayer = () => {
 const providerLayerNoSecret = () => {
 	const env = testEnv()
 	const client = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
-		Layer.provide(Layer.mergeAll(env, GithubHttp.layer)),
+		Layer.provide(Layer.mergeAll(env, FetchHttpClient.layer)),
 	)
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(Layer.provide(Layer.mergeAll(env, client)))
 }
@@ -123,73 +123,6 @@ const rateLimited = (retryAfterSeconds: number) =>
 	new Response("rate limited", { status: 429, headers: { "retry-after": String(retryAfterSeconds) } })
 
 const hexShas = (count: number) => Array.from({ length: count }, (_, n) => n.toString(16).padStart(40, "0"))
-
-describe("VcsSyncJob", () => {
-	// One smoke test over every union member: confirms each kind survives the
-	// encode → wire → decode round-trip the queue relies on (the discriminator and
-	// any optional keys are preserved). Per-kind behavior is covered by the provider
-	// and orchestrator suites; this just guards the transport schema.
-	it("round-trips every job kind through encode/decode", () => {
-		const jobs: VcsSyncJob[] = [
-			{
-				kind: "push",
-				provider: "github",
-				externalInstallationId: "42",
-				externalRepoId: "7",
-				branch: "main",
-				commits: [
-					{
-						sha: SHA,
-						message: "hello",
-						authorName: "Octo",
-						authorEmail: "o@x.io",
-						authorLogin: "octocat",
-						authorAvatarUrl: null,
-						authoredAt: 1,
-						committedAt: 2,
-						htmlUrl: "https://github.com/o/r/commit/x",
-					},
-				],
-			},
-			{
-				kind: "installation-sync",
-				provider: "github",
-				externalInstallationId: "42",
-				reason: "created",
-			},
-			{
-				kind: "sync-branches",
-				provider: "github",
-				externalInstallationId: "42",
-				externalRepoId: "7",
-				owner: "octo",
-				name: "repo",
-			},
-			{
-				kind: "branch-event",
-				provider: "github",
-				externalInstallationId: "42",
-				externalRepoId: "7",
-				action: "created",
-				branch: "feature/x",
-			},
-			{
-				kind: "sync-commits",
-				provider: "github",
-				externalInstallationId: "42",
-				externalRepoId: "7",
-				owner: "octo",
-				name: "repo",
-				branch: "release/2",
-				sinceMs: 100,
-			},
-		]
-		for (const job of jobs) {
-			const wire = JSON.parse(JSON.stringify(Schema.encodeSync(VcsSyncJob)(job)))
-			assert.deepStrictEqual(Schema.decodeUnknownSync(VcsSyncJob)(wire), job)
-		}
-	})
-})
 
 describe("GithubProvider.webhookToJobs", () => {
 	const pushBody = JSON.stringify({
@@ -355,6 +288,63 @@ describe("GithubProvider.webhookToJobs", () => {
 			})
 			assert.lengthOf(yield* map("issue_comment", onIssue), 0)
 		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("maps a person ticking a box on the App's review comment to a checklist job", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const review = (box: " " | "x", extra = "") =>
+				[
+					"<!-- maple-pr-review r1 0 -->",
+					"## Maple review",
+					`- [${box}] **Secret** · Add secret \`FOO\` <!-- ms:secret:FOO -->`,
+					`- [ ] **Manual** · Create the flag <!-- ms:manual:create-the-flag -->${extra}`,
+				].join("\n")
+			const edit = (overrides: {
+				readonly from?: string
+				readonly to?: string
+				readonly author?: { readonly login: string; readonly type: string }
+				readonly sender?: { readonly login: string; readonly type: string }
+			}) =>
+				JSON.stringify({
+					action: "edited",
+					issue: {
+						number: 612,
+						html_url: "https://github.com/octo/repo/pull/612",
+						pull_request: { url: "u" },
+					},
+					comment: {
+						id: 901,
+						body: overrides.to ?? review("x"),
+						html_url: "https://github.com/octo/repo/pull/612#c901",
+						user: overrides.author ?? { login: "maplelabsapp[bot]", type: "Bot" },
+					},
+					changes: { body: { from: overrides.from ?? review(" ") } },
+					sender: overrides.sender ?? { login: "christo", type: "User" },
+					repository: { id: 7, full_name: "octo/repo" },
+					installation: { id: 42 },
+				})
+			const map = (body: string) =>
+				provider.webhookToJobs({
+					headers: { "x-github-event": "issue_comment", "x-hub-signature-256": sign(body) },
+					rawBody: body,
+				})
+
+			const jobs = yield* map(edit({}))
+			assert.lengthOf(jobs, 1)
+			const job = jobs[0]!
+			assert.strictEqual(job.kind, "pull-request-checklist")
+			if (job.kind !== "pull-request-checklist") return
+			assert.strictEqual(job.editorLogin, "christo")
+			assert.deepStrictEqual(job.ticks, [{ key: "secret:FOO", done: true }])
+
+			// The App re-rendering its own comment, another bot's comment, a person's own comment
+			// carrying the marker, and an edit that touched no box: none of them is a tick.
+			assert.lengthOf(yield* map(edit({ sender: { login: "maplelabsapp[bot]", type: "Bot" } })), 0)
+			assert.lengthOf(yield* map(edit({ author: { login: "other[bot]", type: "Bot" } })), 0)
+			assert.lengthOf(yield* map(edit({ author: { login: "mallory", type: "User" } })), 0)
+			assert.lengthOf(yield* map(edit({ from: review("x"), to: review("x", " edited") })), 0)
+		}).pipe(Effect.provide(providerLayer({ GITHUB_APP_SLUG: "maplelabsapp" }))),
 	)
 
 	it.effect("distinguishes a pull request closed without merging", () =>

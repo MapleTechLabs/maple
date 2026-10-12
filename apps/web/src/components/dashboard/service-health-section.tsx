@@ -404,9 +404,9 @@ function ServiceHealthRow({
 						<span className="truncate text-sm font-medium text-foreground">
 							{service.serviceName}
 						</span>
-						<span className="shrink-0 rounded bg-muted px-1.5 py-px text-3xs text-muted-foreground">
+						<Badge variant="muted" size="xs" className="shrink-0">
 							{service.environment}
-						</span>
+						</Badge>
 						{primaryCause && (
 							<Badge
 								variant={primaryCause.severity === "critical" ? "crit" : "warn"}

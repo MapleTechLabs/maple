@@ -83,9 +83,7 @@ export function useLocalErrorsFacets(filters: ErrorsFilters, bounds: TimeBounds)
 				signal,
 			)
 			const pick = (facetType: string) =>
-				rows
-					.filter((r) => r.facetType === facetType)
-					.map((r) => ({ name: r.name, count: Number(r.count) }))
+				rows.filter((r) => r.facetType === facetType).map((r) => ({ name: r.name, count: r.count }))
 			return { services: pick("service"), environments: pick("environment") }
 		},
 	})

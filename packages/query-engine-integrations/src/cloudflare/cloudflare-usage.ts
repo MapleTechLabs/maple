@@ -54,21 +54,21 @@ export function cloudflareUsageStatsQuery() {
 			previousRequests: CH.sumIf(
 				$.Value,
 				$.MetricName.in_(...CLOUDFLARE_USAGE_METRIC_NAMES).and(
-					$.TimeUnix.lt(param.dateTimeString("currentStartTime")),
+					$.TimeUnix.lt(param.dateTime("currentStartTime")),
 				),
 			),
 			firewallBlockedEvents: CH.sumIf(
 				$.Value,
 				$.MetricName.eq("cloudflare.firewall.events")
 					.and($.Attributes.get("firewall.action").in_(...BLOCKED_FIREWALL_ACTIONS))
-					.and($.TimeUnix.gte(param.dateTimeString("currentStartTime"))),
+					.and($.TimeUnix.gte(param.dateTime("currentStartTime"))),
 			),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...CLOUDFLARE_USAGE_METRIC_NAMES, "cloudflare.firewall.events"),
-			$.TimeUnix.gte(param.dateTimeString("prevStartTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("prevStartTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.format("JSON")
 }
@@ -85,8 +85,8 @@ export function cloudflareUsageQuery() {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...CLOUDFLARE_USAGE_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("serviceName", "bucket")
 		.orderBy(["serviceName", "asc"], ["bucket", "asc"])

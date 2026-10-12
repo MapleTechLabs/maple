@@ -1,7 +1,10 @@
+const usageFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 export function formatUsage(gb: number): string {
-	if (gb === 0) return "0 GB"
+	if (!Number.isFinite(gb) || gb <= 0) return "0 GB"
 	if (gb < 1) return `${(gb * 1000).toFixed(2)} MB`
-	return `${gb.toFixed(2)} GB`
+	if (gb >= 10_000) return `${usageFormat.format(gb / 1000)} TB`
+	return `${usageFormat.format(gb)} GB`
 }
 
 /**

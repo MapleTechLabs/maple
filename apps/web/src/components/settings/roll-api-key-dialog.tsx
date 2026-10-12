@@ -39,7 +39,7 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 		prepareForMutation()
 		const result = await rollMutation({ params: { id: apiKey.id } })
 		if (!Exit.isSuccess(result)) {
-			toastExit(result, { error: "Couldn't roll API key" })
+			toastExit(result, { error: "Failed to roll API key" })
 			return
 		}
 		setNewSecret(result.value.secret)
@@ -78,7 +78,7 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 						</DialogPanel>
 						<DialogFooter>
 							<Button variant="outline" onClick={() => handleClose(false)}>
-								Close
+								Done
 							</Button>
 						</DialogFooter>
 					</>

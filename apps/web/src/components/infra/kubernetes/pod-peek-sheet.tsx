@@ -235,7 +235,7 @@ export function PodPeekSheet({
 									disabled={!canStepBack}
 									onClick={() => onStep(-1)}
 								>
-									<ArrowUpIcon size={14} />
+									<ArrowUpIcon />
 								</IconButton>
 								<IconButton
 									variant="outline"
@@ -243,11 +243,12 @@ export function PodPeekSheet({
 									disabled={!canStepForward}
 									onClick={() => onStep(1)}
 								>
-									<ArrowDownIcon size={14} />
+									<ArrowDownIcon />
 								</IconButton>
 								{position ? (
 									<span className="ml-1 font-mono text-2xs tabular-nums text-muted-foreground">
-										{position.index + 1} of {position.count}
+										{(position.index + 1).toLocaleString()} of{" "}
+										{position.count.toLocaleString()}
 									</span>
 								) : null}
 								<span className="ml-2 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex">
@@ -266,7 +267,7 @@ export function PodPeekSheet({
 								}
 							>
 								Open pod
-								<ArrowRightIcon size={14} />
+								<ArrowRightIcon />
 							</Button>
 						</SheetFooter>
 					</>

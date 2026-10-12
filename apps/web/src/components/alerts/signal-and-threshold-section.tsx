@@ -205,10 +205,7 @@ export function SignalAndThresholdSection({
 		if (next === kind) return
 		onChange((c) => ({
 			...c,
-			signalType:
-				next === "builtin"
-					? "error_rate"
-					: (next as Exclude<SignalKind, "builtin"> & AlertSignalType),
+			signalType: next === "builtin" ? "error_rate" : next,
 		}))
 	}
 

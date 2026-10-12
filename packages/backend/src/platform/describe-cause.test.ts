@@ -21,7 +21,7 @@ const driverConnectionError = (): Error =>
 describe("summarizeCause", () => {
 	it("names a tagged failure by its tag", () => {
 		const summary = summarizeCause(Cause.fail(toDatabaseError(new Error("relation does not exist"))))
-		assert.strictEqual(summary, "@maple/api/lib/DatabaseError: relation does not exist")
+		assert.strictEqual(summary, "@maple/backend/lib/DatabaseError: relation does not exist")
 	})
 
 	it("keeps the raw driver object out of the annotation", () => {

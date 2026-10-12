@@ -24,11 +24,12 @@ import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@m
 import type { PrReviewFailureReason } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
+import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option } from "effect"
+import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
-import { ReturnedToolFailuresOkLayer } from "../platform/genai-spans"
+import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
@@ -43,6 +44,7 @@ import {
 	makeRunUsage,
 	prReplyForSession,
 	prReviewForSession,
+	type RunUsage,
 	savedFindingsRequest,
 	SUBMIT_DIAGNOSIS,
 	SUBMIT_REVIEW,
@@ -67,7 +69,7 @@ import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { toTenantContext, withConnectorActor } from "./turn-actor"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
+import { trackAiCredits, trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
 /**
  * The engine's per-step bookkeeping, which is named and therefore traced.
@@ -163,18 +165,27 @@ const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an
  * `usage` is the turn's whole total: every model call the run made, including any the engine spent
  * compacting, and any a sub-agent made against the parent's accumulator.
  *
+ * **Two meters while AI credits roll out.** `ai_credits` charges each model call in dollars,
+ * priced by Autumn from the model's rates, so a cache read or a cheap model costs what it costs.
+ * The raw `ai_input_tokens` / `ai_output_tokens` counts keep running beside it for comparison.
+ *
  * **In a finalizer, not on the happy path.** A turn that failed, was stopped, or ran out of steps
  * is still billed for every step the provider actually served — the loop accounts a step's usage
  * before it checks whether the turn survived. Metering follows the spend, not the outcome. (A step
  * interrupted before the provider's terminal event reports no usage at all, so that much is
  * unbillable rather than unbilled.)
+ *
+ * **Nothing for a turn on the org's own key.** OpenRouter bills the org for those tokens directly,
+ * so charging them here as well would bill the same spend twice.
  */
 export const meterTurn = (
 	input: Pick<RunChatSessionTurnInput, "sessionId" | "messageId">,
 	tenant: Pick<TenantContext, "orgId">,
 	origin: ChatTurnOrigin,
-	usage: { readonly input: number; readonly output: number },
+	usage: Pick<RunUsage, "input" | "output" | "charges">,
+	options: { readonly ownKey?: boolean } = {},
 ): Effect.Effect<void> => {
+	if (options.ownKey === true) return Effect.void
 	if (usage.input <= 0 && usage.output <= 0) return Effect.void
 	const billing = investigationBilling(input.sessionId, input.messageId) ??
 		reviewBilling(input.sessionId, input.messageId) ?? {
@@ -183,13 +194,24 @@ export const meterTurn = (
 		}
 	// Bookkeeping must never fail a delivered answer: the tracker is infallible and bounded here too.
 	// It runs as a finalizer, outside any graph that is sure to carry an HttpClient, so it brings its own.
-	return trackTokenUsage({
-		orgId: tenant.orgId,
-		inputTokens: usage.input,
-		outputTokens: usage.output,
-		idempotencyKey: billing.idempotencyKey,
-		source: billing.source,
-	}).pipe(
+	return Effect.all(
+		[
+			trackAiCredits({
+				orgId: tenant.orgId,
+				spends: usage.charges,
+				idempotencyKey: billing.idempotencyKey,
+				source: billing.source,
+			}),
+			trackTokenUsage({
+				orgId: tenant.orgId,
+				inputTokens: usage.input,
+				outputTokens: usage.output,
+				idempotencyKey: billing.idempotencyKey,
+				source: billing.source,
+			}),
+		],
+		{ concurrency: "unbounded", discard: true },
+	).pipe(
 		Effect.timeout(METERING_TIMEOUT),
 		Effect.ignore,
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
@@ -236,40 +258,45 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const [
 		{ InvestigationServicesLive },
-		{ layerPg },
-		{ mapleDbConnectionLayer },
+		{ DatabasePgLive },
+		{ layerMapleDbConnection },
 		{
 			layerDecisionModelFromConfig,
-			layerFindingEmbedderFromConfig,
+			FindingEmbedderFromConfigLive,
 			layerLlmFromConfig,
+			layerOpenRouterClient,
 			loadLlmSettings,
 			resolveReviewModel,
 			resolveTriageModel,
+			withOrgOpenRouterKey,
 		},
 		{ McpToolExecutor },
+		{ withSandboxBreaker },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
 		import("@maple/backend/platform/DatabasePgLive"),
 		import("@maple/backend/platform/pg-connection-source"),
 		import("../platform/Llm"),
 		import("../mcp/dispatcher"),
+		import("./sandbox-breaker"),
 	])
 	const { InvestigationService } = await import("@maple/backend/services/errors/InvestigationService")
 	const { PrReviewService } = await import("@maple/backend/services/pr-review/PrReviewService")
 	const { PrReviewConversationService } =
 		await import("@maple/backend/services/pr-review/PrReviewConversationService")
+	const { OrgOpenRouterKeyService } = await import("@maple/backend/services/org/OrgOpenRouterKeyService")
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
 			Layer.provideMerge(layerDecisionModelFromConfig(input.workersAi)),
 			// Read by `PrReviewService` as it is built: the review's feedback filter.
-			Layer.provideMerge(layerFindingEmbedderFromConfig),
+			Layer.provideMerge(FindingEmbedderFromConfigLive),
 			Layer.provideMerge(layerLlmFromConfig(input.workersAi)),
-			Layer.provideMerge(layerPg),
-			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
+			Layer.provideMerge(DatabasePgLive),
+			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(ReturnedToolFailuresOkLayer.pipe(Layer.provideMerge(telemetry.layer))),
+			Layer.provideMerge(ReturnedToolFailuresOkLive.pipe(Layer.provideMerge(telemetry.layer))),
 		),
 	)
 
@@ -301,346 +328,381 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const prReviewId = prReviewForSession(input.sessionId)
 	const prReplyId = prReplyForSession(input.sessionId)
 
-	const program = Effect.gen(function* () {
-		const investigations = yield* InvestigationService
-		const reviews = yield* PrReviewService
-		const conversations = yield* PrReviewConversationService
-		const toolExecutor = yield* McpToolExecutor
-		const runTenant = yield* withConnectorActor(tenant, origin)
-		if (prReviewId !== undefined && input.abandoned === true) {
-			observability.outcome = "abandoned"
-			yield* reviews
-				.failReview(tenant.orgId, prReviewId, reviewFailureError("interrupted"))
-				.pipe(
-					Effect.catchCause((cause) =>
-						Effect.logError("Could not record the abandoned review", cause),
-					),
-				)
-			yield* annotateTurn()
-			return
-		}
-		// The dead attempt may have filed its report, or a newer head superseded it, before the
-		// object went down: then there is nothing left to run.
-		if (prReviewId !== undefined && input.resume !== undefined) {
-			yield* Effect.annotateCurrentSpan("maple.pr_review.resume_attempt", input.resume.attempt)
-			// An unreadable row reviews anyway: the row's own guards still refuse a second report.
-			const current = yield* reviews
-				.getReview(tenant.orgId, prReviewId)
-				.pipe(Effect.catchCause(() => Effect.succeed(Option.none())))
-			const settled = Option.match(current, {
-				onNone: () => false,
-				onSome: (review) => review.status !== "queued" && review.status !== "running",
-			})
-			if (settled) {
-				observability.outcome = "resume_skipped"
-				input.session.append({ type: "turn-end", messageId: input.messageId, reason: "stop" })
-				recordedTerminal = true
+	const turnBody = (orgKey: Option.Option<Redacted.Redacted<string>>) =>
+		Effect.gen(function* () {
+			const investigations = yield* InvestigationService
+			const reviews = yield* PrReviewService
+			const conversations = yield* PrReviewConversationService
+			// Shared by the kickoff's clone, every pass of the turn and its review_files children.
+			const toolExecutor = yield* withSandboxBreaker(yield* McpToolExecutor)
+			const runTenant = yield* withConnectorActor(tenant, origin)
+			if (prReviewId !== undefined && input.abandoned === true) {
+				observability.outcome = "abandoned"
+				yield* reviews
+					.failReview(tenant.orgId, prReviewId, reviewFailureError("interrupted"))
+					.pipe(
+						Effect.catchCause((cause) =>
+							Effect.logError("Could not record the abandoned review", cause),
+						),
+					)
 				yield* annotateTurn()
 				return
 			}
-		}
-		// Clone the commit while the model reads the diff, rather than when its first source tool
-		// asks and waits on it. A child of the turn: a clone still running when the turn ends
-		// carries on in the container.
-		if (prReviewId !== undefined) {
-			yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
-				Effect.flatMap(
-					Option.match({
-						onNone: () => Effect.void,
-						onSome: (target) =>
-							toolExecutor.prepareRepository(runTenant, {
-								repository: target.repository,
-								ref: target.headSha,
-							}),
-					}),
-				),
-				Effect.catch((error) =>
-					Effect.logInfo("Could not prepare the review's checkout").pipe(
-						Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
-					),
-				),
-				Effect.forkChild,
-			)
-		}
-		// An investigation picks its commit from telemetry mid-pass, so warm the repositories it
-		// could read instead: the deployed commit then clones from a filled mirror in seconds.
-		if (investigationId !== undefined) {
-			yield* toolExecutor.prepareConnectedRepositories(runTenant).pipe(Effect.forkChild)
-		}
-		const history = input.session.history()
-		const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }
-		const settings = yield* loadLlmSettings
-		const model = yield* Match.value(agent.model).pipe(
-			Match.when("triage", () => Effect.succeed(resolveTriageModel(settings, tags))),
-			Match.when("review", () =>
-				reviews
-					.reviewModel(tenant.orgId)
-					.pipe(Effect.map((chosen) => resolveReviewModel(settings, tags, chosen))),
-			),
-			Match.exhaustive,
-		)
-
-		// The session recorded the user's message before the run started, so the transcript's tail is
-		// this run's input rather than part of its history.
-		// Read once: it is a SQL scan plus a decode, and it is a read-only snapshot.
-		const spoken = history.filter((message) => message.text.trim() !== "")
-		const latest = spoken.at(-1)
-		// A restarted turn reads from its kickoff: what came after it is the attempt that died.
-		const kickoff =
-			input.resume === undefined
-				? -1
-				: spoken.findIndex(
-						(message) => message.role === "user" && message.id === input.resume?.userMessageId,
+			// The dead attempt may have filed its report, or a newer head superseded it, before the
+			// object went down: then there is nothing left to run.
+			if (prReviewId !== undefined && input.resume !== undefined) {
+				yield* Effect.annotateCurrentSpan("maple.pr_review.resume_attempt", input.resume.attempt)
+				// An unreadable row reviews anyway: the row's own guards still refuse a second report.
+				const current = yield* reviews
+					.getReview(tenant.orgId, prReviewId)
+					.pipe(
+						Effect.catchCause((cause) =>
+							Effect.logWarning(
+								"Could not read the review being resumed; reviewing anyway",
+								cause,
+							).pipe(Effect.as(Option.none())),
+						),
 					)
-		const text = input.resume?.text ?? (latest?.role === "user" ? latest.text : "")
-		const prior =
-			input.resume !== undefined
-				? spoken.slice(0, kickoff === -1 ? spoken.length : kickoff)
-				: latest?.role === "user"
-					? spoken.slice(0, -1)
-					: spoken
-		const autonomous = isAutonomousTurn(input.sessionId, origin)
-		// One per review turn: the close-out sees what the pass read and keeps what it saved.
-		const review =
-			prReviewId !== undefined && autonomous
-				? { coverage: makeReviewCoverage(text), ledger: makeReviewLedger() }
-				: undefined
-		// The autonomous pass's tool calls show on the investigation row until its report is on its way. A failed write is logged and dropped: it is only a feed.
-		const investigationFeed =
-			investigationId !== undefined && autonomous
-				? yield* makeProgressFeed({
-						label: stepLabel,
-						heartbeat: INVESTIGATION_PROGRESS_HEARTBEAT,
-						write: (record) =>
-							investigations
-								.recordProgress(tenant.orgId, investigationId, record)
-								.pipe(
+				const settled = Option.match(current, {
+					onNone: () => false,
+					onSome: (review) => review.status !== "queued" && review.status !== "running",
+				})
+				if (settled) {
+					observability.outcome = "resume_skipped"
+					input.session.append({ type: "turn-end", messageId: input.messageId, reason: "stop" })
+					recordedTerminal = true
+					yield* annotateTurn()
+					return
+				}
+			}
+			// Clone the commit while the model reads the diff, rather than when its first source tool
+			// asks and waits on it. A child of the turn (no request Scope here, so `forkRequestScoped`
+			// parents it on this fiber): a clone still running when the turn ends carries on in the container.
+			if (prReviewId !== undefined) {
+				yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
+					Effect.flatMap(
+						Option.match({
+							onNone: () => Effect.void,
+							onSome: (target) =>
+								toolExecutor.prepareRepository(runTenant, {
+									repository: target.repository,
+									ref: target.headSha,
+								}),
+						}),
+					),
+					Effect.catch((error) =>
+						Effect.logInfo("Could not prepare the review's checkout").pipe(
+							Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
+						),
+					),
+					forkRequestScoped,
+				)
+			}
+			// An investigation picks its commit from telemetry mid-pass, so warm the repositories it
+			// could read instead: the deployed commit then clones from a filled mirror in seconds.
+			if (investigationId !== undefined) {
+				yield* forkRequestScoped(toolExecutor.prepareConnectedRepositories(runTenant))
+			}
+			const history = input.session.history()
+			const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }
+			const deploySettings = yield* loadLlmSettings
+			// An org on its own OpenRouter key runs every model call of the turn on it.
+			const settings = Option.match(orgKey, {
+				onNone: () => deploySettings,
+				onSome: (apiKey) => withOrgOpenRouterKey(deploySettings, apiKey),
+			})
+			// Rebuilt from the turn's settings so the org's key, when there is one, replaces the runtime's.
+			const openRouterClient = layerOpenRouterClient(settings)
+			const model = yield* Match.value(agent.model).pipe(
+				Match.when("triage", () => Effect.succeed(resolveTriageModel(settings, tags))),
+				Match.when("review", () =>
+					reviews
+						.reviewModel(tenant.orgId)
+						.pipe(Effect.map((chosen) => resolveReviewModel(settings, tags, chosen))),
+				),
+				Match.exhaustive,
+			)
+
+			// The session recorded the user's message before the run started, so the transcript's tail is
+			// this run's input rather than part of its history.
+			// Read once: it is a SQL scan plus a decode, and it is a read-only snapshot.
+			const spoken = history.filter((message) => message.text.trim() !== "")
+			const latest = spoken.at(-1)
+			// A restarted turn reads from its kickoff: what came after it is the attempt that died.
+			const kickoff =
+				input.resume === undefined
+					? -1
+					: spoken.findIndex(
+							(message) =>
+								message.role === "user" && message.id === input.resume?.userMessageId,
+						)
+			const text = input.resume?.text ?? (latest?.role === "user" ? latest.text : "")
+			const prior =
+				input.resume !== undefined
+					? spoken.slice(0, kickoff === -1 ? spoken.length : kickoff)
+					: latest?.role === "user"
+						? spoken.slice(0, -1)
+						: spoken
+			const autonomous = isAutonomousTurn(input.sessionId, origin)
+			// One per review turn: the close-out sees what the pass read and keeps what it saved.
+			const review =
+				prReviewId !== undefined && autonomous
+					? { coverage: makeReviewCoverage(text), ledger: makeReviewLedger() }
+					: undefined
+			// The autonomous pass's tool calls show on the investigation row until its report is on its way. A failed write is logged and dropped: it is only a feed.
+			const investigationFeed =
+				investigationId !== undefined && autonomous
+					? yield* makeProgressFeed({
+							label: stepLabel,
+							heartbeat: INVESTIGATION_PROGRESS_HEARTBEAT,
+							write: (record) =>
+								investigations.recordProgress(tenant.orgId, investigationId, record).pipe(
 									Effect.catch((error) =>
 										Effect.logWarning("Could not record investigation progress").pipe(
-											Effect.annotateLogs({ investigationId, error: error.message }),
+											Effect.annotateLogs({
+												investigationId,
+												error: error.message,
+											}),
 										),
 									),
 								),
-					})
-				: undefined
-		// The tail lands while the row is still active, and the report's own write lands last. A
-		// report that does not land hands the row back to the feed, since the pass goes on.
-		const beforeReport = <A, E>(submit: Effect.Effect<A, E>) =>
-			investigationFeed === undefined
-				? submit
-				: investigationFeed.flush.pipe(
-						Effect.andThen(investigationFeed.pause),
-						Effect.andThen(submit),
-						Effect.onError(() => investigationFeed.resume),
-					)
-		const closeFeeds =
-			investigationFeed === undefined
-				? Effect.void
-				: investigationFeed.flush.pipe(Effect.andThen(investigationFeed.close))
-		// Why the pass, or else its close-out, stopped; the first reason is the one the PR is told.
-		let failure: PrReviewFailureReason | undefined
-		const holdsTurn = () => input.session.holdsTurn(input.messageId)
-		// An autonomous pass ends when the runner says so, not when a run does: a run that stopped
-		// in prose or died on a model error gets one close-out turn first, so its terminal is held
-		// back until the outcome is known.
-		let held: Extract<ChatTurnEvent, { readonly type: "turn-end" }> | undefined
-		const run = (turn: {
-			readonly text: string
-			readonly history: ReadonlyArray<ChatMessage>
-			readonly closeOut?: boolean
-		}) =>
-			runChatTurn({
-				sessionId: input.sessionId,
-				messageId: input.messageId,
-				tenant: runTenant,
-				origin,
-				toolExecutor,
-				model,
-				submitDiagnosis: (orgId, id, request) =>
-					beforeReport(investigations.submitDiagnosis(orgId, id, request)),
-				submitReview: (orgId, reviewId, request) =>
-					beforeReport(reviews.submitReview(orgId, reviewId, request)),
-				submitReply: conversations.submitReply,
-				stageEdit: conversations.stageEdit,
-				...(turn.closeOut === true ? { closeOut: true } : undefined),
-				...(review === undefined ? undefined : { review }),
-				text: turn.text,
-				history: turn.history,
-				usage,
-				// An abort clears the claim; the run notices at the next event rather than streaming into
-				// a conversation that has moved on.
-				holdsTurn,
-				append: (event) => {
-					// The report call is the run ending, not a step of it.
-					if (
-						event.type === "tool-call" &&
-						event.proposed !== true &&
-						event.name !== SUBMIT_DIAGNOSIS &&
-						event.name !== SUBMIT_REVIEW
-					) {
-						investigationFeed?.step(event.name, parseToolInput(event.input))
-					}
-					if (event.type === "turn-end" && event.task === undefined) {
-						observability.outcome = event.reason
-						if (autonomous && event.reason !== "aborted") {
-							held = event
-							return
+						})
+					: undefined
+			// The tail lands while the row is still active, and the report's own write lands last. A
+			// report that does not land hands the row back to the feed, since the pass goes on.
+			const beforeReport = <A, E>(submit: Effect.Effect<A, E>) =>
+				investigationFeed === undefined
+					? submit
+					: investigationFeed.flush.pipe(
+							Effect.andThen(investigationFeed.pause),
+							Effect.andThen(submit),
+							Effect.onError(() => investigationFeed.resume),
+						)
+			const closeFeeds =
+				investigationFeed === undefined
+					? Effect.void
+					: investigationFeed.flush.pipe(Effect.andThen(investigationFeed.close))
+			// Why the pass, or else its close-out, stopped; the first reason is the one the PR is told.
+			let failure: PrReviewFailureReason | undefined
+			const holdsTurn = () => input.session.holdsTurn(input.messageId)
+			// An autonomous pass ends when the runner says so, not when a run does: a run that stopped
+			// in prose or died on a model error gets one close-out turn first, so its terminal is held
+			// back until the outcome is known.
+			let held: Extract<ChatTurnEvent, { readonly type: "turn-end" }> | undefined
+			const run = (turn: {
+				readonly text: string
+				readonly history: ReadonlyArray<ChatMessage>
+				readonly closeOut?: boolean
+			}) =>
+				runChatTurn({
+					sessionId: input.sessionId,
+					messageId: input.messageId,
+					tenant: runTenant,
+					origin,
+					toolExecutor,
+					model,
+					submitDiagnosis: (orgId, id, request) =>
+						beforeReport(investigations.submitDiagnosis(orgId, id, request)),
+					submitReview: (orgId, reviewId, request) =>
+						beforeReport(reviews.submitReview(orgId, reviewId, request)),
+					submitReply: conversations.submitReply,
+					stageEdit: conversations.stageEdit,
+					...(turn.closeOut === true ? { closeOut: true } : undefined),
+					...(review === undefined ? undefined : { review }),
+					text: turn.text,
+					history: turn.history,
+					usage,
+					// An abort clears the claim; the run notices at the next event rather than streaming into
+					// a conversation that has moved on.
+					holdsTurn,
+					append: (event) => {
+						// The report call is the run ending, not a step of it.
+						if (
+							event.type === "tool-call" &&
+							event.proposed !== true &&
+							event.name !== SUBMIT_DIAGNOSIS &&
+							event.name !== SUBMIT_REVIEW
+						) {
+							investigationFeed?.step(event.name, parseToolInput(event.input))
 						}
-						recordedTerminal = true
-					}
-					input.session.append(event)
-				},
-			})
+						if (event.type === "turn-end" && event.task === undefined) {
+							observability.outcome = event.reason
+							if (autonomous && event.reason !== "aborted") {
+								held = event
+								return
+							}
+							recordedTerminal = true
+						}
+						input.session.append(event)
+					},
+					// oxlint-disable-next-line effecttsgo/strict-effect-provide
+				}).pipe(Effect.provide(openRouterClient))
 
-		// A pass that failed is a pass with no diagnosis yet, not a dead turn: the close-out below
-		// still gets its say. Interrupts stay interrupts.
-		const recoverAutonomousFailure = <R>(effect: Effect.Effect<ChatRunOutcome, unknown, R>) =>
-			effect.pipe(
-				Effect.catchCause((cause) =>
-					Cause.hasInterruptsOnly(cause)
-						? Effect.failCause(cause)
-						: Effect.sync(() => {
-								failure ??= reviewFailureReason(cause)
-							}).pipe(
-								Effect.andThen(Effect.logWarning("Autonomous pass failed; closing it out")),
-								Effect.annotateLogs({
-									sessionId: input.sessionId,
-									messageId: input.messageId,
-									cause: summarizeCause(cause),
-								}),
-								Effect.as<ChatRunOutcome>({
-									autonomous: true,
-									submitted: false,
-									compactions: 0,
-								}),
+			// A pass that failed is a pass with no diagnosis yet, not a dead turn: the close-out below
+			// still gets its say. Interrupts stay interrupts.
+			const recoverAutonomousFailure = <R>(effect: Effect.Effect<ChatRunOutcome, unknown, R>) =>
+				effect.pipe(
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.failCause(cause)
+							: Effect.sync(() => {
+									failure ??= reviewFailureReason(cause)
+								}).pipe(
+									Effect.andThen(
+										Effect.logWarning("Autonomous pass failed; closing it out"),
+									),
+									Effect.annotateLogs({
+										sessionId: input.sessionId,
+										messageId: input.messageId,
+										cause: summarizeCause(cause),
+									}),
+									Effect.as<ChatRunOutcome>({
+										autonomous: true,
+										submitted: false,
+										compactions: 0,
+									}),
+								),
+					),
+				)
+
+			if (!autonomous) {
+				observability.compactions = (yield* run({ text, history: prior })).compactions
+				if (!recordedTerminal && !holdsTurn()) observability.outcome = "aborted"
+				yield* annotateTurn()
+				return
+			}
+
+			const first = yield* recoverAutonomousFailure(run({ text, history: prior }))
+			observability.compactions = first.compactions
+			let submitted = first.submitted
+			// Exhausted rather than failed: the engine's final answer ended in prose, not a report.
+			if (!submitted && held?.reason === "max-steps") failure ??= "step_limit"
+			if (!submitted && holdsTurn()) {
+				held = undefined
+				const closeOut = yield* recoverAutonomousFailure(
+					run({
+						text:
+							prReplyId !== undefined
+								? PR_REPLY_CLOSE_OUT_PROMPT
+								: prReviewId === undefined
+									? CLOSE_OUT_PROMPT
+									: PR_REVIEW_CLOSE_OUT_PROMPT,
+						history: withToolTranscript(input.session.history()),
+						closeOut: true,
+					}),
+				)
+				observability.compactions = (observability.compactions ?? 0) + closeOut.compactions
+				submitted = closeOut.submitted
+				yield* Effect.annotateCurrentSpan(
+					prReplyId !== undefined
+						? "maple.pr_reply.closed_out"
+						: prReviewId === undefined
+							? "maple.investigation.closed_out"
+							: "maple.pr_review.closed_out",
+					submitted,
+				)
+			}
+
+			yield* closeFeeds
+
+			if (holdsTurn()) {
+				if (!submitted && investigationId !== undefined) {
+					observability.failureReason = "NoDiagnosis"
+					yield* investigations
+						.failInvestigation(tenant.orgId, investigationId, NO_DIAGNOSIS_ERROR)
+						.pipe(
+							Effect.catchCause((cause) =>
+								Effect.logError("Could not record the failed pass", cause),
 							),
-				),
-			)
-
-		if (!autonomous) {
-			observability.compactions = (yield* run({ text, history: prior })).compactions
-			if (!recordedTerminal && !holdsTurn()) observability.outcome = "aborted"
+						)
+				}
+				if (!submitted && prReplyId !== undefined) {
+					observability.failureReason = "NoReply"
+					yield* conversations
+						.failReply(tenant.orgId, prReplyId, NO_REPLY_ERROR)
+						.pipe(
+							Effect.catchCause((cause) =>
+								Effect.logError("Could not record the failed reply", cause),
+							),
+						)
+				}
+				// Findings the pass saved are posted as a partial rather than lost with the report.
+				const saved = review?.ledger.findings() ?? []
+				if (!submitted && prReviewId !== undefined && review !== undefined && saved.length > 0) {
+					submitted = yield* reviews
+						.submitReview(
+							tenant.orgId,
+							prReviewId,
+							savedFindingsRequest({
+								findings: saved,
+								unreviewed: review.coverage.unread(),
+								modelName: model.name,
+								usage,
+							}),
+						)
+						.pipe(
+							Effect.as(true),
+							Effect.catchCause((cause) =>
+								Effect.logError("Could not file the saved findings", cause).pipe(
+									Effect.as(false),
+								),
+							),
+						)
+					yield* Effect.annotateCurrentSpan("maple.pr_review.filed_saved_findings", submitted)
+				}
+				if (!submitted && prReviewId !== undefined) {
+					observability.failureReason = "NoReview"
+					yield* Effect.annotateCurrentSpan(
+						"maple.pr_review.failure_reason",
+						failure ?? "no_report",
+					)
+					yield* reviews
+						.failReview(tenant.orgId, prReviewId, reviewFailureError(failure ?? "no_report"))
+						.pipe(
+							Effect.catchCause((cause) =>
+								Effect.logError("Could not record the failed review", cause),
+							),
+						)
+				}
+				input.session.append(
+					submitted
+						? {
+								type: "turn-end",
+								messageId: input.messageId,
+								reason: held?.reason === "max-steps" ? "max-steps" : "stop",
+							}
+						: {
+								type: "turn-end",
+								messageId: input.messageId,
+								reason: "error",
+								error:
+									prReplyId !== undefined
+										? NO_REPLY_MESSAGE
+										: prReviewId === undefined
+											? NO_DIAGNOSIS_MESSAGE
+											: NO_REVIEW_MESSAGE,
+							},
+				)
+				recordedTerminal = true
+			} else {
+				observability.outcome = "aborted"
+			}
 			yield* annotateTurn()
-			return
-		}
+		})
 
-		const first = yield* recoverAutonomousFailure(run({ text, history: prior }))
-		observability.compactions = first.compactions
-		let submitted = first.submitted
-		// Exhausted rather than failed: the engine's final answer ended in prose, not a report.
-		if (!submitted && held?.reason === "max-steps") failure ??= "step_limit"
-		if (!submitted && holdsTurn()) {
-			held = undefined
-			const closeOut = yield* recoverAutonomousFailure(
-				run({
-					text:
-						prReplyId !== undefined
-							? PR_REPLY_CLOSE_OUT_PROMPT
-							: prReviewId === undefined
-								? CLOSE_OUT_PROMPT
-								: PR_REVIEW_CLOSE_OUT_PROMPT,
-					history: withToolTranscript(input.session.history()),
-					closeOut: true,
-				}),
-			)
-			observability.compactions = (observability.compactions ?? 0) + closeOut.compactions
-			submitted = closeOut.submitted
-			yield* Effect.annotateCurrentSpan(
-				prReplyId !== undefined
-					? "maple.pr_reply.closed_out"
-					: prReviewId === undefined
-						? "maple.investigation.closed_out"
-						: "maple.pr_review.closed_out",
-				submitted,
-			)
-		}
-
-		yield* closeFeeds
-
-		if (holdsTurn()) {
-			if (!submitted && investigationId !== undefined) {
-				observability.failureReason = "NoDiagnosis"
-				yield* investigations
-					.failInvestigation(tenant.orgId, investigationId, NO_DIAGNOSIS_ERROR)
-					.pipe(
-						Effect.catchCause((cause) =>
-							Effect.logError("Could not record the failed pass", cause),
-						),
-					)
-			}
-			if (!submitted && prReplyId !== undefined) {
-				observability.failureReason = "NoReply"
-				yield* conversations
-					.failReply(tenant.orgId, prReplyId, NO_REPLY_ERROR)
-					.pipe(
-						Effect.catchCause((cause) =>
-							Effect.logError("Could not record the failed reply", cause),
-						),
-					)
-			}
-			// Findings the pass saved are posted as a partial rather than lost with the report.
-			const saved = review?.ledger.findings() ?? []
-			if (!submitted && prReviewId !== undefined && review !== undefined && saved.length > 0) {
-				submitted = yield* reviews
-					.submitReview(
-						tenant.orgId,
-						prReviewId,
-						savedFindingsRequest({
-							findings: saved,
-							unreviewed: review.coverage.unread(),
-							modelName: model.name,
-							usage,
-						}),
-					)
-					.pipe(
-						Effect.as(true),
-						Effect.catchCause((cause) =>
-							Effect.logError("Could not file the saved findings", cause).pipe(
-								Effect.as(false),
-							),
-						),
-					)
-				yield* Effect.annotateCurrentSpan("maple.pr_review.filed_saved_findings", submitted)
-			}
-			if (!submitted && prReviewId !== undefined) {
-				observability.failureReason = "NoReview"
-				yield* Effect.annotateCurrentSpan("maple.pr_review.failure_reason", failure ?? "no_report")
-				yield* reviews
-					.failReview(tenant.orgId, prReviewId, reviewFailureError(failure ?? "no_report"))
-					.pipe(
-						Effect.catchCause((cause) =>
-							Effect.logError("Could not record the failed review", cause),
-						),
-					)
-			}
-			input.session.append(
-				submitted
-					? {
-							type: "turn-end",
-							messageId: input.messageId,
-							reason: held?.reason === "max-steps" ? "max-steps" : "stop",
-						}
-					: {
-							type: "turn-end",
-							messageId: input.messageId,
-							reason: "error",
-							error:
-								prReplyId !== undefined
-									? NO_REPLY_MESSAGE
-									: prReviewId === undefined
-										? NO_DIAGNOSIS_MESSAGE
-										: NO_REVIEW_MESSAGE,
-						},
-			)
-			recordedTerminal = true
-		} else {
-			observability.outcome = "aborted"
-		}
-		yield* annotateTurn()
+	const program = Effect.gen(function* () {
+		const orgKey = yield* (yield* OrgOpenRouterKeyService).resolveForRun(tenant.orgId)
+		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
+		return yield* turnBody(orgKey).pipe(
+			// `ensuring`, not a trailing statement: a turn that failed, was aborted, or ran out of steps
+			// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
+			Effect.ensuring(
+				Effect.suspend(() =>
+					meterTurn(input, tenant, origin, usage, { ownKey: Option.isSome(orgKey) }),
+				),
+			),
+		)
 	}).pipe(
-		// `ensuring`, not a trailing statement: a turn that failed, was aborted, or ran out of steps
-		// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
-		Effect.ensuring(Effect.suspend(() => meterTurn(input, tenant, origin, usage))),
 		Effect.tapCause((cause) => {
 			observability.outcome = "error"
 			observability.failureReason ??= "UnhandledTurnFailure"

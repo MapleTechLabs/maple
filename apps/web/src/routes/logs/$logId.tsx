@@ -10,13 +10,15 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { LogHeroHeader } from "@/components/logs/log-hero-header"
 import { LogMetaStrip } from "@/components/logs/log-meta-strip"
 import { LogErrorBanner } from "@maple/ui/components/logs/log-error-banner"
+import { severityLabel } from "@maple/ui/components/logs/severity-badge"
 import { LogAttributesPanel } from "@/components/logs/log-attributes-panel"
 import { LogRawPanel } from "@/components/logs/log-raw-panel"
 import { LogTraceTimeline } from "@/components/logs/log-trace-timeline"
+import { LogContextPanel } from "@/components/logs/log-context-panel"
 import { getLogResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { decodeLogKey, encodeLogKey, type LogKey } from "@/lib/log-key"
-import type { GetLogInput, GetLogResult } from "@/api/warehouse/logs"
+import type { GetLogInput, GetLogResult, Log } from "@/api/warehouse/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 // Breadcrumb root shared by every state of this page.
@@ -103,8 +105,10 @@ function LogDetailPage() {
 			}
 		>
 			{(log) => {
-				const sev = log.severityText.toUpperCase()
+				const sev = severityLabel(log.severityText, log.severityNumber).toUpperCase()
 				const showErrorBanner = sev === "ERROR" || sev === "FATAL"
+				const openLog = (next: Log) =>
+					navigate({ to: "/logs/$logId", params: { logId: encodeLogKey(next) } })
 				return (
 					<>
 						{/* Hero + meta as one card, mirroring the drawer's stacked top section. */}
@@ -125,17 +129,16 @@ function LogDetailPage() {
 							<div className="flex flex-col gap-3">
 								{log.traceId && (
 									<Panel padded="sm">
-										<LogTraceTimeline
-											currentLog={log}
-											onLogSelect={(next) =>
-												navigate({
-													to: "/logs/$logId",
-													params: { logId: encodeLogKey(next) },
-												})
-											}
-										/>
+										<LogTraceTimeline currentLog={log} onLogSelect={openLog} />
 									</Panel>
 								)}
+								<Panel padded="sm">
+									<LogContextPanel
+										log={log}
+										listClassName="max-h-[420px] flex-none"
+										onLogSelect={openLog}
+									/>
+								</Panel>
 								<Panel padded="sm">
 									<LogRawPanel log={log} />
 								</Panel>

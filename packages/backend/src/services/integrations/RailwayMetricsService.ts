@@ -17,13 +17,13 @@ import {
 	RailwayIntegrationStatus,
 	UserId,
 } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	railwayConnections,
-	railwayEnvironments,
+	RailwayConnections,
+	RailwayEnvironments,
 	type RailwayConnectionRow,
 	type RailwayEnvironmentRow,
-} from "@maple/db"
-import { and, eq, gt, isNull, lt, or } from "drizzle-orm"
+} from "@maple/db/tables"
 import { Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -31,7 +31,6 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
@@ -84,18 +83,27 @@ const parseServices = (json: string): Readonly<Record<string, string>> =>
 	decodeServices(json).pipe((option) => (option._tag === "Some" ? option.value : {}))
 
 /** Next window for an environment, or null when it is caught up. */
-export const nextWindow = (watermarkAt: Date | null, now: number) => {
+export const nextWindow = (watermarkAt: number | null, now: number) => {
 	const horizonMs = floorToSample(now - SAFETY_LAG_MS)
-	const startMs = watermarkAt === null ? horizonMs - INITIAL_BACKFILL_MS : dateToMs(watermarkAt)
+	const startMs = watermarkAt === null ? horizonMs - INITIAL_BACKFILL_MS : watermarkAt
 	// Cap the end, not the start: a long gap catches up one window per tick instead of being skipped.
 	const endMs = Math.min(horizonMs, startMs + MAX_WINDOW_MS)
 	return startMs < endMs ? { startMs, endMs } : null
 }
 
 class RailwayIngestError extends Schema.TaggedError<RailwayIngestError>()(
-	"@maple/api/integrations/RailwayIngestError",
+	"@maple/backend/integrations/RailwayIngestError",
 	{ message: Schema.String, status: Schema.optionalKey(Schema.Number) },
 ) {}
+
+/** Running counts of one org's poll; `stopped` ends the pass early. */
+interface RailwayPollTally {
+	readonly callsMade: number
+	readonly failures: number
+	readonly rowsIngested: number
+	readonly lastError: string | null
+	readonly stopped: boolean
+}
 
 export interface RailwayPollOrgSummary {
 	readonly orgId: OrgId
@@ -150,28 +158,39 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 			const loadConnection = (orgId: OrgId) =>
 				dbExecute((db) =>
-					db.select().from(railwayConnections).where(eq(railwayConnections.orgId, orgId)).limit(1),
+					db.run(
+						PG.from(RailwayConnections)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
 				).pipe(Effect.map((rows) => rows[0] ?? null))
 
 			const loadEnvironments = (orgId: OrgId) =>
 				dbExecute((db) =>
-					db.select().from(railwayEnvironments).where(eq(railwayEnvironments.orgId, orgId)),
+					db.run(
+						PG.from(RailwayEnvironments)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
 				)
 
-			const updateConnection = (
-				connectionId: string,
-				set: Partial<typeof railwayConnections.$inferInsert>,
-			) =>
+			const updateConnection = (connectionId: string, set: PG.UpdateSetOf<typeof RailwayConnections>) =>
 				dbExecute((db) =>
-					db.update(railwayConnections).set(set).where(eq(railwayConnections.id, connectionId)),
+					db.run(
+						PG.update(RailwayConnections)
+							.set(set)
+							.where(($) => [$.id.eq(connectionId)]),
+					),
 				)
 
-			const updateEnvironment = (
-				rowId: string,
-				set: Partial<typeof railwayEnvironments.$inferInsert>,
-			) =>
+			const updateEnvironment = (rowId: string, set: PG.UpdateSetOf<typeof RailwayEnvironments>) =>
 				dbExecute((db) =>
-					db.update(railwayEnvironments).set(set).where(eq(railwayEnvironments.id, rowId)),
+					db.run(
+						PG.update(RailwayEnvironments)
+							.set(set)
+							.where(($) => [$.id.eq(rowId)]),
+					),
 				)
 
 			const decryptToken = (connection: RailwayConnectionRow) =>
@@ -197,52 +216,57 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				const discoveredIds = new Set(
 					discovery.environments.map((environment) => environment.environmentId),
 				)
-				for (const environment of discovery.environments) {
-					yield* dbExecute((db) =>
-						db
-							.insert(railwayEnvironments)
-							.values({
-								id: randomUUID(),
-								orgId: connection.orgId,
-								connectionId: connection.id,
-								projectId: environment.projectId,
-								projectName: environment.projectName,
-								environmentId: environment.environmentId,
-								environmentName: environment.environmentName,
-								servicesJson: JSON.stringify(environment.services),
-								enabled: true,
-								createdAt: msToDate(now),
-								updatedAt: msToDate(now),
-							})
-							.onConflictDoUpdate({
-								target: [railwayEnvironments.orgId, railwayEnvironments.environmentId],
-								set: {
-									connectionId: connection.id,
-									projectId: environment.projectId,
-									projectName: environment.projectName,
-									environmentName: environment.environmentName,
-									servicesJson: JSON.stringify(environment.services),
-									enabled: true,
-									updatedAt: msToDate(now),
-								},
-							}),
-					)
-				}
+				yield* Effect.forEach(
+					discovery.environments,
+					(environment) =>
+						dbExecute((db) =>
+							db.run(
+								PG.insertInto(RailwayEnvironments)
+									.values({
+										id: randomUUID(),
+										orgId: connection.orgId,
+										connectionId: connection.id,
+										projectId: environment.projectId,
+										projectName: environment.projectName,
+										environmentId: environment.environmentId,
+										environmentName: environment.environmentName,
+										servicesJson: JSON.stringify(environment.services),
+										enabled: true,
+										createdAt: now,
+										updatedAt: now,
+									})
+									.onConflictDoUpdate({
+										target: ["orgId", "environmentId"],
+										set: () => ({
+											connectionId: connection.id,
+											projectId: environment.projectId,
+											projectName: environment.projectName,
+											environmentName: environment.environmentName,
+											servicesJson: JSON.stringify(environment.services),
+											enabled: true,
+											updatedAt: now,
+										}),
+									}),
+							),
+						),
+					{ discard: true },
+				)
 				// A project whose environment page came back full may have more; leave its unseen rows on.
 				const truncated = new Set(discovery.truncatedProjectIds)
-				for (const row of existing) {
-					if (
-						row.enabled &&
-						!discoveredIds.has(row.environmentId) &&
-						!truncated.has(row.projectId)
-					) {
-						yield* updateEnvironment(row.id, { enabled: false, updatedAt: msToDate(now) })
-					}
-				}
+				yield* Effect.forEach(
+					existing.filter(
+						(row) =>
+							row.enabled &&
+							!discoveredIds.has(row.environmentId) &&
+							!truncated.has(row.projectId),
+					),
+					(row) => updateEnvironment(row.id, { enabled: false, updatedAt: now }),
+					{ discard: true },
+				)
 				yield* updateConnection(connection.id, {
-					discoveredAt: msToDate(now),
+					discoveredAt: now,
 					workspaceNames: discovery.workspaceNames.join(", ") || null,
-					updatedAt: msToDate(now),
+					updatedAt: now,
 				})
 			})
 
@@ -265,10 +289,9 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					connected: true,
 					workspaceNames: connection.workspaceNames,
 					connectedByUserId: decodeUserId(connection.connectedByUserId),
-					connectedAt: dateToMs(connection.createdAt),
+					connectedAt: connection.createdAt,
 					authFailed: connection.authFailedAt !== null,
-					lastSyncedAt:
-						connection.lastSuccessAt === null ? null : dateToMs(connection.lastSuccessAt),
+					lastSyncedAt: connection.lastSuccessAt,
 					lastError: connection.lastError,
 					environments: environments
 						.filter((row) => row.enabled)
@@ -286,8 +309,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 									environmentName: row.environmentName,
 									serviceCount: Object.keys(parseServices(row.servicesJson)).length,
 									enabled: row.enabled,
-									lastSyncedAt:
-										row.lastSuccessAt === null ? null : dateToMs(row.lastSuccessAt),
+									lastSyncedAt: row.lastSuccessAt,
 									lastError: row.lastError,
 								}),
 						),
@@ -328,32 +350,33 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 				const now = yield* Clock.currentTimeMillis
 				const [connection] = yield* dbExecute((db) =>
-					db
-						.insert(railwayConnections)
-						.values({
-							id: randomUUID(),
-							orgId,
-							tokenCiphertext: encrypted.ciphertext,
-							tokenIv: encrypted.iv,
-							tokenTag: encrypted.tag,
-							connectedByUserId: userId,
-							createdAt: msToDate(now),
-							updatedAt: msToDate(now),
-						})
-						.onConflictDoUpdate({
-							target: railwayConnections.orgId,
-							set: {
+					db.run(
+						PG.insertInto(RailwayConnections)
+							.values({
+								id: randomUUID(),
+								orgId,
 								tokenCiphertext: encrypted.ciphertext,
 								tokenIv: encrypted.iv,
 								tokenTag: encrypted.tag,
 								connectedByUserId: userId,
-								authFailedAt: null,
-								lastError: null,
-								lastErrorAt: null,
-								updatedAt: msToDate(now),
-							},
-						})
-						.returning(),
+								createdAt: now,
+								updatedAt: now,
+							})
+							.onConflictDoUpdate({
+								target: ["orgId"],
+								set: () => ({
+									tokenCiphertext: encrypted.ciphertext,
+									tokenIv: encrypted.iv,
+									tokenTag: encrypted.tag,
+									connectedByUserId: userId,
+									authFailedAt: null,
+									lastError: null,
+									lastErrorAt: null,
+									updatedAt: now,
+								}),
+							})
+							.returning(),
+					),
 				)
 				if (connection === undefined) {
 					return yield* new IntegrationsPersistenceError({
@@ -368,55 +391,52 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			const disconnect = Effect.fn("RailwayMetricsService.disconnect")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				yield* dbExecute((db) =>
-					db.delete(railwayEnvironments).where(eq(railwayEnvironments.orgId, orgId)),
+					db.run(PG.deleteFrom(RailwayEnvironments).where(($) => [$.orgId.eq(orgId)])),
 				)
 				const deleted = yield* dbExecute((db) =>
-					db.delete(railwayConnections).where(eq(railwayConnections.orgId, orgId)).returning(),
+					db.run(
+						PG.deleteFrom(RailwayConnections)
+							.where(($) => [$.orgId.eq(orgId)])
+							.returning("id"),
+					),
 				)
 				return { disconnected: deleted.length > 0 }
 			})
 
 			const claimLease = (connectionId: string, now: number) =>
 				dbExecute((db) =>
-					db
-						.update(railwayConnections)
-						.set({ leaseUntil: msToDate(now + LEASE_MS), updatedAt: msToDate(now) })
-						.where(
-							and(
-								eq(railwayConnections.id, connectionId),
-								or(
-									isNull(railwayConnections.leaseUntil),
-									lt(railwayConnections.leaseUntil, msToDate(now)),
+					db.run(
+						PG.update(RailwayConnections)
+							.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
+							.where(($) => [
+								$.id.eq(connectionId),
+								PG.or(
+									$.leaseUntil.isNull(),
+									$.leaseUntil.lt(now),
 									// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
-									gt(railwayConnections.leaseUntil, msToDate(now + 2 * BILLING_HOLD_MS)),
+									$.leaseUntil.gt(now + 2 * BILLING_HOLD_MS),
 								),
-							),
-						)
-						.returning(),
+							])
+							.returning(),
+					),
 				).pipe(Effect.map((rows) => rows[0] ?? null))
 
 			/** Compare-and-set on our own claim so a late tick never clears a successor's lease. */
 			const releaseLease = (
 				connectionId: string,
-				claimedUntil: Date | null,
+				claimedUntil: number | null,
 				holdUntilMs: number | null,
 				now: number,
 			) =>
 				dbExecute((db) =>
-					db
-						.update(railwayConnections)
-						.set({
-							leaseUntil: holdUntilMs === null ? null : msToDate(holdUntilMs),
-							updatedAt: msToDate(now),
-						})
-						.where(
-							and(
-								eq(railwayConnections.id, connectionId),
-								claimedUntil === null
-									? isNull(railwayConnections.leaseUntil)
-									: eq(railwayConnections.leaseUntil, claimedUntil),
-							),
-						),
+					db.run(
+						PG.update(RailwayConnections)
+							.set({ leaseUntil: holdUntilMs, updatedAt: now })
+							.where(($) => [
+								$.id.eq(connectionId),
+								claimedUntil === null ? $.leaseUntil.isNull() : $.leaseUntil.eq(claimedUntil),
+							]),
+					),
 				)
 
 			const emitMetrics = Effect.fn("RailwayMetricsService.emitMetrics")(
@@ -458,7 +478,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				window: { readonly startMs: number; readonly endMs: number },
 			) {
 				yield* Effect.annotateCurrentSpan({
-					"railway.environment.id": row.environmentId,
+					"maple.railway.environment_id": row.environmentId,
 					"maple.railway.window_start": new Date(window.startMs).toISOString(),
 				})
 				const results = yield* fetchEnvironmentMetrics(httpClient, token, {
@@ -503,57 +523,51 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				const holdUntilRef = yield* Ref.make<number | null>(null)
 				const summary = yield* Effect.gen(function* () {
 					const token = yield* decryptToken(claimed)
-					let callsMade = 0
-					let failures = 0
-					let rowsIngested = 0
-					let lastError: string | null = null
 
 					const markAuthFailed = (message: string) =>
 						updateConnection(claimed.id, {
-							authFailedAt: msToDate(now),
+							authFailedAt: now,
 							lastError: message,
-							lastErrorAt: msToDate(now),
-							updatedAt: msToDate(now),
+							lastErrorAt: now,
+							updatedAt: now,
 						})
 
-					if (
-						claimed.discoveredAt === null ||
-						now - dateToMs(claimed.discoveredAt) >= DISCOVERY_TTL_MS
-					) {
-						callsMade += 2
-						const discovery = yield* Effect.result(
-							discover(httpClient, token).pipe(
-								Effect.timeoutOrElse({
-									duration: DISCOVERY_TIMEOUT,
-									orElse: () =>
-										Effect.fail(
-											new RailwayApiError({
-												message: "Railway discovery timed out",
-												kind: "upstream",
-											}),
-										),
-								}),
-							),
-						)
-						if (discovery._tag === "Success") {
-							yield* reconcileEnvironments(claimed, discovery.success, now)
-						} else if (discovery.failure.kind === "unauthorized") {
-							yield* markAuthFailed(discovery.failure.message)
-							return { ...skip("token rejected"), callsMade }
-						} else if (discovery.failure.kind === "rate_limited") {
-							yield* Ref.set(holdUntilRef, now + RATE_LIMIT_HOLD_MS)
-							return { ...skip("rate limited"), callsMade }
-						} else {
-							failures += 1
-							lastError = discovery.failure.message
-						}
+					const needsDiscovery =
+						claimed.discoveredAt === null || now - claimed.discoveredAt >= DISCOVERY_TTL_MS
+					const discoveryCalls = needsDiscovery ? 2 : 0
+					const discovery = needsDiscovery
+						? yield* Effect.result(
+								discover(httpClient, token).pipe(
+									Effect.timeoutOrElse({
+										duration: DISCOVERY_TIMEOUT,
+										orElse: () =>
+											Effect.fail(
+												new RailwayApiError({
+													message: "Railway discovery timed out",
+													kind: "upstream",
+												}),
+											),
+									}),
+								),
+							)
+						: undefined
+					if (discovery?._tag === "Success") {
+						yield* reconcileEnvironments(claimed, discovery.success, now)
+					} else if (discovery?.failure.kind === "unauthorized") {
+						yield* markAuthFailed(discovery.failure.message)
+						return { ...skip("token rejected"), callsMade: discoveryCalls }
+					} else if (discovery?.failure.kind === "rate_limited") {
+						yield* Ref.set(holdUntilRef, now + RATE_LIMIT_HOLD_MS)
+						return { ...skip("rate limited"), callsMade: discoveryCalls }
 					}
+					const discoveryError = discovery?._tag === "Failure" ? discovery.failure.message : null
 
 					const ingestKey = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID).pipe(
 						Effect.map((keys) => keys.publicKey),
 						Effect.option,
 					)
-					if (ingestKey._tag === "None") return { ...skip("ingest key unavailable"), callsMade }
+					if (ingestKey._tag === "None")
+						return { ...skip("ingest key unavailable"), callsMade: discoveryCalls }
 
 					const environments = (yield* loadEnvironments(orgId))
 						.filter((row) => row.enabled)
@@ -563,68 +577,93 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						.sort((a, b) => (a.window?.startMs ?? 0) - (b.window?.startMs ?? 0))
 						.slice(0, MAX_ENVIRONMENT_CALLS_PER_TICK)
 
-					for (const { row, window } of environments) {
-						if (window === null) continue
-						// The rest catch up next tick; their watermarks are untouched.
-						if ((yield* Clock.currentTimeMillis) - now >= TICK_BUDGET_MS) break
-						callsMade += 1
-						const result = yield* Effect.result(
-							pollEnvironment(row, token, ingestKey.value, window),
-						)
-						if (result._tag === "Success") {
-							rowsIngested += result.success
-							yield* updateEnvironment(row.id, {
-								watermarkAt: msToDate(window.endMs),
-								lastSuccessAt: msToDate(now),
-								lastError: null,
-								lastErrorAt: null,
-								updatedAt: msToDate(now),
-							})
-							continue
-						}
-						const error = result.failure
-						failures += 1
-						lastError = error.message
-						yield* Effect.logWarning("railway environment poll failed", {
-							orgId,
-							environmentId: row.environmentId,
-							error: error.message,
-						})
-						if (error._tag === "@maple/api/integrations/RailwayApiError") {
-							if (error.kind === "unauthorized") {
-								yield* markAuthFailed(error.message)
-								break
-							}
-							if (error.kind === "rate_limited") {
-								const retryMs = (error.retryAfterSeconds ?? 0) * 1000
-								yield* Ref.set(holdUntilRef, now + Math.max(retryMs, RATE_LIMIT_HOLD_MS))
-								break
-							}
-						} else if (error.status === 402) {
-							// Over the org's billing limit: back off instead of retrying every tick.
-							yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)
-							break
-						}
-						yield* updateEnvironment(row.id, {
-							lastError: error.message.slice(0, 500),
-							lastErrorAt: msToDate(now),
-							updatedAt: msToDate(now),
-						})
+					// `stopped` ends the pass: later environments are not polled this tick.
+					const initial: RailwayPollTally = {
+						callsMade: discoveryCalls,
+						failures: discoveryError === null ? 0 : 1,
+						rowsIngested: 0,
+						lastError: discoveryError,
+						stopped: false,
 					}
+					const { callsMade, failures, rowsIngested, lastError } = yield* Effect.reduce(
+						environments,
+						() => initial,
+						(tally, { row, window }) =>
+							tally.stopped || window === null
+								? Effect.succeed(tally)
+								: Effect.gen(function* () {
+										// The rest catch up next tick; their watermarks are untouched.
+										if ((yield* Clock.currentTimeMillis) - now >= TICK_BUDGET_MS) {
+											return { ...tally, stopped: true }
+										}
+										const called = { ...tally, callsMade: tally.callsMade + 1 }
+										const result = yield* Effect.result(
+											pollEnvironment(row, token, ingestKey.value, window),
+										)
+										if (result._tag === "Success") {
+											yield* updateEnvironment(row.id, {
+												watermarkAt: window.endMs,
+												lastSuccessAt: now,
+												lastError: null,
+												lastErrorAt: null,
+												updatedAt: now,
+											})
+											return {
+												...called,
+												rowsIngested: called.rowsIngested + result.success,
+											}
+										}
+										const error = result.failure
+										const failed = {
+											...called,
+											failures: called.failures + 1,
+											lastError: error.message,
+										}
+										yield* Effect.logWarning("railway environment poll failed", {
+											orgId,
+											environmentId: row.environmentId,
+											error: error.message,
+										})
+										if (error._tag === "@maple/backend/integrations/RailwayApiError") {
+											if (error.kind === "unauthorized") {
+												yield* markAuthFailed(error.message)
+												return { ...failed, stopped: true }
+											}
+											if (error.kind === "rate_limited") {
+												const retryMs = (error.retryAfterSeconds ?? 0) * 1000
+												yield* Ref.set(
+													holdUntilRef,
+													now + Math.max(retryMs, RATE_LIMIT_HOLD_MS),
+												)
+												return { ...failed, stopped: true }
+											}
+										} else if (error.status === 402) {
+											// Over the org's billing limit: back off instead of retrying every tick.
+											yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)
+											return { ...failed, stopped: true }
+										}
+										yield* updateEnvironment(row.id, {
+											lastError: error.message.slice(0, 500),
+											lastErrorAt: now,
+											updatedAt: now,
+										})
+										return failed
+									}),
+					)
 
 					yield* updateConnection(
 						claimed.id,
 						lastError === null
 							? {
-									lastSuccessAt: msToDate(now),
+									lastSuccessAt: now,
 									lastError: null,
 									lastErrorAt: null,
-									updatedAt: msToDate(now),
+									updatedAt: now,
 								}
 							: {
 									lastError: lastError.slice(0, 500),
-									lastErrorAt: msToDate(now),
-									updatedAt: msToDate(now),
+									lastErrorAt: now,
+									updatedAt: now,
 								},
 					)
 					yield* Effect.annotateCurrentSpan({
@@ -654,10 +693,11 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 			const pollAllOrgs = Effect.fn("RailwayMetricsService.pollAllOrgs")(function* () {
 				const connections = yield* dbExecute((db) =>
-					db
-						.select({ orgId: railwayConnections.orgId })
-						.from(railwayConnections)
-						.where(isNull(railwayConnections.authFailedAt)),
+					db.run(
+						PG.from(RailwayConnections)
+							.select("orgId")
+							.where(($) => [$.authFailedAt.isNull()]),
+					),
 				)
 				const summaries = yield* Effect.forEach(
 					connections,

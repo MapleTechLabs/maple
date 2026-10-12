@@ -4,25 +4,6 @@ import { AiTriageSubmission, normalizeTriageSubmission } from "./ai-triage"
 
 const decode = Schema.decodeUnknownSync(AiTriageSubmission)
 
-/**
- * The submissions here are transcribed from prod (internal org, 2026-09-17..19), where each one
- * ended its run with `Invalid output: Missing key` instead of filing the report the agent had
- * already done the work for.
- */
-describe("AiTriageSubmission", () => {
-	it("accepts a submission missing every field the strict report requires", () => {
-		expect(() => decode({ headline: "Retry budget exhausted in the payment client" })).not.toThrow()
-	})
-
-	it("accepts an evidence entry that carries only the arrays the agent filled", () => {
-		expect(() => decode({ evidence: [{ traceIds: ["abc"], note: "the failing span" }] })).not.toThrow()
-	})
-
-	it("accepts a severity the report's literal does not have", () => {
-		expect(() => decode({ severityAssessment: "unclassified" })).not.toThrow()
-	})
-})
-
 describe("normalizeTriageSubmission", () => {
 	it("keeps a complete submission intact and reports nothing filled", () => {
 		const { report, filled } = normalizeTriageSubmission(

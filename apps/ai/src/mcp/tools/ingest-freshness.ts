@@ -110,7 +110,7 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 							executor.compiledQuery(logsQuery, { profile: "list", context: "logsFreshness" }),
 							executor.compiledQuery(historyQuery, {
 								profile: "list",
-								context: "signalPresence",
+								context: "ingestFreshnessSignalHistory",
 							}),
 						],
 						{ concurrency: 3 },

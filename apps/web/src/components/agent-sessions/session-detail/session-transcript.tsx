@@ -5,6 +5,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
@@ -69,7 +70,7 @@ const AVATAR_SLOT = "flex w-6 shrink-0 justify-center"
 /** Prose column: past this a line is too long to track back to its own start. */
 const BODY = "min-w-0 max-w-[900px] grow pl-3"
 /** Who is speaking — a name, set as one, not a category label. */
-const SPEAKER = "shrink-0 font-semibold text-[13px] text-foreground"
+const SPEAKER = "shrink-0 font-semibold text-ui text-foreground"
 /** The clock beside a speaker's name, where a chat puts it. */
 const CLOCK = "shrink-0 font-mono text-2xs text-muted-foreground tabular-nums"
 /** Secondary facts and controls: there for the reader who points at the row. */
@@ -406,7 +407,7 @@ function TurnChapter({
 	// itself only has to say where a turn starts and how long it ran.
 	const detail = [
 		turn.agentName,
-		`${turn.traceIds.length} trace${turn.traceIds.length === 1 ? "" : "s"}`,
+		countLabel(turn.traceIds.length, "trace"),
 		`${row.aiSpanCount} agent spans`,
 	]
 		.filter((part) => part !== undefined)
@@ -445,7 +446,7 @@ function TurnChapter({
 					<>
 						{/* The label is the first prose line of a captured message, not a
 						    verbatim quote, so it is set as text rather than quoted. */}
-						<span className="min-w-0 shrink truncate text-[13px] text-foreground">
+						<span className="min-w-0 shrink truncate text-ui text-foreground">
 							{turn.label ?? (
 								<span className="text-muted-foreground italic">no prompt captured</span>
 							)}
@@ -489,7 +490,7 @@ function EmptyTurnRow({ row }: { row: Extract<TranscriptRow, { kind: "empty-turn
 /** A collapsed chapter keeps its whole summary on the header row, so a long
  *  session can be skimmed one line per turn. */
 function summariseTurn(row: Extract<TranscriptRow, { kind: "turn" }>): string {
-	const parts = [`${row.llmCalls} LLM call${row.llmCalls === 1 ? "" : "s"}`]
+	const parts = [countLabel(row.llmCalls, "LLM call")]
 	if (row.toolNames.length > 0) parts.push(row.toolNames.join(", "))
 	return parts.join(" · ")
 }
@@ -757,7 +758,7 @@ function AssistantBlock({
 									rendering={!errorRaw && error.isJson ? "json" : "text"}
 									mono
 									clampLines={14}
-									toneClass="text-[13px] text-severity-error/90"
+									toneClass="text-ui text-severity-error/90"
 									expanded={disclosed(openRows, `${row.key}:error-text`, false)}
 									onToggleExpanded={() => onToggleRow(`${row.key}:error-text`)}
 								/>
@@ -909,9 +910,8 @@ function ToolBlock({
 
 	return (
 		<Row depth={row.depth} className="pt-1.5">
-			<div
+			<Panel
 				className={cn(
-					"flex min-w-0 flex-col overflow-hidden rounded-md border",
 					row.failed
 						? "border-severity-error/40 bg-severity-error/5"
 						: open
@@ -977,7 +977,7 @@ function ToolBlock({
 						onToggleRow={onToggleRow}
 					/>
 				)}
-			</div>
+			</Panel>
 		</Row>
 	)
 }
@@ -1105,7 +1105,7 @@ function LaneOpen({
 			    the sub-agent's work with no record of what was asked for. Behind the
 			    same chip as a tool card's payloads — it is one. */}
 			{showPayloads && row.args !== undefined && (
-				<div className="overflow-hidden rounded-md border border-border bg-card">
+				<Panel>
 					<PayloadSection
 						label="Task prompt"
 						payload={row.args}
@@ -1114,7 +1114,7 @@ function LaneOpen({
 						onToggleRow={onToggleRow}
 						textKey={`${row.key}:args-text`}
 					/>
-				</div>
+				</Panel>
 			)}
 		</Row>
 	)
@@ -1144,15 +1144,14 @@ function LaneClose({
 					{row.parentAgentName === undefined
 						? " finished"
 						: ` returned to ${row.parentAgentName}`}{" "}
-					· {formatDuration(row.durationMs)} · {row.llmCalls} LLM call
-					{row.llmCalls === 1 ? "" : "s"} · {row.toolCalls} tool call
-					{row.toolCalls === 1 ? "" : "s"}
+					· {formatDuration(row.durationMs)} · {countLabel(row.llmCalls, "LLM call")} ·{" "}
+					{countLabel(row.toolCalls, "tool call")}
 				</span>
 			</div>
 			{/* What the sub-agent handed back, read off the delegating tool call's
 			    result — the only place the answer is recorded. */}
 			{showPayloads && row.result !== undefined && (
-				<div className="overflow-hidden rounded-md border border-border bg-card">
+				<Panel>
 					<PayloadSection
 						label="Returned"
 						payload={row.result}
@@ -1161,7 +1160,7 @@ function LaneClose({
 						onToggleRow={onToggleRow}
 						textKey={`${row.key}:result-text`}
 					/>
-				</div>
+				</Panel>
 			)}
 		</Row>
 	)
@@ -1330,7 +1329,7 @@ function NoteBlock({ row }: { row: Extract<TranscriptRow, { kind: "note" }> }) {
 		<div className="mx-2 mt-2 flex max-w-[924px] items-start gap-3 rounded-lg bg-muted/30 px-4 py-3">
 			<CircleInfoIcon size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
 			<div className="flex min-w-0 grow flex-col gap-1">
-				<p className="font-medium text-[13px] text-foreground">
+				<p className="font-medium text-ui text-foreground">
 					Message content isn't captured for {scope}
 				</p>
 				<p className="text-muted-foreground text-xs leading-relaxed">
@@ -1391,7 +1390,7 @@ function DividerBlock({
 							Loading the rest of this session
 						</span>
 					</div>
-					<p className="text-center text-[13px] text-muted-foreground">
+					<p className="text-center text-ui text-muted-foreground">
 						The agent's later turns are still arriving — this is not where the session ended.
 					</p>
 				</>

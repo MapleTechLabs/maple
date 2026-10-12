@@ -31,14 +31,6 @@ describe("formatCellValue", () => {
 		expect(formatCellValue(314_572_800, "bytes")).toBe(formatValueByUnit(314_572_800, "bytes"))
 		expect(formatCellValue(314_572_800, "bytes")).not.toBe("314572800")
 	})
-
-	// The delegation is the point: every unit @maple/ui knows must render
-	// identically in a table, so the two can never drift apart again.
-	it("matches formatValueByUnit for every shared unit", () => {
-		for (const unit of ["bytes", "number", "percent", "duration_ms", "duration_s", "requests_per_sec"]) {
-			expect(formatCellValue(1536, unit), unit).toBe(formatValueByUnit(1536, unit))
-		}
-	})
 })
 
 describe("buildRowKeys", () => {

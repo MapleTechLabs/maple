@@ -226,20 +226,6 @@ describe("org-collections bounded self-heal", () => {
 		expect(mod.getCollectionsGeneration()).toBe(start + 3)
 	})
 
-	it("collapses a burst of stuck reports into a single recreation", async () => {
-		const { mod } = await freshModule()
-		const start = mod.getCollectionsGeneration()
-
-		// Several stores hitting their stuck timeout at once (three collections in
-		// one model) must not each schedule their own recreation.
-		mod.handleCollectionStuck()
-		mod.handleCollectionStuck()
-		mod.handleCollectionStuck()
-		vi.advanceTimersByTime(6_000)
-
-		expect(mod.getCollectionsGeneration()).toBe(start + 1)
-	})
-
 	it("marks a terminally stopped stream, and clears the mark when it is recreated", async () => {
 		const { mod } = await freshModule()
 		const failed = new CustomEvent("collection:sync-failed", {

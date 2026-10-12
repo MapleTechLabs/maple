@@ -138,7 +138,7 @@ jobs:
                         # The connection layer and everything that decides how many
                         # sockets a request opens. The unit suite replaces the dial
                         # with a fake and the rest of the api suite runs on PGlite,
-                        # so this job is the ONLY place `layerPg` meets a real
+                        # so this job is the ONLY place `DatabasePgLive` meets a real
                         # server — narrow these and the per-request socket
                         # guarantee stops being checked.
                         - 'packages/backend/src/platform/**'
@@ -189,6 +189,8 @@ jobs:
         # automatically sized matrix below so workspace moves cannot strand them.
         # Shards are sized to ~1-2 minutes of work: each one pays ~30s of setup,
         # and the org runs ~16 jobs at once, so short shards queued the whole run.
+        # The short builds and checks share one `quality` shard and run as parallel
+        # steps; the tsc- and lint-heavy shards stay separate jobs for their cores.
         runs-on: ubuntu-latest
         timeout-minutes: 12
         strategy:
@@ -203,13 +205,6 @@ jobs:
                       install-filters: ""
                     - shard: effect-lint
                       install-filters: ""
-                    - shard: web
-                      install-filters: "@maple/web"
-                    - shard: build-other
-                      install-filters: >-
-                          @maple-dev/alchemy @maple-dev/browser
-                          @maple-dev/effect-sdk
-                          @maple/landing @maple/local-ui
                     - shard: typecheck-core
                       install-filters: "@maple/api ./packages/*"
                     - shard: typecheck-rest
@@ -249,30 +244,71 @@ jobs:
             - name: Turbo remote cache
               uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
-            # Alchemy entrypoints reach Workers whose SDK and Alchemy imports
-            # need declarations built from the workspace sources.
-            - name: Build the libraries the quality checks import
+            # Every build the quality checks read, in ONE turbo run: parallel turbo
+            # runs over shared dependencies would race on the same dist/ writes.
+            # Alchemy entrypoints also need the SDK and Alchemy declarations.
+            - name: Build production bundles
               if: ${{ matrix.shard == 'quality' }}
               run: >-
-                  bun turbo build
-                  --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy
+                  bun turbo build --filter=@maple/web --filter=@maple-dev/alchemy
+                  --filter=@maple-dev/browser
+                  --filter=@maple-dev/effect-sdk --filter=@maple/landing
+                  --filter=@maple/local-ui --concurrency=2
 
-            - name: Validate generated ClickHouse and local-store schemas
-              if: ${{ matrix.shard == 'quality' }}
-              run: bun run clickhouse:schema:check
+            # Read-only over the build above. Nothing here may run turbo with its
+            # dependency graph: a cache restore rewrites dist/ under the others.
+            - parallel:
+                  - name: Validate generated ClickHouse and local-store schemas
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun run clickhouse:schema:check
 
-            # The Swift client is generated from a committed, pruned copy of the v2
-            # OpenAPI document. Checking it here means a contract change that breaks
-            # the iOS client fails on Linux, not on a 10x-priced macOS runner.
-            - name: Validate the generated iOS OpenAPI spec
-              if: ${{ matrix.shard == 'quality' }}
-              run: bun run ios:openapi:check
+                  # The Swift client is generated from a committed, pruned copy of the v2
+                  # OpenAPI document. Checking it here means a contract change that breaks
+                  # the iOS client fails on Linux, not on a 10x-priced macOS runner.
+                  - name: Validate the generated iOS OpenAPI spec
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun run ios:openapi:check
 
-            # Shared design tokens live in packages/ui/src/styles/tokens.css;
-            # fails if an app re-declares one (landing ↔ web drift guard).
-            - name: Validate shared design tokens
-              if: ${{ matrix.shard == 'quality' }}
-              run: bun run check:tokens
+                  # Shared design tokens live in packages/ui/src/styles/tokens.css;
+                  # fails if an app re-declares one (landing ↔ web drift guard).
+                  - name: Validate shared design tokens
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun run check:tokens
+
+                  # Guard what installing @maple-dev/browser costs a page. Splits the
+                  # bundled+minified+gzipped graph into what every page load pays and
+                  # what only replay-sampled visitors pay, and fails on the budgets in
+                  # scripts/size.ts. Without this an eager-graph regression is only
+                  # discoverable in a customer's Lighthouse report — which is how a
+                  # bundled `effect/Schema` once took the eager side 53% over budget.
+                  - name: Browser SDK bundle budget
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun run size
+                    working-directory: packages/browser
+
+                  # `turbo typecheck` does not cover tsconfig.alchemy.json (alchemy.run.ts,
+                  # the ECS factories and every Worker module it imports) — only the root
+                  # `typecheck` script chains it, and CI calls turbo directly.
+                  - name: Typecheck Alchemy entrypoints
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bunx tsc -p tsconfig.alchemy.json
+
+                  # Guard the code-split web bundle: initial-load gzip budget and no
+                  # chat/replay code in the startup graph. Reads the dist/ the turbo
+                  # build step just produced (or restored from cache).
+                  - name: Web bundle budget
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun run check:bundle
+                    working-directory: apps/web
+
+                  # `--only` skips the ^build edge, which the build step already ran.
+                  - name: Typecheck web
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun turbo typecheck --filter=@maple/web --only
+
+                  - name: Find unused files and dependencies
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun knip
 
             # Type-aware lint resolves the three workspace packages whose exports point
             # at dist/. Build them before linting so Effect requirement/error channels
@@ -288,49 +324,6 @@ jobs:
               if: ${{ matrix.shard == 'effect-lint' }}
               run: bun run lint
 
-            - name: Build web production bundle
-              if: ${{ matrix.shard == 'web' }}
-              run: bun turbo build --filter=@maple/web --concurrency=2
-
-            - name: Build remaining production bundles
-              if: ${{ matrix.shard == 'build-other' }}
-              run: >-
-                  bun turbo build --filter=@maple-dev/alchemy
-                  --filter=@maple-dev/browser
-                  --filter=@maple-dev/effect-sdk --filter=@maple/landing
-                  --filter=@maple/local-ui --concurrency=2
-
-            # Guard what installing @maple-dev/browser costs a page. Splits the
-            # bundled+minified+gzipped graph into what every page load pays and
-            # what only replay-sampled visitors pay, and fails on the budgets in
-            # scripts/size.ts. Without this an eager-graph regression is only
-            # discoverable in a customer's Lighthouse report — which is how a
-            # bundled `effect/Schema` once took the eager side 53% over budget.
-            - name: Browser SDK bundle budget
-              if: ${{ matrix.shard == 'build-other' }}
-              run: bun run size
-              working-directory: packages/browser
-
-            # `turbo typecheck` does not cover tsconfig.alchemy.json (alchemy.run.ts,
-            # the ECS factories and every Worker module it imports) — only the root
-            # `typecheck` script chains it, and CI calls turbo directly.
-            - name: Typecheck Alchemy entrypoints
-              if: ${{ matrix.shard == 'quality' }}
-              run: bunx tsc -p tsconfig.alchemy.json
-
-            # Guard the code-split web bundle: initial-load gzip budget and no
-            # chat/replay code in the startup graph. Reads the dist/ the turbo
-            # build step just produced (or restored from cache).
-            - name: Web bundle budget
-              if: ${{ matrix.shard == 'web' }}
-              run: bun run check:bundle
-              working-directory: apps/web
-
-            # Two Turbo tasks at a time bounds how many tsc heaps are live at once.
-            - name: Typecheck web
-              if: ${{ matrix.shard == 'web' }}
-              run: bun turbo typecheck --filter=@maple/web --concurrency=2
-
             - name: Typecheck remaining apps, libraries, and examples
               if: ${{ matrix.shard == 'typecheck-rest' }}
               run: >-
@@ -343,10 +336,6 @@ jobs:
               run: >-
                   bun turbo typecheck --filter=@maple/api --filter='./packages/*'
                   --concurrency=2
-
-            - name: Find unused files and dependencies
-              if: ${{ matrix.shard == 'quality' }}
-              run: bun knip
 
     tests:
         name: Tests (${{ matrix.name }})
@@ -397,7 +386,7 @@ jobs:
                   TZ: Asia/Kathmandu
               run: python3 .github/scripts/run-tests.py
 
-    # The only job where `layerPg` meets a real Postgres. Everything else that
+    # The only job where `DatabasePgLive` meets a real Postgres. Everything else that
     # touches the Database service runs on PGlite (in-process, single-connection,
     # marks connected immediately), and the connection-scope unit tests inject a
     # fake dial — so "one socket per request" is asserted here against
@@ -558,40 +547,42 @@ jobs:
               timeout-minutes: 5
               run: scripts/build-local-binary.sh
 
-            - name: Run repeated checkpoint restore and fresh-process reopen smoke
-              timeout-minutes: 4
-              env:
-                  KEEP_ROOT: "1"
-                  TMPDIR: ${{ runner.temp }}/maple-native-checkpoint
-                  # Probes induce failures on purpose; keep them out of the prod errors hub.
-                  MAPLE_TELEMETRY: off
-              run: |
-                  mkdir -p "$TMPDIR"
-                  apps/cli/test/native-checkpoint-smoke.sh "$GITHUB_WORKSPACE/dist"
+            # Each probe owns its TMPDIR and port, so they run side by side.
+            - parallel:
+                  - name: Run repeated checkpoint restore and fresh-process reopen smoke
+                    timeout-minutes: 4
+                    env:
+                        KEEP_ROOT: "1"
+                        TMPDIR: ${{ runner.temp }}/maple-native-checkpoint
+                        # Probes induce failures on purpose; keep them out of the prod errors hub.
+                        MAPLE_TELEMETRY: off
+                    run: |
+                        mkdir -p "$TMPDIR"
+                        apps/cli/test/native-checkpoint-smoke.sh "$GITHUB_WORKSPACE/dist"
 
-            # The crash path the checkpoint smoke does not cover: a FRESH store
-            # that accumulates telemetry and then dies to a SIGKILL, which is the
-            # journey that stranded people with a dirty store and nothing to
-            # restore from.
-            - name: Run native checkpoint refresh and crash-recovery probe
-              timeout-minutes: 5
-              env:
-                  KEEP_ROOT: "1"
-                  TMPDIR: ${{ runner.temp }}/maple-native-cp-refresh
-                  MAPLE_TELEMETRY: off
-              run: |
-                  mkdir -p "$TMPDIR"
-                  apps/cli/test/native-checkpoint-refresh-probe.sh "$GITHUB_WORKSPACE/dist"
+                  # The crash path the checkpoint smoke does not cover: a FRESH store
+                  # that accumulates telemetry and then dies to a SIGKILL, which is the
+                  # journey that stranded people with a dirty store and nothing to
+                  # restore from.
+                  - name: Run native checkpoint refresh and crash-recovery probe
+                    timeout-minutes: 5
+                    env:
+                        KEEP_ROOT: "1"
+                        TMPDIR: ${{ runner.temp }}/maple-native-cp-refresh
+                        MAPLE_TELEMETRY: off
+                    run: |
+                        mkdir -p "$TMPDIR"
+                        apps/cli/test/native-checkpoint-refresh-probe.sh "$GITHUB_WORKSPACE/dist"
 
-            - name: Run native local-store migration and reopen probe
-              timeout-minutes: 4
-              env:
-                  KEEP_ROOT: "1"
-                  TMPDIR: ${{ runner.temp }}/maple-native-migration
-                  MAPLE_TELEMETRY: off
-              run: |
-                  mkdir -p "$TMPDIR"
-                  apps/cli/test/native-local-store-migration.sh "$GITHUB_WORKSPACE/dist"
+                  - name: Run native local-store migration and reopen probe
+                    timeout-minutes: 4
+                    env:
+                        KEEP_ROOT: "1"
+                        TMPDIR: ${{ runner.temp }}/maple-native-migration
+                        MAPLE_TELEMETRY: off
+                    run: |
+                        mkdir -p "$TMPDIR"
+                        apps/cli/test/native-local-store-migration.sh "$GITHUB_WORKSPACE/dist"
 
             # failure() alone skips the upload when a step-level timeout or a
             # concurrency cancel kills the probe mid-hang — precisely the runs
@@ -817,7 +808,9 @@ jobs:
             #
             # The apt mirror sometimes stalls a connection instead of failing it, which
             # hung apt for 11 minutes and timed the job out. Cap each read and each
-            # attempt so a stalled mirror costs a retry, not the run.
+            # attempt so a stalled mirror costs a retry, not the run. `timeout` only
+            # kills playwright: the root apt-get it started through sudo survives and
+            # holds the dpkg lock, so stop it and wait for the lock before retrying.
             - name: Install Playwright system deps
               if: ${{ matrix.browser != 'chromium' }}
               env:
@@ -828,6 +821,12 @@ jobs:
                   for attempt in 1 2 3; do
                       timeout 180 bunx playwright install-deps "$PW_BROWSER" && exit 0
                       echo "::warning::playwright install-deps attempt $attempt failed"
+                      sudo pkill -x apt-get || true
+                      if ! sudo timeout 60 sh -c 'while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 2; done'; then
+                          echo "::error::dpkg lock still held 60s after stopping apt-get"
+                          exit 1
+                      fi
+                      sudo dpkg --configure -a || true
                   done
                   exit 1
               working-directory: apps/web

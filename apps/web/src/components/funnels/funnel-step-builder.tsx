@@ -146,7 +146,7 @@ export function FunnelStepBuilder({
 					disabled={steps.length >= maxSteps}
 					className="w-fit"
 				>
-					<PlusIcon size={14} />
+					<PlusIcon />
 					Add step
 					{steps.length >= maxSteps ? (
 						<span className="text-muted-foreground">(max {maxSteps})</span>
@@ -274,11 +274,8 @@ function StepRow({
 								items={FUNNEL_SESSION_DIMENSION_LABEL}
 								value={step.dimension}
 								onValueChange={(value) => {
-									if (
-										value &&
-										FUNNEL_SESSION_DIMENSIONS.includes(value as FunnelSessionDimension)
-									) {
-										onChange({ ...step, dimension: value as FunnelSessionDimension })
+									if (value && FUNNEL_SESSION_DIMENSIONS.includes(value)) {
+										onChange({ ...step, dimension: value })
 									}
 								}}
 							>
@@ -317,7 +314,7 @@ function StepRow({
 							onClick={onMoveUp}
 							disabled={index === 0}
 						>
-							<ArrowUpIcon size={12} />
+							<ArrowUpIcon />
 						</IconButton>
 						<IconButton
 							label="Move step down"
@@ -325,10 +322,10 @@ function StepRow({
 							onClick={onMoveDown}
 							disabled={index === total - 1}
 						>
-							<ArrowDownIcon size={12} />
+							<ArrowDownIcon />
 						</IconButton>
 						<IconButton label="Remove step" size="icon-xs" onClick={onRemove}>
-							<XmarkIcon size={12} />
+							<XmarkIcon />
 						</IconButton>
 					</div>
 				)}

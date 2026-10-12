@@ -6,14 +6,14 @@ on:
         paths:
             - "apps/ingest/**"
             - "packages/db/drizzle/**"
-            - "packages/db/src/schema/**"
+            - "packages/db/src/tables/**"
             - ".github/scripts/format-ingest-benchmark-comment.py"
             - ".github/workflows/ingest-rust-tests.yml"
     pull_request:
         paths:
             - "apps/ingest/**"
             - "packages/db/drizzle/**"
-            - "packages/db/src/schema/**"
+            - "packages/db/src/tables/**"
             - ".github/scripts/format-ingest-benchmark-comment.py"
             - ".github/workflows/ingest-rust-tests.yml"
     workflow_dispatch:

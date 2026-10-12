@@ -20,6 +20,12 @@ export interface PageTimeScope {
 	endTime?: string
 	presets?: ReadonlyArray<TimePreset>
 	maxRangeSeconds?: number
+	/** Replaces the header's plain Reload button (a `RefreshControls` with a cadence). */
+	reloadControls?: React.ReactNode
+	/** Auto-refresh cadence in ms; absent leaves the page manual-only. */
+	autoRefreshMs?: number
+	/** Holds the timer without forgetting the cadence. */
+	autoRefreshPaused?: boolean
 }
 
 export interface DashboardPageProps {
@@ -86,6 +92,7 @@ export function DashboardPage({
 			onTimeChange={time.onChange}
 			presets={time.presets}
 			maxRangeSeconds={time.maxRangeSeconds}
+			reloadControls={time.reloadControls}
 		/>
 	) : null
 	const actions =
@@ -138,7 +145,11 @@ export function DashboardPage({
 
 	if (!time) return page
 	return (
-		<PageRefreshProvider timePreset={time.search.timePreset ?? time.defaultPreset}>
+		<PageRefreshProvider
+			timePreset={time.search.timePreset ?? time.defaultPreset}
+			autoRefreshMs={time.autoRefreshMs}
+			autoRefreshPaused={time.autoRefreshPaused}
+		>
 			{page}
 		</PageRefreshProvider>
 	)

@@ -168,11 +168,9 @@ const getServiceHealthSnapshotEffect = Effect.fn("QueryEngine.getServiceHealthSn
 
 	return {
 		data: response.data
-			.filter(
-				(row) => scope.memberServices === null || scope.memberServices.has(String(row.serviceName)),
-			)
+			.filter((row) => scope.memberServices === null || scope.memberServices.has(row.serviceName))
 			.map((row): ServiceHealthSnapshot => ({
-				serviceName: String(row.serviceName),
+				serviceName: row.serviceName,
 				environment: row.environment || "unknown",
 				requestCount: row.requestCount,
 				errorCount: row.errorCount,
@@ -248,7 +246,7 @@ const getServiceHealthBaselineEffect = Effect.fn("QueryEngine.getServiceHealthBa
 
 	const result: ServiceHealthBaselineResult = {
 		data: response.data.map((row) => ({
-			serviceName: String(row.serviceName),
+			serviceName: row.serviceName,
 			serviceNamespace: row.serviceNamespace,
 			environment: row.environment,
 			baselineP95LatencyMs: row.baselineP95LatencyMs,
@@ -452,8 +450,8 @@ const getServiceApdexTimeSeriesEffect = Effect.fn("QueryEngine.getServiceApdexTi
 
 	const points = result.data.map((row) => ({
 		bucket: toIsoBucket(row.bucket),
-		apdexScore: Number(row.apdexScore),
-		totalCount: Number(row.totalCount),
+		apdexScore: row.apdexScore,
+		totalCount: row.totalCount,
 	}))
 
 	return {

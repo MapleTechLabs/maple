@@ -1,12 +1,12 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { assert, describe, it } from "@effect/vitest"
-import { IncidentTriageApiGroup, V1SchemaErrors, V1UnexpectedErrors } from "@maple/domain/http"
+import { IncidentTriageApiGroup, ApiSchemaErrors, ApiUnexpectedErrors } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { ConfigProvider, Context, Layer, Redacted } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { layerDecisionModel } from "../../platform/Llm"
 import { HttpTriageLive } from "./triage.http"
 
@@ -14,8 +14,8 @@ const INTERNAL_TOKEN = "test-internal-token"
 
 class TriageOnlyApi extends HttpApi.make("MapleAiApi")
 	.add(IncidentTriageApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors) {}
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
 
 const config = ConfigProvider.layer(
 	ConfigProvider.fromUnknown({
@@ -81,7 +81,7 @@ const makeHarness = () => {
 	)
 	const routes = HttpApiBuilder.layer(TriageOnlyApi).pipe(
 		Layer.provide(HttpTriageLive.pipe(Layer.provide(decisions))),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(Env.layer.pipe(Layer.provide(config))),
 		Layer.provideMerge(workerEnvLayer(workerEnv)),
 	)

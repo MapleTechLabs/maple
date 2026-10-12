@@ -24,7 +24,8 @@ export function ChartCard({
 	className,
 	...rest
 }: Omit<ComponentProps<"section">, "title"> & {
-	title: ReactNode
+	/** Omit for a chart that renders its own header: the card then has no header strip. */
+	title?: ReactNode
 	/** A muted line under the title, for a chart whose title alone does not say what it plots. */
 	description?: ReactNode
 	/**
@@ -39,7 +40,7 @@ export function ChartCard({
 	children: ReactNode
 	className?: string
 }) {
-	const header = (
+	const header = title === undefined ? null : (
 		<PanelHeader
 			title={title}
 			scope={scope}

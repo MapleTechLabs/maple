@@ -310,7 +310,14 @@ export function InfraMetricChart({
 		})
 	}, [data, series, axis, stacked, plot, gradientPrefix, yDomain, tickFormatter, showThreshold, unit])
 
-	if (data.length === 0) {
+	// Buckets with no finite value for any series plot nothing, so they count as empty too.
+	const hasValue = data.some((point) =>
+		series.some((name) => {
+			const value = point[name]
+			return typeof value === "number" && Number.isFinite(value)
+		}),
+	)
+	if (!hasValue) {
 		return <ChartEmpty height={height}>{CHART_EMPTY_MESSAGE}</ChartEmpty>
 	}
 

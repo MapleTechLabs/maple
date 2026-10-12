@@ -1,7 +1,10 @@
 import * as React from "react"
 
 import { ChevronDownIcon, XmarkIcon } from "../icons"
+import { Badge } from "../ui/badge"
+import { Button } from "../ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible"
+import { FilterChip } from "../ui/filter-chip"
 import { Input } from "../ui/input"
 import { formatDuration, formatNumber } from "../../lib/format"
 import { cn } from "../../lib/utils"
@@ -172,7 +175,7 @@ export function RangeFilterSection({
 				<span className="truncate">{title}</span>
 				<span className="flex items-center gap-1.5">
 					{!isOpen && hasActiveRange && (
-						<span className="inline-flex items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-3xs tabular-nums tracking-normal text-foreground">
+						<Badge variant="muted" size="xs" mono className="tracking-normal">
 							{formatRange(minValue, maxValue, unit)}
 							<span
 								role="button"
@@ -193,7 +196,7 @@ export function RangeFilterSection({
 							>
 								<XmarkIcon className="size-3" />
 							</span>
-						</span>
+						</Badge>
 					)}
 					<ChevronDownIcon
 						className={cn(
@@ -257,42 +260,26 @@ export function RangeFilterSection({
 							{presets?.map((preset) => {
 								const isActive = minValue === preset.min && maxValue === preset.max
 								return (
-									<button
+									<FilterChip
 										key={preset.key}
-										type="button"
-										onClick={() => applyPreset(preset)}
-										aria-pressed={isActive}
-										className={cn(
-											"rounded-full border px-2 py-0.5 text-2xs transition-colors",
-											isActive
-												? "border-primary/30 bg-primary/10 text-foreground"
-												: "border-border/60 text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground",
-										)}
+										size="xs"
+										pressed={isActive}
+										onPressedChange={() => applyPreset(preset)}
+										count={preset.value || undefined}
 									>
 										{preset.label}
-										{preset.value && (
-											<span
-												className={cn(
-													"ml-1 tabular-nums",
-													isActive
-														? "text-foreground/60"
-														: "text-muted-foreground/70",
-												)}
-											>
-												{preset.value}
-											</span>
-										)}
-									</button>
+									</FilterChip>
 								)
 							})}
 							{hasActiveRange && (
-								<button
-									type="button"
+								<Button
+									variant="link"
+									size="xs"
 									onClick={clearRange}
-									className="ml-auto text-2xs text-muted-foreground hover:text-foreground transition-colors"
+									className="ml-auto text-muted-foreground hover:text-foreground"
 								>
 									Clear
-								</button>
+								</Button>
 							)}
 						</div>
 					)}

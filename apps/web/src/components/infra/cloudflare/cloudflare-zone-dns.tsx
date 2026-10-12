@@ -12,7 +12,7 @@ import { cloudflareZoneDnsResultAtom } from "@/lib/services/atoms/warehouse-quer
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { formatNumber } from "@maple/ui/lib/format"
 import { ColumnHead, DataTable } from "@/components/common/data-table"
-import { formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
 import { PanelScope } from "./panel-scope"
 import type { CloudflareFilters } from "./filters"
@@ -114,7 +114,7 @@ function DnsNamesTable({
 						{formatNumber(row.queries)}
 					</div>
 					<div className="w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80">
-						{row.queries > 0 ? formatPercent(row.nxdomain / row.queries) : "—"}
+						{row.queries > 0 ? formatPercent(row.nxdomain / row.queries) : EMPTY_VALUE}
 					</div>
 				</div>
 			))}

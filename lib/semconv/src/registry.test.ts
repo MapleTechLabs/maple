@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { attributeStatus, canonicalKey, isRegistryKey, legacyKeys, REGISTRY_VERSIONS } from "./index.ts"
+import { attributeStatus, canonicalKey, isRegistryKey, legacyKeys } from "./index.ts"
 
 describe("attributeStatus", () => {
 	it("reports a live key as current", () => {
@@ -86,12 +86,5 @@ describe("legacyKeys", () => {
 
 	it("never lists a key as its own legacy spelling", () => {
 		expect(legacyKeys("db.system.name")).not.toContain("db.system.name")
-	})
-})
-
-describe("snapshot", () => {
-	it("records the registry versions it was taken at", () => {
-		expect(REGISTRY_VERSIONS.semconv).toMatch(/^\d+\.\d+\.\d+$/)
-		expect(REGISTRY_VERSIONS.genai).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 	})
 })

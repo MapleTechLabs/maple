@@ -28,8 +28,8 @@ export interface ServiceCatalogEntry {
 }
 
 export function toCatalogEntry(row: CH.ServiceCatalogOutput, logCount: number): ServiceCatalogEntry {
-	const spanCount = Number(row.estimatedSpanCount) || Number(row.spanCount)
-	const errorCount = Number(row.estimatedErrorCount) || Number(row.errorCount)
+	const spanCount = row.estimatedSpanCount || row.spanCount
+	const errorCount = row.estimatedErrorCount || row.errorCount
 	return {
 		serviceName: row.serviceName,
 		serviceNamespaces: row.serviceNamespaces,
@@ -37,9 +37,9 @@ export function toCatalogEntry(row: CH.ServiceCatalogOutput, logCount: number): 
 		spanCount,
 		errorCount,
 		errorRate: spanCount > 0 ? errorCount / spanCount : 0,
-		p50LatencyMs: Number(row.p50LatencyMs),
-		p95LatencyMs: Number(row.p95LatencyMs),
-		p99LatencyMs: Number(row.p99LatencyMs),
+		p50LatencyMs: row.p50LatencyMs,
+		p95LatencyMs: row.p95LatencyMs,
+		p99LatencyMs: row.p99LatencyMs,
 		logCount,
 	}
 }
@@ -64,9 +64,7 @@ function useCatalog(env: string | undefined, ns: string | undefined, bounds: Tim
 				),
 				executeLocalCompiledQuery(CH.compile(CH.serviceUsageQuery({}), params), signal),
 			])
-			const logsByService = new Map(
-				usageRows.map((row) => [row.serviceName, Number(row.totalLogCount)]),
-			)
+			const logsByService = new Map(usageRows.map((row) => [row.serviceName, row.totalLogCount]))
 			return catalogRows.map((row) => toCatalogEntry(row, logsByService.get(row.serviceName) ?? 0))
 		},
 	})

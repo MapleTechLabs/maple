@@ -52,8 +52,8 @@ export function cloudflareServiceCountersSQL() {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...COUNTER_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["requests", "desc"])
@@ -86,8 +86,8 @@ export function cloudflareServiceLatencySQL() {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...GAUGE_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("serviceName")
 		.limit(500)

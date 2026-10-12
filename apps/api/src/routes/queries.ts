@@ -432,6 +432,7 @@ const hostInfraGaugeTimeseries = defineQuery({
 				hostName: payload.hostName,
 				metricName: spec.metricName,
 				groupByAttributeKey: spec.groupByAttributeKey,
+				attributeEquals: spec.attributeEquals,
 			}),
 			{
 				orgId,
@@ -651,7 +652,7 @@ export const Queries = {
 			CH.compile(
 				CH.nodeGaugeTimeseriesQuery({
 					nodeName: payload.nodeName,
-					metricName: nodeMetricSpec(payload.metric).metricName,
+					...nodeMetricSpec(payload.metric),
 				}),
 				{
 					orgId,

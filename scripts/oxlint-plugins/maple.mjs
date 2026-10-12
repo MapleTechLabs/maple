@@ -305,7 +305,9 @@ const NO_DATE_PARSE_MESSAGE =
 const noDateParse = {
 	meta: {
 		type: "problem",
-		docs: { description: "Disallow `Date.parse`, which reads zone-less timestamps in the host timezone." },
+		docs: {
+			description: "Disallow `Date.parse`, which reads zone-less timestamps in the host timezone.",
+		},
 		messages: { noDateParse: NO_DATE_PARSE_MESSAGE },
 	},
 	create(context) {
@@ -320,9 +322,159 @@ const noDateParse = {
 	},
 }
 
+const DIALOG_BODY_PADDING_MESSAGE =
+	"This dialog body sits flush against the popup edge. `DialogContent` has no padding of its own: wrap the body in `<DialogPanel>` or give its outermost element horizontal padding (`p-*`/`px-*`). `AlertDialog` has no panel, so its bodies always pad themselves."
+
+const HAS_H_PADDING = /\bp-\d|\bpx-\d|\bpx-\[/
+
+const jsxName = (element) => {
+	const name = element.openingElement.name
+	if (name.type === "JSXIdentifier") return name.name
+	if (name.type === "JSXMemberExpression") return name.property.name
+	return undefined
+}
+
+/** The top-level elements a child renders: itself, a fragment's children, or `{cond && <div/>}`. */
+const renderedElements = (node) => {
+	if (node.type === "JSXElement") return [node]
+	if (node.type === "JSXFragment") return node.children.flatMap(renderedElements)
+	if (node.type !== "JSXExpressionContainer") return []
+	const stack = [node.expression]
+	while (stack.length > 0) {
+		const current = stack.shift()
+		if (!current || typeof current !== "object") continue
+		if (current.type === "JSXElement" || current.type === "JSXFragment") return renderedElements(current)
+		for (const key of ["left", "right", "consequent", "alternate", "body", "expression", "argument"]) {
+			if (current[key]) stack.push(current[key])
+		}
+	}
+	return []
+}
+
+/**
+ * Every child between `DialogHeader` and `DialogFooter` must be a `DialogPanel` or pad itself.
+ * Replaces a test that regex-scanned every tracked .tsx for the same mistake.
+ */
+const dialogBodyPadding = {
+	meta: {
+		type: "problem",
+		docs: { description: "Require dialog bodies to use DialogPanel or carry horizontal padding." },
+		messages: { dialogBodyPadding: DIALOG_BODY_PADDING_MESSAGE },
+	},
+	create(context) {
+		const check = (children, prefix, panelAllowed) => {
+			const meaningful = children.filter(
+				(child) => child.type !== "JSXText" || child.value.trim() !== "",
+			)
+			const header = meaningful.findIndex(
+				(child) => child.type === "JSXElement" && jsxName(child) === `${prefix}Header`,
+			)
+			if (header === -1) return
+			const footer = meaningful.findIndex(
+				(child, index) =>
+					index > header && child.type === "JSXElement" && jsxName(child) === `${prefix}Footer`,
+			)
+			if (footer === -1 || footer === header + 1) return
+			for (const body of meaningful.slice(header + 1, footer).flatMap(renderedElements)) {
+				if (panelAllowed && jsxName(body) === "DialogPanel") continue
+				const className = body.openingElement.attributes.find(
+					(attribute) => attribute.type === "JSXAttribute" && attribute.name.name === "className",
+				)
+				if (className?.value && HAS_H_PADDING.test(context.sourceCode.getText(className.value)))
+					continue
+				context.report({ node: body.openingElement, messageId: "dialogBodyPadding" })
+			}
+		}
+		return {
+			JSXElement(node) {
+				check(node.children, "Dialog", true)
+				check(node.children, "AlertDialog", false)
+			},
+			JSXFragment(node) {
+				check(node.children, "Dialog", true)
+				check(node.children, "AlertDialog", false)
+			},
+		}
+	},
+}
+
+const MCP_TRACER_MESSAGE =
+	"This tracer can run MCP tools but does not spread `MCP_ANTICIPATED_ERROR_IDENTIFIERS` into its anticipated errors, so expected 4xx tool failures land in error tracking as unexpected Error spans (it shipped that way twice)."
+
+const isMemberCall = (node, object, property) =>
+	node.callee.type === "MemberExpression" &&
+	node.callee.object.type === "Identifier" &&
+	node.callee.object.name === object &&
+	node.callee.property.name === property
+
+/** True when the call's own arguments set `anticipatedErrorIdentifiers` from the MCP list. */
+const declaresMcpIdentifiers = (call) => {
+	let found = false
+	const visit = (node, inProperty) => {
+		if (found || !node || typeof node !== "object") return
+		if (inProperty && node.type === "Identifier" && node.name === "MCP_ANTICIPATED_ERROR_IDENTIFIERS") {
+			found = true
+			return
+		}
+		const entering =
+			inProperty ||
+			(node.type === "Property" && !node.computed && node.key?.name === "anticipatedErrorIdentifiers")
+		for (const key of Object.keys(node)) {
+			if (key === "parent") continue
+			const child = node[key]
+			if (Array.isArray(child)) for (const item of child) visit(item, entering)
+			else if (child && typeof child.type === "string") visit(child, entering)
+		}
+	}
+	for (const argument of call.arguments) visit(argument, false)
+	return found
+}
+
+/**
+ * A tracer in a file that builds MCP services must set `anticipatedErrorIdentifiers` from the MCP list.
+ * `WorkerTelemetry(...)` always serves the public `/mcp` transport, so it always must.
+ */
+const mcpTracerAnticipatedErrors = {
+	meta: {
+		type: "problem",
+		docs: {
+			description: "Require MCP-capable tracers to declare the MCP anticipated error identifiers.",
+		},
+		messages: { mcpTracerAnticipatedErrors: MCP_TRACER_MESSAGE },
+	},
+	create(context) {
+		const sdkMakes = []
+		const workerTelemetry = []
+		let buildsMcp = false
+		return {
+			ImportDeclaration(node) {
+				if (String(node.source.value).includes("mcp-service-graph")) buildsMcp = true
+			},
+			ImportExpression(node) {
+				if (String(node.source.value).includes("mcp-service-graph")) buildsMcp = true
+			},
+			Identifier(node) {
+				if (node.name === "McpServicesLive") buildsMcp = true
+			},
+			CallExpression(node) {
+				if (isMemberCall(node, "MapleCloudflareSDK", "make")) sdkMakes.push(node)
+				if (node.callee.type === "Identifier" && node.callee.name === "WorkerTelemetry")
+					workerTelemetry.push(node)
+			},
+			"Program:exit"() {
+				const offenders = [...workerTelemetry, ...(buildsMcp ? sdkMakes : [])]
+				for (const node of offenders.filter((call) => !declaresMcpIdentifiers(call)))
+					context.report({ node, messageId: "mcpTracerAnticipatedErrors" })
+			},
+		}
+	},
+}
+
 export default {
 	meta: { name: "maple" },
 	rules: {
+		"dialog-body-padding": dialogBodyPadding,
+		"mcp-tracer-anticipated-errors": mcpTracerAnticipatedErrors,
 		"no-date-parse": noDateParse,
 		"no-effect-die": noEffectDie,
 		"no-ordie-compiled-query": noOrDieCompiledQuery,

@@ -28,7 +28,13 @@ import {
 	useLocalSessionTranscript,
 } from "../hooks/use-local-session-detail"
 import { hrefFor } from "../lib/router"
-import { formatLocalDateTime, formatRelativeTime, formatUtcTitle, parseClickHouseDateTime } from "../lib/time"
+import {
+	formatLocalDateTime,
+	formatRelativeTime,
+	formatUtcTitle,
+	parseClickHouseDateTime,
+	type WarehouseTime,
+} from "../lib/time"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import { ErrorState } from "../components/view-states"
@@ -56,7 +62,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 		<div className="flex h-full flex-col">
 			<div className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
 				<Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
-					<ArrowLeftIcon size={14} />
+					<ArrowLeftIcon />
 					{backLabel}
 				</Button>
 				<TruncatedText mono className="text-xs text-muted-foreground">
@@ -246,7 +252,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 
 // Transcript
 
-function offsetLabel(startTime: string, ts: string): string {
+function offsetLabel(startTime: WarehouseTime, ts: WarehouseTime): string {
 	const start = parseClickHouseDateTime(startTime)
 	const at = parseClickHouseDateTime(ts)
 	if (start === null || at === null) return ""
@@ -287,7 +293,7 @@ function Transcript({
 	startTime,
 }: {
 	events: ReadonlyArray<SessionTranscriptOutput>
-	startTime: string
+	startTime: WarehouseTime
 }) {
 	return (
 		<ol className="space-y-3">

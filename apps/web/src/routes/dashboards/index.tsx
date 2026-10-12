@@ -188,7 +188,7 @@ function DashboardListPage() {
 	const actions = (
 		<div className="flex flex-wrap items-center gap-1">
 			<Button variant="outline" size="sm" onClick={() => navigate({ to: "/dashboards/templates" })}>
-				<GridIcon size={14} data-icon="inline-start" />
+				<GridIcon data-icon="inline-start" />
 				Browse templates
 			</Button>
 			<Button
@@ -197,12 +197,12 @@ function DashboardListPage() {
 				disabled={readOnly}
 				onClick={() => importInputRef.current?.click()}
 			>
-				<UploadIcon size={14} data-icon="inline-start" />
+				<UploadIcon data-icon="inline-start" />
 				Import
 			</Button>
 			<Button size="sm" disabled={readOnly} onClick={handleCreate}>
-				<PlusIcon size={14} data-icon="inline-start" />
-				Create Dashboard
+				<PlusIcon data-icon="inline-start" />
+				Create dashboard
 			</Button>
 			<input
 				ref={importInputRef}

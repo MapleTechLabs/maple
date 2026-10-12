@@ -10,7 +10,16 @@ import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
 import { FormDialog } from "@maple/ui/components/ui/form-dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { CircleCheckIcon, EnvelopeIcon, PlusIcon, TrashIcon } from "@/components/icons"
 import { settleClerk, toastAccountError } from "@/components/account/account-errors"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
@@ -136,9 +145,9 @@ export function EmailAddressesSection() {
 
 							return (
 								<TableRow key={address.id}>
-									<TableCell className="font-medium text-xs">
-										{address.emailAddress}
-									</TableCell>
+									<TruncatedCell className="font-medium text-xs">
+										<TruncatedText text={address.emailAddress} />
+									</TruncatedCell>
 									<TableCell>
 										<div className="flex items-center gap-1.5">
 											{isPrimary && <Badge variant="secondary">Primary</Badge>}
@@ -161,7 +170,7 @@ export function EmailAddressesSection() {
 													disabled={isBusy}
 													onClick={() => void handleResendVerification(address)}
 												>
-													<EnvelopeIcon size={14} />
+													<EnvelopeIcon />
 													Verify
 												</DropdownMenuItem>
 											)}
@@ -170,7 +179,7 @@ export function EmailAddressesSection() {
 													disabled={isBusy}
 													onClick={() => void handleSetPrimary(address)}
 												>
-													<CircleCheckIcon size={14} />
+													<CircleCheckIcon />
 													Set as primary
 												</DropdownMenuItem>
 											)}
@@ -179,7 +188,7 @@ export function EmailAddressesSection() {
 												disabled={isBusy || !canRemove}
 												onClick={() => setPendingRemoval(address)}
 											>
-												<TrashIcon size={14} />
+												<TrashIcon />
 												Remove
 											</DropdownMenuItem>
 										</RowActionsMenu>

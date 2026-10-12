@@ -10,7 +10,7 @@
 // Every operation returns the same type in both modes, so commands and
 // renderers never learn which backend answered.
 
-import { Clock, Effect, References, Schema } from "effect"
+import { Clock, DateTime, Effect, References, Schema } from "effect"
 import { CH, computeBucketSecondsForRange, type TracesMetric } from "@maple/query-engine"
 import { prepareRawSql } from "@maple/query-engine/runtime"
 import {
@@ -737,11 +737,19 @@ const localMetricSeries = (p: MetricSeriesInput) =>
 						params,
 					),
 					options,
-				)).map((r) => ({ bucket: r.bucket, service: r.groupName, value: r.rateValue }))
+				)).map((r) => ({
+					bucket: DateTime.formatIso(r.bucket),
+					service: r.groupName,
+					value: r.rateValue,
+				}))
 			: (yield* executor.compiledQuery(
 					CH.compile(CH.metricsTimeseriesQuery({ metricType, ...series }), params),
 					options,
-				)).map((r) => ({ bucket: r.bucket, service: r.groupName, value: r.avgValue }))
+				)).map((r) => ({
+					bucket: DateTime.formatIso(r.bucket),
+					service: r.groupName,
+					value: r.avgValue,
+				}))
 		return {
 			_tag: "found",
 			output: {

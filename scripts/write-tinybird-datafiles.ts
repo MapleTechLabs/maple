@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -8,7 +9,7 @@ import { buildTinybirdProjectManifest } from "../packages/domain/src/tinybird/pr
 export const TINYBIRD_PROJECT_DIR = fileURLToPath(new URL("../tinybird", import.meta.url))
 
 export const writeTinybirdDatafiles = (): string => {
-	const manifest = buildTinybirdProjectManifest()
+	const manifest = Effect.runSync(buildTinybirdProjectManifest)
 	rmSync(TINYBIRD_PROJECT_DIR, { recursive: true, force: true })
 	for (const [folder, suffix, resources] of [
 		["datasources", ".datasource", manifest.datasources],

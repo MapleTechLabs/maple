@@ -78,7 +78,7 @@ export function StepIntent({
 				</div>
 				<div className="flex items-center justify-between gap-3">
 					<Button variant="ghost" onClick={onBack}>
-						<ArrowLeftIcon size={14} />
+						<ArrowLeftIcon />
 						Back
 					</Button>
 					<Button size="lg" disabled={value.length === 0} onClick={onContinue}>

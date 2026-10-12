@@ -29,16 +29,6 @@
 	}
 }
 
-@keyframes service-map-load-dot {
-	0%,
-	100% {
-		opacity: 0.35;
-	}
-	50% {
-		opacity: 1;
-	}
-}
-
 /* The "Mapping service connections..." ellipsis, scoped so hosts need no global loader CSS. */
 @keyframes service-map-load-ellipsis {
 	0%,
@@ -68,10 +58,6 @@
 	animation: service-map-load-flow 1.9s linear infinite;
 }
 
-.sm-load-dot {
-	animation: service-map-load-dot 1.8s ease-in-out infinite;
-}
-
 .service-map-loading .pulse-dot {
 	animation: service-map-load-ellipsis 1.4s ease-in-out infinite;
 }
@@ -97,10 +83,6 @@
 	}
 	.sm-load-particle {
 		display: none;
-	}
-	.sm-load-dot {
-		animation: none;
-		opacity: 1;
 	}
 	.service-map-loading .pulse-dot {
 		animation: none;

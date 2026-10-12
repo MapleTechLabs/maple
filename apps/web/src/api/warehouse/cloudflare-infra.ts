@@ -18,7 +18,6 @@ import {
 	CloudflareInfraZoneTimeseriesRequest,
 	CloudflareTopTrafficRequest,
 } from "@maple/domain/http"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 
@@ -697,7 +696,7 @@ export const getCloudflareTopTraffic = Effect.fn("Integrations.getCloudflareTopT
 	const input = yield* decodeInput(TopTrafficInputSchema, data, "getCloudflareTopTraffic")
 	const result = yield* runWarehouseQuery("cloudflareTopTraffic", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.integrations.cloudflareTopTraffic({
 				payload: new CloudflareTopTrafficRequest({
 					zoneName: input.zoneName,

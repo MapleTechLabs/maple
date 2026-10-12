@@ -76,14 +76,14 @@ function TracesFilterSidebarView({
 						<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
 						<FilterSidebarBody>
 							<SingleCheckboxFilter
-								title="Has Error"
+								title="Has error"
 								checked={filters.hasError ?? false}
 								onChange={(checked) => onFilterChange("hasError", checked || undefined)}
 								count={facets.errorCount}
 							/>
 
 							<SingleCheckboxFilter
-								title="Root Traces Only"
+								title="Root traces only"
 								checked={filters.rootOnly ?? true}
 								onChange={(checked) =>
 									onFilterChange("rootOnly", checked ? undefined : false)
@@ -135,7 +135,7 @@ function TracesFilterSidebarView({
 							/>
 
 							<SearchableFilterSection
-								title="Root Span"
+								title="Root span"
 								options={facets.spanNames ?? []}
 								selected={filters.spanNames ?? []}
 								onChange={(val) => onFilterChange("spanNames", val)}
@@ -151,7 +151,7 @@ function TracesFilterSidebarView({
 							/>
 
 							<FilterSection
-								title="HTTP Method"
+								title="HTTP method"
 								options={facets.httpMethods ?? []}
 								selected={filters.httpMethods ?? []}
 								onChange={(val) => onFilterChange("httpMethods", val)}
@@ -160,7 +160,7 @@ function TracesFilterSidebarView({
 							/>
 
 							<FilterSection
-								title="Status Code"
+								title="Status code"
 								options={facets.httpStatusCodes ?? []}
 								selected={filters.httpStatusCodes ?? []}
 								onChange={(val) => onFilterChange("httpStatusCodes", val)}

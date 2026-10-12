@@ -30,7 +30,7 @@ export function PageShell({
 						className="gap-1.5"
 						onClick={() => setDrawerOpen(true)}
 					>
-						<FilterIcon size={14} />
+						<FilterIcon />
 						Filters
 						{activeFilterCount > 0 ? (
 							<span className="rounded-sm bg-primary/15 px-1 text-[10px] tabular-nums text-primary">

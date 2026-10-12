@@ -1,4 +1,5 @@
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query"
+import type { DateTime } from "effect"
 import { CH } from "@maple/query-engine"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { boundsKey, executeLocalCompiledQuery, localParams, noCursor } from "@/lib/query"
@@ -35,7 +36,7 @@ export interface TraceFilters {
 export interface TraceRow {
 	readonly traceId: string
 	/** Root span timestamp: the keyset cursor field, paired with `traceId`. */
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly durationMs: number
 	/** Null only when a span-mode trace's spans could not be counted. */
 	readonly spanCount: number | null
@@ -47,7 +48,7 @@ export interface TraceRow {
 }
 
 interface TraceCursor {
-	timestamp: string
+	timestamp: DateTime.Utc
 	traceId: string
 }
 
@@ -108,7 +109,7 @@ async function rootScopedPage(
 }
 
 const spanCountOf = (stats: { readonly spanCount: number } | undefined): number | null =>
-	stats === undefined ? null : Number(stats.spanCount)
+	stats === undefined ? null : stats.spanCount
 
 async function spanScopedPage(
 	filters: TraceFilters,
@@ -151,13 +152,13 @@ async function spanScopedPage(
 	return summaries.map((row) => ({
 		traceId: row.traceId,
 		startTime: row.startTime,
-		durationMs: Number(row.durationMs),
+		durationMs: row.durationMs,
 		spanCount: spanCountOf(statsByTrace.get(row.traceId)),
 		services: statsByTrace.get(row.traceId)?.services ?? [row.rootServiceName],
 		rootSpanName: row.rootSpanName,
 		rootSpanKind: row.rootSpanKind,
 		rootSpanAttributes: httpAttributes(row),
-		hasError: Number(row.hasError) > 0,
+		hasError: row.hasError > 0,
 	}))
 }
 

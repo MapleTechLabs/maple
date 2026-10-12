@@ -11,18 +11,22 @@ import {
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
 import { requireSecretEntry } from "@maple/infra/env"
-import { r2BucketCredentials } from "@maple/infra/r2-credentials"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
 import type { Sandbox } from "./src/worker.ts"
 
-/** Pinned; alchemy re-pushes it to the account registry, so a bump is a deploy step. */
-const SANDBOX_IMAGE = "docker.io/cloudflare/sandbox:0.12.10"
+/**
+ * The container image, built here and pushed to the account registry on a content change. Its
+ * `sandbox-shim` tag must match the `@cloudflare/sandbox` version in `package.json`.
+ */
+const SANDBOX_IMAGE_CONTEXT = `${import.meta.dirname}/image`
 
 /**
- * Git mirror archives between container lifetimes, plus the SDK's S3 credentials.
- * Customer source: follows the storage jurisdiction; expires a day after the SDK's
- * 7-day TTL, since the SDK never deletes archives.
+ * Git mirror archives between container lifetimes. Customer source: follows the storage
+ * jurisdiction, and the lifecycle rule is the only thing that deletes an archive, so it bounds how
+ * long a disconnected repository's source stays in R2. Daily refreshes keep an active one fresh.
+ * The container never holds credentials for it: `DirectoryBackupGateway` moves each archive
+ * through the Worker.
  */
 const mirrorBackups = Effect.gen(function* () {
 	const { stage, region } = yield* MapleStack
@@ -43,21 +47,7 @@ const mirrorBackups = Effect.gen(function* () {
 		// A cache: every archive can be rebuilt by one clone, so a teardown may empty it.
 		forceDestroy: true,
 	})
-	const credentials = yield* r2BucketCredentials({
-		id: "sandbox-mirrors-rw",
-		tokenName: `${bucketName}-rw`,
-		bucketName,
-		jurisdiction,
-		permissions: ["Workers R2 Storage Bucket Item Read", "Workers R2 Storage Bucket Item Write"],
-	})
-	return {
-		BACKUP_BUCKET: bucket,
-		BACKUP_BUCKET_NAME: bucketName,
-		CLOUDFLARE_ACCOUNT_ID: credentials.accountId,
-		BACKUP_BUCKET_ENDPOINT: credentials.endpoint,
-		R2_ACCESS_KEY_ID: credentials.accessKeyId,
-		R2_SECRET_ACCESS_KEY: credentials.secretAccessKey,
-	}
+	return { BACKUP_BUCKET: bucket }
 })
 
 const props = Effect.gen(function* () {
@@ -74,7 +64,7 @@ const props = Effect.gen(function* () {
 		observability: assetWorkerObservability(destinations),
 		env: {
 			Sandbox: Cloudflare.Container<Sandbox>("Sandbox", {
-				image: SANDBOX_IMAGE,
+				context: SANDBOX_IMAGE_CONTEXT,
 				// Full clones exhaust the smaller tiers' disk. Named tiers are the only dial:
 				// Cloudflare rejects explicit vcpu/memory/disk alongside one.
 				instanceType: production ? ("standard-2" as const) : ("standard-1" as const),

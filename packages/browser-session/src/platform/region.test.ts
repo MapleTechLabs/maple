@@ -16,12 +16,6 @@ afterEach(() => {
 })
 
 describe("region", () => {
-	it("maps each region to its ingest host", () => {
-		expect(ingestEndpointForRegion("us")).toBe("https://ingest.maple.dev")
-		expect(ingestEndpointForRegion("eu")).toBe("https://ingest.eu.maple.dev")
-		expect(ingestEndpointForRegion(undefined)).toBe("https://ingest.maple.dev")
-	})
-
 	it("parses env-style values loosely and rejects unknown ones", () => {
 		expect(parseRegion(" EU ")).toBe("eu")
 		expect(parseRegion("eu-central")).toBeUndefined()

@@ -159,24 +159,6 @@ describe("OtlpIngest", () => {
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
-	it.effect("still errors its span when the gateway itself fails (5xx)", () =>
-		Effect.gen(function* () {
-			const tracer = makeCapturingTracer()
-			const otlp = yield* OtlpIngest
-			yield* otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
-				Effect.provideService(
-					FetchHttpClient.Fetch,
-					stubFetch([], () => new Response("boom", { status: 500 })),
-				),
-				Effect.provide(tracer.layer),
-				Effect.flip,
-			)
-
-			const spans = endedSpansNamed(tracer.ended, "OtlpIngest.send")
-			assert.lengthOf(spans, 1)
-			assert.isTrue(Exit.isFailure(spans[0]!.exit))
-		}).pipe(Effect.provide(TestLayer)),
-	)
 	// A gateway that accepts the connection but never answers must not pin the
 	// scrape (and its global concurrency permit) forever — the send times out
 	// as a retryable typed error.

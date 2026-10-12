@@ -307,7 +307,7 @@ export function ToolErrorsTable({
 											{prepared.errorType === undefined && row.errorType !== "" ? (
 												<span
 													className={cn(
-														"flex h-[18px] shrink-0 items-center rounded-sm border border-border px-[5px] text-2xs leading-3.5",
+														"flex h-4.5 shrink-0 items-center rounded-sm border border-border px-[5px] text-2xs leading-3.5",
 														TONE_TEXT.crit,
 													)}
 												>

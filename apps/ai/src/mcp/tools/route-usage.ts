@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { RouteUsageOutput, RouteUsageSort } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -41,7 +41,11 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const sort = params.sort ?? "count"
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, service: params.service ?? "all", sort })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.sort": sort,
+			})
 
 			const rows = yield* withTenantExecutor(
 				Effect.gen(function* () {
@@ -82,8 +86,8 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 						errorCount: row.errorCount,
 						errorRate: row.spanCount > 0 ? row.errorCount / row.spanCount : 0,
 						p95Ms: row.p95DurationMs,
-						firstSeen: row.firstSeen,
-						lastSeen: row.lastSeen,
+						firstSeen: DateTime.formatIso(row.firstSeen),
+						lastSeen: DateTime.formatIso(row.lastSeen),
 					}
 				}),
 			}

@@ -172,7 +172,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 				value={isStale ? incident.lastTriggeredAt : incident.firstTriggeredAt}
 				prefix={isStale ? "last seen" : undefined}
 				tooltip="title"
-				className="relative z-10 w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
+				className="relative z-10 w-28 shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground"
 			/>
 		</div>
 	)

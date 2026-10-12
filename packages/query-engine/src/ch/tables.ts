@@ -1,12 +1,15 @@
 // Maple Table Definitions
 //
 // The query tables ARE the warehouse datasources in
-// packages/domain/src/tinybird/datasources.ts; these names are aliases. Their
-// timestamps decode as the strings ClickHouse sends, the wire format web and
-// the iOS app parse.
+// packages/domain/src/tinybird/datasources.ts; these names are aliases. A
+// column declared with `utcDateTime()`/`utcDateTime64()` decodes as a
+// `DateTime.Utc`; the rest still decode as the strings ClickHouse sends.
 
+import { DateTime, Option, Schema, SchemaGetter } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
 import * as Datasources from "@maple/domain/tinybird/datasources"
+import { parseUtc } from "../datetime"
 
 /**
  * The type every attribute column in the warehouse has.
@@ -28,6 +31,48 @@ export const orgId = Datasources.traces.columns.OrgId
 
 /** The tenant param every warehouse query filters `OrgId` on. */
 export const orgIdParam = T.param.of(orgId, "orgId")
+
+/**
+ * A string bound written as a `DateTime` literal: floored to whole seconds, as
+ * `param.dateTimeSeconds` does, since the column rejects a fractional literal.
+ */
+const FlooredSecondsString = Schema.String.pipe(
+	Schema.decodeTo(Schema.String, {
+		decode: SchemaGetter.passthrough(),
+		encode: SchemaGetter.transform((value: string) =>
+			Option.match(parseUtc(value), {
+				onNone: () => value,
+				onSome: (utc) => DateTime.formatIso(utc).slice(0, 19).replace("T", " "),
+			}),
+		),
+	}),
+)
+
+const utcSeconds = T.custom(
+	"DateTime",
+	T.dateTime.schema,
+	Schema.Union([T.dateTime.schema, FlooredSecondsString]),
+)
+
+/**
+ * A `DateTime.Utc` bound for a second-precision `DateTime` column, floored to
+ * whole seconds (a string bound too). It may share a name with a
+ * `param.dateTime` bound on a `DateTime64` column. Use it instead of
+ * `param.dateTimeSeconds`, which in effect-orm 0.3.0 only accepts strings at
+ * runtime despite its type.
+ */
+export const utcSecondsParam = <const N extends string>(name: N) => T.param.of(utcSeconds, name)
+
+const WIRE_DATETIME64 = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,9})?$/
+
+/**
+ * A `DateTime64(9)` bound from a `toString(Timestamp)` literal, which keeps the
+ * nanoseconds a `DateTime.Utc` drops: a millisecond keyset cursor would skip
+ * rows sharing the boundary millisecond. Any other string fails `compile` on
+ * the column's codec, as a typed `QueryBuilderError`.
+ */
+export const exactDateTime64 = (value: string): CH.Expr<DateTime.Utc> | string =>
+	WIRE_DATETIME64.test(value) ? CH.makeExpr(CH.toFragment(CH.lit(value)), T.dateTime64.schema) : value
 
 export const Traces = Datasources.traces
 

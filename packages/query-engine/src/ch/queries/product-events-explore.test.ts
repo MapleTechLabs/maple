@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	productEventAttributeKeysQuery,
 	productEventAttributeValuesQuery,
@@ -143,4 +144,52 @@ describe("attribute discovery", () => {
 		expect(sql).toContain("Attributes['plan'] AS attributeValue")
 		expect(sql).toContain("has(mapKeys(product_events.Attributes), 'plan')")
 	})
+})
+
+// Rows reach callers through `decodeRows`; an underived (or untyped series-cap)
+// row schema would leave timestamps strings behind a `DateTime.Utc` type.
+describe("product event rows decode timestamps to DateTime.Utc", () => {
+	const tsRow = { bucket: "2026-06-24 04:00:00.000000000", groupName: "all", value: 1, eventCount: 1 }
+
+	for (const [name, opts] of [
+		["timeseries", { metric: "count" }],
+		["timeseries, series-capped", { metric: "count", groupBy: ["event_name"], seriesLimit: 5 }],
+	] as const) {
+		it.effect(name, () =>
+			Effect.gen(function* () {
+				const compiled = yield* compile(productEventsTimeseriesQuery(opts), params)
+				expect(compiled.rowSchemaSource).not.toBe("none")
+				const [row] = yield* compiled.decodeRows([tsRow])
+				expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2026, 5, 24, 4))
+			}),
+		)
+	}
+
+	it.effect("productEventsListQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(productEventsListQuery({}), params)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{
+					timestamp: "2026-06-24 04:00:00.250000000",
+					eventName: "signup",
+					kind: "track",
+					source: "browser",
+					host: "",
+					pagePath: "",
+					url: "",
+					serviceName: "",
+					userId: "",
+					groupId: "",
+					visitorId: "",
+					sessionId: "",
+					traceId: "",
+					spanId: "",
+					attributes: {},
+					seq: 0,
+				},
+			])
+			expect(DateTime.formatIso(row!.timestamp)).toBe("2026-06-24T04:00:00.250Z")
+		}),
+	)
 })

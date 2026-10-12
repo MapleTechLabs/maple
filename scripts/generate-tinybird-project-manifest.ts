@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -12,7 +13,7 @@ const outputPath = fileURLToPath(
 )
 const checkMode = process.argv.includes("--check")
 
-const manifest = buildTinybirdProjectManifest()
+const manifest = Effect.runSync(buildTinybirdProjectManifest)
 const renderedModuleResult = await format(outputPath, renderTinybirdProjectManifestModule(manifest), {
 	printWidth: 110,
 	semi: false,

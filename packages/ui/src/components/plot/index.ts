@@ -182,6 +182,7 @@ export {
 	isAllZeroStats,
 	sortZeroSeriesLast,
 	type SeriesStats,
+	type SeriesStatsMap,
 	type StatsSeries,
 } from "./series-stats"
 export { useSeriesVisibility } from "./series-visibility"

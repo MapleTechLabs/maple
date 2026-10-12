@@ -165,7 +165,7 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 				Suspected cause
 			</Eyebrow>
 			{/* `headline` is the only field prompted to be one line; `reportHeadline` falls back for older reports. */}
-			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
+			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]">
 				{heading}
 			</h2>
 			{/* Each body field is drawn only if the heading is not already it (older reports fall back to `summary`). */}
@@ -183,7 +183,7 @@ const repeatsHeading = (heading: string | null, text: string): boolean =>
 /** The summary, unless the heading fell back to being it. */
 function Body({ heading, text }: { heading: string | null; text: string }) {
 	if (repeatsHeading(heading, text)) return null
-	return <p className="text-sm leading-6 text-muted-foreground">{text}</p>
+	return <p className="text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{text}</p>
 }
 
 /** The mechanism, set off by a rule so a reader who already believes the verdict can skip it. */
@@ -191,7 +191,9 @@ function Mechanism({ heading, text }: { heading: string | null; text: string }) 
 	if (repeatsHeading(heading, text)) return null
 	return (
 		<div className="mt-1 border-l-2 pl-4">
-			<p className="whitespace-pre-line text-sm leading-6 text-muted-foreground">{text}</p>
+			<p className="whitespace-pre-line text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+				{text}
+			</p>
 		</div>
 	)
 }
@@ -209,7 +211,7 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 						<span className="mt-px shrink-0 text-xs tabular-nums text-muted-foreground">
 							{index + 1}
 						</span>
-						<span className="min-w-0">{action}</span>
+						<span className="min-w-0 [overflow-wrap:anywhere]">{action}</span>
 					</li>
 				))}
 			</ol>
@@ -251,7 +253,7 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 					Investigating
 				</span>
 			</Eyebrow>
-			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
+			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]">
 				Maple is gathering evidence.
 			</h2>
 			<p className="text-sm leading-6 text-muted-foreground">
@@ -297,7 +299,7 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 			<Eyebrow as="div" className="text-severity-error">
 				No diagnosis
 			</Eyebrow>
-			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
+			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]">
 				The pass ended without a diagnosis
 			</h2>
 			<p className="text-sm leading-6 text-muted-foreground">
@@ -391,7 +393,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 				</span>
 				<span>No cause established</span>
 			</Eyebrow>
-			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
+			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]">
 				{headline}
 			</h2>
 			{report ? <Body heading={headline} text={report.summary} /> : null}

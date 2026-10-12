@@ -2,10 +2,11 @@ import { useMemo, useState } from "react"
 
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
-import { countLabel, formatNumber } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ColumnHead, DataTable, MetaChip, useTableSort } from "@/components/common/data-table"
+import { formatWholePercent } from "../format"
 import { SegmentPivot } from "../primitives/segment-pivot"
 import { relativeRatio, shareBar } from "../primitives/share-bar"
 import type { BranchCandidate } from "./branch-selection"
@@ -51,14 +52,14 @@ const MEASURES: Record<Measure, MeasureSpec> = {
 	cpu: {
 		label: "CPU (max)",
 		of: (c) => c.stat?.cpuMaxPercent ?? MISSING,
-		format: (v) => `${v.toFixed(0)}%`,
+		format: (v) => formatWholePercent(v / 100),
 		className: utilizationClass,
 		additive: false,
 	},
 	memory: {
 		label: "Memory (max)",
 		of: (c) => c.stat?.memMaxPercent ?? MISSING,
-		format: (v) => `${v.toFixed(0)}%`,
+		format: (v) => formatWholePercent(v / 100),
 		className: utilizationClass,
 		additive: false,
 	},
@@ -234,7 +235,7 @@ export function PlanetScaleBranchBreakdownPanel({
 									row.hasValue && spec.className?.(row.value),
 								)}
 							>
-								{row.hasValue ? spec.format(row.value) : "—"}
+								{row.hasValue ? spec.format(row.value) : EMPTY_VALUE}
 							</div>
 						</>
 					)

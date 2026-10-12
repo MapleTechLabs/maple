@@ -4,9 +4,8 @@
 	"printWidth": 110,
 	"useTabs": true,
 	"tabWidth": 4,
-	// packages/db/drizzle is drizzle-kit output — the next `db:generate` rewrites
-	// it in drizzle's own style, so formatting it is churn that only obscures the
-	// migration-snapshot diff.
+	// packages/db/drizzle is generated (drizzle-kit, then effect-orm) — formatting
+	// it is churn that only obscures the migration-snapshot diff.
 	// lib/thinking-orbs is vendored upstream source in prettier style; reformatting it
 	// would turn every future upstream sync into a whole-file conflict.
 	// The Maizzle .vue sources under packages/email have load-bearing whitespace —

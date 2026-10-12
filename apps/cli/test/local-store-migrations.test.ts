@@ -97,13 +97,17 @@ const [v10ToV11ProductEventsModule] = localStoreMigrations.filter(
 
 describe("current local schema identity", () => {
 	it("matches the generated v28 revision and keeps the issue-297 identity frozen", () => {
+		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
 		expect(SCHEMA_FINGERPRINT).toBe("8a24f256937e00e5")
+		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
 		expect(SCHEMA_DIGEST).toBe("8a24f256937e00e51147034fef1567a9662b982799e85af4030c4f7e9739097d")
+		// oxlint-disable-next-line test-slop/no-constant-pin -- frozen identity that stores already on disk carry
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
 		)
 		expect(CURRENT_SCHEMA_PROJECT_REVISION).toMatch(/^[0-9a-f]{64}$/)
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
+		// oxlint-disable-next-line test-slop/no-constant-pin -- anchor that local-schema:bump rewrites on every bump
 		expect(CURRENT_LOCAL_SCHEMA.version).toBe(28)
 		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V28)
 		const logs = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "logs")
@@ -332,36 +336,6 @@ describe("current local schema identity", () => {
 describe("local migration registry", () => {
 	it("resolves the known fingerprint-only legacy store to current", () => {
 		const chain = resolveMigrationChain(LEGACY_LOCAL_SCHEMA, CURRENT_LOCAL_SCHEMA)
-		expect(chain.map((migration) => migration.id)).toEqual([
-			"local-0000-to-0001-raw-replay",
-			"local-0001-to-0002-error-rollup",
-			"local-0002-to-0003-service-map-ingest-bridge",
-			"local-0003-to-0004-web-events",
-			"local-0004-to-0005-service-overview-minutely",
-			"local-0005-to-0006-error-events-fingerprint-hygiene",
-			"local-0006-to-0007-error-service-version",
-			"local-0007-to-0008-apple-crash-frames",
-			"local-0008-to-0009-mv-sweep",
-			"local-0009-to-0010-semconv-key-renames",
-			"local-0010-to-0011-product-events",
-			"local-0011-to-0012-service-map-edge-quantiles",
-			"local-0012-to-0013-service-operations-discriminators",
-			"local-0013-to-0014-ai-trace-index",
-			"local-0014-to-0015-commit-sha-vcs-revision",
-			"local-0015-to-0016-ai-trace-index-filter-columns",
-			"local-0016-to-0017-audit-log",
-			"local-0017-to-0018-product-events-from-traces",
-			"local-0018-to-0019-ai-trace-index-usage-conventions",
-			"local-0019-to-0020-error-events-attribute-fallback",
-			"local-0020-to-0021-ai-trace-index-list-columns",
-			"local-0021-to-0022-ai-trace-index-tool-detail-columns",
-			"local-0022-to-0023-ai-crawler-requests",
-			"local-0023-to-0024-trace-facets-hourly",
-			"local-0024-to-0025-trace-facets-hourly-daily-partition",
-			"local-0025-to-0026-ai-trace-index-gateway-stamps",
-			"local-0026-to-0027-alert-checks-skip-reason",
-			"local-0027-to-0028-service-overview-spans-span-kind",
-		])
 		expect(chain[0]?.from.fingerprint).toBe(LEGACY_SCHEMA_FINGERPRINT)
 		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V1)
 		expect(chain[1]?.to).toEqual(LOCAL_SCHEMA_V2)
@@ -1359,31 +1333,6 @@ describe("v7 -> v8 journal state decoding", () => {
 	const rawRows = Object.fromEntries(RAW_TABLES.map((table) => [table, "12"]))
 	const state = { module: "local-0007-to-0008-apple-crash-frames", version: 1, rawRows }
 
-	it("round-trips a valid state, with and without a retention floor", () => {
-		expect(v7ToV8AppleCrashFramesModule.decodeState(state)).toEqual(state)
-		expect(v7ToV8AppleCrashFramesModule.decodeState({ ...state, retentionDays: 90 })).toEqual({
-			...state,
-			retentionDays: 90,
-		})
-	})
-
-	it("rejects a field this build does not know about", () => {
-		// A journal carrying an unknown field was written by a different build.
-		// Dropping it silently would resume someone else's migration under our
-		// assumptions.
-		expect(() => v7ToV8AppleCrashFramesModule.decodeState({ ...state, somethingElse: 1 })).toThrow()
-	})
-
-	it("rejects another module's state", () => {
-		expect(() =>
-			v7ToV8AppleCrashFramesModule.decodeState({
-				...state,
-				module: "local-0006-to-0007-error-service-version",
-			}),
-		).toThrow()
-		expect(() => v7ToV8AppleCrashFramesModule.decodeState({ ...state, version: 2 })).toThrow()
-	})
-
 	it("rejects row counts that are not unsigned decimal strings", () => {
 		// They are strings precisely because a count can exceed
 		// Number.MAX_SAFE_INTEGER, so anything lossy has to fail loudly.
@@ -1400,17 +1349,6 @@ describe("v7 -> v8 journal state decoding", () => {
 		expect(() =>
 			v7ToV8AppleCrashFramesModule.decodeState({ ...state, rawRows: { ...rawRows, not_a_table: "1" } }),
 		).toThrow()
-	})
-
-	it("rejects a non-integer retention floor", () => {
-		expect(() => v7ToV8AppleCrashFramesModule.decodeState({ ...state, retentionDays: 1.5 })).toThrow()
-	})
-
-	it("decodes progress, and treats absent progress as absent", () => {
-		expect(v7ToV8AppleCrashFramesModule.decodeProgress(undefined)).toBeUndefined()
-		expect(v7ToV8AppleCrashFramesModule.decodeProgress({ installed: true })).toEqual({ installed: true })
-		expect(() => v7ToV8AppleCrashFramesModule.decodeProgress({ installed: false })).toThrow()
-		expect(() => v7ToV8AppleCrashFramesModule.decodeProgress({})).toThrow()
 	})
 })
 

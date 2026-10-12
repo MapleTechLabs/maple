@@ -27,7 +27,7 @@ import {
 	CircleWarningIcon,
 	CircleXmarkIcon,
 } from "@/components/icons"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { OrgClickHouseSettingsUpsertRequest } from "@maple/domain/http"
 import { DataPlatformUsageSection } from "@/components/settings/data-platform-usage-section"
 import { toastExit } from "@/lib/error-toast"
@@ -51,25 +51,28 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 	const { effectiveTimezone } = useTimezonePreference()
 	const [expandedDrifts, setExpandedDrifts] = useState<ReadonlySet<string>>(new Set())
 
-	const settingsQueryAtom = retainedQuery("orgClickHouseSettings", "get", {})
+	const settingsQueryAtom = retainedInternalQuery("orgClickHouseSettings", "get", {})
 	const settingsResult = useAtomValue(settingsQueryAtom)
 	const refreshSettings = useAtomRefresh(settingsQueryAtom)
 
-	const diffQueryAtom = retainedQuery("orgClickHouseSettings", "schemaDiff", {})
+	const diffQueryAtom = retainedInternalQuery("orgClickHouseSettings", "schemaDiff", {})
 	const diffResult = useAtomValue(diffQueryAtom)
 	const refreshDiff = useAtomRefresh(diffQueryAtom)
 
-	const statusQueryAtom = retainedQuery("orgClickHouseSettings", "applySchemaStatus", {})
+	const statusQueryAtom = retainedInternalQuery("orgClickHouseSettings", "applySchemaStatus", {})
 	const statusResult = useAtomValue(statusQueryAtom)
 	const refreshStatus = useAtomRefresh(statusQueryAtom)
 
-	const upsertMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "upsert"), {
+	const upsertMutation = useAtomSet(MapleInternalAtomClient.mutation("orgClickHouseSettings", "upsert"), {
 		mode: "promiseExit",
 	})
-	const applyMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "applySchema"), {
-		mode: "promiseExit",
-	})
-	const deleteMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "delete"), {
+	const applyMutation = useAtomSet(
+		MapleInternalAtomClient.mutation("orgClickHouseSettings", "applySchema"),
+		{
+			mode: "promiseExit",
+		},
+	)
+	const deleteMutation = useAtomSet(MapleInternalAtomClient.mutation("orgClickHouseSettings", "delete"), {
 		mode: "promiseExit",
 	})
 

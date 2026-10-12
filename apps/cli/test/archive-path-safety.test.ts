@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
-import { ok, rejects, strictEqual } from "node:assert"
+import { ok, rejects, strictEqual, throws } from "node:assert"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -134,7 +134,7 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 			writeFileSync(sentinel, "sensitive")
 			mkdirSync(signalRootPath(archiveDir, "traces"), { recursive: true })
 			symlinkSync(sentinel, catalogPath(archiveDir, "traces"))
-			throwsSync(
+			throws(
 				() => assertNoSymlinkSync(archiveDir, catalogPath(archiveDir, "traces"), "catalog"),
 				/symlink/,
 			)
@@ -246,7 +246,7 @@ describe("archive path safety — read-side symlink escapes (HIGH-1/HIGH-2)", ()
 				outsideGen,
 				join(generationsRootPath(archiveDir, "traces", "2026-06-01"), generationId),
 			)
-			throwsSync(
+			throws(
 				() => readArchiveGenerationManifest(archiveDir, "traces", "2026-06-01", generationId),
 				/symlink/,
 			)
@@ -306,13 +306,3 @@ const signalRootPath = (archiveDir: string, signal: string): string => join(arch
 
 const generationsRootPath = (archiveDir: string, signal: string, rangeDate: string): string =>
 	join(archiveDir, signal, rangeDate, "generations")
-
-const throwsSync = (fn: () => unknown, pattern: RegExp): void => {
-	try {
-		fn()
-		throw new Error("expected function to throw")
-	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error)
-		if (!pattern.test(msg)) throw new Error(`expected ${pattern}, got: ${msg}`)
-	}
-}

@@ -5,6 +5,7 @@ import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
 import { Effect, Layer, Schema } from "effect"
+import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { TestClock } from "effect/testing"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -38,9 +39,11 @@ const recordingWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = []) =
 			compiledQuery: ((_tenant: unknown, compiled: unknown) =>
 				Effect.gen(function* () {
 					const query = Effect.isEffect(compiled) ? yield* compiled : compiled
-					// SAFETY: every compiled query carries its SQL text.
-					sql.push((query as { readonly sql: string }).sql)
-					return rows
+					// SAFETY: the audit listing hands the stub a compiled query.
+					const compiledQuery = query as CompiledQuery<unknown>
+					sql.push(compiledQuery.sql)
+					// Decode as the real executor does, so timestamps arrive as `DateTime.Utc`.
+					return yield* compiledQuery.decodeRows(rows)
 				})) as never,
 		}),
 	)

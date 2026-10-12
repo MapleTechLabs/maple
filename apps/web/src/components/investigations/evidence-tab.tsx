@@ -4,6 +4,7 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import { EvidenceChips } from "./action-detail-sheet"
 import { CauseRecap } from "./cause-recap"
 import { countLabel } from "@maple/ui/lib/format"
+import { SectionHeading } from "@/components/common/section-heading"
 
 /**
  * The findings that back the cause, promoted out of the chat transcript where
@@ -37,15 +38,10 @@ export function EvidenceTab({ investigation }: { investigation: V2Investigation 
 		<div className="flex shrink-0 flex-col gap-6">
 			<CauseRecap investigation={investigation} />
 			<section className="flex shrink-0 flex-col gap-3.5">
-				<div className="flex items-baseline gap-2.5">
-					<h2 className="font-display text-base font-semibold tracking-[-0.01em] text-foreground">
-						Evidence
-					</h2>
-					<span className="text-sm text-muted-foreground">
-						{countLabel(evidence.length, "finding")}
-						{traceCount > 0 ? ` · ${countLabel(traceCount, "trace")}` : ""}
-					</span>
-				</div>
+				<SectionHeading
+					title="Evidence"
+					hint={`${countLabel(evidence.length, "finding")}${traceCount > 0 ? ` · ${countLabel(traceCount, "trace")}` : ""}`}
+				/>
 				<ol className="flex flex-col border-t">
 					{evidence.map((item, index) => (
 						<li

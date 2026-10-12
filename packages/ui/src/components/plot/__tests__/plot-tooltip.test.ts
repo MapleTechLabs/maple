@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { resolveTooltipHighlight, type PlotTooltipSeries, type TooltipFocus } from "../plot-tooltip"
+import {
+	capTooltipRows,
+	resolveTooltipHighlight,
+	type PlotTooltipSeries,
+	type TooltipFocus,
+} from "../plot-tooltip"
 
 /**
  * A 400px-tall plot over a `[0, 100]` domain: value 0 sits on the axis at y=400,
@@ -108,5 +113,29 @@ describe("resolveTooltipHighlight", () => {
 		// …and the absent series cannot be picked in its stead down where its
 		// values would have been.
 		expect(resolveTooltipHighlight(sparse, ROW, focusAt(mapY(20)))).toBeUndefined()
+	})
+})
+
+describe("capTooltipRows", () => {
+	const wide: PlotTooltipSeries<Record<string, number>>[] = Array.from({ length: 20 }, (_, i) => ({
+		label: `s${i}`,
+		color: "#111",
+		value: (row) => row[`s${i}`],
+		format,
+	}))
+	const datum = Object.fromEntries(wide.map((_, i) => [`s${i}`, i]))
+
+	it("keeps series order under the cap", () => {
+		const { visible, hiddenCount } = capTooltipRows(wide.slice(0, 3), datum, undefined)
+		expect(visible.map((row) => row.spec.label)).toEqual(["s0", "s1", "s2"])
+		expect(hiddenCount).toBe(0)
+	})
+
+	it("keeps the largest values plus the highlighted series past the cap", () => {
+		const { visible, hiddenCount } = capTooltipRows(wide, datum, "s0")
+		expect(visible).toHaveLength(12)
+		expect(visible[0]?.spec.label).toBe("s19")
+		expect(visible.at(-1)?.spec.label).toBe("s0")
+		expect(hiddenCount).toBe(8)
 	})
 })
