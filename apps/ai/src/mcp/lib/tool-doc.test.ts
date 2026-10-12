@@ -9,7 +9,8 @@ describe("renderToolDoc", () => {
 				["Time range", "a to b"],
 				["Service", undefined],
 			],
-			notices: ["`servce` is not a parameter"],
+			warnings: ["`servce` is not a parameter"],
+			notices: ["Window narrowed"],
 			blocks: [doc.table(["Error", "Count"], [["Boom | pipe", "3"]])],
 			truncation: {
 				shown: 1,
@@ -22,8 +23,9 @@ describe("renderToolDoc", () => {
 		expect(text).toBe(
 			[
 				"## Errors by Type",
+				"Warning: `servce` is not a parameter",
 				"Time range: a to b",
-				"Note: `servce` is not a parameter",
+				"Note: Window narrowed",
 				"| Error | Count |\n|---|---|\n| Boom \\| pipe | 3 |",
 				"Showing 1 of 9 error types. Next page: `find_errors offset=1`: the next page",
 				'Next:\n- `error_detail fingerprint="123"`: sample traces',
