@@ -109,9 +109,13 @@ export function truncateCell(text: string, max = CELL_TRUNCATE_LENGTH): string {
 	return text.length > max ? `${text.slice(0, max)}…` : text
 }
 
+/** Text a spreadsheet would evaluate as a formula; numbers are exempt so negatives stay numeric. */
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/
+
 const csvField = (value: unknown): string => {
 	if (value === null || value === undefined) return ""
-	const text = formatCell(value)
+	const formatted = formatCell(value)
+	const text = typeof value === "string" && FORMULA_TRIGGER.test(formatted) ? `'${formatted}` : formatted
 	return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 

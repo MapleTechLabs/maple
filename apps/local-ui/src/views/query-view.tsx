@@ -73,7 +73,11 @@ export function QueryView() {
 		// A fresh id per submission: a remount must never be served a cached result for the same SQL.
 		setSubmitted({ sql: text, id: crypto.randomUUID() })
 	}
-	const cancel = () => void queryClient.cancelQueries({ queryKey: resultKey })
+	// Cancelling reverts a first fetch to pending with no data, so drop the submission too.
+	const cancel = () => {
+		void queryClient.cancelQueries({ queryKey: resultKey })
+		setSubmitted(null)
+	}
 	const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
 		if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
 			event.preventDefault()

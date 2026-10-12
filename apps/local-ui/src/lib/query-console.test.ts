@@ -50,6 +50,14 @@ describe("query console helpers", () => {
 		expect(csv).toBe('a,b\r\n"say ""hi""",\r\n"x,y",2\r\n')
 	})
 
+	it("neutralizes spreadsheet formulas in text but not negative numbers", () => {
+		const csv = toCsv([
+			{ a: '=HYPERLINK("x")', b: -5 },
+			{ a: "+1", b: "@cmd" },
+		])
+		expect(csv).toBe('a,b\r\n"\'=HYPERLINK(""x"")",-5\r\n\'+1,\'@cmd\r\n')
+	})
+
 	it("quotes table names only when needed", () => {
 		expect(quoteIdentifier("traces")).toBe("traces")
 		expect(quoteIdentifier("odd-name")).toBe("`odd-name`")
