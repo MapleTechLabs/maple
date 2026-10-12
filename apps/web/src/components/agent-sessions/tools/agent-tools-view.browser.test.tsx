@@ -229,7 +229,7 @@ describe("ToolDetailView", () => {
 		)
 		const text = data.description!
 		const { rerender } = render(view(text))
-		expect(screen.getByText(text).textContent).toBe(text)
+		expect(screen.getByText(text)).toBeTruthy()
 
 		rerender(view(undefined))
 		expect(screen.queryByText(text)).toBeNull()

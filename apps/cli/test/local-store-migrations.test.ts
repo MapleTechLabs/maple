@@ -1488,9 +1488,26 @@ describe("v10 -> v11 product events module", () => {
 		])
 		// The chain must reach v11 through this module and only this module.
 		const chain = resolveMigrationChain(LOCAL_SCHEMA_V10, CURRENT_LOCAL_SCHEMA)
-		expect(chain).toEqual(
-			localStoreMigrations.slice(localStoreMigrations.indexOf(v10ToV11ProductEventsModule!)),
-		)
+		expect(chain.map((migration) => migration.id)).toEqual([
+			"local-0010-to-0011-product-events",
+			"local-0011-to-0012-service-map-edge-quantiles",
+			"local-0012-to-0013-service-operations-discriminators",
+			"local-0013-to-0014-ai-trace-index",
+			"local-0014-to-0015-commit-sha-vcs-revision",
+			"local-0015-to-0016-ai-trace-index-filter-columns",
+			"local-0016-to-0017-audit-log",
+			"local-0017-to-0018-product-events-from-traces",
+			"local-0018-to-0019-ai-trace-index-usage-conventions",
+			"local-0019-to-0020-error-events-attribute-fallback",
+			"local-0020-to-0021-ai-trace-index-list-columns",
+			"local-0021-to-0022-ai-trace-index-tool-detail-columns",
+			"local-0022-to-0023-ai-crawler-requests",
+			"local-0023-to-0024-trace-facets-hourly",
+			"local-0024-to-0025-trace-facets-hourly-daily-partition",
+			"local-0025-to-0026-ai-trace-index-gateway-stamps",
+			"local-0026-to-0027-alert-checks-skip-reason",
+			"local-0027-to-0028-service-overview-spans-span-kind",
+		])
 		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V11)
 		// The dropped table is declared, and the backfilled ones say what they
 		// are rebuilt from.
