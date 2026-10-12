@@ -1,13 +1,16 @@
-# Isometric service map
+# Maple service map
 
-The service map is a factory drawn in isometric line art: every service is a
-machine, every call a belt. It serves both the lab and the live service map.
+The 3D service map is an autumn sugar-bush drawn in isometric line art: every
+service is a machine, every call a belt. The same scene serves the live service
+map and the lab (`/lab/service-map-3d`).
 
 ## Projection
 
 A locked 2:1 isometric orthographic camera (45° azimuth, about 30° elevation).
 The projection is part of the drawing, so the camera pans and zooms but never
-orbits. Left drag and one-finger drag pan; scroll and pinch zoom.
+orbits. Left drag and one-finger drag pan; scroll and pinch zoom. A press that
+moves more than `DRAG_TOLERANCE` is a pan, never a select. The camera frames the
+zones plus a 2.5 unit meadow margin.
 
 ## Drawing
 
@@ -15,65 +18,18 @@ orbits. Left drag and one-finger drag pan; scroll and pinch zoom.
   lightest, the two visible walls stepped down), then gets ink edges on top.
   No lights, shadows, tone mapping or sky.
 - Faces use polygon offset so ink never flickers into paper.
-- Paper `#f0f2ec` with a faint dot grid; ink `#2f4a3b`; kraft parcels with tape.
-  Dark mode inverts to ink paper with sage lines, keeping the same drawing.
+- Light: parchment paper, bark-brown ink, moss-on-soil zones, and maple red,
+  gold, rust and Maple amber accents. Dark is a night scene, not an inversion:
+  dark ink, lit mid-tone faces, lighter belt decks and warm lit windows
+  (`night` on the palette).
 - Dimmed parts fade toward the paper colour instead of using transparency.
+- Geometry is built once per mount and components are keyed on the inputs it
+  comes from, so live metrics remount rather than leak GPU buffers.
 
 ## Machines
 
-Machines are 2×2 crate modules (0.8 units each) with seams drawn per module.
-In Atlas, request volume adds storeys (1 to 4); Cascade uses two storeys.
-
-- Services: crate stack with a window per module, a louvred vent, drainpipe,
-  roof skylights, an air handler with antenna, and a chimney.
-- Databases: octagonal tank with storey bands, a ladder on the camera-facing
-  facet, a railed roof platform, and an outlet pipe with a valve wheel.
-- Queues and workers: loading dock with a roller bed, hazard kerb, steps, a
-  gantry crane with hook, and taped parcels on a pallet.
-- Edge / Cloudflare: gateway arch with vented posts, marker lights, road
-  markings, a striped barrier arm and a radar dish.
-- External: pitched-roof shed with a window, stovepipe, satellite dish and
-  crates by the door.
-
-Health is the painted door or hatch: teal healthy, hazard elevated, brick
-degraded. Service marks hang on the front wall. Selection paints the pad hazard.
-
-## Belts
-
-Routes are Manhattan belts on the ground plane with small rounded elbows.
-Narrow belts carry calls, wide belts touch a queue. Rails, rungs and the deck
-are one line draw and one mesh per belt. Errors tint the rails. Parcels are
-instanced cubes moved on the GPU (`factory-motion.ts`); count follows call
-rate and period follows route length and latency. Reduced motion and the pause
-control stop them.
-
-## Zones
-
-Atlas namespaces are low plinths; Cascade tiers are terraces that rise with
-dependency depth. HTML labels stay the accessible way to inspect every node.
-
-## Whimsy style
-
-A toolbar toggle switches between Drafted (above), Whimsy and Maple. Maple is
-the default, on the live service map and in the lab. Whimsy keeps the
-same geometry, projection and health doors, and changes only the dressing:
-
-- Storybook pastels on warm cream, drawn in plum ink. Each machine kind has its
-  own body tint (peach services, sky tanks, butter docks, lilac gateways, mint
-  sheds). Zones are soft grass green.
-- Parcels are gift-wrapped in pastel paper with white ribbons.
-- Chimneys puff smoke, tanks carry pinwheels, services fly pennants, gateways
-  hang bunting, doors get candy-striped awnings, sheds get flower boxes.
-- Faceted lollipop and blossom trees mark zone corners. Box clouds drift along
-  the far horizon, behind the map, so they never cover a machine.
-- All decorative motion follows the traffic toggle and reduced motion. Nothing
-  pulses.
-
-## Maple style
-
-An autumn sugar-bush in Maple's own colours: parchment paper, bark-brown ink,
-moss on soil for zones, and maple red, gold, rust and Maple amber for accents.
-Dark mode is a blue-green night forest with warm lantern glow.
+Machines are 2×2 modules (0.8 units each). In Atlas, request volume adds storeys
+(1 to 4); Cascade uses two storeys.
 
 - Services are timber cabins: stone footing, shutters, lit windows, a porch
   with a shingled canopy and lantern, a stone chimney with smoke.
@@ -83,51 +39,57 @@ Dark mode is a blue-green night forest with warm lantern glow.
 - Gateways are open timber gates: four posts, a header board carrying the
   health plates and badge, a cedar-shake roof and a leaf garland.
 - External services are log cabins with notched corners and a stone chimney.
-- Belts are plank boardwalks (narrow calls read as flumes) carrying wooden
-  crates and sap buckets. Labels are wooden signs and hanging tags with their
-  own `sign`/`signInk` colours so they read in both themes.
-- The forest (`maple-scenery*.tsx`) is one merged drawing: maples, birches,
-  pines, undergrowth, a creek with a footbridge, a fence, a deer, a fox and
-  songbirds. Clearances are listed under "No box" below; it thins toward its
-  outer edge. Leaves fall and drift; dark mode adds steady fireflies. All motion
-  stops with the traffic toggle, and nothing pulses or blinks.
 
-### Maple shows live state
+Each machine is seeded by its node id: roof and shutter colour, chimney side,
+porch or stone steps, side windows, vat hoops, gate sign shape, and one or two
+yard props (vegetable patch, woodpile, rain barrel, bench, mailbox, washing
+line, pumpkins, cart).
 
+## Live state
+
+- Health is the painted door, hatch or header plate: teal healthy, amber
+  elevated, brick degraded.
 - Smoke follows request volume: none at 0 rps, a lazy wisp when nearly idle,
   up to five quick puffs for the busiest services.
 - Elevated error rate: a worker with a wrench stands at the machine. Degraded:
   windows and lantern go dark, smoke turns sooty, a red flag goes up and cabin
-  windows are boarded. The health door colour stays the primary signal.
+  windows are boarded.
 - Busy docks get a woodcutter carrying a log.
 - Selection: a rope border on lantern posts around the pad; the selected
   service's belts turn amber and everything else fades to a pencil sketch.
-- Failing belts show split planks in the error colour.
-- Cascade terraces are dry-stone walls with timber steps between levels.
-- Forest life: ducks paddle the creek, birds glide behind the map, a campfire
-  smokes in the back-left clearing, and the deer turns its head.
 
-### No box
+## Belts
 
-The Maple world follows the zones, not their bounding box. A distance field to
-the union of zone rectangles plus seeded noise drives planting
-(`maple-scenery-field.tsx`, `maple-scenery-plan.tsx`): groves hug some zones,
-meadow bays open by others, and trees thin into the paper past an irregular
-meadow edge. Clearances, from `maple-scenery-plan.tsx`: small planting
-(grass, bushes, rocks, saplings) keeps 0.35 outside every zone and 0.75 from
-every belt sample; full trees need 0.9 from zones and 1.1 from belts; landforms
-(creek, hill, lake, fence) keep 0.9 from zones and 0.75 from belts. Plans
-rebuild only when zone or belt geometry changes. Atlas zones are wobbly moss mats with grass
-along the edge; the creek meanders along the meadow and widens into a pond.
+Routes are Manhattan belts on the ground plane with small rounded elbows,
+drawn as plank boardwalks (narrow calls read as flumes) over worn-earth trails.
+Failing belts show split planks in the error colour; a few long boardwalks get
+a covered span or a lantern post. Cargo is instanced and moved on the GPU
+(`factory-motion.ts`): 3 to 44 pieces per belt by length and call rate, a mix
+of slatted crates, sap buckets and literal logs. Period follows route length and
+latency. Reduced motion and the pause control stop all motion; nothing pulses
+or blinks.
 
-### Landforms and individuality
+## Zones and labels
 
-The meadow is lopsided: seeded lobes and bays, a rocky outcrop on the far side
-(irregular steps, a stone face toward the clearing, a lookout bench), a lake
-with reeds, lily pads and a dock feeding the creek, low grassy mounds, dirt
-footpaths and creek stepping stones (`maple-scenery-land.tsx`). Belts over the
-meadow sit on worn-earth trails, and a few long boardwalks get a covered span
-or a lantern post. Each machine is seeded by its node id: roof and shutter
-colour, chimney side, porch or stone steps, side windows, vat hoops, gate sign
-shape, and one or two yard props (vegetable patch, woodpile, rain barrel,
-bench, mailbox, washing line, pumpkins, cart).
+Atlas zones are wobbly moss mats with grass along the edge; Cascade tiers are
+dry-stone terraces with timber steps between levels. HTML labels are wooden
+signs and hanging tags with their own `sign`/`signInk` colours, and stay the
+accessible way to inspect every node.
+
+## Forest
+
+The world follows the zones, not their bounding box. A distance field to the
+union of zone rectangles plus seeded noise drives the meadow outline and
+planting (`maple-scenery-field.tsx`, `maple-scenery-plan.tsx`): groves hug some
+zones, meadow bays open by others, and trees thin into the paper past an
+irregular edge. Clearances: small planting (grass, bushes, rocks, saplings)
+keeps 0.35 outside every zone and 0.75 from every belt sample; full trees need
+0.9 from zones and 1.1 from belts; landforms keep 0.9 from zones and 0.75 from
+belts. Plans rebuild only when zone or belt geometry changes.
+
+The meadow is lopsided, with a rocky outcrop on the far side, a lake with reeds,
+lily pads and a dock feeding a meandering creek, low mounds, footpaths, a
+campfire and a fence (`maple-scenery-land.tsx`). The forest is one merged
+drawing: maples, birches, pines, undergrowth, a deer, a fox, songbirds, ducks
+on the lake and birds gliding behind the map. Leaves fall and drift; dark mode
+adds steady fireflies.

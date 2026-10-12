@@ -17,32 +17,24 @@ interface TransportProps {
 
 const parcelArt = new Map<string, THREE.CanvasTexture>()
 
-/** A carton face with an ink border, shared by every parcel. Drafted cartons are
- * kraft with tape, Maple ships slatted wooden crates, and Whimsy cartons are
- * white so each instance tints its own wrap. */
+/** A slatted wooden crate face with an ink border, shared by every crate. */
 function parcelTexture(palette: InkPalette) {
-	const key = `${palette.style}:${palette.kraft}:${palette.ink}`
+	const key = `${palette.kraft}:${palette.ink}`
 	const cached = parcelArt.get(key)
 	if (cached) return cached
 	const canvas = document.createElement("canvas")
 	canvas.width = canvas.height = 64
 	const context = canvas.getContext("2d")
 	if (context) {
-		context.fillStyle = palette.style === "whimsy" ? "#ffffff" : palette.kraft
+		context.fillStyle = palette.kraft
 		context.fillRect(0, 0, 64, 64)
-		if (palette.style === "drafted") {
-			context.fillStyle = palette.tape
-			context.fillRect(26, 0, 12, 64)
-		}
-		if (palette.style === "maple") {
-			context.strokeStyle = palette.ink
-			context.lineWidth = 2.5
-			for (const y of [21, 43]) {
-				context.beginPath()
-				context.moveTo(0, y)
-				context.lineTo(64, y)
-				context.stroke()
-			}
+		context.strokeStyle = palette.ink
+		context.lineWidth = 2.5
+		for (const y of [21, 43]) {
+			context.beginPath()
+			context.moveTo(0, y)
+			context.lineTo(64, y)
+			context.stroke()
 		}
 		context.strokeStyle = palette.ink
 		context.lineWidth = 5
@@ -55,44 +47,7 @@ function parcelTexture(palette: InkPalette) {
 	return texture
 }
 
-/** Rails, rungs and direction chevrons: the whole belt drawing is one line draw. */
-function beltLines(curve: THREE.Curve<THREE.Vector3>, width: number) {
-	const points: number[] = []
-	const length = curve.getLength()
-	const frame = (t: number) => {
-		const point = curve.getPointAt(t)
-		const tangent = curve.getTangentAt(t)
-		const side = new THREE.Vector3(tangent.z, 0, -tangent.x).normalize()
-		return { point: point.setY(point.y + 0.004), tangent, side }
-	}
-	const samples = Math.max(24, Math.ceil(length / 0.12))
-	for (const offset of [-width / 2, width / 2])
-		for (let i = 0; i < samples; i++) {
-			const a = frame(i / samples),
-				b = frame((i + 1) / samples)
-			points.push(
-				...a.point.addScaledVector(a.side, offset).toArray(),
-				...b.point.addScaledVector(b.side, offset).toArray(),
-			)
-		}
-	const rungs = Math.floor(length / 0.2)
-	for (let i = 1; i < rungs; i++) {
-		const { point, side } = frame(i / rungs)
-		points.push(
-			...point
-				.clone()
-				.addScaledVector(side, -width / 2)
-				.toArray(),
-			...point
-				.clone()
-				.addScaledVector(side, width / 2)
-				.toArray(),
-		)
-	}
-	return points
-}
-
-/** Maple belts are timber: plank seams across the deck, stringers along it and
+/** Belts are timber boardwalks: plank seams across the deck, stringers along it and
  * posts every so often. Flumes also get a raised side wall. One line draw; each
  * vertex carries a weight (1 timber, 0 plank seam) that becomes its colour. */
 function boardwalkLines(curve: THREE.Curve<THREE.Vector3>, width: number, flume: boolean, broken: boolean) {
@@ -262,12 +217,9 @@ export function cargoCount(length: number, callsPerSecond: number) {
 	return Math.round(THREE.MathUtils.clamp(length * (0.55 + busy * 0.9), 3, 44))
 }
 
-/** Which cargo rides in each slot. Logs ride every style (they are, after all,
- * logs); Maple ships more of them and adds sap buckets. */
-function cargoKind(index: number, style: InkPalette["style"]) {
-	if (style === "maple")
-		return index % 5 === 1 || index % 5 === 3 ? "log" : index % 5 === 4 ? "bucket" : "crate"
-	return index % 4 === 2 ? "log" : "crate"
+/** Which cargo rides in each slot: crates, with logs and sap buckets mixed in. */
+function cargoKind(index: number) {
+	return index % 5 === 1 || index % 5 === 3 ? "log" : index % 5 === 4 ? "bucket" : "crate"
 }
 
 function Parcels({
@@ -288,9 +240,9 @@ function Parcels({
 	const { crates, logs, buckets } = useMemo(() => {
 		const all = [...motion.phases]
 		const of = (kind: ReturnType<typeof cargoKind>) =>
-			Float32Array.from(all.filter((_, i) => cargoKind(i, palette.style) === kind))
+			Float32Array.from(all.filter((_, i) => cargoKind(i) === kind))
 		return { crates: of("crate"), logs: of("log"), buckets: of("bucket") }
-	}, [motion.phases, palette.style])
+	}, [motion.phases])
 	const box = useParcelGeometry([size, size, size], crates)
 	const bucket = useBucketGeometry(size, buckets)
 	const log = useLogGeometry(size, size / 2, logs)
@@ -326,37 +278,11 @@ function Parcels({
 		bucketPaint.forEach((material) => material.dispose())
 		logPaint.forEach((material) => material.dispose())
 	})
-	// Gift ribbons wrap both ways round the box and ride the same phases.
-	const ribbonX = useParcelGeometry([size * 1.04, size * 1.04, size * 0.22], crates)
-	const ribbonZ = useParcelGeometry([size * 0.22, size * 1.04, size * 1.04], crates)
 	return (
 		<group key={count}>
-			<instancedMesh
-				args={[box, undefined, crates.length]}
-				frustumCulled={false}
-				ref={(mesh) => {
-					if (!mesh || palette.style !== "whimsy") return
-					const color = new THREE.Color()
-					for (let i = 0; i < crates.length; i++)
-						mesh.setColorAt(
-							i,
-							color.set(palette.gifts[(i * 3) % palette.gifts.length] ?? palette.kraft),
-						)
-					if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-				}}
-			>
+			<instancedMesh args={[box, undefined, crates.length]} frustumCulled={false}>
 				<meshBasicMaterial map={parcelTexture(palette)} vertexColors {...motion.material} />
 			</instancedMesh>
-			{palette.style === "whimsy" &&
-				[ribbonX, ribbonZ].map((ribbon) => (
-					<instancedMesh
-						key={ribbon.uuid}
-						args={[ribbon, undefined, crates.length]}
-						frustumCulled={false}
-					>
-						<meshBasicMaterial color={palette.tape} vertexColors {...motion.material} />
-					</instancedMesh>
-				))}
 			{buckets.length > 0 && (
 				<instancedMesh args={[bucket, bucketPaint, buckets.length]} frustumCulled={false} />
 			)}
@@ -483,36 +409,28 @@ export function linkSeed(id: string) {
 
 export function FactoryTransport({ link, running, active, dimmed, palette }: TransportProps) {
 	const width = beltWidth(link)
-	// Rare seeded dressing keeps long Maple boardwalks from repeating.
+	// Rare seeded dressing keeps long boardwalks from repeating.
 	const seed = linkSeed(link.id)
 	const deck = useMemo(() => beltGeometry(link.curve, width), [link.curve, width])
-	const timber = palette.style === "maple"
 	const broken = errorRateLevel(link.edge.errorRate) !== "neutral"
 	const lines = useMemo(() => {
 		const geometry = new THREE.BufferGeometry()
-		if (!timber) {
-			geometry.setAttribute(
-				"position",
-				new THREE.Float32BufferAttribute(beltLines(link.curve, width), 3),
-			)
-			return geometry
-		}
 		const { points, weights } = boardwalkLines(link.curve, width, link.kind === "pipe", broken)
 		geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3))
 		geometry.setAttribute("color", new THREE.Float32BufferAttribute(weights.length * 3, 3))
 		geometry.userData.weights = weights
 		return geometry
-	}, [link.curve, link.kind, width, timber, broken])
+	}, [link.curve, link.kind, width, broken])
 	useMountEffect(() => () => {
 		deck.dispose()
 		lines.dispose()
 	})
 	const ink = beltInk(link.edge.errorRate, palette)
 	const recede = (color: string) => (dimmed ? fade(color, palette.paper, 0.8) : color)
-	// Maple lights a selected service's boardwalks in warm timber with amber rails;
+	// A selected service's boardwalks light up in warm timber with amber rails;
 	// error tints still win over the amber.
-	const deckColor = recede(active ? (timber ? palette.kraft : palette.tape) : palette.belt)
-	const railColor = timber && active && ink === palette.ink ? palette.selected : ink
+	const deckColor = recede(active ? palette.kraft : palette.belt)
+	const railColor = active && ink === palette.ink ? palette.selected : ink
 	return (
 		<group>
 			<mesh geometry={deck}>
@@ -540,9 +458,9 @@ export function FactoryTransport({ link, running, active, dimmed, palette }: Tra
 					colors.needsUpdate = true
 				}}
 			>
-				<lineBasicMaterial color={timber ? "#ffffff" : recede(ink)} vertexColors={timber} />
+				<lineBasicMaterial color="#ffffff" vertexColors />
 			</lineSegments>
-			{timber && seed % 6 === 0 && link.curve.getLength() > 7 && (
+			{seed % 6 === 0 && link.curve.getLength() > 7 && (
 				<CoveredSpan
 					curve={link.curve}
 					width={width}
@@ -550,7 +468,7 @@ export function FactoryTransport({ link, running, active, dimmed, palette }: Tra
 					roof={recede(palette.gifts[0] ?? palette.trunk)}
 				/>
 			)}
-			{timber && seed % 5 === 2 && (
+			{seed % 5 === 2 && (
 				<LanternPost link={link} width={width} seed={seed} palette={palette} recede={recede} />
 			)}
 			{link.edge.callsPerSecond > 0 && !dimmed && (

@@ -5,11 +5,9 @@ import { errorRateLevel } from "@maple/ui/lib/error-rate"
  * three fixed tones, outlined in ink. Health is a small signal on each machine. */
 export const GROUND_Y = -0.02
 
-export type MapStyle = "drafted" | "whimsy" | "maple"
 export type MachineKind = "processor" | "tank" | "loader" | "gateway" | "shed"
 
 export interface InkPalette {
-	style: MapStyle
 	/** Dark theme: windows and lamps read as lit against a night scene. */
 	night: boolean
 	paper: string
@@ -23,9 +21,9 @@ export interface InkPalette {
 	kraft: string
 	tape: string
 	selected: string
-	/** Body paint per machine kind. Drafted keeps every machine paper-white. */
+	/** Body paint per machine kind. */
 	tint: Record<MachineKind, string>
-	/** Accent colours: gift wrap in Whimsy, autumn leaves in Maple; Drafted ships plain kraft. */
+	/** Autumn accent colours: maple red, gold, rust and amber. */
 	gifts: readonly string[]
 	foliage: readonly string[]
 	/** Evergreens that stay green through the Maple autumn. */
@@ -54,150 +52,15 @@ export interface MachineFinish {
 	tape: string
 	glass: string
 	hazard: string
-	style: MapStyle
 	gifts: readonly string[]
 	/** Decorative motion (smoke, pinwheels) follows the traffic toggle. */
 	running: boolean
 }
 
-const plain = (face: string) => ({ processor: face, tank: face, loader: face, gateway: face, shed: face })
-
-const DRAFTED = {
-	light: {
-		style: "drafted",
-		night: false,
-		paper: "#f0f2ec",
-		dots: "#2f4a3b24",
-		face: "#fbfcf8",
-		plinth: "#e4e8dd",
-		pad: "#e4e8dd",
-		ink: "#2f4a3b",
-		belt: "#e9ece4",
-		kraft: "#d8ad6c",
-		tape: "#f6eedc",
-		selected: "#d9a21b",
-		tint: plain("#fbfcf8"),
-		gifts: ["#d8ad6c"],
-		foliage: [],
-		trunk: "#94703c",
-		evergreen: "#fbfcf8",
-		cloud: "#fbfcf8",
-		stone: "#fbfcf8",
-		iron: "#2f4a3b",
-		soil: "#e4e8dd",
-		birch: "#fbfcf8",
-		water: "#e9ece4",
-		glow: "#d9a21b",
-		sign: "#f6eedc",
-		signInk: "#2f4a3b",
-	},
-	dark: {
-		style: "drafted",
-		night: true,
-		paper: "#131916",
-		dots: "#cfe0d414",
-		face: "#5b6e62",
-		plinth: "#1f2923",
-		pad: "#2b3730",
-		ink: "#0c110e",
-		belt: "#3a4740",
-		kraft: "#c99a5b",
-		tape: "#e8dcc0",
-		selected: "#e0a92a",
-		tint: plain("#5b6e62"),
-		gifts: ["#b88d52"],
-		foliage: [],
-		trunk: "#8a6a3e",
-		evergreen: "#5b6e62",
-		cloud: "#5b6e62",
-		stone: "#55665b",
-		iron: "#2a332e",
-		soil: "#1d2520",
-		birch: "#5b6e62",
-		water: "#3a4740",
-		glow: "#ffc65c",
-		sign: "#2b3530",
-		signInk: "#dfe8e1",
-	},
-} satisfies Record<"light" | "dark", InkPalette>
-
-/** Storybook pastels on warm cream, drawn in plum ink. */
-const WHIMSY = {
-	light: {
-		style: "whimsy",
-		night: false,
-		paper: "#fbf3e4",
-		dots: "#4a3b5c1f",
-		face: "#fffaf1",
-		plinth: "#dcefc9",
-		pad: "#f4e4cf",
-		ink: "#4a3b5c",
-		belt: "#f4e4cf",
-		kraft: "#e8b07a",
-		tape: "#fff6de",
-		selected: "#f2b632",
-		tint: {
-			processor: "#ffd9cc",
-			tank: "#cce9f6",
-			loader: "#fde9ad",
-			gateway: "#ddd3f7",
-			shed: "#d0eedb",
-		},
-		gifts: ["#ff9fb2", "#9fd3f5", "#ffd27f", "#b6e3a1", "#c9b5ff"],
-		foliage: ["#9fd39a", "#b5e2a0", "#86c79a", "#f7b9cb"],
-		trunk: "#b07d54",
-		evergreen: "#86c79a",
-		cloud: "#ffffff",
-		stone: "#ece6f2",
-		iron: "#4a3b5c",
-		soil: "#ecd0b0",
-		birch: "#ffffff",
-		water: "#a9dcf0",
-		glow: "#ffe08a",
-		sign: "#fff6de",
-		signInk: "#4a3b5c",
-	},
-	dark: {
-		style: "whimsy",
-		night: true,
-		paper: "#1e1a29",
-		dots: "#e9dcff1c",
-		face: "#5a4f78",
-		plinth: "#2c4436",
-		pad: "#3a3352",
-		ink: "#140f1c",
-		belt: "#463d63",
-		kraft: "#b9895c",
-		tape: "#efe2c4",
-		selected: "#f2b632",
-		tint: {
-			processor: "#a07580",
-			tank: "#5f86a0",
-			loader: "#a08c55",
-			gateway: "#7c70a8",
-			shed: "#62917a",
-		},
-		gifts: ["#d97a8f", "#6fa6c8", "#d6a55a", "#86b574", "#9a86d1"],
-		foliage: ["#5f9a62", "#78a867", "#4f8a63", "#c27f96"],
-		trunk: "#8a6043",
-		evergreen: "#4f8a63",
-		cloud: "#5c5280",
-		stone: "#5c5280",
-		iron: "#140f1c",
-		soil: "#5a4636",
-		birch: "#d8d0e8",
-		water: "#3d6a80",
-		glow: "#ffd36b",
-		sign: "#3a3250",
-		signInk: "#f6efff",
-	},
-} satisfies Record<"light" | "dark", InkPalette>
-
 /** An autumn sugar-bush: timber cabins on moss, maple reds and Maple's own amber,
  * bark ink. Night swaps parchment for a blue-green forest lit by warm windows. */
 const MAPLE = {
 	light: {
-		style: "maple",
 		night: false,
 		paper: "#f4eddc",
 		dots: "#4a35251c",
@@ -231,7 +94,6 @@ const MAPLE = {
 		signInk: "#4a3525",
 	},
 	dark: {
-		style: "maple",
 		night: true,
 		paper: "#111a1a",
 		dots: "#cfe3d816",
@@ -266,10 +128,8 @@ const MAPLE = {
 	},
 } satisfies Record<"light" | "dark", InkPalette>
 
-const PALETTES = { drafted: DRAFTED, whimsy: WHIMSY, maple: MAPLE } as const
-
-export function mapPalette(style: MapStyle, dark: boolean): InkPalette {
-	return PALETTES[style][dark ? "dark" : "light"]
+export function mapPalette(dark: boolean): InkPalette {
+	return MAPLE[dark ? "dark" : "light"]
 }
 
 /** Face tones for a camera on the (+x, +y, +z) diagonal: roofs stay lit, the

@@ -2,56 +2,46 @@ import { memo, useMemo } from "react"
 import * as THREE from "three"
 import type { Node3D } from "./types"
 import type { Vec3 } from "./types"
-import { fade, type InkPalette, type MachineKind, type MapStyle } from "./appearance"
+import { fade, type InkPalette, type MachineKind } from "./appearance"
 import { health, HEALTH_COLOR, type SpatialView } from "./spatial-layout"
 import { DRAG_TOLERANCE } from "./scene-input"
 import { InkBox, InkLines, InkPlate, InkSolid } from "./factory-primitives"
-import {
-	Awning,
-	Bunting,
-	FlowerBox,
-	Lantern,
-	LogPile,
-	MapleTap,
-	Pennant,
-	Pinwheel,
-	Smoke,
-	Toadstools,
-} from "./factory-decor"
+import { Lantern, LogPile, MapleTap, Toadstools } from "./factory-decor"
 import { FactoryBadge } from "./factory-brand"
 import { resolveMachineBadge } from "./factory-badge"
 import {
+	BoardedWindow,
 	ChoppingStump,
+	DoorSteps,
 	Eaves,
+	FlowerBox,
 	GableRoof,
 	GATE_MARK,
 	InkParts,
-	BoardedWindow,
-	DoorSteps,
 	LogWalls,
 	MapleGate,
 	MapleState,
-	seedOf,
-	variant,
-	Yard,
 	type MapleFinish,
 	type Pane,
 	type Part,
 	Porch,
+	seedOf,
 	StoneChimney,
 	StoneCourse,
 	Stovepipe,
 	SugarRoof,
+	variant,
 	VatHoops,
 	WindowDressing,
 	WoodSled,
+	Yard,
 } from "./maple-props"
 
 /** One stacked crate module. Machines are 2×2 modules wide and grow in whole storeys. */
 export const MODULE = 0.8
 const HALF = MODULE
 
-/** Maple props need stone, iron and timber colours beyond the shared finish. */
+/** Machines need stone, iron and timber colours beyond the shared finish. */
 type Finish = MapleFinish
 
 /** Request volume as 0 to 1 on a log scale (0.1 rps to 1000 rps); exactly idle stays 0. */
@@ -66,7 +56,7 @@ export function machineStoreys(node: Pick<Node3D, "throughput">, view: SpatialVi
 	return Math.min(4, 1 + Math.floor(Math.log10(Math.max(1, node.throughput)) * 0.9))
 }
 
-/** The Maple cabins' stone footing, which lifts their doors onto a porch. */
+/** The cabins' stone footing, which lifts their doors onto a porch. */
 const FOOTING = 0.14
 
 const range = (count: number) => Array.from({ length: Math.max(0, count) }, (_, i) => i)
@@ -88,15 +78,6 @@ function mullion(center: Vec3, normal: "x" | "z", width: number, height: number)
 	return normal === "x"
 		? [x, y - height / 2, z, x, y + height / 2, z, x, y, z - width / 2, x, y, z + width / 2]
 		: [x, y - height / 2, z, x, y + height / 2, z, x - width / 2, y, z, x + width / 2, y, z]
-}
-
-/** A closed polygon of `sides` around the y axis, as line pairs. */
-function ring(radius: number, y: number, sides: number, offset = 0) {
-	return range(sides).flatMap((i) => {
-		const a = offset + (i * Math.PI * 2) / sides,
-			b = offset + ((i + 1) * Math.PI * 2) / sides
-		return [radius * Math.sin(a), y, radius * Math.cos(a), radius * Math.sin(b), y, radius * Math.cos(b)]
-	})
 }
 
 /** Clapboard siding on the two visible walls of a 2×2-module body. */
@@ -151,29 +132,14 @@ function Window({ center, normal, finish }: { center: Vec3; normal: "x" | "z"; f
 	)
 }
 
-function Chimney({ top, finish }: { top: number; finish: Finish }) {
-	if (finish.style === "maple")
-		return (
-			<StoneChimney
-				base={[variant(finish.seed, 3, 2) === 0 ? -0.42 : 0.42, top, -0.42]}
-				height={0.6}
-				width={0.26}
-				finish={finish}
-			/>
-		)
-	return (
-		<group position={[-0.42, top, -0.42]}>
-			<InkBox size={[0.22, 0.62, 0.22]} position={[0, 0.31, 0]} color={finish.face} ink={finish.ink} />
-			<InkBox size={[0.32, 0.08, 0.32]} position={[0, 0.66, 0]} color={finish.face} ink={finish.ink} />
-			<InkLines points={[-0.111, 0.42, 0.06, 0.111, 0.42, 0.06]} ink={finish.ink} />
-			{finish.style !== "drafted" && <Smoke position={[0, 0.78, 0]} finish={finish} />}
-		</group>
-	)
-}
-
-/** Health is the painted door on the machine's lit side wall. */
+/** Health is the painted door on the machine's lit side wall, reached by a porch or steps. */
 function Door({ position, finish }: { position: Vec3; finish: Finish }) {
 	const [x, y, z] = position
+	// Lantern panes are gifts[2]; a degraded machine's lamp is out.
+	const lamp =
+		finish.trouble === "degraded"
+			? { ...finish, gifts: finish.gifts.map((c, i) => (i === 2 ? finish.iron : c)) }
+			: finish
 	return (
 		<group>
 			<InkPlate
@@ -187,68 +153,12 @@ function Door({ position, finish }: { position: Vec3; finish: Finish }) {
 				points={[x, y - 0.18, z, x, y + 0.18, z, x, y + 0.02, z - 0.13, x, y - 0.02, z - 0.13]}
 				ink={finish.ink}
 			/>
-			{finish.style === "maple" ? (
-				<>
-					{variant(finish.seed, 4, 3) === 0 ? (
-						<DoorSteps door={position} finish={finish} />
-					) : (
-						<Porch door={position} finish={finish} />
-					)}
-					{/* Lantern panes are gifts[2]; a degraded machine's lamp is out. */}
-					<Lantern
-						position={[x, y, z - 0.33]}
-						finish={
-							finish.trouble === "degraded"
-								? {
-										...finish,
-										gifts: finish.gifts.map((c, i) => (i === 2 ? finish.iron : c)),
-									}
-								: finish
-						}
-					/>
-				</>
+			{variant(finish.seed, 4, 3) === 0 ? (
+				<DoorSteps door={position} finish={finish} />
 			) : (
-				<>
-					{finish.style === "whimsy" ? (
-						<Awning position={position} finish={finish} />
-					) : (
-						<InkBox
-							size={[0.12, 0.04, 0.54]}
-							position={[x + 0.06, y + 0.21, z]}
-							color={finish.face}
-							ink={finish.ink}
-						/>
-					)}
-					<InkBox
-						size={[0.16, 0.04, 0.5]}
-						position={[x + 0.08, -0.04, z]}
-						color={finish.face}
-						ink={finish.ink}
-					/>
-				</>
+				<Porch door={position} finish={finish} />
 			)}
-		</group>
-	)
-}
-
-function AirHandler({ top, finish }: { top: number; finish: Finish }) {
-	// The stovepipe takes whichever back corner the chimney left free.
-	if (finish.style === "maple")
-		return (
-			<Stovepipe
-				position={[variant(finish.seed, 3, 2) === 0 ? 0.36 : -0.38, top, -0.38]}
-				finish={finish}
-			/>
-		)
-	return (
-		<group position={[0.36, top, -0.38]}>
-			<InkBox size={[0.46, 0.26, 0.36]} position={[0, 0.13, 0]} color={finish.face} ink={finish.ink} />
-			<InkLines points={louvre([0.231, 0.13, 0], "x", 0.28, 0.18, 3)} ink={finish.ink} />
-			<InkLines points={ring(0.11, 0.261, 10)} ink={finish.ink} />
-			<InkLines
-				points={[-0.16, 0.26, -0.1, -0.16, 0.72, -0.1, -0.24, 0.62, -0.1, -0.08, 0.62, -0.1]}
-				ink={finish.ink}
-			/>
+			<Lantern position={[x, y, z - 0.33]} finish={lamp} />
 		</group>
 	)
 }
@@ -256,8 +166,9 @@ function AirHandler({ top, finish }: { top: number; finish: Finish }) {
 function Processor({ height, finish }: { height: number; finish: Finish }) {
 	const storeys = Math.round(height / MODULE)
 	const badgeStorey = Math.min(storeys, 2) - 1
-	const maple = finish.style === "maple"
-	const sides = maple ? variant(finish.seed, 9, 3) : 0
+	// The chimney and stovepipe swap back corners per cabin.
+	const flip = variant(finish.seed, 3, 2) === 1
+	const sides = variant(finish.seed, 9, 3)
 	// The badge storey skips its left front window; the ground storey's side wall has the door.
 	const panes = range(storeys).flatMap((storey) => {
 		const y = storey * MODULE + MODULE * 0.55
@@ -267,10 +178,11 @@ function Processor({ height, finish }: { height: number; finish: Finish }) {
 			...(storey !== badgeStorey ? [pane([-0.4, y, HALF + 0.002], "z")] : []),
 			...(storey > 0 ? [pane([HALF + 0.002, y, 0.4], "x"), pane([HALF + 0.002, y, -0.4], "x")] : []),
 		].filter(
-			// Maple cabins vary the side wall: both windows, or only the front or back one.
+			// Cabins vary the side wall: both windows, or only the front or back one.
 			({ center, normal }) => normal === "z" || sides === 0 || (sides === 1) === center[2] > 0,
 		)
 	})
+	const front = panes[0]
 	return (
 		<group>
 			<InkBox
@@ -288,22 +200,15 @@ function Processor({ height, finish }: { height: number; finish: Finish }) {
 					finish={finish}
 				/>
 			))}
-			{maple && (
-				<>
-					<StoneCourse half={HALF} height={FOOTING} finish={finish} />
-					<WindowDressing windows={panes} finish={finish} />
-					{finish.trouble === "degraded" && panes[0] && (
-						<BoardedWindow center={panes[0].center} finish={finish} />
-					)}
-					{variant(finish.seed, 6, 2) === 1 && panes[0] && (
-						<FlowerBox
-							position={[panes[0].center[0], panes[0].center[1] - 0.2, HALF]}
-							finish={finish}
-						/>
-					)}
-					<Eaves half={HALF} top={height} finish={finish} />
-				</>
+			<StoneCourse half={HALF} height={FOOTING} finish={finish} />
+			<WindowDressing windows={panes} finish={finish} />
+			{finish.trouble === "degraded" && front && (
+				<BoardedWindow center={front.center} finish={finish} />
 			)}
+			{variant(finish.seed, 6, 2) === 1 && front && (
+				<FlowerBox position={[front.center[0], front.center[1] - 0.2, HALF]} finish={finish} />
+			)}
+			<Eaves half={HALF} top={height} finish={finish} />
 			<InkPlate
 				size={[0.42, 0.3]}
 				position={[HALF + 0.002, 0.42, -0.4]}
@@ -318,44 +223,24 @@ function Processor({ height, finish }: { height: number; finish: Finish }) {
 				color={finish.face}
 				ink={finish.ink}
 			/>
-			<InkPlate
-				size={[0.3, 0.3]}
-				position={[0.4, height + 0.003, 0.4]}
-				normal="y"
-				color={finish.glass}
-				ink={finish.ink}
+			<StoneChimney
+				base={[flip ? 0.42 : -0.42, height, -0.42]}
+				height={0.6}
+				width={0.26}
+				finish={finish}
 			/>
-			<InkPlate
-				size={[0.3, 0.3]}
-				position={[-0.4, height + 0.003, 0.4]}
-				normal="y"
-				color={finish.glass}
-				ink={finish.ink}
-			/>
-			<AirHandler top={height} finish={finish} />
-			<Chimney top={height} finish={finish} />
-			<Door position={[HALF + 0.002, maple ? FOOTING + 0.18 : 0.2, 0.36]} finish={finish} />
-			{maple && <InkLines points={clapboard(height)} ink={finish.ink} />}
-			{finish.style === "whimsy" && (
-				<Pennant
-					position={[0.7, height, 0.7]}
-					color={finish.gifts[1] ?? finish.signal}
-					finish={finish}
-				/>
-			)}
+			<Stovepipe position={[flip ? -0.38 : 0.36, height, -0.38]} finish={finish} />
+			<Door position={[HALF + 0.002, FOOTING + 0.18, 0.36]} finish={finish} />
+			<InkLines points={clapboard(height)} ink={finish.ink} />
 		</group>
 	)
 }
 
 function StorageTank({ height, finish }: { height: number; finish: Finish }) {
 	const body = useMemo(() => new THREE.CylinderGeometry(0.82, 0.82, height, 8), [height])
-	const maple = finish.style === "maple"
-	// Maple swaps the cap for a shingled roof; only build what gets mounted, since InkSolid disposes it.
-	const cap = useMemo(() => (maple ? null : new THREE.CylinderGeometry(0.42, 0.82, 0.3, 8)), [maple])
-	const top = height + 0.3
 	const hoops = range(Math.round(height / MODULE) * 2 - 1).map((i) => (i + 1) * (MODULE / 2))
 	// Coopers differ: hoops every half storey, every storey, or doubled bands.
-	const hoopStyle = maple ? variant(finish.seed, 10, 3) : 0
+	const hoopStyle = variant(finish.seed, 10, 3)
 	const vatHoops =
 		hoopStyle === 1
 			? hoops.filter((_, i) => i % 2 === 1)
@@ -381,17 +266,6 @@ function StorageTank({ height, finish }: { height: number; finish: Finish }) {
 		0.14 + i * 0.16,
 		facing.z + across.z,
 	])
-	const railing = range(8).flatMap((i) => {
-		const a = Math.PI / 8 + (i * Math.PI) / 4
-		return [
-			0.42 * Math.sin(a),
-			top,
-			0.42 * Math.cos(a),
-			0.42 * Math.sin(a),
-			top + 0.2,
-			0.42 * Math.cos(a),
-		]
-	})
 	return (
 		<group>
 			<group rotation={[0, Math.PI / 8, 0]}>
@@ -402,35 +276,11 @@ function StorageTank({ height, finish }: { height: number; finish: Finish }) {
 					color={finish.face}
 					ink={finish.ink}
 				/>
-				{cap && (
-					<InkSolid
-						geometry={cap}
-						position={[0, height + 0.15, 0]}
-						color={finish.face}
-						ink={finish.ink}
-					/>
-				)}
 			</group>
-			{maple ? (
-				<>
-					<VatHoops heights={[0.16, ...vatHoops, height - 0.06]} finish={finish} />
-					<SugarRoof height={height} finish={finish} />
-				</>
-			) : (
-				<>
-					<InkLines
-						points={hoops.flatMap((y) => ring(0.825, y, 8, Math.PI / 8))}
-						ink={finish.ink}
-					/>
-					<InkLines
-						points={[...railing, ...ring(0.42, top + 0.2, 8, Math.PI / 8)]}
-						ink={finish.ink}
-					/>
-				</>
-			)}
+			<VatHoops heights={[0.16, ...vatHoops, height - 0.06]} finish={finish} />
+			<SugarRoof height={height} finish={finish} />
 			<InkLines points={[...rails, ...rungs]} ink={finish.ink} />
-			{finish.style === "whimsy" && <Pinwheel position={[0, top + 0.72, 0]} finish={finish} />}
-			{finish.style === "maple" && <MapleTap position={[0.76, height * 0.6, -0.12]} finish={finish} />}
+			<MapleTap position={[0.76, height * 0.6, -0.12]} finish={finish} />
 			<InkBox
 				size={[0.5, 0.12, 0.12]}
 				position={[0.95, 0.2, -0.42]}
@@ -460,8 +310,6 @@ function StorageTank({ height, finish }: { height: number; finish: Finish }) {
 function LoadingBay({ height, finish }: { height: number; finish: Finish }) {
 	const gantry = height + 0.3
 	const rollers = range(10).flatMap((i) => [-0.85, 0.302, -0.48 + i * 0.14, 0.85, 0.302, -0.48 + i * 0.14])
-	const stripes = range(9).flatMap((i) => [-0.78 + i * 0.18, 0.18, 0.852, -0.7 + i * 0.18, 0.28, 0.852])
-	const maple = finish.style === "maple"
 	return (
 		<group>
 			<InkBox size={[1.7, 0.3, 1.7]} position={[0, 0.15, 0]} color={finish.face} ink={finish.ink} />
@@ -470,17 +318,11 @@ function LoadingBay({ height, finish }: { height: number; finish: Finish }) {
 				size={[1.7, 0.1]}
 				position={[0, 0.23, 0.851]}
 				normal="z"
-				color={maple ? finish.timber : finish.hazard}
+				color={finish.timber}
 				ink={finish.ink}
 			/>
-			{maple ? (
-				<>
-					<ChoppingStump position={[0.68, 0.3, -0.36]} finish={finish} />
-					<WoodSled position={[-0.52, 0, 1.02]} finish={finish} />
-				</>
-			) : (
-				<InkLines points={stripes} ink={finish.ink} />
-			)}
+			<ChoppingStump position={[0.68, 0.3, -0.36]} finish={finish} />
+			<WoodSled position={[-0.52, 0, 1.02]} finish={finish} />
 			{[0, 1].map((step) => (
 				<InkBox
 					key={step}
@@ -536,131 +378,26 @@ function LoadingBay({ height, finish }: { height: number; finish: Finish }) {
 				color={finish.kraft}
 				ink={finish.ink}
 			/>
-			{maple ? (
-				<LogPile finish={finish} base={0.38} />
-			) : (
-				(
-					[
-						[-0.35, 0.58, 0.25],
-						[0.35, 0.58, 0.25],
-						[0, 1.0, 0.25],
-					] as const
-				).map(([x, y, z], i) => (
-					<group key={`${x}:${y}`}>
-						<InkBox
-							size={[0.6, 0.4, 0.6]}
-							position={[x, y, z]}
-							color={
-								finish.style === "whimsy"
-									? (finish.gifts[i + 2] ?? finish.kraft)
-									: finish.kraft
-							}
-							ink={finish.ink}
-						/>
-						<InkPlate
-							size={[0.12, 0.6]}
-							position={[x, y + 0.201, z]}
-							normal="y"
-							color={finish.tape}
-							ink={finish.ink}
-						/>
-						<InkPlate
-							size={[0.12, 0.4]}
-							position={[x, y, z + 0.301]}
-							normal="z"
-							color={finish.tape}
-							ink={finish.ink}
-						/>
-					</group>
-				))
-			)}
+			<LogPile finish={finish} base={0.38} />
 		</group>
 	)
 }
 
+/** An open timber gate over a stepping-stone path, with a striped barrier arm out front. */
 function Gateway({ height, finish }: { height: number; finish: Finish }) {
-	const lintel = 0.5
-	const posts = Math.max(MODULE, height - lintel)
-	const roof = posts + lintel
-	const maple = finish.style === "maple"
-	const dish = useMemo(() => (maple ? null : new THREE.CylinderGeometry(0.26, 0.06, 0.12, 10)), [maple])
+	const posts = Math.max(MODULE, height - 0.5)
+	const stripe = finish.gifts[0] ?? finish.hazard
 	return (
 		<group>
-			{maple && <MapleGate posts={posts} finish={finish} />}
-			{!maple &&
-				[-0.55, 0.55].map((x) => (
-					<InkBox
-						key={x}
-						size={[0.5, posts, HALF * 2]}
-						position={[x, posts / 2, 0]}
-						color={finish.face}
-						ink={finish.ink}
-						cell={MODULE}
-					/>
-				))}
-			{!maple && (
-				<>
-					<InkLines
-						points={louvre([0.802, posts * 0.5, -0.4], "x", 0.4, 0.36, 4)}
-						ink={finish.ink}
-					/>
-					<InkLines
-						points={louvre([0.802, posts * 0.5, 0.4], "x", 0.4, 0.36, 4)}
-						ink={finish.ink}
-					/>
-					<InkBox
-						size={[HALF * 2 + 0.1, lintel, HALF * 2]}
-						position={[0, posts + lintel / 2, 0]}
-						color={finish.face}
-						ink={finish.ink}
-					/>
-					<InkPlate
-						size={[0.9, 0.2]}
-						position={[0, posts + lintel / 2, HALF + 0.002]}
-						normal="z"
-						color={finish.signal}
-						ink={finish.ink}
-					/>
-					{finish.style === "whimsy" && (
-						<Bunting
-							from={[-0.85, posts - 0.02, HALF + 0.05]}
-							to={[0.85, posts - 0.02, HALF + 0.05]}
-							finish={finish}
-						/>
-					)}
-					{[-0.62, 0.62].map((x) => (
-						<InkPlate
-							key={x}
-							size={[0.14, 0.14]}
-							position={[x, posts + lintel / 2, HALF + 0.002]}
-							normal="z"
-							color={finish.hazard}
-							ink={finish.ink}
-						/>
-					))}
-				</>
-			)}
-			{maple ? (
-				<InkParts
-					parts={range(3).map((i): Part => ({
-						box: [0.26, 0.03, 0.2],
-						at: [i % 2 === 0 ? -0.05 : 0.06, 0.015, -0.6 + i * 0.5],
-					}))}
-					color={finish.stone}
-					ink={finish.ink}
-				/>
-			) : (
-				range(3).map((i) => (
-					<InkPlate
-						key={i}
-						size={[0.08, 0.3]}
-						position={[0, 0.003, -0.6 + i * 0.5]}
-						normal="y"
-						color={finish.hazard}
-						ink={finish.ink}
-					/>
-				))
-			)}
+			<MapleGate posts={posts} finish={finish} />
+			<InkParts
+				parts={range(3).map((i): Part => ({
+					box: [0.26, 0.03, 0.2],
+					at: [i % 2 === 0 ? -0.05 : 0.06, 0.015, -0.6 + i * 0.5],
+				}))}
+				color={finish.stone}
+				ink={finish.ink}
+			/>
 			<group position={[0.5, 0, 1.0]}>
 				<InkBox
 					size={[0.18, 0.42, 0.18]}
@@ -673,149 +410,44 @@ function Gateway({ height, finish }: { height: number; finish: Finish }) {
 						key={i}
 						size={[0.24, 0.07, 0.07]}
 						position={[-0.21 - i * 0.24, 0.36, 0]}
-						color={
-							i % 2 === 0
-								? maple
-									? (finish.gifts[0] ?? finish.hazard)
-									: finish.hazard
-								: finish.face
-						}
+						color={i % 2 === 0 ? stripe : finish.face}
 						ink={finish.ink}
 					/>
 				))}
 			</group>
-			{dish && (
-				<>
-					<InkLines points={[0.5, roof, -0.5, 0.5, roof + 0.42, -0.5]} ink={finish.ink} />
-					<InkSolid
-						geometry={dish}
-						position={[0.5, roof + 0.46, -0.5]}
-						rotation={[0.6, 0.8, 0]}
-						color={finish.face}
-						ink={finish.ink}
-					/>
-					<InkBox
-						size={[0.3, 0.16, 0.3]}
-						position={[-0.5, roof + 0.08, -0.45]}
-						color={finish.face}
-						ink={finish.ink}
-					/>
-				</>
-			)}
 		</group>
 	)
 }
 
+/** A log cabin with an outside stone chimney, for services beyond the map. */
 function Shed({ height, finish }: { height: number; finish: Finish }) {
-	const maple = finish.style === "maple"
-	// Maple builds its own shingled gable, chimney and log walls; skip the parts it replaces.
-	const roof = useMemo(() => {
-		if (maple) return null
-		const gable = new THREE.Shape()
-		gable.moveTo(-HALF - 0.08, 0)
-		gable.lineTo(HALF + 0.08, 0)
-		gable.lineTo(0, 0.62)
-		gable.closePath()
-		const geometry = new THREE.ExtrudeGeometry(gable, { depth: HALF * 2 + 0.1, bevelEnabled: false })
-		geometry.translate(0, 0, -HALF - 0.05)
-		return geometry
-	}, [maple])
-	const dish = useMemo(() => (maple ? null : new THREE.CylinderGeometry(0.3, 0.06, 0.12, 12)), [maple])
 	const walls = Math.max(MODULE, height - 0.4)
 	// Log walls stand proud of the body, so the window and door sit on the logs' outer face.
-	const face = maple ? 0.862 : HALF + 0.002
+	const face = 0.862
 	const pane: Pane = { center: [0.4, walls * 0.55, face], normal: "z" }
 	return (
 		<group>
 			<InkBox
 				size={[HALF * 2, walls, HALF * 2]}
 				position={[0, walls / 2, 0]}
-				color={maple ? finish.tape : finish.face}
+				color={finish.tape}
 				ink={finish.ink}
-				cell={maple ? undefined : MODULE}
 			/>
-			{roof && (
-				<InkSolid
-					geometry={roof}
-					position={[0, walls, 0]}
-					rotation={[0, Math.PI / 2, 0]}
-					color={finish.face}
-					ink={finish.ink}
-				/>
-			)}
+			<LogWalls walls={walls} finish={finish} />
+			<GableRoof base={walls} half={HALF + 0.08} rise={0.62} length={HALF * 2 + 0.1} finish={finish} />
 			<Window center={pane.center} normal="z" finish={finish} />
-			{finish.style === "whimsy" && (
-				<FlowerBox position={[0.4, walls * 0.55 - 0.2, HALF]} finish={finish} />
-			)}
-			{maple && (
-				<>
-					<LogWalls walls={walls} finish={finish} />
-					<GableRoof
-						base={walls}
-						half={HALF + 0.08}
-						rise={0.62}
-						length={HALF * 2 + 0.1}
-						finish={finish}
-					/>
-					<WindowDressing windows={[pane]} finish={finish} />
-					{finish.trouble === "degraded" && <BoardedWindow center={pane.center} finish={finish} />}
-					<InkBox
-						size={[0.3, 0.5, 0.42]}
-						position={[1.01, 0.25, -0.42]}
-						color={finish.stone}
-						ink={finish.ink}
-						cell={0.13}
-					/>
-					<StoneChimney
-						base={[0.99, 0.5, -0.42]}
-						height={walls + 0.4}
-						width={0.24}
-						finish={finish}
-					/>
-					<Toadstools position={[-0.55, -0.06, 0.95]} finish={finish} />
-				</>
-			)}
-			{dish && (
-				<>
-					<InkBox
-						size={[0.14, 0.5, 0.14]}
-						position={[0.42, walls + 0.4, -0.3]}
-						color={finish.face}
-						ink={finish.ink}
-					/>
-					<InkBox
-						size={[0.2, 0.06, 0.2]}
-						position={[0.42, walls + 0.68, -0.3]}
-						color={finish.face}
-						ink={finish.ink}
-					/>
-					<InkLines points={[-0.4, walls + 0.4, 0, -0.4, walls + 0.86, 0]} ink={finish.ink} />
-					<InkSolid
-						geometry={dish}
-						position={[-0.4, walls + 0.9, 0]}
-						rotation={[0.7, 0.7, 0]}
-						color={finish.face}
-						ink={finish.ink}
-					/>
-				</>
-			)}
-			<Door position={[face, maple ? 0.26 : 0.2, 0.36]} finish={finish} />
-			{!maple &&
-				(
-					[
-						[1.02, 0.15, -0.5, 0.3],
-						[1.02, 0.12, -0.12, 0.24],
-						[1.02, 0.42, -0.5, 0.24],
-					] as const
-				).map(([x, y, z, size]) => (
-					<InkBox
-						key={`${y}:${z}`}
-						size={[size, size, size]}
-						position={[x, y, z]}
-						color={finish.kraft}
-						ink={finish.ink}
-					/>
-				))}
+			<WindowDressing windows={[pane]} finish={finish} />
+			{finish.trouble === "degraded" && <BoardedWindow center={pane.center} finish={finish} />}
+			<InkBox
+				size={[0.3, 0.5, 0.42]}
+				position={[1.01, 0.25, -0.42]}
+				color={finish.stone}
+				ink={finish.ink}
+				cell={0.13}
+			/>
+			<StoneChimney base={[0.99, 0.5, -0.42]} height={walls + 0.4} width={0.24} finish={finish} />
+			<Toadstools position={[-0.55, -0.06, 0.95]} finish={finish} />
+			<Door position={[face, 0.26, 0.36]} finish={finish} />
 		</group>
 	)
 }
@@ -840,7 +472,6 @@ const MACHINE_MODELS = {
 function badgeMount(
 	kind: ReturnType<typeof machineKind>,
 	height: number,
-	style: MapStyle,
 ): { position: Vec3; rotation: Vec3; scale?: number } {
 	switch (kind) {
 		case "tank":
@@ -848,23 +479,16 @@ function badgeMount(
 		case "loader":
 			return { position: [0.6, height + 0.3, -0.54], rotation: [0, 0, 0], scale: 0.32 }
 		case "gateway":
-			// The open Maple gate carries its mark on the header board above the passage.
+			// The open gate carries its mark on the header board above the passage.
 			return {
-				position:
-					style === "maple"
-						? [0, Math.max(MODULE, height - 0.5) + GATE_MARK.y, GATE_MARK.z]
-						: [0, Math.max(MODULE, height - 0.5) * 0.5, HALF + 0.03],
+				position: [0, Math.max(MODULE, height - 0.5) + GATE_MARK.y, GATE_MARK.z],
 				rotation: [0, 0, 0],
 				scale: 0.5,
 			}
 		default:
 			return {
-				// Maple sheds wear log walls, so their mark hangs on the logs' outer face.
-				position: [
-					-0.36,
-					Math.min(height, MODULE * 2) - 0.42,
-					kind === "shed" && style === "maple" ? 0.885 : HALF + 0.03,
-				],
+				// Sheds wear log walls, so their mark hangs on the logs' outer face.
+				position: [-0.36, Math.min(height, MODULE * 2) - 0.42, kind === "shed" ? 0.885 : HALF + 0.03],
 				rotation: [0, 0, 0],
 				scale: 0.5,
 			}
@@ -903,22 +527,16 @@ export const FactoryMachine = memo(function FactoryMachine({
 	const finish: Finish = {
 		face: recede(palette.tint[kind]),
 		ink: recede(palette.ink),
-		signal: recede(HEALTH_COLOR[health(node.errorRate)]),
+		signal: recede(HEALTH_COLOR[trouble]),
 		kraft: recede(palette.kraft),
 		tape: recede(palette.tape),
-		// Maple windows are lamplit, and go dark when the service is degraded.
-		// At night every style lights its windows so machines read as occupied.
+		// Windows are lamplit, and go dark when the service is degraded.
 		glass: recede(
-			palette.style !== "maple"
-				? palette.night
-					? fade(palette.glow, palette.face, 0.25)
-					: fade(palette.ink, palette.face, 0.84)
-				: trouble === "degraded"
-					? fade(palette.ink, palette.face, 0.45)
-					: fade(palette.glow, palette.face, 0.3),
+			trouble === "degraded"
+				? fade(palette.ink, palette.face, 0.45)
+				: fade(palette.glow, palette.face, 0.3),
 		),
 		hazard: recede(palette.selected),
-		style: palette.style,
 		gifts: palette.gifts.map(recede),
 		running: running && !dimmed,
 		stone: recede(palette.stone),
@@ -953,15 +571,11 @@ export const FactoryMachine = memo(function FactoryMachine({
 			/>
 			<group position={[0, 0.06, 0]}>
 				<Model height={height} finish={finish} />
-				{finish.style === "maple" && (
-					<>
-						<MapleState kind={kind} selected={selected} finish={finish} />
-						<Yard kind={kind} finish={finish} />
-					</>
-				)}
+				<MapleState kind={kind} selected={selected} finish={finish} />
+				<Yard kind={kind} finish={finish} />
 				{badge && (
 					<FactoryBadge
-						{...badgeMount(kind, height, palette.style)}
+						{...badgeMount(kind, height)}
 						muted={dimmed}
 						badge={badge}
 						palette={palette}

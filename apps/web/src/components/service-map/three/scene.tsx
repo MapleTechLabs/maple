@@ -37,6 +37,9 @@ const vector = (p: Vec3) => new THREE.Vector3(...p)
 const ISOMETRIC = new THREE.Vector3(1, Math.SQRT2 * Math.tan(Math.PI / 6), 1).normalize().multiplyScalar(40)
 /** Zones and terraces are solid plinths standing on the paper. */
 const PLINTH_FLOOR = -0.14
+/** Frame a little meadow around the zones, so a small topology still shows the
+ * forest edge on reset without shrinking a large map much. */
+const FRAME_MARGIN = 2.5
 
 /** The camera and HTML labels share one projection. Labels stay sharp at every
  * zoom, expose actual buttons, and never cause React renders during orbit. */
@@ -48,11 +51,7 @@ function CameraRig({
 	labels,
 	selectedId,
 	command,
-	palette,
-}: Pick<
-	SceneProps,
-	"topology" | "layout" | "links" | "view" | "labels" | "selectedId" | "command" | "palette"
->) {
+}: Pick<SceneProps, "topology" | "layout" | "links" | "view" | "labels" | "selectedId" | "command">) {
 	const { camera, gl, invalidate, size } = useThree()
 	const controls = useRef<OrbitControls | null>(null)
 	const lastFrame = useRef("")
@@ -70,18 +69,15 @@ function CameraRig({
 		[topology.nodes, links],
 	)
 	const layoutKey = useMemo(() => JSON.stringify([...layout.positions]), [layout])
-	// Maple frames a little meadow around the zones, so a small topology still
-	// shows the forest edge on reset without shrinking a large map much.
-	const margin = palette.style === "maple" ? 2.5 : 0
 	const bounds = useMemo(() => {
 		const points = layout.districts.flatMap((district) =>
 			[-1, 1].flatMap((x) =>
 				[-1, 1].map(
 					(z) =>
 						new THREE.Vector3(
-							district.position[0] + x * (district.width / 2 + margin),
+							district.position[0] + x * (district.width / 2 + FRAME_MARGIN),
 							district.position[1],
-							district.position[2] + z * (district.depth / 2 + margin),
+							district.position[2] + z * (district.depth / 2 + FRAME_MARGIN),
 						),
 				),
 			),
@@ -89,7 +85,7 @@ function CameraRig({
 		for (const point of layout.positions.values())
 			points.push(vector(point).add(new THREE.Vector3(0, 4, 0)))
 		return { points, center: new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3()) }
-	}, [layout, margin])
+	}, [layout])
 	useMountEffect(() => {
 		const orbit = new OrbitControls(camera, gl.domElement)
 		// The projection is part of the drawing: pan and zoom, never orbit.
@@ -114,7 +110,7 @@ function CameraRig({
 	useFrame(() => {
 		const orbit = controls.current
 		if (!orbit || !(camera instanceof THREE.OrthographicCamera)) return
-		const frameKey = `${view}:${size.width}:${size.height}:${layoutKey}:${margin}`
+		const frameKey = `${view}:${size.width}:${size.height}:${layoutKey}`
 		const newCommand = lastCommand.current !== command.serial
 		if (lastFrame.current !== frameKey || (newCommand && command.action === "reset")) {
 			lastFrame.current = frameKey
@@ -527,41 +523,27 @@ function MapScene(props: SceneProps) {
 	return (
 		<>
 			<CameraRig {...props} />
-			{palette.style !== "drafted" && (
-				<Scenery key={view} layout={layout} belts={links} palette={palette} running={flowing} />
-			)}
-			{layout.districts.map((district) => {
-				// Atlas zones are low slabs; Cascade terraces rise to their depth.
-				const top = district.position[1] + 0.16
-				const height = top - PLINTH_FLOOR
-				if (palette.style === "maple")
-					return view === "cascade" ? (
-						<StoneTerrace key={`${view}:${district.id}`} district={district} palette={palette} />
-					) : (
-						<MeadowMat
-							key={`${view}:${district.id}:${district.position.join(",")}:${district.width}:${district.depth}`}
-							district={district}
-							palette={palette}
-						/>
-					)
-				return (
-					<InkBox
-						key={`${view}:${district.id}`}
-						position={[district.position[0], PLINTH_FLOOR + height / 2, district.position[2]]}
-						size={[district.width, height, district.depth]}
-						color={palette.plinth}
-						ink={palette.ink}
+			<Scenery key={view} layout={layout} belts={links} palette={palette} running={flowing} />
+			{layout.districts.map((district) =>
+				// Atlas zones are meadow mats; Cascade terraces rise to their depth.
+				view === "cascade" ? (
+					<StoneTerrace key={`${view}:${district.id}`} district={district} palette={palette} />
+				) : (
+					<MeadowMat
+						key={`${view}:${district.id}:${district.position.join(",")}:${district.width}:${district.depth}`}
+						district={district}
+						palette={palette}
 					/>
-				)
-			})}
-			{palette.style === "maple" && view === "atlas" && (
+				),
+			)}
+			{view === "atlas" && (
 				<WornPaths
 					key={links.map((link) => link.geometryKey).join("|")}
 					links={links}
 					palette={palette}
 				/>
 			)}
-			{palette.style === "maple" && view === "cascade" && (
+			{view === "cascade" && (
 				<TerraceSteps key={layout.districts.length} districts={layout.districts} palette={palette} />
 			)}
 			{links.map((link) => {
@@ -570,7 +552,6 @@ function MapScene(props: SceneProps) {
 					<FactoryTransport
 						key={JSON.stringify([
 							view,
-							palette.style,
 							palette.paper,
 							link.id,
 							link.geometryKey,

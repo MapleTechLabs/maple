@@ -15,7 +15,7 @@ import {
 import { resolveMachineBadge } from "./factory-badge"
 import { ServiceMap3D, type CameraCommand } from "./scene"
 import type { Topology3D, Edge3D } from "./types"
-import { mapPalette, paperBackground, type MapStyle } from "./appearance"
+import { mapPalette, paperBackground } from "./appearance"
 import { factoryRoutes, decorateRoutes, type RoutingTopology } from "./factory-routing"
 import {
 	connectedIds,
@@ -40,16 +40,16 @@ const VIEW_COPY = {
 	},
 } as const
 
-// Maple labels are timber. Per-style styling lives in classes because the
-// camera rig rewrites inline style every frame, keeping only position and colour.
+// Labels are timber signs. Styling lives in classes because the camera rig
+// rewrites inline style every frame, keeping only position and colour.
 const NAIL =
 	"before:absolute before:top-1/2 before:size-[2px] before:-translate-y-1/2 before:rounded-full before:bg-current after:absolute after:top-1/2 after:size-[2px] after:-translate-y-1/2 after:rounded-full after:bg-current"
-const MAPLE_SIGN = "rounded-[3px] px-1.5 font-medium"
-const MAPLE_TAG =
+const SIGN_CLASS = "rounded-[3px] px-1.5 font-medium"
+const TAG_CLASS =
 	"rounded-l-[7px] rounded-r-[2px] border-current/50 pr-1 pl-2.5 before:absolute before:top-1/2 before:left-[3px] before:size-[3px] before:-translate-y-1/2 before:rounded-full before:border before:border-current/70 after:absolute after:bottom-full after:left-[4px] after:h-1.5 after:w-px after:bg-current/50"
-const MAPLE_PLANK = `rounded-[2px] px-2.5 py-px font-semibold before:left-[4px] after:right-[4px] ${NAIL}`
+const PLANK_CLASS = `rounded-[2px] px-2.5 py-px font-semibold before:left-[4px] after:right-[4px] ${NAIL}`
 
-const MAPLE_PANEL = "rounded-[3px] border border-(--map-sign-ink)/35 bg-(--map-sign) text-(--map-sign-ink)"
+const PANEL_CLASS = "rounded-[3px] border border-(--map-sign-ink)/35 bg-(--map-sign) text-(--map-sign-ink)"
 
 function edgeLatency(edge: Edge3D) {
 	return edge.p95LatencyMs !== undefined
@@ -75,9 +75,7 @@ export function ServiceMap3DViewport({
 	const reducedMotion = useReducedMotion()
 	const { theme } = useTheme()
 	const dark = theme === "dark"
-	const [style, setStyle] = useState<MapStyle>("maple")
-	const palette = mapPalette(style, dark)
-	const maple = palette.style === "maple"
+	const palette = mapPalette(dark)
 	// Sign colours as CSS variables, so overlay chrome can follow the palette from classes.
 	const signColors = {
 		"--map-sign": palette.sign,
@@ -128,20 +126,6 @@ export function ServiceMap3DViewport({
 						Cascade
 					</ToggleGroupItem>
 				</ToggleGroup>
-				<ToggleGroup
-					value={[style]}
-					onValueChange={(values) => {
-						const next = values.find((value) => value !== style)
-						if (next === "drafted" || next === "whimsy" || next === "maple") setStyle(next)
-					}}
-					variant="outline"
-					size="xs"
-					aria-label="Map style"
-				>
-					<ToggleGroupItem value="drafted">Drafted</ToggleGroupItem>
-					<ToggleGroupItem value="whimsy">Whimsy</ToggleGroupItem>
-					<ToggleGroupItem value="maple">Maple</ToggleGroupItem>
-				</ToggleGroup>
 				<span className="ml-3 hidden text-2xs text-muted-foreground sm:block">{copy.encoding}</span>
 				<Button
 					size="sm"
@@ -184,11 +168,11 @@ export function ServiceMap3DViewport({
 									else labels.current.delete(node.id)
 								}}
 								title={badge ? `${node.label} · ${badge.label}` : node.label}
-								className={`pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring ${maple ? MAPLE_SIGN : "rounded-[2px] px-1"} ${selectedId === node.id ? "border-current" : maple ? "border-current/60 hover:border-current" : "border-current/30 hover:border-current"}`}
+								className={`pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring ${SIGN_CLASS} ${selectedId === node.id ? "border-current" : "border-current/60 hover:border-current"}`}
 								style={{
 									visibility: "hidden",
 									opacity: node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1,
-									backgroundColor: maple ? palette.sign : palette.paper,
+									backgroundColor: palette.sign,
 									color: palette.signInk,
 								}}
 								onClick={() => onSelect(selectedId === node.id ? null : node.id)}
@@ -214,7 +198,7 @@ export function ServiceMap3DViewport({
 									if (element) labels.current.set(link.id, element)
 									else labels.current.delete(link.id)
 								}}
-								className={`pointer-events-auto absolute top-0 left-0 flex cursor-pointer items-center border font-mono text-4xs leading-normal tabular-nums hover:border-current focus-visible:outline-2 focus-visible:outline-ring ${maple ? MAPLE_TAG : "rounded-[2px] border-current/30 px-1"}`}
+								className={`pointer-events-auto absolute top-0 left-0 flex cursor-pointer items-center border font-mono text-4xs leading-normal tabular-nums hover:border-current focus-visible:outline-2 focus-visible:outline-ring ${TAG_CLASS}`}
 								style={{
 									visibility: "hidden",
 									backgroundColor: palette.sign,
@@ -234,16 +218,12 @@ export function ServiceMap3DViewport({
 								if (element) labels.current.set(`district:${district.id}`, element)
 								else labels.current.delete(`district:${district.id}`)
 							}}
-							className={`absolute top-0 left-0 font-mono text-4xs uppercase tracking-widest ${maple ? MAPLE_PLANK : ""}`}
-							style={
-								maple
-									? {
-											visibility: "hidden",
-											backgroundColor: palette.trunk,
-											color: palette.tape,
-										}
-									: { visibility: "hidden", color: palette.signInk }
-							}
+							className={`absolute top-0 left-0 font-mono text-4xs uppercase tracking-widest ${PLANK_CLASS}`}
+							style={{
+								visibility: "hidden",
+								backgroundColor: palette.trunk,
+								color: palette.tape,
+							}}
 						>
 							{district.label}
 						</span>
@@ -254,19 +234,17 @@ export function ServiceMap3DViewport({
 						if (element) labels.current.set("overlay:hud", element)
 						else labels.current.delete("overlay:hud")
 					}}
-					className={`pointer-events-none absolute top-4 left-4 px-3 py-2 ${maple ? MAPLE_PANEL : "rounded-md bg-background/90"}`}
+					className={`pointer-events-none absolute top-4 left-4 px-3 py-2 ${PANEL_CLASS}`}
 				>
 					<h2 className="font-display text-base font-medium">{copy.title}</h2>
-					<p className={`mt-1 text-2xs ${maple ? "opacity-75" : "text-muted-foreground"}`}>
-						{copy.description}
-					</p>
+					<p className={`mt-1 text-2xs opacity-75`}>{copy.description}</p>
 				</div>
 				<div
 					ref={(element) => {
 						if (element) labels.current.set("overlay:legend", element)
 						else labels.current.delete("overlay:legend")
 					}}
-					className={`pointer-events-none absolute bottom-14 left-4 flex flex-wrap gap-3 px-3 py-2 text-3xs sm:bottom-4 ${maple ? MAPLE_PANEL : "rounded-md bg-background/95 text-foreground/85"}`}
+					className={`pointer-events-none absolute bottom-14 left-4 flex flex-wrap gap-3 px-3 py-2 text-3xs sm:bottom-4 ${PANEL_CLASS}`}
 				>
 					{(["healthy", "elevated", "degraded"] as const).map((status) => (
 						<span key={status} className="flex items-center gap-1.5 capitalize">
@@ -283,7 +261,7 @@ export function ServiceMap3DViewport({
 						if (element) labels.current.set("overlay:controls", element)
 						else labels.current.delete("overlay:controls")
 					}}
-					className={`absolute right-4 bottom-4 flex gap-1 p-1 ${maple ? MAPLE_PANEL : "rounded-md border bg-background"}`}
+					className={`absolute right-4 bottom-4 flex gap-1 p-1 ${PANEL_CLASS}`}
 					aria-label="Camera controls"
 				>
 					<IconButton size="icon-xs" label="Zoom out" onClick={() => camera("out")}>

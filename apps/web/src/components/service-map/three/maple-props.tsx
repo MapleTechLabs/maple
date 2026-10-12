@@ -15,7 +15,7 @@ import {
 import { Bunting } from "./factory-decor"
 import type { Vec3 } from "./types"
 
-/** Maple-only colours the shared finish does not carry, resolved and faded like the rest. */
+/** Colours the shared finish does not carry, resolved and faded like the rest. */
 export type MapleFinish = MachineFinish & {
 	stone: string
 	iron: string
@@ -1042,6 +1042,28 @@ export function DoorSteps({ door, finish }: { door: Vec3; finish: MapleFinish })
 				color={finish.shingle}
 				ink={finish.ink}
 			/>
+		</>
+	)
+}
+
+/** A planter under a z-facing window with three autumn blooms. */
+export function FlowerBox({ position, finish }: { position: Vec3; finish: MapleFinish }) {
+	const [x, y, z] = position
+	return (
+		<>
+			<InkParts
+				parts={[{ box: [0.42, 0.1, 0.12], at: [x, y, z + 0.06] }]}
+				color={finish.timber}
+				ink={finish.ink}
+			/>
+			{[-0.14, 0, 0.14].map((dx, i) => (
+				<InkParts
+					key={dx}
+					parts={[{ box: [0.08, 0.08, 0.08], at: [x + dx, y + 0.1, z + 0.06] }]}
+					color={finish.gifts[(i + 1) % finish.gifts.length] ?? finish.face}
+					ink={finish.ink}
+				/>
+			))}
 		</>
 	)
 }
