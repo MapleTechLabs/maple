@@ -96,12 +96,19 @@ const WINDOW_WORDS: ReadonlySet<string> = new Set([
 const isWindowKey = (key: string): boolean =>
 	key.toLowerCase() === "time" || words(key).some((word) => WINDOW_WORDS.has(word))
 
-/** The parameters an unknown key most plausibly meant: `time_range` is both window bounds. */
+const WINDOW_BOUNDS: ReadonlyArray<string> = ["start_time", "end_time"]
+
+/**
+ * The parameters an unknown key most plausibly meant: `time_range` is both window bounds. A closer
+ * match that is not a bound wins, so `min_duration` still points at `min_duration_ms`.
+ */
 const suggestParameters = (key: string, known: ReadonlyArray<string>): ReadonlyArray<string> => {
-	if (isWindowKey(key) && known.includes("start_time") && known.includes("end_time")) {
-		return ["start_time", "end_time"]
-	}
 	const suggestion = suggestParameter(key, known)
+	const widens =
+		(suggestion === undefined || WINDOW_BOUNDS.includes(suggestion)) &&
+		isWindowKey(key) &&
+		WINDOW_BOUNDS.every((bound) => known.includes(bound))
+	if (widens) return WINDOW_BOUNDS
 	return suggestion === undefined ? [] : [suggestion]
 }
 

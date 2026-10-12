@@ -93,6 +93,11 @@ describe("argument normalization", () => {
 		expect(unknown("lookback")).toEqual([{ key: "lookback", suggestions: ["start_time", "end_time"] }])
 		// One bound stays one bound.
 		expect(unknown("start")).toEqual([{ key: "start", suggestions: ["start_time"] }])
+		// A closer match that is not a bound wins over the window guess.
+		const withDuration = [...known, "min_duration_ms", "max_duration_ms"]
+		expect(normalizeArguments({ min_duration: 5 }, withDuration).unknown).toEqual([
+			{ key: "min_duration", suggestions: ["min_duration_ms"] },
+		])
 		// A tool without a window gets no window suggestion.
 		expect(normalizeArguments({ time_range: "1h" }, ["service"]).unknown).toEqual([
 			{ key: "time_range", suggestions: [] },
