@@ -120,6 +120,18 @@ Run a conversation of three turns with the same `session_id`. After about a minu
 
 You should see one session named after your `session_id`, with vendor **Cloudflare AI Gateway**, a `cf.aig.request` span per model call, the prompt and reply as a transcript, and tokens and cost in USD. Embedding calls show up as `embeddings` operations rather than chat turns.
 
+The example below is a two-turn support chat through the gateway, with one tool call in the first turn.
+
+<figure class="shot">
+  <img src="/screenshots/docs/cloudflare-ai-gateway-01-trace.webp" alt="The Traces view of a Cloudflare AI Gateway session: two turns, the first with two cf.aig.request spans and the second with one, each labeled with its Llama 3.3 70B model, a token bar and its duration on a shared time axis." loading="lazy" />
+  <figcaption>The Traces view. Each turn is one trace because the app passed <code>cf-aig-otel-trace-id</code>; every model call is a <code>cf.aig.request</code> span with its model and tokens.</figcaption>
+</figure>
+
+<figure class="shot">
+  <img src="/screenshots/docs/cloudflare-ai-gateway-02-transcript.webp" alt="The Transcript view of the same session: the system prompt, the user asking where order 4821 is, a get_order_status tool call, the assistant's answer with the model named, then a second turn about changing the delivery address and its answer." loading="lazy" />
+  <figcaption>The Transcript view. The gateway's raw request and response bodies read as a conversation, including the <code>get_order_status</code> tool call.</figcaption>
+</figure>
+
 ## What the gateway doesn't export
 
 - **Cached responses.** A request the gateway answers from its cache produces no span, so cache hits don't appear in Maple.
