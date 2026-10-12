@@ -212,7 +212,7 @@ const formatNumberOfChars = (chars: number): string =>
 	chars >= 1000 ? `${Math.round(chars / 1000)}k` : String(chars)
 
 /**
- * Render a doc within {@link MAX_TOOL_TEXT_CHARS}. Head (title, scope, notices) and tail (paging,
+ * Render a doc within {@link MAX_TOOL_TEXT_CHARS}. Head (title, warnings, scope, notices) and tail (paging,
  * next calls) always survive; body blocks are kept in order and the first that overflows is cut on a
  * row or line boundary, followed by a notice telling the model how to narrow the call.
  */

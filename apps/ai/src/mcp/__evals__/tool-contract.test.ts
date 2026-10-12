@@ -38,6 +38,8 @@ beforeAll(() => {
 			rows: [],
 		},
 		...rules,
+		// Any other query (list_services) returns no rows.
+		{ match: () => true, rows: [] },
 	])
 	rt = makeEvalRuntime()
 })
@@ -81,7 +83,15 @@ describe("a tool declared with define", () => {
 	it("tells the model which keys it ignored, and what it probably meant", async () => {
 		const result = await call("find_errors", { servce: "checkout" })
 		expect(markdown(result)).toContain(
-			"Note: `servce` is not a parameter of `find_errors` and was ignored. Did you mean `service`?",
+			"Warning: `servce` is not a parameter of `find_errors`. It was ignored, and this result is for the call without it. Did you mean `service`?",
+		)
+	})
+
+	it("warns first, under the title, when a window key it does not take was ignored", async () => {
+		const result = await call("list_services", { time_range: "today" })
+		expect(result.isError).toBeUndefined()
+		expect(markdown(result)).toMatch(
+			/^## Services\n\nWarning: `time_range` is not a parameter of `list_services`\. It was ignored, and this result is for the call without it\. Did you mean `start_time`\/`end_time`\?\n\nTime range: /,
 		)
 	})
 
