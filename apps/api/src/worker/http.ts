@@ -201,6 +201,11 @@ export const makeFetch = (
 					}),
 				})
 			}
+			// The unattributed 500s all landed within ~60ms of an isolate's first request, so the
+			// span carries that shape. Counted before the graph builds, so build failures count too,
+			// and before the forward, so a forwarded call's cold cost splits by both isolates.
+			yield* isolateAge.record
+
 			// The agent surfaces moved to maple-ai; this origin keeps serving them.
 			// Ahead of the route graph on purpose: that is the whole point of the
 			// split, so a `/mcp` call no longer builds `AllRoutes` and `ApiAuthLive`.
@@ -216,10 +221,6 @@ export const makeFetch = (
 				}
 				return yield* forwardToAi(aiWorker.value, request)
 			}
-
-			// The unattributed 500s all landed within ~60ms of an isolate's first request, so the
-			// span carries that shape. Counted before the graph builds, so build failures count too.
-			yield* isolateAge.record
 
 			const selectedApp =
 				path === "/internal/query-engine" || path.startsWith("/internal/query-engine/")

@@ -253,10 +253,17 @@ describe("the api Worker through alchemy's bridge", () => {
 				"/broken",
 				Effect.fail(new GraphBuildFailure({ message: "fixture" })),
 			)
+			// Forwarded paths count too; this one answers 503 because the fixture has no binding.
+			const forwarded = yield* event(
+				"POST",
+				"/mcp",
+				Effect.succeed(Effect.succeed(HttpServerResponse.text("ok"))),
+			)
 			assert.strictEqual(success.response.status, 200)
 			assert.strictEqual(failed.response.status, 504)
+			assert.strictEqual(forwarded.response.status, 503)
 			assert.strictEqual(success.response.headers.get("timing-allow-origin"), "*")
-			for (const result of [success, failed]) {
+			for (const result of [success, failed, forwarded]) {
 				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.request_ordinal"), "1")
 				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.age_ms"), "0")
 			}

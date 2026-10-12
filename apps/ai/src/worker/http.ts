@@ -1,4 +1,4 @@
-import { IsolateAge } from "@maple/infra/isolate-age"
+import { IsolateAge, isolateStampHeaders } from "@maple/infra/isolate-age"
 import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
 /**
  * The AI Worker's request path: the route graph built once per isolate on the
@@ -74,15 +74,21 @@ export const makeFetch = <E>(app: Effect.Effect<HttpEffect, E>, ports: Layer.Lay
 			}
 
 			// Before the graph builds, so its failures count too and cold and warm compare unconditioned.
-			yield* isolateAge.record
+			// The stamp goes back to the caller, whose span is the only one that sees cold-start CPU.
+			const stamp = yield* isolateAge.record
 			const built = yield* Effect.exit(app)
 			if (Exit.isFailure(built)) {
 				yield* Effect.logError("AI worker route graph failed to build", built.cause).pipe(
 					Effect.annotateLogs({ method: request.method, path }),
 				)
-				return HttpServerResponse.text("maple-ai is unavailable", { status: 503 })
+				return HttpServerResponse.text("maple-ai is unavailable", {
+					status: 503,
+					headers: isolateStampHeaders(stamp),
+				})
 			}
-			return yield* withPgConnectionScope(built.value)
+			return yield* withPgConnectionScope(built.value).pipe(
+				Effect.map(HttpServerResponse.setHeaders(isolateStampHeaders(stamp))),
+			)
 		}).pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
 			Effect.provide(ports),

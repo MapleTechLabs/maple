@@ -1,6 +1,6 @@
 import { assert, describe, it, vi } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { IsolateAge } from "@maple/infra/isolate-age"
+import { ISOLATE_AGE_HEADER, ISOLATE_ORDINAL_HEADER, IsolateAge } from "@maple/infra/isolate-age"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -93,6 +93,11 @@ const event = (fetch: HttpEffect, method: string, path: string) =>
 			span: server?.name,
 			ordinal: attributeOf(server, "maple.isolate.request_ordinal"),
 			ageMs: attributeOf(server, "maple.isolate.age_ms"),
+			// What maple-api reads back: its span is the one that sees cold-start CPU.
+			headers: {
+				ordinal: response.headers.get(ISOLATE_ORDINAL_HEADER) ?? undefined,
+				ageMs: response.headers.get(ISOLATE_AGE_HEADER) ?? undefined,
+			},
 		}
 	}).pipe(Effect.scoped)
 
@@ -101,7 +106,7 @@ class GraphBuildFailure extends Schema.TaggedError<GraphBuildFailure>()("GraphBu
 }) {}
 
 describe("the maple-ai Worker through alchemy's bridge", () => {
-	it.effect("stamps isolate age on the server span, counting graph-build failures but not liveness", () =>
+	it.effect("stamps isolate age on span and response, counting build failures but not liveness", () =>
 		Effect.gen(function* () {
 			// Two handlers on one isolate: the counter is the isolate's, not the handler's.
 			const serving = yield* makeFetch(
@@ -124,13 +129,21 @@ describe("the maple-ai Worker through alchemy's bridge", () => {
 				span: "http.server GET",
 				ordinal: undefined,
 				ageMs: undefined,
+				headers: { ordinal: undefined, ageMs: undefined },
 			})
-			assert.deepStrictEqual(first, { status: 200, span: "http.server POST", ordinal: "1", ageMs: "0" })
+			assert.deepStrictEqual(first, {
+				status: 200,
+				span: "http.server POST",
+				ordinal: "1",
+				ageMs: "0",
+				headers: { ordinal: "1", ageMs: "0" },
+			})
 			assert.deepStrictEqual(failed, {
 				status: 503,
 				span: "http.server POST",
 				ordinal: "2",
 				ageMs: "250",
+				headers: { ordinal: "2", ageMs: "250" },
 			})
 		}).pipe(Effect.provide(IsolateAge.layer)),
 	)
