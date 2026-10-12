@@ -343,8 +343,12 @@ export const resolveLlmProvider = (settings: LlmSettings): LlmProvider =>
  * `reasoning`, `user`, `session_id` and `trace` are all first-class fields on OpenRouter's chat
  * request, so they ride as model config rather than as a hand-built body. `usage` is the one
  * exception, spliced per call by {@link withPerCallFields} together with the span ids.
+ *
+ * `cache_control` puts the cache breakpoint on the request's last block, so an agent loop reuses its
+ * whole history. Models with explicit caching otherwise cached only the system prompt and tools.
  */
 const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags | undefined) => ({
+	cache_control: { type: "ephemeral" as const },
 	...(effort === undefined || effort === "off" ? undefined : { reasoning: { effort } }),
 	...(tags === undefined
 		? undefined
