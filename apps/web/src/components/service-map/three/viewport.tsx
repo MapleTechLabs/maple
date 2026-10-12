@@ -75,7 +75,7 @@ export function ServiceMap3DViewport({
 	const reducedMotion = useReducedMotion()
 	const { theme } = useTheme()
 	const dark = theme === "dark"
-	const [style, setStyle] = useState<MapStyle>("drafted")
+	const [style, setStyle] = useState<MapStyle>("maple")
 	const palette = mapPalette(style, dark)
 	const maple = palette.style === "maple"
 	// Sign colours as CSS variables, so overlay chrome can follow the palette from classes.
@@ -189,7 +189,7 @@ export function ServiceMap3DViewport({
 									visibility: "hidden",
 									opacity: node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1,
 									backgroundColor: maple ? palette.sign : palette.paper,
-									color: maple ? palette.signInk : palette.ink,
+									color: palette.signInk,
 								}}
 								onClick={() => onSelect(selectedId === node.id ? null : node.id)}
 								aria-label={`Select ${node.label}${badge ? `, ${badge.label}` : ""}`}
@@ -242,7 +242,7 @@ export function ServiceMap3DViewport({
 											backgroundColor: palette.trunk,
 											color: palette.tape,
 										}
-									: { visibility: "hidden", color: palette.ink }
+									: { visibility: "hidden", color: palette.signInk }
 							}
 						>
 							{district.label}

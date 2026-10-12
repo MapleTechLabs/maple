@@ -192,6 +192,84 @@ function bucketTexture(palette: InkPalette) {
 	return texture
 }
 
+const logArt = new Map<string, readonly [THREE.CanvasTexture, THREE.CanvasTexture]>()
+
+/** Bark for the log's side and growth rings for its cut ends, outlined in ink. */
+function logTextures(palette: InkPalette) {
+	const key = `${palette.trunk}:${palette.kraft}:${palette.ink}`
+	const cached = logArt.get(key)
+	if (cached) return cached
+	const paint = (width: number, height: number, draw: (context: CanvasRenderingContext2D) => void) => {
+		const canvas = document.createElement("canvas")
+		canvas.width = width
+		canvas.height = height
+		const context = canvas.getContext("2d")
+		if (context) draw(context)
+		const texture = new THREE.CanvasTexture(canvas)
+		texture.colorSpace = THREE.SRGBColorSpace
+		return texture
+	}
+	// Side UVs wrap the circumference on u, so constant-u grooves run along the log.
+	const bark = paint(128, 32, (context) => {
+		context.fillStyle = palette.trunk
+		context.fillRect(0, 0, 128, 32)
+		context.fillStyle = palette.ink
+		for (let x = 4; x < 128; x += 11) context.fillRect(x, 3 + (x % 7), 1.5, 22 - (x % 5))
+		context.fillRect(0, 0, 128, 2.5)
+		context.fillRect(0, 29.5, 128, 2.5)
+	})
+	const grain = paint(64, 64, (context) => {
+		context.fillStyle = palette.kraft
+		context.fillRect(0, 0, 64, 64)
+		context.strokeStyle = palette.ink
+		for (const [radius, width] of [
+			[29, 4],
+			[19, 1.5],
+			[10, 1.5],
+			[3, 1.5],
+		] as const) {
+			context.lineWidth = width
+			context.beginPath()
+			context.arc(32, 32, radius, 0, Math.PI * 2)
+			context.stroke()
+		}
+	})
+	const textures = [bark, grain] as const
+	logArt.set(key, textures)
+	return textures
+}
+
+/** A log rolling crosswise on the belt: its axis runs across the deck (local x),
+ * and it rests on the deck although the motion shader lifts every cargo by `lift`. */
+function useLogGeometry(size: number, lift: number, phases: Float32Array) {
+	const geometry = useMemo(() => {
+		const radius = size * 0.34
+		const log = new THREE.CylinderGeometry(radius, radius, size * 1.45, 10)
+		log.rotateZ(Math.PI / 2)
+		log.translate(0, radius - lift, 0)
+		shadeFaces(log)
+		log.setAttribute("factoryPhase", new THREE.InstancedBufferAttribute(phases, 1))
+		return log
+	}, [size, lift, phases])
+	useMountEffect(() => () => geometry.dispose())
+	return geometry
+}
+
+/** Cargo per belt: denser on longer and busier belts, so traffic reads as a
+ * working line rather than a few boxes. */
+export function cargoCount(length: number, callsPerSecond: number) {
+	const busy = THREE.MathUtils.clamp(Math.log10(callsPerSecond + 1) / 3, 0, 1)
+	return Math.round(THREE.MathUtils.clamp(length * (0.55 + busy * 0.9), 3, 44))
+}
+
+/** Which cargo rides in each slot. Logs ride every style (they are, after all,
+ * logs); Maple ships more of them and adds sap buckets. */
+function cargoKind(index: number, style: InkPalette["style"]) {
+	if (style === "maple")
+		return index % 5 === 1 || index % 5 === 3 ? "log" : index % 5 === 4 ? "bucket" : "crate"
+	return index % 4 === 2 ? "log" : "crate"
+}
+
 function Parcels({
 	link,
 	running,
@@ -203,20 +281,20 @@ function Parcels({
 	size: number
 	palette: InkPalette
 }) {
-	const count = Math.min(10, 2 + Math.ceil(Math.sqrt(link.edge.callsPerSecond) / 6))
+	const count = cargoCount(link.curve.getLength(), link.edge.callsPerSecond)
 	const period = Math.max(3, link.curve.getLength() / 1.4) + link.edge.avgLatencyMs / 400
 	const motion = useFactoryMotion(link, running, count, period, size / 2, true)
-	// Maple sends every third parcel as a sap bucket on the same timetable.
-	const sugaring = palette.style === "maple" && count >= 3
-	const { crates, buckets } = useMemo(() => {
+	// Each slot on the shared timetable carries one kind of cargo.
+	const { crates, logs, buckets } = useMemo(() => {
 		const all = [...motion.phases]
-		return {
-			crates: sugaring ? Float32Array.from(all.filter((_, i) => i % 3 !== 1)) : motion.phases,
-			buckets: Float32Array.from(sugaring ? all.filter((_, i) => i % 3 === 1) : []),
-		}
-	}, [motion.phases, sugaring])
+		const of = (kind: ReturnType<typeof cargoKind>) =>
+			Float32Array.from(all.filter((_, i) => cargoKind(i, palette.style) === kind))
+		return { crates: of("crate"), logs: of("log"), buckets: of("bucket") }
+	}, [motion.phases, palette.style])
 	const box = useParcelGeometry([size, size, size], crates)
 	const bucket = useBucketGeometry(size, buckets)
+	const log = useLogGeometry(size, size / 2, logs)
+	const [bark, grain] = logTextures(palette)
 	const { onBeforeCompile, customProgramCacheKey } = motion.material
 	// Staves, an amber sap surface, and the base; all ride the shared motion shader.
 	const bucketPaint = useMemo(
@@ -233,10 +311,24 @@ function Parcels({
 			),
 		[palette, onBeforeCompile, customProgramCacheKey],
 	)
-	useMountEffect(() => () => bucketPaint.forEach((material) => material.dispose()))
+	// Cylinder groups: 0 is the bark side, 1 and 2 the cut ends.
+	const logPaint = useMemo(
+		() =>
+			[{ map: bark }, { map: grain }, { map: grain }].map((paint) =>
+				Object.assign(new THREE.MeshBasicMaterial({ ...paint, vertexColors: true }), {
+					onBeforeCompile,
+					customProgramCacheKey,
+				}),
+			),
+		[bark, grain, onBeforeCompile, customProgramCacheKey],
+	)
+	useMountEffect(() => () => {
+		bucketPaint.forEach((material) => material.dispose())
+		logPaint.forEach((material) => material.dispose())
+	})
 	// Gift ribbons wrap both ways round the box and ride the same phases.
-	const ribbonX = useParcelGeometry([size * 1.04, size * 1.04, size * 0.22], motion.phases)
-	const ribbonZ = useParcelGeometry([size * 0.22, size * 1.04, size * 1.04], motion.phases)
+	const ribbonX = useParcelGeometry([size * 1.04, size * 1.04, size * 0.22], crates)
+	const ribbonZ = useParcelGeometry([size * 0.22, size * 1.04, size * 1.04], crates)
 	return (
 		<group key={count}>
 			<instancedMesh
@@ -245,7 +337,7 @@ function Parcels({
 				ref={(mesh) => {
 					if (!mesh || palette.style !== "whimsy") return
 					const color = new THREE.Color()
-					for (let i = 0; i < count; i++)
+					for (let i = 0; i < crates.length; i++)
 						mesh.setColorAt(
 							i,
 							color.set(palette.gifts[(i * 3) % palette.gifts.length] ?? palette.kraft),
@@ -257,13 +349,18 @@ function Parcels({
 			</instancedMesh>
 			{palette.style === "whimsy" &&
 				[ribbonX, ribbonZ].map((ribbon) => (
-					<instancedMesh key={ribbon.uuid} args={[ribbon, undefined, count]} frustumCulled={false}>
+					<instancedMesh
+						key={ribbon.uuid}
+						args={[ribbon, undefined, crates.length]}
+						frustumCulled={false}
+					>
 						<meshBasicMaterial color={palette.tape} vertexColors {...motion.material} />
 					</instancedMesh>
 				))}
 			{buckets.length > 0 && (
 				<instancedMesh args={[bucket, bucketPaint, buckets.length]} frustumCulled={false} />
 			)}
+			{logs.length > 0 && <instancedMesh args={[log, logPaint, logs.length]} frustumCulled={false} />}
 		</group>
 	)
 }

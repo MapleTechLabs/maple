@@ -54,7 +54,8 @@ dependency depth. HTML labels stay the accessible way to inspect every node.
 
 ## Whimsy style
 
-A toolbar toggle switches between Drafted (above), Whimsy and Maple. Whimsy keeps the
+A toolbar toggle switches between Drafted (above), Whimsy and Maple. Maple is
+the default, on the live service map and in the lab. Whimsy keeps the
 same geometry, projection and health doors, and changes only the dressing:
 
 - Storybook pastels on warm cream, drawn in plum ink. Each machine kind has its

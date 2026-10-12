@@ -907,9 +907,12 @@ export const FactoryMachine = memo(function FactoryMachine({
 		kraft: recede(palette.kraft),
 		tape: recede(palette.tape),
 		// Maple windows are lamplit, and go dark when the service is degraded.
+		// At night every style lights its windows so machines read as occupied.
 		glass: recede(
 			palette.style !== "maple"
-				? fade(palette.ink, palette.face, 0.84)
+				? palette.night
+					? fade(palette.glow, palette.face, 0.25)
+					: fade(palette.ink, palette.face, 0.84)
 				: trouble === "degraded"
 					? fade(palette.ink, palette.face, 0.45)
 					: fade(palette.glow, palette.face, 0.3),
