@@ -21,12 +21,17 @@ interface World {
 	/** OpenRouter's status for `GET /key`. */
 	openRouterStatus: number
 	openRouterCalls: Array<string | null>
+	openRouterUrls: Array<string>
+	/** `MAPLE_REGION` for the service's Env. */
+	region: "us" | "eu"
 }
 
 const makeWorld = (overrides: Partial<World> = {}): World => ({
 	autumn: "entitled",
 	openRouterStatus: 200,
 	openRouterCalls: [],
+	openRouterUrls: [],
+	region: "us",
 	...overrides,
 })
 
@@ -60,12 +65,15 @@ const autumnStub = (world: World) =>
 	})
 
 const fetchStub = (world: World): typeof fetch =>
-	(async (_input: string | URL | Request, init?: RequestInit) => {
+	(async (input: string | URL | Request, init?: RequestInit) => {
+		world.openRouterUrls.push(
+			typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+		)
 		world.openRouterCalls.push(new Headers(init?.headers).get("authorization"))
 		return new Response("{}", { status: world.openRouterStatus })
 	}) as typeof fetch
 
-const config = () =>
+const config = (region: World["region"]) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
@@ -77,6 +85,7 @@ const config = () =>
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 			MAPLE_INGEST_PUBLIC_URL: "https://ingest.test",
+			MAPLE_REGION: region,
 		}),
 	)
 
@@ -94,7 +103,7 @@ const run = <A, E>(testDb: TestDb, world: World, effect: Effect.Effect<A, E, Org
 				Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub(world))),
 				Layer.provide(testDb.layer),
 				Layer.provide(Env.layer),
-				Layer.provide(config()),
+				Layer.provide(config(world.region)),
 			),
 		),
 	)
@@ -113,6 +122,7 @@ describe("OrgOpenRouterKeyService", () => {
 				assert.isTrue(saved.configured)
 				assert.strictEqual(saved.keyHint, "cdef")
 				assert.deepStrictEqual(world.openRouterCalls, [`Bearer ${KEY}`])
+				assert.deepStrictEqual(world.openRouterUrls, ["https://openrouter.ai/api/v1/key"])
 
 				const row = yield* Effect.promise(() =>
 					queryFirstRow<{ key_ciphertext: string }>(
@@ -124,6 +134,18 @@ describe("OrgOpenRouterKeyService", () => {
 
 				const resolved = yield* keys.resolveForRun(ORG)
 				assert.strictEqual(Option.map(resolved, Redacted.value).pipe(Option.getOrNull), KEY)
+			}),
+		)
+	})
+
+	it.effect("checks the key against the in-region host on the EU instance", () => {
+		const world = makeWorld({ region: "eu" })
+		return run(
+			createTestDb(trackedDbs),
+			world,
+			Effect.gen(function* () {
+				yield* (yield* OrgOpenRouterKeyService).set(ORG, USER, KEY)
+				assert.deepStrictEqual(world.openRouterUrls, ["https://eu.openrouter.ai/api/v1/key"])
 			}),
 		)
 	})
