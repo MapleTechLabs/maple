@@ -38,6 +38,7 @@
 		"changeset:publish": "bun run ./scripts/publish-packages.ts",
 		"tinybird:manifest": "bun run ./scripts/generate-tinybird-project-manifest.ts",
 		"tinybird:manifest:check": "bun run ./scripts/generate-tinybird-project-manifest.ts --check",
+		"tinybird:deploy": "bun run ./scripts/tinybird-deploy.ts",
 		"tinybird:datafiles": "bun run ./scripts/write-tinybird-datafiles.ts",
 		"clickhouse:schema": "bun run ./scripts/generate-clickhouse-schema.ts && bun run ./scripts/generate-clickhouse-schema-sql.ts && bun run ./scripts/generate-clickhouse-insert-mappings.ts && bun run ./scripts/lint-clickhouse-schema.ts",
 		"clickhouse:schema:check": "bun run ./scripts/generate-clickhouse-schema.ts --check && bun run ./scripts/generate-clickhouse-schema-sql.ts --check && bun run ./scripts/generate-clickhouse-insert-mappings.ts --check && bun run ./scripts/lint-clickhouse-schema.ts && bun run ./scripts/check-local-schema-manifest.ts",
