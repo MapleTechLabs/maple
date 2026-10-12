@@ -286,14 +286,6 @@ describe("downsample", () => {
 	const rowsOf = (length: number, valueAt: (index: number) => number | null): ChartPoint[] =>
 		Array.from({ length }, (_, index) => ({ t: T0 + index * MINUTE, [SINGLE_KEY]: valueAt(index) }))
 
-	it("returns series within the budget untouched", () => {
-		const preview = projectPreview(
-			previewOf([{ groupKey: "all", points: [{ offsetMinutes: 0, value: 1 }] }]),
-			domain.max,
-		)
-		expect(preview.rows).toHaveLength(1)
-	})
-
 	it("keeps a one-window spike that stride sampling used to drop (721 points)", () => {
 		// 721 points forces downsampling; the spike sits off every stride offset.
 		const rows = rowsOf(721, (index) => (index === 33 ? 99 : 1))

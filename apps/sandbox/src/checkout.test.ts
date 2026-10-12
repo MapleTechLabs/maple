@@ -115,10 +115,6 @@ describe("wrapCommand", () => {
 		assert.include(wrapped, "ns=unavailable")
 	})
 
-	it("reports isolation out of band, so a command exiting 97 is not mistaken for one that never ran", () => {
-		assert.include(wrapCommand(request()), '"$rc" "$ob" "$eb" "$ns"')
-	})
-
 	it("never uses `exec`, which would replace the shell running the wrapper", () => {
 		// The trailer is printed after the command returns, so nothing may replace
 		// the wrapper's own process.
@@ -181,11 +177,6 @@ describe("cloneScript", () => {
 		const script = cloneScript(checkout)
 		assert.include(script, `config core.symlinks false`)
 		assert.isTrue(script.indexOf("core.symlinks false") < script.indexOf("checkout --quiet --detach"))
-	})
-
-	it("evicts the least recently used checkouts, so the disk cannot fill", () => {
-		const script = cloneScript(checkout)
-		assert.include(script, "tail -n +4")
 	})
 
 	it("never evicts a checkout or another clone's scratch directory still in use", () => {

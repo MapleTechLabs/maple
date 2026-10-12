@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-	type BackfillSpec,
-	compileBackfillChunk,
-	isBackfill,
-	renderBackfillFull,
-	SOURCE_TIME_COLUMNS,
-} from "./backfill"
+import { type BackfillSpec, compileBackfillChunk, isBackfill, renderBackfillFull } from "./backfill"
 
 const spec: BackfillSpec = {
 	kind: "backfill",
@@ -23,15 +17,6 @@ describe("isBackfill", () => {
 		expect(isBackfill("CREATE TABLE x (a Int)")).toBe(false)
 		expect(isBackfill(null)).toBe(false)
 		expect(isBackfill({ kind: "other" })).toBe(false)
-	})
-})
-
-describe("SOURCE_TIME_COLUMNS", () => {
-	it("maps every source table to its time column", () => {
-		expect(SOURCE_TIME_COLUMNS.traces).toBe("Timestamp")
-		expect(SOURCE_TIME_COLUMNS.logs).toBe("TimestampTime")
-		expect(SOURCE_TIME_COLUMNS.metrics_sum).toBe("TimeUnix")
-		expect(SOURCE_TIME_COLUMNS.metrics_exponential_histogram).toBe("TimeUnix")
 	})
 })
 

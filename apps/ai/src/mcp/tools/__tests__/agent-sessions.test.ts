@@ -22,41 +22,6 @@ const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
 const CSV_SESSION_ID = "wrun_01KZCSV"
 const WINDOW = { start_time: "2026-08-19 09:00:00", end_time: "2026-08-19 12:00:00" }
 
-// Registration
-
-const AGENT_SESSION_TOOLS: ReadonlyArray<{
-	readonly name: string
-	readonly required: ReadonlyArray<string>
-	readonly enums: Readonly<Record<string, ReadonlyArray<string>>>
-}> = [
-	{
-		name: "list_agent_sessions",
-		required: [],
-		// The values a model may send are the schema's job, not a branch in the
-		// handler: published as enums they are visible before the call.
-		enums: { sort_dir: ["asc", "desc"] },
-	},
-	{ name: "get_agent_session", required: ["session_id"], enums: {} },
-	{ name: "get_agent_session_transcript", required: ["session_id"], enums: {} },
-]
-
-describe("agent session tool registration", () => {
-	it("registers both with their required params, framing and published enums", () => {
-		for (const tool of AGENT_SESSION_TOOLS) {
-			const definition = mapleToolCatalog.find((entry) => entry.name === tool.name)
-			expect(definition, tool.name).toBeDefined()
-			const schema = toInputSchema(definition!.schema)
-			expect(schema.type, tool.name).toBe("object")
-			expect(schema.required ?? [], tool.name).toEqual(tool.required)
-			expect(definition!.description, tool.name).toMatch(/AI agent session/i)
-			const properties = schema.properties as Record<string, Record<string, unknown>>
-			for (const [param, values] of Object.entries(tool.enums)) {
-				expect(properties[param]?.enum, `${tool.name}.${param}`).toEqual(values)
-			}
-		}
-	})
-})
-
 // Warehouse rows, in their wire shapes
 
 const listRow = {
@@ -315,7 +280,7 @@ describe("list_agent_sessions rendering", () => {
 
 	it("parses a comma-separated filter into the entries the SQL matches on", async () => {
 		const output = await rendered("list_agent_sessions", { ...WINDOW, tools: "run_sql, search_logs" })
-		expect(rowCells(output, CSV_SESSION_ID)).toBeDefined()
+		expect(rowCells(output, CSV_SESSION_ID)?.[1]).toBe("maple")
 	})
 })
 

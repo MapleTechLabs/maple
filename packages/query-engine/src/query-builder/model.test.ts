@@ -498,7 +498,6 @@ describe("GROUP_BY_TOKENS catalog matches the resolvers", () => {
 	}
 
 	it("logs does not support attr.* — the catalog lists no prefixes for it", () => {
-		expect(GROUP_BY_TOKENS.logs.prefixes).toEqual([])
 		const result = buildTimeseriesQuerySpec(draftFor("logs", ["attr.anything"]))
 		expect(result.warnings.join(" ")).toContain("logs source does not support attr.*")
 	})

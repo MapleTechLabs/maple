@@ -445,43 +445,6 @@ const insertDeliveryEventRow = async (
 }
 
 describe("AlertsService", () => {
-	it.effect("delegates the legacy destination methods to AlertDestinationsService", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
-			const destinations = yield* AlertDestinationsService
-			assert.strictEqual(alerts.listDestinations, destinations.listDestinations)
-			assert.strictEqual(alerts.createDestination, destinations.createDestination)
-			assert.strictEqual(alerts.updateDestination, destinations.updateDestination)
-			assert.strictEqual(alerts.deleteDestination, destinations.deleteDestination)
-			assert.strictEqual(alerts.testDestination, destinations.testDestination)
-		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
-	})
-
-	it.effect("delegates the legacy read methods to AlertReadModelsService", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
-			const readModels = yield* AlertReadModelsService
-			assert.strictEqual(alerts.listIncidents, readModels.listIncidents)
-			assert.strictEqual(alerts.getIncident, readModels.getIncident)
-			assert.strictEqual(alerts.listRuleChecks, readModels.listRuleChecks)
-			assert.strictEqual(alerts.summarizeRuleChecks, readModels.summarizeRuleChecks)
-			assert.strictEqual(alerts.listDeliveryEvents, readModels.listDeliveryEvents)
-		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
-	})
-
-	it.effect("delegates the narrow rule methods to AlertRulesService", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
-			const rules = yield* AlertRulesService
-			assert.strictEqual(alerts.listRules, rules.listRules)
-			assert.strictEqual(alerts.createRule, rules.createRule)
-			assert.strictEqual(alerts.deleteRule, rules.deleteRule)
-		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
-	})
-
 	it.effect("caps active alert rules per organization", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

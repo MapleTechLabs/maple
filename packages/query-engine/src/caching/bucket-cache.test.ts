@@ -140,15 +140,17 @@ describe("coalesceMissingRanges", () => {
 		const buckets = [bucket(MIN, 2 * MIN), bucket(4 * MIN, 5 * MIN), bucket(7 * MIN, 8 * MIN)]
 		const missing = findMissingRanges(buckets, 0, 10 * MIN, MIN, FAR_FUTURE_FLUX)
 		const coalesced = coalesceMissingRanges(missing)
-		for (const gap of missing) {
-			const covering = coalesced.find(
-				(span) =>
-					span.cachable === gap.cachable &&
-					span.range.startMs <= gap.range.startMs &&
-					span.range.endMs >= gap.range.endMs,
-			)
-			expect(covering).toBeDefined()
-		}
+		const uncovered = missing.filter(
+			(gap) =>
+				!coalesced.some(
+					(span) =>
+						span.cachable === gap.cachable &&
+						span.range.startMs <= gap.range.startMs &&
+						span.range.endMs >= gap.range.endMs,
+				),
+		)
+		expect(missing.length).toBeGreaterThan(0)
+		expect(uncovered).toEqual([])
 	})
 })
 

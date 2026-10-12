@@ -30,8 +30,4 @@ describe("ANTICIPATED_ERROR_IDENTIFIERS", () => {
 			expect(isAnticipatedErrorIdentifier(identifier), identifier).toBe(false)
 		}
 	})
-
-	it("contains a non-trivial generated set", () => {
-		expect(ANTICIPATED_ERROR_IDENTIFIERS.size).toBeGreaterThan(25)
-	})
 })

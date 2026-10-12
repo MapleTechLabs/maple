@@ -57,7 +57,7 @@ describe("before-merge detectors on real pull requests", () => {
 		for (const [kind, min] of Rec.toEntries(MIN_RECALL))
 			atLeast(score.recall[kind], min, `${kind} recall`)
 		atLeast(score.precision, MIN_PRECISION, "precision")
-		const noise = fractionValue(score.noise)
-		if (noise !== undefined) assert.isAtMost(noise, MAX_NOISE_PER_NEGATIVE, "noise on negative cases")
+		// No negative cases means no noise, so the bar still holds.
+		assert.isAtMost(fractionValue(score.noise) ?? 0, MAX_NOISE_PER_NEGATIVE, "noise on negative cases")
 	})
 })

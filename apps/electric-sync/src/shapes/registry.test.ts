@@ -29,12 +29,6 @@ describe("isShapeName", () => {
 })
 
 describe("lookupShape", () => {
-	it("resolves a definition with a table for every whitelisted subscription", () => {
-		for (const subscription of SUBSCRIPTION_NAMES) {
-			assert.isString(lookupSubscription(subscription).table, subscription)
-		}
-	})
-
 	it("keeps the PK in every column projection (Electric requires it)", () => {
 		for (const subscription of SUBSCRIPTION_NAMES) {
 			const columns = lookupSubscription(subscription).columns

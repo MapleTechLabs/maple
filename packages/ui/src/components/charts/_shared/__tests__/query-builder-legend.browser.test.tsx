@@ -52,23 +52,6 @@ describe("QueryBuilderLegend", () => {
 		expect(onToggle).toHaveBeenCalledWith("s3")
 	})
 
-	it("dims the hidden series in both variants", () => {
-		const hidden = new Set(["s2"])
-		const stats0 = setup({ hidden })
-		expect([...stats0.container.querySelectorAll("tbody tr")].map((r) => r.className)).toEqual([
-			expect.not.stringContaining("opacity-40"),
-			expect.stringContaining("opacity-40"),
-			expect.not.stringContaining("opacity-40"),
-		])
-		cleanup()
-		const compact = setup({ hidden, variant: "compact" })
-		expect([...compact.container.querySelectorAll("button")].map((b) => b.className)).toEqual([
-			expect.not.stringContaining("opacity-40"),
-			expect.stringContaining("opacity-40"),
-			expect.not.stringContaining("opacity-40"),
-		])
-	})
-
 	it("collapses an all-zero row to a single muted zero", () => {
 		// Four zeros in a row read as noise: only the Last column shows a 0. One cell
 		// per column (no colspan) so narrow legends can hide Min/Max.

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 import {
-	MAX_BREAKDOWN_RANGE_SECONDS,
 	MAX_LIST_RANGE_SECONDS,
 	MAX_QUERY_RANGE_SECONDS,
 	formatRangeSeconds,
@@ -13,9 +12,6 @@ describe("maxRangeSecondsForKind", () => {
 	it("gives charts a far wider ceiling than lists", () => {
 		// The whole point of the module: a dashboard's charts are not bound by the
 		// list tiles sitting next to them.
-		expect(maxRangeSecondsForKind("timeseries")).toBe(MAX_QUERY_RANGE_SECONDS)
-		expect(maxRangeSecondsForKind("list")).toBe(MAX_LIST_RANGE_SECONDS)
-		expect(maxRangeSecondsForKind("breakdown")).toBe(MAX_BREAKDOWN_RANGE_SECONDS)
 		expect(maxRangeSecondsForKind("timeseries")).toBeGreaterThan(maxRangeSecondsForKind("list"))
 	})
 })

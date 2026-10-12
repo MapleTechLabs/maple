@@ -1061,18 +1061,6 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 	})
 })
 
-describe("WarehouseUpstreamError surfaces transient classification", () => {
-	it("carries upstreamStatus on 503", () => {
-		// Sanity check that the constructor flow we depend on for retry is intact.
-		const err = new WarehouseUpstreamError({
-			pipeName: "test",
-			message: "upstream",
-			upstreamStatus: 503,
-		})
-		assert.strictEqual(err.upstreamStatus, 503)
-	})
-})
-
 describe("Tinybird response decoding", () => {
 	const tbConfig = { kind: "tinybird" as const, host: "https://api.tinybird.co", token: "tok" }
 	const statement = parseStatement("SELECT 1 FORMAT JSON")

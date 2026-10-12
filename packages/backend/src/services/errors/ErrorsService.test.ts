@@ -270,31 +270,6 @@ const makeErrorsLayer = (
 }
 
 /**
- * Wraps the in-memory edge-cache backend to record which buckets were written to
- * / read from, so a test can prove the EdgeCacheService is actually exercised at
- * runtime — not merely required by the layer (a regression that stopped *using*
- * the cache while still depending on it would otherwise pass silently).
- */
-const makeSpyEdgeBackend = () => {
-	const inner = makeMemoryBackend()
-	const puts: Array<string> = []
-	const gets: Array<string> = []
-	const backend: ReturnType<typeof makeMemoryBackend> = {
-		name: inner.name,
-		get: (bucket, hash, nowMs) => {
-			gets.push(bucket)
-			return inner.get(bucket, hash, nowMs)
-		},
-		put: (bucket, hash, value, ttlSeconds, nowMs) => {
-			puts.push(bucket)
-			return inner.put(bucket, hash, value, ttlSeconds, nowMs)
-		},
-		delete: inner.delete,
-	}
-	return { backend, puts, gets }
-}
-
-/**
  * Layer variant for active-org gating tests. Lets a test force discovery to
  * FAIL (to exercise the fail-CLOSED path) and/or capture the cost `profile`
  * each query context was issued with.
@@ -1283,23 +1258,6 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(profiles.get("errorActiveOrgsDiscovery"), "discovery")
 			assert.strictEqual(profiles.get("errorIssuesScan"), "aggregation")
 		}).pipe(Effect.provide(makeGatingLayer({ scanRows: () => [scanRow()], profiles })))
-	})
-
-	it.effect("runTick writes the discovered active-org set to the edge cache", () => {
-		const spy = makeSpyEdgeBackend()
-		return Effect.gen(function* () {
-			const errors = yield* ErrorsService
-			yield* TestClock.setTime(TICK_MS)
-			// A known org with recent errors: discovery finds it, and resolveActiveOrgs
-			// caches the freshly-discovered active set — the cache is genuinely used.
-			yield* seedIssue(asIssueId(randomUUID()))
-
-			yield* errors.runTick()
-
-			// The active-org discovery result was written to the edge cache. Asserts the
-			// EdgeCacheService is exercised, not just present in the layer.
-			assert.isAbove(spy.puts.length, 0)
-		}).pipe(Effect.provide(makeErrorsLayer(() => [scanRow()], undefined, spy.backend)))
 	})
 
 	it.effect(

@@ -6,7 +6,6 @@ import {
 	formatCoresOfAllocatable,
 	severityLevel,
 } from "./format"
-import { formatBytesPerSecond, formatLoad, formatPercent, formatUptime } from "@maple/ui/lib/format"
 
 describe("deriveHostStatus", () => {
 	const now = new Date("2026-04-24T12:00:00Z").getTime()
@@ -25,71 +24,6 @@ describe("deriveHostStatus", () => {
 
 	it("returns ended for a malformed ISO string", () => {
 		expect(deriveHostStatus("not-a-date", now)).toBe("ended")
-	})
-})
-
-describe("formatPercent", () => {
-	it("formats a small fraction as 0%", () => {
-		expect(formatPercent(0.0004)).toBe("0%")
-	})
-
-	it("formats a mid-range fraction with one decimal", () => {
-		expect(formatPercent(0.054)).toBe("5.4%")
-	})
-
-	it("drops decimals for values ≥10%", () => {
-		expect(formatPercent(0.236)).toBe("24%")
-	})
-
-	it("returns em-dash for non-finite input", () => {
-		expect(formatPercent(Number.NaN)).toBe("—")
-	})
-})
-
-describe("formatBytesPerSecond", () => {
-	it("returns 0 B/s for zero", () => {
-		expect(formatBytesPerSecond(0)).toBe("0 B/s")
-	})
-
-	it("scales up to KB/s", () => {
-		expect(formatBytesPerSecond(2048)).toBe("2.0 KB/s")
-	})
-
-	it("scales up to MB/s with integer rounding over 10", () => {
-		expect(formatBytesPerSecond(50 * 1024 * 1024)).toBe("50 MB/s")
-	})
-})
-
-describe("formatLoad", () => {
-	it("formats with two decimals", () => {
-		expect(formatLoad(1.3456)).toBe("1.35")
-	})
-
-	it("returns em-dash for NaN", () => {
-		expect(formatLoad(Number.NaN)).toBe("—")
-	})
-})
-
-describe("formatUptime", () => {
-	it("returns em-dash for zero or negative", () => {
-		expect(formatUptime(0)).toBe("—")
-		expect(formatUptime(-5)).toBe("—")
-	})
-
-	it("formats minutes under an hour", () => {
-		expect(formatUptime(125)).toBe("2m")
-	})
-
-	it("formats hours under a day", () => {
-		expect(formatUptime(3 * 3600 + 200)).toBe("3h")
-	})
-
-	it("formats days with remaining hours", () => {
-		expect(formatUptime(2 * 86_400 + 5 * 3600)).toBe("2d 5h")
-	})
-
-	it("returns em-dash for non-finite input", () => {
-		expect(formatUptime(Number.NaN)).toBe("—")
 	})
 })
 

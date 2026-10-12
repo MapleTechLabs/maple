@@ -52,12 +52,6 @@ describe("DotLoader", () => {
 		}
 	})
 
-	it("fills the 14px box its settled-state icons are drawn in", () => {
-		const { container } = render(<DotLoader />)
-
-		expect(signature(container.querySelector(".dmx-root")!).box).toBe("width: 14px; height: 14px")
-	})
-
 	it("stays out of the accessibility tree unless it is given a name of its own", () => {
 		const { container, rerender } = render(<DotLoader />)
 		expect(container.firstElementChild?.getAttribute("aria-hidden")).toBe("true")

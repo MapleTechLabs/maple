@@ -6,7 +6,6 @@
  */
 import { Config, Effect } from "effect"
 import type { Output } from "alchemy/Output"
-import { expect, it } from "vitest"
 import { AlertDestination } from "../src/AlertDestination"
 
 export const acceptsOutputs = (url: Output<string>, secret: Output<string>) =>
@@ -41,9 +40,4 @@ export const rejects = Effect.gen(function* () {
 	yield* AlertDestination("c", { type: "email", name: "x" })
 	// @ts-expect-error telegram requires chat_id alongside the token
 	yield* AlertDestination("d", { type: "telegram", name: "x", bot_token: "123456789:AAtoken" })
-})
-
-it("keeps the compile-time destination examples", () => {
-	expect(accepts).toBeDefined()
-	expect(rejects).toBeDefined()
 })

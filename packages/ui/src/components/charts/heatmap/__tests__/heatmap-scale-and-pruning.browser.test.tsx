@@ -148,16 +148,18 @@ describe("query-builder heatmap: colour scaling", () => {
 
 describe("query-builder heatmap: the colour scale prop", () => {
 	it("defaults to amber and honours a named scale", () => {
-		const amber = render(<QueryBuilderHeatmapChart data={spreadRows} />)
-		const amberTop = fillsByValue(amber.container, ["a", "b", "c"]).get("c")
-		amber.unmount()
+		const topFill = (colorScale?: HeatmapColorScale) => {
+			const { container, unmount } = render(
+				<QueryBuilderHeatmapChart data={spreadRows} colorScale={colorScale} />,
+			)
+			const fill = fillsByValue(container, ["a", "b", "c"]).get("c")
+			unmount()
+			return fill
+		}
 
-		const blues = render(<QueryBuilderHeatmapChart data={spreadRows} colorScale="blues" />)
-		const bluesTop = fillsByValue(blues.container, ["a", "b", "c"]).get("c")
-		blues.unmount()
-
-		expectColor(amberTop, "oklch(0.85 0.13 78)")
-		expectColor(bluesTop, "oklch(0.85 0.11 238)")
+		const byDefault = topFill()
+		expect(byDefault).toBe(topFill("amber"))
+		expect(topFill("blues")).not.toBe(byDefault)
 	})
 
 	it("falls back to amber for a scale name it no longer ships", () => {

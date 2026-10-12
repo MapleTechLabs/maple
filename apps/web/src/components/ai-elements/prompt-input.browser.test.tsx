@@ -39,17 +39,6 @@ describe("PromptInputSubmit", () => {
 		expect(loader()).toBeTruthy()
 	})
 
-	it("keeps both the loader and the stop glyph mounted so the swap can't reflow the button", () => {
-		render(<PromptInputSubmit status="streaming" onStop={() => {}} />)
-
-		const button = screen.getByLabelText("Stop generating")
-		// The crossfade is CSS over two stacked grid cells — if either layer were mounted
-		// conditionally, hovering would resize the button mid-turn.
-		expect(button.querySelector(".dmx-root")).toBeTruthy()
-		expect(button.querySelector("svg")).toBeTruthy()
-		expect(button.className).toContain("group/submit")
-	})
-
 	it("cancels the turn rather than submitting the form when it can stop", () => {
 		const onStop = vi.fn()
 		render(<PromptInputSubmit status="streaming" onStop={onStop} />)

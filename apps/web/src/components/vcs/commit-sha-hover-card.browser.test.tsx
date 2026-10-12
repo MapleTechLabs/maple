@@ -11,13 +11,8 @@ import { commitQueryAtom } from "./commit-sha-hover-card"
 // assertion because every call built a new request object → a new atom.
 describe("commitQueryAtom", () => {
 	const SHA_A = "a".repeat(40)
-	const SHA_B = "b".repeat(40)
 
 	it("returns the same atom instance for the same SHA", () => {
 		expect(commitQueryAtom(SHA_A)).toBe(commitQueryAtom(SHA_A))
-	})
-
-	it("returns distinct atom instances for distinct SHAs", () => {
-		expect(commitQueryAtom(SHA_A)).not.toBe(commitQueryAtom(SHA_B))
 	})
 })

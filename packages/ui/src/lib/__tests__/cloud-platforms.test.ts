@@ -144,7 +144,6 @@ describe("getCloudPlatform — database", () => {
 
 describe("outcomeBadgeStyle", () => {
 	it("styles ok vs failure outcomes differently", () => {
-		expect(outcomeBadgeStyle(false)).toContain("severity-info")
-		expect(outcomeBadgeStyle(true)).toContain("severity-error")
+		expect(outcomeBadgeStyle(false)).not.toBe(outcomeBadgeStyle(true))
 	})
 })

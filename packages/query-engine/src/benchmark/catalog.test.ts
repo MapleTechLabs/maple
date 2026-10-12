@@ -397,13 +397,10 @@ describe("builder coverage", () => {
 	})
 
 	it("declares fixtures whose module/name actually exists", () => {
-		for (const fixture of builderFixtures) {
-			const module = QUERY_MODULES[fixture.module]
-			expect(module, `unknown module ${fixture.module}`).toBeDefined()
-			expect(typeof module?.[fixture.name], `${fixture.module} does not export ${fixture.name}`).toBe(
-				"function",
-			)
-		}
+		const unresolved = builderFixtures
+			.filter((fixture) => !(QUERY_MODULES[fixture.module]?.[fixture.name] instanceof Function))
+			.map((fixture) => `${fixture.module}.${fixture.name}`)
+		expect(unresolved).toEqual([])
 	})
 
 	it("covers or exempts every exported builder", () => {

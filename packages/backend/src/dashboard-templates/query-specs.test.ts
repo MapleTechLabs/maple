@@ -49,7 +49,11 @@ function specBuilderFor(
 }
 
 describe("dashboard template query specs", () => {
-	function checkTemplate(template: TemplateDefinition, params: TemplateParameterValues, variant: string) {
+	function expectTemplateLowers(
+		template: TemplateDefinition,
+		params: TemplateParameterValues,
+		variant: string,
+	) {
 		const built = template.build(params)
 		for (const widget of built.widgets) {
 			const dataSource = widget.dataSource
@@ -74,12 +78,12 @@ describe("dashboard template query specs", () => {
 
 	for (const template of DASHBOARD_TEMPLATES) {
 		it(`${template.id} query-builder widgets lower to valid query specs`, () => {
-			checkTemplate(template, sampleParams(template), "required params")
+			expectTemplateLowers(template, sampleParams(template), "required params")
 			// Second pass with every optional param filled: scoping params must
 			// emit where clauses the engine actually honors — an ignored filter
 			// surfaces as a warning and fails here.
 			if (template.parameters.some((p) => !p.required)) {
-				checkTemplate(template, allParams(template), "all params")
+				expectTemplateLowers(template, allParams(template), "all params")
 			}
 		})
 	}

@@ -124,27 +124,6 @@ describe("ClickHouse DDL emitter", () => {
 		const aggDdl = emitCreateTable(aggDs!, { engineFlavor: "ReplicatedMergeTree" })
 		expect(aggDdl).toContain("ENGINE = AggregatingMergeTree")
 	})
-
-	it("emits the service-operation rollup key, lifecycle, and MV projection", async () => {
-		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const rollup = manifest.datasources.find((ds) => ds.name === "service_operations_minutely")
-		const mv = manifest.pipes.find((pipe) => pipe.name === "service_operations_minutely_mv")
-		expect(rollup).toBeDefined()
-		expect(mv).toBeDefined()
-
-		const tableDdl = emitCreateTable(rollup!)
-		expect(tableDdl).toContain("ENGINE = AggregatingMergeTree")
-		expect(tableDdl).toContain("PARTITION BY toDate(Minute)")
-		expect(tableDdl).toContain("ORDER BY (OrgId, ServiceName, DeploymentEnv, Minute, SpanName)")
-		expect(tableDdl).toContain("TTL toDate(Minute) + INTERVAL 90 DAY")
-		expect(tableDdl).toContain("DurationQuantiles AggregateFunction(quantilesTDigest(0.5, 0.95), UInt64)")
-
-		const mvDdl = emitCreateMaterializedView(mv!)
-		expect(mvDdl).toContain("FROM traces")
-		expect(mvDdl).toContain("toStartOfMinute(toDateTime(Timestamp)) AS Minute")
-		expect(mvDdl).toContain("http.route")
-		expect(mvDdl).toContain("GROUP BY OrgId, Minute, ServiceName, DeploymentEnv, SpanName")
-	})
 })
 
 describe("extractColumnDefinition", () => {
@@ -202,21 +181,5 @@ ENGINE = MergeTree`
 	it("returns null for non-CREATE-TABLE input", () => {
 		expect(extractColumnDefinition("CREATE MATERIALIZED VIEW foo TO bar AS SELECT 1", "OrgId")).toBeNull()
 		expect(extractColumnDefinition("not sql at all", "OrgId")).toBeNull()
-	})
-
-	it("works against actual emitted CREATE TABLE statements", async () => {
-		const manifest = Effect.runSync(buildTinybirdProjectManifest)
-		const traces = manifest.datasources.find((ds) => ds.name === "traces")
-		const ddl = emitCreateTable(traces!)
-
-		const sampleRate = extractColumnDefinition(ddl, "SampleRate")
-		expect(sampleRate).not.toBeNull()
-		expect(sampleRate!).toContain("Float64")
-		expect(sampleRate!).toContain("DEFAULT multiIf(")
-
-		const isEntryPoint = extractColumnDefinition(ddl, "IsEntryPoint")
-		expect(isEntryPoint).not.toBeNull()
-		expect(isEntryPoint!).toContain("UInt8")
-		expect(isEntryPoint!).toContain("DEFAULT if(")
 	})
 })

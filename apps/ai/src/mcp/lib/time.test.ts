@@ -31,11 +31,6 @@ describe("optionalTimeParam", () => {
 		expect(bound("2026-03-30T14:30:00+09:00")).toBe("2026-03-30 05:30:00")
 	})
 
-	it("omits cleanly", () => {
-		const result = decodeBound({})
-		expect(result._tag).toBe("Success")
-	})
-
 	// The value that reached ClickHouse as toDateTime('2026-08-47:53'). It now
 	// fails at the parameter boundary, before any tool body runs.
 	it("rejects the malformed bounds that used to reach the warehouse", () => {

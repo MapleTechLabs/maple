@@ -114,6 +114,10 @@ truthiness.
     "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
   ```
 - `@/` resolves to each app's source. `src/routeTree.gen.ts` is generated.
+- **Tests:** assert behavior, not source. `test-slop/*` rules (`scripts/oxlint-plugins/test-slop.mjs`)
+  ban constant-vs-literal pins, existence-only/does-not-throw tests, Tailwind class pins and tests that
+  read source files. Import and architecture boundaries are `no-restricted-imports` overrides in
+  `.oxlintrc.json`, not tests.
 
 ## MCP tools
 

@@ -312,7 +312,6 @@ const run = (name: string, params: unknown, seen: Seen = {}) =>
 	Effect.runPromise(
 		// The registry's requirement union names every tool's services; the alert tools reach only
 		// the alert services `layer` provides.
-		// oxlint-disable-next-line effecttsgo/missing-effect-context
 		executeRegisteredMcpToolUnscoped(name, params, "mcp").pipe(
 			Effect.provide(layer(seen)),
 			Effect.result,

@@ -277,7 +277,7 @@ describe("MCP dispatcher", () => {
 				// into an Ok span, keyed off the identifier list below.
 				const registrySpan = spans.find((s) => s.name === "McpToolRegistry.execute")
 				assert.isDefined(registrySpan)
-				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain("@maple/mcp/errors/McpDecodeError")
+				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain(dispatchSpan.attributes.get("error.type"))
 			}),
 		)
 

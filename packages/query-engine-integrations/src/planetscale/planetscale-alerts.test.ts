@@ -58,25 +58,7 @@ for (const [name, sql] of Object.entries(STATEMENTS)) {
 }
 
 describe("storage runway", () => {
-	it("keeps a non-shrinking volume far from any lt threshold", () => {
-		// Without the sentinel a healthy disk produces no runway and a `lt`
-		// comparator reads the absence as a breach.
-		expect(PLANETSCALE_STORAGE_RUNWAY_SQL).toContain("3650")
-	})
-
 	it("refuses to forecast off a handful of datapoints", () => {
 		expect(PLANETSCALE_STORAGE_RUNWAY_SQL).toMatch(/HAVING samples >= 60/)
-	})
-})
-
-describe("storage used", () => {
-	it("phrases the percentage as free-space subtracted from the whole", () => {
-		// The builder's arithmetic helpers don't parenthesize; this ordering is
-		// the one validated in planetscale-map.ts and must not be "simplified".
-		expect(PLANETSCALE_STORAGE_USED_SQL).toContain("100 - minIf(")
-	})
-
-	it("guards the divisor so a missing capacity series can't divide by zero", () => {
-		expect(PLANETSCALE_STORAGE_USED_SQL).toContain("nullIf(")
 	})
 })

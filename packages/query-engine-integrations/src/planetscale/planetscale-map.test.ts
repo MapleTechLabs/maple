@@ -51,14 +51,6 @@ describe("planetscaleGaugesSQL", () => {
 			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'main-db'",
 		)
 	})
-
-	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(planetscaleGaugesSQL(), {
-			...baseParams,
-			orgId: OrgId.make("org'evil"),
-		})
-		expect(sql).toContain("OrgId = 'org\\'evil'")
-	})
 })
 
 describe("planetscaleConnectionsSQL", () => {

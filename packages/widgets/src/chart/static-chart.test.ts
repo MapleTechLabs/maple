@@ -217,11 +217,6 @@ describe("renderChartSvg, as an alert draws it: one series and a threshold", () 
 		expect(fraction).toBeLessThanOrEqual(1)
 	})
 
-	it("shades the breaching side, and only when a side is meaningful", () => {
-		expect(renderChartSvg(spec).svg).toContain('fill-opacity="0.06"')
-		expect(renderChartSvg({ ...spec, breachSide: "none" }).svg).not.toContain('fill-opacity="0.06"')
-	})
-
 	it("omits the rule entirely when the spec has no threshold", () => {
 		const render = renderChartSvg({ ...spec, threshold: null })
 		expect(render.threshold).toBeNull()
@@ -234,9 +229,10 @@ describe("renderChartSvg, as an alert draws it: one series and a threshold", () 
 			[at(30), 1],
 			[at(15), 2],
 		]
-		const render = renderChartSvg({ ...spec, kind: "line", series: [{ name: "n", points: shuffled }] })
-		expect(render.legend[0]?.latest).toBe("3%")
-		expect(render.svg).toContain(`viewBox="0 0 720 ${PLOT_HEIGHT}"`)
+		const sorted: ReadonlyArray<ChartPoint> = [shuffled[0]!, shuffled[2]!, shuffled[1]!]
+		const draw = (points: ReadonlyArray<ChartPoint>) =>
+			renderChartSvg({ ...spec, kind: "line", series: [{ name: "n", points }] }).svg
+		expect(draw(shuffled)).toBe(draw(sorted))
 	})
 
 	it("refuses an empty series instead of shipping an empty card", () => {
@@ -292,16 +288,13 @@ describe("renderChartSvg, as a reply draws it: several series and no threshold",
 		expect(render.legend.map((entry) => entry.name)).not.toContain("svc-0")
 	})
 
-	it("fades overlapping area fills, so one series cannot paint over the rest", () => {
-		const one = renderChartSvg({ kind: "area", unit: "number", series: [named("a", [1, 2])] })
+	it("gives each area series its own gradient", () => {
 		const two = renderChartSvg({
 			kind: "area",
 			unit: "number",
 			series: [named("a", [1, 2]), named("b", [3, 4])],
 		})
 
-		expect(one.svg).toContain('stop-opacity="0.8"')
-		expect(two.svg).not.toContain('stop-opacity="0.8"')
 		// One gradient per series, or the second area would fill with the first's.
 		expect(two.svg).toContain('id="areaFill0"')
 		expect(two.svg).toContain('id="areaFill1"')

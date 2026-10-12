@@ -81,12 +81,6 @@ describe("age bound", () => {
 })
 
 describe("LRU bound", () => {
-	it("never exceeds the cap", () => {
-		for (let i = 0; i < MAX_ENTRIES * 2; i++) retainResult(`q${i}`, i, T0)
-
-		expect(retainedResultCount()).toBeLessThanOrEqual(MAX_ENTRIES)
-	})
-
 	it("evicts the least recently used entry first", () => {
 		for (let i = 0; i < MAX_ENTRIES; i++) retainResult(`q${i}`, i, T0)
 

@@ -571,15 +571,16 @@ describe("withPgConnectionScope", () => {
 		},
 	})
 
-	it.effect("installs a scope when the MAPLE_DB binding is present", () =>
+	it.effect("installs a scope when the MAPLE_DB binding is present and releases it after", () =>
 		Effect.gen(function* () {
 			const scope = yield* withPgConnectionScope(PgConnectionScope).pipe(
 				Effect.provideService(MapleDbConnection, hyperdrive),
 			)
 
-			// Lazy: resolving the binding must not connect. Nothing here reaches the
-			// network, and the host above does not resolve.
-			assert.isDefined(scope)
+			// Lazy: never dialed, and closed at the boundary, so a late call is refused
+			// without reaching the network (the host above does not resolve).
+			const error = yield* Effect.flip(scope!.run(noop))
+			assert.instanceOf(error.cause, PgConnectionScopeClosedError)
 		}),
 	)
 

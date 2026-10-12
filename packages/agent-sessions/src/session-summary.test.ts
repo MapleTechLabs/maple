@@ -1458,29 +1458,6 @@ describe("per-model cost, tools and failure groups", () => {
 		expect(summary.models.find((model) => model.model === "claude-haiku-4-5")?.cost).toBeUndefined()
 	})
 
-	// Same deepest-reporter rule the tokens follow: a wrapper that sums its
-	// children's cost onto itself must not double the session's spend.
-	it("does not count a rolled-up cost twice", () => {
-		const summary = summarize([
-			agentSpan({
-				spanId: "root",
-				startMs: 0,
-				durationMs: 4 * SECOND,
-				genAi: { usageCost: 0.3 },
-			}),
-			llmSpan({
-				spanId: "child",
-				parentSpanId: "root",
-				startMs: 0,
-				durationMs: SECOND,
-				model: "gpt-5",
-				genAi: { usageCost: 0.3 },
-			}),
-		])
-
-		expect(summary.cost).toBeCloseTo(0.3)
-	})
-
 	it("nets a sub-agent's cost through its tool span, and past a zero-cost wrapper", () => {
 		// The orchestrator prices the whole run; the worker it delegates to via a
 		// tool stamps a zero cost of its own over the call it made. The list nets

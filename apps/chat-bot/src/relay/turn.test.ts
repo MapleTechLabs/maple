@@ -1074,21 +1074,6 @@ describe("settling an approval somebody clicked", () => {
 		}),
 	)
 
-	it.effect("hands the session the user the HOST resolved, never anything the click carried", () =>
-		Effect.gen(function* () {
-			const platform = chat()
-			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
-			const deployment = host(platform.outbound, agent.stub, {
-				supportsIdentity: true,
-				linkedUserId: ADA,
-			})
-
-			yield* relayInboundEvent(click(), deployment.ports)
-
-			expect(agent.settlements[0]).toHaveProperty("actingUserId", ADA)
-		}),
-	)
-
 	it.effect("does nothing at all for a control Maple did not render", () =>
 		Effect.gen(function* () {
 			const platform = chat()

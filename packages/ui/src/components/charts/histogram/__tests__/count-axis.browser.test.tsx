@@ -88,14 +88,6 @@ describe("histogram: the count axis is niced", () => {
 		expect(highest).toBeGreaterThan(rect.top)
 	})
 
-	it("paints the bins opaque, as Recharts did", () => {
-		const { container } = render(<QueryBuilderHistogramChart data={awkwardBins} />)
-		for (const bin of binRects(container)) {
-			const opacity = bin.getAttribute("fill-opacity")
-			expect(opacity == null || Number(opacity) === 1).toBe(true)
-		}
-	})
-
 	it("nices a numeric histogram's axis too", () => {
 		// The numeric path bins raw observations and shares `useCountAxis`, so the
 		// same rounding has to reach it.

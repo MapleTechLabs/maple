@@ -136,7 +136,6 @@ describe("openinference", () => {
 			"pydantic_ai",
 			"smolagents",
 		] as const) {
-			expect(AI_VENDOR_INTEGRATIONS[vendorId].id).toBe("openinference")
 			expect(resolveAiIntegration(vendorId).id).toBe("openinference")
 		}
 	})
