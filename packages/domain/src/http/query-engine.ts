@@ -2136,9 +2136,9 @@ export class PodRestartsResponse extends Schema.Class<PodRestartsResponse>("PodR
 			podName: Schema.String,
 			namespace: Schema.String,
 			containerName: Schema.String,
-			/** Restarts inside the window (max - min of the running total). */
+			/** Restarts inside the window (last - first of the running total, floored at 0). */
 			restarts: Schema.Number,
-			/** The running total at its highest in the window. */
+			/** The running total at the window's newest sample. */
 			totalRestarts: Schema.Number,
 			/** Why the container last terminated (OOMKilled, Error, ...); empty when it never has. */
 			lastTerminatedReason: Schema.String,
