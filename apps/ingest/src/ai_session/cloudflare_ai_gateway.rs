@@ -19,6 +19,7 @@
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::Span;
 use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 
 pub(super) const VENDOR_ID: &str = "cloudflare_ai_gateway";
 pub(super) const SPAN_NAME: &str = "cf.aig.request";
@@ -165,7 +166,9 @@ fn response_reply(response: &Map<String, Value>) -> Option<Reply> {
 }
 
 /// The parts of a reply message a transcript shows; drops provider noise
-/// (`annotations`, `audio`, `logprobs`, ...).
+/// (`annotations`, `audio`, `logprobs`, ...). A refusal arrives with
+/// `content: null`, so its text stands in as the content or the reply would
+/// vanish from the transcript.
 fn message(source: &Map<String, Value>) -> Value {
     let mut out = Map::new();
     out.insert(
@@ -175,10 +178,15 @@ fn message(source: &Map<String, Value>) -> Value {
             .cloned()
             .unwrap_or_else(|| json!("assistant")),
     );
-    out.insert(
-        "content".to_owned(),
-        source.get("content").cloned().unwrap_or(Value::Null),
-    );
+    let refusal = source.get("refusal").filter(|refusal| refusal.is_string());
+    let content = match (source.get("content"), refusal) {
+        (None | Some(Value::Null), Some(refusal)) => refusal.clone(),
+        (content, _) => content.cloned().unwrap_or(Value::Null),
+    };
+    out.insert("content".to_owned(), content);
+    if let Some(refusal) = refusal {
+        out.insert("refusal".to_owned(), refusal.clone());
+    }
     if let Some(calls) = source
         .get("tool_calls")
         .filter(|calls| non_empty_array(calls))
@@ -188,25 +196,50 @@ fn message(source: &Map<String, Value>) -> Value {
     Value::Object(out)
 }
 
+/// Slot bounds for indexes read from the body: any tenant can post a span
+/// named `cf.aig.request`, and a list is grown up to the index it names.
+const MAX_CHOICES: usize = 16;
+const MAX_TOOL_CALLS: usize = 64;
+
+/// One streamed choice being reassembled.
+#[derive(Default)]
+struct StreamedChoice {
+    text: String,
+    refusal: String,
+    calls: Vec<Map<String, Value>>,
+    finish_reason: Option<String>,
+}
+
 /// A streamed reply arrives as every chunk the gateway relayed: bare deltas,
-/// then whole `chat.completion.chunk` objects, then a usage trailer. The text
-/// and tool-call fragments are joined back into the one message they made.
+/// then whole `chat.completion.chunk` objects, then a usage trailer. Each
+/// choice's text and tool-call fragments are joined back into the message it
+/// made; with `n > 1` the alternatives stay separate messages.
 fn streamed_reply(response: &Map<String, Value>, choices: &[Value]) -> Reply {
-    let mut text = String::new();
-    let mut calls: Vec<Map<String, Value>> = Vec::new();
-    let mut finish_reasons = Vec::new();
+    let mut streamed: BTreeMap<usize, StreamedChoice> = BTreeMap::new();
     let mut id = string_field(response, "id");
     let mut model = string_field(response, "model");
 
     let mut absorb = |choice: &Value| {
-        if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
-            finish_reasons.push(reason.to_owned());
+        let Some(slot) = bounded_index(choice, MAX_CHOICES) else {
+            return;
+        };
+        let reason = choice.get("finish_reason").and_then(Value::as_str);
+        let delta = choice.get("delta");
+        if reason.is_none() && delta.is_none() {
+            return;
         }
-        let Some(delta) = choice.get("delta") else {
+        let state = streamed.entry(slot).or_default();
+        if let Some(reason) = reason {
+            state.finish_reason = Some(reason.to_owned());
+        }
+        let Some(delta) = delta else {
             return;
         };
         if let Some(piece) = delta.get("content").and_then(Value::as_str) {
-            text.push_str(piece);
+            state.text.push_str(piece);
+        }
+        if let Some(piece) = delta.get("refusal").and_then(Value::as_str) {
+            state.refusal.push_str(piece);
         }
         for fragment in delta
             .get("tool_calls")
@@ -214,7 +247,7 @@ fn streamed_reply(response: &Map<String, Value>, choices: &[Value]) -> Reply {
             .into_iter()
             .flatten()
         {
-            merge_tool_call(&mut calls, fragment);
+            merge_tool_call(&mut state.calls, fragment);
         }
     };
     for entry in choices {
@@ -234,35 +267,51 @@ fn streamed_reply(response: &Map<String, Value>, choices: &[Value]) -> Reply {
         }
     }
 
-    let mut out = Map::new();
-    out.insert("role".to_owned(), json!("assistant"));
-    out.insert(
-        "content".to_owned(),
-        if text.is_empty() {
-            Value::Null
-        } else {
-            Value::String(text)
-        },
-    );
-    if !calls.is_empty() {
-        out.insert(
-            "tool_calls".to_owned(),
-            Value::Array(calls.into_iter().map(Value::Object).collect()),
-        );
-    }
-    finish_reasons.dedup();
+    let mut finish_reasons = Vec::new();
+    let messages: Vec<Value> = streamed
+        .into_values()
+        .map(|choice| {
+            finish_reasons.extend(choice.finish_reason);
+            let mut source = Map::new();
+            source.insert("role".to_owned(), json!("assistant"));
+            if !choice.text.is_empty() {
+                source.insert("content".to_owned(), Value::String(choice.text));
+            }
+            if !choice.refusal.is_empty() {
+                source.insert("refusal".to_owned(), Value::String(choice.refusal));
+            }
+            let calls: Vec<Value> = choice
+                .calls
+                .into_iter()
+                .filter(|call| !call.is_empty())
+                .map(Value::Object)
+                .collect();
+            if !calls.is_empty() {
+                source.insert("tool_calls".to_owned(), Value::Array(calls));
+            }
+            message(&source)
+        })
+        .collect();
     Reply {
-        messages: json!([Value::Object(out)]),
+        messages: Value::Array(messages),
         finish_reasons,
         id,
         model,
     }
 }
 
+/// The `index` field, defaulting to 0; `None` when it is past `bound`.
+fn bounded_index(value: &Value, bound: usize) -> Option<usize> {
+    let index = value.get("index").and_then(Value::as_u64).unwrap_or(0);
+    usize::try_from(index).ok().filter(|index| *index < bound)
+}
+
 /// OpenAI streams a tool call as fragments sharing an `index`; the first holds
 /// the id and name, every one adds to `function.arguments`.
 fn merge_tool_call(calls: &mut Vec<Map<String, Value>>, fragment: &Value) {
-    let index = fragment.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let Some(index) = bounded_index(fragment, MAX_TOOL_CALLS) else {
+        return;
+    };
     while calls.len() <= index {
         calls.push(Map::new());
     }
@@ -450,6 +499,87 @@ mod tests {
             "get_weather"
         );
         assert_eq!(attrs["gen_ai.response.finish_reasons"], r#"["tool_calls"]"#);
+    }
+
+    /// A minimal gateway span whose response body is `output`.
+    fn span_with_output(output: Value) -> String {
+        serde_json::json!({ "resourceSpans": [{
+            "resource": { "attributes": [
+                { "key": "service.name", "value": { "stringValue": "ai-gateway" } },
+            ] },
+            "scopeSpans": [{
+                "scope": { "name": "ai" },
+                "spans": [{
+                    "traceId": "5efa0db49636b9776296765eb22fa7b1",
+                    "spanId": "b0dae59224de5338",
+                    "name": "cf.aig.request",
+                    "kind": 1,
+                    "startTimeUnixNano": "1791844794580000000",
+                    "endTimeUnixNano": "1791844796041000000",
+                    "attributes": [
+                        { "key": "gen_ai.operation.name", "value": { "stringValue": "chat" } },
+                        { "key": "gen_ai.input.messages", "value": { "stringValue":
+                            r#"{"messages":[{"role":"user","content":"hi"}]}"# } },
+                        { "key": "gen_ai.output.messages", "value": { "stringValue": output.to_string() } },
+                    ],
+                }],
+            }],
+        }] })
+        .to_string()
+    }
+
+    #[test]
+    fn streamed_alternatives_stay_separate_messages() {
+        let attrs = stamped(&span_with_output(serde_json::json!({ "choices": [
+            { "index": 0, "delta": { "role": "assistant", "content": "Hel" } },
+            { "index": 1, "delta": { "role": "assistant", "content": "Go" } },
+            { "index": 0, "delta": { "content": "lo" } },
+            { "index": 1, "delta": { "content": "odbye" } },
+            { "index": 0, "delta": {}, "finish_reason": "stop" },
+            { "index": 1, "delta": {}, "finish_reason": "length" },
+        ] })));
+        assert_eq!(
+            parsed(&attrs, "gen_ai.output.messages"),
+            serde_json::json!([
+                { "role": "assistant", "content": "Hello" },
+                { "role": "assistant", "content": "Goodbye" },
+            ])
+        );
+        assert_eq!(
+            attrs["gen_ai.response.finish_reasons"],
+            r#"["stop","length"]"#
+        );
+    }
+
+    #[test]
+    fn refusal_stands_in_for_null_content() {
+        let attrs = stamped(&span_with_output(serde_json::json!({ "choices": [{
+            "index": 0,
+            "finish_reason": "stop",
+            "message": { "role": "assistant", "content": null, "refusal": "I can't help with that." },
+        }] })));
+        assert_eq!(
+            parsed(&attrs, "gen_ai.output.messages"),
+            serde_json::json!([{
+                "role": "assistant",
+                "content": "I can't help with that.",
+                "refusal": "I can't help with that.",
+            }])
+        );
+    }
+
+    #[test]
+    fn oversized_indexes_are_dropped_not_allocated() {
+        let attrs = stamped(&span_with_output(serde_json::json!({ "choices": [
+            { "index": 0, "delta": { "content": "ok", "tool_calls": [
+                { "index": 100_000_000u64, "function": { "name": "boom", "arguments": "{}" } },
+            ] } },
+            { "index": 100_000_000u64, "delta": { "content": "ignored" } },
+        ] })));
+        assert_eq!(
+            parsed(&attrs, "gen_ai.output.messages"),
+            serde_json::json!([{ "role": "assistant", "content": "ok" }])
+        );
     }
 
     #[test]
