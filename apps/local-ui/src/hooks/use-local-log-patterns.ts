@@ -39,7 +39,8 @@ export function useLocalLogPatterns(filters: LogFilters, bounds: TimeBounds) {
 			const { patterns } = clusterLogPatterns(rows, PATTERN_LIMIT)
 			return {
 				patterns,
-				totalSampled: rows.length,
+				// clusterLogPatterns skips empty bodies, so they stay out of the share denominator.
+				totalSampled: rows.filter((row) => String(row.body ?? "") !== "").length,
 				truncated: rows.length >= PATTERN_SAMPLE_SIZE,
 			}
 		},

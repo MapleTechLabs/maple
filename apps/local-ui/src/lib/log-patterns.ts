@@ -26,14 +26,14 @@ export function splitTemplate(template: string): ReadonlyArray<TemplateSegment> 
 }
 
 /**
- * The longest literal run of a template, trimmed: a body substring every
- * matching log contains, so the list's search filter can stand in for the pattern.
+ * The longest whitespace-free literal token of a template. Drain rejoins tokens with
+ * single spaces, so only one token is a substring of every matching body.
  */
 export function patternSearchTerm(template: string): string {
 	return splitTemplate(template)
 		.filter((segment) => !segment.variable)
-		.map((segment) => segment.text.trim())
-		.reduce((best, text) => (text.length > best.length ? text : best), "")
+		.flatMap((segment) => segment.text.split(/\s+/))
+		.reduce((best, token) => (token.length > best.length ? token : best), "")
 }
 
 export interface CountEntry {

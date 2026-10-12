@@ -25,8 +25,19 @@ describe("splitTemplate", () => {
 })
 
 describe("patternSearchTerm", () => {
-	it("picks the longest trimmed literal run", () => {
-		expect(patternSearchTerm("user <*> logged in from <ip>")).toBe("logged in from")
+	it("picks the longest single literal token", () => {
+		expect(patternSearchTerm("user <*> logged in from <ip>")).toBe("logged")
+	})
+
+	it("stays a substring of bodies whose whitespace Drain collapsed", () => {
+		const rows = [
+			{ body: "payment   declined for order 1", severityText: "WARN", serviceName: "api" },
+			{ body: "payment\tdeclined for order 2", severityText: "WARN", serviceName: "api" },
+		]
+		const { patterns } = clusterLogPatterns(rows)
+		const term = patternSearchTerm(patterns[0].template)
+		expect(term.length).toBeGreaterThan(0)
+		for (const row of rows) expect(row.body).toContain(term)
 	})
 
 	it("is empty for an all-variable template", () => {

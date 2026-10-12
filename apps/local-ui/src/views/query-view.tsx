@@ -37,7 +37,7 @@ import { EmptyState } from "../components/view-states"
 
 interface Submission {
 	readonly sql: string
-	readonly run: number
+	readonly id: string
 }
 
 interface ConsoleResult {
@@ -53,7 +53,7 @@ export function QueryView() {
 	const setSql = (next: string) => setParams({ sql: next })
 	const [submitted, setSubmitted] = useState<Submission | null>(null)
 	const queryClient = useQueryClient()
-	const resultKey = ["query-console", submitted?.run ?? 0, submitted?.sql ?? ""]
+	const resultKey = ["query-console", submitted?.id ?? "", submitted?.sql ?? ""]
 
 	const result = useQuery({
 		queryKey: resultKey,
@@ -70,7 +70,8 @@ export function QueryView() {
 	const run = () => {
 		const text = sql.trim()
 		if (text === "") return
-		setSubmitted((prev) => ({ sql: text, run: (prev?.run ?? 0) + 1 }))
+		// A fresh id per submission: a remount must never be served a cached result for the same SQL.
+		setSubmitted({ sql: text, id: crypto.randomUUID() })
 	}
 	const cancel = () => void queryClient.cancelQueries({ queryKey: resultKey })
 	const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
