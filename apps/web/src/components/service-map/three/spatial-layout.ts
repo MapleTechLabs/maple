@@ -141,7 +141,7 @@ export const nodeHeight = (node: Node3D) => 0.5 + Math.log10(Math.max(1, node.th
 // Shared thresholds (lib/error-rate); the 3D scene keeps its own hex palette below.
 const HEALTH_BY_LEVEL = { crit: "degraded", warn: "elevated", neutral: "healthy" } as const
 export const health = (rate: number) => HEALTH_BY_LEVEL[errorRateLevel(rate)]
-export const HEALTH_COLOR = { healthy: "#79ad9b", elevated: "#d3a65c", degraded: "#dc7b6d" } as const
+export const HEALTH_COLOR = { healthy: "#2f8f83", elevated: "#d9a21b", degraded: "#c8553d" } as const
 /** The shared rate format, plus the 3D labels' "/s" suffix, "~" estimate mark and "<0.1" floor. */
 export const formatRate = (rate: number, estimated = false) =>
 	`${estimated ? "~" : ""}${rate > 0 && rate < 0.1 ? "<0.1" : formatSharedRate(rate)}/s`

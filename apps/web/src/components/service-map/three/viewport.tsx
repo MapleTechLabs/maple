@@ -15,7 +15,7 @@ import {
 import { resolveMachineBadge } from "./factory-badge"
 import { ServiceMap3D, type CameraCommand } from "./scene"
 import type { Topology3D, Edge3D } from "./types"
-import { MAP_SKY } from "./appearance"
+import { mapPalette, paperBackground, type MapStyle } from "./appearance"
 import { factoryRoutes, decorateRoutes, type RoutingTopology } from "./factory-routing"
 import {
 	connectedIds,
@@ -39,6 +39,17 @@ const VIEW_COPY = {
 		encoding: "Layer height · dependency depth",
 	},
 } as const
+
+// Maple labels are timber. Per-style styling lives in classes because the
+// camera rig rewrites inline style every frame, keeping only position and colour.
+const NAIL =
+	"before:absolute before:top-1/2 before:size-[2px] before:-translate-y-1/2 before:rounded-full before:bg-current after:absolute after:top-1/2 after:size-[2px] after:-translate-y-1/2 after:rounded-full after:bg-current"
+const MAPLE_SIGN = "rounded-[3px] px-1.5 font-medium"
+const MAPLE_TAG =
+	"rounded-l-[7px] rounded-r-[2px] border-current/50 pr-1 pl-2.5 before:absolute before:top-1/2 before:left-[3px] before:size-[3px] before:-translate-y-1/2 before:rounded-full before:border before:border-current/70 after:absolute after:bottom-full after:left-[4px] after:h-1.5 after:w-px after:bg-current/50"
+const MAPLE_PLANK = `rounded-[2px] px-2.5 py-px font-semibold before:left-[4px] after:right-[4px] ${NAIL}`
+
+const MAPLE_PANEL = "rounded-[3px] border border-(--map-sign-ink)/35 bg-(--map-sign) text-(--map-sign-ink)"
 
 function edgeLatency(edge: Edge3D) {
 	return edge.p95LatencyMs !== undefined
@@ -64,6 +75,14 @@ export function ServiceMap3DViewport({
 	const reducedMotion = useReducedMotion()
 	const { theme } = useTheme()
 	const dark = theme === "dark"
+	const [style, setStyle] = useState<MapStyle>("drafted")
+	const palette = mapPalette(style, dark)
+	const maple = palette.style === "maple"
+	// Sign colours as CSS variables, so overlay chrome can follow the palette from classes.
+	const signColors = {
+		"--map-sign": palette.sign,
+		"--map-sign-ink": palette.signInk,
+	} satisfies Record<`--${string}`, string>
 	const flowing = traffic && !reducedMotion
 	// Metrics can refresh without replacing the layout or resetting the user's camera.
 	const topologyKey = JSON.stringify({
@@ -109,6 +128,20 @@ export function ServiceMap3DViewport({
 						Cascade
 					</ToggleGroupItem>
 				</ToggleGroup>
+				<ToggleGroup
+					value={[style]}
+					onValueChange={(values) => {
+						const next = values.find((value) => value !== style)
+						if (next === "drafted" || next === "whimsy" || next === "maple") setStyle(next)
+					}}
+					variant="outline"
+					size="xs"
+					aria-label="Map style"
+				>
+					<ToggleGroupItem value="drafted">Drafted</ToggleGroupItem>
+					<ToggleGroupItem value="whimsy">Whimsy</ToggleGroupItem>
+					<ToggleGroupItem value="maple">Maple</ToggleGroupItem>
+				</ToggleGroup>
 				<span className="ml-3 hidden text-2xs text-muted-foreground sm:block">{copy.encoding}</span>
 				<Button
 					size="sm"
@@ -125,22 +158,17 @@ export function ServiceMap3DViewport({
 			<section
 				className="relative min-h-0 flex-1 overflow-hidden"
 				aria-label={`${copy.title} 3D service map`}
-				style={MAP_SKY}
+				style={{ ...paperBackground(palette), ...signColors }}
 			>
-				<div
-					aria-hidden="true"
-					className="pointer-events-none absolute left-[8%] top-[12%] aspect-square w-[17%] max-w-52 rounded-full bg-[#fff0bb] opacity-85"
-				/>
 				<ServiceMap3D
 					topology={topology}
 					layout={layout}
 					links={links}
-					routes={routes}
 					view={view}
 					selectedId={selectedId}
 					onSelect={onSelect}
 					flowing={flowing}
-					dark={dark}
+					palette={palette}
 					command={command}
 					labels={labels}
 				/>
@@ -156,12 +184,12 @@ export function ServiceMap3DViewport({
 									else labels.current.delete(node.id)
 								}}
 								title={badge ? `${node.label} · ${badge.label}` : node.label}
-								className={`pointer-events-auto absolute top-0 left-0 flex max-w-40 rounded px-1.5 py-1 text-3xs leading-none whitespace-nowrap transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-ring ${selectedId === node.id ? "bg-background text-foreground ring-1 ring-primary" : "text-foreground/90"}`}
+								className={`pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring ${maple ? MAPLE_SIGN : "rounded-[2px] px-1"} ${selectedId === node.id ? "border-current" : maple ? "border-current/60 hover:border-current" : "border-current/30 hover:border-current"}`}
 								style={{
 									visibility: "hidden",
-									opacity: node.dimmed || (related && !related.has(node.id)) ? 0.25 : 1,
-									backgroundColor:
-										selectedId === node.id ? undefined : dark ? "#242321e6" : "#e5e5dfe6",
+									opacity: node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1,
+									backgroundColor: maple ? palette.sign : palette.paper,
+									color: maple ? palette.signInk : palette.ink,
 								}}
 								onClick={() => onSelect(selectedId === node.id ? null : node.id)}
 								aria-label={`Select ${node.label}${badge ? `, ${badge.label}` : ""}`}
@@ -186,15 +214,17 @@ export function ServiceMap3DViewport({
 									if (element) labels.current.set(link.id, element)
 									else labels.current.delete(link.id)
 								}}
-								className="pointer-events-auto absolute top-0 left-0 flex h-5 min-w-14 cursor-pointer items-center justify-center gap-1 rounded-[3px] border-2 border-[#747766] bg-[#e1d5a9] px-2 font-mono text-4xs font-bold text-[#30362c] shadow-[0_2px_0_#3a4034] hover:bg-[#f4e8bc] focus-visible:outline-2 focus-visible:outline-ring"
-								style={{ visibility: "hidden" }}
+								className={`pointer-events-auto absolute top-0 left-0 flex cursor-pointer items-center border font-mono text-4xs leading-normal tabular-nums hover:border-current focus-visible:outline-2 focus-visible:outline-ring ${maple ? MAPLE_TAG : "rounded-[2px] border-current/30 px-1"}`}
+								style={{
+									visibility: "hidden",
+									backgroundColor: palette.sign,
+									color: palette.signInk,
+								}}
 								title={`${nodesById.get(link.edge.source)?.label} → ${nodesById.get(link.edge.target)?.label} · ${formatRate(link.edge.callsPerSecond, link.edge.hasSampling)} calls · ${edgeLatency(link.edge)}`}
 								aria-label={`Inspect connection to ${nodesById.get(link.edge.target)?.label}, ${formatRate(link.edge.callsPerSecond, link.edge.hasSampling)}`}
 								onClick={() => onSelect(link.edge.target)}
 							>
-								<span className="absolute left-0.5 size-0.5 rounded-full bg-[#666e57]" />
 								{formatRate(link.edge.callsPerSecond, link.edge.hasSampling)}
-								<span className="absolute right-0.5 size-0.5 rounded-full bg-[#666e57]" />
 							</button>
 						))}
 					{layout.districts.map((district) => (
@@ -204,8 +234,16 @@ export function ServiceMap3DViewport({
 								if (element) labels.current.set(`district:${district.id}`, element)
 								else labels.current.delete(`district:${district.id}`)
 							}}
-							className="absolute top-0 left-0 rounded-sm bg-background/80 px-1 py-0.5 text-4xs uppercase tracking-widest text-foreground/85"
-							style={{ visibility: "hidden" }}
+							className={`absolute top-0 left-0 font-mono text-4xs uppercase tracking-widest ${maple ? MAPLE_PLANK : ""}`}
+							style={
+								maple
+									? {
+											visibility: "hidden",
+											backgroundColor: palette.trunk,
+											color: palette.tape,
+										}
+									: { visibility: "hidden", color: palette.ink }
+							}
 						>
 							{district.label}
 						</span>
@@ -216,17 +254,19 @@ export function ServiceMap3DViewport({
 						if (element) labels.current.set("overlay:hud", element)
 						else labels.current.delete("overlay:hud")
 					}}
-					className="pointer-events-none absolute top-4 left-4 rounded-md bg-background/90 px-3 py-2"
+					className={`pointer-events-none absolute top-4 left-4 px-3 py-2 ${maple ? MAPLE_PANEL : "rounded-md bg-background/90"}`}
 				>
 					<h2 className="font-display text-base font-medium">{copy.title}</h2>
-					<p className="mt-1 text-2xs text-muted-foreground">{copy.description}</p>
+					<p className={`mt-1 text-2xs ${maple ? "opacity-75" : "text-muted-foreground"}`}>
+						{copy.description}
+					</p>
 				</div>
 				<div
 					ref={(element) => {
 						if (element) labels.current.set("overlay:legend", element)
 						else labels.current.delete("overlay:legend")
 					}}
-					className="pointer-events-none absolute bottom-14 left-4 flex flex-wrap gap-3 rounded-md sm:bottom-4 bg-background/95 px-3 py-2 text-3xs text-foreground/85"
+					className={`pointer-events-none absolute bottom-14 left-4 flex flex-wrap gap-3 px-3 py-2 text-3xs sm:bottom-4 ${maple ? MAPLE_PANEL : "rounded-md bg-background/95 text-foreground/85"}`}
 				>
 					{(["healthy", "elevated", "degraded"] as const).map((status) => (
 						<span key={status} className="flex items-center gap-1.5 capitalize">
@@ -243,7 +283,7 @@ export function ServiceMap3DViewport({
 						if (element) labels.current.set("overlay:controls", element)
 						else labels.current.delete("overlay:controls")
 					}}
-					className="absolute right-4 bottom-4 flex gap-1 rounded-md border bg-background p-1"
+					className={`absolute right-4 bottom-4 flex gap-1 p-1 ${maple ? MAPLE_PANEL : "rounded-md border bg-background"}`}
 					aria-label="Camera controls"
 				>
 					<IconButton size="icon-xs" label="Zoom out" onClick={() => camera("out")}>
@@ -258,12 +298,12 @@ export function ServiceMap3DViewport({
 				</fieldset>
 			</section>
 			<div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-3xs text-muted-foreground">
-				<span>Drag to orbit · scroll to zoom · right-drag to pan</span>
+				<span>Drag to pan · scroll to zoom</span>
 				<span>
 					{selectedId
 						? `${related?.size ?? 0} connected nodes · click the canvas to clear`
 						: sample
-							? "Pipes · calls / Conveyors · queues · sample traffic"
+							? "Narrow belts · calls / Wide belts · queues · sample traffic"
 							: "Rates from selected time range · ~ sampled estimate"}
 				</span>
 			</div>
