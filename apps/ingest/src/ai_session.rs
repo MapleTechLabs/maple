@@ -72,6 +72,7 @@ use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::span::Event;
 
 mod claude_code;
+mod cloudflare_ai_gateway;
 mod facts;
 mod usage;
 
@@ -172,6 +173,9 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                         continue;
                     }
                     claude_code::normalize(span);
+                }
+                if classification.vendor == cloudflare_ai_gateway::VENDOR_ID {
+                    cloudflare_ai_gateway::normalize(span);
                 }
                 let mut stamps = facts::stamps(span, classification.vendor);
                 // One reserve, not a doubling realloc per push that each copy
@@ -963,6 +967,11 @@ static VENDORS: &[Vendor] = &[
         session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
+        id: cloudflare_ai_gateway::VENDOR_ID,
+        detect: detect_cloudflare_ai_gateway,
+        session_keys: cloudflare_ai_gateway::SESSION_KEYS,
+    },
+    Vendor {
         id: "openrouter",
         detect: detect_openrouter,
         session_keys: &["session.id"],
@@ -1203,6 +1212,12 @@ fn detect_litellm(c: &Ctx) -> bool {
     // No `litellm.` attr-prefix clause: that would steal the host framework's
     // spans (litellm.call_id rides along inside other frameworks' spans).
     c.scope.litellm
+}
+
+fn detect_cloudflare_ai_gateway(c: &Ctx) -> bool {
+    // Scope `ai` is shared with the Vercel AI SDK, so the gateway is told
+    // apart by its span name, which nothing else emits.
+    c.span_name == cloudflare_ai_gateway::SPAN_NAME
 }
 
 fn detect_openrouter(c: &Ctx) -> bool {

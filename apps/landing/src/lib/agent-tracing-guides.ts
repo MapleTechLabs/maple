@@ -60,6 +60,7 @@ export const AGENT_GUIDES: readonly AgentGuide[] = [
 		"csharp",
 	]),
 	guide("openrouter", "OpenRouter", "Broadcast traces from the gateway", "openrouter", ["typescript", "python"]),
+	guide("cloudflare-ai-gateway", "Cloudflare AI Gateway", "Export traces from the gateway", "cloudflare", ["typescript"]),
 	guide("litellm", "LiteLLM", "SDK and proxy", "litellm", ["python"]),
 	guide("provider-sdks", "OpenAI, Anthropic & Gemini SDKs", "Your own agent loop", "openai", ["python", "typescript"]),
 	guide(
