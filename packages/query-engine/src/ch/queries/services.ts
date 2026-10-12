@@ -63,7 +63,7 @@ export interface ServiceWindowFilters {
 }
 
 /**
- * The bucket grain a service-history stream is reconstructed at.
+ * The bucket grain (`grain`) a service-history stream is reconstructed at.
  *
  * `"hour"` is the two-tier splice: raw partial boundary hours + the hourly
  * rollup's interior. Correct for any query that aggregates the whole window, and
@@ -75,10 +75,9 @@ export interface ServiceWindowFilters {
  * `bucketSeconds` is not a multiple of 3600 — an hour-floored row landing in a
  * sub-hour bucket puts a whole hour of traffic on the bucket containing `:00`
  * and leaves the rest of the hour reading zero.
+ *
+ * The hour grain always splices the hourly tier; only the minute grain can drop it.
  */
-export type OverviewGrain = "hour" | "minute"
-
-/** The hour grain always splices the hourly tier; only the minute grain can drop it. */
 export type ServiceWindowTiers =
 	| { readonly grain?: "hour"; readonly includeHourly?: true }
 	| {
