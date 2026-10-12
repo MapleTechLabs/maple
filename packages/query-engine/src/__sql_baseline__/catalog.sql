@@ -1055,6 +1055,24 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
+-- builder:infra:hostFilesystemsQuery:default  [c12d4b7b]
+SELECT
+          metrics_gauge.Attributes['mountpoint'] AS mountpoint,
+          any(metrics_gauge.Attributes['device']) AS device,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0), 0) AS usedAvg,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0) AS usedMax
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
+          AND metrics_gauge.MetricName = 'system.filesystem.utilization'
+          AND metrics_gauge.Attributes['state'] = 'used'
+        GROUP BY mountpoint
+        ORDER BY usedMax DESC
+        LIMIT 20
+        FORMAT JSON
+
 -- builder:infra:hostGaugeTimeseriesQuery:default  [b4ba966f]
 SELECT
           toStartOfInterval(metrics_gauge.TimeUnix, INTERVAL 300 SECOND) AS bucket,
@@ -1137,6 +1155,60 @@ SELECT
         LIMIT 1
 FORMAT JSON
 
+-- builder:infra:listNodesQuery:default  [6fe8973a]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.node.name'] AS nodeName,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.node.uid'], metrics_gauge.ResourceAttributes['k8s.node.uid'] != '') AS nodeUid,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.cluster.name'], metrics_gauge.ResourceAttributes['k8s.cluster.name'] != '') AS clusterName,
+          anyIf(coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment']), coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment']) != '') AS environment,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.kubelet.version'], metrics_gauge.ResourceAttributes['k8s.kubelet.version'] != '') AS kubeletVersion,
+          max(metrics_gauge.TimeUnix) AS lastSeen,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) AS cpuUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0) AS cpuAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0), 0), 0) AS cpuUtilization,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) AS memoryUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0) AS memoryAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0), 0), 0) AS memoryUtilization,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.uptime'), 0) AS uptime
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.node.name'] != ''
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
+          AND metrics_gauge.MetricName IN ('k8s.node.cpu.usage', 'k8s.node.uptime', 'k8s.node.memory.working_set', 'k8s.node.allocatable_cpu', 'k8s.node.allocatable_memory')
+        GROUP BY nodeName
+        HAVING countIf(metrics_gauge.MetricName = 'k8s.node.cpu.usage') > 0
+        ORDER BY lastSeen DESC
+        LIMIT 200
+        OFFSET 0
+        FORMAT JSON
+
+-- builder:infra:nodeDetailSummaryQuery:default  [33fb2081]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.node.name'] AS nodeName,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.node.uid'], metrics_gauge.ResourceAttributes['k8s.node.uid'] != '') AS nodeUid,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.kubelet.version'], metrics_gauge.ResourceAttributes['k8s.kubelet.version'] != '') AS kubeletVersion,
+          anyIf(coalesce(nullIf(metrics_gauge.ResourceAttributes['container.runtime.name'], ''), metrics_gauge.ResourceAttributes['container.runtime']), coalesce(nullIf(metrics_gauge.ResourceAttributes['container.runtime.name'], ''), metrics_gauge.ResourceAttributes['container.runtime']) != '') AS containerRuntime,
+          min(metrics_gauge.TimeUnix) AS firstSeen,
+          max(metrics_gauge.TimeUnix) AS lastSeen,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) AS cpuUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0) AS cpuAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0), 0), 0) AS cpuUtilization,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) AS memoryUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0) AS memoryAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0), 0), 0) AS memoryUtilization,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.uptime'), 0) AS uptime
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.node.name'] = 'ip-10-0-1-42.ec2.internal'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
+          AND metrics_gauge.MetricName IN ('k8s.node.cpu.usage', 'k8s.node.uptime', 'k8s.node.memory.working_set', 'k8s.node.allocatable_cpu', 'k8s.node.allocatable_memory')
+        GROUP BY nodeName
+        FORMAT JSON
+
 -- builder:infra:nodeFacetsQuery:default  [0dff8530]
 SELECT
           metrics_gauge.ResourceAttributes['k8s.node.name'] AS name,
@@ -1199,6 +1271,22 @@ SELECT
           AND metrics_gauge.ResourceAttributes['k8s.node.name'] = 'ip-10-0-1-42.ec2.internal'
           AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
           AND metrics_gauge.MetricName = 'k8s.node.cpu.utilization'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:infra:nodeGaugeTimeseriesQuery:utilization  [f4c7789a]
+SELECT
+          toStartOfInterval(metrics_gauge.TimeUnix, INTERVAL 300 SECOND) AS bucket,
+          '' AS attributeValue,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0), 0), 0) AS avgValue
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.node.name'] = 'ip-10-0-1-42.ec2.internal'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
+          AND metrics_gauge.MetricName IN ('k8s.node.memory.working_set', 'k8s.node.allocatable_memory')
         GROUP BY bucket
         ORDER BY bucket ASC
         FORMAT JSON
@@ -1369,6 +1457,47 @@ SELECT
           AND metrics_gauge.MetricName = 'k8s.pod.cpu.utilization'
         GROUP BY bucket
         ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:infra:podRestartsQuery:default  [b489a972]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.pod.name'] AS podName,
+          metrics_gauge.ResourceAttributes['k8s.namespace.name'] AS namespace,
+          metrics_gauge.ResourceAttributes['k8s.container.name'] AS containerName,
+          ifNotFinite(greatest(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix) - argMin(metrics_gauge.Value, metrics_gauge.TimeUnix), 0), 0) AS restarts,
+          ifNotFinite(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix), 0) AS totalRestarts,
+          argMax(metrics_gauge.ResourceAttributes['k8s.container.status.last_terminated_reason'], metrics_gauge.TimeUnix) AS lastTerminatedReason
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.MetricName = 'k8s.container.restarts'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] != ''
+          AND metrics_gauge.ResourceAttributes['k8s.namespace.name'] = 'backend'
+          AND metrics_gauge.ResourceAttributes['k8s.deployment.name'] = 'api'
+        GROUP BY podName, namespace, containerName
+        ORDER BY restarts DESC, totalRestarts DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:infra:podRestartsQuery:podNames  [4976b882]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.pod.name'] AS podName,
+          metrics_gauge.ResourceAttributes['k8s.namespace.name'] AS namespace,
+          metrics_gauge.ResourceAttributes['k8s.container.name'] AS containerName,
+          ifNotFinite(greatest(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix) - argMin(metrics_gauge.Value, metrics_gauge.TimeUnix), 0), 0) AS restarts,
+          ifNotFinite(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix), 0) AS totalRestarts,
+          argMax(metrics_gauge.ResourceAttributes['k8s.container.status.last_terminated_reason'], metrics_gauge.TimeUnix) AS lastTerminatedReason
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.MetricName = 'k8s.container.restarts'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] != ''
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] IN ('api-7d9f8b6c5-x2n4k', 'worker-5c8d7f9b4-q7m2p')
+        GROUP BY podName, namespace, containerName
+        ORDER BY restarts DESC, totalRestarts DESC
+        LIMIT 500
         FORMAT JSON
 
 -- builder:infra:workloadFacetsQuery:default  [39bce5d0]
@@ -3353,7 +3482,7 @@ SELECT
           sum(shapes.bErr) AS errorCount,
           if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
           if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
-          toString(max(shapes.bLastSeen)) AS lastSeen
+          max(shapes.bLastSeen) AS lastSeen
         FROM (
 SELECT
           service_map_db_query_shapes_hourly.ServiceName AS bService,
@@ -3447,7 +3576,7 @@ SELECT
           sum(shapes.bErr) AS errorCount,
           if(sum(shapes.bEst) > 0, sum(shapes.bWDur) / sum(shapes.bEst), 0) AS avgDurationMs,
           if(sum(bCount) > 0, arrayElement(quantilesTDigestWeightedMerge(0.5, 0.95)(bQ), 2) / 1000000, 0) AS p95DurationMs,
-          toString(max(shapes.bLastSeen)) AS lastSeen
+          max(shapes.bLastSeen) AS lastSeen
         FROM (
 SELECT
           service_map_db_query_shapes_hourly.ServiceName AS bService,
@@ -4328,15 +4457,15 @@ SELECT
         GROUP BY OrgId, Hour, SourceService, TargetService, DeploymentEnv
         FORMAT JSON
 
--- builder:service-operations:routeUsageQuery:allServices  [cc7e9fe3]
+-- builder:service-operations:routeUsageQuery:allServices  [679f9639]
 SELECT
           route_windows.bServiceName AS serviceName,
           route_windows.bSpanName AS spanName,
           sum(route_windows.bSpanCount) AS spanCount,
           sum(route_windows.bErrorCount) AS errorCount,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
-          toString(min(route_windows.bFirst)) AS firstSeen,
-          toString(max(route_windows.bLast)) AS lastSeen
+          min(route_windows.bFirst) AS firstSeen,
+          max(route_windows.bLast) AS lastSeen
         FROM (
 SELECT
           traces.ServiceName AS bServiceName,
@@ -4390,15 +4519,15 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:service-operations:routeUsageQuery:searchStalest  [45e0cd47]
+-- builder:service-operations:routeUsageQuery:searchStalest  [8998c3e5]
 SELECT
           route_windows.bServiceName AS serviceName,
           route_windows.bSpanName AS spanName,
           sum(route_windows.bSpanCount) AS spanCount,
           sum(route_windows.bErrorCount) AS errorCount,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
-          toString(min(route_windows.bFirst)) AS firstSeen,
-          toString(max(route_windows.bLast)) AS lastSeen
+          min(route_windows.bFirst) AS firstSeen,
+          max(route_windows.bLast) AS lastSeen
         FROM (
 SELECT
           traces.ServiceName AS bServiceName,
@@ -9057,9 +9186,10 @@ SELECT
         ORDER BY totalSizeBytes DESC
         FORMAT JSON
 
--- pipe:list_logs:default:baseline  [3e0dd5a5]
+-- pipe:list_logs:default:baseline  [e892c9d2]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9089,9 +9219,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:default:bloom  [3e0dd5a5]
+-- pipe:list_logs:default:bloom  [e892c9d2]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9121,9 +9252,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:default:text  [3e0dd5a5]
+-- pipe:list_logs:default:text  [e892c9d2]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9153,9 +9285,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:searched:baseline  [12ccde13]
+-- pipe:list_logs:searched:baseline  [4089be08]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9193,9 +9326,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:searched:bloom  [ca3b875f]
+-- pipe:list_logs:searched:bloom  [74bedc54]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -9233,9 +9367,10 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:searched:text  [7ac1f4bb]
+-- pipe:list_logs:searched:text  [e30d1660]
 SELECT
           logs.Timestamp AS timestamp,
+          toString(logs.Timestamp) AS exactTimestamp,
           logs.SeverityText AS severityText,
           logs.SeverityNumber AS severityNumber,
           logs.ServiceName AS serviceName,
@@ -11097,14 +11232,14 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- pipe:slow_traces:default:baseline  [94ac2455]
+-- pipe:slow_traces:default:baseline  [23e2dc88]
 SELECT
           trace_list_mv.TraceId AS traceId,
           trace_list_mv.SpanName AS spanName,
           trace_list_mv.ServiceName AS serviceName,
           trace_list_mv.Duration / 1000000 AS durationMs,
           trace_list_mv.StatusCode AS statusCode,
-          toString(trace_list_mv.Timestamp) AS timestamp
+          trace_list_mv.Timestamp AS timestamp
         FROM trace_list_mv
         WHERE trace_list_mv.OrgId = 'org_sql_catalog'
           AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
@@ -11250,7 +11385,7 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- pipe:span_search:default:baseline  [b1656c33]
+-- pipe:span_search:default:baseline  [8fc1ed98]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -11261,7 +11396,7 @@ SELECT
           traces.StatusMessage AS statusMessage,
           traces.SpanAttributes AS spanAttributes,
           traces.ResourceAttributes AS resourceAttributes,
-          toString(traces.Timestamp) AS timestamp
+          traces.Timestamp AS timestamp
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -11278,7 +11413,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:span_search:default:bloom  [b1656c33]
+-- pipe:span_search:default:bloom  [8fc1ed98]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -11289,7 +11424,7 @@ SELECT
           traces.StatusMessage AS statusMessage,
           traces.SpanAttributes AS spanAttributes,
           traces.ResourceAttributes AS resourceAttributes,
-          toString(traces.Timestamp) AS timestamp
+          traces.Timestamp AS timestamp
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -11306,7 +11441,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:span_search:default:text  [b1656c33]
+-- pipe:span_search:default:text  [8fc1ed98]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -11317,7 +11452,7 @@ SELECT
           traces.StatusMessage AS statusMessage,
           traces.SpanAttributes AS spanAttributes,
           traces.ResourceAttributes AS resourceAttributes,
-          toString(traces.Timestamp) AS timestamp
+          traces.Timestamp AS timestamp
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'

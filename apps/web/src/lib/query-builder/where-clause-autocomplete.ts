@@ -543,7 +543,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 
 	const firstValueChar = trimmedValueTail[0]
 	if (firstValueChar === '"' || firstValueChar === "'") {
-		const closingQuote = findClosingQuote(trimmedValueTail, firstValueChar as '"' | "'")
+		const closingQuote = findClosingQuote(trimmedValueTail, firstValueChar)
 
 		if (closingQuote === -1) {
 			return {

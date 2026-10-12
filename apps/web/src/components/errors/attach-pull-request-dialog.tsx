@@ -23,7 +23,7 @@ import { IN_FLIGHT_SOFT } from "./workflow-badge"
 
 import { DocsLink } from "@/components/common/docs-link"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 /**
  * Picking the pull request that fixes an issue.
@@ -40,7 +40,7 @@ import { retainedQuery } from "@/lib/services/common/atom-client"
 export const PULL_REQUEST_STATE_TONE = {
 	// Open is work under way; merged is done.
 	open: IN_FLIGHT_SOFT,
-	merged: TONE_SOFT.ok,
+	merged: TONE_SOFT.done,
 	closed: TONE_SOFT.neutral,
 } satisfies Record<PullRequestSummary["state"], string>
 
@@ -90,7 +90,7 @@ export function AttachPullRequestDialog({
 	const [filter, setFilter] = useState("")
 
 	const statusResult = useAtomValue(
-		retainedQuery("integrations", "githubStatus", { reactivityKeys: ["githubStatus"] }),
+		retainedInternalQuery("integrations", "githubStatus", { reactivityKeys: ["githubStatus"] }),
 	)
 	const status = Result.builder(statusResult)
 		.onSuccess((value) => value)
@@ -110,7 +110,7 @@ export function AttachPullRequestDialog({
 			: (repositories[0]?.fullName ?? null))
 
 	const pullRequestsResult = useAtomValue(
-		retainedQuery("integrations", "vcsPullRequests", {
+		retainedInternalQuery("integrations", "vcsPullRequests", {
 			// The query still has to be well-formed when there is nothing to ask
 			// about; the list below is gated on `connected` and a real selection.
 			query: {

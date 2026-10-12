@@ -17,10 +17,10 @@ import {
 	type TracerProvider,
 	trace,
 } from "@opentelemetry/api"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
 import { XMLHttpRequestInstrumentation } from "@opentelemetry/instrumentation-xml-http-request"
+import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
 import { resourceFromAttributes } from "@opentelemetry/resources"
 import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
@@ -30,6 +30,7 @@ import type { ResolvedConfig } from "./config"
 import { responseHeaders, setHeaderAttributes } from "./http-headers"
 import { HttpStatusExporter } from "./http-status"
 import { OfflineSpanExporter } from "./offline"
+import { flushUnloading, newestFirstOnExit, OtlpExporter } from "./otlp"
 import { SessionSampler } from "./sampling"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -110,6 +111,9 @@ class ConsentSpanExporter implements SpanExporter {
  */
 const EXPORT_INTERVAL_MS = 2_000
 
+/** Keepalive room the older spans of an exit batch leave for the logs, which are flushed after them. */
+const EXIT_LOGS_RESERVE_BYTES = 8 * 1024
+
 /**
  * The provider this SDK registered, while it is live. Everything Maple spans
  * goes through it directly: the global provider may belong to the host app,
@@ -168,15 +172,20 @@ export function resourceAttributes(config: ResolvedConfig): Record<string, strin
  * live id per span instead.
  */
 export function setupTracing(config: ResolvedConfig): () => Promise<void> {
-	const otlp = new OTLPTraceExporter({
-		url: `${config.endpoint}/v1/traces`,
+	const otlp = new OtlpExporter(
+		`${config.endpoint}/v1/traces`,
 		// The same auth + `x-maple-sdk` headers as every session write; a page
 		// cannot set `user-agent`, so ingest reads the SDK from the latter.
-		headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
-	})
+		ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
+		JsonTraceSerializer,
+	)
 	const exporter = new ConsentSpanExporter(
 		new HttpStatusExporter(
-			config.offlineQueue ? new OfflineSpanExporter(otlp) : otlp,
+			newestFirstOnExit(
+				config.offlineQueue ? new OfflineSpanExporter(otlp) : otlp,
+				JsonTraceSerializer,
+				EXIT_LOGS_RESERVE_BYTES,
+			),
 			config.errorFilters.captureHttpStatus,
 		),
 	)
@@ -231,14 +240,15 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// entering the bfcache fires it too; ending there is still right, since it
 	// may never be restored.
 	const settledRequests = new Map<ApiSpan, number>()
-	const onPageHide = (): void => {
-		for (const [span, endTime] of settledRequests) {
-			// Entries are only pruned on the next request, so some already ended.
-			if (span.isRecording()) span.end(endTime)
-		}
-		settledRequests.clear()
-		onExit()
-	}
+	const onPageHide = (): void =>
+		flushUnloading(() => {
+			for (const [span, endTime] of settledRequests) {
+				// Entries are only pruned on the next request, so some already ended.
+				if (span.isRecording()) span.end(endTime)
+			}
+			settledRequests.clear()
+			onExit()
+		})
 	// Runs as the response settles, right before the instrumentation schedules
 	// the span's deferred end. Pruning here keeps the map to spans still waiting.
 	const noteSettled = (span: ApiSpan): void => {

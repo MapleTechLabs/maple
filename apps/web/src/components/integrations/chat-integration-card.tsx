@@ -18,6 +18,7 @@ import {
 } from "@maple/ui/components/ui/item"
 import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 
 import { ErrorState } from "@/components/common/error-state"
@@ -171,7 +172,14 @@ function ChatIdentityRow({
 		<Item variant="card" className="gap-3 px-4 py-3">
 			<ItemContent className="gap-0.5">
 				<ItemTitle>Your {platform} account</ItemTitle>
-				<ItemDescription className="truncate text-2xs">
+				<ItemDescription
+					className="truncate text-2xs"
+					title={
+						identity === undefined
+							? undefined
+							: (identity.display_name ?? identity.external_user_id)
+					}
+				>
 					{identity === undefined
 						? `Link it so Maple knows it's you acting from ${platform}.`
 						: `Linked as ${identity.display_name ?? identity.external_user_id}`}
@@ -257,11 +265,14 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 
 	if (Result.isInitial(listResult) && status === null) {
 		return (
-			<div className="flex min-h-70 flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-input px-6 py-10">
+			<EmptyMessage
+				dashed
+				className="flex min-h-70 flex-col items-center justify-center gap-4 border-input px-6 py-10"
+			>
 				<Skeleton className="size-14 rounded-xl" />
 				<Skeleton className="h-4 w-72 max-w-full" />
 				<Skeleton className="h-9 w-36 rounded-md" />
-			</div>
+			</EmptyMessage>
 		)
 	}
 	if (Result.isFailure(listResult) && status === null) {
@@ -292,7 +303,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 					<IntegrationEmptyMedia />
 					<IntegrationEmptyHint>{manifest.description}</IntegrationEmptyHint>
 					<Button onClick={handleInstall} disabled={connectDisabled} loading={busy === "install"}>
-						<MonoIcon size={16} />
+						<MonoIcon />
 						Add to {manifest.name}
 					</Button>
 					<IntegrationEmptyFooter>
@@ -307,6 +318,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 		)
 	}
 
+	const confirmWorkspace = workspaces.find((workspace) => workspace.id === confirmId)
+
 	return (
 		<div className="flex flex-col gap-4">
 			{workspaces.map((workspace) => (
@@ -316,7 +329,9 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 					</ItemMedia>
 					<ItemContent className="gap-2">
 						<div className="flex items-center gap-2">
-							<h3 className="text-sm font-semibold">{workspace.name}</h3>
+							<h3 className="min-w-0 text-sm font-semibold [overflow-wrap:anywhere]">
+								{workspace.name}
+							</h3>
 							<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
 								<StatusDot tone="ok" size="lg" />
 								Connected
@@ -380,8 +395,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 				onOpenChange={(open) => {
 					if (!open) setConfirmId(null)
 				}}
-				title="Disconnect workspace"
-				description={`This workspace is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`}
+				title={confirmWorkspace ? `Disconnect ${confirmWorkspace.name}?` : "Disconnect workspace"}
+				description={`${confirmWorkspace ? confirmWorkspace.name : "This workspace"} is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`}
 				confirmLabel="Disconnect"
 				onConfirm={() => (confirmId !== null ? handleDisconnect(confirmId) : undefined)}
 				pending={busy !== null && busy === confirmId}

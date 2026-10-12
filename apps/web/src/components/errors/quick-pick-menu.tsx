@@ -183,7 +183,7 @@ export function QuickPickMenu<V extends string>({
 											</span>
 											<span className="min-w-0 flex-1 truncate">{item.label}</span>
 											{item.value === current ? (
-												<CheckIcon size={12} className="shrink-0 text-foreground" />
+												<CheckIcon size={14} className="shrink-0 text-foreground" />
 											) : null}
 											{item.shortcut ? (
 												<span className="w-3 shrink-0 text-right text-2xs tabular-nums text-muted-foreground/70">

@@ -58,6 +58,7 @@ import { Route as LabErrorsRouteImport } from './routes/lab/errors'
 import { Route as LabFlowRouteImport } from './routes/lab/flow'
 import { Route as LabInfraRouteImport } from './routes/lab/infra'
 import { Route as LabLoadersRouteImport } from './routes/lab/loaders'
+import { Route as LabLogsRouteImport } from './routes/lab/logs'
 import { Route as LabNodesRouteImport } from './routes/lab/nodes'
 import { Route as LabOnboardingRouteImport } from './routes/lab/onboarding'
 import { Route as LabQueryBuilderRouteImport } from './routes/lab/query-builder'
@@ -67,6 +68,7 @@ import { Route as LabTimeRangeRouteImport } from './routes/lab/time-range'
 import { Route as LabTimelineRouteImport } from './routes/lab/timeline'
 import { Route as LabVerdictRouteImport } from './routes/lab/verdict'
 import { Route as LabWidgetsRouteImport } from './routes/lab/widgets'
+import { Route as LabWorstCaseRouteImport } from './routes/lab/worst-case'
 import { Route as LogsIndexRouteImport } from './routes/logs/index'
 import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
 import { Route as MetricsIndexRouteImport } from './routes/metrics/index'
@@ -98,6 +100,7 @@ import { Route as InfraPlanetscaleDbNameRouteImport } from './routes/infra/plane
 import { Route as InfraRailwayIndexRouteImport } from './routes/infra/railway/index'
 import { Route as InfraRailwayServiceIdRouteImport } from './routes/infra/railway/$serviceId'
 import { Route as LabBenchAgentTranscriptRouteImport } from './routes/lab/bench/agent-transcript'
+import { Route as LabBenchDashboardGridRouteImport } from './routes/lab/bench/dashboard-grid'
 import { Route as LabBenchInfraRouteImport } from './routes/lab/bench/infra'
 import { Route as LabBenchLogsRouteImport } from './routes/lab/bench/logs'
 import { Route as LabBenchOverviewRouteImport } from './routes/lab/bench/overview'
@@ -359,6 +362,11 @@ const LabLoadersRoute = LabLoadersRouteImport.update({
   path: '/loaders',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabLogsRoute = LabLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const LabNodesRoute = LabNodesRouteImport.update({
   id: '/nodes',
   path: '/nodes',
@@ -402,6 +410,11 @@ const LabVerdictRoute = LabVerdictRouteImport.update({
 const LabWidgetsRoute = LabWidgetsRouteImport.update({
   id: '/widgets',
   path: '/widgets',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabWorstCaseRoute = LabWorstCaseRouteImport.update({
+  id: '/worst-case',
+  path: '/worst-case',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LogsIndexRoute = LogsIndexRouteImport.update({
@@ -563,6 +576,11 @@ const LabBenchAgentTranscriptRoute = LabBenchAgentTranscriptRouteImport.update({
   path: '/bench/agent-transcript',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabBenchDashboardGridRoute = LabBenchDashboardGridRouteImport.update({
+  id: '/bench/dashboard-grid',
+  path: '/bench/dashboard-grid',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const LabBenchInfraRoute = LabBenchInfraRouteImport.update({
   id: '/bench/infra',
   path: '/bench/infra',
@@ -688,6 +706,7 @@ export interface FileRoutesByFullPath {
   '/lab/flow': typeof LabFlowRoute
   '/lab/infra': typeof LabInfraRoute
   '/lab/loaders': typeof LabLoadersRoute
+  '/lab/logs': typeof LabLogsRoute
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
@@ -697,6 +716,7 @@ export interface FileRoutesByFullPath {
   '/lab/timeline': typeof LabTimelineRoute
   '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
+  '/lab/worst-case': typeof LabWorstCaseRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
@@ -730,6 +750,7 @@ export interface FileRoutesByFullPath {
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
   '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
+  '/lab/bench/dashboard-grid': typeof LabBenchDashboardGridRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
   '/lab/bench/overview': typeof LabBenchOverviewRoute
@@ -793,6 +814,7 @@ export interface FileRoutesByTo {
   '/lab/flow': typeof LabFlowRoute
   '/lab/infra': typeof LabInfraRoute
   '/lab/loaders': typeof LabLoadersRoute
+  '/lab/logs': typeof LabLogsRoute
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
@@ -802,6 +824,7 @@ export interface FileRoutesByTo {
   '/lab/timeline': typeof LabTimelineRoute
   '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
+  '/lab/worst-case': typeof LabWorstCaseRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
@@ -835,6 +858,7 @@ export interface FileRoutesByTo {
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
   '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
+  '/lab/bench/dashboard-grid': typeof LabBenchDashboardGridRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
   '/lab/bench/overview': typeof LabBenchOverviewRoute
@@ -900,6 +924,7 @@ export interface FileRoutesById {
   '/lab/flow': typeof LabFlowRoute
   '/lab/infra': typeof LabInfraRoute
   '/lab/loaders': typeof LabLoadersRoute
+  '/lab/logs': typeof LabLogsRoute
   '/lab/nodes': typeof LabNodesRoute
   '/lab/onboarding': typeof LabOnboardingRoute
   '/lab/query-builder': typeof LabQueryBuilderRoute
@@ -909,6 +934,7 @@ export interface FileRoutesById {
   '/lab/timeline': typeof LabTimelineRoute
   '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
+  '/lab/worst-case': typeof LabWorstCaseRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/metrics/$metricName': typeof MetricsMetricNameRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
@@ -942,6 +968,7 @@ export interface FileRoutesById {
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
   '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
+  '/lab/bench/dashboard-grid': typeof LabBenchDashboardGridRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
   '/lab/bench/logs': typeof LabBenchLogsRoute
   '/lab/bench/overview': typeof LabBenchOverviewRoute
@@ -1008,6 +1035,7 @@ export interface FileRouteTypes {
     | '/lab/flow'
     | '/lab/infra'
     | '/lab/loaders'
+    | '/lab/logs'
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
@@ -1017,6 +1045,7 @@ export interface FileRouteTypes {
     | '/lab/timeline'
     | '/lab/verdict'
     | '/lab/widgets'
+    | '/lab/worst-case'
     | '/logs/$logId'
     | '/metrics/$metricName'
     | '/recommendations/$recommendationKey'
@@ -1050,6 +1079,7 @@ export interface FileRouteTypes {
     | '/infra/planetscale/$dbName'
     | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
+    | '/lab/bench/dashboard-grid'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
     | '/lab/bench/overview'
@@ -1113,6 +1143,7 @@ export interface FileRouteTypes {
     | '/lab/flow'
     | '/lab/infra'
     | '/lab/loaders'
+    | '/lab/logs'
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
@@ -1122,6 +1153,7 @@ export interface FileRouteTypes {
     | '/lab/timeline'
     | '/lab/verdict'
     | '/lab/widgets'
+    | '/lab/worst-case'
     | '/logs/$logId'
     | '/metrics/$metricName'
     | '/recommendations/$recommendationKey'
@@ -1155,6 +1187,7 @@ export interface FileRouteTypes {
     | '/infra/planetscale/$dbName'
     | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
+    | '/lab/bench/dashboard-grid'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
     | '/lab/bench/overview'
@@ -1219,6 +1252,7 @@ export interface FileRouteTypes {
     | '/lab/flow'
     | '/lab/infra'
     | '/lab/loaders'
+    | '/lab/logs'
     | '/lab/nodes'
     | '/lab/onboarding'
     | '/lab/query-builder'
@@ -1228,6 +1262,7 @@ export interface FileRouteTypes {
     | '/lab/timeline'
     | '/lab/verdict'
     | '/lab/widgets'
+    | '/lab/worst-case'
     | '/logs/$logId'
     | '/metrics/$metricName'
     | '/recommendations/$recommendationKey'
@@ -1261,6 +1296,7 @@ export interface FileRouteTypes {
     | '/infra/planetscale/$dbName'
     | '/infra/railway/$serviceId'
     | '/lab/bench/agent-transcript'
+    | '/lab/bench/dashboard-grid'
     | '/lab/bench/infra'
     | '/lab/bench/logs'
     | '/lab/bench/overview'
@@ -1712,6 +1748,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabLoadersRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/logs': {
+      id: '/lab/logs'
+      path: '/logs'
+      fullPath: '/lab/logs'
+      preLoaderRoute: typeof LabLogsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/nodes': {
       id: '/lab/nodes'
       path: '/nodes'
@@ -1773,6 +1816,13 @@ declare module '@tanstack/react-router' {
       path: '/widgets'
       fullPath: '/lab/widgets'
       preLoaderRoute: typeof LabWidgetsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/worst-case': {
+      id: '/lab/worst-case'
+      path: '/worst-case'
+      fullPath: '/lab/worst-case'
+      preLoaderRoute: typeof LabWorstCaseRouteImport
       parentRoute: typeof LabRouteRoute
     }
     '/logs/': {
@@ -1992,6 +2042,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabBenchAgentTranscriptRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/bench/dashboard-grid': {
+      id: '/lab/bench/dashboard-grid'
+      path: '/bench/dashboard-grid'
+      fullPath: '/lab/bench/dashboard-grid'
+      preLoaderRoute: typeof LabBenchDashboardGridRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/bench/infra': {
       id: '/lab/bench/infra'
       path: '/bench/infra'
@@ -2110,6 +2167,7 @@ interface LabRouteRouteChildren {
   LabFlowRoute: typeof LabFlowRoute
   LabInfraRoute: typeof LabInfraRoute
   LabLoadersRoute: typeof LabLoadersRoute
+  LabLogsRoute: typeof LabLogsRoute
   LabNodesRoute: typeof LabNodesRoute
   LabOnboardingRoute: typeof LabOnboardingRoute
   LabQueryBuilderRoute: typeof LabQueryBuilderRoute
@@ -2119,8 +2177,10 @@ interface LabRouteRouteChildren {
   LabTimelineRoute: typeof LabTimelineRoute
   LabVerdictRoute: typeof LabVerdictRoute
   LabWidgetsRoute: typeof LabWidgetsRoute
+  LabWorstCaseRoute: typeof LabWorstCaseRoute
   LabIndexRoute: typeof LabIndexRoute
   LabBenchAgentTranscriptRoute: typeof LabBenchAgentTranscriptRoute
+  LabBenchDashboardGridRoute: typeof LabBenchDashboardGridRoute
   LabBenchInfraRoute: typeof LabBenchInfraRoute
   LabBenchLogsRoute: typeof LabBenchLogsRoute
   LabBenchOverviewRoute: typeof LabBenchOverviewRoute
@@ -2139,6 +2199,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabFlowRoute: LabFlowRoute,
   LabInfraRoute: LabInfraRoute,
   LabLoadersRoute: LabLoadersRoute,
+  LabLogsRoute: LabLogsRoute,
   LabNodesRoute: LabNodesRoute,
   LabOnboardingRoute: LabOnboardingRoute,
   LabQueryBuilderRoute: LabQueryBuilderRoute,
@@ -2148,8 +2209,10 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabTimelineRoute: LabTimelineRoute,
   LabVerdictRoute: LabVerdictRoute,
   LabWidgetsRoute: LabWidgetsRoute,
+  LabWorstCaseRoute: LabWorstCaseRoute,
   LabIndexRoute: LabIndexRoute,
   LabBenchAgentTranscriptRoute: LabBenchAgentTranscriptRoute,
+  LabBenchDashboardGridRoute: LabBenchDashboardGridRoute,
   LabBenchInfraRoute: LabBenchInfraRoute,
   LabBenchLogsRoute: LabBenchLogsRoute,
   LabBenchOverviewRoute: LabBenchOverviewRoute,

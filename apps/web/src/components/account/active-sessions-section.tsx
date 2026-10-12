@@ -8,7 +8,16 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { ComputerIcon, MobileIcon } from "@/components/icons"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useMountEffect } from "@/hooks/use-mount-effect"
@@ -97,7 +106,7 @@ export function ActiveSessionsSection() {
 						<TableHeader>
 							<TableRow>
 								<TableHead>Device</TableHead>
-								<TableHead>Location</TableHead>
+								<TableHead className="hidden sm:table-cell">Location</TableHead>
 								<TableHead>Last active</TableHead>
 								<TableHead className="w-24" />
 							</TableRow>
@@ -109,19 +118,24 @@ export function ActiveSessionsSection() {
 
 								return (
 									<TableRow key={session.id}>
-										<TableCell>
+										<TruncatedCell>
 											<div className="flex items-center gap-2.5">
 												<DeviceIcon
 													size={16}
 													className="shrink-0 text-muted-foreground"
 												/>
-												<span className="text-xs font-medium">
-													{describeDevice(session)}
-												</span>
-												{isCurrent && <Badge variant="secondary">This device</Badge>}
+												<TruncatedText
+													text={describeDevice(session)}
+													className="text-xs font-medium"
+												/>
+												{isCurrent && (
+													<Badge variant="secondary" className="shrink-0">
+														This device
+													</Badge>
+												)}
 											</div>
-										</TableCell>
-										<TableCell className="text-muted-foreground text-xs">
+										</TruncatedCell>
+										<TableCell className="text-muted-foreground hidden text-xs sm:table-cell">
 											{describeLocation(session)}
 										</TableCell>
 										<TableCell className="text-muted-foreground text-xs">

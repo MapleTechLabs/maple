@@ -6,6 +6,7 @@ import {
 	type TimeInput,
 	toEpochMs,
 } from "@maple/ui/lib/time-format"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -37,7 +38,7 @@ export function RelativeTime({
 	const { effectiveTimezone } = useTimezonePreference()
 	const epochMs = toEpochMs(value)
 	if (!Number.isFinite(epochMs)) {
-		return <span className={cn("text-muted-foreground", className)}>—</span>
+		return <span className={cn("text-muted-foreground", className)}>{EMPTY_VALUE}</span>
 	}
 
 	const relative =

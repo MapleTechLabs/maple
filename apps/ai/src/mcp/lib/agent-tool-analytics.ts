@@ -24,13 +24,12 @@ export const boundedText = (description: string, max: number) =>
 export const agentToolTextParam = (description: string) =>
 	boundedText(description, AI_TOOLS_SELECTION_MAX_CHARS)
 
-/** The scope both tool-analytics tools take: which calls, by model, service and environment. */
+/** The scope both tool-analytics tools take: which calls, by model and service. */
 export const agentToolScopeParams = {
 	model: agentToolTextParam(
 		"Only calls attributed to this model (exact name). A tool span inherits its parent LLM call's model, else its trace's",
 	),
 	service: agentToolTextParam("Only calls from this service (exact `service.name`)"),
-	environment: agentToolTextParam("Only calls from this deployment environment (e.g. production, staging)"),
 }
 
 /** The selection minus `tool`: the overview filters tools by name, the error detail names one exactly. */
@@ -51,7 +50,6 @@ export const agentToolSelection = (
 	...(tool === undefined ? undefined : { tool }),
 	...(params.model === undefined ? undefined : { model: params.model }),
 	...(params.service === undefined ? undefined : { service: params.service }),
-	...(params.environment === undefined ? undefined : { environment: params.environment }),
 	...(params.tool_contains === undefined ? undefined : { toolContains: params.tool_contains }),
 })
 
@@ -60,7 +58,6 @@ export const selectionRequest = (selection: typeof AgentToolSelection.Type) => (
 	tool: selection.tool,
 	model: selection.model,
 	service: selection.service,
-	env: selection.environment,
 	search: selection.toolContains,
 })
 
@@ -74,7 +71,6 @@ export const selectionArgs = (selection: typeof AgentToolSelection.Type) => ({
 export const scopeArgs = (selection: typeof AgentToolSelection.Type) => ({
 	model: selection.model,
 	service: selection.service,
-	environment: selection.environment,
 })
 
 /** One line describing what the numbers below it cover. Every value is the
@@ -84,7 +80,6 @@ export const describeSelection = (selection: typeof AgentToolSelection.Type): st
 		`tool: ${selection.tool === undefined ? "all tools" : tableCell(selection.tool)}`,
 		...(selection.model === undefined ? [] : [`model: ${tableCell(selection.model)}`]),
 		...(selection.service === undefined ? [] : [`service: ${tableCell(selection.service)}`]),
-		...(selection.environment === undefined ? [] : [`environment: ${tableCell(selection.environment)}`]),
 		...(selection.toolContains === undefined
 			? []
 			: [`name contains: ${tableCell(selection.toolContains)}`]),

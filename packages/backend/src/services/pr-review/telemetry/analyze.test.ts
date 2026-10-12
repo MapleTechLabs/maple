@@ -141,6 +141,49 @@ describe("analyzeTelemetry", () => {
 		)
 	})
 
+	// #1308: moving a fetch option matched the HTTP client span `POST` and two alerts that read it.
+	it("ignores a removed literal that is not handed to the telemetry API", () => {
+		const withPost: TelemetryCatalog = {
+			...catalog,
+			operations: [
+				...catalog.operations,
+				{ service: "web", spanName: "POST", count: 7_000, errorCount: 0, p95Ms: 40 },
+			],
+		}
+		const reader: ReferenceSource = {
+			kind: "alert",
+			id: "rule-2",
+			name: "API key created",
+			texts: ["POST"],
+		}
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"src/flush.ts",
+					`@@ -1,3 +1,3 @@\n const init = {\n-\tmethod: "POST",\n+\tkeepalive: true,\n }`,
+				),
+			],
+			catalog: withPost,
+			sources: [reader],
+			issues: [],
+		})
+		assert.lengthOf(telemetry.removed, 0)
+		assert.lengthOf(telemetry.contractBreaks, 0)
+	})
+
+	it("reports a removed span name, under the kind production knows it by", () => {
+		const telemetry = analyzeTelemetry({
+			files: [file("src/payments/charge.ts", `@@ -1,1 +1,0 @@\n-Effect.withSpan("Payments.charge")`)],
+			catalog,
+			sources: [dashboard],
+			issues: [],
+		})
+		assert.deepStrictEqual(
+			telemetry.contractBreaks.map((item) => [item.name, item.kind]),
+			[["Payments.charge", "span"]],
+		)
+	})
+
 	it("does not report a name the pull request adds back elsewhere", () => {
 		const telemetry = analyzeTelemetry({
 			files: [

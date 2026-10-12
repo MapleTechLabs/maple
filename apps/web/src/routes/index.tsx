@@ -423,7 +423,7 @@ function DashboardContent({
 
 	const environmentItems = useMemo(
 		() => [
-			{ value: "__all__", label: "All Environments" },
+			{ value: "__all__", label: "All environments" },
 			...environments.map((e) => ({ value: e.name, label: e.name })),
 		],
 		[environments],
@@ -500,7 +500,7 @@ function DashboardContent({
 				canFetch={canFetch}
 			/>
 			<ServiceUsageCards startTime={effectiveStartTime} endTime={effectiveEndTime} />
-			<MetricsGrid items={metrics} className="mt-4" waiting={!!isWaiting} syncId="home-overview" />
+			<MetricsGrid items={metrics} className="mt-4" waiting={isWaiting} syncId="home-overview" />
 			<ServiceHealthList
 				startTime={effectiveStartTime}
 				endTime={effectiveEndTime}

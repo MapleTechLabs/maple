@@ -14,6 +14,7 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { clearSelfHostedSessionToken } from "@/lib/services/common/self-hosted-auth"
 import { ClerkOrgSwitcherMenu, OrgAvatar } from "@/components/dashboard/org-switcher-menu"
 import { UserAvatar } from "@/components/dashboard/user-avatar"
+import { initialsFrom } from "@maple/ui/lib/initials"
 
 const AVATAR_CLASS = "size-5 rounded-md text-3xs"
 
@@ -37,8 +38,10 @@ function OnboardingOrgSwitcherInner() {
 			trigger={
 				<Button variant="outline" size="sm" className="pl-1.5 text-xs">
 					<OrgAvatar name={orgName} imageUrl={orgImageUrl} className="size-5" />
-					<span className="max-w-[10rem] truncate">{orgName}</span>
-					<ChevronExpandYIcon size={12} className="ml-0.5 size-3 text-muted-foreground" />
+					<span className="max-w-[10rem] truncate" title={orgName}>
+						{orgName}
+					</span>
+					<ChevronExpandYIcon className="ml-0.5 text-muted-foreground" />
 				</Button>
 			}
 		/>
@@ -56,10 +59,10 @@ function ClerkUserMenu() {
 
 	if (!isLoaded) return null
 
-	const name = user?.fullName ?? "Account"
+	const name = user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "User"
 	const email = user?.primaryEmailAddress?.emailAddress ?? ""
 	const imageUrl = user?.imageUrl
-	const initial = name.charAt(0).toUpperCase()
+	const initial = initialsFrom(name)
 
 	return (
 		<DropdownMenu>
@@ -87,9 +90,13 @@ function ClerkUserMenu() {
 								className={AVATAR_CLASS}
 							/>
 							<div className="grid flex-1 text-left text-sm leading-tight">
-								<span className="truncate font-medium">{name}</span>
+								<span className="truncate font-medium" title={name}>
+									{name}
+								</span>
 								{email && (
-									<span className="truncate text-xs text-muted-foreground">{email}</span>
+									<span className="truncate text-xs text-muted-foreground" title={email}>
+										{email}
+									</span>
 								)}
 							</div>
 						</div>
@@ -98,7 +105,7 @@ function ClerkUserMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={() => signOut()}>
-						<LogoutIcon size={16} />
+						<LogoutIcon />
 						Log out
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
@@ -126,7 +133,7 @@ function SelfHostedUserMenu() {
 			<DropdownMenuContent side="bottom" align="end" sideOffset={4} className="min-w-44">
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={handleLogout}>
-						<LogoutIcon size={16} />
+						<LogoutIcon />
 						Log out
 					</DropdownMenuItem>
 				</DropdownMenuGroup>

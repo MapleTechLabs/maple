@@ -10,7 +10,7 @@ import { Headers, HttpMiddleware } from "effect/http"
 // auto server span is suppressed for them; each callback handler carries its own
 // span with safe attributes instead (see `integrations.*OAuthCallback` and
 // `ChatOAuth.callback`). The second alternative must stay in sync with the chat
-// connector callback paths in `routes/v1/chat-integration.http.ts`.
+// connector callback paths in `routes/chat-integration.http.ts`.
 // `/oauth/authorize` is deliberately NOT here: its query carries no bearer
 // credential, and `/oauth/token` + `/oauth/revoke` are POSTs (secrets in the body).
 const OAUTH_CALLBACK_PATH =

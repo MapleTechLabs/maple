@@ -120,7 +120,7 @@
 // level of `aiSessionDetailsQuery` reads a derived table rather than a table,
 // and inherits `org` scope from it.
 
-import { Schema } from "effect"
+import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { compile } from "@maple-dev/effect-orm/sql"
@@ -136,7 +136,7 @@ import {
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
-import { AiTraceIndex, TraceDetailSpans, Traces, orgIdParam } from "@maple/query-engine/ch/tables"
+import { AiTraceIndex, TraceDetailSpans, Traces, exactDateTime64, orgIdParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
@@ -187,6 +187,10 @@ const FAILED_RESPONSE_STATUSES = ["failed", "error"]
  * tops out at 2106-02-07 and anything past it fails to parse.
  */
 export const SESSION_ORDER_SENTINEL = "2106-01-01 00:00:00"
+
+/** {@link SESSION_ORDER_SENTINEL} as a `DateTime` expression, to order beside `Timestamp`. */
+export const sessionOrderSentinel = () =>
+	CH.compileTypedFnCall("toDateTime", T.dateTime.schema, CH.lit(SESSION_ORDER_SENTINEL))
 
 /**
  * How far past the page's own agent-span bounds the `trace_detail_spans`
@@ -554,12 +558,12 @@ const indexTracesOf = <Bounds extends IndexBounds, Row extends { readonly traceI
 		.select(select)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString(boundParams[bounds].start)),
-			$.Timestamp.lte(param.dateTimeString(boundParams[bounds].end)),
+			$.Timestamp.gte(param.dateTime(boundParams[bounds].start)),
+			$.Timestamp.lte(param.dateTime(boundParams[bounds].end)),
 			// A ranked page's rows are the window's: `fanOutEnd` is where the
 			// page's last span ENDED, and a span that started past the window
 			// but before that is one the ranking never counted.
-			CH.when(sessionIds, () => $.Timestamp.lte(param.dateTimeString("endTime"))),
+			CH.when(sessionIds, () => $.Timestamp.lte(param.dateTime("endTime"))),
 		])
 		.groupBy("traceId")
 		.having(($) => [
@@ -597,7 +601,7 @@ const indexTraces = <Bounds extends IndexBounds>(
 		const agentOrder = CH.if_(
 			$.AgentName.neq(""),
 			$.Timestamp,
-			CH.toDateTime(CH.lit(SESSION_ORDER_SENTINEL)),
+			sessionOrderSentinel(),
 		)
 		// Ranks the trace's spans for the vendor `argMin`s: session-bearing
 		// first, then the rest, and inside each rank the earliest — the order
@@ -671,7 +675,7 @@ const carry = <Row extends Record<SessionColumn, unknown>>(row: Row): Pick<Row, 
 const sessionRankColumns = ($: {
 	readonly rawSessionId: CH.Expr<string>
 	readonly traceId: CH.Expr<string>
-	readonly traceAgentStart: CH.Expr<string>
+	readonly traceAgentStart: CH.Expr<DateTime.Utc>
 	readonly traceAgentEndNanos: CH.Expr<number>
 	readonly toolCalls: CH.Expr<number>
 	readonly errorAgentSpans: CH.Expr<number>
@@ -1031,8 +1035,8 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("spansStart")),
-			$.Timestamp.lte(param.dateTimeString("spansEnd")),
+			$.Timestamp.gte(param.dateTime("spansStart")),
+			$.Timestamp.lte(param.dateTime("spansEnd")),
 			inSubquery($.TraceId, pageTraceIds),
 		])
 		.groupBy("traceId")
@@ -1222,8 +1226,8 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 				// Every UNION ALL branch reads a table, so every branch carries the org
 				// predicate itself — see this file's header.
 				$.OrgId.eq(orgIdParam),
-				$.Timestamp.gte(param.dateTimeString("startTime")),
-				$.Timestamp.lte(param.dateTimeString("endTime")),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
 			])
 			.groupBy("traceId")
 			// The list's population, so a facet never counts a session it cannot show.
@@ -1542,8 +1546,8 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 			.select(spanProjection)
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
-				$.Timestamp.gte(param.dateTimeString("startTime")),
-				$.Timestamp.lte(param.dateTimeString("endTime")),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
 				inSubquery($.TraceId, sessionTraceIds),
 				scopePredicate($, opts.scope),
 				opts.after === undefined ? undefined : afterCursor($, opts.after),
@@ -1567,8 +1571,8 @@ const sessionTraceIdsSubquery = () =>
 		.select(($) => ({ TraceId: $.TraceId }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			// The presence guard is what stops an empty `sessionId` param from
 			// matching every span that simply LACKS the key — ClickHouse reads a
 			// missing Map key back as `''`, so equality alone would turn a blank
@@ -1593,7 +1597,9 @@ const scopePredicate = ($: SpanColumns, scope: AiSessionSpanScope | undefined) =
  * millisecond bucket that would re-read or skip the boundary's neighbours.
  */
 const afterCursor = ($: SpanColumns, after: { readonly timestamp: string; readonly spanId: string }) =>
-	$.Timestamp.gt(after.timestamp).or($.Timestamp.eq(after.timestamp).and($.SpanId.gt(after.spanId)))
+	$.Timestamp.gt(exactDateTime64(after.timestamp)).or(
+		$.Timestamp.eq(exactDateTime64(after.timestamp)).and($.SpanId.gt(after.spanId)),
+	)
 
 /**
  * Every span of ONE trace, oldest first — the spans of a `trace:` session.
@@ -1615,8 +1621,8 @@ export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 		.select(spanProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			opts.traceIds === undefined
 				? $.TraceId.eq(param.string("traceId"))
 				: CH.inList($.TraceId, opts.traceIds),
@@ -1905,8 +1911,8 @@ export function aiSessionSummaryQuery() {
 		.select(summaryProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			inSubquery($.TraceId, sessionTraceIdsSubquery()),
 		])
 		.groupBy("turnKey")
@@ -1921,8 +1927,8 @@ export function aiTraceSummaryQuery() {
 		.select(summaryProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.TraceId.eq(param.string("traceId")),
 		])
 		.groupBy("turnKey")
@@ -1937,8 +1943,8 @@ export function aiSessionTotalsQuery() {
 		.select(totalsProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			inSubquery($.TraceId, sessionTraceIdsSubquery()),
 		])
 		.format("JSON")
@@ -1950,8 +1956,8 @@ export function aiTraceTotalsQuery() {
 		.select(totalsProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.TraceId.eq(param.string("traceId")),
 		])
 		.format("JSON")

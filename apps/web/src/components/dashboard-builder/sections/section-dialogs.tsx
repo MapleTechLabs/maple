@@ -1,4 +1,5 @@
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { countLabel } from "@maple/ui/lib/format"
 import { TrashIcon } from "@/components/icons"
 
 // Both destructive section actions offer the same shape of choice: keep the
@@ -36,7 +37,7 @@ export function DeleteSectionDialog({
 			description={
 				widgetCount === 0
 					? "This group is empty, so nothing else will be removed."
-					: `This group holds ${widgetCount === 1 ? "1 widget" : `${widgetCount} widgets`}. Keep them on the dashboard, or delete them with the group.`
+					: `This group holds ${countLabel(widgetCount, "widget")}. Keep them on the dashboard, or delete them with the group.`
 			}
 			secondaryAction={
 				widgetCount > 0 ? { label: "Keep widgets", onClick: () => confirm("ungroup") } : undefined
@@ -79,7 +80,7 @@ export function DeleteTabDialog({
 			description={
 				widgetCount === 0
 					? "This tab is empty, so nothing else will be removed."
-					: `This tab holds ${widgetCount === 1 ? "1 widget" : `${widgetCount} widgets`}.`
+					: `This tab holds ${countLabel(widgetCount, "widget")}.`
 			}
 			secondaryAction={
 				widgetCount > 0

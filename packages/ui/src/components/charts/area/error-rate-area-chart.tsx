@@ -82,7 +82,7 @@ export const ErrorRateAreaChart = memo(function ErrorRateAreaChart({
 	const gradientPrefix = useChartId("errorRate")
 
 	const series = useMemo<FixedMetricSeries[]>(
-		() => [{ key: VALUE_KEY, label: "Error Rate", color: colors.errorRate }],
+		() => [{ key: VALUE_KEY, label: "Error rate", color: colors.errorRate }],
 		[colors],
 	)
 
@@ -97,7 +97,7 @@ export const ErrorRateAreaChart = memo(function ErrorRateAreaChart({
 	const tooltipSeries = useMemo<PlotTooltipSeries<TimeseriesRow>[]>(
 		() => [
 			{
-				label: "Error Rate",
+				label: "Error rate",
 				color: colors.errorRate,
 				value: (row: TimeseriesRow) => {
 					const value = row[VALUE_KEY]

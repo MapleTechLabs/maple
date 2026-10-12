@@ -1,19 +1,11 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import type { RendererComponentProps } from "./types"
+import { formatCell } from "./data-table-format"
 
 interface DataTableProps {
 	headers: string[]
 	rows: string[][]
 	title?: string
-}
-
-function maybeFormatNumber(value: string): string {
-	const num = Number(value)
-	if (value.trim() !== "" && !Number.isNaN(num) && Number.isFinite(num)) {
-		if (Number.isInteger(num)) return num.toLocaleString()
-		return num.toLocaleString(undefined, { maximumFractionDigits: 4 })
-	}
-	return value
 }
 
 export function DataTable({ props }: RendererComponentProps<DataTableProps>) {
@@ -35,8 +27,10 @@ export function DataTable({ props }: RendererComponentProps<DataTableProps>) {
 						{rows.map((row, i) => (
 							<TableRow key={i}>
 								{row.map((cell, j) => (
-									<TableCell key={j} className="max-w-[200px] truncate py-1">
-										{maybeFormatNumber(cell)}
+									<TableCell key={j} className="py-1">
+										<span className="block max-w-[200px] truncate" title={cell}>
+											{formatCell(cell, headers[j])}
+										</span>
 									</TableCell>
 								))}
 							</TableRow>

@@ -9,8 +9,8 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { aiTriageSettings, type AiTriageSettingsRow } from "@maple/db"
-import { eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AiTriageSettings, type AiTriageSettingsRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -48,7 +48,12 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 
 			const loadSettingsRow = Effect.fn("AiTriageService.loadSettingsRow")(function* (orgId: OrgId) {
 				const rows = yield* dbExecute((db) =>
-					db.select().from(aiTriageSettings).where(eq(aiTriageSettings.orgId, orgId)).limit(1),
+					db.run(
+						PG.from(AiTriageSettings)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
 				)
 				return rows[0]
 			})
@@ -96,7 +101,8 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					pausedDimension: paused?.dimension ?? null,
 					resumesAt:
 						paused === null ? null : decodeIsoSync(new Date(paused.retryableAtMs).toISOString()),
-					updatedAt: row?.updatedAt ? decodeIsoSync(row.updatedAt.toISOString()) : null,
+					updatedAt:
+						row === undefined ? null : decodeIsoSync(new Date(row.updatedAt).toISOString()),
 					updatedBy: row?.updatedBy ?? null,
 				})
 			}
@@ -122,14 +128,15 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 						request.maxRunsPerDay ?? existing?.maxRunsPerDay ?? DEFAULT_MAX_RUNS_PER_DAY,
 					maxPassesPerDay:
 						request.maxPassesPerDay ?? existing?.maxPassesPerDay ?? DEFAULT_MAX_PASSES_PER_DAY,
-					updatedAt: new Date(nowMs),
+					updatedAt: nowMs,
 					updatedBy: userId,
 				}
 				yield* dbExecute((db) =>
-					db
-						.insert(aiTriageSettings)
-						.values({ orgId, ...next })
-						.onConflictDoUpdate({ target: aiTriageSettings.orgId, set: next }),
+					db.run(
+						PG.insertInto(AiTriageSettings)
+							.values({ orgId, ...next })
+							.onConflictDoUpdate({ target: ["orgId"], set: next }),
+					),
 				)
 				return settingsToDocument(
 					yield* loadSettingsRow(orgId),

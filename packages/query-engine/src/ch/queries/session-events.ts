@@ -7,6 +7,7 @@
 //
 // Plain MergeTree, immutable append; no ReplacingMergeTree dedup needed.
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -33,7 +34,7 @@ const count = CH.count
 // prune to the 1-2 partitions the session spans. Omit to scan all.
 
 export interface SessionTranscriptOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly seq: number
 	readonly type: string
 	readonly url: string
@@ -59,8 +60,8 @@ export interface SessionTranscriptOpts {
 	/** Only "things that went wrong": error events, console errors, and failed (>=400) requests. */
 	errorsOnly?: boolean
 	/** Optional session time window — prunes daily partitions. Omit to scan all. */
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 	/** Page size. Transcripts are unbounded otherwise — always cap for agents. */
 	limit?: number
 	offset?: number
@@ -91,8 +92,8 @@ export function sessionTranscriptQuery(opts: SessionTranscriptOpts = {}) {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
-			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
-			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+			CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 			opts.types && opts.types.length > 0 ? CH.inList($.Type, opts.types) : undefined,
 			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
 			CH.whenTrue(opts.errorsOnly, () =>
@@ -138,8 +139,8 @@ export function sessionEventMatchQuery(opts: SessionEventMatchOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			CH.when(opts.type, (v: string) => $.Type.eq(v)),
 			CH.when(opts.level, (v: string) => $.Level.eq(v)),
 			CH.when(opts.minStatus, (v: number) => $.NetStatus.gte(v)),
@@ -183,8 +184,8 @@ export interface SessionActivityOutput {
 
 export interface SessionActivityOpts {
 	/** Optional session time window — prunes daily partitions. Omit to scan all. */
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 }
 
 // Per-event gap (ms) to the previous distilled event in the same session.
@@ -240,8 +241,8 @@ export function sessionActivityQuery(opts: SessionActivityOpts = {}) {
 	const gaps = sessionGaps().where(($) => [
 		$.OrgId.eq(orgIdParam),
 		$.SessionId.eq(param.string("sessionId")),
-		CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
-		CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+		CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
+		CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 	])
 	return activeIdleAggregate(gaps).limit(1).format("JSON")
 }
@@ -253,8 +254,8 @@ export function sessionActivityQuery(opts: SessionActivityOpts = {}) {
 export function sessionActivityAggregateQuery() {
 	const gaps = sessionGaps().where(($) => [
 		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 	])
 	return activeIdleAggregate(gaps)
 }

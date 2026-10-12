@@ -84,12 +84,12 @@ export function IssueHeader({
 							size="sm"
 							render={<Link to="/investigations/$id" params={{ id: investigation.id }} />}
 						>
-							<PulseIcon className="size-3.5" />
+							<PulseIcon />
 							Open investigation
 						</Button>
 					) : (
 						<Button size="sm" disabled={startingInvestigation} onClick={onStartInvestigation}>
-							<PulseIcon className="size-3.5" />
+							<PulseIcon />
 							Investigate
 						</Button>
 					)}
@@ -122,13 +122,13 @@ function IssueOverflowMenu({ issue, issueId }: { issue: ErrorIssueDocument; issu
 			<DropdownMenuContent align="end">
 				{issue.kind === "error" ? (
 					<DropdownMenuItem onClick={() => void promptCopy.copy(agentPromptFromIssue(issue))}>
-						<CopyIcon className="size-3.5" />
+						<CopyIcon />
 						Copy agent prompt
 					</DropdownMenuItem>
 				) : null}
 				{issue.fingerprintHash ? (
 					<DropdownMenuItem onClick={() => void fingerprintCopy.copy(issue.fingerprintHash)}>
-						<CopyIcon className="size-3.5" />
+						<CopyIcon />
 						Copy fingerprint
 					</DropdownMenuItem>
 				) : null}
@@ -139,12 +139,12 @@ function IssueOverflowMenu({ issue, issueId }: { issue: ErrorIssueDocument; issu
 						void linkCopy.copy(`${origin}/errors/issues/${issueId}`)
 					}}
 				>
-					<LinkIcon className="size-3.5" />
+					<LinkIcon />
 					Copy link to issue
 				</DropdownMenuItem>
 				{ruleId ? (
 					<DropdownMenuItem render={<Link to="/alerts/$ruleId" params={{ ruleId }} />}>
-						<PulseIcon className="size-3.5" />
+						<PulseIcon />
 						View alert rule
 					</DropdownMenuItem>
 				) : null}

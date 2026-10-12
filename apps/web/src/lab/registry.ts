@@ -148,10 +148,26 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/logs",
+		title: "Logs stream",
+		description:
+			"The `/logs` stream over a production-like fixture: access lines, slow queries, a payment outage with stack traces, JSON bodies. Toggles for wrap, density, search and pinned columns.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
 			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/worst-case",
+		title: "Worst case",
+		description:
+			"Existing components over worst-case fixture data (long names, extreme numbers, unbroken URLs, 8KB messages) behind a Demo data / Worst case toggle, for before and after screenshots.",
 		kind: "lab",
 		session: "none",
 	},
@@ -213,6 +229,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Overview charts",
 		description:
 			"Service-detail chart bench pinned to cursor sync — the cross-browser gate's overview scenario.",
+		kind: "bench",
+		session: "none",
+	},
+	{
+		path: "/lab/bench/dashboard-grid",
+		title: "Dashboard grid",
+		description:
+			"A `?n=`-widget dashboard (default 50) in edit mode for drag, resize and mount timing via window.__dashboardGridBench.",
 		kind: "bench",
 		session: "none",
 	},

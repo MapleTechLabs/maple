@@ -65,7 +65,7 @@ export function TagGroupHeaderRow({
 			<TableCell colSpan={colSpan} className="bg-muted/30 py-1.5">
 				<Eyebrow className="flex items-center gap-2">
 					{label}
-					<span className="tracking-normal normal-case text-muted-foreground/55 tabular-nums">
+					<span className="tracking-normal normal-case text-muted-foreground/60 tabular-nums">
 						{count} {pluralize(count, noun)}
 					</span>
 				</Eyebrow>

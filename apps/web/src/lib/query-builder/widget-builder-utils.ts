@@ -3,7 +3,7 @@ import {
 	createQueryDraft,
 	resetQueryForDataSource,
 } from "@maple/query-engine/query-builder"
-import { TRACE_DEFAULT_COLUMNS, type ListColumnDraft } from "@/lib/query-builder/list-widget-config"
+import { TRACE_DEFAULT_COLUMNS } from "@/lib/query-builder/list-widget-config"
 import type {
 	DashboardWidget,
 	WidgetDataSource,
@@ -125,7 +125,7 @@ export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState
 		listDataSource: "traces",
 		listWhereClause: "",
 		listLimit: "",
-		listColumns: TRACE_DEFAULT_COLUMNS as ListColumnDraft[],
+		listColumns: TRACE_DEFAULT_COLUMNS,
 		listRootOnly: true,
 		heatmapColorScale: undefined,
 		heatmapScaleType: "linear",

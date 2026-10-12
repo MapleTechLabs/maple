@@ -15,7 +15,7 @@ describe("traceFilterChips", () => {
 			excludedSpanNames: ["GET /health"],
 		})
 		expect(chips.map((c) => [c.label, c.negated])).toEqual([
-			["Root Span", true],
+			["Root span", true],
 			["Service", false],
 		])
 	})
@@ -82,7 +82,7 @@ describe("traceFilterChips", () => {
 			services: ["api"],
 			deploymentEnvs: ["prod"],
 		})
-		expect(chips.map((c) => c.label)).toEqual(["Environment", "Service", "HTTP Method"])
+		expect(chips.map((c) => c.label)).toEqual(["Environment", "Service", "HTTP method"])
 	})
 })
 

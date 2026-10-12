@@ -7,8 +7,13 @@ import {
 	type OrgId,
 } from "@maple/domain/http"
 import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
-import { aiTriageSettings, errorIssues, investigations, type ErrorIssueVerificationRow } from "@maple/db"
-import { and, eq } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	AiTriageSettings,
+	ErrorIssues,
+	Investigations,
+	type ErrorIssueVerificationRow,
+} from "@maple/db/tables"
 import { Clock, Effect, Schema } from "effect"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -56,7 +61,7 @@ export type EnqueueFixVerificationResult =
 export const enqueueFixVerification: (
 	input: EnqueueFixVerificationInput,
 ) => Effect.Effect<EnqueueFixVerificationResult, DatabaseError, Database> = Effect.fn(
-	"enqueueFixVerification",
+	"FixVerificationEnqueue.enqueueFixVerification",
 )(function* (input) {
 	const database = yield* Database
 	const nowMs = yield* Clock.currentTimeMillis
@@ -64,7 +69,12 @@ export const enqueueFixVerification: (
 	const orgId: OrgId = verification.orgId
 
 	const settingsRows = yield* database.execute((db) =>
-		db.select().from(aiTriageSettings).where(eq(aiTriageSettings.orgId, orgId)).limit(1),
+		db.run(
+			PG.from(AiTriageSettings)
+				.select()
+				.where(($) => [$.orgId.eq(orgId)])
+				.limit(1),
+		),
 	)
 	const settings = settingsRows[0]
 
@@ -88,11 +98,12 @@ export const enqueueFixVerification: (
 	}
 
 	const issueRows = yield* database.execute((db) =>
-		db
-			.select()
-			.from(errorIssues)
-			.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, verification.issueId)))
-			.limit(1),
+		db.run(
+			PG.from(ErrorIssues)
+				.select()
+				.where(($) => [$.orgId.eq(orgId), $.id.eq(verification.issueId)])
+				.limit(1),
+		),
 	)
 	const issue = issueRows[0]
 	if (issue === undefined) {
@@ -103,7 +114,7 @@ export const enqueueFixVerification: (
 		return { enqueued: false, reason: "error" as const }
 	}
 
-	const mergedAtIso = decodeIso(verification.mergedAt.toISOString())
+	const mergedAtIso = decodeIso(new Date(verification.mergedAt).toISOString())
 	const subject = new InvestigationFixVerificationSubject({
 		type: "fix_verification",
 		issueId: verification.issueId,
@@ -160,26 +171,27 @@ export const enqueueFixVerification: (
 
 	const investigationId = decodeInvestigationId(randomUUID())
 	const inserted = yield* database.execute((db) =>
-		db
-			.insert(investigations)
-			.values({
-				id: investigationId,
-				orgId,
-				status: "investigating",
-				seededBy: "system",
-				subjectJson: subject,
-				snapshotJson: snapshot,
-				// No incidentKind/incidentId: a verification is not an incident, and
-				// leaving them null keeps it out of the one-per-incident dedup index.
-				issueId: verification.issueId,
-				severity: issue.severity ?? null,
-				startedAt: new Date(nowMs),
-				autonomousTurns: 1,
-				createdAt: new Date(nowMs),
-				updatedAt: new Date(nowMs),
-			})
-			.onConflictDoNothing()
-			.returning({ id: investigations.id }),
+		db.run(
+			PG.insertInto(Investigations)
+				.values({
+					id: investigationId,
+					orgId,
+					status: "investigating",
+					seededBy: "system",
+					subjectJson: subject,
+					snapshotJson: snapshot,
+					// No incidentKind/incidentId: a verification is not an incident, and
+					// leaving them null keeps it out of the one-per-incident dedup index.
+					issueId: verification.issueId,
+					severity: issue.severity ?? null,
+					startedAt: nowMs,
+					autonomousTurns: 1,
+					createdAt: nowMs,
+					updatedAt: nowMs,
+				})
+				.onConflictDoNothing()
+				.returning("id"),
+		),
 	)
 	if (inserted.length === 0) {
 		yield* Effect.annotateCurrentSpan({

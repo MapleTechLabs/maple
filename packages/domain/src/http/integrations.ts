@@ -1,9 +1,9 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
-import { Authorization } from "./current-tenant"
+import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { PrReviewListItem, PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
+import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
 import {
 	GitCommitSha,
 	PullRequestSummary,
@@ -327,18 +327,9 @@ export class CloudflarePrimeResponse extends Schema.Class<CloudflarePrimeRespons
 	},
 ) {}
 
-// These shapes now serve two callers at once, which is why they are camelCase
-// with epoch-ms timestamps and the v2 file is not:
-//
-//   1. The deprecated v1 endpoints at the bottom of this file, which are still
-//      mounted for external callers. This is their wire contract, frozen.
-//   2. `PlanetScaleConnectionService` / `PlanetScaleService`, whose method
-//      signatures they are — the v2 handlers map them to the snake_case/ISO
-//      wire format at the boundary.
-//
-// So (1) can be deleted once no customer is calling it, and (2) will keep these
-// alive afterwards as plain service types. Do not reshape them to match v2:
-// that would break the v1 wire format while it still has callers.
+// These camelCase, epoch-ms shapes are the method signatures of
+// `PlanetScaleConnectionService` / `PlanetScaleService`. The v2 handlers map
+// them to the snake_case/ISO wire format at the boundary.
 
 /**
  * The managed scrape target this connection auto-provisioned — surfaced on the
@@ -787,12 +778,6 @@ export class GithubPrReviewSettingsResponse extends Schema.Class<GithubPrReviewS
 	settings: PrReviewOrgSettings,
 }) {}
 
-export class GithubPrReviewsResponse extends Schema.Class<GithubPrReviewsResponse>("GithubPrReviewsResponse")(
-	{
-		reviews: Schema.Array(PrReviewListItem),
-	},
-) {}
-
 /**
  * A single resolved commit, for the dashboard's commit-SHA hover card. Provider-
  * neutral: any connected VCS provider resolves into this same shape. `resolved`
@@ -1054,14 +1039,12 @@ export type IntegrationHttpError =
 	| IntegrationsPersistenceError
 
 /**
- * The `/api/integrations/planetscale/*` operations are gone — `/v2/integrations/
- * planetscale` (`http/v2/integrations-planetscale.ts`) is the whole surface now:
- * scoped API keys, snake_case + ISO wire format, and the documented error
- * envelope. The schemas below stay because v2 and `PlanetScaleService` use them.
+ * Dashboard control surface for the Hazel, Cloudflare, Railway and GitHub
+ * integrations, plus VCS lookups. Internal transport: session-only, absent from
+ * the public docs. PlanetScale and chat connectors are public v2 resources.
  *
- * The OAuth callback and the webhook receiver are NOT part of that retirement.
- * They keep their version-neutral raw-router paths because PlanetScale stores
- * those URLs on its side — see `docs/api-v2.md`.
+ * The OAuth callbacks and webhook receivers are raw routers under `/api/...`,
+ * not part of this group: providers store those URLs on their side.
  */
 export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
@@ -1309,14 +1292,6 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
-		// The repository's most recent reviews, newest first.
-		HttpApiEndpoint.get("githubListPrReviews", "/github/repositories/:repositoryId/pr-reviews", {
-			params: { repositoryId: VcsRepositoryId },
-			success: GithubPrReviewsResponse,
-			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
-		}),
-	)
-	.add(
 		// Vendor-neutral: resolves a commit by SHA across all connected providers.
 		// `:sha` is a raw string (NOT `GitCommitSha`) on purpose — unguarded telemetry
 		// values must reach the handler so they surface as VcsCommitShaInvalidError
@@ -1388,5 +1363,5 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			],
 		}),
 	)
-	.prefix("/api/integrations")
-	.middleware(Authorization) {}
+	.prefix("/internal/integrations")
+	.middleware(SessionAuthorization) {}

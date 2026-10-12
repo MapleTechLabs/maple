@@ -1,5 +1,6 @@
 import { getHttpInfo, HTTP_METHOD_COLORS } from "../../lib/http"
 import { cn } from "../../lib/utils"
+import { MiddleTruncate } from "../ui/middle-truncate"
 
 interface HttpSpanLabelProps {
 	spanName: string
@@ -20,7 +21,7 @@ export function HttpSpanLabel({
 
 	if (!httpInfo) {
 		return (
-			<span className={cn("truncate", className, textClassName)} title={spanName}>
+			<span className={cn("block truncate", className, textClassName)} title={spanName}>
 				{spanName}
 			</span>
 		)
@@ -56,7 +57,7 @@ export function HttpSpanLabel({
 				)}
 				{httpInfo.method}
 			</span>
-			<span className={cn("truncate", textClassName)}>{httpInfo.route || spanName}</span>
+			<MiddleTruncate text={httpInfo.route || spanName} tail={16} className={textClassName} />
 		</span>
 	)
 }

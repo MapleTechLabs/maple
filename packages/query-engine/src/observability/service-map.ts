@@ -11,8 +11,8 @@ export const serviceMap = Effect.fn("Observability.serviceMap")(function* (input
 	const executor = yield* WarehouseExecutor
 
 	yield* Effect.annotateCurrentSpan({
-		service: input.service ?? "all",
-		environment: input.environment ?? "all",
+		"maple.query.service": input.service ?? "all",
+		"maple.query.environment": input.environment ?? "all",
 	})
 
 	const result = yield* executor.query<ServiceDependenciesOutput>(
@@ -26,15 +26,15 @@ export const serviceMap = Effect.fn("Observability.serviceMap")(function* (input
 		{ profile: "aggregation" },
 	)
 
-	yield* Effect.annotateCurrentSpan("edgeCount", result.data.length)
+	yield* Effect.annotateCurrentSpan("result.edgeCount", result.data.length)
 
 	return pipe(
 		result.data,
 		Arr.map((e): ServiceEdge => ({
 			sourceService: e.sourceService,
 			targetService: e.targetService,
-			callCount: Number(e.callCount),
-			errorCount: Number(e.errorCount),
+			callCount: e.callCount,
+			errorCount: e.errorCount,
 			avgDurationMs: e.avgDurationMs,
 			maxDurationMs: e.maxDurationMs,
 		})),

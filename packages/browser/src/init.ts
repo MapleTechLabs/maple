@@ -1,5 +1,6 @@
 import {
 	claimReplayMode,
+	clearPendingChunk,
 	clearPendingEvents,
 	clearSessionSink,
 	configurePrivacy,
@@ -229,6 +230,8 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 				}
 				rotateOnNextStart = runtime !== undefined
 				clearPendingEvents()
+				// Before the teardown: a flush still compressing the chunk then finds nothing to send.
+				clearPendingChunk()
 				setVisitorTracking(false)
 				void stopRuntime(false)
 			})

@@ -825,7 +825,7 @@ function clipTarget(value: string): string | undefined {
 function TokenCell({ tokens, errored }: { tokens: SessionTokenTotals | undefined; errored?: boolean }) {
 	const drawn = tokens === undefined ? [] : TOKEN_BUCKETS.filter((bucket) => tokens[bucket.key] > 0)
 	if (tokens === undefined || tokens.total === 0 || drawn.length === 0) {
-		return <span className={cn(COL_TOKENS, errored && "text-severity-error")}>—</span>
+		return <span className={cn(COL_TOKENS, errored && "text-severity-error")}>{EMPTY_VALUE}</span>
 	}
 
 	const title = [

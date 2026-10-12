@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { deriveHostStatus, severityLevel } from "./format"
+import {
+	capacityFraction,
+	deriveHostStatus,
+	formatBytesOfAllocatable,
+	formatCoresOfAllocatable,
+	severityLevel,
+} from "./format"
 import { formatBytesPerSecond, formatLoad, formatPercent, formatUptime } from "@maple/ui/lib/format"
 
 describe("deriveHostStatus", () => {
@@ -105,5 +111,25 @@ describe("severityLevel", () => {
 
 	it("returns ok for non-finite input", () => {
 		expect(severityLevel(Number.NaN)).toBe("ok")
+	})
+})
+
+describe("node capacity", () => {
+	it("keeps the utilization when allocatable was collected", () => {
+		expect(capacityFraction(0.25, 4)).toBe(0.25)
+	})
+
+	it("is NaN when allocatable was not collected, so it renders a dash", () => {
+		expect(capacityFraction(0, 0)).toBeNaN()
+	})
+
+	it("formats cores against allocatable", () => {
+		expect(formatCoresOfAllocatable(0.4231, 3.92)).toBe("0.42 / 3.92 cores")
+		expect(formatCoresOfAllocatable(0.4231, 0)).toBe("0.42 cores")
+	})
+
+	it("formats memory against allocatable", () => {
+		expect(formatBytesOfAllocatable(3 * 1024 ** 3, 16 * 1024 ** 3)).toBe("3.0 GB / 16.0 GB")
+		expect(formatBytesOfAllocatable(3 * 1024 ** 3, 0)).toBe("3.0 GB")
 	})
 })

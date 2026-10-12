@@ -40,6 +40,17 @@ export const productEvents = feature({
 	consumable: true,
 })
 
+// AI usage in dollars: Autumn prices each model's tokens from models.dev and adds the markup.
+// Metered per model by `trackAiCredits` (packages/backend/src/services/billing/autumn-tracker.ts).
+// Every model Maple runs on is priced there, so no `modelMarkups` cost overrides are needed.
+export const aiCredits = feature({
+	id: "ai_credits",
+	name: "AI Credits",
+	type: "ai_credit_system",
+	defaultMarkup: 20,
+})
+
+// Legacy raw token counts, metered beside `ai_credits` for comparison. Delete once it is trusted.
 export const aiInputTokens = feature({
 	id: "ai_input_tokens",
 	name: "AI Input Tokens",
@@ -117,6 +128,17 @@ export const startup = plan({
 			// "usage_based", interval: "month" }` ($0.05 per 1,000 events).
 			featureId: "product_events",
 			unlimited: true,
+		},
+		{
+			// One credit is one dollar of model spend after markup.
+			featureId: "ai_credits",
+			included: 10,
+			price: {
+				amount: 1,
+				billingUnits: 1,
+				billingMethod: "usage_based",
+				interval: "month",
+			},
 		},
 	],
 	freeTrial: {

@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { Authorization } from "./current-tenant"
+import { SessionAuthorization } from "./current-tenant"
 import {
 	PrReviewCategory,
 	PrReviewFindingStatus,
@@ -242,5 +242,5 @@ export class CodeReviewApiGroup extends HttpApiGroup.make("codeReview")
 			error: PrReviewPersistenceError,
 		}),
 	)
-	.prefix("/api/code-review")
-	.middleware(Authorization) {}
+	.prefix("/internal/code-review")
+	.middleware(SessionAuthorization) {}

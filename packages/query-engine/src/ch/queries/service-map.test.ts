@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Exit } from "effect"
+import { DateTime, Effect, Exit } from "effect"
 import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceDbEdgesSQL,
@@ -380,8 +380,8 @@ describe("serviceMapEdgeJoinQuery", () => {
 	it("pushes a source-service filter into the parent subquery, not the outer WHERE", () => {
 		const { sql } = compileUnsafe(
 			serviceMapEdgeJoinQuery({
-				rangeStart: toDateTime(param.dateTimeString("hourStart")),
-				rangeEnd: toDateTime(param.dateTimeString("hourEnd")),
+				rangeStart: toDateTime(param.dateTime("hourStart")),
+				rangeEnd: toDateTime(param.dateTime("hourEnd")),
 				parentServiceName: "web",
 			}),
 			{ orgId: OrgId.make("org_1"), hourStart: "2024-01-01 10:00:00", hourEnd: "2024-01-01 11:00:00" },
@@ -831,9 +831,9 @@ describe("service-map database query summaries", () => {
 				},
 			])
 
-			expect(rows).toEqual([
+			expect(rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) }))).toEqual([
 				{
-					bucket: "2024-01-01 00:05:00",
+					bucket: "2024-01-01T00:05:00.000Z",
 					queryCount: 12,
 					estimatedQueryCount: 16,
 					errorCount: 1,

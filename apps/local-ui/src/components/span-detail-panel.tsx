@@ -84,7 +84,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 					onClick={onClose}
 					className="shrink-0"
 				>
-					<XmarkIcon size={16} />
+					<XmarkIcon />
 				</Button>
 			</div>
 

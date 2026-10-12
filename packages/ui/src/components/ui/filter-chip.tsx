@@ -27,6 +27,7 @@ const PRESSED_BORDER = {
 	warn: "data-pressed:border-severity-warn/40",
 	ok: "data-pressed:border-severity-info/40",
 	info: "data-pressed:border-severity-info/40",
+	done: "data-pressed:border-severity-debug/40",
 	neutral: "data-pressed:border-border",
 } satisfies Record<Tone, string>
 

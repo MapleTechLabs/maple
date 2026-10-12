@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import { Panel } from "@maple/ui/components/ui/panel"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRate } from "@maple/ui/lib/format"
@@ -13,7 +14,6 @@ import {
 	MobileStat,
 	MobileStatLine,
 	SortColumnHead,
-	TABLE_CARD_CLASS,
 } from "./service-table-cells"
 import { SampledValue } from "./sampled-value"
 import { useTableSort } from "@/hooks/use-table-sort"
@@ -187,8 +187,15 @@ export function ServiceOperationsTab({
 								return (
 									<TableRow
 										key={op.spanName}
+										tabIndex={0}
 										onClick={() => handleRowClick(op)}
-										className="cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/40"
+										onKeyDown={(e) => {
+											if (e.key === "Enter" || e.key === " ") {
+												e.preventDefault()
+												handleRowClick(op)
+											}
+										}}
+										className="cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 									>
 										<TableCell className="max-w-0 py-2 pl-3 align-middle">
 											<span
@@ -269,9 +276,12 @@ export function ServiceOperationsTab({
 						sorted.map((op) => {
 							return (
 								<MobileListRow key={op.spanName} onClick={() => handleRowClick(op)}>
-									<span className="truncate font-mono text-[13px] text-foreground">
-										{op.spanName}
-									</span>
+									<MiddleTruncate
+										text={op.spanName}
+										tail={12}
+										mono
+										className="text-ui text-foreground"
+									/>
 									<MobileStatLine>
 										<MobileStat label="calls">
 											<SampledValue
@@ -301,18 +311,20 @@ export function ServiceOperationsTab({
 
 function OperationsLoadingState() {
 	return (
-		<SkeletonList
-			rows={10}
-			className={cn("gap-0", TABLE_CARD_CLASS)}
-			renderRow={() => (
-				<div className="flex items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
-					<Skeleton className="h-3 flex-1" />
-					<Skeleton className="h-3 w-12" />
-					<Skeleton className="h-3 w-10" />
-					<Skeleton className="h-3 w-12" />
-					<Skeleton className="hidden h-5 w-[120px] md:block" />
-				</div>
-			)}
-		/>
+		<Panel>
+			<SkeletonList
+				rows={10}
+				className="gap-0"
+				renderRow={() => (
+					<div className="flex items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
+						<Skeleton className="h-3 flex-1" />
+						<Skeleton className="h-3 w-12" />
+						<Skeleton className="h-3 w-10" />
+						<Skeleton className="h-3 w-12" />
+						<Skeleton className="hidden h-5 w-[120px] md:block" />
+					</div>
+				)}
+			/>
+		</Panel>
 	)
 }

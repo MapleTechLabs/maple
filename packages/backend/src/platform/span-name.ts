@@ -7,7 +7,7 @@ import { Effect } from "effect"
  * after the query it ran ("SELECT alert_rules") — Maple's own read path says so
  * at `@maple/domain/tinybird/db-query-shape-sql`, where `SpanName` is the
  * "silent last resort (non-conformant naming)". But `Database.execute` takes an
- * opaque callback, so the SQL only becomes known once drizzle's `logger` fires,
+ * opaque callback, so the SQL only becomes known once effect-orm's `observe` fires,
  * which is *after* the span has opened. Effect v4 fixes a span's name at
  * creation (`Effect.withSpan`/`Effect.fn` take a plain string) and, unlike the
  * OTel JS API, exposes no `updateName`.

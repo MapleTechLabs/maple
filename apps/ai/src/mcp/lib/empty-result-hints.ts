@@ -20,9 +20,12 @@ interface FacetRow {
 }
 
 const facets = (window: Window) =>
-	queryWarehouse<FacetRow>("services_facets", { start_time: window.startTime, end_time: window.endTime }).pipe(
+	queryWarehouse<FacetRow>("services_facets", {
+		start_time: window.startTime,
+		end_time: window.endTime,
+	}).pipe(
 		Effect.map(({ data }): KnownValues => {
-			const of = (type: string) => data.filter((r) => r.facetType === type).map((r) => String(r.name))
+			const of = (type: string) => data.filter((r) => r.facetType === type).map((r) => r.name)
 			const services = of("service")
 			const environments = of("environment")
 			return {

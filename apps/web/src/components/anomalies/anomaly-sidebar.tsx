@@ -65,7 +65,7 @@ export function AnomalySidebar({
 						onClick={onOpenLinkDialog}
 						disabled={busy}
 					>
-						<LinkIcon size={13} />
+						<LinkIcon />
 						Link issue
 					</Button>
 				) : (

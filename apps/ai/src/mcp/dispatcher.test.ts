@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Schema, Tracer } from "effect"
+import { Context, Effect, Layer, Schema, Tracer } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor, listMcpTools } from "./dispatcher"
@@ -13,6 +13,11 @@ import {
 	type WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryError } from "@maple/domain"
+import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
+import {
+	type ConnectedSourceRepository,
+	VcsSourceService,
+} from "@maple/backend/services/integrations/vcs/VcsSourceService"
 
 const TENANT: TenantContext = {
 	orgId: "org_test" as TenantContext["orgId"],
@@ -35,12 +40,19 @@ const CONNECTOR_TENANT: TenantContext = {
 	},
 }
 
+// The executor acquires these at construction; no case here prepares a repository.
+const unusedRepositoryServices = Layer.mergeAll(
+	Layer.mock(RepoSandboxService, {}),
+	Layer.mock(VcsSourceService, {}),
+)
+
 // These cases stop at registry lookup/schema decoding, before a tool service is read.
 const makeValidationExecutor = McpToolExecutor.make.pipe(
 	// Every tool call is audited, so the executor needs the audit service even here.
 	Effect.provide(
 		Context.make(AuditLogService, makeMemoryAuditLog()) as Context.Context<McpToolRuntimeRequirements>,
 	),
+	Effect.provide(unusedRepositoryServices),
 )
 
 const makeRecordingTracer = () => {
@@ -257,7 +269,7 @@ describe("MCP dispatcher", () => {
 
 				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
 				assert.isDefined(dispatchSpan)
-				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/decode-error")
+				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/errors/McpDecodeError")
 				expect(dispatchSpan.attributes.get("http.response.status_code")).toBe(400)
 
 				// The inner registry span still FAILS with the decode error (the typed
@@ -265,7 +277,7 @@ describe("MCP dispatcher", () => {
 				// into an Ok span, keyed off the identifier list below.
 				const registrySpan = spans.find((s) => s.name === "McpToolRegistry.execute")
 				assert.isDefined(registrySpan)
-				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain("@maple/mcp/decode-error")
+				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain("@maple/mcp/errors/McpDecodeError")
 			}),
 		)
 
@@ -295,6 +307,7 @@ describe("MCP dispatcher", () => {
 					Effect.provide(
 						Context.make(AuditLogService, audit) as Context.Context<McpToolRuntimeRequirements>,
 					),
+					Effect.provide(unusedRepositoryServices),
 				)
 
 				yield* executor.execute(CONNECTOR_TENANT, "inspect_trace", {}, "bot")
@@ -328,6 +341,7 @@ describe("MCP dispatcher", () => {
 							Context.add(WarehouseQueryService, warehouse),
 						) as Context.Context<McpToolRuntimeRequirements>,
 					),
+					Effect.provide(unusedRepositoryServices),
 				)
 				const { spans, tracer } = makeRecordingTracer()
 
@@ -361,5 +375,47 @@ describe("MCP dispatcher", () => {
 				expect(dispatchSpan.attributes.get("result.isError")).toBe(false)
 			}),
 		)
+	})
+})
+
+describe("McpToolExecutor repository preparation", () => {
+	const connected = (fullName: string, isArchived: boolean): ConnectedSourceRepository => ({
+		provider: "github",
+		fullName,
+		defaultBranch: "main",
+		trackedBranch: "main",
+		htmlUrl: `https://github.com/${fullName}`,
+		isPrivate: false,
+		isArchived,
+	})
+
+	it.effect("prepares every unarchived connected repository through the sandbox it acquired", () => {
+		const prepared: Array<{ orgId: string; repository: string }> = []
+		const repositoryServices = Layer.mergeAll(
+			Layer.mock(RepoSandboxService, {
+				prepare: (orgId, target) =>
+					Effect.sync(() => {
+						prepared.push({ orgId, repository: target.repository })
+					}),
+			}),
+			Layer.mock(VcsSourceService, {
+				listRepositories: () =>
+					Effect.succeed([connected("octo/shop", false), connected("octo/legacy", true)]),
+			}),
+		)
+
+		return Effect.gen(function* () {
+			const executor = yield* McpToolExecutor.make.pipe(
+				Effect.provide(
+					Context.make(
+						AuditLogService,
+						makeMemoryAuditLog(),
+					) as Context.Context<McpToolRuntimeRequirements>,
+				),
+				Effect.provide(repositoryServices),
+			)
+			yield* executor.prepareConnectedRepositories(TENANT)
+			assert.deepStrictEqual(prepared, [{ orgId: "org_test", repository: "octo/shop" }])
+		})
 	})
 })

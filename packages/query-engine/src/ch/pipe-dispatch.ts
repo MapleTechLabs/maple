@@ -18,13 +18,14 @@ import type { OrgId } from "@maple/domain"
 import {
 	compile,
 	compileUnion,
-	type CHQuery,
+	QueryBuilderError,
 	type CompiledQuery,
-	type NeedsSelect,
 } from "@maple-dev/effect-orm/clickhouse"
-import { rawCompiledQuery } from "./raw-sql"
-import { Array as A, Effect, Match, Result, Schema } from "effect"
-import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
+import { compilePeriodCompare } from "./period-compare"
+import { Array as A, type DateTime, Effect, Match, Option, Result } from "effect"
+import type * as CH from "@maple-dev/effect-orm/expr"
+import { parseUtc } from "../datetime"
+import { exactDateTime64 } from "./tables"
 import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
@@ -78,9 +79,6 @@ import {
 	type TracesTimeseriesOpts,
 } from "./queries/traces"
 
-/** A query `compile` accepts, whatever it selects. */
-type CompileTarget<Output extends Record<string, unknown>> = CHQuery<any, Output> & NeedsSelect<Output>
-
 export type PipeCompiledQuery = CompiledQuery<unknown>
 
 type PipeParams = Record<string, unknown> & { org_id: OrgId }
@@ -122,9 +120,24 @@ export function compilePipeQuery(
 	capabilities: WarehouseCapabilities = baselineWarehouseCapabilities(),
 ): PipeCompiled | undefined {
 	const orgId = params.org_id
-	const startTime = String(params.start_time ?? "2023-01-01 00:00:00")
-	const endTime = String(params.end_time ?? "2099-12-31 23:59:59")
 	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
+	const startTime = str("start_time") ?? "2023-01-01 00:00:00"
+	const endTime = str("end_time") ?? "2099-12-31 23:59:59"
+	/**
+	 * Compiles with a param the pipe cannot run without, or fails before compiling.
+	 * No stand-in value: `""` reads as "no filter", and any other string could match.
+	 */
+	const withParam = (key: string, f: (value: string) => PipeCompiled): PipeCompiled => {
+		const value = str(key)
+		return value === undefined
+			? Effect.fail(
+					new QueryBuilderError({
+						code: "UnresolvedParam",
+						message: `pipe \`${pipe}\` requires \`${key}\``,
+					}),
+				)
+			: f(value)
+	}
 	// Overloaded rather than `def?: number`: with an optional default every
 	// defaulted call still typed as `number | undefined` and every call site paid
 	// for it with a `!`.
@@ -150,119 +163,68 @@ export function compilePipeQuery(
 		return key === undefined ? undefined : [{ key, value: str(valueParam), mode: "equals" as const }]
 	}
 
-	// The service-free constraint is `CompiledQueryRowSchema`'s, pushed one level
-	// up: a row schema decodes bytes off a socket, so it cannot ask for a service,
-	// and a struct is service-free exactly when its fields are.
-	const compileCompare = <
-		Output extends Record<string, unknown>,
-		Fields extends Schema.Struct.Fields & Record<PropertyKey, Schema.Codec<any, any, never, never>>,
-	>(
-		query: CompileTarget<Output>,
-		ranges: {
-			currentStart: string
-			currentEnd: string
-			previousStart: string
-			previousEnd: string
-		},
-		/**
-		 * The branch query's row schema, required rather than optional: the union
-		 * is handwritten SQL, so nothing derives a schema for it, and without one
-		 * it decoded nothing — on a backend that quotes 64-bit integers every
-		 * count came back as a string. Taking a `Schema.Struct` rather than a bare
-		 * `Schema` is what makes the `period` field spreadable below, and every
-		 * `*RowSchema` export already is one. See ../schema.ts.
-		 */
-		rowSchema: Schema.Struct<Fields>,
-	): PipeCompiled =>
-		Effect.gen(function* () {
-			const current = yield* compile(
-				query,
-				{ orgId, startTime: ranges.currentStart, endTime: ranges.currentEnd },
-				{ skipFormat: true },
-			)
-			const previous = yield* compile(
-				query,
-				{ orgId, startTime: ranges.previousStart, endTime: ranges.previousEnd },
-				{ skipFormat: true },
-			)
-			return rawCompiledQuery({
-				sql:
-					`SELECT 'current' AS period, * FROM (\n${current.sql}\n)\n` +
-					`UNION ALL\n` +
-					`SELECT 'previous' AS period, * FROM (\n${previous.sql}\n)\n` +
-					`FORMAT JSON`,
-				reason: "param-varied-union",
-				justification:
-					"One builder over a current and a previous window; params are substituted once per compile, so a single CHQuery cannot carry both.",
-				// Both branches are the same builder over different windows, so the
-				// union is scoped exactly when the branch is.
-				tenantScope:
-					current.tenantScope === "single-tenant" && previous.tenantScope === "single-tenant"
-						? "single-tenant"
-						: "cross-tenant",
-				// `period` is typed as a plain String, not a `"current" | "previous"`
-				// literal union. The value is produced by our own SELECT so it is
-				// always one of the two at runtime — but the row schema describes the
-				// WIRE type, and ClickHouse reports the column as String. The SQL
-				// catalog's analyzer sweep decodes a synthetic zero-value row built
-				// from DESCRIBE output, where a String column is `""`; a literal union
-				// rejects that and fails the gate.
-				rowSchema: Schema.Struct({ period: Schema.String, ...rowSchema.fields }),
-			})
-		})
-
 	// Kept in four groups because Pipeable.pipe's typed overloads stop at 20 transformations.
 	// oxlint-disable-next-line effecttsgo/unnecessary-pipe-chain
 	return Match.value(pipe)
 		.pipe(
 			Match.when("list_traces", () =>
 				eraseType(
-					compile(
-						tracesRootListQuery({
-							attributeIndexMode: attributeIndexMode(capabilities, "traces"),
-							limit: int("limit", 100),
-							offset: int("offset", 0),
-							cursor: str("cursor"),
-							serviceName: str("service"),
-							spanName: str("span_name"),
-							errorsOnly: hasError,
-							minDurationMs: int("min_duration_ms"),
-							maxDurationMs: int("max_duration_ms"),
-							environments: strList("deployment_env"),
-							matchModes: {
-								serviceName:
-									str("service_match_mode") === "contains" ? "contains" : undefined,
-								spanName: str("span_name_match_mode") === "contains" ? "contains" : undefined,
-								deploymentEnv:
-									str("deployment_env_match_mode") === "contains" ? "contains" : undefined,
-							},
-							attributeFilters: equalsFilter("attribute_filter_key", "attribute_filter_value"),
-							resourceAttributeFilters: equalsFilter(
-								"resource_filter_key",
-								"resource_filter_value",
-							),
-						}),
-						{ orgId, startTime, endTime },
+					Effect.flatMap(pipeCursor(str("cursor")), (cursor) =>
+						compile(
+							tracesRootListQuery({
+								attributeIndexMode: attributeIndexMode(capabilities, "traces"),
+								limit: int("limit", 100),
+								offset: int("offset", 0),
+								cursor,
+								serviceName: str("service"),
+								spanName: str("span_name"),
+								errorsOnly: hasError,
+								minDurationMs: int("min_duration_ms"),
+								maxDurationMs: int("max_duration_ms"),
+								environments: strList("deployment_env"),
+								matchModes: {
+									serviceName:
+										str("service_match_mode") === "contains" ? "contains" : undefined,
+									spanName:
+										str("span_name_match_mode") === "contains" ? "contains" : undefined,
+									deploymentEnv:
+										str("deployment_env_match_mode") === "contains"
+											? "contains"
+											: undefined,
+								},
+								attributeFilters: equalsFilter(
+									"attribute_filter_key",
+									"attribute_filter_value",
+								),
+								resourceAttributeFilters: equalsFilter(
+									"resource_filter_key",
+									"resource_filter_value",
+								),
+							}),
+							{ orgId, startTime, endTime },
+						),
 					),
 				),
 			),
-			Match.when("span_hierarchy", () => {
-				// Caller may pass `start_time` / `end_time` (typically a tight ±1h
-				// window around the parent span timestamp). Without them, the query
-				// scans the full retention window — present for correctness, but
-				// strongly recommended.
-				const narrowByTime = params.start_time != null && params.end_time != null
-				return eraseType(
-					compile(
-						spanHierarchyQuery({
-							traceId: String(params.trace_id),
-							spanId: str("span_id"),
-							narrowByTime,
-						}),
-						narrowByTime ? { orgId, startTime, endTime } : { orgId },
-					),
-				)
-			}),
+			Match.when("span_hierarchy", () =>
+				withParam("trace_id", (traceId) => {
+					// Caller may pass `start_time` / `end_time` (typically a tight ±1h
+					// window around the parent span timestamp). Without them, the query
+					// scans the full retention window — present for correctness, but
+					// strongly recommended.
+					const narrowByTime = params.start_time != null && params.end_time != null
+					return eraseType(
+						compile(
+							spanHierarchyQuery({
+								traceId,
+								spanId: str("span_id"),
+								narrowByTime,
+							}),
+							narrowByTime ? { orgId, startTime, endTime } : { orgId },
+						),
+					)
+				}),
+			),
 			Match.when("traces_duration_stats", () =>
 				eraseType(
 					compile(
@@ -406,49 +368,56 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("service_overview_compare", () =>
-				compileCompare(
-					serviceOverviewQuery({
-						environments: str("environments")?.split(",").filter(Boolean),
-						namespaces: str("namespaces")?.split(",").filter(Boolean),
-						commitShas: str("commit_shas")?.split(",").filter(Boolean),
-					}),
-					{
-						currentStart: str("current_start_time") ?? startTime,
-						currentEnd: str("current_end_time") ?? endTime,
-						previousStart: str("previous_start_time") ?? startTime,
-						previousEnd: str("previous_end_time") ?? endTime,
-					},
-					serviceOverviewRowSchema,
+				eraseType(
+					compilePeriodCompare(
+						serviceOverviewQuery({
+							environments: str("environments")?.split(",").filter(Boolean),
+							namespaces: str("namespaces")?.split(",").filter(Boolean),
+							commitShas: str("commit_shas")?.split(",").filter(Boolean),
+						}),
+						{
+							orgId,
+							currentStart: str("current_start_time") ?? startTime,
+							currentEnd: str("current_end_time") ?? endTime,
+							previousStart: str("previous_start_time") ?? startTime,
+							previousEnd: str("previous_end_time") ?? endTime,
+						},
+						serviceOverviewRowSchema,
+					),
 				),
 			),
 			Match.when("services_facets", () =>
 				eraseType(compileUnion(servicesFacetsQuery(), { orgId, startTime, endTime })),
 			),
-			Match.when("service_releases_timeline", () => {
-				const bucketSeconds = int("bucket_seconds", 300)
-				return eraseType(
-					compile(
-						serviceReleasesTimelineQuery({
-							serviceName: String(params.service_name),
-							bucketSeconds,
-						}),
-						{ orgId, startTime, endTime, bucketSeconds },
-					),
-				)
-			}),
-			Match.when("service_apdex_time_series", () => {
-				const bucketSeconds = int("bucket_seconds", 60)
-				return eraseType(
-					compile(
-						serviceApdexTimeseriesQuery({
-							serviceName: String(params.service_name),
-							apdexThresholdMs: int("apdex_threshold_ms", 500),
-							bucketSeconds,
-						}),
-						{ orgId, startTime, endTime, bucketSeconds },
-					),
-				)
-			}),
+			Match.when("service_releases_timeline", () =>
+				withParam("service_name", (serviceName) => {
+					const bucketSeconds = int("bucket_seconds", 300)
+					return eraseType(
+						compile(
+							serviceReleasesTimelineQuery({
+								serviceName,
+								bucketSeconds,
+							}),
+							{ orgId, startTime, endTime, bucketSeconds },
+						),
+					)
+				}),
+			),
+			Match.when("service_apdex_time_series", () =>
+				withParam("service_name", (serviceName) => {
+					const bucketSeconds = int("bucket_seconds", 60)
+					return eraseType(
+						compile(
+							serviceApdexTimeseriesQuery({
+								serviceName,
+								apdexThresholdMs: int("apdex_threshold_ms", 500),
+								bucketSeconds,
+							}),
+							{ orgId, startTime, endTime, bucketSeconds },
+						),
+					)
+				}),
+			),
 			Match.when("get_service_usage", () =>
 				eraseType(
 					compile(
@@ -461,18 +430,21 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("get_service_usage_compare", () =>
-				compileCompare(
-					serviceUsageQuery({
-						serviceName: str("service"),
-						serviceNames: str("services")?.split(",").filter(Boolean),
-					}),
-					{
-						currentStart: str("current_start_time") ?? startTime,
-						currentEnd: str("current_end_time") ?? endTime,
-						previousStart: str("previous_start_time") ?? startTime,
-						previousEnd: str("previous_end_time") ?? endTime,
-					},
-					serviceUsageRowSchema,
+				eraseType(
+					compilePeriodCompare(
+						serviceUsageQuery({
+							serviceName: str("service"),
+							serviceNames: str("services")?.split(",").filter(Boolean),
+						}),
+						{
+							orgId,
+							currentStart: str("current_start_time") ?? startTime,
+							currentEnd: str("current_end_time") ?? endTime,
+							previousStart: str("previous_start_time") ?? startTime,
+							previousEnd: str("previous_end_time") ?? endTime,
+						},
+						serviceUsageRowSchema,
+					),
 				),
 			),
 			Match.when("service_dependencies", () =>
@@ -508,13 +480,15 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("errors_timeseries", () =>
-				eraseType(
-					compile(
-						errorsTimeseriesQuery({
-							fingerprintHash: String(params.fingerprint_hash),
-							services: str("services")?.split(",").filter(Boolean),
-						}),
-						{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 3600) },
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(
+							errorsTimeseriesQuery({
+								fingerprintHash,
+								services: str("services")?.split(",").filter(Boolean),
+							}),
+							{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 3600) },
+						),
 					),
 				),
 			),
@@ -545,15 +519,17 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("error_detail_traces", () =>
-				eraseType(
-					compile(
-						errorDetailTracesQuery({
-							fingerprintHash: String(params.fingerprint_hash),
-							rootOnly: bool("root_only"),
-							services: str("services")?.split(",").filter(Boolean),
-							limit: int("limit", 10),
-						}),
-						{ orgId, startTime, endTime },
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(
+							errorDetailTracesQuery({
+								fingerprintHash,
+								rootOnly: bool("root_only"),
+								services: str("services")?.split(",").filter(Boolean),
+								limit: int("limit", 10),
+							}),
+							{ orgId, startTime, endTime },
+						),
 					),
 				),
 			),
@@ -572,34 +548,40 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("error_issue_timeseries", () =>
-				eraseType(
-					compile(errorIssueTimeseriesQuery(), {
-						orgId,
-						startTime,
-						endTime,
-						fingerprintHash: String(params.fingerprint_hash),
-						bucketSeconds: int("bucket_seconds", 3600),
-					}),
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(errorIssueTimeseriesQuery(), {
+							orgId,
+							startTime,
+							endTime,
+							fingerprintHash,
+							bucketSeconds: int("bucket_seconds", 3600),
+						}),
+					),
 				),
 			),
 			Match.when("error_issue_sample_traces", () =>
-				eraseType(
-					compile(errorIssueSampleTracesQuery({ limit: int("limit", 25) }), {
-						orgId,
-						startTime,
-						endTime,
-						fingerprintHash: String(params.fingerprint_hash),
-					}),
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(errorIssueSampleTracesQuery({ limit: int("limit", 25) }), {
+							orgId,
+							startTime,
+							endTime,
+							fingerprintHash,
+						}),
+					),
 				),
 			),
 			Match.when("error_issue_environments", () =>
-				eraseType(
-					compile(errorIssueEnvironmentsQuery({ limit: int("limit", 20) }), {
-						orgId,
-						startTime,
-						endTime,
-						fingerprintHash: String(params.fingerprint_hash),
-					}),
+				withParam("fingerprint_hash", (fingerprintHash) =>
+					eraseType(
+						compile(errorIssueEnvironmentsQuery({ limit: int("limit", 20) }), {
+							orgId,
+							startTime,
+							endTime,
+							fingerprintHash,
+						}),
+					),
 				),
 			),
 			Match.when("list_metrics", () =>
@@ -700,80 +682,86 @@ export function compilePipeQuery(
 					}),
 				)
 			}),
-			Match.when("span_attribute_values", () => {
-				const serviceName = str("service_name")
-				if (serviceName) {
+			Match.when("span_attribute_values", () =>
+				withParam("attribute_key", (attributeKey) => {
+					const serviceName = str("service_name")
+					if (serviceName) {
+						return eraseType(
+							compile(
+								serviceScopedAttributeValuesQuery({
+									scope: "span",
+									attributeKey,
+									limit: int("limit", 50),
+								}),
+								{ orgId, startTime, endTime, serviceName },
+							),
+						)
+					}
 					return eraseType(
 						compile(
-							serviceScopedAttributeValuesQuery({
-								scope: "span",
-								attributeKey: String(params.attribute_key),
+							spanAttributeValuesQuery({
+								attributeKey,
 								limit: int("limit", 50),
 							}),
-							{ orgId, startTime, endTime, serviceName },
+							{ orgId, startTime, endTime },
 						),
 					)
-				}
-				return eraseType(
-					compile(
-						spanAttributeValuesQuery({
-							attributeKey: String(params.attribute_key),
-							limit: int("limit", 50),
-						}),
-						{ orgId, startTime, endTime },
-					),
-				)
-			}),
-			Match.when("resource_attribute_values", () => {
-				const serviceName = str("service_name")
-				if (serviceName) {
+				}),
+			),
+			Match.when("resource_attribute_values", () =>
+				withParam("attribute_key", (attributeKey) => {
+					const serviceName = str("service_name")
+					if (serviceName) {
+						return eraseType(
+							compile(
+								serviceScopedAttributeValuesQuery({
+									scope: "resource",
+									attributeKey,
+									limit: int("limit", 50),
+								}),
+								{ orgId, startTime, endTime, serviceName },
+							),
+						)
+					}
 					return eraseType(
 						compile(
-							serviceScopedAttributeValuesQuery({
-								scope: "resource",
-								attributeKey: String(params.attribute_key),
+							resourceAttributeValuesQuery({
+								attributeKey,
 								limit: int("limit", 50),
 							}),
-							{ orgId, startTime, endTime, serviceName },
+							{ orgId, startTime, endTime },
 						),
 					)
-				}
-				return eraseType(
-					compile(
-						resourceAttributeValuesQuery({
-							attributeKey: String(params.attribute_key),
-							limit: int("limit", 50),
-						}),
-						{ orgId, startTime, endTime },
-					),
-				)
-			}),
-			Match.when("metric_attribute_values", () => {
-				const metricName = str("metric_name")
-				const metricType = parseMetricType(str("metric_type"))
-				if (metricName && metricType) {
+				}),
+			),
+			Match.when("metric_attribute_values", () =>
+				withParam("attribute_key", (attributeKey) => {
+					const metricName = str("metric_name")
+					const metricType = parseMetricType(str("metric_type"))
+					if (metricName && metricType) {
+						return eraseType(
+							compile(
+								metricScopedAttributeValuesQuery({
+									metricType,
+									serviceName: str("service_name"),
+									attributeKey,
+									limit: int("limit", 50),
+								}),
+								{ orgId, startTime, endTime, metricName },
+							),
+						)
+					}
 					return eraseType(
 						compile(
-							metricScopedAttributeValuesQuery({
-								metricType,
-								serviceName: str("service_name"),
-								attributeKey: String(params.attribute_key),
+							metricAttributeValuesQuery({
+								attributeKey,
 								limit: int("limit", 50),
 							}),
-							{ orgId, startTime, endTime, metricName },
+							{ orgId, startTime, endTime },
 						),
 					)
-				}
-				return eraseType(
-					compile(
-						metricAttributeValuesQuery({
-							attributeKey: String(params.attribute_key),
-							limit: int("limit", 50),
-						}),
-						{ orgId, startTime, endTime },
-					),
-				)
-			}),
+				}),
+			),
 			Match.when("custom_traces_timeseries", () => {
 				const tsOpts = {
 					...pipeParamsToTracesTimeseriesOpts(params),
@@ -856,6 +844,31 @@ export function compilePipeQuery(
 			Match.orElse(() => undefined),
 		)
 }
+
+/**
+ * A keyset cursor off the wire. An unparseable one is invalid input: reading
+ * it as absent would silently restart paging at the first page. A wire-form
+ * cursor keeps its nanoseconds, so rows sharing the boundary millisecond are
+ * not skipped.
+ */
+const pipeCursor = (
+	raw: string | undefined,
+): Effect.Effect<DateTime.Utc | CH.Expr<DateTime.Utc> | undefined, QueryBuilderError> =>
+	raw === undefined
+		? Effect.succeed(undefined)
+		: Option.match(parseUtc(raw), {
+				onNone: () =>
+					Effect.fail(
+						new QueryBuilderError({
+							code: "InvalidLiteral",
+							message: `cursor \`${raw}\` is not a timestamp`,
+						}),
+					),
+				onSome: (cursor) => {
+					const exact = exactDateTime64(raw)
+					return Effect.succeed(typeof exact === "string" ? cursor : exact)
+				},
+			})
 
 // Attribute filter param helpers (numbered suffix pattern from Tinybird pipes)
 

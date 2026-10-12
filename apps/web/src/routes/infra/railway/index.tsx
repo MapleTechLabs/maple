@@ -14,7 +14,7 @@ import {
 } from "@/components/integrations/railway-integration-card"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PageHero } from "@/components/common/page-hero"
-import { DataTable } from "@/components/common/data-table"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
 import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import {
@@ -146,7 +146,13 @@ function RailwayServices({
 		)
 	}
 	if (Result.isFailure(servicesResult) && services.length === 0) {
-		return <ErrorState error={servicesResult.cause} />
+		return (
+			<ErrorState
+				error={servicesResult.cause}
+				title="Failed to load Railway services"
+				onRetry={refreshServices}
+			/>
+		)
 	}
 	if (services.length === 0) {
 		return (
@@ -194,11 +200,7 @@ function RailwayServices({
 				}
 			/>
 			{filtered.length === 0 ? (
-				<DataTable.Root ariaLabel="Railway services">
-					<DataTable.Empty>
-						No services match. Clear the search or scope to see them all.
-					</DataTable.Empty>
-				</DataTable.Root>
+				<FilteredEmpty noun="services" description="Clear the search or scope to see them all." />
 			) : (
 				<RailwayServiceTable services={filtered} />
 			)}

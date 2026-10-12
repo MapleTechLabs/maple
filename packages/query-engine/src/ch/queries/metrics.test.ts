@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	metricsTimeseriesQuery,
 	metricsTimeseriesRateQuery,
@@ -101,11 +102,10 @@ describe("metricsTimeseriesQuery", () => {
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 
-	it("applies attribute key/value filter", () => {
+	it("applies an attribute filter", () => {
 		const q = metricsTimeseriesQuery({
 			metricType: "sum",
-			attributeKey: "region",
-			attributeValue: "us-east-1",
+			attributeFilters: [{ key: "region", mode: "equals", value: "us-east-1" }],
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Attributes['region'] = 'us-east-1'")
@@ -212,10 +212,10 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).toContain("- INTERVAL 600 SECOND")
 	})
 
-	it("treats an attribute key with no value as 'has the label'", () => {
-		const q = metricsTimeseriesRateQuery({ attributeKey: "worker" })
+	it("reads an exists filter as 'has a non-empty label'", () => {
+		const q = metricsTimeseriesRateQuery({ attributeFilters: [{ key: "worker", mode: "exists" }] })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("metrics_sum.Attributes['worker'] != ''")
+		expect(sql).toContain("Attributes['worker'] != ''")
 	})
 
 	it("applies serviceName filter in CTE", () => {
@@ -224,10 +224,9 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 
-	it("applies attributeKey filter", () => {
+	it("applies an attribute filter in the CTE", () => {
 		const q = metricsTimeseriesRateQuery({
-			attributeKey: "region",
-			attributeValue: "us-east-1",
+			attributeFilters: [{ key: "region", mode: "equals", value: "us-east-1" }],
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Attributes['region'] = 'us-east-1'")
@@ -295,11 +294,11 @@ describe("metricsTimeseriesRateQuery", () => {
 		const q = metricsTimeseriesRateQuery({
 			metricName: "span.metrics.calls",
 			bucketSeconds: 3600,
-			attributeKey: "span.kind",
-			attributeValue: "SPAN_KIND_SERVER",
+			attributeFilters: [{ key: "span.kind", mode: "equals", value: "SPAN_KIND_SERVER" }],
 			groupByAttributeKey: "span.kind",
 		})
 		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
+		expect(sql).toContain("span_metrics_calls_hourly")
 		expect(sql).toContain("SpanKind = 'SPAN_KIND_SERVER'")
 		expect(sql).toContain("SpanKind AS attributeValue")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
@@ -326,11 +325,24 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).not.toContain("span_metrics_calls_hourly")
 	})
 
-	it("falls back to raw metrics_sum when attributeValue has no attributeKey", () => {
+	it("falls back to raw metrics_sum for a negated attribute filter", () => {
 		const q = metricsTimeseriesRateQuery({
 			metricName: "span.metrics.calls",
 			bucketSeconds: 3600,
-			attributeValue: "SPAN_KIND_SERVER",
+			attributeFilters: [
+				{ key: "span.kind", mode: "equals", value: "SPAN_KIND_SERVER", negated: true },
+			],
+		})
+		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
+		expect(sql).toContain("FROM metrics_sum")
+		expect(sql).toContain("NOT (Attributes['span.kind'] = 'SPAN_KIND_SERVER')")
+	})
+
+	it("falls back to raw metrics_sum for a label the rollup does not keep", () => {
+		const q = metricsTimeseriesRateQuery({
+			metricName: "span.metrics.calls",
+			bucketSeconds: 3600,
+			attributeFilters: [{ key: "http.route", mode: "equals", value: "/api" }],
 		})
 		const { sql } = compileUnsafe(q, { ...baseParams, metricName: "span.metrics.calls" })
 		expect(sql).toContain("FROM metrics_sum")
@@ -453,13 +465,36 @@ describe("metricsBreakdownQuery", () => {
 			metricType: "sum",
 			serviceName: "api",
 			environments: ["production"],
-			attributeKey: "state",
-			attributeValue: "idle",
+			attributeFilters: [{ key: "state", mode: "equals", value: "idle" }],
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("metrics_sum.ServiceName = 'api'")
 		expect(sql).toContain("'production'")
-		expect(sql).toContain("metrics_sum.Attributes['state'] = 'idle'")
+		expect(sql).toContain("Attributes['state'] = 'idle'")
+	})
+
+	it("applies negated and IN attribute filters on the datapoint labels", () => {
+		const q = metricsBreakdownQuery({
+			metricType: "gauge",
+			groupByResourceAttributeKey: "host.name",
+			attributeFilters: [
+				{ key: "state", mode: "equals", value: "idle", negated: true },
+				{ key: "cpu", mode: "in", values: ["cpu0", "cpu1"] },
+			],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("NOT (Attributes['state'] = 'idle')")
+		expect(sql).toContain("Attributes['cpu'] IN ('cpu0', 'cpu1')")
+	})
+
+	it("excludes datapoints missing the label from numeric filters", () => {
+		const q = metricsBreakdownQuery({
+			metricType: "gauge",
+			attributeFilters: [{ key: "cpu", mode: "lt", value: "4" }],
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("Attributes['cpu'] != ''")
+		expect(sql).toContain("toFloat64OrZero(Attributes['cpu']) < 4")
 	})
 
 	it("ranks groups by the requested aggregate before the limit", () => {
@@ -563,4 +598,82 @@ describe("metricsSummaryQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 	})
+})
+
+// Rows reach callers through `decodeRows`; an underived row schema would leave
+// `bucket` a string behind a `DateTime.Utc` type.
+describe("metric rows decode buckets to DateTime.Utc", () => {
+	const valueRow = {
+		bucket: "2024-01-01 10:00:00.000000000",
+		serviceName: "api",
+		attributeValue: "",
+		groupName: "api",
+		avgValue: 1,
+		minValue: 1,
+		maxValue: 1,
+		sumValue: 1,
+		dataPointCount: "1",
+	}
+	const rateRow = {
+		bucket: "2024-01-01 10:00:00",
+		serviceName: "api",
+		attributeValue: "",
+		groupName: "api",
+		rateValue: 1,
+		increaseValue: 1,
+		dataPointCount: "1",
+	}
+	const tenAm = Date.UTC(2024, 0, 1, 10)
+
+	const bucketOf = <A extends { readonly bucket: DateTime.Utc }>(
+		compiled: Effect.Effect<CompiledQuery<A>, unknown>,
+		wire: Record<string, unknown>,
+	) =>
+		Effect.gen(function* () {
+			const query = yield* compiled
+			expect(query.rowSchemaSource).not.toBe("none")
+			const [row] = yield* query.decodeRows([wire])
+			return row!.bucket
+		})
+
+	const cases = {
+		"value timeseries": () =>
+			bucketOf(compile(metricsTimeseriesQuery({ metricType: "gauge" }), baseParams), valueRow),
+		"value timeseries, series-capped": () =>
+			bucketOf(
+				compile(
+					metricsTimeseriesQuery({
+						metricType: "gauge",
+						groupByAttributeKey: "k",
+						groupBy: ["attribute"],
+						seriesLimit: 5,
+					}),
+					baseParams,
+				),
+				valueRow,
+			),
+		"rate timeseries": () =>
+			bucketOf(compile(metricsTimeseriesRateQuery({ metricName: "requests" }), baseParams), rateRow),
+		"rate timeseries from the span-metrics rollup": () =>
+			bucketOf(
+				compile(metricsTimeseriesRateQuery({ metricName: "calls", bucketSeconds: 3600 }), baseParams),
+				rateRow,
+			),
+		sparklines: () =>
+			bucketOf(compile(metricsSparklinesQuery({ metricType: "sum", metricNames: ["m"] }), baseParams), {
+				bucket: "2024-01-01 10:00:00",
+				metricName: "m",
+				avgValue: 1,
+				sumValue: 1,
+				dataPointCount: "1",
+			}),
+	}
+
+	for (const [name, bucket] of Object.entries(cases)) {
+		it.effect(name, () =>
+			Effect.gen(function* () {
+				expect(DateTime.toEpochMillis(yield* bucket())).toBe(tenAm)
+			}),
+		)
+	}
 })

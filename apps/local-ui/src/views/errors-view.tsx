@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { DateTime } from "effect"
 import { CircleWarningIcon, ChevronDownIcon } from "@maple/ui/components/icons"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Spinner } from "@maple/ui/components/ui/spinner"
@@ -27,6 +28,7 @@ import { useRange } from "../hooks/use-range"
 import { useSignalPresence } from "../hooks/use-signal-presence"
 import { useTimeWindow } from "../hooks/use-time-window"
 import { hrefFor, useQueryParams } from "../lib/router"
+import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { formatRelativeTime, WIDEST_RANGE, type TimeBounds } from "../lib/time"
 import { PageShell } from "../components/page-shell"
 import { SignalEmptyState } from "../components/signal-empty-state"
@@ -218,7 +220,7 @@ function ErrorTypeCard({
 						{formatNumber(row.count)}
 					</span>
 					<span className="block text-[10px] text-muted-foreground">
-						last seen {formatRelativeTime(row.lastSeen)}
+						last seen {formatRelativeFrom(DateTime.toEpochMillis(row.lastSeen))}
 					</span>
 				</span>
 				<ChevronDownIcon

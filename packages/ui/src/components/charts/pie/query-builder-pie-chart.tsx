@@ -12,7 +12,7 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import * as React from "react"
 
 import { useContainerSize } from "../../../hooks/use-container-size"
-import { EMPTY_VALUE, formatNumber, formatValueByUnit } from "../../../lib/format"
+import { EMPTY_VALUE, formatNumber, formatPercent, formatValueByUnit } from "../../../lib/format"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { cn } from "../../../lib/utils"
 import {
@@ -82,10 +82,6 @@ function fmtCenterTotal(value: number, unit?: string): string {
 		return value.toLocaleString()
 	}
 	return fmtValue(value, unit)
-}
-
-function fmtPercent(fraction: number, digits = 1): string {
-	return `${(fraction * 100).toFixed(fraction < 0.1 ? digits : 0)}%`
 }
 
 // Tabular legend: a share of the card, bounded so the pie never starves and the
@@ -442,7 +438,7 @@ export function QueryBuilderPieChart({
 				// this column is a span count or a latency.
 				if (tableLegend) {
 					entry.value = fmtValue(row.value, unit)
-					entry.secondary = total > 0 ? fmtPercent(row.value / total, 1) : EMPTY_VALUE
+					entry.secondary = total > 0 ? formatPercent(row.value / total) : EMPTY_VALUE
 				}
 				return entry
 			}),
@@ -516,7 +512,7 @@ export function QueryBuilderPieChart({
 			radius: (slice: PieSlice) =>
 				slice.fraction < LABEL_MIN_FRACTION ? null : donut ? LABEL_RADIUS_DONUT : LABEL_RADIUS_PIE,
 			text: (slice: PieSlice) =>
-				showPercent ? fmtPercent(slice.fraction, 1) : fmtValue(slice.value, unit),
+				showPercent ? formatPercent(slice.fraction) : fmtValue(slice.value, unit),
 			// White on the wedge, as before. The Recharts-era chart also carried a dark
 			// paint-order stroke behind it; `radialText` has no stroke, so a label over
 			// a pale slice leans on the palette's contrast instead.
@@ -684,7 +680,7 @@ export function QueryBuilderPieChart({
 							<div className="mt-0.5 text-muted-foreground tabular-nums">
 								<span className="text-foreground/90">{fmtValue(slice.value, unit)}</span>
 								<span className="px-1 text-muted-foreground/60">·</span>
-								<span>{(slice.fraction * 100).toFixed(1)}%</span>
+								<span>{formatPercent(slice.fraction)}</span>
 							</div>
 						</div>
 					)

@@ -190,7 +190,7 @@ describe("service_deployments", () => {
 		const text = markdown(result)
 		expect(text).toContain("Newest vs previous version")
 		expect(text).toContain("+4.00 pp")
-		expect(text).toContain('`compare_periods around_time="2026-10-01 09:00:00"')
+		expect(text).toContain('`compare_periods around_time="2026-10-01T09:00:00.000Z"')
 		expect(sqlSeen.at(-1)).toContain("service_overview_minutely")
 		expect(sqlSeen.at(-1)).not.toContain("service_overview_hourly")
 	})

@@ -96,7 +96,7 @@ function UserMenu() {
 	const { user } = useUser()
 	const { signOut } = useClerk()
 
-	const name = user?.fullName ?? "User"
+	const name = user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "User"
 	const email = user?.primaryEmailAddress?.emailAddress ?? ""
 	const imageUrl = user?.imageUrl
 	const initials = userInitials(name)
@@ -125,9 +125,13 @@ function UserMenu() {
 								name={name}
 							/>
 							<div className="grid flex-1 text-left text-sm leading-tight">
-								<span className="truncate font-medium">{name}</span>
+								<span className="truncate font-medium" title={name}>
+									{name}
+								</span>
 								{email && (
-									<span className="truncate text-muted-foreground text-xs">{email}</span>
+									<span className="truncate text-muted-foreground text-xs" title={email}>
+										{email}
+									</span>
 								)}
 							</div>
 						</div>
@@ -140,15 +144,15 @@ function UserMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem render={<Link to="/account" />}>
-						<UserIcon size={16} />
+						<UserIcon />
 						Account
 					</DropdownMenuItem>
 					<DropdownMenuItem render={<Link to="/settings" />}>
-						<GearIcon size={16} />
+						<GearIcon />
 						Settings
 					</DropdownMenuItem>
 					<DropdownMenuItem onClick={showKeyboardShortcuts}>
-						<KeyboardIcon size={16} />
+						<KeyboardIcon />
 						Keyboard shortcuts
 						<DropdownMenuShortcut>?</DropdownMenuShortcut>
 					</DropdownMenuItem>
@@ -156,7 +160,7 @@ function UserMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={() => signOut()}>
-						<LogoutIcon size={16} />
+						<LogoutIcon />
 						Log out
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
@@ -191,11 +195,11 @@ function GuestMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem render={<Link to="/settings" />}>
-						<GearIcon size={16} />
+						<GearIcon />
 						Settings
 					</DropdownMenuItem>
 					<DropdownMenuItem onClick={showKeyboardShortcuts}>
-						<KeyboardIcon size={16} />
+						<KeyboardIcon />
 						Keyboard shortcuts
 						<DropdownMenuShortcut>?</DropdownMenuShortcut>
 					</DropdownMenuItem>
@@ -203,7 +207,7 @@ function GuestMenu() {
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={handleGuestLogout}>
-						<LogoutIcon size={16} />
+						<LogoutIcon />
 						Log out
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
@@ -502,7 +506,7 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
 								size="sm"
 							>
 								<GridSquareCirclePlusIcon className="size-3.5 text-muted-foreground" />
-								<span>{dashboard.name}</span>
+								<span title={dashboard.name}>{dashboard.name}</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 					))}
@@ -599,7 +603,7 @@ function SupportMenu() {
 						{/* The channel is created in Maple's Slack for a Clerk org; self-hosted has neither. */}
 						{isClerkAuthEnabled ? (
 							<DropdownMenuItem onClick={() => setSlackOpen(true)}>
-								<SlackIcon size={16} />
+								<SlackIcon />
 								Shared Slack channel
 							</DropdownMenuItem>
 						) : null}
@@ -613,17 +617,17 @@ function SupportMenu() {
 								/>
 							}
 						>
-							<DiscordIcon size={16} />
+							<DiscordIcon />
 							Community Discord
 						</DropdownMenuItem>
 						<DropdownMenuItem
 							render={<a aria-label="Email Support" href="mailto:support@maple.dev" />}
 						>
-							<EnvelopeIcon size={16} />
+							<EnvelopeIcon />
 							Email Support
 						</DropdownMenuItem>
 						<DropdownMenuItem onClick={showKeyboardShortcuts}>
-							<KeyboardIcon size={16} />
+							<KeyboardIcon />
 							Keyboard shortcuts
 							<DropdownMenuShortcut>?</DropdownMenuShortcut>
 						</DropdownMenuItem>

@@ -108,17 +108,18 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			yield* DashboardPersistenceService.upsert(
+			const persistence = yield* DashboardPersistenceService
+			yield* persistence.upsert(
 				asOrgId("org_a"),
 				asUserId("user_a"),
 				makeDashboard({ id: asDashboardId("a-1"), name: "Org A" }),
 			)
-			yield* DashboardPersistenceService.upsert(
+			yield* persistence.upsert(
 				asOrgId("org_b"),
 				asUserId("user_b"),
 				makeDashboard({ id: asDashboardId("b-1"), name: "Org B" }),
 			)
-			const dashboards = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const dashboards = yield* persistence.list(asOrgId("org_a"))
 
 			assert.strictEqual(dashboards.dashboards.length, 1)
 			assert.strictEqual(dashboards.dashboards[0]!.id, asDashboardId("a-1"))
@@ -142,9 +143,10 @@ describe("DashboardPersistenceService", () => {
 		})
 
 		return Effect.gen(function* () {
-			yield* DashboardPersistenceService.upsert(asOrgId("org_a"), asUserId("user_a"), original)
-			yield* DashboardPersistenceService.upsert(asOrgId("org_a"), asUserId("user_a"), updated)
-			const dashboards = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const persistence = yield* DashboardPersistenceService
+			yield* persistence.upsert(asOrgId("org_a"), asUserId("user_a"), original)
+			yield* persistence.upsert(asOrgId("org_a"), asUserId("user_a"), updated)
+			const dashboards = yield* persistence.list(asOrgId("org_a"))
 
 			assert.strictEqual(dashboards.dashboards.length, 1)
 			assert.strictEqual(dashboards.dashboards[0]!.name, "Second Name")
@@ -156,7 +158,8 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const created = yield* DashboardPersistenceService.create(
+			const persistence = yield* DashboardPersistenceService
+			const created = yield* persistence.create(
 				asOrgId("org_a"),
 				asUserId("user_a"),
 				makePortableDashboard({
@@ -166,7 +169,7 @@ describe("DashboardPersistenceService", () => {
 				}),
 			)
 
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const listed = yield* persistence.list(asOrgId("org_a"))
 
 			assert.strictEqual(typeof created.id, "string")
 			assert.strictEqual(created.name, "Imported Dashboard")
@@ -187,13 +190,14 @@ describe("DashboardPersistenceService", () => {
 		// omits both here. The create path must not forward their `undefined` values
 		// into `new DashboardDocument(...)`, which the Schema.Class constructor rejects.
 		return Effect.gen(function* () {
-			const created = yield* DashboardPersistenceService.create(
+			const persistence = yield* DashboardPersistenceService
+			const created = yield* persistence.create(
 				asOrgId("org_a"),
 				asUserId("user_a"),
 				makePortableDashboard({ name: "No Tags" }),
 			)
 
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const listed = yield* persistence.list(asOrgId("org_a"))
 
 			assert.strictEqual(created.name, "No Tags")
 			assert.strictEqual(created.description, undefined)
@@ -207,9 +211,8 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const exit = yield* Effect.exit(
-				DashboardPersistenceService.delete(asOrgId("org_a"), asDashboardId("missing")),
-			)
+			const persistence = yield* DashboardPersistenceService
+			const exit = yield* Effect.exit(persistence.delete(asOrgId("org_a"), asDashboardId("missing")))
 			const failure = getError(exit)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -221,7 +224,8 @@ describe("DashboardPersistenceService", () => {
 		const failingLayer = DashboardPersistenceService.layer.pipe(Layer.provide(failingDatabaseLayer))
 
 		return Effect.gen(function* () {
-			const exit = yield* Effect.exit(DashboardPersistenceService.list(asOrgId("org_a")))
+			const persistence = yield* DashboardPersistenceService
+			const exit = yield* Effect.exit(persistence.list(asOrgId("org_a")))
 			const failure = getError(exit)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -245,7 +249,8 @@ describe("DashboardPersistenceService", () => {
 		})
 
 		return Effect.gen(function* () {
-			yield* DashboardPersistenceService.upsert(
+			const persistence = yield* DashboardPersistenceService
+			yield* persistence.upsert(
 				asOrgId("org_a"),
 				asUserId("user_a"),
 				makeDashboard({
@@ -258,7 +263,7 @@ describe("DashboardPersistenceService", () => {
 				}),
 			)
 
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const listed = yield* persistence.list(asOrgId("org_a"))
 			const stored = listed.dashboards[0]!
 			const [orphan, dangling] = stored.widgets
 
@@ -276,12 +281,13 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			yield* DashboardPersistenceService.upsert(
+			const persistence = yield* DashboardPersistenceService
+			yield* persistence.upsert(
 				asOrgId("org_a"),
 				asUserId("user_a"),
 				makeDashboard({ id: asDashboardId("dash-flat"), name: "Flat" }),
 			)
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const listed = yield* persistence.list(asOrgId("org_a"))
 			assert.isFalse("sections" in listed.dashboards[0]!)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -294,7 +300,8 @@ describe("DashboardPersistenceService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const created = yield* DashboardPersistenceService.create(
+			const persistence = yield* DashboardPersistenceService
+			const created = yield* persistence.create(
 				asOrgId("org_a"),
 				asUserId("user_a"),
 				makePortableDashboard({
@@ -319,7 +326,7 @@ describe("DashboardPersistenceService", () => {
 			assert.strictEqual(created.widgets[0]?.sectionId, "s1")
 
 			// And it survives the round-trip through storage, not just the response.
-			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const listed = yield* persistence.list(asOrgId("org_a"))
 			assert.strictEqual(listed.dashboards[0]?.sections?.length, 1)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -382,7 +389,8 @@ describe("DashboardPersistenceService", () => {
 			const testDb = createTestDb(trackedDbs)
 
 			return Effect.gen(function* () {
-				yield* DashboardPersistenceService.upsert(
+				const persistence = yield* DashboardPersistenceService
+				yield* persistence.upsert(
 					asOrgId("org_a"),
 					asUserId("user_a"),
 					makeDashboard({ id: asDashboardId("dash-stamp") }),
@@ -403,10 +411,11 @@ describe("DashboardPersistenceService", () => {
 			const testDb = createTestDb(trackedDbs)
 
 			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
 				yield* insertRawDashboard(testDb, "dash-legacy", legacyPayload("dash-legacy"))
 
 				const outcome = yield* Effect.exit(
-					DashboardPersistenceService.get(asOrgId("org_a"), asDashboardId("dash-legacy")),
+					persistence.get(asOrgId("org_a"), asDashboardId("dash-legacy")),
 				)
 
 				// Loudly, not silently. A half-decoded document would be persisted by
@@ -419,6 +428,7 @@ describe("DashboardPersistenceService", () => {
 			const testDb = createTestDb(trackedDbs)
 
 			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
 				// Exactly what `backfill-dashboard-datasource-v3.ts` writes back.
 				yield* insertRawDashboard(
 					testDb,
@@ -426,10 +436,7 @@ describe("DashboardPersistenceService", () => {
 					upgradeStoredDocument(legacyPayload("dash-backfilled")) as Record<string, unknown>,
 				)
 
-				const dashboard = yield* DashboardPersistenceService.get(
-					asOrgId("org_a"),
-					asDashboardId("dash-backfilled"),
-				)
+				const dashboard = yield* persistence.get(asOrgId("org_a"), asDashboardId("dash-backfilled"))
 
 				assert.strictEqual(dashboard.name, "Legacy")
 				const dataSource = dashboard.widgets[0]?.dataSource
@@ -445,11 +452,12 @@ describe("DashboardPersistenceService", () => {
 			const testDb = createTestDb(trackedDbs)
 
 			return Effect.gen(function* () {
+				const persistence = yield* DashboardPersistenceService
 				const corrupt = { ...legacyPayload("dash-corrupt"), widgets: [{ id: "no-layout" }] }
 				yield* insertRawDashboard(testDb, "dash-corrupt", corrupt)
 
 				const exit = yield* Effect.exit(
-					DashboardPersistenceService.get(asOrgId("org_a"), asDashboardId("dash-corrupt")),
+					persistence.get(asOrgId("org_a"), asDashboardId("dash-corrupt")),
 				)
 
 				assert.isTrue(Exit.isFailure(exit))

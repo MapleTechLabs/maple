@@ -2,11 +2,7 @@ import { DEFAULT_LIST_LIMIT, WIDGET_TYPES } from "@maple/domain/http"
 import { makeQueryDataSource, makeRouteDataSource } from "@maple/widgets/dashboard"
 
 import { MenuIcon } from "@/components/icons"
-import {
-	DEFAULT_LIST_COLUMNS,
-	toListDataSource,
-	type ListColumnDraft,
-} from "@/lib/query-builder/list-widget-config"
+import { DEFAULT_LIST_COLUMNS, toListDataSource } from "@/lib/query-builder/list-widget-config"
 import { ListWidget } from "@/components/dashboard-builder/widgets/list-widget"
 import { listPresets } from "@/components/dashboard-builder/widgets/widget-definitions"
 import type { WidgetTypeDefinition } from "@/components/dashboard-builder/widgets/widget-type-registry"
@@ -80,7 +76,7 @@ export const listWidgetType: WidgetTypeDefinition = {
 			listDataSource: source,
 			listWhereClause: widget.display.listWhereClause ?? "",
 			listLimit: typeof widget.display.listLimit === "number" ? String(widget.display.listLimit) : "",
-			listColumns: (widget.display.columns ?? DEFAULT_LIST_COLUMNS[source]) as ListColumnDraft[],
+			listColumns: widget.display.columns ?? DEFAULT_LIST_COLUMNS[source],
 			listRootOnly: widget.display.listRootOnly ?? true,
 		}
 	},

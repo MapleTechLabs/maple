@@ -656,7 +656,7 @@ function FailedCallRow({
 				className="ml-auto h-auto p-0 text-xs"
 			>
 				Open span
-				<ArrowRightIcon size={11} />
+				<ArrowRightIcon />
 			</Button>
 		</div>
 	)

@@ -99,6 +99,19 @@ describe("mapWarehouseError", () => {
 				expect(mapped).not.toBeInstanceOf(WarehouseQueryError)
 			})
 
+			// Production: `EventsName != ''` on an Array column, written by the chat agent.
+			it("reports a literal the column cannot read as invalid SQL", () => {
+				const mapped = classify(
+					"rawSqlQuery",
+					{
+						message:
+							"Array does not start with '[' character: while converting '' to Array(String) (CANNOT_READ_ARRAY_FROM_TEXT)",
+					},
+					"caller",
+				)
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
+			})
+
 			// The stale `FROM web_events` left in a saved raw_sql widget by the
 			// product_events rename: the author's to fix, not a Maple 5xx.
 			it("reports a table dropped out from under a saved widget to the author", () => {

@@ -1,8 +1,10 @@
-import { useMemo } from "react"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { useMemo, useState } from "react"
 import { countLabel } from "@maple/ui/lib/format"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Item, ItemActions, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -11,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import { CircleWarningIcon, CloudflareIcon, CloudflareMonoIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { CLOUDFLARE_ACCENT } from "./integration-catalog"
 import { useRequiredIntegrationConnect } from "./integration-connect"
 import {
@@ -72,12 +74,15 @@ function CloudflareAccountsStrip({ accounts }: { readonly accounts: ReadonlyArra
 							<CloudflareMonoIcon size={16} className="text-muted-foreground" />
 						</ItemMedia>
 						<ItemContent className="gap-0">
-							<span className="truncate text-sm font-medium">
-								{account.accountName ?? account.accountId}
-							</span>
-							<span className="truncate font-mono text-2xs text-muted-foreground">
-								{account.accountId}
-							</span>
+							<TruncatedText
+								text={account.accountName ?? account.accountId}
+								className="text-sm font-medium"
+							/>
+							<TruncatedText
+								text={account.accountId}
+								mono
+								className="text-2xs text-muted-foreground"
+							/>
 						</ItemContent>
 						<ItemActions className="gap-1.5">
 							{account.revoked ? (
@@ -108,7 +113,7 @@ export function CloudflareAccountCard() {
 	// phase they imply, which also drives the polling that fills a fresh connection in place.
 	const { statusResult, usageResult, phase } = useCloudflareIngestPhase()
 	const refreshStatus = useAtomRefresh(
-		retainedQuery("integrations", "cloudflareStatus", {
+		retainedInternalQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
@@ -226,7 +231,7 @@ export function CloudflareAccountCard() {
 
 	// Guard the first fetch so a connected org doesn't flash the "Connect" empty state.
 	if (Result.isInitial(statusResult)) {
-		return <Skeleton className="h-40 w-full rounded-lg" />
+		return <Skeleton className="h-40 w-full rounded-md" />
 	}
 
 	// A failed status fetch is not "not connected" — don't offer the connect CTA
@@ -271,7 +276,7 @@ export function CloudflareAccountCard() {
 						Your zones and Workers will appear here after connecting.
 					</IntegrationEmptyHint>
 					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
-						<CloudflareIcon size={16} />
+						<CloudflareIcon />
 						Connect Cloudflare
 					</Button>
 					<IntegrationEmptyFooter>
@@ -389,12 +394,12 @@ export function CloudflareAccountCard() {
  */
 export function CloudflareHeaderActions() {
 	const connectFlow = useRequiredIntegrationConnect("CloudflareHeaderActions")
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "cloudflareDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "cloudflareDisconnect"), {
 		mode: "promiseExit",
 	})
 	// Same memoized atom as the card — no extra fetch, just the account count for labels.
 	const statusResult = useAtomValue(
-		retainedQuery("integrations", "cloudflareStatus", {
+		retainedInternalQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
@@ -410,6 +415,7 @@ export function CloudflareHeaderActions() {
 		},
 	)
 	const actionBusy = connectFlow.busy || disconnectBusy
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	return (
 		<div className="flex items-center gap-2">
@@ -425,12 +431,27 @@ export function CloudflareHeaderActions() {
 			<Button
 				size="sm"
 				variant="destructive-outline"
-				onClick={handleDisconnect}
+				onClick={() => setConfirmingDisconnect(true)}
 				disabled={actionBusy}
 				loading={disconnectBusy}
 			>
 				{multiAccount ? "Disconnect all" : "Disconnect"}
 			</Button>
+			<ConfirmDialog
+				open={confirmingDisconnect}
+				onOpenChange={setConfirmingDisconnect}
+				title="Disconnect Cloudflare"
+				description={
+					multiAccount
+						? "Maple stops collecting data from all connected Cloudflare accounts. You can reconnect later."
+						: "Maple stops collecting data from this Cloudflare account. You can reconnect later."
+				}
+				confirmLabel="Disconnect"
+				onConfirm={() => {
+					setConfirmingDisconnect(false)
+					void handleDisconnect()
+				}}
+			/>
 		</div>
 	)
 }

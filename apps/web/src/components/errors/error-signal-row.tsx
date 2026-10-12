@@ -4,6 +4,8 @@ import { Link } from "@tanstack/react-router"
 import type { ErrorIssueId } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeShort } from "@maple/ui/lib/time-format"
@@ -29,6 +31,8 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 function formatLastSeen(iso: string, timeZone: string): string {
 	const d = new Date(normalizeTimestampInput(iso))
 	if (Number.isNaN(d.getTime())) return iso
+	// Clock skew can put lastSeen ahead of us; "5d" would read as five days ago.
+	if (d.getTime() > Date.now()) return "now"
 	if (Date.now() - d.getTime() < WEEK_MS) return formatRelativeShort(d)
 	const sameYear = zonedDateParts(d.getTime(), timeZone).year === zonedDateParts(Date.now(), timeZone).year
 	return d.toLocaleDateString(undefined, {
@@ -38,6 +42,9 @@ function formatLastSeen(iso: string, timeZone: string): string {
 		year: sameYear ? undefined : "numeric",
 	})
 }
+
+/** Type names that say nothing on their own; the message makes a better row title. */
+const GENERIC_TYPES = new Set(["Error", "Exception", "TypeError", "RuntimeError", "Unknown error"])
 
 /** A burst this far above the window's own average tail is worth calling out. */
 const SURGE_THRESHOLD = 2.5
@@ -161,12 +168,7 @@ export function ErrorSignalHeader({
 	select?: { readonly selection: HeaderSelection; readonly onToggleAll: () => void }
 }) {
 	return (
-		<div
-			className={cn(
-				ROW_SHELL,
-				"h-7 border-b border-border/60 bg-muted/30 text-3xs font-medium tracking-wide text-muted-foreground uppercase",
-			)}
-		>
+		<Eyebrow as="div" className={cn(ROW_SHELL, "h-7 border-b border-border/60 bg-muted/30")}>
 			<span className={cn(LANE.select, "flex items-center justify-center")}>
 				{select !== undefined ? (
 					<Checkbox
@@ -187,7 +189,7 @@ export function ErrorSignalHeader({
 			<span className={LANE.state}>Status</span>
 			<span className={LANE.actor} />
 			<span className={cn(LANE.lastSeen, "text-right")}>Last seen</span>
-		</div>
+		</Eyebrow>
 	)
 }
 
@@ -287,6 +289,11 @@ export function ErrorSignalRow({
 	const dense = densifySpark(signal.spark, sparkWindow)
 	const surge = surgeRatio(dense)
 	const isSurging = surge !== null && surge >= SURGE_THRESHOLD
+	// A generic type swaps places with the message's first line, so the title is the part you scan for.
+	const messageLine = signal.detail.split("\n", 1)[0]?.trim() ?? ""
+	const swap = GENERIC_TYPES.has(signal.title) && messageLine !== ""
+	const rowTitle = swap ? messageLine : signal.title
+	const rowDetail = swap ? signal.title : signal.detail
 
 	return (
 		<IssueContextMenu
@@ -341,7 +348,7 @@ export function ErrorSignalRow({
 							"transition-opacity",
 							selecting || selected
 								? "opacity-100"
-								: "opacity-0 group-hover/row:opacity-100 group-data-focused/row:opacity-100 focus-visible:opacity-100",
+								: "opacity-0 group-hover/row:opacity-100 group-data-focused/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
 						)}
 					/>
 				</span>
@@ -362,19 +369,16 @@ export function ErrorSignalRow({
 				    thing you scan for, and a half-truncated pair loses both. Where both
 				    fit, the type holds up to 60% and the message gives way first. */}
 				<span className={cn(LANE.identity, "flex items-baseline gap-2")}>
-					<span
-						className="min-w-0 truncate font-medium text-foreground @4xl/page:max-w-[60%] @4xl/page:shrink-0"
-						title={signal.title}
+					<TruncatedText
+						text={swap ? signal.detail : rowTitle}
+						className="font-medium text-foreground @4xl/page:max-w-[60%] @4xl/page:shrink-0"
 					>
-						{signal.title}
-					</span>
-					{signal.detail ? (
-						<span
-							className="hidden min-w-0 flex-1 truncate text-muted-foreground @4xl/page:inline"
-							title={signal.detail}
-						>
-							{signal.detail}
-						</span>
+						{rowTitle}
+					</TruncatedText>
+					{rowDetail ? (
+						<TruncatedText className="hidden flex-1 text-muted-foreground @4xl/page:inline">
+							{rowDetail}
+						</TruncatedText>
 					) : null}
 					<SignalActivity
 						investigation={signal.investigation}
@@ -392,8 +396,8 @@ export function ErrorSignalRow({
 							surging={isSurging}
 							label={
 								isSurging
-									? `Surging — ${formatNumber(signal.windowCount ?? 0)} occurrences in the last 24 hours, concentrated at the end`
-									: `${formatNumber(signal.windowCount ?? 0)} occurrences in the last 24 hours`
+									? `Surging — ${countLabel(signal.windowCount ?? 0, "occurrence")} in the last 24 hours, concentrated at the end`
+									: `${countLabel(signal.windowCount ?? 0, "occurrence")} in the last 24 hours`
 							}
 						/>
 					</span>

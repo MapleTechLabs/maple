@@ -6,7 +6,7 @@ import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { shortId } from "@maple/ui/lib/ids"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
-import { encodeLogKey } from "@/lib/log-key"
+import { encodeLogKey, logPermalink } from "@/lib/log-key"
 import { buildLogJsonPayload } from "./log-raw-panel"
 import type { Log } from "@/api/warehouse/logs"
 
@@ -63,13 +63,13 @@ export function LogMetaStrip({ log, timeZone, showOpenFullPage = true }: LogMeta
 						className="text-muted-foreground"
 						render={<Link to="/logs/$logId" params={{ logId: encodeLogKey(log) }} />}
 					>
-						<ExternalLinkIcon size={13} />
+						<ExternalLinkIcon />
 					</IconButton>
 				)}
 
 				<CopyButton
-					value={() => `${window.location.origin}/logs/${encodeLogKey(log)}`}
-					label="Shareable link"
+					value={() => logPermalink(log)}
+					label="Link to log"
 					idleIcon={LinkIcon}
 					iconSize={13}
 					tooltip

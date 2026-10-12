@@ -16,13 +16,13 @@ import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
-import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
@@ -39,7 +39,7 @@ import type { AlertingWorkerEnv } from "./worker.ts"
  * provided either would shadow them — `worker-telemetry.test.ts` pins that
  * a tick's spans still reach the export.
  */
-export const buildLayer = (
+export const layerTick = (
 	env: AlertingWorkerEnv,
 	email: Option.Option<EmailSenderClient> = Option.none(),
 	chatSessions?: ChatSessionNamespace,
@@ -62,10 +62,10 @@ export const buildLayer = (
 		IncidentClassifier.layer,
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
-		Layer.provide(Layer.mergeAll(Env.layer, layerPg, EdgeCacheServiceLive, FetchHttpClient.layer)),
+		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
 		Layer.provideMerge(
 			Layer.mergeAll(
-				mapleDbConnectionLayer(env),
+				layerMapleDbConnection(env),
 				envPorts(env),
 				chatSessionsLayerIfBound(chatSessions, env),
 				Layer.succeed(EmailSender, email),
@@ -398,5 +398,5 @@ export const runScheduled = (
 		// One fire is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(buildLayer(env, email, chatSessions)),
+		Effect.provide(layerTick(env, email, chatSessions)),
 	)

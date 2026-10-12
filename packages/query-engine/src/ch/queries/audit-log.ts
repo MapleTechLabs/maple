@@ -1,3 +1,4 @@
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
 import { AuditLog, orgIdParam } from "../tables"
@@ -72,8 +73,8 @@ export function auditLogEntriesQuery(opts: AuditLogEntriesOpts) {
 				? CH.rawCond(`has(ChangedFields, ${paramPlaceholder("string", "changedField")})`)
 				: undefined,
 			CH.whenTrue(!!opts.requestId, () => $.RequestId.eq(param.string("requestId"))),
-			CH.whenTrue(!!opts.since, () => $.OccurredAt.gte(param.dateTimeString("since"))),
-			CH.whenTrue(!!opts.until, () => $.OccurredAt.lte(param.dateTimeString("until"))),
+			CH.whenTrue(!!opts.since, () => $.OccurredAt.gte(param.dateTime("since"))),
+			CH.whenTrue(!!opts.until, () => $.OccurredAt.lte(param.dateTime("until"))),
 		])
 		.orderBy(["occurredAt", "desc"], ["id", "desc"])
 		.limit(opts.limit)
@@ -85,8 +86,8 @@ export function auditLogEntriesQuery(opts: AuditLogEntriesOpts) {
 /** One listed entry as the warehouse returns it: `''` for absent values, JSON text for documents. */
 export interface AuditLogEntriesOutput {
 	readonly id: string
-	readonly occurredAt: string
-	readonly recordedAt: string
+	readonly occurredAt: DateTime.Utc
+	readonly recordedAt: DateTime.Utc
 	readonly actorType: string
 	readonly userId: string
 	readonly apiKeyId: string

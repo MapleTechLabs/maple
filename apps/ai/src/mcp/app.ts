@@ -1,11 +1,11 @@
 import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
 import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
-import { McpProtocol } from "effect/ai"
+import { McpProtocol, McpServer } from "effect/ai"
 import { RpcSerialization } from "effect/rpc"
 import { Cause, Effect, Layer } from "effect"
 import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { McpToolsLive } from "./server"
-import { layerStatelessMcpHttp, statelessMcpServerLayer } from "./transport/stateless-http"
+import { McpToolRegistration } from "./server"
+import { layerStatelessMcpHttp, layerStatelessMcpServer } from "./transport/stateless-http"
 import { DebugErrorsPrompt } from "./prompts/debug-errors"
 import { LatencyAnalysisPrompt } from "./prompts/latency-analysis"
 import { IncidentTriagePrompt } from "./prompts/incident-triage"
@@ -144,6 +144,7 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 		const auth = yield* AuthService
 		const env = yield* Env
 		const rateLimiter = yield* McpToolRateLimiter
+		const tools = yield* McpToolRegistration
 		return (httpEffect) =>
 			Effect.gen(function* () {
 				const request = yield* HttpServerRequest.HttpServerRequest
@@ -162,6 +163,7 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 								})
 								if (outcome === "limited") return mcpRateLimited()
 							}
+							yield* tools.ensureRegistered
 							return yield* Effect.provideService(httpEffect, CurrentMcpTenant, tenant).pipe(
 								Effect.provideService(CurrentMcpRequestTenant, tenant),
 								// Without this an MCP mutation reads the reference's `undefined`
@@ -201,7 +203,7 @@ const McpTransportLive = layerStatelessMcpHttp({
 	protocol: NEGOTIATED_PROTOCOL,
 }).pipe(Layer.provide(RpcSerialization.layerJsonRpc()), Layer.provide(McpAuthorizationMiddleware.layer))
 
-const McpHttpLive = statelessMcpServerLayer({
+const McpHttpLive = layerStatelessMcpServer({
 	name: "maple-observability",
 	// Kept equal to the public `server.json` manifest (`@maple/domain/mcp-manifest`).
 	version: MAPLE_MCP_SERVER_VERSION,
@@ -214,9 +216,9 @@ export const McpLive: Layer.Layer<
 	Cause.IllegalArgumentError,
 	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutor | McpToolRateLimiter
 > = Layer.mergeAll(
-	McpToolsLive,
+	McpHttpLive,
 	DebugErrorsPrompt,
 	LatencyAnalysisPrompt,
 	IncidentTriagePrompt,
 	InstructionsResource,
-).pipe(Layer.provide(McpHttpLive))
+).pipe(Layer.provide(McpToolRegistration.layer), Layer.provide(McpServer.McpServer.layer))

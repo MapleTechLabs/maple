@@ -6,8 +6,8 @@ import {
 	AI_SESSION_SUMMARY_MAX_TURNS,
 	AI_TOOL_ERRORS_MAX,
 	CurrentTenant,
-	V1SchemaErrors,
-	V1UnexpectedErrors,
+	ApiSchemaErrors,
+	ApiUnexpectedErrors,
 } from "@maple/domain/http"
 
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
@@ -17,7 +17,7 @@ import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "../v2/v2-test-support"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiSessionsInternalLive } from "./ai-sessions.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -33,8 +33,8 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 
 class AiSessionsOnlyApi extends HttpApi.make("MapleInternalApi")
 	.add(AiSessionsInternalApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors) {}
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
 
 const SESSION_ID = "wrun_01KZTEST"
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
@@ -76,7 +76,7 @@ const spanRow = (index: number) => ({
 const makeHarness = (overrides: Partial<WarehouseQueryServiceApi>) => {
 	const routes = HttpApiBuilder.layer(AiSessionsOnlyApi).pipe(
 		Layer.provide(HttpAiSessionsInternalLive),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
 		Layer.provideMerge(Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub(overrides))),
 	)

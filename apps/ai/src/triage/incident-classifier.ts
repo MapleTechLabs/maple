@@ -104,7 +104,7 @@ const decide = <Decisions extends Record<string, Decision.Any>>(
  * The prior-diagnosis question is a second call, made alongside the first, so
  * offering priors never makes the answer slower.
  */
-export const classifyIncident = Effect.fn("classifyIncident")(function* (options: {
+export const classifyIncident = Effect.fn("IncidentClassifier.classifyIncident")(function* (options: {
 	readonly request: IncidentTriageRequest
 	readonly model: string
 }) {

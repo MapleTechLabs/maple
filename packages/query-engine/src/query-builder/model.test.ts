@@ -347,6 +347,38 @@ describe("metrics resource.* support", () => {
 		expect(filters?.environments).toEqual(["production", "staging"])
 	})
 
+	it("lowers a negated attr.* filter so per-state CPU can exclude idle", () => {
+		const { warnings, filters } = metricsFiltersOf({ whereClause: 'attr.state != "idle"' })
+		expect(warnings).toEqual([])
+		expect(filters?.attributeFilters).toEqual([
+			{ key: "state", mode: "equals", negated: true, value: "idle" },
+		])
+	})
+
+	it("keeps several attr.* filters and lowers OR groups onto one filter", () => {
+		const { warnings, filters } = metricsFiltersOf({
+			whereClause: 'attr.cpu exists AND (attr.state = "user" OR attr.state = "system")',
+		})
+		expect(warnings).toEqual([])
+		expect(filters?.attributeFilters).toEqual([
+			{ key: "cpu", mode: "exists" },
+			{
+				key: "state",
+				mode: "equals",
+				value: "user",
+				or: [{ key: "state", mode: "equals", value: "system" }],
+			},
+		])
+	})
+
+	it("drops a metrics OR group that mixes in a named dimension", () => {
+		const { warnings, filters } = metricsFiltersOf({
+			whereClause: '(attr.state = "user" OR service.name = "api")',
+		})
+		expect(filters).not.toHaveProperty("attributeFilters")
+		expect(warnings.some((w) => w.includes("Metrics OR group ignored"))).toBe(true)
+	})
+
 	it("warns when the 5 resource-filter cap is exceeded", () => {
 		const clause = ["a", "b", "c", "d", "e", "f"].map((k) => `resource.${k} = "1"`).join(" AND ")
 		const { warnings, filters } = metricsFiltersOf({ whereClause: clause })
@@ -719,7 +751,7 @@ describe("buildTimeseriesQuerySpec where-clause OR groups", () => {
 		}
 	})
 
-	it("applies groups to logs and reports them as unsupported elsewhere", () => {
+	it("applies groups to logs and metrics and reports them as unsupported elsewhere", () => {
 		const logs = buildTimeseriesQuerySpec(
 			tracesDraft({ dataSource: "logs", whereClause: '(attr.a = "1" OR attr.b = "2")' }),
 		)
@@ -736,9 +768,10 @@ describe("buildTimeseriesQuerySpec where-clause OR groups", () => {
 				whereClause: '(attr.a = "1" OR attr.b = "2")',
 			}),
 		)
-		expect(metrics.warnings).toContain(
-			'Unsupported clause syntax ignored: (attr.a = "1" OR attr.b = "2")',
-		)
+		expect(metrics.warnings).toEqual([])
+		expect(metrics.query).toMatchObject({
+			filters: { attributeFilters: [{ key: "a", value: "1", or: [{ key: "b", value: "2" }] }] },
+		})
 
 		const productEvents = buildTimeseriesQuerySpec(
 			tracesDraft({

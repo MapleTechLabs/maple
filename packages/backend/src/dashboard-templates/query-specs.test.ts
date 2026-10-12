@@ -168,4 +168,10 @@ describe("dashboard template query specs", () => {
 		expect(encoded).not.toContain('"attr.planetscale_database"')
 		expect(encoded).not.toContain('"attr.planetscale_branch"')
 	})
+
+	it("reads host filesystem utilization from the used state only", () => {
+		const template = DASHBOARD_TEMPLATES.find((candidate) => candidate.id === "host-metrics")
+		const widget = template?.build({}).widgets.find((candidate) => candidate.id === "filesystem")
+		expect(JSON.stringify(widget?.dataSource)).toContain('attr.state = \\"used\\"')
+	})
 })

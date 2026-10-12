@@ -252,6 +252,7 @@ export const makeAiTraceWindowRows = (): ReadonlyArray<Record<string, unknown>> 
 export const makeTraceLogs = (): ListLogsOutput[] => [
 	{
 		timestamp: "2026-06-02 10:00:00",
+		exactTimestamp: "2026-06-02 10:00:00",
 		severityText: "ERROR",
 		severityNumber: 17,
 		serviceName: FIXTURES.service,

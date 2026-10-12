@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceOverviewQuery,
@@ -216,7 +216,14 @@ describe("serviceOverviewQuery", () => {
 		expect(decoded.estimatedSpanCount).toBe(200)
 		expect(decoded.p95LatencyMs).toBe(42)
 		expect(decoded.commits).toHaveLength(2)
-		expect(decoded.commits[0]).toEqual(["abc123", 80, 2, "2024-01-01 00:00:00"])
+		const [sha, spans, errors, firstSeen] = decoded.commits[0]!
+		expect([sha, spans, errors, DateTime.formatIso(firstSeen)]).toEqual([
+			"abc123",
+			80,
+			2,
+			"2024-01-01T00:00:00.000Z",
+		])
+		expect(DateTime.formatIso(decoded.firstSeen)).toBe("2024-01-01T00:00:00.000Z")
 	})
 })
 

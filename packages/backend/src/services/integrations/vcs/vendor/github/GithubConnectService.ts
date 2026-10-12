@@ -6,7 +6,6 @@ import {
 	IntegrationsValidationError,
 	isInstallationProcessable,
 	type OrgId,
-	type PrReviewListItem,
 	PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
 	type UserId,
@@ -160,13 +159,6 @@ export interface GithubConnectServiceApi {
 		settings: PrReviewOrgSettings,
 		updatedBy: UserId,
 	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError | IntegrationsValidationError>
-	readonly listPrReviews: (
-		orgId: OrgId,
-		repositoryId: VcsRepositoryId,
-	) => Effect.Effect<
-		ReadonlyArray<PrReviewListItem>,
-		IntegrationsPersistenceError | IntegrationsValidationError
-	>
 }
 
 // Repo / queue / state errors all carry a `message`; collapse them to the
@@ -255,8 +247,8 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						initiatedByUserId: userId,
 						redirectUri: options.callbackUrl,
 						returnTo: options.returnTo ?? null,
-						createdAt: new Date(now),
-						expiresAt: new Date(now + STATE_TTL_MS),
+						createdAt: now,
+						expiresAt: now + STATE_TTL_MS,
 					}),
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -299,7 +291,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						message: "Connect session provider mismatch — restart the connect flow",
 					})
 				}
-				if (stateRow.expiresAt.getTime() < now) {
+				if (stateRow.expiresAt < now) {
 					yield* Effect.annotateCurrentSpan({
 						orgId: stateRow.orgId,
 						"vcs.connect.outcome": "state_expired",
@@ -841,14 +833,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return cleaned
 			})
 
-			const listPrReviews = Effect.fn("GithubConnectService.listPrReviews")(function* (
-				orgId: OrgId,
-				repositoryId: VcsRepositoryId,
-			) {
-				yield* requireRepository(orgId, repositoryId)
-				return yield* asPersistence(repo.listPrReviews(orgId, repositoryId, 50))
-			})
-
 			return {
 				startConnect,
 				completeConnect,
@@ -861,7 +845,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				getPrReviewSettings,
 				setPrReviewSettings,
 				setPrReviewConfig,
-				listPrReviews,
 			} satisfies GithubConnectServiceApi
 		}),
 	},

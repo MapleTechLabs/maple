@@ -136,12 +136,13 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 
 ### Agent sessions
 
-| Tool                       | Access | What it does                                                                        |
-| -------------------------- | ------ | ----------------------------------------------------------------------------------- |
-| `list_agent_sessions`      | read   | AI agent sessions with agent, models, LLM and tool calls, failures, tokens and cost |
-| `get_agent_session`        | read   | One agent session: verdict, checks, findings, timing, turns, tokens and cost        |
-| `get_agent_tools_overview` | read   | Calls, failures and latency per agent tool, compared with the previous window       |
-| `get_agent_tool_error`     | read   | One agent tool failure group with affected sessions and sample calls                |
+| Tool                           | Access | What it does                                                                         |
+| ------------------------------ | ------ | ------------------------------------------------------------------------------------ |
+| `list_agent_sessions`          | read   | AI agent sessions with agent, models, LLM and tool calls, failures, tokens and cost  |
+| `get_agent_session`            | read   | One agent session: verdict, checks, findings, timing, turns, tokens and cost         |
+| `get_agent_session_transcript` | read   | One agent session step by step: prompts, replies, tool calls and results, sub-agents |
+| `get_agent_tools_overview`     | read   | Calls, failures and latency per agent tool, compared with the previous window        |
+| `get_agent_tool_error`         | read   | One agent tool failure group with affected sessions and sample calls                 |
 
 ### Setup and source code
 
@@ -157,8 +158,8 @@ The source-code tools only return results for repositories the organization's Gi
 
 ### Feedback
 
-| Tool              | Access | What it does                                                                                            |
-| ----------------- | ------ | ------------------------------------------------------------------------------------------------------- |
+| Tool                  | Access | What it does                                                                                            |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------- |
 | `send_maple_feedback` | write  | Tell the Maple team about a bug, a missing capability or a misleading doc: its kind, the agent, and why |
 
 The same feedback can be sent over the REST API with `POST /v2/agent_feedback`.

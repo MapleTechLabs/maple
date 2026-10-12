@@ -1,0 +1,12 @@
+{
+	"$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
+	"changelog": "@changesets/cli/changelog",
+	"commit": false,
+	"fixed": [],
+	"linked": [],
+	"access": "public",
+	"baseBranch": "main",
+	"updateInternalDependencies": "patch",
+	"ignore": ["@maple/landing", "@maple/clickhouse-cli", "@effect-router/core"],
+	"privatePackages": { "version": false, "tag": false }
+}

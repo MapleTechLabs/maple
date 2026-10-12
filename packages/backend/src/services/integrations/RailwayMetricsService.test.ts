@@ -19,23 +19,23 @@ describe("nextWindow", () => {
 	})
 
 	it("continues from the watermark", () => {
-		const watermark = new Date(Date.UTC(2026, 9, 3, 12, 20, 0))
+		const watermark = Date.UTC(2026, 9, 3, 12, 20, 0)
 		assert.deepStrictEqual(nextWindow(watermark, now), {
-			startMs: watermark.getTime(),
+			startMs: watermark,
 			endMs: Date.UTC(2026, 9, 3, 12, 28, 0),
 		})
 	})
 
 	it("returns null when the environment is caught up", () => {
-		assert.strictEqual(nextWindow(new Date(Date.UTC(2026, 9, 3, 12, 28, 0)), now), null)
+		assert.strictEqual(nextWindow(Date.UTC(2026, 9, 3, 12, 28, 0), now), null)
 	})
 
 	it("catches up a long gap six hours at a time from the watermark, skipping nothing", () => {
-		const watermark = new Date(now - 48 * 60 * minute)
+		const watermark = now - 48 * 60 * minute
 		const window = nextWindow(watermark, now)
 		assert.deepStrictEqual(window, {
-			startMs: watermark.getTime(),
-			endMs: watermark.getTime() + 6 * 60 * minute,
+			startMs: watermark,
+			endMs: watermark + 6 * 60 * minute,
 		})
 	})
 })

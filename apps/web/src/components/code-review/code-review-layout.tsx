@@ -8,15 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
-import { underlineTabClass } from "@/components/common/underline-link-tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { BranchForkIcon, ChartBarIcon, CircleWarningIcon, GearIcon } from "@/components/icons"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { pickTimeRangeSearch } from "@/components/time-range-picker/search"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
 
 import { AuthorLabel } from "./author-avatar"
@@ -39,10 +39,24 @@ const TABS = [
  * Real links rather than a `Tabs` widget: each tab is a route, so middle-click, Copy link and Back
  * work. The window and the repository and author filters travel between the tabs that read them.
  */
-function CodeReviewTabs({ active, search }: { active: CodeReviewTab; search: CodeReviewSearch }) {
+function CodeReviewTabs({
+	active,
+	search,
+	className,
+}: {
+	active: CodeReviewTab
+	search: CodeReviewSearch
+	className?: string
+}) {
 	const carried = { ...pickTimeRangeSearch(search), repo: search.repo, author: search.author }
 	return (
-		<nav className="flex items-center self-end" aria-label="Code review views">
+		<UnderlineTabStrip
+			navigation
+			label="Code review views"
+			bleed={false}
+			divided={false}
+			className={cn("gap-0 overflow-visible", className)}
+		>
 			{TABS.map(({ tab, to, label, Icon }) => (
 				<Link
 					key={tab}
@@ -59,7 +73,7 @@ function CodeReviewTabs({ active, search }: { active: CodeReviewTab; search: Cod
 					{label}
 				</Link>
 			))}
-		</nav>
+		</UnderlineTabStrip>
 	)
 }
 
@@ -75,51 +89,48 @@ export function CodeReviewLayout({
 }: {
 	active: CodeReviewTab
 	search: CodeReviewSearch
-	/** Right of the title: the filters, on the tabs that have them. */
+	/** The header's actions: the filters, on the tabs that have them. */
 	toolbar?: ReactNode
 	children: ReactNode
 }) {
 	const { flags, isLoaded } = useOrganizationFeatureFlags()
 	const label = TABS.find((tab) => tab.tab === active)?.label
 
+	const enabled = isLoaded && flags.prReview
+
 	return (
 		<PageRefreshProvider timePreset={search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Code Review", href: "/code-review" }, ...(label ? [{ label }] : [])]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							{!isLoaded ? (
-								<div className="space-y-4">
-									<Skeleton className="h-9 w-full" />
-									<Skeleton className="h-28 w-full" />
-									<Skeleton className="h-72 w-full" />
-								</div>
-							) : !flags.prReview ? (
-								<Empty>
-									<EmptyHeader>
-										<EmptyTitle>Code review is not enabled</EmptyTitle>
-										<EmptyDescription>
-											Pull request reviews are rolling out by organization. Ask us to
-											turn them on for yours.
-										</EmptyDescription>
-									</EmptyHeader>
-								</Empty>
-							) : (
-								<div className="flex flex-col gap-6 pb-8">
-									<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border">
-										<CodeReviewTabs active={active} search={search} />
-										{toolbar ? <div className="pb-2">{toolbar}</div> : null}
-									</div>
-									{children}
-								</div>
-							)}
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			<DashboardPage
+				breadcrumbs={[{ label: "Code Review", href: "/code-review" }, ...(label ? [{ label }] : [])]}
+				headerActions={enabled ? toolbar : undefined}
+				tabs={
+					enabled ? (
+						<CodeReviewTabs active={active} search={search} className="border-b border-border" />
+					) : undefined
+				}
+				gap="lg"
+				scrollClassName="pb-8"
+			>
+				{!isLoaded ? (
+					<div className="space-y-4">
+						<Skeleton className="h-9 w-full" />
+						<Skeleton className="h-28 w-full" />
+						<Skeleton className="h-72 w-full" />
+					</div>
+				) : !flags.prReview ? (
+					<Empty>
+						<EmptyHeader>
+							<EmptyTitle>Code review is not enabled</EmptyTitle>
+							<EmptyDescription>
+								Pull request reviews are rolling out by organization. Ask us to turn them on
+								for yours.
+							</EmptyDescription>
+						</EmptyHeader>
+					</Empty>
+				) : (
+					children
+				)}
+			</DashboardPage>
 		</PageRefreshProvider>
 	)
 }
@@ -143,7 +154,7 @@ export function CodeReviewFilters({
 	onChange: (patch: Partial<CodeReviewSearch> & { timePreset?: string }) => void
 }) {
 	const authorsResult = useAtomValue(
-		retainedQuery("codeReview", "analytics", {
+		retainedInternalQuery("codeReview", "analytics", {
 			query: { ...window, repositoryId: search.repo, author: undefined },
 		}),
 	)
@@ -151,7 +162,9 @@ export function CodeReviewFilters({
 		.onSuccess((analytics) => analytics.authors.map((row) => row.author))
 		.orElse(() => [])
 	const status = useAtomValue(
-		retainedQuery("integrations", "githubStatus", { reactivityKeys: ["githubIntegrationStatus"] }),
+		retainedInternalQuery("integrations", "githubStatus", {
+			reactivityKeys: ["githubIntegrationStatus"],
+		}),
 	)
 	const repositories = Result.builder(status)
 		.onSuccess((response) => response.repositories.filter((repo) => repo.prReviewEnabled))
@@ -234,7 +247,7 @@ export function NothingInWindow({
 	onClear?: () => void
 }) {
 	return (
-		<Empty className="rounded-xl border border-dashed md:py-14">
+		<Empty className="rounded-md border border-dashed md:py-14">
 			<EmptyHeader>
 				<EmptyTitle>{title}</EmptyTitle>
 				<EmptyDescription>{description}</EmptyDescription>

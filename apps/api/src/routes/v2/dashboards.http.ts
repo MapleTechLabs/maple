@@ -217,7 +217,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 		// code paths: the two sets of endpoints differ only in the scope they pass,
 		// so they run the same four operations rather than a parallel copy of each
 		// that could drift.
-		const openScope = Effect.fn("dashboards.openShareScope")(function* (
+		const openScope = Effect.fn("HttpV2Dashboards.openShareScope")(function* (
 			dashboardId: DashboardId,
 			widgetId: string | null,
 		) {

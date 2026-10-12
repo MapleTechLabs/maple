@@ -26,6 +26,8 @@ import { registerServiceDeploymentsTool } from "./service-deployments"
 import { registerRouteUsageTool } from "./route-usage"
 import { registerIngestFreshnessTool } from "./ingest-freshness"
 import { registerDbQueryVolumeTool } from "./db-query-volume"
+import { registerListInfraTool } from "./list-infra"
+import { registerInspectInfraTool } from "./inspect-infra"
 import { registerIngestUsageTool } from "./ingest-usage"
 import { registerInspectChartDataTool } from "./inspect-chart-data"
 import { registerInspectTraceTool } from "./inspect-trace"
@@ -66,6 +68,7 @@ import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
 import { registerListAgentSessionsTool } from "./list-agent-sessions"
 import { registerGetAgentSessionTool } from "./get-agent-session"
+import { registerGetAgentSessionTranscriptTool } from "./get-agent-session-transcript"
 import { registerGetAgentToolsOverviewTool } from "./get-agent-tools-overview"
 import { registerGetAgentToolErrorTool } from "./get-agent-tool-error"
 import { registerServiceMapTool } from "./service-map"
@@ -117,13 +120,9 @@ export interface MapleToolCatalogEntry {
 	readonly phrases: McpToolPhrases
 }
 
-class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/decode-error", {
-	errorMessage: Schema.String,
-}) {
-	override get message(): string {
-		return this.errorMessage
-	}
-}
+class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/errors/McpDecodeError", {
+	message: Schema.String,
+}) {}
 
 /**
  * The output schema's JSON Schema. MCP requires an object root, as for inputs. Unlike inputs, a
@@ -373,6 +372,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerGetSessionTracesTool(registrar)
 	registerListAgentSessionsTool(registrar)
 	registerGetAgentSessionTool(registrar)
+	registerGetAgentSessionTranscriptTool(registrar)
 	registerGetAgentToolsOverviewTool(registrar)
 	registerGetAgentToolErrorTool(registrar)
 	registerDiagnoseServiceTool(registrar)
@@ -412,6 +412,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRouteUsageTool(registrar)
 	registerIngestFreshnessTool(registrar)
 	registerDbQueryVolumeTool(registrar)
+	registerListInfraTool(registrar)
+	registerInspectInfraTool(registrar)
 	registerIngestUsageTool(registrar)
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerAuditSetupTool(registrar)
@@ -585,7 +587,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 
 	const normalized = normalizeFor(definition, input ?? {})
 	yield* Effect.annotateCurrentSpan({
-		tool: definition.name,
+		"maple.mcp.tool": definition.name,
 		"maple.mcp.tool.arguments": Object.keys(typeof input === "object" && input !== null ? input : {})
 			.sort()
 			.join(","),
@@ -600,7 +602,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 		Effect.mapError(
 			(error) =>
 				new McpDecodeError({
-					errorMessage: toDecodeErrorMessage(definition, error, normalized),
+					message: toDecodeErrorMessage(definition, error, normalized),
 				}),
 		),
 	)

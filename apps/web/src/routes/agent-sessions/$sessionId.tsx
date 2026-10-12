@@ -8,10 +8,8 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 import { SquareSparkleIcon } from "@/components/icons"
-import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import type { BreadcrumbEntry } from "@/components/layout/dashboard-layout"
-import { DashboardPage } from "@/components/layout/dashboard-page"
+import { ResultPage } from "@/components/layout/result-page"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { DetailHeaderSkeleton } from "@/components/common/detail-header"
 import { ErrorState } from "@/components/common/error-state"
 import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
@@ -83,16 +81,26 @@ function AgentSessionDetailPage() {
 	)
 
 	const searchStr = useRouterState({ select: (state) => state.location.searchStr })
-	const breadcrumbs = [
-		{ label: "Agent Sessions", href: buildBackToSessionsHref(searchStr) },
-		{ label: breadcrumbSessionId(sessionId) },
-	]
+	const breadcrumbs = [{ label: "Agent Sessions", href: buildBackToSessionsHref(searchStr) }]
+	const turns = useMemo(() => buildSessionTurns(spansState.spans), [spansState.spans])
+	const summary = useMemo(
+		() => buildSessionSummary({ spans: spansState.spans, turns }),
+		[spansState.spans, turns],
+	)
+	const totals = Result.isSuccess(summaryResult) ? summaryResult.value : undefined
+	const { progress } = spansState
+	const loaded = Result.isSuccess(spansState.firstPage) && spansState.firstPage.value.data.length > 0
 
-	return Result.builder(spansState.firstPage)
-		.onInitial(() => (
-			<DashboardPage breadcrumbs={breadcrumbs} header={<DetailHeaderSkeleton meta={false} />} fill>
-				{/* The Overview's own shape — switcher, verdict, vitals, time bar —
-				    so the page doesn't reflow on resolve. */}
+	return (
+		<ResultPage
+			breadcrumbs={breadcrumbs}
+			result={spansState.firstPage}
+			select={(value) => (value.data.length === 0 ? null : value)}
+			crumb={() => breadcrumbSessionId(sessionId)}
+			fill={Result.isInitial(spansState.firstPage)}
+			loadingHeader={<DetailHeaderSkeleton meta={false} />}
+			loading={
+				// The Overview's own shape (switcher, verdict, vitals, time bar) so the page doesn't reflow on resolve.
 				<div className="space-y-6 p-4">
 					<Skeleton className="h-8 w-72" />
 					<div className="flex flex-wrap items-start justify-between gap-8">
@@ -109,10 +117,8 @@ function AgentSessionDetailPage() {
 					<Skeleton className="h-4 w-full rounded-sm" />
 					<SkeletonList rows={8} rowClassName="h-12" gap="2" />
 				</div>
-			</DashboardPage>
-		))
-		.onError((error) => (
-			<DashboardPage breadcrumbs={breadcrumbs}>
+			}
+			error={(error) => (
 				<ErrorState
 					error={error}
 					// The 413 describes itself precisely ("Session is too large to
@@ -124,40 +130,42 @@ function AgentSessionDetailPage() {
 							: "Failed to load this agent session"
 					}
 				/>
-			</DashboardPage>
-		))
-		.onSuccess((value) =>
-			value.data.length === 0 ? (
-				<DashboardPage breadcrumbs={breadcrumbs}>
-					<EmptySession sessionId={sessionId} windowed={queryWindow !== undefined} />
-				</DashboardPage>
-			) : (
-				<SessionDetailBody
-					sessionId={sessionId}
-					breadcrumbs={breadcrumbs}
-					spansState={spansState}
-					totals={Result.isSuccess(summaryResult) ? summaryResult.value : undefined}
-				/>
-			),
-		)
-		.render()
+			)}
+			notFound={<EmptySession sessionId={sessionId} windowed={queryWindow !== undefined} />}
+			// No side panel at any width: span detail opens as a popover against the row,
+			// node or finding the reader clicked.
+			titleContent={() => <SessionHeader sessionId={sessionId} summary={summary} />}
+			headerActions={() =>
+				// The one sign a session larger than a page is still arriving. Every view
+				// renders what is in hand and grows as pages land; nothing below asks the
+				// reader to fetch anything.
+				progress !== undefined && progress.phase !== "complete" ? (
+					<SessionLoadIndicator progress={progress} totals={totals} />
+				) : null
+			}
+			// `py-0` (the content blocks carry the padding instead) so the views' sticky
+			// elements pin flush to the scroller's edges: sticky offsets resolve against the
+			// padding edge. `pr-6` keeps the overlay scrollbar off the right-aligned
+			// duration/cost columns, and `overflow-x-hidden` stops an escaped span from
+			// scrolling the whole page sideways.
+			scrollClassName={loaded ? "overflow-x-hidden py-0 pr-6" : undefined}
+		>
+			{() => <SessionDetailBody turns={turns} summary={summary} progress={progress} totals={totals} />}
+		</ResultPage>
+	)
 }
 
 function SessionDetailBody({
-	sessionId,
-	breadcrumbs,
-	spansState,
+	turns,
+	summary,
+	progress,
 	totals,
 }: {
-	sessionId: string
-	breadcrumbs: ReadonlyArray<BreadcrumbEntry>
-	spansState: SessionSpansState
+	turns: ReturnType<typeof buildSessionTurns>
+	summary: ReturnType<typeof buildSessionSummary>
+	progress: SessionSpansState["progress"]
 	totals: GetAiSessionSummaryResponse | undefined
 }) {
-	const { spans, progress } = spansState
-	const turns = useMemo(() => buildSessionTurns(spans), [spans])
-	const summary = useMemo(() => buildSessionSummary({ spans, turns }), [spans, turns])
-
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 
@@ -221,71 +229,41 @@ function SessionDetailBody({
 	)
 
 	return (
-		// No side panel at any width: span detail opens as a popover against the row,
-		// node or finding the reader clicked.
-		<DashboardPage
-			breadcrumbs={breadcrumbs}
-			titleContent={<SessionHeader sessionId={sessionId} summary={summary} />}
-			headerActions={
-				// The one sign a session larger than a page is still arriving. Every view
-				// renders what is in hand and grows as pages land; nothing below asks the
-				// reader to fetch anything.
-				progress !== undefined && progress.phase !== "complete" ? (
-					<SessionLoadIndicator progress={progress} totals={totals} />
-				) : null
-			}
-			// `py-0` (the content blocks carry the padding instead) so the views' sticky
-			// elements pin flush to the scroller's edges: sticky offsets resolve against the
-			// padding edge. `pr-6` keeps the overlay scrollbar off the right-aligned
-			// duration/cost columns, and `overflow-x-hidden` stops an escaped span from
-			// scrolling the whole page sideways.
-			scrollClassName="overflow-x-hidden py-0 pr-6"
-		>
-			{/* Content-driven height inside the scroller: `shrink-0` because a
-			    scroll container's flex items shrink to fit before they overflow,
-			    which would collapse the views instead of scrolling them; `grow`
-			    (basis auto, not `flex-1`'s basis 0) so short content still fills
-			    the viewport; the floor keeps the empty states from a sliver. */}
-			<div className="flex min-h-64 shrink-0 grow flex-col">
-				<SessionViews
-					view={view}
-					onViewChange={changeView}
-					turns={turns}
-					summary={summary}
-					progress={progress}
-					totals={totals}
-					selectedSpanId={search.span}
-					onSelectSpan={selectSpan}
-					initialQuery={search.tool}
-				/>
-			</div>
-		</DashboardPage>
+		// Content-driven height inside the scroller: `shrink-0` because a scroll container's flex
+		// items shrink to fit before they overflow; `grow` so short content still fills the viewport.
+		<div className="flex min-h-64 shrink-0 grow flex-col">
+			<SessionViews
+				view={view}
+				onViewChange={changeView}
+				turns={turns}
+				summary={summary}
+				progress={progress}
+				totals={totals}
+				selectedSpanId={search.span}
+				onSelectSpan={selectSpan}
+				initialQuery={search.tool}
+			/>
+		</div>
 	)
 }
 
 function EmptySession({ sessionId, windowed }: { sessionId: string; windowed: boolean }) {
 	return (
-		<Empty>
-			<EmptyHeader>
-				<EmptyMedia variant="icon">
-					<SquareSparkleIcon />
-				</EmptyMedia>
-				<EmptyTitle>No spans for this session</EmptyTitle>
-				{/* Two genuinely different failures. With a window the read was
-				    bounded by the link's own timestamps, so a stale or hand-edited
-				    link can miss a session that exists; without one the search
-				    already covered everything still retained, and promising a wider
-				    range would be a lie. */}
-				<EmptyDescription>
+		<ResourceNotFound
+			icon={<SquareSparkleIcon />}
+			title="No spans for this session"
+			// With a window the read was bounded by the link's own timestamps, so a stale link can
+			// miss a session that exists; without one the search already covered all retained data.
+			description={
+				<>
 					Nothing was found for <span className="font-mono">{sessionId}</span>
 					{windowed
 						? " around the time this link points at. Open it from the Agent Sessions list to search again."
 						: " in any retained trace — the session may be older than the trace retention."}
-				</EmptyDescription>
-			</EmptyHeader>
-			<Button variant="outline" size="sm" render={<Link to="/agent-sessions" />}>
-				Back to agent sessions
-			</Button>
-		</Empty>
+				</>
+			}
+			backLink={<Link to="/agent-sessions" />}
+			backLabel="Back to agent sessions"
+		/>
 	)
 }

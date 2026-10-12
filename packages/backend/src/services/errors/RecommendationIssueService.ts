@@ -11,16 +11,21 @@ import {
 	RecommendationIssueStatus,
 } from "@maple/domain/http"
 import { detectAttributeRecommendations, planReconcileIssues } from "@maple/domain/recommendations"
-import { orgIngestAttributeMappings, orgRecommendationIssues } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	OrgIngestAttributeMappings,
+	OrgRecommendationIssues,
+	type OrgRecommendationIssueInsert,
+	type OrgRecommendationIssueRow,
+} from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { and, eq } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
-type IssueRow = typeof orgRecommendationIssues.$inferSelect
+type IssueRow = OrgRecommendationIssueRow
 
 export interface RecommendationIssueServiceApi {
 	/** Reconciles live telemetry → persisted issues, then returns the full numbered list. */
@@ -61,9 +66,11 @@ const rowToIssue = (row: IssueRow): RecommendationIssue =>
 		...(row.canonicalKey != null ? { canonicalKey: row.canonicalKey } : undefined),
 		status: decodeStatusSync(row.status),
 		usageCount: row.usageCount,
-		openedAt: decodeIsoSync(row.openedAt.toISOString()),
-		updatedAt: decodeIsoSync(row.updatedAt.toISOString()),
-		...(row.resolvedAt != null ? { resolvedAt: decodeIsoSync(row.resolvedAt.toISOString()) } : undefined),
+		openedAt: decodeIsoSync(new Date(row.openedAt).toISOString()),
+		updatedAt: decodeIsoSync(new Date(row.updatedAt).toISOString()),
+		...(row.resolvedAt != null
+			? { resolvedAt: decodeIsoSync(new Date(row.resolvedAt).toISOString()) }
+			: undefined),
 	})
 
 export class RecommendationIssueService extends Context.Service<
@@ -74,28 +81,15 @@ export class RecommendationIssueService extends Context.Service<
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
 
-		const runDb = <A>(
-			operation: string,
-			effect: Effect.Effect<A, DatabaseError>,
-		): Effect.Effect<A, RecommendationIssuePersistenceError> =>
-			effect.pipe(
-				Effect.tapCause((cause) =>
-					Effect.logError("Recommendation issue database operation failed").pipe(
-						Effect.annotateLogs({ operation, cause }),
-					),
-				),
-				Effect.mapError(toPersistenceError),
-			)
+		const dbExecute = makeDbExecute(database, "RecommendationIssueService", toPersistenceError)
 
 		const selectAll = (orgId: OrgId) =>
-			runDb(
-				"list",
-				database.execute((db) =>
-					db
+			dbExecute((db) =>
+				db.run(
+					PG.from(OrgRecommendationIssues)
 						.select()
-						.from(orgRecommendationIssues)
-						.where(eq(orgRecommendationIssues.orgId, orgId))
-						.orderBy(orgRecommendationIssues.number),
+						.where(($) => [$.orgId.eq(orgId)])
+						.orderBy(["number", "asc"]),
 				),
 			)
 
@@ -130,8 +124,8 @@ export class RecommendationIssueService extends Context.Service<
 					),
 				)
 			return rows.map((row) => ({
-				attributeKey: String(row.attributeKey),
-				usageCount: Number(row.usageCount),
+				attributeKey: row.attributeKey,
+				usageCount: row.usageCount,
 			}))
 		})
 
@@ -152,18 +146,11 @@ export class RecommendationIssueService extends Context.Service<
 			}
 			const spanKeys = spanKeysOpt.value
 
-			const mappingRows = yield* runDb(
-				"listMappings",
-				database.execute((db) =>
-					db
-						.select({ sourceKey: orgIngestAttributeMappings.sourceKey })
-						.from(orgIngestAttributeMappings)
-						.where(
-							and(
-								eq(orgIngestAttributeMappings.orgId, orgId),
-								eq(orgIngestAttributeMappings.sourceContext, "span"),
-							),
-						),
+			const mappingRows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OrgIngestAttributeMappings)
+						.select("sourceKey")
+						.where(($) => [$.orgId.eq(orgId), $.sourceContext.eq("span")]),
 				),
 			)
 			const mappingSourceKeys = mappingRows.map((row) => row.sourceKey)
@@ -189,42 +176,34 @@ export class RecommendationIssueService extends Context.Service<
 					recommendationKey: insert.recommendationKey,
 					kind: insert.kind,
 					sourceKey: insert.sourceKey,
-					canonicalKey: insert.canonicalKey,
-					status: "open" as const,
+					canonicalKey: insert.canonicalKey ?? null,
+					status: "open",
 					usageCount: insert.usageCount,
-					openedAt: new Date(now),
-					updatedAt: new Date(now),
+					openedAt: now,
+					updatedAt: now,
 					resolvedAt: null,
 				}))
-				yield* runDb(
-					"insert",
-					database.execute((db) => db.insert(orgRecommendationIssues).values(rows)),
-				)
+				yield* dbExecute((db) => db.run(PG.insertInto(OrgRecommendationIssues).values(rows)))
 			}
 
 			yield* Effect.forEach(
 				plan.updates,
 				(update) => {
-					const fields: Partial<typeof orgRecommendationIssues.$inferInsert> = {
-						updatedAt: msToDate(now),
+					const fields: Partial<OrgRecommendationIssueInsert> = {
+						updatedAt: now,
+						...(update.usageCount !== undefined ? { usageCount: update.usageCount } : undefined),
+						...(update.nextStatus !== undefined
+							? {
+									status: update.nextStatus,
+									resolvedAt: update.nextStatus === "open" ? null : now,
+								}
+							: undefined),
 					}
-					if (update.usageCount !== undefined) fields.usageCount = update.usageCount
-					if (update.nextStatus !== undefined) {
-						fields.status = update.nextStatus
-						fields.resolvedAt = update.nextStatus === "open" ? null : new Date(now)
-					}
-					return runDb(
-						"update",
-						database.execute((db) =>
-							db
-								.update(orgRecommendationIssues)
+					return dbExecute((db) =>
+						db.run(
+							PG.update(OrgRecommendationIssues)
 								.set(fields)
-								.where(
-									and(
-										eq(orgRecommendationIssues.orgId, orgId),
-										eq(orgRecommendationIssues.id, update.id),
-									),
-								),
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(update.id)]),
 						),
 					)
 				},
@@ -237,19 +216,15 @@ export class RecommendationIssueService extends Context.Service<
 		const setStatus = Effect.fn("RecommendationIssueService.setStatus")(function* (
 			tenant: TenantContext,
 			id: RecommendationIssueId,
-			fields: Partial<typeof orgRecommendationIssues.$inferInsert>,
+			fields: Partial<OrgRecommendationIssueInsert>,
 		) {
 			const orgId = tenant.orgId
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.recommendation_issue.id": id })
-			const existing = yield* runDb(
-				"selectById",
-				database.execute((db) =>
-					db
-						.select({ id: orgRecommendationIssues.id })
-						.from(orgRecommendationIssues)
-						.where(
-							and(eq(orgRecommendationIssues.orgId, orgId), eq(orgRecommendationIssues.id, id)),
-						)
+			const existing = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OrgRecommendationIssues)
+						.select("id")
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
 						.limit(1),
 				),
 			)
@@ -264,15 +239,11 @@ export class RecommendationIssueService extends Context.Service<
 			}
 
 			const now = yield* Clock.currentTimeMillis
-			yield* runDb(
-				"setStatus",
-				database.execute((db) =>
-					db
-						.update(orgRecommendationIssues)
-						.set({ ...fields, updatedAt: new Date(now) })
-						.where(
-							and(eq(orgRecommendationIssues.orgId, orgId), eq(orgRecommendationIssues.id, id)),
-						),
+			yield* dbExecute((db) =>
+				db.run(
+					PG.update(OrgRecommendationIssues)
+						.set({ ...fields, updatedAt: now })
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
 				),
 			)
 			return yield* listResponse(orgId)

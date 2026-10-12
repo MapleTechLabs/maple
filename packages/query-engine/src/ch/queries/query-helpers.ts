@@ -3,13 +3,21 @@
 // Reusable expression builders and WHERE condition helpers used across
 // traces, alerts, services, and metrics queries.
 
+import type { DateTime } from "effect"
 import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import type { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
-import { MetricsSum, MetricsGauge, MetricsHistogram, MetricsExpHistogram, orgIdParam } from "../tables"
+import {
+	MetricsSum,
+	MetricsGauge,
+	MetricsHistogram,
+	MetricsExpHistogram,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 import type { AttributeIndexMode } from "../../capabilities"
@@ -145,8 +153,8 @@ export function inclusionValues(
  * files defined this identically; the expression has to agree with the MV's
  * `Hour` column or the join silently misses.
  */
-export function hourFloor(name: string): CH.Expr<string> {
-	return CH.toStartOfHour(CH.toDateTime(param.dateTimeString(name)))
+export function utcHourFloor(name: string): CH.Expr<DateTime.Utc> {
+	return CH.toStartOfHour(CH.toDateTime(utcSecondsParam(name)))
 }
 
 /**
@@ -277,8 +285,8 @@ export function tracesBaseWhereConditions(
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
 		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
@@ -428,8 +436,8 @@ export function serviceOverviewWhereConditions(
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const conditions: Array<CH.Condition | undefined> = [
 		$.OrgId.eq(orgIdParam),
-		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+		$.Timestamp.gte(utcSecondsParam("startTime")),
+		$.Timestamp.lte(utcSecondsParam("endTime")),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
@@ -533,11 +541,11 @@ export function tracesAggregatesWhereConditions(
 	const conditions: Array<CH.Condition | undefined> = [
 		$.OrgId.eq(orgIdParam),
 		hourBounds
-			? $.Hour.gte(CH.rawExpr(hourBounds.gte, T.dateTimeString))
-			: $.Hour.gte(param.dateTimeSeconds("startTime")),
+			? $.Hour.gte(CH.rawExpr(hourBounds.gte, T.dateTime))
+			: $.Hour.gte(utcSecondsParam("startTime")),
 		hourBounds
-			? $.Hour.lt(CH.rawExpr(hourBounds.lt, T.dateTimeString))
-			: $.Hour.lte(param.dateTimeSeconds("endTime")),
+			? $.Hour.lt(CH.rawExpr(hourBounds.lt, T.dateTime))
+			: $.Hour.lte(utcSecondsParam("endTime")),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
@@ -585,9 +593,7 @@ const HISTOGRAM_TABLES = {
 
 export function resolveMetricTable(metricType: MetricType) {
 	const isHistogram = metricType === "histogram" || metricType === "exponential_histogram"
-	const tbl = isHistogram
-		? HISTOGRAM_TABLES[metricType as keyof typeof HISTOGRAM_TABLES]
-		: VALUE_TABLES[metricType as keyof typeof VALUE_TABLES]
+	const tbl = isHistogram ? HISTOGRAM_TABLES[metricType] : VALUE_TABLES[metricType]
 	return { tbl, isHistogram }
 }
 

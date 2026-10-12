@@ -1,5 +1,6 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { countLabel } from "@maple/ui/lib/format"
+import { SectionHeading } from "@/components/common/section-heading"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { ErrorIssueId } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -36,17 +37,11 @@ export function RelatedAnomaliesSection({ issueId }: { issueId: ErrorIssueId }) 
 
 	return (
 		<section aria-labelledby="related-anomalies-heading" className="flex shrink-0 flex-col gap-3.5">
-			<div className="flex items-baseline gap-2.5">
-				<h2
-					id="related-anomalies-heading"
-					className="font-display text-base font-semibold tracking-[-0.01em] text-foreground"
-				>
-					Related anomalies
-				</h2>
-				<span className="text-sm text-muted-foreground">
-					{countLabel(sorted.length, "detector incident")}
-				</span>
-			</div>
+			<SectionHeading
+				id="related-anomalies-heading"
+				title="Related anomalies"
+				hint={countLabel(sorted.length, "detector incident")}
+			/>
 			<div className="overflow-hidden rounded-md border border-border/60 divide-y divide-border/40">
 				{sorted.map((incident) => (
 					<AnomalyRow key={incident.id} incident={incident} variant="compact" />

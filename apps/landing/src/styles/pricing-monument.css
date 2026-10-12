@@ -73,7 +73,7 @@
 }
 .pricing-rates__grid {
 	display: grid;
-	grid-template-columns: repeat(5, minmax(0, 1fr));
+	grid-template-columns: repeat(6, minmax(0, 1fr));
 	margin-top: 18px;
 	border-block: 1px solid var(--border);
 	background: var(--background);
@@ -178,8 +178,13 @@
 	.pricing-rates__cell:nth-child(even) {
 		border-right: 0;
 	}
-	.pricing-rates__cell:last-child {
+	/* An odd count leaves the last cell alone on its row: let it span. An even
+	   count ends on a full pair, so both cells of that row drop the rule. */
+	.pricing-rates__cell:last-child:nth-child(odd) {
 		grid-column: 1 / -1;
+	}
+	.pricing-rates__cell:last-child,
+	.pricing-rates__cell:nth-last-child(2):nth-child(odd) {
 		border-bottom: 0;
 	}
 	.pricing-offer > div > div > .grid > div {

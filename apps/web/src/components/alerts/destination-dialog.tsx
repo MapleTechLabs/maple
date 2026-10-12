@@ -1,4 +1,5 @@
 import { Spinner } from "@maple/ui/components/ui/spinner"
+import { initialsFrom } from "@maple/ui/lib/initials"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { HazelStartConnectRequest, type AlertDestinationType } from "@maple/domain/http"
@@ -27,7 +28,7 @@ import {
 	channelPickerView,
 	resolveSearchQuery,
 } from "@/components/alerts/channel-search"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
@@ -48,6 +49,7 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
 import { Panel } from "@maple/ui/components/ui/panel"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import {
@@ -233,7 +235,7 @@ function EmailMemberPicker({
 				adornment: (
 					<Avatar className="size-5">
 						<AvatarImage alt={name || email} src={member.publicUserData?.imageUrl} />
-						<AvatarFallback>{(name || email)[0]?.toUpperCase() ?? "?"}</AvatarFallback>
+						<AvatarFallback>{initialsFrom(name || email)}</AvatarFallback>
 					</Avatar>
 				),
 				meta: name ? email : undefined,
@@ -325,11 +327,11 @@ function HazelOAuthFields({
 	isEditing: boolean
 }) {
 	const statusResult = useAtomValue(
-		retainedQuery("integrations", "hazelStatus", {
+		retainedInternalQuery("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
 		}),
 	)
-	const organizationsAtom = retainedQuery("integrations", "hazelOrganizations", {
+	const organizationsAtom = retainedInternalQuery("integrations", "hazelOrganizations", {
 		reactivityKeys: ["hazelIntegrationStatus", "hazelOrganizations"],
 	})
 	const organizationsResult = useAtomValue(organizationsAtom)
@@ -337,17 +339,17 @@ function HazelOAuthFields({
 	const orgIdForChannels = form.hazelOrganizationId.trim()
 	const channelsAtom =
 		orgIdForChannels.length > 0
-			? retainedQuery("integrations", "hazelChannels", {
+			? retainedInternalQuery("integrations", "hazelChannels", {
 					params: { organizationId: orgIdForChannels },
 					reactivityKeys: ["hazelIntegrationStatus", "hazelChannels", orgIdForChannels],
 				})
 			: disabledResultAtom<HazelChannelsListResponse>()
 	const channelsResult = useAtomValue(channelsAtom)
 
-	const startConnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "hazelStart"), {
+	const startConnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "hazelStart"), {
 		mode: "promiseExit",
 	})
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "hazelDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "hazelDisconnect"), {
 		mode: "promiseExit",
 	})
 
@@ -414,6 +416,7 @@ function HazelOAuthFields({
 			hazelChannelName: "",
 		}))
 	})
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	if (!status || !status.connected) {
 		return (
@@ -471,7 +474,7 @@ function HazelOAuthFields({
 					type="button"
 					size="sm"
 					variant="outline"
-					onClick={() => void handleDisconnect()}
+					onClick={() => setConfirmingDisconnect(true)}
 					loading={disconnecting}
 					disabled={connecting}
 				>
@@ -581,6 +584,17 @@ function HazelOAuthFields({
 					</p>
 				) : null}
 			</Field>
+			<ConfirmDialog
+				open={confirmingDisconnect}
+				onOpenChange={setConfirmingDisconnect}
+				title="Disconnect Hazel"
+				description="Maple loses access to your Hazel organizations and channels until you reconnect."
+				confirmLabel="Disconnect Hazel"
+				onConfirm={() => {
+					setConfirmingDisconnect(false)
+					void handleDisconnect()
+				}}
+			/>
 		</div>
 	)
 }
@@ -833,7 +847,7 @@ function ChatDestinationFields({
 						}
 					>
 						Open {connectorName} integration
-						<ArrowRightIcon size={12} />
+						<ArrowRightIcon />
 					</Button>
 				</div>
 			) : failure !== null ? (

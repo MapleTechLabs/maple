@@ -405,7 +405,7 @@ describe("resolveRuntimeConfig caching", () => {
 		return Effect.gen(function* () {
 			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://byo.example"))
-			const resolved = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const resolved = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(Option.isNone(resolved)).toBe(true)
 			expect(yield* service.isWarehouseWriteReady(asOrgId(orgId))).toBe(false)
 		}).pipe(Effect.provide(buildLayerIgnoring(testDb, "development")))
@@ -415,8 +415,9 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_not_ignored_in_prod"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://byo.example"))
-			const resolved = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const resolved = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(resolved).url).toBe("https://byo.example")
 		}).pipe(Effect.provide(buildLayerIgnoring(testDb, "production")))
 	})
@@ -425,10 +426,9 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_invalid_saved_config"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "ftp://clickhouse.example.test"))
-			const exit = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId)).pipe(
-				Effect.exit,
-			)
+			const exit = yield* service.resolveRuntimeConfig(asOrgId(orgId)).pipe(Effect.exit)
 			const error = getError(exit)
 			expect(error).toBeInstanceOf(OrgClickHouseSettingsStoredConfigInvalidError)
 			if (!(error instanceof OrgClickHouseSettingsStoredConfigInvalidError)) return
@@ -440,9 +440,10 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_cache"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
 
-			const first = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const first = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(first).url).toBe("https://a.example")
 
 			// Mutate the row directly in Postgres; a cached resolve must NOT see it.
@@ -453,7 +454,7 @@ describe("resolveRuntimeConfig caching", () => {
 				]),
 			)
 
-			const second = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const second = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			// Still the original URL → proves the second resolve never hit Postgres.
 			expect(expectSome(second).url).toBe("https://a.example")
 		}).pipe(Effect.provide(buildLayer(testDb)))
@@ -479,12 +480,12 @@ describe("resolveRuntimeConfig caching", () => {
 			)
 			yield* Effect.promise(() => seedRow(testDb, managedOrg, "https://appeared.example"))
 
-			const byo = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(byoOrg))
+			const byo = yield* service.resolveRuntimeConfig(asOrgId(byoOrg))
 			expect(expectSome(byo).url).toBe("https://primed.example")
 
 			// The negative answer has to be memoized too — it is the common case
 			// (managed orgs route to Tinybird) and the whole point of priming them.
-			const managed = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(managedOrg))
+			const managed = yield* service.resolveRuntimeConfig(asOrgId(managedOrg))
 			expect(Option.isNone(managed)).toBe(true)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -497,7 +498,7 @@ describe("resolveRuntimeConfig caching", () => {
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://fresh.example"))
 
 			// Populate the memo, then change Postgres behind it.
-			yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			yield* Effect.promise(() =>
 				executeSql(testDb, "UPDATE org_clickhouse_settings SET ch_url = $2 WHERE org_id = $1", [
 					orgId,
@@ -510,7 +511,7 @@ describe("resolveRuntimeConfig caching", () => {
 			// refresh, and must not change what a caller would otherwise observe.
 			yield* service.primeRuntimeConfigs([asOrgId(orgId)])
 
-			const resolved = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const resolved = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(resolved).url).toBe("https://fresh.example")
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -519,16 +520,17 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_invalidate"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
 
 			// Populate the cache.
-			const before = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const before = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(Option.isSome(before)).toBe(true)
 
 			// Delete through the service — this invalidates the cached entry.
-			yield* OrgClickHouseSettingsService.delete(asOrgId(orgId), [asRole("org:admin")])
+			yield* service.delete(asOrgId(orgId), [asRole("org:admin")])
 
-			const after = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const after = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			// Would still be a stale `Some` if the write had not busted the cache.
 			expect(Option.isNone(after)).toBe(true)
 		}).pipe(Effect.provide(buildLayer(testDb)))
@@ -547,17 +549,18 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_edge_managed"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			// No settings row at all — the common case, and the one that caches
 			// `null`. If the envelope ever stopped round-tripping, this is the test
 			// that catches it: the majority of orgs would silently never cache.
-			const first = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const first = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(Option.isNone(first)).toBe(true)
 
 			// Cold isolate: memo gone, shared entry still warm.
 			invalidateOrgRuntimeConfigMemo(orgId)
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://appeared.example"))
 
-			const second = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const second = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			// Still none → the cached `null` answered, Postgres was never dialled.
 			expect(Option.isNone(second)).toBe(true)
 		}).pipe(Effect.provide(buildCachedLayer(testDb)))
@@ -567,8 +570,9 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_edge_byo"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://cached.example"))
-			const first = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const first = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(first).url).toBe("https://cached.example")
 
 			invalidateOrgRuntimeConfigMemo(orgId)
@@ -579,7 +583,7 @@ describe("resolveRuntimeConfig caching", () => {
 				]),
 			)
 
-			const second = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const second = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(second).url).toBe("https://cached.example")
 		}).pipe(Effect.provide(buildCachedLayer(testDb)))
 	})
@@ -588,12 +592,11 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_edge_invalidate"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
-			expect(
-				Option.isSome(yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))),
-			).toBe(true)
+			expect(Option.isSome(yield* service.resolveRuntimeConfig(asOrgId(orgId)))).toBe(true)
 
-			yield* OrgClickHouseSettingsService.delete(asOrgId(orgId), [asRole("org:admin")])
+			yield* service.delete(asOrgId(orgId), [asRole("org:admin")])
 
 			// Drop the memo the write just cleared anyway, so this resolve can only
 			// be answered by the shared tier or Postgres. If the write had evicted
@@ -601,7 +604,7 @@ describe("resolveRuntimeConfig caching", () => {
 			// every other isolate would serve it for the full 6h TTL.
 			invalidateOrgRuntimeConfigMemo(orgId)
 
-			const after = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const after = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(Option.isNone(after)).toBe(true)
 		}).pipe(Effect.provide(buildCachedLayer(testDb)))
 	})
@@ -653,16 +656,15 @@ describe("resolveRuntimeConfig caching", () => {
 			)
 		})()
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedPasswordRow(testDb, byoOrg, "https://wire.example"))
 
 			// Populate both shapes: the `null` envelope and a fully-populated one
 			// carrying the encrypted password material.
-			expect(
-				Option.isNone(yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(managedOrg))),
-			).toBe(true)
-			expect(
-				expectSome(yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(byoOrg))).url,
-			).toBe("https://wire.example")
+			expect(Option.isNone(yield* service.resolveRuntimeConfig(asOrgId(managedOrg)))).toBe(true)
+			expect(expectSome(yield* service.resolveRuntimeConfig(asOrgId(byoOrg))).url).toBe(
+				"https://wire.example",
+			)
 			expect(stats.puts).toBe(2)
 
 			// Cold isolates. Move Postgres so a fallthrough would be visible.
@@ -676,12 +678,12 @@ describe("resolveRuntimeConfig caching", () => {
 				]),
 			)
 
-			const managed = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(managedOrg))
+			const managed = yield* service.resolveRuntimeConfig(asOrgId(managedOrg))
 			expect(Option.isNone(managed)).toBe(true)
 
 			// Decodes back to the same config, password included — proof the
 			// encrypted material survived the round trip and still decrypts.
-			const byo = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(byoOrg))
+			const byo = yield* service.resolveRuntimeConfig(asOrgId(byoOrg))
 			expect(expectSome(byo).url).toBe("https://wire.example")
 			expect(expectSome(byo).password).toBe("legacy-password")
 
@@ -716,9 +718,10 @@ describe("resolveRuntimeConfig caching", () => {
 	 * lands. Bounded, so a refresh that never lands still fails the test.
 	 */
 	const resolveUntilUrl = Effect.fnUntraced(function* (orgId: string, expected: string) {
+		const service = yield* OrgClickHouseSettingsService
 		let last: string | undefined
 		for (let attempt = 0; attempt < 200; attempt++) {
-			const resolved = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const resolved = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			last = Option.isSome(resolved) ? resolved.value.url : undefined
 			if (last === expected) return last
 			yield* TestClock.adjust(1)
@@ -731,8 +734,9 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_swr_stale"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
-			const first = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const first = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(first).url).toBe("https://a.example")
 
 			yield* Effect.promise(() =>
@@ -745,7 +749,7 @@ describe("resolveRuntimeConfig caching", () => {
 			// Past the soft TTL but inside the hard ceiling: the caller must NOT
 			// wait on Postgres, so it still sees the old URL.
 			yield* TestClock.adjust(SOFT_TTL_MS + 1_000)
-			const stale = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const stale = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(stale).url).toBe("https://a.example")
 
 			// The refresh forked by that call lands, so a subsequent resolve sees the
@@ -758,8 +762,9 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_swr_hard"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
-			yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			yield* service.resolveRuntimeConfig(asOrgId(orgId))
 
 			yield* Effect.promise(() =>
 				executeSql(testDb, "UPDATE org_clickhouse_settings SET ch_url = $2 WHERE org_id = $1", [
@@ -772,7 +777,7 @@ describe("resolveRuntimeConfig caching", () => {
 			// all ended before their refresh landed), so the ceiling forces a
 			// blocking read rather than serving an unboundedly old value.
 			yield* TestClock.adjust(HARD_TTL_MS + 1_000)
-			const fresh = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const fresh = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(fresh).url).toBe("https://b.example")
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -785,8 +790,9 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_swr_ceiling_raised"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
-			yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			yield* service.resolveRuntimeConfig(asOrgId(orgId))
 
 			yield* Effect.promise(() =>
 				executeSql(testDb, "UPDATE org_clickhouse_settings SET ch_url = $2 WHERE org_id = $1", [
@@ -796,7 +802,7 @@ describe("resolveRuntimeConfig caching", () => {
 			)
 
 			yield* TestClock.adjust(1_200_000)
-			const stale = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const stale = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			// The old URL proves nobody blocked on the read; the refresh this call
 			// forked lands next, so the burst behind it is already current.
 			expect(expectSome(stale).url).toBe("https://a.example")
@@ -811,8 +817,9 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_memo_module_bust"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
-			const before = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const before = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(before).url).toBe("https://a.example")
 
 			yield* Effect.promise(() =>
@@ -823,7 +830,7 @@ describe("resolveRuntimeConfig caching", () => {
 			)
 
 			invalidateOrgRuntimeConfigMemo(orgId)
-			const afterBust = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const afterBust = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(afterBust).url).toBe("https://b.example")
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -833,8 +840,9 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_cold_isolate"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
-			yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			yield* service.resolveRuntimeConfig(asOrgId(orgId))
 
 			yield* Effect.promise(() =>
 				executeSql(testDb, "UPDATE org_clickhouse_settings SET ch_url = $2 WHERE org_id = $1", [
@@ -846,7 +854,7 @@ describe("resolveRuntimeConfig caching", () => {
 			// What a fresh isolate looks like: no in-process state at all.
 			invalidateOrgRuntimeConfigMemo(orgId)
 
-			const resolved = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			const resolved = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(expectSome(resolved).url).toBe("https://b.example")
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -860,15 +868,16 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_swr_dedup"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
-			yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			yield* TestClock.adjust(SOFT_TTL_MS + 1_000)
 
 			// Eight widgets hitting a stale entry at once must not become eight
 			// Postgres reads — the whole point of the in-flight marker.
 			const results = yield* Effect.forEach(
 				Array.from({ length: 8 }, (_, index) => index),
-				() => OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId)),
+				() => service.resolveRuntimeConfig(asOrgId(orgId)),
 				{ concurrency: "unbounded" },
 			)
 			for (const result of results) {
@@ -885,7 +894,7 @@ describe("resolveRuntimeConfig caching", () => {
 			)
 
 			yield* TestClock.adjust(SOFT_TTL_MS + 1_000)
-			yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(yield* resolveUntilUrl(orgId, "https://c.example")).toBe("https://c.example")
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -895,21 +904,18 @@ describe("resolveRuntimeConfig caching", () => {
 		const byoOrgId = "org_ch_invalidate_byo"
 		const managedOrgId = "org_ch_invalidate_managed"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, byoOrgId, "https://a.example"))
-			yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(byoOrgId))
+			yield* service.resolveRuntimeConfig(asOrgId(byoOrgId))
 			// A managed org memoizes `null` — "we know this org has no override".
-			yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(managedOrgId))
+			yield* service.resolveRuntimeConfig(asOrgId(managedOrgId))
 
 			// This boolean is the warehouse executor's retry gate: re-running a query
 			// can only help when a per-org override was actually dropped.
-			const droppedOverride = yield* OrgClickHouseSettingsService.invalidateRuntimeConfig(
-				asOrgId(byoOrgId),
-			)
+			const droppedOverride = yield* service.invalidateRuntimeConfig(asOrgId(byoOrgId))
 			expect(droppedOverride).toBe(true)
 
-			const droppedManaged = yield* OrgClickHouseSettingsService.invalidateRuntimeConfig(
-				asOrgId(managedOrgId),
-			)
+			const droppedManaged = yield* service.invalidateRuntimeConfig(asOrgId(managedOrgId))
 			expect(droppedManaged).toBe(false)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -918,10 +924,9 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_legacy_http"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedPasswordRow(testDb, orgId, "http://clickhouse.example.test"))
-			const exit = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId)).pipe(
-				Effect.exit,
-			)
+			const exit = yield* service.resolveRuntimeConfig(asOrgId(orgId)).pipe(Effect.exit)
 			const error = getError(exit)
 			expect(error).toBeInstanceOf(OrgClickHouseSettingsStoredConfigInvalidError)
 			if (!(error instanceof OrgClickHouseSettingsStoredConfigInvalidError)) return
@@ -933,10 +938,11 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_legacy_userinfo"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://user:secret@clickhouse.example.test"))
-			const exit = yield* OrgClickHouseSettingsService.collectorConfig(asOrgId(orgId), [
-				asRole("org:admin"),
-			]).pipe(Effect.exit)
+			const exit = yield* service
+				.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
+				.pipe(Effect.exit)
 			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsValidationError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -945,6 +951,7 @@ describe("resolveRuntimeConfig caching", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_corrupt_collector_password"
 		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedPasswordRow(testDb, orgId, "https://clickhouse.example.test"))
 			yield* Effect.promise(() =>
 				executeSql(
@@ -953,9 +960,9 @@ describe("resolveRuntimeConfig caching", () => {
 					[orgId],
 				),
 			)
-			const exit = yield* OrgClickHouseSettingsService.collectorConfig(asOrgId(orgId), [
-				asRole("org:admin"),
-			]).pipe(Effect.exit)
+			const exit = yield* service
+				.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
+				.pipe(Effect.exit)
 			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsEncryptionError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})

@@ -106,8 +106,8 @@ describe("SharedDashboardService", () => {
 			const [first, second] = await runtime.runPromise(
 				Effect.all(
 					[
-						SharedDashboardService.upsert(ORG, USER, scope, "public"),
-						SharedDashboardService.upsert(ORG, USER, scope, "public"),
+						SharedDashboardService.use((shares) => shares.upsert(ORG, USER, scope, "public")),
+						SharedDashboardService.use((shares) => shares.upsert(ORG, USER, scope, "public")),
 					],
 					{ concurrency: 2 },
 				),
@@ -140,13 +140,15 @@ describe("SharedDashboardService", () => {
 			const scope = { dashboardId, widgetId: null }
 
 			const created = await runtime.runPromise(
-				SharedDashboardService.upsert(ORG, USER, scope, "public"),
+				SharedDashboardService.use((shares) => shares.upsert(ORG, USER, scope, "public")),
 			)
 
 			// The point of storing an encrypted copy: a read that never saw the mint
 			// response still produces the link, so nobody has to rotate — and break
 			// every URL already pasted somewhere — merely to see their own.
-			const read = await runtime.runPromise(SharedDashboardService.get(ORG, scope))
+			const read = await runtime.runPromise(
+				SharedDashboardService.use((shares) => shares.get(ORG, scope)),
+			)
 			expect(read._tag).toBe("Some")
 			if (read._tag === "Some") expect(read.value.token).toBe(created.token)
 
@@ -165,7 +167,9 @@ describe("SharedDashboardService", () => {
 			// onto a dashboard they are allowed to read.
 			const other = await createDashboard(runtime)
 			const otherScope = { dashboardId: other, widgetId: null }
-			await runtime.runPromise(SharedDashboardService.upsert(ORG, USER, otherScope, "public"))
+			await runtime.runPromise(
+				SharedDashboardService.use((shares) => shares.upsert(ORG, USER, otherScope, "public")),
+			)
 			await executeSql(
 				testDb,
 				`UPDATE dashboard_shares AS target
@@ -179,7 +183,7 @@ describe("SharedDashboardService", () => {
 			)
 
 			const relocated = await runtime.runPromise(
-				Effect.result(SharedDashboardService.get(ORG, otherScope)),
+				Effect.result(SharedDashboardService.use((shares) => shares.get(ORG, otherScope))),
 			)
 			expect(relocated._tag).toBe("Failure")
 		} finally {
@@ -194,10 +198,14 @@ describe("SharedDashboardService", () => {
 			const scope = { dashboardId, widgetId: null }
 
 			const created = await runtime.runPromise(
-				Effect.result(SharedDashboardService.upsert(ORG, USER, scope, "public")),
+				Effect.result(
+					SharedDashboardService.use((shares) => shares.upsert(ORG, USER, scope, "public")),
+				),
 			)
 			const resolved = await runtime.runPromise(
-				Effect.result(SharedDashboardService.resolveByToken("mshare_anything")),
+				Effect.result(
+					SharedDashboardService.use((shares) => shares.resolveByToken("mshare_anything")),
+				),
 			)
 
 			// Failing is the point: hashing under a fallback key would mint links
@@ -219,12 +227,16 @@ describe("SharedDashboardService", () => {
 			const scope = { dashboardId, widgetId: null }
 
 			const created = await runtime.runPromise(
-				SharedDashboardService.upsert(ORG, USER, scope, "public"),
+				SharedDashboardService.use((shares) => shares.upsert(ORG, USER, scope, "public")),
 			)
 			const token = created.token
 
-			const first = await runtime.runPromise(SharedDashboardService.revoke(ORG, USER, scope))
-			const second = await runtime.runPromise(SharedDashboardService.revoke(ORG, USER, scope))
+			const first = await runtime.runPromise(
+				SharedDashboardService.use((shares) => shares.revoke(ORG, USER, scope)),
+			)
+			const second = await runtime.runPromise(
+				SharedDashboardService.use((shares) => shares.revoke(ORG, USER, scope)),
+			)
 
 			// The first revoke did something; the second is a no-op rather than a
 			// 404, so the dialog can call it without checking first.
@@ -232,20 +244,20 @@ describe("SharedDashboardService", () => {
 			expect(second.revoked).toBe(false)
 
 			const afterRevoke = await runtime.runPromise(
-				Effect.result(SharedDashboardService.resolveByToken(token)),
+				Effect.result(SharedDashboardService.use((shares) => shares.resolveByToken(token))),
 			)
 			expect(afterRevoke._tag).toBe("Failure")
 
 			// A fresh share mints a NEW token; the revoked one stays dead. Sharing
 			// again must not resurrect a link someone was told had been killed.
 			const reshared = await runtime.runPromise(
-				SharedDashboardService.upsert(ORG, USER, scope, "public"),
+				SharedDashboardService.use((shares) => shares.upsert(ORG, USER, scope, "public")),
 			)
 			expect(reshared.token).toBeDefined()
 			expect(reshared.token).not.toBe(token)
 
 			const stillDead = await runtime.runPromise(
-				Effect.result(SharedDashboardService.resolveByToken(token)),
+				Effect.result(SharedDashboardService.use((shares) => shares.resolveByToken(token))),
 			)
 			expect(stillDead._tag).toBe("Failure")
 		} finally {

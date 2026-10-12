@@ -13,6 +13,7 @@ import { Switch } from "@maple/ui/components/ui/switch"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { AiTriageSettingsUpdateRequest } from "@maple/domain/http"
 import { ErrorState } from "@/components/common/error-state"
+import { SectionHeading } from "@/components/common/section-heading"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 
@@ -115,10 +116,12 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 	return (
 		<Panel padded className="gap-6">
 			<div className="space-y-1">
-				<h3 className="flex items-center gap-2 text-sm font-medium">
-					AI auto-triage
-					{settings?.enabled ? <Badge variant="ok">Enabled</Badge> : null}
-				</h3>
+				<SectionHeading
+					as="h3"
+					title="AI auto-triage"
+					badge={settings?.enabled ? <Badge variant="ok">Enabled</Badge> : null}
+					className="items-center gap-2"
+				/>
 				<p className="text-sm text-muted-foreground">
 					When a new error or anomaly incident opens, an AI agent automatically investigates it with
 					read-only tools and attaches a triage summary. Runs use Maple's managed AI, no setup

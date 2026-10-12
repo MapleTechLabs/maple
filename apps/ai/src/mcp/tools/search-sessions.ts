@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { SearchSessionsOutput } from "@maple/domain/mcp-outputs"
 import { searchSessions } from "@maple/query-engine/observability"
 import { SESSION_TAGS, sessionTagsOf } from "@maple/domain/query-engine"
@@ -117,10 +117,10 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				userId: params.user_id ?? "any",
-				eventType: params.event_type ?? "any",
-				limit: lim,
-				offset: off,
+				"maple.ai.user_id": params.user_id ?? "any",
+				"maple.ai.event_type": params.event_type ?? "any",
+				"maple.ai.limit": lim,
+				"maple.ai.offset": off,
 			})
 
 			const sessions = yield* withTenantExecutor(
@@ -165,24 +165,22 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 					userEmail: s.userEmail,
 					groupId: s.groupId,
 					groupName: s.groupName,
-					startTime: s.startTime,
-					durationMs: s.durationMs != null ? Number(s.durationMs) : null,
+					startTime: DateTime.formatIso(s.startTime),
+					durationMs: s.durationMs != null ? s.durationMs : null,
 					status: s.status,
 					browserName: s.browserName,
 					osName: s.osName,
 					deviceType: s.deviceType,
 					country: s.country,
 					serviceName: s.serviceName,
-					pageViews: Number(s.pageViews),
-					clickCount: Number(s.clickCount),
+					pageViews: s.pageViews,
+					clickCount: s.clickCount,
 					// A pure error-event match counts the session's error events; trust it over a 0 column.
-					errorCount: errorTypeOnly
-						? Math.max(Number(s.errorCount), Number(s.matchCount ?? 0))
-						: Number(s.errorCount),
-					traceCount: Number(s.traceCount),
+					errorCount: errorTypeOnly ? Math.max(s.errorCount, s.matchCount ?? 0) : s.errorCount,
+					traceCount: s.traceCount,
 					urlInitial: truncate(s.urlInitial, 256),
 					tags: sessionTagsOf(s),
-					...(eventFiltered ? { matchCount: Number(s.matchCount ?? 0) } : undefined),
+					...(eventFiltered ? { matchCount: s.matchCount ?? 0 } : undefined),
 				})),
 				pagination: {
 					offset: off,

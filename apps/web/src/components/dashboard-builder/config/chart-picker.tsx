@@ -40,19 +40,19 @@ const CHART_STYLES = [
 		// Recharts demo entry (`default-bar`, a dotted-pattern bar nothing else
 		// rendered), so the thumbnail showed something no widget could produce.
 		previewChartId: "query-builder-bar",
-		label: "Bar Chart",
+		label: "Bar chart",
 		description: "Compare values across categories",
 	},
 	{
 		chartId: "query-builder-area",
 		previewChartId: "query-builder-area",
-		label: "Area Chart",
+		label: "Area chart",
 		description: "Visualize trends over time",
 	},
 	{
 		chartId: "query-builder-line",
 		previewChartId: "query-builder-line",
-		label: "Line Chart",
+		label: "Line chart",
 		description: "Track metrics over time",
 	},
 ]
@@ -168,7 +168,7 @@ export function WidgetPicker({ open, onOpenChange, onSelect }: WidgetPickerProps
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="sm:max-w-3xl">
 				<DialogHeader>
-					<DialogTitle>Add Widget</DialogTitle>
+					<DialogTitle>Add widget</DialogTitle>
 					<DialogDescription>
 						Choose a visualization type to add to your dashboard.
 					</DialogDescription>

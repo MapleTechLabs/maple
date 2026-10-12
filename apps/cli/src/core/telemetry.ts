@@ -74,10 +74,14 @@ const DROPPED_KEYS = new Set([
 	"url.query",
 	"http.request.body",
 	"http.response.body",
-	// User-typed filter values from query-engine operations.
+	// User-typed filter values from query-engine operations (bare keys kept for older emitters).
 	"service",
 	"spanName",
 	"sessionId",
+	"maple.query.service",
+	"maple.query.span_name",
+	"maple.query.attribute_key",
+	"maple.session.id",
 ])
 const DROPPED_KEY_PATTERN = /sql|^query\.filter\./i
 

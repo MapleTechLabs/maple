@@ -11,7 +11,7 @@ import { MapleRegion as MapleRegionSchema, parseMapleRegion } from "@maple/domai
 import { RegionBadge } from "@/components/region/region-badge"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useAtomSet } from "@/lib/effect-atom"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import {
 	currentRegion,
 	hasMultipleRegions,
@@ -35,9 +35,12 @@ export function CreateOrganizationDialog({
 	const [name, setName] = useState("")
 	const [region, setRegion] = useState<MapleRegion>(currentRegion)
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
-	const createOrganization = useAtomSet(MapleApiAtomClient.mutation("organizationCreation", "create"), {
-		mode: "promiseExit",
-	})
+	const createOrganization = useAtomSet(
+		MapleInternalAtomClient.mutation("organizationCreation", "create"),
+		{
+			mode: "promiseExit",
+		},
+	)
 
 	const handleOpenChange = (next: boolean) => {
 		onOpenChange(next)

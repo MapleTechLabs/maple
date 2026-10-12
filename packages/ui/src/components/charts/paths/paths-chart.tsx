@@ -2,6 +2,7 @@ import * as React from "react"
 
 import type { PathsChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
+import { Badge } from "../../ui/badge"
 import { Eyebrow } from "../../ui/eyebrow"
 import { formatNumber, formatPercent } from "../../../lib/format"
 import { asFiniteNumber } from "../_shared/breakdown-rows"
@@ -393,13 +394,13 @@ export function PathsChart({ data, className, direction = "after" }: PathsChartP
 							)}
 						/>
 						<span className="truncate font-medium text-foreground">{labelOf(hoveredNode)}</span>
-						<span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-3xs leading-none text-muted-foreground">
+						<Badge variant="muted" size="xs">
 							{hoveredNode.column === 0
 								? "anchor"
 								: reverse
 									? `${hoveredNode.column} before`
 									: `step ${hoveredNode.column}`}
-						</span>
+						</Badge>
 					</div>
 					<div className="mb-1.5 h-1.5 overflow-hidden rounded-sm bg-foreground/5">
 						<div

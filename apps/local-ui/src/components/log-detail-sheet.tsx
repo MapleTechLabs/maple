@@ -155,7 +155,7 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 		isJson ? (
 			<pre
 				className={cn(
-					"font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words",
+					"font-mono text-ui leading-relaxed whitespace-pre-wrap break-words",
 					clamp && "line-clamp-6",
 				)}
 			>
@@ -186,7 +186,7 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 					aria-label="Close log details"
 					onClick={onClose}
 				>
-					<XmarkIcon size={16} />
+					<XmarkIcon />
 				</Button>
 			</div>
 
@@ -308,7 +308,7 @@ function LogTracePanel({
 				className="w-full gap-1.5"
 				render={<a href={traceHref} onClick={onOpenTrace} />}
 			>
-				<PulseIcon size={14} />
+				<PulseIcon />
 				Open trace
 			</Button>
 		</div>

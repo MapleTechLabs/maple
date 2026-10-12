@@ -1,4 +1,5 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { ERROR_INCIDENT_AUTO_RESOLVE_MINUTES, type ErrorIncidentDocument } from "@maple/domain/http"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
@@ -73,14 +74,12 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 										}
 									>
 										{isOpen ? <StatusDot tone="crit" /> : <StatusDot tone="neutral" />}
-										<span
-											className={cn(
-												"text-xs font-medium uppercase tracking-wide",
-												isOpen ? "text-severity-error" : "text-muted-foreground",
-											)}
+										<Eyebrow
+											variant="label"
+											className={isOpen ? "text-severity-error" : undefined}
 										>
 											{incident.status}
-										</span>
+										</Eyebrow>
 									</TooltipTrigger>
 									<TooltipPopup className="max-w-[36ch]">
 										{STATUS_EXPLANATION[incident.status]}

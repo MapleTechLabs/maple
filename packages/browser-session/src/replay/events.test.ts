@@ -25,7 +25,7 @@ vi.mock("../session/session", () => ({
 	markActivity: vi.fn(),
 	noteNavigation: vi.fn(),
 }))
-vi.mock("../platform/transport", () => ({ postSessionEvents: vi.fn(async () => {}) }))
+vi.mock("../platform/transport", () => ({ postSessionEvents: vi.fn(async () => "accepted") }))
 
 const { startEventCapture } = await import("./events")
 const { getActiveSink, resetSinkForTests } = await import("../events/events-sink")

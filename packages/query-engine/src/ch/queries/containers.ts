@@ -21,6 +21,7 @@
 // they are excluded by requiring `k8s.pod.name = ''` (same trick as the node
 // queries).
 
+import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
@@ -98,7 +99,7 @@ export interface ListContainersOutput {
 	readonly composeService: string
 	readonly runtime: string
 	readonly environment: string
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 	// Window averages, 0..1 scale (see file header).
 	readonly cpuPct: number
 	readonly memoryPct: number
@@ -117,8 +118,8 @@ const containerBaseConditions = (
 	metricNames: ReadonlyArray<string> = CONTAINER_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
 	$.OrgId.eq(orgIdParam),
-	$.TimeUnix.gte(param.dateTimeString("startTime")),
-	$.TimeUnix.lte(param.dateTimeString("endTime")),
+	$.TimeUnix.gte(param.dateTime("startTime")),
+	$.TimeUnix.lte(param.dateTime("endTime")),
 	$.ResourceAttributes.get("container.name").neq(""),
 	$.ResourceAttributes.get("k8s.pod.name").eq(""),
 	$.MetricName.in_(...metricNames),
@@ -151,8 +152,8 @@ const containerFilterConditions = (
 	),
 	...CONTAINER_FACETS.flatMap(({ include, exclude, attr }) => {
 		const expr = attr === null ? deploymentEnvExpr($.ResourceAttributes) : $.ResourceAttributes.get(attr)
-		const included = opts[include] as ReadonlyArray<string> | undefined
-		const excluded = opts[exclude] as ReadonlyArray<string> | undefined
+		const included = opts[include]
+		const excluded = opts[exclude]
 		return [
 			included?.length ? CH.inList(expr, included) : undefined,
 			excluded?.length ? CH.notInList(expr, excluded) : undefined,
@@ -227,7 +228,7 @@ export function listContainersQuery(opts: ListContainersOpts = {}) {
 function containerScopeCondition(
 	$: {
 		saturation: CH.Expr<number | null>
-		lastSeen: CH.Expr<string>
+		lastSeen: CH.Expr<DateTime.Utc>
 	},
 	scope: ContainerScope,
 ): CH.Condition {
@@ -237,7 +238,7 @@ function containerScopeCondition(
 		case "elevated":
 			return $.saturation.gte(0.6).and($.saturation.lt(0.9))
 		case "stale":
-			return $.lastSeen.lt(CH.intervalSub(param.dateTimeString("endTime"), STALE_CONTAINER_SECONDS))
+			return $.lastSeen.lt(CH.intervalSub(param.dateTime("endTime"), STALE_CONTAINER_SECONDS))
 	}
 }
 
@@ -279,7 +280,7 @@ export function listContainersSummaryQuery(opts: ListContainersOpts = {}) {
 			saturatedContainers: CH.countIf($.saturation.gte(0.9)),
 			elevatedContainers: CH.countIf($.saturation.gte(0.6).and($.saturation.lt(0.9))),
 			staleContainers: CH.countIf(
-				$.lastSeen.lt(CH.intervalSub(param.dateTimeString("endTime"), STALE_CONTAINER_SECONDS)),
+				$.lastSeen.lt(CH.intervalSub(param.dateTime("endTime"), STALE_CONTAINER_SECONDS)),
 			),
 		}))
 		.format("JSON")
@@ -299,8 +300,8 @@ export interface ContainerDetailSummaryOutput {
 	readonly composeProject: string
 	readonly composeService: string
 	readonly runtime: string
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 	readonly cpuPct: number
 	readonly memoryPct: number
 	readonly cpuLimitCores: number
@@ -326,8 +327,8 @@ export function containerDetailSummaryQuery(opts: ContainerDetailSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
 			CH.when(opts.hostName, (v: string) => $.ResourceAttributes.get("host.name").eq(v)),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
@@ -373,8 +374,8 @@ export function containerCountersSummaryQuery(opts: ContainerCountersSummaryOpts
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
 			CH.when(opts.hostName, (v: string) => $.ResourceAttributes.get("host.name").eq(v)),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
@@ -410,7 +411,7 @@ export interface ContainerGaugeTimeseriesOpts {
 }
 
 export interface ContainerTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly attributeValue: string
 	readonly avgValue: number
 }
@@ -424,8 +425,8 @@ export function containerGaugeTimeseriesQuery(opts: ContainerGaugeTimeseriesOpts
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
 			CH.when(opts.hostName, (v: string) => $.ResourceAttributes.get("host.name").eq(v)),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
@@ -476,8 +477,8 @@ export function containerSumTimeseriesQuery(opts: ContainerSumTimeseriesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("container.name").eq(opts.containerName),
 			CH.when(opts.hostName, (v: string) => $.ResourceAttributes.get("host.name").eq(v)),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),

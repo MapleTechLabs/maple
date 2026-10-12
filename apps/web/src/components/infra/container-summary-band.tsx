@@ -39,7 +39,7 @@ export function ContainerSummaryBand({
 			noun="container"
 			caption="share of the fleet by peak utilization"
 			segments={[
-				{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
+				{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 				{ key: "elevated", count: elevatedContainers, className: TONE_FILL.warn },
 				{ key: "saturated", count: saturatedContainers, className: TONE_FILL.crit },
 			]}

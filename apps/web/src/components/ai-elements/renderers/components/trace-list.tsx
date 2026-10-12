@@ -50,7 +50,7 @@ export function TraceList({ props }: RendererComponentProps<TraceListProps>) {
 					<TableHeader>
 						<TableRow>
 							<TableHead>Trace ID</TableHead>
-							<TableHead>Root Span</TableHead>
+							<TableHead>Root span</TableHead>
 							<TableHead className="text-right">Duration</TableHead>
 							<TableHead className="text-right">Spans</TableHead>
 							<TableHead className="pr-0">Services</TableHead>
@@ -81,7 +81,7 @@ export function TraceList({ props }: RendererComponentProps<TraceListProps>) {
 								>
 									{formatDuration(trace.durationMs)}
 								</TableCell>
-								<TableCell className="py-1 text-right text-muted-foreground">
+								<TableCell className="py-1 text-right text-muted-foreground tabular-nums">
 									{trace.spanCount ?? ""}
 								</TableCell>
 								<TableCell className="py-1 pr-0">

@@ -8,13 +8,13 @@ import {
 	OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { oauthAuthStates } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OAuthAuthStates } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { listAccounts } from "@maple/backend/services/integrations/CloudflareApi"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS } from "./oauth/connection-helpers"
 
 const CLOUDFLARE_PROVIDER = "cloudflare"
@@ -226,17 +226,19 @@ export class CloudflareOAuthService extends Context.Service<
 
 			yield* oauth.purgeExpiredStates(currentTime)
 			yield* oauth.dbExecute((db) =>
-				db.insert(oauthAuthStates).values({
-					state,
-					orgId,
-					provider: CLOUDFLARE_PROVIDER,
-					initiatedByUserId: userId,
-					redirectUri: options.callbackUrl,
-					returnTo: options.returnTo ?? null,
-					codeVerifier,
-					createdAt: msToDate(currentTime),
-					expiresAt: msToDate(currentTime + OAUTH_STATE_TTL_MS),
-				}),
+				db.run(
+					PG.insertInto(OAuthAuthStates).values({
+						state,
+						orgId,
+						provider: CLOUDFLARE_PROVIDER,
+						initiatedByUserId: userId,
+						redirectUri: options.callbackUrl,
+						returnTo: options.returnTo ?? null,
+						codeVerifier,
+						createdAt: currentTime,
+						expiresAt: currentTime + OAUTH_STATE_TTL_MS,
+					}),
+				),
 			)
 
 			// Cloudflare issues a refresh token only when `offline_access` is REQUESTED here — the
@@ -341,7 +343,7 @@ export class CloudflareOAuthService extends Context.Service<
 				refreshTokenCiphertext: refreshEnc?.ciphertext ?? null,
 				refreshTokenIv: refreshEnc?.iv ?? null,
 				refreshTokenTag: refreshEnc?.tag ?? null,
-				expiresAt: msToDate(expiresAt),
+				expiresAt,
 			})
 
 			return { orgId, returnTo: stateRow.returnTo ?? null }
@@ -377,7 +379,7 @@ export class CloudflareOAuthService extends Context.Service<
 			}
 			return {
 				connected: true,
-				connectedAt: dateToMs(row.createdAt),
+				connectedAt: row.createdAt,
 				// `Arr.map` carries the non-emptiness through, so the connected branch keeps its
 				// at-least-one-account guarantee.
 				accounts: Arr.map(grantedAccountsOfRow(row), (account): CloudflareConnectedAccount => ({

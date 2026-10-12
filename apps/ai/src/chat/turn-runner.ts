@@ -24,11 +24,12 @@ import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@m
 import type { PrReviewFailureReason } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
+import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
-import { ReturnedToolFailuresOkLayer } from "../platform/genai-spans"
+import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
@@ -43,6 +44,7 @@ import {
 	makeRunUsage,
 	prReplyForSession,
 	prReviewForSession,
+	type RunUsage,
 	savedFindingsRequest,
 	SUBMIT_DIAGNOSIS,
 	SUBMIT_REVIEW,
@@ -67,7 +69,7 @@ import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { toTenantContext, withConnectorActor } from "./turn-actor"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
+import { trackAiCredits, trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
 /**
  * The engine's per-step bookkeeping, which is named and therefore traced.
@@ -163,6 +165,10 @@ const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an
  * `usage` is the turn's whole total: every model call the run made, including any the engine spent
  * compacting, and any a sub-agent made against the parent's accumulator.
  *
+ * **Two meters while AI credits roll out.** `ai_credits` charges each model call in dollars,
+ * priced by Autumn from the model's rates, so a cache read or a cheap model costs what it costs.
+ * The raw `ai_input_tokens` / `ai_output_tokens` counts keep running beside it for comparison.
+ *
  * **In a finalizer, not on the happy path.** A turn that failed, was stopped, or ran out of steps
  * is still billed for every step the provider actually served — the loop accounts a step's usage
  * before it checks whether the turn survived. Metering follows the spend, not the outcome. (A step
@@ -173,7 +179,7 @@ export const meterTurn = (
 	input: Pick<RunChatSessionTurnInput, "sessionId" | "messageId">,
 	tenant: Pick<TenantContext, "orgId">,
 	origin: ChatTurnOrigin,
-	usage: { readonly input: number; readonly output: number },
+	usage: Pick<RunUsage, "input" | "output" | "charges">,
 ): Effect.Effect<void> => {
 	if (usage.input <= 0 && usage.output <= 0) return Effect.void
 	const billing = investigationBilling(input.sessionId, input.messageId) ??
@@ -183,13 +189,24 @@ export const meterTurn = (
 		}
 	// Bookkeeping must never fail a delivered answer: the tracker is infallible and bounded here too.
 	// It runs as a finalizer, outside any graph that is sure to carry an HttpClient, so it brings its own.
-	return trackTokenUsage({
-		orgId: tenant.orgId,
-		inputTokens: usage.input,
-		outputTokens: usage.output,
-		idempotencyKey: billing.idempotencyKey,
-		source: billing.source,
-	}).pipe(
+	return Effect.all(
+		[
+			trackAiCredits({
+				orgId: tenant.orgId,
+				spends: usage.charges,
+				idempotencyKey: billing.idempotencyKey,
+				source: billing.source,
+			}),
+			trackTokenUsage({
+				orgId: tenant.orgId,
+				inputTokens: usage.input,
+				outputTokens: usage.output,
+				idempotencyKey: billing.idempotencyKey,
+				source: billing.source,
+			}),
+		],
+		{ concurrency: "unbounded", discard: true },
+	).pipe(
 		Effect.timeout(METERING_TIMEOUT),
 		Effect.ignore,
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
@@ -236,23 +253,25 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const [
 		{ InvestigationServicesLive },
-		{ layerPg },
-		{ mapleDbConnectionLayer },
+		{ DatabasePgLive },
+		{ layerMapleDbConnection },
 		{
 			layerDecisionModelFromConfig,
-			layerFindingEmbedderFromConfig,
+			FindingEmbedderFromConfigLive,
 			layerLlmFromConfig,
 			loadLlmSettings,
 			resolveReviewModel,
 			resolveTriageModel,
 		},
 		{ McpToolExecutor },
+		{ withSandboxBreaker },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
 		import("@maple/backend/platform/DatabasePgLive"),
 		import("@maple/backend/platform/pg-connection-source"),
 		import("../platform/Llm"),
 		import("../mcp/dispatcher"),
+		import("./sandbox-breaker"),
 	])
 	const { InvestigationService } = await import("@maple/backend/services/errors/InvestigationService")
 	const { PrReviewService } = await import("@maple/backend/services/pr-review/PrReviewService")
@@ -263,13 +282,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		InvestigationServicesLive.pipe(
 			Layer.provideMerge(layerDecisionModelFromConfig(input.workersAi)),
 			// Read by `PrReviewService` as it is built: the review's feedback filter.
-			Layer.provideMerge(layerFindingEmbedderFromConfig),
+			Layer.provideMerge(FindingEmbedderFromConfigLive),
 			Layer.provideMerge(layerLlmFromConfig(input.workersAi)),
-			Layer.provideMerge(layerPg),
-			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
+			Layer.provideMerge(DatabasePgLive),
+			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(ReturnedToolFailuresOkLayer.pipe(Layer.provideMerge(telemetry.layer))),
+			Layer.provideMerge(ReturnedToolFailuresOkLive.pipe(Layer.provideMerge(telemetry.layer))),
 		),
 	)
 
@@ -305,7 +324,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const investigations = yield* InvestigationService
 		const reviews = yield* PrReviewService
 		const conversations = yield* PrReviewConversationService
-		const toolExecutor = yield* McpToolExecutor
+		// Shared by the kickoff's clone, every pass of the turn and its review_files children.
+		const toolExecutor = yield* withSandboxBreaker(yield* McpToolExecutor)
 		const runTenant = yield* withConnectorActor(tenant, origin)
 		if (prReviewId !== undefined && input.abandoned === true) {
 			observability.outcome = "abandoned"
@@ -326,7 +346,14 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// An unreadable row reviews anyway: the row's own guards still refuse a second report.
 			const current = yield* reviews
 				.getReview(tenant.orgId, prReviewId)
-				.pipe(Effect.catchCause(() => Effect.succeed(Option.none())))
+				.pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning(
+							"Could not read the review being resumed; reviewing anyway",
+							cause,
+						).pipe(Effect.as(Option.none())),
+					),
+				)
 			const settled = Option.match(current, {
 				onNone: () => false,
 				onSome: (review) => review.status !== "queued" && review.status !== "running",
@@ -340,8 +367,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			}
 		}
 		// Clone the commit while the model reads the diff, rather than when its first source tool
-		// asks and waits on it. A child of the turn: a clone still running when the turn ends
-		// carries on in the container.
+		// asks and waits on it. A child of the turn (no request Scope here, so `forkRequestScoped`
+		// parents it on this fiber): a clone still running when the turn ends carries on in the container.
 		if (prReviewId !== undefined) {
 			yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
 				Effect.flatMap(
@@ -359,13 +386,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
 					),
 				),
-				Effect.forkChild,
+				forkRequestScoped,
 			)
 		}
 		// An investigation picks its commit from telemetry mid-pass, so warm the repositories it
 		// could read instead: the deployed commit then clones from a filled mirror in seconds.
 		if (investigationId !== undefined) {
-			yield* toolExecutor.prepareConnectedRepositories(runTenant).pipe(Effect.forkChild)
+			yield* forkRequestScoped(toolExecutor.prepareConnectedRepositories(runTenant))
 		}
 		const history = input.session.history()
 		const tags = { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId }

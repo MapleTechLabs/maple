@@ -196,8 +196,8 @@ describe("MembershipRevocationService", () => {
 			})
 			const cliToken = yield* cli.poll(started.deviceCode)
 			yield* seedMobileDevice(db, "dev_leaver", orgId, userId)
-			yield* seedEmailDestination(db, "dest_shared", orgId, [userId, stayerId])
-			yield* seedChatIdentity(db, "cid_leaver", orgId, userId)
+			yield* seedEmailDestination(db, "00000000-0000-4000-8000-0000000000d1", orgId, [userId, stayerId])
+			yield* seedChatIdentity(db, "00000000-0000-4000-8000-0000000000c1", orgId, userId)
 
 			expect(Option.isSome(yield* apiKeys.resolveByKey(grant.tokens.access_token))).toBe(true)
 
@@ -223,7 +223,7 @@ describe("MembershipRevocationService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(refreshFailure._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
+			expect(refreshFailure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
 
 			expect(yield* countRows(db, "select count(*)::int as count from mobile_devices")).toBe(0)
 			expect(yield* countRows(db, "select count(*)::int as count from cli_device_authorizations")).toBe(
@@ -241,7 +241,7 @@ describe("MembershipRevocationService", () => {
 			const destination = yield* Effect.promise(() =>
 				queryFirstRow<{ config_json: { memberUserIds: string[] }; enabled: boolean }>(
 					db,
-					"select config_json, enabled from alert_destinations where id = 'dest_shared'",
+					"select config_json, enabled from alert_destinations where id = '00000000-0000-4000-8000-0000000000d1'",
 				),
 			)
 			expect(destination?.config_json.memberUserIds).toEqual([stayerId])
@@ -273,7 +273,7 @@ describe("MembershipRevocationService", () => {
 		const cache = recordingEdgeCache()
 		return Effect.gen(function* () {
 			const revocation = yield* MembershipRevocationService
-			yield* seedEmailDestination(db, "dest_solo", orgId, [userId])
+			yield* seedEmailDestination(db, "00000000-0000-4000-8000-0000000000d2", orgId, [userId])
 
 			yield* revocation.revokeMembership(orgId, userId)
 
@@ -300,7 +300,7 @@ describe("MembershipRevocationService", () => {
 			const oauth = yield* McpOAuthService
 			yield* issueMcpGrant(oauth, userId, orgId)
 			yield* seedMobileDevice(db, "dev_retry", orgId, userId)
-			yield* seedEmailDestination(db, "dest_retry", orgId, [userId, stayerId])
+			yield* seedEmailDestination(db, "00000000-0000-4000-8000-0000000000d3", orgId, [userId, stayerId])
 
 			const first = yield* revocation.revokeMembership(orgId, userId)
 			const second = yield* revocation.revokeMembership(orgId, userId)

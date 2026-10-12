@@ -134,14 +134,14 @@ in `pr_reviews.publish_error` and is not retried into the run.
 
 ### Persistence and settings
 
-`pr_reviews` (`packages/db/src/schema/vcs.ts`, migration `20260922213359_pr_reviews`, which also
+`pr_reviews` (`packages/db/src/tables/vcs.ts`, migration `20260922213359_pr_reviews`, which also
 adds `vcs_repositories.pr_review_enabled`) holds the PR identity (`repository_id`, `number`,
 `head_sha`, `base_sha`, `url`, `title`), `status` (`queued`, `running`, `completed`, `failed`,
 `skipped`) with `skip_reason`, `session_id`, `report_json`, `score`, the three published URLs,
 `publish_error`, `error`, `model`, token counts and timestamps. The prd deploy applies the
 migration. The table is registered with `OrganizationService`, so an organization purge removes it.
 
-`PUT /api/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`. Reviews have
+`PUT /internal/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`. Reviews have
 their own section, **Code Review** (`/code-review`, a sidebar row behind the flag), with four tabs:
 
 - **Analytics**: pull requests reviewed, reviews, time to merge and issues caught against the
@@ -155,7 +155,7 @@ their own section, **Code Review** (`/code-review`, a sidebar row behind the fla
   (`pr_review_settings.defaults`), and per repository the switch and its overrides.
 
 A review runs with `mergePrReviewConfig(defaults, repository)`: a repository field overrides the
-organization's, and instructions and ignored paths add up. The reads are `GET /api/code-review/*`
+organization's, and instructions and ignored paths add up. The reads are `GET /internal/code-review/*`
 (`PrReviewAnalyticsService`); settings stay on the integrations endpoints.
 
 ### Observability of the reviewer
@@ -184,12 +184,12 @@ best effort with a 20 s ceiling, and stores its result on `pr_reviews.telemetry_
 
 `analyzeTelemetry` (pure) turns that and the pull request's patches into:
 
-| Fact | How it is decided | What it becomes |
-| --- | --- | --- |
-| Contract break | A string literal on a removed line, not added back anywhere in the pull request, that the warehouse knows as a span name, attribute key or metric name, and that an alert or dashboard reads as a whole token | `TEL-01` finding, critical when an alert reads it, warn for dashboards only |
-| Hot file | Literals anywhere in the file's patch that name a production operation (exact span name, or a route inside `METHOD /route`) | Kickoff traffic block; the model's observability and performance notes in files over 10k calls/day are raised to warnings |
-| Linked issue | An open issue whose top frame ends in the changed file's directory and name (any extension) | Kickoff and comment section; compared again after the merge ships |
-| Cost note | A new log call in a hot file (calls/day × 30 × average record size), or a span name built from a template | `TEL-02` (≥ 1 GB/month, warn from 10 GB) and `TEL-03` findings |
+| Fact           | How it is decided                                                                                                                                                                                             | What it becomes                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Contract break | A string literal on a removed line, not added back anywhere in the pull request, that the warehouse knows as a span name, attribute key or metric name, and that an alert or dashboard reads as a whole token | `TEL-01` finding, critical when an alert reads it, warn for dashboards only                                               |
+| Hot file       | Literals anywhere in the file's patch that name a production operation (exact span name, or a route inside `METHOD /route`)                                                                                   | Kickoff traffic block; the model's observability and performance notes in files over 10k calls/day are raised to warnings |
+| Linked issue   | An open issue whose top frame ends in the changed file's directory and name (any extension)                                                                                                                   | Kickoff and comment section; compared again after the merge ships                                                         |
+| Cost note      | A new log call in a hot file (calls/day × 30 × average record size), or a span name built from a template                                                                                                     | `TEL-02` (≥ 1 GB/month, warn from 10 GB) and `TEL-03` findings                                                            |
 
 Tests, docs, fixtures and config files are never read for any of these. A name quoted on an
 added comment or log line does not count as adding it back.
@@ -383,6 +383,75 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
 - When a pull request closes, its threads are read once more for reactions and dismissals.
   `maple.pr_review.reactions_up` / `reactions_down` on the span are the live precision signal.
 
+### Before merge
+
+Every review comment carries a "Before merge" task list: what has to happen outside the diff
+before the change ships. It is built at submit (`services/pr-review/merge-checklist.ts`) in three
+pure steps, with the service doing only the GitHub reads between them:
+
+1. `detectMergeSteps` reads the changed files. **Names** the diff starts reading: config helpers
+   (`requiredSecret("X")`, `Config.redacted("X")`), a name held in a constant named for config
+   (`CLIENT_SECRET_CONFIG = "X"`), runtime reads (`process.env.X` and the other languages'
+   equivalents), `${{ secrets.X }}` / `${{ vars.X }}` in workflows, `.env.example` keys.
+   A name a removed line still mentions is a move; tests, docs and `scripts/` are skipped.
+   **File steps**: added migrations, warehouse schema (`datasources.ts`, `.datasource`, `.pipe`)
+   and deployment config (`wrangler.*`, `alchemy.run.ts`, Terraform, Dockerfiles).
+2. `searchVerdict` rules on each name from a code search of the default branch (up to 10 names, 5
+   hits each): `exists` only when a hit holds the name as a whole word, `new` otherwise, and
+   `unverified` when no search ran or it failed.
+3. `buildChecklist` lists new and unverified names (a missed secret costs more than a redundant
+   line), the file steps and the reviewer's own steps (`beforeMerge` on `submit_review`, up to six).
+   A reviewer step whose text contains a diff step's `subject` (the exact name or path) replaces it
+   and takes over its kind and subject, so it keeps the step's identity. `ignorePaths` apply. The
+   list never changes the check's conclusion.
+
+**Ticks carry across pushes.** Each review posts its own comment, so steps are tracked per pull
+request in `pr_review_merge_steps`, keyed by `mergeStepKey` (`secret:STRIPE_KEY`,
+`migration:<path>`, `manual:<slug of the title>`). `reconcileMergeSteps` runs at submit: a step
+keeps its stored key and shows ticked when it was ticked, a reworded manual step matches a stored
+one on its telling words, and an open step the head no longer produces becomes `obsolete` (a done
+one stays done). A partial review tracks nothing, like its findings.
+
+Every rendered task ends with a hidden `<!-- ms:<key> -->`. Ticking a box edits the App's comment,
+which arrives as an `issue_comment` `edited` event; `GithubProvider` maps it to a
+`pull-request-checklist` job only when the comment is the App's own review comment, the editor is a
+person, and `changes.body.from` differs from the new body in at least one tagged box (the App's own
+re-renders change none). `PrReviewService.onMergeStepsTicked` records `done`, who and when, or
+reopens an unticked step; obsolete steps ignore ticks. The next comment renders them `[x]` with
+"ticked by @login", and the Code Review sheet strikes them through.
+
+**At merge.** The `closed` + `merged` event claims the pull request's open steps (`reminded_at`)
+and, if there are any, posts one comment listing them (`<!-- maple-pr-merge-steps -->`). The claim
+comes first, so a redelivered event posts nothing.
+
+**Debugging.** `submitReview` sets `maple.pr_review.checklist.*` on its span: `status` (`unread`
+when the files could not be read), `names_new` / `names_exists` / `names_unverified`, `file_steps`,
+`reviewer_steps`, `replaced`, `ignored`, `cut`. It also logs `[PrReview] before-merge checklist`
+with the same fields for any review that found something. To see what a pull request would get
+without running the model:
+
+```bash
+bun run --cwd apps/ai review:checklist MapleTechLabs/maple 1081
+```
+
+It prints each name's verdict, the file steps and the section as the comment renders it. Against a
+merged pull request, names read `exists`, since the default branch now has them.
+
+**Eval.** `merge-checklist.corpus.test.ts` scores the detectors on real pull requests in
+`bun run test`: recall per kind, precision, and steps listed on pull requests that needed nothing.
+Each case under `__fixtures__/merge-checklist/` is generated, and `labels.json` beside them holds
+what a careful reviewer would list (`expected`) and what is fine either way (`acceptable`). Add or
+refresh a case with:
+
+```bash
+bun run --cwd apps/ai review:checklist MapleTechLabs/maple 1290 --snapshot
+```
+
+It rules on names with a whole-word `git grep` at the pull request's base commit in a local clone
+(`--repo-dir`, default this checkout), cuts the patches to the lines detection could read, checks
+the cut decides the same steps, and never touches `labels.json`. A detector change that reads a new
+name fails the test until the cases it touches are re-snapshotted.
+
 ### Learning from feedback
 
 - Every stored finding's `category: title` and body are embedded (`FindingEmbedder`, wired in
@@ -421,10 +490,11 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
 
 ### Settings
 
-- `GET`/`PUT /api/integrations/github/repositories/:id/pr-review/config`: instructions, ignored
+- `GET`/`PUT /internal/integrations/github/repositories/:id/pr-review/config`: instructions, ignored
   paths, lenses, inline threshold, drafts and a per-repository daily limit. Stated in the kickoff
-  and enforced on submit. `GET .../pr-reviews` lists the 50 newest reviews.
-- Integrations → GitHub shows the settings and the review history beside each repository's switch.
+  and enforced on submit. Review history is `GET /internal/code-review/reviews`.
+- Code Review → Settings shows the settings beside each repository's switch; Code Review → Pull
+  requests lists the reviews.
 
 ### What the GitHub App needs
 

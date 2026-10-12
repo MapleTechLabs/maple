@@ -340,7 +340,7 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 									<>
 										{prev && capH > 0 && (
 											<div
-												className={cn("absolute inset-x-0 rounded-[4px]", LOST_CLASS)}
+												className={cn("absolute inset-x-0 rounded-sm", LOST_CLASS)}
 												style={{
 													bottom: `${step.ofFirst * 100}%`,
 													height: `${capH * 100}%`,
@@ -349,7 +349,7 @@ export function FunnelDropoffChart({ data, className, unit, showStepPercent }: Q
 											/>
 										)}
 										<div
-											className="absolute inset-x-0 bottom-0 rounded-[4px] bg-[var(--chart-2)]"
+											className="absolute inset-x-0 bottom-0 rounded-sm bg-[var(--chart-2)]"
 											style={{
 												height: `${Math.max(step.ofFirst * 100, step.value > 0 ? 1.5 : 0)}%`,
 												transition: "height 220ms ease",

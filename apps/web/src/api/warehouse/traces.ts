@@ -5,6 +5,7 @@ import {
 	type AttributeFilter,
 	type AttributeFilterLeaf,
 	formatWarehouseDateTime,
+	CH,
 } from "@maple/query-engine"
 import { TraceId, SpanId } from "@maple/domain"
 import {
@@ -259,91 +260,107 @@ const PROJECTED_ATTR_KEYS = [
 	"screen.name",
 ] as const
 
-/** Transform a list row from tracesListQuery */
-function transformSpanListRow(row: Record<string, unknown>): Trace {
-	const spanAttrs = (row.spanAttributes ?? {}) as Record<string, string>
+const StringRecord = Schema.Record(Schema.String, Schema.String)
+/** The engine ships a boolean; a raw `UInt8` flag still reads as one. */
+const HasError = Schema.Union([Schema.Boolean, CH.CHNumber])
+
+/** A per-span row of the traces list, as the query engine ships it. */
+const SpanListRow = Schema.Struct({
+	traceId: Schema.String,
+	timestamp: Schema.String,
+	spanId: Schema.String,
+	parentSpanId: Schema.optionalKey(Schema.String),
+	serviceName: Schema.String,
+	spanName: Schema.String,
+	durationMs: CH.CHNumber,
+	statusCode: Schema.String,
+	spanKind: Schema.String,
+	hasError: HasError,
+	services: Schema.optionalKey(Schema.Array(Schema.String)),
+	spanAttributes: Schema.optionalKey(StringRecord),
+})
+
+/** A grouped row of the traces list (`groupByTrace`, one row per TraceId). */
+const TraceListRow = Schema.Struct({
+	traceId: Schema.String,
+	startTime: Schema.String,
+	endTime: Schema.String,
+	durationMs: CH.CHNumber,
+	spanCount: CH.CHNumber,
+	services: Schema.Array(Schema.String),
+	rootSpanName: Schema.String,
+	rootSpanKind: Schema.String,
+	rootSpanStatusCode: Schema.String,
+	rootSpanAttributes: StringRecord,
+	hasError: HasError,
+})
+
+const decodeSpanListRows = Schema.decodeUnknownEffect(Schema.Array(SpanListRow))
+const decodeTraceListRows = Schema.decodeUnknownEffect(Schema.Array(TraceListRow))
+
+function transformSpanListRow(row: typeof SpanListRow.Type): Trace {
+	const spanAttrs = row.spanAttributes ?? {}
 	const rootSpanAttributes: Record<string, string> = {}
 	for (const key of PROJECTED_ATTR_KEYS) {
 		if (spanAttrs[key]) rootSpanAttributes[key] = spanAttrs[key]
 	}
-
-	const timestamp = String(row.timestamp)
-	const serviceName = String(row.serviceName)
-	const services = Array.isArray(row.services)
-		? Array.from(
-				new Set(
-					row.services.flatMap((service) => {
-						const name = String(service)
-						return name ? [name] : []
-					}),
-				),
-			)
-		: serviceName
-			? [serviceName]
+	const services = row.services
+		? Array.from(new Set(row.services.filter((name) => name !== "")))
+		: row.serviceName
+			? [row.serviceName]
 			: []
 	return {
-		traceId: toTraceId(String(row.traceId)),
-		spanId: String(row.spanId),
+		traceId: toTraceId(row.traceId),
+		spanId: row.spanId,
 		isRootSpan: !row.parentSpanId,
-		startTime: timestamp,
-		endTime: timestamp,
-		durationMs: Number(row.durationMs),
+		startTime: row.timestamp,
+		endTime: row.timestamp,
+		durationMs: row.durationMs,
 		spanCount: 1,
 		services,
 		rootSpan: {
-			name: String(row.spanName),
-			kind: String(row.spanKind),
-			statusCode: String(row.statusCode),
+			name: row.spanName,
+			kind: row.spanKind,
+			statusCode: row.statusCode,
 			attributes: rootSpanAttributes,
 			http: getHttpInfo({
-				spanName: String(row.spanName),
+				spanName: row.spanName,
 				spanAttributes: rootSpanAttributes,
-				spanKind: String(row.spanKind),
+				spanKind: row.spanKind,
 			}),
 		},
-		rootSpanName: String(row.spanName),
+		rootSpanName: row.spanName,
 		hasError: row.hasError === true || row.hasError === 1,
 	}
 }
 
-/** Transform a grouped row from the `groupByTrace` list (one row per TraceId). */
-function transformTraceListRow(row: Record<string, unknown>): Trace {
+function transformTraceListRow(row: typeof TraceListRow.Type): Trace {
 	const rootSpanAttributes: Record<string, string> = {}
-	if (typeof row.rootSpanAttributes === "object" && row.rootSpanAttributes !== null) {
-		for (const [key, value] of Object.entries(row.rootSpanAttributes)) {
-			if (typeof value === "string" && value.length > 0) rootSpanAttributes[key] = value
-		}
+	for (const [key, value] of Object.entries(row.rootSpanAttributes)) {
+		if (value.length > 0) rootSpanAttributes[key] = value
 	}
-	const services = Array.isArray(row.services)
-		? row.services.flatMap((service) => {
-				const name = String(service)
-				return name ? [name] : []
-			})
-		: []
-	const rootSpanName = String(row.rootSpanName)
-	const rootSpanKind = String(row.rootSpanKind)
 	return {
-		traceId: toTraceId(String(row.traceId)),
+		traceId: toTraceId(row.traceId),
 		// Grouped rows are whole traces — there is no single span to deep-link.
 		spanId: "",
 		isRootSpan: true,
-		startTime: String(row.startTime),
-		endTime: String(row.endTime),
-		durationMs: Number(row.durationMs),
-		spanCount: Number(row.spanCount),
-		services,
+		startTime: row.startTime,
+		endTime: row.endTime,
+		durationMs: row.durationMs,
+		spanCount: row.spanCount,
+		services: row.services.filter((name) => name !== ""),
 		rootSpan: {
-			name: rootSpanName,
-			kind: rootSpanKind,
-			statusCode: String(row.rootSpanStatusCode),
+			name: row.rootSpanName,
+			kind: row.rootSpanKind,
+			statusCode: row.rootSpanStatusCode,
 			attributes: rootSpanAttributes,
 			http: getHttpInfo({
-				spanName: rootSpanName,
+				spanName: row.rootSpanName,
 				spanAttributes: rootSpanAttributes,
-				spanKind: rootSpanKind,
+				spanKind: row.rootSpanKind,
 			}),
 		},
-		rootSpanName,
+		rootSpanName: row.rootSpanName,
 		hasError: row.hasError === true || row.hasError === 1,
 	}
 }
@@ -439,9 +456,15 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 		)
 	}
 
+	const toTransformError = (cause: Schema.SchemaError) =>
+		new WarehouseTransformError({ operation: "queryEngine.listTraces", message: cause.message, cause })
 	const scanned = groupByTrace
-		? response.result.data.map(transformTraceListRow)
-		: response.result.data.map(transformSpanListRow)
+		? (yield* decodeTraceListRows(response.result.data).pipe(Effect.mapError(toTransformError))).map(
+				transformTraceListRow,
+			)
+		: (yield* decodeSpanListRows(response.result.data).pipe(Effect.mapError(toTransformError))).map(
+				transformSpanListRow,
+			)
 
 	const minSpanCount = groupByTrace ? input.minSpanCount : undefined
 	const traces = scanned.filter(
@@ -714,7 +737,7 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 
 	const toItem = (row: { name: string; count: number }): FacetItem => ({
 		name: row.name,
-		count: Number(row.count),
+		count: row.count,
 	})
 	const byType = (type: string) => facetsData.filter((r) => r.facetType === type).map(toItem)
 	const errorRow = facetsData.find((r) => r.facetType === "errorCount")

@@ -8,6 +8,7 @@
  */
 import { memo } from "react"
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type EdgeProps } from "@xyflow/react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 
 import type { EdgeKind } from "./provenance-graph"
@@ -100,13 +101,14 @@ export const FlowEdge = memo(function FlowEdge({
 			<circle cx={targetX} cy={targetY} r={DOT_R} className={live ? DOT_LIVE : DOT} />
 			{data?.label ? (
 				<EdgeLabelRenderer>
-					<span
+					<Eyebrow
+						variant="mono"
 						className={cn(
 							// `whitespace-pre`, not `pre-line`: the span is shrink-to-fit inside
 							// an absolutely-positioned layer, so anything that permits wrapping
 							// collapses "TRIPPED" into a 23px column of single letters.
 							"pointer-events-none absolute z-10 whitespace-pre text-center",
-							"font-mono text-4xs font-medium uppercase leading-3 tracking-[0.1em] text-muted-foreground",
+							"text-4xs leading-3 text-muted-foreground",
 						)}
 						// Parked above the midpoint of the straight run, not on it.
 						style={{
@@ -114,7 +116,7 @@ export const FlowEdge = memo(function FlowEdge({
 						}}
 					>
 						{data.label.replace(" ", "\n")}
-					</span>
+					</Eyebrow>
 				</EdgeLabelRenderer>
 			) : null}
 		</>

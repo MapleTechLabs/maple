@@ -366,8 +366,6 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	"infra/listPodsQuery",
 	"infra/listPodsSummaryQuery",
 	"infra/podDetailSummaryQuery",
-	"infra/listNodesQuery",
-	"infra/nodeDetailSummaryQuery",
 	"infra/listWorkloadsQuery",
 	"infra/workloadDetailSummaryQuery",
 	"service-infra/serviceWorkloadsSQL",

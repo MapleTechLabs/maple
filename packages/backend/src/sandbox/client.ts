@@ -20,7 +20,7 @@ import { SandboxFetcher } from "@maple/backend/platform/bindings"
 import { Env } from "@maple/backend/platform/Env"
 
 export class SandboxClientError extends Schema.TaggedError<SandboxClientError>()(
-	"@maple/api/sandbox/SandboxClientError",
+	"@maple/backend/sandbox/SandboxClientError",
 	{ message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
 ) {}
 

@@ -1,4 +1,4 @@
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
 import { ChatOutboundError, chatConnectorId, type ChatAlertBlock, type ChatBlock } from "@maple/chat-platform"
 import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
@@ -44,8 +44,8 @@ const destinationRow: AlertDestinationRow = {
 	lastFailureAt: null,
 	disabledAt: null,
 	disabledReason: null,
-	createdAt: new Date(0),
-	updatedAt: new Date(0),
+	createdAt: 0,
+	updatedAt: 0,
 	createdBy: "user_1",
 	updatedBy: "user_1",
 }

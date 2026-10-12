@@ -55,10 +55,10 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				hasError: params.has_error ?? false,
-				limit: params.limit,
-				offset: params.offset,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.has_error": params.has_error ?? false,
+				"maple.ai.limit": params.limit,
+				"maple.ai.offset": params.offset,
 			})
 
 			if (params.attribute_value !== undefined && params.attribute_key === undefined) {

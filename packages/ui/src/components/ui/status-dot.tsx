@@ -12,6 +12,7 @@ export const statusDotVariants = cva("relative inline-flex shrink-0 rounded-full
 			warn: TONE_FILL.warn,
 			ok: TONE_FILL.ok,
 			info: TONE_FILL.info,
+			done: TONE_FILL.done,
 			neutral: TONE_FILL.neutral,
 			// In-flight work (running investigations, live streams).
 			live: "bg-primary",

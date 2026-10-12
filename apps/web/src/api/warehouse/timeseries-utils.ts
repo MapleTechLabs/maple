@@ -67,7 +67,7 @@ export function toIsoBucket(value: string | Date): string {
 		return value.toISOString()
 	}
 
-	const raw = String(value).trim()
+	const raw = value.trim()
 	const tinybirdDateTimeMatch = raw.match(TINYBIRD_DATETIME_RE)
 	const normalized = tinybirdDateTimeMatch
 		? `${tinybirdDateTimeMatch[1]}T${tinybirdDateTimeMatch[2]}${tinybirdDateTimeMatch[3] ?? ""}Z`

@@ -6,9 +6,9 @@
 // deploy that shipped it. Both read `service_operations_*`, never raw spans.
 
 import * as CH from "@maple-dev/effect-orm/expr"
-import { from, param } from "@maple-dev/effect-orm/clickhouse"
+import { from } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import { ServiceOperationsHourly, ServiceOperationsMinutely, orgIdParam } from "../tables"
+import { ServiceOperationsHourly, ServiceOperationsMinutely, orgIdParam, utcSecondsParam } from "../tables"
 
 export interface OperationTrafficOpts {
 	/** Only these services; absent means every service of the org. */
@@ -42,8 +42,8 @@ export function operationTrafficHourlyQuery(opts: OperationTrafficOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(param.dateTimeSeconds("startTime")),
-			$.Hour.lte(param.dateTimeSeconds("endTime")),
+			$.Hour.gte(utcSecondsParam("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
 			opts.serviceNames?.length ? CH.inList($.ServiceName, opts.serviceNames) : undefined,
 			opts.spanNames?.length ? CH.inList($.SpanName, opts.spanNames) : undefined,
 		])
@@ -64,8 +64,8 @@ export function operationTrafficMinutelyQuery(opts: OperationTrafficOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Minute.gte(param.dateTimeSeconds("startTime")),
-			$.Minute.lt(param.dateTimeSeconds("endTime")),
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lt(utcSecondsParam("endTime")),
 			opts.serviceNames?.length ? CH.inList($.ServiceName, opts.serviceNames) : undefined,
 			opts.spanNames?.length ? CH.inList($.SpanName, opts.spanNames) : undefined,
 		])

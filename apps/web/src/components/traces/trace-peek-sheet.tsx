@@ -190,7 +190,7 @@ export function TracePeekSheet({
 									disabled={!canStepBack}
 									onClick={() => onStep(-1)}
 								>
-									<ArrowUpIcon size={14} />
+									<ArrowUpIcon />
 								</IconButton>
 								<IconButton
 									variant="outline"
@@ -199,7 +199,7 @@ export function TracePeekSheet({
 									disabled={!canStepForward}
 									onClick={() => onStep(1)}
 								>
-									<ArrowDownIcon size={14} />
+									<ArrowDownIcon />
 								</IconButton>
 								{position ? (
 									<span className="ml-1 font-mono text-2xs tabular-nums text-muted-foreground">
@@ -338,7 +338,7 @@ function TracePeekLoaded({
 		return (
 			<>
 				<SheetHeader className="pr-14">
-					<SheetTitle className="font-mono text-[15px]">{shortId(traceId, "trace")}</SheetTitle>
+					<SheetTitle className="font-mono text-title">{shortId(traceId, "trace")}</SheetTitle>
 					<SheetDescription>
 						{data.spans.length === 0
 							? "This trace could not be found. It may have expired or not been ingested yet."

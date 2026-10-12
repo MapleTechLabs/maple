@@ -5,6 +5,7 @@ import {
 	isDatasourceDefinition,
 } from "@maple-dev/effect-orm/tinybird"
 import * as Datasources from "@maple/domain/tinybird"
+import { Array as Arr, Order } from "effect"
 
 // Live introspection of the `defineDatasource` exports in
 // packages/domain/src/tinybird/datasources.ts. This neutral catalog powers
@@ -211,10 +212,13 @@ export function listWarehouseTables(): ReadonlyArray<TableSummary> {
  * rather than leaking cross-tenant rows.
  */
 export function listOrgScopedDatasourceNames(): ReadonlyArray<string> {
-	return collectDatasources()
-		.filter((ds) => "OrgId" in ds._schema)
-		.map((ds) => ds._name)
-		.sort((a, b) => a.localeCompare(b))
+	// Code-unit order: `localeCompare` builds an ICU collator on first use, a cold-start cost.
+	return Arr.sort(
+		collectDatasources()
+			.filter((ds) => "OrgId" in ds._schema)
+			.map((ds) => ds._name),
+		Order.String,
+	)
 }
 
 export function describeWarehouseTable(name: string): TableInfo | null {
