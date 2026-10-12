@@ -103,14 +103,24 @@ describe("ClickHouse DDL emitter", () => {
 		expect(orgId?.jsonPath).toBe("$.resource_attributes.maple_org_id")
 		const body = spec.find((c) => c.column === "Body")
 		expect(body?.jsonPath).toBe("$.body")
-		const resourceItems = spec.find((c) => c.column === "ResourceAttributeItems")
-		expect(resourceItems?.jsonPath).toBe("$.ResourceAttributeItems[:]")
-		expect(resourceItems?.hasDefaultExpression).toBe(true)
+		// ClickHouse-only columns are never ingested, so the spec leaves them out.
+		expect(spec.some((c) => c.column === "ResourceAttributeItems")).toBe(false)
 
 		// Datasources populated only by MVs (e.g. service_usage) have no JSONPaths.
 		const serviceUsage = manifest.datasources.find((ds) => ds.name === "service_usage")
 		const serviceUsageSpec = emitJsonPathSpec(serviceUsage!)
 		expect(serviceUsageSpec.every((c) => c.jsonPath === null)).toBe(true)
+	})
+
+	it("appends the ClickHouse-only search columns that Tinybird does not store", async () => {
+		const manifest = Effect.runSync(buildTinybirdProjectManifest)
+		const traces = manifest.datasources.find((ds) => ds.name === "traces")
+		expect(traces?.content).not.toContain("SpanAttributeItems")
+
+		const ddl = emitCreateTable(traces!)
+		expect(ddl).toContain(
+			"SpanAttributeItems Array(String) DEFAULT arrayMap((k, v) -> concat(k, char(31), v), mapKeys(SpanAttributes), mapValues(SpanAttributes)),\n    INDEX idx_trace_id",
+		)
 	})
 
 	it("respects the engineFlavor option for swapping MergeTree → ReplicatedMergeTree", async () => {

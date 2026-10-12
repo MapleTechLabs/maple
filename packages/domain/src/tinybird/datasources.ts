@@ -14,9 +14,6 @@ export const utcDateTime = () => t.dateTime().brand(CH.dateTime.schema)
 export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) =>
 	t.dateTime64(precision).brand(CH.dateTime64.schema)
 
-const attributeItemsExpr = (mapColumn: string): string =>
-	`arrayMap((k, v) -> concat(k, char(31), v), mapKeys(${mapColumn}), mapValues(${mapColumn}))`
-
 /**
  * OpenTelemetry logs datasource
  * Matches the official OpenTelemetry Collector Tinybird exporter format
@@ -56,28 +53,9 @@ export const logs = defineDatasource("logs", {
 		LogAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.log_attributes",
 		}),
-		ResourceAttributeItems: column(
-			t.array(t.string()).defaultExpr(attributeItemsExpr("ResourceAttributes")),
-			{ jsonPath: "$.ResourceAttributeItems[:]" },
-		),
-		ScopeAttributeItems: column(t.array(t.string()).defaultExpr(attributeItemsExpr("ScopeAttributes")), {
-			jsonPath: "$.ScopeAttributeItems[:]",
-		}),
-		LogAttributeItems: column(t.array(t.string()).defaultExpr(attributeItemsExpr("LogAttributes")), {
-			jsonPath: "$.LogAttributeItems[:]",
-		}),
+		// The `*AttributeItems` search arrays are ClickHouse-only: see
+		// `clickhouse/clickhouse-only-columns.ts`.
 	},
-	// Changing the logs sorting key rebuilds the 30-day raw table. Carry every
-	// live row forward and initialize the search-only arrays without attempting
-	// to recompute them during the deployment backfill.
-	forwardQuery: `SELECT
-		OrgId, Timestamp, TimestampTime, TraceId, SpanId, TraceFlags,
-		SeverityText, SeverityNumber, ServiceName, Body,
-		ResourceSchemaUrl, ResourceAttributes,
-		ScopeSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, LogAttributes,
-		defaultValueOfTypeName('Array(String)') AS ResourceAttributeItems,
-		defaultValueOfTypeName('Array(String)') AS ScopeAttributeItems,
-		defaultValueOfTypeName('Array(String)') AS LogAttributeItems`,
 	// `TraceId` is not in the sorting key and a trace spans many services (so
 	// `ServiceName` isn't fixed either) — a `WHERE TraceId = ...` lookup would
 	// otherwise scan whole daily partitions. The bloom filter lets ClickHouse
@@ -253,16 +231,8 @@ export const traces = defineDatasource("traces", {
 		 * Server/Consumer kinds, or any root span (ParentSpanId = '').
 		 */
 		IsEntryPoint: t.uint8().defaultExpr(IS_ENTRY_POINT_EXPR),
-		ResourceAttributeItems: column(
-			t.array(t.string()).defaultExpr(attributeItemsExpr("ResourceAttributes")),
-			{ jsonPath: "$.ResourceAttributeItems[:]" },
-		),
-		ScopeAttributeItems: column(t.array(t.string()).defaultExpr(attributeItemsExpr("ScopeAttributes")), {
-			jsonPath: "$.ScopeAttributeItems[:]",
-		}),
-		SpanAttributeItems: column(t.array(t.string()).defaultExpr(attributeItemsExpr("SpanAttributes")), {
-			jsonPath: "$.SpanAttributeItems[:]",
-		}),
+		// The `*AttributeItems` search arrays are ClickHouse-only: see
+		// `clickhouse/clickhouse-only-columns.ts`.
 	},
 	indexes: [
 		{
