@@ -174,13 +174,18 @@ const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an
  * before it checks whether the turn survived. Metering follows the spend, not the outcome. (A step
  * interrupted before the provider's terminal event reports no usage at all, so that much is
  * unbillable rather than unbilled.)
+ *
+ * **Nothing for a turn on the org's own key.** OpenRouter bills the org for those tokens directly,
+ * so charging them here as well would bill the same spend twice.
  */
 export const meterTurn = (
 	input: Pick<RunChatSessionTurnInput, "sessionId" | "messageId">,
 	tenant: Pick<TenantContext, "orgId">,
 	origin: ChatTurnOrigin,
 	usage: Pick<RunUsage, "input" | "output" | "charges">,
+	options: { readonly ownKey?: boolean } = {},
 ): Effect.Effect<void> => {
+	if (options.ownKey === true) return Effect.void
 	if (usage.input <= 0 && usage.output <= 0) return Effect.void
 	const billing = investigationBilling(input.sessionId, input.messageId) ??
 		reviewBilling(input.sessionId, input.messageId) ?? {
@@ -690,12 +695,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
 		return yield* turnBody(orgKey).pipe(
 			// `ensuring`, not a trailing statement: a turn that failed, was aborted, or ran out of steps
-			// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them. An org
-			// on its own key pays OpenRouter directly, so Maple meters nothing.
+			// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
 			Effect.ensuring(
-				Option.isSome(orgKey)
-					? Effect.void
-					: Effect.suspend(() => meterTurn(input, tenant, origin, usage)),
+				Effect.suspend(() =>
+					meterTurn(input, tenant, origin, usage, { ownKey: Option.isSome(orgKey) }),
+				),
 			),
 		)
 	}).pipe(
