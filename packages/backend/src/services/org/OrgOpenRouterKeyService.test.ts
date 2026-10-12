@@ -164,6 +164,20 @@ describe("OrgOpenRouterKeyService", () => {
 		)
 	})
 
+	it.effect("refuses a key over 256 characters without calling OpenRouter", () => {
+		const world = makeWorld()
+		return run(
+			createTestDb(trackedDbs),
+			world,
+			Effect.gen(function* () {
+				const keys = yield* OrgOpenRouterKeyService
+				const error = yield* Effect.flip(keys.set(ORG, USER, `sk-or-v1-${"a".repeat(260)}`))
+				assert.strictEqual(error._tag, "@maple/http/openrouter-key/OpenRouterKeyValidationError")
+				assert.deepStrictEqual(world.openRouterCalls, [])
+			}),
+		)
+	})
+
 	it.effect("refuses to save without the add-on", () =>
 		run(
 			createTestDb(trackedDbs),
