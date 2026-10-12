@@ -10,6 +10,7 @@ import {
 	NetworkNodesIcon,
 	PulseIcon,
 	SitemapIcon,
+	LayersIcon,
 } from "@maple/ui/components/icons"
 import { TraceListView } from "./views/trace-list-view"
 import { TraceDetailView } from "./views/trace-detail-view"
@@ -22,6 +23,7 @@ import { ServiceDetailView } from "./views/service-detail-view"
 import { ServiceMapView } from "./views/service-map-view"
 import { SessionsListView } from "./views/sessions-list-view"
 import { SessionDetailView } from "./views/session-detail-view"
+import { QueryView } from "./views/query-view"
 import { canGoBackInApp, decodeSegment, goBack, hrefFor, useLocation } from "./lib/router"
 import { AppErrorBoundary } from "./components/app-error-boundary"
 import { ConnectButton } from "./components/connect-button"
@@ -44,6 +46,7 @@ type Route =
 	| { name: "errors" }
 	| { name: "sessions" }
 	| { name: "session-detail"; sessionId: string }
+	| { name: "query" }
 
 export function parseRoute(path: string): Route {
 	const detail = (prefix: string) => {
@@ -64,10 +67,11 @@ export function parseRoute(path: string): Route {
 	if (path.startsWith("/service-map")) return { name: "service-map" }
 	if (path.startsWith("/services")) return { name: "services" }
 	if (path.startsWith("/sessions")) return { name: "sessions" }
+	if (path.startsWith("/query")) return { name: "query" }
 	return { name: "traces" }
 }
 
-type Tab = "traces" | "logs" | "metrics" | "services" | "service-map" | "errors" | "sessions"
+type Tab = "traces" | "logs" | "metrics" | "services" | "service-map" | "errors" | "sessions" | "query"
 
 function activeTab(route: Route): Tab {
 	if (route.name === "errors") return "errors"
@@ -76,6 +80,7 @@ function activeTab(route: Route): Tab {
 	if (route.name === "services" || route.name === "service-detail") return "services"
 	if (route.name === "service-map") return "service-map"
 	if (route.name === "sessions" || route.name === "session-detail") return "sessions"
+	if (route.name === "query") return "query"
 	return "traces"
 }
 
@@ -87,6 +92,7 @@ const TABS: ReadonlyArray<{ tab: Tab; label: string; icon: ReactNode }> = [
 	{ tab: "service-map", label: "Service map", icon: <SitemapIcon size={14} /> },
 	{ tab: "errors", label: "Errors", icon: <CircleWarningIcon size={14} /> },
 	{ tab: "sessions", label: "Sessions", icon: <EyeIcon size={14} /> },
+	{ tab: "query", label: "Query", icon: <LayersIcon size={14} /> },
 ]
 
 /** Detail-page params that must not leak back into a list's filters. */
@@ -187,6 +193,8 @@ export function App() {
 									<LogsView />
 								) : route.name === "sessions" ? (
 									<SessionsListView />
+								) : route.name === "query" ? (
+									<QueryView />
 								) : (
 									<TraceListView />
 								)}

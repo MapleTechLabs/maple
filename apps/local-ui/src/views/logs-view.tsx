@@ -1,7 +1,9 @@
-import { useMemo, useRef, useState } from "react"
+import { useMemo, useRef, useState, type ReactNode } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
+import type { LogPattern } from "@maple/query-engine/observability"
 import { LogAttributeChip } from "@maple/ui/components/logs/log-attribute-chip"
 import { Spinner } from "@maple/ui/components/ui/spinner"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
@@ -12,13 +14,16 @@ import {
 	FilterSidebarHeader,
 } from "@maple/ui/components/filters/filter-sidebar"
 import { useLocalLogs, useLocalLogSeverities, type LogFilters } from "../hooks/use-local-logs"
+import { useLocalLogPatterns } from "../hooks/use-local-log-patterns"
 import { useLocalLogServices } from "../hooks/use-local-log-services"
 import { useRange } from "../hooks/use-range"
 import { useTimeWindow } from "../hooks/use-time-window"
 import { useQueryParams } from "../lib/router"
-import { formatLocalTimestamp, formatUtcTitle, WIDEST_RANGE } from "../lib/time"
+import { formatLocalTimestamp, formatUtcTitle, WIDEST_RANGE, type TimeBounds } from "../lib/time"
 import { logKey, type LocalLog } from "../lib/log-shape"
+import { patternSearchTerm } from "../lib/log-patterns"
 import { LogDetailSheet } from "../components/log-detail-sheet"
+import { LogPatternsList } from "../components/log-patterns-list"
 import { HighlightedText } from "../components/highlighted-text"
 import { PageShell } from "../components/page-shell"
 import { SignalEmptyState } from "../components/signal-empty-state"
@@ -35,10 +40,16 @@ import { ErrorState, ListSkeleton } from "../components/view-states"
 const ROW_HEIGHT = 36
 const VISIBLE_CHIPS = 4
 
+type LogsMode = "list" | "patterns"
+
+/** Wraps a mode's body in the shared page chrome; each mode supplies its own stat and freshness. */
+type RenderPage = (props: { stat: ReactNode; since: number; children: ReactNode }) => ReactNode
+
 export function LogsView() {
 	const [query, setParams] = useQueryParams()
 	const [range, setRange] = useRange()
 	const timeWindow = useTimeWindow(range)
+	const mode: LogsMode = query.get("mode") === "patterns" ? "patterns" : "list"
 	const filters: LogFilters = {
 		service: query.get("service") || undefined,
 		severity: query.get("severity") || undefined,
@@ -47,33 +58,6 @@ export function LogsView() {
 
 	const services = useLocalLogServices(filters, timeWindow.bounds)
 	const severities = useLocalLogSeverities(filters, timeWindow.bounds)
-	const logs = useLocalLogs(filters, timeWindow.bounds)
-	const { hasNextPage, isFetchingNextPage, fetchNextPage } = logs
-
-	const rows = useMemo<ReadonlyArray<LocalLog>>(() => logs.data?.pages.flat() ?? [], [logs.data])
-	const scrollRef = useRef<HTMLDivElement>(null)
-
-	const [selectedLog, setSelectedLog] = useState<LocalLog | null>(null)
-	const [sheetOpen, setSheetOpen] = useState(false)
-	const selectedKey = selectedLog ? logKey(selectedLog) : null
-
-	const virtualizer = useVirtualizer({
-		count: rows.length,
-		getScrollElement: () => scrollRef.current,
-		estimateSize: () => ROW_HEIGHT,
-		overscan: 12,
-		// Load the next page as the last row scrolls into view.
-		onChange: (instance) => {
-			const last = instance.getVirtualItems().at(-1)
-			if (last && last.index >= rows.length - 1 && hasNextPage && !isFetchingNextPage)
-				void fetchNextPage()
-		},
-	})
-
-	const openLog = (log: LocalLog) => {
-		setSelectedLog(log)
-		setSheetOpen(true)
-	}
 
 	const activeFilterCount = [filters.service, filters.severity].filter(Boolean).length
 	const clearFilters = () => setParams({ service: null, severity: null, q: null })
@@ -104,73 +88,209 @@ export function LogsView() {
 		</FilterSidebarFrame>
 	)
 
-	const toolbar = (
-		<Toolbar>
-			<ToolbarSearch
-				query={filters.search ?? ""}
-				onSearch={(value) => setParams({ q: value ?? null })}
-				placeholder="Search log bodies…"
-				className="min-w-48 flex-1"
-			/>
-			<ToolbarStats className="shrink-0">
-				<ToolbarStat value={rows.length} label={hasNextPage ? "logs+" : "logs"} />
-				<RefreshButton advance={timeWindow.advance} since={logs.dataUpdatedAt} />
-				<TimeRangeSelect value={range} onChange={setRange} />
-			</ToolbarStats>
-		</Toolbar>
-	)
-
-	return (
-		<PageShell sidebar={sidebar} toolbar={toolbar} activeFilterCount={activeFilterCount}>
-			{logs.isPending ? (
-				<ListSkeleton variant="table" />
-			) : logs.isError ? (
-				<ErrorState label="logs" error={logs.error} onRetry={() => logs.refetch()} />
-			) : rows.length === 0 ? (
-				<SignalEmptyState
-					signal="logs"
-					filtered={activeFilterCount > 0 || !!filters.search}
-					onClearFilters={clearFilters}
-					range={range}
-					onWidenRange={() => setRange(WIDEST_RANGE)}
-				/>
-			) : (
-				<div
-					ref={scrollRef}
-					role="list"
-					aria-label="Logs"
-					className={cn(
-						"h-full overflow-auto",
-						logs.isPlaceholderData && "opacity-60 transition-opacity",
-					)}
-				>
-					<div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-						{virtualizer.getVirtualItems().map((virtualRow) => {
-							const log = rows[virtualRow.index]
-							return (
-								<LogRow
-									key={virtualRow.key}
-									log={log}
-									search={filters.search}
-									top={virtualRow.start}
-									height={virtualRow.size}
-									selected={selectedKey === logKey(log)}
-									onClick={openLog}
-								/>
-							)
-						})}
-					</div>
-					{isFetchingNextPage ? (
-						<div className="flex justify-center p-3">
-							<Spinner className="size-4" />
-						</div>
-					) : null}
-				</div>
-			)}
-
-			<LogDetailSheet log={selectedLog} open={sheetOpen} onOpenChange={setSheetOpen} />
+	const renderPage: RenderPage = ({ stat, since, children }) => (
+		<PageShell
+			sidebar={sidebar}
+			activeFilterCount={activeFilterCount}
+			toolbar={
+				<Toolbar>
+					<ToggleGroup
+						value={[mode]}
+						onValueChange={(values) => {
+							const next = values.find((value) => value !== mode)
+							if (next === "list" || next === "patterns")
+								setParams({ mode: next === "patterns" ? next : null })
+						}}
+						variant="outline"
+						size="sm"
+						aria-label="Logs view"
+						className="shrink-0"
+					>
+						<ToggleGroupItem value="list">List</ToggleGroupItem>
+						<ToggleGroupItem value="patterns">Patterns</ToggleGroupItem>
+					</ToggleGroup>
+					<ToolbarSearch
+						query={filters.search ?? ""}
+						onSearch={(value) => setParams({ q: value ?? null })}
+						placeholder="Search log bodies…"
+						className="min-w-48 flex-1"
+					/>
+					<ToolbarStats className="shrink-0">
+						{stat}
+						<RefreshButton advance={timeWindow.advance} since={since} />
+						<TimeRangeSelect value={range} onChange={setRange} />
+					</ToolbarStats>
+				</Toolbar>
+			}
+		>
+			{children}
 		</PageShell>
 	)
+
+	const emptyState = (
+		<SignalEmptyState
+			signal="logs"
+			filtered={activeFilterCount > 0 || !!filters.search}
+			onClearFilters={clearFilters}
+			range={range}
+			onWidenRange={() => setRange(WIDEST_RANGE)}
+		/>
+	)
+
+	// Each mode is its own component so only the active mode's query runs:
+	// chDB serves one query at a time.
+	return mode === "patterns" ? (
+		<LogPatternsMode
+			filters={filters}
+			bounds={timeWindow.bounds}
+			renderPage={renderPage}
+			emptyState={emptyState}
+			onSelect={(pattern) =>
+				setParams({ mode: null, q: patternSearchTerm(pattern.template) || filters.search })
+			}
+		/>
+	) : (
+		<LogListMode
+			filters={filters}
+			bounds={timeWindow.bounds}
+			renderPage={renderPage}
+			emptyState={emptyState}
+		/>
+	)
+}
+
+function LogPatternsMode({
+	filters,
+	bounds,
+	renderPage,
+	emptyState,
+	onSelect,
+}: {
+	filters: LogFilters
+	bounds: TimeBounds
+	renderPage: RenderPage
+	emptyState: ReactNode
+	onSelect: (pattern: LogPattern) => void
+}) {
+	const patterns = useLocalLogPatterns(filters, bounds)
+	const data = patterns.data
+	const stat = data ? (
+		<>
+			<ToolbarStat value={data.patterns.length} label="patterns" />
+			<span title={data.truncated ? "Clustered from the newest logs only" : undefined}>
+				<ToolbarStat value={data.totalSampled} label={data.truncated ? "logs+" : "logs"} />
+			</span>
+		</>
+	) : null
+
+	return renderPage({
+		stat,
+		since: patterns.dataUpdatedAt,
+		children: patterns.isPending ? (
+			<ListSkeleton variant="table" />
+		) : patterns.isError ? (
+			<ErrorState label="log patterns" error={patterns.error} onRetry={() => patterns.refetch()} />
+		) : data === undefined || data.patterns.length === 0 ? (
+			emptyState
+		) : (
+			<LogPatternsList
+				patterns={data.patterns}
+				totalSampled={data.totalSampled}
+				dimmed={patterns.isPlaceholderData}
+				onSelect={onSelect}
+			/>
+		),
+	})
+}
+
+function LogListMode({
+	filters,
+	bounds,
+	renderPage,
+	emptyState,
+}: {
+	filters: LogFilters
+	bounds: TimeBounds
+	renderPage: RenderPage
+	emptyState: ReactNode
+}) {
+	const logs = useLocalLogs(filters, bounds)
+	const { hasNextPage, isFetchingNextPage, fetchNextPage } = logs
+
+	const rows = useMemo<ReadonlyArray<LocalLog>>(() => logs.data?.pages.flat() ?? [], [logs.data])
+	const scrollRef = useRef<HTMLDivElement>(null)
+
+	const [selectedLog, setSelectedLog] = useState<LocalLog | null>(null)
+	const [sheetOpen, setSheetOpen] = useState(false)
+	const selectedKey = selectedLog ? logKey(selectedLog) : null
+
+	const virtualizer = useVirtualizer({
+		count: rows.length,
+		getScrollElement: () => scrollRef.current,
+		estimateSize: () => ROW_HEIGHT,
+		overscan: 12,
+		// Load the next page as the last row scrolls into view.
+		onChange: (instance) => {
+			const last = instance.getVirtualItems().at(-1)
+			if (last && last.index >= rows.length - 1 && hasNextPage && !isFetchingNextPage)
+				void fetchNextPage()
+		},
+	})
+
+	const openLog = (log: LocalLog) => {
+		setSelectedLog(log)
+		setSheetOpen(true)
+	}
+
+	return renderPage({
+		stat: <ToolbarStat value={rows.length} label={hasNextPage ? "logs+" : "logs"} />,
+		since: logs.dataUpdatedAt,
+		children: (
+			<>
+				{logs.isPending ? (
+					<ListSkeleton variant="table" />
+				) : logs.isError ? (
+					<ErrorState label="logs" error={logs.error} onRetry={() => logs.refetch()} />
+				) : rows.length === 0 ? (
+					emptyState
+				) : (
+					<div
+						ref={scrollRef}
+						role="list"
+						aria-label="Logs"
+						className={cn(
+							"h-full overflow-auto",
+							logs.isPlaceholderData && "opacity-60 transition-opacity",
+						)}
+					>
+						<div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+							{virtualizer.getVirtualItems().map((virtualRow) => {
+								const log = rows[virtualRow.index]
+								return (
+									<LogRow
+										key={virtualRow.key}
+										log={log}
+										search={filters.search}
+										top={virtualRow.start}
+										height={virtualRow.size}
+										selected={selectedKey === logKey(log)}
+										onClick={openLog}
+									/>
+								)
+							})}
+						</div>
+						{isFetchingNextPage ? (
+							<div className="flex justify-center p-3">
+								<Spinner className="size-4" />
+							</div>
+						) : null}
+					</div>
+				)}
+
+				<LogDetailSheet log={selectedLog} open={sheetOpen} onOpenChange={setSheetOpen} />
+			</>
+		),
+	})
 }
 
 function LogRow({
