@@ -226,6 +226,25 @@ describe("OrgOpenRouterKeyService", () => {
 		})
 	})
 
+	it.effect("falls back to Maple's key when the stored key no longer decrypts", () => {
+		const testDb = createTestDb(trackedDbs)
+		return run(
+			testDb,
+			makeWorld(),
+			Effect.gen(function* () {
+				const keys = yield* OrgOpenRouterKeyService
+				yield* keys.set(ORG, USER, KEY)
+				yield* Effect.promise(() =>
+					queryFirstRow(
+						testDb,
+						"UPDATE org_openrouter_keys SET key_tag = 'AAAAAAAAAAAAAAAAAAAAAA==' WHERE org_id = 'org_byok' RETURNING org_id",
+					),
+				)
+				assert.isTrue(Option.isNone(yield* keys.resolveForRun(ORG)))
+			}),
+		)
+	})
+
 	it.effect("removes the key", () =>
 		run(
 			createTestDb(trackedDbs),
