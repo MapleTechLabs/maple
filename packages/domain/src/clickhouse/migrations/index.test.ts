@@ -2,6 +2,10 @@ import { String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
+import {
+	migration_0008_service_operations_minutely,
+	serviceOperationsMinutelyBackfill,
+} from "./0008_service_operations_minutely"
 import { migration_0009_one_year_service_history } from "./0009_one_year_service_history"
 import { migration_0011_session_analytics_columns } from "./0011_session_analytics_columns"
 import { migration_0014_web_events, webEventsBackfill } from "./0014_web_events"
@@ -147,6 +151,16 @@ describe("ClickHouse migrations", () => {
 		expect(webEventsBackfill.tsColumn).toBe("Timestamp")
 		// Row-wise: no GROUP BY means no group can straddle a chunk boundary.
 		expect(webEventsBackfill.groupBy).toBeUndefined()
+	})
+
+	it("keeps the service_operations_minutely backfill aligned with its table and live MV", () => {
+		// The rollout runs this backfill by hand; a drifted SELECT or column list steps the series.
+		const statements = migration_0008_service_operations_minutely.statements.map(String)
+		const table = statements.find((s) => s.includes("CREATE TABLE")) ?? ""
+		const tableColumns = [...table.matchAll(/^\s+(\w+) [A-Z]/gm)].map((match) => match[1])
+		expect(serviceOperationsMinutelyBackfill.columns).toEqual(tableColumns)
+		const mvBody = statements.find((s) => s.includes("CREATE MATERIALIZED VIEW"))
+		expect(mvBody).toContain(serviceOperationsMinutelyBackfill.select)
 	})
 
 	it("adds session analytics columns with defaults so older SDK rows never quarantine", () => {

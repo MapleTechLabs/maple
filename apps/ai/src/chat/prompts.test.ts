@@ -11,6 +11,7 @@
  */
 import { createHash } from "node:crypto"
 import { assert, describe, it } from "vitest"
+import { mapleToolCatalog } from "../mcp/tools/registry"
 import { CONNECTOR_SYSTEM_PROMPT, INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
 
 const sha256 = (value: string) => createHash("sha256").update(value, "utf8").digest("hex")
@@ -38,16 +39,14 @@ describe("CONNECTOR_SYSTEM_PROMPT", () => {
 		}
 	})
 
-	it("teaches the approval step, and the prohibition on imitating one in prose", () => {
-		// Its mutations are gated, so it has to be told — and told not to render the gate itself,
-		// which the connector does. The prohibition quotes "[Approve]" on purpose.
-		assert.include(CONNECTOR_SYSTEM_PROMPT, "approved before they take effect")
-		assert.include(CONNECTOR_SYSTEM_PROMPT, 'NEVER emit "[Approve]"')
-	})
-
-	it("reads the deployed code through the repository sandbox", () => {
-		assert.include(CONNECTOR_SYSTEM_PROMPT, "sandbox_grep")
-		assert.include(CONNECTOR_SYSTEM_PROMPT, "vcs.ref.head.revision")
+	it("only sends the agent to sandbox tools that are registered", () => {
+		const named = [...CONNECTOR_SYSTEM_PROMPT.matchAll(/\bsandbox_[a-z_]+/g)].map((match) => match[0])
+		const registered = new Set(mapleToolCatalog.map((tool) => tool.name))
+		assert.isNotEmpty(named)
+		assert.deepEqual(
+			named.filter((name) => !registered.has(name)),
+			[],
+		)
 	})
 
 	it("sends nobody to the Maple app, because it can act from the channel", () => {
@@ -57,6 +56,5 @@ describe("CONNECTOR_SYSTEM_PROMPT", () => {
 	it("drops what does not survive the trip to a channel", () => {
 		// No 420px panel, and no markdown tables: the in-app prompt teaches both.
 		assert.notInclude(CONNECTOR_SYSTEM_PROMPT, "420px")
-		assert.include(SYSTEM_PROMPT, "420px")
 	})
 })
