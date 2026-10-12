@@ -80,6 +80,30 @@ const omitRouter = (
 const isInitializeMessage = (message: FromClientEncoded): boolean =>
 	message._tag === "Request" && message.tag === "initialize"
 
+const isToolMessage = (message: FromClientEncoded): boolean =>
+	message._tag === "Request" && message.tag.startsWith("tools/")
+
+/**
+ * The server advertises `tools` in its `initialize` reply only once a tool is registered.
+ * Registration is deferred to the first `tools/*` request, so the reply to a client's own
+ * `initialize` states the capability here. Every other field is the server's.
+ */
+const withToolsCapability =
+	(initializeIds: ReadonlySet<string | number>) =>
+	(response: FromServerEncoded): FromServerEncoded => {
+		if (response._tag !== "Exit" || response.exit._tag !== "Success") return response
+		if (!initializeIds.has(response.requestId)) return response
+		const result = response.exit.value
+		if (!Predicate.isObject(result) || !Predicate.isObject(result.capabilities)) return response
+		return {
+			...response,
+			exit: {
+				_tag: "Success",
+				value: { ...result, capabilities: { tools: { listChanged: true }, ...result.capabilities } },
+			},
+		}
+	}
+
 const jsonRpcError = (id: string | number | null, code: number, message: string) =>
 	HttpServerResponse.jsonUnsafe({ jsonrpc: "2.0", id, error: { code, message } })
 
@@ -110,6 +134,9 @@ export const layerStatelessMcpHttp = (options: {
 	 * transport says whether JSON-RPC batches are accepted at all. */
 	readonly protocol: McpProtocol.ProtocolAdapter
 	readonly allowedOrigins?: ReadonlyArray<string> | undefined
+	/** Registers the server's tools. Runs before any `tools/*` request, not up front: most
+	 * requests never touch a tool, and building the catalog dominates a cold request's CPU. */
+	readonly registerTools: Effect.Effect<void>
 }): Layer.Layer<RpcServer.Protocol, never, RpcSerialization.RpcSerialization | HttpRouter.HttpRouter> =>
 	Layer.effect(RpcServer.Protocol)(
 		Effect.gen(function* () {
@@ -210,6 +237,8 @@ export const layerStatelessMcpHttp = (options: {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 
+					if (messages.some(isToolMessage)) yield* options.registerTools
+
 					// The handshake the client did not send, so the server has a negotiated
 					// profile for this exchange.
 					if (!messages.some(isInitializeMessage)) {
@@ -239,13 +268,20 @@ export const layerStatelessMcpHttp = (options: {
 					const responses = yield* Queue.collect(queue)
 					// The synthetic handshake is Maple's, not the caller's; its reply must
 					// not reach the wire.
-					const visible = responses.filter(
-						(response) =>
-							!(
-								Predicate.hasProperty(response, "requestId") &&
-								response.requestId === SYNTHETIC_INITIALIZE_ID
-							),
+					const initializeIds = new Set(
+						messages.flatMap((message) =>
+							message._tag === "Request" && isInitializeMessage(message) ? [message.id] : [],
+						),
 					)
+					const visible = responses
+						.filter(
+							(response) =>
+								!(
+									Predicate.hasProperty(response, "requestId") &&
+									response.requestId === SYNTHETIC_INITIALIZE_ID
+								),
+						)
+						.map(withToolsCapability(initializeIds))
 					return HttpServerResponse.text(parser.encode(visible) as string, {
 						contentType: serialization.contentType,
 					})

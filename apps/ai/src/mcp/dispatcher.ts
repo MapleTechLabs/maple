@@ -32,12 +32,6 @@ import { McpToolNotFoundError, type McpToolDescriptor } from "@maple/domain/mcp-
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Context, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
-import {
-	executeRegisteredMcpToolUnscoped,
-	inputSchemaOf,
-	mapleToolCatalogFor,
-	toOutputSchema,
-} from "./tools/registry"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import { CurrentMcpTenant } from "./lib/query-warehouse"
@@ -46,18 +40,20 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
 
 /**
- * Built on first use, not at module scope.
+ * The tool catalog, loaded on the first call that needs it rather than with this module.
  *
- * `apps/api/src/chat/tools.ts` imports this module and is itself reachable from the tool registry's
- * own import graph (registry -> a tool -> issue-hub/ai-triage-enqueue -> chat/session -> chat/tools
- * -> here). Computing the descriptors eagerly meant that whichever module the bundler happened to
- * evaluate first could observe the tool catalog as `undefined`. Deferring removes the
- * ordering dependency entirely rather than papering over one edge of the cycle.
+ * It is the largest chunk in the Worker, and most cold `/mcp` requests (`initialize`, the
+ * resource and prompt lists, 401s) never touch a tool. The dynamic import also breaks the
+ * registry -> tool -> chat/tools -> here cycle, so no module can observe a half-built catalog.
  */
-let toolDescriptors: ReadonlyArray<McpToolDescriptor> | undefined
+const loadRegistry = Effect.promise(() => import("./tools/registry"))
 
-const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
-	(toolDescriptors ??= mapleToolCatalogFor("mcp").map((definition) => ({
+const toolDescriptors = ({
+	inputSchemaOf,
+	mapleToolCatalogFor,
+	toOutputSchema,
+}: typeof import("./tools/registry")): ReadonlyArray<McpToolDescriptor> =>
+	mapleToolCatalogFor("mcp").map((definition) => ({
 		name: definition.name,
 		// Current spec reads the top-level `title`; Claude's directory and older clients read `annotations.title`.
 		title: definition.title,
@@ -78,10 +74,10 @@ const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
 						openWorldHint: definition.hints.openWorld === true,
 					},
 				}),
-	})))
+	}))
 
-/** The public transport's `tools/list`: the catalog minus every `internal` tool. */
-export const listMcpTools = Effect.sync(listToolDescriptors)
+/** The public transport's `tools/list`: the catalog minus every `internal` tool. Callers cache it. */
+export const listMcpTools = Effect.map(loadRegistry, toolDescriptors)
 
 /**
  * How a failure reads to the model: one short lead naming the kind of failure, never an error tag.
@@ -123,7 +119,8 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 	// solely because each handler happens to carry its own `McpTool.<name>` span
 	// — every usage query had to reconstruct it with `substring(SpanName, 9)`.
 	yield* Effect.annotateCurrentSpan("maple.mcp.tool", name)
-	return yield* executeRegisteredMcpToolUnscoped(name, input, surface).pipe(
+	const registry = yield* loadRegistry
+	return yield* registry.executeRegisteredMcpToolUnscoped(name, input, surface).pipe(
 		Effect.catchTag("@maple/mcp/errors/McpDecodeError", (error) =>
 			recordExpectedMcpFailure(error, "Invalid parameters").pipe(
 				Effect.as(failureResult(error.message, "invalid_parameters")),
