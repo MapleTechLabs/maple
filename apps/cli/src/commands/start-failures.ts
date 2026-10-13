@@ -1,4 +1,4 @@
-import { Clock, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Predicate, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { dirname } from "node:path"
 import { annotateOutcome, EXIT_START_REFUSED } from "../core/outcomes"
@@ -16,7 +16,6 @@ import { dataDirSidecarPath } from "../server/store-version"
 /** Failures that fail the same way on every retry until a human acts. */
 const DETERMINISTIC_START_TAGS: ReadonlySet<string> = new Set([
 	"@maple/cli/ChdbError",
-	"@maple/cli/ServerBindError",
 	// The store refusals: each names a command a person has to run first.
 	"@maple/cli/LocalStoreDirtyError",
 	"@maple/cli/LocalStoreIncompatibleError",
@@ -26,8 +25,22 @@ const DETERMINISTIC_START_TAGS: ReadonlySet<string> = new Set([
 	"@maple/cli/ServerStateError",
 ])
 
-export const isDeterministicStartFailure = (error: unknown): boolean =>
-	DETERMINISTIC_START_TAGS.has(describeFailure(error).tag)
+/** Deduped and backed off like the rest, but a supervisor should keep retrying:
+ *  a port held by a server that is still stopping frees itself. */
+const TRANSIENT_START_TAGS: ReadonlySet<string> = new Set(["@maple/cli/ServerBindError"])
+
+/** A `start -d` child that exited with the refusal status already decided it is final. */
+const isRefusedChildExit = (error: unknown): boolean =>
+	describeFailure(error).tag === "@maple/cli/BackgroundServerExitedError" &&
+	Predicate.hasProperty(error, "exitCode") &&
+	error.exitCode === EXIT_START_REFUSED
+
+/** Exits 78, so a supervisor configured for it stops restarting. */
+export const isNonRestartableStartFailure = (error: unknown): boolean =>
+	DETERMINISTIC_START_TAGS.has(describeFailure(error).tag) || isRefusedChildExit(error)
+
+export const isGuardedStartFailure = (error: unknown): boolean =>
+	isNonRestartableStartFailure(error) || TRANSIENT_START_TAGS.has(describeFailure(error).tag)
 
 const StartFailureRecord = Schema.Struct({
 	fingerprint: Schema.String,
@@ -88,43 +101,56 @@ export const decideStartFailure = (
 	}
 }
 
-export const startFailuresPath = (dataDir: string): string =>
-	dataDirSidecarPath(dataDir, "start-failures.json")
+const RECORD_NAME = "start-failures.json"
+/** A `start -d` child keeps its own streak; sharing one would reset both on every run. */
+const CHILD_RECORD_NAME = "start-failures-child.json"
+
+export const startFailuresPath = (dataDir: string, name: string = RECORD_NAME): string =>
+	dataDirSidecarPath(dataDir, name)
 
 const decodeRecord = Schema.decodeUnknownOption(Schema.fromJsonString(StartFailureRecord))
 
-export const readStartFailureRecord = (dataDir: string) =>
+export const readStartFailureRecord = (dataDir: string, name: string = RECORD_NAME) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
-		return yield* fs.readFileString(startFailuresPath(dataDir)).pipe(
+		return yield* fs.readFileString(startFailuresPath(dataDir, name)).pipe(
 			Effect.map(decodeRecord),
 			Effect.orElseSucceed(() => Option.none<StartFailureRecord>()),
 		)
 	})
 
-const writeRecord = (dataDir: string, record: StartFailureRecord) =>
+const writeRecord = (dataDir: string, name: string, record: StartFailureRecord) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
-		const path = startFailuresPath(dataDir)
+		const path = startFailuresPath(dataDir, name)
 		yield* fs.makeDirectory(dirname(path), { recursive: true })
 		yield* fs.writeFileString(path, `${JSON.stringify(record)}\n`)
 	}).pipe(Effect.ignore)
 
-/** A server that came up ends any streak. */
+/** A server that came up ends any streak, its `start -d` parent's included. */
 export const clearStartFailures = (dataDir: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
-		yield* fs.remove(startFailuresPath(dataDir), { force: true })
+		yield* fs.remove(startFailuresPath(dataDir, RECORD_NAME), { force: true })
+		yield* fs.remove(startFailuresPath(dataDir, CHILD_RECORD_NAME), { force: true })
 	}).pipe(Effect.ignore)
 
-const handleStartFailure = <E>(dataDir: string, error: E, nowMs: number, interactive: boolean) =>
+const handleStartFailure = <E>(
+	dataDir: string,
+	name: string,
+	error: E,
+	nowMs: number,
+	interactive: boolean,
+) =>
 	Effect.gen(function* () {
-		const previous = yield* readStartFailureRecord(dataDir)
+		const previous = yield* readStartFailureRecord(dataDir, name)
 		const decision = decideStartFailure(previous, startFailureFingerprint(error), nowMs, interactive)
-		yield* writeRecord(dataDir, decision.record)
-		yield* Effect.sync(() => {
-			process.exitCode = EXIT_START_REFUSED
-		})
+		yield* writeRecord(dataDir, name, decision.record)
+		if (isNonRestartableStartFailure(error)) {
+			yield* Effect.sync(() => {
+				process.exitCode = EXIT_START_REFUSED
+			})
+		}
 		if (decision.backoffMs > 0) {
 			yield* Effect.sync(() =>
 				process.stderr.write(
@@ -142,18 +168,20 @@ const handleStartFailure = <E>(dataDir: string, error: E, nowMs: number, interac
 		yield* Effect.sync(() => process.stderr.write(formatFailure(describeFailure(error))))
 	})
 
-/** Back off and dedupe repeats of a deterministic start failure; exit code 78 either way. */
+/** Back off and dedupe repeats of a start failure; non-restartable ones exit 78.
+ *  `detachedChild`: a `start -d` child, which never waits since its parent is polling. */
 export const guardStartFailures =
-	(dataDir: string, options: { readonly neverWait?: boolean } = {}) =>
+	(dataDir: string, options: { readonly detachedChild?: boolean } = {}) =>
 	<A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A | void, E, R | FileSystem> =>
 		self.pipe(
-			Effect.catchIf(isDeterministicStartFailure, (error) =>
+			Effect.catchIf(isGuardedStartFailure, (error) =>
 				Effect.gen(function* () {
 					const nowMs = yield* Clock.currentTimeMillis
 					const interactive = yield* Effect.sync(
-						() => options.neverWait === true || process.stdin.isTTY === true,
+						() => options.detachedChild === true || process.stdin.isTTY === true,
 					)
-					return yield* handleStartFailure(dataDir, error, nowMs, interactive)
+					const name = options.detachedChild === true ? CHILD_RECORD_NAME : RECORD_NAME
+					return yield* handleStartFailure(dataDir, name, error, nowMs, interactive)
 				}),
 			),
 		)
