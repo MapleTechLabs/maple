@@ -8,5 +8,5 @@
 	"baseBranch": "main",
 	"updateInternalDependencies": "patch",
 	"ignore": ["@maple/landing", "@maple/clickhouse-cli", "@effect-router/core"],
-	"privatePackages": { "version": false, "tag": false }
+	"privatePackages": { "version": true, "tag": false }
 }
