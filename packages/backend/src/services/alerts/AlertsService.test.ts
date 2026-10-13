@@ -17,6 +17,7 @@ import {
 	Exit,
 	HashSet,
 	Layer,
+	Logger,
 	Option,
 	Ref,
 	Schema,
@@ -35,6 +36,7 @@ import {
 	AlertRuleUpsertRequest,
 	OrgId,
 	WarehouseQueryError,
+	WarehouseUpstreamError,
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
@@ -3565,14 +3567,16 @@ describe("AlertsService evaluation error persistence", () => {
 		failing: boolean
 		rows: ReadonlyArray<Record<string, unknown>>
 		ingested: Array<Record<string, unknown>>
+		failure?: WarehouseQueryError | WarehouseUpstreamError
 	}): WarehouseQueryServiceApi => {
 		const sqlQueryStub = () =>
 			state.failing
 				? Effect.fail(
-						new WarehouseQueryError({
-							message: "Unknown column FooBar in traces",
-							pipeName: "tracesAlertEval",
-						}),
+						state.failure ??
+							new WarehouseQueryError({
+								message: "Unknown column FooBar in traces",
+								pipeName: "tracesAlertEval",
+							}),
 					)
 				: Effect.succeed(state.rows)
 		return {
@@ -3682,6 +3686,88 @@ describe("AlertsService evaluation error persistence", () => {
 			yield* alerts.runSchedulerTick()
 			const rulesAfterRecovery = yield* alerts.listRules(orgId)
 			assert.isNull(rulesAfterRecovery.rules[0]?.lastEvaluationError)
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("skips rules on a warehouse outage without counting failures, warning once per org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			rows: [],
+			ingested: [] as Array<Record<string, unknown>>,
+			failure: new WarehouseUpstreamError({
+				message: "HTTP 503",
+				pipeName: "tracesAlertEval",
+				upstreamStatus: 503,
+			}),
+		}
+		const logs: Array<{ readonly message: string; readonly level: string }> = []
+		const captureLogs = Logger.layer([
+			Logger.make(({ message, logLevel }) => {
+				logs.push({ message: String(message), level: logLevel })
+			}),
+		])
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_outage")
+			const userId = asUserId("user_alert_outage")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id, "Outage rule A")
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id, "Outage rule B")
+
+			const tick = yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(tick.evaluationFailureCount, 0)
+			assert.strictEqual(tick.warehouseUnavailableSkipCount, 2)
+			assert.lengthOf(
+				logs.filter((log) => log.message.includes("Alert rule evaluation failed")),
+				0,
+			)
+			const outageWarnings = logs.filter((log) =>
+				log.message.includes("Alert rule evaluations skipped: warehouse unavailable"),
+			)
+			assert.lengthOf(outageWarnings, 1)
+			assert.strictEqual(outageWarnings[0]?.level, "Warn")
+			// The check history still shows the gap, labelled as an outage.
+			const checks = state.ingested.filter((row) => row.Status === "error")
+			assert.lengthOf(checks, 2)
+			assert.isTrue(checks.every((row) => row.ErrorCategory === "warehouse_unavailable"))
+			const rules = yield* alerts.listRules(orgId)
+			assert.isTrue(rules.rules.every((rule) => rule.lastEvaluationError === "HTTP 503"))
+		}).pipe(
+			Effect.provide(
+				Layer.merge(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch }), captureLogs),
+			),
+		)
+	})
+
+	it.effect("still counts a 4xx upstream rejection as an evaluation failure", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			rows: [],
+			ingested: [] as Array<Record<string, unknown>>,
+			failure: new WarehouseUpstreamError({
+				message: "HTTP 429",
+				pipeName: "tracesAlertEval",
+				upstreamStatus: 429,
+			}),
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_rejected")
+			const userId = asUserId("user_alert_rejected")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+
+			const tick = yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(tick.evaluationFailureCount, 1)
+			assert.strictEqual(tick.warehouseUnavailableSkipCount, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
 

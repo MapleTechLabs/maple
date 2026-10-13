@@ -131,6 +131,7 @@ const alertTick = makeTick(
 		evaluatedCount: result.evaluatedCount,
 		processedCount: result.processedCount,
 		evaluationFailureCount: result.evaluationFailureCount,
+		warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
 		deliveryFailureCount: result.deliveryFailureCount,
 	}),
 )

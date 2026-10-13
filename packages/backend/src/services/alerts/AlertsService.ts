@@ -58,6 +58,7 @@ import {
 	QueryEngineTimeoutError,
 	type QueryEngineValidationError,
 	RoleName,
+	WarehouseUpstreamError,
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -80,6 +81,7 @@ import {
 	Chunk,
 	Duration,
 	Effect,
+	HashMap,
 	HashSet,
 	Layer,
 	Match,
@@ -227,6 +229,14 @@ const DESTINATION_DISABLE_AFTER_FAILURES = 3
 const DISABLED_REASON_MAX_LENGTH = 500
 const ALERT_TEST_DELIVERY_CONCURRENCY = 5
 const ALERT_CHECK_INGEST_CONCURRENCY = 4
+
+/** A warehouse outage (5xx or unreachable), not a fault of the rule being evaluated. */
+const warehouseOutageOf = (error: unknown): Option.Option<WarehouseUpstreamError> =>
+	error instanceof WarehouseUpstreamError &&
+	(error.upstreamStatus === undefined || error.upstreamStatus >= 500)
+		? Option.some(error)
+		: Option.none()
+
 // Storm fuse: cap issue-hub upserts per scheduler tick so a pathological
 // group-by rule opening hundreds of incidents can't stall the per-minute tick.
 const ISSUE_UPSERTS_PER_TICK = 50
@@ -440,6 +450,7 @@ export interface AlertsServiceApi
 			readonly evaluatedCount: number
 			readonly processedCount: number
 			readonly evaluationFailureCount: number
+			readonly warehouseUnavailableSkipCount: number
 			readonly deliveryFailureCount: number
 		},
 		| AlertPersistenceError
@@ -3303,6 +3314,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Incremented from fibers running under the concurrent per-rule forEach
 				// below, so it must be a Ref rather than a mutable closure variable.
 				const evaluationFailureCount = yield* Ref.make(0)
+				const warehouseUnavailableSkips = yield* Ref.make(
+					HashMap.empty<
+						OrgId,
+						{
+							readonly rules: number
+							readonly upstreamStatus: number | undefined
+							readonly message: string
+						}
+					>(),
+				)
 				// Chunk makes concurrent appends immutable without copying the full buffer.
 				const pendingChecks = yield* Ref.make(Chunk.empty<AlertChecksRow>())
 				const issueBudget = yield* Ref.make(ISSUE_UPSERTS_PER_TICK)
@@ -3358,9 +3379,38 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							pipe: fields?.pipe,
 						}),
 					)
+					yield* persistEvaluationError(row, error.message, failureCategory)
+				})
 
+				// The warehouse itself is down (a 5xx or unreachable backend): the rule is
+				// fine, so this is a skip, not a failure. Logged once per org per tick.
+				const recordWarehouseUnavailableSkip = Effect.fnUntraced(function* (
+					row: StoredAlertRuleRow,
+					error: { readonly message: string },
+					failureCategory: string,
+					upstreamStatus: number | undefined,
+				) {
+					yield* Ref.update(warehouseUnavailableSkips, (skips) =>
+						HashMap.set(skips, row.orgId, {
+							rules: Option.match(HashMap.get(skips, row.orgId), {
+								onNone: () => 1,
+								onSome: (entry) => entry.rules + 1,
+							}),
+							upstreamStatus,
+							message: error.message,
+						}),
+					)
+					yield* Metric.update(AlertingMetrics.rulesSkippedTotal, 1)
+					yield* persistEvaluationError(row, error.message, failureCategory)
+				})
+
+				const persistEvaluationError = Effect.fnUntraced(function* (
+					row: StoredAlertRuleRow,
+					rawMessage: string,
+					failureCategory: string,
+				) {
 					const failedAt = yield* now
-					const message = error.message.slice(0, 500)
+					const message = rawMessage.slice(0, 500)
 
 					// Audit row: a failed evaluation is a check that produced no
 					// observation — record it so the check history has no silent gaps.
@@ -3633,28 +3683,39 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							),
 						),
 						Effect.catch((error) =>
-							recordEvaluationFailure(
-								row,
-								error,
-								error.error.code,
-								"pipeName" in error
-									? {
-											pipe: error.pipeName,
-											...(error._tag ===
-											"@maple/http/errors/WarehouseQuotaExceededError"
-												? {
-														quotaSetting: error.setting,
-													}
-												: undefined),
-											...(error._tag === "@maple/http/errors/WarehouseUpstreamError" ||
-											error._tag === "@maple/http/errors/WarehouseAuthError"
-												? {
-														upstreamStatus: error.upstreamStatus,
-													}
-												: undefined),
-										}
-									: undefined,
-							),
+							Option.match(warehouseOutageOf(error), {
+								onSome: (outage) =>
+									recordWarehouseUnavailableSkip(
+										row,
+										outage,
+										outage.error.code,
+										outage.upstreamStatus,
+									),
+								onNone: () =>
+									recordEvaluationFailure(
+										row,
+										error,
+										error.error.code,
+										"pipeName" in error
+											? {
+													pipe: error.pipeName,
+													...(error._tag ===
+													"@maple/http/errors/WarehouseQuotaExceededError"
+														? {
+																quotaSetting: error.setting,
+															}
+														: undefined),
+													...(error._tag ===
+														"@maple/http/errors/WarehouseUpstreamError" ||
+													error._tag === "@maple/http/errors/WarehouseAuthError"
+														? {
+																upstreamStatus: error.upstreamStatus,
+															}
+														: undefined),
+												}
+											: undefined,
+									),
+							}),
 						),
 						// A crash in one rule must not end the tick for every rule after it.
 						Effect.catchDefect((defect) =>
@@ -3743,6 +3804,28 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						Effect.annotateLogs({ workerId, deferredRules: deferred }),
 					)
 				}
+
+				// One warning per org for a warehouse outage, however many of its rules it hit.
+				const unavailable = yield* Ref.get(warehouseUnavailableSkips)
+				const unavailableSkipCount = HashMap.reduce(unavailable, 0, (n, entry) => n + entry.rules)
+				yield* Effect.annotateCurrentSpan(
+					"maple.alerting.rules_skipped_warehouse_unavailable",
+					unavailableSkipCount,
+				)
+				yield* Effect.forEach(
+					unavailable,
+					([orgId, entry]) =>
+						Effect.logWarning("Alert rule evaluations skipped: warehouse unavailable").pipe(
+							Effect.annotateLogs({
+								workerId,
+								orgId,
+								skippedRules: entry.rules,
+								upstreamStatus: entry.upstreamStatus,
+								errorMessage: entry.message,
+							}),
+						),
+					{ discard: true },
+				)
 
 				yield* flushRuleStateHousekeeping(
 					Chunk.toReadonlyArray(yield* Ref.get(selfHealTargets)),
@@ -3834,6 +3917,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				return {
 					evaluatedCount,
 					evaluationFailureCount: yield* Ref.get(evaluationFailureCount),
+					warehouseUnavailableSkipCount: unavailableSkipCount,
 				}
 			})
 
