@@ -49,8 +49,10 @@ export const releasesBetween = (
 
 /**
  * Once per upgrade, on the first interactive run of the new version: name it and
- * point at `maple changelog`. A machine's first recorded run only stores the
- * version, so a fresh install stays quiet. Never fails the command.
+ * point at `maple changelog`. Binaries before this one never stored a version,
+ * but their startup update check left `lastUpdateCheck`, so its presence marks
+ * an upgrade from an unknown version; with neither it is a fresh install and
+ * stays quiet. Never fails the command.
  */
 export const maybeNotifyWhatsNew: Effect.Effect<void, never, MapleConfig> = Effect.gen(function* () {
 	if (!shouldRunNotify(process.argv)) return
@@ -58,11 +60,17 @@ export const maybeNotifyWhatsNew: Effect.Effect<void, never, MapleConfig> = Effe
 	const seen = Option.getOrUndefined(config.lastSeenVersion)
 	if (seen === MAPLE_VERSION) return
 	yield* config.write({ lastSeenVersion: MAPLE_VERSION }).pipe(Effect.ignore)
-	if (seen === undefined || process.argv[2] === "changelog") return
-	if (releasesBetween(RELEASES, seen, MAPLE_VERSION).length === 0) return
+	if (process.argv[2] === "changelog") return
+	const upgraded =
+		seen !== undefined
+			? releasesBetween(RELEASES, seen, MAPLE_VERSION).length > 0
+			: Option.isSome(config.lastUpdateCheck) &&
+				RELEASES.some((r) => r.version === stripV(MAPLE_VERSION))
+	if (!upgraded) return
 	yield* Effect.sync(() => process.stderr.write(whatsNewHint(seen, MAPLE_VERSION)))
 })
 
-export const whatsNewHint = (from: string, to: string): string =>
-	`\n${green("●")} ${bold(`updated to ${stripV(to)}`)} ${dim(`from ${stripV(from)}`)}\n` +
-	`  ${dim("run")} ${bold(`maple changelog --since ${stripV(from)}`)} ${dim("to see what's new")}\n\n`
+/** `from` is undefined after an upgrade from a binary that never stored its version. */
+export const whatsNewHint = (from: string | undefined, to: string): string =>
+	`\n${green("●")} ${bold(`updated to ${stripV(to)}`)}${from === undefined ? "" : ` ${dim(`from ${stripV(from)}`)}`}\n` +
+	`  ${dim("run")} ${bold(from === undefined ? "maple changelog" : `maple changelog --since ${stripV(from)}`)} ${dim("to see what's new")}\n\n`

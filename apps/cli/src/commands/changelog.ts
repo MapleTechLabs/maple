@@ -4,7 +4,7 @@ import { Effect, Option } from "effect"
 import { RELEASES, type ReleaseNotes, releasesBetween } from "../core/changelog"
 import { stripV } from "../core/update"
 import { CliUsageError } from "../lib/errors"
-import { argvFormat, printJson } from "../lib/output"
+import { chosenFormat, printJson } from "../lib/output"
 import { bold } from "../lib/style"
 import { MAPLE_VERSION } from "../version"
 
@@ -22,7 +22,7 @@ export const changelog = Command.make("changelog", {
 }).pipe(
 	Command.withDescription(
 		"What's new: release notes for this version of maple, or for every release since --since. " +
-			"Prints text; pass --format json for JSON.",
+			"Prints text; pass --format json (or set MAPLE_FORMAT=json) for JSON.",
 	),
 	Command.withExamples([
 		{ command: "maple changelog", description: "Notes for the installed version" },
@@ -43,7 +43,8 @@ export const changelog = Command.make("changelog", {
 					: MAPLE_VERSION === "dev"
 						? RELEASES.slice(0, 1)
 						: RELEASES.filter((r) => r.version === stripV(MAPLE_VERSION))
-			if (argvFormat(process.argv) === "json") return yield* printJson(releases)
+			// Text unless JSON was asked for, by --format or MAPLE_FORMAT.
+			if ((yield* chosenFormat) === "json") return yield* printJson(releases)
 			yield* Effect.sync(() => {
 				if (releases.length > 0) process.stdout.write(renderText(releases))
 				else

@@ -40,8 +40,8 @@ export const argvFormat = (argv: ReadonlyArray<string>): OutputFormat | undefine
 	return isFormat(found) ? found : undefined
 }
 
-/** Parsed `--format` when the setting is registered, else argv, then MAPLE_FORMAT, then json. */
-export const resolveFormat: Effect.Effect<OutputFormat> = Effect.gen(function* () {
+/** Parsed `--format` when the setting is registered, else argv, then MAPLE_FORMAT; undefined when none chose. */
+export const chosenFormat: Effect.Effect<OutputFormat | undefined> = Effect.gen(function* () {
 	const setting = yield* Effect.serviceOption(OutputFormatSetting)
 	const explicit = Option.match(setting, {
 		onSome: Option.getOrUndefined,
@@ -52,8 +52,14 @@ export const resolveFormat: Effect.Effect<OutputFormat> = Effect.gen(function* (
 		Effect.map(Option.getOrUndefined),
 		Effect.orElseSucceed(() => undefined),
 	)
-	return explicit ?? (isFormat(env) ? env : "json")
+	return explicit ?? (isFormat(env) ? env : undefined)
 })
+
+/** The chosen format, defaulting to json. */
+export const resolveFormat: Effect.Effect<OutputFormat> = Effect.map(
+	chosenFormat,
+	(format) => format ?? "json",
+)
 
 // ---------------------------------------------------------------------------
 // Cell formatting (table mode only; JSON keeps raw numbers)

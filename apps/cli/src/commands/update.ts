@@ -91,7 +91,10 @@ export const update = Command.make("update", {
 					`${green("✓")} updated to ${bold(stripV(result.tag))} ${dim(`(${result.installDir})`)}\n` +
 						(notice ? `  ${amber("!")} ${dim(notice)}\n` : "") +
 						`  ${dim("restart any running")} ${bold("maple start")}\n` +
-						`  ${dim("see what's new:")} ${bold(`maple changelog --since ${current}`)}\n`,
+						// A pinned --tag can downgrade; there is nothing new to read then.
+						(isNewer(current, result.tag)
+							? `  ${dim("see what's new:")} ${bold(`maple changelog --since ${current}`)}\n`
+							: ""),
 				),
 			)
 			// The hint above already pointed at the notes; skip the next run's notice.
