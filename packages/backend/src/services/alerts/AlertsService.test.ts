@@ -4755,7 +4755,7 @@ describe("AlertsService scheduler pool", () => {
 	const orgAt = (index: number) => asOrgId(`org_pool_${String(index).padStart(2, "0")}`)
 
 	// Created in index order with distinct updatedAt, which is the scheduler's order
-	// before its per-tick rotation.
+	// for rules it has never claimed.
 	const createPoolRules = (alerts: AlertsServiceApi) =>
 		Effect.forEach(
 			Arr.range(0, RULE_COUNT - 1),
@@ -4792,8 +4792,8 @@ describe("AlertsService scheduler pool", () => {
 
 	it.live("a slow rule holds one lane, not the whole claim chunk", () => {
 		const testDb = createTestDb(trackedDbs)
-		// 25 apart, so the two slow rules land in different claim chunks whatever
-		// the tick's rotation is: a chunk barrier would run them back to back.
+		// 25 apart, so the two slow rules land in different claim chunks: a chunk
+		// barrier would run them back to back.
 		const { stub } = makeSlowWarehouse((orgId) =>
 			Effect.succeed(
 				orgId === orgAt(0) || orgId === orgAt(25)
@@ -4811,19 +4811,14 @@ describe("AlertsService scheduler pool", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
 	})
 
-	it.live("stops at the tick deadline and evaluates the deferred rules next tick", () => {
+	it.live("stops at the tick deadline and leads the next tick with the deferred rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		const tickBudgetMs = 1_500
-		// The scheduler rotates its start by the minute index; a clock based on a
-		// multiple of RULE_COUNT minutes starts both ticks at rule 0.
-		const rotationZeroMs = 1_701_000_000_000 - (1_701_000_000_000 % (RULE_COUNT * 60_000))
-		const realStartMs = Date.now()
-		const shiftMs = Ref.makeUnsafe(rotationZeroMs + 1_000 - realStartMs)
-		const allFast = Ref.makeUnsafe(false)
+		const shiftMs = Ref.makeUnsafe(0)
+		// Slow on every tick, so no tick reaches all rules and only the order decides
+		// which rules a tick reaches.
 		const { stub, queried } = makeSlowWarehouse((orgId) =>
-			Effect.map(Ref.get(allFast), (fast): EvalDelay =>
-				fast ? Duration.millis(FAST_EVAL_MS) : orgId === orgAt(0) ? "stuck" : Duration.millis(300),
-			),
+			Effect.succeed<EvalDelay>(orgId === orgAt(0) ? "stuck" : Duration.millis(200)),
 		)
 		const overrides = {
 			fetch: okFetch,
@@ -4835,18 +4830,25 @@ describe("AlertsService scheduler pool", () => {
 			const alerts = yield* AlertsService
 			yield* createPoolRules(alerts)
 
-			const wallMs = yield* timedTick(alerts)
-			const firstTick = yield* queried
+			const startedAt = yield* Clock.currentTimeMillis
+			const firstTick = yield* alerts.runSchedulerTick()
+			const wallMs = (yield* Clock.currentTimeMillis) - startedAt
 
 			assert.isBelow(wallMs, tickBudgetMs + 1_000)
-			assert.isBelow(HashSet.size(firstTick), RULE_COUNT)
+			assert.isBelow(HashSet.size(yield* queried), RULE_COUNT)
+			assert.strictEqual(firstTick.evaluatedCount, HashSet.size(yield* queried))
 			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]!
 			assert.include(stuckRule.lastEvaluationError ?? "", "deadline")
 
-			// Past every claim's TTL, with the same rotation.
-			yield* Ref.update(shiftMs, (shift) => shift + RULE_COUNT * 60_000)
-			yield* Ref.set(allFast, true)
-			yield* alerts.runSchedulerTick()
+			// Each tick a minute later, past every claim's TTL.
+			yield* Effect.forEach(
+				[1, 2],
+				() =>
+					Ref.update(shiftMs, (shift) => shift + 60_000).pipe(
+						Effect.andThen(alerts.runSchedulerTick()),
+					),
+				{ discard: true },
+			)
 
 			assert.strictEqual(HashSet.size(yield* queried), RULE_COUNT)
 		}).pipe(Effect.provide(makeLayer(testDb, stub, overrides)))

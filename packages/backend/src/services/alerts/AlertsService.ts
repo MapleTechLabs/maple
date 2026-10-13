@@ -81,6 +81,7 @@ import {
 	Metric,
 	MutableHashMap,
 	Option,
+	Order,
 	Random,
 	Record,
 	Result,
@@ -304,13 +305,16 @@ export const interleaveAlertRulesByOrg = <T extends { readonly orgId: string }>(
 	rows: ReadonlyArray<T>,
 ): ReadonlyArray<T> => interleaveAlertRulesByTenant(rows, (row) => row.orgId)
 
-// Starts each tick at a different rule, so a tick that hits its deadline does not
-// leave the same tail of rules unevaluated tick after tick.
-const rotateAlertRules = <T>(rows: ReadonlyArray<T>, offset: number): ReadonlyArray<T> => {
-	if (rows.length === 0) return rows
-	const start = offset % rows.length
-	return Arr.appendAll(Arr.drop(rows, start), Arr.take(rows, start))
-}
+// Least recently claimed first (never claimed sorts first), so the rules a tick
+// deferred lead the next one instead of staying in the tail. The sort is stable.
+const orderAlertRulesByLastClaim = <T extends { readonly id: string }>(
+	rows: ReadonlyArray<T>,
+	lastClaimedAt: ReadonlyMap<string, number>,
+): ReadonlyArray<T> =>
+	Arr.sort(
+		rows,
+		Order.mapInput(Order.Number, (row: T) => lastClaimedAt.get(row.id) ?? 0),
+	)
 
 const toIngestDateTime64 = warehouseDateTime64
 
@@ -2798,6 +2802,48 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					}),
 				)
 
+			const loadLastClaimTimes = (rows: ReadonlyArray<StoredAlertRuleRow>) =>
+				Arr.isReadonlyArrayEmpty(rows)
+					? Effect.succeed(new Map<string, number>())
+					: dbExecute((db) =>
+							db.run(
+								PG.from(AlertRuleClaims)
+									.select("ruleId", "lastScheduledAt")
+									.where(($) => [$.ruleId.in_(...Arr.map(rows, (row) => row.id))]),
+							),
+						).pipe(
+							Effect.map(
+								(claims) =>
+									new Map(
+										claims.map((claim) => [claim.ruleId, claim.lastScheduledAt] as const),
+									),
+							),
+						)
+
+			// Expires this tick's own claims (the timestamp predicate leaves a newer
+			// claim alone), so the next tick can take them and orders them first.
+			// Best-effort: an unreleased claim still expires after SCHEDULER_LOCK_TTL_MS.
+			const releaseClaims = (claims: ReadonlyArray<{ id: AlertRuleId; timestamp: number }>) =>
+				Effect.forEach(
+					Record.values(Arr.groupBy(claims, (claim) => String(claim.timestamp))),
+					(group) => {
+						const [first, ...rest] = group
+						return dbExecute((db) =>
+							db.run(
+								PG.update(AlertRuleClaims)
+									.set({ lastScheduledAt: 0 })
+									.where(($) => [
+										$.ruleId.in_(first.id, ...rest.map((claim) => claim.id)),
+										$.lastScheduledAt.eq(first.timestamp),
+									]),
+							),
+						)
+					},
+					{ discard: true },
+				).pipe(
+					Effect.ignore({ log: "Warn", message: "Failed to release unstarted alert rule claims" }),
+				)
+
 			/**
 			 * The two per-rule reads the scheduler used to issue inside its loop,
 			 * fetched once for the whole tick.
@@ -3229,6 +3275,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					)
 				const deferredRules = yield* Ref.make(0)
 				const deferRules = (count: number) => Ref.update(deferredRules, (n) => n + count)
+				// Claims won but never started, released after the pool drains.
+				const unstartedClaims = yield* Ref.make(Chunk.empty<{ id: AlertRuleId; timestamp: number }>())
+				const evaluatedRules = yield* Ref.make(0)
 
 				const evaluateBeforeDeadline = (orgId: OrgId, rule: NormalizedRule) =>
 					Effect.flatMap(now, (startedAt) =>
@@ -3407,9 +3456,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// next chunk is claimed only when the current one is fully handed out.
 				// Lock ages stay bounded by a chunk's queueing, as before, but one slow
 				// rule no longer idles the other lanes until its chunk drains.
+				const lastClaimedAt = yield* loadLastClaimTimes(rows)
 				yield* Stream.fromIterable(
 					Arr.chunksOf(
-						rotateAlertRules(interleaveAlertRulesByOrg(rows), Math.floor(tickStart / 60_000)),
+						interleaveAlertRulesByOrg(orderAlertRulesByLastClaim(rows, lastClaimedAt)),
 						RULE_CLAIM_CHUNK_SIZE,
 					),
 				).pipe(
@@ -3431,13 +3481,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Stream.mapEffect(
 						({ row, timestamp }) =>
 							Effect.flatMap(now, (startedAt) =>
-								startedAt >= deadline ? deferRules(1) : evaluateClaimedRule(row, timestamp),
+								startedAt >= deadline
+									? deferRules(1).pipe(
+											Effect.andThen(
+												Ref.update(
+													unstartedClaims,
+													Chunk.append({ id: row.id, timestamp }),
+												),
+											),
+										)
+									: evaluateClaimedRule(row, timestamp).pipe(
+											Effect.andThen(Ref.update(evaluatedRules, (n) => n + 1)),
+										),
 							),
 						{ concurrency: 5, unordered: true },
 					),
 					Stream.runDrain,
 				)
 
+				yield* releaseClaims(Chunk.toReadonlyArray(yield* Ref.get(unstartedClaims)))
 				const deferred = yield* Ref.get(deferredRules)
 				yield* Effect.annotateCurrentSpan("maple.alerting.rules_deferred", deferred)
 				if (deferred > 0) {
@@ -3532,10 +3594,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 
 				const deliveryResult = yield* processQueuedDeliveries()
-				yield* Metric.update(AlertingMetrics.rulesEvaluatedTotal, rows.length)
+				const evaluatedCount = yield* Ref.get(evaluatedRules)
+				yield* Metric.update(AlertingMetrics.rulesEvaluatedTotal, evaluatedCount)
 				yield* Metric.update(AlertingMetrics.tickDurationMs, (yield* now) - tickStart)
 				return {
-					evaluatedCount: rows.length,
+					evaluatedCount,
 					processedCount: deliveryResult.processedCount,
 					evaluationFailureCount: yield* Ref.get(evaluationFailureCount),
 					deliveryFailureCount: deliveryResult.failureCount,
