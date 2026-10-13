@@ -1,4 +1,4 @@
-// Header "Connect" affordance: a popover with the local ingest endpoint and
+// Sidebar "Connect" affordance: a popover with the local ingest endpoint and
 // exporter env. No API keys: everything ingests under the synthetic `local` org.
 
 import { useState } from "react"
@@ -30,15 +30,15 @@ export function ConnectButton() {
 					<Button
 						variant={hasIngested ? "outline" : "default"}
 						size="sm"
-						className="gap-2"
+						className="flex-1 justify-start gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
 						aria-label="Connect your app"
 					>
 						<ConnectionIcon />
-						<span className="hidden sm:inline">Connect</span>
+						<span className="group-data-[collapsible=icon]:hidden">Connect</span>
 					</Button>
 				}
 			/>
-			<PopoverPopup align="end" className="w-[min(26rem,calc(100vw-2rem))]">
+			<PopoverPopup side="right" align="end" className="w-[min(26rem,calc(100vw-2rem))]">
 				{open && (
 					<div className="space-y-4">
 						<div className="space-y-1">
