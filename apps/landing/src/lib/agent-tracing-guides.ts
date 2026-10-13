@@ -39,6 +39,7 @@ export const AGENT_GUIDES: readonly AgentGuide[] = [
 	guide("cloudflare-agents", "Cloudflare Agents", "Agents in Durable Objects", "cloudflare", ["typescript"]),
 	// No Genkit brand mark yet; Google's, as on the page itself.
 	guide("genkit", "Genkit", "Flows, tools and sessions", "googleadk", ["typescript"]),
+	guide("eve", "eve", "Sessions, subagents and approvals", "vercel", ["typescript"]),
 	guide("openai-agents", "OpenAI Agents SDK", "Handoffs and agents as tools", "openai", ["python", "typescript"]),
 	guide("langchain", "LangChain & LangGraph", "Graphs, threads and interrupts", "langchain", ["python", "typescript"]),
 	guide("claude-agent-sdk", "Claude Agent SDK & Claude Code", "TypeScript, Python and the CLI", "claude", [
