@@ -535,6 +535,12 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 20
         steps:
+            # Probes bind fixed ports in 452xx-454xx, inside Linux's default ephemeral
+            # range, so an earlier outbound socket could hold one (EADDRINUSE). Move
+            # the ephemeral range above them before anything opens a connection.
+            - name: Keep ephemeral ports off the probe ports
+              run: sudo sysctl -w net.ipv4.ip_local_port_range="50000 65000"
+
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
@@ -640,6 +646,12 @@ jobs:
                           native-archive-merge-probe.sh:maple-native-archive-merge:1
                           native-retention-probe.sh:maple-native-retention:1
         steps:
+            # Probes bind fixed ports in 452xx-454xx, inside Linux's default ephemeral
+            # range, so an earlier outbound socket could hold one (EADDRINUSE). Move
+            # the ephemeral range above them before anything opens a connection.
+            - name: Keep ephemeral ports off the probe ports
+              run: sudo sysctl -w net.ipv4.ip_local_port_range="50000 65000"
+
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
