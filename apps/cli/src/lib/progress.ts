@@ -35,7 +35,6 @@ export const progressBar = (fraction: number, width = BAR_WIDTH): string => {
 interface Transfer {
 	readonly received: number
 	readonly total: number | undefined
-	readonly startedAt: number
 }
 
 export interface StepHandle {
@@ -43,15 +42,36 @@ export interface StepHandle {
 	readonly transfer: (received: number, total: number | undefined) => Effect.Effect<void>
 }
 
-const transferSuffix = (t: Transfer, now: number): string => {
-	const elapsed = Math.max(1, now - t.startedAt) / 1000
-	const rate = `${formatBytes(Math.round(t.received / elapsed))}/s`
+/** Transfer suffixes from richest to plainest; the redraw takes the first that
+ *  fits, since a wrapped line leaves rows `CLEAR_LINE` cannot reach. */
+const transferSuffixes = (t: Transfer, elapsedMs: number): ReadonlyArray<string> => {
+	const rate = `${formatBytes(Math.round(t.received / (Math.max(1, elapsedMs) / 1000)))}/s`
 	if (t.total === undefined || t.total <= 0) {
-		return `  ${dim(`${formatBytes(t.received)}  ${rate}`)}`
+		return [`  ${dim(`${formatBytes(t.received)}  ${rate}`)}`, `  ${dim(formatBytes(t.received))}`, ""]
 	}
 	const fraction = t.received / t.total
-	const pct = `${Math.floor(fraction * 100)}%`.padStart(4)
-	return `  ${progressBar(fraction)} ${bold(pct)}  ${dim(`${formatBytes(t.received)} / ${formatBytes(t.total)}  ${rate}`)}`
+	const pct = bold(`${Math.floor(fraction * 100)}%`.padStart(4))
+	return [
+		`  ${progressBar(fraction)} ${pct}  ${dim(`${formatBytes(t.received)} / ${formatBytes(t.total)}  ${rate}`)}`,
+		`  ${progressBar(fraction)} ${pct}`,
+		`  ${progressBar(fraction, 10)} ${pct}`,
+		` ${pct}`,
+		"",
+	]
+}
+
+/** The running line, kept narrower than the terminal so it never wraps. */
+export const fitLine = (
+	head: string,
+	label: string,
+	suffixes: ReadonlyArray<string>,
+	columns: number,
+): string => {
+	const base = `${head}${label}`
+	const fit = suffixes.find((suffix) => Bun.stringWidth(base + suffix) < columns)
+	if (fit !== undefined) return base + fit
+	const room = Math.max(1, columns - 1 - Bun.stringWidth(head))
+	return label.length > room ? `${head}${label.slice(0, Math.max(0, room - 1))}…` : base
 }
 
 export interface StepLabels {
@@ -69,26 +89,23 @@ export const step = <A, E, R>(
 ): Effect.Effect<A, E, R> =>
 	Effect.gen(function* () {
 		const label = labels.running
+		// Timed from the step's start, so a slow first byte counts toward the
+		// elapsed time and the rate.
+		const startedAt = yield* Clock.currentTimeMillis
 		const transfer = yield* Ref.make(Option.none<Transfer>())
 		const handle: StepHandle = {
-			transfer: (received, total) =>
-				Effect.flatMap(Clock.currentTimeMillis, (now) =>
-					Ref.update(transfer, (prev) =>
-						Option.some({
-							received,
-							total,
-							startedAt: Option.match(prev, { onNone: () => now, onSome: (p) => p.startedAt }),
-						}),
-					),
-				),
+			transfer: (received, total) => Ref.set(transfer, Option.some({ received, total })),
 		}
 
 		const draw = Effect.gen(function* () {
 			const now = yield* Clock.currentTimeMillis
 			const frame = SPINNER[Math.floor(now / FRAME_MS) % SPINNER.length] ?? SPINNER[0]
-			const t = yield* Ref.get(transfer)
-			const suffix = Option.match(t, { onNone: () => "", onSome: (x) => transferSuffix(x, now) })
-			yield* write(`${CLEAR_LINE}  ${amber(frame)} ${label}${suffix}`)
+			const suffixes = Option.match(yield* Ref.get(transfer), {
+				onNone: () => [""],
+				onSome: (t) => transferSuffixes(t, now - startedAt),
+			})
+			const columns = process.stderr.columns ?? 80
+			yield* write(`${CLEAR_LINE}${fitLine(`  ${amber(frame)} `, label, suffixes, columns)}`)
 		})
 
 		const ticker = live
@@ -108,7 +125,7 @@ export const step = <A, E, R>(
 				const detail = Option.match(yield* Ref.get(transfer), {
 					onNone: () => "",
 					onSome: (t) =>
-						` ${dim(`${formatBytes(t.total ?? t.received)} in ${((now - t.startedAt) / 1000).toFixed(1)}s`)}`,
+						` ${dim(`${formatBytes(t.total ?? t.received)} in ${((now - startedAt) / 1000).toFixed(1)}s`)}`,
 				})
 				const line = Exit.isSuccess(exit)
 					? `${green("✓")} ${labels.done}${detail}`
