@@ -7,7 +7,20 @@ import { ChatAlertPoster } from "./ChatAlertPoster"
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, Clock, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import {
+	Array as Arr,
+	Cause,
+	Clock,
+	ConfigProvider,
+	Duration,
+	Effect,
+	Exit,
+	HashSet,
+	Layer,
+	Option,
+	Ref,
+	Schema,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
@@ -195,6 +208,8 @@ const defaultTestRuntime: AlertRuntimeApi = {
 	now: Clock.currentTimeMillis,
 	makeUuid: () => crypto.randomUUID(),
 	deliveryTimeoutMs: () => 15_000,
+	schedulerTickBudgetMs: () => 25_000,
+	schedulerEvalTimeoutMs: () => 15_000,
 }
 
 interface TestOverrides extends Partial<AlertRuntimeApi> {
@@ -4703,5 +4718,137 @@ describe("AlertsService held incidents", () => {
 			yield* tickAfter(state, alerts, 1)
 			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).status, "resolved")
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
+	})
+})
+
+describe("AlertsService scheduler pool", () => {
+	const RULE_COUNT = 50
+	const SLOW_EVAL_MS = 3_000
+	const FAST_EVAL_MS = 20
+
+	type EvalDelay = Duration.Duration | "stuck"
+
+	// A warehouse whose latency is chosen per org, one rule per org, so each rule's
+	// evaluation time is set by the test. Records every org it was queried for.
+	const makeSlowWarehouse = (delayFor: (orgId: string) => Effect.Effect<EvalDelay>) => {
+		const queried = Ref.makeUnsafe(HashSet.empty<string>())
+		const base = makeWarehouseStub({})
+		const delayed = <A, E, R>(orgId: string, effect: Effect.Effect<A, E, R>) =>
+			Ref.update(queried, HashSet.add(orgId)).pipe(
+				Effect.andThen(delayFor(orgId)),
+				Effect.flatMap((delay) => (delay === "stuck" ? Effect.never : Effect.sleep(delay))),
+				Effect.andThen(effect),
+			)
+		const stub: WarehouseQueryServiceApi = {
+			...base,
+			sqlQuery: (tenant, ...rest) => delayed(tenant.orgId, base.sqlQuery(tenant, ...rest)),
+			rawSqlQuery: (tenant, ...rest) => delayed(tenant.orgId, base.rawSqlQuery(tenant, ...rest)),
+			compiledQuery: (tenant, ...rest) => delayed(tenant.orgId, base.compiledQuery(tenant, ...rest)),
+			compiledQueryWithCapabilities: (tenant, ...rest) =>
+				delayed(tenant.orgId, base.compiledQueryWithCapabilities(tenant, ...rest)),
+			compiledQueryFirst: (tenant, ...rest) =>
+				delayed(tenant.orgId, base.compiledQueryFirst(tenant, ...rest)),
+		}
+		return { stub, queried: Ref.get(queried) }
+	}
+
+	const orgAt = (index: number) => asOrgId(`org_pool_${String(index).padStart(2, "0")}`)
+
+	// Created in index order with distinct updatedAt, which is the scheduler's order
+	// before its per-tick rotation.
+	const createPoolRules = (alerts: AlertsServiceApi) =>
+		Effect.forEach(
+			Arr.range(0, RULE_COUNT - 1),
+			(index) =>
+				createWebhookDestination(alerts, orgAt(index), asUserId("user_pool")).pipe(
+					Effect.flatMap((destination) =>
+						alerts.createRule(
+							orgAt(index),
+							asUserId("user_pool"),
+							adminRoles,
+							new AlertRuleUpsertRequest({
+								name: "Pool rule",
+								severity: "warning",
+								enabled: true,
+								signalType: "error_rate",
+								comparator: "gt",
+								threshold: 5,
+								windowMinutes: 5,
+								destinationIds: [destination.id],
+							}),
+						),
+					),
+					Effect.andThen(Effect.sleep("2 millis")),
+				),
+			{ discard: true },
+		)
+
+	const timedTick = (alerts: AlertsServiceApi) =>
+		Effect.gen(function* () {
+			const startedAt = yield* Clock.currentTimeMillis
+			yield* alerts.runSchedulerTick()
+			return (yield* Clock.currentTimeMillis) - startedAt
+		})
+
+	it.live("a slow rule holds one lane, not the whole claim chunk", () => {
+		const testDb = createTestDb(trackedDbs)
+		// 25 apart, so the two slow rules land in different claim chunks whatever
+		// the tick's rotation is: a chunk barrier would run them back to back.
+		const { stub } = makeSlowWarehouse((orgId) =>
+			Effect.succeed(
+				orgId === orgAt(0) || orgId === orgAt(25)
+					? Duration.millis(SLOW_EVAL_MS)
+					: Duration.millis(FAST_EVAL_MS),
+			),
+		)
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			yield* createPoolRules(alerts)
+
+			const wallMs = yield* timedTick(alerts)
+
+			assert.isBelow(wallMs, SLOW_EVAL_MS * 1.5)
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+	})
+
+	it.live("stops at the tick deadline and evaluates the deferred rules next tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const tickBudgetMs = 1_500
+		// The scheduler rotates its start by the minute index; a clock based on a
+		// multiple of RULE_COUNT minutes starts both ticks at rule 0.
+		const rotationZeroMs = 1_701_000_000_000 - (1_701_000_000_000 % (RULE_COUNT * 60_000))
+		const realStartMs = Date.now()
+		const shiftMs = Ref.makeUnsafe(rotationZeroMs + 1_000 - realStartMs)
+		const allFast = Ref.makeUnsafe(false)
+		const { stub, queried } = makeSlowWarehouse((orgId) =>
+			Effect.map(Ref.get(allFast), (fast): EvalDelay =>
+				fast ? Duration.millis(FAST_EVAL_MS) : orgId === orgAt(0) ? "stuck" : Duration.millis(300),
+			),
+		)
+		const overrides = {
+			fetch: okFetch,
+			now: Effect.zipWith(Clock.currentTimeMillis, Ref.get(shiftMs), (ms, shift) => ms + shift),
+			schedulerTickBudgetMs: () => tickBudgetMs,
+			schedulerEvalTimeoutMs: () => 800,
+		}
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			yield* createPoolRules(alerts)
+
+			const wallMs = yield* timedTick(alerts)
+			const firstTick = yield* queried
+
+			assert.isBelow(wallMs, tickBudgetMs + 1_000)
+			assert.isBelow(HashSet.size(firstTick), RULE_COUNT)
+			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]!
+			assert.include(stuckRule.lastEvaluationError ?? "", "deadline")
+
+			// Past every claim's TTL, with the same rotation.
+			yield* Ref.update(shiftMs, (shift) => shift + RULE_COUNT * 60_000)
+			yield* Ref.set(allFast, true)
+			yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(HashSet.size(yield* queried), RULE_COUNT)
+		}).pipe(Effect.provide(makeLayer(testDb, stub, overrides)))
 	})
 })

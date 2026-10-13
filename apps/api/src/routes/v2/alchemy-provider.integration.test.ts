@@ -114,6 +114,8 @@ const makeHarness = () => {
 		now: Effect.sync(() => Date.now()),
 		makeUuid: () => crypto.randomUUID(),
 		deliveryTimeoutMs: () => 15_000,
+		schedulerTickBudgetMs: () => 25_000,
+		schedulerEvalTimeoutMs: () => 15_000,
 	})
 	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
 	const emailLive = Layer.succeed(EmailService, {
