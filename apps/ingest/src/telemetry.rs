@@ -2749,13 +2749,8 @@ impl ExportWorker {
             self.post_tinybird(&datasource, body, rows).await?;
         }
         for ((org_id, datasource), frames) in by_clickhouse {
-            // A breaker-deferred group waits at most until its oldest frame ages out.
-            let shed_at = frames
-                .iter()
-                .map(|frame| frame.enqueued_at)
-                .min()
-                .filter(|_| !max_age.is_zero())
-                .map(|oldest| oldest + max_age);
+            let shed_at =
+                breaker_shed_deadline(frames.iter().map(|frame| frame.enqueued_at), max_age);
             let (body, rows) = combine_frames(frames);
             let outcome = self
                 .post_clickhouse(&org_id, &datasource, body, rows, shed_at)
@@ -2998,6 +2993,14 @@ impl ExportWorker {
 
         let mut deferred = false;
         let mut waited_on_breaker = false;
+        // Every admitted probe that fails consumes `attempt`, so with no age bound the
+        // retry budget ends the wait. This cap covers a probe slot this lane never wins.
+        let breaker_wait_cap = self
+            .clickhouse_breakers
+            .cfg
+            .cooldown
+            .saturating_mul(max_attempts.max(1).saturating_mul(2));
+        let mut breaker_waited = Duration::ZERO;
         loop {
             // An open breaker is backpressure, not a drop: hold the batch (and so
             // the WAL cursor) without calling the target until a probe is admitted.
@@ -3034,6 +3037,30 @@ impl ExportWorker {
                     );
                     return Ok(ClickHouseExportOutcome::Dropped);
                 }
+                if breaker_waited >= breaker_wait_cap {
+                    let span =
+                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
+                    span.record("maple.ingest.outcome", "dropped");
+                    record_stage_error(
+                        &span,
+                        "circuit_open_exhausted",
+                        "no breaker probe admitted within the wait cap",
+                        true,
+                    );
+                    metrics::clickhouse_export_dropped(
+                        datasource,
+                        "circuit_open_exhausted",
+                        rows as u64,
+                    );
+                    error!(
+                        org_id,
+                        datasource,
+                        rows,
+                        attempt,
+                        "Dropping ClickHouse batch: breaker admitted no probe within the wait cap"
+                    );
+                    return Ok(ClickHouseExportOutcome::Dropped);
+                }
                 if !deferred {
                     // One span per deferred batch, left Unset: waiting is not a failure.
                     deferred = true;
@@ -3050,7 +3077,14 @@ impl ExportWorker {
                     );
                 }
                 waited_on_breaker = true;
-                sleep(self.clickhouse_breakers.poll_interval()).await;
+                // Wake at the age deadline rather than a poll interval past it.
+                let pause = shed_at.map_or(self.clickhouse_breakers.poll_interval(), |deadline| {
+                    self.clickhouse_breakers
+                        .poll_interval()
+                        .min(deadline.saturating_duration_since(now))
+                });
+                breaker_waited = breaker_waited.saturating_add(pause);
+                sleep(pause).await;
                 continue;
             }
             // Backoff is taken here (before the attempt) so that when the breaker
@@ -3332,6 +3366,18 @@ impl ExportWorker {
         };
         provider.resolve_clickhouse_target(org_id).await
     }
+}
+
+/// When a breaker-deferred group may be shed: once its newest frame has outlived
+/// the max queue age, so fresh rows are never shed early. `None` without an age bound.
+fn breaker_shed_deadline(
+    enqueued: impl Iterator<Item = Instant>,
+    max_age: Duration,
+) -> Option<Instant> {
+    if max_age.is_zero() {
+        return None;
+    }
+    enqueued.max().map(|newest| newest + max_age)
 }
 
 fn combine_frames(frames: Vec<&QueuedFrame>) -> (Vec<u8>, usize) {
@@ -5612,6 +5658,94 @@ mod tests {
         );
 
         drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn clickhouse_breaker_wait_without_age_bound_ends_at_retry_budget() {
+        // With INGEST_QUEUE_MAX_AGE_SECS=0 there is no age deadline, so each failed
+        // half-open probe must spend the retry budget, or a dead target wedges the lane.
+        let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(counting_failing_clickhouse_handler))
+            .with_state(Arc::clone(&request_count));
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("ch-breaker-budget");
+        let mut cfg = test_cfg();
+        cfg.endpoint = String::new();
+        cfg.token = String::new();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.queue_max_age = Duration::ZERO;
+        cfg.export_max_attempts = 4;
+        cfg.clickhouse_breaker = ClickHouseBreakerConfig {
+            failure_threshold: 2,
+            cooldown: Duration::from_millis(50),
+        };
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_owned(),
+                password: String::new(),
+                database: "maple".to_owned(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse_validation(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            Some(provider),
+            false,
+        )
+        .await
+        .unwrap();
+
+        pipeline
+            .accept_logs_to(
+                "org_dead",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::ClickHouse).await;
+        assert_eq!(
+            request_count.load(Ordering::SeqCst),
+            4,
+            "two failures trip the breaker, then two failed probes exhaust the budget"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[test]
+    fn breaker_shed_deadline_follows_the_newest_frame() {
+        let t0 = Instant::now();
+        let max_age = Duration::from_secs(300);
+        let enqueued = [
+            t0,
+            t0 + Duration::from_secs(200),
+            t0 + Duration::from_secs(50),
+        ];
+        assert_eq!(
+            breaker_shed_deadline(enqueued.into_iter(), max_age),
+            Some(t0 + Duration::from_secs(500)),
+            "a group is only shed once its freshest frame has outlived the max age"
+        );
+        assert_eq!(
+            breaker_shed_deadline(enqueued.into_iter(), Duration::ZERO),
+            None
+        );
+        assert_eq!(breaker_shed_deadline(std::iter::empty(), max_age), None);
     }
 
     #[test]
