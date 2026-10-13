@@ -6,6 +6,7 @@ import {
 	type ScrapeResultReport,
 } from "@maple/domain/http"
 import { ScraperEnv } from "./Env"
+import { isTransientStatus, TRANSIENT_RETRY } from "./retry"
 
 export class ApiRequestError extends Schema.TaggedError<ApiRequestError>()("@maple/scraper/ApiRequestError", {
 	message: Schema.String,
@@ -44,26 +45,34 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 		const transportError = (error: { readonly message: string }) =>
 			new ApiRequestError({ message: `Maple API unreachable: ${error.message}`, status: null })
 
+		// One round-trip to the body text, retried while the failure is transient.
+		const roundTrip = (request: HttpClientRequest.HttpClientRequest, label: string) =>
+			Effect.gen(function* () {
+				const response = yield* client
+					.execute(request)
+					.pipe(
+						Effect.annotateSpans("peer.service", "maple-api"),
+						Effect.timeout(REQUEST_TIMEOUT),
+						Effect.mapError(transportError),
+					)
+				const text = yield* response.text.pipe(
+					Effect.timeout(REQUEST_TIMEOUT),
+					Effect.mapError(transportError),
+				)
+				if (response.status < 200 || response.status >= 300) {
+					return yield* new ApiRequestError({
+						message: `${label} returned HTTP ${response.status}: ${text.slice(0, 200)}`,
+						status: response.status,
+					})
+				}
+				return text
+			}).pipe(Effect.retry({ schedule: TRANSIENT_RETRY, while: (error) => isTransientStatus(error.status) }))
+
 		const listTargets = Effect.fn("ApiClient.listTargets")(function* () {
 			const request = HttpClientRequest.get(`${env.MAPLE_API_URL}/api/internal/scrape-targets`, {
 				headers: authHeaders,
 			})
-			const response = yield* client
-				.execute(request)
-				.pipe(
-					Effect.annotateSpans("peer.service", "maple-api"),
-					Effect.timeout(REQUEST_TIMEOUT),
-					Effect.mapError(transportError),
-				)
-			const text = yield* response.text.pipe(Effect.mapError(transportError))
-			if (response.status < 200 || response.status >= 300) {
-				return yield* Effect.fail(
-					new ApiRequestError({
-						message: `scrape-targets returned HTTP ${response.status}: ${text.slice(0, 200)}`,
-						status: response.status,
-					}),
-				)
-			}
+			const text = yield* roundTrip(request, "scrape-targets")
 			return yield* decodeJson(text).pipe(
 				Effect.mapError(
 					() =>
@@ -93,21 +102,7 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 			const request = HttpClientRequest.post(`${env.MAPLE_API_URL}/api/internal/scrape-results`, {
 				headers: authHeaders,
 			}).pipe(HttpClientRequest.bodyText(JSON.stringify(results), "application/json"))
-			const response = yield* client
-				.execute(request)
-				.pipe(
-					Effect.annotateSpans("peer.service", "maple-api"),
-					Effect.timeout(REQUEST_TIMEOUT),
-					Effect.mapError(transportError),
-				)
-			if (response.status < 200 || response.status >= 300) {
-				return yield* Effect.fail(
-					new ApiRequestError({
-						message: `scrape-results returned HTTP ${response.status}`,
-						status: response.status,
-					}),
-				)
-			}
+			yield* roundTrip(request, "scrape-results")
 		})
 
 		return { listTargets, reportResults } satisfies ApiClientApi
