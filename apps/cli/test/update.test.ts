@@ -106,9 +106,24 @@ describe("shouldCheck", () => {
 describe("update HTTP", () => {
 	it.effect("decodes the latest release tag without mutating global fetch", () =>
 		Effect.gen(function* () {
-			const fetchStub = (async () => Response.json({ tag_name: "v1.2.3" })) as typeof fetch
+			const fetchStub = (async () => Response.json([{ tag_name: "v1.2.3" }])) as typeof fetch
 			const tag = yield* withFetch(fetchLatestTag(), fetchStub)
 			strictEqual(tag, "v1.2.3")
+		}),
+	)
+
+	// The npm packages publish GitHub releases too; one of them was "latest" and broke updates.
+	it.effect("skips npm package releases, drafts and prereleases for the newest CLI tag", () =>
+		Effect.gen(function* () {
+			const fetchStub = (async () =>
+				Response.json([
+					{ tag_name: "@maple-dev/alchemy@0.2.0" },
+					{ tag_name: "v0.0.25", draft: true },
+					{ tag_name: "v0.0.25-rc.1", prerelease: true },
+					{ tag_name: "v0.0.24" },
+					{ tag_name: "v0.0.23" },
+				])) as typeof fetch
+			strictEqual(yield* withFetch(fetchLatestTag(), fetchStub), "v0.0.24")
 		}),
 	)
 
