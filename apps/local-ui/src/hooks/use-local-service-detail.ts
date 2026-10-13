@@ -1,8 +1,10 @@
+import { useCallback } from "react"
 import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
 import { DateTime } from "effect"
 import { CH } from "@maple/query-engine"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import type { SeriesPoint } from "../lib/chart-series"
+import { fillGoldenSignals, type GoldenSignalRow } from "../lib/golden-signals"
 import { parseClickHouseDateTime, type ChartWindow, type TimeBounds } from "../lib/time"
 import { toCatalogEntry, type ServiceCatalogEntry } from "./use-local-service-catalog"
 
@@ -106,29 +108,23 @@ export function useLocalServiceOperationsTimeseries(
 	})
 }
 
-/** One bucket of the service's golden signals, shaped for the @maple/ui service charts. */
-export type GoldenSignalPoint = {
-	readonly bucket: string
-	/** Entry spans in the bucket; the throughput chart turns it into a rate. */
-	readonly throughput: number
-	readonly errorRate: number
-	readonly p50LatencyMs: number
-	readonly p95LatencyMs: number
-	readonly p99LatencyMs: number
-	readonly apdexScore: number
-}
-
 /**
  * Latency, throughput, error rate and Apdex over the chart window, from the service's
- * entry spans (the same `rootOnly` scope as the header stats). Empty buckets are filled
- * with zero traffic so a quiet stretch reads as quiet, not as a gap.
+ * entry spans (the same `rootOnly` scope as the header stats). The cache holds the raw
+ * buckets; `select` fills them against the current window, so a window that narrows once
+ * the overview's first-seen time lands redraws without a refetch.
  */
 export function useLocalServiceGoldenSignals(serviceName: string, bounds: TimeBounds, window: ChartWindow) {
-	const { bucketSeconds, startMs, endMs } = window
+	const { bucketSeconds } = window
+	const select = useCallback(
+		(rows: ReadonlyArray<GoldenSignalRow>) => fillGoldenSignals(rows, window),
+		[window],
+	)
 	return useQuery({
 		queryKey: ["local", "services", "golden-signals", serviceName, bucketSeconds, boundsKey(bounds)],
 		placeholderData: keepPreviousData,
-		queryFn: async ({ signal }): Promise<ReadonlyArray<GoldenSignalPoint>> => {
+		select,
+		queryFn: async ({ signal }): Promise<ReadonlyArray<GoldenSignalRow>> => {
 			const rows = await executeLocalCompiledQuery(
 				CH.compile(
 					CH.tracesTimeseriesQuery({
@@ -143,23 +139,15 @@ export function useLocalServiceGoldenSignals(serviceName: string, bounds: TimeBo
 				),
 				signal,
 			)
-			const byBucket = new Map(rows.map((row) => [DateTime.toEpochMillis(row.bucket), row] as const))
-			const stepMs = bucketSeconds * 1000
-			const firstMs = Math.floor(startMs / stepMs) * stepMs
-			const count = Math.max(0, Math.floor((endMs - firstMs) / stepMs) + 1)
-			return Array.from({ length: count }, (_, i): GoldenSignalPoint => {
-				const ms = firstMs + i * stepMs
-				const row = byBucket.get(ms)
-				return {
-					bucket: new Date(ms).toISOString(),
-					throughput: row?.count ?? 0,
-					errorRate: row?.errorRate ?? 0,
-					p50LatencyMs: row?.p50Duration ?? 0,
-					p95LatencyMs: row?.p95Duration ?? 0,
-					p99LatencyMs: row?.p99Duration ?? 0,
-					apdexScore: row?.apdexScore ?? 0,
-				}
-			})
+			return rows.map((row) => ({
+				bucketMs: DateTime.toEpochMillis(row.bucket),
+				count: row.count,
+				errorRate: row.errorRate,
+				p50Ms: row.p50Duration,
+				p95Ms: row.p95Duration,
+				p99Ms: row.p99Duration,
+				apdexScore: row.apdexScore,
+			}))
 		},
 	})
 }

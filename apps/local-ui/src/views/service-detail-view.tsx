@@ -23,7 +23,6 @@ import {
 	useLocalServiceOperations,
 	useLocalServiceOperationsTimeseries,
 	useLocalServiceOverview,
-	type GoldenSignalPoint,
 } from "../hooks/use-local-service-detail"
 import { useRange } from "../hooks/use-range"
 import { useTimeWindow } from "../hooks/use-time-window"
@@ -32,6 +31,7 @@ import { chartWindow, WIDEST_RANGE } from "../lib/time"
 import { LinkRow, RowLink } from "../components/row-link"
 import { SeriesChart } from "../components/series-chart"
 import { RefreshButton, TimeRangeSelect } from "../components/toolbar"
+import type { GoldenSignalPoint } from "../lib/golden-signals"
 import { EmptyState, ErrorState } from "../components/view-states"
 
 const CHART_SERIES_LIMIT = 8
@@ -145,7 +145,15 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 							/>
 						</section>
 
-						<GoldenSignals points={goldenSignals.data} isPending={goldenSignals.isPending} />
+						{goldenSignals.isError ? (
+							<ErrorState
+								label="service charts"
+								error={goldenSignals.error}
+								onRetry={() => goldenSignals.refetch()}
+							/>
+						) : (
+							<GoldenSignals points={goldenSignals.data} isPending={goldenSignals.isPending} />
+						)}
 
 						<section className="space-y-2">
 							<h3 className="text-sm font-medium">Throughput by operation</h3>
