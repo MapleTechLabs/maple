@@ -2,7 +2,7 @@
  * Gen-AI semconv content for Maple's own agents: the model call, the tool call and the agent pass.
  *
  * Effect AI's providers annotate the model-call span with the requested and served model, the
- * response id, the finish reasons and two token totals. Everything else the convention defines —
+ * response id, the finish reasons, the output type and two token totals. Everything else the convention defines —
  * the provider name, the messages, the system instructions, the tool definitions, the cache and
  * reasoning buckets, the cost the provider billed, time to first chunk — is added here. Agent
  * Sessions reads all of it off the spans, and without it an investigation renders as a list of
@@ -272,7 +272,7 @@ interface CallTiming {
 
 const modelCallTransformer =
 	(telemetry: ModelCallTelemetry, timing: CallTiming): Telemetry.SpanTransformer =>
-	({ span, prompt, responseFormat, response }) => {
+	({ span, prompt, response }) => {
 		// Read before the serialization below, which is this side's work and not the model's.
 		const endedMs = timing.now()
 		const input = messagesJson(inputMessages(prompt), INPUT_MESSAGES_BUDGET)
@@ -290,7 +290,6 @@ const modelCallTransformer =
 			...(telemetry.reasoningLevel === undefined
 				? undefined
 				: { "gen_ai.request.reasoning.level": telemetry.reasoningLevel }),
-			"gen_ai.output.type": responseFormat.type,
 			"gen_ai.input.messages": input.json,
 			...(input.dropped > 0 ? { [MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR]: input.dropped } : undefined),
 			...(system === undefined ? undefined : { "gen_ai.system_instructions": system }),
