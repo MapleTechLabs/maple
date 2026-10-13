@@ -338,8 +338,10 @@ const orderAlertRulesByLastClaim = <T extends { readonly id: string }>(
 		Order.mapInput(Order.Number, (row: T) => lastClaimedAt.get(row.id) ?? 0),
 	)
 
-// Queued deliveries one drain pass takes; the rest wait for the next tick.
+// Deliveries claimed per batch. The drain takes batches until the queue is
+// empty or DELIVERY_DRAIN_BUDGET_MS has passed; the rest wait for the next tick.
 const DELIVERY_DRAIN_LIMIT = 50
+const DELIVERY_DRAIN_BUDGET_MS = 20_000
 
 // Logs and drops a typed failure or a defect, so one rule, chunk or delivery
 // cannot end the tick. Interruption still propagates.
@@ -1666,7 +1668,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				},
 			)
 
-			const processQueuedDeliveries = Effect.fn("AlertsService.processQueuedDeliveries")(function* () {
+			const processDeliveryBatch = Effect.fn("AlertsService.processDeliveryBatch")(function* () {
 				const currentTime = yield* now
 				const rows = yield* dbExecute((db) =>
 					db.run(
@@ -1680,6 +1682,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				if (rows.length === 0) {
 					return {
+						claimedCount: 0,
 						processedCount: 0,
 						failureCount: 0,
 					}
@@ -1886,17 +1889,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							cause: summarizeCause(Cause.die(defect)),
 						}),
 					)
-					yield* Ref.update(failureCount, (count) => count + 1)
-					yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
-					// Maple's fault, not the destination's: no retry, and the
-					// destination's failure streak is left alone.
-					yield* finalizeClaimedDelivery(row.id, yield* now, {
-						status: "failed",
-						errorMessage: "Internal error while delivering this notification",
-					})
+					// Retried through the bounded attempts, since a crash may be transient
+					// and nothing was sent. It is Maple's fault, so the destination's
+					// failure streak is left alone. A row whose stored data cannot be
+					// read fails its retry insert too, and so is not re-queued.
+					yield* recordFailedAttempt(
+						row,
+						{
+							message: "Internal error while delivering this notification",
+							kind: "internal",
+							retryable: true,
+						},
+						false,
+					)
 				})
 
-				const recoverDeliveryFailure = Effect.fnUntraced(function* (
+				const recoverDeliveryFailure = (
 					row: AlertDeliveryEventRow,
 					error:
 						| AlertValidationError
@@ -1904,8 +1912,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						| AlertPersistenceError
 						| AlertDestinationStorageError
 						| AlertRuleStoredConfigInvalidError,
-				) {
+				) => {
 					const failure = toDeliveryAttemptFailure(error)
+					return recordFailedAttempt(row, failure, !failure.retryable)
+				}
+
+				const recordFailedAttempt = Effect.fnUntraced(function* (
+					row: AlertDeliveryEventRow,
+					failure: DeliveryAttemptFailure,
+					countsAgainstDestination: boolean,
+				) {
 					// Fresh for the same reason as the claim in `processOneDelivery`:
 					// retry scheduling from the batch timestamp would date the backoff
 					// from before this attempt even started.
@@ -1945,7 +1961,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// A terminal failure is never retried for this delivery, so without
 					// this the destination would keep receiving (and losing) every
 					// future incident.
-					if (!failure.retryable) {
+					if (countsAgainstDestination) {
 						yield* noteTerminalDestinationFailure(
 							row,
 							destinationMap.get(row.destinationId)?.type ?? null,
@@ -1970,17 +1986,41 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				yield* Effect.forEach(rows, (row) =>
 					processOneDelivery(row).pipe(
 						Effect.catch((error) => recoverDeliveryFailure(row, error)),
-						// A crash is finalized as a terminal failure, so the row cannot be
-						// re-claimed first on every tick and stall the queue behind it.
+						// A crash finalizes the row, so it cannot be re-claimed first on
+						// every tick and stall the queue behind it.
 						Effect.catchDefect((defect) => recoverDeliveryDefect(row, defect)),
 						isolate("Alert delivery recovery failed", { deliveryKey: row.deliveryKey }),
 					),
 				)
 
 				return {
+					claimedCount: rows.length,
 					processedCount: yield* Ref.get(processedCount),
 					failureCount: yield* Ref.get(failureCount),
 				}
+			})
+
+			// Batches until the queue is drained or the budget is spent, so a burst
+			// larger than one batch does not build a backlog across ticks.
+			const processQueuedDeliveries = Effect.fn("AlertsService.processQueuedDeliveries")(function* () {
+				const deadline = (yield* now) + DELIVERY_DRAIN_BUDGET_MS
+				const totals = yield* Ref.make({ processedCount: 0, failureCount: 0 })
+				yield* processDeliveryBatch().pipe(
+					Effect.tap((batch) =>
+						Ref.update(totals, (sum) => ({
+							processedCount: sum.processedCount + batch.processedCount,
+							failureCount: sum.failureCount + batch.failureCount,
+						})),
+					),
+					Effect.flatMap((batch) =>
+						Effect.map(
+							now,
+							(time) => batch.claimedCount === DELIVERY_DRAIN_LIMIT && time < deadline,
+						),
+					),
+					Effect.repeat({ while: (more) => more }),
+				)
+				return yield* Ref.get(totals)
 			})
 
 			const processEvaluation = Effect.fn("AlertsService.processEvaluation")(function* (
@@ -3637,17 +3677,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								return []
 							}
 							// A failed claim skips this chunk; its rules are claimed next tick.
+							const skipChunk = (cause: Cause.Cause<unknown>) =>
+								Effect.logError("Alert rule chunk claim failed").pipe(
+									Effect.annotateLogs({
+										chunkSize: chunk.length,
+										cause: summarizeCause(cause),
+									}),
+									Effect.andThen(deferRules(chunk.length)),
+									Effect.as([]),
+								)
 							const claimed = yield* claimRuleChunk(chunk, timestamp).pipe(
-								Effect.catch((error) =>
-									Effect.logError("Alert rule chunk claim failed").pipe(
-										Effect.annotateLogs({
-											chunkSize: chunk.length,
-											cause: summarizeCause(Cause.fail(error)),
-										}),
-										Effect.andThen(deferRules(chunk.length)),
-										Effect.as([]),
-									),
-								),
+								Effect.catch((error) => skipChunk(Cause.fail(error))),
+								Effect.catchDefect((defect) => skipChunk(Cause.die(defect))),
 							)
 							const claimedIds = new Set(claimed.map((row) => row.id))
 							return chunk

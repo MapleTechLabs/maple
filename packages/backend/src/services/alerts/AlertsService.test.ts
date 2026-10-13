@@ -4478,7 +4478,19 @@ describe("AlertsService tick isolation", () => {
 					[],
 				),
 			)
+			// Failed once with its attempt time, and not re-queued: its stored
+			// event type cannot be read, so the retry insert fails too.
 			assert.strictEqual(statuses?.summary, "poison-1=failed,poison-2=success")
+			const poison = yield* Effect.promise(() =>
+				queryFirstRow<{ attempts: number; attemptedAt: Date | null }>(
+					testDb,
+					`select count(*)::int as attempts, max(attempted_at) as "attemptedAt"
+					 from alert_delivery_events where delivery_key = 'poison-1'`,
+					[],
+				),
+			)
+			assert.strictEqual(poison?.attempts, 1)
+			assert.isNotNull(poison?.attemptedAt ?? null)
 			assert.lengthOf(sent, 1)
 			const destinations = yield* alerts.listDestinations(orgId)
 			assert.isTrue(destinations.destinations[0]?.enabled)
@@ -4486,6 +4498,61 @@ describe("AlertsService tick isolation", () => {
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
 					fetch: fetchImpl,
+				}),
+			),
+		)
+	})
+})
+
+describe("AlertsService delivery drain", () => {
+	it.effect("drains a burst larger than one batch in a single tick", () => {
+		const fixedTime = 1_710_000_600_000
+		const testDb = createTestDb(trackedDbs)
+		const sent = { count: 0 }
+		const countingFetch = (async () => {
+			sent.count += 1
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_drain_burst")
+			const userId = asUserId("user_drain_burst")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			yield* Effect.forEach(Arr.range(1, 60), (n) =>
+				Effect.promise(() =>
+					insertDeliveryEventRow(testDb, {
+						id: `00000000-0000-4000-8000-${String(500 + n).padStart(12, "0")}`,
+						orgId,
+						incidentId: null,
+						ruleId: rule.id,
+						destinationId: destination.id,
+						deliveryKey: `burst-${n}`,
+						eventType: "test",
+						attemptNumber: 1,
+						status: "queued",
+						scheduledAt: fixedTime - 100 + n,
+						payloadJson: JSON.stringify({
+							eventType: "test",
+							incidentId: null,
+							incidentStatus: "resolved",
+							dedupeKey: `burst-${n}`,
+							observed: { value: 0, sampleCount: 0 },
+						}),
+					}),
+				),
+			)
+
+			const tick = yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(sent.count, 60)
+			assert.strictEqual(tick.processedCount, 60)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: countingFetch,
 				}),
 			),
 		)
