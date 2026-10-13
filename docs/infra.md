@@ -335,7 +335,8 @@ What each kind of Worker keeps beside the module:
   generates its entry (`makeEffectVirtualEntry`) and exports only the bridge classes it
   created. A plain module is used verbatim, so the exports in `apps/sandbox/src/worker.ts`
   are what bind, and the declaration lives in `apps/sandbox/alchemy.run.ts`. The container
-  uses the `default` scheduling policy, the only one alchemy can declare; the image is built
+  uses the `default` (fleet) scheduling policy: `durable_object` drops `maxInstances` and the
+  per-stage `instanceType`, and switching needs a new application and DO namespace. The image is built
   from `apps/sandbox/image/Dockerfile`, which copies `sandbox-shim` from the
   `cloudflare/sandbox` tag matching the package version. It has no route and no
   hostname. maple-ai, whose agents run the sandbox tools, reaches it over a `SANDBOX`

@@ -22,7 +22,7 @@ import * as Hyperdrive from "@distilled.cloud/cloudflare/hyperdrive"
 import * as Workers from "@distilled.cloud/cloudflare/workers"
 import * as Zones from "@distilled.cloud/cloudflare/zones"
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
-import { Effect, Layer, Match, Schema, Stream } from "effect"
+import { Effect, Layer, Match, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
 
 /** The Effect context a distilled operation requires: resolved credentials + an HTTP client. */
@@ -36,7 +36,7 @@ const credentialsLayer = (accessToken: string, apiBaseUrl?: string): Layer.Layer
 		// The token is already validated/refreshed by CloudflareOAuthService before it reaches us, so
 		// `load` is a constant and `refresh` is a no-op passthrough — a single request never outlives the
 		// access-token TTL. If that assumption ever breaks, wire `refresh` to the token endpoint here.
-		load: Effect.succeed({ accessToken }),
+		load: Effect.succeed({ accessToken: Redacted.make(accessToken) }),
 		refresh: (credentials) => Effect.succeed(credentials),
 		// Defaults to https://api.cloudflare.com/client/v4; overridable (CLOUDFLARE_API_BASE_URL) so
 		// local dev / tests can point the SDK at a mock.
