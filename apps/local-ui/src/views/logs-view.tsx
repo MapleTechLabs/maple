@@ -344,10 +344,14 @@ function LogRow({
 		[log],
 	)
 	// ANSI color codes are stripped for display only; copy and Raw keep the original.
+	// The row shows one line: the first, or the first that matches the search, so a
+	// hit further down a multi-line body is still visible in the row.
 	const firstLine = useMemo(() => {
 		const lines = stripAnsi(log.body).split("\n")
-		return { text: lines[0] ?? "", hidden: lines.length - 1 }
-	}, [log.body])
+		const needle = search?.toLowerCase()
+		const match = needle ? lines.find((line) => line.toLowerCase().includes(needle)) : undefined
+		return { text: match ?? lines[0] ?? "", hidden: lines.length - 1 }
+	}, [log.body, search])
 	const severity = severityLabel(log.severityText, log.severityNumber).toUpperCase()
 
 	return (
