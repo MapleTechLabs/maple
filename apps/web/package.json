@@ -60,7 +60,6 @@
 		"@tanstack/react-table": "^9.2.6",
 		"@tanstack/react-virtual": "^3.14.13",
 		"@xyflow/react": "catalog:ui",
-		"class-variance-authority": "catalog:ui",
 		"d3-scale": "^4.0.2",
 		"d3-shape": "^3.2.0",
 		"date-fns": "^4.4.0",
