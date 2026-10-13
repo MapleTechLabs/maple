@@ -27,8 +27,12 @@ export interface TimeRange {
 }
 
 export const TIME_RANGES: ReadonlyArray<TimeRange> = [
+	{ key: "5m", label: "5M", minutes: 5 },
+	{ key: "15m", label: "15M", minutes: 15 },
+	{ key: "30m", label: "30M", minutes: 30 },
 	{ key: "1h", label: "1H", minutes: 60 },
 	{ key: "6h", label: "6H", minutes: 6 * 60 },
+	{ key: "12h", label: "12H", minutes: 12 * 60 },
 	{ key: "24h", label: "24H", minutes: 24 * 60 },
 	{ key: "7d", label: "7D", minutes: 7 * 24 * 60 },
 	{ key: "30d", label: "30D", minutes: 30 * 24 * 60 },
@@ -49,7 +53,11 @@ export function isRangeKey(value: string | null | undefined): value is string {
 }
 
 export function resolveRange(key: string | undefined): TimeRange {
-	return TIME_RANGES.find((r) => r.key === key) ?? TIME_RANGES[0]
+	return (
+		TIME_RANGES.find((r) => r.key === key) ??
+		TIME_RANGES.find((r) => r.key === DEFAULT_RANGE) ??
+		TIME_RANGES[0]
+	)
 }
 
 /** Floor an instant to its minute, so anchors taken seconds apart share one query key. */
@@ -141,11 +149,17 @@ export function chartWindow(bounds: TimeBounds, firstSeenMs: number | null, nowM
 	const rangeStart = toEpochMs(bounds.startTime)
 	const endMs = Math.min(toEpochMs(bounds.endTime), nowMs)
 	const dataStart = firstSeenMs !== null && firstSeenMs > rangeStart ? firstSeenMs : rangeStart
-	// Keep at least ten minutes on screen so a first burst still reads as a line.
-	const startMs = Math.min(dataStart, endMs - 10 * MINUTE_MS)
+	// Keep at least ten minutes on screen so a first burst still reads as a line,
+	// unless the range itself is shorter.
+	const startMs = Math.min(dataStart, endMs - Math.min(10 * MINUTE_MS, endMs - rangeStart))
 	return {
 		startMs,
 		endMs,
-		bucketSeconds: computeBucketSeconds(startMs, endMs, { targetPoints: 60, minBuckets: 6 }),
+		// Never below a minute: the minutely rollups can't fill a finer bucket.
+		bucketSeconds: computeBucketSeconds(startMs, endMs, {
+			targetPoints: 60,
+			minBuckets: 6,
+			minBucketSeconds: 60,
+		}),
 	}
 }

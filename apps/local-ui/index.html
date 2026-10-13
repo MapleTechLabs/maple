@@ -6,7 +6,23 @@
 		<meta name="color-scheme" content="dark light" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="icon" href="/favicon.ico" />
+		<meta name="theme-color" content="#171410" />
 		<title>Maple Local</title>
+		<!-- Follow the OS theme before first paint so light-mode users don't see a dark
+		     flash. main.tsx takes over from here (same class + colorScheme). -->
+		<script>
+			;(() => {
+				try {
+					const theme = window.matchMedia("(prefers-color-scheme: light)").matches
+						? "light"
+						: "dark"
+					const root = document.documentElement
+					root.classList.remove("light", "dark")
+					root.classList.add(theme)
+					root.style.colorScheme = theme
+				} catch {}
+			})()
+		</script>
 	</head>
 	<body>
 		<div id="app"></div>

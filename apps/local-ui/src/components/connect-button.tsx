@@ -11,16 +11,25 @@ import {
 	PopoverTrigger,
 } from "@maple/ui/components/ui/popover"
 import { ConnectionIcon } from "@maple/ui/components/icons"
+import { useLocalServerStatus } from "../hooks/use-local-server-status"
 import { ConnectGuide } from "./connect-guide"
 
 export function ConnectButton() {
 	const [open, setOpen] = useState(false)
+	// The call to action until the first telemetry lands; a quiet outline after that.
+	const status = useLocalServerStatus()
+	const hasIngested = (status.data?.lastIngestAtMs ?? null) !== null
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
 			<PopoverTrigger
 				render={
-					<Button variant="default" size="sm" className="gap-2" aria-label="Connect your app">
+					<Button
+						variant={hasIngested ? "outline" : "default"}
+						size="sm"
+						className="gap-2"
+						aria-label="Connect your app"
+					>
 						<ConnectionIcon />
 						<span className="hidden sm:inline">Connect</span>
 					</Button>

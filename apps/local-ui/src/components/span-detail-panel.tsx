@@ -6,14 +6,20 @@
 import { useState } from "react"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
-import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
-import { XmarkIcon, ClockIcon, CircleInfoIcon, CodeIcon } from "@maple/ui/components/icons"
-import { CopyableValue, AttributesSection, ResourceAttributesSection } from "@maple/ui/components/attributes"
+import { XmarkIcon, ClockIcon, CircleInfoIcon, FileIcon } from "@maple/ui/components/icons"
+import {
+	AttributesSection,
+	CopyableValue,
+	ResourceAttributesSection,
+	SelectableValue,
+} from "@maple/ui/components/attributes"
+import { ServiceDot } from "@maple/ui/components/service-dot"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { getCacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
@@ -38,6 +44,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 	const cacheInfo = getCacheInfo(span.spanAttributes)
 	const statusStyle = getSpanStatusBadgeClass(span.statusCode)
 	const kindLabel = getSpanKindLabel(span.spanKind)
+	const serviceColor = getServiceColor(span.serviceName)
 
 	const logs = useLocalSpanLogs(span.traceId, span.spanId, span.startTime, span.durationMs)
 	const logCount = logs.data?.length ?? null
@@ -52,40 +59,40 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 
 	return (
 		<aside className="flex h-full w-full shrink-0 flex-col overflow-hidden border-l bg-background sm:w-[28rem]">
-			{/* Header */}
-			<div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
+			{/* Header: the left rail carries the span's service identity color */}
+			<div className="relative flex shrink-0 items-center justify-between border-b px-3 py-2">
+				<span
+					aria-hidden
+					className="absolute inset-y-0 left-0 w-0.5"
+					style={{ backgroundColor: serviceColor }}
+				/>
 				<div className="mr-2 min-w-0 flex-1 overflow-hidden">
-					<CopyableValue value={span.spanName} className="block min-w-0 overflow-hidden">
-						<div className="min-w-0">
-							<HttpSpanLabel
-								spanName={span.spanName}
-								spanAttributes={span.spanAttributes}
-								spanKind={span.spanKind}
-								textClassName="font-semibold text-sm"
-							/>
-						</div>
-					</CopyableValue>
-					<div className="mt-0.5 flex items-center gap-2">
-						<Badge
-							variant="outline"
-							size="xs"
-							mono
-							style={{ color: getServiceColor(span.serviceName) }}
-						>
-							<CopyableValue value={span.serviceName}>{span.serviceName}</CopyableValue>
-						</Badge>
-						<span className="text-[10px] text-muted-foreground">{kindLabel}</span>
+					<SelectableValue
+						value={span.spanName}
+						label="span name"
+						className="flex min-w-0 items-center"
+						textClassName="min-w-0 flex-1"
+					>
+						<HttpSpanLabel
+							spanName={span.spanName}
+							spanAttributes={span.spanAttributes}
+							spanKind={span.spanKind}
+							textClassName="font-semibold text-sm"
+						/>
+					</SelectableValue>
+					<div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+						<ServiceDot serviceName={span.serviceName} size="sm" />
+						<CopyableValue value={span.serviceName} className="min-w-0 truncate">
+							<span className="font-mono text-3xs" style={{ color: serviceColor }}>
+								{span.serviceName}
+							</span>
+						</CopyableValue>
+						<span className="shrink-0 text-3xs text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
-				<Button
-					variant="ghost"
-					size="icon"
-					aria-label="Close span details"
-					onClick={onClose}
-					className="shrink-0"
-				>
+				<IconButton size="icon" label="Close span details" onClick={onClose} className="shrink-0">
 					<XmarkIcon />
-				</Button>
+				</IconButton>
 			</div>
 
 			{/* Everything under the title scrolls as one, so a tall error card never squeezes the
@@ -133,7 +140,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 							<CircleInfoIcon size={14} /> Details
 						</TabsTrigger>
 						<TabsTrigger value="logs">
-							<CodeIcon size={14} /> Logs
+							<FileIcon size={14} /> Logs
 							{logCount !== null && logCount > 0 && (
 								<Badge variant="secondary" size="xs" className="ml-1">
 									{logCount >= LOG_LIMIT ? `${LOG_LIMIT}+` : logCount}
@@ -147,7 +154,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 							<div className="space-y-1">
 								<h4 className="text-xs font-medium text-muted-foreground">Timing</h4>
 								<KeyValueList className="gap-1 rounded-md border p-2">
-									<KeyValue label="Start Time" mono>
+									<KeyValue label="Start time" mono>
 										<span title={formatUtcTitle(span.startTime)}>
 											<CopyableValue value={span.startTime}>
 												{formatLocalDateTime(span.startTime)}
@@ -167,8 +174,10 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 										<CopyableValue value={span.traceId}>{span.traceId}</CopyableValue>
 									</KeyValue>
 									{span.parentSpanId && (
-										<KeyValue label="Parent Span ID" mono>
-											<CopyableValue value={span.parentSpanId}>{span.parentSpanId}</CopyableValue>
+										<KeyValue label="Parent span ID" mono>
+											<CopyableValue value={span.parentSpanId}>
+												{span.parentSpanId}
+											</CopyableValue>
 										</KeyValue>
 									)}
 								</KeyValueList>
@@ -177,14 +186,16 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 							{span.isMissing ? (
 								<AttributesSection
 									attributes={span.spanAttributes ?? {}}
-									title="Span Attributes"
+									title="Span attributes"
 									groupByNamespace
 								/>
 							) : detail.isPending ? (
 								<SkeletonList
 									rows={4}
 									gap="2"
-									renderRow={(i) => <Skeleton className={i % 2 === 0 ? "h-4 w-32" : "h-24 w-full"} />}
+									renderRow={(i) => (
+										<Skeleton className={i % 2 === 0 ? "h-4 w-32" : "h-24 w-full"} />
+									)}
 								/>
 							) : (
 								<>
@@ -196,7 +207,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 									)}
 									<AttributesSection
 										attributes={detail.data?.spanAttributes ?? span.spanAttributes ?? {}}
-										title="Span Attributes"
+										title="Span attributes"
 										groupByNamespace
 									/>
 									<ResourceAttributesSection

@@ -214,6 +214,8 @@
     "apps/local-ui": {
       "name": "@maple/local-ui",
       "dependencies": {
+        "@fontsource-variable/geist": "^5.3.0",
+        "@fontsource-variable/geist-mono": "^5.3.0",
         "@maple/infra": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/ui": "workspace:*",

@@ -59,7 +59,7 @@ export function useLocalServiceOperations(serviceName: string, bounds: TimeBound
 	})
 }
 
-/** Per-bucket throughput for the top operations (drives the detail chart). */
+/** Throughput (spans/s per bucket) for the top operations (drives the detail chart). */
 export function useLocalServiceOperationsTimeseries(
 	serviceName: string,
 	spanNames: ReadonlyArray<string>,
@@ -99,7 +99,8 @@ export function useLocalServiceOperationsTimeseries(
 						return rows.map((r) => ({
 							bucket: DateTime.formatIso(r.bucket),
 							series: r.spanName,
-							value: r.count,
+							// A rate, not a per-bucket count, so the chart reads the same at every zoom.
+							value: r.count / bucketSeconds,
 						}))
 					},
 	})

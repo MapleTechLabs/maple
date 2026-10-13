@@ -2,13 +2,17 @@ import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { formatDuration } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { ServiceDot } from "@maple/ui/components/service-dot"
+import { ServicePills } from "@maple/ui/components/service-pills"
 import { DurationRangeFilter } from "@maple/ui/components/filters/duration-range-filter"
 import {
 	FilterSection,
 	SearchableFilterSection,
+	serviceColorMap,
 	SingleCheckboxFilter,
 } from "@maple/ui/components/filters/filter-section"
 import {
@@ -33,7 +37,7 @@ import {
 	TimeRangeSelect,
 	RefreshButton,
 } from "../components/toolbar"
-import { ErrorState, ListSkeleton } from "../components/view-states"
+import { ErrorState } from "../components/view-states"
 
 /** Parse a URL param as a non-negative integer; anything else means "unset". */
 function parseNonNegativeInt(raw: string | null): number | undefined {
@@ -113,7 +117,7 @@ export function TraceListView() {
 			<FilterSidebarHeader canClear={activeFilterCount > 0} onClear={clearFilters} />
 			<FilterSidebarBody>
 				<SingleCheckboxFilter
-					title="Errors only"
+					title="Has error"
 					checked={filters.errorsOnly === true}
 					onChange={(checked) => setParams({ errors: checked ? "1" : null })}
 					count={facets.data?.errorCount}
@@ -135,9 +139,10 @@ export function TraceListView() {
 					options={facets.data?.services ?? []}
 					selected={filters.service ? [filters.service] : []}
 					onChange={facetSelect("service")}
+					colorMap={serviceColorMap(facets.data?.services ?? [])}
 				/>
 				<SearchableFilterSection
-					title="Root Span"
+					title="Root span"
 					options={facets.data?.spanNames ?? []}
 					selected={filters.span ? [filters.span] : []}
 					onChange={facetSelect("span")}
@@ -155,13 +160,13 @@ export function TraceListView() {
 					debounceMs={300}
 				/>
 				<FilterSection
-					title="HTTP Method"
+					title="HTTP method"
 					options={facets.data?.httpMethods ?? []}
 					selected={filters.method ? [filters.method] : []}
 					onChange={facetSelect("method")}
 				/>
 				<FilterSection
-					title="Status Code"
+					title="Status code"
 					options={facets.data?.httpStatusCodes ?? []}
 					selected={filters.status ? [filters.status] : []}
 					onChange={facetSelect("status")}
@@ -198,7 +203,17 @@ export function TraceListView() {
 	return (
 		<PageShell sidebar={sidebar} toolbar={toolbar} activeFilterCount={activeFilterCount}>
 			{traces.isPending ? (
-				<ListSkeleton variant="table" />
+				<TableSkeleton
+					className="rounded-none border-0"
+					rows={12}
+					columns={[
+						{ header: "Trace", headClassName: "w-[40%]", skeleton: "w-56" },
+						{ header: "Services", skeleton: "w-40" },
+						{ header: "Duration", headClassName: "text-right", skeleton: "ml-auto w-14" },
+						{ header: "Spans", headClassName: "text-right", skeleton: "ml-auto w-8" },
+						{ header: "Started", headClassName: "text-right", skeleton: "ml-auto w-16" },
+					]}
+				/>
 			) : traces.isError ? (
 				<ErrorState label="traces" error={traces.error} onRetry={() => traces.refetch()} />
 			) : rows.length === 0 ? (
@@ -255,6 +270,7 @@ function SpanScopeBanner({
 				<>
 					<span className="text-muted-foreground">from</span>
 					<Badge variant="outline" className="font-mono text-xs">
+						<ServiceDot serviceName={service} size="sm" />
 						{service}
 					</Badge>
 				</>
@@ -294,28 +310,18 @@ function TraceListRow({ row, query }: { row: TraceRow; query: URLSearchParams })
 						spanKind={row.rootSpanKind}
 						spanAttributes={row.rootSpanAttributes}
 						className="min-w-0"
+						textClassName="text-xs"
 					/>
 				</RowLink>
 			</TableCell>
-			<TableCell className="text-muted-foreground">
-				<div className="flex flex-wrap gap-1">
-					{row.services.slice(0, 3).map((svc) => (
-						<Badge key={svc} variant="secondary" size="xs" mono>
-							{svc}
-						</Badge>
-					))}
-					{row.services.length > 3 ? (
-						<Badge variant="secondary" size="xs" mono>
-							+{row.services.length - 3}
-						</Badge>
-					) : null}
-				</div>
+			<TableCell>
+				<ServicePills services={row.services} />
 			</TableCell>
 			<TableCell className="text-right font-mono tabular-nums">
 				{formatDuration(row.durationMs)}
 			</TableCell>
 			<TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-				{row.spanCount ?? "-"}
+				{row.spanCount === null ? EMPTY_VALUE : formatNumber(row.spanCount)}
 			</TableCell>
 			<TableCell
 				className="text-right text-xs whitespace-nowrap text-muted-foreground"

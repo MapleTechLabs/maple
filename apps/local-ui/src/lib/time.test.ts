@@ -73,6 +73,12 @@ describe("chartWindow", () => {
 		expect(window.bucketSeconds).toBe(60)
 	})
 
+	it("charts a five-minute range over exactly that range, never below minute buckets", () => {
+		const window = chartWindow(boundsForRange("5m", now), null, now)
+		expect(window.startMs).toBe(now - 5 * 60 * 1000)
+		expect(window.bucketSeconds).toBe(60)
+	})
+
 	it("uses rollup-aligned buckets for long ranges instead of 10080s ones", () => {
 		const window = chartWindow(boundsForRange("7d", now), null, now)
 		expect(window.bucketSeconds % 3600).toBe(0)

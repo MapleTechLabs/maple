@@ -140,6 +140,7 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 								points={timeseries.data}
 								window={chart}
 								fill="zero"
+								unit="requests_per_sec"
 								isPending={timeseries.isPending && topSpanNames.length > 0}
 							/>
 						</section>

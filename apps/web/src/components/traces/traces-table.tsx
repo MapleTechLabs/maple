@@ -27,7 +27,7 @@ import { VirtualTableBody } from "@/components/common/virtual-table-body"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
-import { ServicePills } from "@/components/common/service-pills"
+import { ServicePills } from "@maple/ui/components/service-pills"
 import { SortableHeader } from "@/components/common/sortable-header"
 import { type Trace } from "@/api/warehouse/traces"
 import type { TracesSearchParams } from "@/routes/traces"
@@ -511,12 +511,12 @@ function TracesTableView({
 											key={cell.id}
 											className={cn(
 												"p-2 whitespace-normal leading-normal",
-											// The lane's ::before goes on the cell: on a <tr> it becomes an extra table cell.
-											cellIndex === 0 && ROW_LANE,
-											cellIndex === 0 &&
-												(row.original.spanId === activeRowSpanId
-													? "before:bg-primary"
-													: "before:bg-transparent"),
+												// The lane's ::before goes on the cell: on a <tr> it becomes an extra table cell.
+												cellIndex === 0 && ROW_LANE,
+												cellIndex === 0 &&
+													(row.original.spanId === activeRowSpanId
+														? "before:bg-primary"
+														: "before:bg-transparent"),
 												responsive,
 												cellClass,
 											)}

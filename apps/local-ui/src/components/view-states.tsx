@@ -194,9 +194,25 @@ function DocsLink({ href, children }: { href: string; children: ReactNode }) {
 
 /**
  * Content-shaped loading placeholder: `table` for row lists, `card` for the
- * card stacks.
+ * card stacks, `grid` for the metrics card grid.
  */
-export function ListSkeleton({ rows = 8, variant = "table" }: { rows?: number; variant?: "table" | "card" }) {
+export function ListSkeleton({
+	rows = 8,
+	variant = "table",
+}: {
+	rows?: number
+	variant?: "table" | "card" | "grid"
+}) {
+	if (variant === "grid") {
+		return (
+			<SkeletonList
+				rows={rows}
+				gap="3"
+				className="m-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+				rowClassName="h-[124px] rounded-md"
+			/>
+		)
+	}
 	return (
 		<SkeletonList
 			rows={rows}
