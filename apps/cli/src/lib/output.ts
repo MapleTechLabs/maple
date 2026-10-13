@@ -111,9 +111,9 @@ const ATTRIBUTES_KEY = /[aA]ttributes$/
  * `JSON.stringify` replacer that applies `utcIso` to time fields only, so a
  * log whose text happens to look like a datetime prints unchanged.
  */
-export const utcTimestampReplacer = (): ((this: unknown, key: string, value: unknown) => unknown) => {
+export const utcTimestampReplacer = () => {
 	const attributeMaps = new WeakSet<object>()
-	return function (this: unknown, key, value) {
+	return function (this: unknown, key: string, value: unknown) {
 		if (typeof this === "object" && this !== null && attributeMaps.has(this)) return value
 		if (ATTRIBUTES_KEY.test(key) && typeof value === "object" && value !== null) attributeMaps.add(value)
 		return typeof value === "string" && TIME_KEY.test(key) ? utcIso(value) : value
