@@ -166,8 +166,12 @@ if [ -z "$tag" ]; then
 	# curl error — we give our own clear message below. Not /releases/latest:
 	# the npm packages publish releases too, so take the newest `v*` tag. Drafts
 	# are invisible to anonymous calls and CLI prereleases are not tagged `vX.Y.Z`.
-	tag="$(curl -sSL "https://api.github.com/repos/$REPO/releases?per_page=100" \
-		| sed -n 's/.*"tag_name": *"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' | head -1)"
+	# Pages on while a page holds only package releases.
+	for page in 1 2 3 4 5; do
+		tag="$(curl -sSL "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page" \
+			| sed -n 's/.*"tag_name": *"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' | head -1)"
+		[ -n "$tag" ] && break
+	done
 fi
 [ -n "$tag" ] || die "no release found for $REPO — check https://github.com/$REPO/releases or set MAPLE_VERSION to pin a tag"
 
