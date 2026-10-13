@@ -35,6 +35,7 @@ import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysS
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
 import { mapRailwayMetrics } from "./railway/mapping"
+import { isIngestRefusal, summarizeUpstreamBody } from "./upstream-body"
 
 const SAMPLE_RATE_SECONDS = 60
 const SAMPLE_MS = SAMPLE_RATE_SECONDS * 1000
@@ -457,7 +458,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					if (response.status >= 300) {
 						const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
 						return yield* new RailwayIngestError({
-							message: `Railway metrics ingest returned ${response.status}: ${body.slice(0, 300)}`,
+							message: `Railway metrics ingest returned ${response.status}: ${summarizeUpstreamBody(body, response.headers)}`,
 							status: response.status,
 						})
 					}
@@ -637,8 +638,11 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 												)
 												return { ...failed, stopped: true }
 											}
-										} else if (error.status === 402) {
-											// Over the org's billing limit: back off instead of retrying every tick.
+										} else if (
+											error.status !== undefined &&
+											isIngestRefusal(error.status)
+										) {
+											// Billing limit or a refused key: back off instead of retrying every tick.
 											yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)
 											return { ...failed, stopped: true }
 										}
