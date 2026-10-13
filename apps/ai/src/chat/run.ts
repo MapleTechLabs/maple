@@ -229,6 +229,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
 	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
+		autonomous: input.origin.kind === "autonomous",
 		...(completion === undefined
 			? undefined
 			: { completion: { tool: completion.tool, required: false } }),
