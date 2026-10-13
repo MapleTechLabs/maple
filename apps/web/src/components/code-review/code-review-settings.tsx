@@ -288,18 +288,20 @@ export function RepositoryList({
 		reviewed: enabled,
 		off: repositories.length - enabled,
 	} satisfies Record<RepositoryFilter, number>
-	const needle = search.trim().toLowerCase()
+	const showToolbar = repositories.length > SEARCH_THRESHOLD
+	// Without the toolbar there is no control to undo a search or filter, so neither applies.
+	const needle = showToolbar ? search.trim().toLowerCase() : ""
+	const activeFilter = showToolbar ? filter : "all"
 	const visible = repositories
 		.filter(
 			(repo) =>
-				(filter === "all" || repo.prReviewEnabled === (filter === "reviewed")) &&
+				(activeFilter === "all" || repo.prReviewEnabled === (activeFilter === "reviewed")) &&
 				(needle.length === 0 || repo.fullName.toLowerCase().includes(needle)),
 		)
 		.toSorted(
 			(a, b) =>
 				Number(pinned.has(b.id)) - Number(pinned.has(a.id)) || a.fullName.localeCompare(b.fullName),
 		)
-	const showToolbar = repositories.length > SEARCH_THRESHOLD
 
 	return (
 		<Panel>
@@ -342,7 +344,7 @@ export function RepositoryList({
 					<p>
 						{needle.length > 0
 							? `No repositories match “${search.trim()}”`
-							: filter === "reviewed"
+							: activeFilter === "reviewed"
 								? "No repositories are reviewed yet"
 								: "Every repository is reviewed"}
 					</p>
