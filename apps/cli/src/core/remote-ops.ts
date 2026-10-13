@@ -293,6 +293,7 @@ export const searchLogs = (
 		environment?: string
 		limit?: number
 		offset?: number
+		includeAttributes?: boolean
 	},
 ): Effect.Effect<SearchLogsOutput, unknown> => {
 	if (p.offset !== undefined && p.offset > 0) {
@@ -323,7 +324,16 @@ export const searchLogs = (
 		return {
 			timeRange: p.range,
 			total,
-			logs: page.data.map(toLogEntry),
+			logs: page.data.map((l) =>
+				p.includeAttributes === true
+					? {
+							...toLogEntry(l),
+							attributes: Object.fromEntries(
+								Object.entries(l.log_attributes).filter(([, v]) => v !== ""),
+							),
+						}
+					: toLogEntry(l),
+			),
 			pagination: { offset: 0, limit, hasMore: page.has_more },
 		} satisfies SearchLogsOutput
 	})

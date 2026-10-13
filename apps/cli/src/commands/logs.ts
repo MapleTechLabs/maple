@@ -1,6 +1,8 @@
 import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
 import { Effect, Option } from "effect"
 import * as f from "../lib/flags"
+import { logsLink, withLogTraceLinks } from "../lib/local-links"
 import { printResult } from "../lib/output"
 import { logPatternsView, logsView } from "../lib/views"
 import { describeWindow, resolveRangeChecked } from "../core/time"
@@ -17,6 +19,10 @@ export const logs = Command.make("logs", {
 	traceId: f.traceId,
 	limit: f.limit,
 	offset: f.offset,
+	attributes: Flag.Boolean("attributes").pipe(
+		Flag.withDescription("Include every log attribute on each entry, not only error keys"),
+		Flag.withDefault(false),
+	),
 }).pipe(
 	Command.withDescription("Search logs with filtering"),
 	Command.withExamples([
@@ -28,21 +34,37 @@ export const logs = Command.make("logs", {
 			command: 'maple logs -q "timed out" --since 1h --format table',
 			description: "Full-text search, readable",
 		},
+		{
+			command: "maple logs --trace-id 4bf92f3577b34da6a3ce929d0e0e4736 --attributes",
+			description: "One request's logs with their structured attributes",
+		},
 	]),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const range = yield* resolveRangeChecked(a)
-			const result = yield* Ops.searchLogs({
-				range,
+			const filters = {
 				service: Option.getOrUndefined(a.service),
-				environment: Option.getOrUndefined(a.environment),
 				severity: Option.getOrUndefined(a.severity),
 				search: Option.getOrUndefined(a.search),
+			}
+			const result = yield* Ops.searchLogs({
+				range,
+				...filters,
+				environment: Option.getOrUndefined(a.environment),
 				traceId: Option.getOrUndefined(a.traceId),
 				limit: a.limit,
 				offset: a.offset,
+				includeAttributes: a.attributes,
 			})
-			yield* printResult(result, logsView(`No logs matched in ${describeWindow(a, range)}`))
+			const output = Option.match(yield* Ops.localUiBase, {
+				onNone: () => result,
+				onSome: (base) => ({
+					url: logsLink(base, { startTime: range.startTime, ...filters }),
+					...result,
+					logs: withLogTraceLinks(base, result.logs),
+				}),
+			})
+			yield* printResult(output, logsView(`No logs matched in ${describeWindow(a, range)}`))
 		}),
 	),
 )

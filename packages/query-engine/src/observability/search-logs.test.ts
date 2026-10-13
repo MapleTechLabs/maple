@@ -106,4 +106,55 @@ describe("searchLogs", () => {
 			}
 		}),
 	)
+
+	describe("attributes", () => {
+		const row = {
+			timestamp: "2026-04-01 10:00:00",
+			exactTimestamp: "2026-04-01 10:00:00.000000000",
+			severityText: "ERROR",
+			severityNumber: 17,
+			serviceName: "api",
+			body: "request failed",
+			traceId: "t1",
+			spanId: "s1",
+			recordIdentity: "r1",
+			logAttributes: JSON.stringify({ requestId: "req-1", "exception.type": "Boom", empty: "" }),
+			resourceAttributes: "{}",
+		}
+		const withRow: WarehouseExecutorApi = {
+			...makeMockExecutor({ pipeCalls: [] }),
+			query: (pipe: string) => {
+				const data: ReadonlyArray<unknown> = pipe === "list_logs" ? [row] : []
+				return Effect.succeed({ data: data as ReadonlyArray<never> })
+			},
+		}
+
+		it.effect("keeps only the error-carrying keys by default", () =>
+			Effect.gen(function* () {
+				const result = yield* searchLogs({ timeRange }).pipe(Effect.provide(makeLayer(withRow)))
+				const [entry] = result.logs
+				assert.deepStrictEqual(entry, {
+					timestamp: "2026-04-01 10:00:00",
+					severityText: "ERROR",
+					serviceName: "api",
+					body: "request failed",
+					traceId: "t1",
+					spanId: "s1",
+					keyAttributes: { "exception.type": "Boom" },
+				})
+			}),
+		)
+
+		it.effect("returns every non-empty attribute when asked", () =>
+			Effect.gen(function* () {
+				const result = yield* searchLogs({ timeRange, includeAttributes: true }).pipe(
+					Effect.provide(makeLayer(withRow)),
+				)
+				assert.deepStrictEqual(result.logs[0]?.attributes, {
+					requestId: "req-1",
+					"exception.type": "Boom",
+				})
+			}),
+		)
+	})
 })
