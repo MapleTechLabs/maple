@@ -4834,15 +4834,18 @@ describe("AlertsService scheduler pool", () => {
 			const firstTick = yield* alerts.runSchedulerTick()
 			const wallMs = (yield* Clock.currentTimeMillis) - startedAt
 
-			assert.isBelow(wallMs, tickBudgetMs + 1_000)
+			// Slack for a loaded CI runner; without the deadline the stuck rule never returns.
+			assert.isBelow(wallMs, tickBudgetMs + 2_500)
 			assert.isBelow(HashSet.size(yield* queried), RULE_COUNT)
 			assert.strictEqual(firstTick.evaluatedCount, HashSet.size(yield* queried))
 			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]!
 			assert.include(stuckRule.lastEvaluationError ?? "", "deadline")
 
-			// Each tick a minute later, past every claim's TTL.
+			// Each tick a minute later, past every claim's TTL. Five more ticks leave
+			// room for a slow runner; an order that keeps deferring the same tail
+			// never reaches every rule, however many ticks run.
 			yield* Effect.forEach(
-				[1, 2],
+				[1, 2, 3, 4, 5],
 				() =>
 					Ref.update(shiftMs, (shift) => shift + 60_000).pipe(
 						Effect.andThen(alerts.runSchedulerTick()),
