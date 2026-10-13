@@ -49,6 +49,27 @@ describe("durableWrite parent handling", () => {
 			expect(modeOf(owned)).toBe(0o700)
 		})
 	})
+
+	// Simulates a dir owned by another uid (bind mount, root-created volume).
+	const chmodDenied = (): Promise<void> =>
+		Promise.reject(Object.assign(new Error("EPERM: operation not permitted, chmod"), { code: "EPERM" }))
+
+	it("ensurePrivateDirectory continues when chmod is denied on a writable directory", async () => {
+		await withRoot(async (root) => {
+			const foreign = join(root, "backups")
+			mkdirSync(foreign, { mode: 0o755 })
+			await ensurePrivateDirectory(foreign, chmodDenied)
+			expect(modeOf(foreign)).toBe(0o755)
+		})
+	})
+
+	it("ensurePrivateDirectory still fails when the denied directory is not writable", async () => {
+		await withRoot(async (root) => {
+			const readOnly = join(root, "backups")
+			mkdirSync(readOnly, { mode: 0o500 })
+			await expect(ensurePrivateDirectory(readOnly, chmodDenied)).rejects.toThrow(/EPERM/)
+		})
+	})
 })
 
 describe("synchronous durable helpers", () => {

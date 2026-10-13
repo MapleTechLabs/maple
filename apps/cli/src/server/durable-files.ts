@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { closeSync, constants, fsyncSync, openSync, renameSync, writeSync } from "node:fs"
-import { chmod, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises"
+import { access, chmod, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { Effect, Schema } from "effect"
 
@@ -29,9 +29,30 @@ export const isUnsupportedDirectorySyncError = (error: unknown): boolean =>
 	"code" in error &&
 	unsupportedDirectorySyncCodes.has(String((error as NodeJS.ErrnoException).code))
 
-export const ensurePrivateDirectory = async (path: string): Promise<void> => {
+export const ensurePrivateDirectory = async (
+	path: string,
+	setMode: (path: string, mode: number) => Promise<void> = chmod,
+): Promise<void> => {
 	await ensureRealDirectory(path)
-	await chmod(path, 0o700)
+	await setMode(path, 0o700).catch(async (error: NodeJS.ErrnoException) => {
+		// A bind mount or a dir pre-created by another uid: its mode is not ours
+		// to set, but a directory we can write into still works.
+		if (error.code !== "EPERM" || !(await isWritableDirectory(path))) throw error
+		warnUnhardenedDirectory(path)
+	})
+}
+
+const isWritableDirectory = (path: string): Promise<boolean> =>
+	access(path, constants.W_OK | constants.X_OK).then(
+		() => true,
+		() => false,
+	)
+
+const warnedDirectories = new Set<string>()
+const warnUnhardenedDirectory = (path: string): void => {
+	if (warnedDirectories.has(path)) return
+	warnedDirectories.add(path)
+	process.emitWarning(`cannot chmod ${path} to 0700 (owned by another user); continuing with its current mode`)
 }
 
 /** Like {@link ensurePrivateDirectory}, but an already-existing directory keeps
