@@ -103,6 +103,23 @@ describe("maintenance lock recovery", () => {
 		})
 	})
 
+	it("refuses an old lock under this PID from a build without heartbeats", async () => {
+		await withDataDir(async (dataDir) => {
+			const lockPath = lockPathOf(dataDir)
+			mkdirSync(lockPath, { mode: 0o700 })
+			writeOwner(lockPath, {
+				formatVersion: 1,
+				operationId: randomUUID(),
+				pid: process.pid,
+				startedAt: new Date().toISOString(),
+			})
+			ageLock(lockPath, 10 * 60_000)
+			const attempt = withMaintenanceLock(dataDir, randomUUID(), async () => "ran")
+			await expect(attempt).rejects.toThrow(/another Maple maintenance operation is active/)
+			await expect(attempt).rejects.toThrow(`remove ${lockPath}`)
+		})
+	})
+
 	it("keeps a long-running hold fresh with its heartbeat", async () => {
 		await withDataDir(async (dataDir) => {
 			const lockPath = lockPathOf(dataDir)
