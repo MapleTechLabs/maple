@@ -198,6 +198,33 @@ describe("OrgOpenRouterKeyService", () => {
 		)
 	})
 
+	it.effect("refuses an EU key with no credits left", () =>
+		run(
+			createTestDb(trackedDbs),
+			makeWorld({ region: "eu", euChatStatus: 402 }),
+			Effect.gen(function* () {
+				const keys = yield* OrgOpenRouterKeyService
+				const error = yield* Effect.flip(keys.set(ORG, USER, KEY))
+				assert.strictEqual(error._tag, "@maple/http/openrouter-key/OpenRouterKeyValidationError")
+				assert.include(error.message, "no credits")
+				assert.isFalse((yield* keys.get(ORG)).configured)
+			}),
+		),
+	)
+
+	it.effect("asks for a retry, without saving, when the EU check fails on OpenRouter's side", () =>
+		run(
+			createTestDb(trackedDbs),
+			makeWorld({ region: "eu", euChatStatus: 500 }),
+			Effect.gen(function* () {
+				const keys = yield* OrgOpenRouterKeyService
+				const error = yield* Effect.flip(keys.set(ORG, USER, KEY))
+				assert.strictEqual(error._tag, "@maple/http/openrouter-key/OpenRouterKeyPersistenceError")
+				assert.isFalse((yield* keys.get(ORG)).configured)
+			}),
+		),
+	)
+
 	it.effect("refuses to save without the add-on", () =>
 		run(
 			createTestDb(trackedDbs),

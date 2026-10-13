@@ -14,6 +14,7 @@ import { OpenAiClient, OpenAiEmbeddingModel, OpenAiLanguageModel } from "@effect
 import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
+import { EU_DEFAULT_OPENROUTER_MODEL } from "@maple/domain/organization-regions"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { Config, Effect, Layer, Option, Redacted, Schema } from "effect"
 import type * as DecisionModel from "effect/ai/DecisionModel"
@@ -76,12 +77,8 @@ const openRouterRegion = (settings: LlmSettings): OpenRouterRegion =>
 export const openRouterApiUrl = (settings: LlmSettings): string =>
 	OPENROUTER_API_URLS[openRouterRegion(settings)]
 
-/**
- * The EU catalogue is a subset (66 models on 2026-09-25) and serves none of the US defaults, so
- * the EU instance runs chat, triage and reviews on one model that has an EU provider.
- */
-const EU_DEFAULT_OPENROUTER_MODEL = "openai/gpt-6-luna"
-const EU_DEFAULT_REVIEW_MODEL = "openai/gpt-6-luna"
+/** Reviews run on the EU chat default too; see {@link EU_DEFAULT_OPENROUTER_MODEL}. */
+const EU_DEFAULT_REVIEW_MODEL = EU_DEFAULT_OPENROUTER_MODEL
 
 /**
  * Default embedding model for the review's feedback filter. Changing it starts the filter from an

@@ -15,7 +15,7 @@ import { EdgeCacheService } from "@maple/cache"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
-import type { MapleRegion } from "@maple/domain/organization-regions"
+import { EU_DEFAULT_OPENROUTER_MODEL, type MapleRegion } from "@maple/domain/organization-regions"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -27,11 +27,10 @@ const VALIDATE_TIMEOUT = Duration.seconds(10)
 
 /**
  * `getKey` answers 200 for any live key, but the EU host serves chat only to Business or
- * Enterprise plans, so the EU instance also asks it for one token before saving. The model is the
- * EU default in `apps/ai/src/platform/Llm.ts`; keep the two in step.
+ * Enterprise plans, so the EU instance also asks the model its agents run on for one token.
  */
 const EU_PLAN_PROBE = {
-	model: "openai/gpt-6-luna",
+	model: EU_DEFAULT_OPENROUTER_MODEL,
 	messages: [{ role: "user" as const, content: "ok" }],
 	max_tokens: 1,
 }
