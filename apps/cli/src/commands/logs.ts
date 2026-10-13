@@ -2,7 +2,7 @@ import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
 import { Effect, Option } from "effect"
 import * as f from "../lib/flags"
-import { logsLink, withLogTraceLinks } from "../lib/local-links"
+import { logsLink, traceLink, withLogTraceLinks } from "../lib/local-links"
 import { printResult } from "../lib/output"
 import { logPatternsView, logsView } from "../lib/views"
 import { describeWindow, resolveRangeChecked } from "../core/time"
@@ -47,11 +47,13 @@ export const logs = Command.make("logs", {
 				severity: Option.getOrUndefined(a.severity),
 				search: Option.getOrUndefined(a.search),
 			}
+			const traceId = Option.getOrUndefined(a.traceId)
+			const environment = Option.getOrUndefined(a.environment)
 			const result = yield* Ops.searchLogs({
 				range,
 				...filters,
-				environment: Option.getOrUndefined(a.environment),
-				traceId: Option.getOrUndefined(a.traceId),
+				environment,
+				traceId,
 				limit: a.limit,
 				offset: a.offset,
 				includeAttributes: a.attributes,
@@ -59,7 +61,13 @@ export const logs = Command.make("logs", {
 			const output = Option.match(yield* Ops.localUiBase, {
 				onNone: () => result,
 				onSome: (base) => ({
-					url: logsLink(base, { startTime: range.startTime, ...filters }),
+					// The logs page filters neither by trace nor environment: a trace id
+					// links its trace (which lists its logs), an environment gets no link.
+					...(traceId !== undefined
+						? { url: traceLink(base, traceId) }
+						: environment === undefined
+							? { url: logsLink(base, { startTime: range.startTime, ...filters }) }
+							: {}),
 					...result,
 					logs: withLogTraceLinks(base, result.logs),
 				}),

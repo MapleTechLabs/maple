@@ -299,7 +299,9 @@ export const searchLogs = (
 	if (p.offset !== undefined && p.offset > 0) {
 		return unsupportedInRemote(
 			"list_logs",
-			"/v2/logs/search paginates by opaque cursor, and the search that takes --offset has no environment filter; drop --env to page with --offset.",
+			p.includeAttributes === true
+				? "/v2/logs/search paginates by opaque cursor, and the search that takes --offset returns no attributes; drop --attributes to page with --offset."
+				: "/v2/logs/search paginates by opaque cursor, and the search that takes --offset has no environment filter; drop --env to page with --offset.",
 		)
 	}
 	const limit = clampListLimit(p.limit)

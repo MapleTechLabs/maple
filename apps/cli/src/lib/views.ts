@@ -38,6 +38,15 @@ const logColumns: ReadonlyArray<Column<LogEntry>> = [
 	{ header: "BODY", cell: (l) => l.body, maxWidth: 100 },
 ]
 
+const attributeColumn: Column<LogEntry> = {
+	header: "ATTRIBUTES",
+	cell: (l) =>
+		Object.entries(l.attributes ?? {})
+			.map(([k, v]) => `${k}=${v}`)
+			.join(" "),
+	maxWidth: 80,
+}
+
 const spanColumns: ReadonlyArray<Column<SpanResult>> = [
 	{ header: "TRACE ID", cell: (s) => s.traceId },
 	{ header: "TIME", cell: (s) => formatTimestamp(s.timestamp) },
@@ -252,7 +261,16 @@ export const diagnoseView: View<ServiceHealthOutput> = {
 export const logsView = (empty: string): View<SearchLogsOutput & { readonly url?: string }> => ({
 	empty,
 	isEmpty: (d) => d.logs.length === 0,
-	table: (d) => [{ body: renderTable(logColumns, d.logs) }],
+	table: (d) => [
+		{
+			body: renderTable(
+				d.logs.some((l) => l.attributes !== undefined)
+					? [...logColumns, attributeColumn]
+					: logColumns,
+				d.logs,
+			),
+		},
+	],
 	notes: (d) => [
 		`${formatCount(d.total)} matching log${d.total === 1 ? "" : "s"} in the window`,
 		...moreNote(d.pagination),

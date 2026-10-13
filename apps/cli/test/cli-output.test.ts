@@ -15,6 +15,7 @@ import {
 	formatPercent,
 	isEmptyResult,
 	utcIso,
+	utcTimestampReplacer,
 } from "../src/lib/output"
 import { logsLink, traceLink, uiRangeFor, withLogTraceLinks } from "../src/lib/local-links"
 import { errorsView, servicesView } from "../src/lib/views"
@@ -72,6 +73,23 @@ describe("timestamps", () => {
 		assert.equal(utcIso("2026-09-25T23:36:29Z"), "2026-09-25T23:36:29Z")
 		assert.equal(utcIso("2026-09-25 23:36:29 request failed"), "2026-09-25 23:36:29 request failed")
 	})
+
+	it("rewrites time fields only, never log text or attributes", () => {
+		const at = "2026-09-25 23:36:29"
+		const json = JSON.parse(
+			JSON.stringify(
+				{
+					timeRange: { startTime: at },
+					logs: [{ timestamp: at, body: at, attributes: { startTime: at } }],
+				},
+				utcTimestampReplacer(),
+			),
+		)
+		assert.deepEqual(json, {
+			timeRange: { startTime: "2026-09-25T23:36:29Z" },
+			logs: [{ timestamp: "2026-09-25T23:36:29Z", body: at, attributes: { startTime: at } }],
+		})
+	})
 })
 
 describe("local UI links", () => {
@@ -87,6 +105,8 @@ describe("local UI links", () => {
 		assert.equal(uiRangeFor("2026-10-13 06:00:00", now), "6h")
 		assert.equal(uiRangeFor("2026-10-10 12:00:00", now), "7d")
 		assert.equal(uiRangeFor("2025-01-01 00:00:00", now), "30d")
+		// `--since 1h` run at a fractional second still links the 1h range.
+		assert.equal(uiRangeFor("2026-10-13 11:00:00", now + 750), "1h")
 	})
 
 	it("carries the CLI's log filters into the logs page", () => {

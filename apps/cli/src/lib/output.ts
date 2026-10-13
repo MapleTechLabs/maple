@@ -103,6 +103,23 @@ export const utcIso = (value: string): string => {
 	return match === null ? value : `${match[1]}T${match[2]}Z`
 }
 
+/** Result fields that hold an instant; log bodies and attributes never match. */
+const TIME_KEY = /(^|[a-z])([Tt]ime|[Tt]imestamp|Seen|[Bb]ucket)$/
+const ATTRIBUTES_KEY = /[aA]ttributes$/
+
+/**
+ * `JSON.stringify` replacer that applies `utcIso` to time fields only, so a
+ * log whose text happens to look like a datetime prints unchanged.
+ */
+export const utcTimestampReplacer = (): ((this: unknown, key: string, value: unknown) => unknown) => {
+	const attributeMaps = new WeakSet<object>()
+	return function (this: unknown, key, value) {
+		if (typeof this === "object" && this !== null && attributeMaps.has(this)) return value
+		if (ATTRIBUTES_KEY.test(key) && typeof value === "object" && value !== null) attributeMaps.add(value)
+		return typeof value === "string" && TIME_KEY.test(key) ? utcIso(value) : value
+	}
+}
+
 /** An instant to epoch ms, reading a zoneless one as UTC; NaN when unparseable. */
 export const timestampMs = (value: string): number => {
 	const iso = value
@@ -279,9 +296,7 @@ export const printResult = <A>(data: A, view?: View<A>): Effect.Effect<void> =>
 		const empty = view?.isEmpty ? view.isEmpty(data) : isEmptyResult(data)
 		if (format === "json") {
 			// Raw SQL rows stay as the query returned them.
-			const replacer = view?.raw
-				? undefined
-				: (_key: string, value: unknown) => (typeof value === "string" ? utcIso(value) : value)
+			const replacer = view?.raw ? undefined : utcTimestampReplacer()
 			process.stdout.write(`${JSON.stringify(data, replacer, 2)}\n`)
 		} else if (!empty) {
 			const sections = view?.table

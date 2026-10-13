@@ -24,7 +24,8 @@ export const traceLink = (baseUrl: string, traceId: string): string =>
  */
 export const uiRangeFor = (startTime: string, nowMs: number = Date.now()): string => {
 	const back = nowMs - timestampMs(startTime)
-	const fit = UI_RANGES.find(([, ms]) => ms >= back)
+	// `startTime` is whole seconds, so `--since 1h` reaches back up to 1h + 999ms.
+	const fit = UI_RANGES.find(([, ms]) => ms + 1_000 >= back)
 	return Number.isFinite(back) && fit !== undefined ? fit[0] : "30d"
 }
 
