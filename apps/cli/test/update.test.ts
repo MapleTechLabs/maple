@@ -127,6 +127,19 @@ describe("update HTTP", () => {
 		}),
 	)
 
+	it.effect("pages past a full page of package releases", () =>
+		Effect.gen(function* () {
+			const packages = Array.from({ length: 100 }, (_, i) => ({ tag_name: `@maple-dev/sdk@0.${i}.0` }))
+			const fetchStub = (async (input: string | URL | Request) => {
+				const url = new URL(input instanceof Request ? input.url : input.toString())
+				return Response.json(
+					url.searchParams.get("page") === "1" ? packages : [{ tag_name: "v0.0.24" }],
+				)
+			}) as typeof fetch
+			strictEqual(yield* withFetch(fetchLatestTag(), fetchStub), "v0.0.24")
+		}),
+	)
+
 	it.effect("maps non-2xx and decode failures to UpdateError", () =>
 		Effect.gen(function* () {
 			const statusError = yield* Effect.flip(
