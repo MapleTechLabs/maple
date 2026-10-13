@@ -51,6 +51,7 @@ import {
 	attributeIndexMode,
 	deriveWarehouseCapabilities,
 	logBodySearchMode,
+	OPTIONAL_ROLLUP_TABLES,
 	type WarehouseCapabilities,
 	WarehouseColumnMetadataSchema,
 	WarehouseIndexMetadataSchema,
@@ -275,7 +276,7 @@ WHERE database = currentDatabase() AND table IN ('logs', 'traces')`,
 						"columns",
 						`SELECT table, name
 FROM system.columns
-WHERE database = currentDatabase() AND table IN ('logs', 'traces')`,
+WHERE database = currentDatabase() AND table IN (${["logs", "traces", ...OPTIONAL_ROLLUP_TABLES].map((table) => `'${table}'`).join(", ")})`,
 					).pipe(
 						Effect.flatMap((rows) =>
 							Schema.decodeUnknownEffect(WarehouseColumnMetadataSchema)(rows),
@@ -306,6 +307,7 @@ WHERE name = 'enable_full_text_index'`,
 					columns,
 					settings,
 					allowSettingOverrides,
+					optionalTables: OPTIONAL_ROLLUP_TABLES,
 				}),
 			),
 		)

@@ -49,7 +49,12 @@ import {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 } from "../limits"
-import { attributeIndexMode, logBodySearchMode, type WarehouseCapabilities } from "../capabilities"
+import {
+	attributeIndexMode,
+	hasWarehouseTable,
+	logBodySearchMode,
+	type WarehouseCapabilities,
+} from "../capabilities"
 import { makeExecuteRawSql } from "./raw-sql"
 import {
 	logsCount,
@@ -1132,11 +1137,18 @@ const executeCHUnionQuery = Effect.fnUntraced(function* <
 >(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
-	query: CH.CHUnionQuery<Output>,
+	query: CH.CHUnionQuery<Output> | ((capabilities: WarehouseCapabilities) => CH.CHUnionQuery<Output>),
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
 ) {
+	if (typeof query === "function") {
+		const compile = (capabilities: WarehouseCapabilities) => CH.compileUnion(query(capabilities), params)
+		return yield* annotateWarehouseError(
+			warehouse.compiledQueryWithCapabilities(tenant, compile, { profile, context }),
+			context,
+		)
+	}
 	const compiled = CH.compileUnion(query, params)
 	return yield* annotateWarehouseError(
 		warehouse.compiledQuery(tenant, compiled, { profile, context }),
@@ -1415,7 +1427,7 @@ const isMissingTraceFacetsRollup = (error: unknown): boolean => {
 /**
  * `trace_facets_hourly` ships in a `requiredForIngest: false` migration (0034),
  * so a BYO cluster may not have it yet; the sidebar then reads `trace_list_mv`.
- * Only a read that actually included the rollup can be missing it.
+ * The capability probe skips it up front; this retry covers an unprobed cluster.
  */
 const withTraceFacetsFallback = <A, E, R>(
 	orgId: OrgId,
@@ -2141,7 +2153,13 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						executeCHUnionQuery(
 							warehouse,
 							tenant,
-							CH.tracesFacetsQuery({ ...opts, facet, rawOnly }),
+							(capabilities) =>
+								CH.tracesFacetsQuery({
+									...opts,
+									facet,
+									rawOnly:
+										rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+								}),
 							baseParams,
 							facet ? `tracesFacets:${facet}` : "tracesFacets",
 							"discovery",
@@ -2274,7 +2292,11 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					executeCHQuery(
 						warehouse,
 						tenant,
-						CH.tracesDurationStatsQuery({ ...opts, rawOnly }),
+						(capabilities) =>
+							CH.tracesDurationStatsQuery({
+								...opts,
+								rawOnly: rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+							}),
 						{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 						"tracesDurationStats",
 					),
