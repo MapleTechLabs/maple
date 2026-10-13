@@ -66,7 +66,7 @@ jobs:
             # A tag pushed with GITHUB_TOKEN starts no workflows, so the binary release is
             # dispatched on the new tag explicitly.
             - name: Tag and release the CLI
-              if: steps.changesets.outputs.hasChangesets == 'false'
+              if: steps.changesets.outputs.has-changesets == 'false'
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
