@@ -342,14 +342,24 @@ const modelCallTransformer =
  */
 const MODEL_STREAM_IDLE_TIMEOUT = "2 minutes"
 
-const idleTimeout = (): AiError.AiError =>
+/**
+ * One model call's whole stream, however steadily it emits. A runaway generation streamed for 577s
+ * of a 600s review budget (2026-10-13) and never tripped the idle timeout.
+ */
+export const MODEL_CALL_TIMEOUT = "4 minutes"
+
+const streamTimeout = (description: string): AiError.AiError =>
 	new AiError.AiError({
 		module: "Maple",
 		method: "streamText",
-		reason: new AiError.UnknownError({
-			description: `Model stream produced nothing for ${MODEL_STREAM_IDLE_TIMEOUT}`,
-		}),
+		reason: new AiError.UnknownError({ description }),
 	})
+
+const idleTimeout = (): AiError.AiError =>
+	streamTimeout(`Model stream produced nothing for ${MODEL_STREAM_IDLE_TIMEOUT}`)
+
+const callTimeout = (): AiError.AiError =>
+	streamTimeout(`Model stream did not finish within ${MODEL_CALL_TIMEOUT}`)
 
 /**
  * Build a provider's language model so that every `streamText` call — the only call Maple makes, and
@@ -392,6 +402,11 @@ export const instrumentLanguageModel = <R>(
 									duration: MODEL_STREAM_IDLE_TIMEOUT,
 									orElse: () => Stream.fail(idleTimeout()),
 								}),
+								Stream.interruptWhen(
+									Effect.sleep(MODEL_CALL_TIMEOUT).pipe(
+										Effect.andThen(Effect.fail(callTimeout())),
+									),
+								),
 								// After the idle timeout, which must keep seeing every raw delta.
 								(stream) =>
 									instrumentation.coalesceDeltas === true ? coalesceDeltas(stream) : stream,

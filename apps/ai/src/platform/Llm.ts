@@ -411,6 +411,12 @@ const instrumentedModel = <R>(
 		Layer.effect(LanguageModel.LanguageModel, instrumentLanguageModel(make, telemetry, options)),
 	)
 
+/**
+ * Output tokens one agent model call may produce, reasoning included. Far below the models' 128k so
+ * a runaway generation ends in minutes; room for a large `submit_review` after high-effort reasoning.
+ */
+export const MODEL_CALL_OUTPUT_TOKENS = 32_000
+
 const openRouterModel = (
 	settings: LlmSettings,
 	name: string,
@@ -422,12 +428,17 @@ const openRouterModel = (
 	unattended = false,
 ): ResolvedModel => {
 	const effort = readReasoningEffort(settings, effortKey) ?? fallbackEffort
+	const limits = limitsFor(settings, name, overridableLimits)
+	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
 		provider: "openrouter",
 		name,
 		layer: instrumentedModel(
 			name,
-			OpenRouterLanguageModel.make({ model: name, config: openRouterConfig(effort, tags) }),
+			OpenRouterLanguageModel.make({
+				model: name,
+				config: { ...openRouterConfig(effort, tags), max_tokens: maxTokens },
+			}),
 			{
 				providerName: genAiProviderName("openrouter"),
 				...(effort === undefined || effort === "off" ? undefined : { reasoningLevel: effort }),
@@ -435,7 +446,7 @@ const openRouterModel = (
 			},
 			{ coalesceDeltas: unattended },
 		),
-		limits: limitsFor(settings, name, overridableLimits),
+		limits,
 		tags,
 	}
 }
