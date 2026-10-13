@@ -23,6 +23,28 @@ export class Credentials extends Context.Service<Credentials, Config>()(
 	"@maple/backend/openrouter/Credentials",
 ) {}
 
+/**
+ * 400: OpenRouter refused the request as written. For a chat completion this includes a model the
+ * key's own account settings cannot reach (provider keys, data region).
+ */
+export class BadRequest extends T.applyErrorMatchers(
+	Schema.TaggedError<BadRequest>()("@maple/backend/openrouter/BadRequest", {
+		message: Schema.String,
+	}).pipe(Category.withBadRequestError),
+	[{ status: 400 }],
+) {}
+
+/**
+ * 404: no endpoint can serve the model, e.g. routing removed every in-region provider. The
+ * message names each routing step and what it removed.
+ */
+export class NotFound extends T.applyErrorMatchers(
+	Schema.TaggedError<NotFound>()("@maple/backend/openrouter/NotFound", {
+		message: Schema.String,
+	}).pipe(Category.withNotFoundError),
+	[{ status: 404 }],
+) {}
+
 /** 401: the key is not a live OpenRouter key. */
 export class Unauthorized extends T.applyErrorMatchers(
 	Schema.TaggedError<Unauthorized>()("@maple/backend/openrouter/Unauthorized", {
@@ -100,7 +122,7 @@ const CreateChatCompletionRequest = Schema.Struct({
 export const createChatCompletion = API.make(() => ({
 	input: CreateChatCompletionRequest,
 	output: Schema.Unknown,
-	errors: [Unauthorized, PaymentRequired, Forbidden],
+	errors: [BadRequest, Unauthorized, PaymentRequired, Forbidden, NotFound],
 	protocol: OpenRouterProtocol,
 }))
 
