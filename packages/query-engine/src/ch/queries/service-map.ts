@@ -408,7 +408,7 @@ export function serviceDependenciesForServiceQuery(opts: ServiceDependenciesForS
 
 // Service ↔ database edges
 //
-// Surfaces DB calls (Client/Producer spans with `db.system.name` set) as a separate
+// Surfaces DB calls (Client/Producer spans with `db.system.name` or `db.system`) as a separate
 // dependency relation so the service map can reify databases as nodes.
 // One row per (sourceService, dbSystem).
 //
@@ -1211,7 +1211,7 @@ export function serviceExternalEdgesSQL(
 				$.Timestamp.lte(param.dateTime("endTime")),
 				edgeCondition("Timestamp"),
 				CH.inList($.SpanKind, ["Client", "Producer"]),
-				attr("db.system.name").eq(""),
+				dbSystemExpr($).eq(""),
 				attr("server.address")
 					.neq("")
 					.or(attr("http.host").neq(""))
