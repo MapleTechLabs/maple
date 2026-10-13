@@ -1960,6 +1960,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// Shared across every account of the grant — Cloudflare meters the grant's holder, so
 			// a per-account budget would multiply a tick's calls by the account count.
 			budget: { calls: number },
+			// The org's ingest refusal this tick: every account posts with the same org key, so
+			// one refusal holds the siblings too instead of re-posting with a refused key.
+			orgRefusal: Ref.Ref<string | null>,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cloudflare.account_id": accountId })
 			// The budget is the grant's running total; this account's own spend is the delta, so
@@ -2013,6 +2016,12 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const deliveryBlockedRef = yield* Ref.make(false)
 
 			return yield* Effect.gen(function* () {
+				const refusal = yield* Ref.get(orgRefusal)
+				if (refusal !== null) {
+					yield* recordConnectionError(orgId, accountId, refusal, now)
+					yield* Ref.set(deliveryBlockedRef, true)
+					return yield* skip("ingest refused the org")
+				}
 				// Token failures: revocation disables the connection's rows until reconnect;
 				// transient upstream failures record and retry next tick.
 				if (Result.isFailure(tokenResult)) {
@@ -2287,6 +2296,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 															),
 														),
 														Effect.andThen(Ref.set(deliveryBlockedRef, true)),
+														Effect.andThen(Ref.set(orgRefusal, message)),
 													),
 												// The one seam: record health to Postgres AND emit an observable signal.
 												failed: ({ failure }) =>
@@ -2393,6 +2403,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const status = yield* oauth.getStatus(orgId)
 			// One budget for the whole grant, spent by the accounts in order.
 			const budget = { calls: 0 }
+			const orgRefusal = yield* Ref.make<string | null>(null)
 			const summaries = yield* Effect.forEach(status.accounts, (account) =>
 				// Revocation is grant-wide (one token), but record it per account so the tick
 				// rollup names the real cause instead of falling through to "not connected".
@@ -2404,7 +2415,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 							rowsIngested: 0,
 							failures: [],
 						})
-					: pollConnection(orgId, account.accountId, budget),
+					: pollConnection(orgId, account.accountId, budget, orgRefusal),
 			)
 			if (summaries.length === 0) {
 				yield* Effect.annotateCurrentSpan("maple.cloudflare.skip_reason", "not connected")
