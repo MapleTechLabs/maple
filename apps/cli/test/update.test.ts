@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { ok, strictEqual } from "node:assert"
+import { deepStrictEqual, ok, strictEqual } from "node:assert"
 import { execFileSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
@@ -209,6 +209,44 @@ describe("update HTTP", () => {
 				),
 				"abc123  release.tar.gz\n",
 			)
+		} finally {
+			await rm(dir, { recursive: true, force: true })
+		}
+	})
+
+	it("reports cumulative download progress against Content-Length", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "maple-update-progress-"))
+		const destination = join(dir, "release.tar.gz")
+		const fetchStub = (async () =>
+			new Response(
+				new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode("release-"))
+						controller.enqueue(new TextEncoder().encode("bytes"))
+						controller.close()
+					},
+				}),
+				{ headers: { "content-length": "13" } },
+			)) as typeof fetch
+		const reports: Array<readonly [number, number | undefined]> = []
+
+		try {
+			await Effect.runPromise(
+				withFetch(
+					__testables.downloadTo(
+						"https://release.test/release.tar.gz",
+						destination,
+						Duration.seconds(1),
+						(received, total) => Effect.sync(() => reports.push([received, total])),
+					),
+					fetchStub,
+				),
+			)
+			deepStrictEqual(reports, [
+				[8, 13],
+				[13, 13],
+			])
+			strictEqual(await readFile(destination, "utf8"), "release-bytes")
 		} finally {
 			await rm(dir, { recursive: true, force: true })
 		}

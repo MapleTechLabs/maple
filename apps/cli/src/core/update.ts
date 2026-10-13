@@ -209,6 +209,7 @@ const downloadTo = (
 	url: string,
 	dest: string,
 	timeout: Duration.Input = DOWNLOAD_TIMEOUT,
+	onProgress: (received: number, total: number | undefined) => Effect.Effect<void> = () => Effect.void,
 ): Effect.Effect<void, UpdateError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
@@ -221,12 +222,25 @@ const downloadTo = (
 			})
 		}
 		// Buffer the redirect-backed release asset before Bun.write; passing the
-		// response stream directly can hang indefinitely.
-		const body = yield* response.arrayBuffer.pipe(
+		// response stream directly can hang indefinitely. Chunks are collected
+		// here so the caller can render byte progress as they arrive.
+		const lengthHeader = Number.parseInt(response.headers["content-length"] ?? "", 10)
+		const total = Number.isFinite(lengthHeader) && lengthHeader > 0 ? lengthHeader : undefined
+		const chunks = yield* response.stream.pipe(
+			Stream.mapAccum(
+				() => 0,
+				(received, chunk: Uint8Array) => {
+					const next = received + chunk.byteLength
+					return [next, [[next, chunk] as const]] as const
+				},
+			),
+			Stream.tap(([received]) => onProgress(received, total)),
+			Stream.map(([, chunk]) => chunk),
+			Stream.runCollect,
 			Effect.mapError((error) => toUpdateError("release download body failed", error)),
 		)
 		yield* Effect.tryPromise({
-			try: () => Bun.write(dest, body),
+			try: () => Bun.write(dest, new Blob(chunks)),
 			catch: (error) => toUpdateError("release download write failed", error),
 		})
 	}).pipe(
@@ -376,6 +390,20 @@ const swapBundlePair = (
 		}).pipe(Effect.tapError(() => restorePrevious))
 	})
 
+export type UpdateStage = "verify" | "download" | "checksum" | "extract" | "install"
+
+/** Hooks for rendering `performUpdate` as it runs. `stage` wraps each phase;
+ *  `downloaded` fires per received chunk of the bundle. */
+export interface UpdateProgress {
+	readonly stage: <A, E, R>(stage: UpdateStage, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+	readonly downloaded: (received: number, total: number | undefined) => Effect.Effect<void>
+}
+
+const silentProgress: UpdateProgress = {
+	stage: (_, effect) => effect,
+	downloaded: () => Effect.void,
+}
+
 export interface UpdateResult {
 	readonly tag: string
 	readonly installDir: string
@@ -385,10 +413,11 @@ export interface UpdateResult {
 /** Download, verify, and atomically install a release bundle in place.
  *  `skipSignature` is `--insecure-skip-signature`: the checksum is still checked. */
 export const performUpdate = (
-	opts: { tag?: string; skipSignature?: boolean } = {},
+	opts: { tag?: string; skipSignature?: boolean; progress?: UpdateProgress } = {},
 ): Effect.Effect<UpdateResult, UpdateError, HttpClient.HttpClient | ChildProcessSpawner | FileSystem> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
+		const progress = opts.progress ?? silentProgress
 		const target = yield* resolveTarget
 		const tagRaw = opts.tag ?? (yield* fetchLatestTag(10_000))
 		const tag = tagRaw.startsWith("v") ? tagRaw : `v${tagRaw}`
@@ -435,40 +464,63 @@ export const performUpdate = (
 				// Authenticate the manifest before trusting its checksum, and before
 				// spending the bundle download on a release that would be rejected.
 				// The manifest is ASCII, so its re-encoded text is the signed bytes.
-				const manifest = yield* fetchText(`${url}.sha256`)
-				const sig = opts.skipSignature
-					? Option.none<string>()
-					: yield* fetchTextIfPresent(`${url}.sha256.sig`)
-				const checksum = yield* releaseChecksum({
-					manifest: new TextEncoder().encode(manifest),
-					signature: Option.getOrUndefined(sig),
-					bundleName: `${name}.tar.gz`,
-					skipSignature: opts.skipSignature === true,
-				}).pipe(
-					Effect.mapError(
-						(e) => new UpdateError({ message: releaseVerificationFailure(e, `${name}.tar.gz`) }),
-					),
+				const checksum = yield* progress.stage(
+					"verify",
+					Effect.gen(function* () {
+						const manifest = yield* fetchText(`${url}.sha256`)
+						const sig = opts.skipSignature
+							? Option.none<string>()
+							: yield* fetchTextIfPresent(`${url}.sha256.sig`)
+						return yield* releaseChecksum({
+							manifest: new TextEncoder().encode(manifest),
+							signature: Option.getOrUndefined(sig),
+							bundleName: `${name}.tar.gz`,
+							skipSignature: opts.skipSignature === true,
+						}).pipe(
+							Effect.mapError(
+								(e) =>
+									new UpdateError({
+										message: releaseVerificationFailure(e, `${name}.tar.gz`),
+									}),
+							),
+						)
+					}),
 				)
 
 				const tarball = join(tmpDir, "bundle.tar.gz")
-				yield* downloadTo(url, tarball)
-				const actual = yield* sha256File(tarball)
-				if (checksum.sha256 !== actual) {
-					return yield* new UpdateError({
-						message: `checksum mismatch for ${name} (expected ${checksum.sha256}, got ${actual})`,
-					})
-				}
-
-				yield* extractTar(tarball, tmpDir)
-				const srcDir = join(tmpDir, name)
-
-				yield* swapBundlePair(srcDir, installDir, tmpDir).pipe(
-					Effect.mapError((e) => mapFsError(e, installDir)),
+				yield* progress.stage(
+					"download",
+					downloadTo(url, tarball, DOWNLOAD_TIMEOUT, progress.downloaded),
+				)
+				yield* progress.stage(
+					"checksum",
+					Effect.gen(function* () {
+						const actual = yield* sha256File(tarball)
+						if (checksum.sha256 !== actual) {
+							return yield* new UpdateError({
+								message: `checksum mismatch for ${name} (expected ${checksum.sha256}, got ${actual})`,
+							})
+						}
+					}),
 				)
 
-				if (process.platform === "darwin") {
-					yield* clearQuarantine([join(installDir, "maple"), join(installDir, "libchdb.so")])
-				}
+				yield* progress.stage("extract", extractTar(tarball, tmpDir))
+				const srcDir = join(tmpDir, name)
+
+				yield* progress.stage(
+					"install",
+					Effect.gen(function* () {
+						yield* swapBundlePair(srcDir, installDir, tmpDir).pipe(
+							Effect.mapError((e) => mapFsError(e, installDir)),
+						)
+						if (process.platform === "darwin") {
+							yield* clearQuarantine([
+								join(installDir, "maple"),
+								join(installDir, "libchdb.so"),
+							])
+						}
+					}),
+				)
 				return checksum.signature
 			}),
 		)
