@@ -156,6 +156,13 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/code-review-repos",
+		title: "Code review repositories",
+		description: "The code review repository picker over 246 fixture repositories.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:

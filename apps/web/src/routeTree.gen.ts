@@ -54,6 +54,7 @@ import { Route as LabAgentSessionsRouteImport } from './routes/lab/agent-session
 import { Route as LabAgentToolsRouteImport } from './routes/lab/agent-tools'
 import { Route as LabChartsRouteImport } from './routes/lab/charts'
 import { Route as LabChatRouteImport } from './routes/lab/chat'
+import { Route as LabCodeReviewReposRouteImport } from './routes/lab/code-review-repos'
 import { Route as LabErrorsRouteImport } from './routes/lab/errors'
 import { Route as LabFlowRouteImport } from './routes/lab/flow'
 import { Route as LabInfraRouteImport } from './routes/lab/infra'
@@ -340,6 +341,11 @@ const LabChartsRoute = LabChartsRouteImport.update({
 const LabChatRoute = LabChatRouteImport.update({
   id: '/chat',
   path: '/chat',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabCodeReviewReposRoute = LabCodeReviewReposRouteImport.update({
+  id: '/code-review-repos',
+  path: '/code-review-repos',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabErrorsRoute = LabErrorsRouteImport.update({
@@ -702,6 +708,7 @@ export interface FileRoutesByFullPath {
   '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/chat': typeof LabChatRoute
+  '/lab/code-review-repos': typeof LabCodeReviewReposRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
   '/lab/infra': typeof LabInfraRoute
@@ -810,6 +817,7 @@ export interface FileRoutesByTo {
   '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/chat': typeof LabChatRoute
+  '/lab/code-review-repos': typeof LabCodeReviewReposRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
   '/lab/infra': typeof LabInfraRoute
@@ -920,6 +928,7 @@ export interface FileRoutesById {
   '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/chat': typeof LabChatRoute
+  '/lab/code-review-repos': typeof LabCodeReviewReposRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
   '/lab/infra': typeof LabInfraRoute
@@ -1031,6 +1040,7 @@ export interface FileRouteTypes {
     | '/lab/agent-tools'
     | '/lab/charts'
     | '/lab/chat'
+    | '/lab/code-review-repos'
     | '/lab/errors'
     | '/lab/flow'
     | '/lab/infra'
@@ -1139,6 +1149,7 @@ export interface FileRouteTypes {
     | '/lab/agent-tools'
     | '/lab/charts'
     | '/lab/chat'
+    | '/lab/code-review-repos'
     | '/lab/errors'
     | '/lab/flow'
     | '/lab/infra'
@@ -1248,6 +1259,7 @@ export interface FileRouteTypes {
     | '/lab/agent-tools'
     | '/lab/charts'
     | '/lab/chat'
+    | '/lab/code-review-repos'
     | '/lab/errors'
     | '/lab/flow'
     | '/lab/infra'
@@ -1720,6 +1732,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabChatRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/code-review-repos': {
+      id: '/lab/code-review-repos'
+      path: '/code-review-repos'
+      fullPath: '/lab/code-review-repos'
+      preLoaderRoute: typeof LabCodeReviewReposRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/errors': {
       id: '/lab/errors'
       path: '/errors'
@@ -2163,6 +2182,7 @@ interface LabRouteRouteChildren {
   LabAgentToolsRoute: typeof LabAgentToolsRoute
   LabChartsRoute: typeof LabChartsRoute
   LabChatRoute: typeof LabChatRoute
+  LabCodeReviewReposRoute: typeof LabCodeReviewReposRoute
   LabErrorsRoute: typeof LabErrorsRoute
   LabFlowRoute: typeof LabFlowRoute
   LabInfraRoute: typeof LabInfraRoute
@@ -2195,6 +2215,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabAgentToolsRoute: LabAgentToolsRoute,
   LabChartsRoute: LabChartsRoute,
   LabChatRoute: LabChatRoute,
+  LabCodeReviewReposRoute: LabCodeReviewReposRoute,
   LabErrorsRoute: LabErrorsRoute,
   LabFlowRoute: LabFlowRoute,
   LabInfraRoute: LabInfraRoute,
