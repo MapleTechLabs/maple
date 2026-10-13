@@ -1935,6 +1935,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						| AlertPersistenceError
 						| AlertDestinationStorageError
 						| AlertRuleStoredConfigInvalidError,
+					// False for all but one row of a digest: one refused post is one destination failure.
+					countable = true,
 				) => {
 					const failure = toDeliveryAttemptFailure(error)
 					// Only the provider's own refusal counts: a Maple fault (decryption,
@@ -1942,7 +1944,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					return recordFailedAttempt(
 						row,
 						failure,
-						!failure.retryable && isProviderDeliveryFailure(error),
+						countable && !failure.retryable && isProviderDeliveryFailure(error),
 					)
 				}
 
@@ -2079,9 +2081,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					}).pipe(
 						Effect.matchEffect({
 							onFailure: (error) =>
-								Effect.forEach(claimed, (row) => recoverDeliveryFailure(row, error), {
-									discard: true,
-								}),
+								Effect.forEach(
+									claimed,
+									(row, index) =>
+										recoverDeliveryFailure(row, error, index === 0).pipe(
+											isolate("Alert delivery recovery failed", {
+												deliveryKey: row.deliveryKey,
+											}),
+										),
+									{ discard: true },
+								),
 							onSuccess: ({ posted, channelName }) =>
 								finalizeDigest(destinationRow, claimed, claimTime, {
 									providerMessage: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${claimed.length}`,
@@ -2089,9 +2098,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								}),
 						}),
 						Effect.catchDefect((defect) =>
-							Effect.forEach(claimed, (row) => recoverDeliveryDefect(row, defect), {
-								discard: true,
-							}),
+							Effect.forEach(
+								claimed,
+								(row) =>
+									recoverDeliveryDefect(row, defect).pipe(
+										isolate("Alert delivery recovery failed", {
+											deliveryKey: row.deliveryKey,
+										}),
+									),
+								{ discard: true },
+							),
 						),
 					)
 				})
@@ -2146,28 +2162,31 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						(row) => row.destinationId,
 					),
 				).filter((group) => group.length > CHAT_DIGEST_THRESHOLD)
-				const digested = new Set(digestGroups.flatMap((group) => group.map((row) => row.id)))
-
-				yield* Effect.forEach(digestGroups, (group) => {
-					const destinationRow = destinationMap.get(group[0].destinationId)
-					return destinationRow === undefined
-						? Effect.void
-						: processChatDigest(destinationRow, group).pipe(
-								isolate("Alert digest delivery failed", { destinationId: destinationRow.id }),
-							)
-				})
-
-				yield* Effect.forEach(
-					rows.filter((row) => !digested.has(row.id)),
-					(row) =>
-						processOneDelivery(row).pipe(
-							Effect.catch((error) => recoverDeliveryFailure(row, error)),
-							// A crash finalizes the row, so it cannot be re-claimed first on
-							// every tick and stall the queue behind it.
-							Effect.catchDefect((defect) => recoverDeliveryDefect(row, defect)),
-							isolate("Alert delivery recovery failed", { deliveryKey: row.deliveryKey }),
-						),
+				// Each row maps to its digest; the digest goes out where its first row sits in batch order.
+				const digestOf = new Map(
+					digestGroups.flatMap((group) => group.map((row) => [row.id, group] as const)),
 				)
+
+				yield* Effect.forEach(rows, (row) => {
+					const group = digestOf.get(row.id)
+					if (group !== undefined) {
+						const destinationRow = destinationMap.get(row.destinationId)
+						return group[0].id !== row.id || destinationRow === undefined
+							? Effect.void
+							: processChatDigest(destinationRow, group).pipe(
+									isolate("Alert digest delivery failed", {
+										destinationId: destinationRow.id,
+									}),
+								)
+					}
+					return processOneDelivery(row).pipe(
+						Effect.catch((error) => recoverDeliveryFailure(row, error)),
+						// A crash finalizes the row, so it cannot be re-claimed first on
+						// every tick and stall the queue behind it.
+						Effect.catchDefect((defect) => recoverDeliveryDefect(row, defect)),
+						isolate("Alert delivery recovery failed", { deliveryKey: row.deliveryKey }),
+					)
+				})
 
 				return {
 					claimedCount: rows.length,
@@ -3527,7 +3546,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							pipe: fields?.pipe,
 						}),
 					)
-					yield* persistEvaluationError(row, error.message, failureCategory)
+					yield* persistEvaluationError(row, error.message, failureCategory, true)
 				})
 
 				// The warehouse itself is down (a 5xx or unreachable backend): the rule is
@@ -3549,13 +3568,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						}),
 					)
 					yield* Metric.update(AlertingMetrics.rulesSkippedTotal, 1)
-					yield* persistEvaluationError(row, error.message, failureCategory)
+					yield* persistEvaluationError(row, error.message, failureCategory, false)
 				})
 
 				const persistEvaluationError = Effect.fnUntraced(function* (
 					row: StoredAlertRuleRow,
 					rawMessage: string,
 					failureCategory: string,
+					ruleAtFault: boolean,
 				) {
 					const failedAt = yield* now
 					const message = rawMessage.slice(0, 500)
@@ -3588,6 +3608,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							ErrorCategory: failureCategory,
 						}),
 					)
+
+					// An outage keeps the check row but not lastError, so the rule is not shown
+					// as broken for a fault that is not its own.
+					if (!ruleAtFault) return
 
 					// Persist the failure to alert_rule_states so listRules/Electric can
 					// surface it. Churn-gated (the states shape is Electric-synced): skip

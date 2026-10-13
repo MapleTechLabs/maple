@@ -1,8 +1,18 @@
 const MAX_SNIPPET = 160
 
-const looksLikeHtml = (body: string) => /^\s*(<!doctype html|<html|<!--|<head|<body)/i.test(body)
+// Any body opening with a tag, comment, doctype or processing instruction is markup.
+const looksLikeHtml = (body: string) => /^<[a-zA-Z!/?]/.test(body.trimStart())
 
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim()
+
+// Visible text only: script/style bodies go first so their code never reaches a message.
+const stripTags = (markup: string) =>
+	collapse(
+		markup
+			.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
+			.replace(/<!--[\s\S]*?-->/g, " ")
+			.replace(/<[^>]*>?/g, " "),
+	)
 
 const truncate = (text: string) => (text.length > MAX_SNIPPET ? `${text.slice(0, MAX_SNIPPET)}...` : text)
 
@@ -17,8 +27,10 @@ export const summarizeUpstreamBody = (body: string, headers: Readonly<Record<str
 		const text = truncate(collapse(body))
 		return `${text === "" ? "empty body" : text}${rayPart}`
 	}
-	const title = collapse((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(body)?.[1] ?? "").replace(/<[^>]*>/g, ""))
-	return `${title === "" ? "HTML response" : `HTML response "${truncate(title)}"`}${rayPart}`
+	const title = stripTags(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(body)?.[1] ?? "")
+	if (title !== "") return `HTML response "${truncate(title)}"${rayPart}`
+	const text = stripTags(body)
+	return `${text === "" ? "HTML response" : `HTML response: ${truncate(text)}`}${rayPart}`
 }
 
 /**

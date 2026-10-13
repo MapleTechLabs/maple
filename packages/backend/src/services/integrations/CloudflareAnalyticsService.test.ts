@@ -1755,6 +1755,49 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 403, metricsHtml })))
 	})
 
+	// Every account of an org posts with the same org key, so one refusal holds the siblings too.
+	it.effect("an ingest refusal on one account holds the org's other accounts without posting", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const otlpCalls: OtlpCall[] = []
+		const SECOND_ACCOUNT = "acct-2"
+		const secondZone = {
+			...zoneFixture,
+			id: "zone-2",
+			name: "beta.example",
+			account: { id: SECOND_ACCOUNT, name: "Second Account" },
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection(ANALYTICS_SCOPE, [
+				{ id: ACCOUNT_ID, name: "Test Account" },
+				{ id: SECOND_ACCOUNT, name: "Second Account" },
+			])
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			assert.strictEqual(summary.failures.length, 0)
+			assert.strictEqual(otlpCalls.length, 1)
+			const rows = yield* loadStateRows
+			const secondAnchor = rows.find(
+				(row) => row.accountId === SECOND_ACCOUNT && row.dataset === "workers_invocations",
+			)
+			assert.include(secondAnchor!.lastError ?? "", "ingest returned 403")
+			assert.isAbove(secondAnchor!.leaseUntil!, T0)
+			// Neither account posts again inside the backoff.
+			yield* TestClock.adjust(MIN)
+			yield* service.pollOrg(ORG)
+			assert.strictEqual(otlpCalls.length, 1)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					otlpCalls,
+					metricsStatus: 403,
+					zonesByAccount: { [ACCOUNT_ID]: [zoneFixture], [SECOND_ACCOUNT]: [secondZone] },
+				}),
+			),
+		)
+	})
+
 	it.effect("getStatus reflects zone and workers state rows", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []

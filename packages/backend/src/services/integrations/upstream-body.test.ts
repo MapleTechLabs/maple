@@ -11,10 +11,17 @@ describe("summarizeUpstreamBody", () => {
 		)
 	})
 
-	it("never returns markup for HTML without a title", () => {
+	it("keeps only visible text for markup without a title", () => {
 		expect(summarizeUpstreamBody("<html><body><h1>Forbidden</h1></body></html>", {})).toBe(
-			"HTML response",
+			"HTML response: Forbidden",
 		)
+		expect(summarizeUpstreamBody('  <div class="err"><b>Access</b> denied</div>', {})).toBe(
+			"HTML response: Access denied",
+		)
+		expect(summarizeUpstreamBody("<script>window.__cf={a:1}</script><p>Blocked</p>", {})).toBe(
+			"HTML response: Blocked",
+		)
+		expect(summarizeUpstreamBody("<script>var x = 1</script>", {})).toBe("HTML response")
 	})
 
 	it("keeps a short text body and truncates a long one", () => {
