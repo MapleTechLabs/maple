@@ -8,6 +8,8 @@ import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { ServicePills } from "@maple/ui/components/service-pills"
+import { TraceStatusBadge } from "@maple/ui/components/traces/trace-status-badge"
+import { getHttpInfo } from "@maple/ui/lib/http"
 import { DurationRangeFilter } from "@maple/ui/components/filters/duration-range-filter"
 import {
 	FilterSection,
@@ -211,6 +213,7 @@ export function TraceListView() {
 						{ header: "Services", skeleton: "w-40" },
 						{ header: "Duration", headClassName: "text-right", skeleton: "ml-auto w-14" },
 						{ header: "Spans", headClassName: "text-right", skeleton: "ml-auto w-8" },
+						{ header: "Status", skeleton: "w-10" },
 						{ header: "Started", headClassName: "text-right", skeleton: "ml-auto w-16" },
 					]}
 				/>
@@ -233,6 +236,7 @@ export function TraceListView() {
 								<TableHead>Services</TableHead>
 								<TableHead className="text-right">Duration</TableHead>
 								<TableHead className="text-right">Spans</TableHead>
+								<TableHead>Status</TableHead>
 								<TableHead className="text-right">Started</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -292,6 +296,11 @@ function SpanScopeBanner({
 
 function TraceListRow({ row, query }: { row: TraceRow; query: URLSearchParams }) {
 	const href = hrefFor(`/traces/${encodeURIComponent(row.traceId)}`, query)
+	const httpStatusCode = getHttpInfo({
+		spanName: row.rootSpanName,
+		spanKind: row.rootSpanKind,
+		spanAttributes: row.rootSpanAttributes,
+	})?.statusCode
 	return (
 		<LinkRow className={cn(row.hasError && "bg-severity-error/5")}>
 			<TableCell className="min-w-0">
@@ -322,6 +331,9 @@ function TraceListRow({ row, query }: { row: TraceRow; query: URLSearchParams })
 			</TableCell>
 			<TableCell className="text-right font-mono tabular-nums text-muted-foreground">
 				{row.spanCount === null ? EMPTY_VALUE : formatNumber(row.spanCount)}
+			</TableCell>
+			<TableCell>
+				<TraceStatusBadge hasError={row.hasError} httpStatusCode={httpStatusCode} />
 			</TableCell>
 			<TableCell
 				className="text-right text-xs whitespace-nowrap text-muted-foreground"

@@ -8,7 +8,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { SEVERITY_LABEL } from "@/components/errors/severity-badge"
-import { StatFigure } from "@/components/common/stat-rail"
+import { StatFigure } from "@maple/ui/components/ui/stat-figure"
 import { CircleQuestionIcon, CircleXmarkIcon } from "@/components/icons"
 import { useTickingNow } from "@/hooks/use-ticking-now"
 import { type Elapsed, reportHeadline, splitDuration } from "./investigation-display"

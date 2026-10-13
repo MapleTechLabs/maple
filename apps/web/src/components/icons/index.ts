@@ -78,6 +78,7 @@ export {
 	TrashIcon,
 	UserIcon,
 	XmarkIcon,
+	IdBadgeIcon,
 } from "@maple/ui/components/icons"
 
 // App-specific icons (not part of the core library).
@@ -170,7 +171,6 @@ export { TagIcon } from "./tag"
 export { HazelIcon } from "./hazel"
 export { HistoryIcon } from "./history"
 export { HouseIcon } from "./house"
-export { IdBadgeIcon } from "./id-badge"
 export { ImageIcon } from "./image"
 export { KafkaIcon } from "./kafka"
 export { LangchainIcon } from "./langchain"

@@ -19,6 +19,7 @@ import {
 	SelectableValue,
 } from "@maple/ui/components/attributes"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { SpanPositionBar } from "@maple/ui/components/traces/span-position-bar"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { getCacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
 import { getServiceColor } from "@maple/ui/lib/colors"
@@ -37,10 +38,13 @@ const LOG_LIMIT = 100
 
 interface SpanDetailPanelProps {
 	span: SpanNode
+	/** The trace's start and length, for the span's position bar. */
+	traceStartTime: string
+	totalDurationMs: number
 	onClose: () => void
 }
 
-export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
+export function SpanDetailPanel({ span, traceStartTime, totalDurationMs, onClose }: SpanDetailPanelProps) {
 	const cacheInfo = getCacheInfo(span.spanAttributes)
 	const statusStyle = getSpanStatusBadgeClass(span.statusCode)
 	const kindLabel = getSpanKindLabel(span.spanKind)
@@ -153,6 +157,12 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 						<div className="space-y-3 p-3">
 							<div className="space-y-1">
 								<h4 className="text-xs font-medium text-muted-foreground">Timing</h4>
+								<SpanPositionBar
+									span={span}
+									traceStartTime={traceStartTime}
+									totalDurationMs={totalDurationMs}
+									color={serviceColor}
+								/>
 								<KeyValueList className="gap-1 rounded-md border p-2">
 									<KeyValue label="Start time" mono>
 										<span title={formatUtcTitle(span.startTime)}>

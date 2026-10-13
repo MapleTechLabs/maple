@@ -14,6 +14,23 @@ describe("HTTP method colors", () => {
 })
 
 describe("getHttpInfo", () => {
+	it("reads the new-semconv status when the projected map carries a blank old key", () => {
+		// The trace list projects a fixed key set, so absent keys arrive as "".
+		const info = getHttpInfo({
+			spanName: "POST /api/checkout",
+			spanKind: "Server",
+			spanAttributes: {
+				"http.method": "",
+				"http.request.method": "POST",
+				"http.route": "/api/checkout",
+				"http.status_code": "",
+				"http.response.status_code": "500",
+			},
+		})
+		expect(info?.statusCode).toBe(500)
+		expect(info?.isError).toBe(true)
+	})
+
 	it("detects HTTP from standard attrs", () => {
 		expect(
 			getHttpInfo({

@@ -17,16 +17,14 @@ import {
 } from "@tanstack/react-table"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
-import { Badge } from "@maple/ui/components/ui/badge"
+import { TraceStatusBadge } from "@maple/ui/components/traces/trace-status-badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { ROW_LANE } from "@maple/ui/components/ui/list-row"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Table, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { VirtualTableBody } from "@/components/common/virtual-table-body"
-import { httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
-import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { ServicePills } from "@maple/ui/components/service-pills"
 import { SortableHeader } from "@/components/common/sortable-header"
 import { type Trace } from "@/api/warehouse/traces"
@@ -109,33 +107,6 @@ function deepLinkSpanId(trace: Trace): string | undefined {
 
 const isPlainClick = (event: React.MouseEvent) =>
 	event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
-
-function StatusBadge({ hasError }: { hasError: boolean }) {
-	return (
-		<Badge variant="secondary" className={TONE_SOFT[hasError ? "crit" : "ok"]}>
-			{hasError ? "Error" : "OK"}
-		</Badge>
-	)
-}
-
-// 4xx/5xx follow the shared status tone; 3xx keeps its own blue so redirects stand apart from 2xx.
-function HttpStatusBadge({ statusCode }: { statusCode: number }) {
-	const tone = httpStatusTone(statusCode)
-	return (
-		<Badge
-			variant="secondary"
-			className={
-				tone !== "neutral"
-					? TONE_SOFT[tone]
-					: statusCode >= 300
-						? "bg-chart-p50/15 text-chart-p50"
-						: TONE_SOFT.ok
-			}
-		>
-			{statusCode}
-		</Badge>
-	)
-}
 
 /**
  * v9 registers features explicitly. Sorting is server-side and nothing else here is table-driven,
@@ -371,12 +342,12 @@ function TracesTableView({
 				id: "status",
 				header: "Status",
 				size: 80,
-				cell: ({ row }) =>
-					row.original.rootSpan.http?.statusCode != null ? (
-						<HttpStatusBadge statusCode={row.original.rootSpan.http.statusCode} />
-					) : (
-						<StatusBadge hasError={row.original.hasError} />
-					),
+				cell: ({ row }) => (
+					<TraceStatusBadge
+						hasError={row.original.hasError}
+						httpStatusCode={row.original.rootSpan.http?.statusCode}
+					/>
+				),
 			},
 		],
 		[effectiveTimezone, sortBy, sortDir, onSortChange, onPeek],
