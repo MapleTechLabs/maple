@@ -13,7 +13,7 @@ import type { AttributeFilter, ProductEventsGroupBy, ProductEventsMetric } from 
 import { ProductEvents, SessionReplays, orgIdParam } from "../tables"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
-import { soleValue, timeseriesBucket } from "./query-helpers"
+import { soleValue, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
 import { replaysWhere, needsSessionSemiJoin, type WebAnalyticsFilters } from "./web-analytics"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 
@@ -237,7 +237,7 @@ export function productEventsTimeseriesQuery(
 			value: metricExpr($, opts.metric),
 			eventCount: CH.count(),
 		}))
-		.where(($) => eventConditions($, opts))
+		.where(($) => [...eventConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(inner, TS_COLUMNS, "value", opts) as CHQuery<

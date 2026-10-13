@@ -50,6 +50,7 @@ import {
 	matchOrIn,
 	soleValue,
 	timeseriesBucket,
+	wholeRangeEnd,
 } from "./query-helpers"
 
 /**
@@ -593,7 +594,11 @@ export function tracesTimeseriesQuery(
 						)
 					: CH.lit(0),
 			}))
-			.where(($) => [...serviceOverviewWhereConditions($, opts), edgeCondition("Timestamp", edgeGrain)])
+			.where(($) => [
+				...serviceOverviewWhereConditions($, opts),
+				edgeCondition("Timestamp", edgeGrain),
+				wholeRangeEnd($.Timestamp, opts.wholeRange),
+			])
 			.groupBy("bucket", "groupName")
 
 		const minutelyInterior = from(ServiceOverviewMinutely)
@@ -764,6 +769,7 @@ export function tracesTimeseriesQuery(
 					matchOrIn($.SpanName, v, opts.matchModes?.spanName === "contains"),
 				),
 				edgeCondition("Timestamp"),
+				wholeRangeEnd($.Timestamp, opts.wholeRange),
 			])
 			.groupBy("bucket", "groupName")
 
@@ -840,7 +846,10 @@ export function tracesTimeseriesQuery(
 				groupName: buildMvGroupNameExpr($, opts.groupBy),
 				...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
 			}))
-			.where(($) => serviceOverviewWhereConditions($, opts))
+			.where(($) => [
+				...serviceOverviewWhereConditions($, opts),
+				wholeRangeEnd($.Timestamp, opts.wholeRange),
+			])
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(mv, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
@@ -861,7 +870,7 @@ export function tracesTimeseriesQuery(
 			),
 			...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
 		}))
-		.where(($) => buildWhereConditions($, opts))
+		.where(($) => [...buildWhereConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts) as CHQuery<

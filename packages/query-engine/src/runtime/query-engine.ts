@@ -957,6 +957,16 @@ const executeCHQuery = Effect.fnUntraced(function* <
 	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, options), context)
 })
 
+// A whole-range counter needs each series' last sample before the window. Two
+// widths reach at least as far back as the epoch-aligned grid (and its hourly rollup) did.
+const wholeRangeCounterLookbackSeconds = (range: {
+	readonly startTime: string
+	readonly endTime: string
+	readonly bucketSeconds: number
+}): number =>
+	2 *
+	Math.max(range.bucketSeconds, Math.ceil((toEpochMs(range.endTime) - toEpochMs(range.startTime)) / 1000))
+
 type MetricsTimeseriesSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "timeseries" }>
 
 const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends QueryTenant>(
@@ -1007,6 +1017,7 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 				metricNames: query.filters.metricNames,
 				metricType: query.filters.metricType,
 				bucketSeconds: range.bucketSeconds,
+				lookbackSeconds: range.wholeRange ? wholeRangeCounterLookbackSeconds(range) : undefined,
 			}),
 			params,
 			contexts.rate,

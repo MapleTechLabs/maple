@@ -24,6 +24,7 @@ import {
 	severitySpellings,
 	soleValue,
 	timeseriesBucket,
+	wholeRangeEnd,
 } from "./query-helpers"
 
 // Shared options
@@ -388,6 +389,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 			$.TimestampTime.lte(utcSecondsParam("endTime")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
+			wholeRangeEnd($.Timestamp, opts.wholeRange),
 			...serviceSeverityConditions($, opts),
 			opts.minSeverity !== undefined ? $.SeverityNumber.gte(opts.minSeverity) : undefined,
 			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),

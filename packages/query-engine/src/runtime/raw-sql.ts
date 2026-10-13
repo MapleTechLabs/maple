@@ -59,6 +59,18 @@ export interface RawSqlWarehouse<TTenant, E> {
 	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, E>
 }
 
+/**
+ * `$__timeGroup` on a grid of range-wide buckets anchored at the range start, so every
+ * row in [start, end) groups at start and a predicate on the macro still reads each
+ * row. Arithmetic, not `toStartOfInterval`'s origin argument, which 24.8 lacks.
+ */
+const rangeAlignedGroup = (column: string, startLiteral: string, endLiteral: string): string => {
+	const start = `toInt64(toUnixTimestamp(${startLiteral}))`
+	const width = `greatest(toInt64(toUnixTimestamp(${endLiteral})) - ${start}, 1)`
+	const offset = `toInt64(floor((toInt64(toUnixTimestamp(${column})) - ${start}) / ${width}))`
+	return `toDateTime(${start} + ${offset} * ${width})`
+}
+
 const fail = (code: RawSqlValidationError["code"], message: string) =>
 	Effect.fail(new RawSqlValidationError({ code, message }))
 
@@ -96,12 +108,17 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	sql = sql.replaceAll("$__endTime", () => endLiteral)
 	sql = sql.replaceAll("$__interval_s", () => String(granularity))
 
+	// An alert window is half-open; interactive ranges keep their inclusive end.
+	const endOperator = input.wholeRange ? "<" : "<="
 	// Materialized before the loop mutates `sql`: the matches are positions in the
 	// text as it was when `matchAll` was called.
 	const timeFilterMatches = [...sql.matchAll(/\$__timeFilter\(([^)]*)\)/g)]
 	for (const match of timeFilterMatches) {
 		const column = match[1].trim()
-		sql = sql.replace(match[0], () => `${column} >= ${startLiteral} AND ${column} <= ${endLiteral}`)
+		sql = sql.replace(
+			match[0],
+			() => `${column} >= ${startLiteral} AND ${column} ${endOperator} ${endLiteral}`,
+		)
 	}
 
 	// Bucketing macro. An alert query that selects `$__timeGroup(Timestamp) AS bucket`
@@ -112,7 +129,9 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	for (const match of timeGroupMatches) {
 		const column = match[1].trim()
 		sql = sql.replace(match[0], () =>
-			input.wholeRange ? startLiteral : `toStartOfInterval(${column}, INTERVAL ${granularity} SECOND)`,
+			input.wholeRange
+				? rangeAlignedGroup(column, startLiteral, endLiteral)
+				: `toStartOfInterval(${column}, INTERVAL ${granularity} SECOND)`,
 		)
 	}
 

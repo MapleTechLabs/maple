@@ -91,12 +91,14 @@ interface SeedLog {
 }
 
 // `logs5` rows straddle the 10:00 epoch boundary inside [09:58, 10:03);
-// `logs60` rows sit in [09:03, 10:03), which holds no whole hour.
+// `logs60` rows sit in [09:03, 10:03), which holds no whole hour. Every source
+// also gets a row at exactly the tick, which the half-open window excludes.
 const SEED_LOGS: ReadonlyArray<SeedLog> = [
 	{ ms: at(9, 57, 30), service: "logs5" },
 	{ ms: at(9, 58, 10), service: "logs5" },
 	{ ms: at(9, 59, 10), service: "logs5" },
 	...Array.from({ length: 6 }, (_, i) => ({ ms: at(10, 0, 10 + i * 20), service: "logs5" })),
+	{ ms: at(10, 3), service: "logs5" },
 	{ ms: at(10, 3, 30), service: "logs5" },
 	{ ms: at(9, 2), service: "logs60" },
 	...Array.from({ length: 3 }, (_, i) => ({ ms: at(9, 10 + i), service: "logs60" })),
@@ -116,9 +118,10 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	{ ms: at(9, 58, 30), status: "Error" },
 	...Array.from({ length: 9 }, (_, i) => ({ ms: at(10, 0, 10 + i * 15), status: "Ok" as const })),
 	{ ms: at(9, 57, 0), status: "Error" },
+	{ ms: at(10, 3), status: "Error" },
 	// `hourly` spans fill [08:03, 10:03): both partial edge hours and the whole
 	// 09:00 hour that the hourly rollups answer, plus one row outside each end.
-	...[at(8, 1), at(8, 10), at(9, 30), at(9, 31), at(9, 32), at(10, 1), at(10, 4)].map((ms) => ({
+	...[at(8, 1), at(8, 10), at(9, 30), at(9, 31), at(9, 32), at(10, 1), at(10, 3), at(10, 4)].map((ms) => ({
 		ms,
 		status: "Ok" as const,
 		service: "hourly",
@@ -126,15 +129,22 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 ]
 
 // A gauge at 100 in the older part of the window and 0 in the newer part (avg 10),
-// and a cumulative counter rising by 10 every 30s (11 samples fall in the window).
+// and a cumulative counter rising by 10 every 30s (10 samples fall in [09:58, 10:03)).
 const GAUGE_POINTS: ReadonlyArray<{ readonly ms: number; readonly value: number }> = [
 	{ ms: at(9, 58, 30), value: 100 },
 	...Array.from({ length: 9 }, (_, i) => ({ ms: at(10, 0, 10 + i * 15), value: 0 })),
+	{ ms: at(10, 3), value: 1000 },
 ]
 const COUNTER_POINTS = Array.from({ length: 16 }, (_, i) => ({ ms: at(9, 56) + i * 30_000, value: 10 * i }))
+// A sparse span-metrics counter: its sample before the 09:03 window start is
+// 61 minutes old, older than one bucket of lookback.
+const SPARSE_CALLS_POINTS = [
+	{ ms: at(8, 2), value: 100 },
+	{ ms: at(9, 10), value: 120 },
+]
 
 // Product events in the window: one before the 10:00 boundary and three after it.
-const EVENT_TIMES = [at(9, 57), at(9, 59), at(10, 0, 30), at(10, 1), at(10, 2, 30)]
+const EVENT_TIMES = [at(9, 57), at(9, 59), at(10, 0, 30), at(10, 1), at(10, 2, 30), at(10, 3)]
 
 const seed = async (): Promise<void> => {
 	const logRows = SEED_LOGS.map(
@@ -170,10 +180,15 @@ const seed = async (): Promise<void> => {
 		`INSERT INTO metrics_gauge (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value) VALUES\n${gaugeRows}`,
 		database,
 	)
-	const counterRows = COUNTER_POINTS.map(
-		(row) =>
-			`(${quote(tenant.orgId)}, 'api', 'http.requests', ${quote(chDateTime(at(9, 0)))}, ${quote(chDateTime(row.ms))}, ${row.value}, 2, true)`,
-	).join(",\n")
+	const counterRows = [
+		...COUNTER_POINTS.map((row) => ({ ...row, name: "http.requests" })),
+		...SPARSE_CALLS_POINTS.map((row) => ({ ...row, name: "span.metrics.calls" })),
+	]
+		.map(
+			(row) =>
+				`(${quote(tenant.orgId)}, 'api', ${quote(row.name)}, ${quote(chDateTime(at(8, 0)))}, ${quote(chDateTime(row.ms))}, ${row.value}, 2, true)`,
+		)
+		.join(",\n")
 	await clickhouseExec(
 		`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic) VALUES\n${counterRows}`,
 		database,
@@ -279,7 +294,37 @@ describe.skipIf(!clickhouseE2eEnabled)("alert evaluation at a tick that is not w
 				}),
 			)
 			assert.deepStrictEqual(gauge, [10])
-			assert.deepStrictEqual(increase, [110])
+			assert.deepStrictEqual(increase, [100])
+		}),
+	)
+
+	it.effect("divides a counter's window increase by the window, not a smaller stored bucket", () =>
+		Effect.gen(function* () {
+			const rate = yield* valueAt(
+				tickRequest(5, {
+					kind: "timeseries",
+					source: "metrics",
+					metric: "rate",
+					filters: { metricName: asMetricName("http.requests"), metricType: "sum" },
+					bucketSeconds: 60,
+				}),
+			)
+			assert.deepStrictEqual(rate, [100 / 300])
+		}),
+	)
+
+	it.effect("keeps a sparse hourly counter's first in-window increase", () =>
+		Effect.gen(function* () {
+			const increase = yield* valueAt(
+				tickRequest(60, {
+					kind: "timeseries",
+					source: "metrics",
+					metric: "increase",
+					filters: { metricName: asMetricName("span.metrics.calls"), metricType: "sum" },
+					bucketSeconds: 3600,
+				}),
+			)
+			assert.deepStrictEqual(increase, [20])
 		}),
 	)
 
@@ -306,6 +351,22 @@ describe.skipIf(!clickhouseE2eEnabled)("alert evaluation at a tick that is not w
 					kind: "raw_sql",
 					windowMinutes: 5,
 					sql: "SELECT $__timeGroup(Timestamp) AS bucket, count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp) AND ServiceName = 'logs5' GROUP BY bucket ORDER BY bucket",
+				},
+			})
+			assert.deepStrictEqual(values, [8])
+		}),
+	)
+
+	it.effect("keeps $__timeGroup row-based when a raw SQL rule filters on it", () =>
+		Effect.gen(function* () {
+			// $__timeFilter bounds only the subquery, so the outer rows outside the
+			// window (09:57:30, 10:03, 10:03:30) are dropped only by a row-based macro.
+			const values = yield* valueAt({
+				...tickRequest(5, { kind: "timeseries", source: "logs", metric: "count" }),
+				source: {
+					kind: "raw_sql",
+					windowMinutes: 5,
+					sql: "SELECT $__timeGroup(Timestamp) AS bucket, count() AS value FROM logs WHERE $__orgFilter AND ServiceName = 'logs5' AND $__timeGroup(Timestamp) = $__startTime AND TraceId IN (SELECT TraceId FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)) GROUP BY bucket ORDER BY bucket",
 				},
 			})
 			assert.deepStrictEqual(values, [8])

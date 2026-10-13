@@ -39,6 +39,17 @@ export function timeseriesBucket<Q>(column: CH.Expr<DateTime.Utc, Q>, wholeRange
 	])
 }
 
+/**
+ * The half-open end of a `wholeRange` query: an alert window is [startTime, endTime),
+ * while the shared source filters keep their inclusive `<= endTime` for dashboards.
+ */
+export function wholeRangeEnd<Q>(
+	column: CH.Expr<DateTime.Utc, Q>,
+	wholeRange: boolean | undefined,
+): CH.Condition | undefined {
+	return wholeRange ? column.lt(utcSecondsParam("endTime")) : undefined
+}
+
 // APDEX expressions
 
 /**

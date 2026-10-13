@@ -19,7 +19,7 @@ import {
 	orgIdParam,
 	utcSecondsParam,
 } from "../tables"
-import { resolveMetricTable, metricsSelectExprs, timeseriesBucket } from "./query-helpers"
+import { resolveMetricTable, metricsSelectExprs, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
@@ -118,6 +118,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
+			wholeRangeEnd($.TimeUnix, opts.wholeRange),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
@@ -435,6 +436,7 @@ export function metricsTimeseriesRateQuery(
 				),
 			),
 			$.TimeUnix.lte(param.dateTime("endTime")),
+			wholeRangeEnd($.TimeUnix, opts.wholeRange),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
@@ -460,11 +462,15 @@ export function metricsTimeseriesRateQuery(
 		.select(($) => {
 			// Seconds of the bucket inside [startTime, endTime]: the edge buckets are
 			// partial, and dividing them by the full width understates their rate.
+			// A `wholeRange` bucket is the whole range, whatever width the spec stored.
 			const bucketStart = CH.toUnixTimestamp(timeseriesBucket($.TimeUnix, opts.wholeRange))
-			const coveredSeconds = CH.least_(
-				bucketStart.add(param.int("bucketSeconds")),
-				CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("endTime"))),
-			).sub(CH.greatest_(bucketStart, CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("startTime")))))
+			const rangeStart = CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("startTime")))
+			const rangeEnd = CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("endTime")))
+			const coveredSeconds = opts.wholeRange
+				? rangeEnd.sub(rangeStart)
+				: CH.least_(bucketStart.add(param.int("bucketSeconds")), rangeEnd).sub(
+						CH.greatest_(bucketStart, rangeStart),
+					)
 			return {
 				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
 				serviceName: $.ServiceName,
