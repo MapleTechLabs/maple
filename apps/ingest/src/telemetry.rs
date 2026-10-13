@@ -205,6 +205,9 @@ enum ClickHouseExportOutcome {
     Dropped,
 }
 
+/// Upper bound on how long one batch waits on an open breaker before shedding.
+const MAX_BREAKER_DEFERRAL: Duration = Duration::from_secs(30);
+
 /// Tuning for the per-org ClickHouse circuit breaker.
 #[derive(Clone, Copy, Debug)]
 pub struct ClickHouseBreakerConfig {
@@ -221,8 +224,8 @@ impl Default for ClickHouseBreakerConfig {
     fn default() -> Self {
         Self {
             // Trip after 2 consecutive failures (not 4) so a stalled BYO-ClickHouse
-            // target stops being hammered quickly; batches then wait on the breaker
-            // instead of burning the retry budget against it.
+            // target stops being hammered quickly instead of each batch burning the
+            // retry budget against it.
             failure_threshold: 2,
             cooldown: Duration::from_secs(30),
         }
@@ -233,8 +236,8 @@ impl Default for ClickHouseBreakerConfig {
 enum BreakerDecision {
     /// The target looks healthy enough to attempt an export.
     Allow,
-    /// The target is in the open state; make no attempt. The caller holds the
-    /// batch (and the WAL cursor) until a probe is admitted.
+    /// The target is in the open state; make no attempt. The caller defers the
+    /// batch for one short window, then sheds it.
     Shed,
 }
 
@@ -246,6 +249,9 @@ struct BreakerState {
     /// When the in-flight half-open probe was admitted. `None` when no probe is
     /// outstanding. Only meaningful while `opened_at` is set.
     probe_started_at: Option<Instant>,
+    /// A batch already waited out a full deferral window in this outage, so later
+    /// batches shed at once instead of each holding the lane again. Cleared on success.
+    deferral_spent: bool,
 }
 
 /// Pure transition: should the next attempt run, given the current state? Kept
@@ -299,6 +305,35 @@ impl ClickHouseBreakerRegistry {
         self.cfg.failure_threshold > 0
     }
 
+    /// How long one batch may wait on an open breaker before it sheds. Kept to one
+    /// cooldown (at most 30s) and well under the max queue age, because every other
+    /// org on the lane waits behind it and would otherwise age out.
+    fn deferral_window(&self, queue_max_age: Duration) -> Duration {
+        let window = self.cfg.cooldown.min(MAX_BREAKER_DEFERRAL);
+        if queue_max_age.is_zero() {
+            window
+        } else {
+            window.min(queue_max_age / 4)
+        }
+    }
+
+    fn deferral_spent(&self, org_id: &str) -> bool {
+        self.states.get(org_id).is_some_and(|state| {
+            state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .deferral_spent
+        })
+    }
+
+    fn mark_deferral_spent(&self, org_id: &str) {
+        let state = self.state_for(org_id);
+        state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .deferral_spent = true;
+    }
+
     /// How often a breaker-deferred batch re-checks for a half-open probe slot.
     fn poll_interval(&self) -> Duration {
         self.cfg
@@ -348,6 +383,7 @@ impl ClickHouseBreakerRegistry {
             guard.consecutive_failures = 0;
             guard.opened_at = None;
             guard.probe_started_at = None;
+            guard.deferral_spent = false;
         }
     }
 
@@ -2749,11 +2785,9 @@ impl ExportWorker {
             self.post_tinybird(&datasource, body, rows).await?;
         }
         for ((org_id, datasource), frames) in by_clickhouse {
-            let shed_at =
-                breaker_shed_deadline(frames.iter().map(|frame| frame.enqueued_at), max_age);
             let (body, rows) = combine_frames(frames);
             let outcome = self
-                .post_clickhouse(&org_id, &datasource, body, rows, shed_at)
+                .post_clickhouse(&org_id, &datasource, body, rows)
                 .await?;
             if outcome == ClickHouseExportOutcome::Dropped {
                 // Direct ClickHouse ingest is fail-closed to the chosen destination:
@@ -2968,7 +3002,6 @@ impl ExportWorker {
         datasource: &str,
         body: Vec<u8>,
         rows: usize,
-        shed_at: Option<Instant>,
     ) -> Result<ClickHouseExportOutcome, String> {
         let Some(mapping) = clickhouse_insert_mappings::mapping_for(datasource) else {
             metrics::clickhouse_export_dropped(datasource, "mapping_missing", rows as u64);
@@ -2991,79 +3024,40 @@ impl ExportWorker {
         // exhausted (which can only happen after at least one failure).
         let mut last_status: String;
 
-        let mut deferred = false;
-        let mut waited_on_breaker = false;
-        // Every admitted probe that fails consumes `attempt`, so with no age bound the
-        // retry budget ends the wait. This cap covers a probe slot this lane never wins.
-        let breaker_wait_cap = self
+        let deferral_window = self
             .clickhouse_breakers
-            .cfg
-            .cooldown
-            .saturating_mul(max_attempts.max(1).saturating_mul(2));
-        let mut breaker_waited = Duration::ZERO;
+            .deferral_window(self.cfg.queue_max_age);
+        let mut deferred_since: Option<Instant> = None;
+        let mut waited_on_breaker = false;
         loop {
-            // An open breaker is backpressure, not a drop: hold the batch (and so
-            // the WAL cursor) without calling the target until a probe is admitted.
+            // An open breaker first defers the batch (cursor held) for one short window,
+            // so a blip is delivered without loss; past it the batch sheds, which bounds
+            // how long co-sharded orgs on this lane wait behind a broken target.
             let now = Instant::now();
             if self.clickhouse_breakers.decide(org_id, now) == BreakerDecision::Shed {
-                if shed_at.is_some_and(|deadline| now >= deadline) {
-                    // The lane's max queue age is the one deliberate-loss bound.
+                let window_spent = self.clickhouse_breakers.deferral_spent(org_id)
+                    || deferred_since
+                        .is_some_and(|since| now.duration_since(since) >= deferral_window);
+                if window_spent {
+                    self.clickhouse_breakers.mark_deferral_spent(org_id);
+                    // A shed makes no HTTP call, but it discards customer data, so it
+                    // still gets a span or the drop is invisible in traces.
                     let span =
                         clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
-                    span.record("maple.ingest.outcome", "shed_queue_age");
-                    record_stage_error(
-                        &span,
-                        "queue_age_exceeded",
-                        "target circuit breaker stayed open past the max queue age",
-                        true,
-                    );
-                    metrics::queue_age_shed(
-                        org_id,
-                        ExportDestination::ClickHouse.as_str(),
-                        datasource,
-                        rows as u64,
-                    );
-                    metrics::clickhouse_export_dropped(
-                        datasource,
-                        "queue_age_exceeded",
-                        rows as u64,
-                    );
+                    span.record("maple.ingest.outcome", "shed_circuit_open");
+                    record_stage_error(&span, "circuit_open", "target circuit breaker open", true);
+                    metrics::clickhouse_export_dropped(datasource, "circuit_open", rows as u64);
                     warn!(
                         org_id,
                         datasource,
                         rows,
                         attempt,
-                        "Shedding ClickHouse batch: breaker stayed open past the max queue age"
+                        "Shedding ClickHouse batch: target circuit breaker open"
                     );
                     return Ok(ClickHouseExportOutcome::Dropped);
                 }
-                if breaker_waited >= breaker_wait_cap {
-                    let span =
-                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
-                    span.record("maple.ingest.outcome", "dropped");
-                    record_stage_error(
-                        &span,
-                        "circuit_open_exhausted",
-                        "no breaker probe admitted within the wait cap",
-                        true,
-                    );
-                    metrics::clickhouse_export_dropped(
-                        datasource,
-                        "circuit_open_exhausted",
-                        rows as u64,
-                    );
-                    error!(
-                        org_id,
-                        datasource,
-                        rows,
-                        attempt,
-                        "Dropping ClickHouse batch: breaker admitted no probe within the wait cap"
-                    );
-                    return Ok(ClickHouseExportOutcome::Dropped);
-                }
-                if !deferred {
+                let since = *deferred_since.get_or_insert_with(|| {
                     // One span per deferred batch, left Unset: waiting is not a failure.
-                    deferred = true;
                     let span =
                         clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
                     span.record("maple.ingest.outcome", "deferred_circuit_open");
@@ -3075,16 +3069,11 @@ impl ExportWorker {
                         attempt,
                         "Deferring ClickHouse batch: target circuit breaker open"
                     );
-                }
-                waited_on_breaker = true;
-                // Wake at the age deadline rather than a poll interval past it.
-                let pause = shed_at.map_or(self.clickhouse_breakers.poll_interval(), |deadline| {
-                    self.clickhouse_breakers
-                        .poll_interval()
-                        .min(deadline.saturating_duration_since(now))
+                    now
                 });
-                breaker_waited = breaker_waited.saturating_add(pause);
-                sleep(pause).await;
+                waited_on_breaker = true;
+                let remaining = deferral_window.saturating_sub(now.duration_since(since));
+                sleep(self.clickhouse_breakers.poll_interval().min(remaining)).await;
                 continue;
             }
             // Backoff is taken here (before the attempt) so that when the breaker
@@ -3366,18 +3355,6 @@ impl ExportWorker {
         };
         provider.resolve_clickhouse_target(org_id).await
     }
-}
-
-/// When a breaker-deferred group may be shed: once its newest frame has outlived
-/// the max queue age, so fresh rows are never shed early. `None` without an age bound.
-fn breaker_shed_deadline(
-    enqueued: impl Iterator<Item = Instant>,
-    max_age: Duration,
-) -> Option<Instant> {
-    if max_age.is_zero() {
-        return None;
-    }
-    enqueued.max().map(|newest| newest + max_age)
 }
 
 fn combine_frames(frames: Vec<&QueuedFrame>) -> (Vec<u8>, usize) {
@@ -5469,7 +5446,7 @@ mod tests {
     async fn clickhouse_breaker_sheds_after_threshold_failures() {
         // A persistently failing target must not burn the full retry budget on
         // every batch: after `failure_threshold` failures the breaker stops calling
-        // the target, and only the lane's max queue age turns the wait into a shed.
+        // it, the batch sheds after one deferral window, and later batches shed at once.
         let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -5602,7 +5579,7 @@ mod tests {
         cfg.batch_max_wait = Duration::from_millis(1);
         cfg.clickhouse_breaker = ClickHouseBreakerConfig {
             failure_threshold: 2,
-            cooldown: Duration::from_millis(200),
+            cooldown: Duration::from_millis(400),
         };
         let provider = Arc::new(StaticClickHouseTargetProvider {
             target: ClickHouseTarget {
@@ -5660,34 +5637,49 @@ mod tests {
         drop(std::fs::remove_dir_all(queue_dir));
     }
 
+    /// Fails every insert for `org_broken` and accepts everything else, counting
+    /// the accepted ones. The org is read from the INSERT's query string.
+    async fn one_org_broken_clickhouse_handler(
+        State(delivered): State<Arc<std::sync::atomic::AtomicUsize>>,
+        uri: axum::http::Uri,
+        _body: Bytes,
+    ) -> StatusCode {
+        if uri.query().unwrap_or_default().contains("org_broken") {
+            StatusCode::SERVICE_UNAVAILABLE
+        } else {
+            delivered.fetch_add(1, Ordering::SeqCst);
+            StatusCode::OK
+        }
+    }
+
     #[tokio::test]
-    async fn clickhouse_breaker_wait_without_age_bound_ends_at_retry_budget() {
-        // With INGEST_QUEUE_MAX_AGE_SECS=0 there is no age deadline, so each failed
-        // half-open probe must spend the retry budget, or a dead target wedges the lane.
-        let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    async fn clickhouse_breaker_deferral_does_not_age_out_cosharded_orgs() {
+        // One lane exports every org's ClickHouse groups in turn, so a broken org's
+        // deferral must stay short enough that a healthy org behind it is not shed.
+        let delivered = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
         let ch_addr = ch_listener.local_addr().unwrap();
         let ch_app = Router::new()
-            .route("/", post(counting_failing_clickhouse_handler))
-            .with_state(Arc::clone(&request_count));
+            .route("/", post(one_org_broken_clickhouse_handler))
+            .with_state(Arc::clone(&delivered));
         tokio::spawn(async move {
             axum::serve(ch_listener, ch_app).await.unwrap();
         });
 
-        let queue_dir = unique_test_dir("ch-breaker-budget");
+        let queue_dir = unique_test_dir("ch-breaker-cosharded");
         let mut cfg = test_cfg();
         cfg.endpoint = String::new();
         cfg.token = String::new();
         cfg.queue_dir = queue_dir.clone();
         cfg.wal_shards = 1;
         cfg.batch_max_wait = Duration::from_millis(1);
-        cfg.queue_max_age = Duration::ZERO;
-        cfg.export_max_attempts = 4;
+        // Deferral window is a quarter of this (1s); one breaker cooldown is far longer.
+        cfg.queue_max_age = Duration::from_secs(4);
         cfg.clickhouse_breaker = ClickHouseBreakerConfig {
             failure_threshold: 2,
-            cooldown: Duration::from_millis(50),
+            cooldown: Duration::from_secs(30),
         };
         let provider = Arc::new(StaticClickHouseTargetProvider {
             target: ClickHouseTarget {
@@ -5709,43 +5701,24 @@ mod tests {
         .await
         .unwrap();
 
-        pipeline
-            .accept_logs_to(
-                "org_dead",
-                &populated_log_request(),
-                ExportDestination::ClickHouse,
-            )
-            .await
-            .unwrap();
-        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::ClickHouse).await;
-        assert_eq!(
-            request_count.load(Ordering::SeqCst),
-            4,
-            "two failures trip the breaker, then two failed probes exhaust the budget"
-        );
+        // Separate batches, so the healthy frame is age-checked after the broken wait.
+        for org in ["org_broken", "org_healthy"] {
+            pipeline
+                .accept_logs_to(org, &populated_log_request(), ExportDestination::ClickHouse)
+                .await
+                .unwrap();
+            sleep(Duration::from_millis(50)).await;
+        }
+        // Two failures (one 500ms backoff) plus the 1s window, far short of the 4s age.
+        tokio::time::timeout(Duration::from_millis(2500), async {
+            while delivered.load(Ordering::SeqCst) == 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("a healthy org must wait at most one deferral window behind a broken one");
 
         drop(std::fs::remove_dir_all(queue_dir));
-    }
-
-    #[test]
-    fn breaker_shed_deadline_follows_the_newest_frame() {
-        let t0 = Instant::now();
-        let max_age = Duration::from_secs(300);
-        let enqueued = [
-            t0,
-            t0 + Duration::from_secs(200),
-            t0 + Duration::from_secs(50),
-        ];
-        assert_eq!(
-            breaker_shed_deadline(enqueued.into_iter(), max_age),
-            Some(t0 + Duration::from_secs(500)),
-            "a group is only shed once its freshest frame has outlived the max age"
-        );
-        assert_eq!(
-            breaker_shed_deadline(enqueued.into_iter(), Duration::ZERO),
-            None
-        );
-        assert_eq!(breaker_shed_deadline(std::iter::empty(), max_age), None);
     }
 
     #[test]
