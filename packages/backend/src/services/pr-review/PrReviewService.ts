@@ -1606,12 +1606,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									),
 								)
 							}
-							yield* update(orgId, row.id, {
+							// From an active state only, like completion: whichever moves the row first owns
+							// its comment, so a summary published meanwhile is never deleted.
+							const claimed = yield* updateWhere(orgId, row.id, ACTIVE_STATUSES, {
 								status: "skipped",
 								skipReason: "superseded",
 								finishedAt: nowMs,
 								updatedAt: nowMs,
 							})
+							if (!claimed) return
 							// Its comment would otherwise say it is reviewing forever: drop it, and skip the check.
 							yield* postReviewStatus(orgId, row.id, repo, number, {
 								kind: "superseded",
