@@ -1,6 +1,20 @@
 // Real compiled-binary coverage: no mocked eventing runtime or native storage.
 import { deepStrictEqual, match, notStrictEqual, ok, strictEqual } from "node:assert"
-import { closeSync, openSync, copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import {
+	closeSync,
+	openSync,
+	copyFileSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+	existsSync,
+	lstatSync,
+	readdirSync,
+	readlinkSync,
+} from "node:fs"
+import { createHash } from "node:crypto"
+import { serverPidPath, storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
@@ -10,7 +24,31 @@ const data = join(root, "data")
 const modulePath = join(root, "external projector #1.mjs")
 copyFileSync(resolve(import.meta.dir, "fixtures/projector-module.mjs"), modulePath)
 const secondModulePath = join(root, "second.mjs")
-writeFileSync(secondModulePath, "export default { apiVersion: 1, register() {} }")
+const registrations = join(root, "registrations.txt")
+writeFileSync(
+	secondModulePath,
+	`import { strictEqual } from "node:assert";
+import { readFileSync, appendFileSync } from "node:fs";
+export default { apiVersion: 1, register() {
+ strictEqual(readFileSync(${JSON.stringify(serverPidPath(data))}, "utf8"), String(process.pid));
+ appendFileSync(${JSON.stringify(registrations)}, String(process.pid) + "\\n");
+} }`,
+)
+const storeDigest = (path: string): string => {
+	const info = lstatSync(path)
+	if (info.isSymbolicLink()) return `link:${readlinkSync(path)}`
+	if (info.isDirectory())
+		return createHash("sha256")
+			.update(
+				JSON.stringify(
+					readdirSync(path)
+						.sort()
+						.map((name) => [name, storeDigest(join(path, name))]),
+				),
+			)
+			.digest("hex")
+	return createHash("sha256").update(readFileSync(path)).digest("hex")
+}
 const moduleArgs = ["--projector-module", modulePath, "--projector-module", secondModulePath]
 const port = Number(process.argv[3] ?? 45239)
 const url = `http://127.0.0.1:${port}`
@@ -121,6 +159,56 @@ try {
 	await stop()
 	await exit(foreground)
 
+	// A module error must not consume --reset or --on-dirty-store=wipe.
+	// Compare the populated native and control stores, not just a dummy marker.
+	const invalidModule = join(root, "invalid.mjs")
+	const malformed = [
+		"export default { apiVersion: 2, register() {} }",
+		'throw new Error("import failure")',
+		'export default { apiVersion: 1, register(add) { add({ id: "broken" }) } }',
+	]
+	for (const background of [false, true]) {
+		for (const [index, source] of malformed.entries()) {
+			writeFileSync(invalidModule, source)
+			const before = storeDigest(data)
+			const marker = readFileSync(storeMarkerPath(data), "utf8")
+			const name = `invalid-reset-${background}-${index}`
+			notStrictEqual(
+				await exit(
+					spawn(name, [
+						...args,
+						"--reset",
+						...(background ? ["--background"] : []),
+						"--projector-module",
+						invalidModule,
+					]),
+				),
+				0,
+			)
+			match(readFileSync(join(root, `${name}.log`), "utf8"), /projector module/)
+			strictEqual(storeDigest(data), before, `${name} changed the live store`)
+			strictEqual(readFileSync(storeMarkerPath(data), "utf8"), marker)
+			strictEqual(existsSync(serverPidPath(data)), false)
+		}
+		writeFileSync(storeOpenMarkerPath(data), "simulated unclean shutdown\n")
+		const before = storeDigest(data)
+		const wipeArgs = args.map((value) => (value === "fail" ? "wipe" : value))
+		notStrictEqual(
+			await exit(
+				spawn(`invalid-wipe-${background}`, [
+					...wipeArgs,
+					...(background ? ["--background"] : []),
+					"--projector-module",
+					invalidModule,
+				]),
+			),
+			0,
+		)
+		strictEqual(storeDigest(data), before, "invalid module changed the dirty store")
+		strictEqual(readFileSync(storeOpenMarkerPath(data), "utf8"), "simulated unclean shutdown\n")
+		rmSync(storeOpenMarkerPath(data))
+	}
+
 	// The parent must forward the path intact, including spaces and the # character.
 	detached = true
 	strictEqual(await exit(spawn("background", [...args, "--background", ...moduleArgs])), 0)
@@ -134,11 +222,24 @@ try {
 	await stop()
 	detached = false
 
+	// Exactly one registration per serving process, always under its PID claim.
+	const owners = readFileSync(registrations, "utf8").trim().split("\n")
+	strictEqual(owners.length, 2)
+	strictEqual(new Set(owners).size, 2)
+
 	const missing = spawn("missing-module", args)
 	notStrictEqual(await exit(missing), 0)
 	match(readFileSync(join(root, "missing-module.log"), "utf8"), /unregistered projector/)
+	// A valid detached reset still reaches the child and clears the live state.
+	detached = true
+	strictEqual(await exit(spawn("valid-reset", [...args, "--background", "--reset", ...moduleArgs])), 0)
+	await healthy()
+	deepStrictEqual(await request("/local/eventing/projections"), [])
+	strictEqual((await request("/local/eventing/outbox")).events.length, 0)
+	await stop()
+	detached = false
 	console.log(
-		"PASS: compiled external projector, saved projection, detached restart, stable event identity and missing-module refusal",
+		"PASS: compiled external projector, saved projection, detached restart, stable event identity, missing-module refusal and reset/wipe preservation",
 	)
 } finally {
 	if (detached) await stop()

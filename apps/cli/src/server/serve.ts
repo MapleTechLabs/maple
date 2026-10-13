@@ -1,3 +1,4 @@
+import type { ProjectorRegistry } from "@maple/eventing-core"
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 // The local Maple server: OTLP/HTTP ingest + a raw SQL query API + the bundled
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
@@ -1474,13 +1475,15 @@ const settleWithin = (work: Promise<unknown>, ms: number): Promise<void> => {
  *  port once listening. */
 export const startServer = (
 	options: ServerOptions,
+	/** Already loaded under the CLI PID claim before destructive store preparation. */
+	preparedProjectors?: ProjectorRegistry,
 ): Effect.Effect<
 	{ readonly port: number },
 	ChdbError | EventingStartupError | ServerBindError | LocalServerConfigError | ProjectorModuleError,
 	Scope.Scope
 > =>
 	Effect.gen(function* () {
-		const projectors = yield* loadProjectorModules(options.projectorModules ?? [])
+		const projectors = preparedProjectors ?? (yield* loadProjectorModules(options.projectorModules ?? []))
 		const policy = yield* Effect.fromResult(
 			makeBrowserOriginPolicy({
 				browserHosts: options.browserHosts,

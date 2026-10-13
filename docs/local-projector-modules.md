@@ -61,6 +61,12 @@ Paths are resolved relative to the starting process's working directory and cano
 being forwarded to a background process. Both the selected path and its resolved target must have
 an `.mjs` extension and name a regular file. Package names and URLs are not supported.
 
+The serving process loads and validates modules while holding the exclusive PID claim, before
+checkpoint reconciliation, migration abandonment, explicit reset, or dirty-store recovery. A
+background parent hands the claim and reset option to its child without changing the store; the
+child loads modules once and reuses that registry when starting the server. Invalid modules thus
+leave the existing live store intact even with `--reset` or `--on-dirty-store=wipe`.
+
 Each start builds a fresh registry, loads modules in flag order, and compiles saved projections
 against that registry. Invalid exports, unsupported API versions, invalid projector registrations,
 duplicate module paths, or duplicate projector ID/version pairs fail startup. A registration error

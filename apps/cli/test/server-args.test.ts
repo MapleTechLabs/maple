@@ -94,6 +94,7 @@ describe("buildDetachedChildArgs", () => {
 				minimumRawTelemetryRetentionDays: 120,
 				checkpointInterval: "30m",
 				projectorModules: ["/tmp/module #1.mjs", "/tmp/second.mjs"],
+				reset: true,
 			})
 			deepStrictEqual(args, [
 				"/repo/apps/cli/src/bin.ts",
@@ -114,6 +115,7 @@ describe("buildDetachedChildArgs", () => {
 				"/tmp/backup config.xml",
 				"--minimum-raw-telemetry-retention-days",
 				"120",
+				"--reset",
 				"--offline",
 				"--projector-module",
 				"/tmp/module #1.mjs",
