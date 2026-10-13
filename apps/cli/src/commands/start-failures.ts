@@ -1,7 +1,7 @@
 import { Clock, Duration, Effect, Option, Predicate, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { dirname } from "node:path"
-import { annotateOutcome, EXIT_START_REFUSED } from "../core/outcomes"
+import { annotateOutcome, EXIT_START_REFUSED, markFailedExit } from "../core/outcomes"
 import { describeFailure, formatFailure } from "../lib/failure"
 import { dim } from "../lib/style"
 import { dataDirSidecarPath } from "../server/store-version"
@@ -163,9 +163,13 @@ const handleStartFailure = <E>(
 			yield* Effect.sleep(Duration.millis(decision.backoffMs))
 		}
 		if (decision.report) return yield* Effect.fail(error)
-		// Already reported this hour: print it, but leave the root span `Ok`.
+		// Already reported this hour: leave the root span `Ok`, but still exit
+		// non-zero so `Restart=on-failure` and `SuccessfulExit=false` keep retrying.
 		yield* annotateOutcome(`repeated:${describeFailure(error).tag}`)
-		yield* Effect.sync(() => process.stderr.write(formatFailure(describeFailure(error))))
+		yield* Effect.sync(() => {
+			process.stderr.write(formatFailure(describeFailure(error)))
+			markFailedExit()
+		})
 	})
 
 /** Back off and dedupe repeats of a start failure; non-restartable ones exit 78.
