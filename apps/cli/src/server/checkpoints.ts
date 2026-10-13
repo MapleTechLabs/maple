@@ -1253,11 +1253,15 @@ const LockHolderSchema = Schema.Struct({
 })
 type LockHolder = Schema.Schema.Type<typeof LockHolderSchema>
 
-const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "unreadable"> => {
+// Only an absent record can prove a crash leftover; unreadable or undecodable
+// records may belong to a live holder, so they stay "uncertain".
+const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "absent" | "uncertain"> => {
 	const ownerPath = join(lockPath, "owner.json")
 	return assertRealFile(ownerPath, "maintenance lock owner")
 		.then(async () => Schema.decodeUnknownSync(LockHolderSchema)(JSON.parse(await readFile(ownerPath, "utf8"))))
-		.catch((): "unreadable" => "unreadable")
+		.catch((error: NodeJS.ErrnoException): "absent" | "uncertain" =>
+			error?.code === "ENOENT" ? "absent" : "uncertain",
+		)
 }
 
 const lockIsOlderThan = (lockPath: string, ms: number): Promise<boolean> =>
@@ -1286,10 +1290,10 @@ const acquireMaintenance = async (
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
 		const owner = await readMaintenanceOwner(lockPath)
-		if (owner === "unreadable") {
+		if (owner === "absent" || owner === "uncertain") {
 			// The owner record is written right after the lock dir, so an old lock
-			// without a readable record is a crash leftover, never a live holder.
-			if (!(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))) {
+			// with no record at all is a crash leftover, never a live holder.
+			if (owner === "uncertain" || !(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))) {
 				throw new Error(`maintenance lock is present but ownership is uncertain: ${lockPath}`)
 			}
 		} else if (maintenanceOwnerIsLive(owner)) {
