@@ -44,7 +44,6 @@ const attributeColumn: Column<LogEntry> = {
 		Object.entries(l.attributes ?? {})
 			.map(([k, v]) => `${k}=${v}`)
 			.join(" "),
-	maxWidth: 80,
 }
 
 const spanColumns: ReadonlyArray<Column<SpanResult>> = [
