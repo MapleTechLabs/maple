@@ -127,6 +127,26 @@ describe("mapWarehouseError", () => {
 				expect(mapped.message).toContain("web_events")
 			})
 
+			// Agent SQL from prod, as Tinybird returns it: the exception type only in the text.
+			it.each([
+				"[Error] Unknown expression identifier `Status` in scope SELECT * FROM traces FORMAT JSON. (UNKNOWN_IDENTIFIER)",
+				"[Error] Function with name `toStartOfTenSeconds` does not exist. In scope SELECT 1. (UNKNOWN_FUNCTION)",
+				"[Error] Illegal type DateTime64(9) of argument of function intDiv. (ILLEGAL_TYPE_OF_ARGUMENT)",
+				"[Error] Column `SpanName` is not under aggregate function and not in GROUP BY keys. (NOT_AN_AGGREGATE)",
+				"[Error] Cannot parse string '2026-10-04T00:00:00Z' as DateTime64(9). (CANNOT_PARSE_DATETIME)",
+			])("reports agent SQL the warehouse refused as invalid SQL: %s", (message) => {
+				expect(classify("rawSqlQuery", { message }, "caller")).toBeInstanceOf(
+					WarehouseInvalidSqlError,
+				)
+			})
+
+			// The message-borne type is read for caller SQL only; Maple's own queries keep their rules.
+			it("does not read the exception type out of a Maple query's message", () => {
+				expect(
+					classify("p", "[Error] Unknown expression identifier `x`. (UNKNOWN_IDENTIFIER)", "maple"),
+				).not.toBeInstanceOf(WarehouseInvalidSqlError)
+			})
+
 			it("defaults to caller authorship, the conservative reading", () => {
 				expect(classify("p", { message: noCommonType })).toBeInstanceOf(WarehouseInvalidSqlError)
 			})
