@@ -15,7 +15,7 @@ import {
 	type QueryError,
 	type RailwayGlobalError,
 } from "@distilled.cloud/railway"
-import { Array as Arr, Duration, Effect, Layer, Schedule, Stream } from "effect"
+import { Array as Arr, Duration, Effect, Layer, Redacted, Schedule, Stream } from "effect"
 import { HttpClient } from "effect/http"
 import { RailwayApiError } from "./errors"
 
@@ -90,7 +90,7 @@ const run = <A>(
 		// The token is per org, so this cannot be hoisted into the static service graph;
 		// the layer closes the distilled SDK query over it.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(GraphQLLive, CredentialsFromToken({ token, tokenKind: "account" }))),
+		Effect.provide(Layer.mergeAll(GraphQLLive, CredentialsFromToken({ token: Redacted.make(token), tokenKind: "account" }))),
 		Effect.provideService(HttpClient.HttpClient, httpClient),
 		Effect.annotateSpans("peer.service", "railway"),
 	)

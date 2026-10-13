@@ -9,7 +9,7 @@
  */
 import * as PlanetScale from "@distilled.cloud/planetscale"
 import { IntegrationsUpstreamError } from "@maple/domain/http"
-import { Duration, Effect, Layer, Schedule, Schema, Stream } from "effect"
+import { Duration, Effect, Layer, Redacted, Schedule, Schema, Stream } from "effect"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 
 /** Per HTTP request, body included, so a paginated listing gets the budget once per page. */
@@ -146,7 +146,7 @@ export const runPlanetScale = <A, E extends SdkError>(
 		Effect.provide(
 			Layer.mergeAll(
 				PlanetScale.fromOAuth({
-					accessToken: target.accessToken,
+					accessToken: Redacted.make(target.accessToken),
 					// Operations take the organization in their input; this field is unused.
 					organization: "",
 					apiBaseUrl: `${target.apiBaseUrl.replace(/\/$/, "")}/v1`,
