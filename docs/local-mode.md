@@ -654,27 +654,10 @@ until you compare it against the emitting service's logs.
 
 ## Release workflow opt-in
 
-The **Release** and **Local Binary Release** workflows only run their jobs when the
-Actions configuration variable `MAPLE_RELEASE_ENABLED` equals `true`. Missing or
-`false` values skip the jobs before runners are allocated. This keeps forks from
-creating version PRs or attempting releases when they sync upstream changes or push
-version tags. Manual dispatch, including artifact-only binary builds, uses the same gate.
-Ordinary build and test CI does not require this variable.
-
-Before enabling releases, configure the repository's existing release permissions,
-npm publishing credentials or trusted publisher, and binary signing secret. Then set
-`MAPLE_RELEASE_ENABLED` to `true` in **Settings → Secrets and variables → Actions →
-Variables**. An organization variable scoped to the repository also works. Do not
-put it only in the `npm-publish` environment: job conditions are evaluated before
-environment-level variables become available. This is a non-secret opt-in, not a
-replacement for publishing credentials or environment protections.
-
-Maintainers must set the variable on the upstream repository **before merging this
-change** to preserve automated releases. Forks can leave it unset, or set it to
-`false` to override an inherited organization value. Setting the variable alone has
-no effect on workflow revisions that do not yet contain the gate; sync the guarded
-workflows into the fork's default branch too. Existing tag revisions still use their
-own workflow definitions, so this does not retroactively gate old release runs.
+Set the repository Actions variable `MAPLE_RELEASE_ENABLED=true` to enable **Release**
+and **Local Binary Release**, including manual runs. Forks can leave it unset to skip
+these jobs. Use a repository or organization variable, not an environment variable.
+Upstream maintainers must set it before merging the gate to keep releases running.
 
 ## Release bundle
 

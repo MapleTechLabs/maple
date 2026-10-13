@@ -28,8 +28,6 @@ permissions:
 
 jobs:
     release:
-        # Opt in per repository; forks must not release just by syncing upstream.
-        # Use a repository/org Actions variable, not an environment variable.
         if: ${{ vars.MAPLE_RELEASE_ENABLED == 'true' }}
         name: Version or publish
         runs-on: ubuntu-latest
