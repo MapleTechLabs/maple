@@ -1,7 +1,7 @@
 ---
 title: "Trace Vercel AI SDK agents with OpenTelemetry"
 description: "Send the Vercel AI SDK's OpenTelemetry spans to Maple and group each chat into one Agent Session."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 10
 navLabel: "Vercel AI SDK"
 icon: "vercel"

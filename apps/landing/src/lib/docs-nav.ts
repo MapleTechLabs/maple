@@ -32,7 +32,7 @@ export const SECTIONS = [
 		icon: "Instrumentation",
 		label: "Instrumentation",
 		blurb: "Languages, frameworks, AI agents, hosts and clusters.",
-		groups: ["Instrumentation", "AI Agents", "Infrastructure"],
+		groups: ["Instrumentation", "AI Frameworks", "AI Gateways", "Infrastructure"],
 	},
 	{
 		id: "local",

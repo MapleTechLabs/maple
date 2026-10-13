@@ -1,7 +1,7 @@
 ---
 title: "Trace Hugging Face smolagents with OpenTelemetry"
 description: "Send smolagents runs to Maple through the OpenInference instrumentor so each conversation shows up as one Agent Session."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 25
 navLabel: "smolagents"
 icon: "huggingface"
