@@ -1,4 +1,4 @@
-import { AlertValidationError } from "@maple/domain/http"
+import { AlertDeliveryError, AlertValidationError } from "@maple/domain/http"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
@@ -4688,6 +4688,113 @@ describe("AlertsService delivery drain", () => {
 			),
 		)
 	})
+})
+
+describe("AlertsService chat digests", () => {
+	const fixedTime = 1_710_000_900_000
+	const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("44444444-4444-4444-8444-444444444444")
+
+	/** Queues `count` trigger deliveries for one chat destination, runs a tick, and reads the queue. */
+	const runBurst = (count: number, outcome: "posted" | "rate_limited") => {
+		const testDb = createTestDb(trackedDbs)
+		const posts: Array<string> = []
+		const poster = Layer.succeed(ChatAlertPoster, {
+			post: (request) =>
+				Effect.suspend(() => {
+					const card = request.blocks[0]
+					posts.push(card?.kind === "alert" ? card.title : "")
+					return outcome === "posted"
+						? Effect.succeed({ connectorName: "Test Chat", messageId: `message-${posts.length}` })
+						: Effect.fail(
+								new AlertDeliveryError({
+									message: "Discord kept rate limiting this message",
+									destinationType: "chat",
+								}),
+							)
+				}),
+			findChannel: () =>
+				Effect.succeed({
+					connector: Schema.decodeUnknownSync(ChatConnectorId)("testchat"),
+					workspaceName: "Acme",
+					channelName: "incidents",
+				}),
+		})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_chat_digest")
+			const userId = asUserId("user_chat_digest")
+			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, {
+				type: "chat",
+				name: "Incidents",
+				workspaceId,
+				channelId: "channel-1",
+			})
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			yield* Effect.forEach(Arr.range(1, count), (n) =>
+				Effect.promise(() =>
+					insertDeliveryEventRow(testDb, {
+						id: `00000000-0000-4000-8000-${String(900 + n).padStart(12, "0")}`,
+						orgId,
+						incidentId: null,
+						ruleId: rule.id,
+						destinationId: destination.id,
+						deliveryKey: `digest-${n}`,
+						eventType: "trigger",
+						attemptNumber: 1,
+						status: "queued",
+						scheduledAt: fixedTime - 100 + n,
+						payloadJson: JSON.stringify({ eventType: "trigger", dedupeKey: `digest-${n}` }),
+					}),
+				),
+			)
+			yield* alerts.runSchedulerTick()
+			const queue = yield* Effect.promise(() =>
+				queryFirstRow<{ summary: string }>(
+					testDb,
+					`select string_agg(status || '@' || attempt_number, ',' order by status, attempt_number) as summary
+					 from alert_delivery_events where delivery_key like 'digest-%'`,
+					[],
+				),
+			)
+			return { posts, queue: queue?.summary ?? "" }
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					testDb,
+					makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
+					undefined,
+					undefined,
+					poster,
+				),
+			),
+		)
+	}
+
+	it.effect("sends a burst of five for one channel as one digest and delivers every row", () =>
+		Effect.gen(function* () {
+			const { posts, queue } = yield* runBurst(5, "posted")
+			assert.deepStrictEqual(posts, ["\u{1F514} 5 alert notifications"])
+			assert.strictEqual(queue, Array(5).fill("success@1").join(","))
+		}),
+	)
+
+	it.effect("keeps two deliveries as two ordinary messages", () =>
+		Effect.gen(function* () {
+			const { posts, queue } = yield* runBurst(2, "posted")
+			assert.lengthOf(posts, 2)
+			assert.notInclude(posts.join(","), "alert notifications")
+			assert.strictEqual(queue, "success@1,success@1")
+		}),
+	)
+
+	it.effect("leaves every row of a failed digest queued for a retry", () =>
+		Effect.gen(function* () {
+			const { posts, queue } = yield* runBurst(5, "rate_limited")
+			assert.lengthOf(posts, 1)
+			assert.strictEqual(queue, [...Array(5).fill("failed@1"), ...Array(5).fill("queued@2")].join(","))
+		}),
+	)
 })
 
 describe("alert incident open uniqueness", () => {
