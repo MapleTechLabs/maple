@@ -4183,15 +4183,16 @@ fn bytes_hex(bytes: &[u8]) -> String {
 }
 
 fn format_timestamp_nano(unix_nano: u64) -> String {
+    // DateTime64(9) is an Int64 of nanoseconds: anything past i64::MAX (year 2262+)
+    // fails the whole insert with DECIMAL_OVERFLOW, so it maps to epoch like 0 does.
+    let Ok(unix_nano) = i64::try_from(unix_nano) else {
+        return "1970-01-01 00:00:00.000000000".to_owned();
+    };
     if unix_nano == 0 {
         return "1970-01-01 00:00:00.000000000".to_owned();
     }
-    #[expect(
-        clippy::cast_possible_wrap,
-        reason = "u64 nanoseconds divided by a billion cannot reach i64::MAX seconds"
-    )]
-    let secs = (unix_nano / 1_000_000_000) as i64;
-    let nanos = (unix_nano % 1_000_000_000) as u32;
+    let secs = unix_nano / 1_000_000_000;
+    let nanos = u32::try_from(unix_nano % 1_000_000_000).unwrap_or_default();
     let Some(dt) = chrono::DateTime::from_timestamp(secs, nanos) else {
         return "1970-01-01 00:00:00.000000000".to_owned();
     };
@@ -4611,6 +4612,18 @@ mod tests {
         assert_eq!(
             format_timestamp_nano(1_700_000_000_123_456_789),
             "2023-11-14 22:13:20.123456789"
+        );
+    }
+
+    #[test]
+    fn timestamp_outside_datetime64_range_maps_to_epoch() {
+        let epoch = "1970-01-01 00:00:00.000000000";
+        assert_eq!(format_timestamp_nano(0), epoch);
+        assert_eq!(format_timestamp_nano(u64::MAX), epoch);
+        assert_eq!(format_timestamp_nano(9_223_372_036_854_775_808), epoch);
+        assert_eq!(
+            format_timestamp_nano(9_223_372_036_854_775_807),
+            "2262-04-11 23:47:16.854775807"
         );
     }
 
