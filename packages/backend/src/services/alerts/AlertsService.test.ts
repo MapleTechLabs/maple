@@ -1126,6 +1126,76 @@ describe("AlertsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
+	it.effect("disabling a rule does not announce the all-clear of a flap-suppressed incident", () => {
+		const testDb = createTestDb(trackedDbs)
+		const row = (errorRate: number) =>
+			tracesRow({
+				count: 200,
+				avgDuration: 20,
+				p50Duration: 10,
+				p95Duration: 80,
+				p99Duration: 160,
+				errorRate,
+				satisfiedCount: 190,
+				toleratingCount: 5,
+				apdexScore: 0.96,
+			})
+		const state = { tracesAggregateRows: [row(10)] as ReadonlyArray<Record<string, unknown>> }
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_flap_disable")
+			const userId = asUserId("user_flap_disable")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			const ticks = (errorRate: number) =>
+				Effect.sync(() => {
+					state.tracesAggregateRows = [row(errorRate)]
+				}).pipe(
+					Effect.andThen(alerts.runSchedulerTick()),
+					Effect.andThen(TestClock.adjust(Duration.minutes(1))),
+					Effect.repeat({ times: 1 }),
+				)
+
+			// Flap 1 is announced; flap 2 reopens inside the renotify interval, so
+			// its trigger is suppressed. Disabling the rule then resolves it.
+			yield* ticks(10)
+			yield* ticks(0.5)
+			yield* ticks(10)
+			yield* alerts.updateRule(
+				orgId,
+				userId,
+				adminRoles,
+				rule.id,
+				new AlertRuleUpsertRequest({
+					name: "Checkout error rate",
+					severity: "critical",
+					enabled: false,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [destination.id],
+				}),
+			)
+
+			const incidents = yield* alerts.listIncidents(orgId)
+			assert.lengthOf(incidents.incidents, 2)
+			assert.isTrue(incidents.incidents.every((incident) => incident.status === "resolved"))
+			const events = yield* alerts.listDeliveryEvents(orgId)
+			assert.deepStrictEqual(
+				events.events.map((event: { eventType: string }) => event.eventType).sort(),
+				["resolve", "trigger"],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
 	it.effect("queues at most one renotify per interval while deliveries keep failing", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
@@ -2217,6 +2287,83 @@ describe("AlertsService", () => {
 			assert.strictEqual(result.value, 42)
 			assert.strictEqual(result.sampleCount, 42)
 		})
+	})
+
+	it.effect("evaluates a builder_query rule once, whatever service scope it carries", () => {
+		const testDb = createTestDb(trackedDbs)
+		const request = (serviceNames: ReadonlyArray<string>, destinationId: AlertDestinationId) =>
+			new AlertRuleUpsertRequest({
+				name: "Error logs",
+				severity: "critical",
+				enabled: true,
+				serviceNames: [...serviceNames],
+				signalType: "builder_query",
+				queryBuilderDraft: {
+					id: "q",
+					name: "A",
+					dataSource: "logs",
+					aggregation: "count",
+					whereClause: 'severity = "error"',
+				},
+				comparator: "gt",
+				threshold: 10,
+				windowMinutes: 5,
+				minimumSampleCount: 1,
+				consecutiveBreachesRequired: 1,
+				consecutiveHealthyRequired: 2,
+				renotifyIntervalMinutes: 30,
+				destinationIds: [destinationId],
+			})
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_builder_scope")
+			const userId = asUserId("user_builder_scope")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+
+			// The draft owns the scope, so a write drops the service fields.
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				request(["checkout", "payments"], destination.id),
+			)
+			assert.deepStrictEqual([...rule.serviceNames], [])
+
+			// A row stored with them anyway evaluates once: one incident per breach,
+			// not one per listed service.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`update alert_rules set service_names_json = '["checkout","payments"]'::jsonb where id = $1`,
+					[rule.id],
+				),
+			)
+			yield* alerts.runSchedulerTick()
+
+			const incidents = yield* alerts.listIncidents(orgId)
+			assert.lengthOf(incidents.incidents, 1)
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					testDb,
+					makeWarehouseStub({
+						logsAggregateRows: [
+							{
+								bucket: new Date(DEFAULT_CLOCK_EPOCH_MS)
+									.toISOString()
+									.replace("T", " ")
+									.slice(0, 19),
+								groupName: "all",
+								count: 42,
+							},
+						],
+					}),
+					{ fetch: okFetch },
+				),
+			),
+		)
 	})
 
 	it.effect("compiles and evaluates a raw SQL query alert", () => {

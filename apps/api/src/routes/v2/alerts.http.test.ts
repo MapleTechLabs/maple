@@ -461,6 +461,37 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("clears the upper threshold when a rule leaves a range comparator", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const destination = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Range transition hook",
+			url: "https://example.com/hooks/range-transition",
+		})
+		expect(destination.status).toBe(200)
+
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Range transition rule",
+			severity: "warning",
+			signal_type: "error_rate",
+			comparator: "between",
+			threshold: 1,
+			threshold_upper: 10,
+			window_minutes: 5,
+			destination_ids: [destination.body.id],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+
+		const patched = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			comparator: "gt",
+		})
+		expect(patched.status, JSON.stringify(patched.body)).toBe(200)
+		expect(patched.body.comparator).toBe("gt")
+		expect(patched.body.threshold_upper).toBeNull()
+		await harness.dispose()
+	})
+
 	it("rejects hidden raw SQL on structured rules", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])

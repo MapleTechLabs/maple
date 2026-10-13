@@ -2553,27 +2553,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				)
 				const staleGroupKeys = Arr.map(toResolve, (i) => i.groupKey ?? UNGROUPED_GROUP_KEY)
 
-				// Serialized per rule via the claim lock + idempotent writes
-				// (incident status update converges; delivery events onConflictDoNothing).
-				yield* Effect.forEach(toResolve, (incident) =>
+				// Same guards as resolveOrphanedGroupIncidents: `status = 'open'` plus
+				// RETURNING skips an incident resolved since the select (no second
+				// all-clear), and a flap-suppressed incident gets no resolve notification.
+				const resolveOutcomes = yield* Effect.forEach(toResolve, (incident) =>
 					Effect.gen(function* () {
-						// A held incident resolved by a rule edit still tells the phone it
-						// was waiting on data, not that a value recovered.
-						const heldForMs = incident.heldSince === null ? 0 : timestamp - incident.heldSince
-						if (incident.holdReason !== null) {
-							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
-						}
-						const resolvedIncident = {
-							...incident,
-							status: "resolved" as const,
-							resolvedAt: timestamp,
-							holdReason: null,
-							heldSince: null,
-							updatedAt: timestamp,
-						}
-
 						// A hold is a sub-state of open; a config-driven resolve ends it too.
-						yield* dbExecute((db) =>
+						const resolved = yield* dbExecute((db) =>
 							db.run(
 								PG.update(AlertIncidents)
 									.set({
@@ -2583,20 +2569,42 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										heldSince: null,
 										updatedAt: timestamp,
 									})
-									.where(($) => [$.id.eq(incident.id)]),
+									.where(($) => [$.id.eq(incident.id), $.status.eq("open")])
+									.returning("id"),
 							),
 						)
+						if (resolved.length === 0) return false
+						if (incident.holdReason !== null) {
+							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
+						}
 
+						if (incident.lastDeliveredEventType == null && incident.lastNotifiedAt != null) {
+							yield* Effect.logInfo("Skipping resolve notification for flapping incident").pipe(
+								Effect.annotateLogs({ ruleId, incidentId: incident.id }),
+							)
+							return true
+						}
+						// A held incident resolved by a rule edit still tells the phone it
+						// was waiting on data, not that a value recovered.
+						const heldForMs = incident.heldSince === null ? 0 : timestamp - incident.heldSince
 						yield* queueIncidentNotifications(
 							orgId,
 							normalized,
-							resolvedIncident,
+							{
+								...incident,
+								status: "resolved",
+								resolvedAt: timestamp,
+								holdReason: null,
+								heldSince: null,
+								updatedAt: timestamp,
+							},
 							syntheticEvaluation,
 							"resolve",
 							timestamp,
 							opts.pushBudget ?? null,
 							afterHold(incident, heldForMs),
 						)
+						return true
 					}),
 				)
 
@@ -2621,8 +2629,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					)
 				}
 
-				yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, toResolve.length)
-				yield* Metric.update(AlertingMetrics.staleIncidentsResolvedTotal, toResolve.length)
+				const resolvedCount = Arr.countBy(resolveOutcomes, (ok) => ok)
+				yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, resolvedCount)
+				yield* Metric.update(AlertingMetrics.staleIncidentsResolvedTotal, resolvedCount)
 			})
 
 			const resolveOrphanedGroupIncidents = Effect.fn("AlertsService.resolveOrphanedGroupIncidents")(
