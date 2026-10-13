@@ -1,5 +1,5 @@
 diff --git a/dist/OpenRouterLanguageModel.js b/dist/OpenRouterLanguageModel.js
-index 464d9e4..e76b1e8 100644
+index 8cf04d2..02e891c 100644
 --- a/dist/OpenRouterLanguageModel.js
 +++ b/dist/OpenRouterLanguageModel.js
 @@ -726,7 +726,22 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
