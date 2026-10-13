@@ -152,7 +152,9 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 	const isJson = Option.isSome(pretty)
 	const formatted = Option.getOrElse(pretty, () => body)
 	const highlighted = useMemo(() => (isJson ? highlightJson(formatted) : ""), [isJson, formatted])
-	const copyValue = isJson ? formatted : (log.body ?? "")
+	// Pretty JSON is the friendlier copy, but only when it is the original bytes reformatted:
+	// a body that carried ANSI codes copies as sent.
+	const copyValue = isJson && body === (log.body ?? "") ? formatted : (log.body ?? "")
 	const isLong = formatted.length > BODY_LINE_THRESHOLD || formatted.includes("\n")
 
 	const message = (clamp: boolean) =>
