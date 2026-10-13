@@ -35,9 +35,8 @@ REPO="MapleTechLabs/maple"
 INSTALL_DIR="${MAPLE_INSTALL_DIR:-$HOME/.maple/bin}"
 
 # Base64 SPKI of the Ed25519 release key: MAPLE_RELEASE_PUBLIC_KEY in
-# apps/cli/src/core/release-signature.ts (a test keeps them equal). Empty until
-# the key is provisioned, and then signatures are not checked.
-release_public_key=""
+# apps/cli/src/core/release-signature.ts (a test keeps them equal).
+release_public_key="MCowBQYDK2VwAyEAT58nYzFjZrHs2utGCW2xooSnljsEl2je33QEJ4VspnI="
 
 # RFC 8032 test vector 2 (message "r"). An openssl must verify it before its
 # verdict on a real signature counts: LibreSSL (macOS) and FIPS builds cannot.
