@@ -8,7 +8,13 @@ import { FetchHttpClient } from "effect/http"
 import { cli } from "./cli"
 import { MapleConfig } from "./core/config"
 import { Mode } from "./core/mode"
-import { annotateOutcome, isExpectedFailure, recoverExpected, renderUnexpected } from "./core/outcomes"
+import {
+	annotateOutcome,
+	isExpectedFailure,
+	markFailedExit,
+	recoverExpected,
+	renderUnexpected,
+} from "./core/outcomes"
 import { TelemetryLayer } from "./core/telemetry"
 import { maybeNotifyUpdate } from "./core/update"
 import { maybeNotifyWhatsNew } from "./core/changelog"
@@ -132,7 +138,7 @@ if (checkpointProbeDataDir !== undefined) {
 				? Effect.failCause(cause)
 				: Effect.sync(() => {
 						process.stderr.write(renderUnexpected(cause, debugEnabled()))
-						process.exitCode = 1
+						markFailedExit()
 					}),
 		),
 		// Logs are diagnostics, never results: keep them off stdout.
