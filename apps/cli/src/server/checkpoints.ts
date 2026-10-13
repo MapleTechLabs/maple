@@ -1274,7 +1274,9 @@ const lockIsOlderThan = (lockPath: string, ms: number): Promise<boolean> =>
 /** Our own PID only counts as live when the record names this process
  *  instance; otherwise an earlier container run wrote it under a reused PID. */
 const maintenanceOwnerIsLive = async (owner: LockHolder, lockPath: string): Promise<boolean> =>
-	owner.pid !== process.pid
+	// Records without an instance id come from builds that never heartbeat, so
+	// only PID liveness can judge them (our PID is alive, so they are refused).
+	owner.pid !== process.pid || owner.instanceId === undefined
 		? processIsAlive(owner.pid)
 		: owner.instanceId === PROCESS_INSTANCE_ID || !(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))
 
@@ -1315,7 +1317,10 @@ const acquireMaintenance = async (
 				throw new Error(`maintenance lock is present but ownership is uncertain: ${lockPath}`)
 			}
 		} else if (await maintenanceOwnerIsLive(owner, lockPath)) {
-			throw new Error(`another Maple maintenance operation is active (PID ${owner.pid})`)
+			throw new Error(
+				`another Maple maintenance operation is active (PID ${owner.pid}). ` +
+					`If no Maple process uses this store (for example after a container restart), remove ${lockPath} and retry.`,
+			)
 		}
 		const quarantinedLock = `${lockPath}.quarantine-${randomUUID()}`
 		await durableRename(lockPath, quarantinedLock)
