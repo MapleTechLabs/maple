@@ -84,7 +84,8 @@ export function TraceDetailView({ traceId, backLabel, onBack }: TraceDetailViewP
 		() => (selectedSpanId && trace.data ? findSpanNode(trace.data.rootSpans, selectedSpanId) : undefined),
 		[selectedSpanId, trace.data],
 	)
-	const rootSpan = trace.data?.rootSpans[0]
+	// The first real root: an orphan's synthetic "missing" parent can sort ahead of it.
+	const rootSpan = trace.data?.rootSpans.find((span) => !span.isMissing) ?? trace.data?.rootSpans[0]
 	const hasError = useMemo(() => (trace.data ? traceHasError(trace.data.spans) : false), [trace.data])
 
 	return (

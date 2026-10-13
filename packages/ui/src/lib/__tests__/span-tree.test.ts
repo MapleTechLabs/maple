@@ -131,4 +131,19 @@ describe("buildTraceDetail", () => {
 		expect(detail.totalDurationMs).toBe(50)
 		expect(detail.services).toEqual(["svc", "other"])
 	})
+
+	it("measures the trace from earliest start to latest end, not the longest span", () => {
+		const detail = buildTraceDetail([
+			row({ spanId: "root", durationMs: 50, startTime: "2026-06-10 12:00:00.000" }),
+			// An async span that starts as the root finishes and outlives it.
+			row({
+				spanId: "late",
+				parentSpanId: "root",
+				durationMs: 30,
+				startTime: "2026-06-10 12:00:00.040",
+			}),
+		])
+
+		expect(detail.totalDurationMs).toBe(70)
+	})
 })
