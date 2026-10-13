@@ -4854,3 +4854,142 @@ describe("AlertsService scheduler pool", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, stub, overrides)))
 	})
 })
+
+describe("AlertsService claim fence", () => {
+	const groupRow = (groupName: string, errorRate: number) =>
+		tracesRow({ groupName, count: 200, errorRate, estimatedSpanCount: 200 })
+
+	it.effect(
+		"a tick whose claim expired mid-notification leaves the rule to the tick that re-claimed it",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const rows = Ref.makeUnsafe<ReadonlyArray<Record<string, unknown>>>([
+				groupRow("checkout", 42),
+				groupRow("payments", 42),
+			])
+			// Shifts the scheduler clock without moving TestClock, so timeouts already
+			// armed inside the tick never fire.
+			const shiftMs = Ref.makeUnsafe(0)
+			// One-shot hooks: the next evaluation query and the next chart-series read
+			// (the notification's enrichment) run these first.
+			const onEvaluation = Ref.makeUnsafe<Effect.Effect<void>>(Effect.void)
+			const onChartSeries = Ref.makeUnsafe<Effect.Effect<void>>(Effect.void)
+			const runHook = (hook: Ref.Ref<Effect.Effect<void>>) =>
+				Effect.flatten(Ref.getAndSet(hook, Effect.void))
+
+			const base = makeWarehouseStub({})
+			const evaluationRows = () => runHook(onEvaluation).pipe(Effect.andThen(Ref.get(rows)))
+			const stub: WarehouseQueryServiceApi = {
+				...base,
+				compiledQuery: (_tenant, compiled, options) =>
+					options?.context === "alertChartSeries"
+						? runHook(onChartSeries).pipe(
+								Effect.andThen(compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie)),
+							)
+						: evaluationRows().pipe(
+								Effect.flatMap((r) =>
+									compiledQueryOf(compiled).decodeRows(r).pipe(Effect.orDie),
+								),
+							),
+				compiledQueryWithCapabilities: (_tenant, compile) =>
+					evaluationRows().pipe(
+						Effect.flatMap((r) =>
+							Effect.runSync(compile(baselineWarehouseCapabilities()))
+								.decodeRows(r)
+								.pipe(Effect.orDie),
+						),
+					),
+			}
+			const overrides = {
+				fetch: okFetch,
+				now: Effect.zipWith(Clock.currentTimeMillis, Ref.get(shiftMs), (ms, shift) => ms + shift),
+			}
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_claim_fence")
+				const userId = asUserId("user_claim_fence")
+				const destination = yield* createWebhookDestination(alerts, orgId, userId)
+				const rule = yield* alerts.createRule(
+					orgId,
+					userId,
+					adminRoles,
+					new AlertRuleUpsertRequest({
+						name: "Grouped error rate",
+						severity: "critical",
+						enabled: true,
+						groupBy: ["service.name"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 1,
+						consecutiveHealthyRequired: 1,
+						renotifyIntervalMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+
+				yield* alerts.runSchedulerTick()
+				assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 2)
+
+				// Both groups recover. The first tick's warehouse result is late (20s), and
+				// its first resolve notification is slow (another 20s): 40s after the
+				// claim, past SCHEDULER_LOCK_TTL_MS. During that notification a second
+				// tick re-claims the rule and resolves the group the first one has not
+				// reached yet.
+				yield* Ref.set(rows, [groupRow("checkout", 0.5), groupRow("payments", 0.5)])
+				yield* TestClock.adjust(Duration.minutes(1))
+				const firstClaimAt = DEFAULT_CLOCK_EPOCH_MS + 60_000
+				const secondClaimAt = firstClaimAt + 40_000
+				yield* Ref.set(
+					onEvaluation,
+					Ref.update(shiftMs, (shift) => shift + 20_000),
+				)
+				yield* Ref.set(
+					onChartSeries,
+					Ref.update(shiftMs, (shift) => shift + 20_000).pipe(
+						Effect.andThen(alerts.runSchedulerTick()),
+						Effect.asVoid,
+						Effect.orDie,
+					),
+				)
+				yield* alerts.runSchedulerTick()
+
+				const incidents = (yield* alerts.listIncidents(orgId)).incidents
+				assert.deepStrictEqual(
+					incidents.map((incident) => incident.status),
+					["resolved", "resolved"],
+				)
+				// Each group resolved once, by one tick each: the first tick stopped at
+				// the group the second tick had already resolved.
+				assert.sameMembers(
+					incidents.map((incident) => incident.resolvedAt),
+					[new Date(firstClaimAt).toISOString(), new Date(secondClaimAt).toISOString()],
+				)
+				const resolveEvents = (yield* alerts.listDeliveryEvents(orgId)).events.filter(
+					(event) => event.eventType === "resolve",
+				)
+				assert.sameMembers(
+					resolveEvents.map((event) => event.incidentId),
+					incidents.map((incident) => incident.id),
+				)
+
+				const lateGroup = incidents.find(
+					(incident) => incident.resolvedAt === new Date(secondClaimAt).toISOString(),
+				)!.groupKey
+				const lateState = yield* Effect.promise(() =>
+					queryFirstRow<{ lastEvaluatedAt: Date | null; consecutiveHealthy: number }>(
+						testDb,
+						`select last_evaluated_at as "lastEvaluatedAt", consecutive_healthy as "consecutiveHealthy"
+					   from alert_rule_states where rule_id = $1 and group_key = $2`,
+						[rule.id, lateGroup],
+					),
+				)
+				assert.strictEqual(lateState?.lastEvaluatedAt?.getTime(), secondClaimAt)
+			}).pipe(Effect.provide(makeLayer(testDb, stub, overrides)))
+		},
+	)
+})

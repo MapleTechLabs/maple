@@ -47,7 +47,7 @@ import {
 	type AlertGroupBy,
 	UNGROUPED_GROUP_KEY,
 	OrgId,
-	type AlertRuleId,
+	AlertRuleId,
 	type AlertDestinationId,
 	type AlertIncidentId,
 	type WarehouseQueryPathError,
@@ -141,6 +141,27 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 export { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 
 type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation
+
+/**
+ * A tick's claim on a rule expired and another tick re-claimed it before this
+ * one finished writing. The rule's remaining writes and notifications belong to
+ * the new claimant, so this tick stops processing the rule.
+ */
+class AlertRuleClaimLostError extends Schema.TaggedError<AlertRuleClaimLostError>()(
+	"@maple/alerts/AlertRuleClaimLostError",
+	{
+		message: Schema.String,
+		ruleId: AlertRuleId,
+		claimedAt: Schema.Number,
+		currentClaimAt: Schema.NullOr(Schema.Number),
+	},
+) {}
+
+/** The claim a tick holds on a rule: its `alert_rule_claims.last_scheduled_at`. */
+interface RuleClaim {
+	readonly ruleId: AlertRuleId
+	readonly claimedAt: number
+}
 
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
 
@@ -455,6 +476,43 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const dbExecute = makeDbExecute(database, "AlertsService", makePersistenceError)
 
 			/**
+			 * Run `write` only while `claim` still owns the rule. The claim row is
+			 * locked FOR UPDATE and re-read in the same transaction as the write, so a
+			 * later tick's re-claim (an upsert on that row) waits for this commit, and
+			 * a write after a re-claim rolls back with `AlertRuleClaimLostError`.
+			 * Keep `write` short: it holds the claim row lock. `null` writes unfenced,
+			 * for callers that hold no claim.
+			 */
+			const writeUnderClaim = <A, E, R>(
+				claim: RuleClaim | null,
+				write: (db: MapleDb) => Effect.Effect<A, E, R>,
+			) =>
+				dbExecute((db) =>
+					claim === null
+						? write(db)
+						: db.transaction(
+								Effect.gen(function* () {
+									const current = yield* db.run(
+										PG.from(AlertRuleClaims)
+											.select("lastScheduledAt")
+											.where(($) => [$.ruleId.eq(claim.ruleId)])
+											.forUpdate(),
+									)
+									const currentClaimAt = current[0]?.lastScheduledAt ?? null
+									if (currentClaimAt !== claim.claimedAt) {
+										return yield* new AlertRuleClaimLostError({
+											message: "Alert rule was re-claimed by a later scheduler tick",
+											ruleId: claim.ruleId,
+											claimedAt: claim.claimedAt,
+											currentClaimAt,
+										})
+									}
+									return yield* write(db)
+								}),
+							),
+				)
+
+			/**
 			 * Services a rule's telemetry-liveness probe should cover. An empty list
 			 * means the rule is org-wide, and the probe falls back to the org pulse.
 			 */
@@ -578,6 +636,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				decision: Extract<LivenessGateDecision, { kind: "hold" }>,
 				liveness: LivenessVerdict,
 				timestamp: number,
+				claim: RuleClaim | null,
 			) {
 				yield* Effect.annotateCurrentSpan({
 					"maple.alert.incident_id": incident.id,
@@ -602,7 +661,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					yield* Metric.update(AlertingMetrics.incidentsHeldTotal, 1)
 				}
 				if (incident.holdReason === decision.reason) return
-				yield* dbExecute((db) =>
+				yield* writeUnderClaim(claim, (db) =>
 					db.run(
 						PG.update(AlertIncidents)
 							.set({
@@ -1887,11 +1946,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				pushBudget: IncidentPushBudget,
 				prefetch: TickPrefetch,
 			) {
-				// Serialized per rule via the claim lock at runSchedulerTick (SCHEDULER_LOCK_TTL_MS
-				// CAS on alertRules.lastScheduledAt). The statements below are separate
-				// sequential writes (no transaction) and stay idempotent on retry: state
-				// upsert via onConflictDoUpdate, incident insert keyed on unique
-				// incidentKey, delivery events via onConflictDoNothing on deliveryKey.
+				// `timestamp` is the tick's claim on the rule. The claim can expire while
+				// this runs (slow notification enrichment, a late warehouse result), so
+				// every state and incident write goes through `writeUnderClaim`: once a
+				// later tick re-claims the rule, the next write fails with
+				// AlertRuleClaimLostError and the rest of the rule is left to that tick.
+				// Notifications are queued after the write commits, never inside it.
+				const claim: RuleClaim = { ruleId: row.id, claimedAt: timestamp }
 				const evaluateTransition = Effect.fnUntraced(function* () {
 					// Both reads come from the tick-head prefetch rather than a query per
 					// group. Safe because this function is the only writer of either key
@@ -1931,7 +1992,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							state.lastEvaluatedAt != null &&
 							timestamp - state.lastEvaluatedAt < STATE_HEARTBEAT_MS
 						if (unchanged) return Effect.void
-						return dbExecute((db) =>
+						return writeUnderClaim(claim, (db) =>
 							db.run(
 								PG.insertInto(AlertRuleStates)
 									.values({
@@ -2046,7 +2107,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							timestamp,
 						)
 						if (gate.kind === "hold") {
-							yield* recordHold(openIncident, gate, liveness, timestamp)
+							yield* recordHold(openIncident, gate, liveness, timestamp, claim)
 						} else {
 							heldForMs = gate.heldForMs
 							resolveEvaluation =
@@ -2099,12 +2160,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						}
 
 						// `alert_incidents_open_group_idx` allows one open incident per
-						// (org, rule, group). The scheduler claim already serializes rules
-						// in the common case; this is the backstop for an expired claim —
-						// a chunk that outran SCHEDULER_LOCK_TTL_MS being re-claimed by the
-						// next tick, both working from tick-head prefetch that saw no open
-						// incident. The loser lands here and must not notify.
-						const inserted = yield* dbExecute((db) =>
+						// (org, rule, group). `writeUnderClaim` stops a tick whose claim
+						// expired; this is the backstop for the tick that re-claimed it,
+						// whose tick-head prefetch can predate the open. The loser lands
+						// here and must not notify.
+						const inserted = yield* writeUnderClaim(claim, (db) =>
 							db.run(
 								PG.insertInto(AlertIncidents)
 									.values(incident)
@@ -2167,7 +2227,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							heldSince: null,
 							updatedAt: timestamp,
 						}
-						yield* dbExecute((db) =>
+						// `status = 'open'` plus RETURNING: the prefetch can predate a resolve
+						// by a tick that held this rule before us, and a resolved incident
+						// must not be refreshed or renotified.
+						const refreshed = yield* writeUnderClaim(claim, (db) =>
 							db.run(
 								PG.update(AlertIncidents)
 									.set({
@@ -2182,9 +2245,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											? timestamp
 											: openIncident.lastNotifiedAt,
 									})
-									.where(($) => [$.id.eq(openIncident.id)]),
+									.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
+									.returning("id"),
 							),
 						)
+						if (refreshed.length === 0) {
+							return {
+								transition: "none" as const,
+								incidentId: null,
+								openedIncidentId: null,
+								consecutiveBreaches: lifecycle.state.consecutiveBreaches,
+								consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+							}
+						}
 						if (lifecycle.eventType === "renotify") {
 							yield* queueIncidentNotifications(
 								row.orgId,
@@ -2217,7 +2290,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							heldSince: null,
 							updatedAt: timestamp,
 						}
-						yield* dbExecute((db) =>
+						// Same `status = 'open'` guard as above: only the write that actually
+						// resolves the incident sends the resolve notification.
+						const resolved = yield* writeUnderClaim(claim, (db) =>
 							db.run(
 								PG.update(AlertIncidents)
 									.set({
@@ -2230,9 +2305,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										heldSince: null,
 										updatedAt: timestamp,
 									})
-									.where(($) => [$.id.eq(openIncident.id)]),
+									.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
+									.returning("id"),
 							),
 						)
+						if (resolved.length === 0) {
+							return {
+								transition: "none" as const,
+								incidentId: null,
+								openedIncidentId: null,
+								consecutiveBreaches: lifecycle.state.consecutiveBreaches,
+								consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+							}
+						}
 						if (openIncident.holdReason !== null) {
 							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 						}
@@ -2613,7 +2698,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								timestamp,
 							)
 							if (gate.kind === "hold") {
-								yield* recordHold(incident, gate, liveness, timestamp)
+								yield* recordHold(incident, gate, liveness, timestamp, null)
 								return false
 							}
 							const syntheticEvaluation = makeSyntheticResolveEvaluation(
@@ -3425,6 +3510,20 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// `lastError` that `recordEvaluationFailure` just wrote for it.
 						Effect.tap(() =>
 							Ref.update(clearErrorTargets, Chunk.append({ orgId: row.orgId, ruleId: row.id })),
+						),
+						// Not an evaluation failure: the tick that re-claimed the rule owns
+						// its state now, so record nothing and leave the rest to it.
+						Effect.catchTag("@maple/alerts/AlertRuleClaimLostError", (lost) =>
+							Effect.logWarning(
+								"Alert rule claim lost mid-evaluation; stopping this rule",
+							).pipe(
+								Effect.annotateLogs({
+									workerId,
+									ruleId: lost.ruleId,
+									claimedAt: lost.claimedAt,
+									currentClaimAt: lost.currentClaimAt ?? undefined,
+								}),
+							),
 						),
 						Effect.catch((error) =>
 							recordEvaluationFailure(
