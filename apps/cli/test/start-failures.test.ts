@@ -130,7 +130,7 @@ describe("guardStartFailures", () => {
 		expect(process.exitCode).toBe(EXIT_START_REFUSED)
 	})
 
-	it("dedupes a taken port but keeps the ordinary exit code so supervisors retry", async () => {
+	it("dedupes a taken port but exits 1, not 78, so supervisors retry", async () => {
 		const bind = new ServerBindError({
 			hostname: "127.0.0.1",
 			port: 4318,
@@ -138,7 +138,7 @@ describe("guardStartFailures", () => {
 		})
 		expect(Exit.isFailure(await run(bind))).toBe(true)
 		expect(Exit.isSuccess(await run(bind))).toBe(true)
-		expect(process.exitCode).toBe(0)
+		expect(process.exitCode).toBe(1)
 	})
 
 	it("treats a start -d child that exited 78 as the same final refusal", async () => {
