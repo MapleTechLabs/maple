@@ -3735,7 +3735,8 @@ describe("AlertsService evaluation error persistence", () => {
 			assert.lengthOf(checks, 2)
 			assert.isTrue(checks.every((row) => row.ErrorCategory === "warehouse_unavailable"))
 			const rules = yield* alerts.listRules(orgId)
-			assert.isTrue(rules.rules.every((rule) => rule.lastEvaluationError === "HTTP 503"))
+			// Not the rule's fault, so the rule is not flagged as failing.
+			assert.isTrue(rules.rules.every((rule) => rule.lastEvaluationError === null))
 		}).pipe(
 			Effect.provide(
 				Layer.merge(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch }), captureLogs),

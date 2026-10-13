@@ -3,8 +3,6 @@ import { errorRateLevel } from "@maple/ui/lib/error-rate"
 
 /** WebGL colors in sRGB. The map is isometric line art: unlit paper faces in
  * three fixed tones, outlined in ink. Health is a small signal on each machine. */
-export const GROUND_Y = -0.02
-
 export type MachineKind = "processor" | "tank" | "loader" | "gateway" | "shed"
 
 export interface InkPalette {

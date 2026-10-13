@@ -1511,10 +1511,7 @@ export const start = Command.make("start", {
 
 					return yield* Effect.never
 				}),
-			).pipe(
-				// A `start -d` child never waits: its parent is polling for it.
-				guardStartFailures(dataDir, { neverWait: pidHandoverFrom() !== undefined }),
-			)
+			).pipe(guardStartFailures(dataDir, { detachedChild: pidHandoverFrom() !== undefined }))
 		}),
 	),
 )

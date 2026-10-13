@@ -219,15 +219,17 @@ port. `maple start -d` checks the port before spawning and reports ready only
 when `/local/status` answers with the child's pid (120s budget).
 
 **Under a supervisor.** A start refusal that retrying cannot fix (an unloadable
-libchdb, a taken port, a dirty or incompatible store; the list is `DETERMINISTIC_START_TAGS` in
-`apps/cli/src/commands/start-failures.ts`) exits with status **78**. Tell the
-supervisor not to restart on it: systemd `RestartPreventExitStatus=78`, launchd
-`KeepAlive` = `{ SuccessfulExit = false; }` plus a `ThrottleInterval`, Docker
-`restart: on-failure:5`. Without that, `maple start` protects itself: it records
-the failure in `start-failures.json` beside the store, reports the same failure
-to Maple's telemetry at most once an hour, and from the third consecutive
-non-interactive repeat waits before exiting (1s, doubling, capped at 60s). A
-successful start clears the record.
+libchdb, a dirty or incompatible store; the list is `DETERMINISTIC_START_TAGS` in
+`apps/cli/src/commands/start-failures.ts`) exits with status **78**, and so does
+a `maple start -d` whose child exited 78. Tell the supervisor not to restart on
+it: systemd `RestartPreventExitStatus=78`, launchd `KeepAlive` =
+`{ SuccessfulExit = false; }` plus a `ThrottleInterval`, Docker
+`restart: on-failure:5`. A taken port keeps the ordinary exit code, since it can
+clear by itself. Either way `maple start` protects itself: it records the
+failure in `start-failures.json` beside the store (a `-d` child uses
+`start-failures-child.json`), reports the same failure to Maple's telemetry at
+most once an hour, and from the third consecutive non-interactive repeat waits
+before exiting (1s, doubling, capped at 60s). A successful start clears both.
 
 ### Service map rollup
 
