@@ -55,15 +55,16 @@ writes: endpoint captures the Postgres txid on the mutating statement
 
 ### Shapes (server-pinned whitelist, `apps/electric-sync/src/shapes/registry.ts`)
 
-| shape                | table              | pinned columns / extra WHERE (besides org scope)                |
-| -------------------- | ------------------ | --------------------------------------------------------------- |
-| `dashboards`         | dashboards         | none                                                            |
-| `alert_rules`        | alert_rules        | none                                                            |
-| `alert_rule_states`  | alert_rule_states  | none                                                            |
-| `alert_incidents`    | alert_incidents    | none                                                            |
-| `alert_destinations` | alert_destinations | columns: drops the encrypted `secret_*`                         |
-| `api_keys`           | api_keys           | columns: drops `key_hash` / `metadata_json`                     |
-| `investigation_v2`   | investigations     | scoped to one `id` (client supplies the value as `$2`); columns |
+| shape                   | table              | pinned columns / extra WHERE (besides org scope)                |
+| ----------------------- | ------------------ | --------------------------------------------------------------- |
+| `dashboards`            | dashboards         | none                                                            |
+| `alert_rules`           | alert_rules        | none                                                            |
+| `alert_rule_states`     | alert_rule_states  | none                                                            |
+| `alert_incidents`       | alert_incidents    | none                                                            |
+| `alert_destinations`    | alert_destinations | columns: drops the encrypted `secret_*` (previous builds only)  |
+| `alert_destinations_v2` | alert_destinations | columns: as v1, plus `disabled_at` / `disabled_reason`          |
+| `api_keys`              | api_keys           | columns: drops `key_hash` / `metadata_json`                     |
+| `investigation_v2`      | investigations     | scoped to one `id` (client supplies the value as `$2`); columns |
 
 Shape `where`/columns are **immutable**. Changing a pinned predicate forces a
 full re-sync for every client. If you must change one, version the shape name
@@ -207,7 +208,7 @@ as local docker does.
    `max_wal_senders>=10`, `max_slot_wal_keep_size>=4096`, `sync_replication_slots=on`,
    `hot_standby_feedback=on`. Already set for Cloud; unchanged.
 2. **The role is declared:** `Planetscale.PostgresRole("electric-db-role", { withReplication: true,
-inheritedRoles: ["postgres"] })` in `alchemy.run.ts`. The `REPLICATION` _attribute_ is never
+   inheritedRoles: ["postgres"] })` in `alchemy.run.ts`. The `REPLICATION` _attribute_ is never
    inherited through role membership. Electric's database validation rejects a role without it
    with a message that does not say so, and PlanetScale issues it only alongside `postgres`.
    Its DIRECT 5432 URL is the task's `DATABASE_URL`. Logical replication cannot run through
@@ -255,7 +256,7 @@ never reads the shared one, so a preview can never proxy shapes at another stage
 
 1. New Drizzle migration (`db:generate --custom`) that adds the table with
    `ALTER TABLE "<t>" REPLICA IDENTITY FULL` and `ALTER PUBLICATION
-electric_publication_default ADD TABLE "<t>"`, each behind a catalog check
+   electric_publication_default ADD TABLE "<t>"`, each behind a catalog check
    (`pg_class.relreplident`, `pg_publication_tables`) as in
    `electric_publication_reconcile`. **No `EXCEPTION` handler.** PGlite (0.5+) runs
    `CREATE/ALTER PUBLICATION` and `pg_publication_tables`, so the guard the early

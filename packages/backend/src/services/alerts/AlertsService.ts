@@ -16,7 +16,11 @@ import {
 } from "@maple/query-engine"
 import {
 	AlertComparator as AlertComparatorSchema,
+	AlertDeliveryAuthError,
+	AlertDeliveryError,
 	type AlertDeliveryFailure,
+	AlertDeliveryRejectedError,
+	AlertDeliveryTargetMissingError,
 	AlertDestinationDecryptionError,
 	AlertDeliveryEventDocument,
 	AlertDestinationDocument,
@@ -337,6 +341,13 @@ const orderAlertRulesByLastClaim = <T extends { readonly id: string }>(
 		rows,
 		Order.mapInput(Order.Number, (row: T) => lastClaimedAt.get(row.id) ?? 0),
 	)
+
+/** The destination's provider refused the delivery, as opposed to Maple failing to send it. */
+const isProviderDeliveryFailure = (error: unknown): error is AlertDeliveryFailure =>
+	error instanceof AlertDeliveryError ||
+	error instanceof AlertDeliveryAuthError ||
+	error instanceof AlertDeliveryTargetMissingError ||
+	error instanceof AlertDeliveryRejectedError
 
 // Deliveries claimed per batch. The drain takes batches until the queue is
 // empty or DELIVERY_DRAIN_BUDGET_MS has passed; the rest wait for the next tick.
@@ -1914,7 +1925,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						| AlertRuleStoredConfigInvalidError,
 				) => {
 					const failure = toDeliveryAttemptFailure(error)
-					return recordFailedAttempt(row, failure, !failure.retryable)
+					// Only the provider's own refusal counts: a Maple fault (decryption,
+					// stored config, validation, persistence) never disables a destination.
+					return recordFailedAttempt(
+						row,
+						failure,
+						!failure.retryable && isProviderDeliveryFailure(error),
+					)
 				}
 
 				const recordFailedAttempt = Effect.fnUntraced(function* (

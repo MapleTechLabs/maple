@@ -1669,6 +1669,51 @@ describe("AlertsService", () => {
 			)
 		})
 
+		it.effect("never disables a destination over Maple's own delivery faults", () => {
+			const fixedTime = 1_710_000_250_000
+			const testDb = createTestDb(trackedDbs)
+			let requestCount = 0
+			const countingFetch = (async () => {
+				requestCount += 1
+				return new Response("ok", { status: 200 })
+			}) as typeof fetch
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(fixedTime)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_dest_platform_fault")
+				const userId = asUserId("user_dest_platform_fault")
+				const destination = yield* createWebhookDestination(alerts, orgId, userId)
+				const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+				yield* breakRuleQuery(testDb, rule.id)
+				// A secret that no longer decrypts, as after a bad key rotation.
+				yield* Effect.promise(() =>
+					executeSql(testDb, "update alert_destinations set secret_tag = $1 where id = $2", [
+						Buffer.alloc(16, 7).toString("base64"),
+						destination.id,
+					]),
+				)
+
+				yield* Effect.forEach([1, 2, 3], (n) =>
+					seedDeliveryFor(testDb, orgId, rule.id, destination.id, fixedTime - 1, n),
+				)
+				yield* alerts.runSchedulerTick()
+
+				assert.strictEqual(requestCount, 0)
+				const events = yield* alerts.listDeliveryEvents(orgId)
+				assert.isTrue(events.events.every((event: { status: string }) => event.status === "failed"))
+				const health = yield* readDestinationHealth(testDb, destination.id)
+				assert.strictEqual(health?.enabled, true)
+				assert.strictEqual(health?.consecutiveFailures, 0)
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+						fetch: countingFetch,
+					}),
+				),
+			)
+		})
+
 		it.effect("resets the streak on a successful delivery", () => {
 			const fixedTime = 1_710_000_300_000
 			const testDb = createTestDb(trackedDbs)
