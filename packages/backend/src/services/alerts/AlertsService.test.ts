@@ -4359,6 +4359,139 @@ describe("AlertsService delivery lease freshness", () => {
 	})
 })
 
+describe("AlertsService tick isolation", () => {
+	const breachedRows = () =>
+		[
+			tracesRow({
+				count: 200,
+				avgDuration: 40,
+				p50Duration: 20,
+				p95Duration: 120,
+				p99Duration: 240,
+				errorRate: 10,
+				satisfiedCount: 180,
+				toleratingCount: 10,
+				apdexScore: 0.925,
+			}),
+		] as ReadonlyArray<Record<string, unknown>>
+
+	it.effect("a rule that crashes does not stop the other rules in the tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const crashingOrg = asOrgId("org_crash_rule")
+		const base = makeWarehouseStub({ tracesAggregateRows: breachedRows() })
+		const crashFor =
+			(orgId: string) =>
+			<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+				orgId === crashingOrg ? Effect.die(new Error("warehouse client bug")) : effect
+		const stub: WarehouseQueryServiceApi = {
+			...base,
+			sqlQuery: (tenant, ...rest) => crashFor(tenant.orgId)(base.sqlQuery(tenant, ...rest)),
+			rawSqlQuery: (tenant, ...rest) => crashFor(tenant.orgId)(base.rawSqlQuery(tenant, ...rest)),
+			compiledQuery: (tenant, ...rest) => crashFor(tenant.orgId)(base.compiledQuery(tenant, ...rest)),
+			compiledQueryWithCapabilities: (tenant, ...rest) =>
+				crashFor(tenant.orgId)(base.compiledQueryWithCapabilities(tenant, ...rest)),
+			compiledQueryFirst: (tenant, ...rest) =>
+				crashFor(tenant.orgId)(base.compiledQueryFirst(tenant, ...rest)),
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const healthyOrg = asOrgId("org_crash_neighbour")
+			const userId = asUserId("user_crash")
+			// Created first, so the crashing rule is evaluated first.
+			const crashing = yield* createErrorRateRule(
+				alerts,
+				crashingOrg,
+				userId,
+				(yield* createWebhookDestination(alerts, crashingOrg, userId)).id,
+			)
+			yield* createErrorRateRule(
+				alerts,
+				healthyOrg,
+				userId,
+				(yield* createWebhookDestination(alerts, healthyOrg, userId)).id,
+			)
+
+			yield* alerts.runSchedulerTick()
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			const incidents = yield* alerts.listIncidents(healthyOrg)
+			assert.strictEqual(incidents.incidents[0]?.status, "open")
+			const crashed = (yield* alerts.listRules(crashingOrg)).rules.find((r) => r.id === crashing.id)
+			assert.include(crashed?.lastEvaluationError ?? "", "Internal error")
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+	})
+
+	it.effect("a delivery row that crashes is failed once and does not block the queue", () => {
+		const fixedTime = 1_710_000_500_000
+		const testDb = createTestDb(trackedDbs)
+		const sent: string[] = []
+		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+			sent.push(String(init?.body ?? ""))
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_poison_delivery")
+			const userId = asUserId("user_poison_delivery")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			const insert = (n: number, eventType: string) =>
+				Effect.promise(() =>
+					insertDeliveryEventRow(testDb, {
+						id: `00000000-0000-4000-8000-00000000040${n}`,
+						orgId,
+						incidentId: null,
+						ruleId: rule.id,
+						destinationId: destination.id,
+						deliveryKey: `poison-${n}`,
+						eventType,
+						attemptNumber: 1,
+						status: "queued",
+						// The corrupt row is the oldest, so it is claimed first.
+						scheduledAt: fixedTime - 10 + n,
+						payloadJson: JSON.stringify({
+							eventType: "test",
+							incidentId: null,
+							incidentStatus: "resolved",
+							dedupeKey: `poison-${n}`,
+							observed: { value: 0, sampleCount: 0 },
+						}),
+					}),
+				)
+			yield* insert(1, "not-an-event-type")
+			yield* insert(2, "test")
+
+			yield* alerts.runSchedulerTick()
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			const statuses = yield* Effect.promise(() =>
+				queryFirstRow<{ summary: string }>(
+					testDb,
+					`select string_agg(delivery_key || '=' || status, ',' order by delivery_key) as summary
+					 from alert_delivery_events where delivery_key like 'poison-%'`,
+					[],
+				),
+			)
+			assert.strictEqual(statuses?.summary, "poison-1=failed,poison-2=success")
+			assert.lengthOf(sent, 1)
+			const destinations = yield* alerts.listDestinations(orgId)
+			assert.isTrue(destinations.destinations[0]?.enabled)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: fetchImpl,
+				}),
+			),
+		)
+	})
+})
+
 describe("alert incident open uniqueness", () => {
 	const insertOpenIncident = (testDb: TestDb, id: string, status = "open") =>
 		executeSql(
