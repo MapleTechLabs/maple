@@ -46,7 +46,11 @@ interface Posted {
 const unreachable = () => Effect.die("the alert reached another transport method")
 
 /** `hang` is a platform that never answers the post. */
-const makeConnector = (posted: Array<Posted>, hang = false): RegisteredChatConnector => ({
+const makeConnector = (
+	posted: Array<Posted>,
+	hang = false,
+	built: Array<true> = [],
+): RegisteredChatConnector => ({
 	id: TESTCHAT,
 	manifest: {
 		id: TESTCHAT,
@@ -68,6 +72,7 @@ const makeConnector = (posted: Array<Posted>, hang = false): RegisteredChatConne
 		requiredConfig: [{ name: OUTBOUND_KEY, secret: true }],
 		transport: Effect.gen(function* () {
 			const config = yield* yield* ConnectorCredentials
+			built.push(true)
 			return {
 				post: (target, blocks) =>
 					hang
@@ -130,10 +135,16 @@ const config = (withOutboundConfig = true) =>
 const makeLayer = (
 	testDb: TestDb | Layer.Layer<Database>,
 	posted: Array<Posted>,
-	options: { readonly outboundConfig?: boolean; readonly hang?: boolean } = {},
+	options: {
+		readonly outboundConfig?: boolean
+		readonly hang?: boolean
+		readonly built?: Array<true>
+	} = {},
 ) =>
 	ChatAlertPoster.layer.pipe(
-		Layer.provide(Layer.succeed(ChatConnectorRegistry, [makeConnector(posted, options.hang)])),
+		Layer.provide(
+			Layer.succeed(ChatConnectorRegistry, [makeConnector(posted, options.hang, options.built)]),
+		),
 		Layer.provide("layer" in testDb ? testDb.layer : testDb),
 		Layer.provide(Env.layer),
 		Layer.provide(config(options.outboundConfig)),
@@ -285,6 +296,20 @@ describe("ChatAlertPoster", () => {
 				assert.strictEqual(posted[0]?.config.get(WORKSPACE_CREDENTIALS), "a-workspaces-own-token")
 				assert.strictEqual(posted[0]?.config.get(OUTBOUND_KEY), "deployment-wide-value")
 			}).pipe(Effect.provide(makeLayer(testDb, posted)))
+		}),
+	)
+
+	it.effect("reuses one transport for a burst to the same workspace, so it shares rate limits", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const posted: Array<Posted> = []
+			const built: Array<true> = []
+			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+			yield* Effect.all([post(), post(), post()]).pipe(
+				Effect.provide(makeLayer(testDb, posted, { built })),
+			)
+			assert.strictEqual(posted.length, 3)
+			assert.strictEqual(built.length, 1)
 		}),
 	)
 
