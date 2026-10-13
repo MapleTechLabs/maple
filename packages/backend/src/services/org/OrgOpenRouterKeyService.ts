@@ -31,6 +31,18 @@ const OPENROUTER_KEY_URLS = {
 } as const
 const VALIDATE_TIMEOUT = Duration.seconds(10)
 
+/**
+ * `/key` answers 200 for any live key, but the EU host only serves chat to Business or Enterprise
+ * plans (a 403 otherwise), so the EU instance also asks for one token before saving. The model is
+ * the EU default in `apps/ai/src/platform/Llm.ts`; keep the two in step.
+ */
+const EU_PLAN_PROBE_URL = "https://eu.openrouter.ai/api/v1/chat/completions"
+const EU_PLAN_PROBE_BODY = {
+	model: "openai/gpt-6-luna",
+	messages: [{ role: "user", content: "ok" }],
+	max_tokens: 1,
+}
+
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
 
 const toPersistenceError = makePersistenceErrorMapper(
@@ -128,6 +140,54 @@ export class OrgOpenRouterKeyService extends Context.Service<
 
 		const keyUrl = env.MAPLE_REGION === "eu" ? OPENROUTER_KEY_URLS.eu : OPENROUTER_KEY_URLS.us
 
+		const unreachable = () =>
+			new OpenRouterKeyPersistenceError({
+				message: "Could not reach OpenRouter to check this key. Try again.",
+			})
+
+		const checkEuPlan = (apiKey: string) =>
+			httpClient
+				.execute(
+					HttpClientRequest.post(EU_PLAN_PROBE_URL).pipe(
+						HttpClientRequest.bearerToken(apiKey),
+						HttpClientRequest.bodyJsonUnsafe(EU_PLAN_PROBE_BODY),
+					),
+				)
+				.pipe(
+					Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+					Effect.timeout(VALIDATE_TIMEOUT),
+					Effect.mapError(unreachable),
+					Effect.flatMap(
+						(
+							response,
+						): Effect.Effect<
+							void,
+							OpenRouterKeyPersistenceError | OpenRouterKeyValidationError
+						> =>
+							response.status === 200
+								? Effect.void
+								: response.status === 403
+									? Effect.fail(
+											new OpenRouterKeyValidationError({
+												message:
+													"This workspace runs in the EU, which needs an OpenRouter Business or Enterprise plan. This key's plan cannot use OpenRouter's EU endpoint.",
+											}),
+										)
+									: response.status === 402
+										? Effect.fail(
+												new OpenRouterKeyValidationError({
+													message: "This OpenRouter key has no credits left.",
+												}),
+											)
+										: Effect.fail(
+												new OpenRouterKeyPersistenceError({
+													message: `OpenRouter answered ${response.status} while checking this key. Try again.`,
+												}),
+											),
+					),
+					Effect.withSpan("OrgOpenRouterKeyService.checkEuPlan"),
+				)
+
 		const validateWithOpenRouter = (apiKey: string) =>
 			httpClient
 				.execute(HttpClientRequest.get(keyUrl).pipe(HttpClientRequest.bearerToken(apiKey)))
@@ -135,12 +195,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 					// A redirect is not OpenRouter vouching for the key, so it is not followed.
 					Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
 					Effect.timeout(VALIDATE_TIMEOUT),
-					Effect.mapError(
-						() =>
-							new OpenRouterKeyPersistenceError({
-								message: "Could not reach OpenRouter to check this key. Try again.",
-							}),
-					),
+					Effect.mapError(unreachable),
 					Effect.flatMap(
 						(
 							response,
@@ -162,6 +217,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 											}),
 										),
 					),
+					Effect.andThen(env.MAPLE_REGION === "eu" ? checkEuPlan(apiKey) : Effect.void),
 					Effect.withSpan("OrgOpenRouterKeyService.validateWithOpenRouter"),
 				)
 

@@ -20,6 +20,8 @@ interface World {
 	autumn: "entitled" | "not_entitled" | "down"
 	/** OpenRouter's status for `GET /key`. */
 	openRouterStatus: number
+	/** OpenRouter's status for the EU instance's one-token chat completion. */
+	euChatStatus: number
 	openRouterCalls: Array<string | null>
 	openRouterUrls: Array<string>
 	/** `MAPLE_REGION` for the service's Env. */
@@ -29,6 +31,7 @@ interface World {
 const makeWorld = (overrides: Partial<World> = {}): World => ({
 	autumn: "entitled",
 	openRouterStatus: 200,
+	euChatStatus: 200,
 	openRouterCalls: [],
 	openRouterUrls: [],
 	region: "us",
@@ -66,11 +69,11 @@ const autumnStub = (world: World) =>
 
 const fetchStub = (world: World): typeof fetch =>
 	(async (input: string | URL | Request, init?: RequestInit) => {
-		world.openRouterUrls.push(
-			typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-		)
+		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+		world.openRouterUrls.push(url)
 		world.openRouterCalls.push(new Headers(init?.headers).get("authorization"))
-		return new Response("{}", { status: world.openRouterStatus })
+		const status = url.endsWith("/chat/completions") ? world.euChatStatus : world.openRouterStatus
+		return new Response("{}", { status })
 	}) as typeof fetch
 
 const config = (region: World["region"]) =>
@@ -138,17 +141,34 @@ describe("OrgOpenRouterKeyService", () => {
 		)
 	})
 
-	it.effect("checks the key against the in-region host on the EU instance", () => {
+	it.effect("checks the key and its plan against the in-region host on the EU instance", () => {
 		const world = makeWorld({ region: "eu" })
 		return run(
 			createTestDb(trackedDbs),
 			world,
 			Effect.gen(function* () {
 				yield* (yield* OrgOpenRouterKeyService).set(ORG, USER, KEY)
-				assert.deepStrictEqual(world.openRouterUrls, ["https://eu.openrouter.ai/api/v1/key"])
+				assert.deepStrictEqual(world.openRouterUrls, [
+					"https://eu.openrouter.ai/api/v1/key",
+					"https://eu.openrouter.ai/api/v1/chat/completions",
+				])
 			}),
 		)
 	})
+
+	it.effect("refuses an EU key whose plan cannot use the in-region host", () =>
+		run(
+			createTestDb(trackedDbs),
+			makeWorld({ region: "eu", euChatStatus: 403 }),
+			Effect.gen(function* () {
+				const keys = yield* OrgOpenRouterKeyService
+				const error = yield* Effect.flip(keys.set(ORG, USER, KEY))
+				assert.strictEqual(error._tag, "@maple/http/openrouter-key/OpenRouterKeyValidationError")
+				assert.include(error.message, "Business or Enterprise")
+				assert.isFalse((yield* keys.get(ORG)).configured)
+			}),
+		),
+	)
 
 	it.effect("refuses a key that is not an OpenRouter key without calling OpenRouter", () => {
 		const world = makeWorld()
