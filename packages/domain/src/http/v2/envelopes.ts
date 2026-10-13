@@ -140,13 +140,10 @@ export const decodeOffsetPage = (query: {
 	readonly limit?: number | undefined
 	readonly cursor?: string | undefined
 }) =>
-	Effect.map(
-		decodeOffsetCursorEffect(query.cursor),
-		(offset): OffsetPage => ({
-			limit: query.limit ?? LIST_LIMIT_DEFAULT,
-			offset,
-		}),
-	)
+	Effect.map(decodeOffsetCursorEffect(query.cursor), (offset): OffsetPage => ({
+		limit: query.limit ?? LIST_LIMIT_DEFAULT,
+		offset,
+	}))
 
 /** Build a list page from a `limit + 1` lookahead result. */
 export const pageFromLookahead = <T>(items: ReadonlyArray<T>, page: OffsetPage) => {

@@ -1,15 +1,10 @@
 import type { ComponentType } from "react"
-import {
-	ArrowTrendUpIcon,
-	ChartLineIcon,
-	CompactLinesIcon,
-	CornerDownLeftIcon,
-	PixelNodesIcon,
-	PixelSparkleIcon,
-	PixelTriangleWarningIcon,
-	ServerIcon,
-} from "@/components/icons"
+import { ArrowTrendUpIcon, CornerDownLeftIcon, PixelSparkleIcon } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import type { IconProps } from "@/components/icons/icon"
+import { DocsLink } from "@/components/common/docs-link"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 
 interface Tone {
 	Glyph: ComponentType<IconProps>
@@ -19,14 +14,14 @@ interface Tone {
 
 const TONES = {
 	errors: {
-		Glyph: PixelTriangleWarningIcon,
-		chip: "text-destructive bg-destructive/10 border-destructive/20",
+		Glyph: CONCEPT_ICON.error,
+		chip: "text-severity-error bg-severity-error/10 border-severity-error/20",
 	},
-	traces: { Glyph: PixelNodesIcon, chip: "text-chart-2 bg-chart-2/10 border-chart-2/20" },
-	logs: { Glyph: CompactLinesIcon, chip: "text-chart-5 bg-chart-5/10 border-chart-5/20" },
+	traces: { Glyph: CONCEPT_ICON.trace, chip: "text-chart-2 bg-chart-2/10 border-chart-2/20" },
+	logs: { Glyph: CONCEPT_ICON.log, chip: "text-chart-5 bg-chart-5/10 border-chart-5/20" },
 	health: { Glyph: ArrowTrendUpIcon, chip: "text-chart-3 bg-chart-3/10 border-chart-3/20" },
-	services: { Glyph: ServerIcon, chip: "text-chart-4 bg-chart-4/10 border-chart-4/20" },
-	metrics: { Glyph: ChartLineIcon, chip: "text-chart-1 bg-chart-1/10 border-chart-1/20" },
+	services: { Glyph: CONCEPT_ICON.service, chip: "text-chart-4 bg-chart-4/10 border-chart-4/20" },
+	metrics: { Glyph: CONCEPT_ICON.metric, chip: "text-chart-1 bg-chart-1/10 border-chart-1/20" },
 	any: { Glyph: PixelSparkleIcon, chip: "text-primary bg-primary/10 border-primary/20" },
 } satisfies Record<string, Tone>
 
@@ -70,24 +65,28 @@ export function ChatEmptyState({
 	suggestions: readonly string[]
 	onSelect: (suggestion: string) => void
 }) {
+	const tracePresence = useSignalPresence("traces")
 	return (
 		<div className="flex w-full min-w-0 max-w-xl flex-col px-4">
 			<div className="flex flex-col items-center gap-2.5 text-center">
 				<span className="relative flex size-11 items-center justify-center">
 					{/* The lit ground behind the mark: one soft primary bloom, no border. */}
-					<span
-						aria-hidden
-						className="absolute inset-0 rounded-full bg-primary/20 blur-lg motion-safe:animate-pulse [animation-duration:4s]"
-					/>
+					<span aria-hidden className="absolute inset-0 rounded-full bg-primary/20 blur-lg" />
 					<PixelSparkleIcon size={24} className="relative text-primary" />
 				</span>
 				<h3 className="font-medium text-base tracking-tight">Maple AI</h3>
 				<p className="max-w-sm text-muted-foreground text-sm">
-					Answers from your live telemetry — traces, logs, errors and services.
+					Answers from your live telemetry: traces, logs, errors and services.
 				</p>
+				{tracePresence.status === "absent" && (
+					<p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-muted-foreground text-sm">
+						Maple AI answers from your telemetry. Send some first.
+						<DocsLink page="instrumentation">Setup guide</DocsLink>
+					</p>
+				)}
 			</div>
 
-			<div className="mt-6 overflow-hidden rounded-xl border border-border/60 bg-gradient-to-b from-card/70 to-card/20">
+			<Panel className="mt-6 border-border/60 bg-transparent bg-gradient-to-b from-card/70 to-card/20">
 				{suggestions.map((suggestion, index) => {
 					const { Glyph, chip } = toneFor(suggestion)
 					return (
@@ -113,11 +112,14 @@ export function ChatEmptyState({
 						</button>
 					)
 				})}
-			</div>
+			</Panel>
 
 			<p className="mt-3 text-center text-muted-foreground/60 text-xs">
-				Or just start typing — your keystrokes land in the composer.
+				Or just start typing. Your keystrokes land in the composer.
 			</p>
+			<div className="mt-4 flex justify-center">
+				<DocsLink page="aiAgents">Use Maple from your editor</DocsLink>
+			</div>
 		</div>
 	)
 }

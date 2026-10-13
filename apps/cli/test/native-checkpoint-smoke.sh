@@ -36,6 +36,7 @@ query() {
 	local sql="$1"
 	curl --fail-with-body -sS --max-time 30 "http://127.0.0.1:$PORT/local/query" \
 		-H 'content-type: application/json' \
+		-H "x-maple-maintenance-token: $(cat "$DATA.maintenance-token")" \
 		--data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"
 }
 
@@ -279,7 +280,9 @@ C3="$(checkpoint)"
 [[ "$C3" =~ ^[0-9a-f-]{36}$ ]] || fail "invalid C3 ID: $C3"
 jq -e --arg c "$C3" --arg p "$C2" \
 	'.current == $c and .previous == $p' "$DATA/backups/state.json" >/dev/null
-[[ ! -e "$DATA/backups/snapshots/$C1" ]] || fail "old previous C1 was not retired"
+# The earlier wipe pinned C1 as a pre-reset restore point, so rotation keeps it
+# until `maple schema gc --apply --release-preserved` releases it.
+[[ -d "$DATA/backups/snapshots/$C1" ]] || fail "C1, kept by the wipe, was retired"
 [[ -d "$DATA/backups/snapshots/$C2" ]] || fail "previous C2 is missing"
 [[ -d "$DATA/backups/snapshots/$C3" ]] || fail "current C3 is missing"
 

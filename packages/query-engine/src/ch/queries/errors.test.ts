@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	errorsByTypeQuery,
 	errorsTimeseriesQuery,
@@ -9,13 +9,16 @@ import {
 	errorsFacetsQuery,
 	errorIssuesQuery,
 	errorTickBootstrapIssuesQuery,
+	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
 	errorFingerprintsQuery,
+	tracesDurationStatsQuery,
 	tracesFacetsQuery,
 } from "./errors"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 	bucketSeconds: 3600,
@@ -51,7 +54,7 @@ describe("errorsSparkQuery", () => {
 		expect(sql).toContain("FROM error_events")
 		expect(sql).not.toContain("FROM error_events_by_time")
 		// Identity UInt64 must survive JSON as a string.
-		expect(sql).toContain("toString(FingerprintHash) AS fingerprintHash")
+		expect(sql).toContain("toString(error_events.FingerprintHash) AS fingerprintHash")
 		expect(sql).toContain("GROUP BY fingerprintHash, bucket")
 		expect(sql).toContain("ORDER BY bucket ASC")
 	})
@@ -71,12 +74,16 @@ describe("errorsByTypeQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		// Broad recent-window scans prune on (OrgId, Timestamp, FingerprintHash).
 		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toString(FingerprintHash) AS fingerprintHash")
-		expect(sql).toContain("any(ErrorLabel) AS errorLabel")
+		expect(sql).toContain("toString(error_events_by_time.FingerprintHash) AS fingerprintHash")
+		expect(sql).toContain("any(error_events_by_time.ErrorLabel) AS errorLabel")
 		expect(sql).toContain("count() AS count")
-		expect(sql).toContain("uniq(ServiceName) AS affectedServicesCount")
-		expect(sql).toContain("min(Timestamp) AS firstSeen")
-		expect(sql).toContain("max(Timestamp) AS lastSeen")
+		expect(sql).toContain("uniq(error_events_by_time.ServiceName) AS affectedServicesCount")
+		// Names a few services so a list need not look them up per fingerprint.
+		expect(sql).toContain(
+			"arraySort(groupUniqArrayIf(3)(error_events_by_time.ServiceName, error_events_by_time.ServiceName != '')) AS serviceNames",
+		)
+		expect(sql).toContain("min(error_events_by_time.Timestamp) AS firstSeen")
+		expect(sql).toContain("max(error_events_by_time.Timestamp) AS lastSeen")
 		expect(sql).toContain("GROUP BY fingerprintHash")
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 50")
@@ -126,7 +133,7 @@ describe("errorsByTypeQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ErrorLabel NOT LIKE '@maple/%'")
 		expect(sql).toContain("ErrorLabel IN ('@maple/api/http/Http5xxResponseError')")
-		expect(sql).toContain("any(StatusMessage) AS sampleMessage")
+		expect(sql).toContain("any(error_events_by_time.StatusMessage) AS sampleMessage")
 	})
 
 	it("escapes LIKE wildcards in the namespace prefix", () => {
@@ -177,6 +184,22 @@ describe("errorsSummaryQuery", () => {
 		expect(sql).toContain("FORMAT JSON")
 	})
 
+	it("reads whole hours from service_usage and the partial end hours from raw spans", () => {
+		// A sub-hour window has no whole hour; reading only the hourly rollup made its
+		// denominator 0 and the error rate 0%.
+		const { sql } = compileUnsafe(errorsSummaryQuery({}), {
+			...baseParams,
+			startTime: "2024-01-01 10:15:00",
+			endTime: "2024-01-01 11:15:00",
+		})
+		expect(sql).toContain("FROM service_usage")
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain("UNION ALL")
+		expect(sql).toContain("toStartOfHour(toDateTime('2024-01-01 10:15:00'))")
+		expect(sql).toMatch(/Hour >= if\(/)
+		expect(sql).toMatch(/Timestamp < if\(/)
+	})
+
 	it("applies rootOnly and services filters", () => {
 		const q = errorsSummaryQuery({ rootOnly: true, services: ["api"] })
 		const { sql } = compileUnsafe(q, baseParams)
@@ -189,7 +212,7 @@ describe("errorsSummaryQuery", () => {
 		const q = errorsSummaryQuery({ deploymentEnvs: ["production"] })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')",
+			"coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production')",
 		)
 		expect(sql).toContain("FROM traces")
 	})
@@ -201,16 +224,16 @@ describe("errorDetailTracesQuery", () => {
 	it("compiles trace-detail lookup with a small error TraceId subquery", () => {
 		const q = errorDetailTracesQuery({ fingerprintHash: "111" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).not.toContain("INNER JOIN")
 		// The subquery projects a single column (an IN list needs exactly one) from
 		// the ranked error-trace query, now spliced as a typed CHQuery rather than a
-		// pre-compiled SQL string — hence the `AS matching_traces` alias.
-		expect(sql).toContain("TraceId IN (SELECT")
+		// pre-compiled SQL string, hence the `AS matching_traces` alias. The IN is
+		// what bounds the span read; the join below it only carries the span id.
+		expect(sql).toContain("trace_detail_spans.TraceId IN (SELECT")
 		expect(sql).toContain("AS matching_traces)")
 		expect(sql).toContain("GROUP BY TraceId")
 		expect(sql).toContain("FROM trace_detail_spans")
 		expect(sql).toContain("GROUP BY traceId")
-		expect(sql).toContain("groupUniqArray(ServiceName)")
+		expect(sql).toContain("groupUniqArray(trace_detail_spans.ServiceName)")
 		expect(sql).toContain("ORDER BY startTime DESC")
 		expect(sql).toContain("FORMAT JSON")
 		// Error subquery references error_events, filtered by fingerprint hash
@@ -230,19 +253,44 @@ describe("errorDetailTracesQuery", () => {
 		expect(sql).toContain("ServiceName IN ('api', 'web')")
 	})
 
+	it("applies deploymentEnvs filter to the occurrence subquery", () => {
+		const q = errorDetailTracesQuery({ fingerprintHash: "1", deploymentEnvs: ["production"] })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("DeploymentEnv IN ('production')")
+		// Absent unless asked for: the span read has no environment column to filter.
+		const unfiltered = compileUnsafe(errorDetailTracesQuery({ fingerprintHash: "1" }), baseParams).sql
+		expect(unfiltered).not.toContain("DeploymentEnv")
+	})
+
 	it("applies custom limit", () => {
 		const q = errorDetailTracesQuery({ fingerprintHash: "1", limit: 20 })
 		const { sql } = compileUnsafe(q, baseParams)
 		// The limit applies to the error subquery
 		expect(sql).toContain("LIMIT 20")
 	})
-	it("reports the failing span rather than an arbitrary one", () => {
+	// Any `StatusCode = 'Error'` span is usually a caller the error propagated
+	// through: 6 of 8 samples for a payment-service fingerprint reported the
+	// api-gateway span. The error span is the fingerprint's own occurrence.
+	it("reports the fingerprint's own span, not any failing span in the trace", () => {
 		const q = errorDetailTracesQuery({ fingerprintHash: "1" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("anyIf(StatusMessage, StatusCode = 'Error') AS errorMessage")
-		expect(sql).toContain("anyIf(SpanId, StatusCode = 'Error') AS errorSpanId")
-		expect(sql).toContain("anyIf(SpanName, StatusCode = 'Error') AS errorSpanName")
-		expect(sql).toContain("SpanAttributes['gen_ai.request.model']")
+		expect(sql).not.toContain("StatusCode = 'Error'")
+		expect(sql).toContain("argMax(error_events.SpanId, error_events.Timestamp) AS occurrenceSpanId")
+		expect(sql).toContain("ORDER BY lastErrorSeen DESC, TraceId DESC")
+		expect(sql).toContain("ON trace_detail_spans.TraceId = occurrence.TraceId")
+		const onOccurrence = "trace_detail_spans.SpanId = occurrence.occurrenceSpanId"
+		expect(sql).toContain(`anyIf(trace_detail_spans.StatusMessage, ${onOccurrence}) AS errorMessage`)
+		expect(sql).toContain(`anyIf(trace_detail_spans.SpanId, ${onOccurrence}) AS errorSpanId`)
+		expect(sql).toContain(`anyIf(trace_detail_spans.SpanName, ${onOccurrence}) AS errorSpanName`)
+		expect(sql).toContain(`anyIf(trace_detail_spans.ServiceName, ${onOccurrence}) AS errorServiceName`)
+		expect(sql).toContain("trace_detail_spans.SpanAttributes['gen_ai.request.model']")
+	})
+
+	it("names the error each trace was sampled for", () => {
+		const { sql } = compileUnsafe(errorDetailTracesQuery({ fingerprintHash: "1" }), baseParams)
+		expect(sql).toContain("any(occurrence.occurrenceLabel) AS errorLabel")
+		expect(sql).toContain("any(occurrence.occurrenceExceptionType) AS exceptionType")
+		expect(sql).toContain("any(occurrence.occurrenceExceptionMessage) AS exceptionMessage")
 	})
 })
 
@@ -320,7 +368,7 @@ describe("errorsFacetsQuery", () => {
 		// beside a list of a dozen issues.
 		const q = errorsFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql).toContain("uniq(FingerprintHash) AS count")
+		expect(sql).toContain("uniq(error_events_by_time.FingerprintHash) AS count")
 		expect(sql).not.toContain("count() AS count")
 	})
 
@@ -399,8 +447,21 @@ describe("errorTickIssuesQuery", () => {
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("Minute >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Minute < '2024-01-02 00:00:00'")
-		expect(sql).toContain("sum(OccurrenceCount) AS count")
+		expect(sql).toContain("sum(error_fingerprints_minutely.OccurrenceCount) AS count")
 		expect(sql).not.toContain("LIMIT")
+	})
+})
+
+describe("errorTickFirstErrorMinuteQuery", () => {
+	it("reads the org's earliest minute in the window from the minute rollup", () => {
+		const { sql } = compileUnsafe(errorTickFirstErrorMinuteQuery(), baseParams)
+
+		expect(sql).toContain("FROM error_fingerprints_minutely")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("Minute >= '2024-01-01 00:00:00'")
+		expect(sql).toContain("Minute < '2024-01-02 00:00:00'")
+		expect(sql).toContain("ORDER BY minute ASC")
+		expect(sql).toContain("LIMIT 1")
 	})
 })
 
@@ -423,7 +484,7 @@ describe("errorFingerprintsQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 
 		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toString(FingerprintHash) AS fingerprintHash")
+		expect(sql).toContain("toString(error_events_by_time.FingerprintHash) AS fingerprintHash")
 		expect(sql).toContain("ServiceName IN ('api')")
 		expect(sql).toContain("DeploymentEnv IN ('production')")
 		expect(sql).toContain("GROUP BY fingerprintHash")
@@ -438,8 +499,8 @@ describe("tracesFacetsQuery", () => {
 	it("compiles UNION ALL with 7 facet dimensions", () => {
 		const q = tracesFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		const unionCount = (sql.match(/UNION ALL/g) || []).length
-		expect(unionCount).toBe(6) // 7 queries = 6 UNION ALL
+		// 7 facet branches, each splicing a raw edge with the hourly interior.
+		expect(sql.match(/UNION ALL/g)).toHaveLength(6 + 7)
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).toContain("'spanName' AS facetType")
 		expect(sql).toContain("'httpMethod' AS facetType")
@@ -473,7 +534,7 @@ describe("tracesFacetsQuery", () => {
 			matchModes: { serviceName: "contains" },
 		})
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql).toContain("positionCaseInsensitive(ServiceName, 'api') > 0")
+		expect(sql).toContain("positionCaseInsensitive(trace_list_mv.ServiceName, 'api') > 0")
 	})
 
 	it("applies attribute filter with correlated EXISTS", () => {
@@ -501,7 +562,8 @@ describe("tracesFacetsQuery", () => {
 	it("compiles only the requested branch when facet is set", () => {
 		const q = tracesFacetsQuery({ facet: "service" })
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql).not.toContain("UNION ALL")
+		// The only UNION left is the branch's own two tiers.
+		expect(sql.match(/UNION ALL/g)).toHaveLength(1)
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).not.toContain("'spanName' AS facetType")
 		expect(sql).not.toContain("'errorCount' AS facetType")
@@ -513,9 +575,45 @@ describe("tracesFacetsQuery", () => {
 	it("keeps the non-service branch empty-value guard when facet-scoped", () => {
 		const q = tracesFacetsQuery({ facet: "deploymentEnv" })
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		expect(sql).not.toContain("UNION ALL")
+		expect(sql.match(/UNION ALL/g)).toHaveLength(1)
 		expect(sql).toContain("'deploymentEnv' AS facetType")
-		expect(sql).toContain("DeploymentEnv != ''")
+		// On both tiers.
+		expect(sql.match(/DeploymentEnv != ''/g)).toHaveLength(2)
 		expect(sql).toContain("LIMIT 20")
+	})
+})
+
+describe("trace facets rollup routing", () => {
+	it("reads whole hours from trace_facets_hourly and the partial ends from trace_list_mv", () => {
+		const filters = { serviceNames: ["api", "web"], hasError: true, deploymentEnvs: ["production"] }
+		for (const sql of [
+			compileUnionUnsafe(tracesFacetsQuery({ ...filters, facet: "spanName" }), baseParams).sql,
+			compileUnsafe(tracesDurationStatsQuery(filters), baseParams).sql,
+		]) {
+			expect(sql).toContain("FROM trace_facets_hourly")
+			expect(sql).toContain("FROM trace_list_mv")
+			// Every filter reaches both tiers.
+			expect(sql.match(/ServiceName IN \('api', 'web'\)/g)).toHaveLength(2)
+			expect(sql.match(/HasError = 1/g)).toHaveLength(2)
+			expect(sql.match(/DeploymentEnv = 'production'/g)).toHaveLength(2)
+		}
+	})
+
+	it("reads only trace_list_mv, for the whole window, when the rollup cannot answer", () => {
+		for (const opts of [
+			{ rawOnly: true },
+			{ minDurationMs: 100 },
+			{ maxDurationMs: 100 },
+			{ attributeFilterKey: "http.route", attributeFilterValue: "/users" },
+			{ resourceFilterKey: "host.name", resourceFilterValue: "web-1" },
+		]) {
+			const facets = compileUnionUnsafe(tracesFacetsQuery(opts), baseParams).sql
+			expect(facets, JSON.stringify(opts)).not.toContain("trace_facets_hourly")
+			expect(facets, JSON.stringify(opts)).not.toContain("INTERVAL 1 HOUR")
+			expect(facets.match(/UNION ALL/g), JSON.stringify(opts)).toHaveLength(6)
+		}
+		const stats = compileUnsafe(tracesDurationStatsQuery({ rawOnly: true }), baseParams).sql
+		expect(stats).not.toContain("trace_facets_hourly")
+		expect(stats).not.toContain("INTERVAL 1 HOUR")
 	})
 })

@@ -30,6 +30,9 @@ export type {
 } from "./_shared/chart-types"
 export * from "./_shared/sample-data"
 
+// The pooled long tail's label and colour, one definition for every chart.
+export { OTHER_COLOR, OTHER_LABEL } from "./_shared/bucket-series"
+
 // Bar Charts
 export { QueryBuilderBarChart } from "./bar/query-builder-bar-chart"
 

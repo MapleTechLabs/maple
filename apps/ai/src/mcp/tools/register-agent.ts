@@ -11,6 +11,7 @@ import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsSe
 export function registerRegisterAgentTool(server: McpToolRegistrar) {
 	server.define({
 		name: "register_agent",
+		title: "Register Agent",
 		description:
 			"Register an LLM agent with the error-issue system so it can claim and transition issues. Must be called from a human session (not an agent API key). Returns an actor ID to pin via API-key metadata.",
 		parameters: Schema.Struct({

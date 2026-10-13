@@ -1,5 +1,5 @@
 // Cards on /docs/instrumentation, grouped by ecosystem. Every entry points at
-// a shipping doc page (or a section of one) — this is an inventory of what is
+// a shipping doc page (or a section of one). This is an inventory of what is
 // documented, not a roadmap.
 import type { BrandMarkId } from "./brand-marks"
 import { languageById, type LanguageId } from "./docs-languages"
@@ -16,7 +16,7 @@ export interface GuideCard {
 export interface GuideSection {
 	/** Stable key used by the filter chips and `data-guide-section`. */
 	id: string
-	/** Section heading — also the chip label unless `chip` is set. */
+	/** Section heading, also the chip label unless `chip` is set. */
 	title: string
 	chip?: string
 	cards: GuideCard[]
@@ -40,6 +40,12 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 				name: "Cloudflare Workers",
 				hint: "Effect SDK · flush in waitUntil",
 				href: "/docs/sdks/effect-cloudflare",
+				icon: { mark: "cloudflare" },
+			},
+			{
+				name: "Cloudflare Workers (native)",
+				hint: "Any Worker · OTLP destinations, no SDK",
+				href: "/docs/guides/instrumentation-cloudflare-workers",
 				icon: { mark: "cloudflare" },
 			},
 			{
@@ -139,13 +145,13 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 			{
 				name: "Kubernetes",
 				hint: "Helm collector · host, kubelet, cluster metrics",
-				href: "/docs/guides/kubernetes-infrastructure",
+				href: "/docs/infrastructure/kubernetes",
 				icon: { mark: "kubernetes" },
 			},
 			{
 				name: "Docker",
 				hint: "Single-container agent · per-container stats and logs",
-				href: "/docs/guides/docker-infrastructure",
+				href: "/docs/infrastructure/docker",
 				icon: { mark: "docker" },
 			},
 			{

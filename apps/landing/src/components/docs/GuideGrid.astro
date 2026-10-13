@@ -1,17 +1,19 @@
 ---
-// One ecosystem's cards on /docs/instrumentation. Styled with scoped CSS on
+// One ecosystem's cards on /docs/instrumentation (or a given card list, as on /docs/frontend). Styled with scoped CSS on
 // purpose: the page sits inside `.docs-content`, whose descendant rules for
 // `a`/`p` beat plain Tailwind utilities (see `local/InstallTabs.astro`).
-import { GUIDE_SECTIONS } from "../../lib/instrumentation-guides";
+import { type GuideCard, GUIDE_SECTIONS } from "../../lib/instrumentation-guides";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
 import LanguageLogo from "./LanguageLogo.astro";
 
 interface Props {
-    section: string;
+    /** A section of GUIDE_SECTIONS, or `cards` for a list shown elsewhere. */
+    section?: string;
+    cards?: readonly GuideCard[];
 }
 
-const { section } = Astro.props;
-const data = GUIDE_SECTIONS.find((s) => s.id === section);
+const { section, cards } = Astro.props;
+const data = cards ? { cards } : GUIDE_SECTIONS.find((s) => s.id === section);
 if (!data) throw new Error(`Unknown guide section: ${section}`);
 ---
 

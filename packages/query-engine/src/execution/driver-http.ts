@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { constTrue } from "effect/Function"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 
 /**
  * The `HttpClient` a warehouse driver runs on. OTel's database conventions
@@ -12,4 +12,6 @@ import { HttpClient } from "effect/unstable/http"
  * provided around each request rather than at construction.
  */
 export const warehouseHttpClient = (http: HttpClient.HttpClient): HttpClient.HttpClient =>
-	HttpClient.transform(http, (effect) => Effect.provideService(effect, HttpClient.TracerDisabledWhen, constTrue))
+	HttpClient.transform(http, (effect) =>
+		Effect.provideService(effect, HttpClient.TracerDisabledWhen, constTrue),
+	)

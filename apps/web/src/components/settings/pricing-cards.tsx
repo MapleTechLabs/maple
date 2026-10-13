@@ -1,11 +1,15 @@
 import { useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
 import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { billingCustomerAtom, billingPlansAtom } from "@/lib/services/atoms/billing-atoms"
 import { useBillingActions } from "@/hooks/use-billing-actions"
-import { displayError } from "@/lib/error-messages"
+import { showErrorToast } from "@/lib/error-toast"
+import { formatCount } from "@/lib/billing/usage"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatDateInTimezone } from "@/lib/timezone-format"
 import { getTrialStatus } from "@/lib/billing/plan-gating"
 import { buildCheckoutSuccessUrl } from "@/lib/billing/checkout-return"
 import { useCheckoutReturn } from "@/hooks/use-checkout-return"
@@ -27,17 +31,10 @@ import {
 } from "@maple/ui/components/ui/card"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Spinner } from "@maple/ui/components/ui/spinner"
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-	DialogFooter,
-} from "@maple/ui/components/ui/dialog"
 import {
 	FileIcon,
 	PulseIcon,
@@ -50,8 +47,10 @@ import {
 	ShieldIcon,
 	PlayRotateClockwiseIcon,
 	GlobePointerIcon,
+	SquareSparkleIcon,
 } from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
 
 const FEATURE_ICONS: Record<string, IconComponent> = {
 	logs: FileIcon,
@@ -59,6 +58,7 @@ const FEATURE_ICONS: Record<string, IconComponent> = {
 	metrics: ChartLineIcon,
 	browser_sessions: PlayRotateClockwiseIcon,
 	product_events: GlobePointerIcon,
+	ai_credits: SquareSparkleIcon,
 } satisfies Record<string, IconComponent>
 
 // Display labels for the metered data rows, keyed by Autumn featureId (Autumn
@@ -70,6 +70,7 @@ const DATA_FEATURE_LABELS: Record<string, string> = {
 	metrics: "Metrics",
 	browser_sessions: "Browser Sessions",
 	product_events: "Product Events",
+	ai_credits: "AI usage",
 } satisfies Record<string, string>
 
 // Count-metered features and their plural unit — everything else is GB.
@@ -115,9 +116,13 @@ function getPlanPrice(plan: Plan): {
 
 function formatIncludedUsage(item: PlanItem): string {
 	if (item.unlimited) return "Unlimited"
+	// A dollar allowance of model usage, priced per model, not a volume.
+	if (item.featureId === "ai_credits" && item.included != null) {
+		return `${formatCurrency(item.included, "usd")} included`
+	}
 	if (item.included != null) {
 		const unit = (item.featureId ? COUNT_UNITS[item.featureId] : undefined) ?? "GB"
-		return `${Number(item.included).toLocaleString()} ${unit}`
+		return `${formatCount(item.included)} ${unit}`
 	}
 	return ""
 }
@@ -218,9 +223,10 @@ export function PricingCards() {
 	const [confirmDialog, setConfirmDialog] = useState<CheckoutPreview | null>(null)
 	const [isAttaching, setIsAttaching] = useState(false)
 	const checkoutReturn = useCheckoutReturn()
+	const { effectiveTimezone } = useTimezonePreference()
 
 	// Back from Stripe with the plan not yet synced: never re-offer the plan the
-	// buyer just bought — that is how a trial user ends up clicking "Start trial"
+	// buyer just bought; that is how a trial user ends up clicking "Start trial"
 	// twice.
 	if (checkoutReturn === "confirming") return <CheckoutConfirmingPanel />
 
@@ -255,7 +261,7 @@ export function PricingCards() {
 	}
 
 	if (!Result.isSuccess(plansResult)) {
-		return <p className="text-muted-foreground text-sm">Unable to load pricing plans.</p>
+		return <ErrorState error={plansResult.cause} title="Unable to load pricing plans" variant="row" />
 	}
 
 	const plans = plansResult.value.plans
@@ -269,73 +275,77 @@ export function PricingCards() {
 		// For upgrades/downgrades, show a preview first
 		if (scenario === "upgrade" || scenario === "downgrade") {
 			setLoadingPlanId(planId)
-			try {
-				const preview = await previewAttach({ planId })
-				setConfirmDialog({
-					planId,
-					planName: plan?.name ?? planId,
-					lines: preview.lineItems.map((l) => ({
-						description: l.description ?? "",
-						amount: l.total ?? 0,
-					})),
-					total: preview.total ?? 0,
-					currency: preview.currency ?? "usd",
-					nextCycle: preview.nextCycle
-						? { starts_at: preview.nextCycle.startsAt ?? 0, total: preview.nextCycle.total ?? 0 }
-						: undefined,
-				})
-			} catch (err) {
-				toastManager.add({ title: displayError(err).message, type: "error" })
-			} finally {
-				setLoadingPlanId(null)
-			}
+			await previewAttach({ planId }).then(
+				(preview) =>
+					setConfirmDialog({
+						planId,
+						planName: plan?.name ?? planId,
+						lines: preview.lineItems.map((l) => ({
+							description: l.description ?? "",
+							amount: l.total ?? 0,
+						})),
+						total: preview.total ?? 0,
+						currency: preview.currency ?? "usd",
+						nextCycle: preview.nextCycle
+							? {
+									starts_at: preview.nextCycle.startsAt ?? 0,
+									total: preview.nextCycle.total ?? 0,
+								}
+							: undefined,
+					}),
+				(error: unknown) => showErrorToast(error, { title: "Failed to preview the plan change" }),
+			)
+			setLoadingPlanId(null)
 			return
 		}
 
 		// For new subscriptions, attach directly (redirects to checkout if needed)
 		setLoadingPlanId(planId)
-		try {
-			const result = await attach({ planId, successUrl: buildCheckoutSuccessUrl(window.location.href) })
+		await attach({ planId, successUrl: buildCheckoutSuccessUrl(window.location.href) }).then(
+			(result) => {
+				if (result.paymentUrl) {
+					// Deliberately NOT clearing `loadingPlanId`: assigning `location.href`
+					// starts a navigation without stopping JS, so the old DOM stays on
+					// screen until Stripe answers. Re-enabling the button here left an
+					// inviting "Subscribe" on an apparently frozen page, and every extra
+					// click became a 409 we reported back as a failed purchase.
+					window.location.href = result.paymentUrl
+					return
+				}
 
-			if (result.paymentUrl) {
-				// Deliberately NOT clearing `loadingPlanId`: assigning `location.href`
-				// starts a navigation without stopping JS, so the old DOM stays on
-				// screen until Stripe answers. Re-enabling the button here left an
-				// inviting "Subscribe" on an apparently frozen page — and every extra
-				// click became a 409 we reported back as a failed purchase.
-				window.location.href = result.paymentUrl
-				return
-			}
-
-			toastManager.add({ title: "Plan updated successfully.", type: "success" })
-			refreshCustomer()
-			setLoadingPlanId(null)
-		} catch (err) {
-			toastManager.add({ title: displayError(err).message, type: "error" })
-			setLoadingPlanId(null)
-		}
+				toastManager.add({ title: "Plan updated successfully", type: "success" })
+				refreshCustomer()
+				setLoadingPlanId(null)
+			},
+			(error: unknown) => {
+				showErrorToast(error, { title: "Failed to update your plan" })
+				setLoadingPlanId(null)
+			},
+		)
 	}
 
 	async function handleConfirmAttach() {
 		if (!confirmDialog) return
 		setIsAttaching(true)
-		try {
-			const result = await attach({
-				planId: confirmDialog.planId,
-				successUrl: buildCheckoutSuccessUrl(window.location.href),
-			})
-			if (result.paymentUrl) {
-				window.location.href = result.paymentUrl
-				return
-			}
-			toastManager.add({ title: "Plan updated successfully.", type: "success" })
-			refreshCustomer()
-			setConfirmDialog(null)
-			setIsAttaching(false)
-		} catch (err) {
-			toastManager.add({ title: displayError(err).message, type: "error" })
-			setIsAttaching(false)
-		}
+		await attach({
+			planId: confirmDialog.planId,
+			successUrl: buildCheckoutSuccessUrl(window.location.href),
+		}).then(
+			(result) => {
+				if (result.paymentUrl) {
+					window.location.href = result.paymentUrl
+					return
+				}
+				toastManager.add({ title: "Plan updated successfully", type: "success" })
+				refreshCustomer()
+				setConfirmDialog(null)
+				setIsAttaching(false)
+			},
+			(error: unknown) => {
+				showErrorToast(error, { title: "Failed to update your plan" })
+				setIsAttaching(false)
+			},
+		)
 	}
 
 	function handleEnterpriseContact() {
@@ -358,63 +368,52 @@ export function PricingCards() {
 				loadingPlanId={loadingPlanId}
 			/>
 
-			<Dialog
+			<ConfirmDialog
 				open={confirmDialog !== null}
 				onOpenChange={(open) => {
 					if (!open) setConfirmDialog(null)
 				}}
+				tone="default"
+				icon={null}
+				title="Confirm plan change"
+				description={
+					<>
+						You're switching to{" "}
+						<span className="text-foreground font-medium">{confirmDialog?.planName}</span>.
+					</>
+				}
+				confirmLabel="Switch plan"
+				pending={isAttaching}
+				onConfirm={() => void handleConfirmAttach()}
 			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Confirm plan change</DialogTitle>
-						<DialogDescription>
-							You're switching to{" "}
-							<span className="text-foreground font-medium">{confirmDialog?.planName}</span>.
-						</DialogDescription>
-					</DialogHeader>
-
-					{confirmDialog && (
-						<div className="space-y-2 px-6 text-xs">
+				{confirmDialog && (
+					<div className="space-y-2 text-xs">
+						<KeyValueList className="tabular-nums">
 							{confirmDialog.lines.map((line, i) => (
-								<div key={i} className="flex justify-between">
-									<span className="text-muted-foreground">{line.description}</span>
-									<span className="tabular-nums">
-										{formatCurrency(line.amount, confirmDialog.currency)}
-									</span>
-								</div>
+								<KeyValue key={i} label={line.description}>
+									{formatCurrency(line.amount, confirmDialog.currency)}
+								</KeyValue>
 							))}
-							<Separator />
-							<div className="flex justify-between font-medium">
-								<span>Due today</span>
-								<span className="tabular-nums">
-									{formatCurrency(confirmDialog.total, confirmDialog.currency)}
-								</span>
-							</div>
-							{confirmDialog.nextCycle && (
-								<p className="text-muted-foreground text-xs">
-									Then{" "}
-									{formatCurrency(confirmDialog.nextCycle.total, confirmDialog.currency)}{" "}
-									starting{" "}
-									{new Date(confirmDialog.nextCycle.starts_at).toLocaleDateString()}
-								</p>
-							)}
+						</KeyValueList>
+						<Separator />
+						<div className="flex justify-between font-medium">
+							<span>Due today</span>
+							<span className="tabular-nums">
+								{formatCurrency(confirmDialog.total, confirmDialog.currency)}
+							</span>
 						</div>
-					)}
-
-					<DialogFooter>
-						<Button
-							variant="outline"
-							onClick={() => setConfirmDialog(null)}
-							disabled={isAttaching}
-						>
-							Cancel
-						</Button>
-						<Button onClick={handleConfirmAttach} disabled={isAttaching}>
-							{isAttaching ? <Spinner className="size-3.5" /> : "Confirm"}
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+						{confirmDialog.nextCycle && (
+							<p className="text-muted-foreground text-xs">
+								Then {formatCurrency(confirmDialog.nextCycle.total, confirmDialog.currency)}{" "}
+								starting{" "}
+								{formatDateInTimezone(confirmDialog.nextCycle.starts_at, {
+									timeZone: effectiveTimezone,
+								})}
+							</p>
+						)}
+					</div>
+				)}
+			</ConfirmDialog>
 		</div>
 	)
 }
@@ -465,27 +464,19 @@ export function PlanCards({
 					>
 						<CardHeader>
 							<div className="flex items-center justify-between gap-2">
-								<CardTitle
-									className={cn(
-										"text-[10px] font-medium uppercase tracking-[0.14em]",
-										isUpgrade ? "text-primary" : "text-muted-foreground",
-									)}
-								>
+								<CardTitle className={cn(eyebrowVariants(), isUpgrade && "text-primary")}>
 									{plan.name}
 								</CardTitle>
 								{isActive && isTrialing && daysRemaining != null ? (
-									<Badge variant="secondary" className="text-[10px] font-medium">
+									<Badge variant="secondary" size="xs">
 										Trial · {daysRemaining}d left
 									</Badge>
 								) : isActive ? (
-									<Badge variant="secondary" className="text-[10px] font-medium">
+									<Badge variant="secondary" size="xs">
 										Current
 									</Badge>
 								) : isUpgrade ? (
-									<Badge
-										variant="secondary"
-										className="text-[10px] font-medium text-primary"
-									>
+									<Badge variant="secondary" size="xs" className="text-primary">
 										Recommended
 									</Badge>
 								) : null}
@@ -495,9 +486,9 @@ export function PlanCards({
 									{price}
 								</span>
 								{interval && (
-									<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider ml-1">
+									<Eyebrow variant="label" className="ml-1">
 										{interval}
-									</span>
+									</Eyebrow>
 								)}
 							</div>
 							<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -508,9 +499,9 @@ export function PlanCards({
 						<CardContent className="flex flex-col gap-5 flex-1">
 							{features.length > 0 && (
 								<div>
-									<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+									<Eyebrow className="mb-3" as="div">
 										Data included
-									</div>
+									</Eyebrow>
 									<div className="space-y-2.5">
 										{features.map((feature) => {
 											const Icon = FEATURE_ICONS[feature.featureId]
@@ -528,7 +519,7 @@ export function PlanCards({
 															{feature.value}
 														</span>
 														{feature.detail && (
-															<p className="text-muted-foreground/70 text-[10px] mt-0.5 font-medium">
+															<p className="text-muted-foreground/70 text-3xs mt-0.5 font-medium">
 																{feature.detail}
 															</p>
 														)}
@@ -543,9 +534,9 @@ export function PlanCards({
 							<Separator className="bg-border/60" />
 
 							<div>
-								<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+								<Eyebrow className="mb-3" as="div">
 									Platform features
-								</div>
+								</Eyebrow>
 								<div className="space-y-2.5">
 									{planFeatures.map((feature) => {
 										const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
@@ -573,22 +564,19 @@ export function PlanCards({
 						<CardFooter className="mt-auto flex-col gap-2 items-stretch">
 							<Button
 								variant={trialAvailable && !btn.disabled ? "default" : btn.variant}
-								disabled={btn.disabled || loadingPlanId === plan.id}
+								loading={loadingPlanId === plan.id}
+								disabled={btn.disabled}
 								className="w-full font-medium"
 								onClick={() => onCheckout(plan.id)}
 							>
-								{loadingPlanId === plan.id ? (
-									<Spinner className="size-4" />
-								) : trialAvailable && !btn.disabled ? (
-									`Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-								) : isActive && isTrialing ? (
-									"Trialing"
-								) : (
-									btn.label
-								)}
+								{trialAvailable && !btn.disabled
+									? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
+									: isActive && isTrialing
+										? "Trialing"
+										: btn.label}
 							</Button>
 							{trialAvailable && !btn.disabled && (
-								<p className="text-[11px] text-muted-foreground text-center tabular-nums">
+								<p className="text-2xs text-muted-foreground text-center tabular-nums">
 									$0 due today · Card required · Cancel anytime
 								</p>
 							)}
@@ -600,7 +588,7 @@ export function PlanCards({
 			<Card className="flex flex-col border-primary/20 bg-primary/[0.02]">
 				<CardHeader>
 					<div className="flex items-center justify-between gap-2">
-						<CardTitle className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+						<CardTitle className={eyebrowVariants({ className: "text-primary" })}>
 							Enterprise
 						</CardTitle>
 					</div>
@@ -614,9 +602,9 @@ export function PlanCards({
 
 				<CardContent className="flex flex-col gap-5 flex-1">
 					<div>
-						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+						<Eyebrow className="mb-3" as="div">
 							Data included
-						</div>
+						</Eyebrow>
 						<div className="space-y-2.5">
 							{ENTERPRISE_DATA_FEATURES.map((feature) => {
 								const Icon = FEATURE_ICONS[feature.featureId]
@@ -641,9 +629,9 @@ export function PlanCards({
 					<Separator className="bg-border/60" />
 
 					<div>
-						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+						<Eyebrow className="mb-3" as="div">
 							Platform features
-						</div>
+						</Eyebrow>
 						<div className="space-y-2.5">
 							{enterprisePlanFeatures.map((feature) => {
 								const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon

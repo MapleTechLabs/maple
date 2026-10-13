@@ -21,7 +21,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 // A plain anchor stands in for the router's: what is under test is whether a
 // click lands on the node or on the link inside it, and `closest("a")` cannot
 // tell the difference. Mounting a real router here would only test TanStack.
-vi.mock("@tanstack/react-router", () => ({
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+	...(await importOriginal<Record<string, unknown>>()),
 	Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
 		<a href={to} {...props} onClick={(event) => event.preventDefault()}>
 			{children}

@@ -5,11 +5,15 @@
 // SeverityBadge, severity/format libs) already come from @maple/ui.
 
 import { useMemo, useState } from "react"
+import { Option } from "effect"
+import { trySync } from "@maple/ui/lib/try-sync"
 import { Sheet, SheetContent, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { shortId } from "@maple/ui/lib/ids"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import {
 	CircleInfoIcon,
@@ -23,9 +27,10 @@ import {
 import { CopyableValue, AttributesSection, ResourceAttributesSection } from "@maple/ui/components/attributes"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { cn } from "@maple/ui/lib/utils"
-import type { LocalLog } from "../lib/log-shape"
-import { navigate } from "../lib/router"
-import { ErrorSection } from "@maple/ui/components/error-section"
+import { logKey, type LocalLog } from "../lib/log-shape"
+import { hrefFor } from "../lib/router"
+import { formatLocalDateTime, formatUtcTitle } from "../lib/time"
+import { LogErrorBanner } from "@maple/ui/components/logs/log-error-banner"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { highlightJson } from "../lib/highlight"
 
@@ -47,13 +52,14 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 	const sev = log.severityText.toUpperCase()
 	const showErrorBanner = sev === "ERROR" || sev === "FATAL"
 	// Identity used to remount the attributes panel (resets its search) per log.
-	const logKey = `${log.timestamp}-${log.spanId}-${log.body.slice(0, 24)}`
-
-	const openTrace = () => {
-		if (!log.traceId) return
-		navigate(`/traces/${encodeURIComponent(log.traceId)}`)
-		onOpenChange(false)
-	}
+	const identity = logKey(log)
+	const traceHref = log.traceId
+		? hrefFor(
+				`/traces/${encodeURIComponent(log.traceId)}`,
+				new URLSearchParams(log.spanId ? { spanId: log.spanId } : {}),
+			)
+		: undefined
+	const onOpenTrace = () => onOpenChange(false)
 
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>
@@ -61,7 +67,7 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 				<SheetTitle className="sr-only">Log: {log.body.slice(0, 80)}</SheetTitle>
 
 				<LogHeroHeader log={log} onClose={() => onOpenChange(false)} />
-				<LogMetaStrip log={log} onOpenTrace={openTrace} />
+				<LogMetaStrip log={log} traceHref={traceHref} onOpenTrace={onOpenTrace} />
 				{showErrorBanner && <LogErrorBanner log={log} />}
 
 				<Tabs defaultValue="attributes" className="flex min-h-0 flex-1 flex-col">
@@ -69,7 +75,7 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 						<TabsTrigger value="attributes">
 							<CircleInfoIcon size={14} /> Attributes
 						</TabsTrigger>
-						{log.traceId && (
+						{traceHref && (
 							<TabsTrigger value="trace">
 								<PulseIcon size={14} /> Trace
 							</TabsTrigger>
@@ -82,16 +88,20 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 					<TabsContent value="attributes" className="mt-0 min-h-0 flex-1">
 						<ScrollArea className="h-full">
 							<div className="p-3">
-								<LogAttributesPanel key={logKey} log={log} />
+								<LogAttributesPanel key={identity} log={log} />
 							</div>
 						</ScrollArea>
 					</TabsContent>
 
-					{log.traceId && (
+					{traceHref && (
 						<TabsContent value="trace" className="mt-0 min-h-0 flex-1">
 							<ScrollArea className="h-full">
 								<div className="p-3">
-									<LogTracePanel log={log} onOpenTrace={openTrace} />
+									<LogTracePanel
+										log={log}
+										traceHref={traceHref}
+										onOpenTrace={onOpenTrace}
+									/>
 								</div>
 							</ScrollArea>
 						</TabsContent>
@@ -122,14 +132,11 @@ const HERO_TONE: Record<string, string> = {
 
 const BODY_LINE_THRESHOLD = 280
 
-function tryParse(value: string): unknown | null {
+/** The body pretty-printed when it is a JSON object or array; `None` otherwise. */
+function prettyJson(value: string): Option.Option<string> {
 	const trimmed = value.trimStart()
-	if (trimmed[0] !== "{" && trimmed[0] !== "[") return null
-	try {
-		return JSON.parse(value)
-	} catch {
-		return null
-	}
+	if (trimmed[0] !== "{" && trimmed[0] !== "[") return Option.none()
+	return trySync(() => JSON.stringify(JSON.parse(value), null, 2))
 }
 
 function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void }) {
@@ -137,12 +144,9 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 	const tone = HERO_TONE[log.severityText.toUpperCase()] ?? "border-border"
 	const body = log.body ?? ""
 
-	const parsed = tryParse(body)
-	const isJson = parsed !== null
-	const formatted = useMemo(
-		() => (parsed !== null ? JSON.stringify(parsed, null, 2) : body),
-		[parsed, body],
-	)
+	const pretty = useMemo(() => prettyJson(body), [body])
+	const isJson = Option.isSome(pretty)
+	const formatted = Option.getOrElse(pretty, () => body)
 	const highlighted = useMemo(() => (isJson ? highlightJson(formatted) : ""), [isJson, formatted])
 	const copyValue = isJson ? formatted : body
 	const isLong = formatted.length > BODY_LINE_THRESHOLD || formatted.includes("\n")
@@ -151,7 +155,7 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 		isJson ? (
 			<pre
 				className={cn(
-					"font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words",
+					"font-mono text-ui leading-relaxed whitespace-pre-wrap break-words",
 					clamp && "line-clamp-6",
 				)}
 			>
@@ -172,11 +176,17 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 		<div className={cn("shrink-0 border-b px-4 py-3", tone)}>
 			<div className="flex items-center gap-2">
 				<SeverityBadge severity={log.severityText} />
-				<Badge variant="outline" className="font-mono text-[10px]">
+				<Badge variant="outline" size="xs" mono>
 					<CopyableValue value={log.serviceName}>{log.serviceName}</CopyableValue>
 				</Badge>
-				<Button variant="ghost" size="icon" className="ml-auto shrink-0" onClick={onClose}>
-					<XmarkIcon size={16} />
+				<Button
+					variant="ghost"
+					size="icon"
+					className="ml-auto shrink-0"
+					aria-label="Close log details"
+					onClick={onClose}
+				>
+					<XmarkIcon />
 				</Button>
 			</div>
 
@@ -197,31 +207,39 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 	)
 }
 
-function LogMetaStrip({ log, onOpenTrace }: { log: LocalLog; onOpenTrace: () => void }) {
+function LogMetaStrip({
+	log,
+	traceHref,
+	onOpenTrace,
+}: {
+	log: LocalLog
+	traceHref: string | undefined
+	onOpenTrace: () => void
+}) {
 	return (
 		<div className="flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap border-b px-4 py-1.5 text-xs">
 			<div className="flex shrink-0 items-center gap-1.5">
 				<ClockIcon size={12} className="text-muted-foreground" />
-				<span className="font-mono">
-					<CopyableValue value={log.timestamp}>{log.timestamp}</CopyableValue>
+				<span className="font-mono" title={formatUtcTitle(log.timestamp)}>
+					<CopyableValue value={log.timestamp}>{formatLocalDateTime(log.timestamp)}</CopyableValue>
 				</span>
 			</div>
 
-			{log.traceId && (
-				<button
-					type="button"
+			{traceHref && (
+				<a
+					href={traceHref}
 					onClick={onOpenTrace}
 					className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/10"
 					title={`View trace ${log.traceId}`}
 				>
 					<PulseIcon size={10} />
-					trace:{log.traceId.slice(0, 8)}
-				</button>
+					trace:{shortId(log.traceId, "trace")}
+				</a>
 			)}
 
 			{log.spanId && (
 				<span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-					<CopyableValue value={log.spanId}>span:{log.spanId.slice(0, 8)}</CopyableValue>
+					<CopyableValue value={log.spanId}>span:{shortId(log.spanId, "span")}</CopyableValue>
 				</span>
 			)}
 
@@ -229,24 +247,6 @@ function LogMetaStrip({ log, onOpenTrace }: { log: LocalLog; onOpenTrace: () => 
 				<CopyButton value={() => buildLogJsonPayload(log)} label="Log JSON" iconSize={13} tooltip />
 			</div>
 		</div>
-	)
-}
-
-function getErrorMessage(log: LocalLog): string {
-	return log.logAttributes["exception.message"] ?? log.logAttributes["error.message"] ?? log.body ?? ""
-}
-
-function LogErrorBanner({ log }: { log: LocalLog }) {
-	const message = getErrorMessage(log)
-	if (!message) return null
-
-	return (
-		<ErrorSection
-			message={message}
-			title={log.severityText.toUpperCase() === "FATAL" ? "Fatal" : "Error"}
-			badge={log.logAttributes["exception.type"] ?? log.logAttributes["error.type"]}
-			prompt={{ serviceName: log.serviceName, attributes: log.logAttributes }}
-		/>
 	)
 }
 
@@ -281,27 +281,34 @@ function LogAttributesPanel({ log }: { log: LocalLog }) {
 	)
 }
 
-function LogTracePanel({ log, onOpenTrace }: { log: LocalLog; onOpenTrace: () => void }) {
+function LogTracePanel({
+	log,
+	traceHref,
+	onOpenTrace,
+}: {
+	log: LocalLog
+	traceHref: string
+	onOpenTrace: () => void
+}) {
 	return (
 		<div className="space-y-3">
-			<div className="rounded-md border p-2 text-xs space-y-1">
-				<div className="flex justify-between gap-3">
-					<span className="text-muted-foreground">Trace ID</span>
-					<span className="truncate font-mono">
-						<CopyableValue value={log.traceId}>{log.traceId}</CopyableValue>
-					</span>
-				</div>
+			<KeyValueList className="gap-1 rounded-md border p-2">
+				<KeyValue label="Trace ID" mono>
+					<CopyableValue value={log.traceId}>{log.traceId}</CopyableValue>
+				</KeyValue>
 				{log.spanId && (
-					<div className="flex justify-between gap-3">
-						<span className="text-muted-foreground">Span ID</span>
-						<span className="truncate font-mono">
-							<CopyableValue value={log.spanId}>{log.spanId}</CopyableValue>
-						</span>
-					</div>
+					<KeyValue label="Span ID" mono>
+						<CopyableValue value={log.spanId}>{log.spanId}</CopyableValue>
+					</KeyValue>
 				)}
-			</div>
-			<Button variant="outline" size="sm" className="w-full gap-1.5" onClick={onOpenTrace}>
-				<PulseIcon size={14} />
+			</KeyValueList>
+			<Button
+				variant="outline"
+				size="sm"
+				className="w-full gap-1.5"
+				render={<a href={traceHref} onClick={onOpenTrace} />}
+			>
+				<PulseIcon />
 				Open trace
 			</Button>
 		</div>
@@ -328,7 +335,7 @@ function buildLogJsonPayload(log: LocalLog): string {
 }
 
 function LogRawPanel({ log }: { log: LocalLog }) {
-	const jsonPayload = buildLogJsonPayload(log)
+	const jsonPayload = useMemo(() => buildLogJsonPayload(log), [log])
 	const highlighted = useMemo(() => highlightJson(jsonPayload), [jsonPayload])
 
 	return (

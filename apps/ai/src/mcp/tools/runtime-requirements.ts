@@ -1,4 +1,5 @@
 import type { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import type { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import type { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import type { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import type { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -23,6 +24,7 @@ import type { CurrentMcpTenant } from "../lib/query-warehouse"
  * dependency must also extend the executor layer that captures that dependency.
  */
 export type McpToolRuntimeRequirements =
+	| AgentFeedbackService
 	| AlertsService
 	| AuditLogService
 	| AlertReadModelsService

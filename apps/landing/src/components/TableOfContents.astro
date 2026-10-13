@@ -1,0 +1,127 @@
+---
+// The one "On this page" outline, used by docs, blog posts, customer stories,
+// changelog releases and guides. With `spy`, the section under the reader is
+// marked as they scroll by a single bar that slides along the rail. The same
+// list also renders inside mobile disclosures, where a live marker would only
+// be visible with the disclosure open, so those pass `spy={false}`.
+interface Props {
+    headings: Array<{ depth: number; slug: string; text: string }>;
+    label?: string;
+    maxDepth?: 2 | 3;
+    spy?: boolean;
+    // Off inside a disclosure whose summary already names the list.
+    showLabel?: boolean;
+    class?: string;
+}
+
+const { headings, label = "On this page", maxDepth = 3, spy = true, showLabel = true, class: className } = Astro.props;
+const items = headings.filter((h) => h.depth >= 2 && h.depth <= maxDepth);
+---
+
+{items.length > 0 && (
+    <nav aria-label={label} data-toc-spy={spy ? "" : undefined} class={className}>
+        {showLabel && <p class="mb-3 text-[12px] font-medium text-fg">{label}</p>}
+        <ul class="toc-list relative m-0 list-none border-l border-border p-0">
+            {spy && <span class="toc-indicator" aria-hidden="true"></span>}
+            {items.map((h) => (
+                <li>
+                    <a
+                        href={`#${h.slug}`}
+                        data-toc-link
+                        class:list={[
+                            "toc-link block py-[5px] font-display text-[13px] leading-[1.4] text-fg-muted transition-colors hover:text-fg",
+                            h.depth === 3 ? "pl-6 text-[12.5px]" : "pl-3.5",
+                        ]}
+                    >
+                        {h.text}
+                    </a>
+                </li>
+            ))}
+        </ul>
+    </nav>
+)}
+
+<style>
+    .toc-link[aria-current="true"] {
+        color: var(--foreground);
+    }
+
+    .toc-indicator {
+        position: absolute;
+        top: 0;
+        left: -1px;
+        width: 2px;
+        height: var(--toc-h, 0px);
+        border-radius: 1px;
+        background: var(--primary);
+        opacity: var(--toc-o, 0);
+        transform: translateY(var(--toc-y, 0px));
+        transition:
+            transform 220ms cubic-bezier(0.2, 0, 0, 1),
+            height 220ms cubic-bezier(0.2, 0, 0, 1),
+            opacity 150ms ease;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .toc-indicator {
+            transition: none;
+        }
+    }
+</style>
+
+<script>
+    // Scroll spy: the current section is the last heading that has passed the
+    // fixed header. Cheaper and steadier than IntersectionObserver for
+    // reference pages with forty short sections.
+    const nav = document.querySelector<HTMLElement>("nav[data-toc-spy]");
+    const list = nav?.querySelector<HTMLElement>(".toc-list");
+    if (nav && list) {
+        const links = [...nav.querySelectorAll<HTMLAnchorElement>("a[data-toc-link]")];
+        const targets = links.flatMap((link) => {
+            const el = document.getElementById(decodeURIComponent(link.hash.slice(1)));
+            return el ? [{ link, el }] : [];
+        });
+        const OFFSET = 6 * 16 + 24; // fixed header + breathing room
+
+        let current: HTMLAnchorElement | null = null;
+        let ticking = false;
+
+        const place = (link: HTMLAnchorElement | null) => {
+            list.style.setProperty("--toc-o", link ? "1" : "0");
+            if (!link) return;
+            list.style.setProperty("--toc-y", `${link.offsetTop}px`);
+            list.style.setProperty("--toc-h", `${link.offsetHeight}px`);
+        };
+
+        const update = () => {
+            ticking = false;
+            const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+            let next: HTMLAnchorElement | null = null;
+            if (atBottom) {
+                next = targets[targets.length - 1]?.link ?? null;
+            } else {
+                for (const { link, el } of targets) {
+                    if (el.getBoundingClientRect().top <= OFFSET) next = link;
+                    else break;
+                }
+            }
+            if (next === current) return;
+            current?.removeAttribute("aria-current");
+            next?.setAttribute("aria-current", "true");
+            current = next;
+            place(next);
+        };
+
+        const onScroll = () => {
+            if (ticking) return;
+            ticking = true;
+            requestAnimationFrame(update);
+        };
+
+        if (targets.length > 0) {
+            window.addEventListener("scroll", onScroll, { passive: true });
+            window.addEventListener("resize", () => place(current), { passive: true });
+            update();
+        }
+    }
+</script>

@@ -16,12 +16,13 @@
  * 2. **Each half fails alone.** A warehouse read that errors greys its own row.
  *    Neither can blank the card, and the card can never blank the page.
  */
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
-import { formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { getServiceColor } from "@maple/ui/lib/colors"
+import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { ServiceDot } from "@maple/ui/components/service-dot"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -33,6 +34,7 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatForTinybird } from "@/lib/time-utils"
 import { servicesTouched } from "./impact-strip"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /** The design's strip is 32 bars wide; the bucket falls out of the window, not the other way round. */
 const BUCKETS = 32
@@ -44,14 +46,12 @@ export function SignalsCard({ investigation }: { investigation: V2Investigation 
 	if (!window || !service) return null
 
 	return (
-		<section className="flex shrink-0 flex-col gap-4 rounded-xl border bg-card px-5 py-4">
+		<Panel className="shrink-0 gap-4 px-5 py-4">
 			<header className="flex items-center gap-2">
-				<span
-					aria-hidden
-					className="size-2 shrink-0 rounded-[3px]"
-					style={{ backgroundColor: getServiceColor(service) }}
-				/>
-				<span className="font-mono text-sm text-foreground">{service}</span>
+				<ServiceDot serviceName={service} />
+				<span className="min-w-0 truncate font-mono text-sm text-foreground" title={service}>
+					{service}
+				</span>
 				{window.label ? (
 					<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 						· {window.label}
@@ -70,7 +70,7 @@ export function SignalsCard({ investigation }: { investigation: V2Investigation 
 
 			<LogsRow service={service} window={window} />
 			<TracesRow service={service} window={window} />
-		</section>
+		</Panel>
 	)
 }
 
@@ -203,7 +203,7 @@ function TracesRow({ service, window }: { service: string; window: SignalWindow 
 					<Figure value={formatNumber(row.spanCount)} unit="spans" />
 					<Figure value={formatLatency(row.p95LatencyMs)} unit="p95" />
 					<Figure
-						value={`${(row.errorRate * 100).toFixed(1)}%`}
+						value={formatErrorRate(row.errorRate)}
 						unit="error rate"
 						tone={row.errorRate > 0 ? "text-severity-error" : undefined}
 					/>
@@ -235,9 +235,7 @@ const Segment = ({ share, color }: { share: number; color: string }) =>
 	) : null
 
 const RowLabel = ({ children }: { children: string }) => (
-	<span className="w-14 shrink-0 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-		{children}
-	</span>
+	<Eyebrow className="w-14 shrink-0">{children}</Eyebrow>
 )
 
 const Figure = ({ value, unit, tone }: { value: string; unit: string; tone?: string }) => (

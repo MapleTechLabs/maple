@@ -5,6 +5,8 @@
 
 import { Effect, Schema } from "effect"
 import {
+	WebAnalyticsAiCrawlersRequest,
+	WebAnalyticsAiReferralsRequest,
 	WebAnalyticsBreakdownsRequest,
 	WebAnalyticsEventsRequest,
 	WebAnalyticsLiveRequest,
@@ -13,6 +15,7 @@ import {
 	WebAnalyticsSummaryRequest,
 	WebAnalyticsTimeseriesRequest,
 } from "@maple/domain/http"
+import type { AiContentFormat } from "@maple/domain/ai-traffic"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 
@@ -76,6 +79,22 @@ const WebAnalyticsBreakdownsInputSchema = Schema.Struct({
 	limitPerDimension: Schema.optional(PositiveInt),
 })
 
+const WebAnalyticsAiReferralsInputSchema = Schema.Struct({
+	...TimeWindowFields,
+	...WebAnalyticsFilterFields,
+	bucketSeconds: Schema.optional(PositiveInt),
+})
+
+// Crawls carry no visitor dimensions, so only the two URL filters reach them.
+const WebAnalyticsAiCrawlersInputSchema = Schema.Struct({
+	...TimeWindowFields,
+	host: Schema.optional(Schema.String),
+	pagePath: Schema.optional(Schema.String),
+	pagesLimit: Schema.optional(PositiveInt),
+})
+
+export type GetWebAnalyticsAiReferralsInput = (typeof WebAnalyticsAiReferralsInputSchema)["Encoded"]
+export type GetWebAnalyticsAiCrawlersInput = (typeof WebAnalyticsAiCrawlersInputSchema)["Encoded"]
 export type GetWebAnalyticsSummaryInput = (typeof WebAnalyticsSummaryInputSchema)["Encoded"]
 export type GetWebAnalyticsLiveInput = (typeof WebAnalyticsLiveInputSchema)["Encoded"]
 export type GetWebAnalyticsTimeseriesInput = (typeof WebAnalyticsTimeseriesInputSchema)["Encoded"]
@@ -345,4 +364,89 @@ const getWebAnalyticsBreakdownsEffect = Effect.fn("QueryEngine.getWebAnalyticsBr
 	)
 
 	return result.data satisfies WebAnalyticsBreakdowns
+})
+
+/** Sessions an AI product sent in one bucket. `product` is an `AI_PRODUCTS` id. */
+export interface WebAnalyticsAiReferralPoint {
+	bucket: string
+	product: string
+	sessions: number
+}
+
+export interface WebAnalyticsAiCrawler {
+	/** An `AI_CRAWLERS` name. */
+	crawler: string
+	requests: number
+	failedRequests: number
+	/** Distinct pages the site served (status below 400). */
+	pages: number
+	lastSeen: string
+}
+
+export interface WebAnalyticsAiCrawlerFormat {
+	format: AiContentFormat
+	requests: number
+	failedRequests: number
+	pages: number
+	crawlers: ReadonlyArray<string>
+}
+
+export interface WebAnalyticsAiCrawledPage {
+	host: string
+	path: string
+	requests: number
+	crawlers: ReadonlyArray<string>
+	lastSeen: string
+}
+
+export interface WebAnalyticsAiCrawlers {
+	crawlers: ReadonlyArray<WebAnalyticsAiCrawler>
+	formats: ReadonlyArray<WebAnalyticsAiCrawlerFormat>
+	pages: ReadonlyArray<WebAnalyticsAiCrawledPage>
+}
+
+export function getWebAnalyticsAiReferrals({ data }: { data: GetWebAnalyticsAiReferralsInput }) {
+	return getWebAnalyticsAiReferralsEffect({ data })
+}
+
+const getWebAnalyticsAiReferralsEffect = Effect.fn("QueryEngine.getWebAnalyticsAiReferrals")(function* ({
+	data,
+}: {
+	data: GetWebAnalyticsAiReferralsInput
+}) {
+	const input = yield* decodeInput(WebAnalyticsAiReferralsInputSchema, data, "getWebAnalyticsAiReferrals")
+
+	const result = yield* runWarehouseQuery("webAnalyticsAiReferrals", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.queryEngine.webAnalyticsAiReferrals({
+				payload: new WebAnalyticsAiReferralsRequest(input),
+			})
+		}),
+	)
+
+	return { data: result.data satisfies ReadonlyArray<WebAnalyticsAiReferralPoint> }
+})
+
+export function getWebAnalyticsAiCrawlers({ data }: { data: GetWebAnalyticsAiCrawlersInput }) {
+	return getWebAnalyticsAiCrawlersEffect({ data })
+}
+
+const getWebAnalyticsAiCrawlersEffect = Effect.fn("QueryEngine.getWebAnalyticsAiCrawlers")(function* ({
+	data,
+}: {
+	data: GetWebAnalyticsAiCrawlersInput
+}) {
+	const input = yield* decodeInput(WebAnalyticsAiCrawlersInputSchema, data, "getWebAnalyticsAiCrawlers")
+
+	const result = yield* runWarehouseQuery("webAnalyticsAiCrawlers", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.queryEngine.webAnalyticsAiCrawlers({
+				payload: new WebAnalyticsAiCrawlersRequest(input),
+			})
+		}),
+	)
+
+	return result.data satisfies WebAnalyticsAiCrawlers
 })

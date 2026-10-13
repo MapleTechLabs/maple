@@ -1,0 +1,121 @@
+---
+/**
+ * One changelog entry at its permalink. Same layout as on the timeline, so a
+ * shared link lands on what the reader would have seen in the feed.
+ */
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import ChangelogEntry from "../../components/changelog/ChangelogEntry.astro";
+import { getSortedReleases } from "../../lib/changelog";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { isoDate } from "../../lib/blog";
+
+export async function getStaticPaths() {
+    const releases = await getSortedReleases();
+    return releases.map((release, i) => ({
+        params: { slug: release.id },
+        props: {
+            release,
+            // Sorted newest-first, so the *next* index is the older entry.
+            newer: releases[i - 1] ?? null,
+            older: releases[i + 1] ?? null,
+        },
+    }));
+}
+
+const { release, newer, older } = Astro.props;
+const { title, description, date, cover, authors } = release.data;
+
+const pageTitle = `${title} | Maple changelog`;
+const canonicalUrl = Astro.site ? new URL(`/changelog/${release.id}`, Astro.site).toString() : undefined;
+
+const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: title,
+    description,
+    datePublished: isoDate(date),
+    dateModified: isoDate(date),
+    ...(cover && Astro.site ? { image: new URL(cover, Astro.site).toString() } : undefined),
+    author: authors.length
+        ? authors.map((id) => ({ "@type": "Person", name: CONTRIBUTORS[id].name, url: `https://github.com/${CONTRIBUTORS[id].github}` }))
+        : { "@type": "Organization", name: "Maple" },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: "https://maple.dev/logo192.png" },
+    },
+    isPartOf: {
+        "@type": "CollectionPage",
+        name: "Maple changelog",
+        url: "https://maple.dev/changelog",
+    },
+    ...(canonicalUrl ? { mainEntityOfPage: canonicalUrl } : undefined),
+};
+
+const key = "font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted";
+const backLink =
+    "inline-flex items-center gap-1.5 font-mono text-xs text-fg-muted transition-colors hover:text-primary";
+---
+
+<Layout title={pageTitle} description={description} image={cover} ogType="article" alternates={["en"]} mdHref={`/changelog/${release.id}.md`}>
+    <link slot="head" rel="alternate" type="application/rss+xml" title="Maple changelog" href="/changelog/rss.xml" />
+    <SeoHead title={pageTitle} description={description} />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <Nav />
+
+    <div class="pt-[19px]">
+        <div class="relative mx-auto max-w-6xl px-6 pt-20 [--cl-gutter:9rem] md:pt-24">
+            <div class="lg:ml-[var(--cl-gutter)] lg:pl-12">
+                <a href="/changelog" class={backLink}>
+                    <span aria-hidden="true">←</span> changelog
+                </a>
+            </div>
+
+            <div class="relative mt-6">
+                <span class="absolute inset-y-0 left-[var(--cl-gutter)] hidden w-px bg-border lg:block" aria-hidden="true"></span>
+                <ChangelogEntry release={release} standalone latest={!newer} />
+            </div>
+
+            {(newer || older) && (
+                <nav
+                    aria-label="Other entries"
+                    class="grid grid-cols-1 gap-px border border-border bg-border sm:grid-cols-2 lg:ml-[calc(var(--cl-gutter)+3rem)] lg:max-w-[680px]"
+                >
+                    {older ? (
+                        <a href={`/changelog/${older.id}`} class="group bg-bg px-4 py-4 transition-colors hover:bg-bg-elevated md:px-5">
+                            <span class={key}>← older</span>
+                            <span class="mt-1.5 block text-[13px] font-medium text-foreground group-hover:text-primary">
+                                {older.data.title}
+                            </span>
+                        </a>
+                    ) : (
+                        <span class="bg-bg px-4 py-4 md:px-5">
+                            <span class={key}>← older</span>
+                            <span class="mt-1.5 block text-[13px] text-fg-muted/60">The first entry</span>
+                        </span>
+                    )}
+                    {newer ? (
+                        <a href={`/changelog/${newer.id}`} class="group bg-bg px-4 py-4 transition-colors hover:bg-bg-elevated sm:text-right md:px-5">
+                            <span class={key}>newer →</span>
+                            <span class="mt-1.5 block text-[13px] font-medium text-foreground group-hover:text-primary">
+                                {newer.data.title}
+                            </span>
+                        </a>
+                    ) : (
+                        <span class="bg-bg px-4 py-4 sm:text-right md:px-5">
+                            <span class={key}>newer →</span>
+                            <span class="mt-1.5 block text-[13px] text-fg-muted/60">This is the latest</span>
+                        </span>
+                    )}
+                </nav>
+            )}
+        </div>
+    </div>
+
+    <BottomCTA />
+    <Footer />
+</Layout>

@@ -1,4 +1,4 @@
-import { PlotFrame, cursorTooltip, usePlotColors, type PlotColorToken } from "@maple/ui/components/plot"
+import { PlotFrame, cursorTooltip, usePlotColors, type PlotColorSource } from "@maple/ui/components/plot"
 import { formatNumber } from "@maple/ui/lib/format"
 import { defineChart, rect } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
@@ -20,8 +20,8 @@ export interface HistogramSpikeRow {
 }
 
 const HISTOGRAM_TOKENS = {
-	bar: ["--chart-1", "#6366f1"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	bar: "--chart-1",
+} as const satisfies Record<string, PlotColorSource>
 
 /** Bin count, matching the production chart's `histogram.bucketCount` default. */
 const BIN_COUNT = 30
@@ -192,7 +192,7 @@ export const HistogramSpike = memo(function HistogramSpike({
 		return (
 			<div className={className}>
 				<div className="grid h-full w-full place-items-center">
-					<span className="text-[11px] text-muted-foreground">No data</span>
+					<span className="text-2xs text-muted-foreground">No data</span>
 				</div>
 			</div>
 		)
@@ -217,7 +217,7 @@ export const HistogramSpike = memo(function HistogramSpike({
 						</div>
 						<div className="flex w-full items-center gap-2">
 							<span
-								className="size-2.5 shrink-0 rounded-[2px]"
+								className="size-2.5 shrink-0 rounded-xs"
 								style={{ backgroundColor: colors.bar }}
 							/>
 							<div className="flex flex-1 items-center justify-between gap-3 leading-none">

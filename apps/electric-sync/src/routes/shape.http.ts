@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { TenantResolver } from "../auth/TenantResolver"
 import { ElectricClient } from "../electric/ElectricClient"
 import { errorResponse, type SyncError, Unauthorized } from "../errors"

@@ -1,7 +1,11 @@
 import { useRef } from "react"
+import { errorMessage } from "@/lib/error-toast"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { countLabel } from "@maple/ui/lib/format"
 
 import { Unitflow, View } from "@maple/unitflow/react"
 import { Button } from "@maple/ui/components/ui/button"
@@ -19,7 +23,7 @@ import {
 } from "@/components/dashboard-builder/portable-dashboard"
 import type { Dashboard } from "@/components/dashboard-builder/types"
 import { CircleWarningIcon, GridIcon, PlusIcon, UploadIcon } from "@/components/icons"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { isDashboardSortOption, type DashboardSortOption } from "@/atoms/dashboard-preferences-atoms"
 import { useDashboardPreferences } from "@/hooks/use-dashboard-preferences"
 import { useDashboardMutations } from "@/hooks/use-dashboard-store"
@@ -90,7 +94,7 @@ function DashboardListPage() {
 							const preview = warnings.slice(0, 3).join("\n")
 							const suffix = warnings.length > 3 ? `\n+${warnings.length - 3} more` : ""
 							toastManager.add({
-								title: `Imported with ${warnings.length} warning${warnings.length === 1 ? "" : "s"}`,
+								title: `Imported with ${countLabel(warnings.length, "warning")}`,
 								description: `${preview}${suffix}`,
 								type: "warning",
 							})
@@ -104,7 +108,7 @@ function DashboardListPage() {
 					toastManager.add({ title: `Dashboard "${dashboard.name}" imported`, type: "success" })
 				} catch (error) {
 					toastManager.add({
-						title: error instanceof Error ? error.message : "Failed to parse dashboard file",
+						title: errorMessage(error, "Failed to parse dashboard file"),
 						type: "error",
 					})
 				}
@@ -115,21 +119,16 @@ function DashboardListPage() {
 
 	const handleCreate = () => {
 		if (readOnly) return
-		void (async () => {
-			try {
-				const dashboard = await createDashboard("Untitled Dashboard")
+		void createDashboard("Untitled Dashboard").then(
+			(dashboard) =>
 				navigate({
 					to: "/dashboards/$dashboardId",
 					params: { dashboardId: dashboard.id },
 					search: { mode: "edit" },
-				})
-			} catch (error) {
-				toastManager.add({
-					title: error instanceof Error ? error.message : "Failed to create dashboard",
-					type: "error",
-				})
-			}
-		})()
+				}),
+			(error) =>
+				toastManager.add({ title: errorMessage(error, "Failed to create dashboard"), type: "error" }),
+		)
 	}
 
 	/**
@@ -139,19 +138,18 @@ function DashboardListPage() {
 	 */
 	const handleDuplicate = (dashboard: Dashboard) => {
 		if (readOnly) return
-		void (async () => {
-			try {
-				const portable = toPortableDashboard(dashboard)
-				const copy = await importDashboard({ ...portable, name: `${dashboard.name} copy` })
+		const portable = toPortableDashboard(dashboard)
+		void importDashboard({ ...portable, name: `${dashboard.name} copy` }).then(
+			(copy) => {
 				navigate({ to: "/dashboards/$dashboardId", params: { dashboardId: copy.id } })
 				toastManager.add({ title: `Duplicated as "${copy.name}"`, type: "success" })
-			} catch (error) {
+			},
+			(error) =>
 				toastManager.add({
-					title: error instanceof Error ? error.message : "Failed to duplicate dashboard",
+					title: errorMessage(error, "Failed to duplicate dashboard"),
 					type: "error",
-				})
-			}
-		})()
+				}),
+		)
 	}
 
 	// `undefined` clears the param instead of writing an empty value, so a cleared
@@ -190,7 +188,7 @@ function DashboardListPage() {
 	const actions = (
 		<div className="flex flex-wrap items-center gap-1">
 			<Button variant="outline" size="sm" onClick={() => navigate({ to: "/dashboards/templates" })}>
-				<GridIcon size={14} data-icon="inline-start" />
+				<GridIcon data-icon="inline-start" />
 				Browse templates
 			</Button>
 			<Button
@@ -199,12 +197,12 @@ function DashboardListPage() {
 				disabled={readOnly}
 				onClick={() => importInputRef.current?.click()}
 			>
-				<UploadIcon size={14} data-icon="inline-start" />
+				<UploadIcon data-icon="inline-start" />
 				Import
 			</Button>
 			<Button size="sm" disabled={readOnly} onClick={handleCreate}>
-				<PlusIcon size={14} data-icon="inline-start" />
-				Create Dashboard
+				<PlusIcon data-icon="inline-start" />
+				Create dashboard
 			</Button>
 			<input
 				ref={importInputRef}
@@ -258,39 +256,30 @@ function PageShell({
 	children: React.ReactNode
 }) {
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Dashboards" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Dashboards"
-							titleContent={
-								summary ? (
-									<div className="text-muted-foreground mt-1 font-mono text-[11px]">
-										{summary}
-									</div>
-								) : undefined
-							}
-						>
-							{actions}
-						</DashboardLayout.Header>
-						{/* Pinned with the header rather than inside Scroll: it explains the
-						    disabled buttons above it, so it must not scroll away from them. */}
-						{persistenceError && (
-							<div className="mb-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive">
-								<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
-								<span>
-									{persistenceError}. Editing, import and delete are disabled until it
-									recovers — reading is unaffected.
-								</span>
-							</div>
-						)}
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[{ label: "Dashboards" }]}
+			titleContent={
+				summary ? (
+					<div className="text-muted-foreground mt-1 font-mono text-2xs">{summary}</div>
+				) : undefined
+			}
+			headerActions={actions}
+			// Pinned with the header rather than inside Scroll: it explains the disabled
+			// buttons above it, so it must not scroll away from them.
+			sticky={
+				persistenceError ? (
+					<Alert variant="crit" size="sm" className="mb-3">
+						<CircleWarningIcon size={14} />
+						<AlertDescription className={TONE_TEXT.crit}>
+							{persistenceError}. Editing, import and delete are disabled until it recovers;
+							reading is unaffected.
+						</AlertDescription>
+					</Alert>
+				) : null
+			}
+		>
+			{children}
+		</DashboardPage>
 	)
 }
 

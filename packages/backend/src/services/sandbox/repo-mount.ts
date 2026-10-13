@@ -1,12 +1,12 @@
 /**
- * How a Maple repository checkout is named inside effect-agent's `Sandbox`
+ * How a Maple repository checkout is named inside @yielded/agent's `Sandbox`
  * contract: as the one `SandboxMount` a request carries, whose `source` is
  * `maple-vcs://<orgId>/<owner>/<name>@<ref>`. The tenant rides in the source
  * so the implementation, which sees nothing but the request, can never be
  * pointed at another organization's repository.
  */
 import type { OrgId } from "@maple/domain/http"
-import { NetworkDisabled, SandboxImplementation, SandboxMount, SandboxRuntime } from "effect-agent/sandbox"
+import { NetworkDisabled, SandboxImplementation, SandboxMount, SandboxRuntime } from "@yielded/agent/sandbox"
 import { Option, Schema } from "effect"
 
 export const REPO_SANDBOX_RUNTIME = new SandboxRuntime({

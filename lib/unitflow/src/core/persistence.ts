@@ -3,7 +3,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
 
 /** Shared options of `Query.persist` and `Store.persist`. */
 export interface PersistOptions<A, I> {

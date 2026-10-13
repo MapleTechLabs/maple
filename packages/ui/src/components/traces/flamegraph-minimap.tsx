@@ -148,7 +148,7 @@ export function FlamegraphMinimap({
 				/>
 			)}
 
-			<div className="absolute right-3 top-1 text-[9px] font-medium text-muted-foreground/60">
+			<div className="absolute right-3 top-1 text-4xs font-medium text-muted-foreground/60">
 				Minimap
 			</div>
 		</div>

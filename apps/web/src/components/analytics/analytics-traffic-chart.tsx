@@ -1,32 +1,31 @@
 import { useMemo } from "react"
 import { areaY, d3Curve, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { scalePoint } from "@tanstack/charts-scales/point"
 import { curveMonotoneX } from "d3-shape"
-import { zonedDateParts } from "@maple/query-engine/datetime"
-import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
+	bucketDate,
 	focusCrosshair,
 	focusDot,
-	resolvePlotColor,
+	makeBucketAxis,
 	useChartId,
-	usePlotChromeColors,
+	useCursorPlot,
 	verticalGradient,
-	type PlotTooltipSeries,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
 import { useMediaQuery } from "@maple/ui/hooks/use-media-query"
-import { useTheme } from "@maple/ui/hooks/use-theme"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
-import { CHART_EMPTY_MESSAGE, isoToLabel, makeBucketLabeler } from "../infra/chart-utils"
-import { CHART_HEIGHT, ChartCard, ChartCardMessage } from "../infra/primitives/chart-card"
+import {
+	CHART_EMPTY_MESSAGE,
+	CHART_HEIGHT,
+	ChartCard,
+	ChartCardMessage,
+} from "@/components/common/chart-card"
+import { SeriesLegend } from "@/components/common/series-legend"
 import type { AnalyticsMetricDescriptor, AnalyticsMetricSource } from "./metrics"
 
 // The page's one accent, same as the KPI sparklines (`SPARK_COLOR.neutral`) and
@@ -34,15 +33,14 @@ import type { AnalyticsMetricDescriptor, AnalyticsMetricSource } from "./metrics
 // amber only in the dark theme and a blue in the light one — the chart would
 // have disagreed with the tile that selected it, at half of all page loads.
 const PRIMARY_TOKEN = "--primary"
-const PRIMARY_FALLBACK = "#6366f1"
 
 /** The designated second-series token: cool against the accent in both themes. */
 const COMPANION_TOKEN = "--chart-2"
-const COMPANION_FALLBACK = "#22d3ee"
 
 /** Series keys. Fixed, so the tooltip can map a row back to its descriptor. */
-const PRIMARY = "primary"
-const COMPANION = "companion"
+type SeriesKey = "primary" | "companion"
+const PRIMARY: SeriesKey = "primary"
+const COMPANION: SeriesKey = "companion"
 
 interface AnalyticsTrafficChartProps {
 	/** The metric selected in the KPI strip. Supplies the series and its formatting. */
@@ -58,10 +56,10 @@ interface AnalyticsTrafficChartProps {
 
 /** One bucket, carrying whichever of the two series reported there. */
 interface TrafficPoint {
-	/** The bucket's ISO timestamp — the x value, so ticks can be chosen by calendar day. */
+	/** The bucket's ISO timestamp. */
 	bucket: string
-	/** The tooltip heading: time of day, dated once the window crosses 24h. */
-	label: string
+	/** The bucket as an instant, the x value. */
+	date: Date
 	primary?: number
 	companion?: number
 }
@@ -88,21 +86,9 @@ interface TrafficPoint {
  */
 export function AnalyticsTrafficChart({ metric, companion, source, syncId }: AnalyticsTrafficChartProps) {
 	const gradientPrefix = useChartId("traffic")
-	const chromeColors = usePlotChromeColors()
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
-	// Tokens resolved to literals: canvas cannot read `var()`, and `useTheme` is
-	// the invalidation key that repaints them when the theme flips.
-	const { theme } = useTheme()
 	const { effectiveTimezone } = useTimezonePreference()
-	const colors = useMemo(
-		() => ({
-			primary: resolvePlotColor(PRIMARY_TOKEN, PRIMARY_FALLBACK),
-			companion: resolvePlotColor(COMPANION_TOKEN, COMPANION_FALLBACK),
-		}),
-		[theme],
-	)
 
-	const { data, dayTicks, totals } = useMemo(() => {
+	const { data, totals } = useMemo(() => {
 		const primaryPoints = metric.series(source)
 		const companionPoints = companion?.series(source) ?? []
 
@@ -140,75 +126,58 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 		zeroFill("primary", metric, primaryPoints)
 		zeroFill("companion", companion, companionPoints)
 
-		const label = makeBucketLabeler(buckets, effectiveTimezone)
-		// The first bucket of each calendar day in the selected zone. Over a multi-day window the
-		// axis ticks there and nowhere else — one dated label per day reads; a
-		// thinned run of "Aug 14, 9:30pm" labels does not. Within a single day the
-		// list has one entry and the axis keeps its time-of-day ticks instead.
-		const dayTicks: string[] = []
-		let lastDay = ""
-		for (const bucket of buckets) {
-			const parts = zonedDateParts(toEpochMs(bucket), effectiveTimezone)
-			const day = `${parts.year}-${parts.month}-${parts.day}`
-			if (day !== lastDay) {
-				dayTicks.push(bucket)
-				lastDay = day
-			}
-		}
-		// A "last 7 days" window opens mid-evening, so its first day is a sliver a
-		// few pixels wide — its label collides with the next day's and thinning
-		// drops the FULL day. Below half a day of coverage the sliver goes untitled.
-		if (dayTicks.length > 1) {
-			const leadSpan = toEpochMs(dayTicks[1]!) - toEpochMs(dayTicks[0]!)
-			if (leadSpan < 12 * 60 * 60 * 1000) dayTicks.shift()
-		}
 		return {
-			data: buckets.map((bucket) => ({ bucket, label: label(bucket), ...byBucket.get(bucket)! })),
-			dayTicks,
+			data: buckets.map((bucket) => ({ bucket, date: bucketDate(bucket), ...byBucket.get(bucket)! })),
 			totals: {
 				primary: primaryPoints.reduce((sum, point) => sum + point.value, 0),
 				companion: companionPoints.reduce((sum, point) => sum + point.value, 0),
 			},
 		}
-	}, [metric, companion, source, effectiveTimezone])
+	}, [metric, companion, source])
 
-	// Selected metric first — this order is the legend's, where it should lead.
-	const series = [
-		{ key: PRIMARY, descriptor: metric, color: colors.primary, total: totals.primary },
-		...(companion
-			? [
-					{
-						key: COMPANION,
-						descriptor: companion,
-						color: colors.companion,
-						total: totals.companion,
-					},
-				]
-			: []),
-	]
+	// Identical ranges tick identically to every other bucketed chart: round
+	// clock boundaries, dated once the window crosses a day.
+	const axis = useMemo(
+		() =>
+			makeBucketAxis(
+				data.map((point) => point.bucket),
+				effectiveTimezone,
+			),
+		[data, effectiveTimezone],
+	)
 
-	// Painting order is by magnitude, not by selection: the bigger area is laid
-	// down first so the smaller one sits on top of it. Both areas are filled, so
-	// drawing page views over visitors would bury the visitors series completely —
-	// and which of the pair is selected must not decide whether you can see the
-	// other one.
-	const painted = [...series].sort((a, b) => b.total - a.total)
-
-	const tooltipSeries = useMemo<PlotTooltipSeries<TrafficPoint>[]>(
+	// Selected metric first, this order is the legend's, where it should lead.
+	const series = useMemo(
+		() => [
+			{ key: PRIMARY, descriptor: metric, color: PRIMARY_TOKEN, total: totals.primary },
+			...(companion
+				? [{ key: COMPANION, descriptor: companion, color: COMPANION_TOKEN, total: totals.companion }]
+				: []),
+		],
+		[metric, companion, totals],
+	)
+	const cursorSeries = useMemo<CursorPlotSeries<TrafficPoint>[]>(
 		() =>
 			series.map((entry) => ({
+				key: entry.key,
 				label: entry.descriptor.label,
 				color: entry.color,
 				value: (point: TrafficPoint) => {
-					const value = point[entry.key as "primary" | "companion"]
+					const value = point[entry.key]
 					return typeof value === "number" ? value : null
 				},
 				format: (value: number) => entry.descriptor.format(value),
 			})),
-		// `series` is rebuilt every render (it is a plain array, not memoised), so
-		// this depends on the inputs behind it rather than on its identity.
-		[metric, companion, colors, totals],
+		[series],
 	)
+	const plot = useCursorPlot(cursorSeries)
+
+	// Painting order is by magnitude, not by selection: the bigger area is laid
+	// down first so the smaller one sits on top of it. Both areas are filled, so
+	// drawing page views over visitors would bury the visitors series completely,
+	// and which of the pair is selected must not decide whether you can see the
+	// other one.
+	const painted = useMemo(() => [...series].sort((a, b) => b.total - a.total), [series])
 
 	// On a phone the 52px axis gutter is ~15% of the plot; the compact tick labels
 	// ("1.2k", "45s") fit in 36. Viewport rather than container is honest here —
@@ -216,20 +185,19 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 	const narrow = useMediaQuery("max-sm")
 
 	const definition = useMemo(() => {
-		const at = (point: TrafficPoint) => point.bucket
-		const perDay = dayTicks.length > 1
+		const at = (point: TrafficPoint) => point.date
 		// A bucket one table has and the other doesn't is a gap, not a zero —
 		// joining across it would draw a dip that never happened, which is what
 		// `connectNulls={false}` said.
-		const valueOf = (key: string) => (point: TrafficPoint) => {
-			const value = point[key as "primary" | "companion"]
+		const valueOf = (key: SeriesKey) => (point: TrafficPoint) => {
+			const value = point[key]
 			return typeof value === "number" ? value : null
 		}
 		const curve = d3Curve(curveMonotoneX)
 
 		return defineChart({
 			gradients: painted.map((entry) =>
-				verticalGradient(`${gradientPrefix}-${entry.key}`, entry.color, 0.35, 0.02),
+				verticalGradient(`${gradientPrefix}-${entry.key}`, plot.color(entry.key), 0.35, 0.02),
 			),
 			marks: [
 				// Painting order is by magnitude — see `painted`. Each series is a
@@ -249,39 +217,18 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 						id: entry.key,
 						x: at,
 						y: valueOf(entry.key),
-						stroke: entry.color,
+						stroke: plot.color(entry.key),
 						strokeWidth: 1.5,
 						curve,
 					}),
 				]),
-				...painted.map((entry) => focusDot(data, at, valueOf(entry.key), entry.color, chromeColors)),
-				focusCrosshair(chromeColors),
+				...painted.map((entry) =>
+					focusDot(data, at, valueOf(entry.key), plot.color(entry.key), plot.chrome),
+				),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
-				x: {
-					scale: scalePoint,
-					axis: {
-						line: false,
-						ticks: perDay
-							? {
-									size: 0,
-									padding: 8,
-									values: dayTicks,
-									format: (bucket: string) =>
-										new Date(toEpochMs(bucket)).toLocaleDateString("en-US", {
-											timeZone: effectiveTimezone,
-											month: "short",
-											day: "numeric",
-										}),
-								}
-							: {
-									size: 0,
-									padding: 8,
-									format: (iso: string) => isoToLabel(iso, effectiveTimezone),
-								},
-						tickLabels: { thin: { minGap: 12 } },
-					},
-				},
+				x: axis.x,
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear,
@@ -305,28 +252,21 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 			margin: { left: narrow ? 36 : 52, right: 8, top: 4 },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
-	}, [data, dayTicks, painted, gradientPrefix, chromeColors, metric, focusStore, narrow, effectiveTimezone])
+	}, [data, axis, painted, gradientPrefix, plot, metric, narrow])
 
 	// Only when there are two series to tell apart — a lone series is already
 	// named by the card title, and a legend restating it is one accessory too many.
 	const legend = companion ? (
-		<>
-			{series.map((entry) => (
-				<span key={entry.key} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-					<span
-						aria-hidden
-						className="size-1.5 rounded-full"
-						style={{ backgroundColor: entry.color }}
-					/>
-					{entry.descriptor.label}
-					<span className="font-mono tabular-nums text-muted-foreground/70">
-						{entry.descriptor.format(entry.total)}
-					</span>
-				</span>
-			))}
-		</>
+		<SeriesLegend
+			items={series.map((entry) => ({
+				key: entry.key,
+				label: entry.descriptor.label,
+				color: `var(${entry.color})`,
+				value: entry.descriptor.format(entry.total),
+			}))}
+		/>
 	) : undefined
 
 	return (
@@ -345,18 +285,13 @@ export function AnalyticsTrafficChart({ metric, companion, source, syncId }: Ana
 					// this names the chart within that group.
 					{...linkedCursorChartProps(syncId != null ? `analytics-${metric.label}` : undefined)}
 				>
-					<PlotFrame
+					<CursorPlot
+						plot={plot}
 						definition={definition}
+						series={cursorSeries}
+						heading={(point: TrafficPoint) => axis.heading(point.bucket)}
 						ariaLabel={metric.label}
 						className="h-full w-full"
-						renderTooltipBody={({ points }) => (
-							<PlotTooltipBody
-								points={points}
-								series={tooltipSeries}
-								focusStore={focusStore}
-								heading={(point: TrafficPoint) => point.label}
-							/>
-						)}
 					/>
 				</div>
 			)}

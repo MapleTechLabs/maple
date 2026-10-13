@@ -1,4 +1,6 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import type { RendererComponentProps } from "./types"
+import { formatCell } from "./data-table-format"
 
 interface DataTableProps {
 	headers: string[]
@@ -6,44 +8,35 @@ interface DataTableProps {
 	title?: string
 }
 
-function maybeFormatNumber(value: string): string {
-	const num = Number(value)
-	if (value.trim() !== "" && !Number.isNaN(num) && Number.isFinite(num)) {
-		if (Number.isInteger(num)) return num.toLocaleString()
-		return num.toLocaleString(undefined, { maximumFractionDigits: 4 })
-	}
-	return value
-}
-
 export function DataTable({ props }: RendererComponentProps<DataTableProps>) {
 	const { headers, rows, title } = props
 
 	return (
 		<div className="space-y-1">
-			{title && <p className="text-[11px] font-medium text-muted-foreground">{title}</p>}
+			{title && <p className="text-2xs font-medium text-muted-foreground">{title}</p>}
 			<div className="max-h-[300px] overflow-auto">
-				<table className="w-full text-[11px]">
-					<thead>
-						<tr className="border-b border-border/40 text-left text-muted-foreground">
+				<Table size="xs" scroll={false}>
+					<TableHeader>
+						<TableRow>
 							{headers.map((h) => (
-								<th key={h} className="pb-1 pr-2 font-medium">
-									{h}
-								</th>
+								<TableHead key={h}>{h}</TableHead>
 							))}
-						</tr>
-					</thead>
-					<tbody>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
 						{rows.map((row, i) => (
-							<tr key={i} className="border-b border-border/20 last:border-0">
+							<TableRow key={i}>
 								{row.map((cell, j) => (
-									<td key={j} className="max-w-[200px] truncate py-1 pr-2">
-										{maybeFormatNumber(cell)}
-									</td>
+									<TableCell key={j} className="py-1">
+										<span className="block max-w-[200px] truncate" title={cell}>
+											{formatCell(cell, headers[j])}
+										</span>
+									</TableCell>
 								))}
-							</tr>
+							</TableRow>
 						))}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			</div>
 		</div>
 	)

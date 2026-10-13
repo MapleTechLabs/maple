@@ -10,6 +10,7 @@ const TOOL = "remove_dashboard_widget"
 export function registerRemoveDashboardWidgetTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Remove Dashboard Widget",
 		description:
 			"Remove a single widget from a dashboard by id. Other widgets and dashboard metadata are left untouched.",
 		parameters: Schema.Struct({

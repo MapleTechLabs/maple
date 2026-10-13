@@ -435,6 +435,7 @@ const fromPullRequestError = (operation: string, number: number) => (error: VcsL
 export function registerPullRequestTools(server: McpToolRegistrar) {
 	server.define({
 		name: "pr_changed_files",
+		title: "PR Changed Files",
 		description:
 			"List every file one pull request changes, with additions, deletions and a coarse kind (source, test, generated, docs, config, infra, tooling, lockfile). Call it first when reviewing a pull request; generated files, docs, tooling and lockfiles are not reviewed. Read the rest with pr_file_diff. The repository must be the one named in the review's first message.",
 		parameters: Schema.Struct({ repository: REPOSITORY, number: NUMBER }),
@@ -456,6 +457,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "pr_context",
+		title: "PR Context",
 		description:
 			"The pull request's commits, the comments people and other bots already left on it, and the checks on its head commit. Call it once, after pr_changed_files, so a review never repeats what was already said or what CI already reports.",
 		parameters: Schema.Struct({ repository: REPOSITORY, number: NUMBER }),
@@ -477,6 +479,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 
 	server.define({
 		name: "pr_file_diff",
+		title: "PR File Diff",
 		description:
 			"The unified diffs of changed files in a pull request, with the NEW-side line number on every added or context line. Those numbers are the only lines a review finding may cite. Deletions carry no number. Pass several files at once in `paths`: every call re-sends the conversation, so batching is far cheaper than one file per call.",
 		parameters: Schema.Struct({

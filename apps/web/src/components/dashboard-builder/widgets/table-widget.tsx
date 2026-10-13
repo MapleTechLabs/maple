@@ -1,12 +1,12 @@
 import { memo } from "react"
 import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
+import { WidgetEmptyState, WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
 import type { WidgetDataState, WidgetDisplayConfig, WidgetMode } from "@/components/dashboard-builder/types"
-import { ArrowUpDownIcon } from "@/components/icons"
+import { SortableHeader } from "@/components/common/sortable-header"
 import { useTableSort } from "@/hooks/use-table-sort"
-import { formatValueByUnit } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 
 interface TableWidgetProps {
 	dataState: WidgetDataState
@@ -28,7 +28,7 @@ interface TableWidgetProps {
  * counts, where abbreviating `1234` to "1.2K" destroys the value being read.
  */
 export function formatCellValue(value: unknown, unit?: string): string {
-	if (value == null) return "-"
+	if (value == null) return EMPTY_VALUE
 	const num = Number(value)
 	if (Number.isNaN(num)) return String(value)
 	if (!unit) return String(value)
@@ -165,69 +165,47 @@ export const TableWidget = memo(function TableWidget({
 			mode={mode}
 			contentClassName="flex-1 min-h-0 overflow-auto p-0"
 			footer={truncated ? `Top ${rowLimit} rows` : undefined}
-			loadingSkeleton={
-				<div className="p-3 flex flex-col gap-2">
-					{Array.from({ length: 3 }).map((_, i) => (
-						<Skeleton key={i} className="h-6 w-full" />
-					))}
-				</div>
-			}
+			loadingSkeleton={<SkeletonList rows={3} rowClassName="h-6" gap="2" className="p-3" />}
 		>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						{effectiveColumns.map((col, colIndex) => {
-							const active = sortKey === col.field
-							return (
-								<TableHead
-									key={col.field}
-									className={cn("text-xs", columnVisibilityClass(colIndex))}
-									aria-sort={
-										active ? (sortDir === "asc" ? "ascending" : "descending") : "none"
-									}
-									style={{
-										textAlign: col.align ?? "left",
-										width: col.width ? `${col.width}px` : undefined,
-									}}
-								>
-									<button
-										type="button"
-										onClick={() => handleSort(col.field)}
-										className={cn(
-											"inline-flex max-w-full items-center gap-1 transition-colors",
-											col.align === "right" && "justify-end",
-											active
-												? "text-foreground"
-												: "text-muted-foreground hover:text-foreground",
-										)}
+			{rows.length === 0 ? (
+				<WidgetEmptyState />
+			) : (
+				<Table>
+					<TableHeader>
+						<TableRow>
+							{effectiveColumns.map((col, colIndex) => {
+								const active = sortKey === col.field
+								return (
+									<TableHead
+										key={col.field}
+										className={cn("text-xs", columnVisibilityClass(colIndex))}
+										aria-sort={
+											active ? (sortDir === "asc" ? "ascending" : "descending") : "none"
+										}
+										style={{
+											textAlign: col.align ?? "left",
+											width: col.width ? `${col.width}px` : undefined,
+										}}
 									>
-										<span className="truncate">{col.header}</span>
-										<ArrowUpDownIcon
-											size={10}
+										<SortableHeader
+											label={<span className="truncate">{col.header}</span>}
+											sortKey={col.field}
+											activeKey={sortKey}
+											dir={sortDir}
+											onSort={handleSort}
 											className={cn(
-												"shrink-0 transition-opacity",
-												active ? "opacity-100" : "opacity-40",
-												active && sortDir === "asc" && "rotate-180",
+												"max-w-full",
+												col.align === "right" && "justify-end",
+												!active && "text-muted-foreground",
 											)}
 										/>
-									</button>
-								</TableHead>
-							)
-						})}
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{rows.length === 0 ? (
-						<TableRow>
-							<TableCell
-								colSpan={effectiveColumns.length}
-								className="text-center text-xs text-muted-foreground"
-							>
-								No data
-							</TableCell>
+									</TableHead>
+								)
+							})}
 						</TableRow>
-					) : (
-						sorted.map((row, i) => (
+					</TableHeader>
+					<TableBody>
+						{sorted.map((row, i) => (
 							<TableRow key={rowKeys[i]}>
 								{effectiveColumns.map((col, colIndex) => {
 									const value = row[col.field]
@@ -247,10 +225,10 @@ export const TableWidget = memo(function TableWidget({
 									)
 								})}
 							</TableRow>
-						))
-					)}
-				</TableBody>
-			</Table>
+						))}
+					</TableBody>
+				</Table>
+			)}
 		</WidgetFrame>
 	)
 })

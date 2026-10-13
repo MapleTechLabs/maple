@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Edge, Node } from "@xyflow/react"
-import type { ServiceNodeData, ServiceEdgeData } from "../service-map-utils"
+import type { ServiceNodeData, ServiceEdgeData } from "@maple/ui/components/service-map/service-map-utils"
 import { liveTopology } from "./live-topology"
 
 const node = (id: string, data: Partial<ServiceNodeData> = {}): Node<ServiceNodeData> => ({

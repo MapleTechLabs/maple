@@ -1,8 +1,8 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
-import type { UpdateBillingControlsRequest } from "@maple/domain/http"
+import type { BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { AUTUMN_API_VERSION } from "./autumn-api"
 
@@ -71,6 +71,7 @@ type AutumnRoute =
 	| "openCustomerPortal"
 	| "listPlans"
 	| "updateSubscription"
+	| "updateCustomer"
 
 const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	getOrCreateCustomer: "/v1/customers.get_or_create",
@@ -80,6 +81,7 @@ const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	openCustomerPortal: "/v1/billing.open_customer_portal",
 	listPlans: "/v1/plans.list",
 	updateSubscription: "/v1/billing.update",
+	updateCustomer: "/v1/customers.update",
 } satisfies Record<AutumnRoute, string>
 
 /**
@@ -231,12 +233,30 @@ const callAutumn = (
 				// read an upstream 4xx becomes a generic 502 by design, so without this
 				// attribute there is nothing left to tell us WHY Autumn refused.
 				if (typeof errorBody.code === "string") {
-					yield* Effect.annotateCurrentSpan({ "autumn.code": errorBody.code })
+					yield* Effect.annotateCurrentSpan({ "maple.autumn.code": errorBody.code })
 				}
 				return { statusCode: response.status, response: errorBody }
-			}).pipe(Effect.withSpan("autumn.request", { attributes: { "autumn.route": route } }))
+			}).pipe(Effect.withSpan("autumn.request", { attributes: { "maple.autumn.route": route } }))
 
 type AutumnCall = Effect.Effect<AutumnResult, AutumnTransportFailure>
+
+/** One spend limit on the wire. `featureId` is a plain string so caps on features we don't model survive a merge. */
+export interface AutumnSpendLimitInput {
+	readonly featureId: string
+	readonly enabled: boolean
+	readonly limitType?: BillingLimitType
+	readonly overageLimit?: number
+}
+
+/**
+ * Autumn REPLACES each list it is given (`customers.update` assigns
+ * `spend_limits` / `usage_alerts` wholesale), so a list must be the full desired
+ * set. An omitted list is left untouched.
+ */
+export interface AutumnBillingControlsUpdate {
+	readonly spendLimits?: ReadonlyArray<AutumnSpendLimitInput>
+	readonly usageAlerts?: ReadonlyArray<UpdateBillingUsageAlert>
+}
 
 export interface AutumnClientApi {
 	readonly getOrCreateCustomer: (
@@ -292,8 +312,10 @@ export interface AutumnClientApi {
 	 */
 	readonly updateCustomerBillingControls: (
 		orgId: string,
-		controls: UpdateBillingControlsRequest,
+		controls: AutumnBillingControlsUpdate,
 	) => AutumnCall
+	/** Overwrites the customer's display name. */
+	readonly updateCustomerName: (customerId: string, name: string) => AutumnCall
 }
 
 const customerDataFields = (data: AutumnCustomerData | undefined): Record<string, unknown> =>
@@ -317,7 +339,7 @@ const callUpdateBillingControls = (
 	secretKey: string | undefined,
 	apiUrl: string,
 	orgId: string,
-	controls: UpdateBillingControlsRequest,
+	controls: AutumnBillingControlsUpdate,
 ): Effect.Effect<AutumnResult, AutumnTransportFailure> =>
 	secretKey === undefined
 		? // A missing key is OUR deployment fault, not Autumn's. This used to answer
@@ -335,19 +357,27 @@ const callUpdateBillingControls = (
 					{
 						customer_id: orgId,
 						billing_controls: {
-							spend_limits: controls.spendLimits.map((limit) => ({
-								feature_id: limit.featureId,
-								enabled: limit.enabled,
-								limit_type: limit.limitType,
-								overage_limit: limit.overageLimit,
-							})),
-							usage_alerts: controls.usageAlerts.map((alert) => ({
-								feature_id: alert.featureId,
-								enabled: alert.enabled,
-								threshold: alert.threshold,
-								threshold_type: alert.thresholdType,
-								...(alert.name ? { name: alert.name } : undefined),
-							})),
+							...(controls.spendLimits !== undefined
+								? {
+										spend_limits: controls.spendLimits.map((limit) => ({
+											feature_id: limit.featureId,
+											enabled: limit.enabled,
+											limit_type: limit.limitType,
+											overage_limit: limit.overageLimit,
+										})),
+									}
+								: undefined),
+							...(controls.usageAlerts !== undefined
+								? {
+										usage_alerts: controls.usageAlerts.map((alert) => ({
+											feature_id: alert.featureId,
+											enabled: alert.enabled,
+											threshold: alert.threshold,
+											threshold_type: alert.thresholdType,
+											...(alert.name ? { name: alert.name } : undefined),
+										})),
+									}
+								: undefined),
 						},
 					},
 				).pipe(Effect.mapError(toBillingUpstreamError))
@@ -361,7 +391,7 @@ const callUpdateBillingControls = (
 				return { statusCode: response.status, response: responseBody } satisfies AutumnResult
 			}).pipe(
 				Effect.withSpan("autumn.request", {
-					attributes: { "autumn.route": "updateCustomerBillingControls" },
+					attributes: { "maple.autumn.route": "updateCustomerBillingControls" },
 				}),
 			)
 
@@ -457,6 +487,9 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 
 				updateCustomerBillingControls: (orgId, controls) =>
 					callUpdateBillingControls(httpClient, secretKey, apiUrl, orgId, controls),
+
+				updateCustomerName: (customerId, name) =>
+					call("updateCustomer", { customer_id: customerId, name }),
 			} satisfies AutumnClientApi
 		}),
 	},

@@ -1,11 +1,12 @@
+import type { Tone } from "@maple/ui/lib/tone"
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 export interface ScheduledScrapeStatus {
 	readonly label: string
 	readonly detail: string
-	readonly dotClass: string
-	readonly badgeVariant: "outline" | "warning" | "success" | "error"
+	/** `neutral` renders as an outline badge. */
+	readonly tone: Tone
 }
 
 type TargetStatusFields = Pick<V2ScrapeTarget, "enabled" | "last_scrape_at" | "last_scrape_error">
@@ -13,8 +14,7 @@ type TargetStatusFields = Pick<V2ScrapeTarget, "enabled" | "last_scrape_at" | "l
 const disabledStatus = (): ScheduledScrapeStatus => ({
 	label: "Disabled",
 	detail: "Collector skips this target",
-	dotClass: "bg-muted-foreground/30",
-	badgeVariant: "outline",
+	tone: "neutral",
 })
 
 /** List-row status from the rollup fields already returned by the targets API. */
@@ -27,23 +27,20 @@ export function scheduledStatusFromRollup(target: TargetStatusFields): Scheduled
 				target.last_scrape_at === null
 					? "No successful scheduled scrape"
 					: `Last success ${formatRelativeTime(target.last_scrape_at)}`,
-			dotClass: "bg-destructive",
-			badgeVariant: "error",
+			tone: "crit",
 		}
 	}
 	if (target.last_scrape_at === null) {
 		return {
 			label: "No checks",
 			detail: "No scheduled scrape observed",
-			dotClass: "bg-severity-warn",
-			badgeVariant: "warning",
+			tone: "warn",
 		}
 	}
 	return {
 		label: "Up",
 		detail: `Scheduled ${formatRelativeTime(target.last_scrape_at)}`,
-		dotClass: "bg-severity-info",
-		badgeVariant: "success",
+		tone: "ok",
 	}
 }
 
@@ -59,38 +56,33 @@ export function scheduledStatusFromChecks(
 		return {
 			label: "Checking",
 			detail: "Loading scheduled history",
-			dotClass: "bg-muted-foreground/40",
-			badgeVariant: "outline",
+			tone: "neutral",
 		}
 	}
 	if (checksUnavailable) {
 		return {
 			label: "Unavailable",
 			detail: "Failed to load scheduled checks",
-			dotClass: "bg-muted-foreground/40",
-			badgeVariant: "outline",
+			tone: "neutral",
 		}
 	}
 	if (latestCheck === null) {
 		return {
 			label: "No checks",
 			detail: "No scheduled scrape observed",
-			dotClass: "bg-severity-warn",
-			badgeVariant: "warning",
+			tone: "warn",
 		}
 	}
 	if (latestCheck.success) {
 		return {
 			label: "Up",
 			detail: `Scheduled ${formatRelativeTime(latestCheck.timestamp)}`,
-			dotClass: "bg-severity-info",
-			badgeVariant: "success",
+			tone: "ok",
 		}
 	}
 	return {
 		label: "Down",
 		detail: `Scheduled ${formatRelativeTime(latestCheck.timestamp)}`,
-		dotClass: "bg-destructive",
-		badgeVariant: "error",
+		tone: "crit",
 	}
 }

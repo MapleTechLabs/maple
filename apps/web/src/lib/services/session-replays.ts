@@ -34,6 +34,7 @@ const replayBaseFromV2 = (replay: V2SessionReplay | V2SessionReplayListItem) => 
 export const replayListItemFromV2 = (replay: V2SessionReplayListItem) => ({
 	...replayBaseFromV2(replay),
 	recorded: replay.recorded === null ? "" : String(replay.recorded),
+	tags: replay.tags,
 })
 
 export const replayDetailFromV2 = (replay: V2SessionReplay) => ({

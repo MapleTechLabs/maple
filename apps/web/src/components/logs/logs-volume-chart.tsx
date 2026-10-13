@@ -1,33 +1,32 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { barY, defineChart, rect, stack } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { scalePoint } from "@tanstack/charts-scales/point"
 
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
+	bucketDate,
 	linearYDomain,
+	makeBucketAxis,
 	niceLinearDomain,
-	resolvePlotColor,
-	usePlotChromeColors,
-	type PlotTooltipSeries,
+	useCursorPlot,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
-import { useTheme } from "@maple/ui/hooks/use-theme"
 import { ChartLoading } from "@maple/ui/components/charts"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { getCustomChartTimeSeriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { computeBucketSeconds } from "@/api/warehouse/timeseries-utils"
-import { formatBucketLabel, formatNumber, inferBucketSeconds, inferRangeMs } from "@maple/ui/lib/format"
+import { formatBucketLabel, formatNumber, inferBucketSeconds } from "@maple/ui/lib/format"
 import { formatForTinybird } from "@/lib/time-utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import type { LogsSearchParams } from "@/routes/logs"
+import { logAttributeQueryFilters } from "@/lib/logs/log-attribute-filters"
 import { SEVERITY_COLORS, SEVERITY_ORDER } from "@maple/ui/lib/severity"
 
 /**
@@ -44,6 +43,7 @@ const HISTOGRAM_TARGET_POINTS = 150
 interface SeverityCell {
 	row: Record<string, unknown>
 	bucket: string
+	date: Date
 	severity: string
 	value: number | null
 }
@@ -58,8 +58,6 @@ interface SeverityCell {
 function LogsVolumePlot({
 	chartData,
 	seriesKeys,
-	rangeMs,
-	dataBucketSeconds,
 	selecting,
 	selection,
 	onBucketHover,
@@ -68,10 +66,8 @@ function LogsVolumePlot({
 	onSelectCancel,
 	interactive,
 }: {
-	chartData: Array<Record<string, unknown>>
+	chartData: Array<{ bucket: string } & Record<string, unknown>>
 	seriesKeys: string[]
-	rangeMs: number
-	dataBucketSeconds: number | undefined
 	selecting: boolean
 	selection: { left: string; right: string } | null
 	onBucketHover: (bucket: string | null) => void
@@ -80,40 +76,12 @@ function LogsVolumePlot({
 	onSelectCancel: () => void
 	interactive: boolean
 }) {
-	const chromeColors = usePlotChromeColors()
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
-	const { theme } = useTheme()
-
-	// Severity tokens resolved to literals — canvas cannot read `var()`.
-	const colorOf = useMemo(() => {
-		const resolved = new Map<string, string>()
-		for (const key of seriesKeys) {
-			const token = SEVERITY_COLORS[key.toUpperCase()] ?? "--muted-foreground"
-			resolved.set(key, resolvePlotColor(token, "#71717a"))
-		}
-		return resolved
-	}, [seriesKeys, theme])
-
-	const { effectiveTimezone } = useTimezonePreference()
-	const axisContext = useMemo(
-		() => ({ rangeMs, bucketSeconds: dataBucketSeconds, timeZone: effectiveTimezone }),
-		[rangeMs, dataBucketSeconds, effectiveTimezone],
-	)
-
-	/**
-	 * The stack's extent, which is also the selection band's — a `rect` needs
-	 * both edges, unlike Recharts' `ReferenceArea`.
-	 */
-	const yDomain = useMemo<[number, number]>(
-		() => niceLinearDomain(linearYDomain({ rows: chartData, keys: seriesKeys, stacked: true })),
-		[chartData, seriesKeys],
-	)
-
-	const tooltipSeries = useMemo<PlotTooltipSeries<SeverityCell>[]>(
+	const series = useMemo<CursorPlotSeries<SeverityCell>[]>(
 		() =>
 			seriesKeys.map((key) => ({
+				key,
 				label: key.toUpperCase(),
-				color: colorOf.get(key) ?? chromeColors.border,
+				color: SEVERITY_COLORS[key.toUpperCase()] ?? "var(--color-muted-foreground)",
 				// Read off the bucket ROW, so hovering one band still prints every
 				// severity at that bucket.
 				value: (cell: SeverityCell) => {
@@ -122,26 +90,47 @@ function LogsVolumePlot({
 				},
 				format: (value: number) => formatNumber(value),
 			})),
-		[seriesKeys, colorOf, chromeColors.border],
+		[seriesKeys],
+	)
+	const plot = useCursorPlot(series)
+
+	const { effectiveTimezone } = useTimezonePreference()
+	const axis = useMemo(
+		() =>
+			makeBucketAxis(
+				chartData.map((row) => row.bucket),
+				effectiveTimezone,
+			),
+		[chartData, effectiveTimezone],
+	)
+
+	/**
+	 * The stack's extent, which is also the selection band's, a `rect` needs
+	 * both edges, unlike Recharts' `ReferenceArea`.
+	 */
+	const yDomain = useMemo<[number, number]>(
+		() => niceLinearDomain(linearYDomain({ rows: chartData, keys: seriesKeys, stacked: true })),
+		[chartData, seriesKeys],
 	)
 
 	const definition = useMemo(() => {
 		const cells: SeverityCell[] = chartData.flatMap((row) =>
 			seriesKeys.map((severity) => ({
 				row,
-				bucket: String(row.bucket),
+				bucket: row.bucket,
+				date: bucketDate(row.bucket),
 				severity,
-				value: typeof row[severity] === "number" ? (row[severity] as number) : null,
+				value: numberOrNull(row[severity]),
 			})),
 		)
 
 		return defineChart({
 			marks: [
 				barY(cells, {
-					x: (cell: SeverityCell) => cell.bucket,
+					x: (cell: SeverityCell) => cell.date,
 					y: (cell: SeverityCell) => cell.value,
 					z: (cell: SeverityCell) => cell.severity,
-					fill: (cell: SeverityCell) => colorOf.get(cell.severity) ?? chromeColors.border,
+					fill: (cell: SeverityCell) => plot.color(cell.severity),
 					radius: 0,
 					layout: stack({ order: [...seriesKeys] }),
 				}),
@@ -152,11 +141,11 @@ function LogsVolumePlot({
 					? [
 							decorative(
 								rect([selection], {
-									x1: (s: { left: string; right: string }) => s.left,
-									x2: (s: { left: string; right: string }) => s.right,
+									x1: (s: { left: string; right: string }) => bucketDate(s.left),
+									x2: (s: { left: string; right: string }) => bucketDate(s.right),
 									y1: () => yDomain[0],
 									y2: () => yDomain[1],
-									fill: chromeColors.border,
+									fill: plot.chrome.border,
 									fillOpacity: 0.25,
 									stroke: "none",
 								}),
@@ -165,18 +154,7 @@ function LogsVolumePlot({
 					: []),
 			],
 			scales: {
-				x: {
-					scale: scalePoint,
-					axis: {
-						line: false,
-						ticks: {
-							size: 0,
-							padding: 4,
-							format: (value: string) => formatBucketLabel(value, axisContext, "tick"),
-						},
-						tickLabels: { thin: { minGap: 12 } },
-					},
-				},
+				x: axis.xBand,
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
@@ -195,9 +173,9 @@ function LogsVolumePlot({
 			focusRing: false,
 			// Suppressed mid-drag: a tooltip following the pointer through a
 			// selection is noise on top of the band being drawn.
-			tooltip: selecting ? false : cursorTooltip(focusStore.anchor),
+			tooltip: selecting ? false : plot.tooltip,
 		})
-	}, [chartData, seriesKeys, colorOf, chromeColors, yDomain, axisContext, selecting, focusStore])
+	}, [chartData, seriesKeys, plot, yDomain, axis, selecting])
 
 	return (
 		<div
@@ -207,27 +185,22 @@ function LogsVolumePlot({
 			onPointerUp={onSelectEnd}
 			onPointerLeave={onSelectCancel}
 		>
-			<PlotFrame
+			<CursorPlot
+				plot={plot}
 				definition={definition}
+				series={series}
+				heading={(cell: SeverityCell) => axis.heading(cell.bucket)}
 				ariaLabel="Log volume by severity"
 				className="h-full w-full"
 				// The replacement for Recharts' `activeLabel`: edge-triggered on the
 				// focused datum, which is exactly "which bucket is the pointer on".
 				onFocusChange={(point) => onBucketHover(point?.datum.bucket ?? null)}
-				renderTooltipBody={({ points }) => (
-					<PlotTooltipBody
-						points={points}
-						series={tooltipSeries}
-						focusStore={focusStore}
-						heading={(cell: SeverityCell) =>
-							formatBucketLabel(cell.bucket, axisContext, "tooltip")
-						}
-					/>
-				)}
 			/>
 		</div>
 	)
 }
+
+const numberOrNull = (value: unknown): number | null => (typeof value === "number" ? value : null)
 
 /** Number of time labels along the empty strip's baseline. */
 const EMPTY_STRIP_TICKS = 5
@@ -297,7 +270,7 @@ function EmptyVolumeStrip({
 			className="flex w-full select-none pt-1 text-muted-foreground"
 			aria-label="Log volume by severity, no logs in the selected range"
 		>
-			<div className="flex w-10 shrink-0 flex-col justify-end pb-[18px] pr-1 text-right text-[10px] leading-none">
+			<div className="flex w-10 shrink-0 flex-col justify-end pb-[18px] pr-1 text-right text-3xs leading-none">
 				0
 			</div>
 			<div className="relative flex min-w-0 flex-1 flex-col">
@@ -321,24 +294,24 @@ function EmptyVolumeStrip({
 					</div>
 					<div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
 						<span className="text-xs">No log volume in this window</span>
-						<ul className="flex items-center gap-3 text-[10px] uppercase tracking-wide opacity-60">
+						<Eyebrow render={<ul />} className="flex items-center gap-3 opacity-60">
 							{legend.map((severity) => (
 								<li key={severity} className="flex items-center gap-1.5">
 									<span
-										className="size-1.5 rounded-[2px]"
+										className="size-1.5 rounded-xs"
 										style={{ backgroundColor: SEVERITY_COLORS[severity] }}
 									/>
 									{severity}
 								</li>
 							))}
-						</ul>
+						</Eyebrow>
 					</div>
 				</div>
-				<div className="relative h-[18px] border-t border-border">
+				<div className="relative h-4.5 border-t border-border">
 					{ticks.map((tick, i) => (
 						<span
 							key={tick.label + i}
-							className="absolute top-1 whitespace-nowrap text-[10px] leading-none"
+							className="absolute top-1 whitespace-nowrap text-3xs leading-none"
 							style={{
 								left: `${tick.left}%`,
 								transform:
@@ -411,6 +384,7 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 							? [...filters.excludedNamespaces]
 							: undefined,
 					traceId: filters?.traceId,
+					...logAttributeQueryFilters(filters?.attrs),
 				},
 			},
 		}),
@@ -550,7 +524,6 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 				)
 			}, 0)
 
-			const rangeMs = inferRangeMs(chartData)
 			const dataBucketSeconds = inferBucketSeconds(chartData)
 			bucketSecondsRef.current = dataBucketSeconds ?? 300
 
@@ -563,7 +536,7 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 
 			if (totalCount === 0) {
 				return (
-					<div className={`transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+					<div className={refreshingClass(result.waiting)} aria-busy={result.waiting || undefined}>
 						{header}
 						<EmptyVolumeStrip
 							startTime={effectiveStartTime}
@@ -575,13 +548,11 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 			}
 
 			return (
-				<div className={`transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+				<div className={refreshingClass(result.waiting)} aria-busy={result.waiting || undefined}>
 					{header}
 					<LogsVolumePlot
 						chartData={chartData}
 						seriesKeys={seriesKeys}
-						rangeMs={rangeMs}
-						dataBucketSeconds={dataBucketSeconds}
 						selecting={isSelecting}
 						selection={
 							refAreaLeft && refAreaRight ? { left: refAreaLeft, right: refAreaRight } : null

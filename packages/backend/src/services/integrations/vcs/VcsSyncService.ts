@@ -3,6 +3,7 @@ import {
 	type BranchEventJob,
 	type InstallationSyncJob,
 	isInstallationProcessable,
+	type PullRequestChecklistJob,
 	type PullRequestCommentJob,
 	type PullRequestEventJob,
 	type PushJob,
@@ -22,7 +23,11 @@ import {
 } from "@maple/domain/http"
 import { Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
-import { PullRequestCommentSink, PullRequestEventSink } from "./PullRequestEventSink"
+import {
+	PullRequestChecklistSink,
+	PullRequestCommentSink,
+	PullRequestEventSink,
+} from "./PullRequestEventSink"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
@@ -74,6 +79,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const queue = yield* VcsSyncQueue
 			const sink = yield* PullRequestEventSink
 			const commentSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestCommentSink))
+			const checklistSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestChecklistSink))
 
 			// The repo's single tracked branch, with the default-branch fallback for a
 			// row whose `trackedBranch` was never set (legacy) — the one place the
@@ -734,16 +740,14 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// Per repo: sync its branch list (names only); sync-branches then enqueues
 					// the commit backfill, keeping all commit-sync enqueuing in one place.
 					yield* queue.sendBatch(
-						repos.map(
-							(r): VcsSyncJob => ({
-								kind: "sync-branches",
-								provider: installation.provider,
-								externalInstallationId: installation.externalInstallationId,
-								externalRepoId: r.externalRepoId,
-								owner: r.owner,
-								name: r.name,
-							}),
-						),
+						repos.map((r): VcsSyncJob => ({
+							kind: "sync-branches",
+							provider: installation.provider,
+							externalInstallationId: installation.externalInstallationId,
+							externalRepoId: r.externalRepoId,
+							owner: r.owner,
+							name: r.name,
+						})),
 					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.installation_sync.outcome": "handled",
@@ -848,6 +852,18 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* commentSink.onPullRequestComment(installation.orgId, job)
 			})
 
+			const handlePullRequestChecklist = Effect.fn("VcsSyncService.handlePullRequestChecklist")(
+				function* (installation: VcsInstallation, job: PullRequestChecklistJob) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.repository.external_id": job.externalRepoId,
+						"vcs.pull_request.number": job.number,
+						"vcs.pull_request.checklist_forwarded": checklistSink !== undefined,
+					})
+					if (checklistSink !== undefined)
+						yield* checklistSink.onMergeStepsTicked(installation.orgId, job)
+				},
+			)
+
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
 					Effect.map(Option.some),
@@ -930,6 +946,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					),
 					Match.discriminator("kind")("pull-request-comment", (job) =>
 						handlePullRequestComment(installation, job),
+					),
+					Match.discriminator("kind")("pull-request-checklist", (job) =>
+						handlePullRequestChecklist(installation, job),
 					),
 					Match.exhaustive,
 				)

@@ -91,84 +91,56 @@ const lambdaAttrs = (env: PlatformInputs["env"], functionName: string): Attrs =>
 // caller spreads it into the final attrs object.
 const providerAttrs = (prov: string, env: PlatformInputs["env"]): Attrs =>
 	Match.value(prov).pipe(
-		Match.when(
-			"cloudflare_workers",
-			(): Attrs => ({
-				"cloud.provider": "cloudflare",
-				"cloud.platform": "cloudflare.workers",
-			}),
-		),
-		Match.when(
-			"cloudflare_pages",
-			(): Attrs => ({
-				"cloud.provider": "cloudflare",
-				"cloud.platform": "cloudflare.pages",
-			}),
-		),
-		Match.when(
-			"vercel",
-			(): Attrs => ({
-				"cloud.provider": "vercel",
-				"cloud.platform": "vercel",
-				...(env.VERCEL_REGION && { "cloud.region": env.VERCEL_REGION }),
-				...(env.VERCEL_DEPLOYMENT_ID && { "faas.instance": env.VERCEL_DEPLOYMENT_ID }),
-			}),
-		),
+		Match.when("cloudflare_workers", (): Attrs => ({
+			"cloud.provider": "cloudflare",
+			"cloud.platform": "cloudflare.workers",
+		})),
+		Match.when("cloudflare_pages", (): Attrs => ({
+			"cloud.provider": "cloudflare",
+			"cloud.platform": "cloudflare.pages",
+		})),
+		Match.when("vercel", (): Attrs => ({
+			"cloud.provider": "vercel",
+			"cloud.platform": "vercel",
+			...(env.VERCEL_REGION && { "cloud.region": env.VERCEL_REGION }),
+			...(env.VERCEL_DEPLOYMENT_ID && { "faas.instance": env.VERCEL_DEPLOYMENT_ID }),
+		})),
 		Match.when("netlify", (): Attrs => ({ "cloud.provider": "netlify", "cloud.platform": "netlify" })),
-		Match.whenOr(
-			"google_cloudrun",
-			"google_cloudrun_job",
-			(): Attrs => ({
-				"cloud.provider": "gcp",
-				"cloud.platform": "gcp_cloud_run",
-				...(env.K_SERVICE && { "faas.name": env.K_SERVICE }),
-				...(env.K_REVISION && { "faas.version": env.K_REVISION }),
-				...(env.CLOUD_RUN_REGION && { "cloud.region": env.CLOUD_RUN_REGION }),
-			}),
-		),
-		Match.when(
-			"firebase_app_hosting",
-			(): Attrs => ({
-				"cloud.provider": "gcp",
-				"cloud.platform": "gcp_firebase_app_hosting",
-			}),
-		),
-		Match.when(
-			"aws_amplify",
-			(): Attrs => ({ "cloud.provider": "aws", "cloud.platform": "aws_amplify" }),
-		),
-		Match.when(
-			"deno-deploy",
-			(): Attrs => ({
-				"cloud.provider": "deno",
-				"cloud.platform": "deno_deploy",
-				...(env.DENO_REGION && { "cloud.region": env.DENO_REGION }),
-				...(env.DENO_DEPLOYMENT_ID && { "faas.instance": env.DENO_DEPLOYMENT_ID }),
-			}),
-		),
-		Match.when(
-			"render",
-			(): Attrs => ({
-				"cloud.provider": "render",
-				"cloud.platform": "render",
-				...(env.RENDER_INSTANCE_ID && { "faas.instance": env.RENDER_INSTANCE_ID }),
-			}),
-		),
-		Match.when(
-			"railway",
-			(): Attrs => ({
-				"cloud.provider": "railway",
-				"cloud.platform": "railway",
-				...(env.RAILWAY_REPLICA_ID && { "faas.instance": env.RAILWAY_REPLICA_ID }),
-			}),
-		),
-		Match.when(
-			"edgeone_pages",
-			(): Attrs => ({
-				"cloud.provider": "tencent_cloud",
-				"cloud.platform": "tencent_edgeone_pages",
-			}),
-		),
+		Match.whenOr("google_cloudrun", "google_cloudrun_job", (): Attrs => ({
+			"cloud.provider": "gcp",
+			"cloud.platform": "gcp_cloud_run",
+			...(env.K_SERVICE && { "faas.name": env.K_SERVICE }),
+			...(env.K_REVISION && { "faas.version": env.K_REVISION }),
+			...(env.CLOUD_RUN_REGION && { "cloud.region": env.CLOUD_RUN_REGION }),
+		})),
+		Match.when("firebase_app_hosting", (): Attrs => ({
+			"cloud.provider": "gcp",
+			"cloud.platform": "gcp_firebase_app_hosting",
+		})),
+		Match.when("aws_amplify", (): Attrs => ({
+			"cloud.provider": "aws",
+			"cloud.platform": "aws_amplify",
+		})),
+		Match.when("deno-deploy", (): Attrs => ({
+			"cloud.provider": "deno",
+			"cloud.platform": "deno_deploy",
+			...(env.DENO_REGION && { "cloud.region": env.DENO_REGION }),
+			...(env.DENO_DEPLOYMENT_ID && { "faas.instance": env.DENO_DEPLOYMENT_ID }),
+		})),
+		Match.when("render", (): Attrs => ({
+			"cloud.provider": "render",
+			"cloud.platform": "render",
+			...(env.RENDER_INSTANCE_ID && { "faas.instance": env.RENDER_INSTANCE_ID }),
+		})),
+		Match.when("railway", (): Attrs => ({
+			"cloud.provider": "railway",
+			"cloud.platform": "railway",
+			...(env.RAILWAY_REPLICA_ID && { "faas.instance": env.RAILWAY_REPLICA_ID }),
+		})),
+		Match.when("edgeone_pages", (): Attrs => ({
+			"cloud.provider": "tencent_cloud",
+			"cloud.platform": "tencent_edgeone_pages",
+		})),
 		Match.orElse((): Attrs => empty),
 	)
 

@@ -4,7 +4,7 @@ import { runListQuerySet } from "@maple/query-engine/query-set"
 import { decodeInput, invalidWarehouseInput } from "@/api/warehouse/effect-utils"
 import { makeWarehouseExecutor } from "@/api/warehouse/query-set-executor"
 
-const dateTimeString = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/))
+const dateTimeString = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u))
 
 const QueryBuilderListInputSchema = Schema.Struct({
 	startTime: dateTimeString,

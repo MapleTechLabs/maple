@@ -8,7 +8,13 @@ import { WarehouseResponseLimitError } from "./response-limits"
  * refused to run at all. `unknown` is reserved for values thrown by Promise-based
  * drivers that carry no such structure — classification falls back to the message.
  */
-export const WarehouseDriverFailureReason = Schema.Literals(["server", "transport", "protocol", "config", "unknown"])
+export const WarehouseDriverFailureReason = Schema.Literals([
+	"server",
+	"transport",
+	"protocol",
+	"config",
+	"unknown",
+])
 export type WarehouseDriverFailureReason = typeof WarehouseDriverFailureReason.Type
 
 /**

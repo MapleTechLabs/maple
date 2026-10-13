@@ -1,5 +1,5 @@
-import { useNavigate } from "@tanstack/react-router"
-import { Fragment } from "react"
+import { Link } from "@tanstack/react-router"
+import { Fragment, useState } from "react"
 
 import type { AlertDestinationDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
@@ -13,13 +13,39 @@ import { NotifyChannels, SignalBadge, TagChips, TagGroupHeaderRow } from "@/comp
 import { CircleWarningIcon } from "@/components/icons"
 import { comparatorLabels, formatSignalValue } from "@/lib/alerts/form-utils"
 import { worstState } from "@/lib/alerts/rule-status"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
+import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
 import { Switch } from "@maple/ui/components/ui/switch"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
 const COL_SPAN = 8
+/** Rows rendered before "Show all"; an org can have a thousand rules. */
+const RENDER_LIMIT = 100
+
+/** Cap the groups to `limit` rows in total, keeping group order. */
+const capGroups = <T,>(groups: TagGroup<T>[], limit: number): TagGroup<T>[] =>
+	groups.reduce<{ out: TagGroup<T>[]; left: number }>(
+		(acc, group) =>
+			acc.left <= 0
+				? acc
+				: {
+						out: [...acc.out, { ...group, items: group.items.slice(0, acc.left) }],
+						left: acc.left - group.items.length,
+					},
+		{ out: [], left: limit },
+	).out
 
 /** Derived rule status → status-badge state ("healthy" renders as "OK"). */
 const badgeState = (status: DerivedRuleStatus["status"]): AlertStatusState =>
@@ -58,7 +84,11 @@ export function RulesOverviewTable({
 	isToggling?: boolean
 	onToggle: (rule: AlertRuleDocument) => void
 }) {
-	const navigate = useNavigate()
+	const [showAll, setShowAll] = useState(false)
+	const totalRows = groups ? groups.reduce((sum, group) => sum + group.items.length, 0) : rules.length
+	const capped = !showAll && totalRows > RENDER_LIMIT
+	const visibleGroups = groups && capped ? capGroups(groups, RENDER_LIMIT) : groups
+	const visibleRules = capped ? rules.slice(0, RENDER_LIMIT) : rules
 
 	const renderRow = (rule: AlertRuleDocument, key: string) => {
 		const derived = derivedByRuleId.get(rule.id)
@@ -72,29 +102,32 @@ export function RulesOverviewTable({
 		const lastEvaluatedAt = state?.last_evaluated_at ?? rule.lastEvaluatedAt
 
 		return (
-			<TableRow
-				key={key}
-				className="cursor-pointer"
-				onClick={() => navigate({ to: "/alerts/$ruleId", params: { ruleId: rule.id } })}
-			>
-				<TableCell onClick={(e) => e.stopPropagation()}>
+			<TableRow key={key}>
+				<TableCell className={ROW_LINK_LIFT}>
 					<Switch
 						checked={rule.enabled}
 						onCheckedChange={() => onToggle(rule)}
 						disabled={!isAdmin || isToggling}
 					/>
 				</TableCell>
-				<TableCell className="min-w-0">
-					<div className="flex items-center gap-2">
-						<span
-							className={cn("font-medium truncate", !rule.enabled && "text-muted-foreground")}
+				<TruncatedCell>
+					<div className="flex min-w-0 items-center gap-2">
+						<Link
+							to="/alerts/$ruleId"
+							params={{ ruleId: rule.id }}
+							className={cn(
+								"min-w-0 truncate font-medium",
+								!rule.enabled && "text-muted-foreground",
+								ROW_STRETCHED_LINK_CLASS,
+							)}
+							title={rule.name}
 						>
 							{rule.name}
-						</span>
+						</Link>
 						<SignalBadge signalType={rule.signalType} />
 					</div>
 					{!grouped && <TagChips tags={rule.tags} />}
-				</TableCell>
+				</TruncatedCell>
 				<TableCell>
 					<AlertSeverityBadge severity={rule.severity} />
 				</TableCell>
@@ -104,10 +137,11 @@ export function RulesOverviewTable({
 						{derived?.status === "error" && derived.reason != null && (
 							<Tooltip>
 								<TooltipTrigger
-									render={<span className="inline-flex cursor-default" />}
-									onClick={(e) => e.stopPropagation()}
+									render={
+										<span className={cn("inline-flex cursor-default", ROW_LINK_LIFT)} />
+									}
 								>
-									<CircleWarningIcon size={14} className="text-destructive" />
+									<CircleWarningIcon size={14} className="text-severity-error" />
 								</TooltipTrigger>
 								<TooltipContent className="max-w-[280px]">
 									Last evaluation failed: {derived.reason}
@@ -118,9 +152,13 @@ export function RulesOverviewTable({
 							<Tooltip>
 								<TooltipTrigger
 									render={
-										<span className="inline-flex cursor-default items-center gap-1 text-warning text-[11px]" />
+										<span
+											className={cn(
+												"inline-flex cursor-default items-center gap-1 text-severity-warn text-2xs",
+												ROW_LINK_LIFT,
+											)}
+										/>
 									}
-									onClick={(e) => e.stopPropagation()}
 								>
 									<CircleWarningIcon size={12} />
 									No destinations
@@ -152,13 +190,13 @@ export function RulesOverviewTable({
 							</span>
 						</span>
 					) : (
-						<span className="text-muted-foreground text-xs">—</span>
+						<span className="text-muted-foreground text-xs">{EMPTY_VALUE}</span>
 					)}
 				</TableCell>
 				<TableCell className="text-muted-foreground text-xs tabular-nums">
-					{lastEvaluatedAt ? formatRelativeTime(lastEvaluatedAt) : "—"}
+					{lastEvaluatedAt ? <RelativeTime value={lastEvaluatedAt} tooltip="title" /> : EMPTY_VALUE}
 				</TableCell>
-				<TableCell onClick={(e) => e.stopPropagation()}>
+				<TableCell className={ROW_LINK_LIFT}>
 					<NotifyChannels destinations={ruleDestinations} enabled={rule.enabled} />
 				</TableCell>
 			</TableRow>
@@ -166,34 +204,44 @@ export function RulesOverviewTable({
 	}
 
 	return (
-		<Table>
-			<TableHeader>
-				<TableRow>
-					<TableHead className="w-[40px]" />
-					<TableHead className="min-w-[220px]">Name</TableHead>
-					<TableHead className="w-[100px]">Severity</TableHead>
-					<TableHead className="w-[140px]">Status</TableHead>
-					<TableHead className="w-[120px]">Last 24h</TableHead>
-					<TableHead className="w-[160px]">Last value</TableHead>
-					<TableHead className="w-[110px]">Evaluated</TableHead>
-					<TableHead className="w-[110px]">Notify</TableHead>
-				</TableRow>
-			</TableHeader>
-			<TableBody>
-				{groups
-					? groups.map((group) => (
-							<Fragment key={group.key}>
-								<TagGroupHeaderRow
-									label={group.label}
-									count={group.count}
-									noun="rule"
-									colSpan={COL_SPAN}
-								/>
-								{group.items.map((rule) => renderRow(rule, `${group.key}:${rule.id}`))}
-							</Fragment>
-						))
-					: rules.map((rule) => renderRow(rule, rule.id))}
-			</TableBody>
-		</Table>
+		<>
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead className="w-[40px]" />
+						<TableHead className="min-w-[220px]">Name</TableHead>
+						<TableHead className="w-[100px]">Severity</TableHead>
+						<TableHead className="w-[140px]">Status</TableHead>
+						<TableHead className="w-[120px]">Last 24h</TableHead>
+						<TableHead className="w-[160px]">Last value</TableHead>
+						<TableHead className="w-[110px]">Evaluated</TableHead>
+						<TableHead className="w-[110px]">Notify</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{visibleGroups
+						? visibleGroups.map((group) => (
+								<Fragment key={group.key}>
+									<TagGroupHeaderRow
+										label={group.label}
+										count={group.count}
+										noun="rule"
+										colSpan={COL_SPAN}
+									/>
+									{group.items.map((rule) => renderRow(rule, `${group.key}:${rule.id}`))}
+								</Fragment>
+							))
+						: visibleRules.map((rule) => renderRow(rule, rule.id))}
+				</TableBody>
+			</Table>
+			{capped && (
+				<div className="flex justify-center pt-3">
+					<LoadMoreButton
+						onClick={() => setShowAll(true)}
+						label={`Show all ${totalRows.toLocaleString()}`}
+					/>
+				</div>
+			)}
+		</>
 	)
 }

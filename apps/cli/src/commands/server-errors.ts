@@ -7,13 +7,13 @@ import { Schema } from "effect"
  * These used to be one `@maple/cli/ServerError` carrying nothing but a rendered
  * message. Grouping is by exception type first, so a bad `--host`, an unclean
  * store, a port already in use and a background boot that never came up all
- * landed in a single issue — and the CLI's error stream was one bucket nobody
+ * landed in a single issue, and the CLI's error stream was one bucket nobody
  * could triage. The API has carried one tag per distinct failure for a while
  * (`@maple/http/errors/*`); this is the same taxonomy for the CLI.
  *
  * Each error carries the context that identifies the *situation* rather than
  * only the sentence shown to the user: which store, which policy, which port.
- * `message` stays because it is the remedy the user reads — `runMain` renders
+ * `message` stays because it is the remedy the user reads: `runMain` renders
  * it and the process exits non-zero, exactly as before.
  *
  * Errors that already had their own tag are no longer re-wrapped here: a bind
@@ -26,7 +26,7 @@ import { Schema } from "effect"
 export class ServerOptionError extends Schema.TaggedError<ServerOptionError>()(
 	"@maple/cli/ServerOptionError",
 	{
-		/** Which input was rejected — `--host`, `MAPLE_LOCAL_UI_URL`, `--checkpoint-id`. */
+		/** Which input was rejected: `--host`, `MAPLE_LOCAL_UI_URL`, `--checkpoint-id`. */
 		source: Schema.String,
 		message: Schema.String,
 	},
@@ -70,6 +70,21 @@ export class LocalStoreSchemaStaleError extends Schema.TaggedError<LocalStoreSch
 	{ dataDir: Schema.String, message: Schema.String },
 ) {}
 
+/**
+ * The store's marker records a schema version newer than this build knows: a
+ * downgrade. Distinct from a stale schema because the remedy is reinstalling
+ * the newer maple, never a reset.
+ */
+export class LocalStoreFromNewerMapleError extends Schema.TaggedError<LocalStoreFromNewerMapleError>()(
+	"@maple/cli/LocalStoreFromNewerMapleError",
+	{
+		dataDir: Schema.String,
+		storeSchemaVersion: Schema.Number,
+		currentSchemaVersion: Schema.Number,
+		message: Schema.String,
+	},
+) {}
+
 /** Which part of the local-store migration journal the command was doing. */
 export const MigrationPhase = Schema.Literals(["read-journal", "resume", "preserve"])
 
@@ -99,13 +114,25 @@ export class BackgroundServerSpawnError extends Schema.TaggedError<BackgroundSer
 ) {}
 
 /**
- * The detached child was spawned but never answered its health probe. Distinct
- * from the spawn failure: the child's own failure is in its log, so this error
- * points there rather than pretending to know the cause.
+ * The detached child was spawned but never reported ready (its own PID from
+ * `/local/status`). Distinct from the spawn failure: the child's own failure is
+ * in its log, so this error points there rather than pretending to know the cause.
  */
 export class BackgroundServerTimeoutError extends Schema.TaggedError<BackgroundServerTimeoutError>()(
 	"@maple/cli/BackgroundServerTimeoutError",
 	{ logPath: Schema.String, timeoutMs: Schema.Number, message: Schema.String },
+) {}
+
+/** A PID, discovery, or legacy state file beside the data dir could not be read or written. */
+export class ServerStateFileError extends Schema.TaggedError<ServerStateFileError>()(
+	"@maple/cli/ServerStateFileError",
+	{ path: Schema.String, message: Schema.String },
+) {}
+
+/** The detached child exited before it was ready; its own error is in the log. */
+export class BackgroundServerExitedError extends Schema.TaggedError<BackgroundServerExitedError>()(
+	"@maple/cli/BackgroundServerExitedError",
+	{ logPath: Schema.String, exitCode: Schema.NullOr(Schema.Number), message: Schema.String },
 ) {}
 
 /** `maple stop` sent SIGTERM and the server was still alive when the budget ran out. */
@@ -119,7 +146,7 @@ export class ServerStopTimeoutError extends Schema.TaggedError<ServerStopTimeout
  *
  * Both the opening checkpoint and the refresh loop take checkpoints by spawning
  * that command rather than calling into chDB, so this is where their failures
- * land. Never fatal — the server keeps serving — but tagged and carrying the
+ * land. Never fatal (the server keeps serving), but tagged and carrying the
  * child's own stderr, because a silently failing loop leaves a store that only
  * turns out to have no restore point when it finally matters.
  */

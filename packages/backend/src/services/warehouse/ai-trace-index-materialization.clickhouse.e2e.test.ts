@@ -17,7 +17,7 @@
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnionUnsafe, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	MAPLE_AI_SESSION_ID_ATTR,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
@@ -29,6 +29,7 @@ import * as Integrations from "@maple/query-engine-integrations"
 import type { AiSessionPageOpts } from "@maple/query-engine-integrations"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
+	aiGatewayStamps,
 	applyRealMigrations,
 	clickhouseE2eEnabled,
 	clickhouseExec,
@@ -92,7 +93,8 @@ const PRODUCTION = { "deployment.environment.name": "production" }
 // carries the session key, which is why resolution is per-TRACE. It names the
 // agent, and it ROLLS UP the usage of the chat call beneath it, bucket for
 // bucket — the shape several frameworks emit, and the reason a naive sum reads
-// 300 tokens where 150 were billed.
+// 300 tokens where 150 were billed. The gateway stamps usage on the chat alone,
+// so this row reads none.
 const AGENT_TURN_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE,
 	spanId: "span-agent-1",
@@ -112,6 +114,7 @@ const AGENT_TURN_SPAN: SeedSpan = {
 		"gen_ai.usage.output_tokens": "50",
 		"gen_ai.usage.reasoning.output_tokens": "10",
 		"gen_ai.usage.cost": "0.02",
+		...aiGatewayStamps({ agentName: "slack-agent" }),
 	},
 	resource: PRODUCTION,
 }
@@ -119,8 +122,8 @@ const AGENT_TURN_SPAN: SeedSpan = {
 // The model call under the turn span: the index row that carries the model,
 // and the deepest reporter of the 150 tokens the turn span repeats. Served
 // through OpenRouter, whose prompt figure already contains the cached tokens
-// and whose completion figure contains the reasoning — so the 40 and the 10
-// reported beside them are NOT added again, and the row still reads 150.
+// and whose completion figure contains the reasoning — so the gateway carved
+// the 40 and the 10 back out of them, and the row still reads 150.
 const AGENT_CHAT_SPAN: SeedSpan = {
 	traceId: AGENT_TRACE,
 	spanId: "span-chat-1",
@@ -141,6 +144,13 @@ const AGENT_CHAT_SPAN: SeedSpan = {
 		"gen_ai.usage.output_tokens": "50",
 		"gen_ai.usage.reasoning.output_tokens": "10",
 		"gen_ai.usage.cost": "0.02",
+		...aiGatewayStamps({
+			llmCall: true,
+			model: "claude-sonnet-5-20260101",
+			responseId: "gen-e2e-1",
+			usage: [60, 40, 0, 40, 10],
+			cost: "0.02",
+		}),
 	},
 	resource: PRODUCTION,
 }
@@ -170,6 +180,13 @@ const MIRROR_CALL_SPAN: SeedSpan = {
 		"gen_ai.usage.output_tokens": "50",
 		"gen_ai.usage.output_tokens.reasoning": "10",
 		"gen_ai.usage.total_cost": "0.03",
+		...aiGatewayStamps({
+			llmCall: true,
+			model: "claude-sonnet-5-20260101",
+			responseId: "gen-e2e-1",
+			usage: [60, 40, 0, 40, 10],
+			cost: "0.03",
+		}),
 	},
 }
 
@@ -188,6 +205,7 @@ const MIRROR_ATTEMPT_SPAN: SeedSpan = {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
 		"gen_ai.operation.name": "chat",
 		"gen_ai.response.id": "gen-e2e-1:attempt-0",
+		...aiGatewayStamps({ llmCall: true, responseId: "gen-e2e-1:attempt-0" }),
 	},
 }
 
@@ -210,6 +228,12 @@ const AGENT_TOOL_SPAN: SeedSpan = {
 		"gen_ai.tool.name": "search_traces",
 		"error.type": "TimeoutError",
 		"gen_ai.tool.description": "Search traces by attribute.",
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "search_traces",
+			toolDescription: "Search traces by attribute.",
+		}),
 	},
 	resource: PRODUCTION,
 }
@@ -225,7 +249,11 @@ const AGENT_SDK_SPAN: SeedSpan = {
 	ms: BASE_MS + 5_000,
 	service: "agent-service",
 	status: "Ok",
-	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "vercel_ai_sdk", [MAPLE_AI_VENDOR_VERSION_ATTR]: "5" },
+	attrs: {
+		[MAPLE_AI_VENDOR_ID_ATTR]: "vercel_ai_sdk",
+		[MAPLE_AI_VENDOR_VERSION_ATTR]: "5",
+		...aiGatewayStamps({}),
+	},
 }
 
 // A plain child of the agent trace, BEFORE its first agent span: no `maple_ai.*`
@@ -258,6 +286,7 @@ const AGENT_TURN_2_SPAN: SeedSpan = {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
 		"gen_ai.agent.name": "critic-agent",
+		...aiGatewayStamps({ agentName: "critic-agent" }),
 	},
 }
 
@@ -266,9 +295,10 @@ const AGENT_TURN_2_SPAN: SeedSpan = {
 // `Timestamp <= '{fanOutEnd}'` has to admit the row it was measured from. A
 // millisecond dropped anywhere in that round trip erases this session.
 //
-// Vercel AI SDK dialect with no operation name: classified by the span-name
-// rules, identified by `ai.model.id`, measured by `ai.usage.*`, and in the
-// environment under the DEPRECATED semconv spelling.
+// Vercel AI SDK dialect with no operation name: the model call by the
+// gateway's legacy-scope rule (`ai.*.doGenerate`), identified by `ai.model.id`,
+// measured off `ai.usage.*`, and in the environment under the DEPRECATED
+// semconv spelling.
 const SESSIONLESS_SPAN: SeedSpan = {
 	traceId: SESSIONLESS_TRACE,
 	spanId: "span-agent-2",
@@ -283,6 +313,7 @@ const SESSIONLESS_SPAN: SeedSpan = {
 		// The SDK re-sums the prompt, so the 4 cached are inside the 10.
 		"ai.usage.cachedInputTokens": "4",
 		"ai.usage.completionTokens": "5",
+		...aiGatewayStamps({ llmCall: true, error: true, model: "gpt-5", usage: [6, 4, 0, 5, 0] }),
 	},
 	resource: { "deployment.environment": "staging" },
 }
@@ -310,6 +341,7 @@ const EARLY_TURN_SPAN: SeedSpan = {
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		[MAPLE_AI_SESSION_ID_ATTR]: SESSION_ID,
+		...aiGatewayStamps({}),
 	},
 }
 
@@ -336,7 +368,7 @@ const FOREIGN_SPAN: SeedSpan = {
 	ms: BASE_MS + 180_000,
 	service: "agent-service",
 	status: "Ok",
-	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "eve" },
+	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: "eve", ...aiGatewayStamps({}) },
 }
 
 // One tool's calls under a third org, so no session read above sees them. The
@@ -365,30 +397,52 @@ const toolCallSpan = (
 		[MAPLE_AI_VENDOR_ID_ATTR]: "eve",
 		"gen_ai.operation.name": "execute_tool",
 		"gen_ai.tool.name": "submit_findings",
+		...aiGatewayStamps({ toolCall: true, toolName: "submit_findings" }),
 		...fields.attrs,
 	},
 })
 
 const MISSING_KEY_0_SPAN = toolCallSpan("span-tool-failure-1", 0, {
 	status: "Ok",
-	attrs: { "error.type": "tool_error", "gen_ai.tool.call.result": missingKeyResult(0) },
+	attrs: {
+		"error.type": "tool_error",
+		"gen_ai.tool.call.result": missingKeyResult(0),
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_findings",
+			toolErrorResult: missingKeyResult(0),
+		}),
+	},
 })
 const MISSING_KEY_1_SPAN = toolCallSpan("span-tool-failure-2", 1_000, {
 	status: "Ok",
-	attrs: { "error.type": "tool_error", "gen_ai.tool.call.result": missingKeyResult(1) },
+	attrs: {
+		"error.type": "tool_error",
+		"gen_ai.tool.call.result": missingKeyResult(1),
+		...aiGatewayStamps({
+			toolCall: true,
+			error: true,
+			toolName: "submit_findings",
+			toolErrorResult: missingKeyResult(1),
+		}),
+	},
 })
 // A failure described only by its status, as other frameworks record one: no
 // result, so the status message is what it is fingerprinted by.
 const STATUS_ONLY_FAILURE_SPAN = toolCallSpan("span-tool-failure-3", 2_000, {
 	status: "Error",
 	statusMessage: "effect-agent.execute_tool: Tool execution reached a failed terminal state",
-	attrs: {},
+	attrs: aiGatewayStamps({ toolCall: true, error: true, toolName: "submit_findings" }),
 })
 // A call that succeeded: its result is a payload, not a failure, so the index
 // carries neither the result nor a fingerprint.
 const TOOL_SUCCESS_SPAN = toolCallSpan("span-tool-success-1", 3_000, {
 	status: "Ok",
-	attrs: { "gen_ai.tool.call.result": JSON.stringify({ result: "3 findings recorded" }) },
+	attrs: {
+		"gen_ai.tool.call.result": JSON.stringify({ result: "3 findings recorded" }),
+		...aiGatewayStamps({ toolCall: true, toolName: "submit_findings" }),
+	},
 })
 
 const TOOL_FAILURE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
@@ -396,6 +450,221 @@ const TOOL_FAILURE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	MISSING_KEY_1_SPAN,
 	STATUS_ONLY_FAILURE_SPAN,
 	TOOL_SUCCESS_SPAN,
+]
+
+// The netting shapes, under a fourth org so no read above sees them.
+//
+// A reused Strands agent across two requests: each `invoke_agent` reports the
+// agent's accumulated usage, over an event-loop span that reports nothing, over
+// the one chat it ran — 204 + 44 + 269 + 78 = 595 tokens, where the roll-ups
+// alone claim 843 more. The gateway stamps usage on the chats alone, so the
+// list sums them with nothing to net.
+//
+// And a gateway request that failed at every provider: the generation and its
+// provider attempt are both model spans with no usage, one call.
+const NETTING_ORG_ID = "org_ai_trace_index_e2e_netting"
+const NETTING_SESSION_ID = `${NETTING_ORG_ID}:strands-reused`
+const FAILED_GATEWAY_TRACE = "aitraceindexe2e000000000000000010"
+
+const strandsTurn = (turn: number, agent: [number, number], chat: [number, number]): SeedSpan[] => {
+	const traceId = `aitraceindexe2e00000000000000002${turn}`
+	const strands = { [MAPLE_AI_VENDOR_ID_ATTR]: "strands" }
+	return [
+		{
+			traceId,
+			spanId: `span-strands-agent-${turn}`,
+			name: "invoke_agent assistant",
+			ms: BASE_MS + 400_000 + turn * 10_000,
+			service: "strands-service",
+			status: "Ok",
+			attrs: {
+				...strands,
+				[MAPLE_AI_SESSION_ID_ATTR]: NETTING_SESSION_ID,
+				"gen_ai.operation.name": "invoke_agent",
+				"gen_ai.agent.name": "assistant",
+				"gen_ai.usage.input_tokens": String(agent[0]),
+				"gen_ai.usage.output_tokens": String(agent[1]),
+				...aiGatewayStamps({ agentName: "assistant" }),
+			},
+		},
+		{
+			traceId,
+			spanId: `span-strands-cycle-${turn}`,
+			parentSpanId: `span-strands-agent-${turn}`,
+			name: "execute_event_loop_cycle",
+			ms: BASE_MS + 400_000 + turn * 10_000 + 1,
+			service: "strands-service",
+			status: "Ok",
+			attrs: {
+				...strands,
+				"gen_ai.operation.name": "execute_event_loop_cycle",
+				...aiGatewayStamps({}),
+			},
+		},
+		{
+			traceId,
+			spanId: `span-strands-chat-${turn}`,
+			parentSpanId: `span-strands-cycle-${turn}`,
+			name: "chat",
+			ms: BASE_MS + 400_000 + turn * 10_000 + 2,
+			service: "strands-service",
+			status: "Ok",
+			attrs: {
+				...strands,
+				"gen_ai.operation.name": "chat",
+				"gen_ai.request.model": "gpt-4o-mini",
+				"gen_ai.usage.input_tokens": String(chat[0]),
+				"gen_ai.usage.output_tokens": String(chat[1]),
+				...aiGatewayStamps({
+					llmCall: true,
+					model: "gpt-4o-mini",
+					usage: [chat[0], 0, 0, chat[1], 0],
+				}),
+			},
+		},
+	]
+}
+
+const NETTING_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	...strandsTurn(0, [204, 44], [204, 44]),
+	...strandsTurn(1, [473, 122], [269, 78]),
+	{
+		traceId: FAILED_GATEWAY_TRACE,
+		spanId: "span-gateway-generation",
+		name: "LLM Generation",
+		ms: BASE_MS + 500_000,
+		service: "openrouter",
+		status: "Error",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
+			"gen_ai.operation.name": "chat",
+			"gen_ai.request.model": "openai/gpt-4o-mini",
+			"gen_ai.response.id": "gen-e2e-failed",
+			...aiGatewayStamps({
+				llmCall: true,
+				error: true,
+				model: "openai/gpt-4o-mini",
+				responseId: "gen-e2e-failed",
+			}),
+		},
+	},
+	{
+		traceId: FAILED_GATEWAY_TRACE,
+		spanId: "span-gateway-attempt",
+		parentSpanId: "span-gateway-generation",
+		name: "provider attempt 1: OpenAI",
+		ms: BASE_MS + 500_001,
+		service: "openrouter",
+		status: "Error",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "openrouter",
+			"gen_ai.operation.name": "chat",
+			"gen_ai.response.id": "gen-e2e-failed:attempt-0",
+			...aiGatewayStamps({ llmCall: true, error: true, responseId: "gen-e2e-failed:attempt-0" }),
+		},
+	},
+]
+
+// One long agent run, under an org of its own: a single trace whose agent span
+// wraps a model call per step. The netting looks every reporter's ancestors
+// and claims up in tables as long as the trace, and a lookup that copied the
+// table per reporter put a trace this size past the list read's memory
+// ceiling in production.
+const WIDE_ORG_ID = "org_ai_trace_index_e2e_wide"
+const WIDE_TRACE = "aitraceindexe2e000000000000000030"
+const WIDE_TRACE_CALLS = 1_500
+const WIDE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	{
+		traceId: WIDE_TRACE,
+		spanId: "span-wide-agent",
+		name: "invoke_agent crawler",
+		ms: BASE_MS + 600_000,
+		service: "strands-service",
+		status: "Ok",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "strands",
+			"gen_ai.operation.name": "invoke_agent",
+			"gen_ai.agent.name": "crawler",
+			...aiGatewayStamps({ agentName: "crawler" }),
+		},
+	},
+	...Array.from({ length: WIDE_TRACE_CALLS }, (_, call) => ({
+		traceId: WIDE_TRACE,
+		spanId: `span-wide-chat-${call}`,
+		parentSpanId: "span-wide-agent",
+		name: "chat",
+		ms: BASE_MS + 600_001 + call,
+		service: "strands-service",
+		status: "Ok",
+		attrs: {
+			[MAPLE_AI_VENDOR_ID_ATTR]: "strands",
+			"gen_ai.operation.name": "chat",
+			"gen_ai.request.model": "gpt-4o-mini",
+			...aiGatewayStamps({ llmCall: true, model: "gpt-4o-mini", usage: [10, 0, 0, 2, 0] }),
+		},
+	})),
+]
+
+// Traces the session rule sorts, under a fifth org, stamped as the gateway
+// stamps them: a sessionless plumbing span (a Spring AI advisor) that is no
+// session, a LangSmith OTel `chain` over LangGraph's `tools` node beside the
+// real tool calls, and a tool server's lone tool call.
+const SESSION_RULE_ORG_ID = "org_ai_trace_index_e2e_session_rule"
+const PLUMBING_TRACE = "aitraceindexe2e000000000000000030"
+const LANGGRAPH_TRACE = "aitraceindexe2e000000000000000031"
+/** A tool server's own trace: one tool call, no session id, model or agent. */
+const TOOL_ONLY_TRACE = "aitraceindexe2e000000000000000032"
+
+const sessionRuleSpan = (
+	traceId: string,
+	spanId: string,
+	name: string,
+	offsetMs: number,
+	vendor: string,
+	attrs: Readonly<Record<string, string>>,
+): SeedSpan => ({
+	traceId,
+	spanId,
+	name,
+	ms: BASE_MS + 600_000 + offsetMs,
+	service: "session-rule-service",
+	status: "Ok",
+	attrs: { [MAPLE_AI_VENDOR_ID_ATTR]: vendor, ...attrs },
+})
+
+const SESSION_RULE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
+	sessionRuleSpan(
+		PLUMBING_TRACE,
+		"span-advisor",
+		"spring_ai chat_client advisor",
+		0,
+		"spring_ai",
+		aiGatewayStamps({}),
+	),
+	sessionRuleSpan(LANGGRAPH_TRACE, "span-lg-agent", "invoke_agent weather", 10, "langchain", {
+		"gen_ai.operation.name": "invoke_agent",
+		...aiGatewayStamps({ agentName: "weather" }),
+	}),
+	sessionRuleSpan(LANGGRAPH_TRACE, "span-lg-tools", "tools", 11, "langchain", {
+		"gen_ai.operation.name": "chain",
+		...aiGatewayStamps({}),
+	}),
+	sessionRuleSpan(LANGGRAPH_TRACE, "span-lg-tool", "get_weather", 13, "langchain", {
+		"gen_ai.operation.name": "execute_tool",
+		...aiGatewayStamps({ toolCall: true, toolName: "get_weather" }),
+	}),
+	sessionRuleSpan(
+		LANGGRAPH_TRACE,
+		"span-lg-sdk-tool",
+		"ai.toolCall",
+		14,
+		"vercel_ai_sdk",
+		aiGatewayStamps({ toolCall: true }),
+	),
+	sessionRuleSpan(TOOL_ONLY_TRACE, "span-tool-only", "execute_tool search", 20, "unknown:genai", {
+		"gen_ai.operation.name": "execute_tool",
+		...aiGatewayStamps({ toolCall: true, toolName: "search" }),
+	}),
 ]
 
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
@@ -408,6 +677,9 @@ const seed = async (): Promise<void> => {
 		...SEED_SPANS.map((span) => [ORG_ID, span] as const),
 		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
 		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
+		...NETTING_ORG_SPANS.map((span) => [NETTING_ORG_ID, span] as const),
+		...WIDE_ORG_SPANS.map((span) => [WIDE_ORG_ID, span] as const),
+		...SESSION_RULE_ORG_SPANS.map((span) => [SESSION_RULE_ORG_ID, span] as const),
 	]
 		.map(
 			([orgId, span]) =>
@@ -423,10 +695,14 @@ const seed = async (): Promise<void> => {
 	)
 }
 
-const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknown>>> => {
+const runJson = async (
+	sql: string,
+	settings: Readonly<Record<string, string>> = {},
+): Promise<ReadonlyArray<Record<string, unknown>>> => {
 	const body = await clickhouseExec(normalizeSqlForClickHouseClient(sql), database, {
 		default_format: "JSON",
 		output_format_json_quote_64bit_integers: "0",
+		...settings,
 	})
 	const parsed = JSON.parse(body) as {
 		readonly data?: ReadonlyArray<Record<string, unknown>>
@@ -453,7 +729,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
 			        ErrorType, StatusMessage, ToolDescription,
 			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint
-			 FROM ai_trace_index ORDER BY Timestamp ASC`,
+			 FROM ai_trace_index WHERE OrgId NOT IN (${quote(NETTING_ORG_ID)}, ${quote(WIDE_ORG_ID)}, ${quote(SESSION_RULE_ORG_ID)}) ORDER BY Timestamp ASC`,
 		)
 
 		/** The index row a seed span is expected to produce, by name — the
@@ -524,16 +800,14 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// per TRACE rather than per span.
 		assert.deepStrictEqual(rows, [
 			indexRow(ORG_ID, EARLY_TURN_SPAN),
-			// OpenRouter nests the cache in the prompt and the reasoning in the
-			// completion, so the buckets carve both out and still sum to `Tokens`.
+			// The roll-up the gateway stamped no usage on: whatever its
+			// `gen_ai.usage.*` repeats, the row reports nothing.
 			indexRow(ORG_ID, AGENT_TURN_SPAN, {
 				DeploymentEnv: "production",
 				AgentName: "slack-agent",
-				Tokens: 150,
-				Cost: 0.02,
-				buckets: [60, 40, 0, 40, 10],
 			}),
-			// Response model over request model; the one model call.
+			// Every column below is the gateway's stamp, projected; the buckets sum
+			// to `Tokens`.
 			indexRow(ORG_ID, AGENT_CHAT_SPAN, {
 				DeploymentEnv: "production",
 				Model: "claude-sonnet-5-20260101",
@@ -570,9 +844,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			// "agent turn" by name, no model, no usage: an agent span, not a call.
 			indexRow(ORG_ID, AGENT_SDK_SPAN),
 			indexRow(ORG_ID, AGENT_TURN_2_SPAN, { AgentName: "critic-agent" }),
-			// The Vercel AI SDK dialect resolves to the same columns, the deprecated
-			// environment spelling still resolves, and the name rules classify a
-			// span with no operation name as the model call it is.
+			// The deprecated environment spelling still resolves.
 			indexRow(ORG_ID, SESSIONLESS_SPAN, {
 				DeploymentEnv: "staging",
 				Model: "gpt-5",
@@ -795,8 +1067,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 	it("measures each session off the index the way the detail page does", async () => {
 		const [sessionless, session] = await rankPage()
 
-		// Name-classified inference: no operation name, but a model and no
-		// tool/agent words in the span name.
+		// The gateway's model call: a legacy-scope `doGenerate` with no
+		// operation name.
 		assert.deepStrictEqual(
 			[sessionless!.models, sessionless!.agentNames, sessionless!.llmCalls, sessionless!.toolCalls],
 			[["gpt-5"], [], 1, 0],
@@ -883,6 +1155,121 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		assert.deepStrictEqual(await ids({ sortBy: "startTime", sortDir: "asc" }), [
 			SESSION_ID,
 			TRACE_SESSION_ID,
+		])
+	})
+
+	// The netting lambdas are raw SQL the builder cannot type-check, and the
+	// unit tests compare their text; this is where their numbers are proven.
+	it("nets usage past spans that reported nothing, and a failed request is one call", async () => {
+		const compiled = compileUnsafe(Integrations.aiSessionPageQuery(), {
+			...WINDOW,
+			orgId: NETTING_ORG_ID,
+		})
+		const rows = Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		const measures = (sessionId: string) => {
+			const row = rows.find((candidate) => candidate.sessionId === sessionId)
+			return [row?.llmCalls, row?.totalTokens, row?.inputTokens, row?.outputTokens]
+		}
+
+		assert.deepStrictEqual(measures(NETTING_SESSION_ID), [2, 595, 473, 122])
+		assert.deepStrictEqual(
+			measures(`${MAPLE_AI_TRACE_SESSION_PREFIX}${FAILED_GATEWAY_TRACE}`),
+			[1, 0, 0, 0],
+		)
+	})
+
+	it("reads a ranked page to the same rows as the one read that ranks and nets together", async () => {
+		// The list's two reads: which sessions, over the window; then their rows,
+		// over the extent of the ranked sessions alone.
+		// The second window ends inside the second Strands turn, after its
+		// event-loop span started and before that span ended: the chat beneath
+		// it starts past the window, and no read may count it.
+		const windows = [WINDOW, { ...WINDOW, endTime: chDateTime(BASE_MS + 410_001) }]
+		for (const [orgId, bounds] of [ORG_ID, NETTING_ORG_ID].flatMap((org) =>
+			windows.map((window) => [org, window] as const),
+		)) {
+			for (const opts of [
+				{},
+				{ limit: 1 },
+				{ limit: 1, offset: 1 },
+				{ sortBy: "durationMs" },
+			] as const) {
+				const window = { ...bounds, orgId }
+				const whole = compileUnsafe(Integrations.aiSessionPageQuery(opts), window)
+				const rank = compileUnsafe(Integrations.aiSessionRankQuery(opts), window)
+				const ranked = Effect.runSync(rank.decodeRows(await runJson(rank.sql)))
+				if (ranked.length === 0) {
+					assert.deepStrictEqual(await runJson(whole.sql), [])
+					continue
+				}
+				const rows = compileUnsafe(
+					Integrations.aiSessionPageQuery({
+						...opts,
+						sessionIds: ranked.map((row) => row.sessionId),
+					}),
+					{
+						orgId,
+						fanOutStart: ranked.map((row) => row.agentStart).sort()[0]!,
+						fanOutEnd: ranked
+							.map((row) => row.agentEnd)
+							.sort()
+							.at(-1)!,
+						endTime: window.endTime,
+					},
+				)
+				// Sets come back in no order; everything else must match as it is.
+				const comparable = (page: ReadonlyArray<Record<string, unknown>>) =>
+					page.map((row) =>
+						Object.fromEntries(
+							Object.entries(row).map(([key, value]) => [
+								key,
+								Array.isArray(value) ? [...value].sort() : value,
+							]),
+						),
+					)
+				assert.deepStrictEqual(
+					comparable(await runJson(rows.sql)),
+					comparable(await runJson(whole.sql)),
+				)
+			}
+		}
+	})
+
+	it("nets a trace of many model calls inside a fraction of the list read's memory", async () => {
+		const compiled = compileUnsafe(Integrations.aiSessionPageQuery(), { ...WINDOW, orgId: WIDE_ORG_ID })
+		const rows = Effect.runSync(
+			compiled.decodeRows(await runJson(compiled.sql, { max_memory_usage: "100000000" })),
+		)
+
+		assert.deepStrictEqual(
+			rows.map((row) => [row.sessionId, row.llmCalls, row.totalTokens]),
+			[[`${MAPLE_AI_TRACE_SESSION_PREFIX}${WIDE_TRACE}`, WIDE_TRACE_CALLS, WIDE_TRACE_CALLS * 12]],
+		)
+	})
+
+	it("files a sessionless trace with no model call, tool call or named agent under no session", async () => {
+		const sessionRule = { ...WINDOW, orgId: SESSION_RULE_ORG_ID }
+		const page = compileUnsafe(Integrations.aiSessionPageQuery(), sessionRule)
+		const rows = Effect.runSync(page.decodeRows(await runJson(page.sql)))
+		// The advisor's trace is gone; the LangGraph trace stays on its named agent,
+		// and the tool server's trace on its one tool call.
+		assert.deepStrictEqual(
+			rows.map((row) => [row.sessionId, row.toolCalls]),
+			[
+				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${TOOL_ONLY_TRACE}`, 1],
+				[`${MAPLE_AI_TRACE_SESSION_PREFIX}${LANGGRAPH_TRACE}`, 2],
+			],
+		)
+
+		const facets = compileUnionUnsafe(Integrations.aiSessionFacetsQuery(), sessionRule)
+		const vendors = Effect.runSync(facets.decodeRows(await runJson(facets.sql)))
+			.filter((row) => row.facetType === "vendor")
+			.map((row) => [row.name, row.count])
+			.sort()
+		assert.deepStrictEqual(vendors, [
+			["langchain", 1],
+			["unknown:genai", 1],
+			["vercel_ai_sdk", 1],
 		])
 	})
 

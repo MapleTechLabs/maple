@@ -4,6 +4,8 @@ import { CircleWarningIcon } from "@/components/icons"
 import { ProviderLogo } from "@/components/alerts/destination-provider"
 import { signalLabels } from "@/lib/alerts/form-utils"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { pluralize } from "@maple/ui/lib/format"
 import { TableCell, TableRow } from "@maple/ui/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
@@ -13,7 +15,7 @@ import { cn } from "@maple/ui/lib/utils"
 /* -------------------------------------------------------------------------- */
 
 const signalBadgeClass: Record<string, string> = {
-	error_rate: "border-destructive/30 text-destructive",
+	error_rate: "border-severity-error/30 text-severity-error",
 	p95_latency: "border-primary/30 text-primary",
 	p99_latency: "border-primary/30 text-primary",
 	apdex: "border-severity-warn/30 text-severity-warn",
@@ -60,16 +62,13 @@ export function TagGroupHeaderRow({
 }) {
 	return (
 		<TableRow>
-			<TableCell
-				colSpan={colSpan}
-				className="bg-muted/30 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
-			>
-				<span className="flex items-center gap-2">
+			<TableCell colSpan={colSpan} className="bg-muted/30 py-1.5">
+				<Eyebrow className="flex items-center gap-2">
 					{label}
-					<span className="tracking-normal normal-case text-muted-foreground/55 tabular-nums">
-						{count} {count === 1 ? noun : `${noun}s`}
+					<span className="tracking-normal normal-case text-muted-foreground/60 tabular-nums">
+						{count} {pluralize(count, noun)}
 					</span>
-				</span>
+				</Eyebrow>
 			</TableCell>
 		</TableRow>
 	)
@@ -93,7 +92,7 @@ export function NotifyChannels({
 			<Tooltip>
 				<TooltipTrigger
 					render={
-						<span className="inline-flex cursor-default items-center gap-1 text-warning text-xs" />
+						<span className="inline-flex cursor-default items-center gap-1 text-severity-warn text-xs" />
 					}
 				>
 					<CircleWarningIcon size={12} />

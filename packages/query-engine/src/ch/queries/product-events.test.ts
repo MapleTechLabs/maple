@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { Result } from "effect"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	productEventsFunnelQuery,
 	productEventsFunnelBreakdownQuery,
@@ -9,8 +10,13 @@ import {
 	ProductEventsFunnelError,
 	type FunnelStep,
 } from "./product-events"
+import { OrgId } from "@maple/domain"
 
-const params = { orgId: "org_1", startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
+const params = {
+	orgId: OrgId.make("org_1"),
+	startTime: "2026-06-24 04:00:00",
+	endTime: "2026-06-25 06:00:00",
+}
 
 const STEPS: ReadonlyArray<FunnelStep> = [
 	{ kind: "page", pagePath: "/pricing", host: "maple.dev" },
@@ -21,6 +27,9 @@ const REFERRAL: FunnelStep = { kind: "session", dimension: "referrerHost", value
 
 const oneLine = (sql: string): string => sql.replace(/\s+/g, " ")
 
+const rejection = (built: Result.Result<unknown, ProductEventsFunnelError>) =>
+	Result.isFailure(built) ? built.failure : undefined
+
 // productEventsFunnelQuery
 //
 // One `windowFunnel` per person over the rows matching any step, then
@@ -29,7 +38,13 @@ const oneLine = (sql: string): string => sql.replace(/\s+/g, " ")
 describe("productEventsFunnelQuery", () => {
 	it("scopes every table it reads to the org and derives an org-scoped result", () => {
 		const compiled = compileUnsafe(
-			productEventsFunnelQuery({ steps: [REFERRAL, ...STEPS], keyBy: "person", windowSeconds: 86_400 }),
+			Result.getOrThrow(
+				productEventsFunnelQuery({
+					steps: [REFERRAL, ...STEPS],
+					keyBy: "person",
+					windowSeconds: 86_400,
+				}),
+			),
 			params,
 		)
 		expect(compiled.tenantScope).toBe("single-tenant")
@@ -42,63 +57,73 @@ describe("productEventsFunnelQuery", () => {
 
 	it("emits one windowFunnel condition per step and one output row per step", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 3_600 }),
+			Result.getOrThrow(
+				productEventsFunnelQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 3_600 }),
+			),
 			params,
 		)
 		// The window is passed in the timestamp's unit — epoch milliseconds — since
 		// windowFunnel does not accept DateTime64.
-		expect(sql).toContain("windowFunnel(3600000)(ts, s1 = 1, s2 = 1, s3 = 1) AS level")
-		expect(sql).toContain("toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts")
+		expect(sql).toContain(
+			"windowFunnel(3600000)(funnel_events.ts, funnel_events.s1 = 1, funnel_events.s2 = 1, funnel_events.s3 = 1) AS level",
+		)
+		expect(sql).toContain("toUInt64(toUnixTimestamp64Milli(e.Timestamp)) AS ts")
 		expect(sql).toContain("[countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts")
 		expect(sql).toContain("arrayJoin([1, 2, 3]) AS step")
-		expect(sql).toContain("arrayElement(counts, step) AS count")
+		expect(sql).toContain("arrayElement(totals.counts, step) AS count")
 		expect(sql).toContain("ORDER BY step ASC")
 	})
 
 	it("projects each step as a flag and only reads rows matching some step", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 3_600 }),
+			Result.getOrThrow(
+				productEventsFunnelQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 3_600 }),
+			),
 			params,
 		)
 		expect(sql).toContain(
-			"toUInt8(((Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev')) AS s1",
+			"toUInt8(((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1",
 		)
-		expect(sql).toContain("toUInt8(EventName = 'signup_completed') AS s2")
+		expect(sql).toContain("toUInt8(e.EventName = 'signup_completed') AS s2")
 		expect(sql).toContain(
-			"toUInt8((EventName = 'plan_started' AND Attributes['plan'] = 'startup')) AS s3",
+			"toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3",
 		)
 		expect(oneLine(sql)).toContain(
-			"AND ((((Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev') OR EventName = 'signup_completed') OR (EventName = 'plan_started' AND Attributes['plan'] = 'startup'))",
+			"AND ((((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))",
 		)
 	})
 
 	it("keys by the raw column for visitor / user / session and drops empty keys", () => {
 		const visitor = compileUnsafe(
-			productEventsFunnelQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 60 }),
+			Result.getOrThrow(
+				productEventsFunnelQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 60 }),
+			),
 			params,
 		).sql
 		expect(visitor).toContain("VisitorId AS key")
-		expect(visitor).toContain("AND VisitorId != ''")
+		expect(visitor).toContain("AND e.VisitorId != ''")
 		expect(visitor).not.toContain("identity_links")
 
 		const user = compileUnsafe(
-			productEventsFunnelQuery({ steps: STEPS, keyBy: "user", windowSeconds: 60 }),
+			Result.getOrThrow(productEventsFunnelQuery({ steps: STEPS, keyBy: "user", windowSeconds: 60 })),
 			params,
 		).sql
 		expect(user).toContain("UserId AS key")
-		expect(user).toContain("AND UserId != ''")
+		expect(user).toContain("AND e.UserId != ''")
 
 		const session = compileUnsafe(
-			productEventsFunnelQuery({ steps: STEPS, keyBy: "session", windowSeconds: 60 }),
+			Result.getOrThrow(
+				productEventsFunnelQuery({ steps: STEPS, keyBy: "session", windowSeconds: 60 }),
+			),
 			params,
 		).sql
 		expect(session).toContain("SessionId AS key")
-		expect(session).toContain("AND SessionId != ''")
+		expect(session).toContain("AND e.SessionId != ''")
 	})
 
 	it("stitches the person key through identity_links aggregated per visitor", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelQuery({ steps: STEPS, keyBy: "person", windowSeconds: 60 }),
+			Result.getOrThrow(productEventsFunnelQuery({ steps: STEPS, keyBy: "person", windowSeconds: 60 })),
 			params,
 		)
 		// `min(FirstSeen)` per pair BEFORE the argMin: identity_links holds one
@@ -106,7 +131,7 @@ describe("productEventsFunnelQuery", () => {
 		// so ranking a visitor's users on a raw FirstSeen would count arbitrary
 		// duplicates until parts merge.
 		expect(oneLine(sql)).toContain(
-			"LEFT JOIN (SELECT VisitorId AS VisitorId, argMin(UserId, FirstSeen) AS UserId FROM (SELECT VisitorId AS VisitorId, UserId AS UserId, min(FirstSeen) AS FirstSeen FROM identity_links WHERE OrgId = 'org_1' GROUP BY VisitorId, UserId) AS pair_links GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId",
+			"LEFT JOIN (SELECT pair_links.VisitorId AS VisitorId, argMin(pair_links.UserId, pair_links.FirstSeen) AS UserId FROM (SELECT identity_links.VisitorId AS VisitorId, identity_links.UserId AS UserId, min(identity_links.FirstSeen) AS FirstSeen FROM identity_links WHERE identity_links.OrgId = 'org_1' GROUP BY VisitorId, UserId) AS pair_links GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId",
 		)
 		expect(sql).toContain(
 			"multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key",
@@ -115,29 +140,35 @@ describe("productEventsFunnelQuery", () => {
 
 	it("turns a session step 1 into a UNION ALL branch of session_replays entries", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelQuery({
-				steps: [REFERRAL, ...STEPS],
-				keyBy: "visitor",
-				windowSeconds: 86_400,
-			}),
+			Result.getOrThrow(
+				productEventsFunnelQuery({
+					steps: [REFERRAL, ...STEPS],
+					keyBy: "visitor",
+					windowSeconds: 86_400,
+				}),
+			),
 			params,
 		)
 		expect(sql).toContain("UNION ALL")
 		// The session branch: s1 = 1, every other step 0, at the session's StartTime.
 		expect(oneLine(sql)).toContain(
-			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(StartTime)) AS ts, 0 AS seq, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
+			"SELECT s.VisitorId AS key, toUInt64(toUnixTimestamp64Milli(s.StartTime)) AS ts, 0 AS seq, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
 		)
-		expect(sql).toContain("AND ReferrerHost = 'news.ycombinator.com'")
+		expect(sql).toContain("AND s.ReferrerHost = 'news.ycombinator.com'")
 		// The events branch never satisfies the session step.
 		expect(oneLine(sql)).toContain(
-			"SELECT VisitorId AS key, toUInt64(toUnixTimestamp64Milli(Timestamp)) AS ts, Seq AS seq, 0 AS s1,",
+			"SELECT e.VisitorId AS key, toUInt64(toUnixTimestamp64Milli(e.Timestamp)) AS ts, e.Seq AS seq, 0 AS s1,",
 		)
-		expect(sql).toContain("windowFunnel(86400000)(ts, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level")
+		expect(sql).toContain(
+			"windowFunnel(86400000)(funnel_events.ts, funnel_events.s1 = 1, funnel_events.s2 = 1, funnel_events.s3 = 1, funnel_events.s4 = 1) AS level",
+		)
 	})
 
 	it("has no session_replays branch without a session step", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 60 }),
+			Result.getOrThrow(
+				productEventsFunnelQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 60 }),
+			),
 			params,
 		)
 		expect(sql).not.toContain("UNION ALL")
@@ -146,12 +177,14 @@ describe("productEventsFunnelQuery", () => {
 
 	it("narrows the population by person, not by session, when filters are set", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelQuery({
-				steps: STEPS,
-				keyBy: "person",
-				windowSeconds: 60,
-				filters: { country: "DE", pagePath: "/" },
-			}),
+			Result.getOrThrow(
+				productEventsFunnelQuery({
+					steps: STEPS,
+					keyBy: "person",
+					windowSeconds: 60,
+					filters: { country: "DE", pagePath: "/" },
+				}),
+			),
 			params,
 		)
 		const flat = oneLine(sql)
@@ -163,36 +196,46 @@ describe("productEventsFunnelQuery", () => {
 		expect(flat).toContain("AND s.Country = 'DE'")
 		// …and the page filter through the navigation semi-join on product_events.
 		expect(flat).toContain(
-			"AND s.SessionId IN (SELECT SessionId AS sessionId FROM product_events WHERE OrgId = 'org_1'",
+			"AND s.SessionId IN (SELECT product_events.SessionId AS sessionId FROM product_events WHERE product_events.OrgId = 'org_1'",
 		)
-		expect(flat).toContain("AND Kind = 'navigation' AND PagePath = '/' GROUP BY sessionId)")
+		expect(flat).toContain(
+			"AND product_events.Kind = 'navigation' AND product_events.PagePath = '/' GROUP BY sessionId)",
+		)
 	})
 
 	it("omits the population subquery when no filter is set", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelQuery({ steps: STEPS, keyBy: "person", windowSeconds: 60 }),
+			Result.getOrThrow(productEventsFunnelQuery({ steps: STEPS, keyBy: "person", windowSeconds: 60 })),
 			params,
 		)
 		expect(sql).not.toContain(" IN (SELECT")
 	})
 
 	it("rejects funnels it cannot compile", () => {
-		expect(() => productEventsFunnelQuery({ steps: [], keyBy: "person", windowSeconds: 60 })).toThrow(
-			ProductEventsFunnelError,
-		)
-		expect(() =>
-			productEventsFunnelQuery({ steps: [STEPS[0]!, REFERRAL], keyBy: "person", windowSeconds: 60 }),
-		).toThrow(/only valid as step 1/)
-		expect(() => productEventsFunnelQuery({ steps: STEPS, keyBy: "person", windowSeconds: 0 })).toThrow(
-			/windowSeconds/,
-		)
-		expect(() =>
-			productEventsFunnelQuery({
-				steps: Array.from({ length: 11 }, () => STEPS[1]!),
-				keyBy: "person",
-				windowSeconds: 60,
-			}),
-		).toThrow(/at most 10 steps/)
+		expect(
+			rejection(productEventsFunnelQuery({ steps: [], keyBy: "person", windowSeconds: 60 })),
+		).toBeInstanceOf(ProductEventsFunnelError)
+		expect(
+			rejection(
+				productEventsFunnelQuery({
+					steps: [STEPS[0]!, REFERRAL],
+					keyBy: "person",
+					windowSeconds: 60,
+				}),
+			)?.message,
+		).toMatch(/only valid as step 1/)
+		expect(
+			rejection(productEventsFunnelQuery({ steps: STEPS, keyBy: "person", windowSeconds: 0 }))?.message,
+		).toMatch(/windowSeconds/)
+		expect(
+			rejection(
+				productEventsFunnelQuery({
+					steps: Array.from({ length: 11 }, () => STEPS[1]!),
+					keyBy: "person",
+					windowSeconds: 60,
+				}),
+			)?.message,
+		).toMatch(/at most 10 steps/)
 	})
 })
 
@@ -201,41 +244,47 @@ describe("productEventsFunnelQuery", () => {
 describe("productEventsFunnelBreakdownQuery", () => {
 	it("groups persons by the first non-empty dimension value and keeps the top N by step-1 count", () => {
 		const compiled = compileUnsafe(
-			productEventsFunnelBreakdownQuery({
-				steps: STEPS,
-				keyBy: "visitor",
-				windowSeconds: 3_600,
-				breakdownBy: "attribute:plan",
-				limit: 5,
-			}),
+			Result.getOrThrow(
+				productEventsFunnelBreakdownQuery({
+					steps: STEPS,
+					keyBy: "visitor",
+					windowSeconds: 3_600,
+					breakdownBy: "attribute:plan",
+					limit: 5,
+				}),
+			),
 			params,
 		)
 		expect(compiled.tenantScope).toBe("single-tenant")
 		const flat = oneLine(compiled.sql)
 		expect(flat).toContain("Attributes['plan'] AS dim")
-		expect(flat).toContain("argMinIf(dim, ts, dim != '') AS group")
+		expect(flat).toContain(
+			"argMinIf(funnel_events.dim, funnel_events.ts, funnel_events.dim != '') AS group",
+		)
 		expect(flat).toContain("countIf(level >= 1) AS entered")
 		expect(flat).toContain("GROUP BY group ORDER BY entered DESC, group ASC LIMIT 5")
 		expect(flat).toContain(
-			"SELECT group AS group, arrayJoin([1, 2, 3]) AS step, arrayElement(counts, step) AS count",
+			"SELECT groups.group AS group, arrayJoin([1, 2, 3]) AS step, arrayElement(groups.counts, step) AS count",
 		)
 		expect(flat).toContain("ORDER BY group ASC, step ASC")
 	})
 
 	it("reads a session dimension through a per-session join on session_replays", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelBreakdownQuery({
-				steps: STEPS,
-				keyBy: "visitor",
-				windowSeconds: 3_600,
-				breakdownBy: "utmSource",
-			}),
+			Result.getOrThrow(
+				productEventsFunnelBreakdownQuery({
+					steps: STEPS,
+					keyBy: "visitor",
+					windowSeconds: 3_600,
+					breakdownBy: "utmSource",
+				}),
+			),
 			params,
 		)
 		const flat = oneLine(sql)
 		expect(flat).toContain("coalesce(sd.Value, '') AS dim")
 		expect(flat).toContain(
-			"LEFT JOIN (SELECT SessionId AS SessionId, max(UtmSource) AS Value FROM session_replays WHERE OrgId = 'org_1'",
+			"LEFT JOIN (SELECT session_replays.SessionId AS SessionId, max(session_replays.UtmSource) AS Value FROM session_replays WHERE session_replays.OrgId = 'org_1'",
 		)
 		expect(flat).toContain("AS sd ON e.SessionId = sd.SessionId")
 		expect(flat).toContain("LIMIT 10")
@@ -243,25 +292,29 @@ describe("productEventsFunnelBreakdownQuery", () => {
 
 	it("reads the dimension straight off the session row on the session-step branch", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelBreakdownQuery({
-				steps: [REFERRAL, ...STEPS],
-				keyBy: "visitor",
-				windowSeconds: 3_600,
-				breakdownBy: "country",
-			}),
+			Result.getOrThrow(
+				productEventsFunnelBreakdownQuery({
+					steps: [REFERRAL, ...STEPS],
+					keyBy: "visitor",
+					windowSeconds: 3_600,
+					breakdownBy: "country",
+				}),
+			),
 			params,
 		)
-		expect(oneLine(sql)).toContain("0 AS s4, Country AS dim FROM session_replays AS s")
+		expect(oneLine(sql)).toContain("0 AS s4, s.Country AS dim FROM session_replays AS s")
 	})
 
 	it("uses the event Host without a join", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelBreakdownQuery({
-				steps: STEPS,
-				keyBy: "visitor",
-				windowSeconds: 60,
-				breakdownBy: "host",
-			}),
+			Result.getOrThrow(
+				productEventsFunnelBreakdownQuery({
+					steps: STEPS,
+					keyBy: "visitor",
+					windowSeconds: 60,
+					breakdownBy: "host",
+				}),
+			),
 			params,
 		)
 		expect(sql).toContain("Host AS dim")
@@ -270,13 +323,15 @@ describe("productEventsFunnelBreakdownQuery", () => {
 
 	it("bounds the group limit", () => {
 		expect(() =>
-			productEventsFunnelBreakdownQuery({
-				steps: STEPS,
-				keyBy: "visitor",
-				windowSeconds: 60,
-				breakdownBy: "host",
-				limit: 21,
-			}),
+			Result.getOrThrow(
+				productEventsFunnelBreakdownQuery({
+					steps: STEPS,
+					keyBy: "visitor",
+					windowSeconds: 60,
+					breakdownBy: "host",
+					limit: 21,
+				}),
+			),
 		).toThrow(/1\.\.20/)
 	})
 })
@@ -289,9 +344,9 @@ describe("productEventNamesQuery", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
 		const flat = oneLine(compiled.sql)
 		expect(flat).toContain(
-			"SELECT EventName AS eventName, Kind AS kind, count() AS count, uniqIf(SessionId, SessionId != '') AS sessions, uniq(if(UserId != '', UserId, VisitorId)) AS persons FROM product_events",
+			"SELECT product_events.EventName AS eventName, product_events.Kind AS kind, count() AS count, uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions, uniq(if(product_events.UserId != '', product_events.UserId, product_events.VisitorId)) AS persons FROM product_events",
 		)
-		expect(flat).toContain("WHERE OrgId = 'org_1'")
+		expect(flat).toContain("WHERE product_events.OrgId = 'org_1'")
 		expect(flat).toContain("GROUP BY eventName, kind ORDER BY count DESC, eventName ASC LIMIT 25")
 		expect(flat).not.toContain("session_replays")
 	})
@@ -305,11 +360,13 @@ describe("productEventNamesQuery", () => {
 		)
 		const flat = oneLine(sql)
 		expect(flat).toContain(
-			"AND Host = 'maple.dev' AND SessionId IN (SELECT SessionId AS sessionId FROM session_replays",
+			"AND product_events.Host = 'maple.dev' AND product_events.SessionId IN (SELECT session_replays.SessionId AS sessionId FROM session_replays",
 		)
-		expect(flat).toContain("AND ReferrerHost = 't.co'")
+		expect(flat).toContain("AND session_replays.ReferrerHost = 't.co'")
 		// pagePath narrows sessions through the navigation semi-join, not the events.
-		expect(flat).toContain("AND Kind = 'navigation' AND PagePath = '/pricing' GROUP BY sessionId)")
+		expect(flat).toContain(
+			"AND product_events.Kind = 'navigation' AND product_events.PagePath = '/pricing' GROUP BY sessionId)",
+		)
 	})
 })
 
@@ -322,7 +379,9 @@ describe("productEventNamesQuery", () => {
 describe("funnel drop-off details", () => {
 	it("walks each step's first event in chain order and takes p50/p90 of the gaps", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelTimingQuery({ steps: STEPS, keyBy: "person", windowSeconds: 3_600 }),
+			Result.getOrThrow(
+				productEventsFunnelTimingQuery({ steps: STEPS, keyBy: "person", windowSeconds: 3_600 }),
+			),
 			params,
 		)
 		expect(sql).toContain("arraySort(x -> (x.1, x.2), groupArray(tuple(ts, seq, s1, s2, s3))) AS evs")
@@ -334,22 +393,24 @@ describe("funnel drop-off details", () => {
 		expect(sql).toContain("quantileIf(0.5)(toFloat64(t2 - t1), level >= 2 AND t2 > 0)")
 		expect(sql).toContain("quantileIf(0.9)(toFloat64(t3 - t2), level >= 3 AND t3 > 0)")
 		expect(sql).toContain("arrayJoin([2, 3]) AS step")
-		expect(sql).toContain("arrayElement(p50s, step) AS p50Ms")
+		expect(sql).toContain("arrayElement(totals.p50s, step) AS p50Ms")
 	})
 
 	it("finds the first event after the last step a leaver reached, top rows per step", () => {
 		const { sql } = compileUnsafe(
-			productEventsFunnelLeaversQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 3_600 }),
+			Result.getOrThrow(
+				productEventsFunnelLeaversQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 3_600 }),
+			),
 			params,
 		)
 		expect(sql).toContain("level + 1 AS step")
 		expect(sql).toContain("arrayElement([t1, t2, t3], level) AS tLast")
-		expect(sql).toContain("WHERE level >= 1")
-		expect(sql).toContain("AND level < 3")
+		expect(sql).toContain("WHERE chain.level >= 1")
+		expect(sql).toContain("AND chain.level < 3")
 		expect(sql).toContain("AND arrayElement([t1, t2, t3], level) > 0")
 		expect(sql).toContain("argMinIf(e.name, e.ts, e.ts > d.tLast) AS next")
 		// No identity join on a visitor key, so the branch's columns go unprefixed.
-		expect(sql).toContain("if(Kind = 'navigation', PagePath, EventName) AS name")
+		expect(sql).toContain("if(e.Kind = 'navigation', e.PagePath, e.EventName) AS name")
 		// Every event of the population, not just step matches: no step OR-chain
 		// on the joined branch.
 		expect(sql).toContain("INNER JOIN")
@@ -359,11 +420,11 @@ describe("funnel drop-off details", () => {
 
 	it("need two steps — there is no 'between' with one", () => {
 		const one = [STEPS[0]!]
-		expect(() =>
-			productEventsFunnelTimingQuery({ steps: one, keyBy: "person", windowSeconds: 60 }),
-		).toThrow(ProductEventsFunnelError)
-		expect(() =>
-			productEventsFunnelLeaversQuery({ steps: one, keyBy: "person", windowSeconds: 60 }),
-		).toThrow(ProductEventsFunnelError)
+		expect(
+			rejection(productEventsFunnelTimingQuery({ steps: one, keyBy: "person", windowSeconds: 60 })),
+		).toBeInstanceOf(ProductEventsFunnelError)
+		expect(
+			rejection(productEventsFunnelLeaversQuery({ steps: one, keyBy: "person", windowSeconds: 60 })),
+		).toBeInstanceOf(ProductEventsFunnelError)
 	})
 })

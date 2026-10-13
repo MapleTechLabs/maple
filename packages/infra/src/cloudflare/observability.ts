@@ -3,30 +3,18 @@ import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
 import { plainWithDefault, requiredPlain } from "../env.ts"
 import { MapleStack } from "./stack.ts"
-import { regionHostsSharedApps } from "./stage.ts"
 
-/**
- * The production destinations' slugs, which Cloudflare derives from their
- * names. A stage that does not own the destinations references these.
- */
+/** prd destination slugs (derived from their names), referenced by non-owning stages. */
 const PRD_LOGS_DESTINATION = "maple-workers-logs"
 const PRD_TRACES_DESTINATION = "maple-workers-traces"
 
 /**
- * Workers Observability destinations for the asset Workers' platform logs and
- * traces (`landing`, `local-ui`, the sandbox): OTLP into Maple's own ingest.
- * Account-wide, so exactly one deploy owns them: the `us` prd, like the other
- * shared apps (`regionHostsSharedApps`), `retain`ed. Every other stage, the
- * EU prd included, references the slugs above instead — owning them twice
- * would have two stacks reconciling one destination, and the deploy token
- * cannot even list destinations to adopt them (Cloudflare answers
- * "Authentication error" to that call, which is what failed the first
- * `prd-eu` deploy). Yielded from each Worker module that references them;
- * alchemy registers a resource by id, so the second yield returns the first's.
+ * Account-wide Workers Observability destinations for the asset Workers, owned only by the `us`
+ * prd; every other stage references the slugs (the deploy token cannot list them to adopt).
  */
 export const WorkersObservabilityDestinations = Effect.gen(function* () {
-	const { stage, region } = yield* MapleStack
-	if (stage.kind !== "prd" || !regionHostsSharedApps(region)) {
+	const { stage, profile } = yield* MapleStack
+	if (stage.kind !== "prd" || !profile.deploys.sharedApps) {
 		return { logsDestination: undefined, tracesDestination: undefined }
 	}
 
@@ -54,11 +42,7 @@ export const WorkersObservabilityDestinations = Effect.gen(function* () {
 	return { logsDestination, tracesDestination }
 })
 
-/**
- * The `observability` block the asset Workers share: invocation logs on,
- * traces off — Cloudflare marks every non-2xx `fetch` span `Error`, so bot
- * 404s (`/wp-admin`, `/.git/config`) flooded error issues with "Unknown Error".
- */
+/** Asset Workers' observability: traces off, since Cloudflare marks every non-2xx span `Error` (bot 404s). */
 export const assetWorkerObservability = ({
 	logsDestination,
 	tracesDestination,

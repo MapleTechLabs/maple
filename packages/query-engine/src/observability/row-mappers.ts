@@ -6,21 +6,45 @@
 // missing column becomes an error. Coercing again downstream only hid which
 // layer was responsible.
 
-import { Schema } from "effect"
-import { TraceId } from "@maple/domain"
-import type { ListTracesOutput, ListLogsOutput, ErrorsByTypeOutput } from "@maple/domain/tinybird"
+import { Option, Schema } from "effect"
+import { SpanId, TraceId } from "@maple/domain"
+import type { ListLogsOutput, ListTracesOutput, ErrorsByTypeOutput } from "@maple/domain/tinybird"
 import type { SpanResult, LogEntry, ErrorSummary } from "./types"
+import { warehouseDateTimeToIso } from "../datetime"
 
+const decodeAttributeMap = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
+
+/** The list query's projected attribute map (a JSON string); empty values are absent keys. */
+export const parseProjectedAttributes = (raw: string): Record<string, string> => {
+	const out: Record<string, string> = {}
+	const parsed = raw.length === 0 ? Option.none() : decodeAttributeMap(raw)
+	if (Option.isNone(parsed)) return out
+	for (const [key, value] of Object.entries(parsed.value)) {
+		if (typeof value === "string" && value.length > 0) out[key] = value
+	}
+	return out
+}
+
+/**
+ * A `list_traces` row as a span result. The status is the stored one (Title
+ * case `Ok`/`Error`/`Unset`), matching the span-level, slow-trace and
+ * inspect-trace paths. Resource attributes are not read on this path.
+ */
 export const toSpanResult = (t: ListTracesOutput): SpanResult => ({
 	traceId: Schema.decodeSync(TraceId)(t.traceId),
-	spanId: null,
+	spanId: Option.getOrNull(Schema.decodeUnknownOption(SpanId)(t.rootSpanId)),
 	spanName: t.rootSpanName,
 	serviceName: t.services[0] ?? "",
 	durationMs: t.durationMicros / 1000,
-	statusCode: t.hasError ? "Error" : "Ok",
-	statusMessage: "",
-	attributes: {},
-	resourceAttributes: {},
+	statusCode: t.rootSpanStatusCode || (t.hasError ? "Error" : "Unset"),
+	statusMessage: t.rootSpanStatusMessage,
+	attributes: parseProjectedAttributes(t.rootSpanAttributes),
+	resourceAttributes: {
+		...(t.rootDeploymentEnv ? { "deployment.environment": t.rootDeploymentEnv } : undefined),
+		...(t.rootServiceVersion ? { "service.version": t.rootServiceVersion } : undefined),
+	},
 	timestamp: t.startTime,
 })
 
@@ -39,5 +63,5 @@ export const toErrorSummary = (e: ErrorsByTypeOutput): ErrorSummary => ({
 	sampleMessage: e.sampleMessage ?? "",
 	count: e.count,
 	affectedServicesCount: e.affectedServicesCount,
-	lastSeen: e.lastSeen,
+	lastSeen: warehouseDateTimeToIso(e.lastSeen),
 })

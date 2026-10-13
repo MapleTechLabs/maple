@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from "react"
 
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import { ChartEmpty } from "@maple/ui/components/charts/_shared/chart-state"
@@ -74,9 +75,10 @@ export function MetricsGrid({ items, className, waiting, syncId, overlay, yAxisW
 			<div
 				{...containerProps}
 				data-metrics-grid=""
+				aria-busy={waiting || undefined}
 				className={cn(
-					"grid grid-cols-1 md:grid-cols-2 gap-3 transition-opacity",
-					waiting && "opacity-60",
+					"grid grid-cols-1 md:grid-cols-2 gap-3",
+					refreshingClass(waiting ?? false),
 					className,
 				)}
 			>
@@ -121,7 +123,9 @@ export function MetricsGrid({ items, className, waiting, syncId, overlay, yAxisW
 									<ChartSkeleton variant={entry.category} />
 								) : item.data.length === 0 ? (
 									// A chart handed no rows draws bare axes and says nothing.
-									<ChartEmpty hint="Try a wider time range">No data in this window</ChartEmpty>
+									<ChartEmpty hint="Try a wider time range">
+										No data in this window
+									</ChartEmpty>
 								) : (
 									<div className="relative h-full min-h-0 w-full">
 										<Suspense fallback={<ChartSkeleton variant={entry.category} />}>

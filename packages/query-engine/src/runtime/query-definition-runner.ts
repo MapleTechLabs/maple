@@ -1,11 +1,12 @@
-import type { CompiledQuery, CompiledQueryInput, QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import type { CompiledQuery, CompiledQueryInput, QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { Effect, Option } from "effect"
 import { baselineWarehouseCapabilities, type WarehouseCapabilities } from "../capabilities"
 import type { SqlQueryOptions } from "../profiles"
 import type { QueryDefinition } from "../registry/query-definition"
+import type { OrgId } from "@maple/domain"
 
 export interface QueryDefinitionTenant {
-	readonly orgId: string
+	readonly orgId: OrgId
 }
 
 export interface QueryDefinitionWarehouse<Tenant extends QueryDefinitionTenant, Error> {

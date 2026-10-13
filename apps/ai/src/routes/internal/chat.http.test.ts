@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { describe, expect, it } from "@effect/vitest"
-import { ChatApiGroup, CurrentTenant, V1SchemaErrors, V1UnexpectedErrors } from "@maple/domain/http"
+import { ChatApiGroup, CurrentTenant, ApiSchemaErrors, ApiUnexpectedErrors } from "@maple/domain/http"
 import {
 	ChatMessage,
 	ChatToolCall,
@@ -8,17 +8,18 @@ import {
 	type ChatProposalSettlement,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { Context, Effect, Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { HttpChatLive } from "./chat.http"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 class ChatOnlyApi extends HttpApi.make("MapleAiApi")
 	.add(ChatApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors) {}
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
 
 const TENANT = new CurrentTenant.TenantSchema({
 	orgId: "org_chat_approval" as CurrentTenant.TenantSchema["orgId"],
@@ -74,13 +75,17 @@ const makeHarness = (session: {
 				session.history ?? recorded({ output: "Approved in Maple.\nAlert rule deleted." }),
 			),
 	}
-	const env = { ChatSession: { idFromName: (name: string) => name, get: () => stub } }
 
 	const routes = HttpApiBuilder.layer(ChatOnlyApi).pipe(
 		Layer.provide(HttpChatLive),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
-		Layer.provideMerge(Layer.succeed(WorkerEnvironment, env as never)),
+		Layer.provideMerge(
+			Layer.merge(
+				envPorts({}),
+				fakeChatSessionsLayer(() => stub),
+			),
+		),
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })
 

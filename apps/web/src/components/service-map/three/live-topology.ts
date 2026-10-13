@@ -1,5 +1,5 @@
 import type { Edge, Node } from "@xyflow/react"
-import type { ServiceEdgeData, ServiceNodeData } from "../service-map-utils"
+import type { ServiceEdgeData, ServiceNodeData } from "@maple/ui/components/service-map/service-map-utils"
 import type { Node3DKind, Topology3D } from "./types"
 
 const QUEUE_SYSTEMS = new Set(["kafka", "rabbitmq", "sqs", "aws_sqs", "nats", "pulsar"])

@@ -1,16 +1,19 @@
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { useAtomValue } from "@/lib/effect-atom"
 
 import { ChartError, ChartLoading, ChartPlotArea } from "@maple/ui/components/charts"
 
 import { hostInfraTimeseriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { HostInfraMetric } from "@/api/warehouse/infra"
 import { formatValueWithUnit } from "./chart-utils"
+import { SeriesLegend } from "@/components/common/series-legend"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import {
 	InfraMetricChart,
 	INFRA_METRIC_CHART_HEIGHT,
 	type InfraSeriesInfo,
 } from "./primitives/infra-metric-chart"
 import { displayError } from "@/lib/error-messages"
+import { ResultView } from "@/components/common/result-view"
 
 interface HostDetailChartProps {
 	hostName: string
@@ -53,20 +56,22 @@ export function HostDetailChart({
 
 	return (
 		<ChartPlotArea height={INFRA_METRIC_CHART_HEIGHT}>
-			{Result.builder(result)
-				.onInitial(() => <ChartLoading variant="area" />)
-				.onError((err) => <ChartError>{displayError(err).message}</ChartError>)
-				.onSuccess((response, holder) => (
+			<ResultView
+				result={result}
+				loading={<ChartLoading variant="area" />}
+				error={(err) => <ChartError>{displayError(err).message}</ChartError>}
+			>
+				{(response, { waiting }) => (
 					<HostMetricChartView
 						rows={response.data}
 						unit={response.unit}
 						metric={metric}
 						seriesLabel={HOST_METRIC_LABELS[metric]}
-						waiting={Boolean(holder.waiting)}
+						waiting={waiting}
 						syncId={syncId}
 					/>
-				))
-				.render()}
+				)}
+			</ResultView>
 		</ChartPlotArea>
 	)
 }
@@ -95,26 +100,22 @@ interface HostMetricChartViewProps {
  */
 function HostSeriesSummary({ series, colors, lastValues, labelFor, unit }: InfraSeriesInfo) {
 	return (
-		<div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 px-3 py-2">
-			{series.map((name) => {
+		<SeriesLegend
+			className="px-3 py-2"
+			// A host can mount dozens of filesystems; long mountpoints differ at the end.
+			maxItems={8}
+			items={series.map((name) => {
 				const value = lastValues[name]
-				return (
-					<div key={name} className="inline-flex items-baseline gap-1.5">
-						<span
-							aria-hidden
-							className="size-1.5 translate-y-[-1px] rounded-full"
-							style={{ background: colors.get(name) }}
-						/>
-						<span className="text-[11px] text-muted-foreground">{labelFor(name)}</span>
-						{value !== undefined && (
-							<span className="font-mono text-[11px] text-foreground/85 tabular-nums">
-								{formatValueWithUnit(value, unit)}
-							</span>
-						)}
-					</div>
-				)
+				const label = labelFor(name)
+				return {
+					key: name,
+					label: <MiddleTruncate text={label} tail={10} />,
+					title: label,
+					color: colors.get(name),
+					value: value === undefined ? undefined : formatValueWithUnit(value, unit),
+				}
 			})}
-		</div>
+		/>
 	)
 }
 
@@ -169,9 +170,9 @@ export function MetricStrip({
 	return (
 		<section className="grid grid-cols-1 gap-0 border-t first:border-t-0 lg:grid-cols-[160px_1fr]">
 			<div className="border-b px-1 py-3 lg:border-b-0 lg:border-r lg:py-5">
-				<div className="text-[12px] font-medium text-foreground">{label}</div>
+				<div className="text-xs font-medium text-foreground">{label}</div>
 				{caption ? (
-					<div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{caption}</div>
+					<div className="mt-1 text-2xs leading-relaxed text-muted-foreground">{caption}</div>
 				) : null}
 			</div>
 			<div className="lg:pl-4">

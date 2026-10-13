@@ -1,11 +1,13 @@
 import { Clock, Effect, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { getServiceOverviewResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+
+export type IngestKeyStatus = "loading" | "ready" | "failed"
 
 export interface IngestConnection {
 	/** `connected` once non-demo telemetry is observed in the last hour. */
@@ -18,6 +20,8 @@ export interface IngestConnection {
 	spansPerMinute: number
 	/** The org's public ingest key (empty string until loaded / when denied). */
 	apiKey: string
+	/** `failed` when the key could not be read (e.g. members without access to org keys). */
+	apiKeyStatus: IngestKeyStatus
 	/** Force an immediate re-poll of the service overview. */
 	refresh: () => void
 }
@@ -38,6 +42,11 @@ export function useIngestConnection({ poll = true }: UseIngestConnectionOptions 
 
 	const keysResult = useAtomValue(retainedQueryV2("ingestKeys", "retrieve", {}))
 	const apiKey = Result.isSuccess(keysResult) ? keysResult.value.public_key : ""
+	const apiKeyStatus: IngestKeyStatus = Result.isSuccess(keysResult)
+		? "ready"
+		: Result.isFailure(keysResult)
+			? "failed"
+			: "loading"
 
 	const overviewAtom = getServiceOverviewResultAtom({ data: { startTime, endTime } })
 	const overviewResult = useAtomValue(overviewAtom)
@@ -51,7 +60,7 @@ export function useIngestConnection({ poll = true }: UseIngestConnectionOptions 
 		(s) => !(typeof s.serviceName === "string" && s.serviceName.startsWith("demo-")),
 	)
 	const firstRealService =
-		typeof realServices[0]?.serviceName === "string" ? (realServices[0].serviceName as string) : undefined
+		typeof realServices[0]?.serviceName === "string" ? realServices[0].serviceName : undefined
 	const spansPerMinute = realServices.reduce((sum, s) => sum + (s.spanCount ?? 0), 0) / 60
 
 	return {
@@ -60,6 +69,7 @@ export function useIngestConnection({ poll = true }: UseIngestConnectionOptions 
 		firstRealService,
 		spansPerMinute,
 		apiKey,
+		apiKeyStatus,
 		refresh,
 	}
 }

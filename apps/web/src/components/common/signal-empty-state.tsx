@@ -10,14 +10,15 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
+import type { DocsPage } from "@/lib/docs"
 import {
-	ExternalLinkIcon,
 	ChartLineIcon,
 	ClockIcon,
 	ConnectionIcon,
 	EyeIcon,
 	FileIcon,
-	SlidersIcon,
 	NetworkNodesIcon,
 } from "@/components/icons"
 import { useSignalPresence, type SignalPresence, type TelemetrySignalKind } from "@/hooks/use-signal-presence"
@@ -41,80 +42,68 @@ import { useSignalPresence, type SignalPresence, type TelemetrySignalKind } from
  */
 
 interface SignalCopy {
-	/** Plural noun for the thing the page lists — "traces", "log lines". */
+	/** Plural noun for the thing the page lists: "traces", "log lines". */
 	readonly noun: string
 	readonly icon: React.ComponentType<{ size?: number; className?: string }>
+	/** What the page is for, in one sentence. Shown whether or not the signal is set up. */
+	readonly purpose: string
 	/** What the user has to do, phrased as the thing they are missing. */
 	readonly source: string
 	/** Action label for the setup CTA. */
 	readonly action: string
-	/**
-	 * Docs page for this signal, as a path under maple.dev. Kept as a path rather than a full URL so
-	 * `signal-empty-state.test.tsx` can check each one against the landing content collection — a
-	 * renamed doc then fails in the PR that renames it, instead of rotting into a 404.
-	 */
-	readonly docs: string
+	/** How to start sending the signal. */
+	readonly setupDocs: DocsPage
+	/** How to use the page once data arrives. */
+	readonly guideDocs: DocsPage
 }
 
-/** Exported for the docs-link test, which resolves each path against the landing content. */
 export const SIGNAL_COPY = {
 	traces: {
 		noun: "traces",
 		icon: NetworkNodesIcon,
-		source: "Traces come from an OpenTelemetry SDK in your app, exporting to Maple's endpoint.",
+		purpose: "Follow every request through your services, with timing for each step.",
+		source: "Send spans from an OpenTelemetry SDK in your app.",
 		action: "Set up tracing",
-		docs: "/docs/instrumentation",
+		setupDocs: "instrumentation",
+		guideDocs: "traces",
 	},
 	logs: {
 		noun: "logs",
 		icon: FileIcon,
-		source: "Logs come from an OTLP log bridge under your existing logger. Logging to stdout alone never reaches Maple.",
+		purpose: "Search every log line and jump to the trace that wrote it.",
+		source: "Add an OpenTelemetry log exporter to the logger you already use; stdout alone doesn't reach Maple.",
 		action: "Set up logging",
-		docs: "/docs/instrumentation",
+		setupDocs: "instrumentation",
+		guideDocs: "logs",
 	},
 	metrics: {
 		noun: "metrics",
 		icon: ChartLineIcon,
-		source: "Metrics come from an OpenTelemetry metric reader exporting to Maple's endpoint.",
+		purpose: "Chart the counters, gauges and histograms your services and hosts report.",
+		source: "Send them from an OpenTelemetry metric reader, a Prometheus scrape, or the Maple agent.",
 		action: "Set up metrics",
-		docs: "/docs/instrumentation",
+		setupDocs: "instrumentation",
+		guideDocs: "metrics",
 	},
 	sessions: {
 		noun: "sessions",
 		icon: EyeIcon,
-		source: "Sessions come from the browser SDK — install @maple-dev/browser and call MapleBrowser.init().",
+		purpose: "Watch what a user saw and did, next to the requests their browser made.",
+		source: "Add the Maple browser SDK to your site.",
 		action: "Set up session replay",
-		docs: "/docs/session-replay/browser-sdk",
+		setupDocs: "browserSdk",
+		guideDocs: "sessionReplay",
 	},
 	product_events: {
 		noun: "events",
 		icon: ConnectionIcon,
-		source: "Product events come from track() calls in the browser SDK.",
+		purpose: "Record what users do in your app, for funnels and web analytics.",
+		source: "Send them with track() from the Maple browser SDK.",
 		action: "Set up product analytics",
-		docs: "/docs/product-events/api",
+		setupDocs: "productEventsApi",
+		guideDocs: "webAnalytics",
 	},
 } satisfies Record<TelemetrySignalKind, SignalCopy>
-
-const DOCS_ORIGIN = "https://maple.dev"
-
-/**
- * Docs escape hatch. The in-app snippet is the fast path, but it is one framework's worth of
- * instructions — anyone on a language or setup it does not cover needs somewhere to go that is not
- * "open a support chat".
- */
-function DocsLink({ signal }: { readonly signal: TelemetrySignalKind }): React.ReactElement {
-	return (
-		<a
-			href={`${DOCS_ORIGIN}${SIGNAL_COPY[signal].docs}`}
-			target="_blank"
-			rel="noopener noreferrer"
-			className="inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline"
-		>
-			Read the docs
-			<ExternalLinkIcon size={12} />
-		</a>
-	)
-}
 
 export interface SignalEmptyStateProps {
 	/** Which signal this view is built on. Drives every piece of copy. */
@@ -132,6 +121,16 @@ export interface SignalEmptyStateProps {
 	 * SIGNAL_COPY instead, or thirty pages drift apart again.
 	 */
 	readonly detail?: React.ReactNode
+	/**
+	 * For pages built on a signal but about something narrower (errors, the service map, agent
+	 * sessions): what this page is for, and which docs explain it. Setup advice stays the signal's.
+	 */
+	readonly purpose?: string
+	readonly guideDocs?: DocsPage
+	/** The pre-data "Setup guide" link, when the page has its own setup docs. */
+	readonly setupDocs?: DocsPage
+	/** The setup button's label, when the page's job is narrower than the signal's. */
+	readonly action?: string
 	readonly className?: string
 }
 
@@ -145,38 +144,22 @@ export function SignalEmptyStateView({
 	onClearFilters,
 	onWidenRange,
 	detail,
+	purpose,
+	guideDocs,
+	setupDocs,
+	action,
 	className,
 }: SignalEmptyStateProps & { readonly presence: SignalPresence }): React.ReactElement {
 	const copy = SIGNAL_COPY[signal]
 	const subject = noun ?? copy.noun
+	const pagePurpose = purpose ?? copy.purpose
+	const guide = guideDocs ?? copy.guideDocs
 
 	// Filters first: the user narrowed this themselves, so that is the explanation they are looking
 	// for — even on an org that has never sent the signal, where the setup advice is also true but
 	// answers a question they did not ask.
 	if (filtered) {
-		return (
-			<Empty className={className}>
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<SlidersIcon />
-					</EmptyMedia>
-					<EmptyTitle>No {subject} match these filters</EmptyTitle>
-					<EmptyDescription>
-						Everything in this time range was excluded by the current filters.
-					</EmptyDescription>
-				</EmptyHeader>
-				{(detail !== undefined || onClearFilters !== undefined) && (
-					<EmptyContent>
-						{detail}
-						{onClearFilters !== undefined && (
-							<Button variant="outline" size="sm" onClick={onClearFilters}>
-								Clear filters
-							</Button>
-						)}
-					</EmptyContent>
-				)}
-			</Empty>
-		)
+		return <FilteredEmpty noun={subject} onClear={onClearFilters} detail={detail} className={className} />
 	}
 
 	if (presence.status === "absent") {
@@ -188,21 +171,25 @@ export function SignalEmptyStateView({
 						<Icon />
 					</EmptyMedia>
 					<EmptyTitle>No {subject} yet</EmptyTitle>
-					<EmptyDescription>{copy.source}</EmptyDescription>
+					<EmptyDescription>
+						{pagePurpose} {copy.source}
+					</EmptyDescription>
 				</EmptyHeader>
 				<EmptyContent>
 					{detail}
-					<div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+					<EmptyActions>
 						<Button
 							size="sm"
 							className="gap-2"
 							render={<Link to="/settings" search={{ tab: "ingestion" }} />}
 						>
-							<ConnectionIcon size={14} />
-							{copy.action}
+							<ConnectionIcon />
+							{action ?? copy.action}
 						</Button>
-						<DocsLink signal={signal} />
-					</div>
+						{/* One link, not two: before any data the setup guide is the only docs page
+						    that helps, and a third action wraps onto its own line. */}
+						<DocsLink page={setupDocs ?? copy.setupDocs}>Setup guide</DocsLink>
+					</EmptyActions>
 				</EmptyContent>
 			</Empty>
 		)
@@ -225,16 +212,17 @@ export function SignalEmptyStateView({
 							: `Maple last received ${copy.noun} ${formatRelativeTime(presence.lastSeen)}. Widen the range to see them.`}
 					</EmptyDescription>
 				</EmptyHeader>
-				{(detail !== undefined || onWidenRange !== undefined) && (
-					<EmptyContent>
-						{detail}
+				<EmptyContent>
+					{detail}
+					<EmptyActions>
 						{onWidenRange !== undefined && (
 							<Button variant="outline" size="sm" onClick={onWidenRange}>
 								Widen time range
 							</Button>
 						)}
-					</EmptyContent>
-				)}
+						<DocsLink page={guide} />
+					</EmptyActions>
+				</EmptyContent>
 			</Empty>
 		)
 	}
@@ -244,8 +232,12 @@ export function SignalEmptyStateView({
 		<Empty className={className}>
 			<EmptyHeader>
 				<EmptyTitle>No {subject} found</EmptyTitle>
+				<EmptyDescription>{pagePurpose}</EmptyDescription>
 			</EmptyHeader>
-			{detail !== undefined && <EmptyContent>{detail}</EmptyContent>}
+			<EmptyContent>
+				{detail}
+				<DocsLink page={guide} />
+			</EmptyContent>
 		</Empty>
 	)
 }

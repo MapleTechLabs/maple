@@ -1,45 +1,36 @@
-import { formatLatency, formatPercent } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+	EMPTY_VALUE,
+	formatRate,
+	pluralize,
+} from "@maple/ui/lib/format"
+import { Separator } from "@maple/ui/components/ui/separator"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { SampledValue } from "@/components/services/sampled-value"
+import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { LatencyLineChart, QueryBuilderBarChart } from "@maple/ui/components/charts"
 import { ChartTooltipSuppressionProvider } from "@maple/ui/components/plot"
 import { LinkedCursorOverlay, linkedCursorChartProps, useLinkedCursor } from "@/hooks/use-linked-cursor"
-import {
-	lazy,
-	Suspense,
-	useCallback,
-	useDeferredValue,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-	useSyncExternalStore,
-} from "react"
-import {
-	ReactFlow,
-	applyNodeChanges,
-	type Edge,
-	type Node,
-	type NodeChange,
-	type NodePositionChange,
-	type ReactFlowInstance,
-	type Viewport,
-} from "@xyflow/react"
-import "@xyflow/react/dist/style.css"
+import { lazy, Suspense, useMemo } from "react"
 
 import { Result, useAtom, useAtomValue } from "@/lib/effect-atom"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { serviceMapLayoutAtomFamily, upsertSnapshot } from "@/atoms/service-map-layout-atoms"
+import { serviceMapLayoutAtomFamily } from "@/atoms/service-map-layout-atoms"
 import { serviceMapViewPrefsAtomFamily } from "@/atoms/service-map-view-prefs-atoms"
 import { Link } from "@tanstack/react-router"
 import { displayError } from "@/lib/error-messages"
-import { logClientError } from "@/lib/services/common/telemetry"
+import { logClientError, logClientWarning } from "@/lib/services/common/telemetry"
 
 import { cn } from "@maple/ui/lib/utils"
-import { getServiceColor, getValueHue } from "@maple/ui/lib/colors"
+import { getServiceColor } from "@maple/ui/lib/colors"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { Popover, PopoverTrigger, PopoverContent } from "@maple/ui/components/ui/popover"
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@maple/ui/components/ui/resizable"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import {
 	Empty,
@@ -48,19 +39,31 @@ import {
 	EmptyHeader,
 	EmptyMedia,
 	EmptyTitle,
+	EmptyMessage,
 } from "@maple/ui/components/ui/empty"
-import { Button } from "@maple/ui/components/ui/button"
+import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import {
 	ArrowRightIcon,
 	CloudflareIcon,
 	CubeIcon,
-	ExternalLinkIcon,
 	MagnifierIcon,
 	NetworkNodesIcon,
 	PlanetScaleIcon,
 	XmarkIcon,
 } from "@/components/icons"
+import { DocsLink } from "@/components/common/docs-link"
+import { ResultView } from "@/components/common/result-view"
+import { SignalEmptyStateView } from "@/components/common/signal-empty-state"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 import {
 	getPlanetScaleBranchStatsResultAtom,
 	getServiceDbQuerySummaryResultAtom,
@@ -79,88 +82,176 @@ import type {
 } from "@/api/warehouse/service-map"
 import type { ServiceOverview } from "@/api/warehouse/services"
 import type { ServiceWorkload } from "@/api/warehouse/service-infra"
-import { ServiceMapNode } from "./service-map-node"
-import { ServiceMapLoading } from "./service-map-loading"
-import { ServiceMapEdge } from "./service-map-edge"
-import { ServiceMapToolbar } from "./service-map-toolbar"
-import { ServiceMapBackground } from "./service-map-background"
-import { ServiceMapControls } from "./service-map-controls"
-import { ServiceMapMiniMap } from "./service-map-minimap"
-import { applyDeclutter, type DeclutterFocus, type DeclutterState } from "./service-map-declutter"
-import { NamespaceGroupNode, type NamespaceGroupData } from "./service-map-namespace-group"
-import { layoutServiceMapWithElk, type ElkLayoutResult, type PreviousPositions } from "./service-map-elk"
 import {
-	createParticleRegistry,
-	ParticleRegistryProvider,
-	ServiceMapParticleCanvas,
-	type ParticleRegistry,
-} from "./service-map-particles"
-import { resolveDbNodePresentation, resolvePlanetScaleDbPresentation } from "./service-map-db"
+	ServiceMapFlowCanvas,
+	type ServiceMap3DRenderProps,
+	type ServiceMapDetailPanelContext,
+} from "@maple/ui/components/service-map/service-map-canvas"
+import type { DeclutterFocus } from "@maple/ui/components/service-map/service-map-declutter"
+import { ServiceMapLoading } from "@maple/ui/components/service-map/service-map-loading"
+import {
+	resolveDbNodePresentation,
+	resolvePlanetScaleDbPresentation,
+} from "@maple/ui/components/service-map/service-map-db"
 import { PlanetScaleTopQueries } from "@/components/infra/planetscale/planetscale-top-queries"
-import { formatStoragePercent, lagClass, utilizationClass } from "@/components/infra/planetscale/metrics"
 import {
+	formatLag,
+	formatStoragePercent,
+	lagClass,
+	utilizationClass,
+} from "@/components/infra/planetscale/metrics"
+import {
+	aggregateServiceOverviews,
 	buildFlowElements,
 	CLOUDFLARE_COLOR,
-	computeNodePositions,
 	DB_NODE_PREFIX,
-	isNsAggregateId,
-	NS_AGGREGATE_PREFIX,
 	parseDbNodeId,
-	getPlatformColor,
 	getServiceMapNodeColor,
-	topologyKey,
-	DEFAULT_LAYOUT_CONFIG,
-	NS_LABEL_HEIGHT,
-	NS_PADDING_X,
-	NS_PADDING_Y,
 	type CloudflareNodeMetrics,
 	type PlanetScaleNodeMetrics,
-	type LayoutConfig,
-	type ServiceEdgeData,
 	type ServiceMapColorMode,
-	type ServiceNodeData,
-} from "./service-map-utils"
-import type { HyperdriveConfigInput, HyperdriveNodeInfo } from "./service-map-hyperdrive"
+} from "@maple/ui/components/service-map/service-map-utils"
+import type { Tone } from "@maple/ui/lib/tone"
+import type {
+	HyperdriveConfigInput,
+	HyperdriveNodeInfo,
+} from "@maple/ui/components/service-map/service-map-hyperdrive"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { useMapleOrganizationId } from "@/hooks/use-maple-organization"
 
 const LiveServiceMap3D = lazy(() => import("./three/live-view"))
 
-const nodeTypes = {
-	serviceNode: ServiceMapNode,
-	namespaceGroup: NamespaceGroupNode,
+function renderLiveServiceMap3D(props: ServiceMap3DRenderProps) {
+	return (
+		<Suspense fallback={<ServiceMapLoading />}>
+			<LiveServiceMap3D {...props} />
+		</Suspense>
+	)
 }
 
-const NAMESPACE_GROUP_PREFIX = "nsgroup:"
-const nsGroupId = (namespace: string) => `${NAMESPACE_GROUP_PREFIX}${encodeURIComponent(namespace)}`
-
-// Fallback node dimensions used before ReactFlow has measured a node, so the
-// dotted boxes appear on first paint and refine once real sizes arrive.
-// Long enough to swallow a wheel-zoom's burst of gesture-end events and the
-// programmatic fit that follows a layout, short enough that a camera is never
-// meaningfully at risk of being lost.
-const VIEWPORT_PERSIST_DEBOUNCE_MS = 400
-
-const FALLBACK_NODE_WIDTH = 220
-const FALLBACK_NODE_HEIGHT = 70
-
-const formatReplicationLag = (seconds: number) =>
-	seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`
-
-const edgeTypes = {
-	serviceEdge: ServiceMapEdge,
+// A quiet error rate reads as healthy, not unknown.
+const healthTone = (errorRate: number): Tone => {
+	const level = errorRateLevel(errorRate)
+	return level === "neutral" ? "ok" : level
 }
 
-function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
+function MetricValue({ className, ...props }: React.ComponentProps<"p">) {
+	return (
+		<p
+			className={cn("font-mono text-xl font-semibold tabular-nums text-foreground", className)}
+			{...props}
+		/>
+	)
 }
 
-function getHealthDotClass(errorRate: number): string {
-	if (errorRate > 0.05) return "bg-severity-error"
-	if (errorRate > 0.01) return "bg-severity-warn"
-	return "bg-severity-info"
+/** Label over a big metric value, with an optional unit or caption under it. */
+function MetricTile({
+	label,
+	caption,
+	children,
+}: {
+	label: string
+	caption?: React.ReactNode
+	children: React.ReactNode
+}) {
+	return (
+		<div className="space-y-0.5">
+			<span className="text-3xs text-muted-foreground">{label}</span>
+			{children}
+			{caption !== undefined && <span className="text-3xs text-muted-foreground">{caption}</span>}
+		</div>
+	)
+}
+
+/** Detail panel header: accent bar + title content on the left, actions on the right. */
+function DetailPanelHeader({
+	accentColor,
+	actions,
+	children,
+}: {
+	accentColor: string
+	actions: React.ReactNode
+	children: React.ReactNode
+}) {
+	return (
+		<div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
+			<div className="flex items-center gap-2 min-w-0">
+				<div
+					className="w-[3px] h-[18px] rounded-sm shrink-0"
+					style={{ backgroundColor: accentColor }}
+				/>
+				{children}
+			</div>
+			<div className="flex items-center gap-2 shrink-0">{actions}</div>
+		</div>
+	)
+}
+
+/** Badge for short uppercase tags (a branch's "prod", an origin scheme). */
+function TagBadge({ children }: { children: React.ReactNode }) {
+	return (
+		<Badge variant="tag" className="shrink-0 font-semibold">
+			{children}
+		</Badge>
+	)
+}
+
+/** One caller or dependency of a node: service swatch + name, call rate, error rate. */
+function EdgeRow({
+	service,
+	edge,
+	durationSeconds,
+	unit,
+	highlightError = false,
+	explainSampling = false,
+}: {
+	service: string
+	edge: {
+		hasSampling: boolean
+		callCount: number
+		estimatedCallCount: number
+		errorRate: number
+		samplingWeight: number
+	}
+	durationSeconds: number
+	unit: string
+	/** Tint the row when the error rate is critical. */
+	highlightError?: boolean
+	/** Native tooltip saying how a sampled rate was extrapolated. */
+	explainSampling?: boolean
+}) {
+	const safeDuration = Math.max(durationSeconds, 1)
+	const reqPerSec = (edge.hasSampling ? edge.estimatedCallCount : edge.callCount) / safeDuration
+	const isError = highlightError && errorRateLevel(edge.errorRate) === "crit"
+	return (
+		<div
+			className={cn(
+				"flex items-center justify-between px-2.5 py-2 rounded-md border text-xs",
+				isError ? "bg-severity-error/[0.04] border-severity-error/[0.12]" : "bg-card border-border",
+			)}
+			title={
+				explainSampling && edge.hasSampling
+					? `Estimated ×${edge.samplingWeight.toFixed(0)} from ${formatRate(edge.callCount / safeDuration)} traced req/s`
+					: undefined
+			}
+		>
+			<div className="flex items-center gap-1.5 min-w-0">
+				<div
+					className="w-[3px] h-3.5 rounded-sm shrink-0"
+					style={{ backgroundColor: getServiceColor(service) }}
+				/>
+				<span className="text-foreground truncate">{service}</span>
+			</div>
+			<div className="flex items-center gap-2 shrink-0 text-3xs">
+				<span className="text-muted-foreground tabular-nums font-mono">
+					<SampledValue estimated={edge.hasSampling} value={formatRate(reqPerSec)} /> {unit}
+				</span>
+				<span className={cn("tabular-nums font-mono", errorRateClass(edge.errorRate))}>
+					{formatErrorRate(edge.errorRate)}
+				</span>
+			</div>
+		</div>
+	)
 }
 
 interface ServiceDetailPanelProps {
@@ -190,7 +281,11 @@ function ServiceDetailPanel({
 	onFocus,
 	onClose,
 }: ServiceDetailPanelProps) {
-	const overview = overviews.find((o) => o.serviceName === serviceId)
+	// Same per-service aggregate the map node renders, so panel and node agree.
+	const overview = useMemo(
+		() => aggregateServiceOverviews(overviews).get(serviceId),
+		[overviews, serviceId],
+	)
 	const errorRate = overview?.errorRate ?? 0
 	const accentColor = getServiceMapNodeColor(
 		{
@@ -202,10 +297,7 @@ function ServiceDetailPanel({
 		colorMode,
 	)
 
-	const throughput = overview?.throughput ?? 0
 	const hasSampling = overview?.hasSampling ?? false
-	const avgLatencyMs = overview?.p50LatencyMs ?? 0
-	const p95LatencyMs = overview?.p95LatencyMs ?? 0
 
 	const dependencies = edges.filter((e) => e.sourceService === serviceId)
 	const calledBy = edges.filter((e) => e.targetService === serviceId)
@@ -213,44 +305,40 @@ function ServiceDetailPanel({
 
 	return (
 		<div className="flex flex-col h-full bg-background overflow-hidden">
-			{/* Header */}
-			<div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-				<div className="flex items-center gap-2 min-w-0">
-					<div
-						className="w-[3px] h-[18px] rounded-sm shrink-0"
-						style={{ backgroundColor: accentColor }}
-					/>
-					<div className={cn("h-1.5 w-1.5 rounded-full shrink-0", getHealthDotClass(errorRate))} />
-					<div className="flex flex-col min-w-0">
-						<span className="text-sm font-semibold text-foreground truncate">{serviceId}</span>
-						{overview?.serviceNamespace ? (
-							<span className="text-[10px] text-muted-foreground truncate">
-								{overview.serviceNamespace}
-							</span>
-						) : null}
-					</div>
+			<DetailPanelHeader
+				accentColor={accentColor}
+				actions={
+					<>
+						<IconButton
+							size="icon-xs"
+							onClick={onFocus}
+							label="Focus the map on this service's neighborhood"
+						>
+							<MagnifierIcon />
+						</IconButton>
+						<Link
+							to="/services/$serviceName"
+							params={{ serviceName: serviceId }}
+							className="text-3xs text-primary hover:text-primary/80 transition-colors"
+						>
+							View service
+						</Link>
+						<IconButton size="icon-xs" onClick={onClose} label="Close">
+							<XmarkIcon />
+						</IconButton>
+					</>
+				}
+			>
+				<StatusDot tone={healthTone(errorRate)} />
+				<div className="flex flex-col min-w-0">
+					<span className="text-sm font-semibold text-foreground truncate">{serviceId}</span>
+					{overview?.serviceNamespace ? (
+						<span className="text-3xs text-muted-foreground truncate">
+							{overview.serviceNamespace}
+						</span>
+					) : null}
 				</div>
-				<div className="flex items-center gap-2 shrink-0">
-					<Button
-						variant="ghost"
-						size="icon-xs"
-						onClick={onFocus}
-						title="Focus the map on this service's neighborhood"
-					>
-						<MagnifierIcon size={13} />
-					</Button>
-					<Link
-						to="/services/$serviceName"
-						params={{ serviceName: serviceId }}
-						className="text-[10px] text-primary hover:text-primary/80 transition-colors"
-					>
-						View service
-					</Link>
-					<Button variant="ghost" size="icon-xs" onClick={onClose}>
-						<XmarkIcon size={14} />
-					</Button>
-				</div>
-			</div>
+			</DetailPanelHeader>
 
 			<Tabs defaultValue="service" className="flex flex-col flex-1 min-h-0">
 				<TabsList variant="underline" className="shrink-0 px-4 pt-2">
@@ -262,7 +350,7 @@ function ServiceDetailPanel({
 						<CubeIcon size={12} />
 						Infrastructure
 						{serviceWorkloads.length > 0 && (
-							<span className="ml-1 text-[9px] tabular-nums text-muted-foreground/70">
+							<span className="ml-1 text-4xs tabular-nums text-muted-foreground/70">
 								{serviceWorkloads.length}
 							</span>
 						)}
@@ -274,126 +362,96 @@ function ServiceDetailPanel({
 						<div className="p-4 space-y-5">
 							{/* Metrics */}
 							<div className="space-y-3">
-								<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-									Metrics
-								</h4>
+								<Eyebrow as="h4">Metrics</Eyebrow>
 								<div className="grid grid-cols-2 gap-x-6 gap-y-4">
-									<div className="space-y-0.5">
-										<span className="text-[10px] text-muted-foreground">Throughput</span>
-										<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-											{hasSampling ? "~" : ""}
-											{formatRate(throughput)}
-										</p>
-										<span className="text-[10px] text-muted-foreground">req/s</span>
-									</div>
-									<div className="space-y-0.5">
-										<span className="text-[10px] text-muted-foreground">Error Rate</span>
-										<p
-											className={cn(
-												"text-xl font-semibold tabular-nums font-mono",
-												errorRate > 0.05
-													? "text-severity-error"
-													: errorRate > 0.01
-														? "text-severity-warn"
-														: "text-foreground",
+									<MetricTile label="Throughput" caption="req/s">
+										<MetricValue>
+											{overview ? (
+												<SampledValue
+													estimated={hasSampling}
+													value={formatRate(overview.throughput)}
+												/>
+											) : (
+												EMPTY_VALUE
 											)}
+										</MetricValue>
+									</MetricTile>
+									<MetricTile label="Error rate">
+										<MetricValue
+											className={overview ? errorRateClass(errorRate) : undefined}
 										>
-											{(errorRate * 100).toFixed(1)}%
-										</p>
-									</div>
-									<div className="space-y-0.5">
-										<span className="text-[10px] text-muted-foreground">Avg Latency</span>
-										<p
-											className={cn(
-												"text-xl font-semibold tabular-nums font-mono",
-												latencyToneClass(avgLatencyMs, "avg"),
-											)}
+											{overview ? formatErrorRate(errorRate) : EMPTY_VALUE}
+										</MetricValue>
+									</MetricTile>
+									<MetricTile label="P50 latency">
+										<MetricValue
+											className={
+												overview
+													? latencyToneClass(overview.p50LatencyMs, "p50")
+													: undefined
+											}
 										>
-											{formatLatency(avgLatencyMs)}
-										</p>
-									</div>
-									<div className="space-y-0.5">
-										<span className="text-[10px] text-muted-foreground">P95 Latency</span>
-										<p
+											{overview ? formatLatency(overview.p50LatencyMs) : EMPTY_VALUE}
+										</MetricValue>
+									</MetricTile>
+									<MetricTile label="P95 latency">
+										<MetricValue
 											className={cn(
-												"text-xl font-semibold tabular-nums font-mono",
-												// A p95 far above this service's own avg is a tail
+												// A p95 far above this service's own p50 is a tail
 												// problem worth flagging even when the absolute
 												// magnitude is fine, so it outranks the ramp.
-												p95LatencyMs > avgLatencyMs * 3
-													? "text-severity-warn"
-													: latencyToneClass(p95LatencyMs, "p95"),
+												overview === undefined
+													? undefined
+													: overview.p95LatencyMs > overview.p50LatencyMs * 3
+														? "text-severity-warn"
+														: latencyToneClass(overview.p95LatencyMs, "p95"),
 											)}
 										>
-											{formatLatency(p95LatencyMs)}
-										</p>
-									</div>
+											{overview ? formatLatency(overview.p95LatencyMs) : EMPTY_VALUE}
+										</MetricValue>
+									</MetricTile>
 								</div>
 							</div>
 
 							{/* Cloudflare edge (direct integration overlay) */}
 							{cloudflare && (
 								<div className="space-y-3">
-									<div className="h-px bg-border" />
+									<Separator />
 									<div className="flex items-center gap-1.5">
 										<CloudflareIcon size={12} style={{ color: CLOUDFLARE_COLOR }} />
-										<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-											Cloudflare edge
-										</h4>
+										<Eyebrow as="h4">Cloudflare edge</Eyebrow>
 									</div>
 									<div className="grid grid-cols-2 gap-x-6 gap-y-4">
-										<div className="space-y-0.5">
-											<span className="text-[10px] text-muted-foreground">
-												Requests
-											</span>
-											<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-												{formatCompactCount(cloudflare.requests)}
-											</p>
-											<span className="text-[10px] text-muted-foreground">
-												edge-reported (unsampled)
-											</span>
-										</div>
-										<div className="space-y-0.5">
-											<span className="text-[10px] text-muted-foreground">
-												Error Rate
-											</span>
-											<p
-												className={cn(
-													"text-xl font-semibold tabular-nums font-mono",
-													cloudflare.errorRate > 0.05
-														? "text-severity-error"
-														: cloudflare.errorRate > 0.01
-															? "text-severity-warn"
-															: "text-foreground",
-												)}
+										<MetricTile label="Requests" caption="edge-reported (unsampled)">
+											<MetricValue>{formatNumber(cloudflare.requests)}</MetricValue>
+										</MetricTile>
+										<MetricTile label="Error rate">
+											<MetricValue className={errorRateClass(cloudflare.errorRate)}>
+												{formatErrorRate(cloudflare.errorRate)}
+											</MetricValue>
+										</MetricTile>
+										<MetricTile label="CPU p99">
+											<MetricValue
+												className={
+													cloudflare.cpuP99Ms === undefined
+														? undefined
+														: latencyToneClass(cloudflare.cpuP99Ms, "cpu")
+												}
 											>
-												{(cloudflare.errorRate * 100).toFixed(1)}%
-											</p>
-										</div>
-										<div className="space-y-0.5">
-											<span className="text-[10px] text-muted-foreground">CPU p99</span>
-											<p
+												{cloudflare.cpuP99Ms === undefined
+													? EMPTY_VALUE
+													: formatLatency(cloudflare.cpuP99Ms)}
+											</MetricValue>
+										</MetricTile>
+										<MetricTile label="Duration p99">
+											<MetricValue
 												className={cn(
-													"text-xl font-semibold tabular-nums font-mono",
-													latencyToneClass(cloudflare.cpuP99Ms ?? 0, "cpu"),
-												)}
-											>
-												{formatLatency(cloudflare.cpuP99Ms ?? 0)}
-											</p>
-										</div>
-										<div className="space-y-0.5">
-											<span className="text-[10px] text-muted-foreground">
-												Duration p99
-											</span>
-											<p
-												className={cn(
-													"text-xl font-semibold tabular-nums font-mono",
 													latencyToneClass(cloudflare.latencyP99Ms, "p99"),
 												)}
 											>
 												{formatLatency(cloudflare.latencyP99Ms)}
-											</p>
-										</div>
+											</MetricValue>
+										</MetricTile>
 									</div>
 								</div>
 							)}
@@ -401,125 +459,40 @@ function ServiceDetailPanel({
 							{/* Dependencies */}
 							{dependencies.length > 0 && (
 								<div className="space-y-3">
-									<div className="h-px bg-border" />
-									<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-										Dependencies
-									</h4>
+									<Separator />
+									<Eyebrow as="h4">Dependencies</Eyebrow>
 									<div className="space-y-1.5">
-										{dependencies.map((dep) => {
-											const depColor = getServiceColor(dep.targetService)
-											const depErrorRate = dep.errorRate
-											const isError = depErrorRate > 0.05
-											const safeDuration = Math.max(durationSeconds, 1)
-											const depReqPerSec = dep.hasSampling
-												? dep.estimatedCallCount / safeDuration
-												: dep.callCount / safeDuration
-											const depTracedReqPerSec = dep.callCount / safeDuration
-											return (
-												<div
-													key={dep.targetService}
-													className={cn(
-														"flex items-center justify-between px-2.5 py-2 rounded-md border text-xs",
-														isError
-															? "bg-severity-error/[0.04] border-severity-error/[0.12]"
-															: "bg-card border-border",
-													)}
-													title={
-														dep.hasSampling
-															? `Estimated x${dep.samplingWeight.toFixed(0)} from ${formatRate(depTracedReqPerSec)} traced req/s`
-															: undefined
-													}
-												>
-													<div className="flex items-center gap-1.5 min-w-0">
-														<div
-															className="w-[3px] h-3.5 rounded-sm shrink-0"
-															style={{ backgroundColor: depColor }}
-														/>
-														<span className="text-foreground truncate">
-															{dep.targetService}
-														</span>
-													</div>
-													<div className="flex items-center gap-2 shrink-0 text-[10px]">
-														<span className="text-muted-foreground tabular-nums font-mono">
-															{dep.hasSampling ? "~" : ""}
-															{formatRate(depReqPerSec)} req/s
-														</span>
-														<span
-															className={cn(
-																"tabular-nums font-mono",
-																depErrorRate > 0.05
-																	? "text-severity-error"
-																	: depErrorRate > 0.01
-																		? "text-severity-warn"
-																		: "text-severity-info",
-															)}
-														>
-															{(depErrorRate * 100).toFixed(1)}%
-														</span>
-													</div>
-												</div>
-											)
-										})}
+										{dependencies.map((dep) => (
+											<EdgeRow
+												key={dep.targetService}
+												service={dep.targetService}
+												edge={dep}
+												durationSeconds={durationSeconds}
+												unit="req/s"
+												highlightError
+												explainSampling
+											/>
+										))}
 									</div>
 								</div>
 							)}
 
-							{/* Called By */}
+							{/* Called by */}
 							{calledBy.length > 0 && (
 								<div className="space-y-3">
-									<div className="h-px bg-border" />
-									<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-										Called By
-									</h4>
+									<Separator />
+									<Eyebrow as="h4">Called by</Eyebrow>
 									<div className="space-y-1.5">
-										{calledBy.map((caller) => {
-											const callerColor = getServiceColor(caller.sourceService)
-											const callerErrorRate = caller.errorRate
-											const safeDuration = Math.max(durationSeconds, 1)
-											const callerReqPerSec = caller.hasSampling
-												? caller.estimatedCallCount / safeDuration
-												: caller.callCount / safeDuration
-											const callerTracedReqPerSec = caller.callCount / safeDuration
-											return (
-												<div
-													key={caller.sourceService}
-													className="flex items-center justify-between px-2.5 py-2 rounded-md border bg-card border-border text-xs"
-													title={
-														caller.hasSampling
-															? `Estimated x${caller.samplingWeight.toFixed(0)} from ${formatRate(callerTracedReqPerSec)} traced req/s`
-															: undefined
-													}
-												>
-													<div className="flex items-center gap-1.5 min-w-0">
-														<div
-															className="w-[3px] h-3.5 rounded-sm shrink-0"
-															style={{ backgroundColor: callerColor }}
-														/>
-														<span className="text-foreground truncate">
-															{caller.sourceService}
-														</span>
-													</div>
-													<div className="flex items-center gap-2 shrink-0 text-[10px]">
-														<span className="text-muted-foreground tabular-nums font-mono">
-															{caller.hasSampling ? "~" : ""}
-															{formatRate(callerReqPerSec)} req/s
-														</span>
-														<span
-															className={cn(
-																"tabular-nums font-mono",
-																callerErrorRate > 0.05
-																	? "text-severity-error"
-																	: callerErrorRate > 0.01
-																		? "text-severity-warn"
-																		: "text-severity-info",
-															)}
-														>
-															{(callerErrorRate * 100).toFixed(1)}%
-														</span>
-													</div>
-												</div>
-											)
-										})}
+										{calledBy.map((caller) => (
+											<EdgeRow
+												key={caller.sourceService}
+												service={caller.sourceService}
+												edge={caller}
+												durationSeconds={durationSeconds}
+												unit="req/s"
+												explainSampling
+											/>
+										))}
 									</div>
 								</div>
 							)}
@@ -534,9 +507,7 @@ function ServiceDetailPanel({
 								<ServiceInfraEmptyState />
 							) : (
 								<div className="space-y-2">
-									<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-										Kubernetes workloads
-									</h4>
+									<Eyebrow as="h4">Kubernetes workloads</Eyebrow>
 									<div className="space-y-2">
 										{serviceWorkloads.map((wl) => (
 											<ServiceWorkloadRow
@@ -563,54 +534,48 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 			? workload.workloadKind
 			: null
 	return (
-		<div className="rounded-md border bg-card p-3 space-y-2.5">
+		<Panel padded="sm" className="space-y-2.5">
 			<div className="flex items-start justify-between gap-2">
 				<div className="min-w-0 flex-1">
-					<div className="flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wide">
+					<Eyebrow as="div" className="flex items-center gap-1.5">
 						<CubeIcon size={11} />
 						<span>{workload.workloadKind}</span>
-					</div>
+					</Eyebrow>
 					<p className="text-xs font-medium text-foreground truncate mt-0.5">
 						{workload.workloadName}
 					</p>
-					<p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+					<p className="text-3xs text-muted-foreground mt-0.5 truncate">
 						{workload.namespace || "default"}
 						{workload.clusterName ? ` · ${workload.clusterName}` : ""}
 					</p>
 				</div>
 				<div className="flex flex-col items-end gap-px shrink-0">
-					<span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">pods</span>
+					<Eyebrow>pods</Eyebrow>
 					<span className="text-sm font-semibold text-foreground tabular-nums font-mono">
 						{workload.podCount}
 					</span>
 				</div>
 			</div>
 
-			<div className="grid grid-cols-2 gap-2 text-[10px]">
-				<div className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-					<span className="text-muted-foreground">CPU</span>
-					<span className="font-mono tabular-nums text-foreground">
-						{workload.avgCpuLimitUtilization == null
-							? "—"
-							: formatPercent(workload.avgCpuLimitUtilization)}
-					</span>
-				</div>
-				<div className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-					<span className="text-muted-foreground">Memory</span>
-					<span className="font-mono tabular-nums text-foreground">
-						{workload.avgMemoryLimitUtilization == null
-							? "—"
-							: formatPercent(workload.avgMemoryLimitUtilization)}
-					</span>
-				</div>
-			</div>
+			<KeyValueList className="grid grid-cols-2 gap-2 text-3xs">
+				<KeyValue label="CPU" mono className="rounded bg-muted/30 px-2 py-1">
+					{workload.avgCpuLimitUtilization == null
+						? EMPTY_VALUE
+						: formatPercent(workload.avgCpuLimitUtilization)}
+				</KeyValue>
+				<KeyValue label="Memory" mono className="rounded bg-muted/30 px-2 py-1">
+					{workload.avgMemoryLimitUtilization == null
+						? EMPTY_VALUE
+						: formatPercent(workload.avgMemoryLimitUtilization)}
+				</KeyValue>
+			</KeyValueList>
 
 			<div className="flex items-center gap-3 pt-0.5">
 				{knownKind && (
 					<Link
 						to="/infra/kubernetes/workloads/$kind/$workloadName"
 						params={{ kind: knownKind, workloadName: workload.workloadName }}
-						className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+						className="inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
 					>
 						View workload <ArrowRightIcon size={10} />
 					</Link>
@@ -627,12 +592,12 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 									namespaces: workload.namespace ? [workload.namespace] : undefined,
 								}
 					}
-					className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+					className="inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
 				>
 					View pods <ArrowRightIcon size={10} />
 				</Link>
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -643,15 +608,15 @@ function ServiceInfraEmptyState() {
 				<CubeIcon size={14} className="text-muted-foreground/50" />
 				<p className="text-xs font-medium text-foreground">No Kubernetes workloads found</p>
 			</div>
-			<p className="text-[11px] text-muted-foreground leading-relaxed">
-				This service has no spans tagged with{" "}
-				<code className="text-[10px] bg-muted px-1 py-0.5 rounded">k8s.deployment.name</code> in the
+			<p className="text-2xs text-muted-foreground leading-relaxed">
+				This service has no spans tagged with <InlineCode>k8s.deployment.name</InlineCode> in the
 				selected window. Install the maple-k8s-infra Helm chart and label your namespace to enable
 				infrastructure context:
 			</p>
-			<pre className="text-[10px] bg-muted px-2 py-1.5 rounded font-mono text-foreground overflow-x-auto">
+			<pre className="text-3xs bg-muted px-2 py-1.5 rounded font-mono text-foreground overflow-x-auto">
 				kubectl label namespace &lt;ns&gt; maple.io/instrument=true
 			</pre>
+			<DocsLink page="kubernetes" />
 		</div>
 	)
 }
@@ -685,6 +650,7 @@ function GhostNode({ x, y, color }: { x: number; y: number; color: string }) {
 // map's own language — the dotted Background grid plus a faint geometric service
 // graph — so it reads as "the map, empty," not a blank void.
 function ServiceMapEmptyState() {
+	const tracesPresence = useSignalPresence("traces")
 	return (
 		<div className="relative flex h-full items-center justify-center overflow-hidden">
 			{/* Dotted grid: the live map's <Background variant={Dots} gap={16} size={1}>,
@@ -731,32 +697,33 @@ function ServiceMapEmptyState() {
 					<GhostNode x={352} y={64} color="var(--service-5)" />
 				</svg>
 
-				<Empty className="flex-none bg-transparent py-0">
-					<EmptyHeader>
-						<EmptyMedia variant="icon">
-							<NetworkNodesIcon size={18} />
-						</EmptyMedia>
-						<EmptyTitle>No service map yet</EmptyTitle>
-						<EmptyDescription>
-							Maple builds this map from cross-service spans in your traces. Once your services
-							report calls to each other, they&rsquo;ll appear here as a connected graph.
-						</EmptyDescription>
-					</EmptyHeader>
-					<EmptyContent>
-						<a
-							href="https://maple.dev/docs/getting-started/introduction"
-							target="_blank"
-							rel="noopener noreferrer"
-							className="inline-flex items-center gap-1.5 text-foreground underline underline-offset-2 transition-colors hover:no-underline"
-						>
-							Set up instrumentation
-							<ExternalLinkIcon size={12} />
-						</a>
-						<p className="text-xs text-muted-foreground/70">
-							Seeing this with active services? Try widening the time range.
-						</p>
-					</EmptyContent>
-				</Empty>
+				{/* Traces arriving with no edges means context is not propagated; no traces means setup. */}
+				{tracesPresence.status === "present" ? (
+					<Empty className="flex-none bg-transparent py-0">
+						<EmptyHeader>
+							<EmptyMedia variant="icon">
+								<NetworkNodesIcon size={18} />
+							</EmptyMedia>
+							<EmptyTitle>No service calls in this window</EmptyTitle>
+							<EmptyDescription>
+								Traces are arriving, but no service calls another one yet. Propagate trace
+								context on outgoing HTTP calls so both sides share a trace.
+							</EmptyDescription>
+						</EmptyHeader>
+						<EmptyContent>
+							<DocsLink page="serviceMap" />
+						</EmptyContent>
+					</Empty>
+				) : (
+					<SignalEmptyStateView
+						signal="traces"
+						presence={tracesPresence}
+						noun="service calls"
+						purpose="See which services call each other, drawn from the spans they send."
+						guideDocs="serviceMap"
+						className="flex-none bg-transparent py-0"
+					/>
+				)}
 			</div>
 		</div>
 	)
@@ -784,12 +751,6 @@ function pickDbSummaryBucketSeconds(durationSeconds: number): number {
 	if (durationSeconds <= 24 * 60 * 60) return 15 * 60
 	if (durationSeconds <= 7 * 24 * 60 * 60) return 60 * 60
 	return 6 * 60 * 60
-}
-
-function formatCompactCount(value: number): string {
-	if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	return value.toLocaleString()
 }
 
 function formatQueryLabel(value: string): string {
@@ -853,18 +814,19 @@ function DbQueryActivityChart({
 	}, [response])
 
 	if (!response && waiting) {
-		return (
-			<div className="flex h-44 items-center justify-center rounded-md border border-border/70 bg-muted/20 text-xs text-muted-foreground">
-				Loading query activity…
-			</div>
-		)
+		return <Skeleton className="h-44 w-full rounded-md" />
 	}
 
 	if (volumeRows.length === 0) {
 		return (
-			<div className="flex h-44 items-center justify-center rounded-md border border-dashed border-border/60 bg-muted/10 text-xs text-muted-foreground">
+			<EmptyMessage
+				dashed
+				className="flex h-44 flex-col items-center justify-center gap-1.5 border-border/60 bg-muted/10 text-xs"
+			>
 				No database query spans in this window
-			</div>
+				<span>Database nodes need spans with db.system.</span>
+				<DocsLink page="otelConventions" />
+			</EmptyMessage>
 		)
 	}
 
@@ -916,82 +878,54 @@ function PlanetScaleSection({
 
 	return (
 		<div className="space-y-3">
-			<div className="h-px bg-border" />
+			<Separator />
 			<div className="flex items-center gap-1.5">
 				<PlanetScaleIcon size={12} className="shrink-0 text-muted-foreground" />
-				<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-					PlanetScale
-				</h4>
-				<span className="ml-auto text-[10px] text-muted-foreground">
+				<Eyebrow as="h4">PlanetScale</Eyebrow>
+				<span className="ml-auto text-3xs text-muted-foreground">
 					{planetscale.kind === "postgresql" ? "Postgres" : "MySQL"} · {planetscale.branchCount}{" "}
-					branch{planetscale.branchCount === 1 ? "" : "es"}
+					{pluralize(planetscale.branchCount, "branch", "branches")}
 				</span>
 			</div>
 
 			{stats ? (
 				<div className="grid grid-cols-2 gap-x-6 gap-y-4">
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">Connections</span>
-						<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-							{formatRate(stats.connectionsAvg)}
-						</p>
-						<span className="text-[10px] text-muted-foreground">
-							peak {formatRate(stats.connectionsMax)}
-						</span>
-					</div>
+					<MetricTile label="Connections" caption={<>peak {formatRate(stats.connectionsMax)}</>}>
+						<MetricValue>{formatRate(stats.connectionsAvg)}</MetricValue>
+					</MetricTile>
 					{/* Thresholds come from the shared PlanetScale metrics module, so a
 					    number tinted red here is tinted red on /infra/planetscale too. */}
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">CPU (max)</span>
-						<p
+					<MetricTile label="CPU (max)">
+						<MetricValue className={cn(utilizationClass(stats.cpuMaxPercent))}>
+							{formatPercent(stats.cpuMaxPercent / 100)}
+						</MetricValue>
+					</MetricTile>
+					<MetricTile label="Memory (max)">
+						<MetricValue className={cn(utilizationClass(stats.memMaxPercent))}>
+							{formatPercent(stats.memMaxPercent / 100)}
+						</MetricValue>
+					</MetricTile>
+					<MetricTile label="Storage (max)">
+						<MetricValue
 							className={cn(
-								"text-xl font-semibold tabular-nums font-mono text-foreground",
-								utilizationClass(stats.cpuMaxPercent),
-							)}
-						>
-							{stats.cpuMaxPercent.toFixed(0)}%
-						</p>
-					</div>
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">Memory (max)</span>
-						<p
-							className={cn(
-								"text-xl font-semibold tabular-nums font-mono text-foreground",
-								utilizationClass(stats.memMaxPercent),
-							)}
-						>
-							{stats.memMaxPercent.toFixed(0)}%
-						</p>
-					</div>
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">Storage (max)</span>
-						<p
-							className={cn(
-								"text-xl font-semibold tabular-nums font-mono text-foreground",
 								stats.storageUsedPercent !== null &&
 									utilizationClass(stats.storageUsedPercent),
 							)}
 						>
 							{stats.storageUsedPercent === null
-								? "—"
+								? EMPTY_VALUE
 								: formatStoragePercent(stats.storageUsedPercent)}
-						</p>
-					</div>
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">Replica Lag (max)</span>
-						<p
-							className={cn(
-								"text-xl font-semibold tabular-nums font-mono text-foreground",
-								lagClass(stats.replicaLagMaxSeconds),
-							)}
-						>
-							{formatReplicationLag(stats.replicaLagMaxSeconds)}
-						</p>
-					</div>
+						</MetricValue>
+					</MetricTile>
+					<MetricTile label="Replica lag (max)">
+						<MetricValue className={cn(lagClass(stats.replicaLagMaxSeconds))}>
+							{formatLag(stats.replicaLagMaxSeconds)}
+						</MetricValue>
+					</MetricTile>
 				</div>
 			) : (
 				<p className="text-xs text-muted-foreground">
-					No PlanetScale metrics in this window yet — the scraper delivers them within a minute of
+					No PlanetScale metrics in this window yet; the scraper delivers them within a minute of
 					connecting.
 				</p>
 			)}
@@ -1000,10 +934,10 @@ function PlanetScaleSection({
 				.onError((error) => {
 					const formatted = displayError(error)
 					return (
-						<div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs">
-							<p className="font-medium text-destructive">{formatted.title}</p>
-							<p className="mt-1 text-muted-foreground">{formatted.message}</p>
-						</div>
+						<Alert variant="crit" size="sm">
+							<AlertTitle className="text-severity-error">{formatted.title}</AlertTitle>
+							<AlertDescription>{formatted.message}</AlertDescription>
+						</Alert>
 					)
 				})
 				.orElse(() => null)}
@@ -1013,75 +947,49 @@ function PlanetScaleSection({
 					{branchStats.map((row) => {
 						const info = branchInfoByName.get(row.branch)
 						return (
-							<div
+							<Panel
 								key={row.branch}
-								className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs"
+								className="flex-row items-center justify-between gap-2 px-2.5 py-2 text-xs"
 							>
 								<div className="flex min-w-0 items-center gap-1.5">
-									<span className="truncate font-mono text-[11px] text-foreground">
+									<span className="truncate font-mono text-2xs text-foreground">
 										{row.branch}
 									</span>
-									{info?.production ? (
-										<span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-											prod
-										</span>
-									) : null}
+									{info?.production ? <TagBadge>prod</TagBadge> : null}
 								</div>
-								<div className="flex shrink-0 items-center gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+								<div className="flex shrink-0 items-center gap-3 font-mono text-3xs tabular-nums text-muted-foreground">
 									<span>{formatRate(row.connectionsAvg)} conns</span>
-									<span
-										className={cn(
-											row.cpuMaxPercent > 80
-												? "text-severity-error"
-												: row.cpuMaxPercent > 60
-													? "text-severity-warn"
-													: undefined,
-										)}
-									>
-										{row.cpuMaxPercent.toFixed(0)}% cpu
+									<span className={utilizationClass(row.cpuMaxPercent)}>
+										{formatPercent(row.cpuMaxPercent / 100)} cpu
 									</span>
-									<span
-										className={cn(
-											row.replicaLagMaxSeconds > 10
-												? "text-severity-error"
-												: row.replicaLagMaxSeconds > 1
-													? "text-severity-warn"
-													: undefined,
-										)}
-									>
-										{formatReplicationLag(row.replicaLagMaxSeconds)} lag
+									<span className={lagClass(row.replicaLagMaxSeconds)}>
+										{formatLag(row.replicaLagMaxSeconds)} lag
 									</span>
 								</div>
-							</div>
+							</Panel>
 						)
 					})}
 					{idleBranches.map((branch) => (
-						<div
+						<Panel
 							key={branch.name}
-							className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-2.5 py-2 text-xs opacity-70"
+							className="flex-row items-center justify-between gap-2 border-border/60 px-2.5 py-2 text-xs opacity-70"
 						>
 							<div className="flex min-w-0 items-center gap-1.5">
-								<span className="truncate font-mono text-[11px] text-muted-foreground">
+								<span className="truncate font-mono text-2xs text-muted-foreground">
 									{branch.name}
 								</span>
-								{branch.production ? (
-									<span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-										prod
-									</span>
-								) : null}
+								{branch.production ? <TagBadge>prod</TagBadge> : null}
 							</div>
-							<span className="shrink-0 text-[10px] text-muted-foreground">
+							<span className="shrink-0 text-3xs text-muted-foreground">
 								{branch.ready ? "no metrics" : "not ready"}
 							</span>
-						</div>
+						</Panel>
 					))}
 				</div>
 			) : null}
 
 			<div className="space-y-2">
-				<h5 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-					Top Queries (PlanetScale Insights)
-				</h5>
+				<Eyebrow as="h5">Top queries (PlanetScale Insights)</Eyebrow>
 				<PlanetScaleTopQueries
 					database={planetscale.database}
 					startTime={startTime}
@@ -1100,37 +1008,29 @@ function PlanetScaleSection({
 function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeInfo> }) {
 	return (
 		<div className="space-y-3">
-			<div className="h-px bg-border" />
+			<Separator />
 			<div className="flex items-center gap-1.5">
 				<CloudflareIcon size={12} className="shrink-0 text-muted-foreground" />
-				<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-					Hyperdrive Configs
-				</h4>
-				<span className="ml-auto text-[10px] text-muted-foreground">
-					{configs.length} config{configs.length === 1 ? "" : "s"}
+				<Eyebrow as="h4">Hyperdrive configs</Eyebrow>
+				<span className="ml-auto text-3xs text-muted-foreground">
+					{countLabel(configs.length, "config")}
 				</span>
 			</div>
 			<div className="space-y-1.5">
 				{configs.map((config) => (
-					<div
-						key={config.id}
-						className="rounded-md border border-border bg-card px-2.5 py-2 text-xs"
-					>
+					<Panel key={config.id} className="px-2.5 py-2 text-xs">
 						<div className="flex items-center justify-between gap-2">
 							<div className="flex min-w-0 items-center gap-1.5">
 								<span className="truncate font-medium text-foreground">{config.name}</span>
-								<span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-									{config.originScheme}
-								</span>
+								<TagBadge>{config.originScheme}</TagBadge>
 							</div>
-							<span
-								className="shrink-0 font-mono text-[10px] text-muted-foreground/60"
-								title={config.id}
-							>
-								{config.id.slice(0, 8)}
-							</span>
+							<TruncatedId
+								value={config.id}
+								length={8}
+								className="shrink-0 text-3xs text-muted-foreground/60"
+							/>
 						</div>
-						<div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
+						<div className="mt-1.5 flex items-center gap-1.5 text-2xs">
 							<ArrowRightIcon size={10} className="shrink-0 text-muted-foreground/60" />
 							{config.matched ? (
 								<Link
@@ -1140,7 +1040,7 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 								>
 									<PlanetScaleIcon size={11} className="shrink-0 text-muted-foreground" />
 									<span className="truncate font-mono">{config.matched.name}</span>
-									<span className="shrink-0 text-[10px] text-muted-foreground">
+									<span className="shrink-0 text-3xs text-muted-foreground">
 										{config.matched.kind === "postgresql" ? "Postgres" : "MySQL"} on
 										PlanetScale
 									</span>
@@ -1149,26 +1049,24 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 								<span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
 									<PlanetScaleIcon size={11} className="shrink-0" />
 									<span className="truncate font-mono">{config.originDatabase}</span>
-									<span className="shrink-0 text-[10px]">
-										PlanetScale (not in inventory)
-									</span>
+									<span className="shrink-0 text-3xs">PlanetScale (not in inventory)</span>
 								</span>
 							) : (
 								<span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
 									<span className="truncate font-mono">{config.originDatabase}</span>
 									{config.originHost ? (
-										<span className="truncate text-[10px] text-muted-foreground/60">
+										<span className="truncate text-3xs text-muted-foreground/60">
 											{config.originHost}
 										</span>
 									) : (
-										<span className="shrink-0 text-[10px] text-muted-foreground/60">
+										<span className="shrink-0 text-3xs text-muted-foreground/60">
 											private origin
 										</span>
 									)}
 								</span>
 							)}
 						</div>
-					</div>
+					</Panel>
 				))}
 			</div>
 		</div>
@@ -1226,7 +1124,7 @@ function DatabaseDetailPanel({
 	const metricHasSampling = summary
 		? summary.estimatedQueryCount > summary.queryCount + 1
 		: callers.some((caller) => caller.hasSampling)
-	const summaryWaiting = Boolean(summaryResult.waiting)
+	const summaryWaiting = summaryResult.waiting
 
 	const {
 		title: dbTitle,
@@ -1240,83 +1138,61 @@ function DatabaseDetailPanel({
 
 	return (
 		<div className="flex flex-col h-full bg-background overflow-hidden">
-			{/* Header */}
-			<div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-				<div className="flex items-center gap-2 min-w-0">
-					<div
-						className="w-[3px] h-[18px] rounded-sm shrink-0"
-						style={{ backgroundColor: dbColor }}
-					/>
-					<DbIcon
-						size={14}
-						className="shrink-0"
-						style={dbBranded ? undefined : { color: dbColor }}
-					/>
-					<span className="text-sm font-semibold text-foreground truncate">{dbTitle}</span>
-					<span className="text-[9px] font-medium tracking-wide text-muted-foreground/60 uppercase shrink-0">
-						{dbBadge}
-					</span>
-				</div>
-				<Button variant="ghost" size="icon-xs" onClick={onClose}>
-					<XmarkIcon size={14} />
-				</Button>
-			</div>
+			<DetailPanelHeader
+				accentColor={dbColor}
+				actions={
+					<IconButton size="icon-xs" onClick={onClose} label="Close">
+						<XmarkIcon />
+					</IconButton>
+				}
+			>
+				<DbIcon size={14} className="shrink-0" style={dbBranded ? undefined : { color: dbColor }} />
+				<span className="text-sm font-semibold text-foreground truncate">{dbTitle}</span>
+				<Eyebrow className="shrink-0">{dbBadge}</Eyebrow>
+			</DetailPanelHeader>
 
 			<ScrollArea className="flex-1 min-h-0">
 				<div className="p-4 space-y-5">
 					<div className="space-y-3">
-						<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-							Metrics
-						</h4>
+						<Eyebrow as="h4">Metrics</Eyebrow>
 						<div className="grid grid-cols-2 gap-x-6 gap-y-4">
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">Queries</span>
-								<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-									{metricHasSampling ? "~" : ""}
-									{formatCompactCount(metricQueryCount)}
-								</p>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">Throughput</span>
-								<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-									{metricHasSampling ? "~" : ""}
-									{formatRate(metricCallsPerSecond)}
-								</p>
-								<span className="text-[10px] text-muted-foreground">calls/s</span>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">Error Rate</span>
-								<p
+							<MetricTile label="Queries">
+								<MetricValue>
+									<SampledValue
+										estimated={metricHasSampling}
+										value={formatNumber(metricQueryCount)}
+									/>
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="Throughput" caption="calls/s">
+								<MetricValue>
+									<SampledValue
+										estimated={metricHasSampling}
+										value={formatRate(metricCallsPerSecond)}
+									/>
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="Error rate">
+								<MetricValue className={errorRateClass(metricErrorRate)}>
+									{formatErrorRate(metricErrorRate)}
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="P50 latency">
+								<MetricValue
 									className={cn(
-										"text-xl font-semibold tabular-nums font-mono",
-										metricErrorRate > 0.05
-											? "text-severity-error"
-											: metricErrorRate > 0.01
-												? "text-severity-warn"
-												: "text-foreground",
-									)}
-								>
-									{(metricErrorRate * 100).toFixed(1)}%
-								</p>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">P50 Latency</span>
-								<p
-									className={cn(
-										"text-xl font-semibold tabular-nums font-mono",
 										metricP50LatencyMs === null
 											? "text-muted-foreground"
 											: latencyToneClass(metricP50LatencyMs, "p50"),
 									)}
 								>
-									{metricP50LatencyMs === null ? "—" : formatLatency(metricP50LatencyMs)}
-								</p>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">P95 Latency</span>
-								<p
+									{metricP50LatencyMs === null
+										? EMPTY_VALUE
+										: formatLatency(metricP50LatencyMs)}
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="P95 latency">
+								<MetricValue
 									className={cn(
-										"text-xl font-semibold tabular-nums font-mono",
 										metricP95LatencyMs === null
 											? "text-muted-foreground"
 											: // A p95 far above this node's own p50 is a tail problem
@@ -1327,20 +1203,16 @@ function DatabaseDetailPanel({
 												: latencyToneClass(metricP95LatencyMs, "p95"),
 									)}
 								>
-									{metricP95LatencyMs === null ? "—" : formatLatency(metricP95LatencyMs)}
-								</p>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">Avg Latency</span>
-								<p
-									className={cn(
-										"text-xl font-semibold tabular-nums font-mono",
-										latencyToneClass(metricAvgLatencyMs, "avg"),
-									)}
-								>
+									{metricP95LatencyMs === null
+										? EMPTY_VALUE
+										: formatLatency(metricP95LatencyMs)}
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="Avg latency">
+								<MetricValue className={cn(latencyToneClass(metricAvgLatencyMs, "avg"))}>
 									{formatLatency(metricAvgLatencyMs)}
-								</p>
-							</div>
+								</MetricValue>
+							</MetricTile>
 						</div>
 					</div>
 
@@ -1355,23 +1227,23 @@ function DatabaseDetailPanel({
 					) : null}
 
 					<div className="space-y-3">
-						<div className="h-px bg-border" />
+						<Separator />
 						<div className="flex items-center justify-between gap-2">
-							<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-								Query Activity
-							</h4>
+							<Eyebrow as="h4">Query activity</Eyebrow>
 							{summaryWaiting && summaryResponse && (
-								<span className="text-[10px] text-muted-foreground">Refreshing</span>
+								<span className="text-3xs text-muted-foreground">Refreshing</span>
 							)}
 						</div>
 						{Result.builder(summaryResult)
 							.onError((error) => {
 								const formatted = displayError(error)
 								return (
-									<div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs">
-										<p className="font-medium text-destructive">{formatted.title}</p>
-										<p className="mt-1 text-muted-foreground">{formatted.message}</p>
-									</div>
+									<Alert variant="crit" size="sm">
+										<AlertTitle className="text-severity-error">
+											{formatted.title}
+										</AlertTitle>
+										<AlertDescription>{formatted.message}</AlertDescription>
+									</Alert>
 								)
 							})
 							.orElse(() => null)}
@@ -1380,37 +1252,29 @@ function DatabaseDetailPanel({
 
 					{summaryResponse?.topQueries.length ? (
 						<div className="space-y-3">
-							<div className="h-px bg-border" />
-							<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-								Top Query Shapes
-							</h4>
+							<Separator />
+							<Eyebrow as="h4">Top query shapes</Eyebrow>
 							<div className="space-y-1.5">
 								{summaryResponse.topQueries.map((query) => (
-									<div
-										key={query.queryKey}
-										className="rounded-md border border-border bg-card px-2.5 py-2"
-									>
+									<Panel key={query.queryKey} className="px-2.5 py-2">
 										<div className="flex items-start justify-between gap-2">
-											<p className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground">
+											<p className="min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground">
 												{formatQueryLabel(query.queryLabel)}
 											</p>
-											<span
-												className={cn(
-													"shrink-0 font-mono text-[10px] tabular-nums",
-													query.errorRate > 0.05
-														? "text-severity-error"
-														: query.errorRate > 0.01
-															? "text-severity-warn"
-															: "text-muted-foreground",
-												)}
-											>
-												{(query.errorRate * 100).toFixed(1)}%
-											</span>
+											<ErrorRateValue
+												rate={query.errorRate}
+												className="shrink-0 text-3xs"
+											/>
 										</div>
-										<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+										<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground">
 											<span className="font-mono tabular-nums">
-												{query.estimatedQueryCount > query.queryCount + 1 ? "~" : ""}
-												{formatCompactCount(query.estimatedQueryCount)} calls
+												<SampledValue
+													estimated={
+														query.estimatedQueryCount > query.queryCount + 1
+													}
+													value={formatNumber(query.estimatedQueryCount)}
+												/>{" "}
+												calls
 											</span>
 											<span className="font-mono tabular-nums">
 												p50{" "}
@@ -1434,7 +1298,7 @@ function DatabaseDetailPanel({
 													: query.sampleService}
 											</span>
 										</div>
-									</div>
+									</Panel>
 								))}
 							</div>
 						</div>
@@ -1442,52 +1306,18 @@ function DatabaseDetailPanel({
 
 					{callers.length > 0 && (
 						<div className="space-y-3">
-							<div className="h-px bg-border" />
-							<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-								Called By
-							</h4>
+							<Separator />
+							<Eyebrow as="h4">Called by</Eyebrow>
 							<div className="space-y-1.5">
-								{callers.map((caller) => {
-									const callerColor = getServiceColor(caller.sourceService)
-									const safeDuration = Math.max(durationSeconds, 1)
-									const reqPerSec = caller.hasSampling
-										? caller.estimatedCallCount / safeDuration
-										: caller.callCount / safeDuration
-									return (
-										<div
-											key={caller.sourceService}
-											className="flex items-center justify-between px-2.5 py-2 rounded-md border bg-card border-border text-xs"
-										>
-											<div className="flex items-center gap-1.5 min-w-0">
-												<div
-													className="w-[3px] h-3.5 rounded-sm shrink-0"
-													style={{ backgroundColor: callerColor }}
-												/>
-												<span className="text-foreground truncate">
-													{caller.sourceService}
-												</span>
-											</div>
-											<div className="flex items-center gap-2 shrink-0 text-[10px]">
-												<span className="text-muted-foreground tabular-nums font-mono">
-													{caller.hasSampling ? "~" : ""}
-													{formatRate(reqPerSec)} calls/s
-												</span>
-												<span
-													className={cn(
-														"tabular-nums font-mono",
-														caller.errorRate > 0.05
-															? "text-severity-error"
-															: caller.errorRate > 0.01
-																? "text-severity-warn"
-																: "text-severity-info",
-													)}
-												>
-													{(caller.errorRate * 100).toFixed(1)}%
-												</span>
-											</div>
-										</div>
-									)
-								})}
+								{callers.map((caller) => (
+									<EdgeRow
+										key={caller.sourceService}
+										service={caller.sourceService}
+										edge={caller}
+										durationSeconds={durationSeconds}
+										unit="calls/s"
+									/>
+								))}
 							</div>
 						</div>
 					)}
@@ -1506,196 +1336,6 @@ interface ServiceMapViewProps {
 	/** Controlled focus state (kept in the route's URL search params). */
 	focus?: DeclutterFocus | null
 	onFocusChange?: (focus: DeclutterFocus | null) => void
-}
-
-const SLIDER_DEFS: Array<{ key: keyof LayoutConfig; label: string; min: number; max: number; step: number }> =
-	[
-		{ key: "layerGapX", label: "Layer Gap X", min: 100, max: 800, step: 10 },
-		{ key: "nodeGapY", label: "Node Gap Y", min: 0, max: 200, step: 5 },
-		{ key: "componentGapY", label: "Component Gap Y", min: 20, max: 400, step: 10 },
-		{ key: "disconnectedGapX", label: "Disconnected Gap X", min: 20, max: 300, step: 10 },
-		{ key: "disconnectedMarginY", label: "Disconnected Margin Y", min: 20, max: 400, step: 10 },
-		{ key: "nodeWidth", label: "Node Width (layout)", min: 100, max: 400, step: 10 },
-		{ key: "nodeHeight", label: "Node Height (layout)", min: 30, max: 200, step: 5 },
-	]
-
-function LayoutDebugPanel({
-	config,
-	onChange,
-}: {
-	config: LayoutConfig
-	onChange: (config: LayoutConfig) => void
-}) {
-	const [open, setOpen] = useState(false)
-
-	return (
-		<div className="absolute top-2 right-2 z-50">
-			<button
-				type="button"
-				onClick={() => setOpen(!open)}
-				className="px-2 py-1 text-[10px] font-mono bg-card/90 backdrop-blur-sm border border-border rounded text-muted-foreground hover:text-foreground transition-colors"
-			>
-				{open ? "Close" : "Debug"}
-			</button>
-			{open && (
-				<div className="absolute top-8 right-0 w-64 bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 space-y-3 shadow-lg">
-					<div className="flex items-center justify-between">
-						<span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-							Layout Config
-						</span>
-						<button
-							type="button"
-							onClick={() => onChange({ ...DEFAULT_LAYOUT_CONFIG })}
-							className="text-[10px] text-primary hover:text-primary/80 transition-colors"
-						>
-							Reset
-						</button>
-					</div>
-					{SLIDER_DEFS.map(({ key, label, min, max, step }) => (
-						<div key={key} className="space-y-1">
-							<div className="flex items-center justify-between">
-								<label className="text-[10px] text-muted-foreground">{label}</label>
-								<span className="text-[10px] font-mono text-foreground tabular-nums">
-									{config[key]}
-								</span>
-							</div>
-							<input
-								type="range"
-								min={min}
-								max={max}
-								step={step}
-								value={config[key]}
-								onChange={(e) => onChange({ ...config, [key]: Number(e.target.value) })}
-								className="w-full h-1 accent-primary"
-							/>
-						</div>
-					))}
-					<div className="pt-1 border-t border-border">
-						<pre className="text-[9px] font-mono text-muted-foreground whitespace-pre-wrap select-all">
-							{JSON.stringify(config, null, 2)}
-						</pre>
-					</div>
-				</div>
-			)}
-		</div>
-	)
-}
-
-interface LayoutRequest {
-	key: string
-	nodes: Node<ServiceNodeData>[]
-	edges: Edge<ServiceEdgeData>[]
-	config: LayoutConfig
-}
-
-/**
- * Metric refreshes replace the node objects even when the layout inputs have not
- * changed. Keep the request identity pinned to the topology/config signature so
- * those refreshes do not restart ELK's worker.
- */
-function useLayoutRequest(
-	rawNodes: Node<ServiceNodeData>[],
-	flowEdges: Edge<ServiceEdgeData>[],
-	config: LayoutConfig,
-	key: string,
-): LayoutRequest {
-	const [stored, setStored] = useState<LayoutRequest>(() => ({
-		key,
-		nodes: rawNodes,
-		edges: flowEdges,
-		config,
-	}))
-	if (stored.key === key) return stored
-
-	const next = { key, nodes: rawNodes, edges: flowEdges, config }
-	setStored(next)
-	return next
-}
-
-type ElkLayoutSnapshot =
-	| { status: "pending"; layout: null }
-	| { status: "fallback"; layout: null }
-	| { status: "ready"; layout: ElkLayoutResult }
-
-const ELK_PENDING: ElkLayoutSnapshot = { status: "pending", layout: null }
-const ELK_FALLBACK: ElkLayoutSnapshot = { status: "fallback", layout: null }
-
-interface ElkLayoutStore {
-	getSnapshot: () => ElkLayoutSnapshot
-	getServerSnapshot: () => ElkLayoutSnapshot
-	subscribe: (listener: () => void) => () => void
-}
-
-/**
- * ELK is an external async engine, so expose it as an external store. This keeps
- * async work out of render and avoids adding another state-synchronizing effect.
- * After two seconds the synchronous layout is revealed; a late ELK result still
- * replaces it once available.
- */
-function createElkLayoutStore(
-	request: LayoutRequest,
-	getPrevious: () => PreviousPositions | undefined,
-): ElkLayoutStore {
-	let snapshot = ELK_PENDING
-	let started = false
-	const listeners = new Set<() => void>()
-
-	const publish = (next: ElkLayoutSnapshot) => {
-		if (snapshot === next) return
-		snapshot = next
-		for (const listener of listeners) listener()
-	}
-
-	const start = () => {
-		if (started) return
-		started = true
-		const graceTimer = setTimeout(() => publish(ELK_FALLBACK), 2000)
-
-		// Read the previous layout at START time, not at store-creation time: the
-		// store is memoized on the request, so a captured value could be a layout
-		// older than the one currently on screen.
-		layoutServiceMapWithElk(request.nodes, request.edges, request.config, getPrevious())
-			.then((layout) => {
-				clearTimeout(graceTimer)
-				publish({ status: "ready", layout })
-			})
-			.catch((error) => {
-				clearTimeout(graceTimer)
-				logClientError("service_map.elk_layout_failed", error)
-				publish(ELK_FALLBACK)
-			})
-	}
-
-	return {
-		getSnapshot: () => snapshot,
-		getServerSnapshot: () => ELK_PENDING,
-		subscribe: (listener) => {
-			listeners.add(listener)
-			start()
-			return () => listeners.delete(listener)
-		},
-	}
-}
-
-/**
- * Runs ELK for `request`, anchored to the layout currently on screen.
- *
- * `lastLayout` is the shared anchor — the positions most recently APPLIED to the
- * canvas, whichever engine produced them. Anchoring ELK on the synchronous
- * layout's output matters as much as the reverse: on a machine where the worker
- * is slow, the fallback is what the user is looking at, and ELK landing later
- * should adjust that rather than replace it.
- *
- * It is read through a stable getter rather than folded into the request, which
- * would change the request's identity and re-run the layout it exists to steady.
- */
-function useElkLayout(
-	request: LayoutRequest,
-	lastLayout: React.RefObject<PreviousPositions | undefined>,
-): ElkLayoutSnapshot {
-	const getPrevious = useCallback(() => lastLayout.current, [lastLayout])
-	const store = useMemo(() => createElkLayoutStore(request, getPrevious), [request, getPrevious])
-	return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot)
 }
 
 export function ServiceMapCanvas({
@@ -1761,21 +1401,8 @@ export function ServiceMapCanvas({
 	/** Forces the low-traffic threshold, bypassing stored prefs (bench harness). */
 	minTrafficPctOverride?: number
 }) {
-	const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null)
-	const [layoutConfig, setLayoutConfig] = useState<LayoutConfig>({ ...DEFAULT_LAYOUT_CONFIG })
-	const [colorMode, setColorMode] = useState<ServiceMapColorMode>("service")
-
 	const [layout, setLayout] = useAtom(serviceMapLayoutAtomFamily(layoutKey))
 	const [viewPrefs, setViewPrefs] = useAtom(serviceMapViewPrefsAtomFamily(layoutKey))
-	const [internalFocus, setInternalFocus] = useState<DeclutterFocus | null>(null)
-	const focus = focusProp !== undefined ? focusProp : internalFocus
-	const setFocus = onFocusChange ?? setInternalFocus
-
-	// Stable registry that edges publish their geometry into and the single
-	// particle canvas reads each frame. Created once per canvas instance.
-	const registryRef = useRef<ParticleRegistry | null>(null)
-	if (registryRef.current === null) registryRef.current = createParticleRegistry()
-	const registry = registryRef.current
 
 	// Build nodes/edges (carrying live metrics) every render — cheap object work.
 	const { rawNodes, flowEdges, services } = useMemo(() => {
@@ -1840,747 +1467,55 @@ export function ServiceMapCanvas({
 		return m
 	}, [rawNodes])
 
-	// Declutter stage: collapse namespaces → focus subgraph → traffic filter.
-	// Everything downstream (topology key, layout, persisted positions, particles,
-	// minimap, namespace boxes) operates on the EFFECTIVE graph, so declutter
-	// changes that alter the node set naturally re-key the layout signature while
-	// focus-dim (topology unchanged) costs no re-layout.
-	const minTrafficPct = minTrafficPctOverride ?? viewPrefs.minTrafficPct
-	const declutterState: DeclutterState = useMemo(
-		() => ({
-			minTrafficPct,
-			focus,
-			collapsedNamespaces: viewPrefs.collapsedNamespaces,
-		}),
-		[minTrafficPct, viewPrefs.collapsedNamespaces, focus],
-	)
-	const exemptIds = useMemo(
-		() => (selectedServiceId ? new Set([selectedServiceId]) : new Set<string>()),
-		[selectedServiceId],
-	)
-	const declutter = useMemo(
-		() => applyDeclutter(rawNodes, flowEdges, declutterState, exemptIds),
-		[rawNodes, flowEdges, declutterState, exemptIds],
-	)
-	const effectiveNodes = declutter.nodes
-	const effectiveEdges = declutter.edges
-
-	// A focus target that no longer exists (service renamed / aged out of the
-	// window) silently clears — the vanished focus chip is the feedback.
-	useEffect(() => {
-		if (declutter.focusMissing) setFocus(null)
-	}, [declutter.focusMissing, setFocus])
-
-	// Collapse and focus-hide can remove the selected node — drop the selection
-	// (the traffic filter alone never does; the selection is exempt).
-	useEffect(() => {
-		if (selectedServiceId && !effectiveNodes.some((n) => n.id === selectedServiceId)) {
-			setSelectedServiceId(null)
-		}
-	}, [selectedServiceId, effectiveNodes])
-
-	// Positions depend ONLY on topology + layout config. Memoize the expensive
-	// hierarchical layout on a topology key so metric refreshes (new array
-	// identities, same shape) don't re-run barycenter sweeps. The memo body runs
-	// each render but short-circuits on an unchanged key.
-	const topoKey = useMemo(
-		() => topologyKey(effectiveNodes, effectiveEdges),
-		[effectiveNodes, effectiveEdges],
-	)
-	// Namespace assignment is part of node DATA, not topology, so it isn't covered
-	// by topoKey. Fold a namespace signature into the cache key so re-bucketing
-	// happens when a service's namespace changes even if the shape is unchanged.
-	const nsKey = useMemo(
-		() =>
-			effectiveNodes
-				.flatMap((node) => (node.data.namespace ? [`${node.id}=${node.data.namespace}`] : []))
-				.sort()
-				.join(","),
-		[effectiveNodes],
-	)
-	// The trailing token is a layout-engine version: changing it invalidates
-	// persisted drag snapshots captured against a previous engine's base positions
-	// (mixing coordinate systems scatters nodes).
-	const layoutSignature = `${topoKey}|${nsKey}|${JSON.stringify(layoutConfig)}|elk3`
-
-	// Persisted drag positions / viewport are absolute coordinates tied to a
-	// specific layout. Honour them ONLY while their captured signature still
-	// matches the live layout — otherwise (topology / namespace / config change,
-	// or pre-signature localStorage data) the stale coords scatter nodes out of
-	// their namespace clusters and overlap the dotted boxes, so fall back to the
-	// clean ELK layout. Stable across metric refreshes (topoKey is the topology
-	// memo key), so ordinary refreshes keep manual arrangements.
-	const persisted = useMemo(
-		() =>
-			layout.snapshots.find((s) => s.signature === layoutSignature) ?? {
-				signature: layoutSignature,
-				positions: {},
-				viewport: null,
-			},
-		[layout, layoutSignature],
-	)
-	// ELK's layered layout runs in a worker. The deterministic synchronous layout
-	// remains the timeout/error fallback, so a worker failure never blanks the map.
-	const layoutRequest = useLayoutRequest(effectiveNodes, effectiveEdges, layoutConfig, layoutSignature)
-	// The layout currently on screen, and the anchor every later layout is built
-	// from. Written by an effect once positions are actually applied.
-	const lastLayoutRef = useRef<PreviousPositions | undefined>(undefined)
-	const elkSnapshot = useElkLayout(layoutRequest, lastLayoutRef)
-	// Snapshot the anchor ONCE per layout signature rather than reading the ref
-	// during render. Reading it live fed the ref's own writes back into the
-	// `layoutedNodes` memo — each write produced a fresh Map, which invalidated
-	// the memo, which re-ran the effect — an idle render loop that cost ~50fps and
-	// ~700ms of blocking time per 4s while the map just sat there.
-	const [carriedSnapshot, setCarriedSnapshot] = useState<{
-		signature: string
-		positions: PreviousPositions | undefined
-	}>(() => ({ signature: layoutSignature, positions: undefined }))
-	if (carriedSnapshot.signature !== layoutSignature) {
-		setCarriedSnapshot({ signature: layoutSignature, positions: lastLayoutRef.current })
-	}
-	const carriedPositions = carriedSnapshot.positions
-	// Wait for the first final/fallback layout so the initial graph never jumps.
-	// Once revealed, keep the current map visible during later ELK recomputes,
-	// matching the previous behavior for filter and topology changes.
-	const [layoutHasEverSettled, setLayoutHasEverSettled] = useState(false)
-	const currentLayoutSettled = elkSnapshot.status !== "pending"
-	if (!layoutHasEverSettled && currentLayoutSettled) setLayoutHasEverSettled(true)
-	const layoutRevealed = layoutHasEverSettled || currentLayoutSettled
-	// Anchored to the last layout for the same reason ELK is: the synchronous
-	// layout is what a slow or worker-less client actually sees, and without the
-	// anchor a one-edge delta re-ranks connected components and slides the whole
-	// graph. `carriedPositions` is a ref read, so it is deliberately not a dep —
-	// the memo re-runs on `layoutRequest`, which is exactly when a new layout is
-	// wanted.
-	const fallbackPositions = useMemo(
-		() =>
-			computeNodePositions(
-				layoutRequest.nodes,
-				layoutRequest.edges,
-				layoutRequest.config,
-				lastLayoutRef.current,
-			),
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[layoutRequest],
-	)
-	const layoutedNodes = useMemo(() => {
-		// While a NEW layout is computing, hold every node the previous ELK layout
-		// knew about exactly where it is. Falling straight through to the
-		// synchronous layout meant a topology change moved the whole graph twice —
-		// once to the fallback coordinates the instant the request changed, then
-		// again when ELK landed a second or two later.
-		//
-		// The carry covers `pending` only. Once ELK gives up (`fallback`), switch to
-		// the synchronous layout rather than holding indefinitely: it is now anchored
-		// on the same previous positions, so it lands near where the graph already
-		// was AND places this topology's new nodes coherently. Holding forever would
-		// keep old nodes pinned while new ones arrived at un-reconciled coordinates,
-		// which is worse than a small settled adjustment.
-		const bridge =
-			elkSnapshot.layout?.positions ?? (elkSnapshot.status === "pending" ? carriedPositions : undefined)
-		return effectiveNodes.map((node) => ({
-			...node,
-			position: bridge?.get(node.id) ?? fallbackPositions.get(node.id) ?? node.position,
-		}))
-	}, [effectiveNodes, elkSnapshot.layout, elkSnapshot.status, carriedPositions, fallbackPositions])
-
-	// Record what was actually applied, so the next layout — from either engine —
-	// is anchored on it. Nodes bridged from the previous layout keep their old
-	// coordinates here, which is the point: the anchor tracks the screen.
-	useEffect(() => {
-		const applied = new Map<string, { x: number; y: number }>()
-		for (const node of layoutedNodes) applied.set(node.id, node.position)
-		lastLayoutRef.current = applied
-	}, [layoutedNodes])
-
-	// Merge layout positions with selection + color-mode + focus-dim state.
-	// Persisted drag positions (keyed by node id) override the deterministic
-	// auto-layout.
-	const nodesWithSelection = useMemo(() => {
-		return layoutedNodes.map((node) => ({
-			...node,
-			position: persisted.positions[node.id] ?? node.position,
-			data: {
-				...node.data,
-				selected: node.id === selectedServiceId,
-				colorMode,
-				dimmed: declutter.dimmedNodeIds.has(node.id),
-			},
-		}))
-	}, [layoutedNodes, selectedServiceId, colorMode, persisted.positions, declutter.dimmedNodeIds])
-
-	// Edges leaving the focus neighborhood render near-invisible (and stop
-	// claiming particle budget) — flagged via edge data.
-	const renderedEdges = useMemo(() => {
-		if (declutter.dimmedEdgeIds.size === 0) return effectiveEdges
-		return effectiveEdges.map((edge) =>
-			declutter.dimmedEdgeIds.has(edge.id) ? { ...edge, data: { ...edge.data!, dimmed: true } } : edge,
+	const renderDetailPanel = ({ selectedId, colorMode, onClose, onFocus }: ServiceMapDetailPanelContext) =>
+		selectedId.startsWith(DB_NODE_PREFIX) ? (
+			<DatabaseDetailPanel
+				{...parseDbNodeId(selectedId)}
+				planetscale={planetscaleOverlayByNode.get(selectedId)}
+				hyperdrive={hyperdriveOverlayByNode.get(selectedId)}
+				dbEdges={dbEdges}
+				durationSeconds={durationSeconds}
+				startTime={startTime}
+				endTime={endTime}
+				deploymentEnv={deploymentEnv}
+				onClose={onClose}
+			/>
+		) : (
+			<ServiceDetailPanel
+				serviceId={selectedId}
+				edges={serviceEdges}
+				overviews={overviews}
+				workloads={workloads}
+				platforms={platforms}
+				colorMode={colorMode}
+				cloudflare={cloudflareOverlayByService.get(selectedId)}
+				durationSeconds={durationSeconds}
+				onFocus={onFocus}
+				onClose={onClose}
+			/>
 		)
-	}, [effectiveEdges, declutter.dimmedEdgeIds])
-
-	// Track nodes with full ReactFlow state (dimensions, positions from drag, etc.)
-	const [nodeState, setNodeState] = useState(() => ({
-		source: nodesWithSelection,
-		nodes: nodesWithSelection,
-	}))
-	let nodes = nodeState.nodes
-
-	// Sync layout changes into node state (preserving measured dimensions)
-	if (nodeState.source !== nodesWithSelection) {
-		const dimMap = new Map<
-			string,
-			{ width?: number; height?: number; measured?: { width?: number; height?: number } }
-		>()
-		for (const node of nodeState.nodes) {
-			dimMap.set(node.id, { width: node.width, height: node.height, measured: node.measured })
-		}
-		nodes = nodesWithSelection.map((node) => {
-			const dims = dimMap.get(node.id)
-			return dims ? { ...node, width: dims.width, height: dims.height, measured: dims.measured } : node
-		})
-		setNodeState({ source: nodesWithSelection, nodes })
-	}
-
-	// Programmatic fitView after ALL nodes are measured (the fitView prop fires too early).
-	// Skip auto-fit entirely when a saved viewport exists so the restored camera survives.
-	const rfInstance = useRef<ReactFlowInstance | null>(null)
-	// Capture the camera that existed when this signature became live. A fallback
-	// fit can itself trigger onMoveEnd before a late ELK result lands; that camera
-	// is not a user-saved camera and must not suppress ELK's final refit.
-	const [viewportSnapshot, setViewportSnapshot] = useState(() => ({
-		signature: layoutSignature,
-		viewport: persisted.viewport,
-	}))
-	let savedViewport = viewportSnapshot.viewport
-	if (viewportSnapshot.signature !== layoutSignature) {
-		savedViewport = persisted.viewport
-		setViewportSnapshot({ signature: layoutSignature, viewport: savedViewport })
-	}
-	const hasSavedViewport = savedViewport != null
-	// Camera-gate key, NOT a React key. It carries the ELK status so a late ELK
-	// result re-fits the camera onto the final layout, but the canvas itself is
-	// never remounted for it — see the `key`-less <ReactFlow> below.
-	const flowLayoutKey = `${layoutSignature}:${elkSnapshot.status === "ready" ? "ready" : "fallback"}`
-	const fitViewState = useRef({ signature: flowLayoutKey, fitted: hasSavedViewport })
-	// The very first fit snaps (nothing was on screen to shift); every later one
-	// animates, because it is moving a map the user is already looking at.
-	const hasFittedOnce = useRef(false)
-
-	// React Flow used to be keyed by `flowLayoutKey`, so every topology delta and
-	// every fallback→ELK flip tore the canvas down and rebuilt it: camera reset to
-	// `defaultViewport`, full re-measure, then a deferred fit — the visible
-	// "paint, jump, reframe" shift. Positions now flow through `nodes` instead, so
-	// the fit has to be driven from an effect: on a position-only update React Flow
-	// emits no `dimensions` change to hang it off.
-	//
-	// Runs after every commit; `nodes` gaining measurements re-triggers it. An
-	// unmeasured node is excluded from fitView's bounds, so wait for all of them.
-	useEffect(() => {
-		if (fitViewState.current.signature !== flowLayoutKey) {
-			fitViewState.current = { signature: flowLayoutKey, fitted: hasSavedViewport }
-		}
-		if (fitViewState.current.fitted) return
-		if (nodes.length === 0 || !nodes.every((n) => n.measured?.width && n.measured?.height)) return
-		fitViewState.current.fitted = true
-		const animate = hasFittedOnce.current
-		hasFittedOnce.current = true
-		const raf = requestAnimationFrame(() =>
-			rfInstance.current?.fitView(animate ? { duration: 300 } : undefined),
-		)
-		return () => cancelAnimationFrame(raf)
-	}, [flowLayoutKey, nodes, hasSavedViewport])
-
-	// `defaultViewport` only applies at mount, so restoring a saved camera for a
-	// signature that becomes live later (previously a side effect of the remount)
-	// is now explicit.
-	const restoredViewportSignature = useRef<string | null>(null)
-	useEffect(() => {
-		if (restoredViewportSignature.current === layoutSignature) return
-		restoredViewportSignature.current = layoutSignature
-		if (savedViewport) rfInstance.current?.setViewport(savedViewport)
-	}, [layoutSignature, savedViewport])
-
-	const onNodesChange = useCallback(
-		(changes: NodeChange[]) => {
-			setNodeState((current) => ({
-				...current,
-				nodes: applyNodeChanges(changes, current.nodes) as typeof current.nodes,
-			}))
-
-			// Persist finished drags only (dragging === false), keyed by node id.
-			const dragEnds = changes.filter(
-				(c): c is NodePositionChange =>
-					c.type === "position" && c.dragging === false && c.position != null,
-			)
-			if (dragEnds.length > 0) {
-				setLayout((prev) =>
-					upsertSnapshot(prev, layoutSignature, (snap) => {
-						const positions = { ...snap.positions }
-						for (const c of dragEnds) {
-							positions[c.id] = { x: c.position!.x, y: c.position!.y }
-						}
-						return { ...snap, positions }
-					}),
-				)
-			}
-		},
-		[layoutSignature, setLayout],
-	)
-
-	// Persisting the camera JSON-encodes the whole snapshot LRU — every node
-	// position across four layouts — into localStorage, so writing on each
-	// gesture-end turned a burst of them into a burst of long tasks. A wheel zoom
-	// emits many; so does a programmatic fit. Measured on CI, an otherwise idle map
-	// that had just been re-framed spent ~600ms blocked across 6 React commits and
-	// 3-6 long tasks in a 4s window.
-	//
-	// Only the last camera in a burst is worth keeping, so coalesce them. The
-	// cleanup flushes on unmount and before the layout signature changes, using
-	// that render's signature, so a camera is never written under the wrong layout
-	// or dropped on navigation.
-	const pendingViewport = useRef<Viewport | null>(null)
-	const viewportWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-	const flushViewport = useCallback(() => {
-		if (viewportWriteTimer.current !== null) {
-			clearTimeout(viewportWriteTimer.current)
-			viewportWriteTimer.current = null
-		}
-		const viewport = pendingViewport.current
-		pendingViewport.current = null
-		if (!viewport) return
-		setLayout((prev) => upsertSnapshot(prev, layoutSignature, (snap) => ({ ...snap, viewport })))
-	}, [layoutSignature, setLayout])
-
-	const onMoveEnd = useCallback(
-		(_: unknown, viewport: Viewport) => {
-			pendingViewport.current = viewport
-			if (viewportWriteTimer.current !== null) clearTimeout(viewportWriteTimer.current)
-			viewportWriteTimer.current = setTimeout(flushViewport, VIEWPORT_PERSIST_DEBOUNCE_MS)
-		},
-		[flushViewport],
-	)
-
-	useEffect(() => flushViewport, [flushViewport])
-
-	const handleNodeClick = useCallback(
-		(_: React.MouseEvent, node: Node) => {
-			// Namespace boxes are non-selectable, but guard anyway so a stray click
-			// never selects a synthetic group node.
-			if (node.type === "namespaceGroup") return
-			// Clicking a collapsed-namespace aggregate expands it back into services.
-			if (isNsAggregateId(node.id)) {
-				const ns = decodeURIComponent(node.id.slice(NS_AGGREGATE_PREFIX.length))
-				setViewPrefs((prev) => ({
-					...prev,
-					collapsedNamespaces: prev.collapsedNamespaces.filter((n) => n !== ns),
-				}))
-				return
-			}
-			setSelectedServiceId((prev) => (prev === node.id ? null : node.id))
-		},
-		[setViewPrefs],
-	)
-
-	const handlePaneClick = useCallback(() => {
-		setSelectedServiceId(null)
-	}, [])
-
-	// "Re-sort": discard any manual drag positions + saved camera and snap every
-	// node back to the computed auto-layout, then fit the fresh layout into view.
-	// Clearing positions re-derives node positions AND the namespace boxes over a
-	// couple of render passes, so the fit is deferred to an effect that runs once
-	// the nodes have actually settled (a fixed timeout races that cascade).
-	const resortFitPending = useRef(false)
-	const handleResort = useCallback(() => {
-		resortFitPending.current = true
-		// Drop only the CURRENT signature's snapshot — other declutter states keep
-		// their manual arrangements.
-		setLayout((prev) => ({
-			snapshots: prev.snapshots.filter((s) => s.signature !== layoutSignature),
-		}))
-	}, [layoutSignature, setLayout])
-
-	useEffect(() => {
-		if (!resortFitPending.current) return
-		// Wait until every node carries measured dimensions, else fitView frames a
-		// partial extent (unmeasured nodes are excluded from the bounds).
-		if (nodes.length === 0 || !nodes.every((n) => n.measured?.width)) return
-		resortFitPending.current = false
-		const raf = requestAnimationFrame(() => rfInstance.current?.fitView({ duration: 300 }))
-		return () => cancelAnimationFrame(raf)
-	}, [nodes])
-
-	// Derive a dotted box per namespace from the node positions/sizes, so the boxes
-	// follow drags and hug the service cards. Only service nodes carrying a namespace
-	// participate; databases and namespace-less services stay unboxed.
-	//
-	// Boxes are derived from `nodes` at DEFERRED priority. During the mount
-	// measurement cascade (and drags), ReactFlow updates `nodes` many times in quick
-	// succession; recomputing the boxes synchronously resized their DOM on every
-	// single measurement, which ReactFlow's own node ResizeObserver then re-observed
-	// mid-frame — producing a burst of benign "ResizeObserver loop completed with
-	// undelivered notifications" warnings (173 in one session). useDeferredValue lets
-	// the boxes lag the urgent measurement render by a frame so each resize lands in
-	// its own commit, collapsing the burst. The ~1-frame lag is imperceptible and the
-	// boxes still settle tight around the nodes.
-	const deferredNodes = useDeferredValue(nodes)
-	const handleCollapseNamespace = useCallback(
-		(ns: string) => {
-			setViewPrefs((prev) =>
-				prev.collapsedNamespaces.includes(ns)
-					? prev
-					: { ...prev, collapsedNamespaces: [...prev.collapsedNamespaces, ns] },
-			)
-		},
-		[setViewPrefs],
-	)
-	const namespaceGroupNodes = useMemo<Node<NamespaceGroupData>[]>(() => {
-		const extents = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
-		for (const node of deferredNodes) {
-			if (node.id.startsWith(DB_NODE_PREFIX)) continue
-			const ns = (node.data as ServiceNodeData).namespace
-			if (!ns) continue
-			const w = node.measured?.width ?? node.width ?? FALLBACK_NODE_WIDTH
-			const h = node.measured?.height ?? node.height ?? FALLBACK_NODE_HEIGHT
-			const { x, y } = node.position
-			const ext = extents.get(ns)
-			if (ext) {
-				ext.minX = Math.min(ext.minX, x)
-				ext.minY = Math.min(ext.minY, y)
-				ext.maxX = Math.max(ext.maxX, x + w)
-				ext.maxY = Math.max(ext.maxY, y + h)
-			} else {
-				extents.set(ns, { minX: x, minY: y, maxX: x + w, maxY: y + h })
-			}
-		}
-		const boxes: Node<NamespaceGroupData>[] = []
-		for (const [ns, ext] of extents) {
-			const width = ext.maxX - ext.minX + NS_PADDING_X * 2
-			const height = ext.maxY - ext.minY + NS_LABEL_HEIGHT + NS_PADDING_Y * 2
-			boxes.push({
-				id: nsGroupId(ns),
-				type: "namespaceGroup",
-				position: { x: ext.minX - NS_PADDING_X, y: ext.minY - (NS_LABEL_HEIGHT + NS_PADDING_Y) },
-				data: {
-					label: ns,
-					hue: getValueHue(ns) ?? 0,
-					onCollapse: () => handleCollapseNamespace(ns),
-				},
-				draggable: false,
-				selectable: false,
-				focusable: false,
-				// z 0 (same layer as service nodes) keeps the box above the pane/edges
-				// so the dashed border + label paint; ordering it first in the nodes
-				// array (below) keeps it behind the service cards.
-				zIndex: 0,
-				// These boxes are derived each render and never live in the controlled
-				// `nodes` state, so ReactFlow's measured dims never round-trip back —
-				// supply width/height/measured explicitly or it keeps them
-				// `visibility: hidden` (unmeasured) forever.
-				width,
-				height,
-				measured: { width, height },
-				// pointerEvents:none on the WRAPPER (ReactFlow applies node.style to it)
-				// so drags/clicks over empty box interior pass through to the pane
-				// (panning) and to the service cards beneath.
-				style: { width, height, pointerEvents: "none" },
-			})
-		}
-		return boxes
-	}, [deferredNodes, handleCollapseNamespace])
-
-	// Boxes first so they paint behind the service nodes. The service nodes use the
-	// LIVE `nodes` (must stay current); only the derived boxes run a frame behind.
-	const renderedNodes = useMemo(() => [...namespaceGroupNodes, ...nodes], [namespaceGroupNodes, nodes])
-
-	if (nodes.length === 0) {
-		// The graph exists but declutter hid everything — offer a reset instead of
-		// the "no instrumentation" empty state.
-		if (rawNodes.length > 0) {
-			return (
-				<div className="flex h-full items-center justify-center">
-					<div className="space-y-3 text-center">
-						<p className="text-sm font-medium text-foreground">
-							Everything is hidden by the current filters
-						</p>
-						<p className="text-xs text-muted-foreground">
-							{rawNodes.length} services are below the traffic threshold or outside the focus.
-						</p>
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={() => {
-								setViewPrefs((prev) => ({ ...prev, minTrafficPct: 0 }))
-								setFocus(null)
-							}}
-						>
-							Reset filters
-						</Button>
-					</div>
-				</div>
-			)
-		}
-		return <ServiceMapEmptyState />
-	}
-
-	if (!layoutRevealed && viewMode === "2d") {
-		return <ServiceMapLoading />
-	}
 
 	return (
-		// `data-elk-status` reports whether the positions on screen are ELK's final
-		// answer ("ready") or the synchronous stand-in it publishes after a 2s grace
-		// ("fallback"). The perf bench needs the difference: edges exist in the DOM
-		// as soon as the fallback lands, so "the map has rendered" is true well
-		// before "the map has stopped moving", and on a slow runner ELK finished
-		// INSIDE the idle measurement window and billed its commits as a render
-		// loop. Cheap enough to keep in production, where it also says which layout
-		// a screenshot or a bug report was taken against.
-		<div className="flex flex-col h-full" data-elk-status={elkSnapshot.status}>
-			<ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
-				<ResizablePanel defaultSize={selectedServiceId ? 65 : 100} minSize={40}>
-					<div className="flex flex-col h-full">
-						<ServiceMapToolbar
-							showPresentationControls={viewMode === "2d"}
-							colorMode={colorMode}
-							onColorModeChange={setColorMode}
-							onResort={handleResort}
-							services={services}
-							focus={focus}
-							onFocusChange={setFocus}
-							minTrafficPct={minTrafficPct}
-							onMinTrafficPctChange={(pct) =>
-								setViewPrefs((prev) => ({ ...prev, minTrafficPct: pct }))
-							}
-							hiddenNodeCount={declutter.hiddenNodeCount}
-							hiddenEdgeCount={declutter.hiddenEdgeCount}
-						/>
-						<div className="flex-1 min-h-0 relative">
-							{viewMode === "3d" ? (
-								<Suspense fallback={<ServiceMapLoading />}>
-									<LiveServiceMap3D
-										nodes={effectiveNodes}
-										edges={effectiveEdges}
-										dimmedNodeIds={declutter.dimmedNodeIds}
-										dimmedEdgeIds={declutter.dimmedEdgeIds}
-										selectedId={selectedServiceId}
-										onSelect={(id) => {
-											if (id && isNsAggregateId(id)) {
-												const ns = decodeURIComponent(
-													id.slice(NS_AGGREGATE_PREFIX.length),
-												)
-												setViewPrefs((prev) => ({
-													...prev,
-													collapsedNamespaces: prev.collapsedNamespaces.filter(
-														(n) => n !== ns,
-													),
-												}))
-											} else setSelectedServiceId(id)
-										}}
-									/>
-								</Suspense>
-							) : (
-								<>
-									{/* Dev-only: the sliders write `layoutConfig`, which is part of
-							    `layoutSignature`, so every tick re-runs ELK. Compiled out of
-							    production builds. */}
-									{import.meta.env.DEV && (
-										<LayoutDebugPanel config={layoutConfig} onChange={setLayoutConfig} />
-									)}
-									<ParticleRegistryProvider value={registry}>
-										<ReactFlow
-											nodes={renderedNodes}
-											edges={renderedEdges}
-											onNodesChange={onNodesChange}
-											onNodeClick={handleNodeClick}
-											onPaneClick={handlePaneClick}
-											onMoveEnd={onMoveEnd}
-											defaultViewport={savedViewport ?? undefined}
-											onInit={(instance) => {
-												// SAFETY: this ref intentionally erases the node/edge generics after ReactFlow initialization.
-												rfInstance.current = instance as unknown as ReactFlowInstance
-											}}
-											nodeTypes={nodeTypes}
-											edgeTypes={edgeTypes}
-											nodesDraggable
-											nodesConnectable={false}
-											connectOnClick={false}
-											elementsSelectable={false}
-											// 0.05 lets fitView frame very large graphs (hundreds of
-											// services) instead of clipping at the zoom floor.
-											minZoom={0.05}
-											maxZoom={2}
-											proOptions={{ hideAttribution: true }}
-										>
-											<ServiceMapParticleCanvas />
-											<ServiceMapControls />
-											<ServiceMapMiniMap key={colorMode} colorMode={colorMode} />
-											<ServiceMapBackground />
-										</ReactFlow>
-									</ParticleRegistryProvider>
-								</>
-							)}
-						</div>
-
-						{viewMode === "2d" && (
-							<>
-								{/* Legend */}
-								<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-[11px] text-muted-foreground shrink-0">
-									{/* Pointer hints only: on touch the gestures are different, and the
-							    two lines they cost are the whole legend's height on a phone. */}
-									<span className="font-medium max-sm:hidden">Drag nodes to arrange</span>
-									<span className="text-foreground/30 max-sm:hidden">|</span>
-									<span className="font-medium max-sm:hidden">Scroll to zoom</span>
-									{colorMode === "service" && services.length > 0 && (
-										<>
-											<span className="text-foreground/30 max-sm:hidden">|</span>
-											{services.slice(0, 3).map((service) => (
-												<div key={service} className="flex items-center gap-1.5">
-													<div
-														className="size-2.5 rounded-sm shrink-0"
-														style={{
-															backgroundColor: getServiceMapNodeColor(
-																{
-																	label: service,
-																	kind: "service",
-																	errorRate: 0,
-																},
-																"service",
-															),
-														}}
-													/>
-													<span className="font-medium">{service}</span>
-												</div>
-											))}
-											{services.length > 3 && (
-												<Popover>
-													<PopoverTrigger className="font-medium hover:text-foreground transition-colors cursor-pointer">
-														+{services.length - 3} more
-													</PopoverTrigger>
-													<PopoverContent
-														align="start"
-														className="w-64 p-3"
-														side="top"
-													>
-														<div className="grid grid-cols-2 gap-2 text-[11px]">
-															{services.map((service) => (
-																<div
-																	key={service}
-																	className="flex items-center gap-1.5 min-w-0"
-																>
-																	<div
-																		className="size-2.5 rounded-sm shrink-0"
-																		style={{
-																			backgroundColor:
-																				getServiceMapNodeColor(
-																					{
-																						label: service,
-																						kind: "service",
-																						errorRate: 0,
-																					},
-																					"service",
-																				),
-																		}}
-																	/>
-																	<span className="truncate font-medium">
-																		{service}
-																	</span>
-																</div>
-															))}
-														</div>
-													</PopoverContent>
-												</Popover>
-											)}
-										</>
-									)}
-									{colorMode === "platform" && (
-										<>
-											<span className="text-foreground/30">|</span>
-											{(
-												[
-													"kubernetes",
-													"cloudflare",
-													"lambda",
-													"web",
-													"unknown",
-												] as const
-											).map((p) => (
-												<div key={p} className="flex items-center gap-1.5">
-													<div
-														className="size-2.5 rounded-sm shrink-0"
-														style={{
-															backgroundColor: getPlatformColor(
-																p === "unknown" ? undefined : p,
-															),
-														}}
-													/>
-													<span className="font-medium capitalize">{p}</span>
-												</div>
-											))}
-										</>
-									)}
-									<span className="flex-1" />
-									<div className="flex items-center gap-3">
-										<div className="flex items-center gap-1.5">
-											<div className="size-2 rounded-full bg-severity-info" />
-											<span>Healthy</span>
-										</div>
-										<div className="flex items-center gap-1.5">
-											<div className="size-2 rounded-full bg-severity-warn" />
-											<span>Degraded</span>
-										</div>
-										<div className="flex items-center gap-1.5">
-											<div className="size-2 rounded-full bg-severity-error" />
-											<span>Error</span>
-										</div>
-									</div>
-								</div>
-							</>
-						)}
-					</div>
-				</ResizablePanel>
-
-				{selectedServiceId &&
-					(() => {
-						const panel = selectedServiceId.startsWith(DB_NODE_PREFIX) ? (
-							<DatabaseDetailPanel
-								{...parseDbNodeId(selectedServiceId)}
-								planetscale={planetscaleOverlayByNode.get(selectedServiceId)}
-								hyperdrive={hyperdriveOverlayByNode.get(selectedServiceId)}
-								dbEdges={dbEdges}
-								durationSeconds={durationSeconds}
-								startTime={startTime}
-								endTime={endTime}
-								deploymentEnv={deploymentEnv}
-								onClose={() => setSelectedServiceId(null)}
-							/>
-						) : (
-							<ServiceDetailPanel
-								serviceId={selectedServiceId}
-								edges={serviceEdges}
-								overviews={overviews}
-								workloads={workloads}
-								platforms={platforms}
-								colorMode={colorMode}
-								cloudflare={cloudflareOverlayByService.get(selectedServiceId)}
-								durationSeconds={durationSeconds}
-								onFocus={() =>
-									setFocus({ serviceId: selectedServiceId, hops: 1, mode: "dim" })
-								}
-								onClose={() => setSelectedServiceId(null)}
-							/>
-						)
-						return (
-							<>
-								<ResizableHandle withHandle />
-								<ResizablePanel defaultSize={35} minSize={25}>
-									{panel}
-								</ResizablePanel>
-							</>
-						)
-					})()}
-			</ResizablePanelGroup>
-		</div>
+		<ServiceMapFlowCanvas
+			viewMode={viewMode}
+			nodes={rawNodes}
+			edges={flowEdges}
+			services={services}
+			layout={layout}
+			onLayoutChange={setLayout}
+			viewPrefs={viewPrefs}
+			onViewPrefsChange={setViewPrefs}
+			focus={focusProp}
+			onFocusChange={onFocusChange}
+			minTrafficPctOverride={minTrafficPctOverride}
+			emptyState={<ServiceMapEmptyState />}
+			renderDetailPanel={renderDetailPanel}
+			render3D={renderLiveServiceMap3D}
+			// Dev-only layout-spacing sliders, compiled out of production builds.
+			showLayoutDebug={import.meta.env.DEV}
+			onLayoutError={logClientError}
+			onLayoutWarning={logClientWarning}
+		/>
 	)
 }
 
@@ -2625,7 +1560,7 @@ export function ServiceMapView({
 		}),
 	)
 	const hyperdriveInventoryResult = useAtomValue(
-		retainedQuery("integrations", "cloudflareHyperdrives", {
+		retainedInternalQuery("integrations", "cloudflareHyperdrives", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
@@ -2749,49 +1684,39 @@ export function ServiceMapView({
 		[allWorkloads, memberServices],
 	)
 
-	return Result.builder(bundleResult)
-		.onInitial(() => <ServiceMapLoading />)
-		.onError((error) => {
-			const formatted = displayError(error)
-			return (
-				<div className="flex items-center justify-center h-full">
-					<div className="text-center space-y-2">
-						<p className="text-sm font-medium text-destructive">{formatted.title}</p>
-						<p className="text-xs text-muted-foreground">{formatted.message}</p>
-					</div>
-				</div>
-			)
-		})
-		.onSuccess((mapResponse) => (
-			<ServiceMapCanvas
-				viewMode={viewMode}
-				edges={
-					memberServices === null
-						? mapResponse.edges
-						: mapResponse.edges.filter(
-								(edge) =>
-									memberServices.has(edge.sourceService) &&
-									memberServices.has(edge.targetService),
-							)
-				}
-				dbEdges={dbEdges}
-				cloudflareServices={cloudflareServices}
-				faasNames={faasNames}
-				planetscaleDatabases={planetscaleDatabases}
-				planetscaleStats={planetscaleStats}
-				hyperdriveConfigs={hyperdriveConfigs}
-				platforms={platforms}
-				runtimes={runtimes}
-				overviews={overviews}
-				workloads={workloads}
-				durationSeconds={durationSeconds}
-				startTime={startTime}
-				endTime={endTime}
-				deploymentEnv={deploymentEnv}
-				layoutKey={orgId ?? "default"}
-				focus={focus}
-				onFocusChange={onFocusChange}
-			/>
-		))
-		.render()
+	return (
+		<ResultView result={bundleResult} loading={<ServiceMapLoading />}>
+			{(mapResponse) => (
+				<ServiceMapCanvas
+					viewMode={viewMode}
+					edges={
+						memberServices === null
+							? mapResponse.edges
+							: mapResponse.edges.filter(
+									(edge) =>
+										memberServices.has(edge.sourceService) &&
+										memberServices.has(edge.targetService),
+								)
+					}
+					dbEdges={dbEdges}
+					cloudflareServices={cloudflareServices}
+					faasNames={faasNames}
+					planetscaleDatabases={planetscaleDatabases}
+					planetscaleStats={planetscaleStats}
+					hyperdriveConfigs={hyperdriveConfigs}
+					platforms={platforms}
+					runtimes={runtimes}
+					overviews={overviews}
+					workloads={workloads}
+					durationSeconds={durationSeconds}
+					startTime={startTime}
+					endTime={endTime}
+					deploymentEnv={deploymentEnv}
+					layoutKey={orgId ?? "default"}
+					focus={focus}
+					onFocusChange={onFocusChange}
+				/>
+			)}
+		</ResultView>
+	)
 }

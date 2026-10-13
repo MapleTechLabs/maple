@@ -342,10 +342,10 @@ const conj = (count: number, singular: string, pluralForm: string) => (count ===
 
 const formatAgo = (ms: number): string => {
 	const minutes = Math.floor(ms / 60_000)
-	if (minutes < 60) return `${plural(Math.max(minutes, 1), "minute")}`
+	if (minutes < 60) return plural(Math.max(minutes, 1), "minute")
 	const hours = Math.floor(minutes / 60)
-	if (hours < 48) return `${plural(hours, "hour")}`
-	return `${plural(Math.floor(hours / 24), "day")}`
+	if (hours < 48) return plural(hours, "hour")
+	return plural(Math.floor(hours / 24), "day")
 }
 
 /** Truncates a provider error so one pathological message can't dominate the report. */

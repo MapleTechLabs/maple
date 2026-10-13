@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Effect, Schema } from "effect"
 import { TAX_ID_TYPE_VALUES } from "../billing-tax-ids"
 import { SessionAuthorization } from "./current-tenant"
@@ -258,10 +258,43 @@ export class UpdateBillingUsageAlert extends Schema.Class<UpdateBillingUsageAler
 export class UpdateBillingControlsRequest extends Schema.Class<UpdateBillingControlsRequest>(
 	"UpdateBillingControlsRequest",
 )({
-	/** Targeted Autumn upserts; disabled entries remove the corresponding control. */
+	/** Per-feature upserts, merged over the org's existing caps; a disabled entry removes that cap. */
 	spendLimits: Schema.Array(UpdateBillingSpendLimit),
-	usageAlerts: Schema.Array(UpdateBillingUsageAlert),
+	/** Replaces the org's usage alerts when present; omit to leave them untouched. */
+	usageAlerts: Schema.optionalKey(Schema.Array(UpdateBillingUsageAlert)),
 }) {}
+
+/**
+ * The full spend-limit list to send upstream: every existing cap, with the
+ * updated features replaced. The provider replaces the whole list on write, so
+ * sending only the edited feature would drop every other feature's cap.
+ */
+export const mergeSpendLimits = (
+	existing: ReadonlyArray<BillingSpendLimit>,
+	updates: ReadonlyArray<UpdateBillingSpendLimit>,
+): ReadonlyArray<{
+	readonly featureId: string
+	readonly enabled: boolean
+	readonly limitType?: BillingLimitType
+	readonly overageLimit?: number
+}> => {
+	const updated = new Set<string>(updates.map((limit) => limit.featureId))
+	const kept = existing.flatMap((limit) =>
+		limit.featureId === undefined || updated.has(limit.featureId)
+			? []
+			: [
+					{
+						featureId: limit.featureId,
+						enabled: limit.enabled,
+						...(limit.limitType !== undefined ? { limitType: limit.limitType } : undefined),
+						...(limit.overageLimit !== undefined
+							? { overageLimit: limit.overageLimit }
+							: undefined),
+					},
+				],
+	)
+	return [...kept, ...updates]
+}
 
 export class AttachRequest extends Schema.Class<AttachRequest>("AttachRequest")({
 	planId: Schema.String,

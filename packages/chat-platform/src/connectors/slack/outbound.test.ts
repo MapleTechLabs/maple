@@ -5,7 +5,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, Layer } from "effect"
 import { TestClock } from "effect/testing"
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import type { InboundAction, InboundMessage } from "../../ingress"
 import { ConnectorCredentials, WORKSPACE_CREDENTIALS } from "../../outbound"
 import { encodeSlackCredentials } from "./credentials"

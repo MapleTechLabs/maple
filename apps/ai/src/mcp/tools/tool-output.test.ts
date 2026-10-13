@@ -6,11 +6,14 @@
  * every tool call goes through here.
  */
 import { assert, describe, it } from "vitest"
+import { doc, renderToolDoc, type ToolDoc } from "../lib/tool-doc"
 import {
 	countLines,
 	formatSize,
 	MAX_TOOL_OUTPUT_BYTES,
 	MAX_TOOL_OUTPUT_LINES,
+	MAX_TOOL_TEXT_CHARS,
+	renderToolDocWithinBudget,
 	truncateToolOutput,
 	utf8ByteLength,
 } from "./tool-output"
@@ -110,5 +113,67 @@ describe("truncateToolOutput", () => {
 		const result = truncateToolOutput("y".repeat(5_000), { maxLines: 10, maxBytes: 1_000 })
 		const body = result.text.slice(0, result.text.indexOf("\n\n…["))
 		assert.equal(body.length, 1_000)
+	})
+})
+
+describe("renderToolDocWithinBudget", () => {
+	const rows = (count: number) => Array.from({ length: count }, (_, i) => [`row-${i}`, "x".repeat(100)])
+	const big = (count: number): ToolDoc => ({
+		title: "Big",
+		scope: [["Time range", "last 6h"]],
+		blocks: [doc.text("Summary first."), doc.table(["Name", "Value"], rows(count)), doc.text("trailer")],
+		truncation: {
+			shown: count,
+			total: count * 2,
+			noun: "rows",
+			next: doc.next("search_traces", { offset: count }, "next page"),
+		},
+		next: [doc.next("list_services", {}, "look around")],
+	})
+
+	it("renders a doc that fits exactly as renderToolDoc does", () => {
+		assert.equal(renderToolDocWithinBudget(big(5)), renderToolDoc(big(5)))
+	})
+
+	it("cuts the overflowing table on a row boundary and keeps head, tail and a narrowing notice", () => {
+		const text = renderToolDocWithinBudget(big(1_000))
+		assert.isAtMost(text.length, MAX_TOOL_TEXT_CHARS)
+		assert.include(text, "## Big")
+		assert.include(text, "Summary first.")
+		assert.include(text, "`list_services`")
+		const kept = Number(
+			/showing (\d+) of 1000 rows in the last section; 1 later section omitted/.exec(text)?.[1],
+		)
+		assert.isBelow(kept, 1_000)
+		// Paging follows the rows actually sent, and no next page skips the ones that were cut.
+		assert.include(text, `Showing ${kept} of 2000 rows.`)
+		assert.notInclude(text, "Next page")
+		assert.notInclude(text, "offset=1000")
+		assert.include(text, "lower `limit`")
+		assert.notInclude(text, "trailer")
+		assert.notInclude(text, "row-999")
+		const lastRow = text
+			.split("\n")
+			.filter((line) => line.startsWith("| row-"))
+			.at(-1)!
+		assert.match(lastRow, /\|$/)
+	})
+
+	it("keeps the hard-cut fallback, marker included, under the ceiling", () => {
+		const text = renderToolDocWithinBudget(
+			{ title: "t".repeat(5_000), blocks: [doc.text("body")] },
+			1_000,
+		)
+		assert.isAtMost(text.length, 1_000)
+		assert.include(text, "[truncated:")
+	})
+
+	it("cuts one enormous line on characters", () => {
+		const text = renderToolDocWithinBudget(
+			{ title: "Blob", blocks: [doc.text("z".repeat(100_000))] },
+			2_000,
+		)
+		assert.isAtMost(text.length, 2_000)
+		assert.include(text, "characters in the last section")
 	})
 })

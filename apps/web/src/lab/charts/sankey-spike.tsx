@@ -5,7 +5,7 @@ import {
 	muteColor,
 	usePlotColors,
 	usePlotLegendHighlight,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotLegendSeries,
 } from "@maple/ui/components/plot"
 import { defineChart, type ChartCurve } from "@tanstack/charts"
@@ -42,15 +42,15 @@ interface SankeySpikeNode {
 }
 
 const FLOW_TOKENS = {
-	node: ["--chart-2", "#ec4899"],
-	nodeLabel: ["--foreground", "#e6e6e6"],
-	healthy: ["--chart-1", "#6366f1"],
-	warning: ["--chart-3", "#f59e0b"],
-	error: ["--destructive", "#ef4444"],
+	node: "--chart-2",
+	nodeLabel: "--foreground",
+	healthy: "--chart-1",
+	warning: "--chart-3",
+	error: "--destructive",
 	// What a muted ribbon mixes toward, resolved in the same call as the rest so
 	// it re-reads on a theme flip.
-	background: ["--background", "#0c0a09"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	background: "--background",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * Deterministic fixture: 8 services, 14 edges, shaped exactly like the warehouse
@@ -363,7 +363,7 @@ function SankeyFigure({
 					return (
 						<div className="flex items-center gap-2">
 							<span
-								className="size-2.5 shrink-0 rounded-[2px]"
+								className="size-2.5 shrink-0 rounded-xs"
 								style={{ backgroundColor: colors.node }}
 							/>
 							<span className="text-muted-foreground">{datum.data.service}</span>
@@ -380,7 +380,7 @@ function SankeyFigure({
 					<div className="flex flex-col gap-1">
 						<div className="flex items-center gap-2">
 							<span
-								className="size-2.5 shrink-0 rounded-[2px]"
+								className="size-2.5 shrink-0 rounded-xs"
 								style={{ backgroundColor: strokeForEdge(edge) }}
 							/>
 							<span className="text-muted-foreground">

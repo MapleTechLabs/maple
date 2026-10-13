@@ -14,21 +14,29 @@ const MAX_ARRAY_ELEMENTS = 100
  */
 export function installConsoleCapture(emit: Emit): () => void {
 	const original: Partial<Record<Level, (...args: unknown[]) => void>> = {}
+	const wrappers: Partial<Record<Level, (...args: unknown[]) => void>> = {}
+	// Two captures can stack (breadcrumbs and replay). After teardown a wrapper
+	// still inside someone else's chain only forwards.
+	let active = true
 
 	for (const level of LEVELS) {
 		const orig = console[level] as (...args: unknown[]) => void
 		original[level] = orig
-		console[level] = (...args: unknown[]) => {
+		const wrapper = (...args: unknown[]): void => {
 			// Capture must never break the host app's logging.
-			safeEmit(emit, { type: "console", level, message: formatArgs(args) })
+			if (active) safeEmit(emit, { type: "console", level, message: formatArgs(args) })
 			orig.apply(console, args)
 		}
+		wrappers[level] = wrapper
+		console[level] = wrapper as never
 	}
 
 	return () => {
+		active = false
 		for (const level of LEVELS) {
 			const orig = original[level]
-			if (orig) console[level] = orig as never
+			// Only undo our own wrapper: one installed on top of it stays, and keeps working.
+			if (orig && console[level] === wrappers[level]) console[level] = orig as never
 		}
 	}
 }

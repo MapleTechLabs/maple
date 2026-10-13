@@ -1,4 +1,5 @@
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
+import { SectionHeading } from "@/components/common/section-heading"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result } from "@/lib/effect-atom"
@@ -6,9 +7,12 @@ import { Result } from "@/lib/effect-atom"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { CloudflareIcon, MagnifierIcon, XmarkIcon } from "@/components/icons"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
+import { DocsLink } from "@/components/common/docs-link"
+import { ResultView } from "@/components/common/result-view"
+import { CloudflareIcon } from "@/components/icons"
+import { CompactFilterInput } from "@/components/infra/cloudflare/compact-filter-input"
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import {
 	CloudflareKpiCards,
@@ -30,7 +34,9 @@ import {
 	CloudflareZoneTable,
 	CloudflareZoneTableLoading,
 } from "@/components/infra/cloudflare/cloudflare-zone-table"
-import { MAX_ZONE_SERIES, OTHER_ZONES_COLOR } from "@/components/infra/cloudflare/constants"
+import { MAX_ZONE_SERIES, OTHER_ZONES_SERIES } from "@/components/infra/cloudflare/constants"
+import { SeriesLegend } from "@/components/common/series-legend"
+import { ChartLoading, OTHER_COLOR } from "@maple/ui/components/charts"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
@@ -44,8 +50,6 @@ import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const cloudflareSearchSchema = Schema.Struct({
 	...TimeRangeSearchFields,
@@ -67,10 +71,7 @@ function CloudflarePage() {
 		search.timePreset ?? "12h",
 	)
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -83,54 +84,29 @@ function CloudflarePage() {
 	const { statusResult, phase } = useCloudflareIngestPhase()
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "12h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Infrastructure", href: "/infra" }, { label: "Cloudflare" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "12h")}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								{Result.builder(statusResult)
-									.onInitial(() => (
-										<div className="space-y-4">
-											<Skeleton className="h-28 w-full" />
-											<Skeleton className="h-64 w-full" />
-										</div>
-									))
-									.onError((err) => <QueryErrorState error={err} />)
-									.onSuccess((status) => {
-										if (!status.connected)
-											return <CloudflareNotConnected variant="not-connected" />
-										if (!status.analyticsCapable) {
-											return <CloudflareNotConnected variant="needs-permissions" />
-										}
-										return (
-											<CloudflareData
-												startTime={startTime}
-												endTime={endTime}
-												phase={phase}
-											/>
-										)
-									})
-									.render()}
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Cloudflare" }]}
+			time={{ search, startTime, endTime, defaultPreset: "12h", onChange: handleTimeChange }}
+			gap="lg"
+		>
+			<ResultView
+				result={statusResult}
+				loading={
+					<div className="space-y-4">
+						<Skeleton className="h-28 w-full" />
+						<ChartLoading variant="line" height={256} />
+					</div>
+				}
+			>
+				{(status) => {
+					if (!status.connected) return <CloudflareNotConnected variant="not-connected" />
+					if (!status.analyticsCapable) {
+						return <CloudflareNotConnected variant="needs-permissions" />
+					}
+					return <CloudflareData startTime={startTime} endTime={endTime} phase={phase} />
+				}}
+			</ResultView>
+		</DashboardPage>
 	)
 }
 
@@ -161,7 +137,7 @@ function CloudflareData({
 		.onSuccess((r) => r)
 		.orElse(() => null)
 	const timeseriesWaiting = Result.builder(timeseriesResult)
-		.onSuccess((_, holder) => Boolean(holder.waiting))
+		.onSuccess((_, holder) => holder.waiting)
 		.orElse(() => false)
 
 	// Stable zone→color assignment shared by all four charts and the legend:
@@ -212,6 +188,7 @@ function CloudflareData({
 						check back once more traffic has been collected.
 					</EmptyDescription>
 				</EmptyHeader>
+				<DocsLink page="cloudflare" />
 			</Empty>
 		)
 	}
@@ -219,122 +196,112 @@ function CloudflareData({
 	return (
 		<div className="space-y-6">
 			{phase == null ? null : <CloudflareIngestBanner phase={phase} />}
-			{Result.builder(zonesResult)
-				.onInitial(() => (
+			<ResultView
+				result={zonesResult}
+				loading={
 					<div className="space-y-4">
 						<CloudflareKpiCardsLoading />
 						<CloudflareZoneTableLoading />
 					</div>
-				))
-				.onError((err) => <QueryErrorState error={err} />)
-				.onSuccess((response, result) => {
-					return (
-						<div className={`space-y-6 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
-							{response.zones.length > 0 && (
-								<CloudflareKpiCards zones={response.zones} buckets={timeseries?.buckets} />
-							)}
-							{response.zones.length > 0 &&
-								timeseries &&
-								timeseries.buckets.length > 0 &&
-								zoneSeries && (
-									<div className="space-y-2">
-										{(zoneSeries.top.length > 1 || zoneSeries.otherCount > 0) && (
-											<div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
-												{zoneSeries.top.map((name) => (
-													<Link
-														key={name}
-														to="/infra/cloudflare/$zoneName"
-														params={{ zoneName: name }}
-														className="group inline-flex items-center gap-1.5"
-													>
-														<span
-															aria-hidden
-															className="size-1.5 rounded-full"
-															style={{
-																background: zoneSeries.colors.get(name),
-															}}
-														/>
-														<span className="text-[11px] text-muted-foreground transition-colors group-hover:text-foreground">
+				}
+				dimWhileWaiting
+				className="space-y-6"
+			>
+				{(response, { waiting }) => (
+					<>
+						{response.zones.length > 0 && (
+							<CloudflareKpiCards zones={response.zones} buckets={timeseries?.buckets} />
+						)}
+						{response.zones.length > 0 &&
+							timeseries &&
+							timeseries.buckets.length > 0 &&
+							zoneSeries && (
+								<div className="space-y-2">
+									{(zoneSeries.top.length > 1 || zoneSeries.otherCount > 0) && (
+										<SeriesLegend
+											className="justify-start gap-x-4 px-1"
+											items={[
+												...zoneSeries.top.map((name) => ({
+													key: name,
+													color: zoneSeries.colors.get(name),
+													label: (
+														<Link
+															to="/infra/cloudflare/$zoneName"
+															params={{ zoneName: name }}
+															className="transition-colors hover:text-foreground"
+														>
 															{name}
-														</span>
-													</Link>
-												))}
-												{zoneSeries.otherCount > 0 && (
-													<span className="inline-flex items-center gap-1.5">
-														<span
-															aria-hidden
-															className="size-1.5 rounded-full"
-															style={{ background: OTHER_ZONES_COLOR }}
-														/>
-														<span className="text-[11px] text-muted-foreground">
-															Other zones ({zoneSeries.otherCount})
-														</span>
-													</span>
-												)}
-											</div>
-										)}
-										<div className="grid gap-4 lg:grid-cols-2">
-											<CloudflareZoneChart
-												buckets={timeseries.buckets}
-												metric="requests"
-												topZones={zoneSeries.top}
-												waiting={timeseriesWaiting}
-												syncId="cf-zones"
-											/>
-											<CloudflareZoneChart
-												buckets={timeseries.buckets}
-												metric="errorRate"
-												topZones={zoneSeries.top}
-												waiting={timeseriesWaiting}
-												syncId="cf-zones"
-											/>
-											<CloudflareZoneChart
-												buckets={timeseries.buckets}
-												metric="cacheHitRate"
-												topZones={zoneSeries.top}
-												waiting={timeseriesWaiting}
-												syncId="cf-zones"
-											/>
-											<CloudflareZoneChart
-												buckets={timeseries.buckets}
-												metric="bytes"
-												topZones={zoneSeries.top}
-												waiting={timeseriesWaiting}
-												syncId="cf-zones"
-											/>
-										</div>
+														</Link>
+													),
+												})),
+												...(zoneSeries.otherCount > 0
+													? [
+															{
+																key: OTHER_ZONES_SERIES,
+																color: OTHER_COLOR,
+																label: `Other zones (${zoneSeries.otherCount})`,
+															},
+														]
+													: []),
+											]}
+										/>
+									)}
+									<div className="grid gap-4 lg:grid-cols-2">
+										<CloudflareZoneChart
+											buckets={timeseries.buckets}
+											metric="requests"
+											topZones={zoneSeries.top}
+											waiting={timeseriesWaiting}
+											syncId="cf-zones"
+										/>
+										<CloudflareZoneChart
+											buckets={timeseries.buckets}
+											metric="errorRate"
+											topZones={zoneSeries.top}
+											waiting={timeseriesWaiting}
+											syncId="cf-zones"
+										/>
+										<CloudflareZoneChart
+											buckets={timeseries.buckets}
+											metric="cacheHitRate"
+											topZones={zoneSeries.top}
+											waiting={timeseriesWaiting}
+											syncId="cf-zones"
+										/>
+										<CloudflareZoneChart
+											buckets={timeseries.buckets}
+											metric="bytes"
+											topZones={zoneSeries.top}
+											waiting={timeseriesWaiting}
+											syncId="cf-zones"
+										/>
 									</div>
-								)}
-							<ZonesSection zones={response.zones} query={zoneQuery} waiting={result.waiting}>
-								<SectionFilter
-									value={zoneFilter}
-									onChange={setZoneFilter}
-									placeholder={`Filter ${response.zones.length} zones`}
-									label="Filter zones by name"
-								/>
-							</ZonesSection>
-						</div>
-					)
-				})
-				.render()}
+								</div>
+							)}
+						<ZonesSection zones={response.zones} query={zoneQuery} waiting={waiting}>
+							<CompactFilterInput
+								className="w-56"
+								value={zoneFilter}
+								onChange={setZoneFilter}
+								placeholder={`Filter ${response.zones.length} zones`}
+								label="Filter zones by name"
+							/>
+						</ZonesSection>
+					</>
+				)}
+			</ResultView>
 			<section className="space-y-3">
-				<h2 className="text-sm font-medium text-foreground">
-					Workers
-					{Result.builder(workersResult)
-						.onSuccess((r) => (
-							<span className="ml-2 font-mono text-xs text-muted-foreground">
-								{r.workers.length}
-							</span>
-						))
+				<SectionHeading
+					title="Workers"
+					count={Result.builder(workersResult)
+						.onSuccess((r) => r.workers.length)
 						.orElse(() => null)}
-				</h2>
-				{Result.builder(workersResult)
-					.onInitial(() => <CloudflareWorkerTableLoading />)
-					.onError((err) => <QueryErrorState error={err} />)
-					.onSuccess((response, result) => (
-						<CloudflareWorkerTable workers={response.workers} waiting={result.waiting} />
-					))
-					.render()}
+				/>
+				<ResultView result={workersResult} loading={<CloudflareWorkerTableLoading />}>
+					{(response, { waiting }) => (
+						<CloudflareWorkerTable workers={response.workers} waiting={waiting} />
+					)}
+				</ResultView>
 			</section>
 			<CloudflarePlatformSection startTime={startTime} endTime={endTime} />
 		</div>
@@ -364,59 +331,18 @@ function ZonesSection({
 
 	return (
 		<section className="space-y-3">
-			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-				<h2 className="text-sm font-medium text-foreground">
-					Zones
-					<span className="ml-2 font-mono text-xs text-muted-foreground">
-						{matches.length === zones.length
-							? zones.length
-							: `${matches.length} of ${zones.length}`}
-					</span>
-				</h2>
-				{zones.length > 1 ? children : null}
-			</div>
+			<SectionHeading
+				title="Zones"
+				count={
+					matches.length === zones.length ? zones.length : `${matches.length} of ${zones.length}`
+				}
+				actions={zones.length > 1 ? children : null}
+			/>
 			<CloudflareZoneTable
 				zones={matches}
 				waiting={waiting}
 				emptyMessage={query === "" ? undefined : `No zones match "${query}" in the selected window.`}
 			/>
 		</section>
-	)
-}
-
-/** Compact filter field for a section header. Same chrome as the breakdown panel's toolbar. */
-function SectionFilter({
-	value,
-	onChange,
-	placeholder,
-	label,
-}: {
-	value: string
-	onChange: (value: string) => void
-	placeholder: string
-	label: string
-}) {
-	return (
-		<label className="flex h-6 w-56 items-center gap-1.5 rounded-sm border border-border/70 bg-background/60 px-2 transition-colors focus-within:border-ring">
-			<MagnifierIcon size={11} className="shrink-0 text-muted-foreground" />
-			<input
-				type="search"
-				value={value}
-				onChange={(event) => onChange(event.target.value)}
-				placeholder={placeholder}
-				aria-label={label}
-				className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
-			/>
-			{value ? (
-				<button
-					type="button"
-					onClick={() => onChange("")}
-					aria-label="Clear filter"
-					className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
-				>
-					<XmarkIcon size={9} />
-				</button>
-			) : null}
-		</label>
 	)
 }

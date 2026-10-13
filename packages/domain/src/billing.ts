@@ -1,3 +1,5 @@
+import { Predicate } from "effect"
+
 /**
  * Shared billing gate — the single source of truth for "is this an actively
  * selected paid plan?", used by both the web redirect gate
@@ -32,6 +34,19 @@ export function isPlanSubscription(sub: PlanGatingSubscription | null | undefine
 export function isActivePlanSubscription(sub: PlanGatingSubscription | null | undefined): boolean {
 	return isPlanSubscription(sub) && sub?.status === "active"
 }
+
+/**
+ * The OpenRouter key add-on: the plan an org attaches and the boolean feature it grants. With it,
+ * the org's AI turns run on its own OpenRouter key and Maple stops metering their tokens.
+ */
+export const OPENROUTER_BYOK_ADDON_ID = "openrouter_byok"
+export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
+
+/** Does a raw Autumn customer carry this boolean feature? Autumn keys granted ones under `flags`. */
+export const customerHasFlag = (response: unknown, featureId: string): boolean =>
+	Predicate.isObject(response) &&
+	Predicate.isObject(response.flags) &&
+	Predicate.isObject(response.flags[featureId])
 
 // Cycle pricing
 //

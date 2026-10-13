@@ -21,14 +21,17 @@ import {
 	type SessionVerdict,
 } from "./session-findings"
 import {
+	sessionLlmCalls,
 	spanTokenBuckets,
 	type SessionFailureKind,
 	type SessionSummary,
 	type SessionTokenReporting,
 } from "./session-summary"
 import {
-	classifyAiSpan,
+	finalTurnIndex,
+	isCountedToolCall,
 	isLlmCall,
+	spanModel,
 	spanStartMs,
 	type SessionTurn,
 	type TurnAnchorKind,
@@ -39,6 +42,14 @@ import {
 const CACHE_HIT_MIN_RATE = 0.5
 /** Fewer calls than this say nothing about the cache either way. */
 const CACHE_MIN_CALLS = 3
+/** The smallest prompt OpenAI, Anthropic or Gemini will cache: a shorter one
+ *  cannot hit the cache, so missing it says nothing about the prefix. */
+const CACHE_MIN_PROMPT_TOKENS = 1024
+/** The largest Claude minimum (Haiku 4.5, Opus 4.5). Anthropic writes as soon
+ *  as a prompt qualifies, so a Claude call that neither wrote nor read the
+ *  cache under it may just have been too short; one above it missed. Only
+ *  Claude's zero says this: other providers stamp a zero write on every call. */
+const CLAUDE_CACHE_MIN_PROMPT_TOKENS = 4096
 /** A headline names this many findings before it counts the rest. */
 const HEADLINE_MAX_CLAUSES = 3
 
@@ -133,9 +144,10 @@ export function buildSessionChecks(
 
 	const checks = [
 		...completionCheck(of("incomplete")),
+		agentLimitCheck(of("agentLimit"), turns),
 		contextWindowCheck(of("contextExceeded"), llmCalls),
 		rateLimitCheck(of("rateLimited")),
-		providerCheck(of("providerError"), of("providerRetry"), llmCalls.length),
+		providerCheck(of("providerError"), of("providerRetry"), summary.work.llmCalls),
 		refusalCheck(of("refusal")),
 		replyLengthCheck(of("truncation"), llmCalls),
 		structuredOutputCheck(of("invalidOutput")),
@@ -147,9 +159,8 @@ export function buildSessionChecks(
 			summary,
 		),
 		...otherErrorsCheck(errors.filter((finding) => finding.tool === undefined)),
-		repetitionCheck(of("repetition"), summary, coverage),
 		stallCheck(of("stall")),
-		promptCacheCheck(llmCalls),
+		promptCacheCheck(cacheObservations(spans)),
 	].sort(
 		(a, b) =>
 			STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
@@ -181,6 +192,29 @@ function reportHeadline(
 		const cause = report.findings.find((finding) => finding.terminal)
 		return `the final ${word} ${cause === undefined ? "did not close cleanly" : causeText(cause)}`
 	}
+	// A fan-out whose sub-agents failed has not completed the way its verdict word
+	// suggests: the runs that did the work are what the headline names.
+	const final = turns[finalTurnIndex(turns)]
+	const subRuns =
+		final === undefined
+			? []
+			: turns.filter(
+					(turn) =>
+						turn !== final &&
+						turn.anchorKind === "agent-root" &&
+						turn.startMs >= final.startMs &&
+						turn.startMs <= final.endMs,
+				)
+	const failedSubRuns = subRuns.filter((turn) => turn.failed).length
+	if (failedSubRuns > 0) {
+		const which =
+			failedSubRuns === subRuns.length
+				? failedSubRuns === 1
+					? "its sub-agent run"
+					: `all ${plural(failedSubRuns, "sub-agent run")}`
+				: `${failedSubRuns} of ${plural(subRuns.length, "sub-agent run")}`
+		return `but ${which} failed`
+	}
 	if (counts.failed > 0) return `but ${plural(counts.failed, "check")} failed`
 	if (counts.warning > 0) return `with ${plural(counts.warning, "warning")}`
 	return `cleanly — ${plural(counts.passed, "check")} passed across ${plural(turns.length, word)}`
@@ -192,7 +226,7 @@ function readCoverage(
 	turns: readonly SessionTurn[],
 ): SessionCoverage {
 	const llmCalls = spans.filter(isLlmCall)
-	const toolCalls = spans.filter((span) => classifyAiSpan(span) === "tool")
+	const toolCalls = spans.filter(isCountedToolCall)
 	// JSON-decoded payloads: an emitter that wrote `null` lands as `null`,
 	// not as a missing key, and recorded nothing.
 	const recorded = (
@@ -278,6 +312,7 @@ const CAUSE_TEXT = {
 	refusal: () => "ended on a refusal",
 	invalidOutput: () => "died on a reply that did not match its schema",
 	incomplete: (finding) => finding.detail ?? "ended without calling its completion tool",
+	agentLimit: (finding) => `was stopped on its ${limitName(finding)}`,
 	toolUnavailable: (finding) => `died with ${toolName(finding)} unable to run`,
 	toolTimeout: (finding) => `died on ${toolName(finding)} timing out`,
 	toolArguments: (finding) => `died on ${toolName(finding)} rejecting its arguments`,
@@ -289,6 +324,38 @@ const isFailureKind = (kind: SessionFindingKind): kind is SessionFailureKind => 
 
 function causeText(finding: SessionFinding): string {
 	return isFailureKind(finding.kind) ? CAUSE_TEXT[finding.kind](finding) : "did not close cleanly"
+}
+
+/** `duration limit`, from an `agent_limit · duration limit` label. */
+const limitName = (finding: SessionFinding): string => finding.label.replace(/^agent_limit · /, "")
+
+/** Agent runs the framework stopped on a budget. A sub-agent stopped this way
+ *  returns nothing to its parent, so its work is lost even when the session
+ *  carried on. */
+function agentLimitCheck(findings: readonly SessionFinding[], turns: readonly SessionTurn[]): SessionCheck {
+	const identity: CheckIdentity = { id: "agent-limits", name: "Agent limits", fixArea: "prompt" }
+	if (findings.length === 0) {
+		const runs = turns.filter((turn) => turn.anchorKind === "agent-root").length
+		return check(
+			identity,
+			"passed",
+			runs > 1
+				? `None of the ${plural(runs, "agent run")} was stopped on a limit`
+				: "No agent run was stopped on a limit",
+		)
+	}
+	const n = total(findings)
+	return check(
+		identity,
+		foundStatus(findings),
+		`${plural(n, "agent run")} ${n === 1 ? "was" : "were"} stopped on a limit: ${clauses(
+			findings,
+			(finding) =>
+				`${limitName(finding)} ${times(finding.count)} on ${where(finding)}${detailText(finding)}`,
+		)}${endedTheRun(findings) ? "" : "; whatever those runs had found was lost"}`,
+		"Raise the limit, or give each run less to do: split the work, or tell the agent to stop and report before the limit.",
+		findings,
+	)
 }
 
 function contextWindowCheck(
@@ -568,36 +635,6 @@ function otherErrorsCheck(findings: readonly SessionFinding[]): SessionCheck[] {
 	]
 }
 
-function repetitionCheck(
-	findings: readonly SessionFinding[],
-	summary: SessionSummary,
-	coverage: SessionCoverage,
-): SessionCheck {
-	const identity: CheckIdentity = { id: "repetition", name: "Repeated calls", fixArea: "prompt" }
-	if (findings.length === 0) {
-		return check(
-			identity,
-			"passed",
-			summary.tools.length === 0
-				? "No tool was called"
-				: coverage.toolPayloads === "captured"
-					? "No tool was called on repeat within a turn"
-					: "No tool was hammered within a turn; arguments were not captured, so identical retries could not be checked",
-		)
-	}
-	return check(
-		identity,
-		foundStatus(findings),
-		clauses(
-			findings,
-			(finding) =>
-				`${toolName(finding)} was ${finding.detail ?? "called repeatedly"} on ${where(finding)}`,
-		),
-		"Cache the result, or give the agent a stop rule; it repeated itself.",
-		findings,
-	)
-}
-
 function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
 	const identity: CheckIdentity = { id: "stalls", name: "Stalls", fixArea: "instrumentation" }
 	if (findings.length === 0) return check(identity, "passed", "No gap over 30s inside a turn")
@@ -613,13 +650,39 @@ function stallCheck(findings: readonly SessionFinding[]): SessionCheck {
 	)
 }
 
+/** Claude, by provider or through any gateway by model. */
+const isClaude = (span: AiSessionSpan): boolean =>
+	span.genAi.providerName === "anthropic" || /claude/i.test(spanModel(span) ?? "")
+
+/** The emitter's own cache keys, or the gateway's buckets, which it stamps
+ *  from dialect spellings the detail decode may not alias. */
+const reportsCache = (span: AiSessionSpan): boolean =>
+	span.genAi.usageCacheReadInputTokens !== undefined ||
+	span.genAi.usageCacheCreationInputTokens !== undefined ||
+	span.genAi.mapleCacheReadTokens !== undefined ||
+	span.genAi.mapleCacheWriteTokens !== undefined
+
+/**
+ * One span per model call, so a call its framework also rolled up (ADK
+ * `call_llm` over `generate_content`) is judged once — and, when the span
+ * counted for it reported no cache usage, another observation of the same
+ * response that did (an app span beside its gateway's mirror).
+ */
+function cacheObservations(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
+	const byResponse = new Map<string, AiSessionSpan>()
+	for (const span of spans) {
+		const responseId = span.genAi.responseId
+		if (responseId !== undefined && responseId !== "" && reportsCache(span))
+			byResponse.set(responseId, span)
+	}
+	return sessionLlmCalls(spans).map((call) =>
+		reportsCache(call) ? call : (byResponse.get(call.genAi.responseId ?? "") ?? call),
+	)
+}
+
 function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 	const identity: CheckIdentity = { id: "prompt-cache", name: "Prompt cache", fixArea: "prompt" }
-	const reporting = llmCalls.filter(
-		(span) =>
-			span.genAi.usageCacheReadInputTokens !== undefined ||
-			span.genAi.usageCacheCreationInputTokens !== undefined,
-	)
+	const reporting = llmCalls.filter(reportsCache)
 	if (reporting.length === 0) {
 		return check(
 			identity,
@@ -627,21 +690,21 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 			"No model call reported cache usage, so the prompt cache could not be checked.",
 		)
 	}
-	// The first call of a session cannot hit a cache nothing has written yet.
-	const calls = reporting
-		.slice(1)
-		.map(spanTokenBuckets)
-		.filter((buckets) => buckets !== undefined)
-		.map((buckets) => ({
-			read: buckets.cacheRead,
-			prompt: buckets.input + buckets.cacheRead + buckets.cacheWrite,
-		}))
-		.filter((call) => call.prompt > 0)
+	// The first cacheable call cannot hit a cache nothing has written yet.
+	const cacheable = reporting.flatMap((span) => {
+		const buckets = spanTokenBuckets(span)
+		if (buckets === undefined) return []
+		const prompt = buckets.input + buckets.cacheRead + buckets.cacheWrite
+		const uncachedClaude = isClaude(span) && buckets.cacheRead + buckets.cacheWrite === 0
+		const minimum = uncachedClaude ? CLAUDE_CACHE_MIN_PROMPT_TOKENS : CACHE_MIN_PROMPT_TOKENS
+		return prompt >= minimum ? [{ read: buckets.cacheRead, prompt }] : []
+	})
+	const calls = cacheable.slice(1)
 	if (calls.length < CACHE_MIN_CALLS) {
 		return check(
 			identity,
 			"skipped",
-			`Only ${plural(reporting.length, "model call")} reported cache usage; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
+			`Only ${plural(cacheable.length, "model call")} had a prompt long enough to cache; at least ${CACHE_MIN_CALLS + 1} are needed to judge the prompt cache.`,
 		)
 	}
 	const rate =

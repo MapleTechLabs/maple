@@ -13,8 +13,7 @@
 import type { InboundEvent } from "@maple/chat-platform"
 import { Context, Effect, Logger, References, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
-import { inboundHandler } from "./inbound.ts"
-import type { ConnectorRelayStub } from "./relay/stub.ts"
+import { inboundHandler, type InboundRelay } from "./inbound.ts"
 import { testMessage } from "./test-support.ts"
 
 interface Recorded {
@@ -53,18 +52,13 @@ const handleAndRecord = async (
 ): Promise<Recorded & { everything: string; delivered: Array<InboundEvent> }> => {
 	const { recorded, context } = record()
 	const delivered: Array<InboundEvent> = []
-	const relay: ConnectorRelayStub = {
-		deliver: (inbound) => {
-			delivered.push(inbound)
-			return Promise.resolve()
-		},
-		remember: () => Promise.resolve(),
+	const relay: InboundRelay = {
+		deliver: (inbound) =>
+			Effect.sync(() => {
+				delivered.push(inbound)
+			}),
 	}
-	await Effect.runPromise(
-		inboundHandler({ forEvent: () => relay })
-			.handle(event)
-			.pipe(Effect.provideContext(context)),
-	)
+	await Effect.runPromise(inboundHandler(relay).handle(event).pipe(Effect.provideContext(context)))
 	const everything = JSON.stringify({
 		logs: recorded.logs,
 		spans: recorded.spans.map((span) => ({

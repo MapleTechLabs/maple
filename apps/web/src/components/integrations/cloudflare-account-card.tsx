@@ -1,17 +1,21 @@
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { useMemo, useState } from "react"
-import { Exit } from "effect"
+import { countLabel } from "@maple/ui/lib/format"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { Item, ItemActions, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
-import { CircleWarningIcon, CloudflareIcon, CloudflareMonoIcon, LoaderIcon } from "@/components/icons"
-import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
-import { CLOUDFLARE_ACCENT, IntegrationIconPlate } from "./integration-catalog"
-import { useIntegrationConnect } from "./integration-connect"
+import { CircleWarningIcon, CloudflareIcon, CloudflareMonoIcon } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
+import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
+import { CLOUDFLARE_ACCENT } from "./integration-catalog"
+import { useRequiredIntegrationConnect } from "./integration-connect"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -22,6 +26,7 @@ import {
 	IntegrationEmptyMedia,
 } from "./integration-empty-state"
 import { CloudflareStatCards } from "./cloudflare-stat-cards"
+import { useIntegrationDisconnect } from "./use-integration-disconnect"
 import { CloudflareIngestBanner } from "@/components/infra/cloudflare/cloudflare-ingest-status"
 import { useCloudflareIngestPhase } from "@/components/infra/cloudflare/use-cloudflare-ingest-phase"
 import {
@@ -54,38 +59,45 @@ interface ConnectedAccountEntry {
 function CloudflareAccountsStrip({ accounts }: { readonly accounts: ReadonlyArray<ConnectedAccountEntry> }) {
 	if (accounts.length < 2) return null
 	return (
-		<div className="rounded-lg border border-border/60 bg-card">
-			<div className="border-b border-border/60 px-4 py-2.5">
-				<h3 className="text-xs font-medium text-muted-foreground">
-					Connected accounts ({accounts.length})
-				</h3>
-			</div>
+		<Panel className="border-border/60">
+			<PanelHeader title={`Connected accounts (${accounts.length})`} className="border-border/60" />
 			<ul className="divide-y divide-border/60">
 				{accounts.map((account) => (
-					<li key={account.accountId} className="flex items-center gap-3 px-4 py-2.5">
-						<CloudflareMonoIcon size={16} className="shrink-0 text-muted-foreground" />
-						<div className="flex min-w-0 flex-col">
-							<span className="truncate text-sm font-medium">
-								{account.accountName ?? account.accountId}
-							</span>
-							<span className="truncate font-mono text-[11px] text-muted-foreground">
-								{account.accountId}
-							</span>
-						</div>
-						<div className="flex items-center gap-1.5">
+					<Item
+						key={account.accountId}
+						variant="flush"
+						size="lg"
+						className="py-2.5"
+						render={<li />}
+					>
+						<ItemMedia>
+							<CloudflareMonoIcon size={16} className="text-muted-foreground" />
+						</ItemMedia>
+						<ItemContent className="gap-0">
+							<TruncatedText
+								text={account.accountName ?? account.accountId}
+								className="text-sm font-medium"
+							/>
+							<TruncatedText
+								text={account.accountId}
+								mono
+								className="text-2xs text-muted-foreground"
+							/>
+						</ItemContent>
+						<ItemActions className="gap-1.5">
 							{account.revoked ? (
-								<Badge variant="error">Reconnect required</Badge>
+								<Badge variant="crit">Reconnect required</Badge>
 							) : !account.analyticsCapable ? (
-								<Badge variant="warning">Needs updated access</Badge>
+								<Badge variant="warn">Needs updated access</Badge>
 							) : null}
-						</div>
-						<span className="ml-auto text-xs text-muted-foreground">
-							{account.zoneCount === 1 ? "1 zone" : `${account.zoneCount} zones`}
-						</span>
-					</li>
+							<span className="text-xs text-muted-foreground">
+								{countLabel(account.zoneCount, "zone")}
+							</span>
+						</ItemActions>
+					</Item>
 				))}
 			</ul>
-		</div>
+		</Panel>
 	)
 }
 
@@ -100,13 +112,15 @@ export function CloudflareAccountCard() {
 	// renders instantly from status and the usage columns hydrate afterwards) — and the ingest
 	// phase they imply, which also drives the polling that fills a fresh connection in place.
 	const { statusResult, usageResult, phase } = useCloudflareIngestPhase()
+	const refreshStatus = useAtomRefresh(
+		retainedInternalQuery("integrations", "cloudflareStatus", {
+			reactivityKeys: ["cloudflareIntegrationStatus"],
+		}),
+	)
 
 	// Connect flow (popup, busy, refresh-on-return) lives in IntegrationConnectProvider —
 	// shared with the drill-in header's Connect/Reconnect/Disconnect buttons.
-	const connectFlow = useIntegrationConnect()
-	if (connectFlow === null) {
-		throw new Error("CloudflareAccountCard must be rendered inside IntegrationConnectProvider")
-	}
+	const connectFlow = useRequiredIntegrationConnect("CloudflareAccountCard")
 	const actionBusy = connectFlow.busy
 
 	const status = Result.builder(statusResult)
@@ -204,30 +218,31 @@ export function CloudflareAccountCard() {
 	const isConnected = status?.connected === true
 
 	const connectButton = (label: string, variant?: "outline") => (
-		<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy} variant={variant}>
-			{connectFlow.busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+		<Button
+			size="sm"
+			onClick={connectFlow.connect}
+			disabled={actionBusy}
+			loading={connectFlow.busy}
+			variant={variant}
+		>
 			{label}
 		</Button>
 	)
 
 	// Guard the first fetch so a connected org doesn't flash the "Connect" empty state.
 	if (Result.isInitial(statusResult)) {
-		return <Skeleton className="h-40 w-full rounded-lg" />
+		return <Skeleton className="h-40 w-full rounded-md" />
 	}
 
 	// A failed status fetch is not "not connected" — don't offer the connect CTA
 	// over an account that may already be authorized.
 	if (Result.isFailure(statusResult)) {
 		return (
-			<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
-				<IntegrationIconPlate icon={CloudflareIcon} accent={CLOUDFLARE_ACCENT} />
-				<div className="flex flex-col gap-1">
-					<h3 className="text-sm font-semibold">Cloudflare account</h3>
-					<p className="text-xs text-muted-foreground">
-						Couldn't load the Cloudflare connection status — refresh the page to try again.
-					</p>
-				</div>
-			</div>
+			<ErrorState
+				error={statusResult.cause}
+				title="Failed to load the Cloudflare integration"
+				onRetry={refreshStatus}
+			/>
 		)
 	}
 
@@ -260,12 +275,8 @@ export function CloudflareAccountCard() {
 					<IntegrationEmptyHint>
 						Your zones and Workers will appear here after connecting.
 					</IntegrationEmptyHint>
-					<Button onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? (
-							<LoaderIcon size={16} className="animate-spin" />
-						) : (
-							<CloudflareIcon size={16} />
-						)}
+					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
+						<CloudflareIcon />
 						Connect Cloudflare
 					</Button>
 					<IntegrationEmptyFooter>
@@ -298,7 +309,7 @@ export function CloudflareAccountCard() {
 	// are no zones to attach it to.
 	const banner =
 		status == null ? null : !status.analyticsCapable ? (
-			<Alert variant="warning">
+			<Alert variant="warn">
 				<CircleWarningIcon />
 				<AlertTitle>Update access to collect analytics</AlertTitle>
 				<AlertDescription>
@@ -320,7 +331,7 @@ export function CloudflareAccountCard() {
 							>
 								Error details
 							</TooltipTrigger>
-							<TooltipContent className="max-w-xs whitespace-pre-wrap break-words font-mono text-[11px]">
+							<TooltipContent className="max-w-xs whitespace-pre-wrap break-words font-mono text-2xs">
 								{accountError.raw}
 							</TooltipContent>
 						</Tooltip>
@@ -382,58 +393,65 @@ export function CloudflareAccountCard() {
  * inside IntegrationConnectProvider (same popup flow as Connect).
  */
 export function CloudflareHeaderActions() {
-	const connectFlow = useIntegrationConnect()
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "cloudflareDisconnect"), {
+	const connectFlow = useRequiredIntegrationConnect("CloudflareHeaderActions")
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "cloudflareDisconnect"), {
 		mode: "promiseExit",
 	})
 	// Same memoized atom as the card — no extra fetch, just the account count for labels.
 	const statusResult = useAtomValue(
-		retainedQuery("integrations", "cloudflareStatus", {
+		retainedInternalQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
 	const accountCount = Result.builder(statusResult)
 		.onSuccess((s) => s.accounts?.length ?? (s.connected ? 1 : 0))
 		.orElse(() => 1)
-	const [disconnectBusy, setDisconnectBusy] = useState(false)
-	if (connectFlow === null) {
-		throw new Error("CloudflareHeaderActions must be rendered inside IntegrationConnectProvider")
-	}
-	const actionBusy = connectFlow.busy || disconnectBusy
 	const multiAccount = accountCount > 1
-
-	async function handleDisconnect() {
-		setDisconnectBusy(true)
-		const result = await disconnect({
-			reactivityKeys: ["cloudflareIntegrationStatus", "cloudflareIntegrationUsage"],
-		})
-		setDisconnectBusy(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: multiAccount ? "Cloudflare accounts disconnected" : "Cloudflare account disconnected",
-				type: "success",
-			})
-		} else {
-			toastManager.add({ title: "Failed to disconnect Cloudflare", type: "error" })
-		}
-	}
+	const { disconnect: handleDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(
+		() => disconnect({ reactivityKeys: ["cloudflareIntegrationStatus", "cloudflareIntegrationUsage"] }),
+		{
+			success: multiAccount ? "Cloudflare accounts disconnected" : "Cloudflare account disconnected",
+			error: "Failed to disconnect Cloudflare",
+		},
+	)
+	const actionBusy = connectFlow.busy || disconnectBusy
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	return (
 		<div className="flex items-center gap-2">
-			<Button size="sm" variant="outline" onClick={connectFlow.connect} disabled={actionBusy}>
-				{connectFlow.busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+			<Button
+				size="sm"
+				variant="outline"
+				onClick={connectFlow.connect}
+				disabled={actionBusy}
+				loading={connectFlow.busy}
+			>
 				{multiAccount ? "Edit accounts" : "Reconnect"}
 			</Button>
 			<Button
 				size="sm"
-				variant="outline"
-				onClick={handleDisconnect}
+				variant="destructive-outline"
+				onClick={() => setConfirmingDisconnect(true)}
 				disabled={actionBusy}
-				className="border-destructive/40 text-destructive-foreground hover:bg-destructive/10 hover:text-destructive-foreground"
+				loading={disconnectBusy}
 			>
-				{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
 				{multiAccount ? "Disconnect all" : "Disconnect"}
 			</Button>
+			<ConfirmDialog
+				open={confirmingDisconnect}
+				onOpenChange={setConfirmingDisconnect}
+				title="Disconnect Cloudflare"
+				description={
+					multiAccount
+						? "Maple stops collecting data from all connected Cloudflare accounts. You can reconnect later."
+						: "Maple stops collecting data from this Cloudflare account. You can reconnect later."
+				}
+				confirmLabel="Disconnect"
+				onConfirm={() => {
+					setConfirmingDisconnect(false)
+					void handleDisconnect()
+				}}
+			/>
 		</div>
 	)
 }

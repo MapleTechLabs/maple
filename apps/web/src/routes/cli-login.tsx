@@ -155,11 +155,11 @@ function CliLoginPage() {
 	return (
 		<AuthLayout maxWidth="max-w-md">
 			<div className="space-y-5">
-				<div className="space-y-1">
-					<h1 className="text-xl font-semibold">Authorize Maple CLI</h1>
-					<p className="text-sm text-muted-foreground">
+				<div>
+					<AuthLayout.Title>Authorize Maple CLI</AuthLayout.Title>
+					<AuthLayout.Description>
 						Approve a terminal session without copying an API key.
-					</p>
+					</AuthLayout.Description>
 				</div>
 
 				{state._tag === "entry" || state._tag === "error" ? (
@@ -210,7 +210,12 @@ function CliLoginPage() {
 					<div className="space-y-4">
 						<div className="space-y-1 border border-border bg-muted/30 p-3">
 							<p className="text-xs text-muted-foreground">Requesting device</p>
-							<p className="font-medium">{state.info.deviceName}</p>
+							<p
+								className="line-clamp-2 font-medium [overflow-wrap:anywhere]"
+								title={state.info.deviceName}
+							>
+								{state.info.deviceName}
+							</p>
 							<p className="font-mono text-sm text-muted-foreground">{state.info.userCode}</p>
 							<p className="text-xs text-muted-foreground">
 								Expires at {new Date(state.info.expiresAt).toLocaleTimeString()}

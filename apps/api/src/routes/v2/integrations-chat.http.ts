@@ -1,5 +1,5 @@
-import { HttpServerRequest } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpServerRequest } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { CurrentTenant } from "@maple/domain/http"
 import type { V2ChatConnector, V2ChatWorkspace } from "@maple/domain/http/v2"

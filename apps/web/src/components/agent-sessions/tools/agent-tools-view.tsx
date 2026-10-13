@@ -13,13 +13,9 @@ import {
 } from "@/lib/agent-sessions/tool-analytics"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
-import {
-	selectedMetric,
-	selectedPercentile,
-	toolDetailLinkSearch,
-} from "@/lib/agent-sessions/tool-search"
+import { selectedMetric, selectedPercentile, toolDetailLinkSearch } from "@/lib/agent-sessions/tool-search"
 
-import { AgentSessionsTabs } from "./agent-sessions-tabs"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { ToolsTable } from "./tool-breakdown-tables"
 import { ToolFilterToolbar, type ToolFilterOption } from "./tool-filter-toolbar"
 import { ToolMetricStrip } from "./tool-metric-strip"
@@ -130,8 +126,8 @@ export function AgentToolsView({
 			// Volume, whatever the chart is drawing: the spark is the row's shape
 			// over the window, and a row's shape is how much of it there was.
 			for (const [key, points] of byTool) sparkByTool.set(key, metricSpark(points, "calls", percentile))
-			for (const [key, token] of toolSeriesColors(rankSeriesKeys(data.series))) {
-				colorByTool.set(key, `var(${token})`)
+			for (const [key, color] of toolSeriesColors(rankSeriesKeys(data.series))) {
+				colorByTool.set(key, color)
 			}
 		}
 		return { sparkByTool, colorByTool }
@@ -141,17 +137,8 @@ export function AgentToolsView({
 	// tool-name search box, which on a one-tool page filters that tool's name.
 	const detailSearch = useMemo(() => toolDetailLinkSearch(search, timeRange), [search, timeRange])
 
-	// `pt-4` is the Sessions list's sticky padding, and the strip's hairline and
-	// the toolbar's `py-3` are matched there too: one height on both tabs.
 	return (
-		<div className="flex flex-col pt-4">
-			<AgentSessionsTabs
-				active="tools"
-				search={timeRange}
-				counts={tabCounts}
-				className="border-b border-border px-6"
-			/>
-
+		<div className="flex flex-col">
 			<ToolFilterToolbar
 				nameSearch={{
 					query: search.q ?? "",
@@ -174,52 +161,67 @@ export function AgentToolsView({
 				actions={actions}
 			/>
 
-			<ToolScopeRow
-				chips={chips}
-				summary={scopeSummary(data.totals, data.scopeCalls)}
-				onRemove={(chip) => onSearchChange({ [chip.kind]: undefined })}
-				onClearAll={() => onSearchChange({ tool: undefined, model: undefined })}
-			/>
+			{/* Zero calls in the unfiltered window: the tables would all be empty, so say why once. */}
+			{tabCounts?.tools === 0 ? (
+				<SignalEmptyState
+					signal="traces"
+					noun="agent tool calls"
+					purpose="See every tool your AI agents call, with volume, latency and failures."
+					guideDocs="agentSessions"
+					className="px-6 py-16"
+				/>
+			) : (
+				<>
+					<ToolScopeRow
+						chips={chips}
+						summary={scopeSummary(data.totals, data.scopeCalls)}
+						onRemove={(chip) => onSearchChange({ [chip.kind]: undefined })}
+						onClearAll={() => onSearchChange({ tool: undefined, model: undefined })}
+					/>
 
-			<ToolMetricStrip
-				totals={data.totals}
-				previous={data.previousTotals}
-				series={data.scopeSeries}
-				metric={metric}
-				percentile={percentile}
-				allSessions={data.allSessions}
-				// The default stays out of the URL, so a shared link only carries a
-				// metric when one was actually chosen.
-				onSelectMetric={(next) => onSearchChange({ metric: next === "calls" ? undefined : next })}
-				onSelectPercentile={(next) =>
-					onSearchChange({ percentile: next === "p90" ? undefined : next })
-				}
-				windowLabel={windowLabel}
-			/>
+					<ToolMetricStrip
+						totals={data.totals}
+						previous={data.previousTotals}
+						series={data.scopeSeries}
+						metric={metric}
+						percentile={percentile}
+						allSessions={data.allSessions}
+						// The default stays out of the URL, so a shared link only carries a
+						// metric when one was actually chosen.
+						onSelectMetric={(next) =>
+							onSearchChange({ metric: next === "calls" ? undefined : next })
+						}
+						onSelectPercentile={(next) =>
+							onSearchChange({ percentile: next === "p90" ? undefined : next })
+						}
+						windowLabel={windowLabel}
+					/>
 
-			<ToolSeriesChart
-				series={data.scopeSeries}
-				loading={data.seriesLoading}
-				failure={data.seriesFailure}
-				metric={metric}
-				percentile={percentile}
-				tool={search.tool}
-				model={search.model}
-				modelLabel={(model) => model}
-				waiting={waiting}
-			/>
+					<ToolSeriesChart
+						series={data.scopeSeries}
+						loading={data.seriesLoading}
+						failure={data.seriesFailure}
+						metric={metric}
+						percentile={percentile}
+						tool={search.tool}
+						model={search.model}
+						modelLabel={(model) => model}
+						waiting={waiting}
+					/>
 
-			<ToolsTable
-				rows={data.tools}
-				percentile={percentile}
-				detailSearch={detailSearch}
-				selected={search.tool}
-				sparkFor={(tool) => sparkByTool.get(tool) ?? []}
-				colorFor={(tool) => colorByTool.get(tool)}
-				loading={data.toolsLoading}
-				failure={data.toolsFailure}
-				waiting={waiting}
-			/>
+					<ToolsTable
+						rows={data.tools}
+						percentile={percentile}
+						detailSearch={detailSearch}
+						selected={search.tool}
+						sparkFor={(tool) => sparkByTool.get(tool) ?? []}
+						colorFor={(tool) => colorByTool.get(tool)}
+						loading={data.toolsLoading}
+						failure={data.toolsFailure}
+						waiting={waiting}
+					/>
+				</>
+			)}
 		</div>
 	)
 }

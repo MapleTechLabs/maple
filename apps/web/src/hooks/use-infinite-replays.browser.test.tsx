@@ -51,6 +51,7 @@ function page(body: string, cursor: string | null = "next"): ReplaysPage {
 				errorCount: 0,
 				traceCount: 0,
 				recorded: "",
+				tags: [],
 			},
 		],
 		hasMore: cursor !== null,

@@ -90,28 +90,26 @@ export const inspectPhysicalSchema = (db: Chdb): PhysicalSchema => {
 	const indexesFromDefinition = (definition: string): string[] =>
 		[...definition.matchAll(/\bINDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gi)].map((match) => match[1]!)
 	return {
-		objects: tables.map(
-			(table): PhysicalSchemaObject => ({
-				name: table.name,
-				kind: table.engine.toLowerCase().includes("materializedview")
-					? "materialized_view"
-					: table.engine.toLowerCase() === "view"
-						? "view"
-						: "table",
-				columns: columnsByTable.get(table.name) ?? [],
-				engine: table.engine,
-				partitionBy: table.partition_key,
-				orderBy: table.sorting_key,
-				ttl: ttlFromDefinition(table.create_table_query),
-				indexes: Array.from(
-					new Set([
-						...(indexesByTable.get(table.name) ?? []),
-						...indexesFromDefinition(table.create_table_query),
-					]),
-				),
-				definition: table.create_table_query,
-			}),
-		),
+		objects: tables.map((table): PhysicalSchemaObject => ({
+			name: table.name,
+			kind: table.engine.toLowerCase().includes("materializedview")
+				? "materialized_view"
+				: table.engine.toLowerCase() === "view"
+					? "view"
+					: "table",
+			columns: columnsByTable.get(table.name) ?? [],
+			engine: table.engine,
+			partitionBy: table.partition_key,
+			orderBy: table.sorting_key,
+			ttl: ttlFromDefinition(table.create_table_query),
+			indexes: Array.from(
+				new Set([
+					...(indexesByTable.get(table.name) ?? []),
+					...indexesFromDefinition(table.create_table_query),
+				]),
+			),
+			definition: table.create_table_query,
+		})),
 	}
 }
 

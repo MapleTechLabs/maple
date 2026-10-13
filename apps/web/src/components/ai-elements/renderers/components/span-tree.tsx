@@ -1,3 +1,4 @@
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import type { RendererComponentProps } from "./types"
 import { cn } from "@maple/ui/lib/utils"
 import { formatDuration } from "@maple/ui/lib/format"
@@ -24,7 +25,7 @@ function SpanNode({ span, isLast, depth }: { span: SpanNode; isLast: boolean; de
 
 	return (
 		<div>
-			<div className="flex items-center gap-1 py-0.5 text-[11px]">
+			<div className="flex items-center gap-1 py-0.5 text-2xs">
 				<span
 					className="shrink-0 font-mono text-muted-foreground"
 					style={{ paddingLeft: `${depth * 16}px` }}
@@ -57,7 +58,7 @@ export function SpanTree({ props }: RendererComponentProps<SpanTreeProps>) {
 
 	return (
 		<div className="space-y-1">
-			<div className="text-[10px] text-muted-foreground">
+			<div className="text-3xs text-muted-foreground">
 				Trace{" "}
 				<a
 					href={`/traces/${traceId}`}
@@ -65,7 +66,7 @@ export function SpanTree({ props }: RendererComponentProps<SpanTreeProps>) {
 					rel="noreferrer"
 					className="font-mono text-primary hover:underline"
 				>
-					{traceId.slice(0, 12)}
+					<TruncatedId value={traceId} kind="trace" length={12} />
 				</a>
 			</div>
 			<div className="max-h-[400px] overflow-y-auto">

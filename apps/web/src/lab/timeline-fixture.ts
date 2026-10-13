@@ -12,7 +12,7 @@ function row(overrides: Partial<SpanHierarchyRow> & { spanId: string; spanName: 
 		traceId: "timeline-lab-trace",
 		parentSpanId: "",
 		serviceName: "checkout-api",
-		spanKind: "SPAN_KIND_INTERNAL",
+		spanKind: "Internal",
 		durationMs: 20,
 		startTime: at(0),
 		statusCode: "Ok",
@@ -26,14 +26,14 @@ function row(overrides: Partial<SpanHierarchyRow> & { spanId: string; spanName: 
 // A wide dynamic range on purpose: a 2s root, mid-size children, and a fan of
 // sub-millisecond spans that only become legible at deep zoom.
 const ROWS: SpanHierarchyRow[] = [
-	row({ spanId: "root", spanName: "POST /api/checkout", spanKind: "SPAN_KIND_SERVER", durationMs: 2000 }),
+	row({ spanId: "root", spanName: "POST /api/checkout", spanKind: "Server", durationMs: 2000 }),
 	...Array.from({ length: 6 }, (_, i) =>
 		row({
 			spanId: `svc${i}`,
 			parentSpanId: "root",
 			spanName: `stage-${i} handler`,
 			serviceName: ["checkout-api", "payments", "inventory", "search", "mailer", "edge"][i],
-			spanKind: "SPAN_KIND_INTERNAL",
+			spanKind: "Internal",
 			startTime: at(20 + i * 300),
 			durationMs: 260,
 			statusCode: i === 3 ? "Error" : "Ok",
@@ -45,7 +45,7 @@ const ROWS: SpanHierarchyRow[] = [
 			parentSpanId: `svc${i % 6}`,
 			spanName: `SELECT shard_${i}`,
 			serviceName: "postgres",
-			spanKind: "SPAN_KIND_CLIENT",
+			spanKind: "Client",
 			startTime: at(25 + (i % 6) * 300 + (i % 7) * 30),
 			// Sub-ms spans: invisible zoomed out, the reason zoom has to work.
 			durationMs: 0.08 + (i % 5) * 0.4,

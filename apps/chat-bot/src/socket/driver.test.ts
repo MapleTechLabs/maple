@@ -1,6 +1,6 @@
 import type { InboundEvent, SocketStep } from "@maple/chat-platform"
 import { Effect, Layer } from "effect"
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { describe, expect, it } from "vitest"
 import { InboundHandler, type InboundHandlerApi } from "../inbound.ts"
 import { TEST_SOCKET_ID, testMessage } from "../test-support.ts"

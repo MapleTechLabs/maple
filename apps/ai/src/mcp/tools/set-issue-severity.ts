@@ -12,6 +12,7 @@ import { IssueSeverity } from "@maple/domain/http"
 export function registerSetIssueSeverityTool(server: McpToolRegistrar) {
 	server.define({
 		name: "set_issue_severity",
+		title: "Set Issue Severity",
 		description:
 			"Set or clear the triage severity of an issue. Severity drives escalation routing. An agent identity writes with `ai` precedence and never overwrites a severity a human set by hand; the result says whether it applied. A human session writes a sticky manual override.",
 		parameters: Schema.Struct({

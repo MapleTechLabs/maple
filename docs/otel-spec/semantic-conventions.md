@@ -373,7 +373,7 @@ Source: https://github.com/open-telemetry/semantic-conventions-genai/blob/main/d
 | `gen_ai.operation.name`      | Required       | e.g. `chat`, `embeddings`, `retrieval`                                                                       |
 | `gen_ai.provider.name`       | Required       | Provider identifier, e.g. `openai`, `anthropic`, `gcp.vertex_ai` (supersedes the deprecated `gen_ai.system`) |
 | `gen_ai.request.model`       | Cond. Required | If available                                                                                                 |
-| `gen_ai.response.model`      | Cond. Required | If available; the model that actually served the response (may differ from the requested one)               |
+| `gen_ai.response.model`      | Cond. Required | If available; the model that actually served the response (may differ from the requested one)                |
 | `gen_ai.usage.input_tokens`  | Recommended    | (none)                                                                                                       |
 | `gen_ai.usage.output_tokens` | Recommended    | (none)                                                                                                       |
 | `error.type`                 | Cond. Required | Should match the provider's/client library's error code                                                      |

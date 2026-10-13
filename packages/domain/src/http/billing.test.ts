@@ -13,6 +13,8 @@ import {
 	BillingSpendLimit,
 	BillingUpstreamError,
 	BillingUsageAlert,
+	mergeSpendLimits,
+	UpdateBillingSpendLimit,
 } from "./billing"
 import { publicHttpErrorBody } from "./error-policy"
 
@@ -172,5 +174,42 @@ describe("billing profile contract", () => {
 		expect(body.message).not.toContain("stripe_id")
 		expect(body.retryable).toBe(false)
 		expect(body.recovery).toBe("none")
+	})
+})
+
+// The provider replaces the whole spend-limit list on write, so saving one
+// feature's cap must carry every other feature's cap along with it.
+describe("mergeSpendLimits", () => {
+	const existing = Schema.decodeSync(Schema.Array(BillingSpendLimit))([
+		{ featureId: "logs", enabled: true, limitType: "absolute", overageLimit: 100 },
+		{ featureId: "traces", enabled: true, limitType: "absolute", overageLimit: 75 },
+		{ featureId: "custom_feature", enabled: true, limitType: "absolute", overageLimit: 5 },
+	])
+
+	it("keeps other features' caps and replaces the edited one", () => {
+		const merged = mergeSpendLimits(existing, [
+			new UpdateBillingSpendLimit({
+				featureId: "traces",
+				enabled: true,
+				limitType: "absolute",
+				overageLimit: 300,
+			}),
+		])
+		expect(merged).toEqual([
+			{ featureId: "logs", enabled: true, limitType: "absolute", overageLimit: 100 },
+			{ featureId: "custom_feature", enabled: true, limitType: "absolute", overageLimit: 5 },
+			{ featureId: "traces", enabled: true, limitType: "absolute", overageLimit: 300 },
+		])
+	})
+
+	it("removes only the cleared feature's cap", () => {
+		const merged = mergeSpendLimits(existing, [
+			new UpdateBillingSpendLimit({ featureId: "logs", enabled: false }),
+		])
+		expect(merged).toEqual([
+			{ featureId: "traces", enabled: true, limitType: "absolute", overageLimit: 75 },
+			{ featureId: "custom_feature", enabled: true, limitType: "absolute", overageLimit: 5 },
+			{ featureId: "logs", enabled: false },
+		])
 	})
 })

@@ -8,6 +8,7 @@
 // weaker, still-true sentence rather than to silence.
 
 import type { PodRow } from "@/components/infra/pod-table"
+import { formatWholePercent } from "@/components/infra/format"
 
 /** A pod at or above this share of a limit is treated as pinned against it. */
 export const SATURATED = 0.9
@@ -189,8 +190,6 @@ export function lensHeadline(verdict: LensVerdict, serviceName: string): string 
 	}
 }
 
-const pct = (fraction: number) => `${Math.round(fraction * 100)}%`
-
 /** The supporting line. Every number in it is one the verdict actually carries. */
 export function lensSubhead(verdict: LensVerdict): string {
 	switch (verdict.kind) {
@@ -208,18 +207,18 @@ export function lensSubhead(verdict: LensVerdict): string {
 				verdict.unbounded > 0 && !verdict.sampled
 					? ` ${verdict.unbounded} run with no limits set, so they aren't ranked.`
 					: ""
-			return `No pod among its ${verdict.podCount} came within ${pct(SATURATED)} of a CPU or memory limit in this window.${caveat}`
+			return `No pod among its ${verdict.podCount} came within ${formatWholePercent(SATURATED)} of a CPU or memory limit in this window.${caveat}`
 		}
 		case "throttled-and-slow":
-			return `${verdict.saturated} of its ${verdict.podCount} pods hit a limit before p99 rose, peaking at ${pct(verdict.worst)}.`
+			return `${verdict.saturated} of its ${verdict.podCount} pods hit a limit before p99 rose, peaking at ${formatWholePercent(verdict.worst)}.`
 		case "throttled":
 			return verdict.spiked
-				? `${verdict.saturated} pods peaked at ${pct(verdict.worst)} of a limit. p99 also rose in this window, but not after the saturation — so the lens won't call one the cause of the other.`
+				? `${verdict.saturated} pods peaked at ${formatWholePercent(verdict.worst)} of a limit. p99 also rose in this window, but not after the saturation — so the lens won't call one the cause of the other.`
 				: // NOT "p99 held": the baseline is the window's own median, so a rise
 					// that occupies most of the window is invisible to it. What was
 					// actually established is the absence of a matching rise, which is a
 					// weaker and true thing to say.
-					`${verdict.saturated} pods peaked at or above ${pct(SATURATED)} of a limit — ${pct(verdict.worst)} at worst — with no matching rise in p99 over this window.`
+					`${verdict.saturated} pods peaked at or above ${formatWholePercent(SATURATED)} of a limit — ${formatWholePercent(verdict.worst)} at worst — with no matching rise in p99 over this window.`
 		case "slow-not-throttled":
 			return `p99 rose while no pod among its ${verdict.podCount} came near a limit. Look upstream — a dependency, the database, or a change in the work itself.`
 	}

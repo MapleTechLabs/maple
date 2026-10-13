@@ -3,7 +3,7 @@ import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { sha256File } from "../src/server/checkpoint-digest"
 import { Clock, Duration, Effect, Exit, Option } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
 import {
 	existsSync,
@@ -28,7 +28,13 @@ import {
 	checkpointRoot,
 	checkpointSnapshotDir,
 	checkpointStatePath,
+	checkpointFailuresPath,
+	checkpointRefreshBackoff,
+	formatCheckpointRefreshBackoff,
 	isMissingBackupConfigurationError,
+	listPreservedCheckpointPins,
+	releasePreservedCheckpoints,
+	sweepUnreferencedCheckpoints,
 	LocalQueryError,
 	newCheckpointId,
 	newCheckpointOperationId,
@@ -60,7 +66,8 @@ import {
 import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
 import { storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { eventingControlSnapshotPath, LocalEventingControlStore } from "../src/server/eventing/control-store"
+import { eventingControlSnapshotPath } from "../src/server/eventing/control-store"
+import { openStore, runAsync } from "./eventing-test-support"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-checkpoint-test-"))
@@ -187,6 +194,7 @@ const writeRestoreTransaction = (
 	checkpointId: CheckpointId,
 	quarantineId: CheckpointQuarantineId,
 	phase: "intent" | "restore-ready" | "old-quarantined" | "new-live" | "markers-committed",
+	extra: Record<string, unknown> = {},
 ): void => {
 	writeFileSync(
 		restoreTransactionPath(dataDir),
@@ -198,6 +206,7 @@ const writeRestoreTransaction = (
 			phase,
 			createdAt: "2026-01-01T00:00:00.000Z",
 			validation: phase === "intent" ? null : restoreValidation,
+			...extra,
 		})}\n`,
 	)
 }
@@ -235,19 +244,14 @@ describe("writeBackupConfig", () => {
 })
 
 describe("checkpoint IDs and strict parsers", () => {
-	it("generates collision-resistant UUIDs", () => {
-		const ids = new Set(Array.from({ length: 2_000 }, () => newCheckpointId()))
-		strictEqual(ids.size, 2_000)
-		for (const id of ids) match(id, /^[0-9a-f-]{36}$/)
-	})
-
 	it("accepts a complete manifest and rejects ID, path, compatibility, and count corruption", () => {
 		const id = newCheckpointId()
 		strictEqual(parseCheckpointManifest(manifest(id), id).checkpointId, id)
-		strictEqual(parseCheckpointManifest(manifest(id), id, "/tmp/maple-data").checkpointId, id)
+		// Provenance only: a data dir moved as a whole keeps its checkpoints.
+		strictEqual(parseCheckpointManifest(manifest(id, undefined, "/tmp/moved-away"), id).checkpointId, id)
 		throwsMessage(
-			() => parseCheckpointManifest(manifest(id), id, "/tmp/different-owner"),
-			/configured owner/,
+			() => parseCheckpointManifest(manifest(id, undefined, "relative/data"), id),
+			/must be absolute/,
 		)
 		const wrong = newCheckpointId()
 		ok(wrong !== id)
@@ -336,14 +340,8 @@ describe("checkpoint snapshot hashing", () => {
 		})
 	})
 
-	it("hashes empty snapshots and propagates file-open/read failures", async () => {
+	it("propagates file-open/read failures while hashing", async () => {
 		await withDataDir(async (dataDir) => {
-			const path = join(dataDir, "empty.bin")
-			writeFileSync(path, "")
-			strictEqual(
-				await sha256File(path),
-				"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			)
 			await rejects(sha256File(join(dataDir, "missing.bin")), /ENOENT/)
 			await rejects(sha256File(dataDir), /EISDIR/)
 		})
@@ -359,10 +357,10 @@ describe("checkpoint state resolution", () => {
 			mkdirSync(join(snapshot, "backup"), { recursive: true })
 			writeFileSync(join(snapshot, "backup", "data.bin"), "backup")
 
-			const store = await LocalEventingControlStore.open(dataDir)
+			const store = await openStore(dataDir)
 			const controlPath = eventingControlSnapshotPath(dataDir, checkpointId)
-			const controlValidation = await store.backupTo(controlPath)
-			store.close()
+			const controlValidation = await runAsync(store.backupTo(controlPath))
+			await store.close()
 			const controlBytes = readFileSync(controlPath)
 			writeFileSync(
 				join(snapshot, "manifest.json"),
@@ -526,7 +524,7 @@ describe("checkpoint state resolution", () => {
 })
 
 describe("checkpoint reconciliation and retention", () => {
-	it("quarantines only an exactly owned incomplete operation and preserves its bytes", async () => {
+	it("deletes an exactly owned incomplete snapshot and quarantines only its operation record", async () => {
 		await withDataDir(async (dataDir) => {
 			const operationId = newCheckpointOperationId()
 			const checkpointId = newCheckpointId()
@@ -541,11 +539,8 @@ describe("checkpoint reconciliation and retention", () => {
 			const quarantineRoot = join(checkpointRoot(dataDir), "quarantine")
 			const quarantines = readdirSync(quarantineRoot)
 			strictEqual(quarantines.length, 1)
-			ok(
-				existsSync(
-					join(quarantineRoot, quarantines[0]!, "incomplete-snapshot", "backup", "partial.bin"),
-				),
-			)
+			// A failed refresh used to leave a full store copy here, forever.
+			deepStrictEqual(readdirSync(join(quarantineRoot, quarantines[0]!)), ["operation"])
 			ok(existsSync(join(quarantineRoot, quarantines[0]!, "operation", "intent.json")))
 		})
 	})
@@ -961,8 +956,9 @@ describe("live-store reset safety", () => {
 describe("live restore transaction reconciliation", () => {
 	it("is a no-op when no transaction or restore debris exists", async () => {
 		await withDataDir(async (dataDir) => {
+			const before = readdirSync(dataDir).sort()
 			await Effect.runPromise(reconcileCheckpointRecovery(dataDir))
-			ok(existsSync(dataDir))
+			deepStrictEqual(readdirSync(dataDir).sort(), before)
 		})
 	})
 
@@ -1080,6 +1076,72 @@ describe("live restore transaction reconciliation", () => {
 				ok(!existsSync(restoreRootPath(dataDir, operationId)), boundary)
 			})
 		}
+	})
+
+	it("moves the registry into the restored store at every boundary instead of copying it", async () => {
+		const boundaries: ReadonlyArray<keyof RestoreRecoveryFaults | "none"> = [
+			"none",
+			"afterLiveQuarantineRename",
+			"afterRestoredLiveRename",
+			"afterNewLiveRecord",
+			"afterStoreMarkerWrite",
+			"afterMarkersCommittedRecord",
+		]
+		for (const boundary of boundaries) {
+			await withDataDir(async (dataDir) => {
+				const operationId = newCheckpointOperationId()
+				const checkpointId = newCheckpointId()
+				const quarantineId = newCheckpointQuarantineId()
+				const quarantine = restoreQuarantinePath(dataDir, operationId, quarantineId)
+				writeSnapshot(dataDir, checkpointId)
+				writeState(dataDir, checkpointId)
+				writeFileSync(join(dataDir, "old-live"), "old")
+				writeRestoreReady(dataDir, operationId, checkpointId)
+				writeFileSync(join(restoreDataPath(dataDir, operationId), "new-live"), "new")
+				writeRestoreTransaction(dataDir, operationId, checkpointId, quarantineId, "restore-ready", {
+					registry: "moved",
+				})
+				if (boundary !== "none") {
+					const faults: RestoreRecoveryFaults = {
+						[boundary]: () => {
+							throw new Error(`injected ${boundary}`)
+						},
+					}
+					await rejects(Effect.runPromise(reconcileCheckpointRecovery(dataDir, faults)), /injected/)
+				}
+				await Effect.runPromise(reconcileCheckpointRecovery(dataDir))
+
+				ok(existsSync(join(dataDir, "new-live")), boundary)
+				strictEqual((await readCheckpointState(dataDir)).current, checkpointId, boundary)
+				// Exactly one copy: the old store keeps no registry of its own.
+				ok(existsSync(join(quarantine, "old-live")), boundary)
+				ok(!existsSync(join(quarantine, "backups")), boundary)
+				ok(!existsSync(restoreTransactionPath(dataDir)), boundary)
+			})
+		}
+	})
+
+	it("fails closed when a moved registry exists in both stores", async () => {
+		await withDataDir(async (dataDir) => {
+			const operationId = newCheckpointOperationId()
+			const checkpointId = newCheckpointId()
+			const quarantineId = newCheckpointQuarantineId()
+			const quarantine = restoreQuarantinePath(dataDir, operationId, quarantineId)
+			writeSnapshot(dataDir, checkpointId)
+			writeState(dataDir, checkpointId)
+			writeRestoreReady(dataDir, operationId, checkpointId)
+			mkdirSync(join(restoreDataPath(dataDir, operationId), "backups"))
+			writeRestoreTransaction(dataDir, operationId, checkpointId, quarantineId, "restore-ready", {
+				registry: "moved",
+			})
+
+			await rejects(
+				Effect.runPromise(reconcileCheckpointRecovery(dataDir)),
+				/both the old and the restored/,
+			)
+			ok(existsSync(join(quarantine, "backups", "state.json")))
+			ok(existsSync(restoreTransactionPath(dataDir)))
+		})
 	})
 
 	it("fails closed on malformed or unrecorded restore state without deleting it", async () => {
@@ -1252,5 +1314,152 @@ describe("checkpoint backup request has no client-side timeout", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true })
 		}
+	})
+})
+
+/** One refresh the way `createCheckpoint` publishes it, minus the BACKUP. */
+const simulateRefresh = async (dataDir: string): Promise<CheckpointId> => {
+	const before = await readCheckpointState(dataDir)
+	const operationId = newCheckpointOperationId()
+	const checkpointId = newCheckpointId()
+	writeSnapshot(dataDir, checkpointId, operationId)
+	writeCheckpointOperation(dataDir, operationId, checkpointId, "manifest-complete", {
+		revision: before.revision,
+		current: before.current,
+		previous: before.previous,
+	})
+	await reconcileCheckpointOperations(dataDir)
+	await Effect.runPromise(sweepUnreferencedCheckpoints(dataDir, await readCheckpointState(dataDir)))
+	return checkpointId
+}
+
+describe("checkpoints kept across a reset", () => {
+	it("keeps every pre-reset checkpoint through two refreshes until explicitly released", async () => {
+		await withDataDir(async (dataDir) => {
+			const previous = newCheckpointId()
+			const current = newCheckpointId()
+			writeSnapshot(dataDir, previous)
+			writeSnapshot(dataDir, current)
+			writeState(dataDir, current, previous)
+			mkdirSync(join(dataDir, "store"))
+
+			const reset = await Effect.runPromise(resetLiveStorePreservingCheckpoints(dataDir))
+			deepStrictEqual([...reset.preserved].sort(), [current, previous].sort())
+
+			// The refresh loop starts right after the reset: at 30 and 60 minutes
+			// both pre-reset checkpoints rotate out of current/previous.
+			const first = await simulateRefresh(dataDir)
+			const second = await simulateRefresh(dataDir)
+			const state = await readCheckpointState(dataDir)
+			strictEqual(state.current, second)
+			strictEqual(state.previous, first)
+			ok(existsSync(checkpointSnapshotDir(dataDir, current)))
+			ok(existsSync(checkpointSnapshotDir(dataDir, previous)))
+			strictEqual((await resolveCheckpoint(dataDir, current)).checkpointId, current)
+			strictEqual((await listPreservedCheckpointPins(dataDir)).length, 2)
+
+			const released = await Effect.runPromise(releasePreservedCheckpoints(dataDir))
+			deepStrictEqual([...released.retired].sort(), [current, previous].sort())
+			ok(!existsSync(checkpointSnapshotDir(dataDir, current)))
+			ok(!existsSync(checkpointSnapshotDir(dataDir, previous)))
+			ok(existsSync(checkpointSnapshotDir(dataDir, first)))
+			ok(existsSync(checkpointSnapshotDir(dataDir, second)))
+		})
+	})
+
+	it("resets a store whose registry is unreadable without pinning anything", async () => {
+		await withDataDir(async (dataDir) => {
+			mkdirSync(checkpointRoot(dataDir), { recursive: true })
+			writeFileSync(checkpointStatePath(dataDir), "{bad json")
+			mkdirSync(join(dataDir, "store"))
+
+			const reset = await Effect.runPromise(resetLiveStorePreservingCheckpoints(dataDir))
+
+			strictEqual(reset.preserved.length, 0)
+			ok(!existsSync(join(dataDir, "store")))
+		})
+	})
+})
+
+describe("unreferenced checkpoint sweep", () => {
+	it("retires a rotated-out checkpoint once its pin is gone, and never a malformed one", async () => {
+		await withDataDir(async (dataDir) => {
+			const current = newCheckpointId()
+			const previous = newCheckpointId()
+			const pinned = newCheckpointId()
+			const malformed = newCheckpointId()
+			for (const id of [current, previous, pinned, malformed]) writeSnapshot(dataDir, id)
+			writeFileSync(join(checkpointSnapshotDir(dataDir, malformed), "manifest.json"), "{bad json")
+			writeState(dataDir, current, previous)
+			const pinDir = join(checkpointRoot(dataDir), "pins", pinned)
+			mkdirSync(pinDir, { recursive: true })
+			writeFileSync(join(pinDir, "pin.json"), "{}")
+			const state = await readCheckpointState(dataDir)
+
+			deepStrictEqual(await Effect.runPromise(sweepUnreferencedCheckpoints(dataDir, state)), [])
+			ok(existsSync(checkpointSnapshotDir(dataDir, pinned)))
+
+			rmSync(pinDir, { recursive: true })
+			deepStrictEqual(await Effect.runPromise(sweepUnreferencedCheckpoints(dataDir, state)), [pinned])
+			ok(!existsSync(checkpointSnapshotDir(dataDir, pinned)))
+			ok(existsSync(checkpointSnapshotDir(dataDir, malformed)))
+			ok(existsSync(checkpointSnapshotDir(dataDir, current)))
+			ok(existsSync(checkpointSnapshotDir(dataDir, previous)))
+			deepStrictEqual(readdirSync(join(checkpointRoot(dataDir), "retiring")), [])
+		})
+	})
+
+	it("removes sweep debris a crash left in the retirement root", async () => {
+		await withDataDir(async (dataDir) => {
+			const current = newCheckpointId()
+			writeSnapshot(dataDir, current)
+			writeState(dataDir, current)
+			const debris = join(checkpointRoot(dataDir), "retiring", `sweep-${newCheckpointId()}-x`)
+			mkdirSync(join(debris, "backup"), { recursive: true })
+			const unrelated = join(checkpointRoot(dataDir), "retiring", "retirement-keep")
+			mkdirSync(unrelated)
+
+			await Effect.runPromise(sweepUnreferencedCheckpoints(dataDir, await readCheckpointState(dataDir)))
+
+			ok(!existsSync(debris))
+			ok(existsSync(unrelated))
+		})
+	})
+})
+
+describe("checkpoint refresh backoff", () => {
+	it("doubles the wait per consecutive failure, caps it, and ignores an unreadable record", async () => {
+		await withDataDir(async (dataDir) => {
+			const interval = Duration.minutes(30)
+			const healthy = await Effect.runPromise(checkpointRefreshBackoff(dataDir, interval))
+			strictEqual(Duration.toMillis(healthy.delay), Duration.toMillis(interval))
+			strictEqual(formatCheckpointRefreshBackoff(healthy), null)
+
+			const failures = (consecutiveFailures: number) =>
+				writeFileSync(
+					checkpointFailuresPath(dataDir),
+					JSON.stringify({
+						formatVersion: 1,
+						consecutiveFailures,
+						lastFailureAt: "2026-01-01T00:00:00.000Z",
+						lastError: "No space left on device\nstack",
+					}),
+				)
+			failures(2)
+			const backedOff = await Effect.runPromise(checkpointRefreshBackoff(dataDir, interval))
+			strictEqual(Duration.toMillis(backedOff.delay), Duration.toMillis(Duration.hours(2)))
+			match(
+				formatCheckpointRefreshBackoff(backedOff) ?? "",
+				/failed 2 time\(s\) in a row \(last: No space left on device\); next attempt in 2h\. Run `maple checkpoint`/,
+			)
+
+			failures(30)
+			const capped = await Effect.runPromise(checkpointRefreshBackoff(dataDir, interval))
+			strictEqual(Duration.toMillis(capped.delay), Duration.toMillis(Duration.hours(4)))
+
+			writeFileSync(checkpointFailuresPath(dataDir), "{bad json")
+			const unreadable = await Effect.runPromise(checkpointRefreshBackoff(dataDir, interval))
+			strictEqual(unreadable.consecutiveFailures, 0)
+		})
 	})
 })

@@ -1,4 +1,4 @@
-import { HttpApi, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, OpenApi } from "effect/http-api"
 import { V2AlertDeliveriesApiGroup } from "./alert-deliveries"
 import { V2AlertDestinationsApiGroup } from "./alert-destinations"
 import { V2AnomaliesApiGroup } from "./anomalies"
@@ -13,6 +13,7 @@ import { V2ChatIntegrationsApiGroup } from "./integrations-chat"
 import { V2PlanetScaleIntegrationsApiGroup } from "./integrations-planetscale"
 import { V2ErrorIssuesApiGroup } from "./error-issues"
 import { V2InvestigationsApiGroup } from "./investigations"
+import { V2AgentFeedbackApiGroup } from "./agent-feedback"
 import { V2MobileDevicesApiGroup } from "./mobile-devices"
 import { V2OnboardingChecklistApiGroup } from "./onboarding-checklist"
 import { V2OrganizationApiGroup } from "./organization"
@@ -20,6 +21,7 @@ import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
+import { V2SupportChannelApiGroup } from "./support-channel"
 import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
 import { V2SharePublicApiGroup } from "./share"
 import { V2WidgetCredentialsApiGroup } from "./widget-credentials"
@@ -81,9 +83,9 @@ const addRateLimitResponseHeaders = <S extends OpenApiSpec>(spec: S): S => {
  * `{error:{type,code,message}}` error envelope, snake_case wire fields,
  * ISO-8601 timestamps, and scoped API keys.
  *
- * Mounted alongside the internal v1 `MapleApi`; groups are added here as they
- * are promoted to the public surface. Dashboard-only operations move to the
- * internal Effect RPC tier instead — they never appear in this API.
+ * Mounted alongside the unversioned `MapleApi` (auth protocols) and the
+ * session-only `MapleInternalApi`; groups are added here as they are promoted
+ * to the public surface. Dashboard-only operations go to `MapleInternalApi`.
  */
 export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2ApiKeysApiGroup)
@@ -106,7 +108,9 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AnomaliesApiGroup)
 	.add(V2OrganizationApiGroup)
 	.add(V2OnboardingChecklistApiGroup)
+	.add(V2SupportChannelApiGroup)
 	.add(V2MobileDevicesApiGroup)
+	.add(V2AgentFeedbackApiGroup)
 	.add(V2SessionReplaysApiGroup)
 	.add(V2TracesApiGroup)
 	.add(V2LogsApiGroup)

@@ -3,8 +3,10 @@ import { Schema } from "effect"
 
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
+import { DocsLink } from "@/components/common/docs-link"
 import { KubernetesIcon } from "@/components/icons"
 import { ServiceLensShell } from "@/components/infra/service-lens/service-lens-shell"
+import { useServiceLensRail } from "@/components/infra/service-lens/use-service-lens-rail"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
@@ -34,6 +36,8 @@ function ServiceLensIndexPage() {
 		search.endTime,
 		search.timePreset ?? "12h",
 	)
+	// Same atoms as the shell's rail, so this reads the cached result.
+	const rail = useServiceLensRail({ startTime, endTime })
 
 	return (
 		<ServiceLensShell
@@ -47,18 +51,34 @@ function ServiceLensIndexPage() {
 				})
 			}
 		>
-			<Empty className="py-24">
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<KubernetesIcon size={16} />
-					</EmptyMedia>
-					<EmptyTitle>Pick a service</EmptyTitle>
-					<EmptyDescription>
-						This view answers one question — whether Kubernetes is why a service got slow — so it
-						needs a service to ask it about. The rail is sorted worst-first.
-					</EmptyDescription>
-				</EmptyHeader>
-			</Empty>
+			{!rail.loading && rail.services.length === 0 ? (
+				<Empty className="py-24">
+					<EmptyHeader>
+						<EmptyMedia variant="icon">
+							<KubernetesIcon size={16} />
+						</EmptyMedia>
+						<EmptyTitle>No linked services</EmptyTitle>
+						<EmptyDescription>
+							No services are linked to Kubernetes workloads yet. The Helm chart's k8sattributes
+							processor tags spans with their workload.
+						</EmptyDescription>
+					</EmptyHeader>
+					<DocsLink page="kubernetes" />
+				</Empty>
+			) : (
+				<Empty className="py-24">
+					<EmptyHeader>
+						<EmptyMedia variant="icon">
+							<KubernetesIcon size={16} />
+						</EmptyMedia>
+						<EmptyTitle>Pick a service</EmptyTitle>
+						<EmptyDescription>
+							This view answers one question: whether Kubernetes is why a service got slow. It
+							needs a service to ask it about. The rail is sorted worst-first.
+						</EmptyDescription>
+					</EmptyHeader>
+				</Empty>
+			)}
 		</ServiceLensShell>
 	)
 }

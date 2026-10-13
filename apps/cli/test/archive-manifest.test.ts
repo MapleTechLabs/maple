@@ -11,7 +11,6 @@ import {
 	rangeRoot,
 } from "../src/server/archives/paths"
 import { parseArchiveActivePointer, parseArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { TUNING_CONFIG_FORMAT_VERSION } from "../src/server/archives/config"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
 import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
 import { randomUUID } from "node:crypto"
@@ -81,15 +80,6 @@ describe("archive generation manifest parser", () => {
 		throws(
 			() => parseArchiveGenerationManifest({ ...validGenerationManifest(), formatVersion: 99 }),
 			/unsupported archive manifest formatVersion 99/,
-		)
-	})
-
-	it("rejects an older (v1) format version fail-closed (round 5)", () => {
-		// A round-4 v1 manifest carried timezone-dependent time evidence and a
-		// commutative digest; the reader must not silently re-interpret it.
-		throws(
-			() => parseArchiveGenerationManifest({ ...validGenerationManifest(), formatVersion: 1 }),
-			/unsupported archive manifest formatVersion 1/,
 		)
 	})
 
@@ -257,31 +247,6 @@ describe("archive manifest tuningConfig identity", () => {
 		strictEqual(parsed.tuningConfig!.formatVersion, 1)
 	})
 
-	it("preserves a loaded format-2 calibration config identity", () => {
-		const generationId = randomUUID()
-		const manifest = validGenerationManifest({
-			generationId,
-			tuningConfig: { formatVersion: 2, configName: "phase3b-tuning.json", sha256: "c".repeat(64) },
-		})
-		const parsed = parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId)
-		strictEqual(parsed.tuningConfig!.formatVersion, 2)
-		strictEqual(parsed.tuningConfig!.configName, "phase3b-tuning.json")
-	})
-
-	it("preserves a current format-3 calibration config identity", () => {
-		const generationId = randomUUID()
-		const manifest = validGenerationManifest({
-			generationId,
-			tuningConfig: {
-				formatVersion: TUNING_CONFIG_FORMAT_VERSION,
-				configName: "new-tuning.json",
-				sha256: "d".repeat(64),
-			},
-		})
-		const parsed = parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId)
-		strictEqual(parsed.tuningConfig!.formatVersion, TUNING_CONFIG_FORMAT_VERSION)
-	})
-
 	it("accepts null tuningConfig (no config loaded)", () => {
 		const generationId = randomUUID()
 		const manifest = validGenerationManifest({ generationId, tuningConfig: null })
@@ -291,12 +256,6 @@ describe("archive manifest tuningConfig identity", () => {
 
 	it("rejects a v3 manifest missing the tuningConfig key", () => {
 		const manifest = validGenerationManifest()
-		delete (manifest as Record<string, unknown>).tuningConfig
-		throws(() => parseArchiveGenerationManifest(manifest), /tuningConfig \(required in formatVersion 3\)/)
-	})
-
-	it("rejects a legacy-shaped v3 manifest with tuningConfigName but no tuningConfig key", () => {
-		const manifest = validGenerationManifest({ tuningConfigName: "calib-2026.json" })
 		delete (manifest as Record<string, unknown>).tuningConfig
 		throws(() => parseArchiveGenerationManifest(manifest), /tuningConfig \(required in formatVersion 3\)/)
 	})

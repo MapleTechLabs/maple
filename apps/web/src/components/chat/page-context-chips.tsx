@@ -1,10 +1,10 @@
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { InputGroupAddon } from "@maple/ui/components/ui/input-group"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	BellIcon,
 	ChartLineIcon,
 	CircleWarningIcon,
-	CubeIcon,
 	DockerIcon,
 	FileIcon,
 	GridSquareCirclePlusIcon,
@@ -12,7 +12,9 @@ import {
 	PulseIcon,
 	ServerIcon,
 	XmarkIcon,
+	type IconComponent,
 } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import { autoContextDisplay, autoContextLabel, type AutoContext } from "./auto-contexts"
 
 /**
@@ -28,11 +30,11 @@ const CONTEXT_ICONS = {
 	host: ServerIcon,
 	logs_explorer: FileIcon,
 	metrics_explorer: ChartLineIcon,
-	service: CubeIcon,
+	service: CONCEPT_ICON.service,
 	service_map: NetworkNodesIcon,
 	trace: PulseIcon,
 	traces_explorer: PulseIcon,
-} satisfies Record<AutoContext["kind"], typeof CubeIcon>
+} satisfies Record<AutoContext["kind"], IconComponent>
 
 interface PageContextChipsProps {
 	contexts: AutoContext[]
@@ -65,18 +67,15 @@ export function PageContextChips({ contexts, onDismiss }: PageContextChipsProps)
 							<span className="text-muted-foreground">{kind}</span>
 							{subject ? <span className="ml-1 text-foreground">{subject}</span> : null}
 						</span>
-						<button
-							type="button"
-							aria-label={`Remove ${autoContextLabel(ctx)}`}
+						<IconButton
+							size="icon-2xs"
+							label={`Remove ${autoContextLabel(ctx)}`}
+							tooltip={false}
 							onClick={() => onDismiss(ctx.id)}
-							className={cn(
-								"grid size-4.5 shrink-0 place-items-center rounded-sm text-muted-foreground/70",
-								"transition-colors hover:bg-foreground/8 hover:text-foreground",
-								"focus-visible:bg-foreground/8 focus-visible:text-foreground focus-visible:outline-none",
-							)}
+							className="text-muted-foreground/70 hover:text-foreground"
 						>
-							<XmarkIcon className="size-3" />
-						</button>
+							<XmarkIcon />
+						</IconButton>
 					</span>
 				)
 			})}

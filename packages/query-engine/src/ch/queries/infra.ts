@@ -11,13 +11,15 @@
 //
 // Host identity is carried on the ResourceAttributes map under `host.name`.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge, MetricsSum } from "../tables"
+import type { DateTime } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
+import { finiteOrZero } from "./format"
 
 const HOSTMETRIC_NAMES = [
 	"system.cpu.utilization",
@@ -25,6 +27,34 @@ const HOSTMETRIC_NAMES = [
 	"system.filesystem.utilization",
 	"system.cpu.load_average.15m",
 ] as const
+
+// Per-state CPU values sum to 1 per core, so busy share is 1 - avg(idle).
+// Averaging every non-idle state instead divides a fully busy host by ~7.
+// A host with no idle samples falls back to idle = 1, i.e. 0% busy.
+const hostCpuPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+	CH.greatest_(
+		CH.lit(1).sub(
+			CH.ifNotFinite(
+				CH.avgIf(
+					$.Value,
+					$.MetricName.eq("system.cpu.utilization").and($.Attributes.get("state").eq("idle")),
+				),
+				1,
+			),
+		),
+		CH.lit(0),
+	)
+
+// Read-only and virtual mounts (snap squashfs, container overlays) always report ~100%.
+const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs"] as const
+
+const hostDiskPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+	maxIfOrZero(
+		$.Value,
+		$.MetricName.eq("system.filesystem.utilization")
+			.and($.Attributes.get("state").eq("used"))
+			.and(CH.notInList($.Attributes.get("type"), PSEUDO_FS_TYPES)),
+	)
 
 // List hosts — one row per host.name with latest-window headline gauges
 
@@ -39,7 +69,7 @@ export interface ListHostsOutput {
 	readonly osType: string
 	readonly hostArch: string
 	readonly cloudProvider: string
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 	readonly cpuPct: number
 	readonly memoryPct: number
 	readonly diskPct: number
@@ -54,24 +84,18 @@ export function listHostsQuery(opts: ListHostsOpts = {}) {
 			hostArch: CH.any_($.ResourceAttributes.get("host.arch")),
 			cloudProvider: CH.any_($.ResourceAttributes.get("cloud.provider")),
 			lastSeen: CH.max_($.TimeUnix),
-			cpuPct: avgIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.cpu.utilization").and($.Attributes.get("state").neq("idle")),
-			),
+			cpuPct: hostCpuPctExpr($),
 			memoryPct: avgIfOrZero(
 				$.Value,
 				$.MetricName.eq("system.memory.utilization").and($.Attributes.get("state").eq("used")),
 			),
-			diskPct: maxIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.filesystem.utilization").and($.Attributes.get("state").eq("used")),
-			),
+			diskPct: hostDiskPctExpr($),
 			load15: avgIfOrZero($.Value, $.MetricName.eq("system.cpu.load_average.15m")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").neq(""),
 			$.MetricName.in_(...HOSTMETRIC_NAMES),
 			CH.when(opts.search, (v: string) =>
@@ -97,8 +121,8 @@ export interface HostDetailSummaryOutput {
 	readonly hostArch: string
 	readonly cloudProvider: string
 	readonly cloudRegion: string
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 	readonly cpuPct: number
 	readonly memoryPct: number
 	readonly diskPct: number
@@ -115,24 +139,18 @@ export function hostDetailSummaryQuery(opts: HostDetailSummaryOpts) {
 			cloudRegion: CH.any_($.ResourceAttributes.get("cloud.region")),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
-			cpuPct: avgIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.cpu.utilization").and($.Attributes.get("state").neq("idle")),
-			),
+			cpuPct: hostCpuPctExpr($),
 			memoryPct: avgIfOrZero(
 				$.Value,
 				$.MetricName.eq("system.memory.utilization").and($.Attributes.get("state").eq("used")),
 			),
-			diskPct: maxIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.filesystem.utilization").and($.Attributes.get("state").eq("used")),
-			),
+			diskPct: hostDiskPctExpr($),
 			load15: avgIfOrZero($.Value, $.MetricName.eq("system.cpu.load_average.15m")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.in_(...HOSTMETRIC_NAMES),
 		])
@@ -147,10 +165,13 @@ export interface HostGaugeTimeseriesOpts {
 	hostName: string
 	metricName: string
 	groupByAttributeKey?: string
+	// Pins one data-point attribute, e.g. `state = 'used'` for filesystem
+	// utilization, which otherwise averages used/free/reserved together.
+	attributeEquals?: { readonly key: string; readonly value: string }
 }
 
 export interface HostGaugeTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly attributeValue: string
 	readonly avgValue: number
 }
@@ -165,11 +186,14 @@ export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
 			avgValue: CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq(opts.metricName),
+			opts.attributeEquals
+				? $.Attributes.get(opts.attributeEquals.key).eq(opts.attributeEquals.value)
+				: undefined,
 		])
 
 	return (opts.groupByAttributeKey ? q.groupBy("bucket", "attributeValue") : q.groupBy("bucket"))
@@ -188,46 +212,9 @@ export interface HostNetworkTimeseriesOpts {
 }
 
 export interface HostNetworkTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly attributeValue: string
 	readonly sumValue: number
-}
-
-// Fleet utilization time-series — bucketed averages of CPU + memory across all
-// hosts in the org, plus an active-host count per bucket. Powers the small
-// sparklines on the overview KPI cards.
-
-export interface FleetUtilizationTimeseriesOutput {
-	readonly bucket: string
-	readonly avgCpu: number
-	readonly avgMemory: number
-	readonly activeHosts: number
-}
-
-export function fleetUtilizationTimeseriesQuery() {
-	return from(MetricsGauge)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			avgCpu: avgIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.cpu.utilization").and($.Attributes.get("state").neq("idle")),
-			),
-			avgMemory: avgIfOrZero(
-				$.Value,
-				$.MetricName.eq("system.memory.utilization").and($.Attributes.get("state").eq("used")),
-			),
-			activeHosts: CH.uniq($.ResourceAttributes.get("host.name")),
-		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
-			$.ResourceAttributes.get("host.name").neq(""),
-			$.MetricName.in_("system.cpu.utilization", "system.memory.utilization"),
-		])
-		.groupBy("bucket")
-		.orderBy(["bucket", "asc"])
-		.format("JSON")
 }
 
 export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
@@ -238,14 +225,51 @@ export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 			sumValue: CH.sum($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq("system.network.io"),
 		])
 		.groupBy("bucket", "attributeValue")
 		.orderBy(["bucket", "asc"])
+		.format("JSON")
+}
+
+// Host filesystems: used fraction per mountpoint. `state` must be pinned to `used`;
+// averaging across used/free/reserved reads every disk as about a third full.
+
+export interface HostFilesystemsOpts {
+	hostName: string
+	limit?: number
+}
+
+export interface HostFilesystemsOutput {
+	readonly mountpoint: string
+	readonly device: string
+	readonly usedAvg: number
+	readonly usedMax: number
+}
+
+export function hostFilesystemsQuery(opts: HostFilesystemsOpts) {
+	return from(MetricsGauge)
+		.select(($) => ({
+			mountpoint: $.Attributes.get("mountpoint"),
+			device: CH.any_($.Attributes.get("device")),
+			usedAvg: avgIfOrZero($.Value, $.Attributes.get("state").eq("used")),
+			usedMax: maxIfOrZero($.Value, $.Attributes.get("state").eq("used")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.ResourceAttributes.get("host.name").eq(opts.hostName),
+			$.MetricName.eq("system.filesystem.utilization"),
+			$.Attributes.get("state").eq("used"),
+		])
+		.groupBy("mountpoint")
+		.orderBy(["usedMax", "desc"])
+		.limit(opts.limit ?? 20)
 		.format("JSON")
 }
 
@@ -368,7 +392,7 @@ export interface ListPodsOutput {
 	// collector hasn't been told to extract the eks.amazonaws.com/compute-type
 	// label, in which case the UI should treat it as ec2).
 	readonly computeType: string
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 	// Window averages.
 	readonly cpuUsage: number
 	readonly cpuLimitPct: number
@@ -396,9 +420,9 @@ const podBaseConditions = (
 	$: ColumnAccessor<typeof MetricsGauge.columns>,
 	metricNames: ReadonlyArray<string> = POD_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
-	$.OrgId.eq(param.string("orgId")),
-	$.TimeUnix.gte(param.dateTimeString("startTime")),
-	$.TimeUnix.lte(param.dateTimeString("endTime")),
+	$.OrgId.eq(orgIdParam),
+	$.TimeUnix.gte(param.dateTime("startTime")),
+	$.TimeUnix.lte(param.dateTime("endTime")),
 	$.ResourceAttributes.get("k8s.pod.name").neq(""),
 	$.MetricName.in_(...metricNames),
 ]
@@ -441,8 +465,8 @@ const podFilterConditions = (
 	),
 	...POD_FACETS.flatMap(({ include, exclude, attr }) => {
 		const expr = attr === null ? deploymentEnvExpr($.ResourceAttributes) : $.ResourceAttributes.get(attr)
-		const included = opts[include] as ReadonlyArray<string> | undefined
-		const excluded = opts[exclude] as ReadonlyArray<string> | undefined
+		const included = opts[include]
+		const excluded = opts[exclude]
 		return [
 			included?.length ? CH.inList(expr, included) : undefined,
 			excluded?.length ? CH.notInList(expr, excluded) : undefined,
@@ -469,8 +493,8 @@ const ENDED_POD_SECONDS = 300
  * rides on `endTime` rather than wall-clock now, so a window that ended an hour
  * ago still reports who was live *then*.
  */
-type PodLifecycleColumns = { lastSeen: CH.Expr<string> }
-const endedCutoff = () => CH.intervalSub(param.dateTimeString("endTime"), ENDED_POD_SECONDS)
+type PodLifecycleColumns = { lastSeen: CH.Expr<DateTime.Utc> }
+const endedCutoff = () => CH.intervalSub(param.dateTime("endTime"), ENDED_POD_SECONDS)
 const podLiveCondition = ($: PodLifecycleColumns) => $.lastSeen.gte(endedCutoff())
 const podEndedCondition = ($: PodLifecycleColumns) => $.lastSeen.lt(endedCutoff())
 
@@ -669,8 +693,8 @@ export interface PodDetailSummaryOutput {
 	readonly podUid: string
 	readonly computeType: string
 	readonly podStartTime: string
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 	readonly cpuUsage: number
 	readonly cpuLimitPct: number
 	readonly memoryLimitPct: number
@@ -700,14 +724,73 @@ export function podDetailSummaryQuery(opts: PodDetailSummaryOpts) {
 			memoryRequestPct: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.memory_request_utilization")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("k8s.pod.name").eq(opts.podName),
 			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
 			$.MetricName.in_(...POD_METRIC_NAMES),
 		])
 		.groupBy("podName")
+		.format("JSON")
+}
+
+// Pod container restarts, from the k8s_cluster receiver's `k8s.container.restarts`
+// (a running total per container). The window's restarts are last - first, floored at 0:
+// a kubelet that prunes dead containers can reset the total, so this undercounts, never over.
+
+export interface PodRestartsOpts {
+	podNames?: ReadonlyArray<string>
+	namespace?: string
+	workloadKind?: "deployment" | "statefulset" | "daemonset"
+	workloadName?: string
+	limit?: number
+}
+
+export interface PodRestartsOutput {
+	readonly podName: string
+	readonly namespace: string
+	readonly containerName: string
+	readonly restarts: number
+	readonly totalRestarts: number
+	/** `k8s.container.status.last_terminated_reason` (OOMKilled, Error, ...); empty when never terminated. */
+	readonly lastTerminatedReason: string
+}
+
+export function podRestartsQuery(opts: PodRestartsOpts) {
+	return from(MetricsGauge)
+		.select(($) => ({
+			podName: $.ResourceAttributes.get("k8s.pod.name"),
+			namespace: $.ResourceAttributes.get("k8s.namespace.name"),
+			containerName: $.ResourceAttributes.get("k8s.container.name"),
+			restarts: CH.ifNotFinite(
+				CH.greatest_(CH.argMax($.Value, $.TimeUnix).sub(CH.argMin($.Value, $.TimeUnix)), CH.lit(0)),
+				0,
+			),
+			totalRestarts: CH.ifNotFinite(CH.argMax($.Value, $.TimeUnix), 0),
+			// The attribute rides on the resource, so the newest sample carries the newest reason.
+			lastTerminatedReason: CH.argMax(
+				$.ResourceAttributes.get("k8s.container.status.last_terminated_reason"),
+				$.TimeUnix,
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.MetricName.eq("k8s.container.restarts"),
+			$.ResourceAttributes.get("k8s.pod.name").neq(""),
+			opts.podNames?.length
+				? CH.inList($.ResourceAttributes.get("k8s.pod.name"), opts.podNames)
+				: undefined,
+			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
+			CH.when(opts.workloadName, (v: string) =>
+				$.ResourceAttributes.get(workloadAttrKey(opts.workloadKind ?? "deployment")).eq(v),
+			),
+		])
+		.groupBy("podName", "namespace", "containerName")
+		.orderBy(["restarts", "desc"], ["totalRestarts", "desc"])
+		.limit(opts.limit ?? 50)
 		.format("JSON")
 }
 
@@ -731,9 +814,9 @@ export function podGaugeTimeseriesQuery(opts: PodGaugeTimeseriesOpts) {
 			avgValue: CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("k8s.pod.name").eq(opts.podName),
 			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
 			$.MetricName.eq(opts.metricName),
@@ -746,10 +829,22 @@ export function podGaugeTimeseriesQuery(opts: PodGaugeTimeseriesOpts) {
 
 // Kubernetes — node aggregations over k8s.node.* metrics from the kubelet
 // stats + k8s_cluster receivers.
-//   k8s.node.cpu.usage    gauge, cores
-//   k8s.node.uptime       gauge, seconds
+//   k8s.node.cpu.usage             gauge, cores (kubeletstats)
+//   k8s.node.uptime                gauge, seconds (kubeletstats)
+//   k8s.node.memory.working_set    gauge, bytes (kubeletstats)
+//   k8s.node.allocatable_cpu       gauge, cores (k8s_cluster, allocatable_types_to_report)
+//   k8s.node.allocatable_memory    gauge, bytes (k8s_cluster, allocatable_types_to_report)
 
-const NODE_METRIC_NAMES = ["k8s.node.cpu.usage", "k8s.node.uptime"] as const
+const NODE_ALLOCATABLE_CPU_METRIC = "k8s.node.allocatable_cpu" as const
+const NODE_ALLOCATABLE_MEMORY_METRIC = "k8s.node.allocatable_memory" as const
+
+const NODE_METRIC_NAMES = [
+	"k8s.node.cpu.usage",
+	"k8s.node.uptime",
+	"k8s.node.memory.working_set",
+	NODE_ALLOCATABLE_CPU_METRIC,
+	NODE_ALLOCATABLE_MEMORY_METRIC,
+] as const
 
 // Single representative metric for node facets — see POD_FACET_PROBE_METRIC.
 const NODE_FACET_PROBE_METRIC = "k8s.node.cpu.usage" as const
@@ -763,24 +858,63 @@ export interface ListNodesOpts {
 	offset?: number
 }
 
-export interface ListNodesOutput {
+/** Usage, allocatable capacity, usage/allocatable fractions and uptime; 0 when not collected. */
+export interface NodeCapacityOutput {
+	readonly cpuUsage: number
+	readonly cpuAllocatable: number
+	readonly cpuUtilization: number
+	readonly memoryUsage: number
+	readonly memoryAllocatable: number
+	readonly memoryUtilization: number
+	readonly uptime: number
+}
+
+export interface ListNodesOutput extends NodeCapacityOutput {
 	readonly nodeName: string
 	readonly nodeUid: string
 	readonly clusterName: string
 	readonly environment: string
 	readonly kubeletVersion: string
-	readonly lastSeen: string
-	readonly cpuUsage: number
-	readonly uptime: number
+	readonly lastSeen: DateTime.Utc
 }
+
+/** `usage / allocatable`; 0 when allocatable was not collected (x/0 is non-finite). */
+const ratioOrZero = (usage: CH.Expr<number>, allocatable: CH.Expr<number>): CH.Expr<number> =>
+	finiteOrZero(usage.div(allocatable))
+
+// The node row merges two receivers: kubeletstats (usage) and k8s_cluster (allocatable,
+// kubelet version). String attributes skip the receiver that leaves them empty.
+const nodeCapacityColumns = ($: ColumnAccessor<typeof MetricsGauge.columns>) => {
+	const cpuUsage = avgIfOrZero($.Value, $.MetricName.eq("k8s.node.cpu.usage"))
+	const cpuAllocatable = maxIfOrZero($.Value, $.MetricName.eq(NODE_ALLOCATABLE_CPU_METRIC))
+	const memoryUsage = avgIfOrZero($.Value, $.MetricName.eq("k8s.node.memory.working_set"))
+	const memoryAllocatable = maxIfOrZero($.Value, $.MetricName.eq(NODE_ALLOCATABLE_MEMORY_METRIC))
+	return {
+		cpuUsage,
+		cpuAllocatable,
+		cpuUtilization: ratioOrZero(cpuUsage, cpuAllocatable),
+		memoryUsage,
+		memoryAllocatable,
+		memoryUtilization: ratioOrZero(memoryUsage, memoryAllocatable),
+		uptime: maxIfOrZero($.Value, $.MetricName.eq("k8s.node.uptime")),
+	}
+}
+
+const nonEmptyAttr = ($: ColumnAccessor<typeof MetricsGauge.columns>, key: string) =>
+	CH.anyIf($.ResourceAttributes.get(key), $.ResourceAttributes.get(key).neq(""))
+
+// Nodes that only k8s_cluster reports (EKS Fargate virtual nodes, nodes the DaemonSet
+// does not run on) carry capacity but no usage; the list and facets both require kubelet data.
+const hasKubeletUsage = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+	CH.countIf($.MetricName.eq(NODE_FACET_PROBE_METRIC)).gt(0)
 
 const nodeBaseConditions = (
 	$: ColumnAccessor<typeof MetricsGauge.columns>,
 	metricNames: ReadonlyArray<string> = NODE_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
-	$.OrgId.eq(param.string("orgId")),
-	$.TimeUnix.gte(param.dateTimeString("startTime")),
-	$.TimeUnix.lte(param.dateTimeString("endTime")),
+	$.OrgId.eq(orgIdParam),
+	$.TimeUnix.gte(param.dateTime("startTime")),
+	$.TimeUnix.lte(param.dateTime("endTime")),
 	$.ResourceAttributes.get("k8s.node.name").neq(""),
 	$.ResourceAttributes.get("k8s.pod.name").eq(""),
 	$.MetricName.in_(...metricNames),
@@ -806,16 +940,19 @@ export function listNodesQuery(opts: ListNodesOpts = {}) {
 	return from(MetricsGauge)
 		.select(($) => ({
 			nodeName: $.ResourceAttributes.get("k8s.node.name"),
-			nodeUid: CH.any_($.ResourceAttributes.get("k8s.node.uid")),
-			clusterName: CH.any_($.ResourceAttributes.get("k8s.cluster.name")),
-			environment: CH.any_(deploymentEnvExpr($.ResourceAttributes)),
-			kubeletVersion: CH.any_($.ResourceAttributes.get("k8s.kubelet.version")),
+			nodeUid: nonEmptyAttr($, "k8s.node.uid"),
+			clusterName: nonEmptyAttr($, "k8s.cluster.name"),
+			environment: CH.anyIf(
+				deploymentEnvExpr($.ResourceAttributes),
+				deploymentEnvExpr($.ResourceAttributes).neq(""),
+			),
+			kubeletVersion: nonEmptyAttr($, "k8s.kubelet.version"),
 			lastSeen: CH.max_($.TimeUnix),
-			cpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.node.cpu.usage")),
-			uptime: maxIfOrZero($.Value, $.MetricName.eq("k8s.node.uptime")),
+			...nodeCapacityColumns($),
 		}))
 		.where(($) => [...nodeBaseConditions($), ...nodeFilterConditions($, opts)])
 		.groupBy("nodeName")
+		.having(($) => [hasKubeletUsage($)])
 		.orderBy(["lastSeen", "desc"])
 		.limit(opts.limit ?? 200)
 		.offset(opts.offset ?? 0)
@@ -826,33 +963,33 @@ export interface NodeDetailSummaryOpts {
 	nodeName: string
 }
 
-export interface NodeDetailSummaryOutput {
+export interface NodeDetailSummaryOutput extends NodeCapacityOutput {
 	readonly nodeName: string
 	readonly nodeUid: string
 	readonly kubeletVersion: string
 	readonly containerRuntime: string
-	readonly firstSeen: string
-	readonly lastSeen: string
-	readonly cpuUsage: number
-	readonly uptime: number
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 }
 
 export function nodeDetailSummaryQuery(opts: NodeDetailSummaryOpts) {
 	return from(MetricsGauge)
 		.select(($) => ({
 			nodeName: $.ResourceAttributes.get("k8s.node.name"),
-			nodeUid: CH.any_($.ResourceAttributes.get("k8s.node.uid")),
-			kubeletVersion: CH.any_($.ResourceAttributes.get("k8s.kubelet.version")),
-			containerRuntime: CH.any_(containerRuntimeExpr($.ResourceAttributes)),
+			nodeUid: nonEmptyAttr($, "k8s.node.uid"),
+			kubeletVersion: nonEmptyAttr($, "k8s.kubelet.version"),
+			containerRuntime: CH.anyIf(
+				containerRuntimeExpr($.ResourceAttributes),
+				containerRuntimeExpr($.ResourceAttributes).neq(""),
+			),
 			firstSeen: CH.min_($.TimeUnix),
 			lastSeen: CH.max_($.TimeUnix),
-			cpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.node.cpu.usage")),
-			uptime: maxIfOrZero($.Value, $.MetricName.eq("k8s.node.uptime")),
+			...nodeCapacityColumns($),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("k8s.node.name").eq(opts.nodeName),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
 			$.MetricName.in_(...NODE_METRIC_NAMES),
@@ -864,22 +1001,32 @@ export function nodeDetailSummaryQuery(opts: NodeDetailSummaryOpts) {
 export interface NodeGaugeTimeseriesOpts {
 	nodeName: string
 	metricName: string
+	/** Plot `metricName / capacityMetricName` per bucket (a 0-1 fraction) instead of the raw gauge. */
+	capacityMetricName?: string
 }
 
 export function nodeGaugeTimeseriesQuery(opts: NodeGaugeTimeseriesOpts) {
+	const capacityMetricName = opts.capacityMetricName
 	return from(MetricsGauge)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: CH.lit(""),
-			avgValue: CH.avg($.Value),
+			avgValue: capacityMetricName
+				? ratioOrZero(
+						avgIfOrZero($.Value, $.MetricName.eq(opts.metricName)),
+						maxIfOrZero($.Value, $.MetricName.eq(capacityMetricName)),
+					)
+				: CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("k8s.node.name").eq(opts.nodeName),
 			$.ResourceAttributes.get("k8s.pod.name").eq(""),
-			$.MetricName.eq(opts.metricName),
+			capacityMetricName
+				? $.MetricName.in_(opts.metricName, capacityMetricName)
+				: $.MetricName.eq(opts.metricName),
 		])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
@@ -909,7 +1056,7 @@ export interface ListWorkloadsOutput {
 	readonly clusterName: string
 	readonly environment: string
 	readonly podCount: number
-	readonly lastSeen: string
+	readonly lastSeen: DateTime.Utc
 	readonly avgCpuLimitPct: number
 	readonly avgMemoryLimitPct: number
 	readonly avgCpuUsage: number
@@ -943,8 +1090,9 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 	return from(MetricsGauge)
 		.select(($) => ({
 			workloadName: $.ResourceAttributes.get(attrKey),
-			namespace: CH.any_($.ResourceAttributes.get("k8s.namespace.name")),
-			clusterName: CH.any_($.ResourceAttributes.get("k8s.cluster.name")),
+			// Same-named workloads in different namespaces/clusters are distinct rows.
+			namespace: $.ResourceAttributes.get("k8s.namespace.name"),
+			clusterName: $.ResourceAttributes.get("k8s.cluster.name"),
 			environment: CH.any_(deploymentEnvExpr($.ResourceAttributes)),
 			podCount: CH.uniq($.ResourceAttributes.get("k8s.pod.uid")),
 			lastSeen: CH.max_($.TimeUnix),
@@ -953,14 +1101,14 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 			avgCpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.cpu.usage")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get(attrKey).neq(""),
 			$.MetricName.in_(...POD_METRIC_NAMES),
 			...workloadFilterConditions($, opts, attrKey),
 		])
-		.groupBy("workloadName")
+		.groupBy("workloadName", "namespace", "clusterName")
 		.orderBy(["lastSeen", "desc"])
 		.limit(opts.limit ?? 200)
 		.offset(opts.offset ?? 0)
@@ -978,8 +1126,8 @@ export interface WorkloadDetailSummaryOutput {
 	readonly kind: string
 	readonly namespace: string
 	readonly podCount: number
-	readonly firstSeen: string
-	readonly lastSeen: string
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
 	readonly avgCpuLimitPct: number
 	readonly avgMemoryLimitPct: number
 	readonly avgCpuUsage: number
@@ -999,9 +1147,9 @@ export function workloadDetailSummaryQuery(opts: WorkloadDetailSummaryOpts) {
 			avgCpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.cpu.usage")),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get(attrKey).eq(opts.workloadName),
 			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
 			$.MetricName.in_(...POD_METRIC_NAMES),
@@ -1027,9 +1175,9 @@ export function workloadGaugeTimeseriesQuery(opts: WorkloadGaugeTimeseriesOpts) 
 			avgValue: CH.avg($.Value),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get(attrKey).eq(opts.workloadName),
 			CH.when(opts.namespace, (v: string) => $.ResourceAttributes.get("k8s.namespace.name").eq(v)),
 			$.MetricName.eq(opts.metricName),
@@ -1121,9 +1269,9 @@ const makeWorkloadFacet = (
 			facetType: CH.lit(facetType),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get(ownerKey).neq(""),
 			$.MetricName.in_(POD_FACET_PROBE_METRIC),
 			...workloadFilterConditions($, opts, ownerKey),
@@ -1189,9 +1337,9 @@ const presenceBranch = (
 	from(MetricsGauge)
 		.select(() => ({ surface: CH.lit(surface) }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.MetricName.eq(metricName),
 			identity($),
 		])

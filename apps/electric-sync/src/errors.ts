@@ -80,46 +80,34 @@ const TEXT_HEADERS = { "content-type": "text/plain; charset=utf-8" }
  * source is not something to describe to a browser.
  */
 export const errorResponse: (error: SyncError) => ErrorResponse = Match.type<SyncError>().pipe(
-	Match.tag(
-		"@maple/electric-sync/ShapeRequestInvalid",
-		(error): ErrorResponse => ({
-			status: 400,
-			body: error.message,
-			headers: TEXT_HEADERS,
-			errorType: "ShapeRequestInvalid",
-		}),
-	),
-	Match.tag(
-		"@maple/electric-sync/Unauthorized",
-		(): ErrorResponse => ({
-			status: 401,
-			body: "Unauthorized",
-			headers: TEXT_HEADERS,
-			errorType: "Unauthorized",
-		}),
-	),
-	Match.tag(
-		"@maple/electric-sync/ElectricNotConfigured",
-		(error): ErrorResponse => ({
-			status: 503,
-			body: "Electric sync is not configured",
-			headers: TEXT_HEADERS,
-			errorType: Match.value(error.reason).pipe(
-				Match.when("missing_url", () => "ElectricConfigUnavailable"),
-				Match.when("incoherent_credentials", () => "ElectricConfigIncoherent"),
-				Match.exhaustive,
-			),
-		}),
-	),
-	Match.tag(
-		"@maple/electric-sync/ElectricUpstreamUnreachable",
-		(): ErrorResponse => ({
-			status: 502,
-			body: "Electric upstream unreachable",
-			headers: TEXT_HEADERS,
-			errorType: "ElectricUpstreamUnavailable",
-		}),
-	),
+	Match.tag("@maple/electric-sync/ShapeRequestInvalid", (error): ErrorResponse => ({
+		status: 400,
+		body: error.message,
+		headers: TEXT_HEADERS,
+		errorType: "ShapeRequestInvalid",
+	})),
+	Match.tag("@maple/electric-sync/Unauthorized", (): ErrorResponse => ({
+		status: 401,
+		body: "Unauthorized",
+		headers: TEXT_HEADERS,
+		errorType: "Unauthorized",
+	})),
+	Match.tag("@maple/electric-sync/ElectricNotConfigured", (error): ErrorResponse => ({
+		status: 503,
+		body: "Electric sync is not configured",
+		headers: TEXT_HEADERS,
+		errorType: Match.value(error.reason).pipe(
+			Match.when("missing_url", () => "ElectricConfigUnavailable"),
+			Match.when("incoherent_credentials", () => "ElectricConfigIncoherent"),
+			Match.exhaustive,
+		),
+	})),
+	Match.tag("@maple/electric-sync/ElectricUpstreamUnreachable", (): ErrorResponse => ({
+		status: 502,
+		body: "Electric upstream unreachable",
+		headers: TEXT_HEADERS,
+		errorType: "ElectricUpstreamUnavailable",
+	})),
 	Match.tag(
 		"@maple/electric-sync/ElectricUpstreamError",
 		// Electric's own status and body go back verbatim, through the same

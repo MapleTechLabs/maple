@@ -1,16 +1,22 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
+import { ResultView } from "@/components/common/result-view"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
 import { Result } from "@/lib/effect-atom"
 
+import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ChartLoading } from "@maple/ui/components/charts"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { CloudflareIcon } from "@/components/icons"
-import { HeroChip, PageHero } from "@/components/infra/primitives/page-hero"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
-import { formatBytes, formatPercent } from "@maple/ui/lib/format"
+import { HeroChip, PageHero } from "@/components/common/page-hero"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
+import { EMPTY_VALUE, formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { CloudflareBreakdownPanel } from "@/components/infra/cloudflare/cloudflare-breakdown-panel"
 import {
 	CloudflareIngestEmpty,
@@ -36,20 +42,17 @@ import {
 	type CloudflareFilterKey,
 	type CloudflareFilters,
 } from "@/components/infra/cloudflare/filters"
-import { errorRateTone } from "@/components/infra/cloudflare/constants"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
 	cloudflareZoneDetailResultAtom,
 	cloudflareZoneFacetsResultAtom,
 	cloudflareZonesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { formatNumber } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
 const zoneDetailSearchSchema = Schema.Struct({
 	...cloudflareFilterSearchFields,
@@ -77,10 +80,7 @@ function ZoneDetailPage() {
 	const serviceName = `${ZONE_SERVICE_PREFIX}${zoneName}`
 	const filters = filtersFromSearch(search)
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -135,63 +135,44 @@ function ZoneDetailPage() {
 	)
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "12h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[
-						{ label: "Infrastructure", href: "/infra" },
-						{ label: "Cloudflare", href: "/infra/cloudflare" },
-						{ label: zoneName },
-					]}
+		<DashboardPage
+			breadcrumbs={[
+				{ label: "Infrastructure", href: "/infra" },
+				{ label: "Cloudflare", href: "/infra/cloudflare" },
+				{ label: zoneName },
+			]}
+			time={{ search, startTime, endTime, defaultPreset: "12h", onChange: handleTimeChange }}
+			filters={
+				<CloudflareFilterSidebarView
+					facetsResult={facetsResult}
+					filters={filters}
+					onFilterChange={onFilterChange}
+					onClearFilters={onClearFilters}
 				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<CloudflareFilterSidebarView
-							facetsResult={facetsResult}
-							filters={filters}
-							onFilterChange={onFilterChange}
-							onClearFilters={onClearFilters}
-						/>
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<TimeRangeHeaderControls
-									startTime={search.startTime ?? startTime}
-									endTime={search.endTime ?? endTime}
-									presetValue={search.timePreset ?? (search.startTime ? undefined : "12h")}
-									onTimeChange={handleTimeChange}
-								/>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								<PageHero
-									title={zoneName}
-									description="How the edge answered this zone's traffic — status mix, cache behavior, and latency percentiles where your plan exposes them."
-									trailing={<HeroChip>zone</HeroChip>}
-									meta={
-										<CloudflareFilterChips
-											filters={filters}
-											onRemove={onRemoveChip}
-											onClear={onClearFilters}
-										/>
-									}
-								/>
-								<ZoneDetailContent
-									zoneName={zoneName}
-									serviceName={serviceName}
-									startTime={startTime}
-									endTime={endTime}
-									filters={filters}
-									onToggleFilter={onToggleFilter}
-								/>
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+			}
+			gap="lg"
+		>
+			<PageHero
+				title={zoneName}
+				description="How the edge answered this zone's traffic: status mix, cache behavior, and latency percentiles where your plan exposes them."
+				trailing={<HeroChip>zone</HeroChip>}
+				meta={
+					<CloudflareFilterChips
+						filters={filters}
+						onRemove={onRemoveChip}
+						onClear={onClearFilters}
+					/>
+				}
+			/>
+			<ZoneDetailContent
+				zoneName={zoneName}
+				serviceName={serviceName}
+				startTime={startTime}
+				endTime={endTime}
+				filters={filters}
+				onToggleFilter={onToggleFilter}
+			/>
+		</DashboardPage>
 	)
 }
 
@@ -229,137 +210,149 @@ function ZoneDetailContent({
 		.onSuccess((r) => r.zones.find((zone) => zone.serviceName === serviceName) ?? null)
 		.orElse(() => null)
 
-	return Result.builder(detailResult)
-		.onInitial(() => (
-			<div className="space-y-6">
-				<StatRailLoading />
-				<Skeleton className="h-28 w-full" />
-				<div className="grid gap-4 lg:grid-cols-2">
-					<Skeleton className="h-56 w-full" />
-					<Skeleton className="h-56 w-full" />
+	return (
+		<ResultView
+			result={detailResult}
+			loading={
+				<div className="space-y-6">
+					<StatRailLoading />
+					<Skeleton className="h-28 w-full" />
+					<div className="grid gap-4 lg:grid-cols-2">
+						<ChartLoading variant="area" height={224} />
+						<ChartLoading variant="area" height={224} />
+					</div>
 				</div>
-			</div>
-		))
-		.onError((err) => <QueryErrorState error={err} />)
-		.onSuccess((detail, result) => {
-			if (detail.statusBuckets.length === 0 && !result.waiting) {
-				if (phase != null && phase.kind !== "live" && phase.kind !== "backfilling") {
+			}
+		>
+			{(detail, { waiting }) => {
+				if (detail.statusBuckets.length === 0 && !waiting) {
+					if (phase != null && phase.kind !== "live" && phase.kind !== "backfilling") {
+						return (
+							<CloudflareIngestEmpty phase={phase}>
+								{phase.kind === "stalled" ? <CloudflareStalledAction /> : null}
+							</CloudflareIngestEmpty>
+						)
+					}
 					return (
-						<CloudflareIngestEmpty phase={phase}>
-							{phase.kind === "stalled" ? <CloudflareStalledAction /> : null}
-						</CloudflareIngestEmpty>
+						<Empty className="py-16">
+							<EmptyHeader>
+								<EmptyMedia variant="icon">
+									<CloudflareIcon size={16} />
+								</EmptyMedia>
+								<EmptyTitle>No traffic for this zone in the selected window</EmptyTitle>
+								<EmptyDescription>
+									Widen the time range, clear the filters, or check the zone list for where
+									traffic is landing.
+								</EmptyDescription>
+							</EmptyHeader>
+							<EmptyActions>
+								<Button variant="outline" size="sm" render={<Link to="/infra/cloudflare" />}>
+									Back to zones
+								</Button>
+								<DocsLink page="cloudflare" />
+							</EmptyActions>
+						</Empty>
 					)
 				}
-				return (
-					<Empty className="py-16">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								<CloudflareIcon size={16} />
-							</EmptyMedia>
-							<EmptyTitle>No traffic for this zone in the selected window</EmptyTitle>
-							<EmptyDescription>
-								Widen the time range, clear the filters, or check the zone list for where
-								traffic is landing.
-							</EmptyDescription>
-						</EmptyHeader>
-					</Empty>
+
+				const requests = detail.statusBuckets.reduce((acc, b) => acc + b.requests, 0)
+				const errors5xx = detail.statusBuckets.reduce(
+					(acc, b) => acc + (b.statusClass === "5xx" ? b.requests : 0),
+					0,
 				)
-			}
+				const errorRate = requests > 0 ? errors5xx / requests : 0
 
-			const requests = detail.statusBuckets.reduce((acc, b) => acc + b.requests, 0)
-			const errors5xx = detail.statusBuckets.reduce(
-				(acc, b) => acc + (b.statusClass === "5xx" ? b.requests : 0),
-				0,
-			)
-			const errorRate = requests > 0 ? errors5xx / requests : 0
-
-			return (
-				<div className={`space-y-6 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
-					<StatRail>
-						<StatRailItem eyebrow="Edge requests" value={formatNumber(requests)} compact />
-						<StatRailItem
-							eyebrow="5xx error rate"
-							value={formatPercent(errorRate)}
-							tone={errorRateTone(errorRate)}
-							compact
-						/>
-						<StatRailItem
-							eyebrow="Bandwidth"
-							value={zoneRow ? formatBytes(zoneRow.bytes) : "—"}
-							compact
-						/>
-						<StatRailItem
-							eyebrow="Visits"
-							value={zoneRow ? formatNumber(zoneRow.visits) : "—"}
-							compact
-						/>
-					</StatRail>
-					<CloudflareEdgeShareBand cacheBuckets={detail.cacheBuckets} />
-					<div className="grid gap-4 lg:grid-cols-2">
-						<CloudflareZoneStatusChart
-							buckets={detail.statusBuckets}
+				return (
+					<div
+						className={cn("space-y-6", refreshingClass(waiting))}
+						aria-busy={waiting || undefined}
+					>
+						<StatRail>
+							<StatRailItem eyebrow="Edge requests" value={formatNumber(requests)} compact />
+							<StatRailItem
+								eyebrow="5xx error rate"
+								value={formatPercent(errorRate)}
+								tone={errorRateLevel(errorRate)}
+								compact
+							/>
+							<StatRailItem
+								eyebrow="Bandwidth"
+								value={zoneRow ? formatBytes(zoneRow.bytes) : EMPTY_VALUE}
+								compact
+							/>
+							<StatRailItem
+								eyebrow="Visits"
+								value={zoneRow ? formatNumber(zoneRow.visits) : EMPTY_VALUE}
+								compact
+							/>
+						</StatRail>
+						<CloudflareEdgeShareBand cacheBuckets={detail.cacheBuckets} />
+						<div className="grid gap-4 lg:grid-cols-2">
+							<CloudflareZoneStatusChart
+								buckets={detail.statusBuckets}
+								syncId="cf-zone-detail"
+								scope={
+									<PanelScope
+										filters={filters}
+										ignoredFilters={detail.ignoredFilters}
+										reason="This chart is grouped by status class"
+									/>
+								}
+							/>
+							<CloudflareZoneCacheChart
+								buckets={detail.cacheBuckets}
+								syncId="cf-zone-detail"
+								scope={
+									<PanelScope
+										filters={filters}
+										ignoredFilters={detail.ignoredFilters}
+										reason="This chart is grouped by cache status"
+									/>
+								}
+							/>
+						</div>
+						<CloudflareZoneLatencyChart
+							buckets={detail.latencyBuckets}
 							syncId="cf-zone-detail"
 							scope={
 								<PanelScope
 									filters={filters}
-									ignoredFilters={detail.ignoredFilters}
-									reason="This chart is grouped by status class"
+									ignoredFilters={detail.latencyIgnoredFilters}
+									reason="Cloudflare reports latency percentiles for the whole zone"
 								/>
 							}
 						/>
-						<CloudflareZoneCacheChart
-							buckets={detail.cacheBuckets}
+						<CloudflareBreakdownPanel
+							serviceName={serviceName}
+							zoneName={zoneName}
+							startTime={startTime}
+							endTime={endTime}
+							bucketSeconds={bucketSeconds}
+							filters={filters}
+							onToggleFilter={onToggleFilter}
 							syncId="cf-zone-detail"
-							scope={
-								<PanelScope
-									filters={filters}
-									ignoredFilters={detail.ignoredFilters}
-									reason="This chart is grouped by cache status"
-								/>
-							}
+						/>
+						{/* Extended sections load independently and hide themselves when their
+					    dataset is absent for this zone (plan/config-dependent). */}
+						<CloudflareZoneSecuritySection
+							serviceName={serviceName}
+							startTime={startTime}
+							endTime={endTime}
+							bucketSeconds={bucketSeconds}
+							filters={filters}
+							syncId="cf-zone-detail"
+						/>
+						<CloudflareZoneDnsSection
+							serviceName={serviceName}
+							startTime={startTime}
+							endTime={endTime}
+							bucketSeconds={bucketSeconds}
+							filters={filters}
+							syncId="cf-zone-detail"
 						/>
 					</div>
-					<CloudflareZoneLatencyChart
-						buckets={detail.latencyBuckets}
-						syncId="cf-zone-detail"
-						scope={
-							<PanelScope
-								filters={filters}
-								ignoredFilters={detail.latencyIgnoredFilters}
-								reason="Cloudflare reports latency percentiles for the whole zone"
-							/>
-						}
-					/>
-					<CloudflareBreakdownPanel
-						serviceName={serviceName}
-						zoneName={zoneName}
-						startTime={startTime}
-						endTime={endTime}
-						bucketSeconds={bucketSeconds}
-						filters={filters}
-						onToggleFilter={onToggleFilter}
-						syncId="cf-zone-detail"
-					/>
-					{/* Extended sections load independently and hide themselves when their
-					    dataset is absent for this zone (plan/config-dependent). */}
-					<CloudflareZoneSecuritySection
-						serviceName={serviceName}
-						startTime={startTime}
-						endTime={endTime}
-						bucketSeconds={bucketSeconds}
-						filters={filters}
-						syncId="cf-zone-detail"
-					/>
-					<CloudflareZoneDnsSection
-						serviceName={serviceName}
-						startTime={startTime}
-						endTime={endTime}
-						bucketSeconds={bucketSeconds}
-						filters={filters}
-						syncId="cf-zone-detail"
-					/>
-				</div>
-			)
-		})
-		.render()
+				)
+			}}
+		</ResultView>
+	)
 }

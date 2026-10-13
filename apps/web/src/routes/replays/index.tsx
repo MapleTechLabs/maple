@@ -3,24 +3,22 @@ import { useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { SessionsList } from "@/components/replays/sessions-list"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { SessionsList, SessionsListSkeleton } from "@/components/replays/sessions-list"
 import { ActiveUserFilter } from "@/components/replays/active-user-filter"
 import { ReplaysFilterSidebar } from "@/components/replays/replays-filter-sidebar"
 import { ReplaysToolbar } from "@/components/replays/replays-toolbar"
-import { BooleanFromStringParam, NumberFromStringParam } from "@/lib/search-params"
+import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
 import { replaysFilterInputs } from "@/components/replays/replays-filter-inputs"
+import { isQualityTier, nextTagSelection, sessionTagsFromSearch } from "@/components/replays/session-tags"
 import { REPLAYS_PAGE_SIZE, useInfiniteReplays } from "@/hooks/use-infinite-replays"
-import { Result } from "@/lib/effect-atom"
+import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { listReplaysResultAtom, replaysFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import type { TimeRange } from "@/components/time-range-picker/types"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ErrorState } from "@/components/common/error-state"
 import { ToolbarStat } from "@maple/ui/components/toolbar"
 import { Button } from "@maple/ui/components/ui/button"
 import { Link } from "@tanstack/react-router"
@@ -50,6 +48,8 @@ const replaysSearchSchema = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	/** Page path visited anywhere in the session, from the sidebar facet. */
 	page: Schema.optional(Schema.String),
+	/** Rule-based session tags, all required (see `SESSION_TAGS`). */
+	tags: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })
 
@@ -93,6 +93,7 @@ function ReplaysPage() {
 			search.hasErrors,
 			search.q,
 			search.page,
+			search.tags,
 			search.durationMin,
 			search.durationMax,
 			search.activeMin,
@@ -103,6 +104,9 @@ function ReplaysPage() {
 
 	const { firstPageResult, allData, hasNextPage, isCapped, isFetchingNextPage, fetchNextPage } =
 		useInfiniteReplays(filterInputs)
+	const retryFirstPage = useAtomRefresh(
+		listReplaysResultAtom({ data: { ...filterInputs, limit: REPLAYS_PAGE_SIZE } }),
+	)
 	// Retained for the same reason as the list: without it, ticking one sidebar
 	// checkbox drops the sidebar that contains it into its own skeleton, and the
 	// option you just clicked disappears out from under the cursor.
@@ -127,6 +131,36 @@ function ReplaysPage() {
 		navigate({ search: (prev) => ({ ...prev, visitorId: value }) })
 	}
 
+	const hasActiveFilters = [
+		search.service,
+		search.browser,
+		search.country,
+		search.deviceType,
+		search.userId,
+		search.user,
+		search.group,
+		search.visitorId,
+		search.hasErrors,
+		search.q,
+		search.page,
+		search.tags?.length ? search.tags : undefined,
+		search.durationMin,
+		search.durationMax,
+		search.activeMin,
+		search.activeMax,
+	].some((value) => value !== undefined && value !== "" && value !== false)
+
+	// Keeps the time range: clearing filters should not also move the window.
+	const handleClearFilters = () => {
+		navigate({
+			search: (prev) => ({
+				startTime: prev.startTime,
+				endTime: prev.endTime,
+				timePreset: prev.timePreset,
+			}),
+		})
+	}
+
 	const sessions = allData
 	// Every header number comes off the facets query, which counts the whole
 	// window under the current filters. They used to be mixed: "sessions" and
@@ -138,9 +172,17 @@ function ReplaysPage() {
 	const totalSessions = facets?.totalSessions
 	const liveSessions = facets?.liveSessions
 	const durationP95 = facets?.durationP95
-	// "Engaged" chip mirrors the sidebar preset exactly (activeMin=30, no max), so
+	// The "Engaged" chip is the sidebar's Session type checkbox of the same name, so
 	// toggling either surface keeps the other in sync.
-	const engagedOnly = search.activeMin === 30 && search.activeMax == null
+	const selectedTags = sessionTagsFromSearch(search.tags) ?? []
+	const engagedOnly = selectedTags.includes("engaged")
+	// Tier counts are taken without the selected tier (they answer "what would ticking
+	// this give"), so once engaged is selected the list itself is the count.
+	const engagedSessions = engagedOnly
+		? totalSessions
+		: (facets?.tags.find((tag) => tag.name === "engaged")?.count ?? (facets ? 0 : undefined))
+	// A tier filter already decided what to show; folding its rows would hide the answer.
+	const collapseLowSignal = !selectedTags.some(isQualityTier)
 
 	const headerActions = (
 		<div className="flex flex-wrap items-center gap-2">
@@ -175,16 +217,9 @@ function ReplaysPage() {
 					/>
 				}
 			>
-				<ChartBarHorizontalIcon size={14} />
+				<ChartBarHorizontalIcon />
 				<span className="hidden sm:inline">Analytics</span>
 			</Button>
-			<TimeRangeHeaderControls
-				startTime={search.startTime ?? startTime}
-				endTime={search.endTime ?? endTime}
-				presetValue={search.timePreset ?? (search.startTime ? undefined : "24h")}
-				defaultPreset="24h"
-				onTimeChange={handleTimeChange}
-			/>
 		</div>
 	)
 
@@ -199,90 +234,64 @@ function ReplaysPage() {
 					search: (prev) => ({ ...prev, hasErrors: prev.hasErrors ? undefined : true }),
 				})
 			}
+			engagedSessions={engagedSessions}
 			engagedOnly={engagedOnly}
-			onToggleEngagedOnly={() =>
-				navigate({
-					search: (prev) =>
-						engagedOnly
-							? { ...prev, activeMin: undefined }
-							: { ...prev, activeMin: 30, activeMax: undefined },
-				})
-			}
+			onToggleEngagedOnly={() => {
+				const next = engagedOnly
+					? selectedTags.filter((tag) => tag !== "engaged")
+					: nextTagSelection(selectedTags, [...selectedTags, "engaged"])
+				navigate({ search: (prev) => ({ ...prev, tags: next.length > 0 ? next : undefined }) })
+			}}
 			waiting={firstPageResult.waiting}
 		/>
 	)
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "24h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Session Replays" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<ReplaysFilterSidebar facetsResult={facetsResult} />
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Session Replays"
-								description="Watch what your users actually saw and did in the browser."
-							>
-								{headerActions}
-							</DashboardLayout.Header>
-							{toolbar}
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							{search.userId && (
-								<ActiveUserFilter
-									userId={search.userId}
-									count={sessions.length}
-									onClear={() => handleUserFilter(undefined)}
-								/>
-							)}
-							{search.visitorId && (
-								<ActiveUserFilter
-									userId={search.visitorId}
-									count={sessions.length}
-									label="Sessions from visitor"
-									clearLabel="Clear visitor filter"
-									onClear={() => handleVisitorFilter(undefined)}
-								/>
-							)}
-							{Result.builder(firstPageResult)
-								.onInitial(() => (
-									<div className="divide-y divide-border">
-										{Array.from({ length: 8 }).map((_, i) => (
-											<div key={i} className="flex items-center gap-3 py-2.5">
-												<Skeleton className="size-8 shrink-0 rounded-full" />
-												<div className="flex-1 space-y-1.5">
-													<Skeleton className="h-3.5 w-48" />
-													<Skeleton className="h-3 w-64" />
-												</div>
-												<Skeleton className="hidden h-3.5 w-40 sm:block" />
-											</div>
-										))}
-									</div>
-								))
-								.onError((error) => (
-									<QueryErrorState
-										error={error}
-										titleOverride="Failed to load session replays"
-									/>
-								))
-								.onSuccess(() => (
-									<SessionsList
-										sessions={allData}
-										hasMore={hasNextPage}
-										isCapped={isCapped}
-										loadingMore={isFetchingNextPage}
-										onReachEnd={fetchNextPage}
-										durationP95={durationP95}
-									/>
-								))
-								.render()}
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Session Replays" }]}
+			filters={<ReplaysFilterSidebar facetsResult={facetsResult} />}
+			headerActions={headerActions}
+			time={{ search, startTime, endTime, defaultPreset: "24h", onChange: handleTimeChange }}
+			sticky={toolbar}
+		>
+			{search.userId && (
+				<ActiveUserFilter
+					userId={search.userId}
+					count={sessions.length}
+					onClear={() => handleUserFilter(undefined)}
+				/>
+			)}
+			{search.visitorId && (
+				<ActiveUserFilter
+					userId={search.visitorId}
+					count={sessions.length}
+					label="Sessions from visitor"
+					clearLabel="Clear visitor filter"
+					onClear={() => handleVisitorFilter(undefined)}
+				/>
+			)}
+			{Result.builder(firstPageResult)
+				.onInitial(() => <SessionsListSkeleton />)
+				.onError((error) => <ErrorState error={error} title="Failed to load session replays" onRetry={retryFirstPage} />)
+				.onSuccess(() => (
+					<SessionsList
+						sessions={allData}
+						hasMore={hasNextPage}
+						isCapped={isCapped}
+						loadingMore={isFetchingNextPage}
+						onReachEnd={fetchNextPage}
+						durationP95={durationP95}
+						filtered={hasActiveFilters}
+						onClearFilters={handleClearFilters}
+						collapseLowSignal={collapseLowSignal}
+						onFilterTag={(tag) => {
+							const next = nextTagSelection(selectedTags, [...selectedTags, tag])
+							navigate({ search: (prev) => ({ ...prev, tags: next }) })
+						}}
+						onFilterGroup={(group) => navigate({ search: (prev) => ({ ...prev, group }) })}
+					/>
+				))
+				.render()}
+		</DashboardPage>
 	)
 }

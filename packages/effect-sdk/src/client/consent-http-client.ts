@@ -2,13 +2,7 @@ import { consentAllowedSince, hasConsent } from "@maple/browser-session"
 import { Effect, Layer } from "effect"
 
 import { trySyncOrUndefined } from "../shared/try-sync.js"
-import {
-	FetchHttpClient,
-	HttpBody,
-	HttpClient,
-	HttpClientRequest,
-	HttpClientResponse,
-} from "effect/unstable/http"
+import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 /**
  * Only timestamps are modeled; all other OTLP fields pass through via spreads.

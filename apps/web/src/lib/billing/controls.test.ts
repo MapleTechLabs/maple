@@ -32,7 +32,7 @@ describe("updateFeatureControls", () => {
 		expect(() => Schema.encodeUnknownSync(UpdateBillingControlsRequest)(next)).not.toThrow()
 	})
 
-	it("upserts only the selected feature so unrelated caps stay untouched", () => {
+	it("sends only the selected feature; the API merges it over the other caps", () => {
 		const next = updateFeatureControls({ featureId: "logs", overageLimit: 250 })
 
 		expect(next.spendLimits).toEqual([
@@ -44,16 +44,15 @@ describe("updateFeatureControls", () => {
 			},
 		])
 		expect(next.spendLimits[0]).not.toHaveProperty("skipOverageBilling")
-		// A usage alert is delivered to Maple's own webhook endpoint, so the UI
-		// never writes one; an empty list upserts nothing.
-		expect(next.usageAlerts).toEqual([])
+		// Omitted, not empty: the provider replaces the list, so [] would wipe existing alerts.
+		expect(next).not.toHaveProperty("usageAlerts")
 	})
 
 	it("explicitly disables the cap when the field is cleared", () => {
 		const next = updateFeatureControls({ featureId: "logs", overageLimit: null })
 
 		expect(next.spendLimits).toEqual([{ featureId: "logs", enabled: false }])
-		expect(next.usageAlerts).toEqual([])
+		expect(next).not.toHaveProperty("usageAlerts")
 	})
 })
 

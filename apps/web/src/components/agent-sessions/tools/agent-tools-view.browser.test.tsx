@@ -17,6 +17,7 @@ import { sessionRowId } from "@maple/agent-sessions"
 import type { ToolErrorRow } from "@/lib/agent-sessions/tool-analytics"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
+import { AgentSessionsTabs } from "./agent-sessions-tabs"
 import { AgentToolsView, type AgentToolsViewProps } from "./agent-tools-view"
 import { ToolDetailView } from "./tool-detail-view"
 import { ToolErrorModal } from "./tool-error-modal"
@@ -140,7 +141,7 @@ describe("AgentToolsView", () => {
 		// `model` is also the toolbar's select label — the chip is the second.
 		expect(screen.getAllByText("model").length).toBeGreaterThan(1)
 
-		fireEvent.click(screen.getByTitle("Remove model claude-opus-5"))
+		fireEvent.click(screen.getByRole("button", { name: "Remove model claude-opus-5" }))
 		expect(onSearchChange).toHaveBeenCalledWith({ model: undefined })
 	})
 
@@ -180,35 +181,13 @@ describe("AgentToolsView", () => {
 		expect(follows(search, failing)).toBe(true)
 		expect(follows(failing, reload)).toBe(true)
 		expect(follows(reload, screen.getByText("Tool calls"))).toBe(true)
-		expect(reload.closest(".ml-auto")?.parentElement?.contains(search)).toBe(true)
 	})
 
-	it("counts the tabs from what it is given, not the filtered table, and never shows an unknown count", () => {
-		// A name search narrows the table; the tabs must read the same on both pages.
-		renderView({ q: "read" }, vi.fn(), { tabCounts: { sessions: 812 } })
+	it("counts the tabs from what it is given and never shows an unknown count", () => {
+		render(<AgentSessionsTabs active="tools" counts={{ sessions: 812 }} />)
 		expect(document.querySelector('[data-to="/agent-sessions"]')?.textContent).toBe("Sessions812")
 		// The tools count has not landed: no number, rather than a 0.
 		expect(document.querySelector('[data-to="/agent-sessions/tools"]')?.textContent).toBe("Tools")
-	})
-})
-
-describe("the Tools table under a scope", () => {
-	it("keeps every tool in the table while one is selected", () => {
-		const scoped = buildToolAnalyticsFixture({ tool: "bash" }, NOW, cells)
-		const unscoped = buildToolAnalyticsFixture({}, NOW, cells)
-		expect(scoped.tools.length).toBe(unscoped.tools.length)
-	})
-
-	it("splits the series by tool, then by model, then not at all", () => {
-		const keys = (search: ToolAnalyticsSearch) =>
-			new Set(buildToolAnalyticsFixture(search, NOW, cells).series.map((point) => point.seriesKey))
-		expect(keys({}).size).toBeGreaterThan(1)
-		expect(keys({ tool: "bash" })).toEqual(
-			new Set(["claude-sonnet-5", "claude-opus-5", "openai/gpt-5.6"]),
-		)
-		// Both picked is one series, and the tool is what names it — the same rule
-		// `aiToolsSeriesKind` applies server-side.
-		expect(keys({ tool: "bash", model: "claude-opus-5" })).toEqual(new Set(["bash"]))
 	})
 })
 
@@ -235,7 +214,7 @@ describe("ToolDetailView", () => {
 		expect(screen.getAllByText(new RegExp(`${data.totals.sessions} sessions`)).length).toBeGreaterThan(0)
 	})
 
-	it("describes the tool beside its name on one muted, truncated line, and says nothing without one", () => {
+	it("describes the tool beside its name, and says nothing without one", () => {
 		const data = buildToolDetailFixture("run_tests", {}, NOW, cells)
 		const view = (description: string | undefined) => (
 			<ToolDetailView
@@ -250,9 +229,7 @@ describe("ToolDetailView", () => {
 		)
 		const text = data.description!
 		const { rerender } = render(view(text))
-		const line = screen.getByText(text)
-		expect(line.className).toContain("truncate")
-		expect(line.className).toContain("text-muted-foreground")
+		expect(screen.getByText(text)).toBeTruthy()
 
 		rerender(view(undefined))
 		expect(screen.queryByText(text)).toBeNull()
@@ -419,7 +396,7 @@ describe("ToolErrorModal", () => {
 		const heading = screen.getByRole("heading")
 		expect(heading.textContent).toContain("Invalid tool input: Missing key")
 		expect(heading.textContent).toContain('["evidence"][*]["traceIds"]')
-		expect(screen.getByText(/^\d+% of failures$/)).toBeTruthy()
+		expect(screen.getByText(/^[\d.]+% of failures$/)).toBeTruthy()
 		expect(screen.getByText("error.type tool_error")).toBeTruthy()
 	})
 

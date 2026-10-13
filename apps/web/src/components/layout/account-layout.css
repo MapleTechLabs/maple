@@ -121,7 +121,9 @@
  */
 .account-layout .account-form :is(.cl-formFieldInput, .cl-socialButtonsBlockButton, .cl-formButtonPrimary) {
 	box-shadow: none;
-	transition: background-color 150ms, border-color 150ms;
+	transition:
+		background-color 150ms,
+		border-color 150ms;
 }
 /* Clerk draws control edges as a shadow ring over a 0-width border; the system
  * forbids shadows in chrome, so the edge becomes a real hairline instead. */
@@ -134,7 +136,16 @@
 	border-color: var(--destructive);
 }
 /* Clerk's own focus indicator is colorRing at 15% — under 3:1 on this canvas. */
-.account-layout .account-form :is(.cl-formFieldInput, .cl-socialButtonsBlockButton, .cl-formButtonPrimary, .cl-footerActionLink, .cl-formFieldAction, .cl-formFieldInputShowPasswordButton):is(:focus, :focus-visible) {
+.account-layout
+	.account-form
+	:is(
+		.cl-formFieldInput,
+		.cl-socialButtonsBlockButton,
+		.cl-formButtonPrimary,
+		.cl-footerActionLink,
+		.cl-formFieldAction,
+		.cl-formFieldInputShowPasswordButton
+	):is(:focus, :focus-visible) {
 	box-shadow: none;
 	outline: 2px solid var(--ring);
 	outline-offset: 2px;
@@ -161,7 +172,15 @@
 }
 /* Mono is the card's base voice (clerk-appearance.ts); these are the label role
  * from DESIGN.md — 12px with the 0.02em tracking that size needs. */
-.account-layout .account-form :is(.cl-formFieldLabel, .cl-formFieldHintText, .cl-dividerText, .cl-footerActionText, .cl-footerActionLink) {
+.account-layout
+	.account-form
+	:is(
+		.cl-formFieldLabel,
+		.cl-formFieldHintText,
+		.cl-dividerText,
+		.cl-footerActionText,
+		.cl-footerActionLink
+	) {
 	font-size: 12px;
 	letter-spacing: 0.02em;
 }
@@ -238,7 +257,9 @@
 }
 @media (prefers-reduced-motion: reduce) {
 	.account-layout a,
-	.account-layout .account-form :is(.cl-formFieldInput, .cl-socialButtonsBlockButton, .cl-formButtonPrimary) {
+	.account-layout
+		.account-form
+		:is(.cl-formFieldInput, .cl-socialButtonsBlockButton, .cl-formButtonPrimary) {
 		transition: none;
 	}
 }

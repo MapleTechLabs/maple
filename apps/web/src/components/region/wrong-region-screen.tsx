@@ -20,13 +20,13 @@ export function WrongRegionScreen({ region }: { region: MapleRegion }) {
 
 	return (
 		<AuthLayout maxWidth="max-w-lg">
-			<h1 className="text-xl font-semibold">
+			<AuthLayout.Title>
 				{orgName} is in the {target.short} region
-			</h1>
-			<p className="mt-2 text-sm text-muted-foreground">
+			</AuthLayout.Title>
+			<AuthLayout.Description>
 				Its data is stored in the {target.name}. You are on the {here.short} dashboard, which keeps a
 				separate set of organizations.
-			</p>
+			</AuthLayout.Description>
 			<div className="mt-6 flex flex-wrap items-center gap-2">
 				{url !== undefined && (
 					<Button render={<a href={`${url}${href}`} />}>Open in {target.short}</Button>

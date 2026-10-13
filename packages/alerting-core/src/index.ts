@@ -21,17 +21,22 @@ export interface AlertEvaluationPolicy {
 	readonly threshold: number
 	readonly thresholdUpper: number | null
 	readonly minimumSampleCount: number
-	readonly noDataBehavior: "skip" | "zero"
+	readonly noDataBehavior: "skip" | "zero" | "alert"
 }
 
 export interface AlertEvaluation extends Pick<
 	AlertEvaluationResult,
-	"status" | "value" | "sampleCount" | "threshold" | "thresholdUpper" | "comparator" | "reason"
+	| "status"
+	| "value"
+	| "sampleCount"
+	| "threshold"
+	| "thresholdUpper"
+	| "comparator"
+	| "reason"
+	| "skipReason"
 > {
-	/** A healthy result derived from an empty window synthesized as zero. */
+	/** Derived from an empty window: healthy when read as zero, breached when the rule alerts on no data. */
 	readonly derivedFromNoData: boolean
-	/** Empty window skipped by policy; distinct from insufficient samples or an invalid scalar. */
-	readonly skippedForNoData?: boolean
 }
 
 export const compareAlertThreshold = (
@@ -85,8 +90,22 @@ export const evaluateAlertObservation = (
 			thresholdUpper: policy.thresholdUpper,
 			comparator: policy.comparator,
 			reason: "No data in the selected window",
+			skipReason: "no_data",
 			derivedFromNoData: false,
-			skippedForNoData: true,
+		}
+	}
+
+	// The window is empty and the rule asked to hear about it: a breach with no value.
+	if (!observation.hasData && policy.noDataBehavior === "alert") {
+		return {
+			status: "breached",
+			value: null,
+			sampleCount,
+			threshold: policy.threshold,
+			thresholdUpper: policy.thresholdUpper,
+			comparator: policy.comparator,
+			reason: "No data in the selected window",
+			derivedFromNoData: true,
 		}
 	}
 
@@ -99,6 +118,7 @@ export const evaluateAlertObservation = (
 			thresholdUpper: policy.thresholdUpper,
 			comparator: policy.comparator,
 			reason: `Sample count ${sampleCount} is below minimum ${policy.minimumSampleCount}`,
+			skipReason: "below_min_samples",
 			derivedFromNoData: false,
 		}
 	}
@@ -112,6 +132,7 @@ export const evaluateAlertObservation = (
 			thresholdUpper: policy.thresholdUpper,
 			comparator: policy.comparator,
 			reason: "Alert evaluation did not return a scalar value",
+			skipReason: "no_value",
 			derivedFromNoData: false,
 		}
 	}
@@ -348,7 +369,7 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 		if (evaluation.status === "skipped") {
 			// Empty skipped windows use the same host liveness gate as missing
 			// groups. Other skips freeze the incident without probing or resolving.
-			if (evaluation.skippedForNoData === true && openIncident !== null) {
+			if (evaluation.skipReason === "no_data" && openIncident !== null) {
 				return input.allowNoDataResolution === true
 					? resolutionPlan(previous, openIncident)
 					: noTransition(previous, "missing_telemetry")

@@ -1,10 +1,12 @@
 import { useMemo } from "react"
+import { SectionHeading } from "@/components/common/section-heading"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
 import { Button } from "@maple/ui/components/ui/button"
+import { countLabel } from "@maple/ui/lib/format"
 import {
 	Empty,
 	EmptyContent,
@@ -15,10 +17,11 @@ import {
 } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
+import { ErrorState } from "@/components/common/error-state"
 import { PlanetScaleIcon } from "@/components/icons"
-import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { PlanetScaleAlertMenu } from "@/components/infra/planetscale/planetscale-alert-menu"
 import { PlanetScaleBranchScope } from "@/components/infra/planetscale/branch-scope"
 import {
@@ -75,8 +78,6 @@ import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import type { PlanetScaleInfraTimeseriesRow } from "@/api/warehouse/planetscale-infra"
 import type { PlanetScaleBranchStat } from "@/api/warehouse/service-map"
 import type { PlanetScaleEventEntry } from "@/api/warehouse/planetscale-infra"
@@ -116,10 +117,7 @@ function PlanetScaleDatabasePage() {
 		search.timePreset ?? "12h",
 	)
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			// Spreads `prev`, so ?branch= survives a time-range change. Keep it that way.
@@ -191,9 +189,11 @@ function PlanetScaleDatabasePage() {
 	const neverCollected = status !== null && status.connected && metricsNeverCollected(status)
 	const setupSteps = status !== null ? derivePlanetScaleSetup(status, Date.now()).steps : []
 
-	const branchStatsResult = useRefreshableAtomValue(
-		getPlanetScaleBranchStatsResultAtom({ data: { database: dbName, startTime, endTime } }),
-	)
+	const branchStatsAtom = getPlanetScaleBranchStatsResultAtom({
+		data: { database: dbName, startTime, endTime },
+	})
+	const branchStatsResult = useRefreshableAtomValue(branchStatsAtom)
+	const refreshBranchStats = useAtomRefresh(branchStatsAtom)
 	const branchStats = Result.builder(branchStatsResult)
 		.onSuccess((r) => r.branches)
 		.orElse(() => NO_BRANCH_STATS)
@@ -220,145 +220,114 @@ function PlanetScaleDatabasePage() {
 	const filteredCandidates = useMemo(() => applyBranchFilters(candidates, filters), [candidates, filters])
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "12h"}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[
-						{ label: "Infrastructure", href: "/infra" },
-						{ label: "PlanetScale", href: "/infra/planetscale" },
-						{ label: dbName },
-					]}
+		<DashboardPage
+			breadcrumbs={[
+				{ label: "Infrastructure", href: "/infra" },
+				{ label: "PlanetScale", href: "/infra/planetscale" },
+				{ label: dbName },
+			]}
+			time={{ search, startTime, endTime, defaultPreset: "12h", onChange: handleTimeChange }}
+			// The page's two scope controls sit together: which branch, which window.
+			headerActions={
+				<BranchScopeSelect
+					candidates={candidates}
+					selected={selectedBranch}
+					onSelect={selectBranch}
 				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<PlanetScaleFilterSidebar
-							candidates={candidates}
-							filters={filters}
-							onFilterChange={setFilter}
-							onClear={clearFilters}
+			}
+			filters={
+				<PlanetScaleFilterSidebar
+					candidates={candidates}
+					loading={Result.isInitial(inventoryResult)}
+					filters={filters}
+					onFilterChange={setFilter}
+					onClear={clearFilters}
+				/>
+			}
+			gap="lg"
+		>
+			<PageHero
+				title={dbName}
+				description="Branch-level health, live from PlanetScale."
+				actions={
+					database ? (
+						<PlanetScaleAlertMenu
+							database={dbName}
+							kind={database.kind}
+							// You can't alert on a metric nobody is collecting.
+							disabledReason={
+								neverCollected ? "Branch metrics aren't being collected yet." : undefined
+							}
 						/>
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<div className="flex items-center gap-2">
-									{/* The page's two scope controls sit together: which branch, which window. */}
-									<BranchScopeSelect
-										candidates={candidates}
-										selected={selectedBranch}
-										onSelect={selectBranch}
-									/>
-									<TimeRangeHeaderControls
-										startTime={search.startTime ?? startTime}
-										endTime={search.endTime ?? endTime}
-										presetValue={
-											search.timePreset ?? (search.startTime ? undefined : "12h")
-										}
-										onTimeChange={handleTimeChange}
-									/>
-								</div>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								<PageHero
-									title={dbName}
-									description="Branch-level health, live from PlanetScale."
-									actions={
-										database ? (
-											<PlanetScaleAlertMenu
-												database={dbName}
-												kind={database.kind}
-												// You can't alert on a metric nobody is collecting.
-												disabledReason={
-													neverCollected
-														? "Branch metrics aren't being collected yet."
-														: undefined
-												}
-											/>
-										) : undefined
-									}
-									meta={
-										database ? (
-											<>
-												<HeroChip>
-													{database.kind === "postgresql"
-														? "Postgres"
-														: "MySQL / Vitess"}
-												</HeroChip>
-												{database.region ? (
-													<HeroChip>{database.region}</HeroChip>
-												) : null}
-												{database.plan ? <HeroChip>{database.plan}</HeroChip> : null}
-												<HeroChip>
-													{database.branches.length} branch
-													{database.branches.length === 1 ? "" : "es"}
-												</HeroChip>
-												{/* Identity chips first, then the removable filter rail
-												    — same 10px mono vocabulary, different job. */}
-												<PlanetScaleFilterChips
-													filters={filters}
-													onRemove={(chip) =>
-														setFilter(
-															chip.key,
-															chip.key === "branchContains"
-																? undefined
-																: toggleFilterValue(
-																		filters[chip.key],
-																		chip.value,
-																	),
-														)
-													}
-													onClear={clearFilters}
-												/>
-											</>
-										) : undefined
-									}
-								/>
-								{status !== null && !status.connected ? (
-									<PlanetScaleNotConnected />
-								) : (
-									<>
-										{status?.revoked_at != null ? <PlanetScaleRevokedNotice /> : null}
-										{/* Setup replaces the notice while nothing has ever been
-										    collected — one screen saying one thing. */}
-										{status?.metrics_auth === "missing" && !neverCollected ? (
-											<PlanetScaleMetricsNotice />
-										) : null}
-										{neverCollected ? <PlanetScaleSetupState steps={setupSteps} /> : null}
-										{resolution.kind === "unknown" ? (
-											<UnknownBranchNotice
-												name={resolution.name}
-												fallback={resolution.fallback}
-												onReset={() => selectBranch(undefined)}
-											/>
-										) : null}
-										{/* Keyed on the database: TanStack Router swaps the param without
-							    remounting, and the retained-value hooks would otherwise render
-							    the previous database's numbers under this one's title. */}
-										<PlanetScaleDatabaseData
-											key={dbName}
-											database={dbName}
-											branch={selectedBranch?.name}
-											startTime={startTime}
-											endTime={endTime}
-											metricsPaused={status?.metrics_auth === "missing"}
-											neverCollected={neverCollected}
-											candidates={filteredCandidates}
-											selectedBranches={filters.branches ?? EMPTY_SELECTION}
-											onToggleBranch={toggleBranch}
-											branchStatsResult={branchStatsResult}
-											selectedBranchName={selectedBranch?.name ?? null}
-											onSelectBranch={selectBranch}
-										/>
-									</>
-								)}
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+					) : undefined
+				}
+				meta={
+					database ? (
+						<>
+							<HeroChip>
+								{database.kind === "postgresql" ? "Postgres" : "MySQL / Vitess"}
+							</HeroChip>
+							{database.region ? <HeroChip>{database.region}</HeroChip> : null}
+							{database.plan ? <HeroChip>{database.plan}</HeroChip> : null}
+							<HeroChip>{countLabel(database.branches.length, "branch", "branches")}</HeroChip>
+							{/* Identity chips first, then the removable filter rail
+							    (same 10px mono vocabulary, different job). */}
+							<PlanetScaleFilterChips
+								filters={filters}
+								onRemove={(chip) =>
+									setFilter(
+										chip.key,
+										chip.key === "branchContains"
+											? undefined
+											: toggleFilterValue(filters[chip.key], chip.value),
+									)
+								}
+								onClear={clearFilters}
+							/>
+						</>
+					) : undefined
+				}
+			/>
+			{status !== null && !status.connected ? (
+				<PlanetScaleNotConnected />
+			) : (
+				<>
+					{status?.revoked_at != null ? <PlanetScaleRevokedNotice /> : null}
+					{/* Setup replaces the notice while nothing has ever been
+					    collected: one screen saying one thing. */}
+					{status?.metrics_auth === "missing" && !neverCollected ? (
+						<PlanetScaleMetricsNotice />
+					) : null}
+					{neverCollected ? <PlanetScaleSetupState steps={setupSteps} /> : null}
+					{resolution.kind === "unknown" ? (
+						<UnknownBranchNotice
+							name={resolution.name}
+							fallback={resolution.fallback}
+							onReset={() => selectBranch(undefined)}
+						/>
+					) : null}
+					{/* Keyed on the database: TanStack Router swaps the param without
+					    remounting, and the retained-value hooks would otherwise render
+					    the previous database's numbers under this one's title. */}
+					<PlanetScaleDatabaseData
+						key={dbName}
+						database={dbName}
+						branch={selectedBranch?.name}
+						startTime={startTime}
+						endTime={endTime}
+						metricsPaused={status?.metrics_auth === "missing"}
+						neverCollected={neverCollected}
+						candidates={filteredCandidates}
+						selectedBranches={filters.branches ?? EMPTY_SELECTION}
+						onToggleBranch={toggleBranch}
+						branchStatsResult={branchStatsResult}
+						onRetryBranchStats={refreshBranchStats}
+						selectedBranchName={selectedBranch?.name ?? null}
+						onSelectBranch={selectBranch}
+					/>
+				</>
+			)}
+		</DashboardPage>
 	)
 }
 
@@ -448,6 +417,7 @@ function PlanetScaleDatabaseData({
 	selectedBranches,
 	onToggleBranch,
 	branchStatsResult,
+	onRetryBranchStats,
 	selectedBranchName,
 	onSelectBranch,
 }: {
@@ -463,26 +433,27 @@ function PlanetScaleDatabaseData({
 	selectedBranches: ReadonlyArray<string>
 	onToggleBranch: (branch: string) => void
 	branchStatsResult: Result.Result<{ branches: ReadonlyArray<PlanetScaleBranchStat> }, unknown>
+	onRetryBranchStats: () => void
 	selectedBranchName: string | null
 	onSelectBranch: (branch: string | undefined) => void
 }) {
 	const bucketSeconds = chartBucketSeconds(startTime, endTime)
-	const timeseriesResult = useRefreshableAtomValue(
-		planetscaleInfraTimeseriesResultAtom({
-			data: {
-				database,
-				startTime,
-				endTime,
-				bucketSeconds,
-				...(!(branch === undefined) ? { branch } : undefined),
-			},
-		}),
-	)
+	const timeseriesAtom = planetscaleInfraTimeseriesResultAtom({
+		data: {
+			database,
+			startTime,
+			endTime,
+			bucketSeconds,
+			...(!(branch === undefined) ? { branch } : undefined),
+		},
+	})
+	const timeseriesResult = useRefreshableAtomValue(timeseriesAtom)
+	const refreshTimeseries = useAtomRefresh(timeseriesAtom)
 
 	const buckets = Result.builder(timeseriesResult)
 		.onSuccess((r) => r.buckets)
 		.orElse(() => NO_BUCKETS)
-	const waiting = Boolean(timeseriesResult.waiting)
+	const waiting = timeseriesResult.waiting
 
 	// The lifecycle timeline: one fetch feeds both the chart markers and the feed
 	// below, so the two can never disagree about what happened.
@@ -526,7 +497,11 @@ function PlanetScaleDatabaseData({
 	) : Result.isFailure(timeseriesResult) ? (
 		// Section-scoped: a failed chart query must not take the branch table and
 		// query insights down with it — they are separate queries.
-		<QueryErrorState error={timeseriesResult.cause} />
+		<ErrorState
+			error={timeseriesResult.cause}
+			title="Failed to load database metrics"
+			onRetry={refreshTimeseries}
+		/>
 	) : (
 		<div className="space-y-4">
 			<PlanetScaleChart
@@ -562,10 +537,12 @@ function PlanetScaleDatabaseData({
 			{/* Between the charts and the tables: the markers above are the index,
 			    this is the detail. */}
 			<section className="space-y-2">
-				<div className="flex items-baseline justify-between gap-3">
-					<h2 className="text-sm font-medium text-foreground">Activity</h2>
-					<span className="font-mono text-[11px] text-muted-foreground">{events.length}</span>
-				</div>
+				<SectionHeading
+					title="Activity"
+					actions={
+						<span className="font-mono text-2xs text-muted-foreground">{events.length}</span>
+					}
+				/>
 				{Result.isInitial(eventsResult) ? (
 					<PlanetScaleActivityFeedLoading />
 				) : Result.isFailure(eventsResult) ? (
@@ -576,7 +553,7 @@ function PlanetScaleDatabaseData({
 				) : (
 					<PlanetScaleActivityFeed
 						events={events}
-						waiting={Boolean(eventsResult.waiting)}
+						waiting={eventsResult.waiting}
 						onSelectBranch={onSelectBranch}
 					/>
 				)}
@@ -588,13 +565,17 @@ function PlanetScaleDatabaseData({
 				{Result.isInitial(branchStatsResult) ? (
 					<PlanetScaleBranchBreakdownPanelLoading />
 				) : Result.isFailure(branchStatsResult) ? (
-					<QueryErrorState error={branchStatsResult.cause} />
+					<ErrorState
+						error={branchStatsResult.cause}
+						title="Failed to load branch stats"
+						onRetry={onRetryBranchStats}
+					/>
 				) : (
 					<PlanetScaleBranchBreakdownPanel
 						candidates={candidates}
 						selectedBranches={selectedBranches}
 						onToggleBranch={onToggleBranch}
-						waiting={Boolean(branchStatsResult.waiting)}
+						waiting={branchStatsResult.waiting}
 						emptyMessage={
 							metricsPaused ? METRICS_PAUSED_MESSAGE : "No branches match these filters."
 						}
@@ -605,7 +586,7 @@ function PlanetScaleDatabaseData({
 			<section className="space-y-2">
 				<div className="flex flex-wrap items-baseline justify-between gap-3">
 					<div className="flex flex-wrap items-baseline gap-2">
-						<h2 className="text-sm font-medium text-foreground">Top queries</h2>
+						<SectionHeading title="Top queries" />
 						{/* Query Insights answers one branch at a time — with several
 						    selected this says which one is on screen. */}
 						<PlanetScaleBranchScope
@@ -614,7 +595,7 @@ function PlanetScaleDatabaseData({
 							surface="insights"
 						/>
 					</div>
-					<span className="text-[11px] text-muted-foreground">PlanetScale Query Insights</span>
+					<span className="text-2xs text-muted-foreground">PlanetScale Query Insights</span>
 				</div>
 				<PlanetScaleTopQueries
 					database={database}

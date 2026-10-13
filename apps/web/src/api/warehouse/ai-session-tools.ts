@@ -127,9 +127,7 @@ export function mapToolSeries(response: AiToolsSeriesResponse): ReadonlyArray<To
 	}))
 }
 
-export function mapToolBreakdown(
-	rows: ReadonlyArray<AiToolsBreakdownItem>,
-): ReadonlyArray<ToolBreakdownRow> {
+export function mapToolBreakdown(rows: ReadonlyArray<AiToolsBreakdownItem>): ReadonlyArray<ToolBreakdownRow> {
 	return rows.map((row) => ({
 		key: row.key,
 		...measuresOf(row),
@@ -305,9 +303,7 @@ export function mapToolErrors(rows: ReadonlyArray<AiToolErrorItem>): ReadonlyArr
 	}))
 }
 
-const mapErrorSessions = (
-	rows: ReadonlyArray<AiToolErrorSessionItem>,
-): ReadonlyArray<ToolErrorSessionRow> =>
+const mapErrorSessions = (rows: ReadonlyArray<AiToolErrorSessionItem>): ReadonlyArray<ToolErrorSessionRow> =>
 	rows.map((row) => ({
 		sessionId: row.sessionId,
 		vendorId: row.vendorId,
@@ -320,9 +316,7 @@ const mapErrorSessions = (
 const mapVariants = (rows: ReadonlyArray<AiToolErrorVariantItem>): ReadonlyArray<ToolErrorVariantRow> =>
 	rows.map((row) => ({ message: row.message, calls: row.calls, lastSeen: toEpochMs(row.lastSeen) }))
 
-const mapOccurrences = (
-	rows: ReadonlyArray<AiToolErrorOccurrence>,
-): ReadonlyArray<ToolErrorOccurrenceRow> =>
+const mapOccurrences = (rows: ReadonlyArray<AiToolErrorOccurrence>): ReadonlyArray<ToolErrorOccurrenceRow> =>
 	rows.map((row) => ({
 		timestamp: toEpochMs(row.timestamp),
 		traceId: row.traceId,

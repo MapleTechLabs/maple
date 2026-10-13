@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { ErrorState } from "@/components/common/error-state"
 import { cn } from "@maple/ui/lib/utils"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import type { Log, LogsResponse } from "@/api/warehouse/logs"
@@ -9,13 +11,14 @@ import { listLogsResultAtom, getSpanHierarchyResultAtom } from "@/lib/services/a
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { computeTraceTimeWindow } from "@/lib/trace-time-window"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { formatDuration } from "@maple/domain/format"
 
-/** Span offset within the trace (`+123ms`) — not a relative-time label. */
+const LOG_LIMIT = 200
+
+/** Offset within the trace (`+12.0ms`), not a relative-time label. Negative is clock skew. */
 function formatTimelineOffset(ms: number): string {
-	if (ms < 1) return "+0ms"
-	if (ms < 1000) return `+${Math.round(ms)}ms`
-	if (ms < 10000) return `+${(ms / 1000).toFixed(1)}s`
-	return `+${Math.round(ms / 1000)}s`
+	return ms < 0 ? `\u2212${formatDuration(-ms)}` : `+${formatDuration(ms)}`
 }
 
 function isCurrentLog(log: Log, currentLog: Log): boolean {
@@ -43,7 +46,7 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 	const window = computeTraceTimeWindow(currentLog.timestamp)
 	const logsResult = useAtomValue(
 		currentLog.traceId
-			? listLogsResultAtom({ data: { traceId: currentLog.traceId, limit: 200, ...window } })
+			? listLogsResultAtom({ data: { traceId: currentLog.traceId, limit: LOG_LIMIT, ...window } })
 			: disabledResultAtom<LogsResponse>(),
 	)
 	const spansResult = useAtomValue(
@@ -63,49 +66,54 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 
 	if (!currentLog.traceId) return null
 
+	const returned = Result.isSuccess(logsResult) ? logsResult.value.data.length : 0
+	// The query caps at LOG_LIMIT and has no ordering param, so a full page is a sample.
+	const truncated = returned >= LOG_LIMIT
+	const logCount = returned > 1 ? (truncated ? `${LOG_LIMIT}+` : String(returned)) : null
+	const spanTraceStart = Result.isSuccess(spansResult) ? spansResult.value.traceStartTime : undefined
+
 	return (
 		<div className="space-y-1.5">
+			<h4 className="text-xs font-medium text-muted-foreground">
+				Trace Timeline
+				{logCount !== null && (
+					<span
+						className="ml-1 text-muted-foreground/60"
+						title={truncated ? `Showing the first ${LOG_LIMIT} logs returned` : undefined}
+					>
+						{logCount}
+					</span>
+				)}
+			</h4>
 			{Result.builder(logsResult)
 				.onInitial(() => (
-					<>
-						<h4 className="text-xs font-medium text-muted-foreground">Trace Timeline</h4>
-						<div className="rounded-md border overflow-hidden">
-							{Array.from({ length: 5 }).map((_, i) => (
-								<div
-									key={i}
-									className="flex items-center gap-2 px-2 py-1.5 border-b last:border-b-0"
-								>
-									<Skeleton className="h-3 w-10 shrink-0" />
-									<Skeleton className="h-3 w-16 shrink-0" />
-									<Skeleton className="h-3 flex-1" />
-								</div>
-							))}
-						</div>
-					</>
+					<SkeletonList
+						rows={5}
+						className="gap-0 overflow-hidden rounded-md border"
+						renderRow={() => (
+							<div className="flex items-center gap-2 border-b px-2 py-1.5 last:border-b-0">
+								<Skeleton className="h-3 w-10 shrink-0" />
+								<Skeleton className="h-3 w-16 shrink-0" />
+								<Skeleton className="h-3 flex-1" />
+							</div>
+						)}
+					/>
 				))
-				.onError(() => (
-					<>
-						<h4 className="text-xs font-medium text-muted-foreground">Trace Timeline</h4>
-						<div className="p-3 text-center text-xs text-destructive">
-							Failed to load trace logs
-						</div>
-					</>
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load trace logs" variant="inline" />
 				))
 				.onSuccess((data) => {
-					const logs = data.data.toSorted((a, b) => a.timestamp.localeCompare(b.timestamp))
+					const logs = data.data.toSorted((a, b) => a.exactTimestamp.localeCompare(b.exactTimestamp))
 
 					if (logs.length <= 1) {
-						return (
-							<>
-								<h4 className="text-xs font-medium text-muted-foreground">Trace Timeline</h4>
-								<div className="p-3 text-center text-xs text-muted-foreground">
-									No other logs in this trace
-								</div>
-							</>
-						)
+						return <EmptyMessage>No other logs in this trace</EmptyMessage>
 					}
 
-					const traceStart = new Date(logs[0].timestamp).getTime()
+					// Offsets read from the trace's first span; without spans, from the first log shown.
+					const spanStartMs = spanTraceStart ? new Date(spanTraceStart).getTime() : Number.NaN
+					const traceStart = Number.isFinite(spanStartMs)
+						? spanStartMs
+						: new Date(logs[0].timestamp).getTime()
 
 					const spanNameMap = new Map<string, string>()
 					if (Result.isSuccess(spansResult)) {
@@ -116,10 +124,6 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 
 					return (
 						<>
-							<h4 className="text-xs font-medium text-muted-foreground">
-								Trace Timeline
-								<span className="ml-1 text-muted-foreground/60">{logs.length}</span>
-							</h4>
 							<div className="rounded-md border overflow-hidden">
 								{logs.map((log, i) => {
 									const isCurrent = isCurrentLog(log, currentLog)
@@ -135,9 +139,9 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 											{spanChanged && (
 												<div className="flex items-center gap-2 px-2 py-0.5 bg-muted/30">
 													<div className="h-px flex-1 bg-border" />
-													<span className="text-[9px] font-mono text-muted-foreground/60 shrink-0 truncate max-w-[200px]">
+													<span className="text-4xs font-mono text-muted-foreground/60 shrink-0 truncate max-w-[200px]">
 														{spanNameMap.get(spanChanged) ??
-															spanChanged.slice(0, 8)}
+															shortId(spanChanged, "span")}
 													</span>
 													<div className="h-px flex-1 bg-border" />
 												</div>
@@ -155,21 +159,30 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 													if (!isCurrent) onLogSelect(log)
 												}}
 											>
-												<span className="text-[10px] text-muted-foreground tabular-nums shrink-0 w-[52px] text-right">
+												<span
+													className={cn(
+														"text-3xs tabular-nums shrink-0 w-[56px] truncate text-right",
+														relativeMs < 0
+															? "text-severity-warn"
+															: "text-muted-foreground",
+													)}
+													title={
+														Number.isFinite(spanStartMs)
+															? "Offset from the trace start"
+															: "Offset from the first log shown"
+													}
+												>
 													{formatTimelineOffset(relativeMs)}
 												</span>
 												{log.serviceName !== currentLog.serviceName && (
-													<span className="flex max-w-[72px] shrink-0 items-center gap-1 truncate text-[10px] text-muted-foreground/60">
-														<ServiceDot
-															serviceName={log.serviceName}
-															className="size-1.5"
-														/>
+													<span className="flex max-w-[72px] shrink-0 items-center gap-1 truncate text-3xs text-muted-foreground/60">
+														<ServiceDot serviceName={log.serviceName} size="sm" />
 														<span className="truncate">{log.serviceName}</span>
 													</span>
 												)}
 												<span
 													className={cn(
-														"min-w-0 flex-1 truncate text-[11px]",
+														"min-w-0 flex-1 truncate text-2xs",
 														isCurrent ? "text-foreground" : "text-foreground/80",
 													)}
 												>

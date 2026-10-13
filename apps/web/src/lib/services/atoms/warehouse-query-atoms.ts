@@ -32,7 +32,6 @@ import {
 	listMetrics,
 } from "@/api/warehouse/metrics"
 import {
-	fleetUtilizationTimeseries,
 	getNodeFacets,
 	getPodFacets,
 	getContainerFacets,
@@ -48,6 +47,7 @@ import {
 	listPods,
 	podsSummary,
 	podDetailSummary,
+	podRestarts,
 	podInfraTimeseries,
 	listNodes,
 	nodeDetailSummary,
@@ -85,6 +85,7 @@ import {
 	getPlanetScaleInfraTimeseries,
 	getPlanetScaleQueryInsights,
 } from "@/api/warehouse/planetscale-infra"
+import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
 import {
 	getServiceHealthBaseline,
 	getServiceHealthSnapshot,
@@ -130,6 +131,8 @@ import {
 	getAiToolTotals,
 } from "@/api/warehouse/ai-session-tools"
 import {
+	getWebAnalyticsAiCrawlers,
+	getWebAnalyticsAiReferrals,
 	getWebAnalyticsBreakdowns,
 	getWebAnalyticsEvents,
 	getWebAnalyticsLive,
@@ -435,6 +438,15 @@ export const webAnalyticsBreakdownsResultAtom = makeQueryAtomFamily(getWebAnalyt
 	staleTime: 30_000,
 })
 
+export const webAnalyticsAiReferralsResultAtom = makeQueryAtomFamily(getWebAnalyticsAiReferrals, {
+	staleTime: 30_000,
+})
+
+// Crawlers visit a few times a day at most; a minute of staleness hides nothing.
+export const webAnalyticsAiCrawlersResultAtom = makeQueryAtomFamily(getWebAnalyticsAiCrawlers, {
+	staleTime: 60_000,
+})
+
 // The event-name list backs the step builder's autocomplete and changes only
 // when someone ships a new `track()` call, so it can sit for a minute.
 export const productEventNamesResultAtom = makeQueryAtomFamily(getProductEventNames, {
@@ -574,10 +586,6 @@ export const hostInfraTimeseriesResultAtom = makeQueryAtomFamily(hostInfraTimese
 	staleTime: 30_000,
 })
 
-export const fleetUtilizationTimeseriesResultAtom = makeQueryAtomFamily(fleetUtilizationTimeseries, {
-	staleTime: 30_000,
-})
-
 export const listPodsResultAtom = makeQueryAtomFamily(listPods, {
 	staleTime: 30_000,
 })
@@ -587,6 +595,10 @@ export const podsSummaryResultAtom = makeQueryAtomFamily(podsSummary, {
 })
 
 export const podDetailSummaryResultAtom = makeQueryAtomFamily(podDetailSummary, {
+	staleTime: 30_000,
+})
+
+export const podRestartsResultAtom = makeQueryAtomFamily(podRestarts, {
 	staleTime: 30_000,
 })
 
@@ -770,6 +782,14 @@ export const getServiceMapPlanetScaleResultAtom = makeQueryAtomFamily(getService
 })
 
 export const planetscaleInfraTimeseriesResultAtom = makeQueryAtomFamily(getPlanetScaleInfraTimeseries, {
+	staleTime: 15_000,
+})
+
+export const railwayServicesResultAtom = makeQueryAtomFamily(getRailwayServices, {
+	staleTime: 15_000,
+})
+
+export const railwayServiceTimeseriesResultAtom = makeQueryAtomFamily(getRailwayServiceTimeseries, {
 	staleTime: 15_000,
 })
 

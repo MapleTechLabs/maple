@@ -15,7 +15,7 @@ describe("traceFilterChips", () => {
 			excludedSpanNames: ["GET /health"],
 		})
 		expect(chips.map((c) => [c.label, c.negated])).toEqual([
-			["Root Span", true],
+			["Root span", true],
 			["Service", false],
 		])
 	})
@@ -82,6 +82,23 @@ describe("traceFilterChips", () => {
 			services: ["api"],
 			deploymentEnvs: ["prod"],
 		})
-		expect(chips.map((c) => c.label)).toEqual(["Environment", "Service", "HTTP Method"])
+		expect(chips.map((c) => c.label)).toEqual(["Environment", "Service", "HTTP method"])
+	})
+})
+
+describe("traceFilterChips OR groups", () => {
+	it("shows a group as one chip and removes only that group", () => {
+		const group = {
+			key: "a",
+			value: "1",
+			or: [{ key: "b", value: "", matchMode: "exists" as const, negated: true }],
+		}
+		const plain = { key: "a", value: "1" }
+		const chips = traceFilterChips({ attributeFilters: [group, plain] })
+		expect(chips.map((c) => [c.label, c.values])).toEqual([
+			["Any of", ['(a = "1" OR b !exists)']],
+			["a", ["1"]],
+		])
+		expect(chips[0]?.remove({ attributeFilters: [group, plain] }).attributeFilters).toEqual([plain])
 	})
 })

@@ -1,19 +1,27 @@
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { formatNumber } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 
+import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
 import type { WorkloadKind } from "@/api/warehouse/infra"
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { GridIcon, MagnifierIcon } from "@/components/icons"
+import { EmptyActions } from "@/components/common/docs-link"
+import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
+import { useInfraSurfaces } from "@/hooks/use-infra-surfaces"
 import { deriveHostStatus, severityLevel } from "@/components/infra/format"
 import { WorkloadTable, WorkloadTableLoading, type WorkloadRow } from "@/components/infra/workload-table"
 import { WorkloadsFilterSidebarView, type WorkloadFilters } from "@/components/infra/k8s-filter-sidebar"
 import { FleetBand, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
 import { listWorkloadsResultAtom, workloadFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -23,8 +31,11 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const DEFAULT_PRESET = "12h"
+// The list query returns the most recently seen N workloads; the toolbar says so at the cap.
+const WORKLOAD_LIST_LIMIT = 200
 
 const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset"])
 
@@ -99,7 +110,11 @@ function WorkloadsPage() {
 		computeTypes: search.computeTypes,
 	}
 
-	const wlResult = useAtomValue(listWorkloadsResultAtom({ data: { kind, startTime, endTime, ...filters } }))
+	const wlAtom = listWorkloadsResultAtom({
+		data: { kind, startTime, endTime, ...filters, limit: WORKLOAD_LIST_LIMIT },
+	})
+	const wlResult = useAtomValue(wlAtom)
+	const refreshWorkloads = useAtomRefresh(wlAtom)
 	const facetsResult = useAtomValue(workloadFacetsResultAtom({ data: { kind, startTime, endTime } }))
 
 	const onFilterChange = <K extends keyof WorkloadFilters>(key: K, value: WorkloadFilters[K]) => {
@@ -113,6 +128,11 @@ function WorkloadsPage() {
 	}
 
 	const kindOption = KIND_OPTIONS.find((option) => option.value === kind) ?? KIND_OPTIONS[0]
+	// The sidebar's presence probe (already cached): any Kubernetes surface means the chart is in.
+	const surfaces = useInfraSurfaces()
+	const clusterReporting =
+		surfaces !== null &&
+		(surfaces.has("k8sPods") || surfaces.has("k8sNodes") || surfaces.has("k8sWorkloads"))
 
 	return (
 		<KubernetesShell
@@ -139,27 +159,57 @@ function WorkloadsPage() {
 		>
 			{Result.builder(wlResult)
 				.onInitial(() => <WorkloadTableLoading />)
-				.onError((err) => <QueryErrorState error={err} />)
+				.onError((err) => (
+					<ErrorState error={err} title="Failed to load workloads" onRetry={refreshWorkloads} />
+				))
 				.onSuccess((response, result) => {
 					const workloads = response.data
 					const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)
 
 					if (workloads.length === 0 && !hasStructuredFilter) {
+						const otherKinds = KIND_OPTIONS.filter((option) => option.value !== kind).map(
+							(option) => (
+								<Button
+									key={option.value}
+									variant="outline"
+									size="sm"
+									onClick={() =>
+										patchSearch({ kind: option.value, workloadNames: undefined })
+									}
+								>
+									Show {option.label}
+								</Button>
+							),
+						)
+						// The cluster already reports, so only this kind is missing: no install advice.
+						if (clusterReporting) {
+							return (
+								<Empty className="py-16">
+									<EmptyHeader>
+										<EmptyMedia variant="icon">
+											<GridIcon size={16} />
+										</EmptyMedia>
+										<EmptyTitle>No {kindOption.label} in this window.</EmptyTitle>
+										<EmptyDescription>
+											Your cluster is reporting, but no pod carried a{" "}
+											{`k8s.${kind}.name`} attribute in this time range.
+										</EmptyDescription>
+									</EmptyHeader>
+									<EmptyActions>{otherKinds}</EmptyActions>
+								</Empty>
+							)
+						}
 						return (
-							<Empty className="py-16">
-								<EmptyHeader>
-									<EmptyMedia variant="icon">
-										<GridIcon size={16} />
-									</EmptyMedia>
-									<EmptyTitle>No workloads reporting yet</EmptyTitle>
-									<EmptyDescription>
-										Maple aggregates pod metrics by k8s.deployment.name,
-										k8s.statefulset.name, and k8s.daemonset.name. Install the Helm chart
-										so the k8sattributes processor can enrich pod metrics with workload
-										identity.
-									</EmptyDescription>
-								</EmptyHeader>
-							</Empty>
+							<InfraSetupEmpty
+								icon={<GridIcon size={16} />}
+								title={`No ${kindOption.label} reporting yet`}
+								description="Maple aggregates pod metrics by k8s.deployment.name, k8s.statefulset.name, and k8s.daemonset.name. If the Helm chart is not installed yet, install it so the k8sattributes processor can tag pod metrics with their workload. If it is, try another workload kind."
+								installTab="kubernetes"
+								actionLabel="Install the Helm chart"
+								docs="kubernetes"
+							>
+								{otherKinds}
+							</InfraSetupEmpty>
 						)
 					}
 
@@ -207,22 +257,25 @@ function WorkloadsPage() {
 						.filter((workload) => !q || workload.workloadName.toLowerCase().includes(q))
 
 					return (
-						<div className={`space-y-5 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+						<div
+							className={cn("space-y-5", refreshingClass(result.waiting))}
+							aria-busy={result.waiting || undefined}
+						>
 							<FleetBand
 								total={workloads.length}
 								noun={kindOption.label.slice(0, -1).toLowerCase()}
 								caption="share of the fleet by average utilization"
 								segments={[
-									{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
+									{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 									{
 										key: "elevated",
 										count: elevated,
-										className: "bg-[var(--severity-warn)]",
+										className: TONE_FILL.warn,
 									},
 									{
 										key: "saturated",
 										count: saturated,
-										className: "bg-[var(--severity-error)]",
+										className: TONE_FILL.crit,
 									},
 								]}
 								cells={cells}
@@ -231,11 +284,15 @@ function WorkloadsPage() {
 								waiting={result.waiting}
 							/>
 							<div className="space-y-3">
-								<ListToolbar
+								<SearchToolbar
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search workloads…"
-									trailing={countLabel(filtered.length, filtered.length, "workload")}
+									trailing={
+										workloads.length >= WORKLOAD_LIST_LIMIT
+											? `${formatNumber(filtered.length)} of the ${formatNumber(WORKLOAD_LIST_LIMIT)} most recently seen workloads`
+											: countLabel(filtered.length, filtered.length, "workload")
+									}
 								>
 									<SegmentPivot
 										ariaLabel="Workload kind"
@@ -245,21 +302,21 @@ function WorkloadsPage() {
 											patchSearch({ kind: next, workloadNames: undefined })
 										}
 									/>
-								</ListToolbar>
+								</SearchToolbar>
 								{(q || scope) && filtered.length === 0 ? (
-									<Empty className="py-12">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<MagnifierIcon size={16} />
-											</EmptyMedia>
-											<EmptyTitle>No workloads match</EmptyTitle>
-											<EmptyDescription>
-												{q
-													? `Nothing named “${searchText}” in this scope.`
-													: "Nothing in this scope right now — which is good news."}
-											</EmptyDescription>
-										</EmptyHeader>
-									</Empty>
+									<FilteredEmpty
+										noun="workloads"
+										className="py-12"
+										icon={<MagnifierIcon size={16} />}
+										title="No workloads match"
+										description={
+											q
+												? `Nothing named “${searchText}” in this scope.`
+												: "Nothing in this scope right now, which is good news."
+										}
+										onClear={() => patchSearch({ q: undefined, scope: undefined })}
+										clearLabel={q ? "Clear search" : "Show all workloads"}
+									/>
 								) : (
 									<WorkloadTable
 										workloads={filtered}

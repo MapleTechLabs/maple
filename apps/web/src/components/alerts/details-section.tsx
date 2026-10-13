@@ -3,10 +3,10 @@ import { useState, type Dispatch, type SetStateAction } from "react"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
-import { SectionHeader } from "@/components/layout/section-header"
+import { SectionHeading } from "@/components/common/section-heading"
 import { TagInput } from "@/components/alerts/tag-input"
 import { PlusIcon } from "@/components/icons"
 import type { RuleFormState } from "@/lib/alerts/form-utils"
@@ -31,19 +31,19 @@ export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }
 
 	return (
 		<Card className="p-4">
-			<SectionHeader id="rule-details-heading" label="Details" />
+			<SectionHeading variant="eyebrow" id="rule-details-heading" title="Details" />
 
 			<div className="space-y-3">
-				<div className="space-y-1.5">
+				<Field className="items-stretch gap-1.5">
 					<div className="flex items-center justify-between gap-2">
-						<Label htmlFor="rule-name">Rule name</Label>
+						<FieldLabel htmlFor="rule-name">Rule name</FieldLabel>
 						{showSuggest && (
 							<Button
 								type="button"
 								variant="ghost"
 								size="sm"
 								onClick={() => onChange((c) => ({ ...c, name: suggestedName! }))}
-								className="h-6 px-1.5 text-[11px]"
+								className="h-6 px-1.5 text-2xs"
 							>
 								Suggest: {suggestedName}
 							</Button>
@@ -55,10 +55,10 @@ export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }
 						onChange={(e) => onChange((c) => ({ ...c, name: e.target.value }))}
 						placeholder="Error Rate — Payments"
 					/>
-				</div>
+				</Field>
 
-				<div className="space-y-1.5">
-					<Label htmlFor="rule-tags">Tags</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel htmlFor="rule-tags">Tags</FieldLabel>
 					<TagInput
 						id="rule-tags"
 						value={form.tags}
@@ -66,14 +66,14 @@ export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }
 						suggestions={tagSuggestions}
 						placeholder="prod, payments, team-checkout…"
 					/>
-					<p className="text-muted-foreground text-xs">
+					<FieldDescription>
 						Group and filter rules in the alerts list. Press Enter to add.
-					</p>
-				</div>
+					</FieldDescription>
+				</Field>
 
 				{notesOpen ? (
-					<div className="space-y-1.5">
-						<Label htmlFor="rule-notes">Notes</Label>
+					<Field className="items-stretch gap-1.5">
+						<FieldLabel htmlFor="rule-notes">Notes</FieldLabel>
 						<Textarea
 							id="rule-notes"
 							value={form.notes}
@@ -82,7 +82,7 @@ export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }
 							rows={2}
 							autoFocus={!hasExistingNotes}
 						/>
-					</div>
+					</Field>
 				) : (
 					<button
 						type="button"

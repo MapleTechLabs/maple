@@ -14,6 +14,7 @@ export const CLICKHOUSE_MV_SOURCE_TABLES: ReadonlyArray<string> = [
 	"service_map_edges_hourly_ingest",
 	"service_overview_spans",
 	"service_operations_minutely",
+	"trace_list_mv",
 	"session_events",
 	"session_replays",
 ]

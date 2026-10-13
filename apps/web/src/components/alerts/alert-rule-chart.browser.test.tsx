@@ -37,6 +37,7 @@ function check(offsetMinutes: number, status: AlertCheckDocument["status"], obse
 		evaluationDurationMs: 12,
 		errorMessage: null,
 		errorCategory: null,
+		skipReason: null,
 	})
 }
 
@@ -173,24 +174,12 @@ describe("alert rule chart truncated preview caption", () => {
 })
 
 describe("alert rule chart rail", () => {
-	it("states its own coverage, so the capped table below can't look contradictory", () => {
-		render(
-			<AlertRuleChart
-				{...baseProps}
-				preview={preview}
-				source="preview"
-				railCoverage="60 buckets · covers all of last 24 hours"
-			/>,
-		)
-		expect(screen.getByText("60 buckets · covers all of last 24 hours")).toBeTruthy()
-	})
-
 	it("labels both lanes and tallies the window", () => {
 		render(<AlertRuleChart {...baseProps} preview={preview} source="preview" />)
 		expect(screen.getByText("Eval")).toBeTruthy()
 		expect(screen.getByText("Incident")).toBeTruthy()
-		expect(screen.getByText("Healthy 2")).toBeTruthy()
-		expect(screen.getByText("Breached 1")).toBeTruthy()
+		expect(screen.getByText("Healthy").parentElement?.textContent).toContain("2")
+		expect(screen.getByText("Breached").parentElement?.textContent).toContain("1")
 	})
 
 	it("reports the clicked bucket with its own time bounds", () => {

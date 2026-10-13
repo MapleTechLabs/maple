@@ -2,7 +2,7 @@
 title: "Embed dashboard charts in your own product"
 description: "Put a live Maple chart in your admin panel, internal tool or customer-facing page with a plain iframe. Make the dashboard public, copy the chart's embed snippet, and set theme, time range, refresh and variables in the URL."
 group: "Dashboards"
-order: 1
+order: 2
 navLabel: "Embed charts"
 ---
 
@@ -92,7 +92,7 @@ Append any of these to the link in `src`:
 
 | Parameter    | Values                                                                                                                                                                      |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `theme`      | `light` or `dark`. Defaults to dark.                                                                                                                                        |
+| `theme`      | `light` or `dark`. Without it, the embed uses the theme the viewer last chose in Maple, and dark for a viewer who has never opened Maple.                                   |
 | `range`      | A relative window: minutes, hours, days, weeks or months, such as `30m`, `24h`, `7d`, `2w` or `1mo`, or `today`. Up to 31 days. Defaults to the dashboard's own time range. |
 | `from`, `to` | A fixed window in UTC, `YYYY-MM-DD HH:MM:SS`. Set both. Takes precedence over `range`.                                                                                      |
 | `refresh`    | Seconds between reloads: `5`, `10`, `30`, `60`, `300` or `900`. `0` turns it off. Defaults to the dashboard's own setting.                                                  |
@@ -165,10 +165,10 @@ Embeds don't work, even for people who are signed in to Maple. A chart link is n
 
 ### Do I need to change my Content Security Policy?
 
-Only if your page sets `frame-src` (or `child-src`) in its `Content-Security-Policy`. Add `https://app.maple.dev`, or your own Maple web address if you self-host.
+Only if your page sets `frame-src` (or `child-src`) in its `Content-Security-Policy`. Add `https://app.maple.dev`, or `https://app.eu.maple.dev` if your organization is in the EU region.
 
 The chart is a JavaScript app, so it won't render inside an iframe whose `sandbox` attribute leaves out `allow-scripts`. Some page builders add that restriction to embedded HTML.
 
 ### Does the embed work when my app uses a light theme?
 
-Add `&theme=light` to the link. The embed has no background, so the chart's card sits on your page in either theme.
+Add `&theme=light` to the link. Without `theme`, a viewer who has never opened Maple sees the dark theme, and a viewer who has sees the theme they last chose. Set `theme` explicitly so every viewer sees the same chart. The embed has no background, so the chart's card sits on your page in either theme.

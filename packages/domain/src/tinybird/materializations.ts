@@ -1,4 +1,4 @@
-import { defineMaterializedView, node } from "@tinybirdco/sdk"
+import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
 import {
 	chPattern,
 	chRedactChain,
@@ -26,8 +26,10 @@ import {
 	errorEventsByTime,
 	errorFingerprintsMinutely,
 	aiTraceIndex,
+	aiCrawlerRequests,
 	traceDetailSpans,
 	traceListMv,
+	traceFacetsHourly,
 	attributeKeysHourly,
 	attributeValuesHourly,
 	tracesAggregatesHourly,
@@ -49,6 +51,13 @@ import {
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR, MAPLE_AI_VENDOR_VERSION_ATTR } from "../gen-ai"
 import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
+import {
+	AI_CRAWLER_INDEX_SQL,
+	AI_CRAWLER_NAME_SQL,
+	REQUEST_HOST_SQL,
+	REQUEST_PATH_SQL,
+	RESPONSE_STATUS_SQL,
+} from "./ai-crawler-columns"
 import {
 	GENAI_AGENT_NAME_SQL,
 	GENAI_CACHE_READ_TOKENS_SQL,
@@ -317,6 +326,9 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
 	description:
 		"Materialized view projecting service entry point spans (Server/Consumer + root) for service overview queries. Pre-extracts deployment attributes from ResourceAttributes at write time.",
 	datasource: serviceOverviewSpans,
+	// Migration 0037's SpanKind/IsRoot are additive and older rows may read ''/0.
+	// Without this, Tinybird rebuilds the target by replaying 30 days of `traces`.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_overview_spans_mv_node",
@@ -331,7 +343,9 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
           ResourceAttributes['vcs.ref.head.revision'] AS CommitSha,
           SampleRate,
-          ResourceAttributes['service.namespace'] AS ServiceNamespace
+          ResourceAttributes['service.namespace'] AS ServiceNamespace,
+          SpanKind,
+          toUInt8(ParentSpanId = '') AS IsRoot
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
       `,
@@ -597,9 +611,9 @@ export const serviceMapDbQuerySignaturesHourlyMv = defineMaterializedView(
 /**
  * Materialized view pre-aggregating service-to-external-target edges per hour.
  * Captures Client/Producer spans with no database system (DB calls go to
- * `service_map_db_edges_hourly_mv`): plain HTTP outbound, messaging
- * producers, and RPC clients. The exclusion uses the same `DB_SYSTEM_ATTR_SQL`
- * coalesce as the db MV, so a legacy `db.system`-only span is never both.
+ * `service_map_db_edges_hourly_mv`): plain HTTP outbound, messaging producers,
+ * and RPC clients. The exclusion uses the same `DB_SYSTEM_ATTR_SQL` coalesce as
+ * the db MV, so a span carrying only the legacy `db.system` is never both.
  *
  * `TargetType` precedence: messaging > rpc > http. A span carrying both
  * `messaging.system` and `server.address` (rare, but happens when a queue
@@ -614,6 +628,9 @@ export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_exte
 	description:
 		"Pre-aggregates Client/Producer spans without a database system into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
 	datasource: serviceExternalEdgesHourly,
+	// Migration 0038 only narrows the WHERE and backfills nothing. Without this,
+	// Tinybird rebuilds the target by replaying `traces` through the new view.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_external_edges_hourly_mv_node",
@@ -1022,9 +1039,13 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  * A missing Map key reads back as `''`, so the single `!= ''` comparison is
  * both the presence check and the non-empty check.
  *
- * The GenAI columns coalesce the dialects and classify the span at insert —
- * the SQL comes from `gen-ai-columns.ts`, so a raw-table read of the same fact
- * is the same expression. Migration 0026 added them; rows materialized before
+ * Every other GenAI column is a projection of the facts the gateway decided
+ * for the span and stamped on it (`MAPLE_AI_STAMP_ATTRS`, SQL from
+ * `gen-ai-columns.ts`) since migration 0035: the view holds no vendor rule,
+ * and a dialect is taught to the gateway instead. Rows materialized before it
+ * keep the values the view's own rules gave them until the 30-day TTL. Before
+ * 0035 the view coalesced the dialects and classified the span itself.
+ * Migration 0026 added the columns; rows materialized before
  * it carry `''`/0 throughout, which the facets drop, the filters never match
  * and the sums count as nothing. Migration 0027 changed `Tokens` to count a
  * nested cache or reasoning bucket once, under the reporter's usage
@@ -1040,7 +1061,7 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
  */
 export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	description:
-		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), pre-extracting the maple_ai.* identity, the environment, the GenAI model/agent/tool, the span's kind and usage, and its failure — whether it failed, the error.type it named, its status message, a failed tool call's result and the failure's fingerprint — plus the tool's own description, to plain columns.",
+		"Populates ai_trace_index with GenAI agent spans (maple_ai.vendor.id stamped), projecting the facts the ingest gateway stamped on each (maple_ai.*: identity, model/agent/tool, kind, usage, failure, a failed tool call's result, the tool's description) plus the environment, the error.type, the status message and the failure's fingerprint, to plain columns.",
 	datasource: aiTraceIndex,
 	// Migration 0026's columns are additive, and the rows already in the target
 	// are explicitly allowed to carry ''/0 for them (see above). Without this,
@@ -1090,6 +1111,37 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
 	],
 })
 
+/**
+ * Populates `ai_crawler_requests` with Server spans whose user agent names an AI
+ * crawler from `AI_CRAWLERS`. Spans without a request path are skipped: they
+ * cannot be attributed to a page (the ingest gateway's own spans are the bulk).
+ */
+export const aiCrawlerRequestsMv = defineMaterializedView("ai_crawler_requests_mv", {
+	description:
+		"Populates ai_crawler_requests with Server spans whose user agent names an AI crawler, pre-extracting the crawler, request host, path and HTTP status.",
+	datasource: aiCrawlerRequests,
+	nodes: [
+		node({
+			name: "ai_crawler_requests_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          ServiceName,
+          ${AI_CRAWLER_NAME_SQL} AS Crawler,
+          ${REQUEST_HOST_SQL} AS Host,
+          ${REQUEST_PATH_SQL} AS Path,
+          ${RESPONSE_STATUS_SQL} AS HttpStatus
+        FROM traces
+        WHERE SpanKind = 'Server'
+          AND ${AI_CRAWLER_INDEX_SQL} > 0
+          AND ${REQUEST_PATH_SQL} != ''
+      `,
+		}),
+	],
+})
+
 export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
 	description:
 		"Populates trace_list_mv from root spans with pre-extracted HTTP attributes and normalized span names.",
@@ -1129,6 +1181,36 @@ export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
           ResourceAttributes['service.namespace'] AS ServiceNamespace
         FROM traces
         WHERE ParentSpanId = ''
+      `,
+		}),
+	],
+})
+
+/** Cascaded off `trace_list_mv`, so it groups by the values the trace list filters on. */
+export const traceFacetsHourlyMv = defineMaterializedView("trace_facets_hourly_mv", {
+	description:
+		"Rolls trace_list_mv up hourly by the traces sidebar facet dimensions, with root-span counts and duration state.",
+	datasource: traceFacetsHourly,
+	nodes: [
+		node({
+			name: "trace_facets_hourly_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          toStartOfHour(Timestamp) AS Hour,
+          ServiceName,
+          SpanName,
+          HttpMethod,
+          HttpStatusCode,
+          DeploymentEnv,
+          ServiceNamespace,
+          HasError,
+          count() AS TraceCount,
+          min(Duration) AS DurationMin,
+          max(Duration) AS DurationMax,
+          quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles
+        FROM trace_list_mv
+        GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError
       `,
 		}),
 	],

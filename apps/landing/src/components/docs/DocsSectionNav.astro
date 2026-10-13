@@ -45,4 +45,13 @@ const sections = await getDocSections(currentSlug);
     .docs-section-nav::-webkit-scrollbar {
         display: none;
     }
+    /* Without a scrollbar, fade the right edge on phones so the clipped last
+       tab reads as "more this way" rather than a cut-off word. */
+    @media (max-width: 639px) {
+        .docs-section-nav {
+            mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+            /* Lets the last tab scroll clear of the fade. */
+            padding-inline-end: 32px;
+        }
+    }
 </style>

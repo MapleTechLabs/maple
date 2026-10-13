@@ -279,7 +279,7 @@ export const TraceScatterSpike = memo(function TraceScatterSpike({
 					<div className="flex flex-col gap-0.5">
 						<div className="flex items-center gap-2">
 							<span
-								className="size-2.5 shrink-0 rounded-[2px]"
+								className="size-2.5 shrink-0 rounded-xs"
 								style={{ backgroundColor: colorScale(bin.count) }}
 							/>
 							<span className="font-mono font-semibold tabular-nums">

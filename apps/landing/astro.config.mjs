@@ -5,6 +5,8 @@ import { defineConfig } from "astro/config"
 import { transformerNotationDiff, transformerNotationHighlight } from "@shikijs/transformers"
 import { unified } from "@astrojs/markdown-remark"
 import rehypeTableWrap from "./src/lib/rehype-table-wrap.mjs"
+import remarkInstallTabs from "./src/lib/remark-install-tabs.mjs"
+import { codeTheme } from "./src/lib/code-theme.mjs"
 import mdx from "@astrojs/mdx"
 import { paraglideVitePlugin } from "@inlang/paraglide-js"
 import react from "@astrojs/react"
@@ -62,9 +64,24 @@ export default defineConfig({
 	site: "https://maple.dev",
 	trailingSlash: "ignore",
 	redirects: {
+		// The monthly release became individual entries.
+		"/changelog/2026-07": "/changelog",
+		"/changelog/2026-07.md": "/changelog.md",
 		"/docs/sdks/overview": "/docs/instrumentation",
 		"/docs/session-replay/product-events-api": "/docs/product-events/api",
 		"/docs/session-replay/product-events-api.md": "/docs/product-events/api.md",
+		"/docs/api": "/docs/reference/api",
+		"/docs/api.md": "/docs/reference/api.md",
+		"/docs/mcp": "/docs/reference/mcp",
+		"/docs/mcp.md": "/docs/reference/mcp.md",
+		"/docs/local-mode/cli-reference": "/docs/reference/cli",
+		"/docs/local-mode/cli-reference.md": "/docs/reference/cli.md",
+		"/docs/guides/docker-infrastructure": "/docs/infrastructure/docker",
+		"/docs/guides/docker-infrastructure.md": "/docs/infrastructure/docker.md",
+		"/docs/guides/kubernetes-infrastructure": "/docs/infrastructure/kubernetes",
+		"/docs/guides/kubernetes-infrastructure.md": "/docs/infrastructure/kubernetes.md",
+		"/docs/agent-sessions/setup": "/docs/agent-sessions/overview",
+		"/docs/agent-sessions/setup.md": "/docs/agent-sessions/overview.md",
 	},
 	i18n: {
 		locales: ["en", "ja", "ko"],
@@ -77,15 +94,20 @@ export default defineConfig({
 			fallbackType: "rewrite",
 		},
 	},
+	// Every same-origin link is fetched on hover/focus, and Chromium prerenders it
+	// via speculation rules, so a click swaps in an already-rendered page.
+	prefetch: { prefetchAll: true, defaultStrategy: "hover" },
+	experimental: { clientPrerender: true },
 	// Astro 7's HTML compressor strips whitespace with JSX rules by default,
 	// silently joining adjacent inline elements across the marketing pages.
 	compressHTML: true,
 	markdown: {
 		// Stay on the remark pipeline: Sätteri doesn't run the Shiki transformers
 		// configured below. Revisit when the transformer story lands there.
-		processor: unified({ rehypePlugins: [rehypeTableWrap] }),
+		// MDX inherits these plugins.
+		processor: unified({ remarkPlugins: [remarkInstallTabs], rehypePlugins: [rehypeTableWrap] }),
 		shikiConfig: {
-			theme: "vitesse-dark",
+			theme: codeTheme,
 			wrap: true,
 			// Line classes only ("diff add" / "highlighted"); the colors live in
 			// global.css under .blog-content.

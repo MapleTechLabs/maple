@@ -4,6 +4,7 @@ import { DescribeWarehouseTablesOutput } from "@maple/domain/mcp-outputs"
 import {
 	describeWarehouseTable,
 	listWarehouseTables,
+	suggestWarehouseTables,
 } from "@maple/backend/services/warehouse/warehouse-catalog"
 import * as P from "../lib/params"
 import { doc, type DocBlock, type ToolDoc } from "../lib/tool-doc"
@@ -39,6 +40,7 @@ const renderTable = (info: NonNullable<Output["table"]>): ToolDoc => {
 export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Describe Warehouse Tables",
 		description:
 			"Table and column catalog for raw warehouse SQL (run_sql, raw_sql widgets, raw_query alert rules). With no arguments it lists every table; with `table` it gives that table's columns, sorting key and notes on enum casing and units. Read it before writing SQL rather than guessing names.",
 		parameters: Schema.Struct({
@@ -52,8 +54,13 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 				const info = describeWarehouseTable(table)
 				if (info === null) {
 					const names = listWarehouseTables().map((t) => t.name)
+					const suggested = suggestWarehouseTables(table)
+					const hint =
+						suggested.length === 0
+							? ""
+							: ` Did you mean ${suggested.map((t) => `"${t}"`).join(" or ")}?`
 					return yield* new McpInvalidInputError({
-						message: `No table named "${table}". Available tables: ${names.join(", ")}.`,
+						message: `No table named "${table}".${hint} Available tables: ${names.join(", ")}.`,
 						parameter: "table",
 					})
 				}
@@ -82,6 +89,7 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 					name: t.name,
 					...(t.description === undefined ? undefined : { description: t.description }),
 					columnCount: t.columnCount,
+					...(t.timeColumn === undefined ? undefined : { timeColumn: t.timeColumn }),
 				})),
 			}
 		}),
@@ -92,8 +100,13 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 				title: `Warehouse tables (${tables.length})`,
 				blocks: [
 					doc.table(
-						["Table", "Description", "Columns"],
-						tables.map((t) => [t.name, t.description ?? "-", String(t.columnCount)]),
+						["Table", "Time column", "Description", "Columns"],
+						tables.map((t) => [
+							t.name,
+							t.timeColumn ?? "-",
+							t.description ?? "-",
+							String(t.columnCount),
+						]),
 					),
 				],
 				next: tables

@@ -15,9 +15,13 @@
  *   - `INDEXES >` blocks (Tinybird-only top-level section; folded into CREATE TABLE)
  *   - `TYPE MATERIALIZED` + `DATASOURCE` (folded into CREATE MATERIALIZED VIEW … TO …)
  *
+ * and we append the ClickHouse-only columns from `clickhouse-only-columns.ts`.
+ *
  * Materialized views must be created after both their source and target tables
  * exist — `orderForCreation()` returns datasources first, then MVs.
  */
+
+import { clickHouseOnlyColumns } from "./clickhouse-only-columns"
 
 export type EngineFlavor = "MergeTree" | "ReplicatedMergeTree" | "SharedMergeTree"
 
@@ -316,10 +320,9 @@ export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOp
 	const ifNotExists = opts.ifNotExists ? "IF NOT EXISTS " : ""
 	const tableRef = qualified(datasource.name, opts.database)
 
+	const columns = [...parsed.columns, ...(clickHouseOnlyColumns.get(datasource.name) ?? [])]
 	const innerLines = [
-		...parsed.columns.map(
-			(col, i) => `${col}${i < parsed.columns.length - 1 || parsed.indexes.length > 0 ? "," : ""}`,
-		),
+		...columns.map((col, i) => `${col}${i < columns.length - 1 || parsed.indexes.length > 0 ? "," : ""}`),
 		...parsed.indexes.map(
 			(idx, i) => `${buildIndexClause(idx)}${i < parsed.indexes.length - 1 ? "," : ""}`,
 		),

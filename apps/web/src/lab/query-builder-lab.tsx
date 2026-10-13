@@ -3,6 +3,7 @@ import { Result } from "@/lib/effect-atom"
 import { displayError } from "@/lib/error-messages"
 import { PulseIcon, XmarkIcon, PlusIcon, MagnifierIcon } from "@/components/icons"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -238,9 +239,9 @@ function QueryBuilderAtomResults({ input }: { input: QueryBuilderTimeseriesInput
 								Combined result
 							</Badge>
 							<Badge variant="destructive">error</Badge>
-							<span className="text-[11px] text-muted-foreground">query_engine</span>
+							<span className="text-2xs text-muted-foreground">query_engine</span>
 						</div>
-						<p className="text-[11px] text-destructive">{displayError(error).message}</p>
+						<p className="text-2xs text-destructive">{displayError(error).message}</p>
 					</div>
 				))
 				.onSuccess((response) => {
@@ -257,8 +258,8 @@ function QueryBuilderAtomResults({ input }: { input: QueryBuilderTimeseriesInput
 									Combined result
 								</Badge>
 								<Badge variant="secondary">success</Badge>
-								<span className="text-[11px] text-muted-foreground">query_engine</span>
-								<span className="text-[11px] text-muted-foreground">
+								<span className="text-2xs text-muted-foreground">query_engine</span>
+								<span className="text-2xs text-muted-foreground">
 									{data.length} buckets
 								</span>
 							</div>
@@ -266,7 +267,7 @@ function QueryBuilderAtomResults({ input }: { input: QueryBuilderTimeseriesInput
 							{warnings.length > 0 && (
 								<div className="space-y-1">
 									{warnings.map((warning) => (
-										<p key={warning} className="text-[11px] text-muted-foreground">
+										<p key={warning} className="text-2xs text-muted-foreground">
 											- {warning}
 										</p>
 									))}
@@ -286,13 +287,13 @@ function QueryBuilderAtomResults({ input }: { input: QueryBuilderTimeseriesInput
 									<TableBody>
 										{data.slice(0, 12).map((point) => (
 											<TableRow key={point.bucket}>
-												<TableCell className="font-mono text-[11px]">
+												<TableCell className="font-mono text-2xs">
 													{point.bucket}
 												</TableCell>
 												{seriesKeys.map((key) => (
 													<TableCell
 														key={`${point.bucket}-${key}`}
-														className="font-mono text-[11px]"
+														className="font-mono text-2xs"
 													>
 														{point.series[key] ?? 0}
 													</TableCell>
@@ -484,26 +485,26 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 			<CardFooter className="flex flex-wrap items-center justify-between gap-2 border-b border-t bg-card">
 				<div className="flex flex-wrap items-center gap-2">
 					<Button variant="outline" size="sm" onClick={addQuery}>
-						<PlusIcon size={14} />
+						<PlusIcon />
 						Add Query
 					</Button>
 					<Button variant="outline" size="sm" onClick={addFormula}>
-						<PlusIcon size={14} />
+						<PlusIcon />
 						Add Formula
 					</Button>
 				</div>
 
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground">
+					<span className="text-2xs text-muted-foreground">
 						{startTime}
 						{" -> "}
 						{endTime}
 					</span>
 					{lastRunAt && (
-						<span className="text-[11px] text-muted-foreground">last run: {lastRunAt}</span>
+						<span className="text-2xs text-muted-foreground">last run: {lastRunAt}</span>
 					)}
 					<Button size="sm" onClick={runQueries}>
-						<MagnifierIcon size={14} />
+						<MagnifierIcon />
 						Run Query
 					</Button>
 				</div>
@@ -523,11 +524,11 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 											-
 										</Badge>
 										<Badge variant="destructive">error</Badge>
-										<span className="text-[11px] text-muted-foreground">
+										<span className="text-2xs text-muted-foreground">
 											query_engine
 										</span>
 									</div>
-									<p className="text-[11px] text-destructive">{noQueriesError}</p>
+									<p className="text-2xs text-destructive">{noQueriesError}</p>
 								</div>
 							) : submittedInput ? (
 								<QueryBuilderAtomResults input={submittedInput} />
@@ -551,7 +552,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 								<div key={query.id} className="grid grid-cols-[44px_1fr] gap-2">
 									<Badge
 										variant="outline"
-										className="h-7 w-11 justify-center self-start font-mono text-[11px]"
+										className="h-7 w-11 justify-center self-start font-mono text-2xs"
 									>
 										{query.name}
 									</Badge>
@@ -606,7 +607,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 														/>
 														<Label
 															htmlFor={`query-enabled-${query.id}`}
-															className="text-[11px] text-muted-foreground"
+															className="text-2xs text-muted-foreground"
 														>
 															enabled
 														</Label>
@@ -624,7 +625,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 														size="xs"
 														onClick={() => removeQuery(query.id)}
 													>
-														<XmarkIcon size={14} />
+														<XmarkIcon />
 														Remove
 													</Button>
 												</div>
@@ -636,9 +637,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												{query.dataSource === "metrics" && (
 													<div className="grid gap-2 md:grid-cols-2">
 														<div className="space-y-1">
-															<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+															<Eyebrow variant="label" as="p">
 																Metric
-															</p>
+															</Eyebrow>
 															<Select
 																items={metricOptions}
 																value={metricValue}
@@ -684,9 +685,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 														</div>
 
 														<div className="space-y-1">
-															<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+															<Eyebrow variant="label" as="p">
 																Signal Source
-															</p>
+															</Eyebrow>
 															<Select
 																items={SIGNAL_SOURCES}
 																value={
@@ -728,9 +729,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												)}
 
 												<div className="space-y-1">
-													<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+													<Eyebrow variant="label" as="p">
 														Where Clause (MVP supports key = value joined by AND)
-													</p>
+													</Eyebrow>
 													<div className="relative">
 														<MagnifierIcon
 															size={12}
@@ -759,7 +760,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 														)
 														if (!hasSlowHints(hints)) return null
 														return (
-															<p className="mt-1 text-[11px] text-warning">
+															<p className="mt-1 text-2xs text-severity-warn">
 																{slowHintsSummary(hints)}
 															</p>
 														)
@@ -768,9 +769,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												<div className="grid gap-2 md:grid-cols-[1.1fr_1fr]">
 													<div className="space-y-1">
-														<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" as="p">
 															Aggregation
-														</p>
+														</Eyebrow>
 														<Select
 															items={aggregateOptions}
 															value={query.aggregation}
@@ -798,9 +799,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 													</div>
 
 													<div className="space-y-1">
-														<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" as="p">
 															Every (seconds, 5m, 1h)
-														</p>
+														</Eyebrow>
 														<Input
 															value={query.stepInterval}
 															onChange={(event) =>
@@ -815,9 +816,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												</div>
 
 												<div className="space-y-2">
-													<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+													<Eyebrow variant="label" as="p">
 														Add-ons
-													</p>
+													</Eyebrow>
 													<div className="flex flex-wrap gap-1.5">
 														{ADD_ONS.map((addOn) => {
 															const isActive = query.addOns[addOn.key]
@@ -851,9 +852,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												{query.addOns.groupBy && (
 													<div className="space-y-1">
-														<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" render={<Label />}>
 															Group By
-														</Label>
+														</Eyebrow>
 														<GroupByAutocomplete
 															value={query.groupBy[0] ?? ""}
 															onChange={(nextGroupBy) =>
@@ -871,9 +872,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												{query.addOns.having && (
 													<div className="space-y-1">
-														<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" render={<Label />}>
 															Having (UI-only)
-														</Label>
+														</Eyebrow>
 														<Input
 															value={query.having}
 															onChange={(event) =>
@@ -890,9 +891,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												{query.addOns.orderBy && (
 													<div className="grid gap-2 md:grid-cols-[1fr_1fr]">
 														<div className="space-y-1">
-															<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+															<Eyebrow variant="label" render={<Label />}>
 																Order By (UI-only)
-															</Label>
+															</Eyebrow>
 															<Input
 																value={query.orderBy}
 																onChange={(event) =>
@@ -905,9 +906,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 															/>
 														</div>
 														<div className="space-y-1">
-															<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+															<Eyebrow variant="label" render={<Label />}>
 																Direction
-															</Label>
+															</Eyebrow>
 															<Select
 																items={{ desc: "desc", asc: "asc" }}
 																value={query.orderByDirection}
@@ -934,9 +935,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												{query.addOns.limit && (
 													<div className="space-y-1">
-														<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" render={<Label />}>
 															Limit (UI-only)
-														</Label>
+														</Eyebrow>
 														<Input
 															value={query.limit}
 															onChange={(event) =>
@@ -953,9 +954,9 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 												{query.addOns.legend && (
 													<div className="space-y-1">
-														<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+														<Eyebrow variant="label" render={<Label />}>
 															Legend Format (UI-only)
-														</Label>
+														</Eyebrow>
 														<Input
 															value={query.legend}
 															onChange={(event) =>
@@ -979,7 +980,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 							<div key={formula.id} className="grid grid-cols-[44px_1fr] gap-2">
 								<Badge
 									variant="outline"
-									className="h-7 w-11 justify-center self-start font-mono text-[11px]"
+									className="h-7 w-11 justify-center self-start font-mono text-2xs"
 								>
 									{formula.name}
 								</Badge>
@@ -994,7 +995,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 												size="xs"
 												onClick={() => removeFormula(formula.id)}
 											>
-												<XmarkIcon size={14} />
+												<XmarkIcon />
 												Remove
 											</Button>
 										</div>
@@ -1038,10 +1039,10 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 					<Separator />
 
 					<div>
-						<p className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+						<Eyebrow variant="label" as="p" className="mb-2">
 							UI State Preview
-						</p>
-						<pre className="max-h-72 overflow-auto rounded-none border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+						</Eyebrow>
+						<pre className="max-h-72 overflow-auto rounded-none border bg-muted/30 p-2 font-mono text-2xs leading-relaxed">
 							{JSON.stringify(
 								{
 									startTime,

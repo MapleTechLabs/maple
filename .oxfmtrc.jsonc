@@ -4,9 +4,8 @@
 	"printWidth": 110,
 	"useTabs": true,
 	"tabWidth": 4,
-	// packages/db/drizzle is drizzle-kit output — the next `db:generate` rewrites
-	// it in drizzle's own style, so formatting it is churn that only obscures the
-	// migration-snapshot diff.
+	// packages/db/drizzle is generated (drizzle-kit, then effect-orm) — formatting
+	// it is churn that only obscures the migration-snapshot diff.
 	// lib/thinking-orbs is vendored upstream source in prettier style; reformatting it
 	// would turn every future upstream sync into a whole-file conflict.
 	// The Maizzle .vue sources under packages/email have load-bearing whitespace —
@@ -19,6 +18,8 @@
 	// `ios:openapi:check` re-runs that generator and compares byte for byte — so
 	// formatting it does not merely churn, it fails CI for anyone who has run
 	// `bun run format` since the last regeneration.
+	// CLAUDE.md (AGENTS.md links to it) has a bare `yield*` snippet that oxfmt parses
+	// outside a generator and rewrites to `yield *`, a multiplication.
 	"ignorePatterns": [
 		".agents/**",
 		".codex/**",
@@ -37,5 +38,6 @@
 		"apps/web/src/routeTree.gen.ts",
 		"apps/ios/Packages/MapleAPI/Sources/MapleAPI/openapi.json",
 		"scripts/oxlint-plugins/anti-slop/**",
+		"CLAUDE.md",
 	],
 }

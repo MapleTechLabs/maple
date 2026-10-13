@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Exit } from "effect"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { toastExit } from "@/lib/error-toast"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleAiAtomClient } from "@/lib/services/common/ai-atom-client"
 import { useMapleChat, type FailedSend } from "@/hooks/use-maple-chat"
@@ -32,10 +35,9 @@ import {
 } from "@/components/ai-elements/prompt-input"
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion"
 import { DotLoader } from "@/components/ai-elements/dot-loader"
-import { Button } from "@maple/ui/components/ui/button"
 import { trackProduct } from "@/lib/analytics"
 import { ChatApplyRequest, type AiTriageResult } from "@maple/domain/http"
-import { TurnFailureNotice } from "./turn-failure-notice"
+import { ChatFailureNotice, TurnFailureNotice } from "./turn-failure-notice"
 import { ChatEmptyState } from "./chat-empty-state"
 
 const DEFAULT_SUGGESTIONS = [
@@ -190,8 +192,8 @@ export function ChatConversation({
 			const exit = await decideProposal({
 				payload: new ChatApplyRequest({ sessionId, toolCallId, decision: "deny" }),
 			})
-			if (Exit.isSuccess(exit)) resolveApproval(toolCallId, "denied")
-			else toastManager.add({ title: "Couldn't deny this change", type: "error" })
+			if (toastExit(exit, { error: "Failed to deny this change" }))
+				resolveApproval(toolCallId, "denied")
 		},
 		[decideProposal, sessionId, resolveApproval],
 	)
@@ -209,7 +211,7 @@ export function ChatConversation({
 				resolveApproval(toolCallId, "applied")
 				toastManager.add({ title: "Change applied", type: "success" })
 			} else {
-				toastManager.add({ title: `Failed to apply ${tool}`, type: "error" })
+				toastExit(exit, { error: `Failed to apply ${tool}` })
 			}
 		},
 		[decideProposal, sessionId, resolveApproval],
@@ -387,14 +389,14 @@ function InvestigationLead({ ctx }: { ctx: InvestigationContext }) {
  */
 function FailedSendNotice({ failed, onRetry }: { failed: FailedSend; onRetry: (text: string) => void }) {
 	return (
-		<div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-			<span className="min-w-0 truncate text-destructive">
-				Message not sent — {failed.error.message}
-			</span>
-			<Button size="sm" variant="outline" onClick={() => onRetry(failed.message)}>
-				Try again
-			</Button>
-		</div>
+		<ChatFailureNotice
+			truncate
+			title={`Message not sent: ${failed.error.message}`}
+			actionLabel="Try again"
+			onAction={() => onRetry(failed.message)}
+		>
+			Message not sent: {failed.error.message}
+		</ChatFailureNotice>
 	)
 }
 
@@ -410,10 +412,10 @@ function EmptyNotice({
 }) {
 	return (
 		<div className="flex flex-col items-center justify-center gap-2 text-center">
-			<p className="flex items-center gap-1.5 text-xs uppercase tracking-[0.14em] text-muted-foreground/70">
+			<Eyebrow as="p" variant="label" className="flex items-center gap-1.5 text-muted-foreground/70">
 				{busy ? <DotLoader /> : null}
 				<span className={busy ? "shimmer" : undefined}>{title}</span>
-			</p>
+			</Eyebrow>
 			<p className="max-w-sm text-sm text-muted-foreground">{children}</p>
 		</div>
 	)
@@ -434,9 +436,9 @@ function WidgetFixAutoSendTrigger({ onFire }: { onFire: () => void }) {
 function ConversationLoadingSkeleton() {
 	return (
 		<div className="flex flex-col gap-3 py-6" aria-hidden>
-			<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-			<div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-			<div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+			<Skeleton className="h-3 w-1/2" />
+			<Skeleton className="h-3 w-2/3" />
+			<Skeleton className="h-3 w-1/3" />
 		</div>
 	)
 }

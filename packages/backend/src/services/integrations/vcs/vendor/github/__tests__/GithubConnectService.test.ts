@@ -1,11 +1,16 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { IntegrationsValidationError, PrReviewRepositoryConfig, type VcsSyncJob } from "@maple/domain/http"
+import {
+	IntegrationsValidationError,
+	PrReviewOrgSettings,
+	PrReviewRepositoryConfig,
+	type VcsSyncJob,
+} from "@maple/domain/http"
 import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
-import type { GithubHttp } from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import type { HttpClient } from "effect/http"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
@@ -64,10 +69,10 @@ const connectResponders = (...rest: Array<() => Response>) => [
 ]
 
 // Wire GithubConnectService over an in-memory PGlite (real repo + state repo), a
-// real GithubAppClient backed by the stubbed GithubHttp, and a recording queue.
+// real GithubAppClient backed by the stubbed HttpClient, and a recording queue.
 const connectLayer = (
 	testDb: TestDb,
-	http: Layer.Layer<GithubHttp>,
+	http: Layer.Layer<HttpClient.HttpClient>,
 	sent: Array<VcsSyncJob>,
 	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
 ) => {
@@ -636,6 +641,64 @@ describe("GithubConnectService", () => {
 			assert.strictEqual(stored.dailyLimit, 20)
 			assert.strictEqual(stored.automaticReviewLimit, 3)
 			assert.strictEqual(stored.feedbackScope, "off")
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("stores the organization's review model and clears it back to the default", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId } = yield* connectedRepo(svc, repo)
+			const actor = asUserId("user_admin")
+			assert.strictEqual((yield* svc.getPrReviewSettings(orgId)).model, undefined)
+			yield* svc.setPrReviewSettings(
+				orgId,
+				new PrReviewOrgSettings({ model: "openai/gpt-6-luna" }),
+				actor,
+			)
+			assert.strictEqual((yield* svc.getPrReviewSettings(orgId)).model, "openai/gpt-6-luna")
+			yield* svc.setPrReviewSettings(orgId, new PrReviewOrgSettings({}), actor)
+			assert.strictEqual((yield* svc.getPrReviewSettings(orgId)).model, undefined)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("stores organization default rules, cleaned, and merges them under a repository's own", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId, repository } = yield* connectedRepo(svc, repo)
+			const actor = asUserId("user_admin")
+			const saved = yield* svc.setPrReviewSettings(
+				orgId,
+				new PrReviewOrgSettings({
+					model: "openai/gpt-6-luna",
+					defaults: new PrReviewRepositoryConfig({
+						instructions: "  Org rule  ",
+						ignorePaths: [" dist/ ", "dist/", ""],
+						minInlineSeverity: "critical",
+					}),
+				}),
+				actor,
+			)
+			assert.strictEqual(saved.defaults?.instructions, "Org rule")
+			assert.deepStrictEqual(saved.defaults?.ignorePaths, ["dist/"])
+			const stored = yield* svc.getPrReviewSettings(orgId)
+			assert.strictEqual(stored.model, "openai/gpt-6-luna")
+			assert.strictEqual(stored.defaults?.minInlineSeverity, "critical")
+
+			yield* svc.setPrReviewConfig(
+				orgId,
+				repository.id,
+				new PrReviewRepositoryConfig({ instructions: "Repo rule", minInlineSeverity: "info" }),
+			)
+			const effective = yield* repo.getEffectivePrReviewConfig(orgId, repository.id)
+			assert.strictEqual(effective.instructions, "Org rule\n\nRepo rule")
+			assert.strictEqual(effective.minInlineSeverity, "info")
+			assert.deepStrictEqual(effective.ignorePaths, ["dist/"])
 		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
 	})
 

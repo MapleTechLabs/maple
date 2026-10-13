@@ -49,7 +49,11 @@ function specBuilderFor(
 }
 
 describe("dashboard template query specs", () => {
-	function checkTemplate(template: TemplateDefinition, params: TemplateParameterValues, variant: string) {
+	function expectTemplateLowers(
+		template: TemplateDefinition,
+		params: TemplateParameterValues,
+		variant: string,
+	) {
 		const built = template.build(params)
 		for (const widget of built.widgets) {
 			const dataSource = widget.dataSource
@@ -74,12 +78,12 @@ describe("dashboard template query specs", () => {
 
 	for (const template of DASHBOARD_TEMPLATES) {
 		it(`${template.id} query-builder widgets lower to valid query specs`, () => {
-			checkTemplate(template, sampleParams(template), "required params")
+			expectTemplateLowers(template, sampleParams(template), "required params")
 			// Second pass with every optional param filled: scoping params must
 			// emit where clauses the engine actually honors — an ignored filter
 			// surfaces as a warning and fails here.
 			if (template.parameters.some((p) => !p.required)) {
-				checkTemplate(template, allParams(template), "all params")
+				expectTemplateLowers(template, allParams(template), "all params")
 			}
 		})
 	}
@@ -167,5 +171,11 @@ describe("dashboard template query specs", () => {
 		expect(encoded).toContain("attr.planetscale_branch_name")
 		expect(encoded).not.toContain('"attr.planetscale_database"')
 		expect(encoded).not.toContain('"attr.planetscale_branch"')
+	})
+
+	it("reads host filesystem utilization from the used state only", () => {
+		const template = DASHBOARD_TEMPLATES.find((candidate) => candidate.id === "host-metrics")
+		const widget = template?.build({}).widgets.find((candidate) => candidate.id === "filesystem")
+		expect(JSON.stringify(widget?.dataSource)).toContain('attr.state = \\"used\\"')
 	})
 })

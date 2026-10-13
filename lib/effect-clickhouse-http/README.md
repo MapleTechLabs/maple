@@ -9,7 +9,7 @@ It does not depend on the official ClickHouse client, not even for tests.
 
 ```ts
 import { Config, Effect } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { make } from "@maple-dev/effect-clickhouse-http"
 
 const program = Effect.gen(function* () {

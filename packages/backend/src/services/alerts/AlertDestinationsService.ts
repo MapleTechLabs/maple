@@ -22,14 +22,16 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { alertDestinations, alertRules, type AlertDestinationRow } from "@maple/db"
-import { and, desc, eq, sql } from "drizzle-orm"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDestinations, AlertRules, type AlertDestinationRow } from "@maple/db/tables"
 import { Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
+import { HttpClient } from "effect/http"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
-import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
+import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { validateExternalUrl } from "@maple/safe-fetch"
 import { HazelOAuthService, type HazelOAuthServiceApi } from "@maple/backend/services/auth/HazelOAuthService"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -61,6 +63,7 @@ const decodeAlertDestinationTypeSync = Schema.decodeUnknownSync(AlertDestination
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const isoFromMs = (ms: number) => decodeIsoDateTimeStringSync(new Date(ms).toISOString())
 
 const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 
@@ -224,16 +227,14 @@ const destinationDocumentFromRow = (
 		...(publicConfig.chatWorkspaceId === undefined
 			? undefined
 			: { chatWorkspaceId: publicConfig.chatWorkspaceId }),
-		lastTestedAt:
-			row.lastTestedAt == null ? null : decodeIsoDateTimeStringSync(row.lastTestedAt.toISOString()),
+		lastTestedAt: row.lastTestedAt == null ? null : isoFromMs(row.lastTestedAt),
 		lastTestError: row.lastTestError,
 		consecutiveFailures: row.consecutiveFailures,
-		lastFailureAt:
-			row.lastFailureAt == null ? null : decodeIsoDateTimeStringSync(row.lastFailureAt.toISOString()),
-		disabledAt: row.disabledAt == null ? null : decodeIsoDateTimeStringSync(row.disabledAt.toISOString()),
+		lastFailureAt: row.lastFailureAt == null ? null : isoFromMs(row.lastFailureAt),
+		disabledAt: row.disabledAt == null ? null : isoFromMs(row.disabledAt),
 		disabledReason: row.disabledReason,
-		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
-		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
+		createdAt: isoFromMs(row.createdAt),
+		updatedAt: isoFromMs(row.updatedAt),
 	})
 
 const rowToDestinationDocument = (
@@ -328,6 +329,7 @@ export class AlertDestinationsService extends Context.Service<
 		const database = yield* Database
 		const env = yield* Env
 		const runtime = yield* AlertRuntime
+		const httpClient = yield* HttpClient.HttpClient
 		const hazelOAuth = yield* HazelOAuthService
 		const email = yield* EmailService
 		const orgMembers = yield* OrgMembersService
@@ -339,13 +341,14 @@ export class AlertDestinationsService extends Context.Service<
 			encryptionKey,
 			appBaseUrl: env.MAPLE_APP_BASE_URL,
 			runtime,
+			httpClient,
 			email,
 			postChatAlert: chatAlertPoster.post,
 		})
 
 		const dbExecute = makeDbExecute(database, "AlertDestinationsService", makePersistenceError)
 
-		const requireAdmin = Effect.fn("AlertsService.requireAdmin")(function* (
+		const requireAdmin = Effect.fn("AlertDestinationsService.requireAdmin")(function* (
 			roles: ReadonlyArray<RoleName>,
 		) {
 			if (roles.some((role) => adminRoles.includes(role))) return
@@ -357,16 +360,17 @@ export class AlertDestinationsService extends Context.Service<
 			)
 		})
 
-		const requireDestinationRow = Effect.fn("AlertsService.requireDestinationRow")(function* (
+		const requireDestinationRow = Effect.fn("AlertDestinationsService.requireDestinationRow")(function* (
 			orgId: OrgId,
 			destinationId: AlertDestinationDocument["id"],
 		) {
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertDestinations)
-					.where(and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId)))
-					.limit(1),
+				db.run(
+					PG.from(AlertDestinations)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
+						.limit(1),
+				),
 			)
 			if (rows[0]) return rows[0]
 			return yield* Effect.fail(
@@ -388,38 +392,42 @@ export class AlertDestinationsService extends Context.Service<
 					),
 				)
 
-		const markDestinationTest = Effect.fn("AlertsService.markDestinationTest")(function* (
+		const markDestinationTest = Effect.fn("AlertDestinationsService.markDestinationTest")(function* (
 			orgId: OrgId,
 			destinationId: AlertDestinationDocument["id"],
 			errorMessage: string | null,
 		) {
 			const timestamp = yield* runtime.now
 			yield* dbExecute((db) =>
-				db
-					.update(alertDestinations)
-					.set({
-						lastTestedAt: new Date(timestamp),
-						lastTestError: errorMessage,
-						// A test that got through proves the destination is reachable, so
-						// it clears the auto-disable counter the same way a real delivery
-						// does. A failed test is left alone: only the delivery queue,
-						// which knows whether the failure was terminal, counts up.
-						...(errorMessage === null
-							? { consecutiveFailures: 0, lastFailureAt: null }
-							: undefined),
-						updatedAt: new Date(timestamp),
-					})
-					.where(and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId))),
+				db.run(
+					PG.update(AlertDestinations)
+						.set({
+							lastTestedAt: timestamp,
+							lastTestError: errorMessage,
+							// A test that got through proves the destination is reachable, so
+							// it clears the auto-disable counter the same way a real delivery
+							// does. A failed test is left alone: only the delivery queue,
+							// which knows whether the failure was terminal, counts up.
+							...(errorMessage === null
+								? { consecutiveFailures: 0, lastFailureAt: null }
+								: undefined),
+							updatedAt: timestamp,
+						})
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)]),
+				),
 			)
 		})
 
-		const listDestinations = Effect.fn("AlertsService.listDestinations")(function* (orgId: OrgId) {
+		const listDestinations = Effect.fn("AlertDestinationsService.listDestinations")(function* (
+			orgId: OrgId,
+		) {
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertDestinations)
-					.where(eq(alertDestinations.orgId, orgId))
-					.orderBy(desc(alertDestinations.createdAt), desc(alertDestinations.id)),
+				db.run(
+					PG.from(AlertDestinations)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)])
+						.orderBy(["createdAt", "desc"], ["id", "desc"]),
+				),
 			)
 			const destinations = yield* Effect.forEach(rows, (row) =>
 				Effect.flatMap(decodePublicConfig(row), (config) => rowToDestinationDocument(row, config)),
@@ -427,7 +435,7 @@ export class AlertDestinationsService extends Context.Service<
 			return new AlertDestinationsListResponse({ destinations })
 		})
 
-		const validatePagerDutyKey = Effect.fn("AlertsService.validatePagerDutyKey")(function* (
+		const validatePagerDutyKey = Effect.fn("AlertDestinationsService.validatePagerDutyKey")(function* (
 			integrationKey: string,
 		) {
 			if (!PAGERDUTY_ROUTING_KEY_PATTERN.test(integrationKey)) {
@@ -439,10 +447,9 @@ export class AlertDestinationsService extends Context.Service<
 			}
 			const result = yield* verifyPagerDutyRoutingKey(
 				integrationKey,
-				runtime.fetch,
 				runtime.deliveryTimeoutMs(),
 				`maple-keycheck-${runtime.makeUuid()}`,
-			)
+			).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 			if (result.status === "invalid") {
 				return yield* Effect.fail(
 					makeValidationError(`PagerDuty rejected this routing key: ${result.reason}`),
@@ -450,26 +457,24 @@ export class AlertDestinationsService extends Context.Service<
 			}
 		})
 
-		const validateTelegramCredentials = Effect.fn("AlertsService.validateTelegramCredentials")(function* (
-			botToken: string,
-			chatId: string,
-		) {
-			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(botToken)) {
-				return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
-			}
-			const result = yield* verifyTelegramCredentials(
-				botToken,
-				chatId,
-				runtime.fetch,
-				runtime.deliveryTimeoutMs(),
-			)
-			if (result.status === "invalid") {
-				return yield* Effect.fail(makeValidationError(result.reason))
-			}
-		})
+		const validateTelegramCredentials = Effect.fn("AlertDestinationsService.validateTelegramCredentials")(
+			function* (botToken: string, chatId: string) {
+				if (!TELEGRAM_BOT_TOKEN_PATTERN.test(botToken)) {
+					return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
+				}
+				const result = yield* verifyTelegramCredentials(
+					botToken,
+					chatId,
+					runtime.deliveryTimeoutMs(),
+				).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+				if (result.status === "invalid") {
+					return yield* Effect.fail(makeValidationError(result.reason))
+				}
+			},
+		)
 
 		const listTelegramChats: AlertDestinationsServiceApi["listTelegramChats"] = Effect.fn(
-			"AlertsService.listTelegramChats",
+			"AlertDestinationsService.listTelegramChats",
 		)(function* (roles, botToken) {
 			// Admin-gated for the same reason a chat workspace's channel list is: it reads
 			// somebody's chat inventory, and it accepts an arbitrary token, so it
@@ -479,13 +484,15 @@ export class AlertDestinationsService extends Context.Service<
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
 				return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
 			}
-			const result = yield* fetchTelegramChats(trimmed, runtime.fetch, runtime.deliveryTimeoutMs())
+			const result = yield* fetchTelegramChats(trimmed, runtime.deliveryTimeoutMs()).pipe(
+				Effect.provideService(HttpClient.HttpClient, httpClient),
+			)
 			if (result.status === "invalid") return yield* Effect.fail(makeValidationError(result.reason))
 			return result.chats
 		})
 
 		const createDestination: AlertDestinationsServiceApi["createDestination"] = Effect.fn(
-			"AlertsService.createDestination",
+			"AlertDestinationsService.createDestination",
 		)(function* (orgId, userId, roles, request) {
 			yield* requireAdmin(roles)
 			if (request.type === "webhook") yield* validateDestinationUrl(request.url, "url")
@@ -560,13 +567,17 @@ export class AlertDestinationsService extends Context.Service<
 				lastFailureAt: null,
 				disabledAt: null,
 				disabledReason: null,
-				createdAt: new Date(timestamp),
-				updatedAt: new Date(timestamp),
+				createdAt: timestamp,
+				updatedAt: timestamp,
 				createdBy: userId,
 				updatedBy: userId,
 			}
 			const writeRows = yield* dbExecute((db) =>
-				db.insert(alertDestinations).values(row).returning(txidColumn),
+				db.run(
+					PG.insertInto(AlertDestinations)
+						.values(row)
+						.returning(() => ({ txid: currentTxid })),
+				),
 			)
 			const txid = readTxid(writeRows)
 			const document = destinationDocumentFromRow(row, publicConfig)
@@ -574,7 +585,7 @@ export class AlertDestinationsService extends Context.Service<
 		})
 
 		const updateDestination: AlertDestinationsServiceApi["updateDestination"] = Effect.fn(
-			"AlertsService.updateDestination",
+			"AlertDestinationsService.updateDestination",
 		)(function* (orgId, userId, roles, destinationId, request) {
 			yield* requireAdmin(roles)
 			const existing = yield* requireDestinationRow(orgId, destinationId)
@@ -814,21 +825,22 @@ export class AlertDestinationsService extends Context.Service<
 				disabledReason: null,
 			} as const
 			const writeRows = yield* dbExecute((db) =>
-				db
-					.update(alertDestinations)
-					.set({
-						name: nextName,
-						enabled: nextEnabled,
-						configJson: nextPublicConfig,
-						secretCiphertext: encryptedSecret.ciphertext,
-						secretIv: encryptedSecret.iv,
-						secretTag: encryptedSecret.tag,
-						...clearedFailureState,
-						updatedAt: new Date(timestamp),
-						updatedBy: userId,
-					})
-					.where(and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId)))
-					.returning(txidColumn),
+				db.run(
+					PG.update(AlertDestinations)
+						.set({
+							name: nextName,
+							enabled: nextEnabled,
+							configJson: nextPublicConfig,
+							secretCiphertext: encryptedSecret.ciphertext,
+							secretIv: encryptedSecret.iv,
+							secretTag: encryptedSecret.tag,
+							...clearedFailureState,
+							updatedAt: timestamp,
+							updatedBy: userId,
+						})
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
+						.returning(() => ({ txid: currentTxid })),
+				),
 			)
 			const txid = readTxid(writeRows)
 			const document = yield* rowToDestinationDocument(
@@ -841,7 +853,7 @@ export class AlertDestinationsService extends Context.Service<
 					secretIv: encryptedSecret.iv,
 					secretTag: encryptedSecret.tag,
 					...clearedFailureState,
-					updatedAt: new Date(timestamp),
+					updatedAt: timestamp,
 					updatedBy: userId,
 				},
 				nextPublicConfig,
@@ -850,19 +862,22 @@ export class AlertDestinationsService extends Context.Service<
 		})
 
 		const deleteDestination: AlertDestinationsServiceApi["deleteDestination"] = Effect.fn(
-			"AlertsService.deleteDestination",
+			"AlertDestinationsService.deleteDestination",
 		)(function* (orgId, roles, destinationId) {
 			yield* requireAdmin(roles)
 			yield* requireDestinationRow(orgId, destinationId)
 			const dependentRules = yield* dbExecute((db) =>
-				db
-					.select({
-						id: alertRules.id,
-						name: alertRules.name,
-						destinationIdsJson: alertRules.destinationIdsJson,
-					})
-					.from(alertRules)
-					.where(eq(alertRules.orgId, orgId)),
+				db.run(
+					PG.from(AlertRules)
+						.select(($) => ({
+							id: $.id,
+							name: $.name,
+							// Read as untyped jsonb: a corrupt stored value must reach
+							// decodeStoredAlertRuleDestinationIds, not fail the row codec.
+							destinationIdsJson: PG.undecoded($.destinationIdsJson),
+						}))
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
 			)
 			const decodedRules = yield* Effect.forEach(dependentRules, (row) =>
 				decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson).pipe(
@@ -889,30 +904,26 @@ export class AlertDestinationsService extends Context.Service<
 			// per-org advisory lock, so re-checking references inside it closes the
 			// race where a rule commits a reference between our scan and the delete.
 			const deleteResult = yield* dbExecute((db) =>
-				db.transaction((tx) =>
+				db.transaction(
 					Effect.gen(function* () {
-						yield* tx.execute(sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
-						const stillReferenced = yield* tx
-							.select({ id: alertRules.id, name: alertRules.name })
-							.from(alertRules)
-							.where(
-								and(
-									eq(alertRules.orgId, orgId),
-									sql`${alertRules.destinationIdsJson} @> ${JSON.stringify([destinationId])}::jsonb`,
-								),
-							)
+						yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+						const stillReferenced = yield* db.run(
+							PG.from(AlertRules)
+								.select("id", "name")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									PG.sql
+										.cond`${$.destinationIdsJson} @> ${JSON.stringify([destinationId])}::jsonb`,
+								]),
+						)
 						if (stillReferenced.length > 0) {
 							return { referencedBy: stillReferenced, deleted: [] }
 						}
-						const deleted = yield* tx
-							.delete(alertDestinations)
-							.where(
-								and(
-									eq(alertDestinations.orgId, orgId),
-									eq(alertDestinations.id, destinationId),
-								),
-							)
-							.returning(txidColumn)
+						const deleted = yield* db.run(
+							PG.deleteFrom(AlertDestinations)
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
+								.returning(() => ({ txid: currentTxid })),
+						)
 						return { referencedBy: [], deleted }
 					}),
 				),
@@ -937,7 +948,7 @@ export class AlertDestinationsService extends Context.Service<
 		})
 
 		const testDestination: AlertDestinationsServiceApi["testDestination"] = Effect.fn(
-			"AlertsService.testDestination",
+			"AlertDestinationsService.testDestination",
 		)(function* (orgId, _userId, roles, destinationId) {
 			yield* requireAdmin(roles)
 			const row = yield* requireDestinationRow(orgId, destinationId)

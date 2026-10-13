@@ -1,7 +1,7 @@
 [install]
 # No release-age floor. The 1-day guard was skipping the window in which most
 # compromised npm releases are caught, but it also blocked every install that
-# resolves a fresh dependency — effect-agent publishes several betas a day, and
+# resolves a fresh dependency — @yielded/agent publishes several betas a day, and
 # changing the workspace list re-resolves every range at once. Turned off
 # deliberately; the trade is that a new resolution can pick up a release nobody
 # has had time to catch yet.

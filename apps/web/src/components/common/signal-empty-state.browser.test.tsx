@@ -21,7 +21,7 @@ it("tells a user who has never sent the signal how to send it", async () => {
 	await renderState({ signal: "logs", presence: { status: "absent", lastSeen: null } })
 
 	expect(screen.getByText("No logs yet")).toBeTruthy()
-	expect(screen.getByText(/OTLP log bridge/)).toBeTruthy()
+	expect(screen.getByText(/OpenTelemetry log exporter/)).toBeTruthy()
 	expect(screen.getByText("Set up logging")).toBeTruthy()
 })
 
@@ -31,7 +31,7 @@ it("tells a user whose signal is wired up that the window is quiet, and when it 
 
 	expect(screen.getByText("No logs in this time range")).toBeTruthy()
 	// The distinction the whole feature exists for: never advise setup to someone already set up.
-	expect(screen.queryByText(/OTLP log bridge/)).toBeNull()
+	expect(screen.queryByText(/OpenTelemetry log exporter/)).toBeNull()
 	expect(screen.getByText(/Maple last received logs/)).toBeTruthy()
 })
 
@@ -69,4 +69,29 @@ it("uses the page's noun for the heading but the signal's noun for the timestamp
 
 	expect(screen.getByText("No services in this time range")).toBeTruthy()
 	expect(screen.getByText(/Maple last received traces/)).toBeTruthy()
+})
+
+it("links the page's guide even when the window is only quiet", async () => {
+	await renderState({ signal: "traces", presence: { status: "present", lastSeen: Date.now() - 60_000 } })
+
+	const docs = screen.getByRole("link", { name: /Read the docs/ })
+	expect(docs.getAttribute("href")).toBe("https://maple.dev/docs/explore/traces")
+})
+
+it("lets a page built on a signal describe itself, keeping the signal's setup advice", async () => {
+	await renderState({
+		signal: "traces",
+		noun: "errors",
+		purpose: "Errors groups failed spans into issues.",
+		guideDocs: "errors",
+		presence: { status: "absent", lastSeen: null },
+	})
+
+	expect(
+		screen.getByText(/Errors groups failed spans into issues\. Send spans from an OpenTelemetry SDK/),
+	).toBeTruthy()
+	expect(screen.getByRole("link", { name: /Setup guide/ }).getAttribute("href")).toBe(
+		"https://maple.dev/docs/instrumentation",
+	)
+	expect(screen.queryByRole("link", { name: /Read the docs/ })).toBeNull()
 })

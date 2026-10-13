@@ -35,6 +35,12 @@ export const TOOL_CONCURRENCY = 4
 export const REPEATED_TOOL_CALLS = 5
 
 /**
+ * Retries of a model call that failed with a 429 or 5xx before any content streamed. The engine backs
+ * off from one to thirty seconds (longer when the provider sends `retryAfter`), inside `maxDuration`.
+ */
+export const MODEL_RETRIES = 3
+
+/**
  * What one kind of turn may spend.
  *
  * Per agent, because the kinds of turn are not the same work: an unattended pass needs rails that

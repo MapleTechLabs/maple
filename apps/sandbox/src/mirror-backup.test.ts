@@ -4,14 +4,27 @@ import { Duration, Effect, Exit, Option } from "effect"
 import {
 	MIRROR_BACKUP_KEY,
 	MIRROR_BACKUP_REFRESH,
-	MIRROR_BACKUP_TTL,
 	type MirrorBackupHost,
+	type MirrorBackupRecord,
 	StoredMirrorBackup,
 	backupMirror,
+	decodeStoredMirrorBackup,
 	restoreMirror,
 } from "./mirror-backup"
 
 const NOW = 1_800_000_000_000
+
+const record = (id: string): MirrorBackupRecord => ({
+	id,
+	dir: SANDBOX_SNAPSHOT_DIR,
+	size: 445,
+	name: "maple-mirror",
+	sha256: "a".repeat(64),
+	format: "tar+zstd/1",
+})
+
+const toStored = (stored: { id: string; createdAt: number }) =>
+	new StoredMirrorBackup({ record: record(stored.id), createdAt: stored.createdAt })
 
 interface FakeHost extends MirrorBackupHost {
 	readonly store: Map<string, StoredMirrorBackup>
@@ -24,10 +37,11 @@ const fakeHost = (options: {
 	readonly stored?: { id: string; createdAt: number }
 	readonly exits?: ReadonlyArray<number>
 	readonly createFails?: boolean
-	readonly restoreFails?: string
+	/** `gone`: R2 no longer has the archive. `error`: any other failure. */
+	readonly restoreFails?: "gone" | "error"
 }): FakeHost => {
 	const store = new Map<string, StoredMirrorBackup>(
-		options.stored === undefined ? [] : [[MIRROR_BACKUP_KEY, new StoredMirrorBackup(options.stored)]],
+		options.stored === undefined ? [] : [[MIRROR_BACKUP_KEY, toStored(options.stored)]],
 	)
 	const calls: string[] = []
 	let next = 0
@@ -42,15 +56,12 @@ const fakeHost = (options: {
 		createBackup: async (backup) => {
 			calls.push(`create:${backup.dir}`)
 			if (options.createFails) throw new Error("upload refused")
-			return { id: "backup-2" }
+			return record("backup-2")
 		},
-		restoreBackup: async (backup) => {
-			calls.push(`restore:${backup.id}->${backup.dir}`)
-			if (options.restoreFails !== undefined) {
-				const error = new Error("restore refused")
-				error.name = options.restoreFails
-				throw error
-			}
+		restoreBackup: async (backup, dir) => {
+			calls.push(`restore:${backup.id}->${dir}`)
+			if (options.restoreFails === "error") throw new Error("restore refused")
+			return options.restoreFails === "gone" ? "gone" : "restored"
 		},
 		readBackup: async () =>
 			Option.fromNullishOr(store.get(MIRROR_BACKUP_KEY) as StoredMirrorBackup | undefined),
@@ -104,9 +115,9 @@ describe("restoreMirror", () => {
 			const host = fakeHost({
 				stored: { id: "backup-1", createdAt: hoursAgo(30) },
 				exits: [1],
-				restoreFails: "BackupNotFoundError",
+				restoreFails: "gone",
 			})
-			assert.strictEqual(yield* restoreMirror(host), "expired")
+			assert.strictEqual(yield* restoreMirror(host), "gone")
 			assert.isFalse(host.store.has(MIRROR_BACKUP_KEY))
 		}),
 	)
@@ -116,22 +127,17 @@ describe("restoreMirror", () => {
 			const host = fakeHost({
 				stored: { id: "backup-1", createdAt: hoursAgo(30) },
 				exits: [1],
-				restoreFails: "BackupRestoreError",
+				restoreFails: "error",
 			})
 			assert.isTrue(Exit.isFailure(yield* Effect.exit(restoreMirror(host))))
 			assert.isTrue(host.store.has(MIRROR_BACKUP_KEY))
 		}),
 	)
 
-	it.effect("forgets a backup older than R2 keeps it", () =>
-		Effect.gen(function* () {
-			const expired = NOW - Duration.toMillis(MIRROR_BACKUP_TTL)
-			const host = fakeHost({ stored: { id: "backup-1", createdAt: expired } })
-			assert.strictEqual(yield* restoreMirror(host), "expired")
-			assert.isFalse(host.store.has(MIRROR_BACKUP_KEY))
-			assert.isFalse(host.calls.some((call) => call.startsWith("restore:")))
-		}),
-	)
+	it("reads a Sandbox SDK 0.x handle as no backup, since it lacks the archive's checksum", () => {
+		assert.isTrue(Option.isNone(decodeStoredMirrorBackup({ id: "backup-0", createdAt: NOW })))
+		assert.isTrue(Option.isSome(decodeStoredMirrorBackup({ record: record("backup-1"), createdAt: NOW })))
+	})
 })
 
 describe("backupMirror", () => {
@@ -151,7 +157,7 @@ describe("backupMirror", () => {
 			assert.include(host.calls, `create:${SANDBOX_SNAPSHOT_DIR}`)
 			assert.deepStrictEqual(
 				host.store.get(MIRROR_BACKUP_KEY),
-				new StoredMirrorBackup({ id: "backup-2", createdAt: NOW }),
+				new StoredMirrorBackup({ record: record("backup-2"), createdAt: NOW }),
 			)
 			// The snapshot is removed once archived.
 			assert.include(host.calls.at(-1)!, `rm -rf ${shellQuote(SANDBOX_SNAPSHOT_DIR)}`)
@@ -179,7 +185,7 @@ describe("backupMirror", () => {
 			const host = fakeHost({ stored: previous, createFails: true })
 			const exit = yield* Effect.exit(backupMirror(host))
 			assert.isTrue(Exit.isFailure(exit))
-			assert.deepStrictEqual(host.store.get(MIRROR_BACKUP_KEY), new StoredMirrorBackup(previous))
+			assert.deepStrictEqual(host.store.get(MIRROR_BACKUP_KEY), toStored(previous))
 			assert.include(host.calls.at(-1)!, `rm -rf ${shellQuote(SANDBOX_SNAPSHOT_DIR)}`)
 		}),
 	)

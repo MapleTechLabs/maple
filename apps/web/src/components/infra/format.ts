@@ -1,4 +1,6 @@
+import { EMPTY_VALUE, formatBytes } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { type UtilizationLevel, utilizationLevel } from "@maple/ui/lib/utilization"
 
 // Generic number/byte/percent formatting lives in `@maple/ui/lib/format`; only
 // infra-specific status policy stays here.
@@ -14,14 +16,10 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
  * desired replicas), and belongs beside these rather than instead of them.
  */
 export type HostStatus = "active" | "idle" | "ended"
-export type SeverityLevel = "ok" | "warn" | "crit"
+export type SeverityLevel = UtilizationLevel
 
-export function severityLevel(fraction: number): SeverityLevel {
-	if (!Number.isFinite(fraction)) return "ok"
-	if (fraction >= 0.9) return "crit"
-	if (fraction >= 0.6) return "warn"
-	return "ok"
-}
+/** Utilization fraction → tone; the shared thresholds in `@maple/ui/lib/utilization`. */
+export const severityLevel: (fraction: number) => SeverityLevel = utilizationLevel
 
 const SCRAPE_INTERVAL_MS = 30_000
 
@@ -35,3 +33,27 @@ export function deriveHostStatus(lastSeenIso: string, reference: number | string
 	if (age < SCRAPE_INTERVAL_MS * 10) return "idle"
 	return "ended"
 }
+
+/** Whole-number percent of a 0-1 fraction; table cells want "7%", not formatPercent's "7.2%". */
+export const formatWholePercent = (fraction: number) =>
+	Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : EMPTY_VALUE
+
+/** CPU usage in cores, two decimals. */
+export const formatCores = (cores: number) => (Number.isFinite(cores) ? cores.toFixed(2) : EMPTY_VALUE)
+
+/**
+ * A node's usage / allocatable fraction, or NaN when allocatable was not collected
+ * (the API sends 0 for both), so meters and percents render a dash instead of 0%.
+ */
+export const capacityFraction = (utilization: number, allocatable: number) =>
+	allocatable > 0 ? utilization : Number.NaN
+
+/** "0.42 / 3.92 cores"; usage alone when allocatable was not collected. */
+export const formatCoresOfAllocatable = (usage: number, allocatable: number) =>
+	allocatable > 0
+		? `${formatCores(usage)} / ${formatCores(allocatable)} cores`
+		: `${formatCores(usage)} cores`
+
+/** "3.1 GB / 15.6 GB"; usage alone when allocatable was not collected. */
+export const formatBytesOfAllocatable = (usage: number, allocatable: number) =>
+	allocatable > 0 ? `${formatBytes(usage)} / ${formatBytes(allocatable)}` : formatBytes(usage)

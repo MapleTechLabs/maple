@@ -13,6 +13,7 @@ const TOOL = "list_dashboards"
 export function registerListDashboardsTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "List Dashboards",
 		description:
 			"List all dashboards with widget counts and timestamps. Use get_dashboard to see full widget configuration.",
 		parameters: Schema.Struct({
@@ -37,7 +38,7 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				search: search ?? "none",
+				"maple.ai.search": search ?? "none",
 				"result.rowCount": dashboards.length,
 			})
 

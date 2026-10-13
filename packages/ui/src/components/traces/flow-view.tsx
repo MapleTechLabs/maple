@@ -15,6 +15,7 @@ import "@xyflow/react/dist/style.css"
 import { EyeIcon } from "../icons"
 
 import { Button } from "../ui/button"
+import { EmptyMessage } from "../ui/empty"
 import { cn } from "../../lib/utils"
 import { getServiceColor } from "../../lib/colors"
 import { describeSpan, SPAN_CATEGORIES } from "../../lib/span-category"
@@ -48,6 +49,9 @@ const edgeTypes = {
 	flowEdge: TraceFlowEdge,
 }
 
+/** Past this many nodes the layout and render cost outweighs what the graph can still show. */
+const MAX_FLOW_NODES = 1500
+
 const defaultEdgeOptions = {
 	animated: true,
 }
@@ -61,10 +65,17 @@ export function TraceFlowView({
 }: TraceFlowViewProps) {
 	// Selection is intentionally NOT part of this memo — it's applied by the
 	// effect below, so a selection change never re-layouts or refits the view.
-	const { initialNodes, initialEdges } = useMemo(() => {
+	const { initialNodes, initialEdges, nodeCount } = useMemo<{
+		initialNodes: FlowNode[]
+		initialEdges: FlowEdge[]
+		nodeCount: number
+	}>(() => {
 		const { nodes, edges } = transformSpansToFlow(rootSpans, services, totalDurationMs)
+		if (nodes.length > MAX_FLOW_NODES) {
+			return { initialNodes: [], initialEdges: [], nodeCount: nodes.length }
+		}
 		const layouted = getLayoutedElements(nodes, edges)
-		return { initialNodes: layouted.nodes, initialEdges: layouted.edges }
+		return { initialNodes: layouted.nodes, initialEdges: layouted.edges, nodeCount: nodes.length }
 	}, [rootSpans, services, totalDurationMs])
 
 	// Only legend categories that actually occur in this trace
@@ -114,7 +125,7 @@ export function TraceFlowView({
 	useEffect(() => {
 		setNodes((nds) =>
 			nds.map((node) => {
-				const nodeData = node.data as FlowNodeData
+				const nodeData = node.data
 				const isSelected =
 					nodeData.combinedSpans.some((s) => s.spanId === selectedSpanId) ||
 					node.id === selectedSpanId
@@ -138,8 +149,18 @@ export function TraceFlowView({
 
 	if (rootSpans.length === 0) {
 		return (
+			<EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
+		)
+	}
+
+	if (nodeCount > MAX_FLOW_NODES) {
+		return (
 			<div className="border p-8 text-center">
-				<p className="text-muted-foreground">No spans found for this trace</p>
+				<p className="text-muted-foreground">Trace too large for the flow view</p>
+				<p className="mt-1 text-xs text-muted-foreground">
+					{nodeCount.toLocaleString()} nodes, the limit is {MAX_FLOW_NODES.toLocaleString()}. Use
+					the timeline instead.
+				</p>
 			</div>
 		)
 	}
@@ -157,8 +178,8 @@ export function TraceFlowView({
 						void rfInstance?.fitView({ padding: 0.2, maxZoom: 1.5 })
 					}}
 				>
-					<EyeIcon size={12} />
-					Fit View
+					<EyeIcon />
+					Fit view
 				</Button>
 			</div>
 
@@ -186,6 +207,7 @@ export function TraceFlowView({
 					minZoom={0.1}
 					maxZoom={2}
 					proOptions={{ hideAttribution: true }}
+					onlyRenderVisibleElements
 				>
 					<Controls showInteractive={false} />
 					<MiniMap
@@ -205,7 +227,7 @@ export function TraceFlowView({
 				</ReactFlow>
 			</div>
 
-			<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-[11px] text-muted-foreground shrink-0">
+			<div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-muted/30 px-3 py-2.5 text-2xs text-muted-foreground shrink-0">
 				<span className="font-medium">Click to select</span>
 				<span className="text-foreground/30">|</span>
 				<span className="font-medium">Scroll to zoom</span>
@@ -228,7 +250,7 @@ export function TraceFlowView({
 								<div key={category.id} className="flex items-center gap-1.5">
 									<span
 										className={cn(
-											"flex size-3.5 items-center justify-center rounded-[4px]",
+											"flex size-3.5 items-center justify-center rounded-sm",
 											category.accent.soft,
 											category.accent.text,
 										)}
@@ -243,7 +265,7 @@ export function TraceFlowView({
 				)}
 				<span className="flex-1" />
 				<div className="flex items-center gap-1.5">
-					<span className="size-3.5 rounded-[4px] bg-severity-error/15 ring-1 ring-inset ring-severity-error/40" />
+					<span className="size-3.5 rounded-sm bg-severity-error/15 ring-1 ring-inset ring-severity-error/40" />
 					<span className="font-medium">Error</span>
 				</div>
 			</div>

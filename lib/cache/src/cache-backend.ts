@@ -1,5 +1,15 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { Context, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
+
+/** A storage failure reported by an `EdgeCacheBackend` operation. */
+export class EdgeCacheBackendError extends Schema.TaggedError<EdgeCacheBackendError>()(
+	"@maple/cache/EdgeCacheBackendError",
+	{
+		op: Schema.Literals(["get", "put", "delete"]),
+		message: Schema.String,
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
+) {}
 
 /**
  * Internal storage interface for the edge cache. The concrete implementation is
@@ -17,15 +27,19 @@ export interface EdgeCacheBackend {
 	 * undefined, and makes every cross-request hit disappear.
 	 */
 	readonly name: "workers-cache" | "memory"
-	readonly get: (bucket: string, hash: string, nowMs: number) => Promise<unknown | undefined>
+	readonly get: (
+		bucket: string,
+		hash: string,
+		nowMs: number,
+	) => Effect.Effect<unknown | undefined, EdgeCacheBackendError>
 	readonly put: (
 		bucket: string,
 		hash: string,
 		value: unknown,
 		ttlSeconds: number,
 		nowMs: number,
-	) => Promise<void>
-	readonly delete: (bucket: string, hash: string) => Promise<void>
+	) => Effect.Effect<void, EdgeCacheBackendError>
+	readonly delete: (bucket: string, hash: string) => Effect.Effect<void, EdgeCacheBackendError>
 }
 
 /**
@@ -53,24 +67,27 @@ export const makeMemoryBackend = (): EdgeCacheBackend => {
 
 	return {
 		name: "memory",
-		get: async (bucket, hash, nowMs) => {
-			const entry = store.get(composite(bucket, hash))
-			if (!entry) return undefined
-			if (entry.expiresAt <= nowMs) {
+		get: (bucket, hash, nowMs) =>
+			Effect.sync(() => {
+				const entry = store.get(composite(bucket, hash))
+				if (!entry) return undefined
+				if (entry.expiresAt <= nowMs) {
+					store.delete(composite(bucket, hash))
+					return undefined
+				}
+				return entry.value
+			}),
+		put: (bucket, hash, value, ttlSeconds, nowMs) =>
+			Effect.sync(() => {
+				store.set(composite(bucket, hash), {
+					value,
+					expiresAt: nowMs + ttlSeconds * 1000,
+				})
+			}),
+		delete: (bucket, hash) =>
+			Effect.sync(() => {
 				store.delete(composite(bucket, hash))
-				return undefined
-			}
-			return entry.value
-		},
-		put: async (bucket, hash, value, ttlSeconds, nowMs) => {
-			store.set(composite(bucket, hash), {
-				value,
-				expiresAt: nowMs + ttlSeconds * 1000,
-			})
-		},
-		delete: async (bucket, hash) => {
-			store.delete(composite(bucket, hash))
-		},
+			}),
 	}
 }
 

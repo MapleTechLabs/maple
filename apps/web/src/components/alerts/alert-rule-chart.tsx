@@ -1,3 +1,5 @@
+import { Badge } from "@maple/ui/components/ui/badge"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import * as React from "react"
 import { areaY, d3Curve, defineChart, lineY, rect, ruleY } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
@@ -28,32 +30,40 @@ import {
 } from "@/lib/alerts/chart-series"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import {
-	PlotFrame,
-	PlotTooltipBody,
+	CursorPlot,
 	bucketTimeScale,
-	createTooltipFocusStore,
-	cursorTooltip,
 	DASHED_Y_GRID,
 	focusCrosshair,
-	resolvePlotColor,
 	roundCapDasharray,
 	useChartId,
-	usePlotChromeColors,
-	useResolvedSeriesColors,
-	type PlotTooltipSeries,
+	useCursorPlot,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
-import { useTheme } from "@maple/ui/hooks/use-theme"
+import { ChartEmpty, ChartError, ChartLoading } from "@maple/ui/components/charts"
 
 /** A `ChartConfig` in all but name — kept local now that the Recharts kit is gone. */
 type ChartConfig = Record<string, { label: string; color?: string }>
 import { formatBucketLabel } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { TONE_COLOR, TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+
+import { SeriesLegend } from "@/components/common/series-legend"
 
 /** The single-series signal line and its area fill — one fixed accent, never hashed. */
 const SIGNAL_TOKEN = "--chart-1"
-const SIGNAL_FALLBACK = "#6366f1"
+
+/** Colours the chart paints that are not a tooltip row: the bands, rules and fills. */
+const PAINT_KEYS = {
+	signal: "__signal",
+	destructive: "__destructive",
+	muted: "__muted",
+} as const
+const PAINT_COLORS = [
+	{ key: PAINT_KEYS.signal, color: SIGNAL_TOKEN },
+	{ key: PAINT_KEYS.destructive, color: "--destructive" },
+	{ key: PAINT_KEYS.muted, color: "--muted-foreground" },
+]
 
 /**
  * THE alert rule chart — shared by the create form's live hero and the rule
@@ -107,8 +117,8 @@ const RAIL_CELLS = 60
 type RailStatus = "breached" | "error" | "skipped" | "healthy" | "empty"
 
 const RAIL_COLOR: Record<RailStatus, string> = {
-	breached: "bg-destructive",
-	error: "bg-warning",
+	breached: TONE_FILL.crit,
+	error: TONE_FILL.warn,
 	skipped: "bg-muted-foreground/30",
 	healthy: "bg-chart-apdex/70",
 	empty: "bg-muted/50",
@@ -286,6 +296,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			breached: 0,
 			healthy: 0,
 			skipped: 0,
+			noData: 0,
 			errored: 0,
 			opened: false,
 			errorMessage: null as string | null,
@@ -303,7 +314,10 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 				if (bucket.errorMessage == null && check.errorMessage != null) {
 					bucket.errorMessage = check.errorMessage
 				}
-			} else bucket.skipped += 1
+			} else {
+				bucket.skipped += 1
+				if (check.skipReason === "no_data") bucket.noData += 1
+			}
 			if (check.incidentTransition === "opened") bucket.opened = true
 		}
 		return buckets.map((bucket, i) => {
@@ -325,7 +339,11 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 				bucket.errored > 0 ? `${bucket.errored} failed` : null,
 				bucket.breached > 0 ? `${bucket.breached} breached` : null,
 				bucket.healthy > 0 ? `${bucket.healthy} healthy` : null,
-				bucket.skipped > 0 ? `${bucket.skipped} skipped` : null,
+				bucket.skipped > 0
+					? bucket.noData > 0
+						? `${bucket.skipped} skipped (${bucket.noData} no data)`
+						: `${bucket.skipped} skipped`
+					: null,
 			]
 				.filter(Boolean)
 				.join(", ")
@@ -364,21 +382,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		}))
 	}, [incidentBands, domain])
 
-	const chromeColors = usePlotChromeColors()
-	const focusStore = React.useMemo(() => createTooltipFocusStore(), [])
 	const signalGradientId = useChartId("alert-signal")
-	const { theme } = useTheme()
-
-	const palette = React.useMemo(
-		() => ({
-			signal: resolvePlotColor(SIGNAL_TOKEN, SIGNAL_FALLBACK),
-			destructive: resolvePlotColor("--destructive", "#ef4444"),
-			muted: resolvePlotColor("--muted-foreground", "#71717a"),
-		}),
-		[theme],
-	)
-
-	const resolvedSeriesColors = useResolvedSeriesColors(seriesColors, palette.signal)
 
 	/**
 	 * One plotted bucket: the row's series values, plus its instant as a `Date`.
@@ -393,11 +397,12 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		[chartData],
 	)
 
-	const tooltipSeries = React.useMemo<PlotTooltipSeries<SignalPoint>[]>(() => {
+	const series = React.useMemo<CursorPlotSeries<SignalPoint>[]>(() => {
 		const keys = isMultiSeries ? seriesKeys : [SINGLE_KEY]
-		const rows: PlotTooltipSeries<SignalPoint>[] = keys.map((key) => ({
+		const rows: CursorPlotSeries<SignalPoint>[] = keys.map((key) => ({
+			key,
 			label: chartConfig[key]?.label ?? key,
-			color: isMultiSeries ? (resolvedSeriesColors.get(key) ?? palette.signal) : palette.signal,
+			color: isMultiSeries ? (seriesColors.get(key) ?? SIGNAL_TOKEN) : SIGNAL_TOKEN,
 			value: (point: SignalPoint) => {
 				const value = point[key]
 				return typeof value === "number" ? value : null
@@ -406,8 +411,9 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		}))
 		if (hasGhost) {
 			rows.push({
+				key: GHOST_KEY,
 				label: chartConfig[GHOST_KEY]?.label ?? "Other source",
-				color: palette.muted,
+				color: "--muted-foreground",
 				dashed: true,
 				value: (point: SignalPoint) => {
 					const value = point[GHOST_KEY]
@@ -417,7 +423,17 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			})
 		}
 		return rows
-	}, [isMultiSeries, seriesKeys, chartConfig, resolvedSeriesColors, palette, signalType, hasGhost])
+	}, [isMultiSeries, seriesKeys, chartConfig, seriesColors, signalType, hasGhost])
+	const paintSeries = React.useMemo(() => [...series, ...PAINT_COLORS], [series])
+	const plot = useCursorPlot(paintSeries)
+	const palette = React.useMemo(
+		() => ({
+			signal: plot.color(PAINT_KEYS.signal),
+			destructive: plot.color(PAINT_KEYS.destructive),
+			muted: plot.color(PAINT_KEYS.muted),
+		}),
+		[plot],
+	)
 
 	const definition = React.useMemo(() => {
 		const at = (point: SignalPoint) => point.at
@@ -538,7 +554,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 								id: key,
 								x: at,
 								y: valueOf(key),
-								stroke: resolvedSeriesColors.get(key) ?? palette.signal,
+								stroke: plot.color(key),
 								strokeWidth: 1.5,
 								curve,
 							}),
@@ -562,7 +578,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 								curve,
 							}),
 						]),
-				focusCrosshair(chromeColors),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
 				x: {
@@ -599,7 +615,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			margin: { top: 8, right: PLOT_RIGHT, left: Y_AXIS_WIDTH },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
 	}, [
 		points,
@@ -613,17 +629,15 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		hasGhost,
 		isMultiSeries,
 		seriesKeys,
-		resolvedSeriesColors,
+		plot,
 		palette,
 		splitOffset,
 		breachAbove,
 		breachBelow,
 		signalGradientId,
-		chromeColors,
 		formatTime,
 		timeZone,
 		signalType,
-		focusStore,
 	])
 
 	const chartArea = hasSignal ? (
@@ -635,58 +649,47 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			 * rather than a reserved band inside it.
 			 */}
 			{isMultiSeries ? (
-				<div className="flex h-8 items-center gap-3 overflow-x-auto whitespace-nowrap">
-					{seriesKeys.map((key) => (
-						<span key={key} className="inline-flex items-center gap-1.5">
-							<span
-								aria-hidden
-								className="size-2 shrink-0 rounded-full"
-								style={{ background: resolvedSeriesColors.get(key) ?? palette.signal }}
-							/>
-							<span className="text-xs text-muted-foreground">
-								{chartConfig[key]?.label ?? key}
-							</span>
-						</span>
-					))}
-				</div>
-			) : null}
-			<div style={{ height: CHART_HEIGHT }}>
-				<PlotFrame
-					definition={definition}
-					ariaLabel="Alert signal"
-					className="h-full w-full"
-					renderTooltipBody={({ points: focused }) => (
-						<PlotTooltipBody
-							points={focused}
-							series={tooltipSeries}
-							focusStore={focusStore}
-							heading={(point: SignalPoint) => {
-								const t = num(point.t)
-								const label = formatTime(t, "tooltip")
-								const meta = bucketMeta.get(t)
-								const extras = [
-									meta != null ? `${meta.sampleCount} samples` : null,
-									meta?.status === "skipped" ? "skipped" : null,
-									meta?.provisional === true ? "in progress" : null,
-								].filter(Boolean)
-								return extras.length > 0 ? `${label} · ${extras.join(" · ")}` : label
-							}}
-						/>
-					)}
+				<SeriesLegend
+					className="h-8 flex-nowrap justify-start overflow-x-auto whitespace-nowrap"
+					items={seriesKeys.map((key) => ({
+						key,
+						label: chartConfig[key]?.label ?? key,
+						color: plot.color(key),
+					}))}
 				/>
-			</div>
+			) : null}
+			<CursorPlot
+				plot={plot}
+				definition={definition}
+				series={series}
+				heading={(point: SignalPoint) => {
+					const t = num(point.t)
+					const label = formatTime(t, "tooltip")
+					const meta = bucketMeta.get(t)
+					const extras = [
+						meta != null ? `${meta.sampleCount} samples` : null,
+						meta?.status === "skipped" ? "skipped" : null,
+						meta?.provisional === true ? "in progress" : null,
+					].filter(Boolean)
+					return extras.length > 0 ? `${label} · ${extras.join(" · ")}` : label
+				}}
+				ariaLabel="Alert signal"
+				height={CHART_HEIGHT}
+			/>
 		</div>
 	) : loading ? (
-		<Skeleton className="w-full" style={{ height: CHART_HEIGHT }} />
+		<ChartLoading variant="area" height={CHART_HEIGHT} />
 	) : error != null ? (
-		<Placeholder tone="destructive">
-			<p className="font-medium text-destructive text-sm">Preview query failed</p>
-			<p className="line-clamp-3 text-muted-foreground text-xs">{error}</p>
-		</Placeholder>
+		<ChartError height={CHART_HEIGHT}>
+			<div className="max-w-sm space-y-2">
+				<p className="font-medium text-sm">Preview query failed</p>
+				<p className="line-clamp-3 text-muted-foreground">{error}</p>
+			</div>
+		</ChartError>
 	) : (
-		<Placeholder>
-			<p className="text-muted-foreground text-sm">No data in this window. Try widening the range.</p>
-		</Placeholder>
+		<ChartEmpty height={CHART_HEIGHT} hint="Try widening the range.">
+			No data in this window.
+		</ChartEmpty>
 	)
 
 	return (
@@ -694,7 +697,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			{chartArea}
 
 			{hasSignal && (
-				<div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+				<div className="flex items-center gap-2 text-2xs text-muted-foreground">
 					<span
 						aria-hidden
 						className="inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-destructive"
@@ -719,7 +722,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			    on `error`, so an empty-but-successful preview silently changed
 			    what the chart meant. */}
 			{hasSignal && fellBack && (
-				<div className="flex items-start gap-2.5 border-l-2 border-warning py-0.5 pl-2.5">
+				<div className="flex items-start gap-2.5 border-l-2 border-severity-warn py-0.5 pl-2.5">
 					<div className="space-y-0.5">
 						<p className="text-foreground text-xs">
 							Showing{" "}
@@ -727,14 +730,14 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 							— {SIGNAL_SOURCE_LABEL[otherSource].toLowerCase()} has no points in this window.
 						</p>
 						{error != null && (
-							<p className="line-clamp-2 text-[11px] text-muted-foreground">{error}</p>
+							<p className="line-clamp-2 text-2xs text-muted-foreground">{error}</p>
 						)}
 					</div>
 				</div>
 			)}
 
 			{hasSignal && hasGhost && (
-				<div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+				<div className="flex items-center gap-3 text-2xs text-muted-foreground">
 					<span className="flex items-center gap-1.5">
 						<span
 							aria-hidden
@@ -743,25 +746,23 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 						{SIGNAL_SOURCE_LABEL[otherSource]}
 					</span>
 					{divergence != null && divergence > Math.abs(threshold) * 0.05 && (
-						<span className="rounded border border-warning/50 px-1.5 py-px text-warning">
+						<Badge variant="warn" size="xs">
 							Sources differ by up to {formatSignalValue(signalType, divergence)}
-						</span>
+						</Badge>
 					)}
 				</div>
 			)}
 
 			{showWouldFire && wouldFireBands.length > 0 && (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					Shaded: rule would have fired (approximate — the live scheduler evaluates every minute).
 				</p>
 			)}
 			{hasSignal && source === "preview" && noDataBands.length > 0 && (
-				<p className="text-[11px] text-muted-foreground">
-					Hatched: no data received in these windows.
-				</p>
+				<p className="text-2xs text-muted-foreground">Hatched: no data received in these windows.</p>
 			)}
 			{preview?.truncatedToStart != null && (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					{clampedToPreview ? "Axis starts at " : "Query series starts at "}
 					{formatTime(Date.parse(preview.truncatedToStart), "tooltip")} — the selected range needs
 					more evaluation windows than one preview replays. Widen the rule's window or shorten the
@@ -798,7 +799,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 											"h-full flex-1 rounded-[1px] p-0",
 											RAIL_COLOR[cell.status],
 											onSelectBucket != null && "cursor-pointer",
-											cell.opened && "ring-1 ring-inset ring-destructive",
+											cell.opened && "ring-1 ring-inset ring-severity-error",
 											selected && "ring-2 ring-foreground ring-offset-0",
 										)}
 									/>
@@ -814,7 +815,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 									// biome-ignore lint/suspicious/noArrayIndexKey: positional overlay
 									key={i}
 									className={cn(
-										"absolute inset-y-0 rounded-[1px] bg-destructive",
+										"absolute inset-y-0 rounded-[1px] bg-severity-error",
 										!span.open && "opacity-60",
 									)}
 									style={{ left: `${span.left}%`, width: `${span.width}%` }}
@@ -823,7 +824,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 						</div>
 					</div>
 					<div
-						className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 pt-0.5 text-[11px] text-muted-foreground"
+						className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 pt-0.5 text-2xs text-muted-foreground"
 						style={{ paddingLeft: Y_AXIS_WIDTH }}
 					>
 						<RailLegend totals={railTotals} />
@@ -835,31 +836,12 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 	)
 })
 
-function Placeholder({ children, tone }: { children: React.ReactNode; tone?: "destructive" }) {
-	return (
-		<div
-			className={cn(
-				"flex w-full items-center justify-center rounded-md border border-dashed px-6 text-center",
-				tone === "destructive"
-					? "border-destructive/40 bg-destructive/5"
-					: "border-border/60 bg-muted/20",
-			)}
-			style={{ height: CHART_HEIGHT }}
-		>
-			<div className="max-w-sm space-y-2">{children}</div>
-		</div>
-	)
-}
-
 /** Fixed-width label column that keeps both lanes aligned to the plot area. */
 function RailGutter({ children }: { children: React.ReactNode }) {
 	return (
-		<span
-			className="shrink-0 pr-3 text-right text-[10px] text-muted-foreground uppercase tracking-wider"
-			style={{ width: Y_AXIS_WIDTH }}
-		>
+		<Eyebrow className="shrink-0 pr-3 text-right" style={{ width: Y_AXIS_WIDTH }}>
 			{children}
-		</span>
+		</Eyebrow>
 	)
 }
 
@@ -870,22 +852,31 @@ function RailLegend({
 	totals: { breached: number; healthy: number; skipped: number; errored: number }
 }) {
 	return (
-		<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-			<LegendChip className="bg-chart-apdex/70">Healthy {totals.healthy}</LegendChip>
-			<LegendChip className="bg-destructive">Breached {totals.breached}</LegendChip>
-			{totals.errored > 0 && <LegendChip className="bg-warning">Failed {totals.errored}</LegendChip>}
-			{totals.skipped > 0 && (
-				<LegendChip className="bg-muted-foreground/30">Skipped {totals.skipped}</LegendChip>
-			)}
-		</div>
-	)
-}
-
-function LegendChip({ className, children }: { className?: string; children: React.ReactNode }) {
-	return (
-		<span className="flex items-center gap-1.5">
-			<span className={cn("size-2 rounded-[1px]", className)} />
-			{children}
-		</span>
+		<SeriesLegend
+			swatch="square"
+			className="justify-start"
+			items={[
+				{
+					key: "healthy",
+					label: "Healthy",
+					value: totals.healthy,
+					color: "color-mix(in oklab, var(--color-chart-apdex) 70%, transparent)",
+				},
+				{ key: "breached", label: "Breached", value: totals.breached, color: TONE_COLOR.crit },
+				...(totals.errored > 0
+					? [{ key: "errored", label: "Failed", value: totals.errored, color: TONE_COLOR.warn }]
+					: []),
+				...(totals.skipped > 0
+					? [
+							{
+								key: "skipped",
+								label: "Skipped",
+								value: totals.skipped,
+								color: "color-mix(in oklab, var(--color-muted-foreground) 30%, transparent)",
+							},
+						]
+					: []),
+			]}
+		/>
 	)
 }

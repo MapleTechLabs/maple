@@ -3,16 +3,12 @@
  * agent is told, where the answer is posted, and when a fix is committed and when it is not.
  *
  * The provider is a fake at the `VcsProviderRegistry` seam, the Durable Object at the
- * `WorkerEnvironment` seam; each records what it was asked to do.
+ * `ChatSessions` seam; each records what it was asked to do.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import {
-	GitCommitSha,
-	type PullRequestCommentJob,
-	type PullRequestHead,
-	PrReviewReplyId,
-} from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { GitCommitSha, type PullRequestCommentJob, type PullRequestHead } from "@maple/domain/http"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -81,6 +77,7 @@ const layerFor = (
 	const unused = () => Effect.die("not used by the conversation service")
 	const provider: VcsProviderClient = {
 		id: "github",
+		reviewerMention: "@maple-review-bot",
 		webhookToJobs: unused,
 		fetchRepositories: unused,
 		fetchCommits: unused,
@@ -139,18 +136,16 @@ const layerFor = (
 		ids: ["github"],
 		resolve: () => Effect.succeed(provider),
 	} satisfies VcsProviderRegistryApi)
-	const workerEnv = Layer.succeed(WorkerEnvironment, {
-		ChatSession: {
-			idFromName: (name: string) => name,
-			get: () => ({
-				beginTurn: async (input: { text: string }) => {
-					recorded.begun.push(input.text)
-					return { cursor: 0, messageId: "m" }
-				},
-				abort: async () => undefined,
-			}),
-		},
-	})
+	const workerEnv = Layer.merge(
+		envPorts({}),
+		fakeChatSessionsLayer(() => ({
+			beginTurn: async (input: { text: string }) => {
+				recorded.begun.push(input.text)
+				return { cursor: 0, messageId: "m", turnMessageId: "t" }
+			},
+			abort: async () => undefined,
+		})),
+	)
 	const base = Layer.mergeAll(
 		testRepoLayer(testDb),
 		registry,
@@ -397,9 +392,5 @@ describe("PrReviewConversationService", () => {
 			),
 		)
 		return noWrite.pipe(Effect.andThen(fork), Effect.andThen(movedBranch))
-	})
-
-	it("decodes reply ids as UUIDs", () => {
-		assert.isTrue(Schema.is(PrReviewReplyId)("00000000-0000-4000-8000-000000000000"))
 	})
 })

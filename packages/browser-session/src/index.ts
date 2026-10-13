@@ -2,6 +2,7 @@ export type { PrivacyOptions } from "./identity/consent"
 export {
 	configurePrivacy,
 	consentAllowedSince,
+	consentRevokedAt,
 	hasConsent,
 	mayPersistIdentifier,
 	onConsentChange,
@@ -14,6 +15,7 @@ export type { SessionEvent, SessionEventSink } from "./events/events-sink"
 export {
 	clearPendingEvents,
 	getActiveSink,
+	onSessionEvent,
 	setActiveTraceIdProvider,
 	startEventSink,
 } from "./events/events-sink"
@@ -23,18 +25,35 @@ export type { SessionMetaRowInput } from "./events/meta-row"
 export { formatCHDateTime, postSessionMetaRow } from "./events/meta-row"
 export type { MetadataSessionHandle, MetadataSessionOptions } from "./session/metadata-session"
 export { startMetadataSession } from "./session/metadata-session"
+export { clearPendingChunk } from "./session/pending-chunk"
 // The session record's mutators (counts, navigation, rotation listeners) stay
 // package-internal: `startSessionLifecycle` owns those invariants, and an SDK
 // reaching past it would write counts the lifecycle then overwrites.
 export type { SessionRecord } from "./session/session"
-export { claimReplaySample, getSession, getSessionId, rotateSession } from "./session/session"
+export type { ReplayMode } from "./session/session"
+export {
+	claimReplayMode,
+	claimReplaySample,
+	getSession,
+	getSessionId,
+	rotateSession,
+} from "./session/session"
 export type { MapleBrowserSessionSink } from "./session/sink"
 export { clearSessionSink } from "./session/sink"
 export { getObservedTraceIds, publishSessionSink, readSessionSink, recordTraceId } from "./session/sink"
 export type { TrackProps } from "./events/track"
 export { track } from "./events/track"
 export { isLikelyBot, parseUserAgent } from "./platform/user-agent"
-export { ingestHeaders, SDK_HINT_HEADER, sdkHint } from "./platform/transport"
+export type { NetworkBodyOptions } from "./platform/transport"
+export {
+	ingestHeaders,
+	OTLP_KEEPALIVE_BYTES,
+	OTLP_UNLOAD_TAIL_BYTES,
+	otlpKeepaliveRoom,
+	postToIngest,
+	SDK_HINT_HEADER,
+	sdkHint,
+} from "./platform/transport"
 export { getVisitorId, isVisitorIdPersisted, setVisitorTracking } from "./identity/visitor"
 export type { MapleRegion } from "./platform/region"
 export {
@@ -48,3 +67,4 @@ export {
 	warnIfKeylessMapleIngest,
 } from "./platform/region"
 export { redactUrl, scrubUrl } from "./platform/url-privacy"
+export { selectorOf } from "./capture/interactions"

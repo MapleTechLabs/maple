@@ -1,34 +1,34 @@
+import { Spinner } from "@maple/ui/components/ui/spinner"
+import { initialsFrom } from "@maple/ui/lib/initials"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { HazelStartConnectRequest, type AlertDestinationType } from "@maple/domain/http"
 import {
 	type DestinationFormState,
 	defaultDestinationForm,
+	chatDestinationForm,
 	MAX_EMAIL_MEMBER_RECIPIENTS,
+	suggestedDestinationName,
 } from "@/lib/alerts/form-utils"
 import {
 	chatDestinationProvider,
-	DESTINATION_TYPES,
 	destinationProvider,
+	destinationTypesFor,
 	PROVIDERS,
 	ProviderLogo,
 	type DestinationProvider,
 } from "@/components/alerts/destination-provider"
 import { chatIntegrationId } from "@/components/integrations/integration-catalog"
-import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
-import {
-	ArrowRightIcon,
-	ArrowRotateClockwiseIcon,
-	CircleInfoIcon,
-	HazelIcon,
-	LoaderIcon,
-	MagnifierIcon,
-} from "@/components/icons"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { useChatConnectors, useChatWorkspaceConnect } from "@/components/alerts/use-chat-workspaces"
+import { ArrowRightIcon, CircleInfoIcon, HazelIcon, MagnifierIcon } from "@/components/icons"
 import {
 	CHANNEL_RESULT_LIMIT,
 	channelLabel,
 	channelPickerView,
 	resolveSearchQuery,
 } from "@/components/alerts/channel-search"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
@@ -48,7 +48,10 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import {
 	Select,
 	SelectContent,
@@ -66,6 +69,8 @@ import {
 	ComboboxList,
 	ComboboxStatus,
 } from "@maple/ui/components/ui/combobox"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Avatar, AvatarFallback, AvatarImage } from "@maple/ui/components/ui/avatar"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
@@ -82,6 +87,9 @@ interface DestinationDialogProps {
 	isEditing: boolean
 	saving: boolean
 	onSave: () => void
+	/** Opened on a provider picked elsewhere: show it folded, with a way back to the full grid. */
+	providerLocked?: boolean
+	onUnlockProvider?: () => void
 }
 
 /**
@@ -105,7 +113,8 @@ const TELEGRAM_CHAT_TYPE_LABELS = {
 } satisfies Record<V2TelegramChat["type"], string>
 
 function isFormReady(form: DestinationFormState, isEditing: boolean): boolean {
-	if (form.name.trim().length === 0) return false
+	// A new destination left unnamed is named after where it delivers (`suggestedDestinationName`).
+	if (isEditing && form.name.trim().length === 0) return false
 	switch (form.type) {
 		case "hazel-oauth":
 			return form.hazelOrganizationId.trim().length > 0 && form.hazelChannelId.trim().length > 0
@@ -142,14 +151,18 @@ function ProviderTile({
 	type,
 	chatConnector,
 	label,
+	description,
 	selected,
+	busy = false,
 	onSelect,
 }: {
 	type: AlertDestinationType
 	chatConnector?: string
 	/** In place of the provider's own label — a chat tile names its workspace. */
 	label?: string
+	description?: string
 	selected: boolean
+	busy?: boolean
 	onSelect: () => void
 }) {
 	const provider = destinationProvider({ type, chatConnector })
@@ -157,13 +170,13 @@ function ProviderTile({
 		<button
 			type="button"
 			onClick={onSelect}
+			disabled={busy}
 			aria-pressed={selected}
 			className={cn(
-				"group relative flex flex-col items-start gap-2 overflow-hidden rounded-lg border p-3 text-left transition-all",
-				"hover:border-border/80 hover:bg-muted/40",
+				"relative flex flex-col items-start gap-2 overflow-hidden rounded-md border p-3 text-left transition-colors",
 				selected
-					? "border-transparent shadow-[inset_0_0_0_1.5px_var(--tile-accent)] bg-muted/40"
-					: "border-border/60 bg-card",
+					? "border-(--tile-accent) bg-muted/40"
+					: "border-border/60 bg-card hover:border-border hover:bg-muted/40",
 			)}
 			style={{ ["--tile-accent" as string]: provider.accent }}
 		>
@@ -171,7 +184,7 @@ function ProviderTile({
 				aria-hidden
 				className={cn(
 					"pointer-events-none absolute inset-0 transition-opacity",
-					selected ? "opacity-100" : "opacity-0 group-hover:opacity-60",
+					selected ? "opacity-100" : "opacity-0",
 				)}
 				style={{
 					background: `radial-gradient(circle at 0% 0%, ${provider.accentBg}, transparent 60%)`,
@@ -180,8 +193,11 @@ function ProviderTile({
 			<div className="relative flex w-full items-center gap-2.5">
 				<ProviderLogo type={type} chatConnector={chatConnector} size={32} />
 				<span className="truncate text-sm font-semibold">{label ?? provider.label}</span>
+				{busy ? <Spinner size={12} className="ml-auto" /> : null}
 			</div>
-			<p className="relative text-[11px] leading-snug text-muted-foreground">{provider.description}</p>
+			<p className="relative text-2xs leading-snug text-muted-foreground">
+				{description ?? provider.description}
+			</p>
 		</button>
 	)
 }
@@ -219,7 +235,7 @@ function EmailMemberPicker({
 				adornment: (
 					<Avatar className="size-5">
 						<AvatarImage alt={name || email} src={member.publicUserData?.imageUrl} />
-						<AvatarFallback>{(name || email)[0]?.toUpperCase() ?? "?"}</AvatarFallback>
+						<AvatarFallback>{initialsFrom(name || email)}</AvatarFallback>
 					</Avatar>
 				),
 				meta: name ? email : undefined,
@@ -228,20 +244,17 @@ function EmailMemberPicker({
 	})
 
 	return (
-		<div className="space-y-1.5">
-			<Label className="text-xs">Recipients</Label>
+		<Field className="items-stretch gap-1.5">
+			<FieldLabel className="text-xs">Recipients</FieldLabel>
 			<MultiSelectCombobox
 				emptyMessage={isLoaded ? "No members found in this workspace." : "Loading members…"}
 				footer={
 					memberships?.hasNextPage ? (
-						<Button
+						<LoadMoreButton
+							variant="ghost"
 							className="w-full text-xs"
 							onClick={() => memberships.fetchNext?.()}
-							size="sm"
-							variant="ghost"
-						>
-							Load more
-						</Button>
+						/>
 					) : undefined
 				}
 				onChange={(memberUserIds) => onFormChange((current) => ({ ...current, memberUserIds }))}
@@ -249,15 +262,15 @@ function EmailMemberPicker({
 				placeholder={form.memberUserIds.length === 0 ? "Select members…" : "Add member..."}
 				value={form.memberUserIds}
 			/>
-			<p className="text-[11px] text-muted-foreground">
+			<FieldDescription className="text-2xs">
 				Alert emails go to the selected workspace members (up to {MAX_EMAIL_MEMBER_RECIPIENTS}).
-			</p>
+			</FieldDescription>
 			{form.memberUserIds.length > MAX_EMAIL_MEMBER_RECIPIENTS && (
-				<p className="text-[11px] text-destructive">
+				<FieldError match className="text-2xs">
 					Select at most {MAX_EMAIL_MEMBER_RECIPIENTS} members.
-				</p>
+				</FieldError>
 			)}
-		</div>
+		</Field>
 	)
 }
 
@@ -314,11 +327,11 @@ function HazelOAuthFields({
 	isEditing: boolean
 }) {
 	const statusResult = useAtomValue(
-		retainedQuery("integrations", "hazelStatus", {
+		retainedInternalQuery("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
 		}),
 	)
-	const organizationsAtom = retainedQuery("integrations", "hazelOrganizations", {
+	const organizationsAtom = retainedInternalQuery("integrations", "hazelOrganizations", {
 		reactivityKeys: ["hazelIntegrationStatus", "hazelOrganizations"],
 	})
 	const organizationsResult = useAtomValue(organizationsAtom)
@@ -326,21 +339,19 @@ function HazelOAuthFields({
 	const orgIdForChannels = form.hazelOrganizationId.trim()
 	const channelsAtom =
 		orgIdForChannels.length > 0
-			? retainedQuery("integrations", "hazelChannels", {
+			? retainedInternalQuery("integrations", "hazelChannels", {
 					params: { organizationId: orgIdForChannels },
 					reactivityKeys: ["hazelIntegrationStatus", "hazelChannels", orgIdForChannels],
 				})
 			: disabledResultAtom<HazelChannelsListResponse>()
 	const channelsResult = useAtomValue(channelsAtom)
 
-	const startConnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "hazelStart"), {
+	const startConnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "hazelStart"), {
 		mode: "promiseExit",
 	})
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "hazelDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "hazelDisconnect"), {
 		mode: "promiseExit",
 	})
-
-	const [busy, setBusy] = useState(false)
 
 	const status = Result.builder(statusResult)
 		.onSuccess((s) => s)
@@ -375,16 +386,14 @@ function HazelOAuthFields({
 		return () => window.removeEventListener("message", onMessage)
 	}, [onFormChange])
 
-	async function handleConnect() {
+	const [handleConnect, connecting] = useAsyncAction(async () => {
 		// Open the popup synchronously to satisfy popup-blocker user-gesture rules,
 		// then point it at the OAuth URL once the start mutation returns.
 		const popup = window.open("", "maple-hazel-connect", "popup,width=520,height=640")
-		setBusy(true)
 		const result = await startConnect({
 			payload: new HazelStartConnectRequest({ returnTo: currentReturnPath() }),
 			reactivityKeys: ["hazelIntegrationStatus"],
 		})
-		setBusy(false)
 		if (Exit.isSuccess(result)) {
 			const url = result.value.redirectUrl
 			if (popup) popup.location.href = url
@@ -392,14 +401,12 @@ function HazelOAuthFields({
 		} else {
 			popup?.close()
 		}
-	}
+	})
 
-	async function handleDisconnect() {
-		setBusy(true)
+	const [handleDisconnect, disconnecting] = useAsyncAction(async () => {
 		await disconnect({
 			reactivityKeys: ["hazelIntegrationStatus", "hazelOrganizations", "hazelChannels"],
 		})
-		setBusy(false)
 		onFormChange((current) => ({
 			...current,
 			hazelOrganizationId: "",
@@ -408,13 +415,14 @@ function HazelOAuthFields({
 			hazelChannelId: "",
 			hazelChannelName: "",
 		}))
-	}
+	})
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
 	if (!status || !status.connected) {
 		return (
 			<div className="space-y-2 rounded-md border border-dashed border-border/60 p-3">
 				{statusFailed ? (
-					<p className="text-xs text-destructive">
+					<p className="text-xs text-severity-error">
 						Couldn't check your Hazel connection status. This may be a temporary issue — try
 						connecting again.
 					</p>
@@ -426,17 +434,17 @@ function HazelOAuthFields({
 				<Button
 					type="button"
 					size="sm"
-					onClick={handleConnect}
-					disabled={busy}
+					onClick={() => void handleConnect()}
+					loading={connecting}
+					disabled={disconnecting}
 					// Same brand fill as the save button below, so it takes the same
 					// measured ink instead of a second copy of the hex + white.
 					style={{
 						background: PROVIDERS["hazel-oauth"].accent,
 						borderColor: PROVIDERS["hazel-oauth"].accent,
-						color: PROVIDERS["hazel-oauth"].accentOn,
+						color: connecting ? "transparent" : PROVIDERS["hazel-oauth"].accentOn,
 					}}
 				>
-					{busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
 					Connect Hazel
 				</Button>
 			</div>
@@ -455,21 +463,28 @@ function HazelOAuthFields({
 
 	return (
 		<div className="space-y-3">
-			<div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-xs">
+			<Panel className="flex-row items-center justify-between px-3 py-2 text-xs">
 				<div className="space-y-0.5">
 					<div className="font-medium">Connected to Hazel</div>
 					<div className="text-muted-foreground">
 						{status.externalUserEmail ?? status.externalUserId ?? "Authorized"}
 					</div>
 				</div>
-				<Button type="button" size="sm" variant="outline" onClick={handleDisconnect} disabled={busy}>
+				<Button
+					type="button"
+					size="sm"
+					variant="outline"
+					onClick={() => setConfirmingDisconnect(true)}
+					loading={disconnecting}
+					disabled={connecting}
+				>
 					Disconnect
 				</Button>
-			</div>
-			<div className="space-y-1.5">
-				<Label htmlFor="destination-hazel-organization" className="text-xs">
+			</Panel>
+			<Field className="items-stretch gap-1.5">
+				<FieldLabel htmlFor="destination-hazel-organization" className="text-xs">
 					Hazel organization
-				</Label>
+				</FieldLabel>
 				<Select
 					items={orgSelectItems}
 					defaultValue={form.hazelOrganizationId || null}
@@ -509,20 +524,20 @@ function HazelOAuthFields({
 					</SelectContent>
 				</Select>
 				{organizationsFailed ? (
-					<p className="text-[11px] text-destructive">
+					<FieldError match className="text-2xs">
 						Couldn't load your Hazel organizations. Try reconnecting or refreshing.
-					</p>
+					</FieldError>
 				) : organizations.length === 0 ? (
-					<p className="text-[11px] text-muted-foreground">
+					<p className="text-2xs text-muted-foreground">
 						No organizations returned. Make sure your Hazel account is a member of at least one
 						organization.
 					</p>
 				) : null}
-			</div>
-			<div className="space-y-1.5">
-				<Label htmlFor="destination-hazel-channel" className="text-xs">
+			</Field>
+			<Field className="items-stretch gap-1.5">
+				<FieldLabel htmlFor="destination-hazel-channel" className="text-xs">
 					Hazel channel
-				</Label>
+				</FieldLabel>
 				<Select
 					items={channelSelectItems}
 					defaultValue={form.hazelChannelId || null}
@@ -560,62 +575,102 @@ function HazelOAuthFields({
 					</SelectContent>
 				</Select>
 				{orgIdForChannels.length > 0 && !channelsLoading && channelsFailed ? (
-					<p className="text-[11px] text-destructive">
+					<FieldError match className="text-2xs">
 						Couldn't load channels for this organization. Try reselecting the organization.
-					</p>
+					</FieldError>
 				) : orgIdForChannels.length > 0 && !channelsLoading && channels.length === 0 ? (
-					<p className="text-[11px] text-muted-foreground">
+					<p className="text-2xs text-muted-foreground">
 						No channels. Make sure your account is in at least one channel of this organization.
 					</p>
 				) : null}
-			</div>
+			</Field>
+			<ConfirmDialog
+				open={confirmingDisconnect}
+				onOpenChange={setConfirmingDisconnect}
+				title="Disconnect Hazel"
+				description="Maple loses access to your Hazel organizations and channels until you reconnect."
+				confirmLabel="Disconnect Hazel"
+				onConfirm={() => {
+					setConfirmingDisconnect(false)
+					void handleDisconnect()
+				}}
+			/>
 		</div>
 	)
 }
 
 /**
- * One tile per linked chat workspace, for every connector this org has staged on. The workspace
- * is the choice — a connector with nothing linked offers nothing to post to — so these stand in
- * for a single `chat` tile. Nothing renders until the list answers, and nothing when it fails:
- * the rest of the picker stays usable either way.
+ * Every provider, in the order people reach for them: chat platforms first (a linked workspace, or
+ * a tile that links one in a popup), then the rest. Discord
+ * shows once: as its linked workspaces when the bot is installed, otherwise as the webhook type.
  */
-function ChatWorkspaceTiles({
+function ProviderPicker({
 	form,
 	onFormChange,
 }: {
 	form: DestinationFormState
 	onFormChange: (updater: (current: DestinationFormState) => DestinationFormState) => void
 }) {
-	const gate = useChatConnectorGate()
-	const connectorsResult = useAtomValue(
-		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
-	)
-	const workspaces = Result.builder(connectorsResult)
-		.onSuccess((response) =>
-			response.data
-				.filter((connector) => gate(connector.id))
-				.flatMap((connector) =>
-					connector.workspaces.map((workspace) => ({ connector: connector.id, workspace })),
-				),
-		)
-		.orElse(() => [])
+	const connectors = useChatConnectors()
+	const chatConnect = useChatWorkspaceConnect({
+		onLinked: (workspace) => onFormChange(() => chatDestinationForm(workspace.connector, workspace.id)),
+	})
+	const discordLinked = connectors.some((c) => c.id === "discord" && c.workspaces.length > 0)
+	const types = destinationTypesFor(discordLinked)
 
-	return workspaces.map(({ connector, workspace }) => (
+	const tile = (type: AlertDestinationType) => (
 		<ProviderTile
-			key={workspace.id}
-			type="chat"
-			chatConnector={connector}
-			label={workspace.name}
-			selected={form.type === "chat" && form.chatWorkspaceId === workspace.id}
-			onSelect={() =>
-				onFormChange(() => ({
-					...defaultDestinationForm("chat"),
-					chatWorkspaceId: workspace.id,
-					chatConnector: connector,
-				}))
-			}
+			key={type}
+			type={type}
+			label={type === "discord" && discordLinked ? "Discord webhook" : undefined}
+			selected={form.type === type}
+			onSelect={() => onFormChange(() => defaultDestinationForm(type))}
 		/>
-	))
+	)
+
+	return (
+		<div className="grid grid-cols-2 gap-2">
+			{connectors.flatMap((connector) =>
+				connector.workspaces.length > 0
+					? connector.workspaces.map((workspace) => (
+							<ProviderTile
+								key={workspace.id}
+								type="chat"
+								chatConnector={connector.id}
+								label={
+									connector.workspaces.length > 1
+										? `${connector.name} · ${workspace.name}`
+										: connector.name
+								}
+								description={`Post to a channel in ${workspace.name}.`}
+								selected={form.type === "chat" && form.chatWorkspaceId === workspace.id}
+								onSelect={() =>
+									onFormChange(() => chatDestinationForm(connector.id, workspace.id))
+								}
+							/>
+						))
+					: connector.available && connector.id !== "discord"
+						? [
+								<ProviderTile
+									key={connector.id}
+									type="chat"
+									chatConnector={connector.id}
+									label={connector.name}
+									description={
+										chatConnect.waitingFor === connector.id
+											? `Finish in the ${connector.name} window. This form stays as it is.`
+											: `Connect a ${connector.name} workspace, then pick a channel.`
+									}
+									selected={false}
+									busy={chatConnect.waitingFor === connector.id}
+									onSelect={() => chatConnect.connect(connector)}
+								/>,
+							]
+						: [],
+			)}
+			{types.map(tile)}
+		</div>
+	)
 }
 
 /**
@@ -699,33 +754,26 @@ function ChatDestinationFields({
 	}
 
 	return (
-		<div className="space-y-1.5">
+		<Field className="items-stretch gap-1.5">
 			<div className="flex items-center justify-between gap-2">
-				<Label htmlFor="destination-chat-channel" className="text-xs">
+				<FieldLabel htmlFor="destination-chat-channel" className="text-xs">
 					Channel
-				</Label>
+				</FieldLabel>
 				<div className="flex min-w-0 items-center gap-1.5">
 					{storedChannelName ? (
-						<span className="truncate text-[11px] text-muted-foreground">
+						<span className="truncate text-2xs text-muted-foreground">
 							Currently{" "}
 							<span className="font-medium text-foreground">#{storedChannelName}</span>
 						</span>
 					) : null}
-					<Button
+					<RefreshButton
 						type="button"
 						size="xs"
 						variant="ghost"
-						className="-my-1 h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
-						onClick={refreshChannels}
-						disabled={channelsLoading}
-						title={`Re-fetch the channel list from ${connectorName}`}
-					>
-						<ArrowRotateClockwiseIcon
-							size={12}
-							className={cn(channelsLoading && "animate-spin")}
-						/>
-						{channelsLoading ? "Refreshing…" : "Refresh"}
-					</Button>
+						className="-my-1 h-6 gap-1 px-1.5 text-2xs text-muted-foreground"
+						onRefresh={refreshChannels}
+						pending={channelsLoading}
+					/>
 				</div>
 			</div>
 			<Combobox
@@ -765,7 +813,7 @@ function ChatDestinationFields({
 								<span className="flex items-center gap-2">
 									<span className="truncate">#{channel.name}</span>
 									{channel.is_private ? (
-										<span className="text-[11px] text-muted-foreground">private</span>
+										<span className="text-2xs text-muted-foreground">private</span>
 									) : null}
 								</span>
 							</ComboboxItem>
@@ -782,7 +830,9 @@ function ChatDestinationFields({
 			</Combobox>
 			{needsReinstall ? (
 				<div className="flex flex-wrap items-center gap-2">
-					<p className="text-[11px] text-destructive">{failure?.message}</p>
+					<FieldError match className="text-2xs">
+						{failure?.message}
+					</FieldError>
 					<Button
 						type="button"
 						size="xs"
@@ -797,16 +847,16 @@ function ChatDestinationFields({
 						}
 					>
 						Open {connectorName} integration
-						<ArrowRightIcon size={12} />
+						<ArrowRightIcon />
 					</Button>
 				</div>
 			) : failure !== null ? (
 				<div className="flex items-center gap-2">
-					<p className="text-[11px] text-destructive">
+					<FieldError match className="text-2xs">
 						{failure.type === "permission_error"
 							? "Listing a workspace's channels is limited to org admins."
 							: `Couldn't load ${connectorName} channels.`}
-					</p>
+					</FieldError>
 					{failure.type === "permission_error" ? null : (
 						<Button type="button" size="xs" variant="ghost" onClick={refreshChannels}>
 							Retry
@@ -814,19 +864,19 @@ function ChatDestinationFields({
 					)}
 				</div>
 			) : channels.length === 0 && !channelsLoading ? (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					No channels returned. Make sure the Maple bot can see at least one channel, then hit
 					Refresh.
 				</p>
 			) : null}
-			<p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+			<p className="flex items-start gap-1.5 text-2xs text-muted-foreground">
 				<CircleInfoIcon size={12} className="mt-0.5 shrink-0" />
 				<span>
 					Private channels are listed once the Maple bot has been added to them. Use Send test after
 					saving to check it can post.
 				</span>
 			</p>
-		</div>
+		</Field>
 	)
 }
 
@@ -837,7 +887,7 @@ function FieldHelper({ provider }: { provider: DestinationProvider }) {
 			href={provider.docsUrl}
 			target="_blank"
 			rel="noreferrer"
-			className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+			className="text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
 		>
 			{provider.docsLabel ?? "Docs"} ↗
 		</a>
@@ -862,19 +912,16 @@ function TelegramChatPicker({
 }) {
 	const [chats, setChats] = useState<ReadonlyArray<V2TelegramChat> | null>(null)
 	const [error, setError] = useState<string | null>(null)
-	const [busy, setBusy] = useState(false)
 	const detect = useAtomSet(MapleApiV2AtomClient.mutation("alertDestinations", "telegramChats"), {
 		mode: "promiseExit",
 	})
 
 	const tokenReady = isValidTelegramToken(botToken)
 
-	const runDetect = async () => {
-		setBusy(true)
+	const [runDetect, busy] = useAsyncAction(async () => {
 		setError(null)
 		setChats(null)
 		const result = await detect({ payload: { bot_token: botToken.trim() } })
-		setBusy(false)
 		if (Exit.isSuccess(result)) {
 			const found = result.value.chats
 			setChats(found)
@@ -884,20 +931,21 @@ function TelegramChatPicker({
 			return
 		}
 		setError(displayError(result.cause).message)
-	}
+	})
 
 	return (
-		<div className="space-y-2">
+		<Field className="items-stretch gap-2">
 			<div className="flex items-center justify-between gap-2">
-				<Label htmlFor="destination-telegram-chat" className="text-xs">
+				<FieldLabel htmlFor="destination-telegram-chat" className="text-xs">
 					Chat ID
-				</Label>
+				</FieldLabel>
 				<Button
 					type="button"
 					variant="ghost"
 					size="sm"
-					className="h-6 px-2 text-[11px]"
-					disabled={!tokenReady || busy}
+					className="h-6 px-2 text-2xs"
+					disabled={!tokenReady}
+					loading={busy}
 					onClick={() => void runDetect()}
 					title={
 						tokenReady
@@ -905,13 +953,16 @@ function TelegramChatPicker({
 							: "Enter the bot token first — detection reads the bot's chats."
 					}
 				>
-					{busy ? <LoaderIcon size={12} className="mr-1 animate-spin" /> : null}
-					{busy ? "Detecting…" : "Detect chats"}
+					Detect chats
 				</Button>
 			</div>
-			{error !== null ? <p className="text-[11px] text-destructive">{error}</p> : null}
+			{error !== null ? (
+				<FieldError match className="text-2xs">
+					{error}
+				</FieldError>
+			) : null}
 			{chats !== null && chats.length === 0 ? (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-2xs text-muted-foreground">
 					No recent chats. Add the bot to the group or channel (or send it a message), then detect
 					again. Telegram only keeps the last 24 hours.
 				</p>
@@ -926,14 +977,14 @@ function TelegramChatPicker({
 							className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
 						>
 							<span className="truncate">{chat.title}</span>
-							<span className="shrink-0 text-[10px] text-muted-foreground">
+							<span className="shrink-0 text-3xs text-muted-foreground">
 								{TELEGRAM_CHAT_TYPE_LABELS[chat.type]}
 							</span>
 						</button>
 					))}
 				</div>
 			) : null}
-		</div>
+		</Field>
 	)
 }
 
@@ -945,6 +996,8 @@ export function DestinationDialog({
 	isEditing,
 	saving,
 	onSave,
+	providerLocked = false,
+	onUnlockProvider,
 }: DestinationDialogProps) {
 	// The connector's name and mark for a `chat` destination; the save button keeps the generic
 	// provider's colours, whose ink is measured against its own accent.
@@ -962,8 +1015,7 @@ export function DestinationDialog({
 						{isEditing ? `Edit ${provider.label} destination` : "Add destination"}
 					</DialogTitle>
 					<DialogDescription>
-						Reuse the same destination across alert rules and verify it with synthetic test
-						events.
+						Where Maple sends a rule&apos;s notifications. Any rule can reuse it.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -972,50 +1024,64 @@ export function DestinationDialog({
 				<div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6">
 					{!isEditing && (
 						<div className="space-y-2">
-							<div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Provider
-							</div>
-							<div className="grid grid-cols-2 gap-2">
-								{DESTINATION_TYPES.map((type) => (
-									<ProviderTile
-										key={type}
-										type={type}
-										selected={form.type === type}
-										onSelect={() => onFormChange(() => defaultDestinationForm(type))}
-									/>
-								))}
-								<ChatWorkspaceTiles form={form} onFormChange={onFormChange} />
-							</div>
+							<Eyebrow variant="label" as="div">
+								Send to
+							</Eyebrow>
+							{providerLocked ? (
+								<Panel className="flex-row items-center justify-between gap-3 px-3 py-2">
+									<span className="flex min-w-0 items-center gap-2.5">
+										<ProviderLogo
+											type={form.type}
+											chatConnector={form.chatConnector}
+											size={28}
+										/>
+										<span className="truncate text-sm font-medium">{provider.label}</span>
+									</span>
+									<Button
+										type="button"
+										variant="ghost"
+										size="xs"
+										onClick={onUnlockProvider}
+									>
+										Change
+									</Button>
+								</Panel>
+							) : (
+								<ProviderPicker form={form} onFormChange={onFormChange} />
+							)}
 						</div>
 					)}
 
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
-							<div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+							<Eyebrow variant="label" as="div">
 								Connection
-							</div>
+							</Eyebrow>
 							<FieldHelper provider={provider} />
 						</div>
-						<div className="space-y-3 rounded-lg border border-border/60 bg-card p-4">
-							<div className="space-y-1.5">
-								<Label htmlFor="destination-name" className="text-xs">
+						<Panel padded className="space-y-3">
+							<Field className="items-stretch gap-1.5">
+								<FieldLabel htmlFor="destination-name" className="text-xs">
 									Name
-								</Label>
+									{isEditing ? null : (
+										<span className="font-normal text-muted-foreground">optional</span>
+									)}
+								</FieldLabel>
 								<Input
 									id="destination-name"
 									value={form.name}
 									onChange={(event) =>
 										onFormChange((current) => ({ ...current, name: event.target.value }))
 									}
-									placeholder="Production paging"
+									placeholder={suggestedDestinationName(form) || "Production paging"}
 								/>
-							</div>
+							</Field>
 
 							{form.type === "pagerduty" && (
-								<div className="space-y-1.5">
-									<Label htmlFor="destination-integration" className="text-xs">
+								<Field className="items-stretch gap-1.5">
+									<FieldLabel htmlFor="destination-integration" className="text-xs">
 										Integration key
-									</Label>
+									</FieldLabel>
 									<Input
 										id="destination-integration"
 										value={form.integrationKey}
@@ -1034,13 +1100,13 @@ export function DestinationDialog({
 									/>
 									{form.integrationKey.trim().length > 0 &&
 										!isValidPagerDutyKey(form.integrationKey) && (
-											<p className="text-[11px] text-destructive">
+											<FieldError match className="text-2xs">
 												That isn't a routing key (must be 32 characters). A
 												~20-character REST API token won't work — copy the Events API
 												v2 integration key.
-											</p>
+											</FieldError>
 										)}
-									<p className="text-[11px] text-muted-foreground">
+									<FieldDescription className="text-2xs">
 										In PagerDuty: open the service → Integrations → add or select an{" "}
 										<a
 											href="https://maple.dev/docs/alerting/notification-destinations#pagerduty"
@@ -1052,15 +1118,15 @@ export function DestinationDialog({
 										</a>{" "}
 										integration → copy its Integration Key (32 characters). A REST API
 										token won't work.
-									</p>
-								</div>
+									</FieldDescription>
+								</Field>
 							)}
 
 							{form.type === "discord" && (
-								<div className="space-y-1.5">
-									<Label htmlFor="destination-discord-webhook" className="text-xs">
+								<Field className="items-stretch gap-1.5">
+									<FieldLabel htmlFor="destination-discord-webhook" className="text-xs">
 										Discord webhook URL
-									</Label>
+									</FieldLabel>
 									<Input
 										id="destination-discord-webhook"
 										value={form.webhookUrl}
@@ -1077,19 +1143,19 @@ export function DestinationDialog({
 										}
 										className="font-mono text-xs"
 									/>
-									<p className="text-[11px] text-muted-foreground">
+									<FieldDescription className="text-2xs">
 										In Discord: Channel settings → Integrations → Webhooks → New Webhook,
 										then copy the URL.
-									</p>
-								</div>
+									</FieldDescription>
+								</Field>
 							)}
 
 							{form.type === "telegram" && (
 								<>
-									<div className="space-y-1.5">
-										<Label htmlFor="destination-telegram-token" className="text-xs">
+									<Field className="items-stretch gap-1.5">
+										<FieldLabel htmlFor="destination-telegram-token" className="text-xs">
 											Bot token
-										</Label>
+										</FieldLabel>
 										<Input
 											id="destination-telegram-token"
 											type="password"
@@ -1108,11 +1174,12 @@ export function DestinationDialog({
 											}
 											className="font-mono text-xs"
 										/>
-										<p className="text-[11px] text-muted-foreground">
-											In Telegram: message @BotFather, send <code>/newbot</code>, then
-											copy the token it replies with.
-										</p>
-									</div>
+										<FieldDescription className="text-2xs">
+											In Telegram: message @BotFather, send{" "}
+											<InlineCode>/newbot</InlineCode>, then copy the token it replies
+											with.
+										</FieldDescription>
+									</Field>
 									<div className="space-y-1.5">
 										<TelegramChatPicker
 											botToken={form.telegramBotToken}
@@ -1135,7 +1202,7 @@ export function DestinationDialog({
 											placeholder="-1001234567890 or @mychannel"
 											className="font-mono text-xs"
 										/>
-										<p className="text-[11px] text-muted-foreground">
+										<p className="text-2xs text-muted-foreground">
 											Add the bot to the chat, then hit <strong>Detect chats</strong> —
 											or enter the id by hand. Maple checks the bot can reach it when
 											you save.
@@ -1146,10 +1213,10 @@ export function DestinationDialog({
 
 							{form.type === "webhook" && (
 								<>
-									<div className="space-y-1.5">
-										<Label htmlFor="destination-url" className="text-xs">
+									<Field className="items-stretch gap-1.5">
+										<FieldLabel htmlFor="destination-url" className="text-xs">
 											Webhook URL
-										</Label>
+										</FieldLabel>
 										<Input
 											id="destination-url"
 											value={form.url}
@@ -1166,11 +1233,11 @@ export function DestinationDialog({
 											}
 											className="font-mono text-xs"
 										/>
-									</div>
-									<div className="space-y-1.5">
-										<Label htmlFor="destination-secret" className="text-xs">
+									</Field>
+									<Field className="items-stretch gap-1.5">
+										<FieldLabel htmlFor="destination-secret" className="text-xs">
 											Signing secret
-										</Label>
+										</FieldLabel>
 										<Input
 											id="destination-secret"
 											value={form.signingSecret}
@@ -1187,7 +1254,7 @@ export function DestinationDialog({
 											}
 											className="font-mono text-xs"
 										/>
-									</div>
+									</Field>
 								</>
 							)}
 
@@ -1195,7 +1262,7 @@ export function DestinationDialog({
 								(isClerkAuthEnabled ? (
 									<EmailMemberPicker form={form} onFormChange={onFormChange} />
 								) : (
-									<p className="text-[11px] text-muted-foreground">
+									<p className="text-2xs text-muted-foreground">
 										Email destinations target workspace members and require Clerk
 										authentication, which is not enabled in this deployment.
 									</p>
@@ -1216,29 +1283,30 @@ export function DestinationDialog({
 									isEditing={isEditing}
 								/>
 							)}
-						</div>
+						</Panel>
 					</div>
 
-					<div className="space-y-2">
-						<div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-							Delivery
-						</div>
-						<div className="flex items-center justify-between rounded-lg border border-border/60 bg-card px-4 py-3">
-							<div>
-								<div className="text-sm font-medium">Enabled</div>
-								<div className="text-[11px] text-muted-foreground">
-									Disabled destinations stay attached to rules but won't receive
-									notifications.
-								</div>
-							</div>
-							<Switch
-								checked={form.enabled}
-								onCheckedChange={(enabled) =>
-									onFormChange((current) => ({ ...current, enabled }))
+					{isEditing ? (
+						<div className="space-y-2">
+							<Eyebrow variant="label" as="div">
+								Delivery
+							</Eyebrow>
+							<SettingRow
+								framed
+								className="border-border/60 bg-card px-4 py-3"
+								label="Enabled"
+								description="Disabled destinations stay attached to rules but won't receive notifications."
+								control={
+									<Switch
+										checked={form.enabled}
+										onCheckedChange={(enabled) =>
+											onFormChange((current) => ({ ...current, enabled }))
+										}
+									/>
 								}
 							/>
 						</div>
-					</div>
+					) : null}
 				</div>
 
 				<DialogFooter>
@@ -1247,17 +1315,18 @@ export function DestinationDialog({
 					</Button>
 					<Button
 						onClick={onSave}
-						disabled={saving || !isFormReady(form, isEditing)}
+						loading={saving}
+						disabled={!isFormReady(form, isEditing)}
 						style={{
 							// `accentOn` is the ink the provider has measured against its own
 							// accent — never assume a brand color is dark enough for white.
 							background: buttonProvider.accent,
 							borderColor: buttonProvider.accent,
-							color: buttonProvider.accentOn,
+							// The inline ink would otherwise show through the loading spinner.
+							color: saving ? "transparent" : buttonProvider.accentOn,
 						}}
 					>
-						{saving ? <LoaderIcon size={14} className="animate-spin" /> : null}
-						{isEditing ? "Save changes" : `Create ${provider.label} destination`}
+						{isEditing ? "Save changes" : `Add ${provider.label} destination`}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

@@ -112,22 +112,20 @@ export function useAlertRulePreview(
 			return { preview: null, previewLoading: false, previewError: issues[0] ?? null }
 		}
 		return Result.builder(result)
-			.onSuccess(
-				(response): AlertRulePreviewState => ({
-					preview: v2PreviewToResponse(response),
-					previewLoading: false,
-					previewError: null,
-				}),
-			)
-			.onError(
-				(error): AlertRulePreviewState => ({
-					preview: null,
-					previewLoading: false,
-					previewError: mapBuilderChartFailure(displayError(error).message),
-				}),
-			)
-			.orElse(
-				(): AlertRulePreviewState => ({ preview: null, previewLoading: true, previewError: null }),
-			)
+			.onSuccess((response): AlertRulePreviewState => ({
+				preview: v2PreviewToResponse(response),
+				previewLoading: false,
+				previewError: null,
+			}))
+			.onError((error): AlertRulePreviewState => ({
+				preview: null,
+				previewLoading: false,
+				previewError: mapBuilderChartFailure(displayError(error).message),
+			}))
+			.orElse((): AlertRulePreviewState => ({
+				preview: null,
+				previewLoading: true,
+				previewError: null,
+			}))
 	}, [payload, result, deferredForm])
 }

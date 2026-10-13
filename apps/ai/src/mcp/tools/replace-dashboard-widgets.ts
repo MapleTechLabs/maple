@@ -52,6 +52,7 @@ const invalid = (message: string, example?: string) =>
 export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Replace Dashboard Widgets",
 		description:
 			"Replace every widget on a dashboard in one validated write. Every widget's query is checked first; if any has a clause the engine cannot honor, nothing is saved and the offending clauses are returned. " +
 			"Use it for a rewrite of the whole board; use add/update_dashboard_widget for one widget, and update_dashboard's dashboard_json only to restore a saved document. Dashboard metadata is untouched. The result carries a validation verdict per widget.",
@@ -110,14 +111,13 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 				widgets.push(widget)
 			}
 
-			const seenIds = new Set<string>()
-			for (const w of widgets) {
-				if (seenIds.has(w.id)) {
-					return yield* invalid(
-						`Duplicate widget id "${w.id}" in widgets_json. Each widget needs a unique id (or omit id to auto-generate).`,
-					)
-				}
-				seenIds.add(w.id)
+			const duplicate = widgets.find(
+				(w, index) => widgets.findIndex((other) => other.id === w.id) !== index,
+			)
+			if (duplicate !== undefined) {
+				return yield* invalid(
+					`Duplicate widget id "${duplicate.id}" in widgets_json. Each widget needs a unique id (or omit id to auto-generate).`,
+				)
 			}
 
 			// Validate every widget's query before persisting anything — an atomic,

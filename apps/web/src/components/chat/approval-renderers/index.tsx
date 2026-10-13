@@ -1,3 +1,5 @@
+import { humanize } from "@/lib/humanize"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { asRecord } from "./parse"
 import {
 	AddDashboardWidgetSummary,
@@ -7,6 +9,7 @@ import {
 	UpdateDashboardSummary,
 	UpdateDashboardWidgetSummary,
 } from "./dashboard"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 interface SummaryProps {
 	toolName: string
@@ -28,12 +31,8 @@ export function ApprovalSummary({ toolName, input }: SummaryProps) {
 	return <KeyValueFallback input={input} />
 }
 
-function humanize(key: string): string {
-	return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
 function formatValue(value: unknown): { kind: "scalar"; text: string } | { kind: "blob"; chars: number } {
-	if (value === null || value === undefined) return { kind: "scalar", text: "—" }
+	if (value === null || value === undefined) return { kind: "scalar", text: EMPTY_VALUE }
 	if (typeof value === "boolean") return { kind: "scalar", text: value ? "true" : "false" }
 	if (typeof value === "number") return { kind: "scalar", text: String(value) }
 	if (typeof value === "string") {
@@ -53,7 +52,7 @@ function KeyValueFallback({ input }: { input: unknown }) {
 	const obj = asRecord(input)
 	if (!obj) {
 		return (
-			<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-[11px] leading-snug">
+			<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-2xs leading-snug">
 				{safeStringify(input)}
 			</pre>
 		)
@@ -68,25 +67,22 @@ function KeyValueFallback({ input }: { input: unknown }) {
 	}
 
 	return (
-		<dl className="space-y-1 text-xs">
+		<KeyValueList layout="grid" className="gap-x-2 gap-y-1">
 			{entries.map(([key, value]) => {
 				const formatted = formatValue(value)
 				return (
-					<div key={key} className="flex items-baseline gap-2">
-						<dt className="shrink-0 text-muted-foreground">{humanize(key)}</dt>
-						<dd className="min-w-0 flex-1 truncate font-medium">
-							{formatted.kind === "scalar" ? (
-								<span>{formatted.text}</span>
-							) : (
-								<span className="text-muted-foreground italic">
-									JSON · {formatted.chars} chars
-								</span>
-							)}
-						</dd>
-					</div>
+					<KeyValue key={key} label={humanize(key)}>
+						{formatted.kind === "scalar" ? (
+							<span className="font-medium">{formatted.text}</span>
+						) : (
+							<span className="text-muted-foreground italic">
+								JSON · {formatted.chars} chars
+							</span>
+						)}
+					</KeyValue>
 				)
 			})}
-		</dl>
+		</KeyValueList>
 	)
 }
 

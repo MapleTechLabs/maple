@@ -173,18 +173,16 @@ const listBackups = (database: string, branch: string): ReadonlyArray<Backup> =>
 	const list = runPscale(["backup", "list", database, branch, "--format", "json"], { secret: true })
 	if (list.exitCode !== 0) fail(`Could not list backups of ${database}/${branch}`)
 	return parseObjectArray(list.stdout, "backup list")
-		.map(
-			(b): Backup => ({
-				id: str(b, "id") ?? "",
-				name: str(b, "name") ?? "",
-				state: str(b, "state") ?? "unknown",
-				size: typeof b.size === "number" ? b.size : 0,
-				created_at: str(b, "created_at") ?? "",
-				started_at: str(b, "started_at"),
-				completed_at: str(b, "completed_at"),
-				expires_at: str(b, "expires_at"),
-			}),
-		)
+		.map((b): Backup => ({
+			id: str(b, "id") ?? "",
+			name: str(b, "name") ?? "",
+			state: str(b, "state") ?? "unknown",
+			size: typeof b.size === "number" ? b.size : 0,
+			created_at: str(b, "created_at") ?? "",
+			started_at: str(b, "started_at"),
+			completed_at: str(b, "completed_at"),
+			expires_at: str(b, "expires_at"),
+		}))
 		.sort((a, b) => ms(b.created_at) - ms(a.created_at))
 }
 

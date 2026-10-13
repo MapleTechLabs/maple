@@ -13,10 +13,12 @@
 // only reachable from ErrorsService/telemetry. Remaining modules live on the
 // exemption list and shrink batch by batch.
 
-import type { CompiledQuery } from "@maple-dev/effect-clickhouse"
+import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
-import { Effect } from "effect"
-import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import { utcSecondsParam } from "../ch/tables"
+import { DateTime, Effect, Result } from "effect"
+import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
+import { OrgId } from "@maple/domain"
 
 /**
  * Run a compile that is now Effect-returning, throwing on failure.
@@ -54,9 +56,12 @@ export interface BuilderFixture {
 	readonly sampleValues?: Readonly<Record<string, unknown>>
 }
 
-const ORG_ID = "org_sql_catalog"
+const ORG_ID = OrgId.make("org_sql_catalog")
 const START_TIME = "2026-01-01 10:30:00"
 const END_TIME = "2026-01-03 14:15:00"
+/** The same window for builders whose bounds are `DateTime.Utc`. */
+const START_UTC = DateTime.makeUnsafe("2026-01-01T10:30:00Z")
+const END_UTC = DateTime.makeUnsafe("2026-01-03T14:15:00Z")
 const SESSION_ID = "sess_0af7651916cd43dd"
 const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 const SPAN_ID = "b7ad6b7169203331"
@@ -97,9 +102,10 @@ const webAnalyticsVariants = (
 	name: string,
 	label: string,
 	compile: (useProductEvents: boolean) => CompiledQuery<unknown>,
+	module = "web-analytics",
 ): ReadonlyArray<BuilderFixture> => [
-	{ module: "web-analytics", name, label, compile: () => compile(false) },
-	{ module: "web-analytics", name, label: `${label}-rollup`, compile: () => compile(true) },
+	{ module, name, label, compile: () => compile(false) },
+	{ module, name, label: `${label}-rollup`, compile: () => compile(true) },
 ]
 
 const webAnalyticsFixtures: ReadonlyArray<BuilderFixture> = [
@@ -194,6 +200,56 @@ const webAnalyticsFixtures: ReadonlyArray<BuilderFixture> = [
 	),
 ]
 
+const webAnalyticsAiFixtures: ReadonlyArray<BuilderFixture> = [
+	...webAnalyticsVariants(
+		"webAnalyticsAiReferralsQuery",
+		"default",
+		(useProductEvents) =>
+			CH.compileUnsafe(
+				CH.webAnalyticsAiReferralsQuery({ bucketSeconds: 3600, useProductEvents }),
+				window,
+			),
+		"web-analytics-ai",
+	),
+	// A page filter reaches session_replays through the navigation semi-join.
+	...webAnalyticsVariants(
+		"webAnalyticsAiReferralsQuery",
+		"filtered",
+		(useProductEvents) =>
+			CH.compileUnsafe(
+				CH.webAnalyticsAiReferralsQuery({
+					...WEB_ANALYTICS_ALL_FILTERS,
+					bucketSeconds: 3600,
+					useProductEvents,
+				}),
+				window,
+			),
+		"web-analytics-ai",
+	),
+	{
+		module: "web-analytics-ai",
+		name: "webAnalyticsAiCrawlersQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.webAnalyticsAiCrawlersQuery({}), window),
+	},
+	{
+		module: "web-analytics-ai",
+		name: "webAnalyticsAiCrawlerFormatsQuery",
+		label: "url-filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.webAnalyticsAiCrawlerFormatsQuery({ host: "maple.dev", pagePath: "/pricing" }),
+				window,
+			),
+	},
+	{
+		module: "web-analytics-ai",
+		name: "webAnalyticsAiCrawledPagesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.webAnalyticsAiCrawledPagesQuery({ limit: 50 }), window),
+	},
+]
+
 // Product-event funnel fixtures. The funnel SQL has four independent axes —
 // person-key resolution (with or without the identity_links join), a session
 // step 1 (UNION ALL of a session_replays branch), the population filter
@@ -216,11 +272,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "person",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
 				window,
 			),
 	},
@@ -230,12 +288,14 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "session-step-filtered",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({
-					steps: REFERRAL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-					filters: WEB_ANALYTICS_ALL_FILTERS,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+						filters: WEB_ANALYTICS_ALL_FILTERS,
+					}),
+				),
 				window,
 			),
 	},
@@ -245,11 +305,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "visitor-session-step",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({
-					steps: REFERRAL_STEPS,
-					keyBy: "visitor",
-					windowSeconds: 3_600,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "visitor",
+						windowSeconds: 3_600,
+					}),
+				),
 				window,
 			),
 	},
@@ -259,7 +321,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "session-key",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelQuery({ steps: FUNNEL_STEPS, keyBy: "session", windowSeconds: 1_800 }),
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "session",
+						windowSeconds: 1_800,
+					}),
+				),
 				window,
 			),
 	},
@@ -269,13 +337,15 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "session-dimension",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelBreakdownQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-					breakdownBy: "utmSource",
-					limit: 10,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelBreakdownQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+						breakdownBy: "utmSource",
+						limit: 10,
+					}),
+				),
 				window,
 			),
 	},
@@ -285,13 +355,15 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "attribute-session-step",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelBreakdownQuery({
-					steps: REFERRAL_STEPS,
-					keyBy: "user",
-					windowSeconds: 7 * 86_400,
-					breakdownBy: "attribute:plan",
-					limit: 5,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelBreakdownQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "user",
+						windowSeconds: 7 * 86_400,
+						breakdownBy: "attribute:plan",
+						limit: 5,
+					}),
+				),
 				window,
 			),
 	},
@@ -303,11 +375,13 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "person",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelTimingQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "person",
-					windowSeconds: 7 * 86_400,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelTimingQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
 				window,
 			),
 	},
@@ -317,12 +391,14 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "visitor-filtered",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsFunnelLeaversQuery({
-					steps: FUNNEL_STEPS,
-					keyBy: "visitor",
-					windowSeconds: 7 * 86_400,
-					filters: WEB_ANALYTICS_ALL_FILTERS,
-				}),
+				Result.getOrThrow(
+					CH.productEventsFunnelLeaversQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "visitor",
+						windowSeconds: 7 * 86_400,
+						filters: WEB_ANALYTICS_ALL_FILTERS,
+					}),
+				),
 				window,
 			),
 	},
@@ -332,15 +408,17 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "after-person",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsPathsQuery({
-					anchor: { kind: "event", eventName: "signup_completed" },
-					direction: "after",
-					depth: 3,
-					branches: 4,
-					keyBy: "person",
-					windowSeconds: 86_400,
-					exclude: ["heartbeat", "/"],
-				}),
+				Result.getOrThrow(
+					CH.productEventsPathsQuery({
+						anchor: { kind: "event", eventName: "signup_completed" },
+						direction: "after",
+						depth: 3,
+						branches: 4,
+						keyBy: "person",
+						windowSeconds: 86_400,
+						exclude: ["heartbeat", "/"],
+					}),
+				),
 				window,
 			),
 	},
@@ -350,16 +428,18 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "before-session-pages-filtered",
 		compile: () =>
 			CH.compileUnsafe(
-				CH.productEventsPathsQuery({
-					anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
-					direction: "before",
-					depth: 2,
-					branches: 3,
-					keyBy: "session",
-					windowSeconds: 3_600,
-					include: "pages",
-					filters: WEB_ANALYTICS_ALL_FILTERS,
-				}),
+				Result.getOrThrow(
+					CH.productEventsPathsQuery({
+						anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
+						direction: "before",
+						depth: 2,
+						branches: 3,
+						keyBy: "session",
+						windowSeconds: 3_600,
+						include: "pages",
+						filters: WEB_ANALYTICS_ALL_FILTERS,
+					}),
+				),
 				window,
 			),
 	},
@@ -570,6 +650,14 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.sessionReplaysListQuery({ pagePath: "/pricing" }), window),
 	},
 	{
+		// The tag semi-join: every requested tag, decided over the window's finalized rows.
+		module: "session-replays",
+		name: "sessionReplaysListQuery",
+		label: "tagged",
+		compile: () =>
+			CH.compileUnsafe(CH.sessionReplaysListQuery({ tags: ["engaged", "signed_in"] }), window),
+	},
+	{
 		module: "session-replays",
 		name: "sessionReplaysFacetsQuery",
 		label: "default",
@@ -592,15 +680,21 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		module: "session-replays",
 		name: "sessionReplaysFacetsQuery",
 		label: "page-visited",
-		compile: () =>
-			CH.compileUnionUnsafe(CH.sessionReplaysFacetsQuery({ pagePath: "/pricing" }), window),
+		compile: () => CH.compileUnionUnsafe(CH.sessionReplaysFacetsQuery({ pagePath: "/pricing" }), window),
+	},
+	{
+		// Selected tags narrow every other branch and are excluded from the tag branch.
+		module: "session-replays",
+		name: "sessionReplaysFacetsQuery",
+		label: "tagged",
+		compile: () => CH.compileUnionUnsafe(CH.sessionReplaysFacetsQuery({ tags: ["engaged"] }), window),
 	},
 	{
 		module: "session-replays",
 		name: "getSessionReplayQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.getSessionReplayQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.getSessionReplayQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -610,7 +704,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionReplayChunkIndexQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionReplayChunkIndexQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionReplayChunkIndexQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -620,7 +714,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionReplayEventsQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionReplayEventsQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionReplayEventsQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -634,8 +728,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.sessionReplayEventsQuery({
-					startTime: START_TIME,
-					endTime: END_TIME,
+					startTime: START_UTC,
+					endTime: END_UTC,
 					fromChunkSeq: 16,
 					toChunkSeq: 31,
 					limit: 40,
@@ -657,8 +751,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			CH.compileUnsafe(
 				CH.sessionTraceSummariesQuery({
 					traceIds: [TRACE_ID],
-					startTime: START_TIME,
-					endTime: END_TIME,
+					startTime: DateTime.makeUnsafe("2026-01-01T10:30:00Z"),
+					endTime: DateTime.makeUnsafe("2026-01-03T14:15:00Z"),
 				}),
 				{ orgId: ORG_ID },
 			),
@@ -670,7 +764,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionTranscriptQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionTranscriptQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionTranscriptQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
@@ -680,13 +774,28 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "sessionActivityQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.sessionActivityQuery({ startTime: START_TIME, endTime: END_TIME }), {
+			CH.compileUnsafe(CH.sessionActivityQuery({ startTime: START_UTC, endTime: END_UTC }), {
 				orgId: ORG_ID,
 				sessionId: SESSION_ID,
 			}),
 	},
 
 	...webAnalyticsFixtures,
+	...webAnalyticsAiFixtures,
+
+	// Traces sidebar (query-engine runtime); the pipe fixtures cover the raw-only route.
+	{
+		module: "errors",
+		name: "tracesFacetsQuery",
+		label: "rollup",
+		compile: () => CH.compileUnionUnsafe(CH.tracesFacetsQuery({ serviceNames: ["api"] }), window),
+	},
+	{
+		module: "errors",
+		name: "tracesDurationStatsQuery",
+		label: "rollup",
+		compile: () => CH.compileUnsafe(CH.tracesDurationStatsQuery({ serviceNames: ["api"] }), window),
+	},
 
 	// Error fixtures reached through ErrorsService, v2 telemetry, and observability.
 	{
@@ -727,6 +836,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "errorTickBootstrapIssuesQuery",
 		label: "bootstrap-window",
 		compile: () => CH.compileUnsafe(CH.errorTickBootstrapIssuesQuery(), window),
+	},
+	{
+		// ErrorsService cursor recovery for an org that was not being scanned.
+		module: "errors",
+		name: "errorTickFirstErrorMinuteQuery",
+		label: "first-error-minute",
+		compile: () => CH.compileUnsafe(CH.errorTickFirstErrorMinuteQuery(), window),
 	},
 	{
 		// ErrorsService errorIssueEnvFingerprints
@@ -794,6 +910,61 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				...window,
 				fingerprintHash: FINGERPRINT,
 			}),
+	},
+	{
+		// error_detail (MCP): a fingerprint's volume and identity, and the window anchor.
+		module: "errors",
+		name: "errorFingerprintSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.errorFingerprintSummaryQuery({ fingerprintHash: FINGERPRINT }), window),
+	},
+	{
+		// error_detail (MCP): other fingerprints raised inside the sampled traces.
+		module: "errors",
+		name: "errorCooccurringFingerprintsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.errorCooccurringFingerprintsQuery({
+					fingerprintHash: FINGERPRINT,
+					traceIds: ["0af7651916cd43dd8448eb211c80319c"],
+				}),
+				window,
+			),
+	},
+	{
+		// find_errors / list_error_issues (MCP): labels for exception-less fingerprints.
+		module: "errors",
+		name: "errorFingerprintOccurrencesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.errorFingerprintOccurrencesQuery({ fingerprintHashes: [FINGERPRINT] }),
+				window,
+			),
+		// The branded TraceId/SpanId columns reject the synthetic "" the sweep would use.
+		sampleValues: { traceId: "0af7651916cd43dd8448eb211c80319c", spanId: "b7ad6b7169203331" },
+	},
+	{
+		module: "errors",
+		name: "errorOccurrenceSpansQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.errorOccurrenceSpansQuery({
+					traceIds: ["0af7651916cd43dd8448eb211c80319c"],
+					spanIds: ["b7ad6b7169203331"],
+				}),
+				window,
+			),
+	},
+	{
+		// find_errors (MCP): every occurrence in the window, beyond the top-N rows.
+		module: "errors",
+		name: "errorsWindowTotalsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.errorsWindowTotalsQuery({}), window),
 	},
 
 	// Batch ④ — the modules the query-engine refactor touches. These exist so a
@@ -927,6 +1098,98 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 
+	// MCP `service_deployments`, `route_usage` and `ingest_freshness`.
+	{
+		module: "releases",
+		name: "serviceDeploymentsQuery",
+		label: "minutePrecision",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceDeploymentsQuery({ serviceName: "api", minutePrecision: true }),
+				window,
+			),
+	},
+	{
+		module: "releases",
+		name: "serviceDeploymentsQuery",
+		label: "hourInterior",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceDeploymentsQuery({ environments: ["production"], minutePrecision: false }),
+				window,
+			),
+	},
+	{
+		module: "pr-review",
+		name: "operationTrafficHourlyQuery",
+		label: "allServices",
+		compile: () => CH.compileUnsafe(CH.operationTrafficHourlyQuery({}), window),
+	},
+	{
+		module: "pr-review",
+		name: "operationTrafficMinutelyQuery",
+		label: "servicesAndSpans",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.operationTrafficMinutelyQuery({ serviceNames: ["api"], spanNames: ["POST /checkout"] }),
+				window,
+			),
+	},
+	{
+		module: "service-operations",
+		name: "routeUsageQuery",
+		label: "allServices",
+		compile: () => CH.compileUnsafe(CH.routeUsageQuery({}), window),
+	},
+	{
+		module: "service-operations",
+		name: "routeUsageQuery",
+		label: "searchStalest",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.routeUsageQuery({
+					serviceName: "api",
+					environments: ["production"],
+					search: "/v1/",
+					orderBy: "lastSeenAsc",
+				}),
+				window,
+			),
+	},
+	{
+		module: "liveness",
+		name: "ingestFreshnessQuery",
+		label: "default",
+		compile: () => CH.compileUnionUnsafe(CH.ingestFreshnessQuery(), window),
+	},
+	{
+		module: "liveness",
+		name: "logsFreshnessQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.logsFreshnessQuery(), window),
+	},
+	{
+		module: "service-map",
+		name: "dbQueryVolumeQuery",
+		label: "allDatabases",
+		compile: () => CH.compileUnsafe(CH.dbQueryVolumeQuery({}), window),
+	},
+	{
+		module: "service-map",
+		name: "dbQueryVolumeQuery",
+		label: "scoped",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.dbQueryVolumeQuery({
+					dbSystem: "postgresql",
+					serviceName: "api",
+					deploymentEnv: "production",
+					limit: 20,
+				}),
+				window,
+			),
+	},
+
 	// Service-catalog hourly-rollup splice.
 	{
 		// routes/v2/services.http.ts — the services list.
@@ -965,6 +1228,12 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	// Infra gauge timeseries and facet unions.
 	{
 		module: "infra",
+		name: "hostFilesystemsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.hostFilesystemsQuery({ hostName: "ip-10-0-1-42" }), window),
+	},
+	{
+		module: "infra",
 		name: "hostGaugeTimeseriesQuery",
 		label: "default",
 		compile: () =>
@@ -993,6 +1262,34 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "infra",
+		name: "podRestartsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.podRestartsQuery({
+					workloadKind: "deployment",
+					workloadName: "api",
+					namespace: "backend",
+				}),
+				window,
+			),
+	},
+	{
+		// The pod list's shape: one page of pod names, every container on them.
+		module: "infra",
+		name: "podRestartsQuery",
+		label: "podNames",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.podRestartsQuery({
+					podNames: ["api-7d9f8b6c5-x2n4k", "worker-5c8d7f9b4-q7m2p"],
+					limit: 500,
+				}),
+				window,
+			),
+	},
+	{
+		module: "infra",
 		name: "podGaugeTimeseriesQuery",
 		label: "default",
 		compile: () =>
@@ -1001,6 +1298,33 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					podName: "api-7d9f8b6c5-x2n4k",
 					namespace: "backend",
 					metricName: "k8s.pod.cpu.utilization",
+				}),
+				{ ...window, bucketSeconds: 300 },
+			),
+	},
+	{
+		module: "infra",
+		name: "listNodesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.listNodesQuery(), window),
+	},
+	{
+		module: "infra",
+		name: "nodeDetailSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.nodeDetailSummaryQuery({ nodeName: "ip-10-0-1-42.ec2.internal" }), window),
+	},
+	{
+		module: "infra",
+		name: "nodeGaugeTimeseriesQuery",
+		label: "utilization",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.nodeGaugeTimeseriesQuery({
+					nodeName: "ip-10-0-1-42.ec2.internal",
+					metricName: "k8s.node.memory.working_set",
+					capacityMetricName: "k8s.node.allocatable_memory",
 				}),
 				{ ...window, bucketSeconds: 300 },
 			),
@@ -1107,6 +1431,27 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "listContainersSummaryQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.listContainersSummaryQuery({}), window),
+	},
+	{
+		// explore_attributes with a service: the hourly key rollup has no ServiceName.
+		module: "attribute-keys",
+		name: "serviceScopedAttributeKeysQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceScopedAttributeKeysQuery({ scope: "span" }), {
+				...window,
+				serviceName: "checkout",
+			}),
+	},
+	{
+		module: "attribute-keys",
+		name: "serviceScopedAttributeValuesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceScopedAttributeValuesQuery({ scope: "resource", attributeKey: "k8s.pod.name" }),
+				{ ...window, serviceName: "checkout" },
+			),
 	},
 	{
 		module: "containers",
@@ -1224,8 +1569,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTimeString("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTimeString("hourEnd")),
+					rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+					rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 				}).format("JSON"),
 				{ orgId: ORG_ID, hourStart: START_TIME, hourEnd: END_TIME },
 			),
@@ -1239,8 +1584,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.serviceMapEdgeJoinQuery({
-					rangeStart: CH.toDateTime(CH.param.dateTimeString("hourStart")),
-					rangeEnd: CH.toDateTime(CH.param.dateTimeString("hourEnd")),
+					rangeStart: CH.toDateTime(utcSecondsParam("hourStart")),
+					rangeEnd: CH.toDateTime(utcSecondsParam("hourEnd")),
 					deploymentEnv: "production",
 					parentServiceName: "web",
 				}).format("JSON"),
@@ -1375,6 +1720,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.traceServicesByTraceIdsQuery({
+					traceIds: [TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "traces",
+		name: "traceSpanStatsByTraceIdsQuery",
+		label: "page-enrichment",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceSpanStatsByTraceIdsQuery({
 					traceIds: [TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736"],
 				}),
 				window,

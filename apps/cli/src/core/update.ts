@@ -2,8 +2,8 @@
 //   • `maybeNotifyUpdate` — a throttled, non-blocking startup check (run from
 //     bin.ts) that prints a one-line "update available" notice on stderr.
 //   • `performUpdate` — downloads the latest (or pinned) GitHub release bundle,
-//     verifies its sha256, and atomically swaps the running binary in place
-//     (driven by `maple update`, see commands/update.ts).
+//     verifies its signed sha256 manifest (release-signature.ts), and atomically
+//     swaps the running binary in place (driven by `maple update`, see commands/update.ts).
 //
 // We mirror scripts/install.sh's conventions (target triples, release URLs,
 // 2-file bundle, checksum, macOS quarantine clear) rather than shelling out to
@@ -16,15 +16,16 @@
 import { Clock, Duration, Effect, Option, Schema, Stream } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { PlatformError } from "effect/PlatformError"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { randomUUID } from "node:crypto"
 import { realpathSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { amber, bold, dim, green } from "../lib/style"
 import { MAPLE_VERSION } from "../version"
 import { MapleConfig } from "./config"
+import { releaseChecksum, releaseVerificationFailure, type ReleaseSignatureStatus } from "./release-signature"
 
 /** A `maple update` / version-check failure. The message is shown to the user
  *  and the process exits non-zero (handled by the CLI runtime, like ServerError). */
@@ -33,13 +34,26 @@ export class UpdateError extends Schema.TaggedError<UpdateError>()("@maple/cli/U
 }) {}
 
 const REPO = "MapleTechLabs/maple"
-const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`
+// Not `/releases/latest`: the npm packages cut GitHub releases too (`@maple-dev/alchemy@0.2.0`),
+// so "latest" is often not a CLI release. The list is newest first; take the first `v*` tag,
+// paging on while a page is all package releases.
+const RELEASES_PER_PAGE = 100
+const MAX_RELEASE_PAGES = 5
+const releasesPageUrl = (page: number) =>
+	`https://api.github.com/repos/${REPO}/releases?per_page=${RELEASES_PER_PAGE}&page=${page}`
+const CLI_RELEASE_TAG = /^v\d+\.\d+\.\d+$/
 /** Throttle window for the startup check — hit GitHub at most once per day. */
 export const CHECK_TTL_MS = 24 * 60 * 60 * 1000
 const CHECKSUM_TIMEOUT = Duration.seconds(30)
 const DOWNLOAD_TIMEOUT = Duration.minutes(2)
 
-const LatestReleaseResponse = Schema.Struct({ tag_name: Schema.optionalKey(Schema.String) })
+const ReleasesResponse = Schema.Array(
+	Schema.Struct({
+		tag_name: Schema.String,
+		draft: Schema.optionalKey(Schema.Boolean),
+		prerelease: Schema.optionalKey(Schema.Boolean),
+	}),
+)
 
 /** Drop a leading "v" so release tags ("v0.6.0") compare against MAPLE_VERSION
  *  ("0.6.0", already stripped in version.ts). */
@@ -112,11 +126,10 @@ const toUpdateError = (prefix: string, error: unknown): UpdateError =>
 		message: `${prefix}: ${error instanceof Error ? error.message : String(error)}`,
 	})
 
-/** Fetch the latest release tag from the GitHub API (keeps the leading "v" for URL building). */
-export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+const fetchReleasesPage = (page: number) =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
-		const request = HttpClientRequest.get(LATEST_API, {
+		const request = HttpClientRequest.get(releasesPageUrl(page), {
 			headers: { "User-Agent": "maple-cli", Accept: "application/vnd.github+json" },
 		})
 		const response = yield* client
@@ -130,17 +143,29 @@ export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateEr
 		const text = yield* response.text.pipe(
 			Effect.mapError((error) => toUpdateError("could not read GitHub release response", error)),
 		)
-		const body = yield* Effect.try({
-			try: () => Schema.decodeUnknownSync(Schema.fromJsonString(LatestReleaseResponse))(text),
+		return yield* Effect.try({
+			try: () => Schema.decodeUnknownSync(Schema.fromJsonString(ReleasesResponse))(text),
 			catch: (error) => toUpdateError("could not decode GitHub release response", error),
 		})
-		if (!body.tag_name) {
-			return yield* new UpdateError({
-				message: "could not check for updates: no published release found",
-			})
+	})
+
+const findCliRelease = (page: number): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+	Effect.flatMap(fetchReleasesPage(page), (releases) => {
+		const latest = releases.find(
+			(r) => r.draft !== true && r.prerelease !== true && CLI_RELEASE_TAG.test(r.tag_name),
+		)
+		if (latest !== undefined) return Effect.succeed(latest.tag_name)
+		if (releases.length < RELEASES_PER_PAGE || page >= MAX_RELEASE_PAGES) {
+			return Effect.fail(
+				new UpdateError({ message: "could not check for updates: no published release found" }),
+			)
 		}
-		return body.tag_name
-	}).pipe(
+		return findCliRelease(page + 1)
+	})
+
+/** Fetch the newest CLI release tag from the GitHub API (keeps the leading "v" for URL building). */
+export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+	findCliRelease(1).pipe(
 		Effect.timeoutOrElse({
 			duration: Duration.millis(timeoutMs),
 			orElse: () =>
@@ -201,7 +226,7 @@ const downloadTo = (
 			Effect.mapError((error) => toUpdateError("release download body failed", error)),
 		)
 		yield* Effect.tryPromise({
-			try: () => Bun.write(dest, body).then(() => undefined),
+			try: () => Bun.write(dest, body),
 			catch: (error) => toUpdateError("release download write failed", error),
 		})
 	}).pipe(
@@ -212,21 +237,25 @@ const downloadTo = (
 		}),
 	)
 
-const fetchText = (
+/** GET a small release asset as text; `None` on 404 so the caller decides
+ *  whether a missing asset (an unsigned release's `.sig`) is fatal. */
+const fetchTextIfPresent = (
 	url: string,
 	timeout: Duration.Input = CHECKSUM_TIMEOUT,
-): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+): Effect.Effect<Option.Option<string>, UpdateError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		const response = yield* client
 			.execute(HttpClientRequest.get(url, { headers: { "User-Agent": "maple-cli" } }))
 			.pipe(Effect.mapError((error) => toUpdateError("checksum request failed", error)))
+		if (response.status === 404) return Option.none<string>()
 		if (response.status < 200 || response.status >= 300) {
 			return yield* new UpdateError({ message: `could not fetch ${url} (${response.status})` })
 		}
-		return yield* response.text.pipe(
+		const text = yield* response.text.pipe(
 			Effect.mapError((error) => toUpdateError("checksum response read failed", error)),
 		)
+		return Option.some(text)
 	}).pipe(
 		Effect.timeoutOrElse({
 			duration: timeout,
@@ -234,6 +263,18 @@ const fetchText = (
 				Effect.fail(new UpdateError({ message: "checksum request timed out after 30 seconds" })),
 		}),
 	)
+
+const fetchText = (
+	url: string,
+	timeout: Duration.Input = CHECKSUM_TIMEOUT,
+): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+	Effect.gen(function* () {
+		const text = yield* fetchTextIfPresent(url, timeout)
+		if (Option.isNone(text)) {
+			return yield* new UpdateError({ message: `could not fetch ${url} (404)` })
+		}
+		return text.value
+	})
 
 const sha256File = (path: string): Effect.Effect<string, UpdateError> =>
 	Effect.tryPromise({
@@ -338,11 +379,13 @@ const swapBundlePair = (
 export interface UpdateResult {
 	readonly tag: string
 	readonly installDir: string
+	readonly signature: ReleaseSignatureStatus
 }
 
-/** Download, verify, and atomically install a release bundle in place. */
+/** Download, verify, and atomically install a release bundle in place.
+ *  `skipSignature` is `--insecure-skip-signature`: the checksum is still checked. */
 export const performUpdate = (
-	opts: { tag?: string } = {},
+	opts: { tag?: string; skipSignature?: boolean } = {},
 ): Effect.Effect<UpdateResult, UpdateError, HttpClient.HttpClient | ChildProcessSpawner | FileSystem> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
@@ -367,7 +410,7 @@ export const performUpdate = (
 		// in-flight update is never touched.
 		const sweepStaleTmpDirs = Effect.gen(function* () {
 			const entries = yield* fs.readDirectory(installDir)
-			const cutoff = Date.now() - 60 * 60 * 1000
+			const cutoff = (yield* Clock.currentTimeMillis) - 60 * 60 * 1000
 			for (const entry of entries) {
 				if (!entry.startsWith(".maple-update-tmp")) continue
 				const path = join(installDir, entry)
@@ -378,7 +421,7 @@ export const performUpdate = (
 			}
 		}).pipe(Effect.ignore)
 
-		yield* Effect.scoped(
+		const signature = yield* Effect.scoped(
 			Effect.gen(function* () {
 				yield* Effect.addFinalizer(() =>
 					fs.remove(tmpDir, { recursive: true, force: true }).pipe(Effect.ignore),
@@ -389,16 +432,30 @@ export const performUpdate = (
 					.makeDirectory(tmpDir, { recursive: true })
 					.pipe(Effect.mapError((e) => mapFsError(e, installDir)))
 
+				// Authenticate the manifest before trusting its checksum, and before
+				// spending the bundle download on a release that would be rejected.
+				// The manifest is ASCII, so its re-encoded text is the signed bytes.
+				const manifest = yield* fetchText(`${url}.sha256`)
+				const sig = opts.skipSignature
+					? Option.none<string>()
+					: yield* fetchTextIfPresent(`${url}.sha256.sig`)
+				const checksum = yield* releaseChecksum({
+					manifest: new TextEncoder().encode(manifest),
+					signature: Option.getOrUndefined(sig),
+					bundleName: `${name}.tar.gz`,
+					skipSignature: opts.skipSignature === true,
+				}).pipe(
+					Effect.mapError(
+						(e) => new UpdateError({ message: releaseVerificationFailure(e, `${name}.tar.gz`) }),
+					),
+				)
+
 				const tarball = join(tmpDir, "bundle.tar.gz")
 				yield* downloadTo(url, tarball)
-
-				const expected = yield* fetchText(`${url}.sha256`).pipe(
-					Effect.map((t) => t.trim().split(/\s+/)[0]),
-				)
 				const actual = yield* sha256File(tarball)
-				if (expected !== actual) {
+				if (checksum.sha256 !== actual) {
 					return yield* new UpdateError({
-						message: `checksum mismatch for ${name} (expected ${expected}, got ${actual})`,
+						message: `checksum mismatch for ${name} (expected ${checksum.sha256}, got ${actual})`,
 					})
 				}
 
@@ -412,17 +469,18 @@ export const performUpdate = (
 				if (process.platform === "darwin") {
 					yield* clearQuarantine([join(installDir, "maple"), join(installDir, "libchdb.so")])
 				}
+				return checksum.signature
 			}),
 		)
 
-		return { tag, installDir }
+		return { tag, installDir, signature }
 	})
 
 const NOTIFY_SKIP_FLAGS = new Set(["--version", "-v", "--help", "-h"])
 
 /** Whether the throttled startup check should run at all. Skips dev builds, the
  *  opt-out env var, non-TTY (CI/pipes), and the update/version/help paths. */
-const shouldRunNotify = (argv: ReadonlyArray<string>): boolean => {
+export const shouldRunNotify = (argv: ReadonlyArray<string>): boolean => {
 	if (MAPLE_VERSION === "dev") return false
 	if (process.env.MAPLE_NO_UPDATE_CHECK) return false
 	if (process.stderr.isTTY !== true) return false
@@ -474,4 +532,11 @@ export const maybeNotifyUpdate: Effect.Effect<void, never, MapleConfig | HttpCli
 	},
 )
 
-export const __testables = { downloadTo, extractTar, fetchText, mapFsError, swapBundlePair }
+export const __testables = {
+	downloadTo,
+	extractTar,
+	fetchText,
+	fetchTextIfPresent,
+	mapFsError,
+	swapBundlePair,
+}

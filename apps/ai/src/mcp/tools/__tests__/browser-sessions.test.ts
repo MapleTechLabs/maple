@@ -46,6 +46,7 @@ const replayRow = {
 	resourceAttributes: "{}",
 	version: 1,
 	recorded: "true",
+	quality: "engaged",
 	visitorIsNew: 0,
 	userTraits: "{}",
 	referrer: "",
@@ -92,6 +93,11 @@ const fixtures: FixtureRule[] = [
 			}),
 		],
 	},
+	// An event-refined list: the replay row's ErrorCount is 0, as most SDKs leave it.
+	{
+		match: (sql) => sql.includes("session_replays") && sql.includes("matchCount"),
+		rows: [{ ...replayRow, errorCount: "0", matchCount: "5" }],
+	},
 	{
 		match: (sql) => sql.includes("session_events"),
 		rows: [{ sessionId: SESSION_ID, activeTimeMs: "4000", idleTimeMs: "1000", eventCount: "2" }],
@@ -134,7 +140,8 @@ describe("search_sessions", () => {
 	it("returns typed rows and renders the identified user", async () => {
 		const result = await call("search_sessions", { has_errors: "true" })
 		const output = Schema.decodeUnknownSync(SearchSessionsOutput)(result.structuredContent)
-		expect(output.sessions[0]?.errorCount).toBe(2)
+		// has_errors reads recorded error events, so the 0 ErrorCount column yields to their count.
+		expect(output.sessions[0]?.errorCount).toBe(5)
 		expect(output.filters).toEqual({ hasErrors: true })
 		const text = markdown(result)
 		expect(text).toContain(`| ${SESSION_ID} | Ada |`)
@@ -146,6 +153,20 @@ describe("search_sessions", () => {
 		expect(text).toMatch(
 			/Next page: `search_sessions start_time="[^"]+" end_time="[^"]+" service="web" limit=1 offset=1`/,
 		)
+	})
+
+	it("tags every row and carries a tag filter into the next page", async () => {
+		const result = await call("search_sessions", { tags: ["engaged", "signed_in"], limit: 1 })
+		const output = Schema.decodeUnknownSync(SearchSessionsOutput)(result.structuredContent)
+		expect(output.sessions[0]?.tags).toEqual(["engaged", "signed_in"])
+		expect(output.filters).toEqual({ tags: ["engaged", "signed_in"] })
+		expect(markdown(result)).toContain("| engaged signed_in |")
+	})
+
+	it("rejects a tag outside the vocabulary", async () => {
+		const bad = await call("search_sessions", { tags: ["frustrated"] })
+		expect(bad.isError).toBe(true)
+		expect(markdown(bad)).toContain("Invalid parameters for `search_sessions`")
 	})
 })
 
@@ -162,7 +183,9 @@ describe("get_session_transcript", () => {
 		expect(text).toContain("NET   POST 500 /api/pay (120ms)")
 		// The first event's timestamp rides along so `inspect_trace` prunes to the right day.
 		expect(text).toMatch(
-			new RegExp(`\\\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24 10:00:0\\d"\\\``),
+			new RegExp(
+				`\\\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24T10:00:0\\d\\.000Z"\\\``,
+			),
 		)
 
 		const bad = await call("get_session_transcript", { session_id: SESSION_ID, event_types: ["clicks"] })
@@ -179,7 +202,7 @@ describe("get_session_traces", () => {
 		const text = markdown(result)
 		expect(text).toContain("### Backend traces")
 		expect(text).toContain(
-			`\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24 10:00:02"\`: errored POST /api/pay in api`,
+			`\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24T10:00:02.000Z"\`: errored POST /api/pay in api`,
 		)
 	})
 

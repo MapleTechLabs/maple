@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import {
 	AlertDeliveryEventId,
+	AlertDestinationDocument,
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
@@ -11,23 +12,25 @@ import {
 	buildDestinationCreateParamsV2,
 	buildDestinationUpdateParamsV2,
 	buildRuleCreateParamsV2,
+	chatDestinationForm,
 	defaultDestinationForm,
 	defaultRuleForm,
+	ruleFormIsGrouped,
 	deriveRuleQueryIssues,
 	domainThresholdToForm,
 	formThresholdToDomain,
+	formatSignalValue,
 	normalizeRuleQueryDraft,
+	pickDefaultDestination,
+	suggestedDestinationName,
 	rawSqlHasValueColumn,
 	v2CheckToDocument,
 	v2DeliveryToDocument,
 	v2PreviewToResponse,
 } from "./form-utils"
+import { formatErrorRate } from "@maple/ui/lib/format"
 
 describe("rule notes", () => {
-	it("defaults to an empty note", () => {
-		expect(defaultRuleForm().notes).toBe("")
-	})
-
 	it("carries a trimmed note onto the create params", () => {
 		const params = buildRuleCreateParamsV2({
 			...defaultRuleForm(),
@@ -52,6 +55,17 @@ describe("threshold unit conversion", () => {
 		expect(formThresholdToDomain("error_rate", "50")).toBe(0.5)
 		expect(domainThresholdToForm("error_rate", 0.05)).toBe("5")
 		expect(domainThresholdToForm("error_rate", 0.5)).toBe("50")
+	})
+
+	it("drops float noise when converting error_rate ratios to percent", () => {
+		expect(domainThresholdToForm("error_rate", 0.07)).toBe("7")
+		expect(domainThresholdToForm("error_rate", 0.29)).toBe("29")
+	})
+
+	it("keeps precision for error rates below 0.01%", () => {
+		expect(formatSignalValue("error_rate", 0.00005)).toBe("0.0050%")
+		expect(formatSignalValue("error_rate", 0.05)).toBe(formatErrorRate(0.05))
+		expect(formatSignalValue("error_rate", 0)).toBe("0%")
 	})
 
 	it("passes non-error_rate thresholds through unchanged", () => {
@@ -84,13 +98,10 @@ describe("threshold unit conversion", () => {
 
 describe("buildRuleCreateParamsV2", () => {
 	it("dedupes destination ids", () => {
-		const form = defaultRuleForm()
-		const params = buildRuleCreateParamsV2({
-			...form,
-			name: "A",
-			destinationIds: [...form.destinationIds, ...form.destinationIds],
-		})
-		expect(params.destination_ids).toEqual([...new Set(params.destination_ids)])
+		const a = AlertDestinationId.make("00000000-0000-4000-8000-0000000000a1")
+		const b = AlertDestinationId.make("00000000-0000-4000-8000-0000000000b2")
+		const params = buildRuleCreateParamsV2({ ...defaultRuleForm(), name: "A", destinationIds: [a, b, a] })
+		expect(params.destination_ids).toEqual([a, b])
 	})
 
 	it("empties the rule-level scope for query-owned signals", () => {
@@ -118,11 +129,6 @@ describe("buildRuleCreateParamsV2", () => {
 			environments: ["production", "  ", "staging"],
 		})
 		expect(params.environments).toEqual(["production", "staging"])
-	})
-
-	it("defaults to an empty environment scope (all environments)", () => {
-		const params = buildRuleCreateParamsV2({ ...defaultRuleForm(), name: "A" })
-		expect(params.environments).toEqual([])
 	})
 
 	it("normalizes and submits one query-builder draft", () => {
@@ -322,6 +328,7 @@ describe("v2 response mappers", () => {
 			timestamp: "2026-07-15T09:10:00.000Z",
 			group_key: "__total__",
 			status: "breached",
+			skip_reason: null,
 			signal_type: "error_rate",
 			comparator: "gt",
 			threshold: 0.05,
@@ -386,5 +393,64 @@ describe("v2 response mappers", () => {
 			status: "success",
 			responseCode: 200,
 		})
+	})
+})
+
+describe("alert on no data", () => {
+	it("is sent only for rules that are not grouped", () => {
+		const form = { ...defaultRuleForm(), name: "A", alertOnNoData: true }
+		expect(buildRuleCreateParamsV2(form).alert_on_no_data).toBe(true)
+		const grouped = { ...form, serviceNames: [], groupBy: ["service.name"] }
+		expect(ruleFormIsGrouped(grouped)).toBe(true)
+		expect(buildRuleCreateParamsV2(grouped).alert_on_no_data).toBe(false)
+		expect(ruleFormIsGrouped({ ...grouped, signalType: "raw_query" })).toBe(false)
+	})
+})
+
+describe("suggestedDestinationName", () => {
+	it("names a destination after where it delivers", () => {
+		const workspace = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+		expect(
+			suggestedDestinationName({
+				...chatDestinationForm("slack", workspace),
+				chatChannelName: "alerts",
+			}),
+		).toBe("#alerts")
+		expect(suggestedDestinationName(chatDestinationForm("slack", workspace))).toBe("")
+		expect(
+			suggestedDestinationName({
+				...defaultDestinationForm("webhook"),
+				url: "https://hooks.example.com/x",
+			}),
+		).toBe("hooks.example.com")
+		expect(suggestedDestinationName({ ...defaultDestinationForm("webhook"), url: "not a url" })).toBe(
+			"Webhook",
+		)
+		expect(suggestedDestinationName(defaultDestinationForm("pagerduty"))).toBe("PagerDuty")
+	})
+})
+
+describe("pickDefaultDestination", () => {
+	const a = AlertDestinationId.make("00000000-0000-4000-8000-0000000000a1")
+	const b = AlertDestinationId.make("00000000-0000-4000-8000-0000000000b2")
+	const c = AlertDestinationId.make("00000000-0000-4000-8000-0000000000c3")
+	const live = (id: typeof a) => ({ id, enabled: true, disabledAt: null })
+
+	it("picks the only usable destination even when no rule uses it", () => {
+		expect(pickDefaultDestination([live(a), { id: b, enabled: false, disabledAt: null }], [])).toBe(a)
+	})
+
+	it("picks the usable destination the most rules notify", () => {
+		const rules = [{ destinationIds: [a, b] }, { destinationIds: [b] }, { destinationIds: [c] }]
+		expect(pickDefaultDestination([live(a), live(b), live(c)], rules)).toBe(b)
+	})
+
+	it("skips auto-disabled destinations and picks nothing when none is in use", () => {
+		const disabledAt = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)(
+			"2026-10-06T00:00:00.000Z",
+		)
+		const disabled = { id: b, enabled: true, disabledAt }
+		expect(pickDefaultDestination([live(a), disabled], [{ destinationIds: [b] }])).toBe(a)
+		expect(pickDefaultDestination([live(a), live(c)], [])).toBeNull()
 	})
 })

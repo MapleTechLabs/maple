@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { HttpClient, type HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, type HttpClientRequest } from "effect/http"
 import { apiBaseUrl } from "./api-base-url"
 import { hasCachedMapleAuthToken, invalidateMapleAuthToken } from "./auth-headers"
 import { withMapleRetryPolicy } from "./retry-policy"

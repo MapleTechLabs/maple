@@ -12,8 +12,15 @@
 // measure) and this draws it.
 
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { StatRailItem } from "@/components/common/stat-rail"
 import type { Tone } from "../severity-tokens"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
+
+/** A band that stands alone on a page body rather than flush under a shell's header. */
+export const FLEET_BAND_BOXED = "overflow-hidden rounded-md border"
 
 /** One slice of the proportional strip. */
 export interface FleetBandSegment {
@@ -31,7 +38,7 @@ export interface FleetBandCell<S extends string> {
 	readonly hint: string
 	readonly value: number
 	/** `info` is the freshness blue; the rest are the severity ramp. */
-	readonly tone: Tone | "info"
+	readonly tone: Tone
 }
 
 interface FleetBandProps<S extends string> {
@@ -48,14 +55,6 @@ interface FleetBandProps<S extends string> {
 	className?: string
 }
 
-const CELL_VALUE_TONE: Record<Tone | "info", string> = {
-	neutral: "text-foreground",
-	ok: "text-foreground",
-	info: "text-[var(--severity-info)]",
-	warn: "text-[var(--severity-warn)]",
-	crit: "text-[var(--severity-error)]",
-} satisfies Record<Tone | "info", string>
-
 export function FleetBand<S extends string>({
 	total,
 	noun,
@@ -64,7 +63,7 @@ export function FleetBand<S extends string>({
 	cells,
 	activeScope,
 	onScopeChange,
-	waiting,
+	waiting = false,
 	className,
 }: FleetBandProps<S>) {
 	const drawn = segments.filter((segment) => segment.count > 0)
@@ -73,40 +72,36 @@ export function FleetBand<S extends string>({
 		<div
 			className={cn(
 				"flex flex-col border-b bg-background md:flex-row md:items-stretch",
-				waiting && "opacity-60 transition-opacity",
+				refreshingClass(waiting),
 				className,
 			)}
+			aria-busy={waiting || undefined}
 		>
 			<div className="flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0">
 				<span className="flex items-baseline gap-1.5">
 					<span className="font-mono text-base font-semibold tabular-nums">
-						{total.toLocaleString()}
+						{formatNumber(total)}
 					</span>
-					<span className="text-[11px] text-muted-foreground">
-						{total === 1 ? noun : `${noun}s`} in scope
-					</span>
+					<span className="text-2xs text-muted-foreground">{pluralize(total, noun)} in scope</span>
 				</span>
 				{total > 0 ? (
-					<div
-						className="flex h-1.5 w-full gap-px overflow-hidden rounded-full"
-						role="img"
-						aria-label={segments.map((segment) => `${segment.count} ${segment.key}`).join(", ")}
-					>
-						{/* A single hot pod in a fleet of 600 is 0.2% of the width, which
-						    rounds to nothing — so any non-zero segment gets a floor wide
-						    enough to see. */}
-						{drawn.map((segment) => (
-							<div
-								key={segment.key}
-								className={segment.className}
-								style={{ width: `${Math.max((segment.count / total) * 100, 2)}%` }}
-							/>
-						))}
-					</div>
+					// A single hot pod in a fleet of 600 is 0.2% of the width, which
+					// rounds to nothing, so any non-zero segment gets a 2% floor.
+					<SegmentedBar
+						className="w-full gap-px bg-transparent"
+						total={total}
+						minVisible={2}
+						label={segments.map((segment) => `${segment.count} ${segment.key}`).join(", ")}
+						segments={drawn.map((segment) => ({
+							key: segment.key,
+							value: segment.count,
+							className: segment.className,
+						}))}
+					/>
 				) : (
 					<div className="h-1.5 w-full rounded-full bg-muted" />
 				)}
-				<span className="text-[10px] text-muted-foreground">{caption}</span>
+				<span className="text-3xs text-muted-foreground">{caption}</span>
 			</div>
 			{cells.map((cell) => (
 				<ScopeCell
@@ -136,37 +131,24 @@ function ScopeCell<S extends string>({
 	// which case the press is the only way back out.
 	const idle = value === 0 && !active
 	return (
-		<button
-			type="button"
-			aria-pressed={active}
+		<StatRailItem
+			size="sm"
+			eyebrow={label}
+			value={value}
+			hint={hint}
+			tone={tone}
+			valueClassName={value === 0 ? "text-muted-foreground" : undefined}
+			onSelect={() => onSelect(active ? undefined : scope)}
+			selected={active}
 			disabled={idle}
-			onClick={() => onSelect(active ? undefined : scope)}
-			className={cn(
-				"flex flex-1 flex-col justify-center gap-1.5 border-l px-4 py-3 text-left transition-colors",
-				"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-				idle ? "cursor-default" : "hover:bg-muted/40",
-				active && "bg-muted/60",
-			)}
-		>
-			<span className="text-[11px] text-muted-foreground">{label}</span>
-			<span className="flex items-baseline gap-1.5">
-				<span
-					className={cn(
-						"font-mono text-xl font-semibold leading-none tabular-nums",
-						value === 0 ? "text-muted-foreground" : CELL_VALUE_TONE[tone],
-					)}
-				>
-					{value}
-				</span>
-				<span className="text-[10px] text-muted-foreground">{hint}</span>
-			</span>
-		</button>
+			className="flex flex-1 flex-col justify-center border-l"
+		/>
 	)
 }
 
-export function FleetBandLoading({ cells }: { cells: number }) {
+export function FleetBandLoading({ cells, className }: { cells: number; className?: string }) {
 	return (
-		<div className="flex flex-col border-b bg-background md:flex-row md:items-stretch">
+		<div className={cn("flex flex-col border-b bg-background md:flex-row md:items-stretch", className)}>
 			<div className="flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0">
 				<Skeleton className="h-4 w-28" />
 				<Skeleton className="h-1.5 w-full rounded-full" />

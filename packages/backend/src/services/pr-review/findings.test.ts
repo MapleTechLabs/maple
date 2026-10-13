@@ -37,8 +37,16 @@ const thread = (overrides: Partial<PullRequestReviewThread> = {}): PullRequestRe
 })
 
 describe("dismissedFindings", () => {
-	it("dismisses a finding whose thread a person resolved", () => {
-		assert.lengthOf(dismissedFindings([tracked()], [thread({ isResolved: true })]), 1)
+	it("dismisses a finding whose thread a person resolved without touching its file", () => {
+		const resolved = thread({ isResolved: true })
+		assert.lengthOf(dismissedFindings([tracked()], [resolved], new Set(["src/other.ts"])), 1)
+	})
+
+	// Authors resolve the thread once they push the fix; the reviewer decides whether it is fixed.
+	it("leaves a resolved thread open when its file changed or the changes are unknown", () => {
+		const resolved = thread({ isResolved: true })
+		assert.lengthOf(dismissedFindings([tracked()], [resolved], new Set(["src/a.ts"])), 0)
+		assert.lengthOf(dismissedFindings([tracked()], [resolved], undefined), 0)
 	})
 
 	it("never dismisses on a question or a negation", () => {
@@ -53,7 +61,7 @@ describe("dismissedFindings", () => {
 					{ commentId: "101", author: "alice", body, thumbsUp: 0, thumbsDown: 0 },
 				],
 			})
-			assert.lengthOf(dismissedFindings([tracked()], [replied]), 0, body)
+			assert.lengthOf(dismissedFindings([tracked()], [replied], undefined), 0, body)
 		}
 	})
 
@@ -70,19 +78,22 @@ describe("dismissedFindings", () => {
 				},
 			],
 		})
-		assert.lengthOf(dismissedFindings([tracked()], [replied]), 1)
+		assert.lengthOf(dismissedFindings([tracked()], [replied], undefined), 1)
 		const botReply = thread({
 			comments: [
 				{ commentId: "100", author: "maple[bot]", body: "finding", thumbsUp: 0, thumbsDown: 0 },
 				{ commentId: "101", author: "maple[bot]", body: "not an issue", thumbsUp: 0, thumbsDown: 0 },
 			],
 		})
-		assert.lengthOf(dismissedFindings([tracked()], [botReply]), 0)
+		assert.lengthOf(dismissedFindings([tracked()], [botReply], undefined), 0)
 	})
 
 	it("keeps a finding with no thread or an open, quiet one", () => {
-		assert.lengthOf(dismissedFindings([tracked({ commentId: null })], [thread({ isResolved: true })]), 0)
-		assert.lengthOf(dismissedFindings([tracked()], [thread()]), 0)
+		assert.lengthOf(
+			dismissedFindings([tracked({ commentId: null })], [thread({ isResolved: true })], new Set()),
+			0,
+		)
+		assert.lengthOf(dismissedFindings([tracked()], [thread()], new Set()), 0)
 	})
 })
 

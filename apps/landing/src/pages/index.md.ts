@@ -62,7 +62,7 @@ export const GET: APIRoute = ({ site }) => {
 				`- [Pricing](${url("/pricing.md")})`,
 				`- [Maple API](${url(`${SITE_PATHS.apiDocs}.md`)}): base URL \`${apiUrl(API_PATHS.reference).replace(API_PATHS.reference, "")}\`, [interactive reference](${apiUrl(API_PATHS.reference)}), [OpenAPI 3.1](${url(SITE_PATHS.openapi)})`,
 				`- [MCP server](${url(`${SITE_PATHS.mcpDocs}.md`)}): \`${apiUrl(API_PATHS.mcp)}\` (Streamable HTTP), [manifest](${url(SITE_PATHS.mcpManifest)})`,
-				`- [Command line tool](${url("/docs/local-mode/cli-reference.md")}): \`curl -fsSL ${url("/cli/install")} | sh\` or \`brew install Makisuo/tap/maple\``,
+				`- [Command line tool](${url("/docs/reference/cli.md")}): \`curl -fsSL ${url("/cli/install")} | sh\` or \`brew install Makisuo/tap/maple\``,
 				`- [Source code](${GITHUB_URL})`,
 				`- [Site index for agents](${url(SITE_PATHS.llmsTxt)})`,
 			].join("\n"),

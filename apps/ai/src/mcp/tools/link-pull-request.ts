@@ -11,6 +11,7 @@ import { IssueFixVerificationService } from "@maple/backend/services/errors/Issu
 export function registerLinkPullRequestTool(server: McpToolRegistrar) {
 	server.define({
 		name: "link_pull_request",
+		title: "Link Pull Request",
 		description: [
 			"Attach a GitHub pull request to an error issue without proposing new work.",
 			"When it merges, Maple opens a verification window sized by the issue's severity and occurrence rate, then closes the issue if the error stopped.",

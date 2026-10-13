@@ -596,14 +596,12 @@ export const list = <M extends AnyService>(
 								ErrorOf<M>
 							>,
 					),
-					Effect.map(
-						(ports): ListEntry<M> => ({
-							key,
-							ports,
-							item: { ...ports, key },
-							scope,
-						}),
-					),
+					Effect.map((ports): ListEntry<M> => ({
+						key,
+						ports,
+						item: { ...ports, key },
+						scope,
+					})),
 					// A failed construction releases the sub-scope so nothing dangles
 					// off the instance scope (the accessor already invalidated the
 					// entry before failing).

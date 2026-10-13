@@ -10,27 +10,34 @@ import {
 	PlanetScaleQueryInsightRow,
 	PlanetScaleQueryInsightsResponse,
 } from "@maple/domain/http"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	planetscaleConnections,
-	planetscaleDatabases,
-	planetscaleEvents,
-	planetscalePollState,
+	PlanetscaleConnections,
+	PlanetscaleDatabases,
+	PlanetscaleEvents,
+	PlanetscalePollState,
 	type PlanetScaleBranchInfo,
 	type PlanetScaleConnectionRow,
 	type PlanetScaleDatabaseRow,
 	type PlanetScaleEventRow,
-} from "@maple/db"
-import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm"
-import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schedule, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+} from "@maple/db/tables"
+import * as PlanetScale from "@distilled.cloud/planetscale"
+import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schema } from "effect"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import {
-	PlanetScaleOAuthService,
-	planetScaleBearerHeader,
-} from "@maple/backend/services/auth/PlanetScaleOAuthService"
+	collectPages,
+	decodeConsumed,
+	PLANETSCALE_TIMEOUT_STATUS,
+	runPlanetScale,
+	type SdkError,
+} from "./planetscale/api"
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { timestampMs } from "@maple/backend/platform/time"
 
 /**
  * PlanetScale management-API poller: keeps the org's database/branch inventory
@@ -63,7 +70,6 @@ const DEPLOY_REQUESTS_MAX_DATABASES_PER_TICK = 25
 const DEPLOY_REQUESTS_CONCURRENCY = 2
 /** Tick-overlap lease. */
 const LEASE_MS = Duration.toMillis(Duration.minutes(4))
-const REQUEST_TIMEOUT = Duration.seconds(15)
 /**
  * Extra attempts after a timed-out request, before the call fails. A PlanetScale
  * slowdown timed out the inventory listing for 5+ orgs at once; a single retry
@@ -73,16 +79,15 @@ const REQUEST_TIMEOUT = Duration.seconds(15)
  * the caller's own taxonomy (revoked / upstream) and must not be replayed.
  */
 const REQUEST_TIMEOUT_RETRIES = 2
-const REQUEST_RETRY_BASE_DELAY = Duration.millis(500)
 /**
  * Tagged onto the exhausted-timeout failure so the tick can tell "PlanetScale is
  * slow" from "PlanetScale rejected us" without matching on a message string. A
  * genuine upstream 504 classifies the same way, which is correct — both are the
  * provider failing to answer in time.
  */
-const UPSTREAM_TIMEOUT_STATUS = 504
 const isUpstreamTimeout = (error: { readonly _tag: string; readonly status?: number }) =>
-	error._tag === "@maple/http/errors/IntegrationsUpstreamError" && error.status === UPSTREAM_TIMEOUT_STATUS
+	error._tag === "@maple/http/errors/IntegrationsUpstreamError" &&
+	error.status === PLANETSCALE_TIMEOUT_STATUS
 const ORG_CONCURRENCY = 3
 const INVENTORY_WRITE_CONCURRENCY = 4
 /** Pagination caps — a runaway org can't make a tick unbounded. */
@@ -161,9 +166,9 @@ const toPersistenceError = (error: unknown) =>
 		message: error instanceof Error ? error.message : "PlanetScale inventory persistence failed",
 	})
 
-// Lenient decoders: only the fields we consume, everything else ignored. The
-// region/kind shapes differ between the Vitess and Postgres products, so all
-// secondary fields are optional.
+// Lenient decoders for the fields we consume. The SDK returns bodies unchecked while typing
+// them as complete, and the region/kind shapes differ between the Vitess and Postgres
+// products, so all secondary fields are optional.
 const DatabaseSchema = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
@@ -239,14 +244,9 @@ const InsightRowSchema = Schema.Struct({
 	last_run_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 
-const PageSchema = <S extends Schema.Top>(item: S) =>
-	Schema.Struct({
-		data: Schema.Array(item),
-	})
-
 const parseTimestamp = (value: string | null | undefined): number | null => {
 	if (value == null || value === "") return null
-	const parsed = Date.parse(value)
+	const parsed = timestampMs(value)
 	return Number.isNaN(parsed) ? null : parsed
 }
 
@@ -324,122 +324,30 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "PlanetScaleService", toPersistenceError)
 			const env = yield* Env
 			const psOAuth = yield* PlanetScaleOAuthService
 			const httpClient = yield* HttpClient.HttpClient
-			const apiBase = env.MAPLE_PLANETSCALE_API_BASE_URL.replace(/\/$/, "")
-
-			const apiGetJson = Effect.fn("PlanetScaleService.apiGetJson")(function* (
-				path: string,
-				authorization: string,
-			) {
-				return yield* Effect.gen(function* () {
-					const request = HttpClientRequest.get(`${apiBase}${path}`).pipe(
-						HttpClientRequest.setHeaders({
-							Authorization: authorization,
-							Accept: "application/json",
-						}),
-					)
-					const res = yield* httpClient.execute(request)
-					const text = yield* res.text
-					return { status: res.status, text }
-				}).pipe(
-					Effect.mapError(
-						(error) =>
-							new IntegrationsUpstreamError({
-								message: `PlanetScale API request failed: ${error.message}`,
-								cause: error,
-							}),
-					),
-					Effect.timeout(REQUEST_TIMEOUT),
-					Effect.retry({
-						while: (error) => error._tag === "TimeoutError",
-						times: REQUEST_TIMEOUT_RETRIES,
-						schedule: Schedule.exponential(REQUEST_RETRY_BASE_DELAY).pipe(Schedule.jittered),
-					}),
-					Effect.catchTag("TimeoutError", () =>
-						Effect.fail(
-							new IntegrationsUpstreamError({
-								message: `PlanetScale API request timed out: ${path}`,
-								status: UPSTREAM_TIMEOUT_STATUS,
-							}),
-						),
-					),
-				)
-			})
 
 			/**
-			 * Fetch all pages of a list endpoint, bounded by MAX_PAGES. `complete`
-			 * is false when the bound was hit with a full final page — the listing
-			 * was truncated, and callers must not treat the items as an exhaustive
-			 * inventory (no reconciling deletions, no advancing watermarks past
-			 * data that was never observed).
+			 * One management-API call with the org's grant. A 401 refreshes once and stamps the
+			 * grant revoked if the fresh token is rejected too (`withAccessToken`). Only timeouts
+			 * retry, per request: a PlanetScale slowdown once timed out 5+ orgs at once, and a
+			 * jittered retry rides that out without stretching the tick. HTTP errors are never replayed.
 			 */
-			const fetchAllPages = Effect.fn("PlanetScaleService.fetchAllPages")(function* <
-				S extends Schema.Top,
-			>(basePath: string, authorization: string, itemSchema: S) {
-				const decodePage = Schema.decodeUnknownEffect(Schema.fromJsonString(PageSchema(itemSchema)))
-				const items: Array<S["Type"]> = []
-				let complete = false
-				for (let page = 1; page <= MAX_PAGES; page++) {
-					const separator = basePath.includes("?") ? "&" : "?"
-					const response = yield* apiGetJson(
-						`${basePath}${separator}page=${page}&per_page=${PAGE_SIZE}`,
-						authorization,
-					)
-					// Same taxonomy as fetchOrganizations: a rejected grant surfaces as
-					// revoked, so the per-org lastInventoryError copy (and any future
-					// tag-keyed handling) distinguishes it from a transient blip.
-					if (response.status === 401 || response.status === 403) {
-						return yield* Effect.fail(
-							new IntegrationsRevokedError({
-								message: `PlanetScale rejected the authorization (HTTP ${response.status}) for ${basePath} — reconnect the integration`,
-							}),
-						)
-					}
-					if (response.status < 200 || response.status >= 300) {
-						return yield* Effect.fail(
-							new IntegrationsUpstreamError({
-								message: `PlanetScale API returned HTTP ${response.status} for ${basePath}`,
-								status: response.status,
-							}),
-						)
-					}
-					const decoded = yield* decodePage(response.text).pipe(
-						Effect.mapError(
-							(cause) =>
-								new IntegrationsUpstreamError({
-									message: `PlanetScale API returned an unexpected payload for ${basePath}`,
-									cause,
-								}),
-						),
-					)
-					items.push(...decoded.data)
-					if (decoded.data.length < PAGE_SIZE) {
-						complete = true
-						break
-					}
-				}
-				if (!complete) {
-					yield* Effect.annotateCurrentSpan("maple.planetscale.listing_truncated", true)
-					yield* Effect.logWarning("PlanetScale listing truncated at the pagination ceiling", {
-						basePath,
-						maxItems: MAX_PAGES * PAGE_SIZE,
-					})
-				}
-				return { items, complete }
-			})
-
-			/**
-			 * Bearer Authorization for the org's OAuth grant, refreshed as needed.
-			 * A revoked/missing grant surfaces as-is — the poller records it per-org
-			 * and moves on; queryInsights lets the endpoint error union carry it.
-			 */
-			const authorizationFor = (connection: PlanetScaleConnectionRow) =>
-				Schema.decodeEffect(OrgId)(connection.orgId).pipe(
-					Effect.orDie,
-					Effect.flatMap((orgId) => psOAuth.getValidAccessToken(orgId)),
-					Effect.map(({ accessToken }) => planetScaleBearerHeader(accessToken)),
+			const callApi = <A, E extends SdkError>(
+				connection: PlanetScaleConnectionRow,
+				operation: string,
+				effect: Effect.Effect<A, E, PlanetScale.PlanetScaleOpContext>,
+			) =>
+				psOAuth.withAccessToken(connection.orgId, (accessToken) =>
+					runPlanetScale(
+						httpClient,
+						{ apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL, accessToken },
+						operation,
+						effect,
+						{ timeoutRetries: REQUEST_TIMEOUT_RETRIES },
+					),
 				)
 
 			/**
@@ -456,64 +364,55 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				ttlMs: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscalePollState)
 							.select()
-							.from(planetscalePollState)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, dataset),
-									eq(planetscalePollState.databaseId, databaseId),
-								),
-							)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dataset.eq(dataset),
+								$.databaseId.eq(databaseId),
+							])
 							.limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 				const existing = rows[0]
 
 				if (existing === undefined) {
-					yield* database
-						.execute((db) =>
-							db.insert(planetscalePollState).values({
+					yield* dbExecute((db) =>
+						db.run(
+							PG.insertInto(PlanetscalePollState).values({
 								id: randomUUID(),
 								orgId,
 								dataset,
 								databaseId,
-								leaseUntil: new Date(now + LEASE_MS),
-								createdAt: new Date(now),
-								updatedAt: new Date(now),
+								leaseUntil: now + LEASE_MS,
+								createdAt: now,
+								updatedAt: now,
 							}),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
+						),
+					)
 					return "claimed" as const
 				}
 
 				if (!existing.enabled) return "disabled" as const
-				if (existing.lastSuccessAt !== null && now - existing.lastSuccessAt.getTime() < ttlMs) {
+				if (existing.lastSuccessAt !== null && now - existing.lastSuccessAt < ttlMs) {
 					return "fresh" as const
 				}
 
 				// Lease claim: only wins if the previous lease expired. `.returning()`
 				// length is the claim signal (never read driver write-result shapes).
-				const claimed = yield* database
-					.execute((db) =>
-						db
-							.update(planetscalePollState)
-							.set({ leaseUntil: new Date(now + LEASE_MS), updatedAt: new Date(now) })
-							.where(
-								and(
-									eq(planetscalePollState.id, existing.id),
-									or(
-										isNull(planetscalePollState.leaseUntil),
-										lt(planetscalePollState.leaseUntil, new Date(now)),
-									),
-								),
-							)
-							.returning({ id: planetscalePollState.id }),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const claimed = yield* dbExecute((db) =>
+					db.run(
+						PG.update(PlanetscalePollState)
+							.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
+							.where(($) => [
+								$.id.eq(existing.id),
+								PG.or($.leaseUntil.isNull(), $.leaseUntil.lt(now)),
+							])
+							.returning("id"),
+					),
+				)
 				return claimed.length > 0 ? ("claimed" as const) : ("lease_held" as const)
 			})
 
@@ -535,21 +434,18 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				dataset: string,
 				databaseId: string,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscalePollState)
 							.select()
-							.from(planetscalePollState)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, dataset),
-									eq(planetscalePollState.databaseId, databaseId),
-								),
-							)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dataset.eq(dataset),
+								$.databaseId.eq(databaseId),
+							])
 							.limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 				return rows[0]
 			})
 
@@ -558,22 +454,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				orgId: OrgId,
 				dataset: string,
 			) {
-				const rows = yield* database
-					.execute((db) =>
-						db
-							.select({
-								databaseId: planetscalePollState.databaseId,
-								lastSuccessAt: planetscalePollState.lastSuccessAt,
-							})
-							.from(planetscalePollState)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, dataset),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscalePollState)
+							.select("databaseId", "lastSuccessAt")
+							.where(($) => [$.orgId.eq(orgId), $.dataset.eq(dataset)]),
+					),
+				)
 				return new Map(rows.map((row) => [row.databaseId, row.lastSuccessAt]))
 			})
 
@@ -586,39 +473,36 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				dataset: string,
 				databaseId: string,
 				error: string | null,
-				watermarkAt: Date | null,
+				watermarkAt: number | null,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* database
-					.execute((db) =>
-						db
-							.update(planetscalePollState)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(PlanetscalePollState)
 							.set(
 								error === null
 									? {
-											lastSuccessAt: new Date(now),
+											lastSuccessAt: now,
 											lastError: null,
 											lastErrorAt: null,
 											leaseUntil: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 											...(!(watermarkAt === null) ? { watermarkAt } : undefined),
 										}
 									: {
 											lastError: error,
-											lastErrorAt: new Date(now),
+											lastErrorAt: now,
 											leaseUntil: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 										},
 							)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, dataset),
-									eq(planetscalePollState.databaseId, databaseId),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dataset.eq(dataset),
+								$.databaseId.eq(databaseId),
+							]),
+					),
+				)
 			})
 
 			const recordInventoryResult = Effect.fn("PlanetScaleService.recordInventoryResult")(function* (
@@ -627,73 +511,88 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				error: string | null,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* database
-					.execute((db) =>
-						db
-							.update(planetscalePollState)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(PlanetscalePollState)
 							.set(
 								error === null
 									? {
-											lastSuccessAt: new Date(now),
+											lastSuccessAt: now,
 											lastError: null,
 											lastErrorAt: null,
 											leaseUntil: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 										}
 									: {
 											lastError: error,
-											lastErrorAt: new Date(now),
+											lastErrorAt: now,
 											leaseUntil: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 										},
 							)
-							.where(
-								and(
-									eq(planetscalePollState.orgId, orgId),
-									eq(planetscalePollState.dataset, INVENTORY_DATASET),
-									eq(planetscalePollState.databaseId, ""),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
-				yield* database
-					.execute((db) =>
-						db
-							.update(planetscaleConnections)
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dataset.eq(INVENTORY_DATASET),
+								$.databaseId.eq(""),
+							]),
+					),
+				)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(PlanetscaleConnections)
 							.set(
 								error === null
 									? {
-											lastInventoryAt: new Date(now),
+											lastInventoryAt: now,
 											lastInventoryError: null,
-											updatedAt: new Date(now),
+											updatedAt: now,
 										}
-									: { lastInventoryError: error, updatedAt: new Date(now) },
+									: { lastInventoryError: error, updatedAt: now },
 							)
-							.where(eq(planetscaleConnections.id, connectionId)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.id.eq(connectionId)]),
+					),
+				)
 			})
 
 			const refreshInventory = Effect.fn("PlanetScaleService.refreshInventory")(function* (
 				connection: PlanetScaleConnectionRow,
 			) {
-				const authorization = yield* authorizationFor(connection)
-				const org = encodeURIComponent(connection.psOrganization)
-
-				const { items: upstreamDatabases, complete: inventoryComplete } = yield* fetchAllPages(
-					`/v1/organizations/${org}/databases`,
-					authorization,
-					DatabaseSchema,
+				const organization = connection.psOrganization
+				const listing = yield* callApi(
+					connection,
+					`listing databases in ${organization}`,
+					collectPages(PlanetScale.listDatabases, { organization, per_page: PAGE_SIZE }, MAX_PAGES),
 				)
+				const inventoryComplete = listing.complete
+				const upstreamDatabases = yield* decodeConsumed(
+					Schema.Array(DatabaseSchema),
+					`databases in ${organization}`,
+				)(listing.items)
+				if (!inventoryComplete) {
+					yield* Effect.logWarning(
+						"PlanetScale database listing truncated at the pagination ceiling",
+					).pipe(Effect.annotateLogs({ orgId: connection.orgId, maxItems: MAX_PAGES * PAGE_SIZE }))
+				}
 
 				const withBranches = yield* Effect.forEach(
 					upstreamDatabases,
 					(db) =>
 						Effect.gen(function* () {
-							const { items: branches } = yield* fetchAllPages(
-								`/v1/organizations/${org}/databases/${encodeURIComponent(db.name)}/branches`,
-								authorization,
-								BranchSchema,
+							const branches = yield* callApi(
+								connection,
+								`listing branches of ${organization}/${db.name}`,
+								collectPages(
+									PlanetScale.listBranches,
+									{ organization, database: db.name, per_page: PAGE_SIZE },
+									MAX_PAGES,
+								),
+							).pipe(
+								Effect.flatMap(({ items }) =>
+									decodeConsumed(
+										Schema.Array(BranchSchema),
+										`branches of ${db.name}`,
+									)(items),
+								),
 							)
 							const branchInfos: PlanetScaleBranchInfo[] = branches.map((branch) => ({
 								id: branch.id,
@@ -707,14 +606,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				)
 
 				const now = yield* Clock.currentTimeMillis
-				const existingRows = yield* database
-					.execute((db) =>
-						db
+				const existingRows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleDatabases)
 							.select()
-							.from(planetscaleDatabases)
-							.where(eq(planetscaleDatabases.orgId, connection.orgId)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(connection.orgId)]),
+					),
+				)
 				const existingByDatabaseId = new Map(existingRows.map((row) => [row.databaseId, row]))
 				const upstreamIds = new Set(withBranches.map(({ db }) => db.id))
 
@@ -729,27 +627,28 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 							plan: db.plan ?? null,
 							branchesJson: branches,
 							deletedAt: null,
-							updatedAt: new Date(now),
+							updatedAt: now,
 						}
 						const existing = existingByDatabaseId.get(db.id)
-						return (
-							existing !== undefined
-								? database.execute((client) =>
-										client
-											.update(planetscaleDatabases)
+						return existing !== undefined
+							? dbExecute((client) =>
+									client.run(
+										PG.update(PlanetscaleDatabases)
 											.set(values)
-											.where(eq(planetscaleDatabases.id, existing.id)),
-									)
-								: database.execute((client) =>
-										client.insert(planetscaleDatabases).values({
+											.where(($) => [$.id.eq(existing.id)]),
+									),
+								)
+							: dbExecute((client) =>
+									client.run(
+										PG.insertInto(PlanetscaleDatabases).values({
 											id: randomUUID(),
 											orgId: connection.orgId,
 											databaseId: db.id,
-											createdAt: new Date(now),
+											createdAt: now,
 											...values,
 										}),
-									)
-						).pipe(Effect.mapError(toPersistenceError))
+									),
+								)
 					},
 					{ concurrency: INVENTORY_WRITE_CONCURRENCY, discard: true },
 				)
@@ -765,14 +664,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 							Predicate.isNull(row.deletedAt),
 					),
 					(row) =>
-						database
-							.execute((client) =>
-								client
-									.update(planetscaleDatabases)
-									.set({ deletedAt: new Date(now), updatedAt: new Date(now) })
-									.where(eq(planetscaleDatabases.id, row.id)),
-							)
-							.pipe(Effect.mapError(toPersistenceError)),
+						dbExecute((client) =>
+							client.run(
+								PG.update(PlanetscaleDatabases)
+									.set({ deletedAt: now, updatedAt: now })
+									.where(($) => [$.id.eq(row.id)]),
+							),
+						),
 					{ concurrency: INVENTORY_WRITE_CONCURRENCY, discard: true },
 				)
 
@@ -787,11 +685,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			 * dedupe index is what makes the two sources converge.
 			 */
 			const refreshDeployRequestsFor = Effect.fn("PlanetScaleService.refreshDeployRequestsFor")(
-				function* (
-					connection: PlanetScaleConnectionRow,
-					database_: PlanetScaleDatabaseRow,
-					authorization: string,
-				) {
+				function* (connection: PlanetScaleConnectionRow, database_: PlanetScaleDatabaseRow) {
 					const claim = yield* claimPollWork(
 						connection.orgId,
 						DEPLOY_REQUESTS_DATASET,
@@ -802,7 +696,6 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
 						return 0
 					}
-					const orgId = yield* Schema.decodeEffect(OrgId)(connection.orgId).pipe(Effect.orDie)
 
 					const state = yield* readPollState(
 						connection.orgId,
@@ -812,59 +705,70 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					const now = yield* Clock.currentTimeMillis
 					// First backfill reaches 30 days; afterwards only what changed since
 					// the watermark, so a steady-state tick pages once and stops.
-					const floor = Math.max(state?.watermarkAt?.getTime() ?? 0, now - DEPLOY_REQUESTS_FLOOR_MS)
+					const floor = Math.max(state?.watermarkAt ?? 0, now - DEPLOY_REQUESTS_FLOOR_MS)
 
-					const org = encodeURIComponent(connection.psOrganization)
-					const { items: requests, complete: requestsComplete } = yield* fetchAllPages(
-						`/v1/organizations/${org}/databases/${encodeURIComponent(database_.name)}/deploy-requests`,
-						authorization,
-						DeployRequestSchema,
+					const organization = connection.psOrganization
+					const listing = yield* callApi(
+						connection,
+						`listing deploy requests of ${organization}/${database_.name}`,
+						collectPages(
+							PlanetScale.listDeployRequests,
+							{ organization, database: database_.name, per_page: PAGE_SIZE },
+							MAX_PAGES,
+						),
 					)
+					const requestsComplete = listing.complete
+					const requests = yield* decodeConsumed(
+						Schema.Array(DeployRequestSchema),
+						`deploy requests of ${database_.name}`,
+					)(listing.items)
 
-					let inserted = 0
-					let newestUpdate = state?.watermarkAt?.getTime() ?? 0
-					for (const request of requests) {
+					const newestUpdate = requests.reduce(
+						(newest, request) => Math.max(newest, parseTimestamp(request.updated_at) ?? 0),
+						state?.watermarkAt ?? 0,
+					)
+					const pending = requests.flatMap((request) => {
 						const updatedAt = parseTimestamp(request.updated_at) ?? 0
-						if (updatedAt > newestUpdate) newestUpdate = updatedAt
 						// Untouched since the watermark: its transitions are already stored.
-						if (updatedAt !== 0 && updatedAt <= floor) continue
-
+						if (updatedAt !== 0 && updatedAt <= floor) return []
 						const externalId =
 							request.number != null ? String(request.number) : (request.id ?? "")
 						const label = externalId === "" ? "Deploy request" : `Deploy request #${externalId}`
-						for (const row of deployRequestTimelineRows(request)) {
-							if (row.occurredAtMs < now - DEPLOY_REQUESTS_FLOOR_MS) continue
-							const result = yield* appendTimelineEvent({
-								orgId,
-								databaseName: database_.name,
-								// A deploy request spans two branches; pinning the marker to
-								// one of them would be a guess the payload doesn't support.
-								branchName: "",
-								category: "deploy_request",
-								eventType: row.eventType,
-								state: row.state,
-								externalId,
-								title: `${label} ${DEPLOY_BACKFILL_VERB[row.state] ?? row.state}`,
-								source: "backfill",
-								actorLogin: request.actor?.display_name ?? null,
-								url: request.html_url ?? null,
-								payload: {
-									branch: request.branch ?? null,
-									intoBranch: request.into_branch ?? null,
-								},
-								occurredAtMs: row.occurredAtMs,
-								createdAtMs: now,
-							}).pipe(Effect.mapError(toPersistenceError))
-							if (result.inserted) inserted++
-						}
-					}
+						return deployRequestTimelineRows(request)
+							.filter((row) => row.occurredAtMs >= now - DEPLOY_REQUESTS_FLOOR_MS)
+							.map((row) => ({ request, row, externalId, label }))
+					})
+					const appended = yield* Effect.forEach(pending, ({ request, row, externalId, label }) =>
+						appendTimelineEvent({
+							orgId: connection.orgId,
+							databaseName: database_.name,
+							// A deploy request spans two branches; pinning the marker to
+							// one of them would be a guess the payload doesn't support.
+							branchName: "",
+							category: "deploy_request",
+							eventType: row.eventType,
+							state: row.state,
+							externalId,
+							title: `${label} ${DEPLOY_BACKFILL_VERB[row.state] ?? row.state}`,
+							source: "backfill",
+							actorLogin: request.actor?.display_name ?? null,
+							url: request.html_url ?? null,
+							payload: {
+								branch: request.branch ?? null,
+								intoBranch: request.into_branch ?? null,
+							},
+							occurredAtMs: row.occurredAtMs,
+							createdAtMs: now,
+						}).pipe(Effect.mapError(toPersistenceError)),
+					)
+					const inserted = appended.filter((result) => result.inserted).length
 
 					// A truncated listing has unobserved requests beyond the ceiling:
 					// advancing the watermark past them would skip them forever. Keep the
 					// old watermark — inserts are idempotent, so re-scanning is safe.
 					const watermark = requestsComplete
 						? newestUpdate > 0
-							? new Date(newestUpdate)
+							? newestUpdate
 							: null
 						: (state?.watermarkAt ?? null)
 					yield* recordPollResult(
@@ -890,33 +794,27 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			const refreshDeployRequests = Effect.fn("PlanetScaleService.refreshDeployRequests")(function* (
 				connection: PlanetScaleConnectionRow,
 			) {
-				const authorization = yield* authorizationFor(connection)
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleDatabases)
 							.select()
-							.from(planetscaleDatabases)
-							.where(
-								and(
-									eq(planetscaleDatabases.orgId, connection.orgId),
-									isNull(planetscaleDatabases.deletedAt),
-									// Deploy requests are a MySQL/Vitess-only resource — Postgres
-									// databases answer 405 on this endpoint. Polling them anyway
-									// burned a slot in every tick's batch and buried the result
-									// in a logWarning, so it repeated forever.
-									eq(planetscaleDatabases.kind, "mysql"),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [
+								$.orgId.eq(connection.orgId),
+								$.deletedAt.isNull(),
+								// Deploy requests are a MySQL/Vitess-only resource — Postgres
+								// databases answer 405 on this endpoint. Polling them anyway
+								// burned a slot in every tick's batch and buried the result
+								// in a logWarning, so it repeated forever.
+								$.kind.eq("mysql"),
+							]),
+					),
+				)
 
 				// Round-robin by staleness so every database is reached eventually
 				// rather than the first 25 alphabetically being reached always.
 				const staleness = yield* pollStateByDatabaseId(connection.orgId, DEPLOY_REQUESTS_DATASET)
 				const ordered = [...rows].sort(
-					(a, b) =>
-						(staleness.get(a.databaseId)?.getTime() ?? 0) -
-						(staleness.get(b.databaseId)?.getTime() ?? 0),
+					(a, b) => (staleness.get(a.databaseId) ?? 0) - (staleness.get(b.databaseId) ?? 0),
 				)
 				const batch = ordered.slice(0, DEPLOY_REQUESTS_MAX_DATABASES_PER_TICK)
 				if (ordered.length > batch.length) {
@@ -934,7 +832,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				const counts = yield* Effect.forEach(
 					batch,
 					(row) =>
-						refreshDeployRequestsFor(connection, row, authorization).pipe(
+						refreshDeployRequestsFor(connection, row).pipe(
 							// One bad database must not stop the others.
 							Effect.catchCause((cause) =>
 								Cause.hasInterruptsOnly(cause)
@@ -958,6 +856,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				connection: PlanetScaleConnectionRow,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
+				// A revoked grant fails every call until someone reconnects, so polling it only
+				// repeats the 401. Reconnecting clears the stamp and polling resumes.
+				const grant = yield* psOAuth.grantStatus(connection.orgId)
+				if (grant.revokedAt !== null) {
+					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": "grant_revoked" })
+					return { outcome: "skipped" as const, deployEvents: 0 }
+				}
 				const claim = yield* claimInventoryWork(connection.orgId)
 				// Deliberately outside the inventory claim: inventory refreshes hourly,
 				// and a deploy marker an hour late is a deploy nobody can correlate.
@@ -1001,7 +906,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					return { outcome: "refreshed" as const, deployEvents }
 				}
 				yield* recordInventoryResult(connection.orgId, connection.id, result.error.message).pipe(
-					Effect.ignore,
+					Effect.ignore({ log: "Warn", message: "Failed to record PlanetScale inventory result" }),
 				)
 				// Fail inside a span so poll failures surface in find_errors, mirroring
 				// the Cloudflare poller's observeDatasetFailure seam — EXCEPT an upstream
@@ -1035,31 +940,20 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			})
 
 			const pollAllOrgs = Effect.fn("PlanetScaleService.pollAllOrgs")(function* () {
-				const connections = yield* database
-					.execute((db) => db.select().from(planetscaleConnections))
-					.pipe(
-						Effect.mapError(toPersistenceError),
-						Effect.tapError((error) =>
-							Effect.logWarning("PlanetScale poll could not list connections").pipe(
-								Effect.annotateLogs({ error: error.message }),
-							),
+				const connections = yield* dbExecute((db) =>
+					db.run(PG.from(PlanetscaleConnections).select()),
+				).pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning("PlanetScale poll could not list connections").pipe(
+							Effect.annotateLogs({ error: error.message }),
 						),
-					)
+					),
+				)
 
-				let refreshed = 0
-				let skipped = 0
-				let failures = 0
-				let deployEvents = 0
-				yield* Effect.forEach(
+				const results = yield* Effect.forEach(
 					connections,
 					(connection) =>
 						pollOrg(connection).pipe(
-							Effect.map((result) => {
-								deployEvents += result.deployEvents
-								if (result.outcome === "refreshed") refreshed++
-								else if (result.outcome === "skipped") skipped++
-								else failures++
-							}),
 							// A broken org must not stop the fleet.
 							Effect.catchCause((cause) =>
 								Cause.hasInterruptsOnly(cause)
@@ -1069,16 +963,22 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 												orgId: connection.orgId,
 												error: summarizeCause(cause),
 											}),
-											Effect.map(() => {
-												failures++
-											}),
+											Effect.as({ outcome: "failed" as const, deployEvents: 0 }),
 										),
 							),
 						),
-					{ concurrency: ORG_CONCURRENCY, discard: true },
+					{ concurrency: ORG_CONCURRENCY },
 				)
 
-				return { orgs: connections.length, refreshed, skipped, failures, deployEvents }
+				const countOutcome = (outcome: (typeof results)[number]["outcome"]) =>
+					results.filter((result) => result.outcome === outcome).length
+				return {
+					orgs: connections.length,
+					refreshed: countOutcome("refreshed"),
+					skipped: countOutcome("skipped"),
+					failures: countOutcome("failed"),
+					deployEvents: results.reduce((sum, result) => sum + result.deployEvents, 0),
+				}
 			})
 
 			const queryInsights = Effect.fn("PlanetScaleService.queryInsights")(function* (
@@ -1090,15 +990,14 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					"maple.planetscale.database": options.database,
 					"maple.planetscale.branch": options.branch ?? "",
 				})
-				const connections = yield* database
-					.execute((db) =>
-						db
+				const connections = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleConnections)
 							.select()
-							.from(planetscaleConnections)
-							.where(eq(planetscaleConnections.orgId, orgId))
+							.where(($) => [$.orgId.eq(orgId)])
 							.limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 				const connection = connections[0]
 				if (connection === undefined) {
 					return yield* Effect.fail(
@@ -1111,69 +1010,70 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				// Default to the database's production branch from the inventory.
 				let branch = options.branch
 				if (branch === undefined || branch.length === 0) {
-					const rows = yield* database
-						.execute((db) =>
-							db
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(PlanetscaleDatabases)
 								.select()
-								.from(planetscaleDatabases)
-								.where(
-									and(
-										eq(planetscaleDatabases.orgId, orgId),
-										eq(planetscaleDatabases.name, options.database),
-									),
-								)
+								.where(($) => [$.orgId.eq(orgId), $.name.eq(options.database)])
 								.limit(1),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
+						),
+					)
 					const branches = rows[0]?.branchesJson ?? []
 					branch = branches.find((entry) => entry.production)?.name ?? branches[0]?.name ?? "main"
 				}
 
-				const authorization = yield* authorizationFor(connection)
 				const limit = Math.min(Math.max(Math.floor(options.limit ?? 10), 1), 25)
-				const path =
-					`/v1/organizations/${encodeURIComponent(connection.psOrganization)}` +
-					`/databases/${encodeURIComponent(options.database)}` +
-					`/branches/${encodeURIComponent(branch)}/insights` +
-					`?from=${encodeURIComponent(new Date(options.startTime).toISOString())}` +
-					`&to=${encodeURIComponent(new Date(options.endTime).toISOString())}` +
-					`&sort=totalTime&dir=desc&per_page=${limit}`
-
-				const response = yield* apiGetJson(path, authorization)
-				if (response.status < 200 || response.status >= 300) {
-					// Authz/branch-shaped rejections soft-fail so the panel renders an
-					// inline empty state instead of a 5xx toast (top-traffic pattern).
-					return new PlanetScaleQueryInsightsResponse({
+				const unavailable = (unavailableReason: string) =>
+					Effect.succeed(
+						new PlanetScaleQueryInsightsResponse({ branch, rows: [], unavailableReason }),
+					)
+				// Authz/branch-shaped rejections soft-fail so the panel renders an inline empty
+				// state instead of a 5xx toast (top-traffic pattern). Timeouts and transport
+				// failures still fail the request.
+				const insights = yield* callApi(
+					connection,
+					`reading Query Insights for ${options.database}/${branch}`,
+					PlanetScale.listBranchQueries({
+						organization: connection.psOrganization,
+						database: options.database,
 						branch,
-						rows: [],
-						unavailableReason:
-							response.status === 401 || response.status === 403
-								? "The PlanetScale authorization lacks the read_databases scope needed for Query Insights."
-								: response.status === 404
-									? `PlanetScale has no insights for ${options.database}/${branch}.`
-									: `PlanetScale Query Insights returned HTTP ${response.status}.`,
-					})
-				}
-
-				const decoded = yield* Schema.decodeEffect(
-					Schema.fromJsonString(PageSchema(InsightRowSchema)),
-				)(response.text).pipe(
-					Effect.mapError(
-						(cause) =>
-							new IntegrationsUpstreamError({
-								message: "PlanetScale Query Insights returned an unexpected payload",
-								cause,
-							}),
-					),
+						from: new Date(options.startTime).toISOString(),
+						to: new Date(options.endTime).toISOString(),
+						sort: "totalTime",
+						dir: "desc",
+						per_page: limit,
+					}),
+				).pipe(
+					Effect.catchTags({
+						// Only a 403 from the insights endpoint itself: a revoked grant still fails, so
+						// the client sees the reconnect error rather than a scope hint.
+						"@maple/backend/integrations/PlanetScaleForbiddenError": () =>
+							unavailable(
+								"The PlanetScale authorization lacks the read_databases scope needed for Query Insights.",
+							),
+						"@maple/http/errors/IntegrationsUpstreamError": (error) =>
+							error.status === 404
+								? unavailable(
+										`PlanetScale has no insights for ${options.database}/${branch}.`,
+									)
+								: error.status !== undefined && !isUpstreamTimeout(error)
+									? unavailable(`PlanetScale Query Insights returned HTTP ${error.status}.`)
+									: Effect.fail(error),
+					}),
 				)
+				if (insights instanceof PlanetScaleQueryInsightsResponse) return insights
+				const insightRows = yield* decodeConsumed(
+					Schema.Array(InsightRowSchema),
+					"Query Insights",
+				)(insights.data)
 
 				return new PlanetScaleQueryInsightsResponse({
 					branch,
 					unavailableReason: null,
-					rows: decoded.data.flatMap((row) => {
+					rows: insightRows.flatMap((row) => {
 						const normalizedSql = row.normalized_sql ?? ""
 						if (normalizedSql.length === 0) return []
-						const lastRunAtMs = row.last_run_at ? Date.parse(row.last_run_at) : Number.NaN
+						const lastRunAtMs = row.last_run_at ? timestampMs(row.last_run_at) : Number.NaN
 						return [
 							new PlanetScaleQueryInsightRow({
 								fingerprint: row.fingerprint ?? normalizedSql,
@@ -1196,19 +1096,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 
 			const listDatabases = Effect.fn("PlanetScaleService.listDatabases")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				return yield* database
-					.execute((db) =>
-						db
+				return yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleDatabases)
 							.select()
-							.from(planetscaleDatabases)
-							.where(
-								and(
-									eq(planetscaleDatabases.orgId, orgId),
-									isNull(planetscaleDatabases.deletedAt),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
+					),
+				)
 			})
 
 			const listEvents = Effect.fn("PlanetScaleService.listEvents")(function* (
@@ -1220,64 +1114,43 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				// Keyset pagination over (occurred_at DESC, id DESC): an offset would
 				// skip rows as live webhooks land at the head between pages.
 				const cursor = parseEventCursor(options.cursor)
-				const rows = yield* database
-					.execute((db) =>
-						db
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(PlanetscaleEvents)
 							.select()
-							.from(planetscaleEvents)
-							.where(
-								and(
-									// OrgId first, always.
-									eq(planetscaleEvents.orgId, orgId),
-									gte(planetscaleEvents.occurredAt, new Date(options.startTime)),
-									lte(planetscaleEvents.occurredAt, new Date(options.endTime)),
-									...(options.database === undefined
-										? []
-										: [eq(planetscaleEvents.databaseName, options.database)]),
-									// A deploy request has no single branch, so a branch filter
-									// must not hide deploys — it narrows branch-scoped rows only.
-									...(options.branch === undefined
-										? []
-										: [
-												or(
-													eq(planetscaleEvents.branchName, options.branch),
-													eq(planetscaleEvents.branchName, ""),
-												)!,
-											]),
-									...(options.categories === undefined || options.categories.length === 0
-										? []
-										: [inArray(planetscaleEvents.category, [...options.categories])]),
-									...(cursor === null
-										? []
-										: [
-												or(
-													lt(
-														planetscaleEvents.occurredAt,
-														new Date(cursor.occurredAtMs),
-													),
-													and(
-														eq(
-															planetscaleEvents.occurredAt,
-															new Date(cursor.occurredAtMs),
-														),
-														lt(planetscaleEvents.id, cursor.id),
-													),
-												)!,
-											]),
-								),
-							)
-							.orderBy(desc(planetscaleEvents.occurredAt), desc(planetscaleEvents.id))
+							.where(($) => [
+								// OrgId first, always.
+								$.orgId.eq(orgId),
+								$.occurredAt.gte(options.startTime),
+								$.occurredAt.lte(options.endTime),
+								options.database === undefined
+									? undefined
+									: $.databaseName.eq(options.database),
+								// A deploy request has no single branch, so a branch filter
+								// must not hide deploys — it narrows branch-scoped rows only.
+								options.branch === undefined
+									? undefined
+									: PG.or($.branchName.eq(options.branch), $.branchName.eq("")),
+								options.categories === undefined || options.categories.length === 0
+									? undefined
+									: PG.inList($.category, options.categories),
+								cursor === null
+									? undefined
+									: PG.or(
+											$.occurredAt.lt(cursor.occurredAtMs),
+											PG.and($.occurredAt.eq(cursor.occurredAtMs), $.id.lt(cursor.id)),
+										),
+							])
+							.orderBy(["occurredAt", "desc"], ["id", "desc"])
 							// One extra row is how we know a next page exists without a count.
 							.limit(options.limit + 1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+					),
+				)
 
 				const events = rows.slice(0, options.limit)
 				const last = events[events.length - 1]
 				const nextCursor =
-					rows.length > options.limit && last !== undefined
-						? `${last.occurredAt.getTime()}:${last.id}`
-						: null
+					rows.length > options.limit && last !== undefined ? `${last.occurredAt}:${last.id}` : null
 				return { events, nextCursor }
 			})
 

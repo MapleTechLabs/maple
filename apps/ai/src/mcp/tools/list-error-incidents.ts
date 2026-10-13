@@ -9,6 +9,7 @@ import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/Erro
 export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_error_incidents",
+		title: "List Error Incidents",
 		description:
 			"List error incidents: time-bounded flare-ups under an error issue. Each issue can have many incidents: a 'first_seen' incident when the issue opens, then 'regression' incidents if new occurrences arrive after the issue was resolved. Incidents auto-resolve after the issue is silent for ~30 min.",
 		parameters: Schema.Struct({
@@ -25,7 +26,7 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				issueId: params.issue_id ?? "all",
+				"maple.issue.id": params.issue_id ?? "all",
 			})
 			const readModels = yield* ErrorIssueReadModelsService
 

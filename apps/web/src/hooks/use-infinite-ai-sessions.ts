@@ -65,7 +65,8 @@ const rankedOf = (page: { data: ReadonlyArray<unknown>; ranked?: number }) => pa
 export function useInfiniteAiSessions(filterInputs: AiSessionsFilterInputs) {
 	const filterKey = React.useMemo(() => JSON.stringify(filterInputs), [filterInputs])
 	const countedFilters = React.useMemo(() => {
-		const { vendorIds, serviceNames, deploymentEnvs, models, agentNames, toolNames, search } = filterInputs
+		const { vendorIds, serviceNames, deploymentEnvs, models, agentNames, toolNames, search } =
+			filterInputs
 		return { vendorIds, serviceNames, deploymentEnvs, models, agentNames, toolNames, search }
 	}, [filterInputs])
 	const detailsKey = React.useMemo(() => JSON.stringify(countedFilters), [countedFilters])
@@ -78,7 +79,10 @@ export function useInfiniteAiSessions(filterInputs: AiSessionsFilterInputs) {
 		listAiSessionsResultAtom({ data: { ...filterInputs, limit: PAGE_SIZE, offset: 0 } }),
 	)
 
-	const [additionalPages, setAdditionalPages] = React.useState<AdditionalPages>({ key: filterKey, pages: NO_PAGES })
+	const [additionalPages, setAdditionalPages] = React.useState<AdditionalPages>({
+		key: filterKey,
+		pages: NO_PAGES,
+	})
 	const [isFetchingNextPage, setIsFetchingNextPage] = React.useState(false)
 	const [paginationStopped, setPaginationStopped] = React.useState(false)
 	const [details, setDetails] = React.useState<ReadonlyMap<string, AiSessionDetailsItem>>(() => new Map())
@@ -212,7 +216,10 @@ export function useInfiniteAiSessions(filterInputs: AiSessionsFilterInputs) {
 				if (filterKeyRef.current !== currentKey) return
 				setAdditionalPages((prev) => ({
 					key: currentKey,
-					pages: [...(prev.key === currentKey ? prev.pages : NO_PAGES), { data: result.data, ranked: rankedOf(result) }],
+					pages: [
+						...(prev.key === currentKey ? prev.pages : NO_PAGES),
+						{ data: result.data, ranked: rankedOf(result) },
+					],
 				}))
 			})
 			.catch((error) => {

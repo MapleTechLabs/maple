@@ -6,7 +6,7 @@ import {
 	IntegrationsValidationError,
 	isInstallationProcessable,
 	type OrgId,
-	type PrReviewListItem,
+	PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
 	type UserId,
 	type VcsAccountType,
@@ -151,13 +151,14 @@ export interface GithubConnectServiceApi {
 		repositoryId: VcsRepositoryId,
 		config: PrReviewRepositoryConfig,
 	) => Effect.Effect<PrReviewRepositoryConfig, IntegrationsPersistenceError | IntegrationsValidationError>
-	readonly listPrReviews: (
+	readonly getPrReviewSettings: (
 		orgId: OrgId,
-		repositoryId: VcsRepositoryId,
-	) => Effect.Effect<
-		ReadonlyArray<PrReviewListItem>,
-		IntegrationsPersistenceError | IntegrationsValidationError
-	>
+	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError>
+	readonly setPrReviewSettings: (
+		orgId: OrgId,
+		settings: PrReviewOrgSettings,
+		updatedBy: UserId,
+	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError | IntegrationsValidationError>
 }
 
 // Repo / queue / state errors all carry a `message`; collapse them to the
@@ -179,6 +180,34 @@ const fromGithubError = (error: GithubAppError) =>
 				message: error.message,
 				...(!(error.status === undefined) ? { status: error.status } : undefined),
 			})
+
+/** Trims and de-duplicates a review config, dropping empty fields so a later default reaches it. */
+const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig")(function* (
+	config: PrReviewRepositoryConfig,
+) {
+	const ignorePaths = [...new Set((config.ignorePaths ?? []).map((p) => p.trim()).filter((p) => p !== ""))]
+	if (ignorePaths.length > 50)
+		return yield* new IntegrationsValidationError({ message: "At most 50 ignored paths." })
+	const instructions = config.instructions?.trim()
+	return new PrReviewRepositoryConfig({
+		...(instructions ? { instructions } : undefined),
+		...(ignorePaths.length > 0 ? { ignorePaths } : undefined),
+		...(config.categories === undefined ? undefined : { categories: config.categories }),
+		...(config.minInlineSeverity === undefined
+			? undefined
+			: { minInlineSeverity: config.minInlineSeverity }),
+		...(config.reviewDrafts === undefined ? undefined : { reviewDrafts: config.reviewDrafts }),
+		...(config.dailyLimit === undefined ? undefined : { dailyLimit: config.dailyLimit }),
+		...(config.automaticReviewLimit === undefined
+			? undefined
+			: { automaticReviewLimit: config.automaticReviewLimit }),
+		...(config.feedbackScope === undefined ? undefined : { feedbackScope: config.feedbackScope }),
+		...(config.blockOnContractBreaks === undefined
+			? undefined
+			: { blockOnContractBreaks: config.blockOnContractBreaks }),
+		...(config.postMergeCheck === undefined ? undefined : { postMergeCheck: config.postMergeCheck }),
+	})
+})
 
 export class GithubConnectService extends Context.Service<GithubConnectService, GithubConnectServiceApi>()(
 	"@maple/api/services/vcs/vendor/github/GithubConnectService",
@@ -218,8 +247,8 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						initiatedByUserId: userId,
 						redirectUri: options.callbackUrl,
 						returnTo: options.returnTo ?? null,
-						createdAt: new Date(now),
-						expiresAt: new Date(now + STATE_TTL_MS),
+						createdAt: now,
+						expiresAt: now + STATE_TTL_MS,
 					}),
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -262,7 +291,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						message: "Connect session provider mismatch — restart the connect flow",
 					})
 				}
-				if (stateRow.expiresAt.getTime() < now) {
+				if (stateRow.expiresAt < now) {
 					yield* Effect.annotateCurrentSpan({
 						orgId: stateRow.orgId,
 						"vcs.connect.outcome": "state_expired",
@@ -761,30 +790,9 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				config: PrReviewRepositoryConfig,
 			) {
 				yield* requireRepository(orgId, repositoryId)
-				const ignorePaths = [
-					...new Set((config.ignorePaths ?? []).map((p) => p.trim()).filter((p) => p !== "")),
-				]
-				if (ignorePaths.length > 50)
-					return yield* new IntegrationsValidationError({ message: "At most 50 ignored paths." })
-				const instructions = config.instructions?.trim()
-				const cleaned = new PrReviewRepositoryConfig({
-					...(instructions ? { instructions } : undefined),
-					...(ignorePaths.length > 0 ? { ignorePaths } : undefined),
-					...(config.categories === undefined ? undefined : { categories: config.categories }),
-					...(config.minInlineSeverity === undefined
-						? undefined
-						: { minInlineSeverity: config.minInlineSeverity }),
-					...(config.reviewDrafts === undefined
-						? undefined
-						: { reviewDrafts: config.reviewDrafts }),
-					...(config.dailyLimit === undefined ? undefined : { dailyLimit: config.dailyLimit }),
-					...(config.automaticReviewLimit === undefined
-						? undefined
-						: { automaticReviewLimit: config.automaticReviewLimit }),
-					...(config.feedbackScope === undefined
-						? undefined
-						: { feedbackScope: config.feedbackScope }),
-				})
+				const cleaned = yield* cleanPrReviewConfig(config)
+				const ignorePaths = cleaned.ignorePaths ?? []
+				const instructions = cleaned.instructions
 				yield* asPersistence(repo.setPrReviewConfig(orgId, repositoryId, cleaned))
 				yield* Effect.annotateCurrentSpan({
 					orgId,
@@ -795,12 +803,34 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return cleaned
 			})
 
-			const listPrReviews = Effect.fn("GithubConnectService.listPrReviews")(function* (
+			const getPrReviewSettings = Effect.fn("GithubConnectService.getPrReviewSettings")(function* (
 				orgId: OrgId,
-				repositoryId: VcsRepositoryId,
 			) {
-				yield* requireRepository(orgId, repositoryId)
-				return yield* asPersistence(repo.listPrReviews(orgId, repositoryId, 50))
+				return yield* asPersistence(repo.getPrReviewSettings(orgId))
+			})
+
+			const setPrReviewSettings = Effect.fn("GithubConnectService.setPrReviewSettings")(function* (
+				orgId: OrgId,
+				settings: PrReviewOrgSettings,
+				updatedBy: UserId,
+			) {
+				const defaults =
+					settings.defaults === undefined
+						? undefined
+						: yield* cleanPrReviewConfig(settings.defaults)
+				const cleaned = new PrReviewOrgSettings({
+					...(settings.model === undefined ? undefined : { model: settings.model }),
+					...(defaults === undefined || Object.keys(defaults).length === 0
+						? undefined
+						: { defaults }),
+				})
+				yield* asPersistence(repo.setPrReviewSettings(orgId, cleaned, updatedBy))
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.pr_review.model": cleaned.model ?? "default",
+					"vcs.pr_review.has_defaults": cleaned.defaults !== undefined,
+				})
+				return cleaned
 			})
 
 			return {
@@ -812,8 +842,9 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				setTrackedBranch,
 				setPrReviewEnabled,
 				getPrReviewConfig,
+				getPrReviewSettings,
+				setPrReviewSettings,
 				setPrReviewConfig,
-				listPrReviews,
 			} satisfies GithubConnectServiceApi
 		}),
 	},

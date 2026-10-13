@@ -1,14 +1,14 @@
 import { useNavigate, useSearch } from "@tanstack/react-router"
 import { Exit } from "effect"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { memo, useEffect, useMemo, useRef, useState } from "react"
-import { toastManager } from "@maple/ui/components/ui/toast"
+import { EMPTY_VALUE, pluralize } from "@maple/ui/lib/format"
 
 import type { AlertDestinationDocument, AlertRuleDocument } from "@maple/domain/http"
 import { Unitflow, View } from "@maple/unitflow/react"
 
-import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
-import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
+import { SegmentedSelect } from "@/components/common/segmented-select"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { AlertTagControls } from "@/components/alerts/alert-tag-controls"
 import { ActiveIncidentsTable } from "@/components/alerts/overview/active-incidents-table"
 import { AlertsEmptyState } from "@/components/alerts/overview/alerts-empty-state"
@@ -17,9 +17,11 @@ import {
 	type AlertsStatusFilter,
 } from "@/components/alerts/overview/alerts-health-summary"
 import { RulesOverviewTable } from "@/components/alerts/overview/rules-overview-table"
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
-import { getExitErrorMessage } from "@/lib/alerts/form-utils"
+import { MagnifierIcon } from "@/components/icons"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
+import { toastExit } from "@/lib/error-toast"
 import { needsAttention } from "@/lib/alerts/rule-status"
+import { formatResolutionDuration } from "@/lib/alerts/form-utils"
 import {
 	filterByTags,
 	groupByTag as groupItemsByTag,
@@ -31,16 +33,10 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { AlertsOverviewModel, type AlertsOverviewReady } from "@/lib/models/alerts-overview-model"
 import { unitflowRuntime } from "@/lib/models/runtime"
 import { retainedQuery } from "@/lib/services/common/atom-client"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { ErrorState } from "@/components/common/error-state"
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 /** Sentinel value for the "Created by" filter meaning no creator restriction. */
 const ANY_CREATOR = "__anyone__"
@@ -69,13 +65,15 @@ export function AlertsOverviewTab() {
 	)
 }
 
+const OVERVIEW_SKELETON_ROWS = ["h-21 w-full", "h-10 w-full", "h-48 w-full"]
+
 function OverviewSkeleton() {
 	return (
-		<div className="space-y-6">
-			<Skeleton className="h-[84px] w-full" />
-			<Skeleton className="h-10 w-full" />
-			<Skeleton className="h-48 w-full" />
-		</div>
+		<SkeletonList
+			rows={OVERVIEW_SKELETON_ROWS.length}
+			gap="6"
+			renderRow={(index) => <Skeleton className={OVERVIEW_SKELETON_ROWS[index]} />}
+		/>
 	)
 }
 
@@ -155,10 +153,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 		if (toggleState === lastToggleState.current) return
 		lastToggleState.current = toggleState
 		if (AsyncResult.isFailure(toggleState)) {
-			toastManager.add({
-				title: getExitErrorMessage(Exit.failCause(toggleState.cause), "Failed to update rule"),
-				type: "error",
-			})
+			toastExit(Exit.failCause(toggleState.cause), { error: "Failed to update rule" })
 		}
 	}, [toggleState])
 	const isToggling = AsyncResult.isWaiting(toggleState)
@@ -252,14 +247,12 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 
 	const mttr = useMemo(() => {
 		const resolved = incidents.filter((i) => i.resolvedAt && i.firstTriggeredAt)
-		if (resolved.length === 0) return "—"
+		if (resolved.length === 0) return EMPTY_VALUE
 		const avg =
 			resolved.reduce((sum, i) => {
 				return sum + (new Date(i.resolvedAt!).getTime() - new Date(i.firstTriggeredAt).getTime())
 			}, 0) / resolved.length
-		if (avg < 60_000) return `${Math.round(avg / 1000)}s`
-		if (avg < 3_600_000) return `${(avg / 60_000).toFixed(1)}m`
-		return `${(avg / 3_600_000).toFixed(1)}h`
+		return formatResolutionDuration(avg)
 	}, [incidents])
 
 	const enabledRules = rules.filter((r) => r.enabled).length
@@ -284,26 +277,13 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 
 			<div className="space-y-4">
 				<div className="flex items-center gap-3">
-					<InputGroup className="flex-1 max-w-xs">
-						<InputGroupAddon>
-							<MagnifierIcon />
-						</InputGroupAddon>
-						<InputGroupInput
-							placeholder="Search rules..."
-							value={searchQuery}
-							onChange={(e) => setSearchQuery(e.target.value)}
-						/>
-						{searchQuery && (
-							<InputGroupAddon align="inline-end">
-								<InputGroupButton
-									aria-label="Clear search"
-									onClick={() => setSearchQuery("")}
-								>
-									<XmarkIcon />
-								</InputGroupButton>
-							</InputGroupAddon>
-						)}
-					</InputGroup>
+					<SearchInput
+						size="default"
+						className="flex-1 max-w-xs"
+						placeholder="Search rules..."
+						value={searchQuery}
+						onValueChange={setSearchQuery}
+					/>
 					{showCreatorFilter && (
 						<Select
 							items={creatorOptions}
@@ -345,17 +325,24 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 						serviceName={search.serviceName}
 					/>
 				) : filteredRules.length === 0 ? (
-					<Empty className="py-12">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								<MagnifierIcon size={18} />
-							</EmptyMedia>
-							<EmptyTitle>No rules match your filters</EmptyTitle>
-							<EmptyDescription>
-								Try a different search term, creator, tag, or health filter.
-							</EmptyDescription>
-						</EmptyHeader>
-					</Empty>
+					<FilteredEmpty
+						noun="rules"
+						title="No rules match your filters"
+						description="Try a different search term, creator, tag, or health filter."
+						icon={<MagnifierIcon size={18} />}
+						onClear={() => {
+							setSearchQuery("")
+							navigate({
+								search: (prev) => ({
+									...prev,
+									tags: undefined,
+									createdBy: undefined,
+									status: undefined,
+								}),
+							})
+						}}
+						className="py-12"
+					/>
 				) : (
 					<RulesOverviewTable
 						rules={filteredRules}
@@ -376,7 +363,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 			{/* Slim summary strip — a secondary glance beneath the rules list */}
 			<div className="space-y-2">
 				<div className="flex justify-end">
-					<AlertSegmentedSelect<"24h" | "7d" | "30d">
+					<SegmentedSelect<"24h" | "7d" | "30d">
 						options={[
 							{ value: "24h", label: "24h" },
 							{ value: "7d", label: "7d" },
@@ -388,17 +375,21 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 						aria-label="Triggered window"
 					/>
 				</div>
-				<AlertStatStrip
-					items={[
-						{
-							label: `Triggered (${triggeredWindow})`,
-							value: triggeredInWindow,
-							hint: triggeredInWindow === 1 ? "incident" : "incidents",
-						},
-						{ label: "Avg MTTR", value: mttr, hint: "resolved · 30d" },
-						{ label: "Rules enabled", value: enabledRules, hint: `of ${rules.length} total` },
-					]}
-				/>
+				<StatRail columns={3}>
+					<StatRailItem
+						size="sm"
+						eyebrow={`Triggered (${triggeredWindow})`}
+						value={triggeredInWindow}
+						hint={pluralize(triggeredInWindow, "incident")}
+					/>
+					<StatRailItem size="sm" eyebrow="Avg MTTR" value={mttr} hint="resolved · 30d" />
+					<StatRailItem
+						size="sm"
+						eyebrow="Rules enabled"
+						value={enabledRules}
+						hint={`of ${rules.length} total`}
+					/>
+				</StatRail>
 			</div>
 		</div>
 	)

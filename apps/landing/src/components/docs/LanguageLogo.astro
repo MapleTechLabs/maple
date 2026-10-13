@@ -1,8 +1,8 @@
 ---
-// Maps a `LanguageId` to its brand logo. The only place the logo components
+// Maps a `LogoId` to its brand logo. The only place the logo components
 // are wired to language ids — everything else passes the id around.
 import type { AstroComponentFactory } from "astro/runtime/server/index.js";
-import type { LanguageId } from "../../lib/docs-languages";
+import type { LogoId } from "../../lib/docs-languages";
 import EffectLogomark from "../icons/EffectLogomark.astro";
 import NodeJsLogo from "../icons/NodeJsLogo.astro";
 import NextjsLogo from "../icons/NextjsLogo.astro";
@@ -13,9 +13,10 @@ import OpenJdkLogo from "../icons/OpenJdkLogo.astro";
 import CsharpLogo from "../icons/CsharpLogo.astro";
 import KotlinLogo from "../icons/KotlinLogo.astro";
 import LaravelLogo from "../icons/LaravelLogo.astro";
+import TypeScriptLogo from "../icons/TypeScriptLogo.astro";
 
 interface Props {
-    id: LanguageId;
+    id: LogoId;
     class?: string;
 }
 
@@ -30,7 +31,8 @@ const LOGOS = {
     kotlin: KotlinLogo,
     csharp: CsharpLogo,
     laravel: LaravelLogo,
-} satisfies Record<LanguageId, AstroComponentFactory>;
+    typescript: TypeScriptLogo,
+} satisfies Record<LogoId, AstroComponentFactory>;
 
 const { id, class: className = "h-4 w-4" } = Astro.props;
 const Logo = LOGOS[id];

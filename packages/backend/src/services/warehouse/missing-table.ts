@@ -36,4 +36,7 @@ const isMissingTable =
  */
 export const isMissingProductEvents = isMissingTable(/product_events/i)
 
+/** `ai_crawler_requests` ships in a later migration; only its absence may drop the crawler stats. */
+export const isMissingAiCrawlerRequests = isMissingTable(/ai_crawler_requests/i)
+
 export const isMissingServiceOperationsRollup = isMissingTable(/service_operations_(?:minutely|hourly)/i)

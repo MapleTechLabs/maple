@@ -1,0 +1,17 @@
+---
+import ChangelogPage from "../../../components/changelog/ChangelogPage.astro";
+import { getSortedReleases, pageCount } from "../../../lib/changelog";
+
+export async function getStaticPaths() {
+    const releases = await getSortedReleases();
+    // Page 1 is /changelog itself, so the paged routes start at 2.
+    return Array.from({ length: pageCount(releases.length) - 1 }, (_, i) => ({
+        params: { page: String(i + 2) },
+        props: { releases, page: i + 2 },
+    }));
+}
+
+const { releases, page } = Astro.props;
+---
+
+<ChangelogPage releases={releases} page={page} />

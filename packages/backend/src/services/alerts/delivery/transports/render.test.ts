@@ -1,4 +1,5 @@
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
+import { OrgId } from "@maple/domain/primitives"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Schema } from "effect"
@@ -25,7 +26,7 @@ const CHAT = "https://web.localhost/chat"
 
 const destinationRow: AlertDestinationRow = {
 	id: DESTINATION_ID,
-	orgId: "org_1" as AlertDestinationRow["orgId"],
+	orgId: Schema.decodeSync(OrgId)("org_1"),
 	name: "Destination",
 	type: "webhook",
 	enabled: true,
@@ -35,8 +36,12 @@ const destinationRow: AlertDestinationRow = {
 	secretTag: "",
 	lastTestedAt: null,
 	lastTestError: null,
-	createdAt: new Date(0),
-	updatedAt: new Date(0),
+	consecutiveFailures: 0,
+	lastFailureAt: null,
+	disabledAt: null,
+	disabledReason: null,
+	createdAt: 0,
+	updatedAt: 0,
 	createdBy: "user_1",
 	updatedBy: "user_1",
 }
@@ -204,26 +209,6 @@ describe("transport render: templates", () => {
 			assert.strictEqual(spec.body, '{"canonical":"payload"}')
 		}
 	})
-})
-
-describe("transport render: event types", () => {
-	for (const eventType of ["trigger", "resolve", "test"] as const) {
-		it(`every provider renders a ${eventType} event without throwing`, () => {
-			const withEvent = { context: { ...context, eventType } }
-			assert.doesNotThrow(() => {
-				pagerDutyTransport.render(inputFor({ type: "pagerduty", integrationKey: "k" }, withEvent))
-				webhookTransport.render(
-					inputFor(
-						{ type: "webhook", url: "https://hooks.test/x", signingSecret: null },
-						withEvent,
-					),
-				)
-				discordTransport.render(
-					inputFor({ type: "discord", webhookUrl: "https://discord.com/api/w/1/tok" }, withEvent),
-				)
-			})
-		})
-	}
 })
 
 /**

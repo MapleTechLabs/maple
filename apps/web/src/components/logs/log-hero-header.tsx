@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, type CSSProperties } from "react"
 import { XmarkIcon, ChevronDownIcon, ChevronUpIcon } from "@/components/icons"
 
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -7,20 +7,24 @@ import { SheetClose } from "@maple/ui/components/ui/sheet"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import { CopyableValue, tryParseJson } from "@/components/attributes"
+import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { highlightCode } from "@/lib/sugar-high"
-import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
+import { SeverityBadge, severityLabel } from "@maple/ui/components/logs/severity-badge"
+import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import type { Log } from "@/api/warehouse/logs"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { LogTextButton } from "./log-text-button"
 
-const HERO_TONE: Record<string, string> = {
-	TRACE: "bg-severity-trace/5 border-severity-trace/20",
-	DEBUG: "bg-severity-debug/5 border-severity-debug/20",
-	INFO: "bg-severity-info/5 border-severity-info/20",
-	WARN: "bg-severity-warn/5 border-severity-warn/20",
-	WARNING: "bg-severity-warn/5 border-severity-warn/20",
-	ERROR: "bg-severity-error/5 border-severity-error/20",
-	FATAL: "bg-severity-fatal/5 border-severity-fatal/20",
-} satisfies Record<string, string>
+/** A faint wash of the severity colour behind the hero; unknown levels keep the plain border. */
+function heroToneStyle(severity: string): CSSProperties | undefined {
+	const color = SEVERITY_COLORS[severity.toUpperCase()]
+	if (color === undefined) return undefined
+	return {
+		backgroundColor: `color-mix(in oklch, ${color} 5%, transparent)`,
+		borderColor: `color-mix(in oklch, ${color} 20%, transparent)`,
+	}
+}
 
 const BODY_LINE_THRESHOLD = 280
 
@@ -36,12 +40,12 @@ interface LogHeroHeaderProps {
 
 export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 	const [expanded, setExpanded] = useState(false)
-	const tone = HERO_TONE[log.severityText.toUpperCase()] ?? "border-border"
 	const body = log.body ?? ""
 
 	// A JSON body (object/array) is pretty-printed and syntax-highlighted, like
 	// the Raw panel; anything else renders as plain text.
-	const parsed = tryParseJson(body)
+	const parsed = useMemo(() => tryParseJson(body), [body])
+	const displayBody = useMemo(() => stripAnsi(body), [body])
 	const isJson = parsed !== null
 	const formatted = useMemo(
 		() => (parsed !== null ? JSON.stringify(parsed, null, 2) : body),
@@ -57,7 +61,7 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 		isJson ? (
 			<pre
 				className={cn(
-					"font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words",
+					"font-mono text-ui leading-relaxed whitespace-pre-wrap break-words",
 					clamp && "line-clamp-6",
 				)}
 			>
@@ -70,25 +74,37 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 					clamp && "line-clamp-4",
 				)}
 			>
-				{body}
+				{displayBody}
 			</p>
 		)
 
 	return (
-		<div className={cn("border-b px-4 py-3 shrink-0", tone)}>
+		<div
+			className="border-b px-4 py-3 shrink-0"
+			style={heroToneStyle(severityLabel(log.severityText, log.severityNumber))}
+		>
 			<div className="flex items-center gap-2">
 				<Tooltip>
 					<TooltipTrigger render={<span className="cursor-help inline-flex" />}>
-						<SeverityBadge severity={log.severityText} />
+						<SeverityBadge severity={log.severityText} severityNumber={log.severityNumber} />
 					</TooltipTrigger>
 					<TooltipContent side="bottom">OTel severity number {log.severityNumber}</TooltipContent>
 				</Tooltip>
-				<Badge variant="outline" className="font-mono text-[10px]">
-					<ServiceDot serviceName={log.serviceName} className="size-1.5" />
+				<Badge variant="outline" size="xs" mono>
+					<ServiceDot serviceName={log.serviceName} size="sm" />
 					<CopyableValue value={log.serviceName}>{log.serviceName}</CopyableValue>
 				</Badge>
 				{showClose && (
-					<SheetClose render={<Button variant="ghost" size="icon" className="ml-auto shrink-0" />}>
+					<SheetClose
+						render={
+							<Button
+								variant="ghost"
+								size="icon"
+								aria-label="Close"
+								className="ml-auto shrink-0"
+							/>
+						}
+					>
 						<XmarkIcon size={16} />
 					</SheetClose>
 				)}
@@ -101,16 +117,25 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 			 * flickered on toggle as the two nodes swapped mid-animation.
 			 */}
 			<div className="mt-3">
-				<CopyableValue value={copyValue}>{message(isLong && !expanded)}</CopyableValue>
-				{isLong && (
-					<button
-						type="button"
-						onClick={() => setExpanded((v) => !v)}
-						className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+				<div className="flex items-start gap-1">
+					{/* Capped when expanded so a huge body cannot push the tabs below out of the sheet. */}
+					<div
+						className={cn("min-w-0 flex-1 select-text", expanded && "max-h-[45vh] overflow-auto")}
 					>
+						{message(isLong && !expanded)}
+					</div>
+					<CopyButton
+						value={copyValue}
+						label="message"
+						iconSize={12}
+						className="-mt-0.5 shrink-0"
+					/>
+				</div>
+				{isLong && (
+					<LogTextButton onClick={() => setExpanded((v) => !v)} className="mt-1.5">
 						{expanded ? "Show less" : "Show full message"}
 						{expanded ? <ChevronUpIcon size={10} /> : <ChevronDownIcon size={10} />}
-					</button>
+					</LogTextButton>
 				)}
 			</div>
 		</div>

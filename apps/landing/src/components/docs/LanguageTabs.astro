@@ -1,0 +1,56 @@
+---
+// Language/framework switcher for docs pages. Children are `<LanguageTab id>`
+// panels holding ordinary markdown, so code blocks keep their highlighting and
+// copy buttons. The pick is remembered and shared by every group on the site.
+// Without JavaScript the first panel shows and the rest stay hidden. Styles live
+// in global.css and behavior in lib/docs-tabs.ts, shared with the package-manager
+// switchers remark-install-tabs.mjs renders.
+import LanguageLogo from "./LanguageLogo.astro";
+import { LOGO_IDS, type LogoId } from "../../lib/docs-languages";
+
+interface Tab {
+    id: string;
+    label: string;
+}
+
+interface Props {
+    tabs: Tab[];
+    label?: string;
+}
+
+const { tabs, label = "Language" } = Astro.props;
+const hasLogo = (id: string): id is LogoId => (LOGO_IDS as readonly string[]).includes(id);
+---
+
+<div class="lt" data-lang-tabs="maple-docs-language">
+    <div class="lt__rail" role="tablist" aria-label={label}>
+        {tabs.map((tab, index) => (
+            <button
+                type="button"
+                role="tab"
+                class="lt__tab"
+                data-lang-trigger={tab.id}
+                aria-selected={index === 0 ? "true" : "false"}
+                tabindex={index === 0 ? 0 : -1}
+            >
+                {hasLogo(tab.id) ? (
+                    <LanguageLogo id={tab.id} class="lt__icon" />
+                ) : (
+                    <svg class="lt__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" />
+                        <polyline points="6.5 9.5 9.5 12 6.5 14.5" />
+                        <line x1="12.5" y1="14.5" x2="16.5" y2="14.5" />
+                    </svg>
+                )}
+                <span>{tab.label}</span>
+            </button>
+        ))}
+    </div>
+    <div class="lt__panels">
+        <slot />
+    </div>
+</div>
+
+<script>
+    import "../../lib/docs-tabs";
+</script>

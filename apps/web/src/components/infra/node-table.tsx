@@ -1,19 +1,27 @@
 import { Link } from "@tanstack/react-router"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import type { ListNodesResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "./primitives/data-table"
+import {
+	ColumnHead,
+	DataTable,
+	type SortControls,
+	ROW_LINK_CLASS,
+	useTableSort,
+} from "@/components/common/data-table"
 import { MetaLine } from "./primitives/meta-line"
+import { MeterRows } from "./primitives/meter-rows"
+import { capacityFraction, formatBytesOfAllocatable, formatCoresOfAllocatable } from "./format"
 import { formatUptime } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 export type NodeRow = ListNodesResponse["data"][number]
 
-type SortKey = "nodeName" | "cpuUsage" | "uptime" | "lastSeen"
+type SortKey = "nodeName" | "cpuUtilization" | "memoryUtilization" | "uptime" | "lastSeen"
 
 interface NodeTableProps {
 	nodes: ReadonlyArray<NodeRow>
@@ -21,23 +29,57 @@ interface NodeTableProps {
 	referenceTime?: string
 }
 
+/** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
+function NodeColumns({ sort }: { sort?: SortControls<SortKey> }) {
+	return (
+		<>
+			<ColumnHead<SortKey> label="Node" sortKey="nodeName" {...sort} width="w-0 flex-1 min-w-[260px]" />
+			<ColumnHead<SortKey>
+				label="CPU / allocatable"
+				sortKey="cpuUtilization"
+				{...sort}
+				width="w-[176px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Memory / allocatable"
+				sortKey="memoryUtilization"
+				{...sort}
+				width="w-[176px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Uptime"
+				sortKey="uptime"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<SortKey>
+				label="Last seen"
+				sortKey="lastSeen"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+			/>
+		</>
+	)
+}
+
 export function NodeTableLoading() {
 	return (
 		<DataTable.Root ariaLabel="Nodes">
 			<DataTable.Head>
-				<ColumnHead label="Node" width="w-0 flex-1 min-w-[260px]" />
-				<ColumnHead label="Status" width="w-[88px]" />
-				<ColumnHead label="CPU cores" align="right" width="w-[110px]" hidden="hidden md:flex" />
-				<ColumnHead label="Uptime" align="right" width="w-[100px]" hidden="hidden md:flex" />
-				<ColumnHead label="Last seen" align="right" width="w-[100px]" />
+				<NodeColumns />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={4}>
 				<div className="w-0 min-w-[260px] flex-1">
 					<Skeleton className="h-4 w-48" />
 					<Skeleton className="mt-1.5 h-3 w-32" />
 				</div>
-				<Skeleton className="h-3 w-[88px]" />
-				<Skeleton className="hidden h-3 w-[110px] md:block" />
+				<Skeleton className="hidden h-3 w-[176px] md:block" />
+				<Skeleton className="hidden h-3 w-[176px] lg:block" />
 				<Skeleton className="hidden h-3 w-[100px] md:block" />
 				<Skeleton className="h-3 w-[100px]" />
 			</DataTable.SkeletonRows>
@@ -47,51 +89,14 @@ export function NodeTableLoading() {
 
 export function NodeTable({ nodes, waiting, referenceTime }: NodeTableProps) {
 	const { sorted, sortKey, sortDir, handleSort } = useTableSort<NodeRow, SortKey>(nodes, {
-		initialKey: "cpuUsage",
+		initialKey: "cpuUtilization",
 		stringKeys: ["nodeName"],
 	})
 
 	return (
 		<DataTable.Root ariaLabel="Nodes" waiting={waiting}>
 			<DataTable.Head>
-				<ColumnHead<SortKey>
-					label="Node"
-					sortKey="nodeName"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					width="w-0 flex-1 min-w-[260px]"
-				/>
-				<ColumnHead label="Status" width="w-[88px]" />
-				<ColumnHead<SortKey>
-					label="CPU cores"
-					sortKey="cpuUsage"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[110px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Uptime"
-					sortKey="uptime"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[100px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<SortKey>
-					label="Last seen"
-					sortKey="lastSeen"
-					currentKey={sortKey}
-					dir={sortDir}
-					onSort={handleSort}
-					align="right"
-					width="w-[100px]"
-				/>
+				<NodeColumns sort={{ currentKey: sortKey, dir: sortDir, onSort: handleSort }} />
 			</DataTable.Head>
 			{sorted.length === 0 && <DataTable.Empty>No nodes match your search.</DataTable.Empty>}
 
@@ -103,33 +108,50 @@ export function NodeTable({ nodes, waiting, referenceTime }: NodeTableProps) {
 					className={ROW_LINK_CLASS}
 				>
 					<div className="w-0 min-w-[260px] flex-1">
-						<div className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
-							{node.nodeName}
+						<div className="flex items-center gap-2">
+							<TruncatedText
+								text={node.nodeName}
+								mono
+								className="text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+							/>
+							<HostStatusBadge quiet lastSeen={node.lastSeen} referenceTime={referenceTime} />
 						</div>
 						<MetaLine items={[node.kubeletVersion && `kubelet ${node.kubeletVersion}`]} />
 					</div>
-					<div className="w-[88px]">
-						<HostStatusBadge lastSeen={node.lastSeen} referenceTime={referenceTime} />
+					<div className="hidden w-[176px] md:block">
+						<CapacityCell
+							fraction={capacityFraction(node.cpuUtilization, node.cpuAllocatable)}
+							caption={formatCoresOfAllocatable(node.cpuUsage, node.cpuAllocatable)}
+						/>
 					</div>
-					<div className="hidden w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
-						{Number.isFinite(node.cpuUsage) ? node.cpuUsage.toFixed(2) : "—"}
+					<div className="hidden w-[176px] lg:block">
+						<CapacityCell
+							fraction={capacityFraction(node.memoryUtilization, node.memoryAllocatable)}
+							caption={formatBytesOfAllocatable(node.memoryUsage, node.memoryAllocatable)}
+						/>
 					</div>
-					<div className="hidden w-[100px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
+					<div className="hidden w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 						{formatUptime(node.uptime)}
 					</div>
 					<div className="w-[100px] text-right">
-						<Tooltip>
-							<TooltipTrigger
-								render={<span />}
-								className="cursor-default font-mono text-[11px] text-muted-foreground"
-							>
-								{formatRelativeTime(node.lastSeen)}
-							</TooltipTrigger>
-							<TooltipContent>{node.lastSeen}</TooltipContent>
-						</Tooltip>
+						<RelativeTime
+							value={node.lastSeen}
+							mono
+							className="cursor-default text-2xs text-muted-foreground"
+						/>
 					</div>
 				</Link>
 			))}
 		</DataTable.Root>
+	)
+}
+
+/** Usage against allocatable capacity: the meter answers "is this node full", the caption says of what. */
+function CapacityCell({ fraction, caption }: { fraction: number; caption: string }) {
+	return (
+		<div className="space-y-1">
+			<MeterRows hideLabels meters={[{ label: "usage", fraction }]} />
+			<div className="truncate font-mono text-2xs tabular-nums text-muted-foreground">{caption}</div>
+		</div>
 	)
 }

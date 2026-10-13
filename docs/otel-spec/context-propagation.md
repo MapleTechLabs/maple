@@ -75,18 +75,18 @@ captured.
 
 ### Core operations
 
-| Operation   | Signature (conceptual)             | Notes                                                                                                                                                                                                                  |
-| ----------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Operation   | Signature (conceptual)             | Notes                                                                                                                                                                                                                |
+| ----------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CreateKey` | `(name: string) -> Key`            | `name` is for debugging only. "Multiple calls to `CreateKey` with the same name SHOULD NOT return the same value unless language constraints dictate otherwise." Keys are unforgeable/opaque, not string-keyed maps. |
-| `GetValue`  | `(context, key) -> value`          | Read-only lookup against a given `Context`.                                                                                                                                                                            |
-| `SetValue`  | `(context, key, value) -> Context` | Returns a **new** `Context`; does not mutate the input.                                                                                                                                                                |
+| `GetValue`  | `(context, key) -> value`          | Read-only lookup against a given `Context`.                                                                                                                                                                          |
+| `SetValue`  | `(context, key, value) -> Context` | Returns a **new** `Context`; does not mutate the input.                                                                                                                                                              |
 
 ### Implicit-context operations (languages with implicit/ambient context, e.g. via thread-locals or async-local storage)
 
-| Operation             | Purpose                                                                                                                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Get Current Context` | Returns the `Context` associated with the current execution unit.                                                                                                                          |
-| `Attach`              | Associates a given `Context` with the current execution unit; returns a **token** for later restoration.                                                                                   |
+| Operation             | Purpose                                                                                                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Get Current Context` | Returns the `Context` associated with the current execution unit.                                                                                                                            |
+| `Attach`              | Associates a given `Context` with the current execution unit; returns a **token** for later restoration.                                                                                     |
 | `Detach`              | Resets the current context using the token returned by `Attach`. Implementations are expected to be able to signal incorrect call ordering (e.g. detaching out of order or detaching twice). |
 
 Attach/detach is a stack-like discipline. Detach with the token from the matching attach; don't
@@ -107,10 +107,10 @@ HTTP-style string-keyed carriers.
 
 ### `TextMapPropagator`
 
-| Method                               | Contract                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Fields(carrier)`                    | Returns the propagation field/header names this propagator uses for a given carrier type. A caller can clear those fields before re-injecting into a reused carrier ("If your carrier is reused, you should delete the fields here before calling Inject").                                                                               |
-| `Inject(context, carrier, setter?)`  | Writes values from `context` into `carrier` using `setter`.                                                                                                                                                                                                                                                                               |
+| Method                               | Contract                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Fields(carrier)`                    | Returns the propagation field/header names this propagator uses for a given carrier type. A caller can clear those fields before re-injecting into a reused carrier ("If your carrier is reused, you should delete the fields here before calling Inject").                                                                                    |
+| `Inject(context, carrier, setter?)`  | Writes values from `context` into `carrier` using `setter`.                                                                                                                                                                                                                                                                                    |
 | `Extract(context, carrier, getter?)` | Reads values from `carrier` and returns a **new** `Context` (per Context immutability) with the extracted values layered on top of the passed-in `context`. **On parse failure, the implementation MUST NOT throw and MUST NOT store a new value.** Extraction failures degrade to a no-op; they never crash the caller or poison the context. |
 
 ### `Setter` / `Getter` carrier interfaces
@@ -197,12 +197,12 @@ Example: `traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`
 
 ### Field-by-field
 
-| Field                        | Size     | Encoding               | Invalid value                                 | On invalid, receiver behavior                                                                                                                  |
-| ---------------------------- | -------- | ---------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`                    | 1 byte   | 2 lowercase hex digits | `ff` is explicitly forbidden                  | Reject/ignore the header                                                                                                                       |
-| `trace-id`                   | 16 bytes | 32 lowercase hex chars | All-zero (`00000000000000000000000000000000`) | Invalid. Vendors **must ignore** a `traceparent` with an invalid trace-id (treat it as if no `traceparent` was received; start a new trace)    |
-| `parent-id` (a.k.a. span-id) | 8 bytes  | 16 lowercase hex chars | All-zero (`0000000000000000`)                 | Invalid. Same treatment: ignore the header                                                                                                     |
-| `trace-flags`                | 1 byte   | 2 lowercase hex digits | None (all 256 bit patterns are structurally valid) | Level 1 defines only the least-significant bit (`sampled`). Level 2 (CR) also defines bit 1 (`random`)                                   |
+| Field                        | Size     | Encoding               | Invalid value                                      | On invalid, receiver behavior                                                                                                               |
+| ---------------------------- | -------- | ---------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`                    | 1 byte   | 2 lowercase hex digits | `ff` is explicitly forbidden                       | Reject/ignore the header                                                                                                                    |
+| `trace-id`                   | 16 bytes | 32 lowercase hex chars | All-zero (`00000000000000000000000000000000`)      | Invalid. Vendors **must ignore** a `traceparent` with an invalid trace-id (treat it as if no `traceparent` was received; start a new trace) |
+| `parent-id` (a.k.a. span-id) | 8 bytes  | 16 lowercase hex chars | All-zero (`0000000000000000`)                      | Invalid. Same treatment: ignore the header                                                                                                  |
+| `trace-flags`                | 1 byte   | 2 lowercase hex digits | None (all 256 bit patterns are structurally valid) | Level 1 defines only the least-significant bit (`sampled`). Level 2 (CR) also defines bit 1 (`random`)                                      |
 
 ### Sampled flag (trace-flags LSB)
 
@@ -260,9 +260,9 @@ chr          = %x20 / nblk-chr
 
 ### Key rules
 
-| Key form         | Format                                     | Purpose                                                                                                          |
-| ---------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| Simple key       | lowercase alphanum + `_ - * /`, ≤256 chars | Single-tenant vendor identifier, e.g. `congo`                                                                    |
+| Key form         | Format                                     | Purpose                                                                                                         |
+| ---------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Simple key       | lowercase alphanum + `_ - * /`, ≤256 chars | Single-tenant vendor identifier, e.g. `congo`                                                                   |
 | Multi-tenant key | `tenant-id@system-id`                      | Lets a multi-tenant vendor (`system-id`) namespace by `tenant-id`, so lookups can jump straight to `@system-id` |
 
 ### Value rules
@@ -300,11 +300,11 @@ under the key `ot`. Its value is an internal `;`-separated set of sub-keys (e.g.
 `ot=th:c8;rv:1a2b3c...`), capped at 256 characters for that entry. Individual instrumentation
 libraries get their own list-member keys rather than writing into the shared `ot` entry.
 
-| Sub-key | Meaning                                                                                                                                                                         | Format                                                            |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `th`    | Sampling **threshold** (rejection threshold `T`); conveys effective sampling probability. `0` = 100% sampling. Probability = `(2^56 - Threshold) / 2^56`.                       | 1-14 lowercase hex digits (conceptually right-padded to 56 bits)  |
-| `rv`    | Explicit **randomness value**: an alternative source of the common random value `R` used for consistent sampling decisions, instead of the trailing bits of the `trace-id` | Exactly 14 lowercase hex digits                                   |
-| `p`     | Legacy probability encoding that predates `th`/`rv`                                                                                                                            | (not specified here)                                              |
+| Sub-key | Meaning                                                                                                                                                                    | Format                                                           |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `th`    | Sampling **threshold** (rejection threshold `T`); conveys effective sampling probability. `0` = 100% sampling. Probability = `(2^56 - Threshold) / 2^56`.                  | 1-14 lowercase hex digits (conceptually right-padded to 56 bits) |
+| `rv`    | Explicit **randomness value**: an alternative source of the common random value `R` used for consistent sampling decisions, instead of the trailing bits of the `trace-id` | Exactly 14 lowercase hex digits                                  |
+| `p`     | Legacy probability encoding that predates `th`/`rv`                                                                                                                        | (not specified here)                                             |
 
 This mechanism underpins **OTel consistent probability sampling**. Every participant compares the
 shared randomness `R` (from `rv`, or else the low 7 bytes of the `trace-id`) against its own
@@ -322,12 +322,12 @@ customer `tracestate` values.
 **Stability: Stable.**
 Source: https://opentelemetry.io/docs/specs/otel/baggage/api/
 
-| Operation        | Signature                                      | Notes                                                                                                                                                                 |
-| ---------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Get Value`      | `(baggage, name) -> value \| absent`           | Simple lookup.                                                                                                                                                        |
-| `Get All Values` | `(baggage) -> [(name, value, metadata)]`       | Order is **not significant**; may be exposed as an iterator or immutable collection.                                                                                  |
+| Operation        | Signature                                      | Notes                                                                                                                                                                  |
+| ---------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Get Value`      | `(baggage, name) -> value \| absent`           | Simple lookup.                                                                                                                                                         |
+| `Get All Values` | `(baggage) -> [(name, value, metadata)]`       | Order is **not significant**; may be exposed as an iterator or immutable collection.                                                                                   |
 | `Set Value`      | `(baggage, name, value, metadata?) -> Baggage` | Returns a new `Baggage`. `metadata` is "an opaque wrapper for a string with no semantic meaning" to the API itself (vendor-defined use, e.g. W3C's `property` syntax). |
-| `Remove Value`   | `(baggage, name) -> Baggage`                   | Returns a new `Baggage` without that entry.                                                                                                                           |
+| `Remove Value`   | `(baggage, name) -> Baggage`                   | Returns a new `Baggage` without that entry.                                                                                                                            |
 
 Entry shape: **key** is any non-empty valid UTF-8 string, case-sensitive; **value** is any valid
 UTF-8 string, case-sensitive; **metadata** is an optional opaque string. A name has exactly one
@@ -365,11 +365,11 @@ outside the allowed set must be percent-encoded per RFC 3986.
 
 #### Limits
 
-| Limit             | Requirement                                                                                                                                           |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Max list-members  | Implementations **must** propagate all list-members when the total is **64 or fewer**                                                                 |
-| Max header size   | Implementations **must** propagate the full baggage-string when it is **8192 bytes or fewer**                                                         |
-| Over either limit | Implementations **may** drop list-members to come back into compliance (no normative drop order is mandated, unlike `tracestate`)                      |
+| Limit             | Requirement                                                                                                                       |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Max list-members  | Implementations **must** propagate all list-members when the total is **64 or fewer**                                             |
+| Max header size   | Implementations **must** propagate the full baggage-string when it is **8192 bytes or fewer**                                     |
+| Over either limit | Implementations **may** drop list-members to come back into compliance (no normative drop order is mandated, unlike `tracestate`) |
 
 No minimum-length constraint is specified for individual keys/values.
 

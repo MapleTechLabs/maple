@@ -4,10 +4,7 @@ import type { AiSessionGenAiValues, AiSessionSpan } from "@maple/domain/http"
 
 import { SessionViews } from "@/components/agent-sessions/session-detail/session-views"
 import { useMountEffect } from "@/hooks/use-mount-effect"
-import {
-	buildSessionSummary,
-	buildSessionTurns,
-} from "@maple/agent-sessions"
+import { buildSessionSummary, buildSessionTurns } from "@maple/agent-sessions"
 import { agentSpan, llmSpan, toolSpan, userMessages } from "@maple/agent-sessions/testing"
 /**
  * The transcript view over a session big enough to hurt: tens of turns, every

@@ -156,6 +156,16 @@ export const AlertCheckStatus = Schema.Literals(["breached", "healthy", "skipped
 })
 export type AlertCheckStatus = Schema.Schema.Type<typeof AlertCheckStatus>
 
+/**
+ * Why a check was skipped: the window had no data, fewer samples than the
+ * rule's minimum, or data without a usable scalar.
+ */
+export const AlertSkipReason = Schema.Literals(["no_data", "below_min_samples", "no_value"]).annotate({
+	identifier: "@maple/AlertSkipReason",
+	title: "Alert Skip Reason",
+})
+export type AlertSkipReason = Schema.Schema.Type<typeof AlertSkipReason>
+
 const ChannelLabel = Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed()))
 
 const NonEmptyString = Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed()))
@@ -557,6 +567,8 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	queryBuilderDraft: Schema.optionalKey(Schema.NullOr(QueryBuilderQueryDraftSchema)),
 	rawQuerySql: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	rawQueryReducer: Schema.optionalKey(Schema.NullOr(QueryEngineAlertReducer)),
+	/** Count a window with no data as a breach instead of skipping it. Default false. */
+	alertOnNoData: Schema.optionalKey(Schema.Boolean),
 	destinationIds: Schema.Array(AlertDestinationId),
 }) {}
 
@@ -585,6 +597,8 @@ export class AlertEvaluationResult extends Schema.Class<AlertEvaluationResult>("
 	thresholdUpper: Schema.NullOr(Schema.Number),
 	comparator: AlertComparator,
 	reason: Schema.String,
+	/** Set on `status: "skipped"`. */
+	skipReason: Schema.optionalKey(AlertSkipReason),
 }) {}
 
 export class AlertRulePreviewRequest extends Schema.Class<AlertRulePreviewRequest>("AlertRulePreviewRequest")(
@@ -605,6 +619,8 @@ export class AlertRulePreviewPoint extends Schema.Class<AlertRulePreviewPoint>("
 	value: Schema.NullOr(Schema.Number),
 	sampleCount: Schema.Number,
 	status: AlertEvaluationStatus,
+	/** Set on `status: "skipped"` points. */
+	skipReason: Schema.optionalKey(AlertSkipReason),
 	/**
 	 * The trailing in-progress window: evaluated over less than a full
 	 * `windowMinutes`, so its value may still move as data arrives.
@@ -1089,6 +1105,8 @@ export class AlertCheckDocument extends Schema.Class<AlertCheckDocument>("AlertC
 	timestamp: IsoDateTimeString,
 	groupKey: Schema.String,
 	status: AlertCheckStatus,
+	/** Populated on `status: "skipped"` rows; null on rows recorded before it existed. */
+	skipReason: Schema.NullOr(AlertSkipReason),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
 	threshold: Schema.Number,

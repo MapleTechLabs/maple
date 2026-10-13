@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { FetchHttpClient, HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Env } from "@maple/backend/platform/Env"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -91,6 +91,7 @@ const planetScaleStubs = Layer.mergeAll(
 		startConnect: die,
 		completeConnect: die,
 		getValidAccessToken: die,
+		withAccessToken: die,
 		listOrganizations: die,
 		hasConnection: die,
 		connectedByUserId: die,
@@ -116,7 +117,10 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi) => {
 		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
 			Layer.provide(warehouseLive),
 		),
-		Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(Layer.provide(planetScaleStubs)),
+		Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
+			Layer.provide(FetchHttpClient.layer),
+			Layer.provide(planetScaleStubs),
+		),
 		Layer.effect(SetupAuditService, SetupAuditService.make).pipe(Layer.provide(warehouseLive)),
 		Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(Layer.provide(warehouseLive)),
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
@@ -129,7 +133,7 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi) => {
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),

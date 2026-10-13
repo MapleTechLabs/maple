@@ -1,15 +1,19 @@
 import { useState } from "react"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
-import { Result } from "@/lib/effect-atom"
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import { Result, useAtomRefresh } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ChartLoading } from "@maple/ui/components/charts"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { PageHero } from "@/components/infra/primitives/page-hero"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
+import { ErrorState } from "@/components/common/error-state"
+import { DocsLink } from "@/components/common/docs-link"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { PlayRotateClockwiseIcon } from "@/components/icons"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import type { WebAnalyticsBreakdowns, WebAnalyticsEvent } from "@/api/warehouse/web-analytics"
@@ -27,6 +31,8 @@ import {
 	AnalyticsMetricStripLoading,
 } from "@/components/analytics/analytics-metric-strip"
 import { AnalyticsTrafficChart } from "@/components/analytics/analytics-traffic-chart"
+import { AnalyticsAiTab } from "@/components/analytics/ai/analytics-ai-tab"
+import { previousWindow } from "@/components/analytics/previous-window"
 import { Favicon } from "@/components/analytics/row-icon"
 import {
 	ANALYTICS_METRICS,
@@ -54,16 +60,22 @@ import {
 	webAnalyticsTimeseriesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
+
+const ANALYTICS_TABS = ["overview", "ai"] as const
+type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
 
 const analyticsSearchSchema = Schema.Struct({
 	...analyticsFilterSearchFields,
 	...TimeRangeSearchFields,
+	// A loose string so a stale or mistyped `?tab=` falls back to Overview instead of failing validation.
+	tab: Schema.optional(Schema.String),
 })
+
+const decodeTab = (value: unknown): AnalyticsTab => ANALYTICS_TABS.find((tab) => tab === value) ?? "overview"
 
 const DEFAULT_PRESET = "7d"
 const PAGES_LIMIT = 100
@@ -86,11 +98,9 @@ function WebAnalyticsPage() {
 		search.timePreset ?? DEFAULT_PRESET,
 	)
 	const filters = filtersFromSearch(search)
+	const activeTab = decodeTab(search.tab)
 
-	const handleTimeChange = (
-		range: { startTime?: string; endTime?: string; presetValue?: string },
-		options?: { replace?: boolean },
-	) => {
+	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
 			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
@@ -106,14 +116,15 @@ function WebAnalyticsPage() {
 		onFilterChange(key, toggleFilterValue(filters[key], value))
 	}
 
-	// Clearing filters keeps the time range: that is what you are looking at,
-	// the filters are how narrowly.
+	// Clearing filters keeps the time range and the tab: that is what you are
+	// looking at, the filters are how narrowly.
 	const onClearFilters = () => {
 		navigate({
 			search: {
 				startTime: search.startTime,
 				endTime: search.endTime,
 				timePreset: search.timePreset,
+				tab: search.tab,
 			},
 		})
 	}
@@ -138,106 +149,124 @@ function WebAnalyticsPage() {
 	)
 
 	const chips = activeFilterChips(filters)
+	// An org that never sent browser data gets the on-ramp, not a strip of zeroes.
+	const sessionsPresence = useSignalPresence("sessions")
 
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? DEFAULT_PRESET}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Web Analytics" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Filters>
-						<AnalyticsFilterSidebar
-							breakdownsResult={breakdownsResult}
-							eventsResult={eventsResult}
-							filters={filters}
-							onFilterChange={onFilterChange}
-							onClearFilters={onClearFilters}
-						/>
-					</DashboardLayout.Filters>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header>
-								<div className="flex flex-wrap items-center gap-2">
-									{/* Ahead of the range controls, because it is the one number
-									    on the page they do not govern: "right now" is its own
-									    window, and the filters still narrow it. */}
-									<AnalyticsLiveBadge filters={filters} />
-									{/* The reciprocal of the Analytics button on Session Replays: this
-									    page aggregates the sessions that page plays back one at a time,
-									    and "who are these people actually" is the next question from
-									    either side. Carries the window across, same as the outbound link. */}
-									<Button
-										variant="outline"
-										size="sm"
-										aria-label="View session replays"
-										render={
-											<Link
-												to="/replays"
-												search={{
-													startTime: search.startTime,
-													endTime: search.endTime,
-													timePreset: search.timePreset,
-												}}
-											/>
-										}
-									>
-										<PlayRotateClockwiseIcon size={14} />
-										<span className="hidden sm:inline">Replays</span>
-									</Button>
-									<TimeRangeHeaderControls
-										startTime={search.startTime ?? startTime}
-										endTime={search.endTime ?? endTime}
-										presetValue={
-											search.timePreset ??
-											(search.startTime ? undefined : DEFAULT_PRESET)
-										}
-										onTimeChange={handleTimeChange}
-									/>
-								</div>
-							</DashboardLayout.Header>
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<div className="space-y-6">
-								<PageHero
-									title="Web Analytics"
-									description="Who visited your sites, what they read, and where they came from — from the same browser SDK that records sessions."
-									meta={
-										chips.length > 0 ? (
-											<div className="flex flex-wrap items-center gap-1.5">
-												{chips.map((chip) => (
-													<button
-														key={`${chip.key}:${chip.value}`}
-														type="button"
-														onClick={() => onFilterChange(chip.key, undefined)}
-														className="rounded-sm border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
-													>
-														{chip.label} ✕
-													</button>
-												))}
-												<button
-													type="button"
-													onClick={onClearFilters}
-													className="px-1 text-[10px] text-muted-foreground underline-offset-2 hover:underline"
-												>
-													Clear all
-												</button>
-											</div>
-										) : undefined
-									}
-								/>
-								<AnalyticsContent
-									startTime={startTime}
-									endTime={endTime}
-									filters={filters}
-									breakdownsResult={breakdownsResult}
-									eventsResult={eventsResult}
-									onToggleFilter={onToggleFilter}
-								/>
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Web Analytics" }]}
+			headerActions={
+				<>
+					{/* Ahead of the range controls, because it is the one number
+					    on the page they do not govern: "right now" is its own
+					    window, and the filters still narrow it. */}
+					<AnalyticsLiveBadge filters={filters} />
+					{/* The reciprocal of the Analytics button on Session Replays: this
+					    page aggregates the sessions that page plays back one at a time,
+					    and "who are these people actually" is the next question from
+					    either side. Carries the window across, same as the outbound link. */}
+					<Button
+						variant="outline"
+						size="sm"
+						aria-label="View session replays"
+						render={
+							<Link
+								to="/replays"
+								search={{
+									startTime: search.startTime,
+									endTime: search.endTime,
+									timePreset: search.timePreset,
+								}}
+							/>
+						}
+					>
+						<PlayRotateClockwiseIcon />
+						<span className="hidden sm:inline">Replays</span>
+					</Button>
+				</>
+			}
+			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
+			tabs={
+				<UnderlineTabStrip navigation label="Analytics views">
+					{ANALYTICS_TABS.map((tab) => (
+						<Link
+							key={tab}
+							to="/analytics"
+							replace
+							search={(prev) => ({ ...prev, tab: tab === "overview" ? undefined : tab })}
+							aria-current={tab === activeTab ? "page" : undefined}
+							className={underlineTabClass(tab === activeTab)}
+						>
+							{tab === "overview" ? "Overview" : "AI traffic"}
+						</Link>
+					))}
+				</UnderlineTabStrip>
+			}
+			filters={
+				<AnalyticsFilterSidebar
+					breakdownsResult={breakdownsResult}
+					eventsResult={eventsResult}
+					filters={filters}
+					onFilterChange={onFilterChange}
+					onClearFilters={onClearFilters}
+				/>
+			}
+			gap="lg"
+		>
+			{/* Active filters, removable one at a time. The page title used to carry
+			    them; the breadcrumb and tab bar already say where you are. */}
+			{chips.length > 0 ? (
+				<div className="flex flex-wrap items-center gap-1.5">
+					{chips.map((chip) => (
+						<Badge
+							key={`${chip.key}:${chip.value}`}
+							variant="meta"
+							size="xs"
+							mono
+							className="h-auto px-1.5 py-0.5 transition-colors hover:text-foreground"
+							render={
+								<button type="button" onClick={() => onFilterChange(chip.key, undefined)} />
+							}
+						>
+							{chip.label} ✕
+						</Badge>
+					))}
+					<Button
+						variant="link"
+						size="xs"
+						onClick={onClearFilters}
+						className="h-auto px-1 text-3xs text-muted-foreground sm:text-3xs"
+					>
+						Clear all
+					</Button>
+				</div>
+			) : null}
+			{activeTab === "ai" ? (
+				<AnalyticsAiTab
+					startTime={startTime}
+					endTime={endTime}
+					filters={filters}
+					onToggleFilter={onToggleFilter}
+				/>
+			) : sessionsPresence.status === "absent" && chips.length === 0 ? (
+				<SignalEmptyState
+					signal="sessions"
+					noun="visits"
+					purpose="See your visitors, top pages and where they came from."
+					action="Set up web analytics"
+					guideDocs="webAnalytics"
+				/>
+			) : (
+				<AnalyticsContent
+					startTime={startTime}
+					endTime={endTime}
+					filters={filters}
+					breakdownsResult={breakdownsResult}
+					eventsResult={eventsResult}
+					onToggleFilter={onToggleFilter}
+				/>
+			)}
+		</DashboardPage>
 	)
 }
 
@@ -258,21 +287,6 @@ function pairedCompanion(
 	if (!metric.companion) return undefined
 	const companion = findMetric(metric.companion)
 	return isMetricAvailable(companion, source) ? companion : undefined
-}
-
-/**
- * The window immediately before this one, of the same length — the baseline the
- * KPI deltas are measured against. "Last 7 days" compares against the 7 days
- * before it, which is what makes a delta answer "is this better than usual".
- */
-function previousWindow(startTime: string, endTime: string) {
-	const start = parseWarehouseDateTime(startTime)
-	const end = parseWarehouseDateTime(endTime)
-	const span = end - start
-	return {
-		startTime: formatWarehouseDateTime(start - span),
-		endTime: startTime,
-	}
 }
 
 function AnalyticsContent({
@@ -309,6 +323,12 @@ function AnalyticsContent({
 	const [picked, setPicked] = useState<AnalyticsMetricKey | null>(null)
 
 	const summaryResult = useRefreshableAtomValue(webAnalyticsSummaryResultAtom({ data: windowInput }))
+	const retrySummary = useAtomRefresh(webAnalyticsSummaryResultAtom({ data: windowInput }))
+	const retryBreakdowns = useAtomRefresh(
+		webAnalyticsBreakdownsResultAtom({
+			data: { startTime, endTime, limitPerDimension: BREAKDOWN_LIMIT, ...filters },
+		}),
+	)
 
 	// The bot split for this window, measured over every agent regardless of the
 	// Traffic filter — which is the only way it can be reported while that filter
@@ -365,10 +385,12 @@ function AnalyticsContent({
 				.onInitial(() => (
 					<>
 						<AnalyticsMetricStripLoading />
-						<Skeleton className="h-56 w-full" />
+						<ChartLoading variant="area" height={224} />
 					</>
 				))
-				.onError((error) => <QueryErrorState error={error} />)
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load analytics summary" onRetry={retrySummary} />
+				))
 				.onSuccess((summary) => {
 					const source: AnalyticsMetricSource = { summary, timeseries, pageviews }
 					// An explicit pick wins while it still holds; a filter change that
@@ -414,7 +436,9 @@ function AnalyticsContent({
 						<Skeleton className="h-72 w-full" />
 					</div>
 				))
-				.onError((error) => <QueryErrorState error={error} />)
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load breakdowns" onRetry={retryBreakdowns} />
+				))
 				.onSuccess((breakdowns, result) => {
 					const pages = Result.builder(pagesResult)
 						.onSuccess((rows) => rows.data)
@@ -478,7 +502,14 @@ function AnalyticsContent({
 							renderIcon: multiSite
 								? (row) => <Favicon host={row.secondary ?? ""} />
 								: undefined,
-							emptyMessage: "No page views in the selected window.",
+							emptyMessage: (
+								<>
+									No page views in the selected window.
+									<span className="mt-2 flex justify-center">
+										<DocsLink page="webAnalytics" />
+									</span>
+								</>
+							),
 						},
 						{
 							tab: "Entries",
@@ -569,8 +600,15 @@ function AnalyticsContent({
 							noun: "event",
 							nounPlural: "events",
 							viewsLabel: "Events",
-							emptyMessage:
-								'No custom events in the selected window. Send one with track("name", props) from the browser SDK.',
+							emptyMessage: (
+								<>
+									No custom events in the selected window. Send one with track("name",
+									props) from the browser SDK.
+									<span className="mt-2 flex justify-center">
+										<DocsLink page="productEventsApi" />
+									</span>
+								</>
+							),
 						},
 					]
 

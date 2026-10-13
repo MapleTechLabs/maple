@@ -5,11 +5,11 @@
 // SPAN_KIND_LABELS for its existing importers.
 
 /**
- * Canonical span kinds. The warehouse carries two spellings of the same value: the managed
- * (Tinybird) schema stores the OTLP enum name `SPAN_KIND_SERVER`, while the BYO-ClickHouse /
- * ClickStack schema stores the short `Server` (see `IsEntryPoint` in
- * `packages/domain/src/clickhouse`). Compare against a normalized kind, never against a raw
- * string — a `=== "SPAN_KIND_CONSUMER"` check silently never fires on BYO ClickHouse.
+ * Canonical span kinds. Both the managed warehouse and local chDB store the short spelling
+ * (`Server`, `Client`, `Internal`, `Producer`, `Consumer`); the OTLP enum name
+ * `SPAN_KIND_SERVER` still reaches the UI from fixtures and older payloads. Compare against a
+ * normalized kind, never against a raw string: a `=== "SPAN_KIND_CLIENT"` check never fires
+ * on stored data.
  */
 export type SpanKind = "SERVER" | "CLIENT" | "PRODUCER" | "CONSUMER" | "INTERNAL"
 

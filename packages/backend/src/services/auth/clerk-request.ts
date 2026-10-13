@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 
 export class ClerkRequestError extends Schema.TaggedError<ClerkRequestError>()(
-	"@maple/api/services/auth/ClerkRequestError",
+	"@maple/backend/services/auth/ClerkRequestError",
 	{
 		operation: Schema.String,
 		message: Schema.String,

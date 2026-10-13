@@ -92,8 +92,8 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-MAPLE_ENDPOINT = "https://ingest.maple.dev"
-MAPLE_KEY = "MAPLE_TEST"  # set by maple-onboard skill on pairing
+MAPLE_ENDPOINT = "https://ingest.maple.dev"  # EU: https://ingest.eu.maple.dev
+MAPLE_KEY = "MAPLE_TEST"  # public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 _INITIALIZED = False
 
@@ -155,7 +155,7 @@ Counters:
 - `llm.tokens.output`
 - requests/events/jobs/errors
 
-Use UCUM units: token counters use `unit="{token}"`. Do not add app-side `llm.cost_usd` pricing metrics for normal LLM calls; Maple estimates cost centrally from provider/model/token data.
+Use UCUM units: token counters use `unit="{token}"`. Do not add app-side `llm.cost_usd` pricing metrics. Maple does not price tokens; it shows cost only from `gen_ai.usage.cost` on the LLM span (see `maple-onboarding-style` "LLM calls").
 
 Histograms:
 

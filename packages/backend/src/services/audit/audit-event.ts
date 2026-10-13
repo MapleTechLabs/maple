@@ -1,7 +1,7 @@
 import { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from "@maple/domain/http"
 import { ActorId, ApiKeyId, AuditLogEntryId, OrgId, UserId } from "@maple/domain/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
-import { Schema, SchemaTransformation } from "effect"
+import { DateTime, Schema, SchemaTransformation } from "effect"
 import { warehouseDateTime64 } from "@maple/query-engine/datetime"
 import { msToDate } from "@maple/backend/platform/time"
 
@@ -138,19 +138,11 @@ const nullableText = emptyAsNull(Schema.String)
 /** JSON document columns: `''` when absent, otherwise a JSON string of `schema`. */
 const jsonDocument = <S extends Schema.Top>(schema: S) => emptyAsNull(Schema.fromJsonString(schema))
 
-/**
- * `YYYY-MM-DD HH:mm:ss.SSS` (UTC, as the warehouse emits DateTime64) ⇄ `Date`;
- * an ISO rendering with `T`/`Z` is accepted as-is should a backend emit one.
- */
-const warehouseDateTime64Column = Schema.String.pipe(
+/** The warehouse column, already decoded to `DateTime.Utc`, as the entry's `Date`. */
+const utcAsDate = Schema.DateTimeUtc.pipe(
 	Schema.decodeTo(
 		Schema.Date,
-		SchemaTransformation.transform({
-			decode: (value: string) => new Date(/[TZ]/.test(value) ? value : `${value.replace(" ", "T")}Z`),
-			// The brand is the minting side's guarantee; a codec encodes to the
-			// wire type, which is a plain string.
-			encode: (value: Date): string => warehouseDateTime64(value.getTime()),
-		}),
+		SchemaTransformation.transform({ decode: DateTime.toDateUtc, encode: DateTime.fromDateUnsafe }),
 	),
 )
 
@@ -160,8 +152,8 @@ const warehouseDateTime64Column = Schema.String.pipe(
  */
 export const StoredAuditLogEntry = Schema.Struct({
 	id: AuditLogEntryId,
-	occurredAt: warehouseDateTime64Column,
-	recordedAt: warehouseDateTime64Column,
+	occurredAt: utcAsDate,
+	recordedAt: utcAsDate,
 	actorType: AuditActorType,
 	userId: emptyAsNull(UserId),
 	apiKeyId: emptyAsNull(ApiKeyId),

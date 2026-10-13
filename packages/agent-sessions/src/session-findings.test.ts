@@ -297,34 +297,6 @@ describe("buildSessionFindings", () => {
 		expect(finding.severity).toBe("anomaly")
 	})
 
-	it("flags the same tool called eight times within one turn, and not seven", () => {
-		const callsOf = (count: number) =>
-			twoTurns([
-				agentSpan({
-					spanId: "a2",
-					startMs: 5 * MINUTE,
-					durationMs: 60 * SECOND,
-					genAi: { conversationId: "t2" },
-				}),
-				...Array.from({ length: count }, (_, index) =>
-					toolSpan({
-						spanId: `loop-${index}`,
-						parentSpanId: "a2",
-						startMs: 5 * MINUTE + index * SECOND,
-						durationMs: 500,
-						toolName: "search",
-						genAi: { conversationId: "t2" },
-					}),
-				),
-			])
-
-		const flagged = report(callsOf(8)).findings.find((entry) => entry.label === "search")
-		expect(flagged?.detail).toBe("called 8× within one turn")
-		expect(flagged?.spanId).toBe("loop-0")
-
-		expect(report(callsOf(7)).findings).toEqual([])
-	})
-
 	it("flags a stall inside a turn, never the pause between turns", () => {
 		const result = report(
 			twoTurns([

@@ -1,6 +1,6 @@
 import { Context, Effect } from "effect"
-import type { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import type { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import type { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { AuditedRead, type AuditLogSource } from "@maple/domain/http"
 import { CONNECTOR_TENANT_USER_ID, type ChatTurnOrigin } from "@maple/domain/chat-session"
 import { chatConnectorAgentName } from "@maple/domain/system-agents"

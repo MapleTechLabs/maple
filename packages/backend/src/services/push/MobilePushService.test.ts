@@ -96,7 +96,8 @@ const makeLayer = (
 	devices: ReadonlyArray<MobileDevice>,
 	sendImpl: (push: ApnsPush) => ApnsSendResult,
 	sent: Array<ApnsPush>,
-	disabled: Array<string>,
+	// Device writes as `disable:<org>:<id>:<reason>` and `pushed:<org>:<ids>`, so the org each write is scoped to is asserted.
+	deviceWrites: Array<string>,
 	configured = true,
 	live: LiveActivityRecorder = { pushes: [], ended: [] },
 	running: ReadonlyArray<LiveActivity> = [],
@@ -129,11 +130,14 @@ const makeLayer = (
 					find: () => Effect.die("unused"),
 					listForUser: () => Effect.die("unused"),
 					listForOrg: () => Effect.succeed(devices),
-					disable: (id, reason) => {
-						disabled.push(`${id}:${reason}`)
+					disable: (orgId, id, reason) => {
+						deviceWrites.push(`disable:${orgId}:${id}:${reason}`)
 						return Effect.void
 					},
-					markPushed: () => Effect.void,
+					markPushed: (orgId, ids) => {
+						deviceWrites.push(`pushed:${orgId}:${ids.join(",")}`)
+						return Effect.void
+					},
 				}),
 				Layer.succeed(LiveActivitiesService, {
 					register: () => Effect.die("unused"),
@@ -299,12 +303,15 @@ describe("MobilePushService.notifyIncident", () => {
 
 	it.effect("disables a device Apple says is gone and keeps going for the rest", () => {
 		const sent: Array<ApnsPush> = []
-		const disabled: Array<string> = []
+		const deviceWrites: Array<string> = []
 		return Effect.gen(function* () {
 			const push = yield* MobilePushService
 			const summary = yield* push.notifyIncident(event({ eventType: "resolve" }))
 			assert.deepStrictEqual(summary, { sent: 1, failed: 1, unregistered: 1, skipped: 0 })
-			assert.deepStrictEqual(disabled, [`${deviceId(2)}:Unregistered`])
+			assert.deepStrictEqual(deviceWrites, [
+				`disable:${ORG}:${deviceId(2)}:Unregistered`,
+				`pushed:${ORG}:${deviceId(1)}`,
+			])
 		}).pipe(
 			Effect.provide(
 				makeLayer(
@@ -321,7 +328,7 @@ describe("MobilePushService.notifyIncident", () => {
 									}
 								: { outcome: "sent", apnsId: null },
 					sent,
-					disabled,
+					deviceWrites,
 				),
 			),
 		)

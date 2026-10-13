@@ -123,7 +123,7 @@ bounded 60 "legacy source fixture" \
 # compatibility evidence the v0 resolver is allowed to use.
 step "installing legacy marker"
 CHDB_VERSION="$(bounded 60 "maple --version" env MAPLE_LIBCHDB="$LIBCHDB" "$MAPLE" --version 2>/dev/null | sed -n 's/.*chdb \([^ ]*\).*/\1/p')"
-[[ -n "$CHDB_VERSION" ]] || CHDB_VERSION="v26.1.0"
+[[ -n "$CHDB_VERSION" ]] || CHDB_VERSION="v26.7.3"
 printf '%s\n' "{\"chdb\":\"$CHDB_VERSION\",\"maple\":\"native-probe\",\"createdAt\":\"unknown\",\"schema\":\"428701854f9fd30e\"}" >"$ROOT/maple-store-version.json"
 chmod 600 "$ROOT/maple-store-version.json"
 
@@ -142,7 +142,7 @@ grep -q "local store migrated" "$ROOT/migrate.out" || fail "native migration did
 # must be bumped in lockstep with LOCAL_SCHEMA_VERSION and the matching
 # LOCAL_SCHEMA_V<n>.fingerprint in apps/cli/src/server/schema-identity.ts;
 # leaving it on the previous version is what makes this step fail after a bump.
-jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 23 and .schema == "d6a6d8966cb49929"' \
+jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 29 and .schema == "c0c78cf931a7f897"' \
 	"$ROOT/maple-store-version.json" >/dev/null || fail "native migration wrote the wrong active identity"
 
 step "reopening promoted store in a fresh server"
@@ -167,7 +167,9 @@ step "verifying the service-map ingress bridge"
 bounded 60 "service-map ingress bridge probe" \
 	env MAPLE_LIBCHDB="$LIBCHDB" bun "$REPO_ROOT/apps/cli/test/native-service-map-ingest-bridge-probe.ts" "$DATA" "$CONFIG"
 
-rollback="$(sed -n 's/^.*rollback *//p' "$ROOT/migrate.out" | tail -1)"
+# Anchor on the `rollback` field label: the reclaim hint below it also mentions
+# the rollback source.
+rollback="$(sed -n 's/^[[:space:]]*rollback[[:space:]][[:space:]]*//p' "$ROOT/migrate.out" | tail -1)"
 [[ -n "$rollback" && -d "$rollback" ]] || fail "native migration did not retain a rollback source"
 [[ -f "$(dirname "$rollback")/maple-store-version.json" ]] || fail "native rollback marker was not retained"
 echo "PASS: native historical migration, rebuilt aggregates, v3 materialization triggers, fresh reopen, and rollback retention"

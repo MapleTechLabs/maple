@@ -22,15 +22,15 @@ java \
   -jar build/libs/app.jar
 ```
 
-Replace `MAPLE_TEST` with the project's real Maple ingest key once it exists. Keep these flags inline where the JVM is launched (`Procfile`, `Dockerfile`, or `JAVA_TOOL_OPTIONS`). Do not move them behind unset env vars. The agent does not read `application.yml`.
+Replace `MAPLE_TEST` with the project's real Maple ingest key once it exists. EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep these flags inline where the JVM is launched (`Procfile`, `Dockerfile`, or `JAVA_TOOL_OPTIONS`). Do not move them behind unset env vars. The agent does not read `application.yml`.
 
 The agent auto-instruments Ktor, Spring Boot (MVC, WebFlux), kotlinx.coroutines context propagation, JDBC (so Exposed), R2DBC, Kafka, gRPC, OkHttp, AWS SDK, and more.
 
 ## Manual SDK (Ktor, no agent)
 
 ```kotlin
-val MAPLE_ENDPOINT = "https://ingest.maple.dev"
-val MAPLE_KEY = "MAPLE_TEST" // set by maple-onboard skill on pairing
+val MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
+val MAPLE_KEY = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 fun initTelemetry(): OpenTelemetrySdk {
     val headers = mapOf("authorization" to "Bearer $MAPLE_KEY")

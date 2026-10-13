@@ -1,18 +1,14 @@
 /**
- * How often the reviewer catches a bug that shipped, measured on this repository's own history.
- *
- *   bun run --cwd apps/ai review:eval mine [--since 2026-08-01] [--ref origin/main] [--limit 40]
- *   bun run --cwd apps/ai review:eval run [--model id] [--prompt-file p] [--cases id,id] [--allow-exec]
- *
- * `mine` walks `fix:` commits, blames the lines each one changed back to the squash-merged pull
- * request that wrote them, and prints candidates. A person keeps the real bugs in
- * `pr-review-eval/corpus.json`. `run` reviews every corpus pull request with `review:local` and
- * counts a case located when a finding lands on a line the fix later changed; whether that finding
- * names the bug is for a person to read in `hits`. Unmatched findings are
- * not false positives by definition; read them in each run's `review.md`. A case with `range`
- * reviews that local `base..head` instead of the pull request's current head, for a bug fixed
- * inside the same pull request. `--allow-exec` is passed through to `review:local`.
+ * Historical PR replay and human semantic grading. See pr-review-eval/README.md.
+ * mine proposes unverified candidates; run compares prompt/model combinations;
+ * score evaluates explicit grades, never location overlap.
  */
+import { createHash } from "node:crypto"
+import { Schema } from "effect"
+import { PR_REVIEW_SYSTEM_PROMPT } from "@/chat/prompts"
+import { PR_REVIEW_BUDGET } from "@/chat/budgets"
+import { PR_REVIEW_WORKER_PROMPT } from "@/chat/review-fanout"
+import { Grade, scoreGrade } from "./pr-review-eval/grading"
 import { spawnSync } from "node:child_process"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
@@ -42,6 +38,9 @@ interface EvalCase {
 	readonly locations: ReadonlyArray<Location>
 	/** `base..head` to review instead of the pull request, when the bug never reached its final head. */
 	readonly range?: string
+	readonly expected?: "present" | "absent"
+	readonly split?: string
+	readonly enabled?: boolean
 }
 
 interface Finding {
@@ -64,8 +63,8 @@ const flags = (argv: ReadonlyArray<string>): Map<string, string> => {
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
 		if (!arg.startsWith("--")) continue
-		if (arg === "--allow-exec") {
-			out.set("allow-exec", "true")
+		if (arg === "--allow-exec" || arg === "--dry-run") {
+			out.set(arg.slice(2), "true")
 			continue
 		}
 		const value = argv[i + 1]
@@ -212,81 +211,233 @@ const overlaps = (finding: Finding, location: Location) =>
 	finding.line - LINE_TOLERANCE <= location.lines[1] &&
 	(finding.endLine ?? finding.line) + LINE_TOLERANCE >= location.lines[0]
 
+const hash = (text: string) => createHash("sha256").update(text).digest("hex")
+
 const runEval = async (argv: ReadonlyArray<string>) => {
 	const opts = flags(argv)
-	const wanted = opts.get("cases")?.split(",")
 	const corpus: { cases: ReadonlyArray<EvalCase> } = JSON.parse(readFileSync(CORPUS, "utf8"))
-	const cases = corpus.cases.filter((c) => wanted === undefined || wanted.includes(c.id))
-	const model = opts.get("model")
-	const label = `${new Date().toISOString().replace(/[:.]/g, "-")}${model === undefined ? "" : `__${model.replace(/[^\w.-]+/g, "_")}`}`
-	const out = join(SCRIPT_DIR, ".pr-review-evals", label)
-	mkdirSync(out, { recursive: true })
-
-	const results: Array<Record<string, unknown>> = []
-	for (const evalCase of cases) {
-		console.log(`\n=== ${evalCase.id}: ${evalCase.bug}`)
-		const dir = await reviewLocally([
-			REPOSITORY,
-			...(evalCase.range === undefined ? [String(evalCase.number)] : ["--range", evalCase.range]),
-			"--repo-dir",
-			REPO_ROOT,
-			"--out",
-			join(out, "runs"),
-			...(model === undefined ? [] : ["--model", model]),
-			...(opts.has("prompt-file") ? ["--prompt-file", opts.get("prompt-file") ?? ""] : []),
-			...(opts.has("allow-exec") ? ["--allow-exec"] : []),
-		])
-		if (dir === undefined) {
-			results.push({ id: evalCase.id, submitted: false })
-			continue
-		}
-		const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"))
-		const findings: ReadonlyArray<Finding> = report.report.findings
-		const hits = findings.filter((finding) => evalCase.locations.some((loc) => overlaps(finding, loc)))
-		results.push({
-			id: evalCase.id,
-			submitted: true,
-			// A finding on the fixed lines, not proof it names the bug: read `hits`.
-			located: hits.length > 0,
-			hits: hits.map((f) => `${f.path}:${f.line} ${f.severity}/${f.category ?? "?"} ${f.title}`),
-			findings: findings.length,
-			unmatched: findings.length - hits.length,
-			calls: report.tools.length,
-			inputTokens: report.usage?.input ?? null,
-			seconds: Math.round(report.durationMs / 1000),
-			run: dir,
-		})
+	const wanted = opts.get("cases")?.split(",")
+	const cases = corpus.cases.filter(
+		(c) =>
+			c.enabled !== false &&
+			(wanted === undefined || wanted.includes(c.id)) &&
+			(!opts.has("split") || c.split === opts.get("split")),
+	)
+	if (cases.length === 0 || wanted?.some((id) => !cases.some((c) => c.id === id))) {
+		console.error("No matching cases, or unknown/disabled case IDs.")
+		process.exit(2)
 	}
-
-	const submitted = results.filter((r) => r.submitted)
-	const located = submitted.filter((r) => r.located).length
-	const sum = (key: string) => submitted.reduce((total, r) => total + (Number(r[key]) || 0), 0)
-	const summary = [
-		`# review:eval ${label}`,
-		"",
-		`Model: ${model ?? "(default)"} · prompt: ${opts.get("prompt-file") ?? "(committed)"}`,
-		"",
-		`**Located ${located} of ${cases.length}** (a finding on the fixed lines; read the hits to confirm it names the bug) (${submitted.length} submitted) · ${sum("findings")} findings, ${sum("unmatched")} unmatched · ${sum("calls")} calls · ${sum("inputTokens")} input tokens · ${sum("seconds")} s`,
-		"",
-		"| Case | Located | Findings | Unmatched | Calls | Seconds |",
-		"| --- | --- | --- | --- | --- | --- |",
-		...results.map((r) =>
-			r.submitted
-				? `| ${r.id} | ${r.located ? "yes" : "no"} | ${r.findings} | ${r.unmatched} | ${r.calls} | ${r.seconds} |`
-				: `| ${r.id} | no review submitted | | | | |`,
+	if (opts.has("allow-exec")) {
+		console.error("Historical evals disable execution to prevent reading future fixes from the clone.")
+		process.exit(2)
+	}
+	const models = (opts.get("models") ?? opts.get("model"))?.split(",") ?? [undefined]
+	const prompts = opts.has("prompt-file")
+		? [opts.get("prompt-file")]
+		: (opts
+				.get("prompts")
+				?.split(",")
+				.map((p) => (p === "committed" ? undefined : p)) ?? [undefined])
+	const repeats = positiveInt(opts.get("repeats"), 1, "repeats")
+	// Resolve every ref before spending tokens. No live PR comments/checks enter a replay.
+	for (const c of cases) {
+		if (!c.range || !/^[a-f0-9]{40}\.\.[a-f0-9]{40}$/.test(c.range)) {
+			console.error(`${c.id} needs an immutable base..head range`)
+			process.exit(2)
+		}
+		for (const sha of c.range.split("..")) git(["cat-file", "-e", `${sha}^{commit}`])
+		const [base, head] = c.range.split("..")
+		if (git(["merge-base", base!, head!]).trim() !== base) {
+			console.error(`${c.id}: pinned base must be an ancestor of head`)
+			process.exit(2)
+		}
+	}
+	const promptTexts = prompts.map((p) =>
+		p === undefined ? PR_REVIEW_SYSTEM_PROMPT : readFileSync(resolve(p), "utf8"),
+	)
+	const groups = [...new Set(cases.map((c) => c.range))]
+	console.log(
+		`${cases.length} labels, ${groups.length} unique replays × ${models.length} models × ${prompts.length} prompts × ${repeats} repeats`,
+	)
+	if (opts.has("dry-run")) return
+	const out = join(SCRIPT_DIR, ".pr-review-evals", new Date().toISOString().replace(/[:.]/g, "-"))
+	mkdirSync(out, { recursive: true })
+	writeFileSync(join(out, "corpus.json"), JSON.stringify({ cases }, null, "\t"))
+	writeFileSync(join(out, "worker-prompt.txt"), PR_REVIEW_WORKER_PROMPT)
+	writeFileSync(
+		join(out, "manifest.json"),
+		JSON.stringify(
+			{
+				revision: git(["rev-parse", "HEAD"]).trim(),
+				dirty: git(["status", "--porcelain"]),
+				models,
+				prompts,
+				repeats,
+				historical: true,
+				budget: PR_REVIEW_BUDGET,
+				workerPromptHash: hash(PR_REVIEW_WORKER_PROMPT),
+				promptHashes: promptTexts.map(hash),
+				corpusHash: hash(JSON.stringify(cases)),
+			},
+			null,
+			"\t",
 		),
-	].join("\n")
-	writeFileSync(join(out, "summary.md"), summary)
-	writeFileSync(join(out, "results.json"), JSON.stringify(results, null, "\t"))
-	console.log(`\n${summary}\n\nWritten to ${out}`)
+	)
+	const results: Array<Record<string, unknown>> = []
+	const grades: Array<Grade & { runId: string }> = []
+	// Rotate variants between repetitions to reduce provider/cache/order bias.
+	const variants = models.flatMap((model) => prompts.map((_, prompt) => ({ model, prompt })))
+	for (let repeat = 0; repeat < repeats; repeat++)
+		for (const range of groups) {
+			const labels = cases.filter((c) => c.range === range)
+			for (let v = 0; v < variants.length; v++) {
+				const variant = variants[(v + repeat) % variants.length]!
+				const runId = `r${repeat}-g${groups.indexOf(range)}-v${variants.indexOf(variant)}`
+				const promptFile = join(out, `prompt-${variant.prompt}.txt`)
+				writeFileSync(promptFile, promptTexts[variant.prompt]!)
+				console.log(`\n${runId}: PR #${labels[0]!.number}`)
+				const dir = await reviewLocally([
+					REPOSITORY,
+					"--number",
+					String(labels[0]!.number),
+					"--range",
+					range!,
+					"--repo-dir",
+					REPO_ROOT,
+					"--historical",
+					"--out",
+					join(out, "runs"),
+					"--prompt-file",
+					promptFile,
+					...(variant.model === undefined ? [] : ["--model", variant.model]),
+				])
+				const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"))
+				const findings: ReadonlyArray<Finding> = report?.report?.findings ?? []
+				results.push({
+					runId,
+					repeat,
+					model: report?.model ?? variant.model ?? "default",
+					prompt: variant.prompt,
+					submitted: report?.report !== undefined,
+					cases: labels.map((c) => c.id),
+					run: dir,
+					findings,
+					calls: report?.tools?.length,
+					usage: report?.usage,
+					seconds: report ? report.durationMs / 1000 : null,
+					closedOut: report?.closedOut,
+					endReason: report?.endReason,
+					offDiff: report?.offDiff,
+					// Location overlap is navigation only, never a quality score.
+					nearby: Object.fromEntries(
+						labels.map((c) => [
+							c.id,
+							findings.flatMap((f, i) => (c.locations.some((l) => overlaps(f, l)) ? [i] : [])),
+						]),
+					),
+				})
+				if (report?.report)
+					for (const c of labels)
+						grades.push({
+							runId,
+							caseId: c.id,
+							status: "pending",
+							findings: findings.map((_, index) => ({
+								index,
+								verdict: "ungraded",
+								rationale: "",
+							})),
+						})
+				// Checkpoint after every replay, including failures.
+				writeFileSync(join(out, "results.json"), JSON.stringify(results, null, "\t"))
+				writeFileSync(join(out, "grades.json"), JSON.stringify(grades, null, "\t"))
+			}
+		}
+	console.log(`\nArtifacts: ${out}\nGrade findings in grades.json, then run review:eval score --dir ${out}`)
+	if (results.some((r) => r.submitted !== true)) process.exitCode = 1
 }
 
-const [command, ...rest] = process.argv.slice(2)
-if (command === "mine") mine(rest)
-else if (command === "run") await runEval(rest)
-else {
-	console.error(
-		"usage: review:eval mine [--since date] [--ref ref] [--limit n] | run [--model id] [--prompt-file p] [--cases a,b]",
+const score = (argv: ReadonlyArray<string>) => {
+	const opts = flags(argv)
+	if (!opts.has("dir")) {
+		console.error("score needs --dir")
+		process.exit(2)
+	}
+	const dir = resolve(opts.get("dir")!)
+	const cases: { cases: ReadonlyArray<EvalCase> } = JSON.parse(
+		readFileSync(join(dir, "corpus.json"), "utf8"),
 	)
-	process.exit(2)
+	const grades = Schema.decodeUnknownSync(
+		Schema.Array(Schema.Struct({ ...Grade.fields, runId: Schema.String })),
+	)(JSON.parse(readFileSync(join(dir, "grades.json"), "utf8")))
+	const results = Schema.decodeUnknownSync(
+		Schema.Array(
+			Schema.Struct({
+				runId: Schema.String,
+				submitted: Schema.Boolean,
+				cases: Schema.Array(Schema.String),
+				findings: Schema.Array(Schema.Unknown),
+				model: Schema.String,
+				prompt: Schema.Int,
+			}),
+		),
+	)(JSON.parse(readFileSync(join(dir, "results.json"), "utf8")))
+	const rows = results.flatMap((run) =>
+		run.cases.map((caseId) => {
+			const c = cases.cases.find((c) => c.id === caseId)!
+			const matching = grades.filter((g) => g.runId === run.runId && g.caseId === caseId)
+			const scored =
+				matching.length === 1
+					? scoreGrade(matching[0]!, run.findings.length, c.expected ?? "present")
+					: null
+			return {
+				runId: run.runId,
+				model: run.model,
+				prompt: run.prompt,
+				caseId,
+				expected: c.expected,
+				status: !run.submitted ? "failed" : scored === null ? "ungraded" : "graded",
+				...scored,
+			}
+		}),
+	)
+	writeFileSync(join(dir, "scores.json"), JSON.stringify(rows, null, "\t"))
+	console.table(rows)
+	const variants = [...new Set(rows.map((r) => `${r.model} / prompt ${r.prompt}`))]
+	const summary = variants.map((variant) => {
+		const selected = rows.filter((r) => `${r.model} / prompt ${r.prompt}` === variant)
+		const graded = selected.filter((r) => r.status === "graded")
+		const positives = graded.filter((r) => r.expected === "present")
+		const controls = graded.filter((r) => r.expected === "absent")
+		return {
+			variant,
+			graded: graded.length,
+			pending: selected.filter((r) => r.status === "ungraded").length,
+			failed: selected.filter((r) => r.status === "failed").length,
+			targetRecall: positives.length
+				? positives.filter((r) => r.passed).length / positives.length
+				: null,
+			controlPassRate: controls.length
+				? controls.filter((r) => r.passed).length / controls.length
+				: null,
+		}
+	})
+	writeFileSync(join(dir, "summary.json"), JSON.stringify(summary, null, "\t"))
+	console.table(summary)
+	console.log(
+		"Pending grades are not misses or clean reviews. Shared replays appear once per target; do not sum their findings/tokens twice.",
+	)
+}
+
+if (import.meta.main) {
+	const [command, ...rest] = process.argv.slice(2)
+	if (command === "mine") mine(rest)
+	else if (command === "run") await runEval(rest)
+	else if (command === "score") score(rest)
+	else {
+		console.error(
+			"usage: review:eval mine [--ref ref] [--since date] [--limit n] | run [--cases ids] [--models ids] [--prompts committed,path] [--repeats n] [--split development|holdout] [--dry-run] | score --dir path",
+		)
+		process.exit(2)
+	}
 }

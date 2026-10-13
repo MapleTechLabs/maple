@@ -1,5 +1,7 @@
-import { lazy, memo, Suspense, useMemo, useState } from "react"
-import { ChevronDownIcon, CircleCheckIcon, CircleXmarkIcon, LoaderIcon } from "@/components/icons"
+import { lazy, memo, Suspense, useMemo, useState, type ComponentProps } from "react"
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
+import { CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { cn } from "@maple/ui/lib/utils"
 import type { StructuredToolOutput } from "@maple/domain"
 import { STRUCTURED_MARKER } from "./renderers/constants"
@@ -48,10 +50,10 @@ function StatusGlyph({ status, live }: { status: ToolStatus; live: boolean }) {
 			live ? (
 				<DotLoader />
 			) : (
-				<LoaderIcon className="size-3.5 animate-spin text-muted-foreground motion-reduce:animate-none" />
+				<Spinner className="size-3.5 text-muted-foreground motion-reduce:animate-none" />
 			)
 		) : status === "error" ? (
-			<CircleXmarkIcon className="size-3.5 text-destructive" />
+			<CircleXmarkIcon className="size-3.5 text-severity-error" />
 		) : (
 			<CircleCheckIcon className="size-3.5 text-severity-info" />
 		)
@@ -261,9 +263,8 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 
 	return (
 		<div className="text-xs">
-			<button
-				type="button"
-				className="group/tool flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60 disabled:cursor-default disabled:hover:bg-transparent"
+			<TranscriptRowButton
+				className="group/tool disabled:cursor-default disabled:hover:bg-transparent"
 				disabled={!hasContent}
 				onClick={() => setOpen((v) => !v)}
 			>
@@ -274,14 +275,15 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 				{live ? null : <Icon className="size-3.5 shrink-0 text-muted-foreground/70" />}
 				<span
 					className={cn(
-						"shrink-0 font-medium",
+						"min-w-0 truncate font-medium",
 						status === "running" ? "shimmer text-foreground" : "text-muted-foreground",
 					)}
+					title={label}
 				>
 					{label}
 				</span>
 				{summary ? (
-					<span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/60">
+					<span className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground/60">
 						{summary}
 					</span>
 				) : (
@@ -289,27 +291,22 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 				)}
 				{status === "running" && live ? <RunningClock /> : null}
 				{hasContent ? (
-					<ChevronDownIcon
-						className={cn(
-							"size-3 shrink-0 text-muted-foreground/60 transition-transform",
-							open ? "rotate-0" : "-rotate-90",
-						)}
-					/>
+					<DisclosureChevron open={open} className="size-3 text-muted-foreground/60" />
 				) : null}
-			</button>
+			</TranscriptRowButton>
 
 			{open && hasContent && (
 				<div className="ms-[0.9375rem] space-y-2 border-s border-border/60 py-1.5 ps-3">
 					{hasInput && (
 						<div>
 							<p className="mb-1 font-medium text-muted-foreground">Arguments</p>
-							<div className="space-y-0.5">
+							<div className="max-h-60 space-y-0.5 overflow-auto">
 								{Object.entries(input as Record<string, unknown>)
 									.filter(([, v]) => v != null)
 									.map(([key, value]) => (
 										<div key={key} className="flex gap-2">
 											<span className="shrink-0 text-muted-foreground">{key}:</span>
-											<span className="font-mono text-foreground">
+											<span className="min-w-0 font-mono break-all whitespace-pre-wrap text-foreground">
 												{typeof value === "string" ? value : JSON.stringify(value)}
 											</span>
 										</div>
@@ -320,8 +317,8 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 
 					{errorText != null && (
 						<div>
-							<p className="mb-1 font-medium text-destructive">Error</p>
-							<pre className="max-h-40 overflow-auto whitespace-pre-wrap text-destructive/80">
+							<p className="mb-1 font-medium text-severity-error">Error</p>
+							<pre className="max-h-40 overflow-auto whitespace-pre-wrap text-severity-error/80">
 								{errorText}
 							</pre>
 						</div>
@@ -330,7 +327,7 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 					{(structuredData || outputText != null) && (
 						<div>
 							{structuredData ? (
-								<Suspense fallback={<div className="text-muted-foreground">Loading…</div>}>
+								<Suspense fallback={<Spinner className="size-3.5 text-muted-foreground" />}>
 									<LazyToolRenderer data={structuredData} />
 								</Suspense>
 							) : outputText != null ? (
@@ -357,10 +354,24 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 export function RunningClock() {
 	const elapsed = formatElapsed(useElapsedSeconds())
 	if (!elapsed) return null
-	return <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground/60">{elapsed}</span>
+	return <span className="shrink-0 tabular-nums text-2xs text-muted-foreground/60">{elapsed}</span>
 }
 
 /** A tool call standing on its own — same line, no shell around it. */
 export const Tool = memo(function Tool(props: ToolProps) {
 	return <ToolRow {...props} />
 })
+
+/** The full-width inset row a tool call, tool group or sub-agent task opens from. */
+export function TranscriptRowButton({ className, ...props }: ComponentProps<"button">) {
+	return (
+		<button
+			type="button"
+			className={cn(
+				"flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60",
+				className,
+			)}
+			{...props}
+		/>
+	)
+}

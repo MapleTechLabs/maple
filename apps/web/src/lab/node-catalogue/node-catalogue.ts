@@ -17,6 +17,7 @@
  * is: coverage over the state space is a fact about this array, and it should be
  * assertable without mounting a canvas.
  */
+import type { Tone } from "@maple/ui/lib/tone"
 import { ACTION_GLYPH } from "@/components/investigations/flow/flow-nodes"
 import type { ActionKind, ActionTarget } from "@/components/investigations/flow/action-target"
 import {
@@ -29,7 +30,6 @@ import {
 	SPINE_HEIGHT_TALL,
 	SPINE_WIDTH,
 	type FlowGlyph,
-	type FlowTone,
 	type ProvenanceEdge,
 	type ProvenanceNode,
 	type SpineNodeData,
@@ -244,7 +244,7 @@ const edgeCell = (
  * Fixtures
  * -----------------------------------------------------------------------------------------------*/
 
-const TONES: ReadonlyArray<FlowTone> = ["muted", "primary", "success", "info", "warning", "destructive"]
+const TONES: ReadonlyArray<Tone> = ["crit", "warn", "ok", "info", "neutral"]
 const GLYPHS: ReadonlyArray<FlowGlyph> = ["issue", "check", "incident", "investigation", "verdict"]
 
 /** Long enough to hit the two-line clamp and then overflow it. */

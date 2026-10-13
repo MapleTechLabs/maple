@@ -3,17 +3,17 @@ import { getRouteApi } from "@tanstack/react-router"
 
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { FilterSection, SearchableFilterSection } from "@/components/traces/filter-section"
+import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
 	FilterSidebarError,
+	FilterSidebarEmpty,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
 import { getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { releasesQueryInput } from "./releases-query-input"
-import { cn } from "@maple/ui/lib/utils"
 
 import { RELEASE_HEALTH_DESCRIPTION, RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL } from "./release-health"
 import {
@@ -23,6 +23,7 @@ import {
 	isReleaseHealth,
 	releaseFacetCounts,
 } from "./release-model"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 const routeApi = getRouteApi("/releases/")
 
@@ -73,6 +74,9 @@ export function ReleasesFilterSidebar() {
 	if (Result.isInitial(result)) return <FilterSidebarLoading sectionCount={3} />
 	if (Result.isFailure(result)) return <FilterSidebarError error={result.cause} onRetry={refresh} />
 	if (facets === undefined) return <FilterSidebarLoading sectionCount={3} />
+	if (!hasActiveFilters && facets.services.length === 0 && facets.environments.length === 0) {
+		return <FilterSidebarEmpty />
+	}
 
 	return (
 		<FilterSidebarFrame waiting={Result.isSuccess(result) && result.waiting}>
@@ -94,12 +98,7 @@ export function ReleasesFilterSidebar() {
 					}
 					renderOptionIcon={(name) =>
 						isReleaseHealth(name) ? (
-							<span
-								className={cn(
-									"inline-block size-2 shrink-0 rounded-full",
-									RELEASE_HEALTH_DOT_CLASS[name],
-								)}
-							/>
+							<StatusDot tone="custom" size="lg" className={RELEASE_HEALTH_DOT_CLASS[name]} />
 						) : null
 					}
 				/>

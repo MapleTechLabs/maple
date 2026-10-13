@@ -1,12 +1,15 @@
-import { Result } from "@/lib/effect-atom"
+import type { Result } from "@/lib/effect-atom"
+import { ResultView } from "@/components/common/result-view"
 
 import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import {
 	FilterSidebarBody,
+	FilterSidebarEmpty,
 	FilterSidebarError,
 	FilterSidebarFrame,
 	FilterSidebarHeader,
 	FilterSidebarLoading,
+	hasNoFacetOptions,
 } from "@/components/filters/filter-sidebar"
 import type { ContainerFacetsResponse } from "@maple/domain/http"
 
@@ -52,73 +55,80 @@ export function ContainersFilterSidebarView({
 		(filters.excludedComposeServices?.length ?? 0) > 0 ||
 		(filters.excludedEnvironments?.length ?? 0) > 0
 
-	return Result.builder(facetsResult)
-		.onInitial(() => <FilterSidebarLoading sectionCount={6} />)
-		.onError((error) => <FilterSidebarError error={error} />)
-		.onSuccess((facetsResponse, result) => {
-			const f = facetsResponse.data
+	return (
+		<ResultView
+			result={facetsResult}
+			loading={<FilterSidebarLoading sectionCount={6} />}
+			error={(error) => <FilterSidebarError error={error} />}
+		>
+			{(facetsResponse, { waiting }) => {
+				const f = facetsResponse.data
+				if (!hasActiveFilters && hasNoFacetOptions(Object.values(f))) {
+					return <FilterSidebarEmpty />
+				}
 
-			return (
-				<FilterSidebarFrame waiting={result.waiting}>
-					<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
-					<FilterSidebarBody>
-						<SearchableFilterSection
-							title="Container"
-							options={f.containers}
-							selected={filters.containerNames ?? []}
-							onChange={(val) => onFilterChange("containerNames", val)}
-							excluded={filters.excludedContainerNames ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedContainerNames", val)}
-							defaultOpen
-						/>
-						<SearchableFilterSection
-							title="Image"
-							options={f.images}
-							selected={filters.images ?? []}
-							onChange={(val) => onFilterChange("images", val)}
-							excluded={filters.excludedImages ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedImages", val)}
-							defaultOpen={false}
-						/>
-						<SearchableFilterSection
-							title="Host"
-							options={f.hosts}
-							selected={filters.hostNames ?? []}
-							onChange={(val) => onFilterChange("hostNames", val)}
-							excluded={filters.excludedHostNames ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedHostNames", val)}
-							defaultOpen={false}
-						/>
-						<FilterSection
-							title="Compose Project"
-							options={f.composeProjects}
-							selected={filters.composeProjects ?? []}
-							onChange={(val) => onFilterChange("composeProjects", val)}
-							excluded={filters.excludedComposeProjects ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedComposeProjects", val)}
-							defaultOpen={false}
-						/>
-						<FilterSection
-							title="Compose Service"
-							options={f.composeServices}
-							selected={filters.composeServices ?? []}
-							onChange={(val) => onFilterChange("composeServices", val)}
-							excluded={filters.excludedComposeServices ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedComposeServices", val)}
-							defaultOpen={false}
-						/>
-						<FilterSection
-							title="Environment"
-							options={f.environments}
-							selected={filters.environments ?? []}
-							onChange={(val) => onFilterChange("environments", val)}
-							excluded={filters.excludedEnvironments ?? []}
-							onExcludedChange={(val) => onFilterChange("excludedEnvironments", val)}
-							defaultOpen={false}
-						/>
-					</FilterSidebarBody>
-				</FilterSidebarFrame>
-			)
-		})
-		.render()
+				return (
+					<FilterSidebarFrame waiting={waiting}>
+						<FilterSidebarHeader canClear={hasActiveFilters} onClear={onClearFilters} />
+						<FilterSidebarBody>
+							<SearchableFilterSection
+								title="Container"
+								options={f.containers}
+								selected={filters.containerNames ?? []}
+								onChange={(val) => onFilterChange("containerNames", val)}
+								excluded={filters.excludedContainerNames ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedContainerNames", val)}
+								defaultOpen
+							/>
+							<SearchableFilterSection
+								title="Image"
+								options={f.images}
+								selected={filters.images ?? []}
+								onChange={(val) => onFilterChange("images", val)}
+								excluded={filters.excludedImages ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedImages", val)}
+								defaultOpen={false}
+							/>
+							<SearchableFilterSection
+								title="Host"
+								options={f.hosts}
+								selected={filters.hostNames ?? []}
+								onChange={(val) => onFilterChange("hostNames", val)}
+								excluded={filters.excludedHostNames ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedHostNames", val)}
+								defaultOpen={false}
+							/>
+							<FilterSection
+								title="Compose project"
+								options={f.composeProjects}
+								selected={filters.composeProjects ?? []}
+								onChange={(val) => onFilterChange("composeProjects", val)}
+								excluded={filters.excludedComposeProjects ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedComposeProjects", val)}
+								defaultOpen={false}
+							/>
+							<FilterSection
+								title="Compose service"
+								options={f.composeServices}
+								selected={filters.composeServices ?? []}
+								onChange={(val) => onFilterChange("composeServices", val)}
+								excluded={filters.excludedComposeServices ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedComposeServices", val)}
+								defaultOpen={false}
+							/>
+							<FilterSection
+								title="Environment"
+								options={f.environments}
+								selected={filters.environments ?? []}
+								onChange={(val) => onFilterChange("environments", val)}
+								excluded={filters.excludedEnvironments ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedEnvironments", val)}
+								defaultOpen={false}
+							/>
+						</FilterSidebarBody>
+					</FilterSidebarFrame>
+				)
+			}}
+		</ResultView>
+	)
 }

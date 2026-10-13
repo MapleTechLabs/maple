@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
 import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -361,6 +361,22 @@ describe("MCP HTTP authorization", () => {
 				defect: false,
 			})
 			expect(body).toContain("inspect_trace")
+			// Claude's connector directory reads `annotations.title`; stock effect drops it for
+			// 2025-06-18+ (patches/effect@*.patch).
+			// SAFETY: a 200 `tools/list` response; a different body fails the expectation below.
+			const inspectTrace = (
+				JSON.parse(body) as {
+					result: {
+						tools: Array<{ name: string; title?: string; annotations?: { title?: string } }>
+					}
+				}
+			).result.tools.find((tool) => tool.name === "inspect_trace")
+			expect({ title: inspectTrace?.title, annotationTitle: inspectTrace?.annotations?.title }).toEqual(
+				{
+					title: "Inspect Trace",
+					annotationTitle: "Inspect Trace",
+				},
+			)
 
 			// A session id left over from an earlier isolate is ignored, not rejected.
 			const stale = await second.handler(
@@ -497,6 +513,89 @@ describe("MCP HTTP authorization", () => {
 			expect({ status: response.status, code: body.error?.code }).toEqual({
 				status: 200,
 				code: -32700,
+			})
+		} finally {
+			await dispose()
+		}
+	})
+
+	it("advertises tools on a cold initialize and registers them for the first tools request", async () => {
+		// Tools register before the first `tools/*` request, not on `initialize`: loading the
+		// catalog was ~40% of a cold `initialize`. The server only reports `tools` once one is
+		// registered, so the transport has to state it, or clients would never list them.
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			AuthService.layer,
+			makeMcpToolExecutorStubLayer(),
+			makeRateLimiterStubLayer(),
+		).pipe(Layer.provideMerge(base))
+		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
+		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(orgId, userId, { name: "Lazy tools test", kind: "mcp" })
+			}).pipe(Effect.provide(services)),
+		)
+		const post = (body: unknown) =>
+			new Request("https://api.example.com/mcp", {
+				method: "POST",
+				headers: {
+					authorization: `Bearer ${key.secret}`,
+					accept: "application/json, text/event-stream",
+					"content-type": "application/json",
+					host: "api.example.com",
+					"x-forwarded-proto": "https",
+					"mcp-protocol-version": "2025-06-18",
+				},
+				body: JSON.stringify(body),
+			})
+		const { handler, dispose } = HttpRouter.toWebHandler(McpLive.pipe(Layer.provideMerge(services)), {
+			disableLogger: true,
+		})
+		try {
+			const initialized = await handler(
+				post({
+					jsonrpc: "2.0",
+					id: 1,
+					method: "initialize",
+					params: {
+						protocolVersion: "2025-06-18",
+						capabilities: {},
+						clientInfo: { name: "test", version: "1.0.0" },
+					},
+				}),
+				Context.empty() as never,
+			)
+			const result = (await initialized.clone().json()).result
+			expect({
+				status: initialized.status,
+				serverName: result?.serverInfo?.name,
+				capabilities: result?.capabilities,
+			}).toEqual({
+				status: 200,
+				serverName: "maple-observability",
+				capabilities: expect.objectContaining({
+					tools: { listChanged: true },
+					prompts: { listChanged: true },
+					resources: expect.any(Object),
+				}),
+			})
+
+			const listed = await handler(
+				post({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+				Context.empty() as never,
+			)
+			const tools: ReadonlyArray<{ readonly name: string }> =
+				(await listed.clone().json()).result?.tools ?? []
+			expect({
+				status: listed.status,
+				hasInspectTrace: tools.some((tool) => tool.name === "inspect_trace"),
+			}).toEqual({
+				status: 200,
+				hasInspectTrace: true,
 			})
 		} finally {
 			await dispose()

@@ -49,6 +49,9 @@ const leaseCurrent = (): MetadataSessionHandle | undefined => {
 		get sessionId() {
 			return owned.sessionId
 		},
+		announce: () => {
+			if (!released) owned.announce()
+		},
 		shutdown: async (options) => {
 			if (released) return
 			released = true

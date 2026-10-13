@@ -215,6 +215,11 @@
 	--radius-2xl: calc(var(--radius) + 8px);
 	--radius-3xl: calc(var(--radius) + 12px);
 	--radius-4xl: calc(var(--radius) + 16px);
+	--text-2xs: 0.6875rem;
+	--text-3xs: 0.625rem;
+	--text-4xs: 0.5625rem;
+	--text-ui: 0.8125rem;
+	--text-title: 0.9375rem;
 	--animate-skeleton: skeleton 2s -1s infinite linear;
 	--animate-caret-blink: 1s ease-out infinite caret-blink;
 	/* Mirrors packages/ui/src/styles/tokens.css — local-ui keeps its own copy of
@@ -364,10 +369,10 @@
 	border-bottom: none !important;
 }
 
-.react-flow__controls-button svg {
+.react-flow__controls-button svg:not([fill="none"]) {
 	fill: var(--foreground) !important;
 }
 
-.react-flow__controls-button svg path {
+.react-flow__controls-button svg:not([fill="none"]) path {
 	fill: var(--foreground) !important;
 }

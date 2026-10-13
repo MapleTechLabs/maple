@@ -1,6 +1,6 @@
 // Probe: a single row that genuinely exceeds maxShardBytes must fail DISTINCTLY
-// with a "single row exceeds maxShardBytes" message, not a generic
-// "recalibrate". This is the only impassable case. Contract: exit 0 (PASS) when
+// with a "single row exceeds maxShardBytes" message, not a generic bound
+// error. This is the only impassable case. Contract: exit 0 (PASS) when
 // export fails with the distinct single-row message; exit nonzero (FAIL) when it
 // aborts with a generic message or (worse) succeeds.
 //

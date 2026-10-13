@@ -317,7 +317,10 @@ const timeAxis = (tMin: number, tMax: number, tRange: number): ReadonlyArray<Tim
 	// names no end — there is one time on the chart — so it sits at the left,
 	// where the first label always does, whether it got there by collapse or by
 	// the series holding a single instant.
-	labels[labels.length - 1] = { text: `${last.text} UTC`, xFraction: labels.length === 1 ? 0 : last.xFraction }
+	labels[labels.length - 1] = {
+		text: `${last.text} UTC`,
+		xFraction: labels.length === 1 ? 0 : last.xFraction,
+	}
 	return labels
 }
 

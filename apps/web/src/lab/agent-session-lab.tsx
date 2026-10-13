@@ -30,7 +30,8 @@ export function AgentSessionLab({ initialView }: { initialView?: SessionView }) 
 	const [clean, setClean] = useState(false)
 
 	const spans = useMemo(
-		() => (clean ? buildCleanFixture() : captureOff ? buildCaptureOffFixture() : buildAgentSessionFixture()),
+		() =>
+			clean ? buildCleanFixture() : captureOff ? buildCaptureOffFixture() : buildAgentSessionFixture(),
 		[captureOff, clean],
 	)
 	const turns = useMemo(() => buildSessionTurns(spans), [spans])

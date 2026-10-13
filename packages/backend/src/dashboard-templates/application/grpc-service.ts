@@ -13,7 +13,7 @@ import {
 } from "@maple/backend/dashboard-templates/helpers"
 import type { TemplateDefinition, WidgetDef } from "@maple/backend/dashboard-templates/types"
 
-const GRPC_FILTER = `rpc.system = "grpc"`
+const GRPC_FILTER = `rpc.system.name = "grpc"`
 
 function widgets(serviceName?: string): WidgetDef[] {
 	const where = combineWhere(GRPC_FILTER, serviceWhereClause(serviceName))

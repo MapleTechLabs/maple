@@ -16,7 +16,8 @@ import { KIND_LABEL } from "@/lib/errors/error-filter-chips"
 export const SOURCES: ReadonlyArray<IssueKind> = ["error", "alert", "integration"]
 
 export const SOURCE_COLOR = {
-	error: "var(--color-rose-500)",
+	// The chart error-series token: the same red errors carry on every chart.
+	error: "var(--chart-error)",
 	alert: "var(--color-violet-500)",
 	integration: "var(--color-teal-500)",
 } satisfies Record<IssueKind, string>

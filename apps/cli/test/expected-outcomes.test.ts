@@ -58,7 +58,7 @@ describe("expected CLI outcomes", () => {
 				message: "maple is already running (PID 4242) — stop it with `maple stop`",
 			}),
 		)
-		strictEqual(output, "maple is already running (PID 4242) — stop it with `maple stop`\n")
+		strictEqual(output, "error: maple is already running (PID 4242) — stop it with `maple stop`\n")
 	})
 
 	// The "no `<backups>` stanza" refusal used to bill two error events: an Error
@@ -77,7 +77,7 @@ describe("expected CLI outcomes", () => {
 
 		strictEqual(refusal._tag, "@maple/cli/CheckpointPreconditionError")
 		strictEqual(refusal.expected, true)
-		strictEqual(await captureStderr(recoverExpected(refusal)), `${refusal.message}\n`)
+		strictEqual(await captureStderr(recoverExpected(refusal)), `error: ${refusal.message}\n`)
 	})
 
 	it("still exits non-zero, so scripts and CI keep their old behaviour", async () => {

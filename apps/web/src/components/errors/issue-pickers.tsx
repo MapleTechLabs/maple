@@ -141,7 +141,7 @@ export function StatePicker({
 				title={`Status: ${WORKFLOW_LABEL[current]} · click to change`}
 				className={cn(
 					TRIGGER,
-					"-ml-1.5 inline-flex h-6 max-w-full items-center gap-1.5 px-1.5 text-[11px] whitespace-nowrap text-muted-foreground hover:text-foreground data-popup-open:text-foreground",
+					"-ml-1.5 inline-flex h-6 max-w-full items-center gap-1.5 px-1.5 text-2xs whitespace-nowrap text-muted-foreground hover:text-foreground data-popup-open:text-foreground",
 					className,
 				)}
 			>

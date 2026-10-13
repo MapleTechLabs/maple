@@ -1,4 +1,5 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import type { ChatSessionCallError } from "@maple/domain/chat-session-stub"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	ChatApplyResponse,
 	ChatToolExecutionError,
@@ -8,14 +9,13 @@ import {
 	MapleAiApi,
 } from "@maple/domain/http"
 import { Effect } from "effect"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { encodeChatTurnTenant, orgIdFromChatSessionId } from "@maple/domain/chat-session"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { describeCause } from "@maple/backend/platform/describe-cause"
 
 /** A session call that did not complete. It may have got as far as running the tool, so the copy hedges. */
-const sessionCall = <A>(toolCallId: string, run: () => Promise<A>) =>
-	Effect.tryPromise(run).pipe(
+const sessionCall = <A>(toolCallId: string, call: Effect.Effect<A, ChatSessionCallError>) =>
+	call.pipe(
 		Effect.tapError((error) =>
 			Effect.logError("A chat approval could not reach its session").pipe(
 				Effect.annotateLogs({ toolCallId, cause: describeCause(error.cause) }),
@@ -49,15 +49,10 @@ export const HttpChatLive = HttpApiBuilder.group(MapleAiApi, "chat", (handlers) 
 			// Another org's conversation reads as missing: confirming it exists is itself a leak.
 			if (orgIdFromChatSessionId(sessionId) !== tenant.orgId) return yield* notFound
 
-			const stub = chatSessionStub(yield* WorkerEnvironment, sessionId)
-			if (stub === undefined) {
-				return yield* new ChatToolExecutionError({
-					toolCallId,
-					message: "Chat sessions are not configured on this deployment.",
-				})
-			}
+			const stub = (yield* ChatSessions).session(sessionId)
 
-			const outcome = yield* sessionCall(toolCallId, () =>
+			const outcome = yield* sessionCall(
+				toolCallId,
 				stub.settleProposal({
 					sessionId,
 					toolCallId,
@@ -80,7 +75,7 @@ export const HttpChatLive = HttpApiBuilder.group(MapleAiApi, "chat", (handlers) 
 			}
 
 			// The answer is what the session recorded, read back as the chat-platform relay reads it.
-			const messages = yield* sessionCall(toolCallId, () => stub.history())
+			const messages = yield* sessionCall(toolCallId, stub.history())
 			const call = messages.flatMap((message) => message.toolCalls).find((c) => c.id === toolCallId)
 			return new ChatApplyResponse({
 				content: typeof call?.output === "string" ? call.output : "",

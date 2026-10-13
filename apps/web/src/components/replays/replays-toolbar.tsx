@@ -1,5 +1,10 @@
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { FilterChip } from "@maple/ui/components/ui/filter-chip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import type { Tone } from "@maple/ui/lib/tone"
 
 interface ReplaysToolbarProps {
 	/** Current `q` search param (URL substring filter). */
@@ -10,7 +15,9 @@ interface ReplaysToolbarProps {
 	/** `hasErrors` URL filter state — the chip toggles it. */
 	errorsOnly: boolean
 	onToggleErrorsOnly: () => void
-	/** "Engaged >30s" preset state (`activeMin === 30`) — the chip toggles it. */
+	/** Facet count behind the "engaged" tier chip; hidden until known. */
+	engagedSessions?: number
+	/** Whether the `engaged` session tag is selected — the chip toggles it. */
 	engagedOnly: boolean
 	onToggleEngagedOnly: () => void
 	/** Dim the chips while the list is refetching. */
@@ -20,7 +27,8 @@ interface ReplaysToolbarProps {
 /**
  * Search + one-click triage chips. The session/live totals live in the page
  * header; this row answers "what should I watch first" — errored sessions and
- * engaged sessions are each one click away.
+ * engaged sessions (everything but bots, bounces, idle tabs and glances) are each
+ * one click away.
  */
 export function ReplaysToolbar({
 	query,
@@ -28,6 +36,7 @@ export function ReplaysToolbar({
 	errorSessions,
 	errorsOnly,
 	onToggleErrorsOnly,
+	engagedSessions,
 	engagedOnly,
 	onToggleEngagedOnly,
 	waiting = false,
@@ -44,45 +53,59 @@ export function ReplaysToolbar({
 			/>
 
 			<div
-				className={cn(
-					"flex flex-wrap items-center gap-2 transition-opacity",
-					waiting && "opacity-60",
-				)}
+				aria-busy={waiting || undefined}
+				className={cn("flex flex-wrap items-center gap-2", refreshingClass(waiting))}
 			>
-				<button
-					type="button"
-					onClick={onToggleErrorsOnly}
-					aria-pressed={errorsOnly}
-					title={errorsOnly ? "Show all sessions" : "Show only sessions with errors"}
-					className={cn(
-						"inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors",
-						errorsOnly
-							? "border-destructive bg-destructive text-white"
-							: "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15",
-					)}
+				<TriageChip
+					pressed={errorsOnly}
+					onToggle={onToggleErrorsOnly}
+					tooltip={errorsOnly ? "Show all sessions" : "Show only sessions with errors"}
+					tone="crit"
 				>
-					<span
-						className={cn("size-1.5 rounded-full", errorsOnly ? "bg-white" : "bg-destructive")}
-						aria-hidden
-					/>
-					<span className="tabular-nums">{errorSessions.toLocaleString()}</span> with errors
-				</button>
+					<span className="tabular-nums">{formatNumber(errorSessions)}</span> with errors
+				</TriageChip>
 
-				<button
-					type="button"
-					onClick={onToggleEngagedOnly}
-					aria-pressed={engagedOnly}
-					title="Sessions with more than 30s of active time"
-					className={cn(
-						"inline-flex h-7 items-center rounded-full border px-3 text-xs font-medium transition-colors",
-						engagedOnly
-							? "border-primary bg-accent text-accent-foreground"
-							: "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
-					)}
+				<TriageChip
+					pressed={engagedOnly}
+					onToggle={onToggleEngagedOnly}
+					tooltip={
+						engagedOnly ? "Show every session type" : "Hide bots, bounces, idle tabs and glances"
+					}
+					tone="ok"
 				>
-					Engaged &gt;30s
-				</button>
+					{engagedSessions !== undefined && (
+						<span className="tabular-nums">{formatNumber(engagedSessions)}</span>
+					)}
+					engaged
+				</TriageChip>
 			</div>
 		</div>
+	)
+}
+
+function TriageChip({
+	pressed,
+	onToggle,
+	tooltip,
+	tone,
+	children,
+}: {
+	pressed: boolean
+	onToggle: () => void
+	tooltip: string
+	tone: Tone
+	children: React.ReactNode
+}) {
+	return (
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<FilterChip pressed={pressed} onPressedChange={() => onToggle()} tone={tone} dot>
+						{children}
+					</FilterChip>
+				}
+			/>
+			<TooltipContent>{tooltip}</TooltipContent>
+		</Tooltip>
 	)
 }

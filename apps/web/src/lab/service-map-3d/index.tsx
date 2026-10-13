@@ -1,3 +1,4 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useState } from "react"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
@@ -6,8 +7,8 @@ import { SERVICE_MAP_3D_TOPOLOGY } from "./fixture"
 import type { Node3D } from "@/components/service-map/three/types"
 import { resolveMachineBadge } from "@/components/service-map/three/factory-badge"
 import { ServiceMap3DViewport } from "@/components/service-map/three/viewport"
+import { formatErrorRate } from "@maple/ui/lib/format"
 import {
-	formatError,
 	formatLatency,
 	formatRate,
 	health,
@@ -17,9 +18,9 @@ import {
 /**
  * THESIS: A service map should be a readable instrument. Two spatial models
  * expose ownership (Atlas) and dependency depth (Cascade) over the same graph.
- * OWN-WORLD: Maple's warm surfaces and Geist Mono, mineral green infrastructure,
- * amber elevated errors, clay degraded errors. Maple-branded voxel machinery in
- * a tiled meadow cutaway, block-built trees, square pipes and working cargo conveyors.
+ * OWN-WORLD: an autumn sugar-bush in isometric line art. Timber cabins, sugaring
+ * vats and boardwalk belts carrying crates and logs, inside a forest that grows
+ * around the zones; health on the painted doors, live state in smoke and lamps.
  * STORY: Survey the system, select a service, follow an actual inbound/outbound call.
  * FIRST VIEWPORT: A large orthographic map with a compact service inventory at
  * right. The two view controls lead; the inspector never covers the map.
@@ -28,12 +29,7 @@ import {
 const topology = SERVICE_MAP_3D_TOPOLOGY
 const nodesById = new Map(topology.nodes.map((node) => [node.id, node]))
 function HealthDot({ node }: { node: Node3D }) {
-	return (
-		<span
-			className="inline-block size-1.5 shrink-0 rounded-full"
-			style={{ backgroundColor: HEALTH_COLOR[health(node.errorRate)] }}
-		/>
-	)
+	return <StatusDot tone="custom" style={{ backgroundColor: HEALTH_COLOR[health(node.errorRate)] }} />
 }
 
 function ServiceInventory({
@@ -77,12 +73,12 @@ function ServiceInventory({
 					<div
 						className="mt-4 inline-flex items-center gap-1.5 text-xs capitalize"
 						style={{
-							color: `var(--severity-${health(selected.errorRate) === "healthy" ? "info" : health(selected.errorRate) === "elevated" ? "warn" : "error"})`,
+							color: `var(--color-severity-${health(selected.errorRate) === "healthy" ? "info" : health(selected.errorRate) === "elevated" ? "warn" : "error"})`,
 						}}
 					>
 						{health(selected.errorRate)}
 						<span className="text-muted-foreground">
-							· {formatError(selected.errorRate)} errors
+							· {formatErrorRate(selected.errorRate)} errors
 						</span>
 					</div>
 				</div>
@@ -139,7 +135,7 @@ function ServiceInventory({
 						</section>
 					)
 				})}
-				<p className="mt-auto p-4 text-[11px] leading-relaxed text-muted-foreground">
+				<p className="mt-auto p-4 text-2xs leading-relaxed text-muted-foreground">
 					Select a connected service to follow the request path.
 				</p>
 			</aside>
@@ -154,7 +150,7 @@ function ServiceInventory({
 					<h2 className="text-xs font-semibold">Services & dependencies</h2>
 					<span className="text-xs text-muted-foreground">{topology.nodes.length}</span>
 				</div>
-				<p className="mt-2 text-[11px] text-muted-foreground">Select a node to inspect its calls.</p>
+				<p className="mt-2 text-2xs text-muted-foreground">Select a node to inspect its calls.</p>
 				<Input
 					aria-label="Find a service"
 					placeholder="Find a service…"
@@ -163,7 +159,7 @@ function ServiceInventory({
 					className="mt-4 h-8 text-xs"
 				/>
 			</div>
-			<div className="flex items-center justify-between border-b px-4 py-2.5 text-[11px] text-muted-foreground">
+			<div className="flex items-center justify-between border-b px-4 py-2.5 text-2xs text-muted-foreground">
 				<span>Sorted by error rate</span>
 				<span className="text-severity-error">{degraded} degraded</span>
 			</div>
@@ -182,17 +178,17 @@ function ServiceInventory({
 						<HealthDot node={node} />
 						<span className="min-w-0 flex-1">
 							<span className="block truncate text-xs">{node.label}</span>
-							<span className="mt-0.5 block text-[10px] text-muted-foreground">
+							<span className="mt-0.5 block text-3xs text-muted-foreground">
 								{node.kind === "service" ? node.namespace : node.kind}
 							</span>
 						</span>
-						<span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-							{formatError(node.errorRate)}
+						<span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
+							{formatErrorRate(node.errorRate)}
 						</span>
 					</button>
 				))}
 			</div>
-			<p className="border-t px-4 py-3 text-[10px] leading-relaxed text-muted-foreground">
+			<p className="border-t px-4 py-3 text-3xs leading-relaxed text-muted-foreground">
 				Sample health thresholds
 				<br />
 				Elevated &gt; 1% · Degraded &gt; 5% errors
@@ -217,16 +213,16 @@ export function ServiceMap3DLab() {
 									<h1 className="font-display text-lg font-semibold tracking-tight">
 										Service map
 									</h1>
-									<span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-										Voxel lab
+									<span className="rounded border px-1.5 py-0.5 text-3xs text-muted-foreground">
+										Isometric lab
 									</span>
 								</div>
 								<p className="mt-1 text-xs text-muted-foreground">
-									A voxel landscape of services and their connections.
+									Every service a machine, every call a belt.
 								</p>
 							</div>
-							<div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-								<span className="size-1.5 rounded-full bg-muted-foreground" />
+							<div className="flex items-center gap-2 text-2xs text-muted-foreground">
+								<StatusDot tone="custom" className="bg-muted-foreground" />
 								Sample topology
 								<span className="ml-2 border-l pl-3">
 									{topology.nodes.length} nodes · {topology.edges.length} connections

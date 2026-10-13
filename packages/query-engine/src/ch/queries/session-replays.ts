@@ -16,15 +16,32 @@
 // Stale-prone post-aggregation predicates (e.g. exact Status) are deliberately
 // not exposed as SQL filters since the DSL has no HAVING clause.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { compileFnCallCond } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { inSubquery, param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, type ColumnAccessor, type CHQuery } from "@maple-dev/effect-clickhouse"
-import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-import { ProductEvents, SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
+import type { DateTime } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { compileFnCallCond } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { inSubquery, param } from "@maple-dev/effect-orm/clickhouse"
+import {
+	from,
+	fromQuery,
+	type ColumnAccessor,
+	type CHQuery,
+	type ColumnDefs,
+	type NullableColumnDefs,
+	type OutputToColumnDefs,
+} from "@maple-dev/effect-orm/clickhouse"
+import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { SESSION_LIVE_WINDOW_SECONDS, type SessionTag } from "@maple/domain/query-engine"
+import {
+	ProductEvents,
+	SessionReplays,
+	SessionReplayEvents,
+	TraceDetailSpans,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
 import { sessionActivityAggregateQuery, sessionEventMatchQuery } from "./session-events"
+import { sessionQualityExpr, sessionTagFacet, taggedSessionIds } from "./session-tags"
 import type { FacetOutput } from "./query-helpers"
 
 // argMax(value, ordering) — finalize a ReplacingMergeTree column to its latest
@@ -42,27 +59,27 @@ function has<T>(array: CH.Expr<ReadonlyArray<T>>, element: CH.Expr<T>): CH.Condi
 
 // length(array) — element count.
 function arrayLength<T>(array: CH.Expr<ReadonlyArray<T>>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("length", T.uint64.schema, array)
+	return CH.compileTypedFnCall("length", T.uint64.schema, array)
 }
 
 // floor / log2 / pow — plain numeric functions the DSL doesn't export, needed
 // only by the duration histogram below. Declared here like argMax above.
 function floor_(value: CH.Expr<number>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("floor", T.float64.schema, value)
+	return CH.compileTypedFnCall("floor", T.float64.schema, value)
 }
 
 function log2(value: CH.Expr<number>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("log2", T.float64.schema, value)
+	return CH.compileTypedFnCall("log2", T.float64.schema, value)
 }
 
 function pow(base: number, exponent: CH.Expr<number>): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("pow", T.float64.schema, CH.lit(base), exponent)
+	return CH.compileTypedFnCall("pow", T.float64.schema, CH.lit(base), exponent)
 }
 
 // greatest(value, floor) over a nullable numeric column — clamps and, since
 // callers pair it with a `> 0` predicate that already excludes NULLs, narrows.
 function greatestNonNull(value: CH.Expr<number | null>, floor: number): CH.Expr<number> {
-	return CH.compileTypedFnCall<number>("greatest", T.float64.schema, value, CH.lit(floor))
+	return CH.compileTypedFnCall("greatest", T.float64.schema, value, CH.lit(floor))
 }
 
 // assumeNotNull(x) — drops the Nullable wrapper for callers whose WHERE has
@@ -71,7 +88,7 @@ function assumeNotNull<T>(value: CH.Expr<T | null>): CH.Expr<T> {
 	// The `Nullable` wrapper goes away in SQL but the codec is left as-is: it
 	// already accepts every non-null the column can produce, and narrowing it
 	// would mean rebuilding a schema this function cannot see inside.
-	return CH.compileTypedFnCall<T>("assumeNotNull", CH.schemaOf<T>(value), value)
+	return CH.compileTypedFnCall("assumeNotNull", CH.schemaOf<T>(value), value)
 }
 
 // ifNotFinite(x, fallback) — quantile() over an empty set yields nan, and
@@ -95,12 +112,30 @@ function pageVisitSessions(pagePath: string) {
 	return from(ProductEvents)
 		.select(($) => ({ SessionId: $.SessionId }))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.Kind.eq("navigation"),
 			$.PagePath.eq(pagePath),
 		])
+}
+
+// Sessions carrying every tag in `tags`. SessionId is version-invariant, so this
+// sits in WHERE like `pagePath`; the tags themselves are decided over the window's
+// finalized rows inside the subquery.
+function tagFilter(
+	tags: ReadonlyArray<SessionTag> | undefined,
+	$: ColumnAccessor<typeof SessionReplays.columns>,
+): CH.Condition | undefined {
+	if (tags === undefined || tags.length === 0) return undefined
+	return inSubquery(
+		$.SessionId,
+		taggedSessionIds(tags, ($$) => [
+			$$.OrgId.eq(orgIdParam),
+			$$.StartTime.gte(param.dateTime("startTime")),
+			$$.StartTime.lte(param.dateTime("endTime")),
+		]),
+	)
 }
 
 // List query
@@ -134,6 +169,8 @@ export interface SessionReplaysListOpts {
 	search?: string
 	/** Exact page path (no query/hash) the session navigated to at any point. */
 	pagePath?: string
+	/** Only sessions carrying every one of these tags (see session-tags.ts). */
+	tags?: ReadonlyArray<SessionTag>
 	/**
 	 * Keyset cursor: the (StartTime, SessionId) of the last row of the previous
 	 * page, matching this query's `ORDER BY startTime DESC, sessionId DESC`.
@@ -145,7 +182,7 @@ export interface SessionReplaysListOpts {
 	 * every session on the far side of it. `sessionId` is optional only for the
 	 * v1 endpoint, whose cursor is a bare timestamp.
 	 */
-	cursor?: { startTime: string; sessionId?: string }
+	cursor?: { startTime: DateTime.Utc; sessionId?: string }
 	/** Min/max wall-clock duration (ms). Filters on the stored DurationMs; only
 	 *  completed (Version=2) sessions carry it, so in-progress sessions are
 	 *  excluded when either bound is set. */
@@ -180,8 +217,8 @@ export interface SessionReplaysListOpts {
 
 export interface SessionReplaysListOutput {
 	readonly sessionId: string
-	readonly startTime: string
-	readonly endTime: string | null
+	readonly startTime: DateTime.Utc
+	readonly endTime: DateTime.Utc | null
 	readonly durationMs: number | null
 	readonly status: string
 	/**
@@ -194,7 +231,7 @@ export interface SessionReplaysListOutput {
 	 * also what recovers a duration for those sessions, whose `durationMs` stays
 	 * NULL forever.
 	 */
-	readonly lastActivityAt: string | null
+	readonly lastActivityAt: DateTime.Utc | null
 	readonly userId: string
 	// identify() identity (migration 0011). `''` when the session was never
 	// identified — the list renders its existing session-id/host line in that case,
@@ -221,31 +258,19 @@ export interface SessionReplaysListOutput {
 	/** The SDK's `maple.session.recorded` marker: `"true"`, `"false"`, or `""`
 	 *  for sessions written before the SDK stamped it (absent map key). */
 	readonly recorded: string
+	/** Quality tier: one of `SESSION_QUALITY_TAGS`, decided by `sessionQualityExpr`. */
+	readonly quality: string
+	/** 1 when the visitor id was minted on this session's first page load. */
+	readonly visitorIsNew: number
 	/** Count of distilled events matching the event predicates. Present only when an
 	 *  `event*` filter is set (the event INNER JOIN selects it); absent otherwise. */
 	readonly matchCount?: number
 }
 
-// Return type is annotated (not inferred) because the duration/active filters
-// branch into structurally-different sources (the base table vs a wrapping
-// subquery, optionally joined) — all three produce the same row shape, but TS
-// otherwise infers a union that won't unify at the compile call site. Mirrors
-// metricsTimeseriesRateQuery's annotation.
-export function sessionReplaysListQuery(
-	opts: SessionReplaysListOpts,
-): CHQuery<any, SessionReplaysListOutput, {}> {
-	const limit = opts.limit ?? 50
-	const needsDurationFilter = opts.durationMinMs != null || opts.durationMaxMs != null
-	const needsActiveFilter = opts.activeTimeMinMs != null || opts.activeTimeMaxMs != null
-	const needsEventFilter =
-		opts.eventType != null ||
-		opts.eventLevel != null ||
-		opts.eventMinStatus != null ||
-		opts.eventUrlSearch != null ||
-		opts.eventMessageSearch != null ||
-		opts.eventTraceId != null
-
-	const base = from(SessionReplays)
+// The finalized per-session rows before any post-aggregate predicate. The
+// duration, active-time and event paths wrap it as the `s` subquery.
+function sessionReplaysListBase(opts: SessionReplaysListOpts) {
+	return from(SessionReplays)
 		.select(($) => ({
 			sessionId: $.SessionId,
 			startTime: argMax($.StartTime, $.Version),
@@ -283,11 +308,13 @@ export function sessionReplaysListQuery(
 			// already-selected resource map — no join against session_replay_events,
 			// which would undo this query's partition pruning.
 			recorded: argMax($.ResourceAttributes.get("maple.session.recorded"), $.Version),
+			quality: sessionQualityExpr($),
+			visitorIsNew: argMax($.VisitorIsNew, $.Version),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.StartTime.gte(param.dateTimeString("startTime")),
-			$.StartTime.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.StartTime.gte(param.dateTime("startTime")),
+			$.StartTime.lte(param.dateTime("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 			CH.when(opts.country, (v: string) => $.Country.eq(v)),
@@ -312,9 +339,10 @@ export function sessionReplaysListQuery(
 			CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 			// SessionId is version-invariant, so this is row-level like the rest.
 			CH.when(opts.pagePath, (v: string) => inSubquery($.SessionId, pageVisitSessions(v))),
+			tagFilter(opts.tags, $),
 			// Version-invariant, so the keyset can sit in WHERE ahead of the GROUP BY
 			// rather than becoming another post-aggregate predicate.
-			CH.when(opts.cursor, (c: { startTime: string; sessionId?: string }) =>
+			CH.when(opts.cursor, (c: { startTime: DateTime.Utc; sessionId?: string }) =>
 				c.sessionId === undefined
 					? $.StartTime.lt(c.startTime)
 					: $.StartTime.lt(c.startTime).or(
@@ -323,189 +351,158 @@ export function sessionReplaysListQuery(
 			),
 		])
 		.groupBy("sessionId")
+}
+
+type SessionListBaseColumns = OutputToColumnDefs<
+	NonNullable<ReturnType<typeof sessionReplaysListBase>["_phantom"]>["output"]
+>
+type SessionActivityColumns = NullableColumnDefs<
+	OutputToColumnDefs<NonNullable<ReturnType<typeof sessionActivityAggregateQuery>["_phantom"]>["output"]>
+>
+
+// Re-selects the base row from the `s` subquery, in the base's column order.
+function sessionListColumns($: ColumnAccessor<SessionListBaseColumns>) {
+	return {
+		sessionId: $.sessionId,
+		startTime: $.startTime,
+		endTime: $.endTime,
+		durationMs: $.durationMs,
+		status: $.status,
+		lastActivityAt: $.lastActivityAt,
+		userId: $.userId,
+		userName: $.userName,
+		userEmail: $.userEmail,
+		groupId: $.groupId,
+		groupName: $.groupName,
+		visitorId: $.visitorId,
+		utmSource: $.utmSource,
+		entryPath: $.entryPath,
+		urlInitial: $.urlInitial,
+		browserName: $.browserName,
+		osName: $.osName,
+		deviceType: $.deviceType,
+		country: $.country,
+		serviceName: $.serviceName,
+		pageViews: $.pageViews,
+		clickCount: $.clickCount,
+		errorCount: $.errorCount,
+		traceCount: $.traceCount,
+		recorded: $.recorded,
+		quality: $.quality,
+		visitorIsNew: $.visitorIsNew,
+	}
+}
+
+// durationMs is NULL for in-progress (Version=1-only) sessions; leaving it NULL
+// deliberately excludes them from a duration filter (an unknown duration can't be
+// said to fall within a bound). `!= null` so an explicit 0 bound still applies.
+function durationConditions(opts: SessionReplaysListOpts, $: ColumnAccessor<SessionListBaseColumns>) {
+	return [
+		opts.durationMinMs != null ? $.durationMs.gte(opts.durationMinMs) : undefined,
+		opts.durationMaxMs != null ? $.durationMs.lte(opts.durationMaxMs) : undefined,
+	]
+}
+
+// The LEFT JOIN yields NULL activeTimeMs for sessions with no distilled
+// session_events (the rrweb-only case the detail/MCP path reports as null).
+// Coalesce to 0 so a max bound, or a min of 0, includes those zero-activity
+// sessions instead of silently dropping them: a NULL comparison is itself NULL,
+// which WHERE excludes. A min > 0 still (correctly) excludes them.
+function activeTimeConditions(opts: SessionReplaysListOpts, a: ColumnAccessor<SessionActivityColumns>) {
+	const activeMs = CH.coalesce(a.activeTimeMs, CH.lit(0))
+	return [
+		opts.activeTimeMinMs != null ? activeMs.gte(opts.activeTimeMinMs) : undefined,
+		opts.activeTimeMaxMs != null ? activeMs.lte(opts.activeTimeMaxMs) : undefined,
+	]
+}
+
+// Annotated because the branches select from different sources (the table, or
+// the grouped subquery with or without joins); TS cannot unify their union at
+// the compile call site.
+export function sessionReplaysListQuery(
+	opts: SessionReplaysListOpts,
+): CHQuery<ColumnDefs, SessionReplaysListOutput> {
+	const limit = opts.limit ?? 50
+	const offset = opts.offset ?? 0
+	const needsDurationFilter = opts.durationMinMs != null || opts.durationMaxMs != null
+	const needsActiveFilter = opts.activeTimeMinMs != null || opts.activeTimeMaxMs != null
+	const needsEventFilter =
+		opts.eventType != null ||
+		opts.eventLevel != null ||
+		opts.eventMinStatus != null ||
+		opts.eventUrlSearch != null ||
+		opts.eventMessageSearch != null ||
+		opts.eventTraceId != null
+	const base = sessionReplaysListBase(opts)
 
 	// Event refinement path. When any `event*` predicate is set, INNER JOIN the
-	// grouped session_events match subquery onto the session list — narrowing to
-	// sessions that contain a matching event and surfacing its `matchCount` — and,
+	// grouped session_events match subquery onto the session list (narrowing to
+	// sessions that contain a matching event and surfacing its `matchCount`) and,
 	// if active-time bounds are set, additionally LEFT JOIN the activity aggregate.
-	// Handled entirely here (and returning) so the no-event branches below keep
-	// their exact compiled SQL: the web `listReplays` path never sets event filters,
-	// so it is byte-for-byte unchanged.
+	// The web `listReplays` path never sets event filters, so its SQL is unchanged.
 	if (needsEventFilter) {
-		const eventMatch = sessionEventMatchQuery({
-			type: opts.eventType,
-			level: opts.eventLevel,
-			minStatus: opts.eventMinStatus,
-			urlSearch: opts.eventUrlSearch,
-			messageSearch: opts.eventMessageSearch,
-			traceId: opts.eventTraceId,
-		})
-		// The accumulator is typed `any` because each conditional join widens the
-		// builder's Join type, which TS can't thread through the `if (needsActiveFilter)`
-		// re-assignment. The public return type is annotated on the function signature.
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		let joined: any = fromQuery(base, "s").innerJoinQuery(eventMatch, "e", (s: any, e: any) =>
-			s.sessionId.eq(e.sessionId),
+		const eventJoined = fromQuery(base, "s").innerJoinQuery(
+			sessionEventMatchQuery({
+				type: opts.eventType,
+				level: opts.eventLevel,
+				minStatus: opts.eventMinStatus,
+				urlSearch: opts.eventUrlSearch,
+				messageSearch: opts.eventMessageSearch,
+				traceId: opts.eventTraceId,
+			}),
+			"e",
+			(s, e) => s.sessionId.eq(e.sessionId),
 		)
 		if (needsActiveFilter) {
-			joined = joined.leftJoinQuery(sessionActivityAggregateQuery(), "a", (s: any, a: any) =>
-				s.sessionId.eq(a.sessionId),
-			)
+			return eventJoined
+				.leftJoinQuery(sessionActivityAggregateQuery(), "a", (s, a) => s.sessionId.eq(a.sessionId))
+				.select(($) => ({ ...sessionListColumns($), matchCount: $.e.matchCount }))
+				.where(($) => [...durationConditions(opts, $), ...activeTimeConditions(opts, $.a)])
+				.orderBy(["startTime", "desc"], ["sessionId", "desc"])
+				.limit(limit)
+				.offset(offset)
+				.format("JSON")
 		}
-		return joined
-			.select(($: any) => ({
-				sessionId: $.sessionId,
-				startTime: $.startTime,
-				endTime: $.endTime,
-				durationMs: $.durationMs,
-				status: $.status,
-				lastActivityAt: $.lastActivityAt,
-				userId: $.userId,
-				userName: $.userName,
-				userEmail: $.userEmail,
-				groupId: $.groupId,
-				groupName: $.groupName,
-				visitorId: $.visitorId,
-				utmSource: $.utmSource,
-				entryPath: $.entryPath,
-				urlInitial: $.urlInitial,
-				browserName: $.browserName,
-				osName: $.osName,
-				deviceType: $.deviceType,
-				country: $.country,
-				serviceName: $.serviceName,
-				pageViews: $.pageViews,
-				clickCount: $.clickCount,
-				errorCount: $.errorCount,
-				traceCount: $.traceCount,
-				recorded: $.recorded,
-				matchCount: $.e.matchCount,
-			}))
-			.where(($: any) => {
-				const conds = [
-					opts.durationMinMs != null ? $.durationMs.gte(opts.durationMinMs) : undefined,
-					opts.durationMaxMs != null ? $.durationMs.lte(opts.durationMaxMs) : undefined,
-				]
-				if (needsActiveFilter) {
-					// See the active-only branch below for why NULL activity coalesces to 0.
-					const activeMs = CH.coalesce($.a.activeTimeMs, CH.lit(0))
-					if (opts.activeTimeMinMs != null) conds.push(activeMs.gte(opts.activeTimeMinMs))
-					if (opts.activeTimeMaxMs != null) conds.push(activeMs.lte(opts.activeTimeMaxMs))
-				}
-				return conds
-			})
+		return eventJoined
+			.select(($) => ({ ...sessionListColumns($), matchCount: $.e.matchCount }))
+			.where(($) => durationConditions(opts, $))
 			.orderBy(["startTime", "desc"], ["sessionId", "desc"])
 			.limit(limit)
-			.offset(opts.offset ?? 0)
+			.offset(offset)
 			.format("JSON")
 	}
 
-	// Fast path: no post-aggregate filters → the original grouped query, untouched
-	// (never reads session_events).
+	// Fast path: no post-aggregate filters, the grouped query untouched (never
+	// reads session_events).
 	if (!needsDurationFilter && !needsActiveFilter) {
 		return base
 			.orderBy(["startTime", "desc"], ["sessionId", "desc"])
 			.limit(limit)
-			.offset(opts.offset ?? 0)
+			.offset(offset)
 			.format("JSON")
 	}
 
 	// Duration and active-time bounds are post-aggregate predicates (argMax /
-	// joined column), which the DSL can't put in WHERE/HAVING directly — wrap the
-	// grouped query in a subquery and filter there. The active-time filter LEFT
-	// JOINs the per-session session_events activity aggregate; the duration-only
-	// path skips the join (and the session_events scan) entirely.
+	// joined column), which the DSL can't put in WHERE/HAVING directly, so wrap
+	// the grouped query in a subquery and filter there. Only the active-time
+	// filter LEFT JOINs the session_events activity aggregate.
 	if (needsActiveFilter) {
 		return fromQuery(base, "s")
 			.leftJoinQuery(sessionActivityAggregateQuery(), "a", (s, a) => s.sessionId.eq(a.sessionId))
-			.select(($) => ({
-				sessionId: $.sessionId,
-				startTime: $.startTime,
-				endTime: $.endTime,
-				durationMs: $.durationMs,
-				status: $.status,
-				lastActivityAt: $.lastActivityAt,
-				userId: $.userId,
-				userName: $.userName,
-				userEmail: $.userEmail,
-				groupId: $.groupId,
-				groupName: $.groupName,
-				visitorId: $.visitorId,
-				utmSource: $.utmSource,
-				entryPath: $.entryPath,
-				urlInitial: $.urlInitial,
-				browserName: $.browserName,
-				osName: $.osName,
-				deviceType: $.deviceType,
-				country: $.country,
-				serviceName: $.serviceName,
-				pageViews: $.pageViews,
-				clickCount: $.clickCount,
-				errorCount: $.errorCount,
-				traceCount: $.traceCount,
-				recorded: $.recorded,
-			}))
-			.where(($) => {
-				// The LEFT JOIN yields NULL activeTimeMs for sessions with no
-				// distilled session_events (the rrweb-only case the detail/MCP path
-				// reports as null). Coalesce to 0 so a max bound — or a min of 0 —
-				// includes those zero-activity sessions instead of silently dropping
-				// them: a NULL comparison is itself NULL, which WHERE excludes. A min
-				// > 0 still (correctly) excludes them, since 0 < min. `!= null` rather
-				// than the truthy CH.when so an explicit 0 bound is still applied.
-				const activeMs = CH.coalesce($.a.activeTimeMs, CH.lit(0))
-				return [
-					opts.durationMinMs != null ? $.durationMs.gte(opts.durationMinMs) : undefined,
-					opts.durationMaxMs != null ? $.durationMs.lte(opts.durationMaxMs) : undefined,
-					opts.activeTimeMinMs != null ? activeMs.gte(opts.activeTimeMinMs) : undefined,
-					opts.activeTimeMaxMs != null ? activeMs.lte(opts.activeTimeMaxMs) : undefined,
-				]
-			})
+			.select(sessionListColumns)
+			.where(($) => [...durationConditions(opts, $), ...activeTimeConditions(opts, $.a)])
 			.orderBy(["startTime", "desc"], ["sessionId", "desc"])
 			.limit(limit)
-			.offset(opts.offset ?? 0)
+			.offset(offset)
 			.format("JSON")
 	}
 
 	return fromQuery(base, "s")
-		.select(($) => ({
-			sessionId: $.sessionId,
-			startTime: $.startTime,
-			endTime: $.endTime,
-			durationMs: $.durationMs,
-			status: $.status,
-			lastActivityAt: $.lastActivityAt,
-			userId: $.userId,
-			userName: $.userName,
-			userEmail: $.userEmail,
-			groupId: $.groupId,
-			groupName: $.groupName,
-			visitorId: $.visitorId,
-			utmSource: $.utmSource,
-			entryPath: $.entryPath,
-			urlInitial: $.urlInitial,
-			browserName: $.browserName,
-			osName: $.osName,
-			deviceType: $.deviceType,
-			country: $.country,
-			serviceName: $.serviceName,
-			pageViews: $.pageViews,
-			clickCount: $.clickCount,
-			errorCount: $.errorCount,
-			traceCount: $.traceCount,
-			recorded: $.recorded,
-		}))
-		.where(($) => [
-			// durationMs is NULL for in-progress (Version=1-only) sessions; leaving
-			// it NULL deliberately excludes them from a duration filter (an unknown
-			// duration can't be said to fall within a bound). `!= null` rather than
-			// the truthy CH.when so an explicit 0 bound is still applied.
-			opts.durationMinMs != null ? $.durationMs.gte(opts.durationMinMs) : undefined,
-			opts.durationMaxMs != null ? $.durationMs.lte(opts.durationMaxMs) : undefined,
-		])
+		.select(sessionListColumns)
+		.where(($) => durationConditions(opts, $))
 		.orderBy(["startTime", "desc"], ["sessionId", "desc"])
 		.limit(limit)
-		.offset(opts.offset ?? 0)
+		.offset(offset)
 		.format("JSON")
 }
 
@@ -539,11 +536,13 @@ export interface SessionReplaysFacetsOpts {
 	search?: string
 	/** Exact visited page path — excluded from its own (page) branch. */
 	pagePath?: string
+	/** Required tags — excluded from their own (tag) branch. */
+	tags?: ReadonlyArray<SessionTag>
 }
 
 export type SessionReplaysFacetsOutput = FacetOutput
 
-type SessionFacetKey = "service" | "browser" | "country" | "device" | "group" | "page"
+type SessionFacetKey = "service" | "browser" | "country" | "device" | "group" | "page" | "tag"
 
 export function sessionReplaysFacetsQuery(
 	opts: SessionReplaysFacetsOpts,
@@ -552,9 +551,9 @@ export function sessionReplaysFacetsQuery(
 		$: ColumnAccessor<typeof SessionReplays.columns>,
 		exclude?: SessionFacetKey,
 	): Array<CH.Condition | undefined> => [
-		$.OrgId.eq(param.string("orgId")),
-		$.StartTime.gte(param.dateTimeString("startTime")),
-		$.StartTime.lte(param.dateTimeString("endTime")),
+		$.OrgId.eq(orgIdParam),
+		$.StartTime.gte(param.dateTime("startTime")),
+		$.StartTime.lte(param.dateTime("endTime")),
 		exclude === "service" ? undefined : CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		exclude === "browser" ? undefined : CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 		exclude === "country" ? undefined : CH.when(opts.country, (v: string) => $.Country.eq(v)),
@@ -571,6 +570,7 @@ export function sessionReplaysFacetsQuery(
 		exclude === "page"
 			? undefined
 			: CH.when(opts.pagePath, (v: string) => inSubquery($.SessionId, pageVisitSessions(v))),
+		exclude === "tag" ? undefined : tagFilter(opts.tags, $),
 	]
 
 	const makeFacet = (
@@ -603,9 +603,9 @@ export function sessionReplaysFacetsQuery(
 			facetType: CH.lit("page"),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			$.Kind.eq("navigation"),
 			$.PagePath.neq(""),
 			inSubquery(
@@ -693,7 +693,7 @@ export function sessionReplaysFacetsQuery(
 				$.Status.eq("active").and(
 					CH.coalesce($.LastActivityAt, $.StartTime).gte(
 						CH.intervalSub(
-							CH.toDateTime(param.dateTimeString("endTime")),
+							CH.toDateTime(utcSecondsParam("endTime")),
 							SESSION_LIVE_WINDOW_SECONDS,
 						),
 					),
@@ -713,6 +713,7 @@ export function sessionReplaysFacetsQuery(
 		// blank option.
 		makeFacet("group", ($) => $.GroupName),
 		pageFacet,
+		sessionTagFacet(($) => baseWhere($, "tag"), opts.tags),
 		durationHistogram,
 		durationStat("p50", 0.5),
 		durationStat("p95", 0.95),
@@ -727,9 +728,9 @@ export function sessionReplaysFacetsQuery(
 				facetType: CH.lit("error"),
 			}))
 			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
-				$.StartTime.gte(param.dateTimeString("startTime")),
-				$.StartTime.lte(param.dateTimeString("endTime")),
+				$.OrgId.eq(orgIdParam),
+				$.StartTime.gte(param.dateTime("startTime")),
+				$.StartTime.lte(param.dateTime("endTime")),
 				CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 				CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 				CH.when(opts.country, (v: string) => $.Country.eq(v)),
@@ -742,6 +743,7 @@ export function sessionReplaysFacetsQuery(
 				),
 				CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 				CH.when(opts.pagePath, (v: string) => inSubquery($.SessionId, pageVisitSessions(v))),
+				tagFilter(opts.tags, $),
 				$.ErrorCount.gt(0),
 			]),
 	).format("JSON")
@@ -757,14 +759,14 @@ export function sessionReplaysFacetsQuery(
 // daily partitions a deep-scan would otherwise touch. Omit to scan all.
 
 export interface SessionReplayDetailOpts {
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 }
 
 export interface SessionReplayDetailOutput {
 	readonly sessionId: string
-	readonly startTime: string
-	readonly endTime: string | null
+	readonly startTime: DateTime.Utc
+	readonly endTime: DateTime.Utc | null
 	readonly durationMs: number | null
 	readonly status: string
 	readonly userId: string
@@ -829,10 +831,10 @@ export function getSessionReplayQuery(opts: SessionReplayDetailOpts = {}) {
 			lastActivityAt: $.LastActivityAt,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
-			CH.when(opts.startTime, (v: string) => $.StartTime.gte(v)),
-			CH.when(opts.endTime, (v: string) => $.StartTime.lte(v)),
+			CH.when(opts.startTime, (v: DateTime.Utc) => $.StartTime.gte(v)),
+			CH.when(opts.endTime, (v: DateTime.Utc) => $.StartTime.lte(v)),
 		])
 		.orderBy(["version", "desc"])
 		.limit(1)
@@ -859,8 +861,8 @@ export function getSessionReplayQuery(opts: SessionReplayDetailOpts = {}) {
 
 export interface SessionReplayChunkIndexOpts {
 	/** Optional session time window — prunes daily partitions. Omit to scan all. */
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 }
 
 export interface SessionReplayChunkIndexOutput {
@@ -872,7 +874,7 @@ export interface SessionReplayChunkIndexOutput {
 	 * inside one chunk's duration, so it resolves a seek to the right chunk. The
 	 * exact offset within that chunk comes from its rrweb events once loaded.
 	 */
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly durationMs: number
 	readonly eventCount: number
 	readonly byteSize: number
@@ -900,10 +902,10 @@ export function sessionReplayChunkIndexQuery(opts: SessionReplayChunkIndexOpts =
 			isCheckpoint: $.IsCheckpoint,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
-			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
-			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+			CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 		])
 		.orderBy(["chunkSeq", "asc"])
 		.format("JSON")
@@ -911,8 +913,8 @@ export function sessionReplayChunkIndexQuery(opts: SessionReplayChunkIndexOpts =
 
 export interface SessionReplayEventsOpts {
 	/** Optional session time window — prunes daily partitions. Omit to scan all. */
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 	/**
 	 * Inclusive chunk-sequence window. Callers get these from the chunk index and
 	 * fetch a session in bounded slices — selecting `Events` for a whole session
@@ -928,7 +930,7 @@ export interface SessionReplayEventsOpts {
 
 export interface SessionReplayEventsOutput {
 	readonly chunkSeq: number
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly durationMs: number
 	readonly eventCount: number
 	readonly byteSize: number
@@ -949,10 +951,10 @@ export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
 			isCheckpoint: $.IsCheckpoint,
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.SessionId.eq(param.string("sessionId")),
-			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
-			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+			CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 			opts.fromChunkSeq === undefined ? undefined : $.ChunkSeq.gte(opts.fromChunkSeq),
 			opts.toChunkSeq === undefined ? undefined : $.ChunkSeq.lte(opts.toChunkSeq),
 		])
@@ -974,7 +976,7 @@ export interface SessionsForTraceOpts {
 
 export interface SessionsForTraceOutput {
 	readonly sessionId: string
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly durationMs: number | null
 }
 
@@ -986,9 +988,9 @@ export function sessionsForTraceQuery(opts: SessionsForTraceOpts) {
 			durationMs: argMax($.DurationMs, $.Version),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.StartTime.gte(param.dateTimeString("startTime")),
-			$.StartTime.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.StartTime.gte(param.dateTime("startTime")),
+			$.StartTime.lte(param.dateTime("endTime")),
 			has($.TraceIds, CH.lit(opts.traceId)),
 		])
 		.groupBy("sessionId")
@@ -1017,18 +1019,18 @@ export interface SessionTraceSummariesOpts {
 	/** The correlated trace ids to summarize (from session_replays.TraceIds). */
 	traceIds: ReadonlyArray<string>
 	/** Optional session time window — prunes daily partitions. Omit to scan all. */
-	startTime?: string
-	endTime?: string
+	startTime?: DateTime.Utc
+	endTime?: DateTime.Utc
 	limit?: number
 }
 
 export interface SessionTraceSummaryOutput {
 	readonly traceId: string
-	readonly startTime: string
+	readonly startTime: DateTime.Utc
 	readonly durationMs: number
 	readonly rootSpanName: string
 	readonly rootServiceName: string
-	/** Root span's OTel kind (e.g. SPAN_KIND_CLIENT), so the UI can format the HTTP label. */
+	/** Root span's OTel kind as stored (e.g. `Client`), so the UI can format the HTTP label. */
 	readonly rootSpanKind: string
 	/** Root span's attribute map, JSON-encoded — parsed by the UI for `getHttpInfo`. */
 	readonly rootSpanAttributes: string
@@ -1066,10 +1068,10 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 			}
 		})
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.TraceId.in_(...opts.traceIds),
-			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
-			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+			CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 		])
 		.groupBy("traceId")
 		.orderBy(["startTime", "asc"])

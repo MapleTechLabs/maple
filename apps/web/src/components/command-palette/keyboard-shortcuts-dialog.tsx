@@ -8,6 +8,7 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Kbd, KbdGroup } from "@maple/ui/components/ui/kbd"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	allShortcutIds,
 	SHORTCUT_GROUPS,
@@ -61,9 +62,9 @@ export function KeyboardShortcutsDialog({
 							if (groupIds.length === 0) return null
 							return (
 								<div key={group}>
-									<h3 className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+									<Eyebrow variant="label" className="mb-1" as="h3">
 										{group}
-									</h3>
+									</Eyebrow>
 									<div className="divide-y divide-border/50">
 										{groupIds.map((id) => (
 											<ShortcutRow key={id} id={id} />

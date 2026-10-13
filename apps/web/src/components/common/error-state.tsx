@@ -77,7 +77,7 @@ export function ErrorState({ error, title, onRetry, variant = "panel", className
 		return (
 			<div
 				className={cn(
-					"flex flex-wrap items-center gap-x-4 gap-y-3 rounded-lg border border-dashed px-4 py-3.5",
+					"flex flex-wrap items-center gap-x-4 gap-y-3 rounded-md border border-dashed px-4 py-3.5",
 					className,
 				)}
 				role="alert"
@@ -101,14 +101,14 @@ export function ErrorState({ error, title, onRetry, variant = "panel", className
 	return (
 		<div
 			className={cn(
-				"flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed px-6 py-8 text-center",
+				"flex h-full flex-col items-center justify-center gap-4 rounded-md border border-dashed px-6 py-8 text-center",
 				className,
 			)}
 			role="alert"
 			aria-live="polite"
 			aria-atomic="true"
 		>
-			<div className="rounded-lg border bg-card/50 px-3 py-2.5">
+			<div className="rounded-md border bg-card/50 px-3 py-2.5">
 				<DroppedSignalGlyph />
 			</div>
 			<div className="max-w-xs space-y-1">
@@ -125,9 +125,8 @@ export function ErrorState({ error, title, onRetry, variant = "panel", className
 }
 
 /**
- * The dropped-signal readout: a steady signal line that cuts out, a pulsing
- * destructive marker at the break, and a dashed trail where the data should
- * be. Pulse reuses `.infra-pulse` (carries its own reduced-motion guard).
+ * The dropped-signal readout: a steady signal line that cuts out, a static
+ * destructive marker at the break, and a dashed trail where the data should be.
  */
 function DroppedSignalGlyph({ compact = false }: { compact?: boolean }) {
 	return (
@@ -165,14 +164,7 @@ function DroppedSignalGlyph({ compact = false }: { compact?: boolean }) {
 				opacity="0.45"
 			/>
 			{/* The break point. */}
-			<circle
-				cx="118"
-				cy="30"
-				r="5.5"
-				className="infra-pulse fill-destructive"
-				style={{ transformBox: "fill-box", transformOrigin: "center" }}
-				opacity="0.35"
-			/>
+			<circle cx="118" cy="30" r="5.5" className="fill-destructive" opacity="0.35" />
 			<circle cx="118" cy="30" r="2.5" className="fill-destructive" />
 		</svg>
 	)

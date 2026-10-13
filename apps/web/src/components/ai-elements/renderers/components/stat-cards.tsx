@@ -34,7 +34,7 @@ export function StatCards({ props }: RendererComponentProps<StatCardsProps>) {
 		<div className="flex flex-wrap gap-1.5">
 			{cards.map((card) => (
 				<div key={card.label} className="min-w-[80px] rounded border border-border/40 px-2 py-1.5">
-					<p className="text-[10px] text-muted-foreground">{card.label}</p>
+					<p className="text-3xs text-muted-foreground">{card.label}</p>
 					<p className="font-mono text-sm font-medium">{formatValue(card.value, card.format)}</p>
 				</div>
 			))}

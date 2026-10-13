@@ -1,9 +1,18 @@
 import { describe, it } from "@effect/vitest"
 import { strict as assert } from "node:assert"
 import { Effect, Layer, Tracer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import {
+	FetchHttpClient,
+	HttpClient,
+	HttpClientError,
+	type HttpClientRequest,
+	HttpClientResponse,
+} from "effect/http"
+import { LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
 import { Mode } from "./mode"
 import { rawQuery } from "./operations"
+
+const RANGE = { startTime: "2026-08-15 12:00:00", endTime: "2026-08-15 13:00:00" }
 
 const makeRecordingTracer = () => {
 	const spans: Array<Tracer.NativeSpan> = []
@@ -34,7 +43,7 @@ describe("rawQuery instrumentation", () => {
 				Layer.provide(Layer.succeed(FetchHttpClient.Fetch, request)),
 			)
 
-			const rows = yield* rawQuery("SELECT 1").pipe(
+			const { rows } = yield* rawQuery({ sql: "SELECT 1", range: RANGE }).pipe(
 				Effect.provide(Layer.merge(modeLayer, httpLayer)),
 				Effect.withTracer(tracer),
 			)
@@ -50,4 +59,106 @@ describe("rawQuery instrumentation", () => {
 			assert.strictEqual(typeof span.attributes.get("db.duration_ms"), "number")
 		}),
 	)
+})
+
+describe("rawQuery failures", () => {
+	const modeLayer = Layer.succeed(Mode, {
+		resolve: Effect.succeed({ _tag: "local" as const, baseUrl: "http://127.0.0.1:4318" }),
+	})
+	const run = (
+		respond: (
+			request: HttpClientRequest.HttpClientRequest,
+		) => Effect.Effect<Response, HttpClientError.HttpClientError>,
+	) =>
+		Effect.runPromise(
+			Effect.flip(rawQuery({ sql: "CREATE TABLE t (a Int8) ENGINE = Memory", range: RANGE })).pipe(
+				Effect.provide(
+					Layer.merge(
+						modeLayer,
+						Layer.succeed(
+							HttpClient.HttpClient,
+							HttpClient.make((request) =>
+								Effect.map(respond(request), (response) =>
+									HttpClientResponse.fromWeb(request, response),
+								),
+							),
+						),
+					),
+				),
+			),
+		)
+
+	// The server refuses writes; the user sees why, not a warehouse error.
+	it("maps the read-only refusal to its reason", async () => {
+		const error = await run(() =>
+			Effect.succeed(new Response("read-only query endpoint: CREATE is not allowed", { status: 400 })),
+		)
+		assert.ok(error instanceof ReadOnlyQueryError)
+		assert.equal(error.message, "maple query is read-only: CREATE is not allowed")
+	})
+
+	it("names the URL it could not reach", async () => {
+		const error = await run((request) =>
+			Effect.fail(
+				new HttpClientError.HttpClientError({
+					reason: new HttpClientError.TransportError({
+						request,
+						description: "connection refused",
+					}),
+				}),
+			),
+		)
+		assert.ok(error instanceof LocalServerUnreachableError)
+		assert.match(error.message, /http:\/\/127\.0\.0\.1:4318/)
+		assert.match(error.hint ?? "", /MAPLE_LOCAL_URL/)
+	})
+})
+
+describe("rawQuery macros", () => {
+	const modeLayer = Layer.succeed(Mode, {
+		resolve: Effect.succeed({ _tag: "local" as const, baseUrl: "http://127.0.0.1:4318" }),
+	})
+	const sent = (sql: string) =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				let body = ""
+				yield* rawQuery({ sql, range: RANGE }).pipe(
+					Effect.provide(
+						Layer.merge(
+							modeLayer,
+							Layer.succeed(
+								HttpClient.HttpClient,
+								HttpClient.make((request) =>
+									Effect.sync(() => {
+										body =
+											request.body._tag === "Uint8Array"
+												? new TextDecoder().decode(request.body.body)
+												: ""
+										return HttpClientResponse.fromWeb(
+											request,
+											new Response("[]", { status: 200 }),
+										)
+									}),
+								),
+							),
+						),
+					),
+				)
+				return body
+			}),
+		)
+
+	// The same SQL a workspace runs, so a query can move between the two modes unchanged.
+	it("expands the workspace macros with the local tenant and the window", async () => {
+		const body = await sent("SELECT count() FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)")
+		assert.match(body, /OrgId = 'local'/)
+		assert.match(body, /Timestamp >= toDateTime\('2026-08-15 12:00:00'\)/)
+		assert.doesNotMatch(body, /\$__/)
+	})
+
+	it("leaves plain SQL exactly as written", async () => {
+		const body = await sent("SELECT 1")
+		assert.match(body, /SELECT 1/)
+		assert.doesNotMatch(body, /maple_raw_sql_limited/)
+	})
 })

@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import type { V2WidgetSummaryService } from "@maple/domain/http/v2"
 import {
@@ -11,18 +11,16 @@ import {
 	WIDGET_SUMMARY_SERVICE_LIMIT,
 	WIDGET_SUMMARY_THROUGHPUT_WINDOW_SECONDS,
 } from "@maple/domain/http/v2"
-import {
-	CH,
-	formatWarehouseDateTime,
-	formatWarehouseDateTimeMs,
-	QueryEngineExecuteRequest,
-} from "@maple/query-engine"
+import { formatWarehouseDateTime, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/query-engine/runtime"
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { toService, type ServiceBaselines } from "./telemetry.http"
+import {
+	TelemetryReadService,
+	type ServiceBaselines,
+} from "@maple/backend/services/warehouse/TelemetryReadService"
+import { toService } from "./telemetry.http"
 
 /**
  * The one read behind the iOS Home Screen widgets.
@@ -80,7 +78,7 @@ const bucketCounts = (
 export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetSummary", (handlers) =>
 	Effect.gen(function* () {
 		const readModels = yield* ErrorIssueReadModelsService
-		const warehouse = yield* WarehouseQueryService
+		const telemetry = yield* TelemetryReadService
 		const queryEngine = yield* QueryEngineService
 
 		return handlers.handle("retrieve", ({ query }) =>
@@ -90,15 +88,15 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 				// half filtered to staging next to a half that is not would render as
 				// an error rate the traffic underneath it cannot produce.
 				const deploymentEnv = query.deployment_environment
-				// One clock for the whole response. Two `Date.now()` calls would let
+				// One clock read for the whole response. Two reads would let
 				// the issues window and the throughput window describe times that do
 				// not line up, which is the sort of skew a widget renders as a
 				// contradiction between its two halves.
-				const nowMs = Date.now()
+				const nowMs = yield* Clock.currentTimeMillis
 				const issuesStartMs = nowMs - WIDGET_SUMMARY_ISSUES_WINDOW_SECONDS * 1000
 				const throughputStartMs = nowMs - WIDGET_SUMMARY_THROUGHPUT_WINDOW_SECONDS * 1000
 
-				const issuesPage = yield* readModels.listIssues(tenant.orgId, {
+				const issues = readModels.listIssues(tenant.orgId, {
 					actionable: true,
 					sort: "severity",
 					// Costs one extra warehouse round-trip, and drops alert-kind issues
@@ -113,39 +111,37 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 
 				// Whole seconds: the catalog reads the hourly rollups, whose
 				// Timestamp is a plain `DateTime` and rejects a fractional literal.
-				const compiled = CH.compile(
-					CH.serviceCatalogQuery({
-						limit: WIDGET_SUMMARY_SERVICE_LIMIT,
-						deploymentEnvironment: deploymentEnv,
-					}),
+				const catalog = telemetry.serviceCatalog(
+					tenant,
+					{ limit: WIDGET_SUMMARY_SERVICE_LIMIT, deploymentEnvironment: deploymentEnv },
 					{
-						orgId: tenant.orgId,
 						startTime: formatWarehouseDateTime(throughputStartMs),
 						endTime: formatWarehouseDateTime(nowMs),
 					},
+					"v2WidgetSummaryServices",
 				)
-				const serviceRows = yield* warehouse.compiledQuery(tenant, compiled, {
-					profile: "aggregation",
-					context: "v2WidgetSummaryServices",
-				})
 
 				const bucketSeconds = computeBucketSeconds(throughputStartMs, nowMs)
 				const timeseries = (groupByService: boolean) =>
 					decodeExecuteRequest({
-						// Millisecond precision: the series read the raw trace table,
-						// not the rollups the catalog above reads.
-						startTime: formatWarehouseDateTimeMs(throughputStartMs),
-						endTime: formatWarehouseDateTimeMs(nowMs),
+						// Whole seconds, like the catalog: the series read the same rollups.
+						startTime: formatWarehouseDateTime(throughputStartMs),
+						endTime: formatWarehouseDateTime(nowMs),
 						query: {
 							kind: "timeseries",
 							source: "traces",
 							metric: "count",
 							bucketSeconds,
-							// The runtime takes a list even where the public parameter is
-							// one value, so the single filter becomes a one-element set.
-							...(deploymentEnv === undefined
-								? undefined
-								: { filters: { environments: [deploymentEnv] } }),
+							// Entry spans, the population `throughput_per_second` counts. It
+							// also routes the read to the minutely rollup instead of a raw
+							// scan of every span in the org. The runtime takes a list even
+							// where the public parameter is one value.
+							filters: {
+								rootSpansOnly: true,
+								...(deploymentEnv === undefined
+									? undefined
+									: { environments: [deploymentEnv] }),
+							},
 							...(groupByService
 								? { groupBy: ["service"], seriesLimit: WIDGET_SUMMARY_SERIES_LIMIT }
 								: undefined),
@@ -160,9 +156,11 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 						),
 					)
 
-				const [grouped, total] = yield* Effect.all([timeseries(true), timeseries(false)], {
-					concurrency: 2,
-				})
+				// Independent reads; serially they summed to the widget's whole wait.
+				const [issuesPage, serviceRows, grouped, total] = yield* Effect.all(
+					[issues, catalog, timeseries(true), timeseries(false)],
+					{ concurrency: "unbounded" },
+				)
 				// Null rather than the computed length when nothing came back: the
 				// client divides its points by this, and a bucket length attached to
 				// no points invites it to draw a unit it was never given.

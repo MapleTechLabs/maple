@@ -16,6 +16,10 @@ import { ErrorIssueEventType } from "@maple/domain/http"
  */
 export const AuditResources = {
 	agent: { prefix: PublicIdPrefixes.actor, verbs: ["registered"] },
+	/** Feedback about Maple sent by an agent; kind and agent type are in `metadata`. */
+	agent_feedback: { prefix: PublicIdPrefixes.agentFeedback, verbs: ["submitted"] },
+	/** Org-singleton OpenRouter key the org's AI turns run on; the key is never in `changes`. */
+	ai_provider_key: { verbs: ["updated", "deleted"] },
 	alert_destination: {
 		prefix: PublicIdPrefixes.alertDestination,
 		verbs: ["created", "updated", "deleted"],
@@ -97,6 +101,8 @@ export const AuditResources = {
 	 * end-user data. Recorded by the auth layers from the `AuditedRead` annotation.
 	 */
 	session_replay: { verbs: ["read"] },
+	/** Org-singleton shared Slack channel; the invited email is in `metadata`. */
+	support_channel: { verbs: ["created", "invite_sent"] },
 	/**
 	 * Reads of traces, logs, metrics and error events (`read`, from the
 	 * `AuditedRead` annotation on the endpoint) and every raw SQL statement run

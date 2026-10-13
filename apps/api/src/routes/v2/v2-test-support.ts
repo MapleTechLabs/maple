@@ -15,6 +15,7 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
@@ -23,8 +24,12 @@ import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetS
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
+import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
+import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
+import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -42,7 +47,9 @@ import { HttpV2ErrorIssuesLive } from "./error-issues.http"
 import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
 import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
+import { HttpV2AgentFeedbackLive } from "./agent-feedback.http"
 import { HttpV2OnboardingChecklistLive } from "./onboarding-checklist.http"
+import { HttpV2SupportChannelLive } from "./support-channel.http"
 import { HttpV2OrganizationLive } from "./organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "./recommendations.http"
 import { HttpV2AuditLogLive } from "./audit-log.http"
@@ -147,15 +154,37 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 		HttpV2MobileDevicesLive.pipe(
 			Layer.provide(Layer.mergeAll(MobileDevicesService.layer, LiveActivitiesService.layer)),
 		),
-		HttpV2SessionReplaysLive,
-		HttpV2TracesLive,
-		HttpV2LogsLive,
-		HttpV2MetricsLive,
-		HttpV2ServicesLive,
-		HttpV2ServiceMapLive,
-		HttpV2EnvironmentsLive,
-		HttpV2WidgetSummaryLive,
+		HttpV2AgentFeedbackLive.pipe(Layer.provide(AgentFeedbackService.layer)),
+		// Real reads over whichever `WarehouseQueryService` stub the test provides.
+		HttpV2SessionReplaysLive.pipe(
+			Layer.provide(
+				Layer.effect(SessionReplayReadService, SessionReplayReadService.make).pipe(
+					Layer.provide(ReplayBlobStore.layer),
+				),
+			),
+		),
+		// Real reads over whichever warehouse and query-engine stubs the test provides.
+		Layer.mergeAll(
+			HttpV2TracesLive,
+			HttpV2LogsLive,
+			HttpV2MetricsLive,
+			HttpV2ServicesLive,
+			HttpV2ServiceMapLive,
+			HttpV2EnvironmentsLive,
+			HttpV2WidgetSummaryLive,
+		).pipe(Layer.provide(Layer.effect(TelemetryReadService, TelemetryReadService.make))),
 		HttpV2WidgetCredentialsLive,
+		// Talks to Slack; only its own service test exercises it.
+		HttpV2SupportChannelLive.pipe(
+			Layer.provide(
+				Layer.succeed(SupportChannelService, {
+					retrieve: () => Effect.succeed({ status: "unavailable" }),
+					ensureForCaller: () =>
+						Effect.die("support channels are not exercised by v2 route harnesses"),
+					sendInvite: () => Effect.die("support channels are not exercised by v2 route harnesses"),
+				}),
+			),
+		),
 		// The share group's own dependencies are satisfied here rather than by every
 		// harness: most v2 route tests never touch the share endpoints, and threading
 		// inert services through two dozen call sites to register a group they never
@@ -247,6 +276,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 	Layer.succeed(ErrorIssueReadModelsService, {
 		listIssues: die,
 		countOpenIssuesByService: die,
+		countIssues: die,
 		getIssue: die,
 		listIssueIncidents: die,
 		listOpenIncidents: die,
@@ -312,6 +342,7 @@ export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 	}),
 	Layer.succeed(OrgIngestKeysService, {
 		getOrCreate: die,
+		getOrCreateMany: die,
 		rerollPublic: die,
 		rerollPrivate: die,
 		resolveIngestKey: die,
@@ -352,12 +383,14 @@ export const PlanetScaleServiceStubsLayer = Layer.mergeAll(
 		setMetricsToken: die,
 		disconnect: die,
 		loadConnection: die,
+		loadConnectionById: die,
 		webhookConfig: die,
 	}),
 	Layer.succeed(PlanetScaleOAuthService, {
 		startConnect: die,
 		completeConnect: die,
 		getValidAccessToken: die,
+		withAccessToken: die,
 		listOrganizations: die,
 		hasConnection: die,
 		connectedByUserId: die,

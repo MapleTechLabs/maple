@@ -6,10 +6,10 @@
 // their scope explicit.
 
 import { finiteOrZero } from "@maple/query-engine/ch/format"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from } from "@maple-dev/effect-clickhouse"
-import { Traces } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from } from "@maple-dev/effect-orm/clickhouse"
+import { Traces, orgIdParam } from "@maple/query-engine/ch/tables"
 
 // db.statement samples
 
@@ -74,10 +74,10 @@ export function dbStatementSamplesQuery(opts: DbStatementSamplesOpts) {
 			maxDurationMs: CH.max_($.Duration).div(1000000),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.SpanName.eq("WarehouseQueryService.executeSql"),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 			// Spans without a fingerprint pre-date this attribute or come from
 			// the in-process `EXPLAIN` calls the bench itself makes — neither
 			// is interesting for ranking.

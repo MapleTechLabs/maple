@@ -5,8 +5,8 @@ import { MobilePushService } from "@maple/backend/services/push/MobilePushServic
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { FetchHttpClient, HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import {
 	AlertMemberDirectoryUnavailableError,
 	IntegrationsRevokedError,
@@ -22,7 +22,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -97,8 +97,9 @@ const makeHarness = (
 	const runtimeLive = Layer.succeed(AlertRuntime, {
 		now: Effect.sync(() => Date.now()),
 		makeUuid: () => crypto.randomUUID(),
-		fetch: globalThis.fetch,
 		deliveryTimeoutMs: () => 15_000,
+		schedulerTickBudgetMs: () => 25_000,
+		schedulerEvalTimeoutMs: () => 15_000,
 	})
 	const hazelOAuthLive =
 		hazelOAuthService === undefined
@@ -121,6 +122,7 @@ const makeHarness = (
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
@@ -133,6 +135,7 @@ const makeHarness = (
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
@@ -176,7 +179,7 @@ const makeHarness = (
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
@@ -458,6 +461,37 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("clears the upper threshold when a rule leaves a range comparator", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const destination = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Range transition hook",
+			url: "https://example.com/hooks/range-transition",
+		})
+		expect(destination.status).toBe(200)
+
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Range transition rule",
+			severity: "warning",
+			signal_type: "error_rate",
+			comparator: "between",
+			threshold: 1,
+			threshold_upper: 10,
+			window_minutes: 5,
+			destination_ids: [destination.body.id],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+
+		const patched = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			comparator: "gt",
+		})
+		expect(patched.status, JSON.stringify(patched.body)).toBe(200)
+		expect(patched.body.comparator).toBe("gt")
+		expect(patched.body.threshold_upper).toBeNull()
+		await harness.dispose()
+	})
+
 	it("rejects hidden raw SQL on structured rules", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])
@@ -677,6 +711,7 @@ describe("v2 alerts over HTTP", () => {
 				evaluationDurationMs: 8,
 				errorMessage: null,
 				errorCategory: "",
+				skipReason: "",
 			}
 		})
 		const pagedWarehouse: WarehouseQueryServiceApi = {

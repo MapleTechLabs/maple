@@ -126,6 +126,8 @@ const getReleasesEffect = Effect.fn("QueryEngine.getReleases")(function* ({
 const GetReleaseDetailInput = Schema.Struct({
 	serviceName: ServiceName,
 	commitSha: CommitSha,
+	/** The version this one replaced; the baseline charts fall back to every other version without it. */
+	baselineCommitSha: Schema.optional(CommitSha),
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
 	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
@@ -145,7 +147,7 @@ export interface ReleaseDetailResult {
 	timeline: ReleaseTimelineBucket[]
 	/** Golden signals for this version only. */
 	points: ServiceDetailTimeSeriesPoint[]
-	/** Golden signals for every other version of the service. */
+	/** Golden signals for the replaced version, or every other version when it is unknown. */
 	baselinePoints: ServiceDetailTimeSeriesPoint[]
 	errorFingerprints: ReleaseErrorFingerprint[]
 	startTime: string
@@ -190,10 +192,11 @@ const getReleaseDetailEffect = Effect.fn("QueryEngine.getReleaseDetail")(functio
 					endTime,
 					environments,
 					timeseries: makeAllMetricsTimeseriesRequest({ ...common, commitShas: [input.commitSha] }),
-					baselineTimeseries: makeAllMetricsTimeseriesRequest({
-						...common,
-						excludedCommitShas: [input.commitSha],
-					}),
+					baselineTimeseries: makeAllMetricsTimeseriesRequest(
+						input.baselineCommitSha === undefined
+							? { ...common, excludedCommitShas: [input.commitSha] }
+							: { ...common, commitShas: [input.baselineCommitSha] },
+					),
 					bucketSeconds,
 				}),
 			})

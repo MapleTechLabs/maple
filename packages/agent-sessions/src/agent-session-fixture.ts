@@ -301,7 +301,9 @@ export function buildCleanFixture(): readonly AiSessionSpan[] {
 				...span,
 				statusCode: "Unset",
 				statusMessage: "",
-				genAi: failedTool ? { ...genAi, toolCallResult: toolResult(span.genAi.toolName ?? "") } : genAi,
+				genAi: failedTool
+					? { ...genAi, toolCallResult: toolResult(span.genAi.toolName ?? "") }
+					: genAi,
 			}
 		})
 }

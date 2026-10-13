@@ -98,7 +98,7 @@ const DETAILS_SLICE_CONCURRENCY = 6
  * bounds: every read has to be partition-pruned on both levels rather than fan
  * out unpruned — see `aiSessionSpansQuery`.
  */
-export const resolveAiSessionWindow = Effect.fn("aiSessions.resolveWindow")(function* (
+export const resolveAiSessionWindow = Effect.fn("AiSessionReads.resolveWindow")(function* (
 	tenant: TenantContext,
 	sessionId: string,
 ) {
@@ -166,44 +166,82 @@ const resolveRead = Effect.fnUntraced(function* (
 	return yield* resolveAiSessionWindow(tenant, payload.sessionId)
 })
 
-export const listAiSessions = Effect.fn("aiSessions.list")(function* (
+type PageBounds = {
+	readonly orgId: string
+	readonly fanOutStart: string
+	readonly fanOutEnd: string
+	readonly endTime: string
+}
+
+export const listAiSessions = Effect.fn("AiSessionReads.list")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionsRequest,
 ) {
 	const warehouse = yield* WarehouseQueryService
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-	// One read, off `ai_trace_index` alone: the page is ranked over the
-	// caller's whole window and every fact the row shows is measured
-	// there, over the session's agent spans. The facts only the traces'
-	// other spans can answer come from `details`, which the client
-	// asks for once this has rendered — see `aiSessionPageQuery` for
-	// what the fan-out cost on the critical path.
-	const page = yield* warehouse.compiledQuery(
-		tenant,
-		CH.compile(
-			Integrations.aiSessionPageQuery({
-				...countedFilters(payload),
-				limit: payload.limit,
-				offset: payload.offset,
-				hasErrors: payload.hasErrors,
-				excludeTraceSessions: payload.excludeTraceSessions,
-				durationMinMs: payload.durationMinMs,
-				durationMaxMs: payload.durationMaxMs,
-				costMin: payload.costMin,
-				costMax: payload.costMax,
-				tokensMin: payload.tokensMin,
-				tokensMax: payload.tokensMax,
-				llmCallsMin: payload.llmCallsMin,
-				llmCallsMax: payload.llmCallsMax,
-				toolCallsMin: payload.toolCallsMin,
-				toolCallsMax: payload.toolCallsMax,
-				sortBy: payload.sortBy,
-				sortDir: payload.sortDir,
-			}),
-			{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
-		),
-		{ profile: "list", context: "aiSessionsPage" },
-	)
+	// Off `ai_trace_index` alone: the page is ranked over the caller's whole
+	// window and every fact the row shows is measured there, over the
+	// session's agent spans. The facts only the traces' other spans can
+	// answer come from `details`, which the client asks for once this has
+	// rendered — see `aiSessionPageQuery` for what the fan-out cost on the
+	// critical path.
+	const opts = {
+		...countedFilters(payload),
+		limit: payload.limit,
+		offset: payload.offset,
+		hasErrors: payload.hasErrors,
+		excludeTraceSessions: payload.excludeTraceSessions,
+		durationMinMs: payload.durationMinMs,
+		durationMaxMs: payload.durationMaxMs,
+		costMin: payload.costMin,
+		costMax: payload.costMax,
+		tokensMin: payload.tokensMin,
+		tokensMax: payload.tokensMax,
+		llmCallsMin: payload.llmCallsMin,
+		llmCallsMax: payload.llmCallsMax,
+		toolCallsMin: payload.toolCallsMin,
+		toolCallsMax: payload.toolCallsMax,
+		sortBy: payload.sortBy,
+		sortDir: payload.sortDir,
+	}
+	const window = { orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime }
+	const readPage = (
+		query: ReturnType<typeof Integrations.aiSessionPageQuery>,
+		params: typeof window | PageBounds,
+	) =>
+		warehouse.compiledQuery(tenant, CH.compile(query, params), {
+			profile: "list",
+			context: "aiSessionsPage",
+		})
+	// Two reads where the index can rank the page without its usage: which
+	// sessions, over the window, then their rows over the page's own extent.
+	// What a row costs is its traces' netting, so one read nets every trace of
+	// the window to show fifty sessions — the whole of a list read for an org
+	// with long agent runs, and past the profile's memory on a later page. A
+	// sort or filter on usage needs every session netted either way.
+	const page = Integrations.aiSessionPageRanksOnIndex(opts)
+		? yield* Effect.gen(function* () {
+				const ranked = yield* warehouse.compiledQuery(
+					tenant,
+					CH.compile(Integrations.aiSessionRankQuery(opts), window),
+					{ profile: "list", context: "aiSessionsRank" },
+				)
+				if (ranked.length === 0) return []
+				return yield* readPage(
+					Integrations.aiSessionPageQuery({
+						...opts,
+						sessionIds: ranked.map((row) => row.sessionId),
+					}),
+					{
+						orgId: tenant.orgId,
+						// Fixed-width literals, so they order as the instants do.
+						fanOutStart: ranked.map((row) => row.agentStart).reduce((a, b) => (a < b ? a : b)),
+						fanOutEnd: ranked.map((row) => row.agentEnd).reduce((a, b) => (a > b ? a : b)),
+						endTime: payload.endTime,
+					},
+				)
+			})
+		: yield* readPage(Integrations.aiSessionPageQuery(opts), window)
 	// Rows returned, not rows asked for — annotated before the empty answer
 	// leaves, so a window that ranks nothing is visible as such.
 	yield* Effect.annotateCurrentSpan({ "maple.ai.page_size": page.length })
@@ -243,7 +281,7 @@ export const listAiSessions = Effect.fn("aiSessions.list")(function* (
 	})
 })
 
-export const readAiSessionDetails = Effect.fn("aiSessions.details")(function* (
+export const readAiSessionDetails = Effect.fn("AiSessionReads.details")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionDetailsRequest,
 ) {
@@ -289,7 +327,7 @@ export const readAiSessionDetails = Effect.fn("aiSessions.details")(function* (
 	return new ListAiSessionDetailsResponse({ data: rows })
 })
 
-export const readAiSessionFacets = Effect.fn("aiSessions.facets")(function* (
+export const readAiSessionFacets = Effect.fn("AiSessionReads.facets")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionsFacetsRequest,
 ) {
@@ -317,7 +355,7 @@ export const readAiSessionFacets = Effect.fn("aiSessions.facets")(function* (
 	})
 })
 
-export const readAiSessionDistributions = Effect.fn("aiSessions.distributions")(function* (
+export const readAiSessionDistributions = Effect.fn("AiSessionReads.distributions")(function* (
 	tenant: TenantContext,
 	payload: ListAiSessionsDistributionsRequest,
 ) {
@@ -355,7 +393,7 @@ export const readAiSessionDistributions = Effect.fn("aiSessions.distributions")(
 	})
 })
 
-export const readAiSessionSpans = Effect.fn("aiSessions.spans")(function* (
+export const readAiSessionSpans = Effect.fn("AiSessionReads.spans")(function* (
 	tenant: TenantContext,
 	payload: GetAiSessionSpansRequest,
 ) {
@@ -439,7 +477,7 @@ export const readAiSessionSpans = Effect.fn("aiSessions.spans")(function* (
 	})
 })
 
-export const readAiSessionSummary = Effect.fn("aiSessions.summary")(function* (
+export const readAiSessionSummary = Effect.fn("AiSessionReads.summary")(function* (
 	tenant: TenantContext,
 	payload: GetAiSessionSummaryRequest,
 ) {
@@ -453,27 +491,39 @@ export const readAiSessionSummary = Effect.fn("aiSessions.summary")(function* (
 	// capped, and a session grouping into more turns than the cap
 	// must still report exact totals — those come from the ungrouped
 	// read, which no cap touches.
-	const params =
+	const base = { orgId: tenant.orgId, ...window }
+	const turnsSchema = { rowSchema: Integrations.aiSessionSummaryRowSchema }
+	const totalsSchema = { rowSchema: Integrations.aiSessionTotalsRowSchema }
+	// Compiled per branch: each query pairs with its own params.
+	const compiled =
 		traceId === undefined
-			? { orgId: tenant.orgId, sessionId: payload.sessionId, ...window }
-			: { orgId: tenant.orgId, traceId, ...window }
-	const turnsQuery =
-		traceId === undefined ? Integrations.aiSessionSummaryQuery() : Integrations.aiTraceSummaryQuery()
-	const totalsQuery =
-		traceId === undefined ? Integrations.aiSessionTotalsQuery() : Integrations.aiTraceTotalsQuery()
+			? {
+					turns: CH.compile(
+						Integrations.aiSessionSummaryQuery(),
+						{ ...base, sessionId: payload.sessionId },
+						turnsSchema,
+					),
+					totals: CH.compile(
+						Integrations.aiSessionTotalsQuery(),
+						{ ...base, sessionId: payload.sessionId },
+						totalsSchema,
+					),
+				}
+			: {
+					turns: CH.compile(Integrations.aiTraceSummaryQuery(), { ...base, traceId }, turnsSchema),
+					totals: CH.compile(Integrations.aiTraceTotalsQuery(), { ...base, traceId }, totalsSchema),
+				}
 	const kind = traceId === undefined ? "aiSession" : "aiTrace"
 	const [rows, totals] = yield* Effect.all(
 		[
-			warehouse.compiledQuery(
-				tenant,
-				CH.compile(turnsQuery, params, { rowSchema: Integrations.aiSessionSummaryRowSchema }),
-				{ context: `${kind}Summary` },
-			),
-			warehouse.compiledQuery(
-				tenant,
-				CH.compile(totalsQuery, params, { rowSchema: Integrations.aiSessionTotalsRowSchema }),
-				{ context: `${kind}Totals` },
-			),
+			warehouse.compiledQuery(tenant, compiled.turns, {
+				profile: "aggregation",
+				context: `${kind}Summary`,
+			}),
+			warehouse.compiledQuery(tenant, compiled.totals, {
+				profile: "aggregation",
+				context: `${kind}Totals`,
+			}),
 		],
 		{ concurrency: 2 },
 	)
@@ -485,7 +535,7 @@ export const readAiSessionSummary = Effect.fn("aiSessions.summary")(function* (
 	return summary
 })
 
-export const readAiToolsSeries = Effect.fn("aiSessions.toolsSeries")(function* (
+export const readAiToolsSeries = Effect.fn("AiSessionReads.toolsSeries")(function* (
 	tenant: TenantContext,
 	payload: AiToolsSeriesRequest,
 ) {
@@ -507,12 +557,12 @@ export const readAiToolsSeries = Effect.fn("aiSessions.toolsSeries")(function* (
 			endTime: payload.endTime,
 			bucketSeconds: payload.bucketSeconds,
 		}),
-		{ context: "aiToolsSeries" },
+		{ profile: "aggregation", context: "aiToolsSeries" },
 	)
 	return new AiToolsSeriesResponse({ data: rows, seriesKind })
 })
 
-export const readAiToolsTotals = Effect.fn("aiSessions.toolsTotals")(function* (
+export const readAiToolsTotals = Effect.fn("AiSessionReads.toolsTotals")(function* (
 	tenant: TenantContext,
 	payload: AiToolsTotalsRequest,
 ) {
@@ -539,7 +589,7 @@ export const readAiToolsTotals = Effect.fn("aiSessions.toolsTotals")(function* (
 					},
 					{ rowSchema: Integrations.aiToolsTotalsRowSchema },
 				),
-				{ context: "aiToolsTotals" },
+				{ profile: "aggregation", context: "aiToolsTotals" },
 			),
 			// The detail page's header names the tool, so only a selected
 			// tool has a description to look up.
@@ -581,7 +631,7 @@ export const readAiToolsTotals = Effect.fn("aiSessions.toolsTotals")(function* (
 	})
 })
 
-export const readAiToolsBreakdowns = Effect.fn("aiSessions.toolsBreakdowns")(function* (
+export const readAiToolsBreakdowns = Effect.fn("AiSessionReads.toolsBreakdowns")(function* (
 	tenant: TenantContext,
 	payload: AiToolsBreakdownsRequest,
 ) {
@@ -598,12 +648,12 @@ export const readAiToolsBreakdowns = Effect.fn("aiSessions.toolsBreakdowns")(fun
 			},
 			{ rowSchema: Integrations.aiToolsBreakdownsRowSchema },
 		),
-		{ context: "aiToolsBreakdowns" },
+		{ profile: "aggregation", context: "aiToolsBreakdowns" },
 	)
 	return new AiToolsBreakdownsResponse({ tools: rows.map(breakdownItem) })
 })
 
-export const readAiToolErrors = Effect.fn("aiSessions.toolErrors")(function* (
+export const readAiToolErrors = Effect.fn("AiSessionReads.toolErrors")(function* (
 	tenant: TenantContext,
 	payload: AiToolErrorsRequest,
 ) {
@@ -627,7 +677,7 @@ export const readAiToolErrors = Effect.fn("aiSessions.toolErrors")(function* (
 			},
 			{ rowSchema: Integrations.aiToolErrorsRowSchema },
 		),
-		{ context: "aiToolsErrors" },
+		{ profile: "aggregation", context: "aiToolsErrors" },
 	)
 	return new AiToolErrorsResponse({
 		data: rows.map((row) => ({
@@ -641,7 +691,7 @@ export const readAiToolErrors = Effect.fn("aiSessions.toolErrors")(function* (
 	})
 })
 
-export const readAiToolErrorDetail = Effect.fn("aiSessions.toolErrorDetail")(function* (
+export const readAiToolErrorDetail = Effect.fn("AiSessionReads.toolErrorDetail")(function* (
 	tenant: TenantContext,
 	payload: AiToolErrorDetailRequest,
 ) {
@@ -689,7 +739,7 @@ export const readAiToolErrorDetail = Effect.fn("aiSessions.toolErrorDetail")(fun
 	return new AiToolErrorDetailResponse({ sessions, variants, breakdown })
 })
 
-export const readAiToolErrorSamples = Effect.fn("aiSessions.toolErrorSamples")(function* (
+export const readAiToolErrorSamples = Effect.fn("AiSessionReads.toolErrorSamples")(function* (
 	tenant: TenantContext,
 	payload: AiToolErrorSamplesRequest,
 ) {
@@ -749,7 +799,11 @@ export const readAiToolErrorSamples = Effect.fn("aiSessions.toolErrorSamples")(f
 				),
 				{ profile: "list", context: "aiToolsErrorPayloads" },
 			)
-	const payloadBySpan = new Map(payloads.map((row) => [`${row.traceId}:${row.spanId}`, row] as const))
+	const payloadBySpan = new Map(
+		payloads.map(
+			(row) => [`${row.traceId}:${row.spanId}`, Integrations.aiToolErrorPayload(row)] as const,
+		),
+	)
 	return new AiToolErrorSamplesResponse({
 		...(nextCursor !== undefined && { nextCursor }),
 		occurrences: occurrences.map((row) => {

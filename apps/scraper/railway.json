@@ -5,6 +5,8 @@
 		"dockerfilePath": "apps/scraper/Dockerfile",
 		"watchPatterns": [
 			"apps/scraper/**",
+			"lib/prometheus-otlp/**",
+			"lib/safe-fetch/**",
 			"packages/domain/**",
 			"packages/effect-sdk/**",
 			"bun.lock"

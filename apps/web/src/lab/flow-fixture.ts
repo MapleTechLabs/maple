@@ -13,7 +13,7 @@ function row(overrides: Partial<SpanHierarchyRow> & { spanId: string; spanName: 
 		traceId: "flow-lab-trace",
 		parentSpanId: "",
 		serviceName: "checkout-api",
-		spanKind: "SPAN_KIND_INTERNAL",
+		spanKind: "Internal",
 		durationMs: 20,
 		startTime: at(0),
 		statusCode: "Ok",
@@ -33,7 +33,7 @@ const ROWS: SpanHierarchyRow[] = [
 	row({
 		spanId: "root",
 		spanName: "POST /api/checkout",
-		spanKind: "SPAN_KIND_SERVER",
+		spanKind: "Server",
 		durationMs: 480,
 		spanAttributes: JSON.stringify({
 			"http.request.method": "POST",
@@ -47,7 +47,7 @@ const ROWS: SpanHierarchyRow[] = [
 		parentSpanId: "root",
 		spanName: "checkout-edge fetch",
 		serviceName: "edge-router",
-		spanKind: "SPAN_KIND_SERVER",
+		spanKind: "Server",
 		durationMs: 34,
 		spanAttributes: JSON.stringify({
 			"cloud.platform": "cloudflare.workers",
@@ -89,7 +89,7 @@ const ROWS: SpanHierarchyRow[] = [
 		startTime: at(22),
 		parentSpanId: "pricing",
 		spanName: "SELECT orders",
-		spanKind: "SPAN_KIND_CLIENT",
+		spanKind: "Client",
 		durationMs: 41,
 		spanAttributes: JSON.stringify({
 			"db.system.name": "postgresql",
@@ -103,7 +103,7 @@ const ROWS: SpanHierarchyRow[] = [
 		startTime: at(120),
 		parentSpanId: "root",
 		spanName: "POST",
-		spanKind: "SPAN_KIND_CLIENT",
+		spanKind: "Client",
 		durationMs: 210,
 		spanAttributes: JSON.stringify({
 			"http.request.method": "POST",
@@ -116,7 +116,7 @@ const ROWS: SpanHierarchyRow[] = [
 		startTime: at(340),
 		parentSpanId: "root",
 		spanName: "GET",
-		spanKind: "SPAN_KIND_CLIENT",
+		spanKind: "Client",
 		durationMs: 87,
 		statusCode: "Error",
 		spanAttributes: JSON.stringify({
@@ -143,7 +143,7 @@ const ROWS: SpanHierarchyRow[] = [
 		startTime: at(430),
 		parentSpanId: "root",
 		spanName: "order.created publish",
-		spanKind: "SPAN_KIND_PRODUCER",
+		spanKind: "Producer",
 		durationMs: 6,
 	}),
 	row({
@@ -152,7 +152,7 @@ const ROWS: SpanHierarchyRow[] = [
 		parentSpanId: "publish",
 		spanName: "order.created process",
 		serviceName: "email-worker",
-		spanKind: "SPAN_KIND_CONSUMER",
+		spanKind: "Consumer",
 		durationMs: 54,
 	}),
 	// three consecutive identical spans → one combined ×3 card
@@ -163,7 +163,7 @@ const ROWS: SpanHierarchyRow[] = [
 			parentSpanId: "consume",
 			spanName: "INSERT events",
 			serviceName: "email-worker",
-			spanKind: "SPAN_KIND_CLIENT",
+			spanKind: "Client",
 			durationMs: 9 + i * 4,
 			spanAttributes: JSON.stringify({
 				"db.system.name": "clickhouse",

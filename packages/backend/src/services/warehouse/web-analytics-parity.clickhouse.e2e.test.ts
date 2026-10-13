@@ -22,6 +22,7 @@
 //     network rows must never reach `product_events`, and custom rows must.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
+import { Result } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
@@ -588,14 +589,18 @@ const PRODUCT_STEPS: ReadonlyArray<CH.FunnelStep> = [
 ]
 
 const funnelCounts = async (opts: CH.ProductEventsFunnelOpts): Promise<ReadonlyArray<number>> => {
-	const rows = await runJson(CH.compileUnsafe(CH.productEventsFunnelQuery(opts), funnelWindow).sql)
+	const rows = await runJson(
+		CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelQuery(opts)), funnelWindow).sql,
+	)
 	return rows.map((row) => Number(row.count))
 }
 
 const breakdownRows = async (
 	opts: CH.ProductEventsFunnelBreakdownOpts,
 ): Promise<ReadonlyArray<[unknown, number, number]>> => {
-	const rows = await runJson(CH.compileUnsafe(CH.productEventsFunnelBreakdownQuery(opts), funnelWindow).sql)
+	const rows = await runJson(
+		CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelBreakdownQuery(opts)), funnelWindow).sql,
+	)
 	return rows.map((row) => [row.group, Number(row.step), Number(row.count)])
 }
 
@@ -734,17 +739,23 @@ describe.skipIf(!clickhouseE2eEnabled)("product events funnels", () => {
 // past the top `branches` nodes into `$other`.
 
 const timingRows = async (opts: CH.ProductEventsFunnelOpts) => {
-	const rows = await runJson(CH.compileUnsafe(CH.productEventsFunnelTimingQuery(opts), funnelWindow).sql)
+	const rows = await runJson(
+		CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelTimingQuery(opts)), funnelWindow).sql,
+	)
 	return rows.map((row) => [Number(row.step), Number(row.p50Ms), Number(row.p90Ms)])
 }
 
 const leaverRows = async (opts: CH.ProductEventsFunnelOpts) => {
-	const rows = await runJson(CH.compileUnsafe(CH.productEventsFunnelLeaversQuery(opts), funnelWindow).sql)
+	const rows = await runJson(
+		CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelLeaversQuery(opts)), funnelWindow).sql,
+	)
 	return rows.map((row) => [Number(row.step), row.next, Number(row.count)])
 }
 
 const pathRows = async (opts: CH.ProductEventsPathsOpts) => {
-	const rows = await runJson(CH.compileUnsafe(CH.productEventsPathsQuery(opts), funnelWindow).sql)
+	const rows = await runJson(
+		CH.compileUnsafe(Result.getOrThrow(CH.productEventsPathsQuery(opts)), funnelWindow).sql,
+	)
 	return rows.map((row) => [Number(row.hop), row.fromNode, row.toNode, Number(row.count)])
 }
 

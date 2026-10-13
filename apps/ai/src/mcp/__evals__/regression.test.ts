@@ -325,6 +325,20 @@ describe("inspect_span drill-down", () => {
 	})
 })
 
+describe("search_logs entries", () => {
+	it("prints full ids and the cause-bearing attributes, not the rest", async () => {
+		const result = await runToolDirect(rt, "search_logs", {
+			start_time: "2026-06-02 09:00:00",
+			end_time: "2026-06-02 11:00:00",
+		})
+		const text = markdown(result)
+		expect(text).toContain(`trace=${FIXTURES.traceId} span=${FIXTURES.spanId}`)
+		expect(text).toContain("log.error: ECONNRESET at pool.acquire")
+		expect(text).not.toContain("http.method")
+		expect(text).toContain(`inspect_trace trace_id="${FIXTURES.traceId}" timestamp="2026-06-02 10:00:00"`)
+	})
+})
+
 describe("search_logs paging", () => {
 	// A full page names the call for the next one, with the window and filters repeated so the
 	// page after is the same search.
@@ -402,17 +416,18 @@ describe("agent-recoverable error messages", () => {
 	// query_data: 22 failures, 100% of that tool's errors — all a token that is
 	// valid for one source/kind combination rejected by another, reported as a bare
 	// SchemaError that named neither the combination nor the alternatives.
-	it("names the valid metrics when the token is only valid for the other kind", async () => {
+	it("names the valid group_by values when the token is only valid for the other kind", async () => {
 		const text = markdown(
 			await runToolDirect(rt, "query_data", {
 				source: "metrics",
 				kind: "breakdown",
-				metric: "rate",
+				metric: "avg",
+				group_by: "none",
 				metric_name: "http.server.duration",
 				metric_type: "histogram",
 			}),
 		)
-		expect(text).toContain('"avg", "sum", "count"')
+		expect(text).toContain('"service", "attribute", "resource_attribute"')
 		expect(text).toContain('kind="timeseries"')
 		expect(text).not.toContain("SchemaError")
 	})

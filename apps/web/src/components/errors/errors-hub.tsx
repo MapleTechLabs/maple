@@ -18,12 +18,7 @@ import {
 	sparkFingerprintHashes,
 } from "@/lib/models/error-signal"
 
-import {
-	ACTIONABLE_VIEWS,
-	ErrorsHubView,
-	type HubPaging,
-	viewCovers,
-} from "./errors-hub-view"
+import { ACTIONABLE_VIEWS, ErrorsHubView, type HubPaging, viewCovers } from "./errors-hub-view"
 import { ErrorsStatStrip } from "./errors-stat-strip"
 
 /**

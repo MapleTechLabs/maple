@@ -8,10 +8,7 @@ import {
 import { Effect, Layer } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
-import {
-	GithubHttp,
-	type GithubHttpApi,
-} from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import type { HttpClient } from "effect/http"
 import { GithubProvider } from "@maple/backend/services/integrations/vcs/vendor/github/GithubProvider"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
@@ -22,6 +19,7 @@ import {
 	expectSome,
 	findError,
 	GITHUB_APP_CONFIG,
+	fakeGithubHttp,
 	jsonResponse,
 	testEnv,
 	type VcsRepo,
@@ -42,35 +40,31 @@ const commitBody = (sha: string) => ({
 	author: { login: "octocat", avatar_url: "https://avatars/u/1" },
 })
 
-// GithubHttp seam: access-token POSTs always succeed; commit GETs return the canned
+// HttpClient seam: access-token POSTs always succeed; commit GETs return the canned
 // body or 404 based on `resolvable`. Counts GETs so tests can verify the negative cache.
 const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
 	const calls = { commitGets: 0 }
-	const layer = Layer.succeed(GithubHttp, {
-		fetch: async (input: string | URL | Request, init?: RequestInit) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			const method = init?.method ?? "GET"
-			if (url.includes("/access_tokens") && method === "POST") {
-				return jsonResponse({ token: "ghs_test", expires_at: "2999-01-01T00:00:00Z" })
-			}
-			const match = url.match(/\/repos\/[^/]+\/([^/]+)\/commits\/([0-9a-fA-F]+)/)
-			if (match) {
-				calls.commitGets += 1
-				const [, repoName, sha] = match
-				return resolvable(repoName!, sha!.toLowerCase())
-					? jsonResponse(commitBody(sha!.toLowerCase()))
-					: jsonResponse({ message: "No commit found for SHA" }, { status: 404 })
-			}
-			return jsonResponse({ message: `unexpected ${method} ${url}` }, { status: 500 })
-		},
-	} satisfies GithubHttpApi)
+	const layer = fakeGithubHttp(({ url, method }) => {
+		if (url.includes("/access_tokens") && method === "POST") {
+			return jsonResponse({ token: "ghs_test", expires_at: "2999-01-01T00:00:00Z" })
+		}
+		const match = url.match(/\/repos\/[^/]+\/([^/]+)\/commits\/([0-9a-fA-F]+)/)
+		if (match) {
+			calls.commitGets += 1
+			const [, repoName, sha] = match
+			return resolvable(repoName!, sha!.toLowerCase())
+				? jsonResponse(commitBody(sha!.toLowerCase()))
+				: jsonResponse({ message: "No commit found for SHA" }, { status: 404 })
+		}
+		return jsonResponse({ message: `unexpected ${method} ${url}` }, { status: 500 })
+	})
 	return { layer, calls }
 }
 
-// Full layer stack over an in-memory PGlite + stubbed GithubHttp. `data` appears in
+// Full layer stack over an in-memory PGlite + stubbed HttpClient. `data` appears in
 // both the service deps and the returned merge so Effect memoizes one shared repo
 // instance.
-const commitLayer = (testDb: TestDb, http: Layer.Layer<GithubHttp>) => {
+const commitLayer = (testDb: TestDb, http: Layer.Layer<HttpClient.HttpClient>) => {
 	const env = testEnv(GITHUB_APP_CONFIG)
 	const data = VcsRepository.layer.pipe(Layer.provide(testDb.layer), Layer.provide(env))
 	const githubAppClient = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
@@ -369,6 +363,85 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 			const details = yield* svc.resolveCommitDetails(orgId, SHAS)
 			assert.strictEqual(details.length, 8)
 			assert.strictEqual(calls.commitGets, 8)
+		}).pipe(Effect.provide(commitLayer(testDb, layer)))
+	})
+})
+
+describe("VcsCommitService.resolveCommitRanges", () => {
+	// Five commits on one repo, a..e, committed at 1000..5000.
+	const SHAS = ["a", "b", "c", "d", "e"].map((c) => c.repeat(40))
+	const seedHistory = (repo: VcsRepo, orgId: OrgId) =>
+		Effect.gen(function* () {
+			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
+			const r = expectSome(yield* repo.resolveRepository(orgId, "github", "7"))
+			yield* repo.upsertCommits(
+				r,
+				SHAS.map((sha, index) => ({
+					sha,
+					message: `commit ${index}`,
+					authorName: null,
+					authorEmail: null,
+					authorLogin: null,
+					authorAvatarUrl: null,
+					authoredAt: null,
+					committedAt: (index + 1) * 1000,
+					htmlUrl: `https://github.com/octo/repo/commit/${sha}`,
+				})),
+			)
+		})
+
+	it.effect("lists what shipped after the base up to the head, newest first", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { layer, calls } = routedHttp(() => false)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			yield* seedHistory(repo, orgId)
+
+			const [wide, narrow] = yield* svc.resolveCommitRanges(
+				orgId,
+				[
+					{ base: SHAS[0]!, head: SHAS[4]! },
+					{ base: SHAS[2]!, head: SHAS[3]! },
+				],
+				{ limit: 2 },
+			)
+			assert.strictEqual(wide!.status, "resolved")
+			assert.strictEqual(wide!.totalCount, 4)
+			assert.deepStrictEqual(
+				wide!.commits.map((c) => c.sha),
+				[SHAS[4], SHAS[3]],
+			)
+			assert.strictEqual(wide!.repoFullName, "octo/repo")
+			assert.strictEqual(narrow!.totalCount, 1)
+			assert.strictEqual(narrow!.commits[0]!.sha, SHAS[3])
+			assert.strictEqual(calls.commitGets, 0)
+		}).pipe(Effect.provide(commitLayer(testDb, layer)))
+	})
+
+	it.effect("reads unavailable for an unknown end or a backwards range", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { layer } = routedHttp(() => false)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			yield* seedHistory(repo, orgId)
+
+			const results = yield* svc.resolveCommitRanges(
+				orgId,
+				[
+					{ base: "f".repeat(40), head: SHAS[4]! },
+					{ base: SHAS[4]!, head: SHAS[0]! },
+					{ base: "v1.2.0", head: SHAS[1]! },
+				],
+				{ limit: 10 },
+			)
+			assert.deepStrictEqual(
+				results.map((r) => r.status),
+				["unavailable", "unavailable", "unavailable"],
+			)
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
 })

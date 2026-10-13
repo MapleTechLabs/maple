@@ -24,6 +24,7 @@ vi.mock("@/components/layout/dashboard-layout", () => {
 			Filters: passthrough,
 			Content: passthrough,
 			Sticky: passthrough,
+			Tabs: passthrough,
 			Scroll: passthrough,
 		},
 	}

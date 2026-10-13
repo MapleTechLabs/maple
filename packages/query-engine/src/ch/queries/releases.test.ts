@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { releaseErrorFingerprintsQuery, releasesListQuery, releasesTimelineQuery } from "./releases"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
@@ -42,7 +43,7 @@ describe("releasesTimelineQuery", () => {
 		})
 		expect(sql).toContain("FROM service_overview_minutely")
 		expect(sql).not.toContain("FROM service_overview_hourly")
-		expect(sql).toContain("toStartOfInterval(bBucket, INTERVAL 300 SECOND)")
+		expect(sql).toContain("toStartOfInterval(service_windows.bBucket, INTERVAL 300 SECOND)")
 		expect(sql).toContain("GROUP BY bucket, serviceName, commitSha")
 	})
 
@@ -73,7 +74,7 @@ describe("releaseErrorFingerprintsQuery", () => {
 			{ ...baseParams, serviceVersion: "abc123" },
 		)
 		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toString(FingerprintHash)")
+		expect(sql).toContain("toString(error_events_by_time.FingerprintHash)")
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("ServiceVersion = 'abc123'")
 		expect(sql).toContain("DeploymentEnv IN ('production')")

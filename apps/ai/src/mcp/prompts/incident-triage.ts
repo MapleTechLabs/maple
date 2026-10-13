@@ -1,4 +1,4 @@
-import { McpServer } from "effect/unstable/ai"
+import { McpServer } from "effect/ai"
 import { Effect, Schema } from "effect"
 
 export const IncidentTriagePrompt = McpServer.prompt({

@@ -56,10 +56,10 @@ Two URLs derive from it, and you will paste both into GitHub later. Note them no
 
 ## Step 2: Fill in the basic details
 
-| Field               | What to enter                                                                                                                                                                                         |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field               | What to enter                                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **GitHub App name** | A unique, human-readable name, e.g. `Maple` or `Maple (example.com)`. GitHub requires global uniqueness; if the name is taken, add a suffix. This name also determines your app **slug** (used later). |
-| **Homepage URL**    | `https://YOUR_MAPLE_DOMAIN`                                                                                                                                                                           |
+| **Homepage URL**    | `https://YOUR_MAPLE_DOMAIN`                                                                                                                                                                            |
 
 ---
 
@@ -249,12 +249,12 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 
 ### Permissions
 
-| Permission                 | Access                                              |
-| -------------------------- | --------------------------------------------------- |
-| Repository → Contents      | Read-only (Read and write to allow `@maple fix`)    |
-| Repository → Pull requests | Read and write                                      |
-| Repository → Checks        | Read and write                                      |
-| Repository → Metadata      | Read-only (mandatory)                               |
+| Permission                 | Access                                           |
+| -------------------------- | ------------------------------------------------ |
+| Repository → Contents      | Read-only (Read and write to allow `@maple fix`) |
+| Repository → Pull requests | Read and write                                   |
+| Repository → Checks        | Read and write                                   |
+| Repository → Metadata      | Read-only (mandatory)                            |
 
 ### Subscribed webhook events
 

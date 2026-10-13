@@ -303,6 +303,13 @@ const isEmptyDataEnvelope = (raw: unknown): boolean => {
 	return Array.isArray(raw.data) && raw.data.length === 0
 }
 
+// Every query toggled off: a config state for the tile, not an empty window.
+const isNoEnabledQueriesError = (error: unknown): boolean =>
+	typeof error === "object" &&
+	error !== null &&
+	"message" in error &&
+	error.message === "No enabled queries to run"
+
 const isExpectedEmptyDataError = (error: unknown): boolean => {
 	if (typeof error !== "object" || error === null) return false
 	const message = (error as { message?: unknown }).message
@@ -574,6 +581,14 @@ export function useWidgetDataSource(
 				message: "Pick a metric in the query editor to run this tile.",
 			} as const
 		}
+		if (!dataSource) {
+			return {
+				status: "error",
+				kind: "config",
+				title: "Not set up yet",
+				message: "Pick what this widget should show.",
+			} as const
+		}
 		if (disableReason) {
 			return { status: "error", message: disableReason } as const
 		}
@@ -588,9 +603,18 @@ export function useWidgetDataSource(
 		return Result.builder(result)
 			.onInitial(() => ({ status: "loading" }) as const)
 			.onError((error) => {
+				if (isNoEnabledQueriesError(error)) {
+					return {
+						status: "error",
+						kind: "config",
+						title: "All queries are turned off",
+						message: "Turn on a query in the editor to draw this widget.",
+					} as const
+				}
 				if (isExpectedEmptyDataError(error)) {
 					return {
 						status: "error",
+						kind: "empty",
 						message: "No query data found in selected time range",
 					} as const
 				}
@@ -601,14 +625,19 @@ export function useWidgetDataSource(
 			.onSuccess((rawData) =>
 				isEmptyDataEnvelope(rawData)
 					? // Same muted "No data" frame the empty-window failure used to
-						// produce; `WidgetFrame` keys off this exact message.
-						({ status: "error", message: "No query data found in selected time range" } as const)
+						// produce; `WidgetFrame` keys off `kind: "empty"`.
+						({
+							status: "error",
+							kind: "empty",
+							message: "No query data found in selected time range",
+						} as const)
 					: ({ status: "ready", data: toReadyWidgetData(rawData, transform) } as const),
 			)
 			.orElse(() => ({ status: "error", message: "Unknown error" }) as const)
 	}, [
 		result,
 		transform,
+		dataSource,
 		disableReason,
 		executed,
 		isStatic,

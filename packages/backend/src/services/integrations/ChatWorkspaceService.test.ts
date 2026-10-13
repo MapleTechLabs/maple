@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Duration, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { ChatConnectorId, ChatWorkspaceId, OrgId, UserId } from "@maple/domain/http"
 import {
 	chatConnectorConfigNames,

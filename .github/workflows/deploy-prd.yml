@@ -1,12 +1,8 @@
 name: Deploy PRD (Cloudflare via Alchemy)
 
-# Gated on CI rather than `push: main`. Both used to fire on the same push with
-# separate concurrency groups, so a red CI still shipped to production.
-# `workflow_dispatch` stays as the manual escape hatch and skips the gate.
-#
-# One production deploy is one commit shipped to every instance. The steps
-# live in `deploy-prd-instance.yml`, called once per instance below; the
-# ingest binary is built once and shared by both.
+# Gated on CI passing (not `push: main`); `workflow_dispatch` skips the gate.
+# One commit ships to every instance via `deploy-prd-instance.yml`; the ingest
+# binary is built once and shared.
 on:
     workflow_run:
         workflows: ["CI"]
@@ -23,16 +19,12 @@ permissions:
     id-token: write # Infisical OIDC machine-identity auth
 
 jobs:
-    # Separate job because it needs an arm64 runner — see the workflow itself.
-    # Same gate as deploy-prd: a superseded CI run has nothing to deploy, so it
-    # should not spend an arm64 runner compiling a binary nobody will ship.
+    # Separate job for the arm64 runner; same gate so a red CI builds nothing.
     ingest-binary:
         if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
         uses: ./.github/workflows/build-ingest-binary.yml
 
-    # On a workflow_run event `github.sha` is the default branch head, not the
-    # commit CI actually ran against — so pin everything to head_sha, both for
-    # what gets deployed and for the telemetry stamp.
+    # On workflow_run, `github.sha` is the branch head, not the commit CI tested: pin head_sha.
     deploy-prd:
         needs: ingest-binary
         if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
@@ -42,11 +34,8 @@ jobs:
             region: us
             commit-sha: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-    # The EU instance (`prd-eu`, `*.eu.maple.dev`). Opt-in through the
-    # `MAPLE_DEPLOY_EU` repository variable until its accounts exist — the stack
-    # refuses to deploy `eu` without its Hyperdrive configs — after which it
-    # ships on every green CI run alongside `us`. Sequenced after `us` so a
-    # change that breaks the deploy stops at one instance.
+    # EU instance (`*.eu.maple.dev`), opt-in via the `MAPLE_DEPLOY_EU` repo variable.
+    # Sequenced after `us` so a breaking change stops at one instance.
     deploy-prd-eu:
         needs: [ingest-binary, deploy-prd]
         if: ${{ vars.MAPLE_DEPLOY_EU == '1' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
@@ -56,16 +45,8 @@ jobs:
             region: eu
             commit-sha: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-    # A skipped job does not fail its run, so with CI red this workflow reported
-    # SUCCESS while nothing deployed — which is how a broken `main` looked like a
-    # string of clean deploys for several commits, and why an Electric deploy
-    # nobody had noticed was never running took an hour to spot. This job always
-    # runs, so the run's conclusion says what actually happened.
-    #
-    # A *cancelled* CI run is not a broken main: CI cancels in-progress runs on
-    # `main` when a newer push lands, and the superseding commit's own run
-    # deploys both. Reporting that as "Fix main" made every back-to-back push
-    # look like a deploy failure.
+    # Skipped jobs do not fail a run, so this always runs and fails when nothing
+    # deployed. A cancelled CI run (superseded by a newer push) is not a failure.
     deployment-gate:
         needs: [deploy-prd, deploy-prd-eu]
         if: ${{ always() }}
@@ -85,8 +66,6 @@ jobs:
                       echo "::error::Nothing was deployed: CI did not pass for $HEAD_SHA. Fix main, then re-run."
                       exit 1
                   fi
-                  # A genuine deploy failure already fails its own job and reddens
-                  # the run; there is nothing to add here. The EU job is skipped
-                  # by design until MAPLE_DEPLOY_EU is set.
+                  # Real deploy failures already fail their own job. EU skips until MAPLE_DEPLOY_EU is set.
                   echo "deploy-prd: $result"
                   echo "deploy-prd-eu: ${{ needs.deploy-prd-eu.result }}"

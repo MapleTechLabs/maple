@@ -1,12 +1,21 @@
 import { memo, useDeferredValue, useEffect, useMemo, useRef, type ReactNode } from "react"
+import { shortId } from "@maple/ui/lib/ids"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import type { AiSessionSpan } from "@maple/domain/http"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
-import { formatBytes, formatDuration } from "@maple/ui/lib/format"
+import { countLabel, formatBytes, formatDuration } from "@maple/ui/lib/format"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { cn } from "@maple/ui/lib/utils"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 
 import {
 	BranchForkIcon,
@@ -23,6 +32,7 @@ import {
 	UserIcon,
 	type IconComponent,
 } from "@/components/icons"
+import { FailedBadge } from "./session-waterfall"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -43,7 +53,6 @@ import {
 import { formatClockInTimezone } from "@/lib/timezone-format"
 import { ClampedText, firstLine } from "./clamped-text"
 import { disclosed, MessageBody, useJsonPayload, useMessageBody, ViewSwitch } from "./payload-view"
-import { Pill } from "./pill"
 import { ToolIo, ToolIoSummary } from "./tool-io"
 
 /**
@@ -61,13 +70,13 @@ const AVATAR_SLOT = "flex w-6 shrink-0 justify-center"
 /** Prose column: past this a line is too long to track back to its own start. */
 const BODY = "min-w-0 max-w-[900px] grow pl-3"
 /** Who is speaking — a name, set as one, not a category label. */
-const SPEAKER = "shrink-0 font-semibold text-[13px] text-foreground"
+const SPEAKER = "shrink-0 font-semibold text-ui text-foreground"
 /** The clock beside a speaker's name, where a chat puts it. */
-const CLOCK = "shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums"
+const CLOCK = "shrink-0 font-mono text-2xs text-muted-foreground tabular-nums"
 /** Secondary facts and controls: there for the reader who points at the row. */
 const ON_HOVER = "opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100"
 const LABEL = "shrink-0 font-medium text-xs"
-const META = "min-w-0 truncate font-mono text-[11px] text-muted-foreground"
+const META = "min-w-0 truncate font-mono text-2xs text-muted-foreground"
 /** One lane of nesting; the hairline is what makes a lane's extent visible. */
 const INDENT = "flex w-6 shrink-0 justify-center"
 /** Past this the prose column is narrower than the gutters framing it, and a
@@ -211,11 +220,11 @@ export function SessionTranscript({
 
 	if (rows.length === 0) {
 		return (
-			<p className="px-2.5 py-8 text-center text-muted-foreground text-sm">
+			<EmptyMessage>
 				{query.trim() === ""
-					? "No AI activity in this session — its spans are HTTP and database work, which the transcript excludes. The Traces view shows them."
+					? "No AI activity in this session. Its spans are HTTP and database work, which the transcript excludes. The Traces view shows them."
 					: "No blocks match this filter."}
-			</p>
+			</EmptyMessage>
 		)
 	}
 
@@ -398,7 +407,7 @@ function TurnChapter({
 	// itself only has to say where a turn starts and how long it ran.
 	const detail = [
 		turn.agentName,
-		`${turn.traceIds.length} trace${turn.traceIds.length === 1 ? "" : "s"}`,
+		countLabel(turn.traceIds.length, "trace"),
 		`${row.aiSpanCount} agent spans`,
 	]
 		.filter((part) => part !== undefined)
@@ -432,12 +441,12 @@ function TurnChapter({
 				<span className="shrink-0 font-medium text-muted-foreground text-xs group-hover/turn:text-foreground">
 					{turnOrdinal(turn)}
 				</span>
-				{turn.failed && <Pill tone="error">Failed</Pill>}
+				{turn.failed && <FailedBadge />}
 				{collapsed && (
 					<>
 						{/* The label is the first prose line of a captured message, not a
 						    verbatim quote, so it is set as text rather than quoted. */}
-						<span className="min-w-0 shrink truncate text-[13px] text-foreground">
+						<span className="min-w-0 shrink truncate text-ui text-foreground">
 							{turn.label ?? (
 								<span className="text-muted-foreground italic">no prompt captured</span>
 							)}
@@ -481,7 +490,7 @@ function EmptyTurnRow({ row }: { row: Extract<TranscriptRow, { kind: "empty-turn
 /** A collapsed chapter keeps its whole summary on the header row, so a long
  *  session can be skimmed one line per turn. */
 function summariseTurn(row: Extract<TranscriptRow, { kind: "turn" }>): string {
-	const parts = [`${row.llmCalls} LLM call${row.llmCalls === 1 ? "" : "s"}`]
+	const parts = [countLabel(row.llmCalls, "LLM call")]
 	if (row.toolNames.length > 0) parts.push(row.toolNames.join(", "))
 	return parts.join(" · ")
 }
@@ -510,18 +519,22 @@ function UserBlock({
 			<div className="flex flex-col gap-1.5">
 				<div className="flex h-6 items-center justify-end gap-2">
 					{row.earlierCount > 0 && (
-						<button
-							type="button"
-							onClick={() => onToggleRow(historyKey)}
-							aria-expanded={showHistory}
-							title={`${row.earlierCount} earlier message${row.earlierCount === 1 ? "" : "s"} re-sent with this one, shown once`}
-							className={cn(
-								"shrink-0 cursor-pointer text-[11px] text-muted-foreground hover:text-foreground",
-								!showHistory && ON_HOVER,
-							)}
-						>
-							{showHistory ? "hide history" : `+${row.earlierCount} re-sent`}
-						</button>
+						<Tooltip>
+							<TooltipTrigger
+								render={<button type="button" />}
+								onClick={() => onToggleRow(historyKey)}
+								aria-expanded={showHistory}
+								className={cn(
+									"shrink-0 cursor-pointer text-2xs text-muted-foreground hover:text-foreground",
+									!showHistory && ON_HOVER,
+								)}
+							>
+								{showHistory ? "hide history" : `+${row.earlierCount} re-sent`}
+							</TooltipTrigger>
+							<TooltipContent>
+								{`${countLabel(row.earlierCount, "earlier message")} re-sent with this one, shown once`}
+							</TooltipContent>
+						</Tooltip>
 					)}
 					<ViewSwitch
 						rendered={body.rendered}
@@ -550,7 +563,7 @@ function UserBlock({
 						{/* The history verbatim, not a diff: dropped and truncated
 						    messages make a suffix diff unreliable, so what the model was
 						    actually sent is shown whole instead of guessed at. */}
-						<p className="text-[11px] text-muted-foreground">
+						<p className="text-2xs text-muted-foreground">
 							The whole history this call re-sent, as captured.
 						</p>
 						{row.history.map((message, index) => {
@@ -680,7 +693,9 @@ function AssistantBlock({
 					<Avatar
 						icon={row.failed ? CircleWarningIcon : PixelSparkleIcon}
 						className={
-							row.failed ? "bg-destructive/15 text-destructive" : "bg-chart-2/15 text-chart-2"
+							row.failed
+								? "bg-severity-error/15 text-severity-error"
+								: "bg-chart-2/15 text-chart-2"
 						}
 					/>
 				)
@@ -701,10 +716,10 @@ function AssistantBlock({
 					className="flex min-w-0 grow cursor-pointer items-center gap-2 text-left"
 				>
 					{(!continued || row.failed) && <span className={SPEAKER}>Assistant</span>}
-					{row.failed && <Pill tone="error">Failed</Pill>}
+					{row.failed && <FailedBadge />}
 					<span className={CLOCK}>{clockOf(row.startMs, timeZone)}</span>
 					{row.span.genAi.errorType !== undefined && (
-						<span className="shrink-0 font-mono text-[11px] text-destructive">
+						<span className="shrink-0 font-mono text-2xs text-severity-error">
 							{row.span.genAi.errorType}
 						</span>
 					)}
@@ -743,7 +758,7 @@ function AssistantBlock({
 									rendering={!errorRaw && error.isJson ? "json" : "text"}
 									mono
 									clampLines={14}
-									toneClass="text-[13px] text-destructive/90"
+									toneClass="text-ui text-severity-error/90"
 									expanded={disclosed(openRows, `${row.key}:error-text`, false)}
 									onToggleExpanded={() => onToggleRow(`${row.key}:error-text`)}
 								/>
@@ -768,7 +783,7 @@ function AssistantBlock({
 					<p className="text-muted-foreground text-xs">No reply was produced by this call.</p>
 				</div>
 			)}
-			{!row.failed && row.text === undefined && (
+			{!row.failed && !row.toolCallsOnly && row.text === undefined && (
 				<InlineNote className="mt-2.5">
 					The reply isn't captured. This emitter recorded the request but not{" "}
 					<span className="font-mono">gen_ai.output.messages</span>, so the call's text is gone — it
@@ -891,15 +906,14 @@ function ToolBlock({
 }: BlockProps & { row: Extract<TranscriptRow, { kind: "tool" }> }) {
 	const payloadsKey = `${row.key}:payloads`
 	const open = disclosed(openRows, payloadsKey, showPayloads)
-	const tone = row.failed ? "text-destructive" : "text-chart-4"
+	const tone = row.failed ? "text-severity-error" : "text-chart-4"
 
 	return (
 		<Row depth={row.depth} className="pt-1.5">
-			<div
+			<Panel
 				className={cn(
-					"flex min-w-0 flex-col overflow-hidden rounded-lg border",
 					row.failed
-						? "border-destructive/40 bg-destructive/5"
+						? "border-severity-error/40 bg-severity-error/5"
 						: open
 							? "border-border bg-card"
 							: "border-transparent bg-muted/30 hover:bg-muted/50",
@@ -925,7 +939,7 @@ function ToolBlock({
 						<span className={cn(META, "shrink-0")}>{formatDuration(row.span.durationMs)}</span>
 					)}
 					{row.failed && row.span.genAi.errorType !== undefined && (
-						<span className="shrink-0 font-mono text-[11px] text-destructive">
+						<span className="shrink-0 font-mono text-2xs text-severity-error">
 							{row.span.genAi.errorType}
 						</span>
 					)}
@@ -954,14 +968,16 @@ function ToolBlock({
 						missingResultNote={
 							row.fromMessageOnly
 								? "not captured — this call is known only from the message that made it. Whether it ran is unknown."
-								: "not captured — the span carries no result attribute and no later message echoes this call id. Whether it succeeded is unknown."
+								: row.failed
+									? "not captured — the span failed without recording a result or an error message."
+									: "not captured — the span carries no result attribute and no later message echoes this call id. Whether it succeeded is unknown."
 						}
 						keyPrefix={row.key}
 						openRows={openRows}
 						onToggleRow={onToggleRow}
 					/>
 				)}
-			</div>
+			</Panel>
 		</Row>
 	)
 }
@@ -992,10 +1008,8 @@ function PayloadSection({
 	return (
 		<div className={cn("flex flex-col gap-2 px-3 pt-2.5 pb-3", bordered && "border-border/60 border-t")}>
 			<div className="flex flex-wrap items-center gap-2">
-				<span className="font-medium font-mono text-[10px] text-muted-foreground uppercase tracking-[0.1em]">
-					{label}
-				</span>
-				<span className="font-mono text-[10px] text-muted-foreground">
+				<Eyebrow variant="mono">{label}</Eyebrow>
+				<span className="font-mono text-3xs text-muted-foreground">
 					{[
 						meta,
 						formatBytes(payload.byteLength),
@@ -1007,9 +1021,9 @@ function PayloadSection({
 				{/* Emitter truncation, not the view's clamping — there is no "show
 				    full" that can recover what was never recorded. */}
 				{payload.truncatedByEmitter && (
-					<Pill tone="warn" className="rounded-sm font-mono normal-case tracking-normal">
+					<Badge size="xs" mono className={TONE_SOFT.warn}>
 						truncated by the emitter
-					</Pill>
+					</Badge>
 				)}
 				{/* Copies what is displayed: the pretty-printed JSON, or the raw text.
 				    The switch only appears where the two differ. */}
@@ -1041,7 +1055,7 @@ function PayloadSection({
 				/>
 			)}
 			{payload.truncatedByEmitter && (
-				<p className="text-[11px] text-muted-foreground italic">
+				<p className="text-2xs text-muted-foreground italic">
 					Cut off here by the instrumentation, not by Maple — the tail was never recorded.
 				</p>
 			)}
@@ -1075,16 +1089,14 @@ function LaneOpen({
 			<div className="mt-4 flex h-6 items-center gap-2">
 				{/* An agent name is emitter input: capped and truncating so a long one
 				    cannot widen the page. */}
-				<span className={cn(SPEAKER, "max-w-56 shrink truncate")} title={row.agentName}>
-					{row.agentName}
-				</span>
+				<TruncatedText className={cn(SPEAKER, "max-w-56 shrink")}>{row.agentName}</TruncatedText>
 				<span className={CLOCK}>{clockOf(row.startMs, timeZone)}</span>
 				<span className={META}>
 					{row.laneKind === "subagent"
 						? row.parentAgentName !== undefined
 							? `subagent of ${row.parentAgentName}`
 							: "subagent"
-						: `agent · trace ${row.span.traceId.slice(0, 8)}`}{" "}
+						: `agent · trace ${shortId(row.span.traceId, "trace")}`}{" "}
 					· {row.spanCount} spans · {formatDuration(row.span.durationMs)}
 				</span>
 			</div>
@@ -1093,7 +1105,7 @@ function LaneOpen({
 			    the sub-agent's work with no record of what was asked for. Behind the
 			    same chip as a tool card's payloads — it is one. */}
 			{showPayloads && row.args !== undefined && (
-				<div className="overflow-hidden rounded-md border border-border bg-card">
+				<Panel>
 					<PayloadSection
 						label="Task prompt"
 						payload={row.args}
@@ -1102,7 +1114,7 @@ function LaneOpen({
 						onToggleRow={onToggleRow}
 						textKey={`${row.key}:args-text`}
 					/>
-				</div>
+				</Panel>
 			)}
 		</Row>
 	)
@@ -1132,15 +1144,14 @@ function LaneClose({
 					{row.parentAgentName === undefined
 						? " finished"
 						: ` returned to ${row.parentAgentName}`}{" "}
-					· {formatDuration(row.durationMs)} · {row.llmCalls} LLM call
-					{row.llmCalls === 1 ? "" : "s"} · {row.toolCalls} tool call
-					{row.toolCalls === 1 ? "" : "s"}
+					· {formatDuration(row.durationMs)} · {countLabel(row.llmCalls, "LLM call")} ·{" "}
+					{countLabel(row.toolCalls, "tool call")}
 				</span>
 			</div>
 			{/* What the sub-agent handed back, read off the delegating tool call's
 			    result — the only place the answer is recorded. */}
 			{showPayloads && row.result !== undefined && (
-				<div className="overflow-hidden rounded-md border border-border bg-card">
+				<Panel>
 					<PayloadSection
 						label="Returned"
 						payload={row.result}
@@ -1149,7 +1160,7 @@ function LaneClose({
 						onToggleRow={onToggleRow}
 						textKey={`${row.key}:result-text`}
 					/>
-				</div>
+				</Panel>
 			)}
 		</Row>
 	)
@@ -1167,9 +1178,7 @@ function ParallelRule({ label, range }: { label: string; range: string }) {
 			<BranchForkIcon size={12} className="shrink-0" />
 			{/* The label joins agent names, which are emitter input: it truncates
 			    rather than widening the page. */}
-			<span className="min-w-0 truncate font-medium text-xs" title={label}>
-				{label}
-			</span>
+			<TruncatedText className="font-medium text-xs">{label}</TruncatedText>
 			<span className={cn(META, "shrink-0")}>{range}</span>
 			<span aria-hidden className="h-px min-w-6 grow bg-border/60" />
 		</div>
@@ -1251,7 +1260,7 @@ function StructureRow({
 	const Glyph: IconComponent =
 		category === "tool" ? GearIcon : category === "agent" ? FaceRobotIcon : PixelSparkleIcon
 	const tone = row.failed
-		? "text-destructive"
+		? "text-severity-error"
 		: category === "tool"
 			? "text-chart-4"
 			: category === "agent"
@@ -1268,16 +1277,13 @@ function StructureRow({
 					aria-pressed={selected}
 					className={cn(
 						"-mx-1.5 flex min-w-0 grow cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted/40",
-						selected && "bg-primary/6",
+						rowSelectedClass(selected),
 					)}
 				>
 					<Glyph size={13} className={cn("shrink-0", tone)} />
-					<span
-						className="min-w-0 truncate font-medium font-mono text-foreground text-xs"
-						title={row.label}
-					>
+					<TruncatedText mono className="font-medium text-foreground text-xs">
 						{row.label}
-					</span>
+					</TruncatedText>
 					<span className={cn(META, "shrink-0")}>{meta.shown}</span>
 					<span className={cn(META, !selected && ON_HOVER)}>{meta.onHover}</span>
 					<span className="grow" />
@@ -1323,7 +1329,7 @@ function NoteBlock({ row }: { row: Extract<TranscriptRow, { kind: "note" }> }) {
 		<div className="mx-2 mt-2 flex max-w-[924px] items-start gap-3 rounded-lg bg-muted/30 px-4 py-3">
 			<CircleInfoIcon size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
 			<div className="flex min-w-0 grow flex-col gap-1">
-				<p className="font-medium text-[13px] text-foreground">
+				<p className="font-medium text-ui text-foreground">
 					Message content isn't captured for {scope}
 				</p>
 				<p className="text-muted-foreground text-xs leading-relaxed">
@@ -1384,7 +1390,7 @@ function DividerBlock({
 							Loading the rest of this session
 						</span>
 					</div>
-					<p className="text-center text-[13px] text-muted-foreground">
+					<p className="text-center text-ui text-muted-foreground">
 						The agent's later turns are still arriving — this is not where the session ended.
 					</p>
 				</>
@@ -1418,7 +1424,7 @@ function structureMeta(span: AiSessionSpan, category: string): { shown: string; 
 	if (category === "tool") {
 		return { shown: `${span.serviceName} · payloads not captured`, onHover: "" }
 	}
-	if (category === "agent") return { shown: `trace ${span.traceId.slice(0, 8)}`, onHover: "" }
+	if (category === "agent") return { shown: `trace ${shortId(span.traceId, "trace")}`, onHover: "" }
 	// The model already leads the label; the rest of the call's facts follow, so
 	// the parts are taken as parts rather than sliced back out of a joined line.
 	// What the call cost is the turn header's, the same as on a captured call,

@@ -4,16 +4,13 @@
 // `@maple/query-engine/observability`, so commands and renderers are unaware
 // of which backend answered. Where v2 cannot express what local mode returns,
 // the operation fails loudly (see `unsupportedInRemote`) rather than quietly
-// returning a narrower answer — a partially-correct observability answer is
+// returning a narrower answer; a partially-correct observability answer is
 // worse than a refusal, because nothing about the output says it was partial.
 
-import { Effect } from "effect"
-import { Schema } from "effect"
-import { ServiceName, SpanId, TraceId } from "@maple/domain"
+import { Effect, Predicate, Schema } from "effect"
+import { MetricName, ServiceName, SpanId, TraceId } from "@maple/domain"
 import { clusterLogPatterns } from "@maple/query-engine/observability"
 import type {
-	ErrorDetailOutput,
-	ErrorDetailTrace,
 	InspectTraceOutput,
 	LogEntry,
 	SearchLogsOutput,
@@ -24,8 +21,10 @@ import type {
 	SpanResult,
 } from "@maple/query-engine/observability"
 import type { ListMetricsOutput } from "@maple/domain/tinybird"
+import { CliNotFoundError } from "../lib/errors"
+import type { MetricSeriesOutput } from "../lib/views"
 import type { Range } from "./time"
-import { type MapleV2Client, remoteFailure, toV2Window, unsupportedInRemote } from "./v2-client"
+import { type MapleV2Client, toV2Window, unsupportedInRemote } from "./v2-client"
 
 /**
  * v2 list endpoints cap `limit` at 100 (LIST_LIMIT_MAX) and paginate by opaque
@@ -54,17 +53,15 @@ export const listServices = (
 			},
 		}),
 		(list) =>
-			list.data.map(
-				(s): ServiceSummary => ({
-					name: s.name,
-					throughput: s.throughput,
-					errorCount: s.error_count,
-					errorRate: s.error_rate,
-					p50Ms: s.p50_latency_ms,
-					p95Ms: s.p95_latency_ms,
-					p99Ms: s.p99_latency_ms,
-				}),
-			),
+			list.data.map((s): ServiceSummary => ({
+				name: s.name,
+				throughput: s.throughput,
+				errorCount: s.error_count,
+				errorRate: s.error_rate,
+				p50Ms: s.p50_latency_ms,
+				p95Ms: s.p95_latency_ms,
+				p99Ms: s.p99_latency_ms,
+			})),
 	)
 
 export const serviceMap = (
@@ -80,16 +77,14 @@ export const serviceMap = (
 			},
 		}),
 		(map) =>
-			map.edges.map(
-				(e): ServiceEdge => ({
-					sourceService: e.source_service,
-					targetService: e.target_service,
-					callCount: e.call_count,
-					errorCount: e.error_count,
-					avgDurationMs: e.avg_duration_ms,
-					maxDurationMs: e.max_duration_ms,
-				}),
-			),
+			map.edges.map((e): ServiceEdge => ({
+				sourceService: e.source_service,
+				targetService: e.target_service,
+				callCount: e.call_count,
+				errorCount: e.error_count,
+				avgDurationMs: e.avg_duration_ms,
+				maxDurationMs: e.max_duration_ms,
+			})),
 	)
 
 export const searchTraces = (
@@ -104,6 +99,7 @@ export const searchTraces = (
 		httpMethod?: string
 		traceId?: string
 		rootOnly?: boolean
+		environment?: string
 		limit?: number
 		offset?: number
 	},
@@ -121,7 +117,7 @@ export const searchTraces = (
 	if (p.offset !== undefined && p.offset > 0) {
 		return unsupportedInRemote(
 			"list_traces",
-			"/v2/traces/search paginates by opaque cursor and cannot seek to a numeric --offset.",
+			"/v2/traces/search paginates by opaque cursor, and the search that takes --offset has no environment filter; drop --env to page with --offset.",
 		)
 	}
 	const limit = clampListLimit(p.limit)
@@ -137,6 +133,7 @@ export const searchTraces = (
 					...(p.minDurationMs != null ? { min_duration_ms: p.minDurationMs } : undefined),
 					...(p.maxDurationMs != null ? { max_duration_ms: p.maxDurationMs } : undefined),
 					...(p.httpMethod ? { http_method: p.httpMethod } : undefined),
+					...(p.environment ? { deployment_environment: p.environment } : undefined),
 				},
 			},
 		}),
@@ -145,20 +142,18 @@ export const searchTraces = (
 			// Every row is a root span, so the span fields describe the root. v2
 			// search carries no attribute maps or span id; those are only available
 			// per-span via `GET /v2/traces/:id`.
-			spans: list.data.map(
-				(t): SpanResult => ({
-					traceId: t.id,
-					spanId: null,
-					spanName: t.root_span_name,
-					serviceName: t.root_service_name,
-					durationMs: t.duration_ms,
-					statusCode: t.root_status_code,
-					statusMessage: "",
-					attributes: {},
-					resourceAttributes: {},
-					timestamp: t.start_time,
-				}),
-			),
+			spans: list.data.map((t): SpanResult => ({
+				traceId: t.id,
+				spanId: null,
+				spanName: t.root_span_name,
+				serviceName: t.root_service_name,
+				durationMs: t.duration_ms,
+				statusCode: t.root_status_code,
+				statusMessage: "",
+				attributes: {},
+				resourceAttributes: {},
+				timestamp: t.start_time,
+			})),
 			pagination: { offset: 0, limit, hasMore: list.has_more },
 		}),
 	)
@@ -173,6 +168,7 @@ const buildSpanTree = (
 		service_name: string
 		kind: string
 		duration_ms: number
+		start_time: string
 		status_code: string
 		status_message: string | null
 		attributes: Record<string, string>
@@ -188,6 +184,7 @@ const buildSpanTree = (
 			serviceName: s.service_name,
 			spanKind: s.kind,
 			durationMs: s.duration_ms,
+			startTime: s.start_time,
 			statusCode: s.status_code,
 			statusMessage: s.status_message ?? "",
 			attributes: s.attributes,
@@ -208,16 +205,29 @@ const buildSpanTree = (
 	return roots
 }
 
+const TRACE_NOT_FOUND_TAG = "@maple/http/v2/TraceNotFoundError"
+
 export const inspectTrace = (
 	client: MapleV2Client,
 	p: { traceId: string },
 ): Effect.Effect<InspectTraceOutput, unknown> =>
 	Effect.gen(function* () {
 		const id = traceId(p.traceId)
-		const trace = yield* client.traces.retrieve({ params: { trace_id: id } })
-		// `maple trace <id>` takes no time flags, and it should not have to: the
-		// trace reports its own bounds, which are exactly the window its logs
-		// fall in. Deriving the window here keeps the command's shape unchanged.
+		const trace = yield* client.traces.retrieve({ params: { trace_id: id } }).pipe(
+			Effect.catchIf(
+				(error: unknown) => Predicate.isTagged(error, TRACE_NOT_FOUND_TAG),
+				() =>
+					Effect.fail(
+						new CliNotFoundError({
+							message: `trace ${p.traceId} not found in the workspace`,
+							hint: "check the id, or look it up with `maple traces`",
+						}),
+					),
+			),
+		)
+		// v2 retrieves a trace by id alone, so `--since/--start/--end` do not
+		// apply here. The trace reports its own bounds, which are exactly the
+		// window its logs fall in.
 		const logs = yield* client.logs.search({
 			payload: {
 				start_time: trace.start_time,
@@ -258,11 +268,18 @@ const toLogEntry = (l: {
 	spanId: l.span_id ?? "",
 })
 
-const logFilters = (p: { service?: string; severity?: string; search?: string; traceId?: string }) => ({
+const logFilters = (p: {
+	service?: string
+	severity?: string
+	search?: string
+	traceId?: string
+	environment?: string
+}) => ({
 	...(p.service ? { service_name: serviceName(p.service) } : undefined),
 	...(p.severity ? { severity: p.severity } : undefined),
 	...(p.search ? { body_search: p.search } : undefined),
 	...(p.traceId ? { trace_id: traceId(p.traceId) } : undefined),
+	...(p.environment ? { deployment_environment: p.environment } : undefined),
 })
 
 export const searchLogs = (
@@ -273,14 +290,18 @@ export const searchLogs = (
 		severity?: string
 		search?: string
 		traceId?: string
+		environment?: string
 		limit?: number
 		offset?: number
+		includeAttributes?: boolean
 	},
 ): Effect.Effect<SearchLogsOutput, unknown> => {
 	if (p.offset !== undefined && p.offset > 0) {
 		return unsupportedInRemote(
 			"list_logs",
-			"/v2/logs/search paginates by opaque cursor and cannot seek to a numeric --offset.",
+			p.includeAttributes === true
+				? "/v2/logs/search paginates by opaque cursor, and the search that takes --offset returns no attributes; drop --attributes to page with --offset."
+				: "/v2/logs/search paginates by opaque cursor, and the search that takes --offset has no environment filter; drop --env to page with --offset.",
 		)
 	}
 	const limit = clampListLimit(p.limit)
@@ -290,7 +311,7 @@ export const searchLogs = (
 			[
 				client.logs.search({ payload: { ...toV2Window(p.range), limit, filters } }),
 				// `total` is the match count for the whole window, not the page, so
-				// it needs its own aggregate — the page length would under-report
+				// it needs its own aggregate: the page length would under-report
 				// exactly when it matters (a truncated result).
 				client.logs.timeseries({
 					payload: { ...toV2Window(p.range), aggregation: "count", filters },
@@ -305,7 +326,16 @@ export const searchLogs = (
 		return {
 			timeRange: p.range,
 			total,
-			logs: page.data.map(toLogEntry),
+			logs: page.data.map((l) =>
+				p.includeAttributes === true
+					? {
+							...toLogEntry(l),
+							attributes: Object.fromEntries(
+								Object.entries(l.log_attributes).filter(([, v]) => v !== ""),
+							),
+						}
+					: toLogEntry(l),
+			),
 			pagination: { offset: 0, limit, hasMore: page.has_more },
 		} satisfies SearchLogsOutput
 	})
@@ -313,7 +343,14 @@ export const searchLogs = (
 
 export const mineLogPatterns = (
 	client: MapleV2Client,
-	p: { range: Range; service?: string; severity?: string; search?: string; limit?: number },
+	p: {
+		range: Range
+		service?: string
+		severity?: string
+		search?: string
+		environment?: string
+		limit?: number
+	},
 ) =>
 	Effect.map(
 		client.logs.search({
@@ -321,7 +358,7 @@ export const mineLogPatterns = (
 		}),
 		(page) => {
 			// Clustering runs over whatever the API returns. v2 caps a page at 100,
-			// so remote mode samples far less than local's 10k default — the
+			// so remote mode samples far less than local's 10k default; the
 			// templates are the same, their counts are drawn from a smaller sample.
 			const rows = page.data.map((l) => ({
 				body: l.body,
@@ -342,7 +379,7 @@ export const mineLogPatterns = (
  * v2 speaks snake_case resources; local mode returns the warehouse's
  * `ListMetricsOutput` rows. `maple metrics` must print the same columns either
  * way, so the resource is mapped back onto the local row shape rather than
- * passed through — the pass-through renamed every column in remote mode.
+ * passed through: the pass-through renamed every column in remote mode.
  */
 export const listMetrics = (
 	client: MapleV2Client,
@@ -358,19 +395,17 @@ export const listMetrics = (
 			},
 		}),
 		(list) =>
-			list.data.map(
-				(m): ListMetricsOutput => ({
-					metricName: m.name,
-					metricType: m.type,
-					serviceName: m.service_name,
-					metricDescription: m.description,
-					metricUnit: m.unit,
-					dataPointCount: m.data_point_count,
-					firstSeen: m.first_seen,
-					lastSeen: m.last_seen,
-					isMonotonic: m.is_monotonic,
-				}),
-			),
+			list.data.map((m): ListMetricsOutput => ({
+				metricName: m.name,
+				metricType: m.type,
+				serviceName: m.service_name,
+				metricDescription: m.description,
+				metricUnit: m.unit,
+				dataPointCount: m.data_point_count,
+				firstSeen: m.first_seen,
+				lastSeen: m.last_seen,
+				isMonotonic: m.is_monotonic,
+			})),
 	)
 
 /**
@@ -505,123 +540,38 @@ export const tracesBreakdown = (
 		return Array.from(rows.values())
 	})
 
-/**
- * `maple error <fingerprint-hash>` over v2.
- *
- * This used to be local-only on the grounds that v2 keyed errors by an opaque
- * `erris_…` id with no way in from a fingerprint hash. `/v2/error_issues`
- * gained a `fingerprint_hash` filter, so the hash resolves to an issue and the
- * issue detail carries the timeseries and sample traces the command prints.
- *
- * One real difference from local mode: v2 answers from Maple's triage issues,
- * so a fingerprint that was never swept into an issue has no detail to show
- * and fails rather than returning an empty page. Local mode reads the raw
- * error events and would show the traces regardless.
- *
- * The per-trace fan-out is what `V2ErrorIssueSampleTrace` does not carry —
- * span count, participating services, the root span's name. It is bounded by
- * the caller's own `--limit`.
- */
-/** The same attribute allowlist the warehouse query projects for the failing span. */
-const ERROR_SPAN_ATTRIBUTE_KEYS = [
-	"gen_ai.request.model",
-	"gen_ai.tool.name",
-	"http.request.method",
-	"http.route",
-	"query.context",
-	"error.type",
-] as const
-
-const pickErrorSpanAttributes = (attributes: Record<string, unknown>): Record<string, string> => {
-	const picked: Record<string, string> = {}
-	for (const key of ERROR_SPAN_ATTRIBUTE_KEYS) {
-		const value = attributes[key]
-		if (typeof value === "string" && value !== "") picked[key] = value
-	}
-	return picked
-}
-
-export const errorDetail = (
+/** One metric's series, one point per bucket and service, over `/v2/metrics/timeseries`. */
+export const metricTimeseries = (
 	client: MapleV2Client,
-	p: { fingerprintHash: string; range: Range; service?: string; limit?: number },
-): Effect.Effect<ErrorDetailOutput, unknown> =>
-	Effect.gen(function* () {
-		const sampleLimit = Math.min(Math.max(p.limit ?? 5, 1), V2_LIST_MAX)
-		// Deliberately unwindowed: a fingerprint is an identity, and the issue
-		// list's window filters on triage activity rather than on the events the
-		// command is about. Windowing the lookup would report "no such error" for
-		// a real fingerprint whose issue was last touched outside --since.
-		const issues = yield* client.errorIssues.list({
-			query: {
-				fingerprint_hash: p.fingerprintHash,
-				limit: 1,
-				...(p.service ? { service_name: p.service } : undefined),
+	p: {
+		range: Range
+		name: string
+		metricType: "sum" | "gauge" | "histogram" | "exponential_histogram"
+		aggregation: "rate" | "avg"
+		bucketSeconds: number
+		service?: string
+	},
+): Effect.Effect<MetricSeriesOutput["points"], unknown> =>
+	Effect.map(
+		client.metrics.timeseries({
+			payload: {
+				...toV2Window(p.range),
+				aggregation: p.aggregation,
+				filters: {
+					metric_name: Schema.decodeSync(MetricName)(p.name),
+					metric_type: p.metricType,
+					...(p.service ? { service_name: serviceName(p.service) } : undefined),
+				},
+				group_by: "service",
+				bucket_seconds: p.bucketSeconds,
 			},
-		})
-		const issue = issues.data[0]
-		if (!issue) {
-			return yield* remoteFailure(
-				"error_detail_traces",
-				`No error issue matches fingerprint ${p.fingerprintHash}. Remote mode reads Maple's triage issues; run with --local to read the raw error events.`,
-			)
-		}
-
-		const detail = yield* client.errorIssues.retrieve({
-			params: { id: issue.id },
-			query: { ...toV2Window(p.range), sample_limit: sampleLimit },
-		})
-
-		const traces = yield* Effect.forEach(
-			detail.sample_traces,
-			(sample, index) =>
-				Effect.gen(function* () {
-					const trace = yield* client.traces.retrieve({ params: { trace_id: sample.trace_id } })
-					// Logs for the first three only, matching local mode: they are a
-					// glance at context, not the point of the command.
-					const logs =
-						index < 3
-							? yield* client.logs.search({
-									payload: {
-										start_time: trace.start_time,
-										end_time: trace.end_time,
-										limit: 10,
-										filters: { trace_id: sample.trace_id },
-									},
-								})
-							: undefined
-					const root = trace.spans.find((s) => s.parent_span_id === null)
-					const failing = trace.spans.find((s) => s.status_code === "Error")
-					return {
-						traceId: sample.trace_id,
-						rootSpanName: root?.name ?? "",
-						durationMs: trace.duration_ms,
-						spanCount: trace.span_count,
-						services: Array.from(new Set(trace.spans.map((s) => s.service_name))),
-						startTime: sample.timestamp,
-						errorMessage: sample.exception_message,
-						errorSpan: failing
-							? {
-									spanId: failing.id,
-									name: failing.name,
-									serviceName: failing.service_name,
-									statusMessage: failing.status_message ?? "",
-									attributes: pickErrorSpanAttributes(failing.attributes),
-								}
-							: undefined,
-						logs: (logs?.data ?? []).slice(0, 5).map((l) => ({
-							timestamp: l.timestamp,
-							severityText: l.severity_text || "INFO",
-							body: l.body,
-						})),
-					} satisfies ErrorDetailTrace
-				}),
-			{ concurrency: 5 },
-		)
-
-		return {
-			fingerprintHash: p.fingerprintHash,
-			timeRange: p.range,
-			traces,
-			timeseries: detail.timeseries.map((point) => ({ bucket: point.bucket, count: point.count })),
-		} satisfies ErrorDetailOutput
-	})
+		}),
+		(result) =>
+			result.series.flatMap((series) =>
+				series.points.map((point) => ({
+					bucket: point.timestamp,
+					service: series.group ?? "",
+					value: point.value,
+				})),
+			),
+	)

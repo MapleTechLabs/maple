@@ -98,7 +98,9 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 	)
 
 	return {
-		data: coerceServiceOverviewRows(result.data, windowDurationSeconds(input.startTime, input.endTime)),
+		// The window the query actually ran on: the raw inputs fall back to 3600s,
+		// which would turn a 24h default window into a 24x-inflated rate.
+		data: coerceServiceOverviewRows(result.data, windowDurationSeconds(startTime, endTime)),
 	}
 })
 
@@ -166,20 +168,16 @@ const getServiceHealthSnapshotEffect = Effect.fn("QueryEngine.getServiceHealthSn
 
 	return {
 		data: response.data
-			.filter(
-				(row) => scope.memberServices === null || scope.memberServices.has(String(row.serviceName)),
-			)
-			.map(
-				(row): ServiceHealthSnapshot => ({
-					serviceName: String(row.serviceName),
-					environment: row.environment || "unknown",
-					requestCount: row.requestCount,
-					errorCount: row.errorCount,
-					errorRate: row.requestCount > 0 ? row.errorCount / row.requestCount : 0,
-					p95LatencyMs: row.p95LatencyMs,
-					throughput: row.requestCount / durationSeconds,
-				}),
-			),
+			.filter((row) => scope.memberServices === null || scope.memberServices.has(row.serviceName))
+			.map((row): ServiceHealthSnapshot => ({
+				serviceName: row.serviceName,
+				environment: row.environment || "unknown",
+				requestCount: row.requestCount,
+				errorCount: row.errorCount,
+				errorRate: row.requestCount > 0 ? row.errorCount / row.requestCount : 0,
+				p95LatencyMs: row.p95LatencyMs,
+				throughput: row.requestCount / durationSeconds,
+			})),
 	}
 })
 
@@ -248,7 +246,7 @@ const getServiceHealthBaselineEffect = Effect.fn("QueryEngine.getServiceHealthBa
 
 	const result: ServiceHealthBaselineResult = {
 		data: response.data.map((row) => ({
-			serviceName: String(row.serviceName),
+			serviceName: row.serviceName,
 			serviceNamespace: row.serviceNamespace,
 			environment: row.environment,
 			baselineP95LatencyMs: row.baselineP95LatencyMs,
@@ -452,8 +450,8 @@ const getServiceApdexTimeSeriesEffect = Effect.fn("QueryEngine.getServiceApdexTi
 
 	const points = result.data.map((row) => ({
 		bucket: toIsoBucket(row.bucket),
-		apdexScore: Number(row.apdexScore),
-		totalCount: Number(row.totalCount),
+		apdexScore: row.apdexScore,
+		totalCount: row.totalCount,
 	}))
 
 	return {

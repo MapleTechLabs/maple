@@ -1,15 +1,15 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import React, { Fragment, useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { EMPTY_VALUE, formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import type { VcsCommitDetailResponse } from "@maple/domain/http"
+import { RelativeTime } from "@/components/common/relative-time"
+import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
 
 import { ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import {
@@ -20,13 +20,20 @@ import {
 	firstLine,
 	isResolvableSha,
 } from "@/components/vcs/commit-sha-hover-card"
+import { CommitCount, ResolvedCommitRanges } from "./release-changeset"
 import { ReleaseHealthPill, releaseHealthFigure } from "./release-health"
 import {
 	releaseDayLabel,
+	previousSha,
+	releaseHeadline,
 	shortReleaseLabel,
 	type ReleaseGroup,
+	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
 } from "./release-model"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /** The bulk VCS lookup takes one page of shas; rows past it fall back to the sha. */
 const COMMIT_RESOLVE_LIMIT = 50
@@ -57,7 +64,7 @@ function ResolvedCommits({
 	return <>{children(commits)}</>
 }
 
-interface DeltaProps {
+interface BaselineShiftProps {
 	value: number
 	baseline: number | undefined
 	format: (value: number) => string
@@ -65,10 +72,15 @@ interface DeltaProps {
 	tone?: "error" | "warn"
 }
 
-/** "1.24% vs 0.30%" — the live figure, then the rest of the service beside it. */
-function Delta({ value, baseline, format, tone }: DeltaProps) {
+/** "0.30% → 1.24%": the version it replaced, then this one. */
+function BaselineShift({ value, baseline, format, tone }: BaselineShiftProps) {
 	return (
-		<span className="inline-flex items-baseline gap-1.5 font-mono text-xs tabular-nums">
+		<span className="inline-flex items-baseline gap-1 font-mono text-xs tabular-nums">
+			{baseline !== undefined ? (
+				<span className="text-3xs text-muted-foreground/70" title="The version this one replaced">
+					{format(baseline)} →
+				</span>
+			) : null}
 			<span
 				className={cn(
 					tone === "error" && "text-severity-error",
@@ -77,36 +89,72 @@ function Delta({ value, baseline, format, tone }: DeltaProps) {
 			>
 				{format(value)}
 			</span>
-			{baseline !== undefined ? (
-				<span
-					className="text-[10px] text-muted-foreground/70"
-					title="Every other version of this service in this window"
-				>
-					vs {format(baseline)}
-				</span>
+		</span>
+	)
+}
+
+/** New and regressed issues credited to a release; a dash while none, blank while loading. */
+function IssueCounts({ counts }: { counts: ReleaseIssueCounts | undefined | null }) {
+	if (counts === null) return null
+	if (counts === undefined || (counts.fresh === 0 && counts.regressed === 0)) {
+		return <span className="font-mono text-xs text-muted-foreground/50">{EMPTY_VALUE}</span>
+	}
+	return (
+		<span className="inline-flex items-baseline gap-2 whitespace-nowrap font-mono text-xs tabular-nums">
+			{counts.fresh > 0 ? <span className="text-severity-error">{counts.fresh} new</span> : null}
+			{counts.regressed > 0 ? (
+				<span className="text-severity-warn">{counts.regressed} regressed</span>
 			) : null}
 		</span>
 	)
 }
 
+/** Past this many services a release reads as a count, naming only the flagged ones. */
+const NAMED_SERVICES = 3
+
 function ServiceChips({ services }: { services: ReadonlyArray<ReleaseServiceImpact> }) {
 	// One chip per service: a commit on two environments of one service is
 	// still one service, and the expanded rows carry the environment.
 	const names = [...new Set(services.map((service) => service.serviceName))]
-	const shown = names.slice(0, 3)
-	const more = names.length - shown.length
+	if (names.length > NAMED_SERVICES) {
+		const flagged = [
+			...new Set(
+				services
+					.filter((service) => service.health !== "healthy")
+					.map((service) => service.serviceName),
+			),
+		]
+		return (
+			<span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+				<span className="tabular-nums">{names.length} services</span>
+				{flagged.slice(0, 2).map((serviceName) => (
+					<span
+						key={serviceName}
+						className="inline-flex min-w-0 max-w-56 items-center gap-1"
+						title={serviceName}
+					>
+						<ServiceDot serviceName={serviceName} />
+						<span className="truncate">{serviceName}</span>
+					</span>
+				))}
+				{flagged.length > 2 ? (
+					<span className="text-2xs text-muted-foreground/70">+{flagged.length - 2}</span>
+				) : null}
+			</span>
+		)
+	}
 	return (
 		<span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-			{shown.map((serviceName) => (
+			{names.map((serviceName) => (
 				<span
 					key={serviceName}
-					className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+					className="inline-flex min-w-0 max-w-56 items-center gap-1 text-xs text-muted-foreground"
+					title={serviceName}
 				>
 					<ServiceDot serviceName={serviceName} />
-					{serviceName}
+					<span className="truncate">{serviceName}</span>
 				</span>
 			))}
-			{more > 0 ? <span className="text-[11px] text-muted-foreground/70">+{more}</span> : null}
 		</span>
 	)
 }
@@ -116,10 +164,11 @@ interface ReleaseTitleProps {
 	commit: VcsCommitDetailResponse | undefined
 	health: ReleaseServiceImpact["health"]
 	figure: string | undefined
+	range: VcsCommitRangeResponse | undefined
 }
 
 /** Message-first title: subject · pill, with sha · author demoted underneath. */
-function ReleaseTitle({ commitSha, commit, health, figure }: ReleaseTitleProps) {
+function ReleaseTitle({ commitSha, commit, health, figure, range }: ReleaseTitleProps) {
 	const resolvable = isResolvableSha(commitSha)
 	const author = commit?.authorLogin ?? commit?.authorName ?? undefined
 	return (
@@ -136,18 +185,19 @@ function ReleaseTitle({ commitSha, commit, health, figure }: ReleaseTitleProps) 
 					<CommitShaHoverCard
 						sha={commitSha}
 						className={cn(
-							"min-w-0 truncate text-[13px] text-foreground",
+							"min-w-0 truncate text-sm text-foreground",
 							commit === undefined && "font-mono text-xs",
 						)}
 					>
-						{commit ? firstLine(commit.message) : shortReleaseLabel(commitSha)}
+						{(commit ? firstLine(commit.message) : "") || shortReleaseLabel(commitSha)}
 					</CommitShaHoverCard>
 					{health === "healthy" ? null : <ReleaseHealthPill health={health} label={figure} />}
 				</div>
-				<div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+				<div className="flex items-center gap-1.5 text-2xs text-muted-foreground">
 					{commit ? <span className="font-mono">{shortReleaseLabel(commitSha)}</span> : null}
 					{author ? <span className="truncate">{author}</span> : null}
 					{!commit && !resolvable ? <span>deployment reference</span> : null}
+					<CommitCount range={range} />
 				</div>
 			</div>
 		</div>
@@ -156,6 +206,8 @@ function ReleaseTitle({ commitSha, commit, health, figure }: ReleaseTitleProps) 
 
 interface ReleasesTableProps {
 	groups: ReadonlyArray<ReleaseGroup>
+	/** New and regressed issues per commit; undefined while they load. */
+	issueCounts: ReadonlyMap<string, ReleaseIssueCounts> | undefined
 	timeSearch: TimeRangeSearch
 	environments?: string[]
 	waiting?: boolean
@@ -163,28 +215,50 @@ interface ReleasesTableProps {
 
 /**
  * Grouped by commit with expandable per-service children, day headers instead
- * of a date column, and deltas against the rest of each service.
+ * of a date column, and deltas against the version each one replaced.
  */
 export function ReleasesTable(props: ReleasesTableProps) {
 	const shasKey = useMemo(
 		() => commitsQueryKey(props.groups.slice(0, COMMIT_RESOLVE_LIMIT).map((group) => group.commitSha)),
 		[props.groups],
 	)
-	if (shasKey === "") return <ReleasesTableRows {...props} commits={EMPTY_COMMITS} />
+	const ranges = useMemo(
+		() =>
+			props.groups.slice(0, COMMIT_RESOLVE_LIMIT).flatMap((group) => {
+				const base = previousSha(group)
+				return base === undefined ? [] : [{ base, head: group.commitSha }]
+			}),
+		[props.groups],
+	)
 	return (
-		<ResolvedCommits shasKey={shasKey}>
-			{(commits) => <ReleasesTableRows {...props} commits={commits} />}
-		</ResolvedCommits>
+		<ResolvedCommitRanges ranges={ranges}>
+			{(resolvedRanges) =>
+				shasKey === "" ? (
+					<ReleasesTableRows {...props} commits={EMPTY_COMMITS} ranges={resolvedRanges} />
+				) : (
+					<ResolvedCommits shasKey={shasKey}>
+						{(commits) => (
+							<ReleasesTableRows {...props} commits={commits} ranges={resolvedRanges} />
+						)}
+					</ResolvedCommits>
+				)
+			}
+		</ResolvedCommitRanges>
 	)
 }
 
 function ReleasesTableRows({
 	groups,
+	issueCounts,
 	timeSearch,
 	environments,
 	waiting,
 	commits,
-}: ReleasesTableProps & { commits: ReadonlyMap<string, VcsCommitDetailResponse> }) {
+	ranges,
+}: ReleasesTableProps & {
+	commits: ReadonlyMap<string, VcsCommitDetailResponse>
+	ranges: ReadonlyMap<string, VcsCommitRangeResponse>
+}) {
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
 	const nowMs = Date.now()
 	const { effectiveTimezone } = useTimezonePreference()
@@ -206,16 +280,16 @@ function ReleasesTableRows({
 	let lastDay: string | undefined
 
 	return (
-		<div className={cn("rounded-md border bg-card transition-opacity", waiting && "opacity-60")}>
+		<Panel className={refreshingClass(waiting === true)} aria-busy={waiting || undefined}>
 			<Table>
 				<TableHeader>
-					<TableRow className="hover:bg-transparent">
-						<TableHead className="w-[38%] min-w-[260px]">Release</TableHead>
+					<TableRow>
+						<TableHead className="w-[46%] min-w-[260px]">Release</TableHead>
 						<TableHead>Services</TableHead>
-						<TableHead className="whitespace-nowrap">First seen</TableHead>
-						<TableHead className="text-right">Traffic</TableHead>
-						<TableHead>Error rate</TableHead>
+						<TableHead className="whitespace-nowrap">Deployed</TableHead>
+						<TableHead className="whitespace-nowrap">Error rate</TableHead>
 						<TableHead>p95</TableHead>
+						<TableHead>Issues</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -223,38 +297,38 @@ function ReleasesTableRows({
 						const day = releaseDayLabel(group.firstSeen, nowMs, effectiveTimezone)
 						const showDay = day !== lastDay
 						lastDay = day
-						const primary = group.services[0]!
 						const isOpen = expanded.has(group.commitSha)
-						const worst =
-							group.services.find((service) => service.health === group.health) ?? primary
+						const worst = releaseHeadline(group)
+						const multi = group.services.length > 1
 						return (
 							<Fragment key={group.commitSha}>
 								{showDay ? (
 									<TableRow className="hover:bg-transparent">
-										<TableCell
-											colSpan={6}
-											className="bg-muted/40 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
+										<Eyebrow
+											render={<TableCell colSpan={6} />}
+											className="bg-muted/40 py-1"
 										>
 											{day}
-										</TableCell>
+										</Eyebrow>
 									</TableRow>
 								) : null}
 								<TableRow className="group/row">
-									<TableCell className="py-2">
+									<TableCell className="max-w-0 py-2">
 										<div className="flex items-start gap-1">
-											<button
-												type="button"
+											<IconButton
+												size="icon-2xs"
 												aria-expanded={isOpen}
-												aria-label={isOpen ? "Hide services" : "Show services"}
+												label={isOpen ? "Hide services" : "Show services"}
+												tooltip={false}
 												onClick={() => toggle(group.commitSha)}
 												className={cn(
-													"mt-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition-transform hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+													"mt-1 text-muted-foreground/60 transition-transform hover:text-foreground",
 													isOpen && "rotate-90",
 													group.services.length <= 1 && "invisible",
 												)}
 											>
-												<ChevronRightIcon size={12} />
-											</button>
+												<ChevronRightIcon />
+											</IconButton>
 											<Link
 												to="/releases/$commitSha"
 												params={{ commitSha: group.commitSha }}
@@ -266,51 +340,54 @@ function ReleasesTableRows({
 													commit={commits.get(group.commitSha)}
 													health={group.health}
 													figure={releaseHealthFigure(worst)}
+													range={ranges.get(group.commitSha)}
 												/>
 											</Link>
 										</div>
 									</TableCell>
-									<TableCell className="py-2 align-top">
+									<TableCell className="whitespace-normal py-2 align-top">
 										<ServiceChips services={group.services} />
 									</TableCell>
-									<TableCell
-										className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground"
-										title={formatTimestampInTimezone(group.firstSeen, {
-											timeZone: effectiveTimezone,
-											withYear: true,
-										})}
-									>
-										{formatRelativeTimeOrDate(
-											group.firstSeen,
-											undefined,
-											effectiveTimezone,
-										)}
-									</TableCell>
-									<TableCell className="py-2 text-right align-top font-mono text-xs tabular-nums">
-										{formatNumber(group.spanCount)}
-									</TableCell>
-									<TableCell className="py-2 align-top">
-										<Delta
-											value={worst.errorRate}
-											baseline={
-												group.services.length === 1
-													? worst.baseline?.errorRate
-													: undefined
-											}
-											format={formatErrorRate}
-											tone={group.health === "regressed" ? "error" : undefined}
+									<TableCell className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground">
+										<RelativeTime
+											value={group.firstSeen}
+											variant="orDate"
+											tooltip="title"
 										/>
 									</TableCell>
 									<TableCell className="py-2 align-top">
-										<Delta
+										<span className="inline-flex items-center gap-1.5">
+											{multi ? (
+												<span
+													className="inline-flex"
+													title={`Worst service: ${worst.serviceName}`}
+												>
+													<ServiceDot serviceName={worst.serviceName} />
+												</span>
+											) : null}
+											<BaselineShift
+												value={worst.errorRate}
+												baseline={worst.baseline?.errorRate}
+												format={formatErrorRate}
+												tone={worst.health === "regressed" ? "error" : undefined}
+											/>
+										</span>
+									</TableCell>
+									<TableCell className="py-2 align-top">
+										<BaselineShift
 											value={worst.p95LatencyMs}
-											baseline={
-												group.services.length === 1
-													? worst.baseline?.p95LatencyMs
-													: undefined
-											}
+											baseline={worst.baseline?.p95LatencyMs}
 											format={formatLatency}
-											tone={group.health === "watch" ? "warn" : undefined}
+											tone={worst.health === "watch" ? "warn" : undefined}
+										/>
+									</TableCell>
+									<TableCell className="py-2 align-top">
+										<IssueCounts
+											counts={
+												issueCounts === undefined
+													? null
+													: issueCounts.get(group.commitSha)
+											}
 										/>
 									</TableCell>
 								</TableRow>
@@ -320,7 +397,7 @@ function ReleasesTableRows({
 												key={`${service.serviceName}:${service.environment}`}
 												className="bg-muted/20"
 											>
-												<TableCell className="py-1.5 pl-12">
+												<TableCell className="max-w-0 py-1.5 pl-12">
 													<Link
 														to="/releases/$commitSha"
 														params={{ commitSha: group.commitSha }}
@@ -328,12 +405,17 @@ function ReleasesTableRows({
 															service.serviceName,
 															service.environment,
 														)}
-														className="inline-flex items-center gap-2 text-xs hover:underline"
+														className="inline-flex max-w-full items-center gap-2 text-xs hover:underline"
 													>
 														<ServiceDot serviceName={service.serviceName} />
-														{service.serviceName}
+														<span
+															className="min-w-0 truncate"
+															title={service.serviceName}
+														>
+															{service.serviceName}
+														</span>
 														{service.environment && !environments?.length ? (
-															<span className="text-muted-foreground/70">
+															<span className="min-w-0 truncate text-muted-foreground/70">
 																{service.environment}
 															</span>
 														) : null}
@@ -341,29 +423,21 @@ function ReleasesTableRows({
 															<ReleaseHealthPill
 																health={service.health}
 																label={releaseHealthFigure(service)}
+																className="shrink-0"
 															/>
 														)}
 													</Link>
 												</TableCell>
 												<TableCell className="py-1.5" />
-												<TableCell
-													className="whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground"
-													title={formatTimestampInTimezone(service.firstSeen, {
-														timeZone: effectiveTimezone,
-														withYear: true,
-													})}
-												>
-													{formatRelativeTimeOrDate(
-														service.firstSeen,
-														undefined,
-														effectiveTimezone,
-													)}
-												</TableCell>
-												<TableCell className="py-1.5 text-right font-mono text-xs tabular-nums">
-													{formatNumber(service.spanCount)}
+												<TableCell className="whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground">
+													<RelativeTime
+														value={service.firstSeen}
+														variant="orDate"
+														tooltip="title"
+													/>
 												</TableCell>
 												<TableCell className="py-1.5">
-													<Delta
+													<BaselineShift
 														value={service.errorRate}
 														baseline={service.baseline?.errorRate}
 														format={formatErrorRate}
@@ -375,13 +449,14 @@ function ReleasesTableRows({
 													/>
 												</TableCell>
 												<TableCell className="py-1.5">
-													<Delta
+													<BaselineShift
 														value={service.p95LatencyMs}
 														baseline={service.baseline?.p95LatencyMs}
 														format={formatLatency}
 														tone={service.health === "watch" ? "warn" : undefined}
 													/>
 												</TableCell>
+												<TableCell className="py-1.5" />
 											</TableRow>
 										))
 									: null}
@@ -390,6 +465,6 @@ function ReleasesTableRows({
 					})}
 				</TableBody>
 			</Table>
-		</div>
+		</Panel>
 	)
 }

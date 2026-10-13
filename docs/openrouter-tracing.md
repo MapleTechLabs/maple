@@ -16,7 +16,7 @@ References verified on August 4, 2026:
 | Path                                 | Client                              | Surfaces                                                   |
 | ------------------------------------ | ----------------------------------- | ---------------------------------------------------------- |
 | `apps/ai/src/platform/Llm.ts`        | Effect AI (`@effect/ai-openrouter`) | chat turns, investigation passes, and pull request reviews |
-| `apps/ai/src/mcp/__evals__/model.ts` | `@ai-sdk/openai-compatible`         | MCP evals in CI, **not** attributed or tagged              |
+| `apps/ai/src/mcp/__evals__/model.ts` | Effect AI (`@effect/ai-openrouter`) | evals in CI, **not** attributed or tagged                  |
 
 `apps/ai` can also run on Cloudflare Workers AI (`MAPLE_LLM_PROVIDER=workers-ai`). None of the
 attribution below applies on that path. The tag fields are OpenRouter's, and `resolveTriageModel`
@@ -29,10 +29,10 @@ without a referer never appears in the rankings. Every caller sends the same URL
 purpose: the referer is the app's identity, so a second value would mint a second app entry and
 split the rankings.
 
-| Header         | Value               | Set at                                                                |
-| -------------- | ------------------- | --------------------------------------------------------------------- |
+| Header         | Value               | Set at                                                                 |
+| -------------- | ------------------- | ---------------------------------------------------------------------- |
 | `HTTP-Referer` | `https://maple.dev` | `apps/ai/src/platform/Llm.ts` (`OPENROUTER_APP_URL`, `openRouterHttp`) |
-| `X-Title`      | `Maple`             | same file, `OPENROUTER_APP_TITLE`                                     |
+| `X-Title`      | `Maple`             | same file, `OPENROUTER_APP_TITLE`                                      |
 
 Per-app analytics then live at https://openrouter.ai/apps.
 
@@ -43,11 +43,11 @@ Per-app analytics then live at https://openrouter.ai/apps.
 fields are folded into the model config, so every call made with the returned model carries them
 without each call site threading them through.
 
-| Field              | Maple value                                                                                                              | Where it shows up                                                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user`             | Maple org id                                                                                                             | the `/activity` page, activity exports, and the `/generations` API. OpenRouter folds it into a hashed identity and never forwards it raw upstream. |
-| `session_id`       | the chat session id (`<orgId>:inv-<investigationId>` for an investigation's passes), truncated to OpenRouter's 256-character limit | groups the requests of one conversation or investigation, and makes OpenRouter route the whole session to one provider so prompt caches hit |
-| `trace.trace_name` | `chat` or `bot`                                                                                                          | forwarded to configured Broadcast destinations only. It does **not** appear in the OpenRouter dashboard.                                          |
+| Field              | Maple value                                                                                                                        | Where it shows up                                                                                                                                  |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user`             | Maple org id                                                                                                                       | the `/activity` page, activity exports, and the `/generations` API. OpenRouter folds it into a hashed identity and never forwards it raw upstream. |
+| `session_id`       | the chat session id (`<orgId>:inv-<investigationId>` for an investigation's passes), truncated to OpenRouter's 256-character limit | groups the requests of one conversation or investigation, and makes OpenRouter route the whole session to one provider so prompt caches hit        |
+| `trace.trace_name` | `chat` or `bot`                                                                                                                    | forwarded to configured Broadcast destinations only. It does **not** appear in the OpenRouter dashboard.                                           |
 
 The same session id goes onto Maple's own model-call spans as `maple_ai.session.id`, so a call and
 its Broadcast mirror land in one agent session.

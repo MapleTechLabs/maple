@@ -266,6 +266,7 @@ describe("toChatEvents", () => {
 		for (const tag of [
 			"TurnStarted",
 			"ModelStarted",
+			"ModelRestarted",
 			"ReasoningDelta",
 			"ToolCallStarted",
 			"ToolProgress",

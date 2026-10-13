@@ -1,11 +1,27 @@
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
+import { OrgId } from "@maple/domain/primitives"
 import { AlertDeliveryError, AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
-import { dispatchDelivery } from "./dispatch"
+import { dispatchDelivery as dispatchDeliveryRaw } from "./dispatch"
+import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./Transport"
 import type { DispatchContext } from "./context"
+
+type DispatchArgs = Parameters<typeof dispatchDeliveryRaw>
+
+/** The runtime provides the HTTP client; each test fakes the wire as `FetchHttpClient.Fetch`. */
+const dispatchDelivery = (
+	context: DispatchArgs[0],
+	payloadJson: DispatchArgs[1],
+	fetchFn: typeof fetch,
+	...rest: [DispatchArgs[2], DispatchArgs[3], DispatchArgs[4], DispatchArgs[5]]
+) =>
+	dispatchDeliveryRaw(context, payloadJson, ...rest).pipe(
+		Effect.provide(FetchHttpClient.layer),
+		Effect.provideService(FetchHttpClient.Fetch, fetchFn),
+	)
 
 /**
  * The outbound provider call must be a **Client-kind span carrying
@@ -31,7 +47,7 @@ const HTTP_SPAN = "AlertDelivery.http"
 
 const destinationRow: AlertDestinationRow = {
 	id: DESTINATION_ID,
-	orgId: "org_1" as AlertDestinationRow["orgId"],
+	orgId: Schema.decodeSync(OrgId)("org_1"),
 	name: "Destination",
 	type: "webhook",
 	enabled: true,
@@ -41,8 +57,12 @@ const destinationRow: AlertDestinationRow = {
 	secretTag: "",
 	lastTestedAt: null,
 	lastTestError: null,
-	createdAt: new Date(0),
-	updatedAt: new Date(0),
+	consecutiveFailures: 0,
+	lastFailureAt: null,
+	disabledAt: null,
+	disabledReason: null,
+	createdAt: 0,
+	updatedAt: 0,
 	createdBy: "user_1",
 	updatedBy: "user_1",
 }

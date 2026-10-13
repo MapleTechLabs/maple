@@ -1,6 +1,8 @@
 import * as React from "react"
+import { Effect, Exit } from "effect"
 import { useNavigate } from "@tanstack/react-router"
 
+import { countLabel } from "@maple/ui/lib/format"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import {
@@ -13,6 +15,8 @@ import {
 import { defaultWidgetLayout } from "@maple/domain/http"
 import { BellIcon, GridSquareCirclePlusIcon, LinkIcon } from "@/components/icons"
 import { useDashboardStore } from "@/hooks/use-dashboard-store"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { ErrorState } from "@/components/common/error-state"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { encodeAlertChartToSearchParam } from "@/lib/alerts/widget-chart-param"
 import type { WidgetDataSource } from "@/components/dashboard-builder/types"
@@ -56,11 +60,11 @@ export function MetricGraduationActions({ draft }: MetricGraduationActionsProps)
 	return (
 		<div className="flex items-center gap-2">
 			<Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
-				<GridSquareCirclePlusIcon size={14} />
+				<GridSquareCirclePlusIcon />
 				Add to dashboard
 			</Button>
 			<Button variant="outline" size="sm" onClick={handleCreateAlert}>
-				<BellIcon size={14} />
+				<BellIcon />
 				Create alert
 			</Button>
 			<CopyButton
@@ -89,16 +93,16 @@ function AddToDashboardDialog({
 	const navigate = useNavigate()
 	const { dashboards, readOnly, addWidget, importDashboard } = useDashboardStore()
 	const [newName, setNewName] = React.useState("")
-	const [creating, setCreating] = React.useState(false)
-	const [error, setError] = React.useState<string | null>(null)
+	const [error, setError] = React.useState<{ readonly title: string; readonly cause: unknown } | null>(null)
 
 	const widgetDisplay = { title: draft.metricName, chartId: "query-builder-area" }
 
 	const addToDashboard = (dashboardId: string) => {
-		try {
-			addWidget(dashboardId, "chart", buildWidgetDataSource(draft), widgetDisplay)
-		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Failed to add widget")
+		const exit = Effect.runSyncExit(
+			Effect.try(() => addWidget(dashboardId, "chart", buildWidgetDataSource(draft), widgetDisplay)),
+		)
+		if (Exit.isFailure(exit)) {
+			setError({ title: "Failed to add widget", cause: exit })
 			return
 		}
 		onOpenChange(false)
@@ -115,35 +119,40 @@ function AddToDashboardDialog({
 	 * yet — that gap used to swallow the widget, leaving a brand-new empty
 	 * dashboard and no explanation.
 	 */
+	const [createDashboard, creating] = useAsyncAction(async (name: string) => {
+		setError(null)
+		const exit = await Effect.runPromiseExit(
+			Effect.tryPromise(() =>
+				importDashboard({
+					name,
+					timeRange: { type: "relative", value: "12h" },
+					widgets: [
+						{
+							id: crypto.randomUUID(),
+							visualization: "chart",
+							dataSource: buildWidgetDataSource(draft),
+							display: widgetDisplay,
+							layout: { x: 0, y: 0, ...defaultWidgetLayout("chart") },
+						},
+					],
+				}),
+			),
+		)
+		if (Exit.isFailure(exit)) {
+			setError({ title: "Failed to create dashboard", cause: exit })
+			return
+		}
+		onOpenChange(false)
+		void navigate({
+			to: "/dashboards/$dashboardId",
+			params: { dashboardId: exit.value.id },
+		})
+	})
+
 	const handleCreate = async () => {
 		const name = newName.trim()
 		if (!name || creating) return
-		setCreating(true)
-		setError(null)
-		try {
-			const dashboard = await importDashboard({
-				name,
-				timeRange: { type: "relative", value: "12h" },
-				widgets: [
-					{
-						id: crypto.randomUUID(),
-						visualization: "chart",
-						dataSource: buildWidgetDataSource(draft),
-						display: widgetDisplay,
-						layout: { x: 0, y: 0, ...defaultWidgetLayout("chart") },
-					},
-				],
-			})
-			onOpenChange(false)
-			void navigate({
-				to: "/dashboards/$dashboardId",
-				params: { dashboardId: dashboard.id },
-			})
-		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Failed to create dashboard")
-		} finally {
-			setCreating(false)
-		}
+		await createDashboard(name)
 	}
 
 	return (
@@ -172,8 +181,7 @@ function AddToDashboardDialog({
 									>
 										<span className="truncate">{dashboard.name}</span>
 										<span className="shrink-0 text-xs text-muted-foreground">
-											{dashboard.widgets.length} widget
-											{dashboard.widgets.length !== 1 ? "s" : ""}
+											{countLabel(dashboard.widgets.length, "widget")}
 										</span>
 									</button>
 								))}
@@ -193,13 +201,21 @@ function AddToDashboardDialog({
 							<Button
 								size="sm"
 								onClick={() => void handleCreate()}
-								disabled={!newName.trim() || creating}
+								disabled={!newName.trim()}
+								loading={creating}
 							>
-								{creating ? "Creating..." : "Create & add"}
+								Create & add
 							</Button>
 						</div>
 
-						{error && <p className="text-xs text-destructive">{error}</p>}
+						{error && (
+							<ErrorState
+								error={error.cause}
+								title={error.title}
+								variant="inline"
+								className="py-0"
+							/>
+						)}
 					</div>
 				)}
 			</DialogContent>

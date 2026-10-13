@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { cn } from "@maple/ui/lib/utils"
 import type { IconComponent } from "@/components/icons"
 
@@ -78,9 +79,9 @@ export function SettingsNavShell<TId extends string, TLinkId extends string = ne
 		<nav className="flex flex-col gap-5">
 			{sections.map((section) => (
 				<div key={section.id} className="flex flex-col gap-1">
-					<div className="px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/60">
+					<Eyebrow className="px-2.5" as="div">
 						{section.title}
-					</div>
+					</Eyebrow>
 					<div className="flex flex-col gap-0.5">
 						{section.items.map((row) => {
 							const isActive = row.id === active

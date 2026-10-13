@@ -1,5 +1,5 @@
 /**
- * The pre-LLM incident triage: one Jev decision, before an investigation is
+ * The pre-LLM incident triage: one Clef decision, before an investigation is
  * allowed to spend a model pass.
  *
  * This is deliberately NOT an agent turn. An investigation is one turn
@@ -15,7 +15,7 @@ import {
 	type IssueSeverity,
 } from "@maple/domain/http"
 import { Effect } from "effect"
-import { Decision, DecisionModel } from "effect/unstable/ai"
+import { Decision, DecisionModel } from "effect/ai"
 
 /** The severity scale, ordered as `Decision.rate` needs it: least to most urgent. */
 const SEVERITY_SCALE = ["low", "medium", "high", "critical"] as const satisfies ReadonlyArray<IssueSeverity>
@@ -104,7 +104,7 @@ const decide = <Decisions extends Record<string, Decision.Any>>(
  * The prior-diagnosis question is a second call, made alongside the first, so
  * offering priors never makes the answer slower.
  */
-export const classifyIncident = Effect.fn("classifyIncident")(function* (options: {
+export const classifyIncident = Effect.fn("IncidentClassifier.classifyIncident")(function* (options: {
 	readonly request: IncidentTriageRequest
 	readonly model: string
 }) {

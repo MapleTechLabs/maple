@@ -18,8 +18,10 @@ import {
 	connectorSessionId,
 } from "@maple/domain/chat-session"
 import { ExternalUserId, OrgId } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { ConfigProvider, Effect, Logger, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
+import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
 import { meterTurn } from "./turn-runner"
 
 const ORG = "org_test"
@@ -41,14 +43,23 @@ const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 	displayName: "Ada",
 }
 
-const env = { AUTUMN_SECRET_KEY: "sk_test" }
+const config = ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "sk_test" }))
 
-const turn = (sessionId: string, messageId: string) => ({ sessionId, messageId, env })
+const turn = (sessionId: string, messageId: string) => ({ sessionId, messageId })
 
 interface Tracked {
 	readonly featureId: string
 	readonly value: number
 	readonly key: string
+}
+
+interface Charged {
+	readonly modelId: string
+	readonly inputTokens: number
+	readonly outputTokens: number
+	readonly cacheReadTokens: number
+	/** `track_tokens` carries its key in the `Idempotency-Key` header, not the body. */
+	readonly key: string | null
 }
 
 /** The track body the tracker builds; read back field by field rather than asserted into shape. */
@@ -61,14 +72,40 @@ const trackedFrom = (body: unknown): Tracked => {
 	}
 }
 
+const chargedFrom = (body: unknown, key: string | null): Charged => {
+	const fields = body as Record<string, unknown>
+	return {
+		modelId: String(fields["model_id"]),
+		inputTokens: Number(fields["input_tokens"]),
+		outputTokens: Number(fields["output_tokens"]),
+		cacheReadTokens: Number(fields["cache_read_tokens"]),
+		key,
+	}
+}
+
 let tracked: Array<Tracked>
+let charged: Array<Charged>
 let realFetch: typeof globalThis.fetch
 
 beforeEach(() => {
 	tracked = []
+	charged = []
 	realFetch = globalThis.fetch
-	globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-		tracked.push(trackedFrom(JSON.parse(typeof init?.body === "string" ? init.body : "{}")))
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+		// The HttpClient sends the JSON body as bytes.
+		const body = init?.body
+		const text =
+			typeof body === "string"
+				? body
+				: body instanceof Uint8Array
+					? new TextDecoder().decode(body)
+					: "{}"
+		const request = new Request(input, init)
+		if (request.url.endsWith("/v1/balances.track_tokens")) {
+			charged.push(chargedFrom(JSON.parse(text), request.headers.get("idempotency-key")))
+		} else {
+			tracked.push(trackedFrom(JSON.parse(text)))
+		}
 		return new Response("{}", { status: 200 })
 	}
 })
@@ -83,11 +120,51 @@ const meter = (
 	input: number,
 	output: number,
 	origin: ChatTurnOrigin = { kind: "app" },
-) => Effect.runPromise(meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }))
+	configLayer: typeof config = config,
+	charges: Array<AiModelSpend> = [],
+) =>
+	Effect.runPromise(
+		meterTurn(turn(sessionId, messageId), tenant, origin, { input, output, charges }).pipe(
+			Effect.provide(configLayer),
+			// Read the global per call: the tests swap `globalThis.fetch`, and the default reference caches it.
+			Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
+		),
+	)
 
 const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
 
 describe("meterTurn", () => {
+	it("charges nothing for a turn on the org's own OpenRouter key", async () => {
+		await Effect.runPromise(
+			meterTurn(
+				turn(`${ORG}:inv-${INVESTIGATION}`, "msg-1"),
+				tenant,
+				{ kind: "app" },
+				{
+					input: 1200,
+					output: 340,
+					charges: [
+						{
+							modelId: "openrouter/z-ai/glm-5.3-flash",
+							inputTokens: 1200,
+							outputTokens: 340,
+							cacheReadTokens: 0,
+							cacheWriteTokens: 0,
+							reasoningTokens: 0,
+						},
+					],
+				},
+				{ ownKey: true },
+			).pipe(
+				Effect.provide(config),
+				Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
+			),
+		)
+
+		assert.deepEqual(tracked, [])
+		assert.deepEqual(charged, [])
+	})
+
 	it("charges input and output under a key that carries the turn", async () => {
 		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1200, 340)
 
@@ -190,6 +267,15 @@ describe("meterTurn", () => {
 		assert.deepEqual(keysFor("ai_output_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:output`])
 	})
 
+	it("skips tracking when the secret key is set but blank", async () => {
+		// A blank key reads as unset, as an absent one does: no request with an empty bearer.
+		const blankKey = ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "  " }))
+
+		await meter(`${ORG}:default`, "msg-1", 1000, 100, { kind: "app" }, blankKey)
+
+		assert.deepEqual(tracked, [])
+	})
+
 	it("survives a tracker that rejects, rather than failing a delivered answer", async () => {
 		// This runs in `Effect.ensuring` on the turn's own program: a defect escaping here would
 		// turn an answer the user already has into a failed turn.
@@ -233,5 +319,116 @@ describe("meterTurn", () => {
 
 		assert.isNotEmpty(signals)
 		for (const signal of signals) assert.instanceOf(signal, AbortSignal)
+	})
+})
+
+const GLM = "openrouter/z-ai/glm-5.3-flash"
+const SONNET = "openrouter/anthropic/claude-sonnet-5.5"
+
+const charge = (
+	modelId: string,
+	inputTokens: number,
+	outputTokens: number,
+	cacheReadTokens = 0,
+): AiModelSpend => ({
+	modelId,
+	inputTokens,
+	outputTokens,
+	cacheReadTokens,
+	cacheWriteTokens: 0,
+	reasoningTokens: 0,
+})
+
+describe("meterTurn AI credits", () => {
+	const meterCharges = (sessionId: string, messageId: string, charges: Array<AiModelSpend>) =>
+		meter(sessionId, messageId, 5000, 500, { kind: "app" }, config, charges)
+
+	it("charges every model call by model, in exclusive pools", async () => {
+		await meterCharges(`${ORG}:default`, "msg-1", [
+			charge(GLM, 1000, 200, 3000),
+			charge(SONNET, 1000, 300),
+		])
+
+		assert.deepEqual(charged, [
+			{
+				modelId: GLM,
+				inputTokens: 1000,
+				outputTokens: 200,
+				cacheReadTokens: 3000,
+				key: `${ORG}:default:msg-1:chat:credits:0`,
+			},
+			{
+				modelId: SONNET,
+				inputTokens: 1000,
+				outputTokens: 300,
+				cacheReadTokens: 0,
+				key: `${ORG}:default:msg-1:chat:credits:1`,
+			},
+		])
+	})
+
+	it("keeps the legacy token meter running beside it", async () => {
+		await meterCharges(`${ORG}:default`, "msg-1", [charge(GLM, 1000, 200)])
+
+		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:chat:input`])
+		assert.strictEqual(charged.length, 1)
+	})
+
+	it("keys an investigation's charges on the investigation turn, as triage", async () => {
+		await meterCharges(`${ORG}:inv-${INVESTIGATION}`, "msg-2", [charge(GLM, 1000, 200)])
+
+		assert.deepEqual(
+			charged.map((c) => c.key),
+			[`${INVESTIGATION}:turn-msg-2:triage:credits:0`],
+		)
+	})
+
+	it("reuses the same keys when a turn is metered again", async () => {
+		await meterCharges(`${ORG}:default`, "msg-1", [charge(GLM, 1000, 200)])
+		await meterCharges(`${ORG}:default`, "msg-1", [charge(GLM, 1000, 200)])
+
+		assert.deepEqual(
+			charged.map((c) => c.key),
+			[`${ORG}:default:msg-1:chat:credits:0`, `${ORG}:default:msg-1:chat:credits:0`],
+		)
+	})
+
+	it("treats a 409 as a charge Autumn already counted, and warns on any other refusal", async () => {
+		// A retried turn reuses its keys, so Autumn's 409 is the expected answer, not a failure.
+		const warningsFor = async (status: number) => {
+			const warnings: Array<unknown> = []
+			globalThis.fetch = async () => new Response("{}", { status })
+			await Effect.runPromise(
+				meterTurn(
+					turn(`${ORG}:default`, "msg-1"),
+					tenant,
+					{ kind: "app" },
+					{
+						input: 1000,
+						output: 200,
+						charges: [charge(GLM, 1000, 200)],
+					},
+				).pipe(
+					Effect.provide(config),
+					Effect.provideService(FetchHttpClient.Fetch, (input, init) =>
+						globalThis.fetch(input, init),
+					),
+					Effect.provide(Logger.layer([Logger.make(({ message }) => void warnings.push(message))])),
+				),
+			)
+			return warnings
+		}
+
+		assert.deepEqual(await warningsFor(409), [])
+		assert.isNotEmpty(await warningsFor(400))
+	})
+
+	it("skips a charge that spent nothing, without shifting the others' keys", async () => {
+		await meterCharges(`${ORG}:default`, "msg-1", [charge(GLM, 0, 0), charge(SONNET, 1000, 100)])
+
+		assert.deepEqual(
+			charged.map((c) => c.key),
+			[`${ORG}:default:msg-1:chat:credits:1`],
+		)
 	})
 })

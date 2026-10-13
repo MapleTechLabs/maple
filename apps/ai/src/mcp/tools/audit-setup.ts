@@ -45,6 +45,7 @@ export const formatAffected = (check: AffectedLike): string => {
 export function registerAuditSetupTool(server: McpToolRegistrar) {
 	server.define({
 		name: "audit_setup",
+		title: "Audit Setup",
 		description:
 			"Audit the organization's whole Maple setup and report every check with its outcome: alert routing and " +
 			"delivery (rules that will never notify anyone), error-notification wiring, what each service actually " +
@@ -77,9 +78,9 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				"audit.dataStatus": report.dataStatus,
-				"audit.critical": report.summary.critical,
-				"audit.warn": report.summary.warn,
+				"maple.audit.data_status": report.dataStatus,
+				"maple.audit.critical": report.summary.critical,
+				"maple.audit.warn": report.summary.warn,
 				"result.rowCount": report.checks.length,
 			})
 

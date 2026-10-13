@@ -12,7 +12,7 @@ import {
 	type OrgId,
 } from "@maple/domain/http"
 import { Context, Duration, Effect, Layer, Option, Redacted } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -126,17 +126,16 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 				).pipe(
 					Effect.catchTags({
 						// A failed LOOKUP is not a missing workspace: keep it retryable.
-						"@maple/api/lib/DatabaseError": (cause) =>
+						"@maple/backend/lib/DatabaseError": (cause) =>
 							Effect.fail(deliveryError("Failed to load the chat workspace", cause)),
-						// Only a reinstall writes a credential that opens.
+						// Maple could not open its own stored credential (for example after a
+						// key rotation): retryable, so no destination is disabled for it.
 						"@maple/backend/ChatWorkspaceCredentialsUnreadable": (cause) =>
 							Effect.fail(
-								new AlertDeliveryAuthError({
-									message:
-										"The chat workspace's stored credential is unreadable — reinstall the app to relink it",
-									destinationType: "chat",
+								deliveryError(
+									"The chat workspace's stored credential is unreadable. Reinstall the app to relink it",
 									cause,
-								}),
+								),
 							),
 					}),
 				)
@@ -148,7 +147,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 					})
 				}
 				const { connector, externalWorkspaceId } = workspace.value
-				yield* Effect.annotateCurrentSpan({ "chat.connector": connector.id })
+				yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connector.id })
 				// A deployment gap, not the org's: retryable, so no destination is disabled for it.
 				const missing = missingOutboundConfig(workspace.value, outboundConfig)
 				if (missing.length > 0) {
@@ -196,7 +195,8 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 					encryptionKey.value,
 				).pipe(
 					Effect.catchTags({
-						"@maple/api/lib/DatabaseError": (cause) => Effect.fail(makePersistenceError(cause)),
+						"@maple/backend/lib/DatabaseError": (cause) =>
+							Effect.fail(makePersistenceError(cause)),
 						"@maple/backend/ChatWorkspaceCredentialsUnreadable": (cause) =>
 							Effect.fail(
 								validation(

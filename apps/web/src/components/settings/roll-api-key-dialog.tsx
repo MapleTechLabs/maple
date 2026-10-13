@@ -2,7 +2,6 @@ import { useAtomSet } from "@/lib/effect-atom"
 import { useState } from "react"
 import { Exit } from "effect"
 import type { V2ApiKey } from "@maple/domain/http/v2"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -15,7 +14,8 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { useApiKeyMutationSync } from "@/hooks/use-api-keys"
-import { displayError } from "@/lib/error-messages"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { ApiKeySecretReveal } from "./api-key-secret-reveal"
 
@@ -27,7 +27,6 @@ interface RollApiKeyDialogProps {
 }
 
 export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollApiKeyDialogProps) {
-	const [isRolling, setIsRolling] = useState(false)
 	const [newSecret, setNewSecret] = useState<string | null>(null)
 
 	const { prepareForMutation, reconcileTxid } = useApiKeyMutationSync()
@@ -35,21 +34,18 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 		mode: "promiseExit",
 	})
 
-	async function handleRoll() {
+	const [handleRoll, isRolling] = useAsyncAction(async () => {
 		if (!apiKey) return
-		setIsRolling(true)
 		prepareForMutation()
 		const result = await rollMutation({ params: { id: apiKey.id } })
-		if (Exit.isSuccess(result)) {
-			setNewSecret(result.value.secret)
-			onRolled?.()
-			void reconcileTxid(result.value.txid)
-		} else {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
+		if (!Exit.isSuccess(result)) {
+			toastExit(result, { error: "Failed to roll API key" })
+			return
 		}
-		setIsRolling(false)
-	}
+		setNewSecret(result.value.secret)
+		onRolled?.()
+		void reconcileTxid(result.value.txid)
+	})
 
 	function handleClose(nextOpen: boolean) {
 		if (nextOpen) {
@@ -74,7 +70,7 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 							<DialogTitle>API key rolled</DialogTitle>
 							<DialogDescription>
 								A new secret has been issued and the previous key was revoked. Copy your new
-								key now — you won't be able to see it again.
+								key now; you won't be able to see it again.
 							</DialogDescription>
 						</DialogHeader>
 						<DialogPanel>
@@ -82,7 +78,7 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 						</DialogPanel>
 						<DialogFooter>
 							<Button variant="outline" onClick={() => handleClose(false)}>
-								Close
+								Done
 							</Button>
 						</DialogFooter>
 					</>
@@ -101,8 +97,8 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 							<Button variant="outline" onClick={() => handleClose(false)} disabled={isRolling}>
 								Cancel
 							</Button>
-							<Button variant="destructive" onClick={handleRoll} disabled={isRolling}>
-								{isRolling ? "Rolling..." : "Roll key"}
+							<Button variant="destructive" onClick={handleRoll} loading={isRolling}>
+								Roll key
 							</Button>
 						</DialogFooter>
 					</>

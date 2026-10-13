@@ -1,13 +1,13 @@
 // ClickHouse Query DSL — Maple facade
 //
 // The generic, reusable query builder now lives in the standalone
-// @maple-dev/effect-clickhouse package. This module re-exports that public API
+// @maple-dev/effect-orm package. This module re-exports that public API
 // and layers Maple's OpenTelemetry-specific table definitions, the named-query
 // ("pipe") registry, and the pre-built query templates on top of it.
 
 // Generic DSL — types, table, expressions, functions, params, query builder,
 // compilation, and unions — re-exported from the standalone library.
-export * from "@maple-dev/effect-clickhouse"
+export * from "@maple-dev/effect-orm/clickhouse"
 
 // Handwritten SQL. Shadows the builder's `rawCompiledQuery`, whose `reason`
 // is any string, with one that pins Maple's closed `RawSqlReason` union — the
@@ -18,6 +18,9 @@ export { type RawSqlReason, rawCompiledQuery } from "./raw-sql"
 // Shared by the cloud WarehouseQueryService and the local CLI executor so both
 // resolve a pipe name to identical SQL.
 export { compilePipeQuery, type PipeCompiledQuery } from "./pipe-dispatch"
+
+// One builder over a current and a previous window, rows tagged with `period`.
+export { compilePeriodCompare, type PeriodCompareWindows } from "./period-compare"
 
 export * as tables from "./tables"
 
@@ -33,6 +36,7 @@ export {
 	tracesRootListQuery,
 	traceListQuery,
 	traceServicesByTraceIdsQuery,
+	traceSpanStatsByTraceIdsQuery,
 	traceSummariesQuery,
 	slowTracesQuery,
 	spanSearchQuery,
@@ -48,6 +52,8 @@ export {
 	type TracesRootListOutput,
 	type TraceListOutput,
 	type TraceServicesByTraceIdsOutput,
+	type TraceSpanStatsByTraceIdsOpts,
+	type TraceSpanStatsByTraceIdsOutput,
 	type TraceSummariesOpts,
 	type TraceSummaryOutput,
 	type SlowTracesOpts,
@@ -65,6 +71,8 @@ export {
 	metricAttributeValuesQuery,
 	metricScopedAttributeKeysQuery,
 	metricScopedAttributeValuesQuery,
+	serviceScopedAttributeKeysQuery,
+	serviceScopedAttributeValuesQuery,
 	type MetricScopedAttributeKeysOpts,
 	type MetricScopedAttributeValuesOpts,
 	type AttributeKeysQueryOpts,
@@ -181,6 +189,23 @@ export {
 	type ProductEventsFilters,
 } from "./queries/web-analytics"
 
+// Queries: Web Analytics AI tab (AI referrals and AI crawler fetches)
+export {
+	webAnalyticsAiReferralsQuery,
+	webAnalyticsAiCrawlersQuery,
+	webAnalyticsAiCrawlerFormatsQuery,
+	webAnalyticsAiCrawledPagesQuery,
+	aiReferralProductExpr,
+	aiContentFormatExpr,
+	type WebAnalyticsAiReferralsOpts,
+	type WebAnalyticsAiReferralsOutput,
+	type WebAnalyticsAiCrawlerFilters,
+	type WebAnalyticsAiCrawlersOutput,
+	type WebAnalyticsAiCrawlerFormatsOutput,
+	type WebAnalyticsAiCrawledPagesOpts,
+	type WebAnalyticsAiCrawledPagesOutput,
+} from "./queries/web-analytics-ai"
+
 // Queries — Product events (funnels over `product_events`)
 export {
 	productEventsFunnelQuery,
@@ -292,7 +317,6 @@ export {
 	releasesListRowSchema,
 	releasesTimelineQuery,
 	releaseErrorFingerprintsQuery,
-	releaseErrorFingerprintsRowSchema,
 	RELEASES_LIST_CAP,
 	PLACEHOLDER_COMMIT_SHAS,
 	type ReleasesListOpts,
@@ -301,6 +325,11 @@ export {
 	type ReleasesTimelineOutput,
 	type ReleaseErrorFingerprintsOpts,
 	type ReleaseErrorFingerprintsOutput,
+	serviceDeploymentsQuery,
+	serviceDeploymentsRowSchema,
+	DEPLOYMENTS_PER_SERVICE_CAP,
+	type ServiceDeploymentsOpts,
+	type ServiceDeploymentsOutput,
 } from "./queries/releases"
 
 // Queries — Errors
@@ -313,13 +342,21 @@ export {
 	SPAN_HIERARCHY_MAX_SPANS,
 	spanDetailQuery,
 	traceTimeProbeQuery,
+	recentTraceTimeProbeQuery,
 	tracesDurationStatsQuery,
+	canUseTraceFacetsRollup,
 	tracesFacetsQuery,
 	errorsFacetsQuery,
 	errorsSummaryQuery,
 	errorDetailTracesQuery,
+	errorFingerprintSummaryQuery,
+	errorCooccurringFingerprintsQuery,
+	errorFingerprintOccurrencesQuery,
+	errorOccurrenceSpansQuery,
+	errorsWindowTotalsQuery,
 	errorIssuesQuery,
 	errorTickBootstrapIssuesQuery,
+	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
 	errorFingerprintsQuery,
 	errorIssueTimeseriesQuery,
@@ -395,6 +432,10 @@ export {
 	serviceDbQuerySummarySQL,
 	serviceDbQueryTimeseriesSQL,
 	serviceDbTopQueriesSQL,
+	dbQueryVolumeQuery,
+	dbQueryVolumeRowSchema,
+	type DbQueryVolumeOpts,
+	type DbQueryVolumeOutput,
 	servicePlatformsSQL,
 	serviceMapEdgeJoinQuery,
 	type ServiceDependenciesOpts,
@@ -420,6 +461,14 @@ export {
 	serviceMapEdgesExistingHoursSQL,
 	serviceMapResolutionsExistingHoursSQL,
 	serviceMapResolutionsRollupSQL,
+	SERVICE_MAP_ROLLUP_HOUR_MS,
+	SERVICE_MAP_ROLLUP_LOOKBACK_HOURS,
+	serviceMapRollupCandidateHours,
+	serviceMapHourSet,
+	serviceMapRollupMissingHours,
+	serviceMapResolutionRepairHours,
+	serviceMapRollupHourParams,
+	serviceMapRollupWindowParams,
 	type ServiceMapEdgesRollupParams,
 	type ServiceMapEdgesHourlyOutput,
 	type ServiceMapEdgesExistingHour,
@@ -450,6 +499,11 @@ export {
 	type ServiceOperationsSummaryOutput,
 	type ServiceOperationsTimeseriesOpts,
 	type ServiceOperationsTimeseriesOutput,
+	routeUsageQuery,
+	routeUsageRowSchema,
+	type RouteUsageOpts,
+	type RouteUsageOrder,
+	type RouteUsageOutput,
 } from "./queries/service-operations"
 
 // Queries — Service API Endpoints (the HTTP slice of the operations rollup)
@@ -505,6 +559,9 @@ export {
 
 // Queries — Telemetry liveness (auto-resolve gating + local-mode header heartbeat)
 export {
+	ingestFreshnessQuery,
+	ingestFreshnessRowSchema,
+	logsFreshnessQuery,
 	orgTelemetryPulseQuery,
 	serviceLivenessQuery,
 	type ServiceLivenessOpts,
@@ -533,10 +590,11 @@ export {
 	hostDetailSummaryQuery,
 	hostGaugeTimeseriesQuery,
 	hostNetworkTimeseriesQuery,
-	fleetUtilizationTimeseriesQuery,
+	hostFilesystemsQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
+	podRestartsQuery,
 	podGaugeTimeseriesQuery,
 	podFacetsQuery,
 	listNodesQuery,
@@ -555,7 +613,8 @@ export {
 	type HostGaugeTimeseriesOutput,
 	type HostNetworkTimeseriesOpts,
 	type HostNetworkTimeseriesOutput,
-	type FleetUtilizationTimeseriesOutput,
+	type HostFilesystemsOpts,
+	type HostFilesystemsOutput,
 	type ListPodsOpts,
 	type ListPodsOutput,
 	type ListPodsSummaryOutput,
@@ -563,10 +622,13 @@ export {
 	type SortDirection,
 	type PodDetailSummaryOpts,
 	type PodDetailSummaryOutput,
+	type PodRestartsOpts,
+	type PodRestartsOutput,
 	type PodGaugeTimeseriesOpts,
 	type PodFacetsOutput,
 	type ListNodesOpts,
 	type ListNodesOutput,
+	type NodeCapacityOutput,
 	type NodeDetailSummaryOpts,
 	type NodeDetailSummaryOutput,
 	type NodeGaugeTimeseriesOpts,
@@ -606,3 +668,11 @@ export {
 	type ContainerTimeseriesOutput,
 	type ContainerFacetsOutput,
 } from "./queries/containers"
+
+// Queries — Pull request review (per-operation traffic across services)
+export {
+	operationTrafficHourlyQuery,
+	operationTrafficMinutelyQuery,
+	type OperationTrafficOpts,
+	type OperationTrafficOutput,
+} from "./queries/pr-review"

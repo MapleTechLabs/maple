@@ -1,7 +1,7 @@
 # Persistence Operations
 
-Maple stores relational application state in PostgreSQL with a schema defined by Drizzle in
-`packages/db/src/schema/`.
+Maple stores relational application state in PostgreSQL with a schema defined by effect-orm tables in
+`packages/db/src/tables/`.
 
 ## Runtime modes
 
@@ -12,12 +12,12 @@ Maple stores relational application state in PostgreSQL with a schema defined by
   `localConnectionString`.
 - **Non-Worker local entrypoints and tests:** embedded PGlite. `MAPLE_DB_URL` is a PGlite data
   directory, or `memory://` for an ephemeral database. It is not a remote database URL.
-- **PR previews:** no application database while preview deploys are disabled. Routes that
-  need `Database` fail normally; DB-free routes such as health checks continue to work.
+- **PR previews:** a Neon branch `pr-<n>` per preview, migrated by the deploy like prd's
+  `main` and deleted on teardown, behind one Hyperdrive config (`docs/pr-previews.md`).
 
-Application code keeps timestamps as epoch-millisecond numbers and converts at the Drizzle
-boundary. Use `msToDate` / `dateToMs` from `packages/backend/src/platform/time.ts` instead of bare
-`new Date(ms)` / `.getTime()`, including inside Promise-land helpers.
+Application code keeps timestamps as epoch-millisecond numbers. Table columns read and write them
+directly (`PG.timestamptzMillis`); compare them with `=== null`, never by truthiness, since 0 is a
+valid time.
 
 ## Connections on Workers
 
@@ -64,28 +64,27 @@ Persistent PGlite is created automatically for non-Worker local entrypoints unde
 
 ## Authoring migrations
 
-Change the Drizzle schema, then generate the SQL and metadata together:
+Change a table in `packages/db/src/tables/`, then generate the migration:
 
 ```bash
-bun run --cwd packages/db db:generate
+bun run --cwd packages/db db:generate --name <name>
 ```
 
-Review the generated folder in `packages/db/drizzle/`: one `<timestamp>_<name>/` per migration
-holding `migration.sql` and the DDL `snapshot.json` (drizzle-kit v1 layout, no journal). The
-migrator orders folders by name and applies every folder the database has not recorded. A
-hand-authored migration (data backfill, publication change) still needs a folder with both
-files. Scaffold it with `drizzle-kit generate --custom --name <name>` instead of creating the
-folder by hand, so the snapshot chain stays intact.
+It diffs the tables against the newest snapshot and writes `packages/db/drizzle/<timestamp>_<name>/`
+holding `migration.sql` and the effect-orm `snapshot.json` (`effect-orm.config.ts`, `emit: "sql"`).
+Folders up to `effect_orm_baseline` were written by drizzle-kit and still run. The deploy orders
+folders by name and applies every folder the database has not recorded. A hand-authored migration
+(data backfill, publication change) uses `db:generate --custom --name <name>`, so the snapshot
+chain stays intact. `parity.test.ts` fails when the tables and the migrations disagree.
 
 Useful local commands:
 
 ```bash
-bun run --cwd packages/db db:migrate
-bun run --cwd packages/db db:push
-bun run --cwd packages/db db:studio
+bun run --cwd packages/db db:migrate   # apply to a local database (adopts a drizzle-kit ledger once)
+bun run --cwd packages/db db:check     # the folder's snapshot chain is consistent
+bun run --cwd packages/db db:status    # what a local database has applied
+bun run --cwd packages/db db:verify    # a local database's schema against the last applied snapshot
 ```
-
-`db:push` is a development utility only. Committed environments use migrations.
 
 ## Deployment and tests
 
@@ -94,7 +93,7 @@ PlanetScale `main` branch (database `maple` on `prd`, `maple-eu` on `prd-eu`) as
 `Planetscale.PostgresBranch` with `migrations` pointed at `packages/db/drizzle`. The api, ai and
 alerting Workers carry its name in their env so they upload after it. Bookkeeping is alchemy's
 `__alchemy_migrations`; `drizzle.__drizzle_migrations` was copied in once and is frozen, so never run
-`drizzle-kit migrate` against prd. The deploy migrates as a temporary role that is dropped with
+`db:migrate` against prd. The deploy migrates as a temporary role that is dropped with
 `postgres` as its successor, so the tables it creates end up owned by `postgres` with no other grants.
 Every runtime role must therefore inherit `postgres` (`USAGE`, not mere membership, which only
 grants `SET ROLE`). Inheritance is fixed when PlanetScale creates the role and `GRANT postgres` is
@@ -109,8 +108,9 @@ SELECT rolname FROM pg_roles WHERE rolname LIKE 'pscale\_api\_%' AND NOT pg_has_
 The ingest gateway's credential is declared rather than minted: `Planetscale.PostgresRole` in
 `alchemy.run.ts` inherits `postgres`, its pooled 6432 URL is the fleet's `maple-pg-url` secret, and
 its id sits in the task env so a replaced role rolls the fleet onto the new secret before alchemy
-deletes the old role. `MAPLE_INGEST_PG_URL` in Infisical remains only for stages that deploy a fleet
-without a database branch (PR previews).
+deletes the old role. A preview's gateway logs in to its Neon branch's pooled endpoint instead.
+`MAPLE_INGEST_PG_URL` in Infisical remains only for a stage that deploys a fleet without a declared
+database, which no profile does today.
 
 Electric's is declared too, on both instances: `Planetscale.PostgresRole("electric-db-role", {
 withReplication: true })`, whose direct 5432 URL is the task's `DATABASE_URL` (`docs/electric-sync.md`).
@@ -122,7 +122,7 @@ every role URL with `sslmode=verify-full`, which neither ECS client accepts, so 
 The EU instance's Worker credentials are declared the same way: `declareMapleDb` in `alchemy.run.ts`
 mints one role per consumer on `maple-eu` and a Hyperdrive config on each role's direct origin, and
 the Workers bind them from their props. No dashboard config and no hand-minted role exist there
-(`resolveDatabaseMode` is `"declared"`); the US prd keeps its dashboard-managed configs, bound by id.
+(its `resolveMapleProfile` database mode is `"declared"`); the US prd keeps its dashboard-managed configs, bound by id.
 
 The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
 `PLANETSCALE_ORGANIZATION` from the instance's Infisical environment. `bun dev` leaves the

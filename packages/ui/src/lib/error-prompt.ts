@@ -10,19 +10,27 @@ export interface ErrorPromptInput {
 	attributes?: Record<string, string>
 }
 
+// Current semconv key first, its deprecated spelling after, so spans from
+// either generation of instrumentation keep their context.
 const RELEVANT_KEYS = [
+	"http.request.method",
 	"http.method",
+	"url.full",
 	"http.url",
 	"http.route",
+	"http.response.status_code",
 	"http.status_code",
 	"db.system.name",
 	"db.system",
 	"db.query.text",
 	"db.statement",
+	"rpc.system.name",
 	"rpc.method",
 	"rpc.service",
 	"messaging.system",
+	"messaging.operation.type",
 	"messaging.operation",
+	"messaging.destination.name",
 ]
 
 export function formatErrorPrompt({ message, serviceName, operation, attributes }: ErrorPromptInput): string {

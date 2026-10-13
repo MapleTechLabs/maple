@@ -83,9 +83,9 @@ export const bestObservabilityTools: BestTool[] = [
 		bestFor: "Teams wanting an all-in-one OpenTelemetry-native APM",
 		license: "MIT core, commercial ee/ directory",
 		summary:
-			"SigNoz is an OpenTelemetry-native, ClickHouse-backed APM that keeps traces, logs, and metrics in a single application, and the closest peer to Maple on this list. It is a strong default if you want one open-source app instead of a stack to assemble.",
+			"SigNoz is an OpenTelemetry-native, ClickHouse-backed APM that keeps traces, logs, and metrics in a single application, and the closest peer to Maple on this list. It is a good default if you want one open-source app and no stack to assemble.",
 		pros: [
-			"OpenTelemetry-native from the ground up",
+			"Built on OpenTelemetry from the start",
 			"Traces, logs, and metrics in one app",
 			"ClickHouse storage for fast queries",
 		],
@@ -115,7 +115,7 @@ export const bestObservabilityTools: BestTool[] = [
 		bestFor: "Cost-sensitive teams with very high log volume",
 		license: "AGPLv3",
 		summary:
-			"OpenObserve is a Rust-based observability platform designed for cheap, S3-backed storage at high volume. It shines for logs and is simple to run, with traces and metrics support that's maturing.",
+			"OpenObserve is a Rust-based observability platform designed for cheap, S3-backed storage at high volume. It is strongest for logs and is simple to run, with traces and metrics support that's maturing.",
 		pros: [
 			"Very low storage cost (object storage / S3)",
 			"Fast and simple to operate",

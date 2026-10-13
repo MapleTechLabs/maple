@@ -7,6 +7,9 @@ import {
 	type PullRequestHead,
 	type PullRequestReviewThread,
 	mentionsReviewer,
+	mergeStepTickChanges,
+	PR_REVIEW_COMMENT_MARKER_PREFIX,
+	reviewerMention as reviewerMentionFor,
 	type PullRequestSummary,
 	type RepoUpsertInput,
 	type VcsInstallation,
@@ -39,6 +42,7 @@ import {
 	GithubAppClient,
 	GithubAppError,
 } from "./GithubAppClient"
+import { timestampMs } from "@maple/backend/platform/time"
 
 const PROVIDER: VcsProviderId = "github"
 
@@ -158,6 +162,12 @@ const IssueCommentPayload = Schema.Struct({
 	}),
 	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
 	installation: Schema.Struct({ id: Schema.Number }),
+	/** On `edited`: the body before the edit, which is how a ticked box is told from a re-render. */
+	changes: Schema.optionalKey(
+		Schema.Struct({ body: Schema.optionalKey(Schema.Struct({ from: Schema.String })) }),
+	),
+	/** Who did it; on `edited`, the editor rather than the comment's author. */
+	sender: Schema.optionalKey(CommentUser),
 })
 
 // `pull_request_review_comment`: a comment on a line of the diff, possibly a reply in a thread.
@@ -273,6 +283,8 @@ const toVcsCommitError = (
 
 const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
 
+const decodeJsonBody = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
+
 // GitHub serves a stable avatar for any login at `<host>/<login>.png`, redirecting
 // to that user's current avatar. Derive one from a login so commits whose ingestion
 // path carries no avatar URL still resolve to a picture. The host is taken from the
@@ -282,11 +294,9 @@ const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
 // dashboard renders with an initials fallback.
 const githubAvatarUrl = (htmlUrl: string, login: string | null): string | null => {
 	if (!login) return null
-	try {
-		return new URL(`/${encodeURIComponent(login)}.png?size=64`, htmlUrl).href
-	} catch {
-		return null
-	}
+	return Option.liftThrowable(
+		() => new URL(`/${encodeURIComponent(login)}.png?size=64`, htmlUrl).href,
+	)().pipe(Option.getOrNull)
 }
 
 const installationReason = (action: string): VcsInstallationSyncReason | null => {
@@ -314,9 +324,11 @@ const timingSafeEqual = (a: string, b: string): boolean => {
 }
 
 const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUpsertInput => {
-	const authoredAt = commit.commit.author?.date ? finiteOrNull(Date.parse(commit.commit.author.date)) : null
+	const authoredAt = commit.commit.author?.date
+		? finiteOrNull(timestampMs(commit.commit.author.date))
+		: null
 	const committedAt = commit.commit.committer?.date
-		? finiteOrNull(Date.parse(commit.commit.committer.date))
+		? finiteOrNull(timestampMs(commit.commit.committer.date))
 		: null
 	return {
 		sha: commit.sha,
@@ -334,12 +346,42 @@ const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUps
 	}
 }
 
+/**
+ * Greedily pack commits into slices whose job stays under PUSH_JOB_MAX_BYTES. Every commit
+ * lands in a slice (guaranteed progress), and the result always holds at least one slice.
+ */
+const packCommits = (
+	commits: ReadonlyArray<CommitUpsertInput>,
+	envelopeBytes: number,
+): Array<Array<CommitUpsertInput>> => {
+	const slices: Array<Array<CommitUpsertInput>> = []
+	let slice: CommitUpsertInput[] = []
+	let sliceBytes = envelopeBytes
+	for (const c of commits) {
+		const commitBytes = Buffer.byteLength(JSON.stringify(c)) + 1 // +1: array comma
+		if (slice.length > 0 && sliceBytes + commitBytes > PUSH_JOB_MAX_BYTES) {
+			slices.push(slice)
+			slice = []
+			sliceBytes = envelopeBytes
+		}
+		slice.push(c)
+		sliceBytes += commitBytes
+	}
+	slices.push(slice)
+	return slices
+}
 export class GithubProvider extends Context.Service<GithubProvider, VcsProviderClient>()(
 	"@maple/api/services/vcs/vendor/github/GithubProvider",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const client = yield* GithubAppClient
+			const reviewerMention = reviewerMentionFor(Option.getOrUndefined(env.GITHUB_APP_SLUG))
+			/** The login the App comments as; unknown without a slug, when any bot's comment is read. */
+			const appBotLogin = Option.match(env.GITHUB_APP_SLUG, {
+				onNone: () => undefined,
+				onSome: (slug) => `${slug}[bot]`,
+			})
 
 			// Stamp the (low-cardinality) signature *result* on the active span. NEVER
 			// records the signature value or the secret — only the outcome enum. The
@@ -461,7 +503,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						return [job]
 					}
 					const commits: ReadonlyArray<CommitUpsertInput> = (payload.commits ?? []).map((c) => {
-						const ts = c.timestamp ? finiteOrNull(Date.parse(c.timestamp)) : null
+						const ts = c.timestamp ? finiteOrNull(timestampMs(c.timestamp)) : null
 						return {
 							sha: c.id,
 							message: c.message,
@@ -502,21 +544,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// job (guaranteed progress), so a lone commit bigger than the budget — a
 					// pathologically huge message, which the branch's commit backfill re-fetches
 					// in full anyway — gets its own job rather than stalling the loop.
-					const envelopeBytes = Buffer.byteLength(JSON.stringify(makeJob([])))
-					const jobs: VcsSyncJob[] = []
-					let slice: CommitUpsertInput[] = []
-					let sliceBytes = envelopeBytes
-					for (const c of commits) {
-						const commitBytes = Buffer.byteLength(JSON.stringify(c)) + 1 // +1: array comma
-						if (slice.length > 0 && sliceBytes + commitBytes > PUSH_JOB_MAX_BYTES) {
-							jobs.push(makeJob(slice))
-							slice = []
-							sliceBytes = envelopeBytes
-						}
-						slice.push(c)
-						sliceBytes += commitBytes
-					}
-					jobs.push(makeJob(slice))
+					const jobs = packCommits(commits, Buffer.byteLength(JSON.stringify(makeJob([])))).map(
+						makeJob,
+					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.webhook.jobs": jobs.length,
@@ -640,7 +670,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// need it, and the review trigger treats its absence as "nothing to review".
 					const headSha = Option.getOrUndefined(decodeGitShaOption(pr.head?.sha))
 					const baseSha = Option.getOrUndefined(decodeGitShaOption(pr.base?.sha))
-					const mergedAtMs = pr.merged_at ? finiteOrNull(Date.parse(pr.merged_at)) : null
+					const mergedAtMs = pr.merged_at ? finiteOrNull(timestampMs(pr.merged_at)) : null
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.merged": merged,
@@ -680,16 +710,62 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					"vcs.webhook.skip_reason": reason,
 				}).pipe(Effect.as<ReadonlyArray<VcsSyncJob>>([]))
 
+			/**
+			 * A person ticked a box on one of our review comments. Only the App's own comments count,
+			 * only a person's edit, and only an edit that changed a tagged "Before merge" box: GitHub
+			 * also sends `edited` for every re-render the App does itself.
+			 */
+			const mapChecklistEdit = (payload: typeof IssueCommentPayload.Type) =>
+				Effect.gen(function* () {
+					const author = payload.comment.user
+					const ours =
+						author !== null &&
+						author.type === "Bot" &&
+						(appBotLogin === undefined || author.login === appBotLogin) &&
+						(payload.comment.body ?? "").startsWith(PR_REVIEW_COMMENT_MARKER_PREFIX)
+					if (
+						!ours ||
+						payload.issue.pull_request === undefined ||
+						payload.issue.pull_request === null
+					)
+						return yield* commentSkip("edit_not_review_comment")
+					const editor = payload.sender
+					if (editor === undefined || editor.type === "Bot")
+						return yield* commentSkip("comment_by_bot")
+					const before = payload.changes?.body?.from
+					const ticks =
+						before === undefined ? [] : mergeStepTickChanges(before, payload.comment.body ?? "")
+					if (ticks.length === 0) return yield* commentSkip("checklist_unchanged")
+					yield* Effect.annotateCurrentSpan({
+						"vcs.webhook.outcome": "handled",
+						"vcs.pull_request.number": payload.issue.number,
+					})
+					const job: VcsSyncJob = {
+						kind: "pull-request-checklist",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						number: payload.issue.number,
+						commentId: String(payload.comment.id),
+						editorLogin: editor.login,
+						ticks,
+					}
+					return [job]
+				})
+
 			const mapIssueComment = (raw: unknown) =>
 				Effect.gen(function* () {
 					const payload = yield* parsePayload("issue_comment", decodeIssueComment(raw))
 					const body = payload.comment.body ?? ""
+					if (payload.action === "edited") return yield* mapChecklistEdit(payload)
 					if (payload.action !== "created") return yield* commentSkip("comment_action")
 					if (payload.issue.pull_request === undefined || payload.issue.pull_request === null)
 						return yield* commentSkip("issue_comment_not_pull_request")
 					if (payload.comment.user === null || payload.comment.user.type === "Bot")
 						return yield* commentSkip("comment_by_bot")
-					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					if (!mentionsReviewer(body, reviewerMention))
+						return yield* commentSkip("comment_no_mention")
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.number": payload.issue.number,
@@ -721,7 +797,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					if (payload.action !== "created") return yield* commentSkip("comment_action")
 					if (payload.comment.user === null || payload.comment.user.type === "Bot")
 						return yield* commentSkip("comment_by_bot")
-					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					if (!mentionsReviewer(body, reviewerMention))
+						return yield* commentSkip("comment_no_mention")
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
 						"vcs.pull_request.number": payload.pull_request.number,
@@ -773,10 +850,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			const webhookToJobs = (input: VcsWebhookRequest) =>
 				Effect.gen(function* () {
 					yield* verifySignature(input.rawBody, input.headers["x-hub-signature-256"])
-					const parsed = yield* Effect.try({
-						try: () => JSON.parse(input.rawBody) as unknown,
-						catch: () => parseError("Invalid JSON body"),
-					}).pipe(
+					const parsed = yield* decodeJsonBody(input.rawBody).pipe(
+						Effect.mapError(() => parseError("Invalid JSON body")),
 						Effect.tapError(() =>
 							Effect.annotateCurrentSpan({
 								"vcs.webhook.outcome": "rejected",
@@ -804,18 +879,17 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const fetchRepositories = (installation: VcsInstallation) =>
 				client.listInstallationRepositories(installation.externalInstallationId).pipe(
-					Effect.map(
-						(repos): ReadonlyArray<RepoUpsertInput> =>
-							repos.map((r) => ({
-								externalRepoId: String(r.id),
-								owner: r.owner.login,
-								name: r.name,
-								fullName: r.full_name,
-								defaultBranch: r.default_branch ?? "main",
-								htmlUrl: r.html_url,
-								isPrivate: r.private,
-								isArchived: r.archived ?? false,
-							})),
+					Effect.map((repos): ReadonlyArray<RepoUpsertInput> =>
+						repos.map((r) => ({
+							externalRepoId: String(r.id),
+							owner: r.owner.login,
+							name: r.name,
+							fullName: r.full_name,
+							defaultBranch: r.default_branch ?? "main",
+							htmlUrl: r.html_url,
+							isPrivate: r.private,
+							isArchived: r.archived ?? false,
+						})),
 					),
 					Effect.mapError(toVcsError),
 				)
@@ -881,7 +955,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							// commit reported by a deploy. For a SHA-only probe both are "look
 							// in the next repo", not a failure. Every other GitHub failure is
 							// mapped to the port's semantic errors.
-							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+							Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
 								error.status === 404 || error.status === 422
 									? Effect.succeed(Option.none<CommitUpsertInput>())
 									: Effect.fail(toVcsCommitError(error)),
@@ -910,9 +984,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			// two here is the same rule `mapPullRequest` applies to a webhook payload —
 			// the port only ever speaks the three-way `PullRequestLinkState`.
 			const normalizePullRequest = (pr: GithubApiPullRequest): PullRequestSummary => {
-				const mergedAtMs = pr.merged_at === null ? null : Date.parse(pr.merged_at)
+				const mergedAtMs = pr.merged_at === null ? null : timestampMs(pr.merged_at)
 				const merged = mergedAtMs !== null && Number.isFinite(mergedAtMs)
-				const updatedAtMs = Date.parse(pr.updated_at)
+				const updatedAtMs = timestampMs(pr.updated_at)
 				return {
 					number: pr.number,
 					title: pr.title,
@@ -990,7 +1064,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 										: file.content,
 							}),
 						),
-						Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+						Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
 							error.status === 404
 								? Effect.succeed(Option.none())
 								: Effect.fail(toVcsCommitError(error)),
@@ -1000,7 +1074,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			const resolveRef: VcsProviderClient["resolveRef"] = (installation, repo, ref) =>
 				client.getCommit(installation.externalInstallationId, repo.owner, repo.name, ref).pipe(
 					Effect.map((commit) => Option.some(commit.sha)),
-					Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+					Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
 						// 422 is GitHub's answer for a ref that parses but names nothing.
 						error.status === 404 || error.status === 422
 							? Effect.succeed(Option.none())
@@ -1032,16 +1106,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.listPullRequestFiles(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
 						Effect.map((files) =>
-							files.map(
-								(file): PullRequestFile => ({
-									path: file.filename,
-									previousPath: file.previous_filename ?? null,
-									status: normalizeFileStatus(file.status),
-									additions: file.additions,
-									deletions: file.deletions,
-									patch: file.patch ?? null,
-								}),
-							),
+							files.map((file): PullRequestFile => ({
+								path: file.filename,
+								previousPath: file.previous_filename ?? null,
+								status: normalizeFileStatus(file.status),
+								additions: file.additions,
+								deletions: file.deletions,
+								patch: file.patch ?? null,
+							})),
 						),
 						Effect.mapError(toVcsError),
 					)
@@ -1055,27 +1127,23 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.listReviewThreads(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
 						Effect.map((threads) =>
-							threads.map(
-								(thread): PullRequestReviewThread => ({
-									id: thread.id,
-									isResolved: thread.isResolved,
-									comments: thread.comments.nodes.map((comment) => {
-										const count = (content: string) =>
-											comment.reactionGroups?.find((group) => group.content === content)
-												?.reactors.totalCount ?? 0
-										return {
-											commentId:
-												comment.databaseId === null
-													? null
-													: String(comment.databaseId),
-											author: comment.author?.login ?? "(deleted user)",
-											body: comment.body,
-											thumbsUp: count("THUMBS_UP"),
-											thumbsDown: count("THUMBS_DOWN"),
-										}
-									}),
+							threads.map((thread): PullRequestReviewThread => ({
+								id: thread.id,
+								isResolved: thread.isResolved,
+								comments: thread.comments.nodes.map((comment) => {
+									const count = (content: string) =>
+										comment.reactionGroups?.find((group) => group.content === content)
+											?.reactors.totalCount ?? 0
+									return {
+										commentId:
+											comment.databaseId === null ? null : String(comment.databaseId),
+										author: comment.author?.login ?? "(deleted user)",
+										body: comment.body,
+										thumbsUp: count("THUMBS_UP"),
+										thumbsDown: count("THUMBS_DOWN"),
+									}
 								}),
-							),
+							})),
 						),
 						Effect.mapError(toVcsError),
 					)
@@ -1247,26 +1315,24 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				client
 					.getPullRequestContext(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
-						Effect.map(
-							(raw): PullRequestContext => ({
-								commits: raw.commits.map((commit) => ({
-									sha: commit.sha,
-									message: commit.commit.message,
-								})),
-								comments: raw.comments.map((comment) => ({
-									author: comment.user?.login ?? "(deleted user)",
-									path: comment.path ?? null,
-									line: comment.line ?? null,
-									body: comment.body ?? "",
-								})),
-								checks: raw.checks.map((check) => ({
-									name: check.name,
-									status: check.status,
-									conclusion: check.conclusion,
-									title: check.output?.title ?? null,
-								})),
-							}),
-						),
+						Effect.map((raw): PullRequestContext => ({
+							commits: raw.commits.map((commit) => ({
+								sha: commit.sha,
+								message: commit.commit.message,
+							})),
+							comments: raw.comments.map((comment) => ({
+								author: comment.user?.login ?? "(deleted user)",
+								path: comment.path ?? null,
+								line: comment.line ?? null,
+								body: comment.body ?? "",
+							})),
+							checks: raw.checks.map((check) => ({
+								name: check.name,
+								status: check.status,
+								conclusion: check.conclusion,
+								title: check.output?.title ?? null,
+							})),
+						})),
 						Effect.mapError(toVcsError),
 					)
 
@@ -1297,7 +1363,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								id: run.id,
 								html_url: run.html_url,
 							})),
-							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+							Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
 								// A secondary rate limit is also a 403, but carries a retry time.
 								error.status === 403 && error.retryAfterSeconds === undefined
 									? Effect.annotateCurrentSpan(
@@ -1378,7 +1444,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						)
 						.pipe(
 							Effect.map((posted) => Option.some(posted)),
-							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+							Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
 								error.status === 422
 									? Effect.annotateCurrentSpan(
 											"vcs.pull_request.review_comments_rejected",
@@ -1477,6 +1543,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			return {
 				id: PROVIDER,
+				reviewerMention,
 				webhookToJobs,
 				fetchRepositories,
 				fetchCommits,

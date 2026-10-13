@@ -10,7 +10,7 @@ backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relation
 - `lib/*`: zero Maple knowledge, could ship as a standalone OSS library. A `lib/` package that
   imports `@maple/domain` must move to `packages/`. New packages default to `packages/`.
 
-`@maple-dev/effect-clickhouse` lives in the separate effect-clickhouse repo; change it there.
+`@maple-dev/effect-orm` lives in the separate effect-orm repo; change it there.
 
 ## Commands
 
@@ -23,7 +23,7 @@ bun typecheck
 bun run tinybird:manifest      # after editing datasources.ts
 bun run local-schema:bump <slug>   # local chDB schema bump for a datasources.ts change
 bun db:up && bun db:migrate:local
-bun run --cwd packages/db db:generate   # new Drizzle migration
+bun run --cwd packages/db db:generate   # new migration (effect-orm)
 bun run dev:signin             # one-shot signed-in Clerk link (dev user david+clerk_test@gmail.com)
 ```
 
@@ -36,7 +36,7 @@ with `packageManager`.
   `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding; OAuth stays in `apps/api`.
 - An investigation is **one agent turn** ending in `submit_diagnosis`. Do not split it across
   planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `SubagentHost`.
-- LLM code (Effect AI + `effect-agent`) is only in `apps/ai`; Maple-specific wiring lives in
+- LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
   `apps/ai/src/platform/Llm.ts`.
 - Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.
 
@@ -73,19 +73,24 @@ const rows = yield* warehouse.compiledQuery(tenant, CH.compile(CH.myQuery({ limi
 - Read `docs/warehouse-rollups.md` before adding a materialized view. Query perf work uses
   `bun run bench:queries` (see `docs/query-benchmarking.md`); empty-table timings prove nothing.
 
-## Application database (Postgres / Drizzle)
+## Application database (Postgres / effect-orm)
 
-Schema in `packages/db/src/schema/`, reached via Hyperdrive binding `MAPLE_DB`. Drizzle runs on
-Effect (`drizzle-orm/effect-postgres`): queries are `yield*`ed, `db.transaction` takes an Effect.
+Tables in `packages/db/src/tables/` (`@maple/db/tables`), reached via Hyperdrive binding
+`MAPLE_DB`. Queries use `@maple-dev/effect-orm`: `database.execute((db) => db.run(PG.from(T)...))`,
+`db.transaction(effect)`. Rows are typed by the table: branded ids, literal unions, schema-typed
+jsonb, timestamps as epoch ms (`PG.timestamptzMillis`), so compare them with `=== null`, never by
+truthiness.
 
-- Use `msToDate` / `dateToMs` (`packages/backend/src/platform/time.ts`) at the drizzle boundary.
-- Use `.returning()` + length, never driver write-result shapes. `count(*)` needs `::int`. Wrap raw
-  `db.execute(sql...)` in `rawRows`.
+- No untyped SQL. A query the builder lacks is a `PG.sql` template with a typed result.
+- Readers that must tolerate old jsonb shapes select the column with `PG.undecoded`.
+- Change a table, then `bun run --cwd packages/db db:generate --name <x>`: it diffs the tables
+  against the newest snapshot and writes `packages/db/drizzle/<ts>_<x>/migration.sql`.
+  `parity.test.ts` fails when the tables and the migrations disagree.
 - One pool per invocation via `withPgConnectionScope`; connections never outlive the invocation.
   Fork DB work off a request only with `forkRequestScoped`.
 - Tests use `createTestDb()` (PGlite, `packages/backend/src/platform/test-pglite.ts`).
-- **Migrations apply in the prd alchemy deploy.** Never run `drizzle-kit migrate` against prd.
-- PR previews (only with the `preview` label) have no database; DB-backed routes 500 there.
+- **Migrations apply in the prd alchemy deploy.** `db:migrate` is for local databases; never point it at prd.
+- PR previews (only with the `preview` label) get their own Neon branch, migrated by the deploy (`docs/pr-previews.md`).
 
 ## Conventions
 
@@ -109,6 +114,10 @@ Effect (`drizzle-orm/effect-postgres`): queries are `yield*`ed, `db.transaction`
     "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
   ```
 - `@/` resolves to each app's source. `src/routeTree.gen.ts` is generated.
+- **Tests:** assert behavior, not source. `test-slop/*` rules (`scripts/oxlint-plugins/test-slop.mjs`)
+  ban constant-vs-literal pins, existence-only/does-not-throw tests, Tailwind class pins and tests that
+  read source files. Import and architecture boundaries are `no-restricted-imports` overrides in
+  `.oxlintrc.json`, not tests.
 
 ## MCP tools
 
@@ -139,4 +148,5 @@ Test with `bun run --cwd apps/sandbox verify:image` (needs Docker); it catches w
 
 Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in
 `packages/backend/src/services/errors/`), `warehouse-rollups.md`, `service-map-architecture.md`,
-`ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`.
+`ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
+`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`).

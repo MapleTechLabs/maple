@@ -94,18 +94,20 @@ describe("ReplaysToolbar filter chips", () => {
 		expect(onToggleErrorsOnly).toHaveBeenCalledOnce()
 	})
 
-	it("marks the engaged chip pressed when the preset is active", () => {
+	it("marks the engaged chip pressed when the tag is selected", () => {
 		const onToggleEngagedOnly = vi.fn()
 		render(
 			<ReplaysToolbar
 				{...props}
 				query=""
 				onSearch={() => {}}
+				engagedSessions={69}
 				engagedOnly
 				onToggleEngagedOnly={onToggleEngagedOnly}
 			/>,
 		)
-		const chip = screen.getByText(/Engaged/).closest("button")!
+		const chip = screen.getByText("engaged").closest("button")!
+		expect(chip.textContent).toContain("69")
 		expect(chip.getAttribute("aria-pressed")).toBe("true")
 		fireEvent.click(chip)
 		expect(onToggleEngagedOnly).toHaveBeenCalledOnce()

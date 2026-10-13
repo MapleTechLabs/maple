@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit } from "effect"
 import { serviceWorkloadsSQL } from "./service-infra"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }

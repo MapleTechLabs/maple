@@ -1,6 +1,7 @@
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { AlertDestinationId, OrgId } from "@maple/domain/http"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -68,6 +69,7 @@ describe("NotificationDispatcher.dispatch", () => {
 		const layer = Layer.effect(NotificationDispatcher, NotificationDispatcher.make).pipe(
 			Layer.provide(ChatAlertPoster.layer),
 			Layer.provide(Layer.succeed(EmailService, emailStub)),
+			Layer.provide(FetchHttpClient.layer),
 			Layer.provideMerge(failingDb),
 			Layer.provideMerge(Env.layer),
 			Layer.provide(testConfig()),
@@ -88,6 +90,7 @@ describe("NotificationDispatcher.dispatch", () => {
 		const layer = Layer.effect(NotificationDispatcher, NotificationDispatcher.make).pipe(
 			Layer.provide(ChatAlertPoster.layer),
 			Layer.provide(Layer.succeed(EmailService, emailStub)),
+			Layer.provide(FetchHttpClient.layer),
 			Layer.provideMerge(testDb.layer),
 			Layer.provideMerge(Env.layer),
 			Layer.provide(testConfig()),

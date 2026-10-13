@@ -8,7 +8,15 @@
 // that ever sees a wire shape.
 
 import { AI_TOOLS_BREAKDOWN_MAX } from "@maple/domain/http"
-import { formatErrorRate, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import {
+	EMPTY_VALUE,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+	pluralize,
+} from "@maple/ui/lib/format"
+import { OTHER_COLOR } from "@maple/ui/components/charts/_shared/bucket-series"
 
 /** Which measure the strip, the chart and the breakdown columns are reading. */
 export const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
@@ -228,7 +236,7 @@ export function errorRate(measures: Pick<ToolMeasures, "calls" | "errors">): num
 
 /** Nanoseconds as a latency string — the warehouse stores ns, `formatLatency` takes ms. */
 export function formatDurationNs(ns: number): string {
-	if (!Number.isFinite(ns) || ns <= 0) return "—"
+	if (!Number.isFinite(ns) || ns <= 0) return EMPTY_VALUE
 	return formatLatency(ns / 1_000_000)
 }
 
@@ -278,7 +286,12 @@ const metricRiseIsBad = (metric: ToolMetric): boolean => metric === "error_rate"
  * wearing it would read as "this series is selected", which is never what it
  * means.
  */
-export const TOOL_SERIES_COLOR_TOKENS = ["--chart-2", "--chart-3", "--chart-4", "--chart-5"] as const
+export const TOOL_SERIES_COLOR_TOKENS = [
+	"var(--chart-2)",
+	"var(--chart-3)",
+	"var(--chart-4)",
+	"var(--chart-5)",
+] as const
 
 /**
  * The folded tail. Grey, because it is a residue rather than a thing.
@@ -294,10 +307,9 @@ export const OTHER_SERIES_KEY = "other"
  *  selection contract has no spelling for "the unnamed one". */
 export const UNATTRIBUTED_LABEL = "Unattributed"
 export const breakdownKeyLabel = (key: string): string => (key === "" ? UNATTRIBUTED_LABEL : key)
-export const OTHER_SERIES_COLOR_TOKEN = "--muted-foreground"
 
 /**
- * Key → colour token, assigned in the order given and stable for that order.
+ * Key → colour (a wrapped `var()`), assigned in the order given and stable for that order.
  *
  * Callers pass the RANKED key list, so a tool keeps its colour as long as its
  * rank holds; `Other` is always grey wherever it lands.
@@ -307,7 +319,7 @@ export function toolSeriesColors(keys: ReadonlyArray<string>): ReadonlyMap<strin
 	let index = 0
 	for (const key of keys) {
 		if (key === OTHER_SERIES_KEY) {
-			out.set(key, OTHER_SERIES_COLOR_TOKEN)
+			out.set(key, OTHER_COLOR)
 			continue
 		}
 		out.set(key, TOOL_SERIES_COLOR_TOKENS[index % TOOL_SERIES_COLOR_TOKENS.length]!)
@@ -367,7 +379,7 @@ export function toolChartTitle({
  * accounts for, and across how many sessions.
  */
 export function scopeSummary(totals: ToolTotals, matchedOfCalls: number, subject?: string): string {
-	const sessions = `${formatToolCount(totals.sessions)} session${totals.sessions === 1 ? "" : "s"}`
+	const sessions = `${formatToolCount(totals.sessions)} ${pluralize(totals.sessions, "session")}`
 	// The tool detail page names the tool in its denominator ("of 3,908
 	// run_tests calls"), because there the whole page is one tool's and an
 	// unqualified "calls" would read as the org's.
@@ -482,7 +494,7 @@ export function toolsTableFooter(
 		subject:
 			rows.length >= limit
 				? `Showing the ${formatToolCount(limit)} busiest tools`
-				: `Showing all ${formatToolCount(rows.length)} tool${rows.length === 1 ? "" : "s"}`,
+				: `Showing all ${formatToolCount(rows.length)} ${pluralize(rows.length, "tool")}`,
 		detail: `· ${formatToolCount(calls)} calls · ${formatErrorRate(calls > 0 ? errors / calls : 0)} errors`,
 	}
 }

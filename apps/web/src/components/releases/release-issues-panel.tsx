@@ -1,27 +1,19 @@
 import { useMemo } from "react"
-import { Link } from "@tanstack/react-router"
 import type { ErrorIssueDocument } from "@maple/domain/http"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 
-import { SeverityBadge } from "@/components/errors/severity-badge"
 import { SectionCard } from "@/components/services/section-card"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { IssueLine } from "@/components/services/issue-line"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import type { ReleaseErrorFingerprint } from "@/api/warehouse/releases"
+import { NEW_ISSUE_SLACK_MS } from "./release-model"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { ErrorState } from "@/components/common/error-state"
 
 /** The v2 list takes one page of fingerprints; the rest of a very noisy version stays on /errors. */
 const FINGERPRINT_LIMIT = 50
-
-/**
- * Slack between a version's first span and an issue's first occurrence: the
- * rollup's first-seen is bucket-floored, and the error event can land a beat
- * before the entry-point span that carried it.
- */
-const NEW_ISSUE_SLACK_MS = 5 * 60 * 1000
 
 /** The two timestamps the split reads; the panel passes whole issue documents. */
 export interface ReleaseIssueDates {
@@ -54,50 +46,21 @@ export function splitReleaseIssues<T extends ReleaseIssueDates>(
 	return split
 }
 
-interface IssueLineProps {
-	issue: ErrorIssueDocument
-	/** Occurrences carried by this version, from the warehouse split. */
-	onVersion: number | undefined
-}
-
-function IssueLine({ issue, onVersion }: IssueLineProps) {
-	const { effectiveTimezone } = useTimezonePreference()
-	const title = issue.errorLabel || issue.exceptionType || issue.exceptionMessage || "Unknown error"
-	return (
-		<Link
-			to="/errors/issues/$issueId"
-			params={{ issueId: issue.id }}
-			className="flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-		>
-			<SeverityBadge severity={issue.severity} className="w-[60px] shrink-0 justify-center" />
-			<span className="min-w-0 flex-1 truncate" title={title}>
-				{title}
-			</span>
-			<span
-				className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground"
-				title="Occurrences on this version in the window"
-			>
-				{formatNumber(onVersion ?? issue.occurrenceCount)}×
-			</span>
-			<span className="w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground/70">
-				{formatRelativeTimeOrDate(issue.lastSeenAt, undefined, effectiveTimezone)}
-			</span>
-		</Link>
-	)
-}
-
-function IssueList({
+export function IssueList({
 	title,
 	issues,
 	counts,
 	empty,
 	tone,
+	showService,
 }: {
 	title: string
 	issues: ReadonlyArray<ErrorIssueDocument>
 	counts: ReadonlyMap<string, number>
 	empty: string
 	tone?: "error" | "warn"
+	/** Marks each line with its service, for a release spanning several. */
+	showService?: boolean
 }) {
 	return (
 		<SectionCard
@@ -106,12 +69,12 @@ function IssueList({
 				<span
 					className={
 						issues.length === 0
-							? "text-[11px] text-muted-foreground/70"
+							? "text-2xs text-muted-foreground/70"
 							: tone === "error"
-								? "text-[11px] font-medium text-severity-error"
+								? "text-2xs font-medium text-severity-error"
 								: tone === "warn"
-									? "text-[11px] font-medium text-severity-warn"
-									: "text-[11px] text-muted-foreground"
+									? "text-2xs font-medium text-severity-warn"
+									: "text-2xs text-muted-foreground"
 					}
 				>
 					{issues.length}
@@ -119,14 +82,16 @@ function IssueList({
 			}
 		>
 			{issues.length === 0 ? (
-				<div className="px-4 py-6 text-center text-xs text-muted-foreground">{empty}</div>
+				<EmptyMessage>{empty}</EmptyMessage>
 			) : (
 				<div className="space-y-px p-2">
 					{issues.map((issue) => (
 						<IssueLine
 							key={issue.id}
 							issue={issue}
-							onVersion={counts.get(issue.fingerprintHash)}
+							occurrences={counts.get(issue.fingerprintHash)}
+							occurrencesTitle="Occurrences on this version in the window"
+							showService={showService}
 						/>
 					))}
 				</div>
@@ -140,11 +105,7 @@ function PanelsSkeleton() {
 		<div className="grid gap-3 lg:grid-cols-3">
 			{["New on this version", "Regressed on this version", "Still occurring"].map((title) => (
 				<SectionCard key={title} title={title}>
-					<div className="space-y-px p-2">
-						{Array.from({ length: 3 }).map((_, i) => (
-							<Skeleton key={i} className="h-8 w-full" />
-						))}
-					</div>
+					<SkeletonList rows={3} className="p-2" />
 				</SectionCard>
 			))}
 		</div>
@@ -223,9 +184,11 @@ function ReleaseIssuesLoaded({ serviceName, releaseFirstSeen, fingerprints }: Re
 	if (Result.isInitial(result)) return <PanelsSkeleton />
 	if (split === undefined) {
 		return (
-			<div className="rounded-md border bg-card px-4 py-6 text-center text-xs text-muted-foreground">
-				Issues could not be loaded.
-			</div>
+			<ErrorState
+				error={Result.isFailure(result) ? result.cause : undefined}
+				title="Issues could not be loaded"
+				variant="row"
+			/>
 		)
 	}
 

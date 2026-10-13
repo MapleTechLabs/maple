@@ -88,6 +88,10 @@ export interface SessionRecord {
 	 * recorded session "Not recorded".
 	 */
 	replaySampled?: boolean
+	/** Whether an unsampled session buffers replay in memory, uploading it only if an error happens. */
+	replayBuffered?: boolean
+	/** Set once an error turned a buffered session into a recorded one. */
+	replayTrigger?: "error"
 }
 
 /** Optional keys carrying a plain number. Absent is fine; wrongly typed is not. */
@@ -145,6 +149,12 @@ function parseSessionRecord(raw: string): SessionRecord | undefined {
 		if (typeof value.replaySampled !== "boolean") return undefined
 		record.replaySampled = value.replaySampled
 	}
+	if (value.replayBuffered !== undefined) {
+		if (typeof value.replayBuffered !== "boolean") return undefined
+		record.replayBuffered = value.replayBuffered
+	}
+	// An unknown trigger (from a newer SDK) is dropped, not fatal: rejecting the record would split the session.
+	if (value.replayTrigger === "error") record.replayTrigger = value.replayTrigger
 	if (value.utm !== undefined) {
 		if (!isStringRecord(value.utm)) return undefined
 		record.utm = value.utm
@@ -615,13 +625,43 @@ export function claimReplaySample(sampleRate: number): boolean {
 	return sampled
 }
 
+/** `record` uploads as it goes; `buffer` keeps the last minute in memory until an error. */
+export type ReplayMode = "record" | "buffer" | "off"
+
+/**
+ * This session's replay mode: recorded at `sampleRate`, otherwise buffered for
+ * errors at `onErrorSampleRate`. Rolled once per session and persisted, like
+ * `claimReplaySample`.
+ */
+export function claimReplayMode(sampleRate: number, onErrorSampleRate: number): ReplayMode {
+	if (claimReplaySample(sampleRate)) return "record"
+	const record = readRecord() ?? getSession()
+	if (record.replayBuffered === undefined) {
+		const buffered = onErrorSampleRate > 0 && uniformRandom() < onErrorSampleRate
+		writeRecord({ ...record, replayBuffered: buffered })
+		return buffered ? "buffer" : "off"
+	}
+	return record.replayBuffered ? "buffer" : "off"
+}
+
+/** An error made this buffered session a recorded one: later loads record it from the start. */
+export function markReplayTriggered(sessionId: string): void {
+	const record = readRecord()
+	if (!record || record.id !== sessionId) return
+	writeRecord({ ...record, replaySampled: true, replayTrigger: "error" })
+}
+
 /**
  * Pin a session to the capture mode a running page is already in. A session
  * minted by idle rotation mid-page inherits that page's mode rather than
  * rolling again, and later loads of it honour the same answer.
  */
-export function adoptReplayDecision(sessionId: string, recorded: boolean): void {
+export function adoptReplayDecision(sessionId: string, recorded: boolean, buffered?: boolean): void {
 	const record = readRecord()
 	if (!record || record.id !== sessionId || record.replaySampled !== undefined) return
-	writeRecord({ ...record, replaySampled: recorded })
+	writeRecord({
+		...record,
+		replaySampled: recorded,
+		...(buffered !== undefined && !recorded ? { replayBuffered: buffered } : undefined),
+	})
 }

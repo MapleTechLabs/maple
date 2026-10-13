@@ -58,9 +58,7 @@ export function toLineChartRows(
 
 	return rows.map((row) => {
 		const out: Record<string, string | number> = {
-			bucket: String(
-				row[bucketCol] instanceof Date ? (row[bucketCol] as Date).toISOString() : row[bucketCol],
-			),
+			bucket: String(row[bucketCol] instanceof Date ? row[bucketCol].toISOString() : row[bucketCol]),
 		} satisfies Record<string, string | number>
 		for (const col of seriesCols) {
 			const value = row[col]

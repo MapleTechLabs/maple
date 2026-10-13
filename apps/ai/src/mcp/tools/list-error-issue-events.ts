@@ -15,6 +15,7 @@ const decodePayload = Schema.decodeUnknownOption(Schema.Record(Schema.String, Sc
 export function registerListErrorIssueEventsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_error_issue_events",
+		title: "List Error Issue Events",
 		description:
 			"List the audit-log events for an issue (state transitions, claims, comments, agent notes, fix proposals) in reverse-chronological order.",
 		parameters: Schema.Struct({

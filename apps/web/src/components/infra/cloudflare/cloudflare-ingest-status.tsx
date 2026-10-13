@@ -1,7 +1,6 @@
-import { Link } from "@tanstack/react-router"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 
 import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
-import { Button } from "@maple/ui/components/ui/button"
 import {
 	Empty,
 	EmptyContent,
@@ -11,7 +10,8 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 
-import { CircleInfoIcon, CircleWarningIcon, CloudflareIcon, LoaderIcon } from "@/components/icons"
+import { CircleInfoIcon, CircleWarningIcon, CloudflareIcon } from "@/components/icons"
+import { IntegrationLinkActions } from "../primitives/integration-not-connected"
 import { describeCloudflareIngestPhase, type CloudflareIngestPhase } from "./ingest-phase"
 
 /**
@@ -31,8 +31,8 @@ export function CloudflareIngestBanner({ phase }: { phase: CloudflareIngestPhase
 	return (
 		<Alert variant={tone}>
 			{isWorking(phase) ? (
-				<LoaderIcon size={16} className="animate-spin" />
-			) : tone === "warning" ? (
+				<Spinner size={16} />
+			) : tone === "warn" ? (
 				<CircleWarningIcon size={16} />
 			) : (
 				<CircleInfoIcon size={16} />
@@ -60,11 +60,7 @@ export function CloudflareIngestEmpty({
 		<Empty className="py-16">
 			<EmptyHeader>
 				<EmptyMedia variant="icon">
-					{isWorking(phase) ? (
-						<LoaderIcon size={16} className="animate-spin" />
-					) : (
-						<CloudflareIcon size={16} />
-					)}
+					{isWorking(phase) ? <Spinner size={16} /> : <CloudflareIcon size={16} />}
 				</EmptyMedia>
 				<EmptyTitle>{title}</EmptyTitle>
 				<EmptyDescription>{description}</EmptyDescription>
@@ -77,8 +73,11 @@ export function CloudflareIngestEmpty({
 /** The one action a stalled connection has: re-grant access from the integrations page. */
 export function CloudflareStalledAction() {
 	return (
-		<Button size="sm" variant="outline" render={<Link to="/integrations" />}>
-			Check the connection
-		</Button>
+		<IntegrationLinkActions
+			integration="cloudflare"
+			actionLabel="Check the connection"
+			actionVariant="outline"
+			docsPage="cloudflare"
+		/>
 	)
 }

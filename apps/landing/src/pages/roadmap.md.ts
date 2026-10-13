@@ -31,7 +31,11 @@ export const GET: APIRoute = async () => {
 			...items.map((entry) =>
 				blocks(
 					`### ${entry.data.title}`,
-					[entry.data.category, entry.data.quarter, entry.data.shipped_date && `shipped ${entry.data.shipped_date}`]
+					[
+						entry.data.category,
+						entry.data.quarter,
+						entry.data.shipped_date && `shipped ${entry.data.shipped_date}`,
+					]
 						.filter(Boolean)
 						.join(" · "),
 					entry.data.description,

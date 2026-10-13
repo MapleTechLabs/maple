@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { highlightCode } from "@/lib/sugar-high"
 
 interface CodeBlockProps {
@@ -14,9 +15,7 @@ export function CodeBlock({ code, language, className, highlighted = highlightCo
 	return (
 		<div className={cn("relative overflow-clip rounded-md border border-border bg-muted", className)}>
 			<div className="flex items-center justify-between px-3 py-1.5 text-muted-foreground">
-				{language && (
-					<span className="text-[10px] font-medium uppercase tracking-wider">{language}</span>
-				)}
+				{language && <Eyebrow>{language}</Eyebrow>}
 				<CopyButton value={code} label="Code" className="ml-auto" />
 			</div>
 			<div className="overflow-x-auto bg-background/50 p-3">

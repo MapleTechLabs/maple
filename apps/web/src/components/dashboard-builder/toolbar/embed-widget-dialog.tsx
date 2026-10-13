@@ -8,6 +8,8 @@
  * share list is the same atom the board dialog reads, so either side's changes
  * show up in the other.
  */
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useMemo, useState } from "react"
 import { useMountEffect } from "@maple/ui/hooks/use-mount-effect"
 import { Exit } from "effect"
@@ -25,6 +27,9 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import {
 	ArrowRotateClockwiseIcon,
 	BracketsCurlyIcon,
@@ -35,6 +40,7 @@ import {
 import type { DashboardVariable } from "@/components/dashboard-builder/types"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { displayError } from "@/lib/error-messages"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { REFRESH_INTERVAL_OPTIONS } from "@/lib/dashboard-controls/search-params"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
 import {
@@ -76,7 +82,6 @@ export function EmbedWidgetDialog({
 		mode: "promiseExit",
 	})
 	const [error, setError] = useState<string | null>(null)
-	const [busy, setBusy] = useState(false)
 
 	const shares: ReadonlyArray<ShareRecord> = Result.isSuccess(sharesResult) ? sharesResult.value : []
 	// A list that failed to load must not read as "this board isn't shared":
@@ -92,10 +97,9 @@ export function EmbedWidgetDialog({
 	}
 
 	/** Runs the steps in order, stopping at the first failure. */
-	const run = async (...steps: ReadonlyArray<() => Promise<Exit.Exit<unknown, unknown>>>) => {
-		setError(null)
-		setBusy(true)
-		try {
+	const [run, busy] = useAsyncAction(
+		async (...steps: ReadonlyArray<() => Promise<Exit.Exit<unknown, unknown>>>) => {
+			setError(null)
 			for (const step of steps) {
 				const result = await step()
 				if (Exit.isFailure(result)) {
@@ -104,10 +108,8 @@ export function EmbedWidgetDialog({
 				}
 			}
 			refreshShares()
-		} finally {
-			setBusy(false)
-		}
-	}
+		},
+	)
 
 	const mintChartLink = () => upsert({ ...request, payload: { mode: "public" } })
 
@@ -158,10 +160,10 @@ export function EmbedWidgetDialog({
 							<EmbedUrlOptions />
 						</>
 					) : error ? null : (
-						<div className="h-8 animate-pulse rounded-lg bg-muted/60 sm:h-7" />
+						<Skeleton className="h-8 rounded-lg sm:h-7" />
 					)}
 					{(listError ?? error) ? (
-						<p className="text-destructive-foreground text-xs">{listError ?? error}</p>
+						<p className={cn(TONE_TEXT.crit, "text-xs")}>{listError ?? error}</p>
 					) : null}
 				</DialogPanel>
 
@@ -247,7 +249,7 @@ function NotPublicNotice({
 	onMakePublic: () => void
 }) {
 	return (
-		<div className="space-y-3 rounded-lg border bg-muted/30 px-3.5 py-3">
+		<Panel tone="muted" className="space-y-3 px-3.5 py-3">
 			<div className="flex items-start gap-3">
 				<GlobeIcon size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
 				<div className="space-y-1">
@@ -273,7 +275,7 @@ function NotPublicNotice({
 					Make dashboard public
 				</Button>
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -366,7 +368,7 @@ function EmbedUrlOptions() {
 			</div>
 			{/* Three fixed columns on every row — icon, parameter, details — so names,
 			    descriptions and examples line up down the list whatever their length. */}
-			<ul className="divide-y divide-border overflow-hidden rounded-lg border">
+			<ul className="divide-y divide-border overflow-hidden rounded-md border">
 				{options.map(({ key, icon: Icon, param, description, example, unavailable }) => (
 					<li
 						key={key}
@@ -378,13 +380,11 @@ function EmbedUrlOptions() {
 						<span className="flex h-5 items-center text-muted-foreground">
 							<Icon size={14} />
 						</span>
-						<code className="truncate font-medium font-mono" title={param}>
-							{param}
-						</code>
+						<TruncatedText className="font-medium font-mono">{param}</TruncatedText>
 						<span className="text-muted-foreground">{description}</span>
-						<code className="col-start-3 w-fit max-w-full truncate rounded bg-muted px-1.5 font-mono text-[11px] text-muted-foreground">
+						<InlineCode className="col-start-3 w-fit max-w-full truncate px-1.5 text-2xs text-muted-foreground">
 							{example}
-						</code>
+						</InlineCode>
 					</li>
 				))}
 			</ul>

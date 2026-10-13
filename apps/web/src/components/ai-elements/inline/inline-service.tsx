@@ -2,16 +2,11 @@ import { Link } from "@tanstack/react-router"
 import type { InlineServiceData } from "@maple/domain/chat-annotations"
 import { cn } from "@maple/ui/lib/utils"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { errorRateClass } from "@maple/ui/lib/error-rate"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { ServerIcon } from "@/components/icons"
 import { INLINE_CARD_ROW, InlineCardChevron, InlineMetric, inlineCardClass } from "./inline-card"
-
-/** Same thresholds the services list tones by: under 1% is noise, 5% is an outage. */
-function errorTone(rate: number): string {
-	if (rate >= 5) return "text-severity-error"
-	if (rate >= 1) return "text-severity-warn"
-	return "text-muted-foreground"
-}
 
 export function InlineService({ data }: { data: InlineServiceData }) {
 	return (
@@ -24,12 +19,7 @@ export function InlineService({ data }: { data: InlineServiceData }) {
 		>
 			<div className={INLINE_CARD_ROW}>
 				<ServerIcon className="size-3.5 shrink-0 text-muted-foreground" />
-				<span
-					className="min-w-0 flex-1 truncate text-xs font-medium text-foreground"
-					title={data.name}
-				>
-					{data.name}
-				</span>
+				<TruncatedText className="flex-1 text-xs font-medium text-foreground">{data.name}</TruncatedText>
 				{/* The card is its own container: in a 420px side panel the service name matters
 				    more than its throughput, so the least diagnostic lane goes first. */}
 				{data.throughputRpm != null && (
@@ -43,7 +33,7 @@ export function InlineService({ data }: { data: InlineServiceData }) {
 					</InlineMetric>
 				)}
 				{data.errorRate != null && (
-					<InlineMetric width="min-w-14" unit="err" tone={errorTone(data.errorRate)}>
+					<InlineMetric width="min-w-14" unit="err" tone={errorRateClass(data.errorRate / 100)}>
 						{formatErrorRate(data.errorRate / 100)}
 					</InlineMetric>
 				)}

@@ -22,6 +22,7 @@ const splitHeading = (markdown: string): { readonly title: string; readonly body
 export function registerDescribeDashboardSchemaTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
+		title: "Describe Dashboard Schema",
 		description:
 			"What a dashboard widget can be: panel types, the four data-source kinds, the unit vocabulary, aggregations and group-by tokens, the display config. Generated from the live schema; read it before authoring or editing widgets rather than working from a remembered example.",
 		parameters: Schema.Struct({

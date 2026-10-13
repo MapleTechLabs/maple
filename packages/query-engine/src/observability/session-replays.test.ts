@@ -5,6 +5,7 @@ import { getSessionTraces } from "./session-replays"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
+import { OrgId } from "@maple/domain"
 
 interface Captured {
 	sqls: string[]
@@ -29,7 +30,7 @@ const makeExecutor = (captured: Captured, responses: MockResponses): WarehouseEx
 		return responses.detail ?? []
 	}
 	return {
-		orgId: "org_test",
+		orgId: OrgId.make("org_test"),
 		query: () => Effect.succeed({ data: [] as ReadonlyArray<never> }),
 		compiledQuery: ((compiled) => {
 			captured.sqls.push(compiledQueryOf(compiled).sql)
@@ -202,7 +203,7 @@ describe("getSessionTraces", () => {
 	it.effect("propagates warehouse errors from the executor", () =>
 		Effect.gen(function* () {
 			const failing: WarehouseExecutorApi = {
-				orgId: "org_test",
+				orgId: OrgId.make("org_test"),
 				query: () => Effect.succeed({ data: [] }),
 				compiledQuery: () =>
 					Effect.fail(

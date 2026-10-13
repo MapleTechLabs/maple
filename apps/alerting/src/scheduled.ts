@@ -9,21 +9,27 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
+import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
-import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { Cause, Effect, Layer, Match } from "effect"
+import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
+import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
+import { envPorts } from "@maple/backend/platform/env-ports"
+import { Cause, Effect, Layer, Match, Option } from "effect"
+import { FetchHttpClient } from "effect/http"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
 /**
@@ -33,24 +39,38 @@ import type { AlertingWorkerEnv } from "./worker.ts"
  * provided either would shadow them — `worker-telemetry.test.ts` pins that
  * a tick's spans still reach the export.
  */
-export const buildLayer = (env: AlertingWorkerEnv) =>
+export const layerTick = (
+	env: AlertingWorkerEnv,
+	email: Option.Option<EmailSenderClient> = Option.none(),
+	chatSessions?: ChatSessionNamespace,
+) =>
 	Layer.mergeAll(
 		AlertsService.layer,
 		AnomalyDetectionService.layer,
 		CloudflareAnalyticsService.layer,
 		PlanetScaleService.layer,
+		RailwayMetricsService.layer,
 		DigestService.layer,
+		WebAnalyticsDigestService.layer,
 		ErrorsService.layer,
 		FixVerificationTickService.layer,
 		EscalationService.layer,
 		ServiceMapRollupService.layer,
+		PrReviewPostMergeService.layer,
 		// Read by `maybeEnqueueTriage` when present; its absence means every
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
-		Layer.provide(Layer.mergeAll(Env.layer, layerPg, EdgeCacheServiceLive)),
-		Layer.provideMerge(Layer.mergeAll(mapleDbConnectionLayer(env), workerEnvLayer(env))),
+		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
+		Layer.provideMerge(
+			Layer.mergeAll(
+				layerMapleDbConnection(env),
+				envPorts(env),
+				chatSessionsLayerIfBound(chatSessions, env),
+				Layer.succeed(EmailSender, email),
+			),
+		),
 	)
 
 /**
@@ -159,7 +179,7 @@ const escalationTick = makeTick(
 			: undefined,
 )
 
-const digestTick = makeTick(
+const opsDigestTick = makeTick(
 	DigestService.use((digest) => digest.runDigestTick()),
 	"digest",
 	(result) => ({
@@ -168,6 +188,20 @@ const digestTick = makeTick(
 		skipped: result.skipped,
 	}),
 )
+
+const webAnalyticsDigestTick = makeTick(
+	WebAnalyticsDigestService.use((digest) => digest.runTick()),
+	"web_analytics_digest",
+	(result) => ({
+		sentCount: result.sentCount,
+		errorCount: result.errorCount,
+		skipped: result.skipped,
+	}),
+)
+
+// Sequential: the ops digest tick runs the daily Clerk member sweep that seeds
+// the subscriber rows both emails read.
+const digestTick = Effect.andThen(opsDigestTick, webAnalyticsDigestTick)
 
 // The onboarding drip moved to maple-portal (`camp_onboarding`), which owns the
 // sequence, its send log and its suppression list. `org_onboarding_state` stays
@@ -230,6 +264,35 @@ const planetScaleTick = makeTick(
 			: undefined,
 )
 
+const railwayMetricsTick = makeTick(
+	RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
+	"railway_metrics",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					rowsIngested: result.rowsIngested,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
+const prReviewPostMergeTick = makeTick(
+	PrReviewPostMergeService.use((service) => service.runTick()),
+	"pr_review_post_merge",
+	(result) =>
+		result.examined > 0
+			? {
+					examined: result.examined,
+					reported: result.reported,
+					waiting: result.waiting,
+					gaveUp: result.gaveUp,
+					failedRows: result.failedRows,
+				}
+			: undefined,
+)
+
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
 	readonly anomaly: Effect.Effect<void, never, R>
@@ -239,6 +302,8 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
+	readonly prReviewPostMerge: Effect.Effect<void, never, R>
+	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
 }
 
@@ -253,10 +318,16 @@ export const selectScheduledProgram = <R>(
 ): Effect.Effect<void, never, R> =>
 	Match.value(cron).pipe(
 		Match.when("*/5 * * * *", () =>
-			Effect.all([ticks.anomaly, ticks.cloudflareAnalytics, ticks.planetScale], {
-				concurrency: 3,
-				discard: true,
-			}),
+			Effect.all(
+				[
+					ticks.anomaly,
+					ticks.cloudflareAnalytics,
+					ticks.planetScale,
+					ticks.railwayMetrics,
+					ticks.prReviewPostMerge,
+				],
+				{ concurrency: 4, discard: true },
+			),
 		),
 		Match.when("*/15 * * * *", () => ticks.digest),
 		Match.when("0 * * * *", () => ticks.serviceMapRollup),
@@ -285,10 +356,13 @@ type ScheduledServices =
 	| AnomalyDetectionService
 	| CloudflareAnalyticsService
 	| DigestService
+	| WebAnalyticsDigestService
 	| ErrorsService
 	| EscalationService
 	| FixVerificationTickService
 	| PlanetScaleService
+	| PrReviewPostMergeService
+	| RailwayMetricsService
 	| ServiceMapRollupService
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
@@ -300,6 +374,8 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
 	planetScale: planetScaleTick,
+	prReviewPostMerge: prReviewPostMergeTick,
+	railwayMetrics: railwayMetricsTick,
 	serviceMapRollup: serviceMapRollupTick,
 }
 
@@ -312,10 +388,15 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
  * one of the Worker's six outbound connection slots on a handshake; the
  * tick's statements now pipeline over one.
  */
-export const runScheduled = (cron: string, env: AlertingWorkerEnv): Effect.Effect<void, unknown> =>
+export const runScheduled = (
+	cron: string,
+	env: AlertingWorkerEnv,
+	email: Option.Option<EmailSenderClient>,
+	chatSessions: ChatSessionNamespace,
+): Effect.Effect<void, unknown> =>
 	withPgConnectionScope(selectScheduledProgram(cron, scheduledTicks)).pipe(
 		// One fire is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(buildLayer(env)),
+		Effect.provide(layerTick(env, email, chatSessions)),
 	)

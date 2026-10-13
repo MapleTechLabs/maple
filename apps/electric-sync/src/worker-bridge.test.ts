@@ -3,7 +3,7 @@ import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Exit, Layer, Schema, Scope } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 import { ElectricSyncRouter } from "./routes/shape.http"
 import {
 	noTenantLayer,

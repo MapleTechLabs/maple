@@ -1,6 +1,7 @@
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { SearchSessionsOutput } from "@maple/domain/mcp-outputs"
 import { searchSessions } from "@maple/query-engine/observability"
+import { SESSION_TAGS, sessionTagsOf } from "@maple/domain/query-engine"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
@@ -23,6 +24,7 @@ const filterArgs = (filters: Filters) => ({
 	country: filters.country,
 	device_type: filters.deviceType,
 	has_errors: filters.hasErrors,
+	tags: filters.tags,
 	duration_min_ms: filters.durationMinMs,
 	duration_max_ms: filters.durationMaxMs,
 	active_min_ms: filters.activeMinMs,
@@ -38,8 +40,9 @@ const filterArgs = (filters: Filters) => ({
 export function registerSearchSessionsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "search_sessions",
+		title: "Search Sessions",
 		description:
-			"Find browser session replays (end-user web sessions). Not AI agent sessions: those are `list_agent_sessions`. Filter by who (user_id, user_search, group_name), by client, by whether the session errored, by how long it lasted, or by what happened inside it (an event type, console level, HTTP status, URL, message or trace id). All filters are ANDed. Then `get_session_transcript` reads a session's events and `get_session_traces` lists the backend traces it produced.",
+			"Find browser session replays (end-user web sessions). Not AI agent sessions: those are `list_agent_sessions`. Filter by who (user_id, user_search, group_name), by client, by whether the session errored, by session type (tags: `engaged` drops bots, bounces, idle tabs and glances), by how long it lasted, or by what happened inside it (an event type, console level, HTTP status, URL, message or trace id). All filters are ANDed. Then `get_session_transcript` reads a session's events and `get_session_traces` lists the backend traces it produced.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			// Session metadata filters (who / where / how long)
@@ -54,7 +57,11 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			browser: P.optionalText("Exact match on browser name (e.g. Chrome)"),
 			country: P.optionalText("Only sessions from this country (two-letter ISO code, e.g. DE)"),
 			device_type: P.optionalText("Exact match on device type (e.g. desktop, mobile)"),
-			has_errors: P.optionalFlag("Only sessions with at least one recorded error"),
+			has_errors: P.optionalFlag("Only sessions with at least one recorded error event"),
+			tags: P.optionalOneOfList(
+				SESSION_TAGS,
+				"Only sessions carrying every one of these tags, so pass at most one quality tier. Quality tiers (exactly one per session): bot, bounce (<5s, no clicks), idle (one page, no clicks), glance (one page, <=2 clicks, <30s), engaged (everything else). Traits: signed_in, new_visitor.",
+			),
 			duration_min_ms: P.optionalNumber("Only sessions at least this long (ms)"),
 			duration_max_ms: P.optionalNumber("Only sessions at most this long (ms)"),
 			active_min_ms: P.optionalNumber(
@@ -88,8 +95,19 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			// Whether any in-session event predicate is active: drives the Matches column. Uses
 			// `!== undefined` to match the query layer's `needsEventFilter`, so `http_status_min=0`
 			// applies the INNER JOIN in SQL and the column alike.
+			// The replay row's ErrorCount is 0 for most SDKs, so `has_errors` alone reads recorded
+			// error events instead; with another event_type it keeps the row-count filter.
+			const errorsViaEvents = params.has_errors === true && params.event_type === undefined
+			const eventType = errorsViaEvents ? "error" : params.event_type
+			const errorTypeOnly =
+				eventType === "error" &&
+				params.level === undefined &&
+				params.http_status_min === undefined &&
+				params.url_contains === undefined &&
+				params.message_contains === undefined &&
+				params.trace_id === undefined
 			const eventFiltered =
-				params.event_type !== undefined ||
+				eventType !== undefined ||
 				params.level !== undefined ||
 				params.http_status_min !== undefined ||
 				params.url_contains !== undefined ||
@@ -99,10 +117,10 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				userId: params.user_id ?? "any",
-				eventType: params.event_type ?? "any",
-				limit: lim,
-				offset: off,
+				"maple.ai.user_id": params.user_id ?? "any",
+				"maple.ai.event_type": params.event_type ?? "any",
+				"maple.ai.limit": lim,
+				"maple.ai.offset": off,
 			})
 
 			const sessions = yield* withTenantExecutor(
@@ -116,12 +134,13 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 					browser: params.browser,
 					country: params.country,
 					deviceType: params.device_type,
-					hasErrors: params.has_errors,
+					hasErrors: errorsViaEvents ? undefined : params.has_errors,
+					tags: params.tags,
 					durationMinMs: params.duration_min_ms,
 					durationMaxMs: params.duration_max_ms,
 					activeTimeMinMs: params.active_min_ms,
 					activeTimeMaxMs: params.active_max_ms,
-					eventType: params.event_type,
+					eventType,
 					eventLevel: params.level,
 					eventMinStatus: params.http_status_min,
 					eventUrlSearch: params.url_contains,
@@ -146,20 +165,22 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 					userEmail: s.userEmail,
 					groupId: s.groupId,
 					groupName: s.groupName,
-					startTime: s.startTime,
-					durationMs: s.durationMs != null ? Number(s.durationMs) : null,
+					startTime: DateTime.formatIso(s.startTime),
+					durationMs: s.durationMs != null ? s.durationMs : null,
 					status: s.status,
 					browserName: s.browserName,
 					osName: s.osName,
 					deviceType: s.deviceType,
 					country: s.country,
 					serviceName: s.serviceName,
-					pageViews: Number(s.pageViews),
-					clickCount: Number(s.clickCount),
-					errorCount: Number(s.errorCount),
-					traceCount: Number(s.traceCount),
+					pageViews: s.pageViews,
+					clickCount: s.clickCount,
+					// A pure error-event match counts the session's error events; trust it over a 0 column.
+					errorCount: errorTypeOnly ? Math.max(s.errorCount, s.matchCount ?? 0) : s.errorCount,
+					traceCount: s.traceCount,
 					urlInitial: truncate(s.urlInitial, 256),
-					...(eventFiltered ? { matchCount: Number(s.matchCount ?? 0) } : undefined),
+					tags: sessionTagsOf(s),
+					...(eventFiltered ? { matchCount: s.matchCount ?? 0 } : undefined),
 				})),
 				pagination: {
 					offset: off,
@@ -176,6 +197,9 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 					...(params.country === undefined ? undefined : { country: params.country }),
 					...(params.device_type === undefined ? undefined : { deviceType: params.device_type }),
 					...(params.has_errors === undefined ? undefined : { hasErrors: params.has_errors }),
+					...(params.tags === undefined || params.tags.length === 0
+						? undefined
+						: { tags: params.tags }),
 					...(params.duration_min_ms === undefined
 						? undefined
 						: { durationMinMs: params.duration_min_ms }),
@@ -213,6 +237,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 				"Device",
 				"Country",
 				"Errors",
+				"Tags",
 				"Entry URL",
 			]
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
@@ -249,6 +274,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 											device || "—",
 											s.country || "—",
 											s.errorCount > 0 ? String(s.errorCount) : "",
+											s.tags.join(" "),
 											truncate(s.urlInitial, 60),
 										]
 										return eventFiltered ? [...row, String(s.matchCount ?? 0)] : row

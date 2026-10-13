@@ -1,3 +1,6 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { META_CHIP_CLASS } from "./anomaly-format"
 import { Link } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { AnomalyIncidentDocument, ErrorIssueId } from "@maple/domain/http"
@@ -9,10 +12,11 @@ import { ActorAvatar } from "@/components/errors/actor-chip"
 import { shortIssueId } from "@/components/errors/issue-id"
 import { WorkflowBadge } from "@/components/errors/workflow-badge"
 import { ArrowRightIcon, LinkIcon, XmarkIcon } from "@/components/icons"
-import { formatNumber } from "@maple/ui/lib/format"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 
 export function AnomalyLinkedIssueCard({
 	incident,
@@ -37,13 +41,13 @@ export function AnomalyLinkedIssueCard({
 								: "Escalate this anomaly by linking it to an existing error issue."}
 						</p>
 						{incident.fingerprintHash !== null ? (
-							<code className="inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+							<InlineCode className="inline-block px-1.5 py-0.5 text-2xs text-muted-foreground">
 								fingerprint {incident.fingerprintHash}
-							</code>
+							</InlineCode>
 						) : null}
 					</div>
 					<Button size="sm" variant="outline" onClick={onOpenLinkDialog} disabled={busy}>
-						<LinkIcon size={13} />
+						<LinkIcon />
 						Link issue
 					</Button>
 				</div>
@@ -109,15 +113,12 @@ function LinkedIssueBody({
 										<code className="font-mono text-xs tabular-nums text-muted-foreground">
 											{shortIssueId(issue.id)}
 										</code>
-										<span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-border/70 bg-background px-2 text-[11px] text-muted-foreground">
-											<ServiceDot
-												serviceName={issue.serviceName}
-												className="size-1.5"
-											/>
+										<Badge variant="meta" pill size="sm" className={META_CHIP_CLASS}>
+											<ServiceDot serviceName={issue.serviceName} size="sm" />
 											<span className="max-w-[140px] truncate">
 												{issue.serviceName}
 											</span>
-										</span>
+										</Badge>
 									</div>
 									<p className="min-w-0 truncate font-medium text-foreground">
 										{issue.exceptionType || "Unknown error"}
@@ -129,7 +130,8 @@ function LinkedIssueBody({
 									</p>
 									<div className="flex items-center gap-3 text-xs text-muted-foreground">
 										<span className="tabular-nums">
-											{formatNumber(issue.occurrenceCount)} events
+											{formatNumber(issue.occurrenceCount)}{" "}
+											{pluralize(issue.occurrenceCount, "event")}
 										</span>
 										<span className="flex items-center gap-1.5">
 											<ActorAvatar actor={issue.leaseHolder ?? issue.assignedActor} />
@@ -171,20 +173,14 @@ function IssueCardActions({
 				render={<Link to="/errors/issues/$issueId" params={{ issueId }} />}
 			>
 				Open issue
-				<ArrowRightIcon size={13} />
+				<ArrowRightIcon />
 			</Button>
-			<Button
-				size="sm"
-				variant="ghost"
-				onClick={onOpenLinkDialog}
-				disabled={busy}
-				title="Link a different issue"
-			>
-				<LinkIcon size={13} />
-			</Button>
-			<Button size="sm" variant="ghost" onClick={onUnlink} disabled={busy} title="Unlink issue">
-				<XmarkIcon size={13} />
-			</Button>
+			<IconButton onClick={onOpenLinkDialog} disabled={busy} label="Link a different issue">
+				<LinkIcon />
+			</IconButton>
+			<IconButton onClick={onUnlink} disabled={busy} label="Unlink issue">
+				<XmarkIcon />
+			</IconButton>
 		</div>
 	)
 }

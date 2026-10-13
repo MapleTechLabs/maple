@@ -26,7 +26,7 @@ java \
   -jar build/libs/app.jar
 ```
 
-Replace `MAPLE_TEST` with the project's real Maple ingest key once it exists. Keep the flags inline where the JVM is launched (`Procfile`, `Dockerfile`, `systemd` unit, or `JAVA_TOOL_OPTIONS`). Do not move them behind unset env vars. The agent does not read Spring's `application.yml`.
+Replace `MAPLE_TEST` with the project's real Maple ingest key once it exists. EU organizations use `https://ingest.eu.maple.dev` as the endpoint. Keep the flags inline where the JVM is launched (`Procfile`, `Dockerfile`, `systemd` unit, or `JAVA_TOOL_OPTIONS`). Do not move them behind unset env vars. The agent does not read Spring's `application.yml`.
 
 The agent auto-instruments Spring (Boot, MVC, WebFlux), Servlet containers, Apache HttpClient, OkHttp, JDBC, R2DBC, Hibernate, Kafka, gRPC, AWS SDK, and many more.
 
@@ -55,8 +55,8 @@ Where the agent can't run (GraalVM native image, embedded JVM, sealed module pat
 
 ```java
 public final class Telemetry {
-    private static final String MAPLE_ENDPOINT = "https://ingest.maple.dev";
-    private static final String MAPLE_KEY = "MAPLE_TEST"; // set by maple-onboard skill on pairing
+    private static final String MAPLE_ENDPOINT = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
+    private static final String MAPLE_KEY = "MAPLE_TEST"; // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
     public static OpenTelemetrySdk init() {
         var headers = Map.of("authorization", "Bearer " + MAPLE_KEY);

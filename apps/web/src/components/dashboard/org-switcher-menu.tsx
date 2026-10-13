@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react"
+import { lazy, Suspense, useState, type ReactElement } from "react"
 import { useOrganization, useOrganizationList } from "@clerk/clerk-react"
 import { CheckIcon, PlusIcon } from "@/components/icons"
 import {
@@ -10,11 +10,19 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
-import { CreateOrganizationDialog } from "./create-organization-dialog"
 import { organizationHomeRegion, organizationRegionOpen } from "@maple/domain/organization-regions"
 import { RegionBadge } from "@/components/region/region-badge"
 import { currentRegion, hasMultipleRegions, regionAppUrl } from "@/lib/region"
 import { NamespaceScopeSubmenu } from "./namespace-scope-menu"
+import { Avatar, AvatarFallback, AvatarImage } from "@maple/ui/components/ui/avatar"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { initialsFrom } from "@maple/ui/lib/initials"
+import { cn } from "@maple/ui/lib/utils"
+
+// Opened from a menu item, so its form, radio group and validation stay out of startup.
+const CreateOrganizationDialog = lazy(() =>
+	import("./create-organization-dialog").then((module) => ({ default: module.CreateOrganizationDialog })),
+)
 
 export function OrgAvatar({
 	name,
@@ -29,20 +37,19 @@ export function OrgAvatar({
 	 * "contain" shows the full logo undistorted (used in the settings preview). */
 	fit?: "cover" | "contain"
 }) {
-	const initial = name.charAt(0).toUpperCase()
-	const baseClass = className ?? "size-8"
-	return imageUrl ? (
-		<img
-			src={imageUrl}
-			alt={name}
-			className={`${baseClass} shrink-0 rounded-md ${fit === "contain" ? "object-contain" : "object-cover"}`}
-		/>
-	) : (
-		<div
-			className={`${baseClass} flex shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-semibold`}
-		>
-			{initial}
-		</div>
+	return (
+		<Avatar className={cn("size-8 rounded-md bg-transparent", className)}>
+			{imageUrl && (
+				<AvatarImage
+					src={imageUrl}
+					alt={name}
+					className={fit === "contain" ? "object-contain" : "object-cover"}
+				/>
+			)}
+			<AvatarFallback className="rounded-[inherit] bg-primary text-primary-foreground text-xs font-semibold">
+				{initialsFrom(name)}
+			</AvatarFallback>
+		</Avatar>
 	)
 }
 
@@ -102,7 +109,9 @@ export function ClerkOrgSwitcherMenu({
 									name={mem.organization.name}
 									imageUrl={mem.organization.imageUrl}
 								/>
-								<span className="truncate">{mem.organization.name}</span>
+								<span className="truncate" title={mem.organization.name}>
+									{mem.organization.name}
+								</span>
 								{hasMultipleRegions &&
 									!organizationRegionOpen(
 										mem.organization.publicMetadata,
@@ -116,17 +125,24 @@ export function ClerkOrgSwitcherMenu({
 									)}
 								{organization?.id === mem.organization.id && (
 									<CheckIcon
-										size={16}
 										className={hasMultipleRegions ? undefined : "ml-auto"}
 									/>
 								)}
 							</DropdownMenuItem>
 						))}
+						{userMemberships?.hasNextPage && (
+							<LoadMoreButton
+								variant="ghost"
+								className="w-full text-xs"
+								loading={userMemberships.isFetching}
+								onClick={() => userMemberships.fetchNext?.()}
+							/>
+						)}
 					</DropdownMenuGroup>
 					<DropdownMenuSeparator />
 					<DropdownMenuGroup>
 						<DropdownMenuItem onClick={() => setShowCreateDialog(true)}>
-							<PlusIcon size={16} />
+							<PlusIcon />
 							Create Organization
 						</DropdownMenuItem>
 					</DropdownMenuGroup>
@@ -134,7 +150,9 @@ export function ClerkOrgSwitcherMenu({
 				</DropdownMenuContent>
 			</DropdownMenu>
 
-			<CreateOrganizationDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+			<Suspense fallback={null}>
+				{showCreateDialog && <CreateOrganizationDialog open onOpenChange={setShowCreateDialog} />}
+			</Suspense>
 		</>
 	)
 }

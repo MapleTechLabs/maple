@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2, V2OnboardingChecklist } from "@maple/domain/http/v2"
 import {
@@ -11,7 +11,7 @@ import {
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Env } from "@maple/backend/platform/Env"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -72,6 +72,7 @@ const report = (status: OnboardingChecklistEvaluation["status"]): OnboardingChec
 		{ id: "create_alert_rule", completed: status !== "in_progress", optional: false },
 		{ id: "connect_mcp_agent", completed: status !== "in_progress", optional: false },
 		{ id: "invite_teammate", completed: false, optional: true },
+		{ id: "join_slack_channel", completed: false, optional: true },
 	],
 	completedCount: status === "in_progress" ? 2 : 4,
 	totalCount: 4,
@@ -122,7 +123,7 @@ const makeHarness = (status: OnboardingChecklistEvaluation["status"]) => {
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
@@ -192,7 +193,9 @@ describe("GET /v2/onboarding/checklist", () => {
 				"create_alert_rule",
 				"connect_mcp_agent",
 				"invite_teammate",
+				"join_slack_channel",
 			])
+			expect(checklist.steps.at(-1)?.href).toBe("/?support=slack_channel")
 			expect(checklist.steps[1]).toEqual({
 				object: "onboarding_checklist_step",
 				id: "connect_github",

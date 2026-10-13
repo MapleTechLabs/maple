@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
@@ -14,6 +14,7 @@ import {
 	TraceId,
 } from "../primitives"
 import {
+	AttributeFilter,
 	QueryEngineExecuteBatchRequest,
 	QueryEngineExecuteBatchResponse,
 	QueryEngineExecuteRequest,
@@ -32,6 +33,7 @@ import {
 	PathsDirection,
 	PathsInclude,
 } from "@maple/query-model"
+import { WireRow } from "../wire"
 
 /**
  * A timeseries bucket width.
@@ -160,31 +162,9 @@ export class ErrorsByTypeResponse extends Schema.Class<ErrorsByTypeResponse>("Er
 	),
 }) {}
 
-export class ErrorsTimeseriesRequest extends Schema.Class<ErrorsTimeseriesRequest>("ErrorsTimeseriesRequest")(
-	{
-		startTime: TinybirdDateTime,
-		endTime: TinybirdDateTime,
-		fingerprintHash: FingerprintHash,
-		services: OptionalServiceNames,
-		bucketSeconds: Schema.optional(BucketSeconds),
-	},
-) {}
-
-export class ErrorsTimeseriesResponse extends Schema.Class<ErrorsTimeseriesResponse>(
-	"ErrorsTimeseriesResponse",
-)({
-	data: Schema.Array(
-		Schema.Struct({
-			bucket: Schema.String,
-			count: Schema.Number,
-		}),
-	),
-}) {}
-
 /**
  * Bucketed counts for MANY fingerprints at once — the trend shape drawn on
- * every row of the unified errors list. `ErrorsTimeseriesRequest` answers the
- * same question for a single fingerprint on its detail page.
+ * every row of the unified errors list.
  */
 export class ErrorsSparkRequest extends Schema.Class<ErrorsSparkRequest>("ErrorsSparkRequest")({
 	startTime: TinybirdDateTime,
@@ -294,7 +274,7 @@ export class ServiceOverviewRequest extends Schema.Class<ServiceOverviewRequest>
 
 export class ServiceOverviewResponse extends Schema.Class<ServiceOverviewResponse>("ServiceOverviewResponse")(
 	{
-		data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+		data: Schema.Array(WireRow),
 	},
 ) {}
 
@@ -374,7 +354,7 @@ export class ServiceDependenciesRequest extends Schema.Class<ServiceDependencies
 export class ServiceDependenciesResponse extends Schema.Class<ServiceDependenciesResponse>(
 	"ServiceDependenciesResponse",
 )({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 }) {}
 
 export class ServiceDbEdgesRequest extends Schema.Class<ServiceDbEdgesRequest>("ServiceDbEdgesRequest")({
@@ -384,7 +364,7 @@ export class ServiceDbEdgesRequest extends Schema.Class<ServiceDbEdgesRequest>("
 }) {}
 
 export class ServiceDbEdgesResponse extends Schema.Class<ServiceDbEdgesResponse>("ServiceDbEdgesResponse")({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 }) {}
 
 // Cloudflare direct-integration Workers analytics, one row per Worker
@@ -403,7 +383,7 @@ export class ServiceCloudflareStatsRequest extends Schema.Class<ServiceCloudflar
 export class ServiceCloudflareStatsResponse extends Schema.Class<ServiceCloudflareStatsResponse>(
 	"ServiceCloudflareStatsResponse",
 )({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 }) {}
 
 // PlanetScale scraped-metrics rollups for the service map: one row per
@@ -423,7 +403,7 @@ export class ServicePlanetScaleStatsRequest extends Schema.Class<ServicePlanetSc
 export class ServicePlanetScaleStatsResponse extends Schema.Class<ServicePlanetScaleStatsResponse>(
 	"ServicePlanetScaleStatsResponse",
 )({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 }) {}
 
 // PlanetScale infrastructure page (/infra/planetscale): bucketed health
@@ -447,7 +427,32 @@ export class PlanetScaleInfraTimeseriesRequest extends Schema.Class<PlanetScaleI
 export class PlanetScaleInfraTimeseriesResponse extends Schema.Class<PlanetScaleInfraTimeseriesResponse>(
 	"PlanetScaleInfraTimeseriesResponse",
 )({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
+}) {}
+
+// Railway infrastructure page (/infra/railway): `railway.*` gauges from the Railway poller.
+export class RailwayInfraServicesRequest extends Schema.Class<RailwayInfraServicesRequest>(
+	"RailwayInfraServicesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+export class RailwayInfraServiceTimeseriesRequest extends Schema.Class<RailwayInfraServiceTimeseriesRequest>(
+	"RailwayInfraServiceTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	/** Railway service ids are shared across a project's environments, so both are required. */
+	environmentId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+	serviceId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+}) {}
+
+export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsResponse>(
+	"RailwayInfraRowsResponse",
+)({
+	data: Schema.Array(WireRow),
 }) {}
 
 // Cloudflare infrastructure page (/infra/cloudflare): per-zone HTTP edge
@@ -494,7 +499,7 @@ export class CloudflareInfraZonesRequest extends Schema.Class<CloudflareInfraZon
 export class CloudflareInfraZonesResponse extends Schema.Class<CloudflareInfraZonesResponse>(
 	"CloudflareInfraZonesResponse",
 )({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 	ignoredFilters: IgnoredFilters,
 }) {}
 
@@ -510,7 +515,7 @@ export class CloudflareInfraZoneTimeseriesRequest extends Schema.Class<Cloudflar
 export class CloudflareInfraZoneTimeseriesResponse extends Schema.Class<CloudflareInfraZoneTimeseriesResponse>(
 	"CloudflareInfraZoneTimeseriesResponse",
 )({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 	ignoredFilters: IgnoredFilters,
 }) {}
 
@@ -530,9 +535,9 @@ export class CloudflareInfraZoneDetailRequest extends Schema.Class<CloudflareInf
 export class CloudflareInfraZoneDetailResponse extends Schema.Class<CloudflareInfraZoneDetailResponse>(
 	"CloudflareInfraZoneDetailResponse",
 )({
-	statusBuckets: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	cacheBuckets: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	latencyBuckets: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	statusBuckets: Schema.Array(WireRow),
+	cacheBuckets: Schema.Array(WireRow),
+	latencyBuckets: Schema.Array(WireRow),
 	/** Applies to the status/cache charts. */
 	ignoredFilters: IgnoredFilters,
 	/** Latency gauges carry only `quantile`, so every dimension filter is inapplicable there. */
@@ -549,7 +554,7 @@ export class CloudflareInfraWorkersRequest extends Schema.Class<CloudflareInfraW
 export class CloudflareInfraWorkersResponse extends Schema.Class<CloudflareInfraWorkersResponse>(
 	"CloudflareInfraWorkersResponse",
 )({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 }) {}
 
 // Zone detail page, extended sections: firewall/WAF events and DNS analytics —
@@ -570,8 +575,8 @@ export class CloudflareInfraZoneSecurityRequest extends Schema.Class<CloudflareI
 export class CloudflareInfraZoneSecurityResponse extends Schema.Class<CloudflareInfraZoneSecurityResponse>(
 	"CloudflareInfraZoneSecurityResponse",
 )({
-	buckets: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	top: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	buckets: Schema.Array(WireRow),
+	top: Schema.Array(WireRow),
 	ignoredFilters: IgnoredFilters,
 }) {}
 
@@ -588,8 +593,8 @@ export class CloudflareInfraZoneDnsRequest extends Schema.Class<CloudflareInfraZ
 export class CloudflareInfraZoneDnsResponse extends Schema.Class<CloudflareInfraZoneDnsResponse>(
 	"CloudflareInfraZoneDnsResponse",
 )({
-	buckets: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	names: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	buckets: Schema.Array(WireRow),
+	names: Schema.Array(WireRow),
 	ignoredFilters: IgnoredFilters,
 }) {}
 
@@ -623,8 +628,8 @@ export class CloudflareInfraZoneBreakdownRequest extends Schema.Class<Cloudflare
 export class CloudflareInfraZoneBreakdownResponse extends Schema.Class<CloudflareInfraZoneBreakdownResponse>(
 	"CloudflareInfraZoneBreakdownResponse",
 )({
-	totals: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	buckets: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	totals: Schema.Array(WireRow),
+	buckets: Schema.Array(WireRow),
 	/**
 	 * Zone requests in the window not attributed to any returned key — the poller's top-N fold plus
 	 * Cloudflare's own per-selection row cap. Never negative.
@@ -676,8 +681,8 @@ export class CloudflareInfraPlatformResourcesRequest extends Schema.Class<Cloudf
 export class CloudflareInfraPlatformResourcesResponse extends Schema.Class<CloudflareInfraPlatformResourcesResponse>(
 	"CloudflareInfraPlatformResourcesResponse",
 )({
-	queues: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	durableObjects: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	queues: Schema.Array(WireRow),
+	durableObjects: Schema.Array(WireRow),
 }) {}
 
 // Service-scoped variants for the service-detail page's Dependencies tab.
@@ -839,9 +844,9 @@ export class ServiceDependenciesBundleRequest extends Schema.Class<ServiceDepend
 export class ServiceDependenciesBundleResponse extends Schema.Class<ServiceDependenciesBundleResponse>(
 	"ServiceDependenciesBundleResponse",
 )({
-	dependencies: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	dbEdges: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	externalEdges: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	dependencies: Schema.Array(WireRow),
+	dbEdges: Schema.Array(WireRow),
+	externalEdges: Schema.Array(WireRow),
 }) {}
 
 export class ServiceDbQuerySummaryRequest extends Schema.Class<ServiceDbQuerySummaryRequest>(
@@ -972,9 +977,9 @@ export class ServiceMapBundleRequest extends Schema.Class<ServiceMapBundleReques
 export class ServiceMapBundleResponse extends Schema.Class<ServiceMapBundleResponse>(
 	"ServiceMapBundleResponse",
 )({
-	dependencies: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	dbEdges: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
-	overview: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	dependencies: Schema.Array(WireRow),
+	dbEdges: Schema.Array(WireRow),
+	overview: Schema.Array(WireRow),
 	platforms: Schema.Array(ServicePlatformRow),
 	workloads: Schema.Array(ServiceWorkloadRow),
 }) {}
@@ -991,7 +996,7 @@ export class ServiceUsageRequest extends Schema.Class<ServiceUsageRequest>("Serv
 }) {}
 
 export class ServiceUsageResponse extends Schema.Class<ServiceUsageResponse>("ServiceUsageResponse")({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 }) {}
 
 export class ServiceOperationsRequest extends Schema.Class<ServiceOperationsRequest>(
@@ -1111,11 +1116,17 @@ export class ListLogsRequest extends Schema.Class<ListLogsRequest>("ListLogsRequ
 	namespace: Schema.optional(ServiceNamespace),
 	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
 	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	// Predicates on `LogAttributes` / `ResourceAttributes`, the /logs "filter in / out" chips.
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	/** Scopes a log's surrounding context to one instance (`k8s.pod.name`, `service.instance.id`). */
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	limit: Schema.optional(Schema.Number),
+	/** `asc` reads oldest-first from `startTime`. Defaults to newest-first; `cursor` follows the order. */
+	order: Schema.optional(Schema.Literals(["asc", "desc"])),
 }) {}
 
 export class ListLogsResponse extends Schema.Class<ListLogsResponse>("ListLogsResponse")({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 }) {}
 
 // Exact-match lookup of one log by its composite key (logs have no primary id).
@@ -1136,7 +1147,7 @@ export class GetLogRequest extends Schema.Class<GetLogRequest>("GetLogRequest")(
 
 // `data` holds 0 or 1 rows — the requested log, or nothing if it aged out.
 export class GetLogResponse extends Schema.Class<GetLogResponse>("GetLogResponse")({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 }) {}
 
 export class ListMetricsRequest extends Schema.Class<ListMetricsRequest>("ListMetricsRequest")({
@@ -1150,7 +1161,7 @@ export class ListMetricsRequest extends Schema.Class<ListMetricsRequest>("ListMe
 }) {}
 
 export class ListMetricsResponse extends Schema.Class<ListMetricsResponse>("ListMetricsResponse")({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 }) {}
 
 export class MetricsSummaryRequest extends Schema.Class<MetricsSummaryRequest>("MetricsSummaryRequest")({
@@ -1269,27 +1280,6 @@ export class HostInfraTimeseriesResponse extends Schema.Class<HostInfraTimeserie
 	),
 	groupByAttributeKey: Schema.optional(Schema.String),
 	unit: Schema.Literals(["percent", "load", "bytes_per_second"]),
-}) {}
-
-export class FleetUtilizationTimeseriesRequest extends Schema.Class<FleetUtilizationTimeseriesRequest>(
-	"FleetUtilizationTimeseriesRequest",
-)({
-	startTime: TinybirdDateTime,
-	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.optional(BucketSeconds),
-}) {}
-
-export class FleetUtilizationTimeseriesResponse extends Schema.Class<FleetUtilizationTimeseriesResponse>(
-	"FleetUtilizationTimeseriesResponse",
-)({
-	data: Schema.Array(
-		Schema.Struct({
-			bucket: Schema.String,
-			avgCpu: Schema.Number,
-			avgMemory: Schema.Number,
-			activeHosts: Schema.Number,
-		}),
-	),
 }) {}
 
 // Kubernetes (pods / nodes / workloads)
@@ -1773,6 +1763,75 @@ export class WebAnalyticsBreakdownsResponse extends Schema.Class<WebAnalyticsBre
 	}),
 }) {}
 
+// Web Analytics AI tab: referrals under the page's filters, crawls under host/path only.
+
+export class WebAnalyticsAiReferralsRequest extends Schema.Class<WebAnalyticsAiReferralsRequest>(
+	"WebAnalyticsAiReferralsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: Schema.optional(BucketSeconds),
+	...WebAnalyticsFilterFields,
+}) {}
+
+export class WebAnalyticsAiReferralsResponse extends Schema.Class<WebAnalyticsAiReferralsResponse>(
+	"WebAnalyticsAiReferralsResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			/** An `AI_PRODUCTS` id from `@maple/domain/ai-traffic`. */
+			product: Schema.String,
+			sessions: Schema.Number,
+		}),
+	),
+}) {}
+
+export class WebAnalyticsAiCrawlersRequest extends Schema.Class<WebAnalyticsAiCrawlersRequest>(
+	"WebAnalyticsAiCrawlersRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	host: Schema.optional(Schema.String),
+	pagePath: Schema.optional(Schema.String),
+	pagesLimit: Schema.optional(RowLimit),
+}) {}
+
+export class WebAnalyticsAiCrawlersResponse extends Schema.Class<WebAnalyticsAiCrawlersResponse>(
+	"WebAnalyticsAiCrawlersResponse",
+)({
+	data: Schema.Struct({
+		crawlers: Schema.Array(
+			Schema.Struct({
+				/** An `AI_CRAWLERS` name from `@maple/domain/ai-traffic`. */
+				crawler: Schema.String,
+				requests: Schema.Number,
+				failedRequests: Schema.Number,
+				pages: Schema.Number,
+				lastSeen: Schema.String,
+			}),
+		),
+		formats: Schema.Array(
+			Schema.Struct({
+				format: Schema.Literals(["markdown", "llms", "html", "other"]),
+				requests: Schema.Number,
+				failedRequests: Schema.Number,
+				pages: Schema.Number,
+				crawlers: Schema.Array(Schema.String),
+			}),
+		),
+		pages: Schema.Array(
+			Schema.Struct({
+				host: Schema.String,
+				path: Schema.String,
+				requests: Schema.Number,
+				crawlers: Schema.Array(Schema.String),
+				lastSeen: Schema.String,
+			}),
+		),
+	}),
+}) {}
+
 // Product events — funnels
 //
 // Step-based conversion funnels over `product_events` (browser page views and
@@ -2059,6 +2118,34 @@ export class PodDetailSummaryResponse extends Schema.Class<PodDetailSummaryRespo
 	),
 }) {}
 
+/**
+ * Container restarts for a set of pods, from the cluster receiver's
+ * `k8s.container.restarts`. One row per container; the pod list sends its page.
+ */
+export class PodRestartsRequest extends Schema.Class<PodRestartsRequest>("PodRestartsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	podNames: Schema.optional(StringArray),
+	namespace: Schema.optional(Schema.String),
+	limit: Schema.optional(Schema.Number),
+}) {}
+
+export class PodRestartsResponse extends Schema.Class<PodRestartsResponse>("PodRestartsResponse")({
+	data: Schema.Array(
+		Schema.Struct({
+			podName: Schema.String,
+			namespace: Schema.String,
+			containerName: Schema.String,
+			/** Restarts inside the window (last - first of the running total, floored at 0). */
+			restarts: Schema.Number,
+			/** The running total at the window's newest sample. */
+			totalRestarts: Schema.Number,
+			/** Why the container last terminated (OOMKilled, Error, ...); empty when it never has. */
+			lastTerminatedReason: Schema.String,
+		}),
+	),
+}) {}
+
 export class PodInfraTimeseriesRequest extends Schema.Class<PodInfraTimeseriesRequest>(
 	"PodInfraTimeseriesRequest",
 )({
@@ -2094,6 +2181,18 @@ export class ListNodesRequest extends Schema.Class<ListNodesRequest>("ListNodesR
 	offset: Schema.optional(Schema.Number),
 }) {}
 
+// Allocatable is 0 when the k8s_cluster receiver did not report it; utilizations are
+// usage / allocatable fractions (0-1) and are 0 in that case.
+const NodeCapacityFields = {
+	cpuUsage: Schema.Number,
+	cpuAllocatable: Schema.Number,
+	cpuUtilization: Schema.Number,
+	memoryUsage: Schema.Number,
+	memoryAllocatable: Schema.Number,
+	memoryUtilization: Schema.Number,
+	uptime: Schema.Number,
+}
+
 const NodeRow = Schema.Struct({
 	nodeName: Schema.String,
 	nodeUid: Schema.String,
@@ -2101,8 +2200,7 @@ const NodeRow = Schema.Struct({
 	environment: Schema.String,
 	kubeletVersion: Schema.String,
 	lastSeen: Schema.String,
-	cpuUsage: Schema.Number,
-	uptime: Schema.Number,
+	...NodeCapacityFields,
 })
 
 export class ListNodesResponse extends Schema.Class<ListNodesResponse>("ListNodesResponse")({
@@ -2145,8 +2243,7 @@ export class NodeDetailSummaryResponse extends Schema.Class<NodeDetailSummaryRes
 			containerRuntime: Schema.String,
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
-			cpuUsage: Schema.Number,
-			uptime: Schema.Number,
+			...NodeCapacityFields,
 		}),
 	),
 }) {}
@@ -2157,7 +2254,7 @@ export class NodeInfraTimeseriesRequest extends Schema.Class<NodeInfraTimeseries
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	nodeName: Schema.String,
-	metric: Schema.Literals(["cpu_usage", "uptime"]),
+	metric: Schema.Literals(["cpu_usage", "cpu_utilization", "memory_usage", "memory_utilization", "uptime"]),
 	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
@@ -2171,7 +2268,7 @@ export class NodeInfraTimeseriesResponse extends Schema.Class<NodeInfraTimeserie
 			value: Schema.Number,
 		}),
 	),
-	unit: Schema.Literals(["cores", "seconds"]),
+	unit: Schema.Literals(["cores", "percent", "bytes", "seconds"]),
 }) {}
 
 export class ListWorkloadsRequest extends Schema.Class<ListWorkloadsRequest>("ListWorkloadsRequest")({
@@ -2325,7 +2422,7 @@ export class RawSqlExecuteRequest extends Schema.Class<RawSqlExecuteRequest>("Ra
 }) {}
 
 export class RawSqlExecuteResponse extends Schema.Class<RawSqlExecuteResponse>("RawSqlExecuteResponse")({
-	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	data: Schema.Array(WireRow),
 	meta: Schema.Struct({
 		rowCount: Schema.Number,
 		columns: Schema.Array(Schema.String),
@@ -2368,7 +2465,7 @@ export class QueryEngineValidationError extends HttpTaggedError<QueryEngineValid
 ) {}
 
 /**
- * Legacy v1 contract member. Production query execution now preserves the
+ * Internal-API contract member. Production query execution now preserves the
  * underlying warehouse tag, so v2 endpoints must not advertise this wrapper.
  */
 export class QueryEngineExecutionError extends HttpTaggedError<QueryEngineExecutionError>()(
@@ -2477,13 +2574,6 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
-		HttpApiEndpoint.post("errorsTimeseries", "/errors-timeseries", {
-			payload: ErrorsTimeseriesRequest,
-			success: ErrorsTimeseriesResponse,
-			error: queryEngineEndpointErrors,
-		}),
-	)
-	.add(
 		HttpApiEndpoint.post("errorsSpark", "/errors-spark", {
 			payload: ErrorsSparkRequest,
 			success: ErrorsSparkResponse,
@@ -2557,6 +2647,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("planetscaleInfraTimeseries", "/planetscale-infra-timeseries", {
 			payload: PlanetScaleInfraTimeseriesRequest,
 			success: PlanetScaleInfraTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("railwayInfraServices", "/railway-infra-services", {
+			payload: RailwayInfraServicesRequest,
+			success: RailwayInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("railwayInfraServiceTimeseries", "/railway-infra-service-timeseries", {
+			payload: RailwayInfraServiceTimeseriesRequest,
+			success: RailwayInfraRowsResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)
@@ -2752,13 +2856,6 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
-		HttpApiEndpoint.post("fleetUtilizationTimeseries", "/fleet-utilization-timeseries", {
-			payload: FleetUtilizationTimeseriesRequest,
-			success: FleetUtilizationTimeseriesResponse,
-			error: queryEngineEndpointErrors,
-		}),
-	)
-	.add(
 		HttpApiEndpoint.post("listPods", "/list-pods", {
 			payload: ListPodsRequest,
 			success: ListPodsResponse,
@@ -2776,6 +2873,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("podDetailSummary", "/pod-detail-summary", {
 			payload: PodDetailSummaryRequest,
 			success: PodDetailSummaryResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("podRestarts", "/pod-restarts", {
+			payload: PodRestartsRequest,
+			success: PodRestartsResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)
@@ -2930,6 +3034,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("webAnalyticsBreakdowns", "/web-analytics-breakdowns", {
 			payload: WebAnalyticsBreakdownsRequest,
 			success: WebAnalyticsBreakdownsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("webAnalyticsAiReferrals", "/web-analytics-ai-referrals", {
+			payload: WebAnalyticsAiReferralsRequest,
+			success: WebAnalyticsAiReferralsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("webAnalyticsAiCrawlers", "/web-analytics-ai-crawlers", {
+			payload: WebAnalyticsAiCrawlersRequest,
+			success: WebAnalyticsAiCrawlersResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

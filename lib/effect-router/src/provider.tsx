@@ -1,8 +1,8 @@
 import { RouterProvider, type AnyRouter, type RouterOptions } from "@tanstack/react-router"
 import { RegistryContext, useAtomMount, useAtomValue } from "@effect/atom-react"
-import type { AtomRegistry } from "effect/unstable/reactivity"
-import type { Atom } from "effect/unstable/reactivity"
-import type * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import type { AtomRegistry } from "effect/reactivity"
+import type { Atom } from "effect/reactivity"
+import type * as AsyncResult from "effect/reactivity/AsyncResult"
 
 /**
  * Props for the EffectRouterProvider component.

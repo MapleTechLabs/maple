@@ -16,7 +16,7 @@ import { Spinner } from "@maple/ui/components/ui/spinner"
 
 import { shortIssueId } from "@/components/errors/issue-id"
 import { WorkflowRingIcon } from "@/components/icons"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 
@@ -128,9 +128,11 @@ function DialogContent({
 										<code className="font-mono tabular-nums">
 											{shortIssueId(issue.id)}
 										</code>
-										<span className="tabular-nums">
-											{formatRelativeTime(issue.lastSeenAt)}
-										</span>
+										<RelativeTime
+											value={issue.lastSeenAt}
+											tooltip="title"
+											className="tabular-nums"
+										/>
 									</span>
 								</CommandItem>
 							))}

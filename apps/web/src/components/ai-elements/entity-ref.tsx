@@ -22,7 +22,6 @@ export function TraceRef({ traceId, className }: { traceId: string; className?: 
 			params={{ traceId }}
 			target="_blank"
 			rel="noreferrer"
-			title={traceId}
 			className={cn("font-mono text-foreground", REF_CLASS, className)}
 		>
 			{traceId}
@@ -37,7 +36,6 @@ export function ServiceRef({ name, className }: { name: string; className?: stri
 			params={{ serviceName: name }}
 			target="_blank"
 			rel="noreferrer"
-			title={name}
 			className={cn("text-foreground", REF_CLASS, className)}
 		>
 			{name}

@@ -17,7 +17,7 @@ import {
 	usePlotChromeColors,
 	usePlotColors,
 	verticalGradient,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { type TanstackRenderer, plotRendererFor } from "@/lab/bench/tanstack/renderer-arm"
@@ -27,9 +27,9 @@ interface ThroughputBenchRow extends OverviewBenchRow {
 }
 
 const THROUGHPUT_TOKENS = {
-	throughput: ["--chart-throughput", "#3b82f6"],
-	error: ["--chart-error", "#ef4444"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	throughput: "--chart-throughput",
+	error: "--chart-error",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * TanStack port of `packages/ui/src/components/charts/area/throughput-area-chart.tsx`,
@@ -78,14 +78,14 @@ export const TanstackThroughputAreaChart = memo(function TanstackThroughputAreaC
 				label: "Throughput",
 				color: colors.throughput,
 				value: (row: ThroughputBenchRow) => row.throughput,
-				format: (value) => `${Number(value).toLocaleString()}${rateLabel}`,
+				format: (value) => `${value.toLocaleString()}${rateLabel}`,
 			},
 			{
 				label: "Errors",
 				color: colors.error,
 				dashed: true,
 				value: (row: ThroughputBenchRow) => row.errorThroughput,
-				format: (value) => `${Number(value).toLocaleString()}${rateLabel}`,
+				format: (value) => `${value.toLocaleString()}${rateLabel}`,
 			},
 		],
 		[colors],

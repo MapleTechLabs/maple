@@ -59,7 +59,7 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Changelog",
 		"",
-		`Maple product updates, month by month. The index enumerates every release. ${CONVENTION("changelog")}`,
+		`Maple product updates, one entry per shipped change. The index enumerates every entry. ${CONVENTION("changelog")}`,
 		"",
 		...both("Changelog index", "/changelog"),
 		`- [RSS feed](${url("/changelog/rss.xml")})`,
@@ -104,6 +104,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [Guides index](${url("/guides")})`,
 		`- [What is APM, and why is it important?](${url("/guides/what-is-apm")})`,
 		`- [What is Apdex, and how do you use the score?](${url("/guides/what-is-apdex")})`,
+		`- [Uptime monitoring with traces and HTTP checks](${url("/guides/uptime-monitoring")})`,
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
@@ -137,7 +138,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- Homebrew: \`brew install Makisuo/tap/maple\``,
 		`- Install script: \`curl -fsSL ${url("/cli/install")} | sh\` ([source](${url("/cli/install")}))`,
 		`- [Releases on GitHub](${GITHUB_URL}/releases)`,
-		`- [CLI reference](${url("/docs/local-mode/cli-reference.md")})`,
+		`- [CLI reference](${url("/docs/reference/cli.md")})`,
 		"",
 
 		"## SDKs and instrumentation",

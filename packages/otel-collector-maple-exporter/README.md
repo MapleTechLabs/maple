@@ -67,15 +67,15 @@ record, the static `org_id` from config is used as a fallback.
 ```yaml
 # Single-tenant deploy — typical case
 exporters:
-  maple:
-    org_id: org_3AuiNCIuD1XCbbzcjkzE3s5HoQj
-    # everything stamped with that org_id
+    maple:
+        org_id: org_3AuiNCIuD1XCbbzcjkzE3s5HoQj
+        # everything stamped with that org_id
 
 # Multi-tenant fan-out
 exporters:
-  maple:
-    org_id: org_default                              # fallback
-    org_id_from_resource_attribute: maple_org_id     # per-record override
+    maple:
+        org_id: org_default # fallback
+        org_id_from_resource_attribute: maple_org_id # per-record override
 ```
 
 ## Building

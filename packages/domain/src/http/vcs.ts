@@ -44,7 +44,7 @@ export type VcsBranchId = Schema.Schema.Type<typeof VcsBranchId>
  * (40 hex = git's SHA-1 object format; git's experimental SHA-256 object format
  * — 64 hex — is a known, currently-unused limitation across every git host.)
  */
-const GitCommitShaBrand = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)).pipe(
+const GitCommitShaBrand = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u)).pipe(
 	Schema.brand("@maple/GitCommitSha"),
 )
 export const GitCommitSha = Schema.String.pipe(
@@ -321,7 +321,8 @@ export const PullRequestReviewPublication = Schema.Struct({
 	checkName: Schema.String,
 	title: Schema.String,
 	summary: Schema.String,
-	conclusion: Schema.Literals(["success", "neutral"]),
+	/** `failure` only for a repository that asked to block on a broken telemetry contract. */
+	conclusion: Schema.Literals(["success", "neutral", "failure"]),
 	annotations: Schema.Array(PullRequestCheckAnnotation),
 	/**
 	 * The one summary comment the review keeps on the pull request. `marker` is a hidden line the
@@ -591,6 +592,25 @@ export const PullRequestCommentJob = Schema.Struct({
 })
 export type PullRequestCommentJob = Schema.Schema.Type<typeof PullRequestCommentJob>
 
+/**
+ * A person ticked or unticked "Before merge" steps on a review comment. Mapped from an `edited`
+ * comment the App wrote, only when the edit changed at least one box.
+ */
+export const PullRequestChecklistJob = Schema.Struct({
+	kind: Schema.Literal("pull-request-checklist"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	repoFullName: Schema.String,
+	number: Schema.Number,
+	commentId: Schema.String,
+	/** Who edited the comment. */
+	editorLogin: Schema.String,
+	ticks: Schema.Array(Schema.Struct({ key: Schema.String, done: Schema.Boolean })),
+	deliveryId: Schema.optionalKey(Schema.String),
+})
+export type PullRequestChecklistJob = Schema.Schema.Type<typeof PullRequestChecklistJob>
+
 /** A pull request's head as the reviewer needs it to answer, and to commit a fix. */
 export const PullRequestHead = Schema.Struct({
 	number: Schema.Number,
@@ -617,6 +637,7 @@ export const VcsSyncJob = Schema.Union([
 	BranchEventJob,
 	PullRequestEventJob,
 	PullRequestCommentJob,
+	PullRequestChecklistJob,
 ])
 export type VcsSyncJob = Schema.Schema.Type<typeof VcsSyncJob>
 

@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { makeProductEvents, toProductEventLine } from "./ProductEventsService"
 
 interface Captured {

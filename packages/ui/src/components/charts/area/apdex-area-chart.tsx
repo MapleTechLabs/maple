@@ -21,7 +21,7 @@ import {
 	usePlotLegendSlot,
 	verticalGradient,
 	type FixedMetricSeries,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotTooltipSeries,
 	type TimeseriesRow,
 } from "../../plot"
@@ -40,8 +40,8 @@ const FILL_OPACITY = 0.6
 
 /** Module scope — see `usePlotColors` on why a fresh literal defeats the memo. */
 const APDEX_TOKENS = {
-	apdexScore: ["--chart-apdex", "#3fb27f"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	apdexScore: "--chart-apdex",
+} as const satisfies Record<string, PlotColorSource>
 
 // Memoized: these charts sit in synced grids whose parent rerenders on every
 // atom/query settle; with stable props the whole chart subtree is skipped.

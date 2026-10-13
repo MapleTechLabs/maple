@@ -5,11 +5,13 @@ import { FormEvent, useState } from "react"
 import { Schema } from "effect"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
+import { Field, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { setSelfHostedSessionToken } from "@/lib/services/common/self-hosted-auth"
 import { AccountLayout } from "@/components/layout/account-layout"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { clerkAuthCardAppearance } from "@/lib/clerk-appearance"
 import { tracedFetch } from "@/lib/services/common/telemetry"
 
@@ -58,25 +60,21 @@ async function loginSelfHosted(password: string) {
 
 export function SelfHostedSignInPage() {
 	const [password, setPassword] = useState("")
-	const [isSubmitting, setIsSubmitting] = useState(false)
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-	const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault()
-		if (isSubmitting) return
-
-		setIsSubmitting(true)
+	const [submit, isSubmitting] = useAsyncAction(async () => {
 		setErrorMessage(null)
+		await loginSelfHosted(password)
+			.then((result) => {
+				setSelfHostedSessionToken(result.token)
+				redirectToDashboard()
+			})
+			.catch((error: unknown) => setErrorMessage(getErrorMessage(error)))
+	})
 
-		try {
-			const result = await loginSelfHosted(password)
-			setSelfHostedSessionToken(result.token)
-			redirectToDashboard()
-		} catch (error) {
-			setErrorMessage(getErrorMessage(error))
-		} finally {
-			setIsSubmitting(false)
-		}
+	const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault()
+		if (!isSubmitting) void submit()
 	}
 
 	return (
@@ -93,17 +91,11 @@ export function SelfHostedSignInPage() {
 				<form className="space-y-6" onSubmit={onSubmit}>
 					{/* Label and field are one group: the gap between them stays tighter
 					 * than the gap to the next control, or the pairing stops reading. */}
-					<div className="space-y-2">
-						<label
-							htmlFor="root-password"
-							className="block font-mono font-medium text-xs tracking-[0.02em]"
-						>
+					<Field invalid={Boolean(errorMessage)} className="items-stretch">
+						<FieldLabel className="font-mono text-xs sm:text-xs tracking-[0.02em]">
 							Root password
-						</label>
+						</FieldLabel>
 						<Input
-							id="root-password"
-							aria-invalid={Boolean(errorMessage)}
-							aria-describedby={errorMessage ? "login-error" : undefined}
 							type="password"
 							value={password}
 							onChange={(event) => setPassword(event.target.value)}
@@ -112,13 +104,13 @@ export function SelfHostedSignInPage() {
 							required
 						/>
 						{errorMessage ? (
-							<p id="login-error" role="alert" className="font-mono text-destructive text-xs">
+							<FieldError match role="alert" className="font-mono">
 								{errorMessage}
-							</p>
+							</FieldError>
 						) : null}
-					</div>
-					<Button type="submit" className="w-full" disabled={isSubmitting}>
-						{isSubmitting ? "Signing in\u2026" : "Sign in"}
+					</Field>
+					<Button type="submit" className="w-full" loading={isSubmitting}>
+						Sign in
 					</Button>
 				</form>
 			</div>

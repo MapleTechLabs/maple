@@ -47,22 +47,18 @@ export const parseStoredDashboard = (
 	const fromVersion = detectSchemaVersion(payload)
 
 	return decodeDocument(migrateToLatest(payload)).pipe(
-		Effect.map(
-			(document): DashboardParseOutcome => ({
-				_tag: "Decoded",
-				document,
+		Effect.map((document): DashboardParseOutcome => ({
+			_tag: "Decoded",
+			document,
+			fromVersion,
+			degradedWidgetIds: [],
+		})),
+		Effect.catchTag("SchemaError", (error): Effect.Effect<DashboardParseOutcome> =>
+			Effect.succeed({
+				_tag: "Rejected",
 				fromVersion,
-				degradedWidgetIds: [],
+				issue: formatIssue(error.issue),
 			}),
-		),
-		Effect.catchTag(
-			"SchemaError",
-			(error): Effect.Effect<DashboardParseOutcome> =>
-				Effect.succeed({
-					_tag: "Rejected",
-					fromVersion,
-					issue: formatIssue(error.issue),
-				}),
 		),
 	)
 }

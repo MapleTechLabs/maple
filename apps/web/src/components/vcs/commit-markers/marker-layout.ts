@@ -1,5 +1,6 @@
 // Pure geometry + derivation for the chart's commit deploy markers. Kept free of
 // React/recharts so it unit-tests cleanly and the overlay component stays thin.
+import { shortId } from "@maple/ui/lib/ids"
 
 /** A row of the per-bucket release timeline (one per distinct commit per bucket). */
 export interface ReleasePoint {
@@ -69,7 +70,7 @@ export function estimateLabelWidth(label: string, commitCount: number): number {
 // (tag, version, arbitrary `vcs.ref.head.revision`) is already a meaningful short id
 // and is shown verbatim — the renderer CSS-truncates only if it's genuinely too long.
 function shortLabel(sha: string): string {
-	return /^[0-9a-f]{40}$/i.test(sha) ? sha.slice(0, 7) : sha
+	return /^[0-9a-f]{40}$/i.test(sha) ? shortId(sha, "sha") : sha
 }
 
 // Tolerates ISO ("…T…Z") and Tinybird ("YYYY-MM-DD HH:mm:ss", treated as UTC).

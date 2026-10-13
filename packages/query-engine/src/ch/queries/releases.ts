@@ -5,13 +5,20 @@
 // `CommitSha` and key on it, so every row here is a GROUP BY over the same
 // splice the services list already reads. Nothing scans the raw traces table.
 
-import { Schema } from "effect"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param, from, type CHQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
-import { ErrorEventsByTime, ServiceOverviewSpans } from "../tables"
+import { type DateTime, Schema } from "effect"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import {
+	param,
+	from,
+	fromQuery,
+	type CHQuery,
+	type CompiledQueryRowSchema,
+} from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import { ErrorEventsByTime, ServiceOverviewSpans, orgIdParam, utcSecondsParam } from "../tables"
 import { CHNumber } from "../schema"
+import { DateTimeUtcFromWarehouse } from "../../datetime"
 import { serviceOverviewWhereConditions } from "./query-helpers"
 import { serviceOverviewWindows, serviceWindowTiersForBucket } from "./services"
 
@@ -44,7 +51,7 @@ export interface ReleasesListOutput {
 	readonly serviceName: string
 	readonly environment: string
 	readonly commitSha: string
-	readonly firstSeen: string
+	readonly firstSeen: DateTime.Utc
 	readonly spanCount: number
 	readonly errorCount: number
 	readonly p50LatencyMs: number
@@ -58,7 +65,7 @@ export const releasesListRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	environment: Schema.String,
 	commitSha: Schema.String,
-	firstSeen: Schema.String,
+	firstSeen: DateTimeUtcFromWarehouse,
 	// `CHNumber`, never `Schema.Number`: UInt64 counts arrive quoted on a
 	// gateway that refuses `output_format_json_quote_64bit_integers=0`.
 	spanCount: CHNumber,
@@ -141,7 +148,7 @@ export interface ReleasesTimelineOpts {
 }
 
 export interface ReleasesTimelineOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly serviceName: string
 	readonly commitSha: string
 	readonly count: number
@@ -226,16 +233,8 @@ export interface ReleaseErrorFingerprintsOpts {
 export interface ReleaseErrorFingerprintsOutput {
 	readonly fingerprintHash: string
 	readonly count: number
-	readonly firstSeen: string
+	readonly firstSeen: DateTime.Utc
 }
-
-export const releaseErrorFingerprintsRowSchema = Schema.Struct({
-	// `toString()`-wrapped in the SELECT: a UInt64 hash above 2^53 corrupts as
-	// a JS number.
-	fingerprintHash: Schema.String,
-	count: CHNumber,
-	firstSeen: Schema.String,
-}) satisfies CompiledQueryRowSchema<ReleaseErrorFingerprintsOutput>
 
 export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts) {
 	return from(ErrorEventsByTime)
@@ -245,15 +244,111 @@ export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts
 			firstSeen: CH.min_($.Timestamp),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(opts.serviceName),
 			$.ServiceVersion.eq(param.string("serviceVersion")),
-			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
 			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
 		])
 		.groupBy("fingerprintHash")
 		.orderBy(["count", "desc"])
 		.limit(opts.limit ?? 50)
+		.format("JSON")
+}
+
+// Service deployments
+//
+// The releases list plus when each version last served, for deploy
+// verification in one call. `lastSeen` is the start of the last bucket the
+// version had traffic in: minute precision without the hourly tier, hour
+// precision for hours wholly inside the window with it.
+
+export interface ServiceDeploymentsOpts {
+	readonly serviceName?: string
+	readonly environments?: readonly string[]
+	/** Read minutely buckets for the whole window so `lastSeen` is minute-exact. */
+	readonly minutePrecision: boolean
+	readonly limit?: number
+	/** Versions kept per (service, environment), most recently serving first. */
+	readonly perServiceLimit?: number
+}
+
+export interface ServiceDeploymentsOutput extends ReleasesListOutput {
+	readonly lastSeen: DateTime.Utc
+}
+
+export const serviceDeploymentsRowSchema = Schema.Struct({
+	...releasesListRowSchema.fields,
+	lastSeen: DateTimeUtcFromWarehouse,
+}) satisfies CompiledQueryRowSchema<ServiceDeploymentsOutput>
+
+export const DEPLOYMENTS_PER_SERVICE_CAP = 20
+
+type DeploymentKey = keyof ServiceDeploymentsOutput
+
+const deploymentColumns = <A extends { readonly [K in DeploymentKey]: unknown }>(
+	$: A,
+): Pick<A, DeploymentKey> => ({
+	serviceName: $.serviceName,
+	environment: $.environment,
+	commitSha: $.commitSha,
+	firstSeen: $.firstSeen,
+	lastSeen: $.lastSeen,
+	spanCount: $.spanCount,
+	errorCount: $.errorCount,
+	p50LatencyMs: $.p50LatencyMs,
+	p95LatencyMs: $.p95LatencyMs,
+	p99LatencyMs: $.p99LatencyMs,
+	apdexSatisfiedCount: $.apdexSatisfiedCount,
+	apdexToleratingCount: $.apdexToleratingCount,
+})
+
+export function serviceDeploymentsQuery(opts: ServiceDeploymentsOpts) {
+	const versions = serviceOverviewWindows(
+		{ serviceName: opts.serviceName, environments: opts.environments },
+		{ grain: "minute", includeHourly: !opts.minutePrecision },
+	)
+		.select(($) => ({
+			serviceName: $.bServiceName,
+			environment: $.bEnvironment,
+			commitSha: $.bCommitSha,
+			firstSeen: CH.min_($.bFirstSeen),
+			lastSeen: CH.max_($.bBucket),
+			spanCount: CH.sum($.bSpanCount),
+			errorCount: CH.sum($.bErrorCount),
+			p50LatencyMs: CH.rawExpr(
+				"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000",
+				T.float64,
+			),
+			p95LatencyMs: CH.rawExpr(
+				"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000",
+				T.float64,
+			),
+			p99LatencyMs: CH.rawExpr(
+				"arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000",
+				T.float64,
+			),
+			apdexSatisfiedCount: CH.sum($.bApdexSatisfiedCount),
+			apdexToleratingCount: CH.sum($.bApdexToleratingCount),
+		}))
+		.where(($) => [CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS)])
+		.groupBy("serviceName", "environment", "commitSha")
+
+	// Rank inside each (service, environment) so one fast-deploying service
+	// cannot crowd the others out of the global limit.
+	const ranked = fromQuery(versions, "versions").select(($) => ({
+		...deploymentColumns($),
+		versionRank: CH.rawExpr(
+			"row_number() OVER (PARTITION BY serviceName, environment ORDER BY lastSeen DESC, firstSeen DESC)",
+			T.uint64,
+		),
+	}))
+
+	return fromQuery(ranked, "ranked")
+		.select(($) => deploymentColumns($))
+		.where(($) => [$.versionRank.lte(opts.perServiceLimit ?? DEPLOYMENTS_PER_SERVICE_CAP)])
+		.orderBy(["serviceName", "asc"], ["firstSeen", "desc"])
+		.limit(opts.limit ?? RELEASES_LIST_CAP)
 		.format("JSON")
 }

@@ -70,6 +70,11 @@ export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 	"list_metrics",
 	"audit_setup",
 	"get_instrumentation_recommendations",
+	// Production facts the kickoff states: traffic per route, deploys, and the errors in changed files.
+	"route_usage",
+	"service_deployments",
+	"find_errors",
+	"error_detail",
 ]
 
 /** A reply reads what a review reads; its only writes are its own completion tools. */

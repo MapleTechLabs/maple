@@ -2,6 +2,7 @@ import { strictEqual } from "node:assert"
 import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { Effect } from "effect"
 import { describe, it } from "vitest"
 import {
 	ensureEventConsumerToken,
@@ -15,8 +16,8 @@ describe("local event consumer authorization", () => {
 		const dataDir = join(parent, "data")
 		mkdirSync(dataDir)
 		try {
-			const first = await ensureEventConsumerToken(dataDir)
-			const second = await ensureEventConsumerToken(dataDir)
+			const first = await Effect.runPromise(ensureEventConsumerToken(dataDir))
+			const second = await Effect.runPromise(ensureEventConsumerToken(dataDir))
 			strictEqual(first.length, 64)
 			strictEqual(second, first)
 			strictEqual(statSync(eventConsumerTokenPath(dataDir)).mode & 0o777, 0o600)
@@ -36,7 +37,7 @@ describe("local event consumer authorization", () => {
 			symlinkSync(join(parent, "target"), eventConsumerTokenPath(dataDir))
 			let message = ""
 			try {
-				await ensureEventConsumerToken(dataDir)
+				await Effect.runPromise(ensureEventConsumerToken(dataDir))
 			} catch (error) {
 				message = error instanceof Error ? error.message : String(error)
 			}

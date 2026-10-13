@@ -1,12 +1,15 @@
 import { Children, createContext, isValidElement, use, useRef, type ReactNode } from "react"
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { httpStatusTone } from "@maple/ui/lib/http"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { LATENCY_TEXT_TONE, latencyLevel } from "@maple/ui/lib/latency-tone"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { ServiceRef, TraceRef } from "./entity-ref"
 import { useKnownServices } from "./known-services"
 import { classifyCell, columnRole, type CellValue } from "./table-cell-value"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /**
  * The table Streamdown renders for a markdown table in an assistant reply.
@@ -70,11 +73,11 @@ export function MarkdownTable({ children, className, node: _node, ...props }: Ma
 		<HeadersContext value={headers.current}>
 			{/* The frame lives on a wrapper because `Table` gives its own scroll
 			    container no class hook, and the radius has to clip the header fill. */}
-			<div className="my-3 overflow-hidden rounded-lg border border-border bg-card">
+			<Panel className="my-3">
 				<Table className={cn("text-xs", className)} {...props}>
 					{children}
 				</Table>
-			</div>
+			</Panel>
 		</HeadersContext>
 	)
 }
@@ -169,14 +172,9 @@ function CellValueView({ value }: { value: Exclude<CellValue, { kind: "plain" }>
 					{value.text}
 				</span>
 			)
-		case "status": {
-			const tone =
-				value.code >= 500
-					? "text-severity-error"
-					: value.code >= 400
-						? "text-severity-warn"
-						: "text-muted-foreground"
-			return <span className={cn("font-mono", tone)}>{value.text}</span>
-		}
+		case "status":
+			return (
+				<span className={cn("font-mono", TONE_TEXT[httpStatusTone(value.code)])}>{value.text}</span>
+			)
 	}
 }

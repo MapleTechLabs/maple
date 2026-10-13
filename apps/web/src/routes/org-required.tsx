@@ -43,10 +43,10 @@ function OrgRequiredPageClerk() {
 
 	return (
 		<AuthLayout maxWidth="max-w-lg">
-			<h1 className="text-xl font-semibold">Organization required</h1>
-			<p className="mt-2 text-sm text-muted-foreground">
+			<AuthLayout.Title>Organization required</AuthLayout.Title>
+			<AuthLayout.Description>
 				Select or create an organization before entering the app.
-			</p>
+			</AuthLayout.Description>
 			<div className="mt-4">
 				<ClerkOrgSwitcherMenu
 					trigger={<Button variant="outline">Select or create organization</Button>}

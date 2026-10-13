@@ -23,6 +23,7 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
+import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 import { AiTriageService } from "@maple/backend/services/errors/AiTriageService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
@@ -38,10 +39,13 @@ import { CloudflareAnalyticsService } from "@maple/backend/services/integrations
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
+import { CancellationReviewService } from "@maple/backend/services/cancellation-review/CancellationReviewService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
@@ -50,21 +54,26 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { DemoService } from "@maple/backend/services/org/DemoService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
+import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
 /** Services consumed by HTTP routes; each service owns its implementation dependencies. */
 export const HttpServicesLive = Layer.mergeAll(
@@ -84,13 +93,16 @@ export const HttpServicesLive = Layer.mergeAll(
 	HazelOAuthService.layer,
 	OnboardingService.layer,
 	OnboardingChecklistService.layer,
+	SupportChannelService.layer,
 	OrgIngestKeysService.layer,
 	OrgClickHouseSettingsService.layer,
 	TinybirdOrgTokenService.layer,
 	OrganizationService.layer,
 	MobileDevicesService.layer,
+	AgentFeedbackService.layer,
 	LiveActivitiesService.layer,
 	PlanetScaleWebhookQueue.layer,
+	CancellationReviewService.layer,
 	ScrapeTargetsService.layer,
 	PlanetScaleConnectionService.layer,
 	PlanetScaleService.layer,
@@ -100,9 +112,12 @@ export const HttpServicesLive = Layer.mergeAll(
 	ProductEventsService.layer,
 	DailySpendService.layer,
 	CloudflareAnalyticsService.layer,
+	RailwayMetricsService.layer,
+	OrgOpenRouterKeyService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
+	TelemetryReadService.layer,
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,
@@ -123,9 +138,12 @@ export const HttpServicesLive = Layer.mergeAll(
 	RecommendationIssueService.layer,
 	SetupAuditService.layer,
 	SignalPresenceService.layer,
+	SessionReplayReadService.layer,
 	DigestService.layer,
+	WebAnalyticsDigestService.layer,
 	DemoService.layer,
 	GithubConnectService.layer,
+	PrReviewAnalyticsService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,

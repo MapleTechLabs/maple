@@ -68,7 +68,9 @@ const isDefaultSort = (sort: AgentSessionsSort) =>
 	sort.sortBy === DEFAULT_SORT.sortBy && sort.sortDir === DEFAULT_SORT.sortDir
 
 /** The order a URL names, with either half it leaves off taken from the default. */
-export function agentSessionsSort(search: Pick<AgentSessionsSearchState, "sortBy" | "sortDir">): AgentSessionsSort {
+export function agentSessionsSort(
+	search: Pick<AgentSessionsSearchState, "sortBy" | "sortDir">,
+): AgentSessionsSort {
 	return {
 		sortBy: search.sortBy ?? DEFAULT_SORT.sortBy,
 		sortDir: search.sortDir ?? DEFAULT_SORT.sortDir,

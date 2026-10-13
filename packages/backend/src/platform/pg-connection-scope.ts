@@ -7,8 +7,8 @@ import {
 } from "@maple/db/client"
 import { trackOutboundSlot } from "@maple/cache"
 import { Context, Effect, Exit, Option, Schema, Scope, Semaphore } from "effect"
-import type * as Reactivity from "effect/unstable/reactivity/Reactivity"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import type * as Reactivity from "effect/reactivity/Reactivity"
+import type { SqlError } from "effect/sql/SqlError"
 import { MapleDbConnection } from "./bindings"
 import {
 	type DatabaseError,
@@ -89,7 +89,7 @@ export class PgConnectionScope extends Context.Reference<PgConnectionScopeApi | 
  * a span can name it as something other than a driver fault.
  */
 export class PgConnectionScopeClosedError extends Schema.TaggedError<PgConnectionScopeClosedError>()(
-	"@maple/api/platform/PgConnectionScopeClosedError",
+	"@maple/backend/platform/PgConnectionScopeClosedError",
 	{ message: Schema.String },
 ) {}
 

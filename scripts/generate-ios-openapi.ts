@@ -31,7 +31,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { OpenApi } from "effect/unstable/httpapi"
+import { OpenApi } from "effect/http-api"
 import { MapleApiV2 } from "../packages/domain/src/http/v2/api"
 
 /**

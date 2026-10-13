@@ -106,8 +106,8 @@ export function copyTooltipText(
 
 export interface CopyIndicatorProps {
 	status: CopyStatus
-	/** Rendered size in px. Matches the `size` prop on the icon components. */
-	size?: number
+	/** Glyph size in px, the same `iconSize` that `CopyButton` takes. */
+	iconSize?: number
 	/** Icon for the resting state — pass `LinkIcon` for share-a-URL affordances,
 	 * or whatever else the callsite is copying. Only the idle glyph is the
 	 * callsite's to pick; the success check and failure X are fixed. */
@@ -127,7 +127,7 @@ export interface CopyIndicatorProps {
  */
 export function CopyIndicator({
 	status,
-	size = 14,
+	iconSize = 14,
 	idleIcon: Idle = CopyIcon,
 	className,
 }: CopyIndicatorProps): React.ReactElement {
@@ -136,18 +136,18 @@ export function CopyIndicator({
 			aria-hidden="true"
 			data-copy-status={status}
 			className={cn("group/copy grid shrink-0", className)}
-			style={{ height: size, width: size }}
+			style={{ height: iconSize, width: iconSize }}
 		>
 			<span className={cn(LAYER, LAYER_ACTIVE.idle)}>
-				<Idle size={size} />
+				<Idle size={iconSize} />
 			</span>
 
 			<span className={cn(LAYER, LAYER_ACTIVE.copied, "text-severity-info")}>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					viewBox="0 0 24 24"
-					width={size}
-					height={size}
+					width={iconSize}
+					height={iconSize}
 					fill="none"
 					aria-hidden="true"
 					className={FULL_STRENGTH}
@@ -167,8 +167,8 @@ export function CopyIndicator({
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					viewBox="0 0 24 24"
-					width={size}
-					height={size}
+					width={iconSize}
+					height={iconSize}
 					fill="none"
 					aria-hidden="true"
 					className={FULL_STRENGTH}
@@ -286,7 +286,7 @@ export function CopyButton({
 			}}
 			{...props}
 		>
-			<CopyIndicator status={status} size={iconSize} idleIcon={idleIcon} />
+			<CopyIndicator status={status} iconSize={iconSize} idleIcon={idleIcon} />
 			{withLabel && (
 				<CopyLabel
 					labels={[

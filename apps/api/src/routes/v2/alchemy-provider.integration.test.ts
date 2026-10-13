@@ -12,8 +12,8 @@ import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
  */
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { FetchHttpClient, HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -36,7 +36,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -113,8 +113,9 @@ const makeHarness = () => {
 	const runtimeLive = Layer.succeed(AlertRuntime, {
 		now: Effect.sync(() => Date.now()),
 		makeUuid: () => crypto.randomUUID(),
-		fetch: globalThis.fetch,
 		deliveryTimeoutMs: () => 15_000,
+		schedulerTickBudgetMs: () => 25_000,
+		schedulerEvalTimeoutMs: () => 15_000,
 	})
 	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
 	const emailLive = Layer.succeed(EmailService, {
@@ -133,6 +134,7 @@ const makeHarness = () => {
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
@@ -145,6 +147,7 @@ const makeHarness = () => {
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
@@ -188,7 +191,7 @@ const makeHarness = () => {
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),

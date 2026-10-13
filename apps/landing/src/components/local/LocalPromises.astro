@@ -5,9 +5,9 @@
  * Each item is a promise plus the mechanism that makes it true, including the
  * two places where "standalone" needs a qualifier: the dashboard page loads
  * from local.maple.dev by default (data never goes there; `--offline` removes
- * even that), and manual installs check GitHub for a newer release once a day
- * (opt out with an env var). Saying both up front is what makes the rest
- * believable.
+ * even that), manual installs check GitHub for a newer release once a day,
+ * and the CLI exports its own telemetry (each opts out with an env var).
+ * Saying these up front is what makes the rest believable.
  */
 const promises: Array<{ title: string; body: string }> = [
 	{
@@ -20,7 +20,7 @@ const promises: Array<{ title: string; body: string }> = [
 	},
 	{
 		title: "Works with no internet",
-		body: "With `--offline` everything, including the UI, comes out of the binary. The only other network call is a once-a-day check for a newer release. Homebrew installs skip it, and `MAPLE_NO_UPDATE_CHECK=1` turns it off.",
+		body: "With `--offline` everything, including the UI, comes out of the binary. The CLI still reports its own usage and errors to Maple unless you set `MAPLE_TELEMETRY=off`, and checks for a newer release once a day unless you set `MAPLE_NO_UPDATE_CHECK=1` (Homebrew installs skip the check).",
 	},
 	{
 		title: "You own the files",

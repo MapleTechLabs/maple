@@ -17,7 +17,7 @@ import {
 	trimEmptyTrailingBuckets,
 	usePlotColors,
 	useTimeseriesModel,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotTooltipSeries,
 	type TimeseriesRow,
 	type TimeseriesSeries,
@@ -52,8 +52,8 @@ const DIMMED_PARTIAL_FILL_OPACITY = 0.15
  * literal because `OTHER_COLOR` is a `var()` and canvas cannot read one.
  */
 const BAR_TOKENS = {
-	other: ["--muted-foreground", "#a1a1aa"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	other: "--muted-foreground",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * One bar: a bucket, a series, and the value where the two meet.

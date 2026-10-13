@@ -16,10 +16,10 @@ import {
 	WarehouseScopeError,
 	WarehouseUpstreamError,
 } from "@maple/domain/http"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { rawCompiledQuery } from "@maple/query-engine/ch"
-import { parseStatement, type ClickHouseStatement } from "@maple-dev/effect-clickhouse/sql"
+import { parseStatement, type ClickHouseStatement } from "@maple-dev/effect-orm/sql"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import {
 	makeWarehouseExecutor,
@@ -361,6 +361,23 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 			assert.instanceOf(getError(exit), WarehouseConfigError)
 			assert.isFalse(constructed)
 		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("ClickHouse-protocol session settings", () => {
+	it("pins UTC on BYO ClickHouse and chDB, never on the Tinybird gateway", () => {
+		assert.deepStrictEqual(__testables.clickHouseSessionSettings("clickhouse"), {
+			output_format_json_quote_64bit_integers: 0,
+			session_timezone: "UTC",
+		})
+		assert.deepStrictEqual(__testables.clickHouseSessionSettings("chdb"), {
+			output_format_json_quote_64bit_integers: 0,
+			session_timezone: "UTC",
+		})
+		// Tinybird rejects `session_timezone` as a restricted setting.
+		assert.deepStrictEqual(__testables.clickHouseSessionSettings("tinybird-gateway"), {
+			output_format_json_quote_64bit_integers: 0,
+		})
 	})
 })
 
@@ -1041,18 +1058,6 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 				{ op: "insert", kind: "tinybird" },
 			])
 		}).pipe(Effect.provide(layer))
-	})
-})
-
-describe("WarehouseUpstreamError surfaces transient classification", () => {
-	it("carries upstreamStatus on 503", () => {
-		// Sanity check that the constructor flow we depend on for retry is intact.
-		const err = new WarehouseUpstreamError({
-			pipeName: "test",
-			message: "upstream",
-			upstreamStatus: 503,
-		})
-		assert.strictEqual(err.upstreamStatus, 503)
 	})
 })
 

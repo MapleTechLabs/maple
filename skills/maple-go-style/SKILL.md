@@ -45,8 +45,8 @@ import (
 )
 
 const (
-	mapleEndpoint = "ingest.maple.dev"
-	mapleKey      = "MAPLE_TEST" // set by maple-onboard skill on pairing
+	mapleEndpoint = "ingest.maple.dev" // EU: ingest.eu.maple.dev
+	mapleKey      = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 )
 
 func Init(ctx context.Context) (shutdown func(context.Context) error, err error) {
@@ -120,11 +120,12 @@ Wire from `main`:
 ```go
 func main() {
 	ctx := context.Background()
-	shutdown, err := telemetry.Init(ctx)
-	if err != nil {
-		log.Fatal(err)
+	// A telemetry setup error is logged, never fatal: the app runs without export.
+	if shutdown, err := telemetry.Init(ctx); err != nil {
+		log.Printf("telemetry disabled: %v", err)
+	} else {
+		defer shutdown(ctx)
 	}
-	defer shutdown(ctx)
 
 	// app start
 }

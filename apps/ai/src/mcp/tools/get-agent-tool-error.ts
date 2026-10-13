@@ -58,6 +58,7 @@ const samplePayload = (text: string, bytes: number, retained: boolean): string =
 export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_agent_tool_error",
+		title: "Get Agent Tool Error",
 		description:
 			"One failure group of an AI agent tool call, as `get_agent_tools_overview tool=…` lists them with their `fingerprint`: the sessions that hit it, the message variants it folded, the models and services it fails under, and sample calls with their arguments and results.",
 		parameters: Schema.Struct({
@@ -108,9 +109,9 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				tool,
-				fingerprint: fingerprint.value,
-				limit: params.samples_limit,
+				"maple.ai.tools.tool": tool,
+				"maple.ai.tools.fingerprint": fingerprint.value,
+				"maple.ai.limit": params.samples_limit,
 			})
 
 			const scope = {

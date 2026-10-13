@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, Layer } from "effect"
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { TestClock } from "effect/testing"
 import type { InboundAction, InboundMessage } from "../../ingress"
 import { ChatOutboundError, ConnectorCredentials } from "../../outbound"

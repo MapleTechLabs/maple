@@ -3,7 +3,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { beforeEach, vi } from "vitest"
 import { Effect, Schema } from "effect"
-import { OpenApi } from "effect/unstable/httpapi"
+import { OpenApi } from "effect/http-api"
 import {
 	MapleApiV2,
 	V2SessionReplay,
@@ -17,8 +17,8 @@ const mocks = vi.hoisted(() => ({ fetch: vi.fn<typeof globalThis.fetch>() }))
 vi.mock("./effect-utils", async () => {
 	const actual = await vi.importActual<typeof import("./effect-utils")>("./effect-utils")
 	const { Effect, Layer } = await import("effect")
-	const { FetchHttpClient } = await import("effect/unstable/http")
-	const { HttpApiClient } = await import("effect/unstable/httpapi")
+	const { FetchHttpClient } = await import("effect/http")
+	const { HttpApiClient } = await import("effect/http-api")
 	const { MapleApiV2 } = await import("@maple/domain/http/v2")
 	const { MapleApiV2AtomClient } = await import("@/lib/services/common/v2-atom-client")
 	const layer = Layer.effect(

@@ -8,4 +8,8 @@
 # purpose, but here an upgrade is a deliberate read of the release notes: the
 # storage format has changed across minors, and rolling back after the new
 # version has rewritten the shape cache re-snapshots every connected client.
-FROM electricsql/electric:1.7.12
+#
+# Built from upstream source into our own registry by publish-electric-image.yml:
+# upstream's Docker Hub repo was deleted (electric-sql/electric#4822). To upgrade,
+# run that workflow with the new version and pin the digest from its summary.
+FROM ghcr.io/mapletechlabs/maple/electric:1.7.12@sha256:d8a377eee0edeac0d4dbbd77c22b92c1ef601184722ea2b7da5b3381e3bb8e2c

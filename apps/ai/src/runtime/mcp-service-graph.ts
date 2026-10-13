@@ -5,6 +5,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
+import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
 import { PrReviewConversationService } from "@maple/backend/services/pr-review/PrReviewConversationService"
 
@@ -36,6 +37,9 @@ export const InvestigationServicesLive = Layer.mergeAll(
 	// agent, which the toolkit and the audit log both read off the tenant.
 	ErrorActorsService.layer,
 	InvestigationService.layer.pipe(Layer.provide(Env.layer)),
-	PrReviewService.layer.pipe(Layer.provide(Env.layer)),
-	PrReviewConversationService.layer.pipe(Layer.provide(Env.layer)),
+	// The review reads production telemetry through the warehouse, which caches at the edge.
+	PrReviewService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	PrReviewConversationService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	// The org's own OpenRouter key, when it holds the add-on; the add-on check reads the cached customer.
+	OrgOpenRouterKeyService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 )

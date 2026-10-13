@@ -1,4 +1,7 @@
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Panel } from "@maple/ui/components/ui/panel"
 import {
 	Combobox,
 	ComboboxContent,
@@ -143,7 +146,7 @@ export function FunnelStepBuilder({
 					disabled={steps.length >= maxSteps}
 					className="w-fit"
 				>
-					<PlusIcon size={14} />
+					<PlusIcon />
 					Add step
 					{steps.length >= maxSteps ? (
 						<span className="text-muted-foreground">(max {maxSteps})</span>
@@ -195,17 +198,12 @@ function StepRow({
 	const filterError = filterParse !== null && !filterParse.ok ? filterParse.error : null
 
 	return (
-		<div
-			className={cn(
-				"flex flex-col gap-1 rounded-md border bg-card",
-				compact ? "px-1.5 py-1" : "px-2 py-1.5",
-			)}
-		>
+		<Panel className={cn("gap-1 overflow-visible", compact ? "px-1.5 py-1" : "px-2 py-1.5")}>
 			<div className="flex items-center gap-1.5">
 				{!single && (
 					<span
 						className={cn(
-							"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-[10px] tabular-nums text-muted-foreground",
+							"grid shrink-0 place-items-center rounded-sm bg-muted font-mono text-3xs tabular-nums text-muted-foreground",
 							compact ? "size-5" : "size-6",
 						)}
 						aria-label={`Step ${index + 1}`}
@@ -276,11 +274,8 @@ function StepRow({
 								items={FUNNEL_SESSION_DIMENSION_LABEL}
 								value={step.dimension}
 								onValueChange={(value) => {
-									if (
-										value &&
-										FUNNEL_SESSION_DIMENSIONS.includes(value as FunnelSessionDimension)
-									) {
-										onChange({ ...step, dimension: value as FunnelSessionDimension })
+									if (value && FUNNEL_SESSION_DIMENSIONS.includes(value)) {
+										onChange({ ...step, dimension: value })
 									}
 								}}
 							>
@@ -313,44 +308,32 @@ function StepRow({
 
 				{!single && (
 					<div className="flex shrink-0 items-center">
-						<Button
-							type="button"
-							variant="ghost"
+						<IconButton
+							label="Move step up"
 							size="icon-xs"
 							onClick={onMoveUp}
 							disabled={index === 0}
-							aria-label="Move step up"
 						>
-							<ArrowUpIcon size={12} />
-						</Button>
-						<Button
-							type="button"
-							variant="ghost"
+							<ArrowUpIcon />
+						</IconButton>
+						<IconButton
+							label="Move step down"
 							size="icon-xs"
 							onClick={onMoveDown}
 							disabled={index === total - 1}
-							aria-label="Move step down"
 						>
-							<ArrowDownIcon size={12} />
-						</Button>
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-xs"
-							onClick={onRemove}
-							aria-label="Remove step"
-						>
-							<XmarkIcon size={12} />
-						</Button>
+							<ArrowDownIcon />
+						</IconButton>
+						<IconButton label="Remove step" size="icon-xs" onClick={onRemove}>
+							<XmarkIcon />
+						</IconButton>
 					</div>
 				)}
 			</div>
 			{eventStepFilter && step.kind === "event" ? (
 				<div className={cn("flex flex-col gap-0.5", compact ? "pl-6" : "pl-7")}>
 					<div className="flex items-center gap-1.5">
-						<span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
-							where
-						</span>
+						<Eyebrow className="shrink-0">where</Eyebrow>
 						{/* Attribute keys are the customer's own vocabulary, so the scope
 						    offers no keys and only `=`; the data source is the editor's
 						    required prop and is not consulted under this scope. */}
@@ -370,10 +353,10 @@ function StepRow({
 							ariaLabel={`Step ${index + 1} attribute filter`}
 						/>
 					</div>
-					{filterError ? <p className="text-[11px] text-destructive">{filterError}</p> : null}
+					{filterError ? <p className="text-2xs text-severity-error">{filterError}</p> : null}
 				</div>
 			) : null}
-		</div>
+		</Panel>
 	)
 }
 
@@ -446,7 +429,7 @@ function SuggestingInput({
 									{name}
 								</span>
 								{countOf.get(name) !== undefined ? (
-									<span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+									<span className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground">
 										{formatNumber(countOf.get(name)!)}
 									</span>
 								) : null}

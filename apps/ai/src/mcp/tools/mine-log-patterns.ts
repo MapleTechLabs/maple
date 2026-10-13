@@ -16,6 +16,7 @@ const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_LOG_PATTERN_MAX_HOU
 export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "mine_log_patterns",
+		title: "Mine Log Patterns",
 		description:
 			"Cluster log messages into templates (e.g. 'GET /api/users/<*> 200 in <*>ms') with counts and a per-template severity/service breakdown. Use when search_logs would return too many rows to read. It clusters a sample of the most recent matching logs, so pair it with a tight window and selective filters.",
 		parameters: Schema.Struct({
@@ -43,10 +44,10 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				severity: params.severity ?? "all",
-				sampleSize: params.sample_size,
-				limit: params.limit,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.severity": params.severity ?? "all",
+				"maple.ai.sample_size": params.sample_size,
+				"maple.ai.limit": params.limit,
 			})
 
 			const result = yield* mineLogPatterns({

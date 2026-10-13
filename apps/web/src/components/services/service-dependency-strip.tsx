@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -9,6 +10,9 @@ import { toSingleDeploymentEnv } from "@/lib/services/environments"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { DatabaseIcon, GlobeIcon, NetworkNodesIcon, PaperPlaneIcon } from "@/components/icons"
 import type { DependencyKind } from "./dependency-type-badge"
+import { ViewAllButton } from "./view-all-button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
 const STRIP_LIMIT = 8
 
@@ -106,12 +110,10 @@ export function ServiceDependencyStrip({
 
 	return (
 		<div
-			className={cn(
-				"flex flex-wrap items-center gap-x-2 gap-y-1.5 transition-opacity",
-				isWaiting && "opacity-60",
-			)}
+			className={cn("flex flex-wrap items-center gap-x-2 gap-y-1.5", refreshingClass(isWaiting))}
+			aria-busy={isWaiting || undefined}
 		>
-			<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Talks to</span>
+			<Eyebrow>Talks to</Eyebrow>
 			{visible.map((target) =>
 				target.kind === "service" ? (
 					<Link
@@ -136,13 +138,7 @@ export function ServiceDependencyStrip({
 					+{hiddenCount} more
 				</button>
 			) : null}
-			<button
-				type="button"
-				onClick={onViewAll}
-				className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-			>
-				View all →
-			</button>
+			<ViewAllButton onClick={onViewAll} />
 		</div>
 	)
 }
@@ -154,10 +150,9 @@ function DependencyChip({ target, onClick }: { target: StripTarget; onClick: () 
 			type="button"
 			onClick={onClick}
 			className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-			title={`${target.name} — see Dependencies tab`}
 		>
 			<Icon size={11} />
-			<span className="truncate">{target.name}</span>
+			<TruncatedText text={target.name} />
 		</button>
 	)
 }

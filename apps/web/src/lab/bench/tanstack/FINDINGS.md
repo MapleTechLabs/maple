@@ -58,13 +58,13 @@ that tightens its second overload; nothing in Maple tripped on it.
 
 **The bump does not buy performance.** Measured n=4 per version, both specs, alternating installs:
 
-| bench | 0.16.0 | 0.18.0 | verdict |
-| --- | --- | --- | --- |
-| overview sweep, svg (React ms) | 82.4 | 85.8 | noise (sd 5.9) |
-| overview sweep, canvas (React ms) | 78.4 | 76.3 | noise (sd 3.4) |
-| 22 of 23 `/lab/charts` arms | — | — | noise, identical commit counts |
-| `stacked-bar-production` (React ms) | 23.0 | **35.9** | **+56%, reproducible** |
-| `stacked-bar-production` (commits) | 24 | **40** | **+67%, stable across 4 runs each** |
+| bench                               | 0.16.0 | 0.18.0   | verdict                             |
+| ----------------------------------- | ------ | -------- | ----------------------------------- |
+| overview sweep, svg (React ms)      | 82.4   | 85.8     | noise (sd 5.9)                      |
+| overview sweep, canvas (React ms)   | 78.4   | 76.3     | noise (sd 3.4)                      |
+| 22 of 23 `/lab/charts` arms         | —      | —        | noise, identical commit counts      |
+| `stacked-bar-production` (React ms) | 23.0   | **35.9** | **+56%, reproducible**              |
+| `stacked-bar-production` (commits)  | 24     | **40**   | **+67%, stable across 4 runs each** |
 
 Every arm is at the floor on both versions — 0 dropped frames, 0 long tasks, 0 blocking ms — so
 these benches cannot resolve a paint-level win even if one exists. The commit counts are the honest

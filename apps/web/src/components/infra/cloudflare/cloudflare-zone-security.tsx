@@ -3,12 +3,14 @@
 // the window has no security events — most zones most of the time.
 
 import { useMemo } from "react"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Result } from "@/lib/effect-atom"
 import { cloudflareZoneSecurityResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable } from "../primitives/data-table"
+import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
 import { PanelScope } from "./panel-scope"
 import type { CloudflareFilters } from "./filters"
@@ -74,7 +76,10 @@ export function CloudflareZoneSecuritySection({
 				value: bucket.events,
 			}))
 			return (
-				<div className={`space-y-4 transition-opacity ${r.waiting ? "opacity-60" : ""}`}>
+				<div
+					className={cn("space-y-4", refreshingClass(r.waiting))}
+					aria-busy={r.waiting || undefined}
+				>
 					<StackedBreakdownChart
 						title="Security events by action"
 						rows={rows}
@@ -119,19 +124,19 @@ function SecurityTopTable({
 
 			{rows.map((row) => (
 				<div key={`${row.source}:${row.action}:${row.ruleId}:${row.host}`} className={ROW_CLASS}>
-					<div className="w-0 min-w-[200px] flex-1 truncate font-mono text-[13px] text-foreground">
+					<div className="w-0 min-w-[200px] flex-1 truncate font-mono text-xs text-foreground">
 						{row.ruleId}
 					</div>
-					<div className="hidden w-[130px] truncate font-mono text-[12px] text-foreground/80 md:block">
+					<div className="hidden w-[130px] truncate font-mono text-xs text-foreground/80 md:block">
 						{row.source}
 					</div>
-					<div className="w-[130px] truncate font-mono text-[12px] text-foreground/80">
+					<div className="w-[130px] truncate font-mono text-xs text-foreground/80">
 						{row.action}
 					</div>
-					<div className="hidden w-[180px] truncate font-mono text-[12px] text-foreground/80 lg:block">
+					<div className="hidden w-[180px] truncate font-mono text-xs text-foreground/80 lg:block">
 						{row.host}
 					</div>
-					<div className="w-[90px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
+					<div className="w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80">
 						{formatNumber(row.events)}
 					</div>
 				</div>

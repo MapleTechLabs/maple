@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
 
@@ -23,6 +23,8 @@ export class DigestSubscriptionResponse extends Schema.Class<DigestSubscriptionR
 	namespaces: Schema.Array(Schema.String),
 	environments: Schema.Array(Schema.String),
 	lastSentAt: Schema.NullOr(Schema.Number),
+	/** The separate weekly web analytics email. */
+	webAnalyticsEnabled: Schema.Boolean,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 }) {}
@@ -44,6 +46,7 @@ export class UpsertDigestSubscriptionRequest extends Schema.Class<UpsertDigestSu
 	timezone: Schema.optionalKey(Schema.String),
 	namespaces: Schema.optionalKey(ScopeValues),
 	environments: Schema.optionalKey(ScopeValues),
+	webAnalyticsEnabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class DigestPreviewResponse extends Schema.Class<DigestPreviewResponse>("DigestPreviewResponse")({
@@ -82,6 +85,41 @@ export class DigestRenderError extends Schema.TaggedError<DigestRenderError>()(
 	{ httpApiStatus: 500 },
 ) {}
 
+export class DigestUnsubscribeTokenInvalidError extends Schema.TaggedError<DigestUnsubscribeTokenInvalidError>()(
+	"@maple/http/errors/DigestUnsubscribeTokenInvalidError",
+	{
+		message: Schema.String,
+	},
+	{ httpApiStatus: 400 },
+) {}
+
+export const EmailUnsubscribeKind = Schema.Literals(["digest", "web-analytics"])
+
+const EmailUnsubscribeQuery = Schema.Struct({
+	token: Schema.String.check(Schema.isMaxLength(256)),
+})
+
+export class EmailUnsubscribeResponse extends Schema.Class<EmailUnsubscribeResponse>(
+	"EmailUnsubscribeResponse",
+)({
+	kind: EmailUnsubscribeKind,
+}) {}
+
+/**
+ * Unauthenticated: the signed token in an email's unsubscribe link is the credential.
+ * Mail clients POST here directly for RFC 8058 one-click (`List-Unsubscribe-Post`),
+ * and the web `/unsubscribe` confirm page calls it too.
+ */
+export class EmailPublicApiGroup extends HttpApiGroup.make("emailPublic")
+	.add(
+		HttpApiEndpoint.post("unsubscribe", "/unsubscribe", {
+			query: EmailUnsubscribeQuery,
+			success: EmailUnsubscribeResponse,
+			error: [DigestUnsubscribeTokenInvalidError, DigestPersistenceError],
+		}),
+	)
+	.prefix("/api/email") {}
+
 export class DigestApiGroup extends HttpApiGroup.make("digest")
 	.add(
 		HttpApiEndpoint.get("getSubscription", "/", {
@@ -104,6 +142,12 @@ export class DigestApiGroup extends HttpApiGroup.make("digest")
 	)
 	.add(
 		HttpApiEndpoint.post("preview", "/preview", {
+			success: DigestPreviewResponse,
+			error: [DigestPersistenceError, DigestNotConfiguredError, DigestRenderError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("previewWebAnalytics", "/web-analytics/preview", {
 			success: DigestPreviewResponse,
 			error: [DigestPersistenceError, DigestNotConfiguredError, DigestRenderError],
 		}),

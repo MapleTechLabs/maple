@@ -48,14 +48,12 @@ export class VcsScheduledSyncService extends Context.Service<
 				// suspended/disconnected installations anyway.
 				const processable = installations.filter(isInstallationProcessable)
 
-				const jobs = processable.map(
-					(installation): VcsSyncJob => ({
-						kind: "installation-sync",
-						provider: installation.provider,
-						externalInstallationId: installation.externalInstallationId,
-						reason: "scheduled",
-					}),
-				)
+				const jobs = processable.map((installation): VcsSyncJob => ({
+					kind: "installation-sync",
+					provider: installation.provider,
+					externalInstallationId: installation.externalInstallationId,
+					reason: "scheduled",
+				}))
 				// `sendBatch` handles chunking to platform per-call caps internally.
 				yield* queue.sendBatch(jobs)
 

@@ -3,13 +3,20 @@
 // The endpoint runs raw SQL through the in-process chDB session and returns a
 // bare JSON array.
 //
-// The output FORMAT is owned by the server: `forceJsonEachRow` in
-// `apps/cli/src/server/serve.ts` strips whatever trailing `FORMAT <fmt>` the
-// compiler emitted (`CH.compile(...)` appends `FORMAT JSON`) and re-runs the
-// query as `FORMAT JSONEachRow`. So callers POST `compiled.sql` verbatim.
+// The output FORMAT is owned by the server: `apps/cli/src/server/query-guard.ts`
+// peels whatever trailing `FORMAT <fmt>` the compiler emitted (`CH.compile(...)`
+// appends `FORMAT JSON`) and runs the single read-only statement as JSON rows.
+// So callers POST `compiled.sql` verbatim.
 
 import { Effect, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { OrgId } from "@maple/domain/primitives"
+
+/**
+ * Local mode's single synthetic tenant. The ingest binary writes every span,
+ * log and metric under this `OrgId`, so every local query compiles with it.
+ */
+export const LOCAL_ORG_ID = OrgId.make("local")
 
 /**
  * The local server refused the query. Its own tag, and structured fields, so
@@ -74,7 +81,10 @@ export const executeLocalQuery = (
 				.pipe(
 					Effect.mapError(
 						(cause) =>
-							new LocalQueryUnreachable({ message: "Local Maple server is unreachable", cause }),
+							new LocalQueryUnreachable({
+								message: "Local Maple server is unreachable",
+								cause,
+							}),
 					),
 				)
 			if (response.status < 200 || response.status >= 300) {
@@ -92,7 +102,10 @@ export const executeLocalQuery = (
 			const json = yield* response.json.pipe(
 				Effect.mapError(
 					(cause) =>
-						new LocalQueryMalformedResponse({ message: "Local query response was not JSON", cause }),
+						new LocalQueryMalformedResponse({
+							message: "Local query response was not JSON",
+							cause,
+						}),
 				),
 			)
 			return yield* decodeRows(json).pipe(

@@ -4,8 +4,11 @@
 // is a policy of the codebase using it, not of a generic query builder. This is
 // where Maple pins that policy.
 
-import { type CompiledQuery, rawCompiledQuery as rawCompiledQueryUntyped } from "@maple-dev/effect-clickhouse"
-import type { CompiledQueryRowSchema, TenantScope } from "@maple-dev/effect-clickhouse"
+import {
+	type CompiledQuery,
+	rawCompiledQuery as rawCompiledQueryUntyped,
+} from "@maple-dev/effect-orm/clickhouse"
+import type { CompiledQueryRowSchema, TenantScope } from "@maple-dev/effect-orm/clickhouse"
 
 /**
  * Why a query is handwritten SQL rather than a builder query.

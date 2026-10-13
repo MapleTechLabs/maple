@@ -1,4 +1,4 @@
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { useAtomValue } from "@/lib/effect-atom"
 
 import { ChartError, ChartLoading } from "@maple/ui/components/charts"
 
@@ -14,8 +14,11 @@ import type {
 	WorkloadKind,
 } from "@/api/warehouse/infra"
 import { formatValueWithUnit } from "./chart-utils"
+import { ChartCard } from "@/components/common/chart-card"
+import { SeriesLegend } from "@/components/common/series-legend"
 import { InfraMetricChart, type InfraSeriesInfo } from "./primitives/infra-metric-chart"
 import { displayError } from "@/lib/error-messages"
+import { ResultView } from "@/components/common/result-view"
 
 /**
  * k8s detail charts plot taller than the shared infra default: a pod/node page
@@ -38,6 +41,9 @@ const POD_METRIC_LABELS: Record<PodInfraMetric, string> = {
 
 const NODE_METRIC_LABELS: Record<NodeInfraMetric, string> = {
 	cpu_usage: "CPU usage",
+	cpu_utilization: "CPU / allocatable",
+	memory_usage: "Memory working set",
+	memory_utilization: "Memory / allocatable",
 	uptime: "Uptime",
 } satisfies Record<NodeInfraMetric, string>
 
@@ -76,25 +82,19 @@ interface K8sMetricChartViewProps {
  */
 function K8sSeriesSummary({ series, colors, lastValues, labelFor, unit }: InfraSeriesInfo) {
 	return (
-		<div className="mb-3 flex flex-wrap items-center gap-2">
-			{series.map((name) => {
+		<SeriesLegend
+			variant="chip"
+			className="mb-3"
+			items={series.map((name) => {
 				const value = lastValues[name]
-				return (
-					<div
-						key={name}
-						className="inline-flex items-center gap-1.5 rounded-full border bg-background px-2 py-0.5 text-[11px]"
-					>
-						<span className="size-2 rounded-full" style={{ background: colors.get(name) }} />
-						<span className="font-medium text-foreground/80">{labelFor(name)}</span>
-						{value !== undefined && (
-							<span className="font-mono text-muted-foreground tabular-nums">
-								{formatValueWithUnit(value, unit)}
-							</span>
-						)}
-					</div>
-				)
+				return {
+					key: name,
+					label: labelFor(name),
+					color: colors.get(name),
+					value: value === undefined ? undefined : formatValueWithUnit(value, unit),
+				}
 			})}
-		</div>
+		/>
 	)
 }
 
@@ -111,7 +111,7 @@ export function K8sMetricChartView({
 	height = CHART_HEIGHT,
 }: K8sMetricChartViewProps) {
 	return (
-		<div className="rounded-lg border bg-card p-4">
+		<ChartCard className="p-4">
 			<InfraMetricChart
 				rows={rows}
 				unit={unit}
@@ -123,7 +123,7 @@ export function K8sMetricChartView({
 				linkedChartId={syncId != null ? (chartId ?? seriesLabel ?? "k8s-metric") : undefined}
 				header={K8sSeriesSummary}
 			/>
-		</div>
+		</ChartCard>
 	)
 }
 
@@ -154,22 +154,26 @@ export function PodDetailChart({
 		}),
 	)
 
-	return Result.builder(result)
-		.onInitial(() => <ChartLoading variant="area" height={height} />)
-		.onError((err) => <ChartError height={height}>{displayError(err).message}</ChartError>)
-		.onSuccess((response, holder) => (
-			<K8sMetricChartView
-				rows={response.data}
-				unit={response.unit}
-				seriesLabel={POD_METRIC_LABELS[metric]}
-				showThreshold={metric.startsWith("cpu_") || metric.startsWith("memory_")}
-				waiting={Boolean(holder.waiting)}
-				syncId={syncId}
-				chartId={`pod-${metric}`}
-				height={height}
-			/>
-		))
-		.render()
+	return (
+		<ResultView
+			result={result}
+			loading={<ChartLoading variant="area" height={height} />}
+			error={(err) => <ChartError height={height}>{displayError(err).message}</ChartError>}
+		>
+			{(response, { waiting }) => (
+				<K8sMetricChartView
+					rows={response.data}
+					unit={response.unit}
+					seriesLabel={POD_METRIC_LABELS[metric]}
+					showThreshold={metric.startsWith("cpu_") || metric.startsWith("memory_")}
+					waiting={waiting}
+					syncId={syncId}
+					chartId={`pod-${metric}`}
+					height={height}
+				/>
+			)}
+		</ResultView>
+	)
 }
 
 interface NodeDetailChartProps {
@@ -195,20 +199,24 @@ export function NodeDetailChart({
 		}),
 	)
 
-	return Result.builder(result)
-		.onInitial(() => <ChartLoading variant="area" height={CHART_HEIGHT} />)
-		.onError((err) => <ChartError height={CHART_HEIGHT}>{displayError(err).message}</ChartError>)
-		.onSuccess((response, holder) => (
-			<K8sMetricChartView
-				rows={response.data}
-				unit={response.unit}
-				seriesLabel={NODE_METRIC_LABELS[metric]}
-				waiting={Boolean(holder.waiting)}
-				syncId={syncId}
-				chartId={`node-${metric}`}
-			/>
-		))
-		.render()
+	return (
+		<ResultView
+			result={result}
+			loading={<ChartLoading variant="area" height={CHART_HEIGHT} />}
+			error={(err) => <ChartError height={CHART_HEIGHT}>{displayError(err).message}</ChartError>}
+		>
+			{(response, { waiting }) => (
+				<K8sMetricChartView
+					rows={response.data}
+					unit={response.unit}
+					seriesLabel={NODE_METRIC_LABELS[metric]}
+					waiting={waiting}
+					syncId={syncId}
+					chartId={`node-${metric}`}
+				/>
+			)}
+		</ResultView>
+	)
 }
 
 interface WorkloadDetailChartProps {
@@ -249,19 +257,23 @@ export function WorkloadDetailChart({
 		}),
 	)
 
-	return Result.builder(result)
-		.onInitial(() => <ChartLoading variant="area" height={CHART_HEIGHT} />)
-		.onError((err) => <ChartError height={CHART_HEIGHT}>{displayError(err).message}</ChartError>)
-		.onSuccess((response, holder) => (
-			<K8sMetricChartView
-				rows={response.data}
-				unit={response.unit}
-				seriesLabel={WORKLOAD_METRIC_LABELS[metric]}
-				showThreshold={metric === "cpu_limit" || metric === "memory_limit"}
-				waiting={Boolean(holder.waiting)}
-				syncId={syncId}
-				chartId={`workload-${metric}`}
-			/>
-		))
-		.render()
+	return (
+		<ResultView
+			result={result}
+			loading={<ChartLoading variant="area" height={CHART_HEIGHT} />}
+			error={(err) => <ChartError height={CHART_HEIGHT}>{displayError(err).message}</ChartError>}
+		>
+			{(response, { waiting }) => (
+				<K8sMetricChartView
+					rows={response.data}
+					unit={response.unit}
+					seriesLabel={WORKLOAD_METRIC_LABELS[metric]}
+					showThreshold={metric === "cpu_limit" || metric === "memory_limit"}
+					waiting={waiting}
+					syncId={syncId}
+					chartId={`workload-${metric}`}
+				/>
+			)}
+		</ResultView>
+	)
 }

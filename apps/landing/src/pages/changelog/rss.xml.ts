@@ -1,6 +1,7 @@
 import rss from "@astrojs/rss"
 import type { APIContext } from "astro"
 import { getSortedReleases } from "../../lib/changelog"
+import { CATEGORY_LABELS } from "../../lib/changelog-meta"
 
 export async function GET(context: APIContext) {
 	const releases = await getSortedReleases()
@@ -10,7 +11,7 @@ export async function GET(context: APIContext) {
 
 	return rss({
 		title: "Maple changelog",
-		description: "Every Maple release, month by month.",
+		description: "New features, improvements and fixes in Maple.",
 		site,
 		items: releases.map((release) => {
 			// The cover leads the item body rather than riding as an <enclosure>:
@@ -19,18 +20,13 @@ export async function GET(context: APIContext) {
 			const cover = release.data.cover
 				? `<p><img src="${escapeHtml(new URL(release.data.cover, site).toString())}" alt="${escapeHtml(release.data.coverAlt ?? "")}" /></p>`
 				: ""
-			// Highlights as the item body: enough to decide whether to click
-			// through, without shipping the full release note in the feed.
-			const highlights = release.data.highlights.length
-				? `<ul>${release.data.highlights.map((h) => `<li>${escapeHtml(h)}</li>`).join("")}</ul>`
-				: ""
-
 			return {
 				title: release.data.title,
 				pubDate: release.data.date,
 				description: release.data.description,
 				link: `/changelog/${release.id}`,
-				content: cover + highlights || undefined,
+				categories: [CATEGORY_LABELS[release.data.category]],
+				content: cover || undefined,
 			}
 		}),
 		customData: "<language>en-us</language>",

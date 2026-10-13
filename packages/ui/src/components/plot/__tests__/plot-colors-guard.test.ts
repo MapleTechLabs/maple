@@ -1,4 +1,4 @@
-import { areaY, defineChart, lineY } from "@tanstack/charts"
+import { areaY, defineChart } from "@tanstack/charts"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { verticalGradient } from "../plot-paint"
@@ -72,27 +72,6 @@ describe("warnUnresolvedColors", () => {
 		expect(errors).not.toHaveBeenCalled()
 	})
 
-	it("cannot see mark colours at all — a mark is a closure, not data", () => {
-		// Not an endorsement: `lineY` captures `stroke` inside `createMark`, so this
-		// broken token is invisible from here. The guard covers the definition's
-		// plain structure and nothing else, and this test exists so that stays
-		// documented rather than assumed.
-		const errors = captureErrors()
-		const definition = defineChart({
-			marks: [
-				lineY(rows, {
-					x: (row: Row) => row.date,
-					y: (row: Row) => row.value,
-					stroke: "--chart-p99",
-				}),
-			],
-		})
-
-		warnUnresolvedColors(definition, "Latency")
-
-		expect(errors).not.toHaveBeenCalled()
-	})
-
 	it("leaves var() and currentColor alone — canvas resolves both", () => {
 		// The canvas paint resolver assigns each paint to a probe span and reads the
 		// computed colour back, so both are valid input; the library's own theme
@@ -104,9 +83,10 @@ describe("warnUnresolvedColors", () => {
 		expect(errors).not.toHaveBeenCalled()
 	})
 
-	it("never throws, whatever it finds", () => {
-		captureErrors()
-		expect(() => warnUnresolvedColors({ gradients: [{ stops: [{ color: "--x" }] }] }, "c")).not.toThrow()
+	it("reports a broken token instead of throwing", () => {
+		const errors = captureErrors()
+		warnUnresolvedColors({ gradients: [{ stops: [{ color: "--x" }] }] }, "c")
+		expect(errors).toHaveBeenCalledTimes(1)
 	})
 
 	it("survives a self-referential definition", () => {

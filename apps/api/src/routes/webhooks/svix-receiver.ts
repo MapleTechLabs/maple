@@ -1,5 +1,5 @@
 import { Clock, Effect, Option, Redacted, Result } from "effect"
-import { HttpServerResponse, type HttpServerRequest } from "effect/unstable/http"
+import { HttpServerResponse, type HttpServerRequest } from "effect/http"
 import { readSvixHeaders, verifySvixSignature } from "@maple/backend/services/product-events/svix"
 
 /**

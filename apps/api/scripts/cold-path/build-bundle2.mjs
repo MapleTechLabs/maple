@@ -81,7 +81,7 @@ const build = await rolldown({
 	external: ["lightningcss", "fsevents"],
 	plugins: [
 		sourceOverride,
-		cloudflareRolldown({ compatibilityDate: "2026-04-08", compatibilityFlags: ["nodejs_compat"] }),
+		cloudflareRolldown({ compatibilityDate: "2026-10-01" }),
 	],
 	checks: { unresolvedImport: false, ineffectiveDynamicImport: false },
 })

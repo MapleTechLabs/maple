@@ -481,10 +481,11 @@ function convertPanel(args: {
 	}
 }
 
-function convertSync(input: unknown): PersesImportConversion {
+// Returns the validation error rather than throwing it; unexpected throws are caught by the caller.
+function convertSync(input: unknown): PersesImportConversion | DashboardValidationError {
 	const root = asRecord(input)
 	if (!root || root.kind !== "Dashboard") {
-		throw new DashboardValidationError({
+		return new DashboardValidationError({
 			message: "Invalid Perses dashboard",
 			details: ['Expected a Perses resource with kind "Dashboard".'],
 		})
@@ -492,7 +493,7 @@ function convertSync(input: unknown): PersesImportConversion {
 
 	const spec = asRecord(root.spec)
 	if (!spec) {
-		throw new DashboardValidationError({
+		return new DashboardValidationError({
 			message: "Invalid Perses dashboard",
 			details: ["Dashboard spec must be an object."],
 		})
@@ -521,7 +522,7 @@ function convertSync(input: unknown): PersesImportConversion {
 
 	const panels = asRecord(spec.panels)
 	if (!panels || Object.keys(panels).length === 0) {
-		throw new DashboardValidationError({
+		return new DashboardValidationError({
 			message: "Invalid Perses dashboard",
 			details: ["Dashboard spec.panels must contain at least one panel."],
 		})
@@ -601,14 +602,14 @@ function convertSync(input: unknown): PersesImportConversion {
 export const convertPersesDashboardToPortable = Effect.fn("PersesDashboardImport.convert")(function* (
 	input: unknown,
 ) {
-	return yield* Effect.try({
+	const result = yield* Effect.try({
 		try: () => convertSync(input),
 		catch: (error) =>
-			error instanceof DashboardValidationError
-				? error
-				: new DashboardValidationError({
-						message: "Invalid Perses dashboard",
-						details: [error instanceof Error ? error.message : String(error)],
-					}),
+			new DashboardValidationError({
+				message: "Invalid Perses dashboard",
+				details: [error instanceof Error ? error.message : String(error)],
+			}),
 	})
+	if (result instanceof DashboardValidationError) return yield* result
+	return result
 })

@@ -86,6 +86,111 @@ describe("spanMessages", () => {
 		expect(spanMessages(span)[0]!.parts).toEqual([{ kind: "text", text: '{"type":"image","media":"…"}' }])
 	})
 
+	it("reads OpenAI-format tool calls and tool messages", () => {
+		// Trimmed from a LiteLLM `chat` span: the assistant message that only
+		// calls a tool has `content: null` (output) or no content (history).
+		const call = {
+			index: 0,
+			function: { arguments: '{"city":"Berlin"}', name: "get_weather" },
+			id: "call_PnF57J0QOIKUlzQKpqwxV8tl",
+			type: "function",
+		}
+		const span = llmSpan({
+			spanId: "l1",
+			startMs: 0,
+			durationMs: 1000,
+			genAi: {
+				inputMessages: [
+					{ role: "user", content: "What's the weather in Berlin?" },
+					{ role: "assistant", tool_calls: [call], provider_specific_fields: { reasoning: null } },
+					{
+						role: "tool",
+						tool_call_id: "call_PnF57J0QOIKUlzQKpqwxV8tl",
+						content: '{"city": "Berlin", "temperature_c": 21, "condition": "partly cloudy"}',
+					},
+				],
+				outputMessages: [
+					{ content: null, role: "assistant", tool_calls: [call], function_call: null },
+				],
+			},
+		})
+
+		const toolCall = {
+			kind: "tool_call",
+			id: "call_PnF57J0QOIKUlzQKpqwxV8tl",
+			name: "get_weather",
+			argumentsText: '{"city":"Berlin"}',
+		}
+		expect(spanMessages(span).map((message) => [message.role, message.parts])).toEqual([
+			["user", [{ kind: "text", text: "What's the weather in Berlin?" }]],
+			["assistant", [toolCall]],
+			[
+				"tool",
+				[
+					{
+						kind: "tool_result",
+						id: "call_PnF57J0QOIKUlzQKpqwxV8tl",
+						resultText: '{"city": "Berlin", "temperature_c": 21, "condition": "partly cloudy"}',
+					},
+				],
+			],
+			["assistant", [toolCall]],
+		])
+		expect(spanToolCalls(span).map((c) => c.name)).toEqual(["get_weather"])
+	})
+
+	it("reads a streamed Google ADK reply as its aggregate, not its chunks", () => {
+		// A `generate_content` span of a streamed turn: one message per chunk with
+		// an empty finish reason, then the aggregate that finished.
+		const chunk = (content: string) => ({
+			role: "assistant",
+			parts: [{ content, type: "text" }],
+			finish_reason: "",
+		})
+		const span = llmSpan({
+			spanId: "l1",
+			startMs: 0,
+			durationMs: 1000,
+			genAi: {
+				outputMessages: [
+					...["The", " capital", " of", " France", " is", " Paris", "."].map(chunk),
+					{
+						role: "assistant",
+						parts: [{ content: "The capital of France is Paris.", type: "text" }],
+						finish_reason: "stop",
+					},
+				],
+			},
+		})
+
+		expect(spanMessages(span).map((message) => message.parts)).toEqual([
+			[{ kind: "text", text: "The capital of France is Paris." }],
+		])
+
+		// Chunks with no aggregate behind them are all the reply there is.
+		const unfinished = llmSpan({
+			spanId: "l2",
+			startMs: 0,
+			durationMs: 1000,
+			genAi: { outputMessages: [chunk("The"), chunk(" capital")] },
+		})
+		expect(spanMessages(unfinished)).toHaveLength(2)
+
+		// A message that names no finish reason is not an aggregate either.
+		const unmarked = llmSpan({
+			spanId: "l3",
+			startMs: 0,
+			durationMs: 1000,
+			genAi: {
+				outputMessages: [
+					chunk("The"),
+					{ role: "assistant", parts: [{ type: "text", content: "x" }] },
+				],
+			},
+		})
+		expect(spanMessages(unmarked)).toHaveLength(2)
+	})
+
 	it("captures nothing when nothing was captured — the ordinary case", () => {
 		const span = llmSpan({ spanId: "l1", startMs: 0, durationMs: 1000 })
 		expect(spanMessages(span)).toEqual([])

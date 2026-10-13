@@ -1,65 +1,34 @@
 ---
-title: "OpenTelemetry Conventions"
+title: "OpenTelemetry conventions"
 description: "Maple's expected OpenTelemetry attributes, status codes, span kinds, and data model conventions."
 group: "Concepts"
 order: 1
 ---
 
-Maple is fully compatible with the OpenTelemetry Protocol (OTLP). This document describes the conventions and attributes that Maple uses to power its dashboards, service maps, and analytics.
+Maple accepts telemetry over the OpenTelemetry Protocol (OTLP). This page describes the attributes and conventions Maple reads to build its dashboards, service map and analytics.
 
-Maple stores every OTel attribute you send verbatim, but a curated set get special treatment — pre-extracted into fast columns at ingest, exposed as short filter aliases, rendered as colored badges, used to draw the service map, or scored higher in the attribute chip strip. Most of these follow the [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/) — if your SDK emits standard attributes you usually don't need to do anything extra.
+Maple stores every OTel attribute you send verbatim. A curated set gets special treatment: pre-extracted into indexed columns at ingest, exposed as short filter aliases, rendered as colored badges, used to draw the service map, or ranked higher in the log attribute chips. Most of these follow the [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/). If your SDK emits standard attributes, you usually don't need to do anything extra.
 
-> **Audit with Claude Code:** `maple-audit` reviews an existing setup against these conventions — per service, with severities — and fixes the gaps. See the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
+> **Audit with Claude Code:** `maple-audit` reviews an existing setup against these conventions per service, with severities, and fixes the gaps. See the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
-## Ingest Endpoints
+## Sending data
 
-Send telemetry to Maple using standard OTLP HTTP endpoints:
-
-| Signal  | Endpoint      |
-| ------- | ------------- |
-| Traces  | `/v1/traces`  |
-| Logs    | `/v1/logs`    |
-| Metrics | `/v1/metrics` |
-
-**Base URL:** `https://ingest.maple.dev`
-
-**Content types:**
-
-- `application/x-protobuf` (recommended)
-- `application/json`
-
-**Compression:** gzip supported via `Content-Encoding: gzip` header.
-
-## Authentication
-
-Include your API key in the request headers:
-
-```
-Authorization: Bearer YOUR_API_KEY
-```
-
-Alternatively, use the `x-maple-ingest-key` header:
-
-```
-x-maple-ingest-key: YOUR_API_KEY
-```
-
-API keys are available in your Maple project settings.
+This page covers what to put on your telemetry. Endpoints, authentication headers, content types and the standard `OTEL_*` environment variables are in the [Ingest API reference](/docs/reference/ingest). To set up an SDK, start at [Instrument your application](/docs/instrumentation).
 
 ## Service identity
 
-The bare minimum every span needs. `service.name` is the primary axis Maple groups by — without it spans go to a synthetic `unknown_service` bucket.
+The bare minimum every span needs. `service.name` is the primary axis Maple groups by. Without it, spans go to a synthetic `unknown_service` bucket.
 
 | Attribute             | Example                | What Maple does with it                                                                                     |
 | --------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `service.name`        | `api`, `ingest`, `web` | **Required.** Primary grouping for services list, service map, dashboards, alerts. Filter alias: `service`. |
-| `service.version`     | `1.4.2`, `c0b92f68`    | Per-version slices on service overview. Auto-skipped from chip strip but always queryable.                  |
-| `service.namespace`   | `payments`             | Logical grouping above `service.name`. Auto-skipped from chip strip.                                        |
-| `service.instance.id` | UUID per process       | Distinguishes replicas of the same service. Auto-skipped from chip strip.                                   |
+| `service.version`     | `1.4.2`, `c0b92f68`    | Per-version slices on service overview. Hidden from log chips but always queryable.                         |
+| `service.namespace`   | `payments`             | Logical grouping above `service.name`. Hidden from log chips.                                               |
+| `service.instance.id` | UUID per process       | Distinguishes replicas of the same service. Hidden from log chips.                                          |
 
-## Deployment & version tracking
+## Deployment and version tracking
 
-Tag every span with these and you get per-environment and per-version slices for free across the services table, service map, and per-service overview.
+Tag every span with these and you get per-environment and per-version slices across the services table, service map, and per-service overview.
 
 | Attribute                     | Example                       | What Maple does with it                                                                             |
 | ----------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -68,7 +37,7 @@ Tag every span with these and you get per-environment and per-version slices for
 | `vcs.ref.head.revision`       | `c0b92f68`                    | Git commit SHA. Enables release markers on charts and per-version metrics.                          |
 | `vcs.repository.url.full`     | `https://github.com/acme/api` | Canonical repo URL. Links telemetry to source.                                                      |
 
-`vcs.repository.url.full` and `vcs.ref.head.revision` are the OpenTelemetry semantic-convention keys — use them exactly as named; legacy spellings like `deployment.commit_sha`, `git.repo`, or `app.repo_url` are not read.
+`vcs.repository.url.full` and `vcs.ref.head.revision` are the OpenTelemetry semantic-convention keys. Use them exactly as named. Legacy spellings like `deployment.commit_sha`, `git.repo`, or `app.repo_url` are not read.
 
 Set resource attributes via environment variable:
 
@@ -76,43 +45,45 @@ Set resource attributes via environment variable:
 export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=abc123"
 ```
 
-In the search bar, `env`, `environment`, and `commit_sha` are short aliases — see [Filter aliases](#filter-aliases) below.
+In the search bar, `env`, `environment`, and `commit_sha` are short aliases. See [Filter aliases](#filter-aliases) below.
 
-## Span Status Codes — Title Case is required
+## Span status codes
 
-Maple stores span status codes as title-case strings:
+Maple stores span status codes as title-case strings. Maple's ingest converts the OTLP status enum on the way in:
 
-| Value     | Meaning                          |
-| --------- | -------------------------------- |
-| `"Unset"` | Default — no explicit status set |
-| `"Ok"`    | Explicitly marked successful     |
-| `"Error"` | Span encountered an error        |
+| OTLP value | Stored as | Meaning                         |
+| ---------- | --------- | ------------------------------- |
+| `0`        | `"Unset"` | Default. No explicit status set |
+| `1`        | `"Ok"`    | Explicitly marked successful    |
+| `2`        | `"Error"` | Span encountered an error       |
 
-Use the strings `"Ok"`, `"Error"`, `"Unset"` exactly. The error-rate widget filters via `WHERE StatusCode = 'Error'` — uppercase (`ERROR`) or lowercase (`error`) variants silently produce zero rows. Most OTel SDKs serialize the status enum correctly; the OpenTelemetry Collector also normalizes integer status codes (0, 1, 2) to these strings automatically. Just don't hand-stamp the wire value.
+Set status through your SDK's status API. You don't need to convert anything yourself.
 
-Only spans with `StatusCode = 'Error'` appear in error analytics.
+Title case matters when you filter or write queries. `StatusCode = 'Error'` matches. Uppercase (`ERROR`) or lowercase (`error`) variants match zero rows.
 
-## Span Kinds
+Only spans with status `Error` appear in error analytics.
 
-| Kind         | Description                          | How Maple Uses It                                                       |
-| ------------ | ------------------------------------ | ----------------------------------------------------------------------- |
-| `"Server"`   | Incoming request handler             | Throughput and error rate calculations. Renders path-only HTTP routes.  |
-| `"Client"`   | Outgoing request to another service  | Service map edges (with `peer.service`). Renders host+path HTTP routes. |
-| `"Producer"` | Async message producer               | Service map edges (with `peer.service`).                                |
-| `"Consumer"` | Async message consumer               | Throughput calculations.                                                |
-| `"Internal"` | Default, synchronous in-process work | Trace detail view.                                                      |
+## Span kinds
 
-`Client` spans get a small outgoing-arrow icon in HTTP labels and render their route as `host+path` so the destination is visible; `Server` spans render path-only. The [Service Map](#service-map) only draws an edge for `Client` / `Producer` spans — leaving a network call on `Internal` makes it invisible in the map.
+| Kind         | Description                          | How Maple Uses It                                                                                         |
+| ------------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `"Server"`   | Incoming request handler             | Throughput and error rate calculations. Callee side of a service map edge. Renders path-only HTTP routes. |
+| `"Client"`   | Outgoing request to another service  | Caller side of a service map edge; database nodes; external dependencies. Renders host+path HTTP routes.  |
+| `"Producer"` | Async message producer               | Caller side of a service map edge; messaging dependencies.                                                |
+| `"Consumer"` | Async message consumer               | Throughput calculations. Callee side of a `Producer` edge.                                                |
+| `"Internal"` | Default, synchronous in-process work | Trace detail view.                                                                                        |
 
-## HTTP Attributes
+`Client` spans get a small outgoing-arrow icon in HTTP labels and render their route as `host+path` so the destination is visible. `Server` spans render path-only. The [service map](#service-map) and a service's dependencies are built only from `Client` and `Producer` spans. A network call left on `Internal` does not appear on either.
 
-The most heavily instrumented namespace. Maple extracts three fields into fast materialized-view columns at write time, then renders method, route, and status code in trace rows.
+## HTTP attributes
+
+The most heavily instrumented namespace. Maple extracts three fields into indexed columns at write time, then renders method, route, and status code in trace rows.
 
 ### Fast columns
 
-Filtering on these is a scan over a small column instead of a per-row map lookup. Both the legacy and post-1.21 OTel semconv names map to the same column — the first non-empty source wins, so you don't need to migrate just for fast filtering.
+Filtering on these scans a small column instead of doing a per-row map lookup. The legacy and current OTel semconv names map to the same column. The first non-empty source wins, so you don't need to migrate just for fast filtering.
 
-| Attribute(s)                                    | MV column        |
+| Attribute(s)                                    | Indexed column   |
 | ----------------------------------------------- | ---------------- |
 | `http.method`, `http.request.method`            | `HttpMethod`     |
 | `http.route`, `url.path`, `http.target`         | `HttpRoute`      |
@@ -136,16 +107,16 @@ Filtering on these is a scan over a small column instead of a per-row map lookup
 
 `http.status_code` / `http.response.status_code` is rendered as a colored badge in the trace list:
 
-| Status range | Tone                |
-| ------------ | ------------------- |
-| 5xx          | Error (red)         |
-| 4xx          | Warn (amber)        |
-| 3xx          | Info (chart purple) |
-| 1xx–2xx      | Info (blue)         |
+| Status range | Tone         |
+| ------------ | ------------ |
+| 5xx          | Error (red)  |
+| 4xx          | Warn (amber) |
+| 3xx          | Blue         |
+| 1xx–2xx      | Info (green) |
 
-In log chips, the same value is also scored 95 (top of the chip strip, just below `exception.*`) — see [Attribute prominence scoring](#appendix-attribute-prominence-scoring).
+In log chips, the same key scores 95, just below `exception.*`. See [Attribute prominence scoring](#appendix-attribute-prominence-scoring).
 
-### Route extraction & fallback chain
+### Route extraction and fallback chain
 
 For full HTTP info, Maple tries each source in order until one matches:
 
@@ -154,53 +125,72 @@ For full HTTP info, Maple tries each source in order until one matches:
 - **Route on client spans:** `http.route` → parsed `url.full` / `http.url` (host+path) → `server.address` / `net.peer.name` combined with `url.path` / `http.target`.
 - **Status:** `http.status_code` → `http.response.status_code`.
 
-So `url.full` (e.g. `https://api.tinybird.co/v0/sql`) on a `Client` span lights up route rendering automatically — but emitting `http.route` is preferred because it's a semantic path (`/api/users/:id`) instead of a high-cardinality URL.
+If none of the route attributes are set, Maple falls back to the route in the span name.
 
-## Service Map
+So `url.full` (e.g. `https://api.stripe.com/v1/charges`) on a `Client` span is enough for route rendering. Emitting `http.route` is still preferred, because it's a semantic path (`/api/users/:id`) instead of a high-cardinality URL.
 
-The map renders nodes for services and edges for the calls between them. Three rules to make sure your spans show up correctly.
+## Service map
+
+The [service map](/docs/explore/service-map) draws a node for each service and each database, and an edge for the calls between them. Calls to external HTTP hosts, message queues and RPC services are not drawn on the map. They are listed on the service's **Dependencies** tab. Four rules make sure your spans show up correctly.
 
 ### 1. Service-to-service edges
 
-Emit `peer.service` on every `Client` or `Producer` span. The value must match the `service.name` of the downstream service. Maple's materialized view groups on `(SourceService, TargetService, DeploymentEnv)` per hour where `peer.service` is non-empty.
+Maple draws an edge when a `Client` or `Producer` span in one service has a child `Server` or `Consumer` span in another service, in the same trace. Two things make that work:
 
-```javascript
-span.setAttribute("peer.service", "service-b")
+- The callee is instrumented, so it records its own `Server` or `Consumer` span.
+- The caller propagates trace context (the `traceparent` header), so the callee's span becomes a child of the client span.
+
+Instrumented HTTP and RPC clients do both for you.
+
+```text
+api:    GET /v1/users  (span.kind=Client, span_id=a1)
+users:  GET /v1/users  (span.kind=Server, parent_span_id=a1)
+                            └──> draws an edge api → users
 ```
 
-```
-GET /v1/users  (service.name=api, span.kind=Client, peer.service=users-service)
-                            └──> draws an edge api → users-service
-```
-
-If you put `peer.service` on a `Server` span, or leave it off entirely, no edge is drawn — the call won't appear in the map.
+`peer.service` does not draw edges. If the callee is not instrumented, or the caller drops `traceparent`, no edge is drawn. The call shows up at most as an external dependency on the caller's **Dependencies** tab (see rule 3).
 
 ### 2. Database nodes
 
-Pair `db.system.name` with `peer.service` on the same `Client` span — both are required. The map aggregates by `db.system.name`, so multiple services calling the same database land on a single shared node. (The legacy `db.system` spelling is also accepted as a fallback.)
+Set `db.system.name` and `db.namespace` on database `Client` spans. The legacy `db.system` spelling is also accepted. Maple keys each database node on the pair, so services that call the same database share one node.
 
+```text
+SELECT * FROM users  (span.kind=Client, db.system.name=postgresql, db.namespace=users_db)
+                            └──> draws an edge api → postgresql users_db
 ```
-SELECT * FROM users  (span.kind=Client, db.system.name=postgresql, peer.service=postgresql)
-                            └──> draws an edge api → postgresql DB node
-```
 
-### 3. Pick canonical names
+Without `db.system.name`, the call is treated as an external HTTP or other dependency, not a database. Without `db.namespace`, Maple falls back to the legacy `db.name`, then to the host (`server.address`). With none of these set, every database behind that driver collapses into one node.
 
-Keep `peer.service` spelling consistent across services so edges don't fragment. If one service emits `peer.service=tinybird` and another emits `peer.service=Tinybird` or `peer.service=tb`, they become separate nodes. Pick one canonical name per peer and stick with it.
+### 3. External dependencies
+
+Other outbound `Client` and `Producer` spans become external dependencies. They are listed on the calling service's **Dependencies** tab, not drawn on the map. Maple names each one from these attributes:
+
+| Call type   | Attributes                                       | Dependency name                            |
+| ----------- | ------------------------------------------------ | ------------------------------------------ |
+| Messaging   | `messaging.system`, `messaging.destination.name` | Destination name, or the system if missing |
+| RPC         | `rpc.system`, `rpc.service`                      | `rpc.service`, or the system if missing    |
+| HTTP, other | `server.address`                                 | Host                                       |
+
+HTTP client instrumentation sets `server.address` automatically.
+
+### 4. Pick canonical names
+
+Keep `db.system.name`, `messaging.system`, and `rpc.system` values spelled the same across services. If one service emits `db.system.name=postgresql` and another emits `PostgreSQL`, they become separate database nodes. Use the OpenTelemetry well-known values where one exists.
 
 ## Database queries
 
-In addition to powering the service map, these drive the chip strip and the AI error-debug prompt context.
+Besides the service map, these drive the log chips and the AI error-debug prompt context.
 
 | Attribute                                   | What Maple does with it                                                                                     |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `db.system.name` (legacy `db.system`)       | Scored 70 in the chip strip; pairs with `peer.service` for service map DB nodes; toned `info` in log chips. |
+| `db.system.name` (legacy `db.system`)       | Scored 70 in log chips; with `db.namespace`, keys the service map database node; toned `info` in log chips. |
+| `db.namespace`                              | Names the database node on the service map.                                                                 |
 | `db.query.text` (legacy `db.statement`)     | Scored 70; rendered in span detail; included as context in the error-debug prompt.                          |
 | `db.operation.name` (legacy `db.operation`) | Scored 70 (e.g. `"SELECT"`, `"INSERT"`).                                                                    |
 
 ## Caching
 
-Maple detects a cache span when **any** `cache.*` attribute is present. When detected, the trace UI renders a hit/miss badge and an operation pill (GET / SET / DELETE) on the span row.
+Maple detects a cache span when `cache.system` or `cache.result` is present. When detected, the trace UI renders a hit/miss badge and an operation pill (GET / SET / DELETE) on the span row.
 
 | Attribute                | Example                | What Maple does with it                                                       |
 | ------------------------ | ---------------------- | ----------------------------------------------------------------------------- |
@@ -210,44 +200,45 @@ Maple detects a cache span when **any** `cache.*` attribute is present. When det
 | `cache.operation`        | `GET`, `SET`, `DELETE` | Drives the operation pill color.                                              |
 | `cache.lookup_performed` | `true` \| `false`      | Whether a lookup was actually executed (string, not bool).                    |
 
-## Errors & exceptions
+## Errors and exceptions
 
-Drives the destructive-tone error banner shown on log rows and the highest-priority chip on every row.
+Drives the error banner in the log detail panel and the highest-priority chip on every log row.
 
-| Attribute           | What Maple does with it                                           |
-| ------------------- | ----------------------------------------------------------------- |
-| `exception.message` | Banner body. Falls back to `error.message`, then to the log body. |
-| `exception.type`    | Banner top-right monospace badge. Falls back to `error.type`.     |
-| `error.message`     | Same as `exception.message` (legacy fallback).                    |
-| `error.type`        | Same as `exception.type` (legacy fallback).                       |
+| Attribute           | What Maple does with it                                              |
+| ------------------- | -------------------------------------------------------------------- |
+| `exception.message` | Banner body. Falls back to `error.message`, then to the log body.    |
+| `exception.type`    | Monospace badge beside the banner title. Falls back to `error.type`. |
+| `error.message`     | Same as `exception.message` (legacy fallback).                       |
+| `error.type`        | Same as `exception.type` (legacy fallback).                          |
 
-Any attribute matching `exception.*` is scored 100 (top of the chip strip) and auto-toned `error` (red) in log chips.
+Any attribute matching `exception.*` scores 100 (top of the log chips) and is toned `error` (red).
 
-If `exception.message` is longer than 120 characters or contains a newline, the banner collapses by default and shows a "Show full error" toggle.
+If the message runs past 3 lines or 160 characters, the banner collapses by default and shows a "Show more" toggle.
 
 ## RPC
 
 For gRPC and other RPC frameworks.
 
-| Attribute              | What Maple does with it                                                       |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `rpc.service`          | Scored 68 in chip strip; toned `info`.                                        |
-| `rpc.method`           | Scored 68; toned `info`.                                                      |
-| `rpc.grpc.status_code` | Scored 90 (just below HTTP status). Non-zero values auto-toned `error` (red). |
+| Attribute              | What Maple does with it                                                      |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `rpc.system`           | Names RPC dependencies when `rpc.service` is missing.                        |
+| `rpc.service`          | Scored 68 in log chips; toned `info`. Names RPC dependencies.                |
+| `rpc.method`           | Scored 68; toned `info`.                                                     |
+| `rpc.grpc.status_code` | Scored 90 (just below HTTP status). Non-zero values are toned `error` (red). |
 
 ## User identity
 
-Promotes user/customer context to the chip strip so it's visible at a glance on every log row.
+Promotes user/customer context to the log chips so it's visible at a glance on every log row.
 
-| Attribute                                             | What Maple does with it                            |
-| ----------------------------------------------------- | -------------------------------------------------- |
-| `user.id`, `enduser.id`, `customer.id`, `customer_id` | All scored 66 in chip strip (equivalent priority). |
+| Attribute                                             | What Maple does with it                      |
+| ----------------------------------------------------- | -------------------------------------------- |
+| `user.id`, `enduser.id`, `customer.id`, `customer_id` | All scored 66 in log chips (equal priority). |
 
 ## Logs
 
-### Severity Levels
+### Severity levels
 
-`log.severityText` drives the per-row text color in the log list and the trace detail timeline.
+`SeverityText` drives the per-row text color in the log list and the trace detail timeline.
 
 | SeverityText | SeverityNumber | Color theme    |
 | ------------ | -------------- | -------------- |
@@ -258,35 +249,35 @@ Promotes user/customer context to the chip strip so it's visible at a glance on 
 | `ERROR`      | 17-20          | severity-error |
 | `FATAL`      | 21-24          | severity-fatal |
 
-`ERROR` and `FATAL` severities additionally cause the error banner to render at the top of the log detail panel.
+`ERROR` and `FATAL` severities also show the error banner at the top of the log detail panel.
 
-### Trace Correlation
+### Trace correlation
 
 Logs are automatically correlated with traces when `TraceId` and `SpanId` fields are present. Most OTel SDKs inject these fields when a span is active.
 
-## Kubernetes & infrastructure
+## Kubernetes and infrastructure
 
-Tag spans with `k8s.*` and they light up the service map's pod-count badges and Infrastructure tab. The `maple-k8s-infra` Helm chart sets most of these for you via the OTel operator + `k8sattributes` processor.
+Kubernetes resource attributes power the service map's pod-count badges and the Infrastructure pages. The `maple-k8s-infra` Helm chart sets most of these for you via the OTel operator and the `k8sattributes` processor.
 
 ### Workload identity (joins to `service.name`)
 
-| Attribute              | What Maple does with it                                                                |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| `k8s.deployment.name`  | Primary workload identity; joins to `service.name` to populate the Infrastructure tab. |
-| `k8s.statefulset.name` | Same join, for stateful workloads.                                                     |
-| `k8s.daemonset.name`   | Same join, for DaemonSets.                                                             |
-| `k8s.job.name`         | Same join, for Jobs.                                                                   |
+| Attribute              | What Maple does with it                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| `k8s.deployment.name`  | Primary workload identity. With `k8s.namespace.name`, joins to `service.name` for infrastructure data. |
+| `k8s.statefulset.name` | Same join, for stateful workloads.                                                                     |
+| `k8s.daemonset.name`   | Same join, for DaemonSets.                                                                             |
+| `k8s.job.name`         | Job filter and pod detail on the Infrastructure pages. Not part of the service join.                   |
+| `k8s.cluster.name`     | Cluster shown on the Infrastructure pages. Not part of the service join.                               |
 
 ### Promoted to log chips
 
-Always shown in the chip strip when present.
+Resource attributes normally stay out of log chips. These are the exceptions, along with `deployment.environment`.
 
-| Attribute            | What Maple does with it                   |
-| -------------------- | ----------------------------------------- |
-| `k8s.pod.name`       | Promoted to log attribute chips.          |
-| `k8s.namespace.name` | Promoted to log attribute chips.          |
-| `k8s.cluster.name`   | Cluster column on the Infrastructure tab. |
-| `cloud.region`       | Promoted to log attribute chips.          |
+| Attribute            | What Maple does with it          |
+| -------------------- | -------------------------------- |
+| `k8s.pod.name`       | Promoted to log attribute chips. |
+| `k8s.namespace.name` | Promoted to log attribute chips. |
+| `cloud.region`       | Promoted to log attribute chips. |
 
 ### Node detail metadata
 
@@ -298,51 +289,47 @@ Always shown in the chip strip when present.
 | `k8s.kubelet.version` | Display in node metadata panel.                                               |
 | `container.runtime`   | Display in K8s node metadata (containerd, cri-o, etc.).                       |
 
-## Cloud & platform badges
+## Cloud and platform badges
 
-These set the platform badge and runtime icon next to a service on the service map. SDKs running on common platforms auto-detect most of them — document the keys so self-instrumenters can match.
+These set the platform badge and runtime icon next to a service on the service map. SDKs running on common platforms detect most of them automatically. The keys are listed here so self-instrumenters can match.
 
-| Attribute              | Example values                                           | What Maple does with it                               |
-| ---------------------- | -------------------------------------------------------- | ----------------------------------------------------- |
-| `cloud.provider`       | `aws`, `gcp`, `azure`, `cloudflare`, `vercel`, `railway` | Provider icon / badge resolution.                     |
-| `cloud.platform`       | `aws_lambda`, `cloudflare.workers`, `gcp_cloud_run`      | More granular platform badge.                         |
-| `cloud.region`         | `us-west-2`, `iad1`                                      | Promoted to log chips (see Kubernetes section above). |
-| `process.runtime.name` | `nodejs`, `bun`, `deno`, `workerd`, `rust`, `jvm`        | Runtime mark on the service map.                      |
-| `faas.name`            | Lambda function name, Cloud Run service name             | Function-name badge on FaaS deployments.              |
-| `faas.version`         | Function version / revision                              | Per-version slicing on FaaS.                          |
-| `faas.instance`        | Function execution / instance ID                         | Replica identifier on FaaS.                           |
+| Attribute              | Example values                                    | What Maple does with it                                                                                                  |
+| ---------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `cloud.provider`       | `cloudflare`                                      | `cloudflare` sets the Cloudflare badge.                                                                                  |
+| `cloud.platform`       | `cloudflare.workers`, `aws_lambda`                | `cloudflare.workers` sets the Cloudflare badge; `aws_lambda` sets the Lambda badge.                                      |
+| `cloud.region`         | `us-west-2`, `iad1`                               | Promoted to log chips (see Kubernetes section above).                                                                    |
+| `process.runtime.name` | `nodejs`, `bun`, `deno`, `workerd`, `rust`, `jvm` | Runtime mark on the service map.                                                                                         |
+| `faas.name`            | Lambda function name, Worker script name          | Any value sets the Lambda badge unless the service is on Cloudflare. Matches Cloudflare Worker scripts to their service. |
+| `faas.version`         | Function version / revision                       | Shown as the script version on Cloudflare Workers.                                                                       |
 
-`nodejs`, `bun`, `deno`, `workerd`, `rust`, `python` (or `cpython`), `ruby`, and the JVM
-(`jvm`, `java`, or the OTel-canonical `OpenJDK Runtime Environment`) render as their logo next to
-the service name; `go`, `dotnet`, `php` and anything unrecognized render as a short text chip
-instead, since their logos are wordmarks that don't survive being drawn at icon size. A runtime the
-platform badge already implies — `workerd` on a Cloudflare service — is dropped rather than shown
-twice.
+A service with `k8s.pod.name` or `k8s.deployment.name` gets the Kubernetes badge. Cloudflare takes precedence over Lambda, and Lambda over Kubernetes.
 
-Common aliases are folded together (`node`/`nodejs`, `go`/`golang`), but keep the value consistent across services on the same runtime anyway — an unlisted variant falls through to the text chip and one fleet ends up wearing two different marks.
+`nodejs`, `bun`, `deno`, `workerd`, `rust`, `python` (or `cpython`), `ruby`, and the JVM (`jvm`, `java`, or the OTel-canonical `OpenJDK Runtime Environment`) render as their logo next to the service name. `go`, `dotnet`, `php`, and anything unrecognized render as a short text chip, because their logos are wordmarks that are unreadable at icon size. A runtime the platform badge already implies (`workerd` on a Cloudflare service) is not shown a second time.
+
+Common aliases are folded together (`node`/`nodejs`, `go`/`golang`). Keep the value consistent across services on the same runtime anyway. An unlisted variant falls through to the text chip, and one fleet ends up wearing two different marks.
 
 ## Filter aliases
 
 In Maple's WHERE-clause search bar (trace list, log search, dashboard widgets), you can type a short alias and it resolves to the canonical attribute:
 
-| Alias                | Resolves to                                        |
-| -------------------- | -------------------------------------------------- |
-| `service`            | `service.name`                                     |
-| `span`               | `span.name`                                        |
-| `environment`, `env` | `deployment.environment`                           |
-| `commit_sha`         | `vcs.ref.head.revision`                            |
-| `root.only`          | `root_only` (synthetic boolean — root spans only)  |
-| `errors_only`        | `has_error` (synthetic boolean — error spans only) |
+| Alias                | Resolves to                                       |
+| -------------------- | ------------------------------------------------- |
+| `service`            | `service.name`                                    |
+| `span`               | `span.name`                                       |
+| `environment`, `env` | `deployment.environment`                          |
+| `commit_sha`         | `vcs.ref.head.revision`                           |
+| `root.only`          | `root_only` (synthetic boolean, root spans only)  |
+| `errors_only`        | `has_error` (synthetic boolean, error spans only) |
 
-So `env = "production"` and `deployment.environment = "production"` mean the same thing; pick whichever is shorter.
+So `env = "production"` and `deployment.environment = "production"` mean the same thing. Pick whichever is shorter.
 
 ## Reserved namespace
 
-`maple_*` is reserved for Maple platform internals (org routing, ingest auth keys). Do not use this prefix for your own attributes — the UI hides anything starting with `maple_` from log and span attribute chips.
+`maple_*` is reserved for Maple platform internals (org routing, ingest auth keys). Do not use this prefix for your own attributes. The UI hides anything starting with `maple_` from log attribute chips.
 
-## Attributes Maple hides in the UI chip strip
+## Attributes Maple hides from log chips
 
-These are stored on the row but skipped from the log/span attribute chip strip because they're noisy or already shown elsewhere (service column, etc.):
+These are stored on the row but skipped from the log attribute chips because they're noisy or already shown elsewhere (service column, etc.):
 
 - `service.name`, `service.namespace`, `service.instance.id`, `service.version`
 - `telemetry.sdk.*`
@@ -351,11 +338,11 @@ These are stored on the row but skipped from the log/span attribute chip strip b
 - `host.arch`, `host.name`
 - `maple_*`
 
-The data is still queryable — you can filter or group by these in the search bar — they're just not auto-promoted into the row's attribute chips.
+The data is still queryable. You can filter or group by these in the search bar. They just don't appear in the row's attribute chips.
 
-## Appendix: Attribute prominence scoring
+## Appendix: attribute prominence scoring
 
-The chip strip on each log/span row shows the top 4 attributes by score. Higher score = more prominent.
+Each log row shows every attribute that isn't hidden as a chip, ordered by score. Higher score comes first.
 
 | Score | Attributes                                                                                          |
 | ----- | --------------------------------------------------------------------------------------------------- |
@@ -376,52 +363,14 @@ The chip strip on each log/span row shows the top 4 attributes by score. Higher 
 | 25    | Anything with a dot (`namespace.key`)                                                               |
 | 20    | Bare keys (no namespace)                                                                            |
 
-Resource attributes only appear in chips if they're in the promoted set (deployment env, k8s pod/namespace, cloud region); other resource attrs get their score decremented by 10 even if promoted.
+Resource attributes appear in chips only if they're in the promoted set (`deployment.environment`, `deployment.environment.name`, `k8s.pod.name`, `k8s.namespace.name`, `cloud.region`). A promoted resource attribute scores 10 lower than the same key on the log itself.
 
 ## Metrics
 
-Maple accepts OTLP metrics at `/v1/metrics`, including counters, gauges, histograms, and summaries.
+Maple accepts OTLP metrics at `/v1/metrics`: sums (counters), gauges, histograms, and exponential histograms. Summary data points are not supported and are dropped at ingest.
 
-For accurate RED (Rate, Error, Duration) metrics alongside sampled traces, use the OpenTelemetry Collector [SpanMetrics Connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetrics):
+For exact RED (rate, error, duration) metrics alongside sampled traces, derive metrics from every span with the Collector's SpanMetrics connector before sampling. See [Exact counts with SpanMetrics](/docs/concepts/sampling-throughput#exact-counts-with-spanmetrics).
 
-```yaml
-connectors:
-    spanmetrics:
-        namespace: span.metrics
+## Data retention
 
-service:
-    pipelines:
-        traces:
-            receivers: [otlp]
-            exporters: [otlp/maple, spanmetrics]
-        metrics:
-            receivers: [spanmetrics]
-            exporters: [otlp/maple]
-```
-
-This derives 100%-accurate metrics from every span before sampling reduces the trace volume. See [Sampling & Throughput Estimation](/docs/concepts/sampling-throughput) for details.
-
-## Data Retention
-
-| Signal          | Retention |
-| --------------- | --------- |
-| Traces and logs | 90 days   |
-| Metrics         | 365 days  |
-
-## Environment Variable Reference
-
-The recommended setup is to **inline the endpoint and ingest key directly in your bootstrap source** — the ingest key is project-scoped and write-only (Sentry-DSN-shaped), so source-level configuration removes a class of "OTel didn't start because env vars weren't set" deploy failures. The per-language guides show this shape.
-
-If your existing setup uses the standard OpenTelemetry environment variables, those are also supported:
-
-```bash
-# Required
-export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_API_KEY"
-export OTEL_SERVICE_NAME="my-service"
-
-# Recommended
-export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=abc123"
-```
-
-These variables are supported by all official OpenTelemetry SDKs.
+How long each signal is kept depends on your plan. See [Retention](/docs/reference/retention).

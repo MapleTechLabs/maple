@@ -4,20 +4,21 @@
 // accounts without either dataset — most orgs never see it.
 
 import { Result } from "@/lib/effect-atom"
+import { SectionHeading } from "@/components/common/section-heading"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { CloudflareDurableObjectRow, CloudflareQueueRow } from "@/api/warehouse/cloudflare-infra"
 import { cloudflarePlatformResourcesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable, useTableSort } from "../primitives/data-table"
+import { ColumnHead, DataTable, useTableSort } from "@/components/common/data-table"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
-import { errorRateClass } from "./constants"
+import { errorRateClass } from "@maple/ui/lib/error-rate"
 
 const ROW_CLASS =
 	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
 
 const numCell = (value: string, hidden?: boolean) => (
 	<div
-		className={`w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80 ${
+		className={`w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80 ${
 			hidden ? "hidden md:block" : ""
 		}`}
 	>
@@ -78,7 +79,7 @@ function QueueTable({ queues, waiting }: { queues: ReadonlyArray<CloudflareQueue
 
 			{sorted.map((queue) => (
 				<div key={queue.serviceName} className={ROW_CLASS}>
-					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-[13px] font-medium text-foreground">
+					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground">
 						{queue.queueName}
 					</div>
 					{numCell(formatNumber(Math.round(queue.backlogMessages)))}
@@ -140,12 +141,12 @@ function DurableObjectTable({
 
 			{sorted.map((row) => (
 				<div key={row.serviceName} className={ROW_CLASS}>
-					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-[13px] font-medium text-foreground">
+					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground">
 						{row.scriptName}
 					</div>
 					{numCell(formatNumber(row.requests))}
 					<div
-						className={`w-[110px] text-right font-mono text-[12px] tabular-nums ${errorRateClass(row.errorRate)}`}
+						className={`w-[110px] text-right font-mono text-xs tabular-nums ${errorRateClass(row.errorRate)}`}
 					>
 						{formatPercent(row.errorRate)}
 					</div>
@@ -167,7 +168,7 @@ export function CloudflarePlatformSection({ startTime, endTime }: { startTime: s
 			if (data.queues.length === 0 && data.durableObjects.length === 0) return null
 			return (
 				<section className="space-y-3">
-					<h2 className="text-sm font-medium text-foreground">Platform</h2>
+					<SectionHeading title="Platform" />
 					<div className="space-y-4">
 						{data.queues.length > 0 && <QueueTable queues={data.queues} waiting={r.waiting} />}
 						{data.durableObjects.length > 0 && (

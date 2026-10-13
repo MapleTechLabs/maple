@@ -9,6 +9,12 @@ import { TraceViewProvider } from "./trace-view-context"
 import { DEFAULT_COLOR_BY, type ColorByField } from "./color-by"
 import type { SpanNode, Span } from "../../lib/types"
 
+export type TraceView = "waterfall" | "timeline" | "flow"
+
+const TRACE_VIEWS: ReadonlyArray<TraceView> = ["waterfall", "timeline", "flow"]
+
+export const isTraceView = (value: unknown): value is TraceView => TRACE_VIEWS.some((view) => view === value)
+
 interface TraceViewTabsProps {
 	rootSpans: SpanNode[]
 	spans: Span[]
@@ -17,6 +23,9 @@ interface TraceViewTabsProps {
 	services: string[]
 	selectedSpanId?: string
 	onSelectSpan?: (span: SpanNode) => void
+	/** Controlled active tab. Omit to let the tabs own it, starting on the timeline. */
+	view?: TraceView
+	onViewChange?: (view: TraceView) => void
 }
 
 export function TraceViewTabs({
@@ -27,6 +36,8 @@ export function TraceViewTabs({
 	services,
 	selectedSpanId,
 	onSelectSpan,
+	view,
+	onViewChange,
 }: TraceViewTabsProps) {
 	// _spans is reserved for future Flow view implementation
 	const [colorBy, setColorBy] = React.useState<ColorByField>(DEFAULT_COLOR_BY)
@@ -42,7 +53,13 @@ export function TraceViewTabs({
 			colorBy={colorBy}
 			setColorBy={setColorBy}
 		>
-			<Tabs defaultValue="timeline" className="flex flex-col h-full">
+			<Tabs
+				{...(view === undefined ? { defaultValue: "timeline" } : { value: view })}
+				onValueChange={(next) => {
+					if (isTraceView(next)) onViewChange?.(next)
+				}}
+				className="flex flex-col h-full"
+			>
 				<TabsList variant="underline" className="shrink-0">
 					<TabsTrigger value="waterfall">
 						<MenuIcon size={14} />

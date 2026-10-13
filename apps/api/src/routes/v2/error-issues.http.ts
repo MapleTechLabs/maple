@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type {
 	ActorDocument,
 	ErrorIncidentDocument,
@@ -149,6 +149,7 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 						deploymentEnv: query.deployment_environment,
 						startTime: query.start_time,
 						endTime: query.end_time,
+						introducedAfter: query.introduced_after,
 						actionable: query.actionable === "true",
 						sort,
 						limit: query.limit ?? 20,

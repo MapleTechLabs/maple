@@ -4,7 +4,7 @@
  */
 import { Component, type ErrorInfo, type ReactNode } from "react"
 
-import { buttonVariants } from "@maple/ui/components/ui/button"
+import { Button } from "@maple/ui/components/ui/button"
 import { isChunkLoadError, shouldAttemptChunkReload } from "@/lib/chunk-reload"
 import { displayError } from "@/lib/error-messages"
 import { captureException } from "@/lib/services/common/otel-layer"
@@ -94,16 +94,12 @@ function CrashScreen({ error }: { error: unknown }) {
 			</div>
 
 			<div className="flex items-center gap-2">
-				<button
-					type="button"
-					className={buttonVariants({ size: "sm", variant: "default" })}
-					onClick={() => window.location.reload()}
-				>
+				<Button size="sm" onClick={() => window.location.reload()}>
 					Reload dashboard
-				</button>
-				<a href="/" className={buttonVariants({ size: "sm", variant: "outline" })}>
+				</Button>
+				<Button size="sm" variant="outline" render={<a href="/" />}>
 					Go to home
-				</a>
+				</Button>
 			</div>
 
 			{import.meta.env.DEV && (
@@ -111,7 +107,7 @@ function CrashScreen({ error }: { error: unknown }) {
 					<summary className="cursor-pointer text-xs text-muted-foreground select-none">
 						{name} details
 					</summary>
-					<pre className="mt-2 overflow-auto bg-muted p-3 font-mono text-[11px] leading-relaxed">
+					<pre className="mt-2 overflow-auto bg-muted p-3 font-mono text-2xs leading-relaxed">
 						{stack ?? presentation.title}
 					</pre>
 				</details>

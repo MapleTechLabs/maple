@@ -31,13 +31,39 @@ import {
 	type QueryBuilderQueryDraftPayload,
 	type OrgId,
 } from "@maple/domain/http"
-import type { AlertRuleRow } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
 import { Array as Arr, Effect, Match, Result, Schema } from "effect"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import type { AlertRuntimeApi } from "./AlertRuntime"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 
 const StringArraySchema = Schema.Array(Schema.String)
+
+type StoredJsonColumn =
+	| "serviceNamesJson"
+	| "excludeServiceNamesJson"
+	| "environmentsJson"
+	| "tagsJson"
+	| "destinationIdsJson"
+
+/**
+ * An `alert_rules` row with its schema-typed jsonb columns read as `unknown`. The model
+ * decodes them itself, so a malformed stored value is `AlertRuleStoredConfigInvalidError`.
+ */
+export type StoredAlertRuleRow = Omit<AlertRuleRow, StoredJsonColumn> & {
+	readonly [K in StoredJsonColumn]: unknown
+}
+
+/** Every `alert_rules` column as a `StoredAlertRuleRow`; add a `where` to it. */
+export const selectStoredAlertRules = () =>
+	PG.from(AlertRules).select(($) => ({
+		...$,
+		serviceNamesJson: PG.undecoded($.serviceNamesJson),
+		excludeServiceNamesJson: PG.undecoded($.excludeServiceNamesJson),
+		environmentsJson: PG.undecoded($.environmentsJson),
+		tagsJson: PG.undecoded($.tagsJson),
+		destinationIdsJson: PG.undecoded($.destinationIdsJson),
+	}))
 const DestinationIdArraySchema = Schema.Array(AlertDestinationDocument.fields.id)
 const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)
 
@@ -76,6 +102,7 @@ export interface NormalizedRule {
 	readonly queryBuilderDraft: QueryBuilderQueryDraftPayload | null
 	readonly rawQuerySql: string | null
 	readonly rawQueryReducer: QueryEngineAlertReducer | null
+	readonly alertOnNoData: boolean
 	readonly destinationIds: ReadonlyArray<AlertDestinationId>
 	readonly compiledPlan: Schema.Schema.Type<typeof CompiledAlertQueryPlan>
 	readonly createdAt: number
@@ -96,7 +123,7 @@ export const normalizedRuleToDocument = (
 		readonly txid?: AlertRuleDocument["txid"]
 	},
 ): AlertRuleDocument => {
-	const timestamp = decodeIsoDateTimeStringSync(msToDate(options.timestamp).toISOString())
+	const timestamp = decodeIsoDateTimeStringSync(new Date(options.timestamp).toISOString())
 	return new AlertRuleDocument({
 		id: rule.id,
 		name: rule.name,
@@ -248,6 +275,7 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 	readonly comparator: AlertComparator
 	readonly windowMinutes: number
 	readonly groupBy: AlertGroupBy | null
+	readonly alertOnNoData: boolean
 }): Effect.fn.Return<Schema.Schema.Type<typeof CompiledAlertQueryPlan>, AlertValidationError> {
 	const bucketSeconds = alertWindowBucketSeconds(rule.windowMinutes)
 	const envFilter = rule.environments.length > 0 ? { environments: rule.environments } : {}
@@ -256,8 +284,13 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 		...envFilter,
 	}
 
-	const noDataBehavior: QueryEngineNoDataBehavior =
-		rule.signalType === "throughput" && ["lt", "lte"].includes(rule.comparator) ? "zero" : "skip"
+	// An explicit alert-on-no-data wins: a low-throughput rule reads an empty window
+	// as zero, but a minimum sample count then skips it instead of breaching.
+	const noDataBehavior: QueryEngineNoDataBehavior = rule.alertOnNoData
+		? "alert"
+		: rule.signalType === "throughput" && ["lt", "lte"].includes(rule.comparator)
+			? "zero"
+			: "skip"
 	const traceSignalMetrics: Record<string, string> = {
 		error_rate: "error_rate",
 		p95_latency: "p95_duration",
@@ -404,7 +437,7 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 
 const parseCompiledPlan = (
 	row: Pick<
-		AlertRuleRow,
+		StoredAlertRuleRow,
 		| "id"
 		| "signalType"
 		| "querySpecJson"
@@ -423,9 +456,7 @@ const parseCompiledPlan = (
 		})
 	if (row.signalType === "raw_query") {
 		if (row.rawQuerySql == null) {
-			return Effect.fail(
-				invalid("Stored raw alert is missing its SQL query", new Error("rawQuerySql is null")),
-			)
+			return Effect.fail(invalid("Stored raw alert is missing its SQL query", "rawQuerySql is null"))
 		}
 		return Schema.decodeUnknownEffect(CompiledAlertQueryPlan)({
 			kind: "raw_sql",
@@ -453,8 +484,8 @@ const parseCompiledPlan = (
 
 type IsoDateTimeValue = Schema.Schema.Type<typeof AlertDestinationDocument.fields.createdAt>
 
-const toIso = (value: Date | null | undefined): IsoDateTimeValue | null =>
-	value == null ? null : decodeIsoDateTimeStringSync(value.toISOString())
+const toIso = (value: number | null | undefined): IsoDateTimeValue | null =>
+	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
 
 type StoredRuleComponent = AlertRuleStoredConfigInvalidError["component"]
 
@@ -493,7 +524,7 @@ const decodeNullableStoredRuleComponent = <S extends Schema.Top>(
 ): Effect.Effect<S["Type"] | null, AlertRuleStoredConfigInvalidError, S["DecodingServices"]> =>
 	value == null ? Effect.succeed(null) : decodeStoredRuleComponent(ruleId, component, schema, value)
 
-export const decodeStoredAlertRuleMetadata = (row: AlertRuleRow) =>
+export const decodeStoredAlertRuleMetadata = (row: StoredAlertRuleRow) =>
 	Effect.all({
 		serviceNames: decodeStoredStringArray(row.id, "service_names", row.serviceNamesJson),
 		excludeServiceNames: decodeStoredStringArray(
@@ -535,7 +566,7 @@ export const decodeStoredAlertRuleDestinationIds = (
 	)
 
 export const rowToRuleDocument = (
-	row: AlertRuleRow,
+	row: StoredAlertRuleRow,
 	evaluationState?: RuleEvaluationState,
 ): Effect.Effect<AlertRuleDocument, AlertRuleStoredConfigInvalidError> =>
 	Effect.gen(function* () {
@@ -575,12 +606,10 @@ export const rowToRuleDocument = (
 					noDataBehavior: decodeNoDataBehaviorSync(row.noDataBehavior),
 					lastEvaluationError: evaluationState?.error ?? null,
 					lastEvaluatedAt:
-						evaluationState?.evaluatedAt != null
-							? decodeIsoDateTimeStringSync(msToDate(evaluationState.evaluatedAt).toISOString())
-							: null,
+						evaluationState?.evaluatedAt != null ? toIso(evaluationState.evaluatedAt) : null,
 					lastScheduledAt: toIso(row.lastScheduledAt),
-					createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
-					updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
+					createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
+					updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
 					createdBy: decodeUserIdSync(row.createdBy),
 					updatedBy: decodeUserIdSync(row.updatedBy),
 				})
@@ -597,9 +626,15 @@ export const rowToRuleDocument = (
 
 export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 	const normalizeRuleRow = Effect.fn("AlertsService.normalizeRuleRow")(function* (
-		row: AlertRuleRow,
+		row: StoredAlertRuleRow,
 	): Effect.fn.Return<NormalizedRule, AlertRuleStoredConfigInvalidError> {
-		const stored = yield* decodeStoredAlertRuleMetadata(row)
+		const metadata = yield* decodeStoredAlertRuleMetadata(row)
+		// Rows written before the request normalizer dropped a builder query's
+		// service scope evaluate as the draft alone, once, like new ones.
+		const stored =
+			row.signalType === "builder_query"
+				? { ...metadata, serviceNames: [], excludeServiceNames: [] }
+				: metadata
 		const decoded = yield* Effect.try({
 			try: () => {
 				return {
@@ -648,10 +683,11 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			queryBuilderDraft: stored.queryBuilderDraft,
 			rawQuerySql: row.rawQuerySql ?? null,
 			rawQueryReducer: decoded.rawQueryReducer,
+			alertOnNoData: row.noDataBehavior === "alert",
 			destinationIds: yield* decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson),
 			compiledPlan: yield* parseCompiledPlan(row),
-			createdAt: dateToMs(row.createdAt),
-			updatedAt: dateToMs(row.updatedAt),
+			createdAt: row.createdAt,
+			updatedAt: row.updatedAt,
 		}
 	})
 
@@ -661,18 +697,22 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		options?: { readonly forPreview?: boolean },
 	): Effect.fn.Return<NormalizedRule, AlertValidationError> {
 		const name = request.name.trim()
+		// A builder query's draft carries its own scope and never reads the
+		// service fields, so keeping them would only fan out identical queries.
+		const draftOwnsScope = request.signalType === "builder_query"
 		const serviceNames =
-			request.serviceNames && request.serviceNames.length > 0
+			request.serviceNames && request.serviceNames.length > 0 && !draftOwnsScope
 				? request.serviceNames
 						.map((service) => service.trim())
 						.filter((service) => service.length > 0)
 				: []
 		const serviceName = serviceNames.length === 1 ? (serviceNames[0] ?? null) : null
-		const excludeServiceNames = request.excludeServiceNames
-			? request.excludeServiceNames
-					.map((service) => service.trim())
-					.filter((service) => service.length > 0)
-			: []
+		const excludeServiceNames =
+			request.excludeServiceNames && !draftOwnsScope
+				? request.excludeServiceNames
+						.map((service) => service.trim())
+						.filter((service) => service.length > 0)
+				: []
 		const queryOwnsScope = request.signalType === "builder_query" || request.signalType === "raw_query"
 		const environments =
 			request.environments && !queryOwnsScope
@@ -779,14 +819,22 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			rawQuerySql:
 				request.signalType === "raw_query" ? normalizeOptionalString(request.rawQuerySql) : null,
 			rawQueryReducer: request.signalType === "raw_query" ? (request.rawQueryReducer ?? null) : null,
+			alertOnNoData: request.alertOnNoData ?? false,
 			destinationIds,
 			createdAt: nowMs,
 			updatedAt: nowMs,
 		}
-		return {
-			...normalizedBase,
-			compiledPlan: yield* compileRulePlan(normalizedBase),
+		const compiledPlan = yield* compileRulePlan(normalizedBase)
+		// A grouped rule's missing group is already held open by its incident's
+		// liveness check; an empty result would breach under no real group.
+		if (normalizedBase.alertOnNoData && planGroupingTokens(compiledPlan) != null) {
+			return yield* Effect.fail(
+				makeAlertValidationError("Invalid alert rule", [
+					"alertOnNoData is not supported on grouped rules: a group that stops reporting is already held open by its incident's telemetry check",
+				]),
+			)
 		}
+		return { ...normalizedBase, compiledPlan }
 	})
 
 	return { normalizeRule, normalizeRuleRow }

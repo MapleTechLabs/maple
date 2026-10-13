@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { cloudflareZoneCacheTimeseriesSQL } from "./cloudflare-infra"
 import { cloudflareZoneBreakdownTotalsSQL } from "./cloudflare-infra-breakdowns"
 import { cloudflareZoneFirewallTopSQL } from "./cloudflare-infra-extended"
 import { CF_METRIC, cloudflareIgnoredFilters, cloudflareIgnoredFiltersFor } from "./cloudflare-infra-filters"
+import { OrgId } from "@maple/domain"
 
 const zoneParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	serviceName: "cloudflare/example.com",
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",

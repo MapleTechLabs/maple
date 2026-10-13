@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import {
 	bucketIntervalLabel,
+	countLabel,
+	EMPTY_VALUE,
 	formatBucketLabel,
 	formatBytes,
 	formatBytesPerSecond,
@@ -11,12 +13,15 @@ import {
 	formatLoad,
 	formatNumber,
 	formatPercent,
+	formatRate,
+	formatRatePerHour,
 	formatStorageBytes,
 	formatUptime,
 	formatValueByUnit,
 	inferBucketSeconds,
 	inferRangeMs,
 	parseBucketMs,
+	pluralize,
 } from "../format"
 
 // This file is the contract for the consolidation: every helper below replaced
@@ -42,7 +47,7 @@ describe("formatLatency", () => {
 	it("shares the duration ladder and has a placeholder for missing values", () => {
 		expect(formatLatency(90_000)).toBe("1.5min")
 		expect(formatLatency(3_600_000)).toBe("1.0h")
-		expect(formatLatency(Number.NaN)).toBe("-")
+		expect(formatLatency(Number.NaN)).toBe(EMPTY_VALUE)
 	})
 })
 
@@ -101,7 +106,13 @@ describe("percent formatters stay separate", () => {
 		expect(formatPercent(0.0001)).toBe("0%")
 		expect(formatPercent(0.052)).toBe("5.2%")
 		expect(formatPercent(0.87)).toBe("87%")
-		expect(formatPercent(Number.NaN)).toBe("—")
+		expect(formatPercent(Number.NaN)).toBe(EMPTY_VALUE)
+	})
+
+	it("formatPercent with a floor marks a tiny non-zero share", () => {
+		expect(formatPercent(0.0004, { floor: 0.001 })).toBe("<0.1%")
+		expect(formatPercent(0, { floor: 0.001 })).toBe("0%")
+		expect(formatPercent(0.052, { floor: 0.001 })).toBe("5.2%")
 	})
 
 	it("formatErrorRate surfaces a rare failure instead of showing 0%", () => {
@@ -115,8 +126,8 @@ describe("percent formatters stay separate", () => {
 describe("formatLoad / formatUptime", () => {
 	it("renders load and uptime", () => {
 		expect(formatLoad(1.234)).toBe("1.23")
-		expect(formatLoad(Number.NaN)).toBe("—")
-		expect(formatUptime(0)).toBe("—")
+		expect(formatLoad(Number.NaN)).toBe(EMPTY_VALUE)
+		expect(formatUptime(0)).toBe(EMPTY_VALUE)
 		expect(formatUptime(30 * 60)).toBe("30m")
 		expect(formatUptime(5 * 3600)).toBe("5h")
 		expect(formatUptime(3 * 86_400 + 4 * 3600)).toBe("3d 4h")
@@ -162,5 +173,65 @@ describe("bucket helpers normalize warehouse timestamps", () => {
 		expect(bucketIntervalLabel(86_400)).toBe("/d")
 		expect(bucketIntervalLabel(7)).toBe("")
 		expect(bucketIntervalLabel(undefined)).toBe("")
+	})
+})
+
+describe("pluralize / countLabel", () => {
+	it("picks the noun form from the count", () => {
+		expect(pluralize(1, "host")).toBe("host")
+		expect(pluralize(0, "host")).toBe("hosts")
+		expect(pluralize(2, "query", "queries")).toBe("queries")
+		expect(countLabel(1200, "span")).toBe("1,200 spans")
+	})
+})
+
+describe("formatRatePerHour", () => {
+	it("switches to the unit a reader can picture", () => {
+		expect(formatRatePerHour(12.4)).toBe("12× an hour")
+		expect(formatRatePerHour(2.34)).toBe("2.3× an hour")
+		expect(formatRatePerHour(0.5)).toBe("12× a day")
+		expect(formatRatePerHour(0.01)).toBe("1.7× a week")
+	})
+})
+
+describe("formatRate", () => {
+	it("reads at the precision a rate is compared at", () => {
+		expect(formatRate(0)).toBe("0")
+		expect(formatRate(0.0123)).toBe("0.012")
+		expect(formatRate(12.3456)).toBe("12.3")
+		expect(formatRate(123.4)).toBe("123")
+		expect(formatRate(1234)).toBe("1.2K")
+	})
+})
+
+describe("worst-case inputs", () => {
+	it("formatDuration keeps sign, rolls up at rounding edges, reaches days and guards NaN", () => {
+		expect(formatDuration(-42.5)).toBe("-42.5ms")
+		expect(formatDuration(0.000001)).toBe("1ns")
+		expect(formatDuration(0)).toBe("0μs")
+		expect(formatDuration(999.96)).toBe("1.00s")
+		expect(formatDuration(59_999)).toBe("1.0min")
+		expect(formatDuration(259_200_000)).toBe("3.0d")
+		expect(formatDuration(Number.NaN)).toBe("—")
+		expect(formatDuration(Number.POSITIVE_INFINITY)).toBe("—")
+	})
+
+	it("formatNumber does not print InfinityT", () => {
+		expect(formatNumber(Number.POSITIVE_INFINITY)).toBe("—")
+		expect(formatNumber(Number.NaN)).toBe("—")
+	})
+
+	it("byte formatters reach PB", () => {
+		expect(formatStorageBytes(5e15)).toBe("5.0 PB")
+		expect(formatBytes(5 * 1024 ** 5)).toBe("5.0 PB")
+	})
+
+	it("formatUptime has a sub-minute and a years tier", () => {
+		expect(formatUptime(4)).toBe("<1m")
+		expect(formatUptime(3 * 365 * 86_400)).toBe("3y 0d")
+	})
+
+	it("formatErrorRate guards non-finite input", () => {
+		expect(formatErrorRate(Number.NaN)).toBe(EMPTY_VALUE)
 	})
 })

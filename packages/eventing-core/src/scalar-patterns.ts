@@ -20,6 +20,7 @@ export const INT64_MAX = (1n << 63n) - 1n
 // Preserve the existing spelling of zero, including -0; reject leading zeroes.
 export const DECIMAL_INT64_PATTERN = new RegExp(
 	`^(?:${magnitudePattern(INT64_MAX)}|-${magnitudePattern(-INT64_MIN)})$`,
+	"u",
 )
 
 // Gregorian leap years: divisible by four, except centuries not divisible by 400.
@@ -31,4 +32,5 @@ const minuteOrSecond = "[0-5][0-9]"
 /** The v1 RFC 3339 subset, enforced even by validators that ignore format annotations. */
 export const RFC3339_TIMESTAMP_PATTERN = new RegExp(
 	`^(?:${ordinaryDate}|${leapYear}-02-29)T${hour}:${minuteOrSecond}:${minuteOrSecond}(?:\\.[0-9]{1,9})?(?:Z|[+-]${hour}:${minuteOrSecond})$`,
+	"u",
 )

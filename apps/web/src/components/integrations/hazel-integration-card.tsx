@@ -1,16 +1,18 @@
-import { useState } from "react"
-import { Exit, Option } from "effect"
+import { Option } from "effect"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { useState } from "react"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { Item, ItemContent, ItemMedia } from "@maple/ui/components/ui/item"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { ErrorState } from "@/components/common/error-state"
-import { HazelIcon, LoaderIcon } from "@/components/icons"
+import { HazelIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { HAZEL_ACCENT, IntegrationIconPlate } from "./integration-catalog"
-import { useIntegrationConnect } from "./integration-connect"
+import { useRequiredIntegrationConnect } from "./integration-connect"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -20,53 +22,37 @@ import {
 	IntegrationEmptyHint,
 	IntegrationEmptyMedia,
 } from "./integration-empty-state"
+import { useIntegrationDisconnect } from "./use-integration-disconnect"
 
 export function HazelIntegrationCard() {
-	const statusAtom = retainedQuery("integrations", "hazelStatus", {
+	const statusAtom = retainedInternalQuery("integrations", "hazelStatus", {
 		reactivityKeys: ["hazelIntegrationStatus"],
 	})
 	const statusResult = useAtomValue(statusAtom)
 	const refreshStatus = useAtomRefresh(statusAtom)
 
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "hazelDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "hazelDisconnect"), {
 		mode: "promiseExit",
 	})
 
 	// Connect flow (popup, busy, refresh-on-return) lives in IntegrationConnectProvider —
 	// shared with the drill-in header's Connect button.
-	const connectFlow = useIntegrationConnect()
-	if (connectFlow === null) {
-		throw new Error("HazelIntegrationCard must be rendered inside IntegrationConnectProvider")
-	}
-	const [disconnectBusy, setDisconnectBusy] = useState(false)
+	const connectFlow = useRequiredIntegrationConnect("HazelIntegrationCard")
+	const { disconnect: handleDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(
+		() => disconnect({ reactivityKeys: ["hazelIntegrationStatus", "hazelWorkspaces"] }),
+		{ success: "Hazel disconnected", error: "Failed to disconnect Hazel" },
+	)
 	const actionBusy = connectFlow.busy || disconnectBusy
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
-	const status = Result.builder(statusResult)
-		.onSuccess((s) => s)
-		.orElse(() =>
-			Result.isFailure(statusResult)
-				? Option.getOrNull(Option.map(statusResult.previousSuccess, (previous) => previous.value))
-				: null,
-		)
+	// Keep the last loaded status if a refetch fails.
+	const status = Option.getOrNull(AsyncResult.value(statusResult))
 	const isLoading = Result.isInitial(statusResult) && status === null
 	const loadFailed = Result.isFailure(statusResult) && status === null
 
-	async function handleDisconnect() {
-		setDisconnectBusy(true)
-		const result = await disconnect({
-			reactivityKeys: ["hazelIntegrationStatus", "hazelWorkspaces"],
-		})
-		setDisconnectBusy(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Hazel disconnected", type: "success" })
-		} else {
-			toastManager.add({ title: "Failed to disconnect Hazel", type: "error" })
-		}
-	}
-
 	const isConnected = status?.connected === true
 	if (isLoading) {
-		return <Skeleton className="h-32 w-full rounded-lg" />
+		return <Skeleton className="h-32 w-full rounded-md" />
 	}
 	if (loadFailed) {
 		return (
@@ -103,12 +89,8 @@ export function HazelIntegrationCard() {
 					<IntegrationEmptyHint>
 						Alert destinations will appear here after connecting your workspace.
 					</IntegrationEmptyHint>
-					<Button onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? (
-							<LoaderIcon size={16} className="animate-spin" />
-						) : (
-							<HazelIcon size={16} />
-						)}
+					<Button onClick={connectFlow.connect} disabled={actionBusy} loading={connectFlow.busy}>
+						<HazelIcon />
 						Connect Hazel
 					</Button>
 					<IntegrationEmptyFooter>
@@ -120,14 +102,16 @@ export function HazelIntegrationCard() {
 	}
 
 	return (
-		<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
-			<IntegrationIconPlate icon={HazelIcon} accent={HAZEL_ACCENT} />
+		<Item variant="card" className="items-start gap-4 p-4">
+			<ItemMedia>
+				<IntegrationIconPlate icon={HazelIcon} accent={HAZEL_ACCENT} />
+			</ItemMedia>
 
-			<div className="flex flex-1 flex-col gap-2">
+			<ItemContent className="gap-2">
 				<div>
 					<div className="flex items-center gap-2">
 						<h3 className="text-sm font-semibold">Hazel</h3>
-						<Badge variant="success">Connected</Badge>
+						<Badge variant="ok">Connected</Badge>
 					</div>
 					<p className="mt-1 text-xs text-muted-foreground">
 						Forward Maple alerts into a Hazel workspace via OAuth. Once connected, create a Hazel
@@ -136,9 +120,9 @@ export function HazelIntegrationCard() {
 				</div>
 
 				{status ? (
-					<div className="flex flex-col gap-1 rounded-md bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+					<div className="flex flex-col gap-1 rounded-md bg-muted/40 px-3 py-2 text-2xs text-muted-foreground">
 						{status.externalUserEmail ? (
-							<div>
+							<div className="[overflow-wrap:anywhere]">
 								<span className="text-foreground">{status.externalUserEmail}</span> authorized
 								this connection.
 							</div>
@@ -150,16 +134,37 @@ export function HazelIntegrationCard() {
 				) : null}
 
 				<div className="flex flex-wrap gap-2">
-					<Button size="sm" onClick={connectFlow.connect} disabled={actionBusy} variant="outline">
-						{connectFlow.busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={connectFlow.connect}
+						disabled={actionBusy}
+						loading={connectFlow.busy}
+					>
 						Reconnect
 					</Button>
-					<Button size="sm" onClick={handleDisconnect} disabled={actionBusy} variant="outline">
-						{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={() => setConfirmingDisconnect(true)}
+						disabled={actionBusy}
+						loading={disconnectBusy}
+					>
 						Disconnect
 					</Button>
 				</div>
-			</div>
-		</div>
+				<ConfirmDialog
+					open={confirmingDisconnect}
+					onOpenChange={setConfirmingDisconnect}
+					title="Disconnect Hazel"
+					description="Alerts routed to Hazel stop being delivered until you reconnect."
+					confirmLabel="Disconnect"
+					onConfirm={() => {
+						setConfirmingDisconnect(false)
+						void handleDisconnect()
+					}}
+				/>
+			</ItemContent>
+		</Item>
 	)
 }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -67,10 +68,7 @@ export function ErrorsLab() {
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Errors"
-							description="Every error fingerprint, with what it is doing and who is on it."
-						>
+						<DashboardLayout.Header>
 							<LabControls
 								state={state}
 								onStateChange={setState}
@@ -147,7 +145,7 @@ function LabToggleGroup<T extends string | number | null>({
 }) {
 	return (
 		<div className="flex items-center gap-1.5">
-			<span className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</span>
+			<Eyebrow>{label}</Eyebrow>
 			<div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5">
 				{options.map((option) => (
 					<button

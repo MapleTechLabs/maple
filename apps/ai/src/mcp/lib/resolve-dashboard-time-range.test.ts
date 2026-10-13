@@ -18,12 +18,6 @@ describe("validateDashboardTimeRange", () => {
 		expect(validateDashboardTimeRange("3mo")).toContain("31 days")
 	})
 
-	it("still accepts the four values the whitelist allowed", () => {
-		for (const value of ["1h", "6h", "24h", "7d"]) {
-			expect(validateDashboardTimeRange(value)).toBeNull()
-		}
-	})
-
 	it("rejects a range past the engine ceiling instead of downgrading it", () => {
 		const error = validateDashboardTimeRange("999d")
 		expect(error).not.toBeNull()

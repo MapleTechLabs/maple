@@ -233,8 +233,7 @@ const AXIS_MIN_SEPARATION = SMALL_ROW
  */
 export const yAxisGutter = (labels: ReadonlyArray<PlotLabel>, limit: PlotLabel | null): Node => {
 	const clear = (tick: PlotLabel): boolean =>
-		limit === null ||
-		Math.abs(plotY(tick.yFraction) - plotY(limit.yFraction)) >= AXIS_MIN_SEPARATION
+		limit === null || Math.abs(plotY(tick.yFraction) - plotY(limit.yFraction)) >= AXIS_MIN_SEPARATION
 	const drawn = [
 		...labels.filter(clear).map((tick) => ({ tick, color: COLOR.muted })),
 		// The limit is a value on this scale, so it belongs on the scale, at the

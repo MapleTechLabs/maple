@@ -25,10 +25,12 @@ import type { AiSessionSpan } from "@maple/domain/http"
 import {
 	classifyAiSpan,
 	isLlmCall,
+	lastUserMessageText,
 	spanEndMs,
 	spanFailed,
 	spanModel,
 	spanStartMs,
+	withoutInjectedBlocks,
 	type AiSpanCategory,
 	type SessionTurn,
 } from "./session-turns"
@@ -40,6 +42,7 @@ import {
 	type SpanMessage,
 	type SpanMessagePart,
 } from "./span-detail"
+import { rawFailureText } from "./failure-text"
 import { countTurnUsage, type SessionTurnUsage } from "./session-summary"
 
 /* -------------------------------------------------------------------------- */
@@ -136,6 +139,9 @@ export type TranscriptRow =
 			/** Absent when the call failed, or captured no output text. */
 			readonly text: string | undefined
 			readonly failed: boolean
+			/** The call's whole output was tool calls; the row only names the
+			 *  speaker, so the calls below it are not read as the failed call's. */
+			readonly toolCallsOnly: boolean
 	  })
 	/** A captured prompt whose reply the emitter did not record. */
 	| (SpanRowBase & { readonly kind: "prompt"; readonly text: string })
@@ -466,9 +472,10 @@ function buildTurn(
 		emittedSystem: new Set<string>(),
 		userEmitted: false,
 		lastService: undefined,
+		lastCallFailed: false,
 	}
 
-	const forest = buildForest(spans)
+	const forest = buildForest(spans, dedupeById(turn.spans))
 	const walk = walkLane(forest.roots, forest.children, {
 		context,
 		depth: 0,
@@ -499,12 +506,15 @@ interface TurnContext {
 	userEmitted: boolean
 	/** The last model call's service, for the capture-boundary note. */
 	lastService: string | undefined
+	/** The previous model call failed — its row broke the speaker run. */
+	lastCallFailed: boolean
 }
 
 /**
  * Tool spans in this turn that carry no `gen_ai.tool.call.id`, counted by name.
  *
- * An id-less `tool_call` part in an output message cannot be matched to its
+ * A `tool_call` part no tool span's call id claims — an id-less part, or one
+ * whose tool span recorded no id (OpenInference) — cannot be matched to its
  * span by id, so without this the call renders twice: once first-hand from the
  * span, once again from the message that made it. The tool NAME is the only
  * evidence left, and it is spent conservatively — only against spans that no id
@@ -579,14 +589,32 @@ interface SpanForest {
  * read this one, but it deliberately preserves input order where this sorts —
  * unifying them is a behavioural change to the waterfall, not a lift.
  */
-function buildForest(spans: readonly AiSessionSpan[]): SpanForest {
+/**
+ * The AI spans as a forest. A span whose parent is the app's own (a runtime's
+ * `AgentRuntime.model` wrapper around each model call) hangs off its nearest AI
+ * ancestor through it: promoted to a root instead, every model call of an agent
+ * would print after that agent's whole tool subtree.
+ */
+function buildForest(spans: readonly AiSessionSpan[], all: readonly AiSessionSpan[] = spans): SpanForest {
 	const present = new Set(spans.map((span) => span.spanId))
+	const byId = new Map(all.map((span) => [span.spanId, span]))
+	const aiParentOf = (span: AiSessionSpan): string | undefined => {
+		const seen = new Set<string>([span.spanId])
+		let parentId = span.parentSpanId
+		while (parentId !== "" && !seen.has(parentId)) {
+			if (present.has(parentId)) return parentId
+			seen.add(parentId)
+			parentId = byId.get(parentId)?.parentSpanId ?? ""
+		}
+		return undefined
+	}
 	const children = new Map<string, AiSessionSpan[]>()
 	const roots: AiSessionSpan[] = []
 	for (const span of spans) {
-		if (span.parentSpanId !== "" && present.has(span.parentSpanId)) {
-			const siblings = children.get(span.parentSpanId)
-			if (siblings === undefined) children.set(span.parentSpanId, [span])
+		const parentId = aiParentOf(span)
+		if (parentId !== undefined) {
+			const siblings = children.get(parentId)
+			if (siblings === undefined) children.set(parentId, [span])
 			else siblings.push(span)
 		} else {
 			roots.push(span)
@@ -670,8 +698,13 @@ function walkLane(
 			// Its captured prompt is the one thing it says that the header does
 			// not: an emitter that records the user's message on the turn span
 			// (Claude Code's `interaction`) and never on the model calls under it
-			// would otherwise have no user row at all.
-			rows.push(...userRows(scope.context.messagesOf(span), span, scope))
+			// would otherwise have no user row at all. A prompt that is not the
+			// turn's label is an earlier turn's (see `turnLabel`), and the model
+			// call below carries the real one.
+			const prompt = lastUserMessageText(span.genAi.inputMessages)
+			if (prompt === undefined || prompt === scope.context.turn.label) {
+				rows.push(...userRows(scope.context.messagesOf(span), span, scope))
+			}
 			const inner = walkLane(children.get(span.spanId) ?? [], children, scope)
 			rows.push(...inner.rows)
 			addWork(counts, inner.counts)
@@ -1085,16 +1118,19 @@ function userRows(
 	const history = messages.filter((message) => message.origin === "input")
 	if (history.length === 0) return []
 
+	// The newest user message that says something: a framework's status block
+	// appended as a user message (`<run-status>`) is not what the user asked.
 	let index = -1
+	let text = ""
 	for (let i = history.length - 1; i >= 0; i--) {
-		if (history[i].role.toLowerCase() === "user") {
+		if (history[i].role.toLowerCase() !== "user") continue
+		text = withoutInjectedBlocks(textOf(history[i].parts)).trim()
+		if (text !== "") {
 			index = i
 			break
 		}
 	}
 	if (index === -1) return []
-	const text = textOf(history[index].parts)
-	if (text === "") return []
 
 	scope.context.userEmitted = true
 	return [
@@ -1127,6 +1163,8 @@ function outputRows(
 	const rows: TranscriptRow[] = []
 	const output = messages.filter((message) => message.origin === "output")
 	const failed = spanFailed(span)
+	const afterFailure = scope.context.lastCallFailed
+	scope.context.lastCallFailed = failed
 	const base = { depth: scope.depth, span, startMs: spanStartMs(span) }
 	let partIndex = 0
 
@@ -1142,7 +1180,15 @@ function outputRows(
 			}
 			if (part.kind === "text") {
 				const text = part.text.trim()
-				if (text !== "") rows.push({ ...base, kind: "assistant", key, text: part.text, failed })
+				if (text !== "")
+					rows.push({
+						...base,
+						kind: "assistant",
+						key,
+						text: part.text,
+						failed,
+						toolCallsOnly: false,
+					})
 				continue
 			}
 			if (part.kind === "tool_call") {
@@ -1174,7 +1220,14 @@ function outputRows(
 	if (failed) {
 		return [
 			...rows,
-			{ ...base, kind: "assistant", key: rowKey(scope, span, "failed"), text: undefined, failed: true },
+			{
+				...base,
+				kind: "assistant",
+				key: rowKey(scope, span, "failed"),
+				text: undefined,
+				failed: true,
+				toolCallsOnly: false,
+			},
 		]
 	}
 	const promptText = promptAllowed ? capturedPromptText(messages) : undefined
@@ -1186,8 +1239,22 @@ function outputRows(
 	// model going straight to work, not a missing reply. That is read off the
 	// captured messages, not off the rows: a hidden thinking row and a tool call
 	// a span already covers both leave `rows` empty without the reply having
-	// gone anywhere.
-	if (output.length > 0) return rows
+	// gone anywhere. Straight after a failed call, though, that work needs a
+	// speaker of its own, or its tool calls read as the failed call's.
+	if (output.length > 0) {
+		if (!afterFailure) return rows
+		return [
+			{
+				...base,
+				kind: "assistant",
+				key: rowKey(scope, span, "tool-calls"),
+				text: undefined,
+				failed: false,
+				toolCallsOnly: true,
+			},
+			...rows,
+		]
+	}
 	if (messages.length > 0) {
 		// This call captured something — so the reply is missing, not merely
 		// unrecorded like every call in a capture-off session.
@@ -1198,6 +1265,7 @@ function outputRows(
 				key: rowKey(scope, span, "no-reply"),
 				text: undefined,
 				failed: false,
+				toolCallsOnly: false,
 			},
 		]
 	}
@@ -1216,7 +1284,7 @@ function outputRows(
 function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, context: TurnContext): boolean {
 	// A tool span for the same call carries the duration, the service and the
 	// error; the message-only row exists only where there is no such span.
-	if (part.id !== undefined) return context.coveredCallIds.has(part.id)
+	if (part.id !== undefined && context.coveredCallIds.has(part.id)) return true
 	if (part.name === undefined) return false
 	const unclaimed = context.unclaimedToolNames.get(part.name)
 	if (unclaimed === undefined || unclaimed === 0) return false
@@ -1231,7 +1299,7 @@ function capturedPromptText(messages: readonly SpanMessage[]): string | undefine
 	const input = messages.filter((message) => message.origin === "input")
 	for (let i = input.length - 1; i >= 0; i--) {
 		if (input[i].role.toLowerCase() !== "user") continue
-		const text = textOf(input[i].parts)
+		const text = withoutInjectedBlocks(textOf(input[i].parts)).trim()
 		if (text !== "") return text
 	}
 	return undefined
@@ -1296,12 +1364,15 @@ function toolArgsText(span: AiSessionSpan): string | undefined {
 }
 
 /** A tool span's captured result. The session-wide index only fills an absence:
- *  a later call's echoed response never overrides the span's own report. */
+ *  a later call's echoed response never overrides the span's own report. A
+ *  failed span that recorded no result still says why it failed (its status
+ *  message), which is the result the call produced. */
 function toolResultText(span: AiSessionSpan, context: TurnContext): string | undefined {
 	const own = span.genAi.toolCallResult ?? undefined
 	if (own !== undefined) return jsonText(own)
 	const id = span.genAi.toolCallId
-	return id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
+	const echoed = id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
+	return echoed ?? (spanFailed(span) ? rawFailureText(span) : undefined)
 }
 
 /* -------------------------------------------------------------------------- */

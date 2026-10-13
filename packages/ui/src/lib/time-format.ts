@@ -17,6 +17,8 @@
 
 import { parseWarehouseDateTime } from "@maple/query-engine/datetime"
 
+import { EMPTY_VALUE } from "./empty-value"
+
 export type TimeInput = string | number | Date
 
 /**
@@ -68,7 +70,7 @@ export function relativeParts(epochMs: number, nowMs: number = Date.now()): Rela
 
 /** `"3h ago"` / `"in 3h"` / `"just now"`, from an epoch-ms instant. */
 export function formatRelativeFrom(epochMs: number, nowMs: number = Date.now()): string {
-	if (!Number.isFinite(epochMs)) return "—"
+	if (!Number.isFinite(epochMs)) return EMPTY_VALUE
 	const { value, unit, future } = relativeParts(epochMs, nowMs)
 	if (unit === "s" && value < 5) return "just now"
 	return future ? `in ${value}${unit}` : `${value}${unit} ago`
@@ -76,7 +78,7 @@ export function formatRelativeFrom(epochMs: number, nowMs: number = Date.now()):
 
 /** `"3h"` / `"now"`, from an epoch-ms instant. For dense table cells and chips. */
 export function formatRelativeShortFrom(epochMs: number, nowMs: number = Date.now()): string {
-	if (!Number.isFinite(epochMs)) return "—"
+	if (!Number.isFinite(epochMs)) return EMPTY_VALUE
 	const { value, unit } = relativeParts(epochMs, nowMs)
 	if (unit === "s" && value < 5) return "now"
 	return `${value}${unit}`
@@ -104,7 +106,7 @@ export function formatRelativeTimeOrDate(
 	timeZone?: string,
 ): string {
 	const epochMs = toEpochMs(input)
-	if (!Number.isFinite(epochMs)) return "—"
+	if (!Number.isFinite(epochMs)) return EMPTY_VALUE
 	if (nowMs - epochMs >= RELATIVE_CUTOVER_MS) {
 		// The date branch is a wall-clock reading, so it takes the viewer's selected
 		// zone where the page has one; the relative branch is zone-free.
@@ -116,4 +118,20 @@ export function formatRelativeTimeOrDate(
 		})
 	}
 	return formatRelativeFrom(epochMs, nowMs)
+}
+
+const pad2 = (value: number) => value.toString().padStart(2, "0")
+
+/**
+ * Clock-style countdown for a remaining duration: `4:05`, `1:04:05`, or with
+ * `fixedHours` always `01:04:05` (a pill that must not change width).
+ */
+export function formatCountdown(remainingMs: number, options: { fixedHours?: boolean } = {}): string {
+	const total = Number.isFinite(remainingMs) && remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0
+	const hours = Math.floor(total / 3600)
+	const minutes = Math.floor((total % 3600) / 60)
+	const seconds = total % 60
+	if (options.fixedHours) return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`
+	if (hours > 0) return `${hours}:${pad2(minutes)}:${pad2(seconds)}`
+	return `${minutes}:${pad2(seconds)}`
 }

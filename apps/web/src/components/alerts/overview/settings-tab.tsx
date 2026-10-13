@@ -1,4 +1,5 @@
-import { Exit, Option } from "effect"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Exit } from "effect"
 import { Fragment, useState, type Dispatch, type SetStateAction } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
@@ -6,7 +7,12 @@ import type { AlertDestinationDocument, AlertDestinationId } from "@maple/domain
 
 import { DestinationCard } from "@/components/alerts/destination-card"
 import { ProviderLogo } from "@/components/alerts/destination-provider"
-import { CircleWarningIcon, FireIcon, PlusIcon, TruckIcon } from "@/components/icons"
+import { TagGroupHeaderRow } from "@/components/alerts/overview/shared"
+import { Link } from "@tanstack/react-router"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
+import { ErrorState } from "@/components/common/error-state"
+import { SectionHeading } from "@/components/common/section-heading"
+import { PaperPlaneIcon, PlusIcon, TruckIcon } from "@/components/icons"
 import {
 	buildDestinationCreateParamsV2,
 	buildDestinationUpdateParamsV2,
@@ -16,14 +22,15 @@ import {
 	eventTypeMeta,
 	formatAlertDateTime,
 	formatAlertTime,
-	getExitErrorMessage,
 	groupDeliveryEventsByDay,
 	v2DeliveryToDocument,
+	suggestedDestinationName,
 	type DestinationFormState,
 } from "@/lib/alerts/form-utils"
-import { publicError } from "@/lib/error-messages"
+import { toastExit } from "@/lib/error-toast"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -34,6 +41,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 
 /**
  * Destination CRUD state + handlers, lifted into a hook so the route header's
@@ -47,13 +55,20 @@ export interface DestinationManager {
 	setForm: Dispatch<SetStateAction<DestinationFormState>>
 	isEditing: boolean
 	saving: boolean
-	testingId: AlertDestinationDocument["id"] | null
-	deletingId: AlertDestinationDocument["id"] | null
-	openDialog: (destination?: AlertDestinationDocument) => void
+	isTesting: (id: AlertDestinationId) => boolean
+	isDeleting: (id: AlertDestinationId) => boolean
+	/** True when the dialog opened on a provider picked elsewhere, so the provider grid starts folded. */
+	providerLocked: boolean
+	unlockProvider: () => void
+	/** Opens on an existing destination to edit it, or on a new one, optionally preset to a provider. */
+	openDialog: (destination?: AlertDestinationDocument, preset?: DestinationFormState) => void
 	save: () => Promise<void>
+	/** Creates a fully specified destination without the dialog. Resolves to whether it was created. */
+	quickCreate: (form: DestinationFormState) => Promise<boolean>
 	test: (destination: AlertDestinationDocument) => Promise<void>
 	toggle: (destination: AlertDestinationDocument) => Promise<void>
-	remove: (destination: AlertDestinationDocument) => Promise<void>
+	/** Resolves to whether it was deleted, so a confirm dialog can stay open on failure. */
+	remove: (destination: AlertDestinationDocument) => Promise<boolean>
 }
 
 export function useDestinationManager(options?: {
@@ -76,18 +91,32 @@ export function useDestinationManager(options?: {
 	const [dialogOpen, setDialogOpen] = useState(false)
 	const [form, setForm] = useState<DestinationFormState>(defaultDestinationForm())
 	const [editing, setEditing] = useState<AlertDestinationDocument | null>(null)
-	const [saving, setSaving] = useState(false)
-	const [testingId, setTestingId] = useState<AlertDestinationDocument["id"] | null>(null)
-	const [deletingId, setDeletingId] = useState<AlertDestinationDocument["id"] | null>(null)
+	const [providerLocked, setProviderLocked] = useState(false)
 
-	function openDialog(destination?: AlertDestinationDocument) {
+	function openDialog(destination?: AlertDestinationDocument, preset?: DestinationFormState) {
 		setEditing(destination ?? null)
-		setForm(destination ? destinationToFormState(destination) : defaultDestinationForm())
+		setForm(destination ? destinationToFormState(destination) : (preset ?? defaultDestinationForm()))
+		setProviderLocked(destination === undefined && preset !== undefined)
 		setDialogOpen(true)
 	}
 
-	async function save() {
-		setSaving(true)
+	async function create(next: DestinationFormState) {
+		const named = next.name.trim().length > 0 ? next : { ...next, name: suggestedDestinationName(next) }
+		const result = await createDestination({
+			// `as never`: see the union-payload note in `save`.
+			payload: buildDestinationCreateParamsV2(named) as never,
+			reactivityKeys: ["alertDestinations"],
+		})
+		if (!toastExit(result, { success: "Destination created", error: "Failed to save destination" })) {
+			return false
+		}
+		if (Exit.isSuccess(result)) options?.onCreated?.(result.value.id)
+		return true
+	}
+
+	const [quickCreate, quickCreating] = useAsyncAction(create)
+
+	const [save, savingDialog] = useAsyncAction(async () => {
 		if (editing) {
 			const result = await updateDestination({
 				params: { id: editing.id },
@@ -97,55 +126,28 @@ export function useDestinationManager(options?: {
 				payload: buildDestinationUpdateParamsV2(form) as never,
 				reactivityKeys: ["alertDestinations"],
 			})
-			if (Exit.isSuccess(result)) {
-				toastManager.add({ title: "Destination updated", type: "success" })
+			if (toastExit(result, { success: "Destination updated", error: "Failed to save destination" })) {
 				setDialogOpen(false)
-			} else {
-				toastManager.add({
-					title: getExitErrorMessage(result, "Failed to save destination"),
-					type: "error",
-				})
 			}
 		} else {
-			const result = await createDestination({
-				// `as never`: see above.
-				payload: buildDestinationCreateParamsV2(form) as never,
-				reactivityKeys: ["alertDestinations"],
-			})
-			if (Exit.isSuccess(result)) {
-				toastManager.add({ title: "Destination created", type: "success" })
-				setDialogOpen(false)
-				options?.onCreated?.(result.value.id)
-			} else {
-				toastManager.add({
-					title: getExitErrorMessage(result, "Failed to save destination"),
-					type: "error",
-				})
-			}
+			if (await create(form)) setDialogOpen(false)
 		}
-		setSaving(false)
-	}
+	})
+	const saving = quickCreating || savingDialog
 
-	async function test(destination: AlertDestinationDocument) {
-		setTestingId(destination.id)
+	const testAction = useKeyedAsyncAction(async (id: AlertDestinationId) => {
 		const result = await testDestination({
-			params: { id: destination.id },
+			params: { id },
 			reactivityKeys: ["alertDestinations", "alertDeliveryEvents"],
 		})
+		if (!toastExit(result, { error: "Failed to send test notification" })) return
 		if (Exit.isSuccess(result)) {
-			if (result.value.success) {
-				toastManager.add({ title: result.value.message, type: "success" })
-			} else {
-				toastManager.add({ title: result.value.message, type: "error" })
-			}
-		} else {
 			toastManager.add({
-				title: getExitErrorMessage(result, "Failed to send test notification"),
-				type: "error",
+				title: result.value.message,
+				type: result.value.success ? "success" : "error",
 			})
 		}
-		setTestingId(null)
-	}
+	})
 
 	async function toggle(destination: AlertDestinationDocument) {
 		const nextForm = destinationToFormState(destination)
@@ -156,38 +158,17 @@ export function useDestinationManager(options?: {
 			payload: buildDestinationUpdateParamsV2(nextForm) as never,
 			reactivityKeys: ["alertDestinations"],
 		})
-		if (!Exit.isSuccess(result)) {
-			toastManager.add({
-				title: getExitErrorMessage(result, "Failed to update destination"),
-				type: "error",
-			})
-		}
+		toastExit(result, { error: "Failed to update destination" })
 	}
 
-	async function remove(destination: AlertDestinationDocument) {
-		setDeletingId(destination.id)
+	const removeAction = useKeyedAsyncAction(async (id: AlertDestinationId) => {
 		const result = await deleteDestination({
-			params: { id: destination.id },
+			params: { id },
 			reactivityKeys: ["alertDestinations", "alertRules"],
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Destination deleted", type: "success" })
-		} else {
-			// A destination still referenced by rules deletes with a 409
-			// conflict_error whose message already names the referencing rules.
-			const failure = Option.getOrUndefined(Exit.findErrorOption(result))
-			const v2 = publicError(failure)
-			if (v2 !== null && v2.type === "conflict_error") {
-				toastManager.add({ title: v2.message, type: "error" })
-			} else {
-				toastManager.add({
-					title: getExitErrorMessage(result, "Failed to delete destination"),
-					type: "error",
-				})
-			}
-		}
-		setDeletingId(null)
-	}
+		// A 409 from a destination still referenced by rules names those rules in its message.
+		return toastExit(result, { success: "Destination deleted", error: "Failed to delete destination" })
+	})
 
 	return {
 		dialogOpen,
@@ -195,14 +176,17 @@ export function useDestinationManager(options?: {
 		form,
 		setForm,
 		isEditing: editing != null,
+		providerLocked,
+		unlockProvider: () => setProviderLocked(false),
+		quickCreate,
 		saving,
-		testingId,
-		deletingId,
+		isTesting: testAction.isPending,
+		isDeleting: removeAction.isPending,
 		openDialog,
 		save,
-		test,
+		test: (destination) => testAction.run(destination.id),
 		toggle,
-		remove,
+		remove: (destination) => removeAction.run(destination.id),
 	}
 }
 
@@ -235,7 +219,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 				{/* Destinations section */}
 				<section className="space-y-4">
 					<div>
-						<h2 className="text-lg font-semibold">Destinations</h2>
+						<SectionHeading title="Destinations" />
 						<p className="text-muted-foreground text-sm">
 							Destinations are reusable across rules and keep provider retries and failures
 							auditable.
@@ -247,35 +231,32 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 							<Skeleton className="h-24 w-full" />
 							<Skeleton className="h-24 w-full" />
 						</div>
-					) : !Result.isSuccess(destinationsResult) ? (
-						<Empty className="py-12">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<CircleWarningIcon size={18} />
-								</EmptyMedia>
-								<EmptyTitle>Failed to load alert destinations</EmptyTitle>
-								<EmptyDescription>
-									Refresh the page or check your connection.
-								</EmptyDescription>
-							</EmptyHeader>
-						</Empty>
+					) : Result.isFailure(destinationsResult) ? (
+						<ErrorState
+							error={destinationsResult.cause}
+							title="Failed to load alert destinations"
+						/>
 					) : destinations.length === 0 ? (
 						<Empty className="py-12">
 							<EmptyHeader>
 								<EmptyMedia variant="icon">
-									<FireIcon size={18} />
+									<PaperPlaneIcon size={18} />
 								</EmptyMedia>
 								<EmptyTitle>No destinations configured</EmptyTitle>
 								<EmptyDescription>
 									Add Slack, PagerDuty, or webhook destinations before creating alert rules.
+									{!isAdmin && " Ask an org admin to add one."}
 								</EmptyDescription>
 							</EmptyHeader>
-							{isAdmin && (
-								<Button size="sm" onClick={() => manager.openDialog()}>
-									<PlusIcon size={14} />
-									Add destination
-								</Button>
-							)}
+							<EmptyActions>
+								{isAdmin && (
+									<Button size="sm" onClick={() => manager.openDialog()}>
+										<PlusIcon />
+										Add destination
+									</Button>
+								)}
+								<DocsLink page="destinations" />
+							</EmptyActions>
 						</Empty>
 					) : (
 						<div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -284,8 +265,8 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 									key={destination.id}
 									destination={destination}
 									isAdmin={isAdmin}
-									isTesting={manager.testingId === destination.id}
-									isDeleting={manager.deletingId === destination.id}
+									isTesting={manager.isTesting(destination.id)}
+									isDeleting={manager.isDeleting(destination.id)}
 									onToggle={manager.toggle}
 									onTest={manager.test}
 									onEdit={manager.openDialog}
@@ -301,7 +282,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 				{/* Delivery log section */}
 				<section className="space-y-4">
 					<div>
-						<h2 className="text-lg font-semibold">Delivery log</h2>
+						<SectionHeading title="Delivery log" />
 						<p className="text-muted-foreground text-sm">
 							Every queued, retried, and completed notification attempt across alert
 							destinations.
@@ -314,18 +295,11 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 							<Skeleton className="h-10 w-full" />
 							<Skeleton className="h-10 w-full" />
 						</div>
-					) : !Result.isSuccess(deliveryEventsResult) ? (
-						<Empty className="py-12">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<CircleWarningIcon size={18} />
-								</EmptyMedia>
-								<EmptyTitle>Failed to load delivery history</EmptyTitle>
-								<EmptyDescription>
-									Refresh the page or check your connection.
-								</EmptyDescription>
-							</EmptyHeader>
-						</Empty>
+					) : Result.isFailure(deliveryEventsResult) ? (
+						<ErrorState
+							error={deliveryEventsResult.cause}
+							title="Failed to load delivery history"
+						/>
 					) : deliveryEvents.length === 0 ? (
 						<Empty className="py-12">
 							<EmptyHeader>
@@ -337,6 +311,14 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 									Once rules start triggering, delivery attempts will show up here.
 								</EmptyDescription>
 							</EmptyHeader>
+							<EmptyActions>
+								{isAdmin && (
+									<Button variant="outline" size="sm" render={<Link to="/alerts/create" />}>
+										Create an alert rule
+									</Button>
+								)}
+								<DocsLink page="destinations" />
+							</EmptyActions>
 						</Empty>
 					) : (
 						<Table>
@@ -352,20 +334,12 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 							<TableBody>
 								{deliveryEventGroups.map((group) => (
 									<Fragment key={group.key}>
-										<TableRow>
-											<TableCell
-												colSpan={5}
-												className="bg-muted/30 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
-											>
-												<span className="flex items-center gap-2">
-													{group.label}
-													<span className="tracking-normal normal-case text-muted-foreground/55">
-														{group.events.length}{" "}
-														{group.events.length === 1 ? "attempt" : "attempts"}
-													</span>
-												</span>
-											</TableCell>
-										</TableRow>
+										<TagGroupHeaderRow
+											label={group.label}
+											count={group.events.length}
+											noun="attempt"
+											colSpan={5}
+										/>
 										{group.events.map((event) => {
 											const ev = eventTypeMeta[event.eventType]
 											const status = deliveryStatusMeta[event.status]
@@ -378,7 +352,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 															</Badge>
 															{event.attemptNumber > 1 && (
 																<span
-																	className="text-warning tabular-nums text-[11px]"
+																	className="text-severity-warn tabular-nums text-2xs"
 																	title={`Attempt ${event.attemptNumber}`}
 																>
 																	↻{event.attemptNumber}
@@ -390,15 +364,10 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 														<span
 															className={cn(
 																"flex items-center gap-1.5 text-xs font-medium",
-																ev.text,
+																TONE_TEXT[ev.tone],
 															)}
 														>
-															<span
-																className={cn(
-																	"size-1.5 rounded-full",
-																	ev.dot,
-																)}
-															/>
+															<StatusDot tone={ev.tone} />
 															{ev.label}
 														</span>
 													</TableCell>
@@ -417,7 +386,7 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 													</TableCell>
 													<TableCell className="max-w-0">
 														{event.status === "failed" ? (
-															<span className="block truncate text-xs text-destructive/90">
+															<span className="block truncate text-xs text-severity-error">
 																{event.errorMessage ?? "Delivery failed"}
 																{event.responseCode != null && (
 																	<span className="text-muted-foreground">

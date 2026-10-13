@@ -2,11 +2,13 @@ import { Effect } from "effect"
 import { WarehouseDriverError, WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { __testables } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
+import { FIXTURES } from "./utils"
 
 export interface FixtureRule {
 	/** Match against the compiled SQL the WarehouseQueryService would execute. */
 	readonly match: (sql: string) => boolean
-	readonly rows: ReadonlyArray<unknown>
+	/** Fixed rows, or rows computed from the SQL (to honor a service filter, say). */
+	readonly rows: ReadonlyArray<unknown> | ((sql: string) => ReadonlyArray<unknown>)
 }
 
 /**
@@ -14,9 +16,13 @@ export interface FixtureRule {
  * `span_hierarchy` and `list_logs` pipes compile to SQL referencing their CH
  * table, so we route by table name.
  */
-const defaultTraceFixtures = (): FixtureRule[] => [
-	{ match: (sql) => sql.includes("trace_detail_spans"), rows: makeLargeTraceSpans() },
-	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql), rows: makeTraceLogs() },
+export const defaultTraceFixtures = (): FixtureRule[] => [
+	{
+		match: (sql) => sql.includes("trace_detail_spans") && sql.includes(FIXTURES.traceId),
+		rows: makeLargeTraceSpans(),
+	},
+	// Only the fixture trace's logs: a bare `FROM logs` also matches log search and analytics.
+	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql) && sql.includes(FIXTURES.traceId), rows: makeTraceLogs() },
 ]
 
 /**
@@ -35,6 +41,8 @@ export const installFakeWarehouse = (
 	 *  cached for the runtime's lifetime, so a test switches the failure from
 	 *  inside this hook rather than by re-installing. */
 	failWhen?: (sql: string) => boolean,
+	/** What unmatched SQL gets: a loud failure (default), or no rows, for suites that only need tools to run. */
+	unmatched: "fail" | "empty" = "fail",
 ): void => {
 	__testables.setClientFactory(() =>
 		Effect.succeed({
@@ -54,6 +62,7 @@ export const installFakeWarehouse = (
 							)
 						}
 						const rule = rules.find((r) => r.match(sql))
+						if (!rule && unmatched === "empty") return Effect.succeed({ data: [] })
 						if (!rule) {
 							return Effect.fail(
 								new WarehouseDriverError({
@@ -62,7 +71,8 @@ export const installFakeWarehouse = (
 								}),
 							)
 						}
-						return Effect.succeed({ data: rule.rows as ReadonlyArray<Record<string, unknown>> })
+						const rows = typeof rule.rows === "function" ? rule.rows(sql) : rule.rows
+						return Effect.succeed({ data: rows as ReadonlyArray<Record<string, unknown>> })
 					},
 				),
 			insert: () => Effect.void,

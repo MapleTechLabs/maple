@@ -1,4 +1,7 @@
-import { Link, useNavigate } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { RelativeTime } from "@/components/common/relative-time"
+import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 import { Fragment, useMemo } from "react"
 
 import type { AlertIncidentDocument, AlertIncidentHoldReason } from "@maple/domain/http"
@@ -8,9 +11,18 @@ import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { sortIncidents, TagChips, TagGroupHeaderRow } from "@/components/alerts/overview/shared"
 import { formatSignalValue } from "@/lib/alerts/form-utils"
 import { groupByTag as groupItemsByTag } from "@/lib/alerts/tag-grouping"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { Badge } from "@maple/ui/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
+import { SectionHeading } from "@/components/common/section-heading"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
 
 const holdReasonTitle = (reason: AlertIncidentHoldReason): string => {
 	switch (reason) {
@@ -39,8 +51,6 @@ export function ActiveIncidentsTable({
 	tagsByRuleId: Map<string, readonly string[]>
 	grouped: boolean
 }) {
-	const navigate = useNavigate()
-
 	const sorted = useMemo(() => sortIncidents(incidents), [incidents])
 	const groups = useMemo(
 		() => (grouped ? groupItemsByTag(sorted, (i) => tagsByRuleId.get(i.ruleId) ?? []) : null),
@@ -48,43 +58,46 @@ export function ActiveIncidentsTable({
 	)
 
 	const renderRow = (incident: AlertIncidentDocument, key: string) => {
-		const duration = incident.lastTriggeredAt ? formatRelativeTime(incident.lastTriggeredAt) : "—"
 		const tags = tagsByRuleId.get(incident.ruleId) ?? []
 		return (
-			<TableRow
-				key={key}
-				className="cursor-pointer"
-				onClick={() => navigate({ to: "/alerts/$ruleId", params: { ruleId: incident.ruleId } })}
-			>
+			<TableRow key={key}>
 				<TableCell>
 					<AlertSeverityBadge severity={incident.severity} />
 				</TableCell>
-				<TableCell>
+				<TruncatedCell>
 					<Link
 						to="/alerts/$ruleId"
 						params={{ ruleId: incident.ruleId }}
-						className="font-medium hover:underline"
+						className={cn("block truncate font-medium hover:underline", ROW_STRETCHED_LINK_CLASS)}
+						title={incident.ruleName}
 					>
 						{incident.ruleName}
 					</Link>
 					{!grouped && <TagChips tags={tags} />}
-				</TableCell>
+				</TruncatedCell>
 				<TableCell>
-					<span className="font-mono text-muted-foreground">{incident.groupKey ?? "all"}</span>
+					<span
+						className="block max-w-[180px] truncate font-mono text-muted-foreground"
+						title={incident.groupKey ?? "all"}
+					>
+						{incident.groupKey ?? "all"}
+					</span>
 				</TableCell>
 				<TableCell>
 					{incident.holdReason != null ? (
-						<span title={holdReasonTitle(incident.holdReason)}>
+						<span title={holdReasonTitle(incident.holdReason)} className={ROW_LINK_LIFT}>
 							<AlertStatusBadge state="held" />
 							{incident.heldSince ? (
-								<span className="text-muted-foreground text-xs ml-1">
-									{formatRelativeTime(incident.heldSince)}
-								</span>
+								<RelativeTime
+									value={incident.heldSince}
+									tooltip="title"
+									className="text-muted-foreground text-xs ml-1"
+								/>
 							) : null}
 						</span>
 					) : (
 						<>
-							<span className="font-mono text-destructive">
+							<span className="font-mono text-severity-error">
 								{formatSignalValue(incident.signalType, incident.lastObservedValue)}
 							</span>
 							<span className="text-muted-foreground text-xs ml-1">
@@ -93,9 +106,19 @@ export function ActiveIncidentsTable({
 						</>
 					)}
 				</TableCell>
-				<TableCell>{duration}</TableCell>
 				<TableCell>
-					{incident.lastNotifiedAt ? formatRelativeTime(incident.lastNotifiedAt) : "Never"}
+					{incident.lastTriggeredAt ? (
+						<RelativeTime value={incident.lastTriggeredAt} tooltip="title" />
+					) : (
+						EMPTY_VALUE
+					)}
+				</TableCell>
+				<TableCell>
+					{incident.lastNotifiedAt ? (
+						<RelativeTime value={incident.lastNotifiedAt} tooltip="title" />
+					) : (
+						"Never"
+					)}
 				</TableCell>
 			</TableRow>
 		)
@@ -103,12 +126,7 @@ export function ActiveIncidentsTable({
 
 	return (
 		<div className="space-y-3">
-			<div className="flex items-center gap-2">
-				<h2 className="text-lg font-semibold">Active incidents</h2>
-				<Badge variant="secondary" className="rounded-full tabular-nums">
-					{sorted.length}
-				</Badge>
-			</div>
+			<SectionHeading title="Active incidents" count={sorted.length.toLocaleString()} />
 
 			<Table>
 				<TableHeader>
@@ -124,8 +142,8 @@ export function ActiveIncidentsTable({
 				<TableBody>
 					{sorted.length === 0 ? (
 						<TableRow>
-							<TableCell colSpan={6} className="py-8 text-center text-muted-foreground text-sm">
-								No active incidents match the selected tags.
+							<TableCell colSpan={6} className="p-0">
+								<EmptyMessage>No active incidents match the selected tags.</EmptyMessage>
 							</TableCell>
 						</TableRow>
 					) : groups ? (

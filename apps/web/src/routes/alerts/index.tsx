@@ -1,20 +1,26 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { AlertsOverviewTab } from "@/components/alerts/overview/alerts-overview-tab"
 import { AlertsSettingsTab, useDestinationManager } from "@/components/alerts/overview/settings-tab"
 import { DestinationDialog } from "@/components/alerts/destination-dialog"
 import { OpenDestinationDialogProvider } from "@/components/alerts/destination-manager-context"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PlusIcon } from "@/components/icons"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { BooleanFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Button } from "@maple/ui/components/ui/button"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 
 type AlertsTab = "overview" | "settings"
+
+// The URL value stays `settings` so existing links keep resolving.
+const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
+	{ value: "overview", label: "Overview" },
+	{ value: "settings", label: "Destinations" },
+]
 
 const AlertsSearch = Schema.Struct({
 	/**
@@ -39,7 +45,6 @@ export const Route = createFileRoute("/alerts/")({
 
 function AlertsPage() {
 	const search = Route.useSearch()
-	const navigate = useNavigate({ from: Route.fullPath })
 
 	const activeTab: AlertsTab = search.tab === "settings" ? "settings" : "overview"
 
@@ -57,16 +62,19 @@ function AlertsPage() {
 	const destinationManager = useDestinationManager()
 
 	const tabBar = (
-		<Tabs
-			value={activeTab}
-			onValueChange={(tab) => navigate({ search: (prev) => ({ ...prev, tab: tab as AlertsTab }) })}
-		>
-			<TabsList variant="underline">
-				<TabsTrigger value="overview">Overview</TabsTrigger>
-				{/* The URL value stays `settings` so existing links keep resolving. */}
-				<TabsTrigger value="settings">Destinations</TabsTrigger>
-			</TabsList>
-		</Tabs>
+		<UnderlineTabStrip navigation label="Alerts sections">
+			{ALERTS_TABS.map((tab) => (
+				<Link
+					key={tab.value}
+					to="/alerts"
+					search={(prev: Record<string, unknown>) => ({ ...prev, tab: tab.value })}
+					aria-current={tab.value === activeTab ? "page" : undefined}
+					className={underlineTabClass(tab.value === activeTab)}
+				>
+					{tab.label}
+				</Link>
+			))}
+		</UnderlineTabStrip>
 	)
 
 	const headerActions =
@@ -75,7 +83,7 @@ function AlertsPage() {
 			// While empty, the empty-state CTA is the single add affordance (avoids a duplicate).
 			isAdmin && hasDestinations ? (
 				<Button size="sm" onClick={() => destinationManager.openDialog()}>
-					<PlusIcon size={14} />
+					<PlusIcon />
 					Add destination
 				</Button>
 			) : undefined
@@ -84,40 +92,29 @@ function AlertsPage() {
 				size="sm"
 				render={<Link to="/alerts/create" search={{ serviceName: search.serviceName }} />}
 			>
-				<PlusIcon size={14} />
+				<PlusIcon />
 				New rule
 			</Button>
 		)
 
 	return (
 		<OpenDestinationDialogProvider value={isAdmin ? () => destinationManager.openDialog() : null}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={[{ label: "Alerts" }]} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Alerts">{headerActions}</DashboardLayout.Header>
-							{tabBar}
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							{activeTab === "overview" ? (
-								<AlertsOverviewTab />
-							) : (
-								<AlertsSettingsTab manager={destinationManager} isAdmin={isAdmin} />
-							)}
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-				<DestinationDialog
-					open={destinationManager.dialogOpen}
-					onOpenChange={destinationManager.setDialogOpen}
-					form={destinationManager.form}
-					onFormChange={destinationManager.setForm}
-					isEditing={destinationManager.isEditing}
-					saving={destinationManager.saving}
-					onSave={destinationManager.save}
-				/>
-			</DashboardLayout.Root>
+			<DashboardPage breadcrumbs={[{ label: "Alerts" }]} headerActions={headerActions} tabs={tabBar}>
+				{activeTab === "overview" ? (
+					<AlertsOverviewTab />
+				) : (
+					<AlertsSettingsTab manager={destinationManager} isAdmin={isAdmin} />
+				)}
+			</DashboardPage>
+			<DestinationDialog
+				open={destinationManager.dialogOpen}
+				onOpenChange={destinationManager.setDialogOpen}
+				form={destinationManager.form}
+				onFormChange={destinationManager.setForm}
+				isEditing={destinationManager.isEditing}
+				saving={destinationManager.saving}
+				onSave={destinationManager.save}
+			/>
 		</OpenDestinationDialogProvider>
 	)
 }

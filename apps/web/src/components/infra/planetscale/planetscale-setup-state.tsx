@@ -47,7 +47,7 @@ export function PlanetScaleSetupState({ steps }: { steps: ReadonlyArray<SetupSte
 				<IntegrationEmptyFeature
 					label="Utilization"
 					title="CPU, memory, connections"
-					description="Per branch, scraped on a schedule — not sampled from your app."
+					description="Per branch, scraped from PlanetScale on a schedule."
 				/>
 				<IntegrationEmptyFeature
 					label="Storage"

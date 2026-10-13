@@ -19,6 +19,8 @@
  *   - attributes are arrays of `{ key, value: AnyValue }`
  */
 
+import { Schema } from "effect"
+
 export interface EncodedBatch {
 	datasource: string
 	rowCount: number
@@ -28,11 +30,15 @@ export interface EncodedBatch {
 
 type AttrMap = Record<string, string>
 
+/** An attribute value as JSON: scalars in their string form, arrays and maps nested. */
+type AttrJson = string | readonly AttrJson[] | { readonly [key: string]: AttrJson }
+
 export interface AnyValue {
 	stringValue?: string
 	boolValue?: boolean
 	intValue?: string | number
-	doubleValue?: number
+	/** Proto3 JSON allows "NaN", "Infinity", "-Infinity" and numeric strings. */
+	doubleValue?: number | string
 	bytesValue?: string
 	arrayValue?: { values?: readonly AnyValue[] }
 	kvlistValue?: { values?: readonly KeyValue[] }
@@ -55,6 +61,26 @@ export function bytesHex(b64: string | undefined): string {
 		return ""
 	}
 	return hexFromBytes(base64ToBytes(b64))
+}
+
+// `ignoreBOM` keeps a leading U+FEFF, as Rust's `from_utf8` does.
+const UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
+// Rust's `char::is_control` (C0, DEL, C1) less tab, LF and CR.
+const BINARY_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/
+
+/**
+ * Port of the Rust `BytesValue` arm of `any_value_string`: the bytes as text
+ * when they are valid UTF-8 without control characters, else hex.
+ */
+function bytesText(b64: string): string {
+	const bytes = base64ToBytes(b64)
+	try {
+		const text = UTF8.decode(bytes)
+		if (!BINARY_CONTROL.test(text)) return text
+	} catch {
+		// Not UTF-8: binary.
+	}
+	return hexFromBytes(bytes)
 }
 
 /** Lowercase hex for `bytes`, or `""` when it is empty or all zero. */
@@ -92,16 +118,15 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 /**
- * A malformed field in an otherwise well-formed OTLP payload. Surfaces as a
- * 400 from the ingest handler rather than the generic 500 an encoder crash
- * would produce.
+ * A malformed field in an otherwise well-formed OTLP payload. The synchronous
+ * encoder throws it and the ingest handler maps it to a 400 rather than the
+ * generic 500 an encoder crash would produce.
  */
-// The pure encoder throws this sentinel for its HTTP adapter to translate into a 400 response.
-// oxlint-disable-next-line effecttsgo/extends-native-error
-export class OtlpFieldError extends Error {
-	constructor(message: string) {
-		super(message)
-		this.name = "OtlpFieldError"
+export class OtlpFieldError extends Schema.TaggedError<OtlpFieldError>()("@maple/cli/OtlpFieldError", {
+	message: Schema.String,
+}) {
+	static of(message: string): OtlpFieldError {
+		return new OtlpFieldError({ message })
 	}
 }
 
@@ -151,7 +176,7 @@ function idHex(value: string | undefined, byteLength: number, field: string): st
 		// noise ("deadbeef" is 4 hex bytes, but decodes as 6 base64 bytes).
 		const base64Chars = Math.ceil(byteLength / 3) * 4
 		const shown = value.length > 80 ? `${value.slice(0, 80)}…` : value
-		throw new OtlpFieldError(
+		throw OtlpFieldError.of(
 			`${field} must be ${byteLength} bytes: expected ${byteLength * 2} hex chars (OTLP/JSON) or ${base64Chars} base64 chars (OTLP/protobuf), got ${JSON.stringify(shown)} (${value.length} chars)`,
 		)
 	}
@@ -221,20 +246,32 @@ export function anyValueString(value: AnyValue | undefined | null): string {
 		return String(value.intValue)
 	}
 	if (value.doubleValue !== undefined) {
-		return formatDouble(value.doubleValue)
+		const parsed = parseDouble(value.doubleValue)
+		return parsed === undefined ? String(value.doubleValue) : formatDouble(parsed)
 	}
 	if (value.bytesValue !== undefined) {
-		return bytesHex(value.bytesValue)
+		return bytesText(value.bytesValue)
 	}
-	if (value.arrayValue !== undefined) {
-		const values = (value.arrayValue.values ?? []).map(anyValueString)
-		return JSON.stringify(values)
-	}
-	if (value.kvlistValue !== undefined) {
-		const attrs = attrMap(value.kvlistValue.values ?? [])
-		return JSON.stringify(attrs)
+	if (value.arrayValue !== undefined || value.kvlistValue !== undefined) {
+		return JSON.stringify(anyValueJson(value))
 	}
 	return ""
+}
+
+/**
+ * Port of Rust `any_value_json`: an array or map as JSON, scalars in their
+ * string form, nested arrays and maps kept as JSON.
+ */
+function anyValueJson(value: AnyValue | undefined): AttrJson {
+	if (value?.arrayValue !== undefined) {
+		return (value.arrayValue.values ?? []).map(anyValueJson)
+	}
+	if (value?.kvlistValue !== undefined) {
+		return Object.fromEntries(
+			(value.kvlistValue.values ?? []).map((kv) => [kv.key ?? "", anyValueJson(kv.value)]),
+		)
+	}
+	return anyValueString(value)
 }
 
 /**
@@ -426,10 +463,48 @@ function toBigInt(value: string | number | undefined): bigint {
 	}
 }
 
+type ProtoDouble = number | string
+
+/** A proto3-JSON double: a number, or "NaN" / "Infinity" / "-Infinity" / a
+ *  numeric string. `undefined` when the string is none of those. */
+function parseDouble(value: ProtoDouble): number | undefined {
+	if (typeof value === "number") return value
+	if (value === "NaN") return Number.NaN
+	if (value === "Infinity") return Number.POSITIVE_INFINITY
+	if (value === "-Infinity") return Number.NEGATIVE_INFINITY
+	const parsed = value.trim() === "" ? Number.NaN : Number(value)
+	return Number.isNaN(parsed) ? undefined : parsed
+}
+
+function requireDouble(value: ProtoDouble, field: string): number {
+	const parsed = parseDouble(value)
+	if (parsed === undefined) throw OtlpFieldError.of(`${field} is not a double: ${JSON.stringify(value)}`)
+	return parsed
+}
+
+/**
+ * A Float64 cell for the NDJSON row. `JSON.stringify` turns NaN and ±Infinity
+ * into `null`, which the non-nullable column stores as 0; ClickHouse parses the
+ * quoted tokens below back into the same IEEE values.
+ */
+function float64Cell(value: number): number | string {
+	if (Number.isNaN(value)) return "nan"
+	if (value === Number.POSITIVE_INFINITY) return "inf"
+	if (value === Number.NEGATIVE_INFINITY) return "-inf"
+	return value
+}
+
+function optionalFloat64Cell(value: ProtoDouble | undefined, field: string): number | string | null {
+	return value === undefined || value === null ? null : float64Cell(requireDouble(value, field))
+}
+
 /** Number data point value (`as_double` | `as_int` | none → 0.0). */
-function numberPointValue(point: { asDouble?: number; asInt?: string | number }): number {
+function numberPointValue(
+	point: { asDouble?: ProtoDouble; asInt?: string | number },
+	field: string,
+): number | string {
 	if (point.asDouble !== undefined) {
-		return point.asDouble
+		return float64Cell(requireDouble(point.asDouble, `${field}.asDouble`))
 	}
 	if (point.asInt !== undefined) {
 		return Number(point.asInt)
@@ -443,7 +518,7 @@ interface Exemplar {
 	traceId?: string
 	spanId?: string
 	timeUnixNano?: string | number
-	asDouble?: number
+	asDouble?: ProtoDouble
 	asInt?: string | number
 	filteredAttributes?: KeyValue[]
 }
@@ -452,7 +527,7 @@ interface EncodedExemplars {
 	exemplars_trace_id: string[]
 	exemplars_span_id: string[]
 	exemplars_timestamp: string[]
-	exemplars_value: number[]
+	exemplars_value: Array<number | string>
 	exemplars_filtered_attributes: AttrMap[]
 }
 
@@ -472,7 +547,7 @@ function encodeExemplars(exemplars: Exemplar[] | undefined): EncodedExemplars {
 		out.exemplars_trace_id.push(traceIdHex(exemplar.traceId, `exemplars[${index}].traceId`))
 		out.exemplars_span_id.push(spanIdHex(exemplar.spanId, `exemplars[${index}].spanId`))
 		out.exemplars_timestamp.push(formatTimestampNano(exemplar.timeUnixNano))
-		out.exemplars_value.push(numberPointValue(exemplar))
+		out.exemplars_value.push(numberPointValue(exemplar, `exemplars[${index}]`))
 		out.exemplars_filtered_attributes.push(attrMap(exemplar.filteredAttributes))
 	}
 	return out
@@ -698,7 +773,7 @@ interface NumberDataPoint {
 	attributes?: KeyValue[]
 	startTimeUnixNano?: string | number
 	timeUnixNano?: string | number
-	asDouble?: number
+	asDouble?: ProtoDouble
 	asInt?: string | number
 	exemplars?: Exemplar[]
 	flags?: number | string
@@ -708,13 +783,13 @@ interface HistogramDataPoint {
 	startTimeUnixNano?: string | number
 	timeUnixNano?: string | number
 	count?: string | number
-	sum?: number
+	sum?: ProtoDouble
 	bucketCounts?: (string | number)[]
-	explicitBounds?: number[]
+	explicitBounds?: ProtoDouble[]
 	exemplars?: Exemplar[]
 	flags?: number | string
-	min?: number
-	max?: number
+	min?: ProtoDouble
+	max?: ProtoDouble
 }
 interface ExpHistogramBuckets {
 	offset?: number | string
@@ -725,15 +800,15 @@ interface ExpHistogramDataPoint {
 	startTimeUnixNano?: string | number
 	timeUnixNano?: string | number
 	count?: string | number
-	sum?: number
+	sum?: ProtoDouble
 	scale?: number | string
 	zeroCount?: string | number
 	positive?: ExpHistogramBuckets
 	negative?: ExpHistogramBuckets
 	flags?: number | string
 	exemplars?: Exemplar[]
-	min?: number
-	max?: number
+	min?: ProtoDouble
+	max?: ProtoDouble
 }
 interface Metric {
 	name?: string
@@ -837,7 +912,7 @@ export function encodeMetrics(req: unknown): EncodedBatch[] {
 							point.flags,
 							point.exemplars,
 						)
-						row.value = numberPointValue(point)
+						row.value = numberPointValue(point, "gauge.dataPoint")
 						push("metrics_gauge", row)
 					}
 				} else if (metric.sum) {
@@ -851,7 +926,7 @@ export function encodeMetrics(req: unknown): EncodedBatch[] {
 							point.flags,
 							point.exemplars,
 						)
-						row.value = numberPointValue(point)
+						row.value = numberPointValue(point, "sum.dataPoint")
 						row.aggregation_temporality = asInt32(metric.sum.aggregationTemporality)
 						row.is_monotonic = metric.sum.isMonotonic ?? false
 						push("metrics_sum", row)
@@ -868,11 +943,13 @@ export function encodeMetrics(req: unknown): EncodedBatch[] {
 							point.exemplars,
 						)
 						row.count = asUint64Number(point.count)
-						row.sum = point.sum ?? 0
+						row.sum = optionalFloat64Cell(point.sum, "histogram.dataPoint.sum") ?? 0
 						row.bucket_counts = (point.bucketCounts ?? []).map(asUint64Number)
-						row.explicit_bounds = point.explicitBounds ?? []
-						row.min = point.min ?? null
-						row.max = point.max ?? null
+						row.explicit_bounds = (point.explicitBounds ?? []).map((bound) =>
+							float64Cell(requireDouble(bound, "histogram.dataPoint.explicitBounds")),
+						)
+						row.min = optionalFloat64Cell(point.min, "histogram.dataPoint.min")
+						row.max = optionalFloat64Cell(point.max, "histogram.dataPoint.max")
 						row.aggregation_temporality = asInt32(metric.histogram.aggregationTemporality)
 						push("metrics_histogram", row)
 					}
@@ -890,15 +967,15 @@ export function encodeMetrics(req: unknown): EncodedBatch[] {
 						const positive = point.positive
 						const negative = point.negative
 						row.count = asUint64Number(point.count)
-						row.sum = point.sum ?? 0
+						row.sum = optionalFloat64Cell(point.sum, "exponentialHistogram.dataPoint.sum") ?? 0
 						row.scale = asInt32(point.scale)
 						row.zero_count = asUint64Number(point.zeroCount)
 						row.positive_offset = asInt32(positive?.offset)
 						row.positive_bucket_counts = (positive?.bucketCounts ?? []).map(asUint64Number)
 						row.negative_offset = asInt32(negative?.offset)
 						row.negative_bucket_counts = (negative?.bucketCounts ?? []).map(asUint64Number)
-						row.min = point.min ?? null
-						row.max = point.max ?? null
+						row.min = optionalFloat64Cell(point.min, "exponentialHistogram.dataPoint.min")
+						row.max = optionalFloat64Cell(point.max, "exponentialHistogram.dataPoint.max")
 						row.aggregation_temporality = asInt32(
 							metric.exponentialHistogram.aggregationTemporality,
 						)

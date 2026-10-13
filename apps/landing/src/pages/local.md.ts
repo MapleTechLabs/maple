@@ -67,7 +67,7 @@ export const GET: APIRoute = async ({ site }) => {
 			[
 				"- **No account, ever.** No sign-up, login, license key, or trial. `maple start` is the whole onboarding.",
 				"- **Telemetry stays on loopback.** Ingest, storage, and every query run on 127.0.0.1. The dashboard page loads from local.maple.dev by default so UI fixes ship without a new binary; it only talks back to your local server. `maple start --offline` serves the UI from the binary too.",
-				"- **Works with no internet.** With `--offline` everything comes out of the binary. The only other network call is a once-per-day check for a newer release. Homebrew installs skip it, and `MAPLE_NO_UPDATE_CHECK=1` disables it.",
+				"- **Works with no internet.** With `--offline` everything comes out of the binary. The CLI reports its own usage and errors unless you set `MAPLE_TELEMETRY=off`, and checks for a newer release once a day. Homebrew installs skip the check, and `MAPLE_NO_UPDATE_CHECK=1` disables it.",
 				"- **You own the files.** Everything lives under `~/.maple`. `maple archive` seals a day into Parquet queryable with DuckDB; uninstalling leaves the data directory in place.",
 				"- **Source-available.** The whole platform is on GitHub under the Functional Source License, converting to Apache 2.0.",
 			].join("\n"),
@@ -85,7 +85,7 @@ export const GET: APIRoute = async ({ site }) => {
 				'maple query "SELECT count() FROM traces"          # raw SQL against the local store',
 				"```",
 			].join("\n"),
-			`Full command list: [CLI reference](${url("/docs/local-mode/cli-reference.md")}).`,
+			`Full command list: [CLI reference](${url("/docs/reference/cli.md")}).`,
 
 			"## FAQ",
 			"### Do I need a Maple account?",
@@ -102,7 +102,7 @@ export const GET: APIRoute = async ({ site }) => {
 			"## Links",
 			[
 				`- [Documentation](${url("/docs/local-mode.md")})`,
-				`- [CLI reference](${url("/docs/local-mode/cli-reference.md")})`,
+				`- [CLI reference](${url("/docs/reference/cli.md")})`,
 				`- [Releases](${GITHUB_URL}/releases)`,
 				`- [Source](${GITHUB_URL})`,
 			].join("\n"),

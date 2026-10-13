@@ -3,10 +3,6 @@
 	"$id": "urn:maple:eventing:schema:signal-projection:v1",
 	"$ref": "#/$defs/SignalProjectionSpec",
 	"$defs": {
-		"SignalPredicate_1": {
-			"$ref": "#/$defs/Union_",
-			"description": "Consumers MUST enforce a maximum predicate depth of 8 (root depth 1) and 64 total predicate nodes before recursive validation. Count nodes by occurrence, including repeated subtrees. These whole-tree limits are enforced by the shared decoder but are not expressed by JSON Schema validation keywords."
-		},
 		"SignalFieldRef": {
 			"type": "object",
 			"properties": {
@@ -168,7 +164,7 @@
 				}
 			]
 		},
-		"Union_": {
+		"SignalPredicate": {
 			"anyOf": [
 				{
 					"type": "object",
@@ -182,7 +178,7 @@
 						"clauses": {
 							"type": "array",
 							"items": {
-								"$ref": "#/$defs/SignalPredicate_1"
+								"$ref": "#/$defs/SignalPredicate"
 							},
 							"minItems": 1,
 							"maxItems": 64
@@ -206,7 +202,7 @@
 						"clauses": {
 							"type": "array",
 							"items": {
-								"$ref": "#/$defs/SignalPredicate_1"
+								"$ref": "#/$defs/SignalPredicate"
 							},
 							"minItems": 1,
 							"maxItems": 64
@@ -228,7 +224,7 @@
 							]
 						},
 						"clause": {
-							"$ref": "#/$defs/SignalPredicate_1"
+							"$ref": "#/$defs/SignalPredicate"
 						}
 					},
 					"required": [
@@ -313,10 +309,7 @@
 					],
 					"additionalProperties": false
 				}
-			]
-		},
-		"SignalPredicate": {
-			"$ref": "#/$defs/Union_",
+			],
 			"description": "Consumers MUST enforce a maximum predicate depth of 8 (root depth 1) and 64 total predicate nodes before recursive validation. Count nodes by occurrence, including repeated subtrees. These whole-tree limits are enforced by the shared decoder but are not expressed by JSON Schema validation keywords."
 		},
 		"SignalProjectionSpec": {

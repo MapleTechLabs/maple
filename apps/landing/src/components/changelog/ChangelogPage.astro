@@ -1,0 +1,101 @@
+---
+/**
+ * Page shell for /changelog and /changelog/page/N: header, the timeline slice,
+ * pagination. Page 1 is canonical for the collection's structured data.
+ */
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../Nav.astro";
+import Footer from "../Footer.astro";
+import BottomCTA from "../BottomCTA.astro";
+import SeoHead from "../SeoHead.astro";
+import ChangelogTimeline from "./ChangelogTimeline.astro";
+import type { Release } from "../../lib/changelog";
+import { PAGE_SIZE, pageCount, pageHref } from "../../lib/changelog";
+import { isoDate } from "../../lib/blog";
+
+interface Props {
+    releases: Release[];
+    page: number;
+}
+
+const { releases, page } = Astro.props;
+const pages = pageCount(releases.length);
+const entries = releases.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+const latest = releases[0];
+
+const pageTitle = page > 1 ? `Changelog, page ${page} | Maple` : "Changelog | What shipped in Maple";
+const pageDescription =
+    "New features, improvements and fixes in Maple: traces, logs, errors, dashboards, alerting, integrations and the API.";
+
+const canonicalUrl = Astro.site ? new URL(pageHref(page), Astro.site).toString() : undefined;
+
+const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: "Maple changelog",
+    description: pageDescription,
+    ...(canonicalUrl ? { url: canonicalUrl } : undefined),
+    ...(latest ? { dateModified: isoDate(latest.data.date) } : undefined),
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: "https://maple.dev/logo192.png" },
+    },
+    hasPart: entries.map((r) => ({
+        "@type": "TechArticle",
+        headline: r.data.title,
+        description: r.data.description,
+        datePublished: isoDate(r.data.date),
+        ...(Astro.site ? { url: new URL(`/changelog/${r.id}`, Astro.site).toString() } : undefined),
+    })),
+};
+
+const breadcrumbLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Maple", item: "https://maple.dev/" },
+        { "@type": "ListItem", position: 2, name: "Changelog", item: "https://maple.dev/changelog" },
+    ],
+};
+
+const link = "text-fg-muted underline underline-offset-2 transition-colors hover:text-primary";
+---
+
+<Layout title={pageTitle} description={pageDescription} alternates={["en"]} mdHref="/changelog.md">
+    <link slot="head" rel="alternate" type="application/rss+xml" title="Maple changelog" href="/changelog/rss.xml" />
+    {page > 1 && <link slot="head" rel="prev" href={pageHref(page - 1)} />}
+    {page < pages && <link slot="head" rel="next" href={pageHref(page + 1)} />}
+    <SeoHead title={pageTitle} description={pageDescription} />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <script type="application/ld+json" set:html={JSON.stringify(breadcrumbLd)} />
+    <Nav />
+
+    <div class="pt-[19px]">
+        <div class="mx-auto max-w-6xl px-6 pt-20 md:pt-24">
+            <header class="lg:ml-[9rem] lg:pl-12">
+                <p class="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">changelog</p>
+                <h1
+                    class="mt-4 font-display text-[clamp(34px,8vw,64px)] font-semibold leading-[0.95] tracking-[-0.035em] text-balance text-foreground"
+                >
+                    What shipped
+                </h1>
+                <p class="mt-5 max-w-[60ch] font-display text-[15px] leading-relaxed text-pretty text-fg-muted">
+                    New features, improvements and fixes, as they land. Anything that needs your attention
+                    before you upgrade is marked breaking.
+                </p>
+                <p class="mt-5 flex flex-wrap gap-x-5 gap-y-2 font-mono text-xs">
+                    <a href="/changelog/rss.xml" class={link}>rss</a>
+                    <a href="/changelog.md" class={link}>markdown</a>
+                    <a href="/roadmap" class={link}>roadmap</a>
+                    {page > 1 && <span class="text-fg-muted/60">page {page} of {pages}</span>}
+                </p>
+            </header>
+
+            <ChangelogTimeline entries={entries} page={page} pages={pages} latestId={latest?.id} />
+        </div>
+    </div>
+
+    <BottomCTA />
+    <Footer />
+</Layout>

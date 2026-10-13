@@ -305,7 +305,7 @@ function parseMessages(value: unknown, origin: SpanMessage["origin"]): readonly 
 	}
 
 	const messages: SpanMessage[] = []
-	for (const entry of value) {
+	for (const entry of origin === "output" ? withoutStreamedChunks(value) : value) {
 		if (!isRecord(entry)) {
 			messages.push({
 				role: origin === "output" ? "assistant" : "user",
@@ -327,13 +327,49 @@ function parseMessages(value: unknown, origin: SpanMessage["origin"]): readonly 
 	return messages
 }
 
+/**
+ * Google ADK records a streamed reply as every chunk, each with an empty
+ * `finish_reason`, followed by the aggregate that finished. The chunks repeat
+ * the aggregate piecewise, so they are dropped whenever a finished message is
+ * there to stand for them.
+ */
+function withoutStreamedChunks(entries: readonly unknown[]): readonly unknown[] {
+	const aggregated = entries.some(
+		(entry) => isRecord(entry) && typeof entry.finish_reason === "string" && entry.finish_reason !== "",
+	)
+	return aggregated ? entries.filter((entry) => !(isRecord(entry) && entry.finish_reason === "")) : entries
+}
+
 function messageParts(message: Record<string, unknown>): readonly SpanMessagePart[] {
 	const source = message.parts ?? message.content
+	// OpenAI chat format: a tool message answers one call by `tool_call_id`.
+	if (typeof message.tool_call_id === "string") {
+		return [{ kind: "tool_result", id: message.tool_call_id, resultText: jsonText(source ?? "") }]
+	}
+	return [...contentParts(source), ...openAiToolCalls(message.tool_calls)]
+}
+
+function contentParts(source: unknown): readonly SpanMessagePart[] {
 	if (typeof source === "string") return source === "" ? [] : [{ kind: "text", text: source }]
 	if (!Array.isArray(source)) {
 		return source === undefined || source === null ? [] : [rawPart(source)]
 	}
 	return source.map(parsePart)
+}
+
+/** OpenAI chat format puts the calls beside `content`, which is `null` when
+ *  the message only calls tools: `[{ id, function: { name, arguments } }]`. */
+function openAiToolCalls(value: unknown): readonly SpanMessagePart[] {
+	if (!Array.isArray(value)) return []
+	return value.filter(isRecord).map((call) => {
+		const fn = isRecord(call.function) ? call.function : {}
+		return {
+			kind: "tool_call",
+			id: stringOrUndefined(call.id),
+			name: stringOrUndefined(fn.name),
+			argumentsText: fn.arguments === undefined ? undefined : jsonText(fn.arguments),
+		}
+	})
 }
 
 function parsePart(part: unknown): SpanMessagePart {

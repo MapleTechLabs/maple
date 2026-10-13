@@ -1,5 +1,6 @@
 import {
 	ActorId,
+	AgentFeedbackId,
 	AlertDeliveryEventId,
 	AlertDestinationId,
 	AlertIncidentId,
@@ -23,3 +24,4 @@ export const ErrorIncidentPublicId = PublicId(PublicIdPrefixes.errorIncident, Er
 export const ErrorIssuePublicId = PublicId(PublicIdPrefixes.errorIssue, ErrorIssueId)
 export const InvestigationPublicId = PublicId(PublicIdPrefixes.investigation, InvestigationId)
 export const MobileDevicePublicId = PublicId(PublicIdPrefixes.mobileDevice, MobileDeviceId)
+export const AgentFeedbackPublicId = PublicId(PublicIdPrefixes.agentFeedback, AgentFeedbackId)

@@ -20,7 +20,7 @@ import {
 	usePlotColors,
 	usePlotLegendSlot,
 	type FixedMetricSeries,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotTooltipSeries,
 	type TimeseriesRow,
 } from "../../plot"
@@ -39,10 +39,10 @@ const STROKE_WIDTH = 2
  * literal per render would re-read computed style every frame.
  */
 const LATENCY_TOKENS = {
-	p99LatencyMs: ["--chart-p99", "#e0484a"],
-	p95LatencyMs: ["--chart-p95", "#e0a23a"],
-	p50LatencyMs: ["--chart-p50", "#4f8ef7"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	p99LatencyMs: "--chart-p99",
+	p95LatencyMs: "--chart-p95",
+	p50LatencyMs: "--chart-p50",
+} as const satisfies Record<string, PlotColorSource>
 
 const LATENCY_LABELS = {
 	p99LatencyMs: "P99",

@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
+import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { ConnectInstructions, useGuidedFramework } from "./guided-setup"
+import { ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "./onboard-skill"
 
 const API_KEY = "mpl_ingest_supersecretkey123"
 
@@ -34,6 +36,18 @@ describe("ConnectInstructions", () => {
 				!blocked.some((b) => b.contains(el)),
 		)
 		expect(leaked).toEqual([])
+	})
+
+	it("gives the agent the org's ingest endpoint and installs the companion skills", () => {
+		const { container } = render(
+			<ConnectInstructions framework="nodejs" apiKey={API_KEY} showCredentials />,
+		)
+
+		fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }))
+
+		const blocks = [...container.querySelectorAll("pre")].map((el) => el.textContent ?? "")
+		expect(blocks).toContain(ONBOARD_SKILL_COMMAND)
+		expect(blocks).toContain(onboardSkillPrompt(ingestUrl, API_KEY))
 	})
 })
 

@@ -124,11 +124,6 @@ describe("dashboard template previews", () => {
 		}
 		expect(checked, "expected line/area widgets to check").toBeGreaterThan(0)
 	})
-
-	it("gives the blank template an empty preview", () => {
-		const blank = DASHBOARD_TEMPLATES.find((t) => t.id === "blank")!
-		expect(buildTemplatePreview(blank)).toEqual([])
-	})
 })
 
 describe("dashboard template requirements", () => {

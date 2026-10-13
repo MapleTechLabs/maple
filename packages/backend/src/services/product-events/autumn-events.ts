@@ -22,9 +22,11 @@ import type { ProductEventInput, ProductEventName } from "./ProductEventsService
 const AutumnSubscription = Schema.Struct({
 	plan_id: Schema.String,
 	status: Schema.optionalKey(Schema.String),
+	past_due: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
 	started_at: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	trial_ends_at: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	canceled_at: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	expires_at: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 })
 
 const AutumnPurchase = Schema.Struct({
@@ -36,6 +38,8 @@ const AutumnPlanChange = Schema.Struct({
 	action: Schema.String,
 	subscription: Schema.optionalKey(Schema.NullOr(AutumnSubscription)),
 	purchase: Schema.optionalKey(Schema.NullOr(AutumnPurchase)),
+	/** Sparse: only the lifecycle fields this change touched, holding their previous values. */
+	previous_attributes: Schema.optionalKey(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
 })
 
 export const AutumnBillingUpdatedData = Schema.Struct({
@@ -103,4 +107,75 @@ export const planEventsFromBillingUpdated = (
 		})
 	}
 	return events
+}
+
+/**
+ * A customer leaving a plan, as one `billing.updated` delivery describes it.
+ *
+ * `scheduled` is the moment they asked: Autumn sends `updated` with `canceled_at`
+ * newly set while the plan stays active until `expires_at`. `ended` is the plan
+ * actually going away, which is the only signal for an immediate cancel or a
+ * subscription Stripe gave up collecting on. A scheduled cancel later produces
+ * its own `ended`; the review keys on `(orgId, planId, startedAt)` so one
+ * subscription is looked at once. A plan switch also ends the old plan: the
+ * review tells that apart by asking Autumn what the org holds now.
+ */
+export interface PlanCancellation {
+	readonly orgId: string
+	readonly planId: string
+	readonly phase: "scheduled" | "ended"
+	readonly startedAt: number | null
+	readonly canceledAt: number | null
+	readonly expiresAt: number | null
+	readonly trial: boolean
+	readonly pastDue: boolean
+}
+
+/** The legacy free tier is not a plan anyone cancels (`isPlanSubscription`, @maple/domain/billing). */
+const isFreePlan = (planId: string): boolean => planId.toLowerCase() === "free"
+
+/**
+ * `trial_ends_at` stays on a subscription after it converts, so a set value
+ * alone does not mean the plan was cancelled during its trial.
+ */
+const isTrialing = (subscription: {
+	readonly trial_ends_at?: number | null | undefined
+	readonly canceled_at?: number | null | undefined
+	readonly expires_at?: number | null | undefined
+}): boolean => {
+	const leftAt = subscription.canceled_at ?? subscription.expires_at
+	return subscription.trial_ends_at != null && (leftAt == null || subscription.trial_ends_at >= leftAt)
+}
+
+export const cancellationsFromBillingUpdated = (
+	data: AutumnBillingUpdatedData,
+): ReadonlyArray<PlanCancellation> => {
+	if (data.entity_id !== undefined && data.entity_id !== null && data.entity_id.length > 0) return []
+	const cancellations: Array<PlanCancellation> = []
+	for (const change of data.plan_changes) {
+		const subscription = change.subscription
+		if (subscription == null || isFreePlan(subscription.plan_id)) continue
+		const previous = change.previous_attributes ?? {}
+		const phase =
+			change.action === "updated" &&
+			subscription.canceled_at != null &&
+			"canceled_at" in previous &&
+			previous.canceled_at === null
+				? "scheduled"
+				: change.action === "expired"
+					? "ended"
+					: undefined
+		if (phase === undefined) continue
+		cancellations.push({
+			orgId: data.customer_id,
+			planId: subscription.plan_id,
+			phase,
+			startedAt: subscription.started_at ?? null,
+			canceledAt: subscription.canceled_at ?? null,
+			expiresAt: subscription.expires_at ?? null,
+			trial: isTrialing(subscription),
+			pastDue: subscription.past_due === true,
+		})
+	}
+	return cancellations
 }

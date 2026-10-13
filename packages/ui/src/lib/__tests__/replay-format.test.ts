@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { formatSessionDuration, isSessionLive, sessionDurationMs } from "../replay-format"
+import { formatClock, formatSessionDuration, isSessionLive, sessionDurationMs } from "../replay-format"
 
 describe("formatSessionDuration", () => {
 	it("renders missing, zero, and negative durations as an em dash", () => {
@@ -33,33 +33,25 @@ const at = (isoMinutesAgo: number) => new Date(NOW - isoMinutesAgo * 60_000).toI
 
 describe("isSessionLive", () => {
 	it("is live while the heartbeat is inside the window", () => {
-		expect(
-			isSessionLive({ status: "active", lastActivityAt: at(2), startTime: at(40) }, NOW),
-		).toBe(true)
+		expect(isSessionLive({ status: "active", lastActivityAt: at(2), startTime: at(40) }, NOW)).toBe(true)
 	})
 
 	it("is not live once the heartbeat has gone quiet", () => {
-		expect(
-			isSessionLive({ status: "active", lastActivityAt: at(31), startTime: at(40) }, NOW),
-		).toBe(false)
+		expect(isSessionLive({ status: "active", lastActivityAt: at(31), startTime: at(40) }, NOW)).toBe(
+			false,
+		)
 	})
 
 	it("is never live for a session that reported its own end", () => {
-		expect(isSessionLive({ status: "ended", lastActivityAt: at(1), startTime: at(5) }, NOW)).toBe(
-			false,
-		)
+		expect(isSessionLive({ status: "ended", lastActivityAt: at(1), startTime: at(5) }, NOW)).toBe(false)
 	})
 
 	it("falls back to the start time when no heartbeat has landed yet", () => {
 		// The v1 start row carries no LastActivityAt. A session seconds old is
 		// genuinely live; the stranded start row of a tab that went away is not,
 		// and the window separates them without a special case.
-		expect(isSessionLive({ status: "active", lastActivityAt: null, startTime: at(1) }, NOW)).toBe(
-			true,
-		)
-		expect(isSessionLive({ status: "active", lastActivityAt: null, startTime: at(90) }, NOW)).toBe(
-			false,
-		)
+		expect(isSessionLive({ status: "active", lastActivityAt: null, startTime: at(1) }, NOW)).toBe(true)
+		expect(isSessionLive({ status: "active", lastActivityAt: null, startTime: at(90) }, NOW)).toBe(false)
 	})
 
 	it("accepts warehouse-shaped timestamps, not just ISO", () => {
@@ -99,5 +91,13 @@ describe("sessionDurationMs", () => {
 		expect(
 			sessionDurationMs({ status: "active", lastActivityAt: null, startTime: at(5), durationMs: null }),
 		).toBeNull()
+	})
+})
+
+describe("formatClock", () => {
+	it("rolls into hours for long sessions", () => {
+		expect(formatClock(65_000)).toBe("1:05")
+		expect(formatClock(9 * 3_600_000)).toBe("9:00:00")
+		expect(formatClock(3_600_000 + 61_000)).toBe("1:01:01")
 	})
 })

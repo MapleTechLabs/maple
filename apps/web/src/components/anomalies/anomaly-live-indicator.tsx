@@ -1,4 +1,5 @@
-import { cn } from "@maple/ui/lib/utils"
+import { FilterChip } from "@maple/ui/components/ui/filter-chip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 export function AnomalyLiveIndicator({
 	live,
@@ -8,33 +9,15 @@ export function AnomalyLiveIndicator({
 	onToggle: (live: boolean) => void
 }) {
 	return (
-		<button
-			type="button"
-			role="switch"
-			aria-checked={live}
-			onClick={() => onToggle(!live)}
-			title={
-				live ? "Auto-refreshing every 15s — click to pause" : "Paused — click to resume auto-refresh"
-			}
-			className={cn(
-				"inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",
-				live
-					? "border-success/30 bg-success/10 text-success"
-					: "border-border/70 text-muted-foreground hover:text-foreground",
-			)}
-		>
-			<span className="relative inline-flex size-1.5">
-				{live ? (
-					<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
-				) : null}
-				<span
-					className={cn(
-						"relative inline-flex size-full rounded-full",
-						live ? "bg-success" : "bg-muted-foreground/50",
-					)}
-				/>
-			</span>
-			{live ? "Live" : "Paused"}
-		</button>
+		<Tooltip>
+			<TooltipTrigger render={<FilterChip pressed={live} onPressedChange={onToggle} tone="ok" dot />}>
+				{live ? "Live" : "Paused"}
+			</TooltipTrigger>
+			<TooltipContent>
+				{live
+					? "Auto-refreshing every 15s. Click to pause."
+					: "Paused. Click to resume auto-refresh."}
+			</TooltipContent>
+		</Tooltip>
 	)
 }

@@ -1,9 +1,9 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
-import { Authorization } from "./current-tenant"
+import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { PrReviewListItem, PrReviewRepositoryConfig } from "./pr-review"
+import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
 import {
 	GitCommitSha,
 	PullRequestSummary,
@@ -21,7 +21,7 @@ const RETURN_PATH_MAX_LENGTH = 2048
 // One leading `/`, never `//` or `/\` (protocol-relative or backslash origin
 // tricks), and no backslash, whitespace or control character anywhere — which
 // leaves no room for a scheme or embedded credentials.
-export const RETURN_PATH_PATTERN = /^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]*$/
+export const RETURN_PATH_PATTERN = /^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]*$/u
 
 /**
  * A path inside the Maple dashboard, e.g. `/integrations?connected=1`.
@@ -327,18 +327,9 @@ export class CloudflarePrimeResponse extends Schema.Class<CloudflarePrimeRespons
 	},
 ) {}
 
-// These shapes now serve two callers at once, which is why they are camelCase
-// with epoch-ms timestamps and the v2 file is not:
-//
-//   1. The deprecated v1 endpoints at the bottom of this file, which are still
-//      mounted for external callers. This is their wire contract, frozen.
-//   2. `PlanetScaleConnectionService` / `PlanetScaleService`, whose method
-//      signatures they are — the v2 handlers map them to the snake_case/ISO
-//      wire format at the boundary.
-//
-// So (1) can be deleted once no customer is calling it, and (2) will keep these
-// alive afterwards as plain service types. Do not reshape them to match v2:
-// that would break the v1 wire format while it still has callers.
+// These camelCase, epoch-ms shapes are the method signatures of
+// `PlanetScaleConnectionService` / `PlanetScaleService`. The v2 handlers map
+// them to the snake_case/ISO wire format at the boundary.
 
 /**
  * The managed scrape target this connection auto-provisioned — surfaced on the
@@ -775,11 +766,17 @@ export class GithubPrReviewConfigResponse extends Schema.Class<GithubPrReviewCon
 	config: PrReviewRepositoryConfig,
 }) {}
 
-export class GithubPrReviewsResponse extends Schema.Class<GithubPrReviewsResponse>("GithubPrReviewsResponse")(
-	{
-		reviews: Schema.Array(PrReviewListItem),
-	},
-) {}
+export class GithubPrReviewSettingsRequest extends Schema.Class<GithubPrReviewSettingsRequest>(
+	"GithubPrReviewSettingsRequest",
+)({
+	settings: PrReviewOrgSettings,
+}) {}
+
+export class GithubPrReviewSettingsResponse extends Schema.Class<GithubPrReviewSettingsResponse>(
+	"GithubPrReviewSettingsResponse",
+)({
+	settings: PrReviewOrgSettings,
+}) {}
 
 /**
  * A single resolved commit, for the dashboard's commit-SHA hover card. Provider-
@@ -834,6 +831,70 @@ export class VcsCommitDetailsResponse extends Schema.Class<VcsCommitDetailsRespo
 
 /** Upper bound on SHAs per bulk commit lookup — one page of a list view. */
 export const VCS_COMMIT_DETAILS_MAX_SHAS = 50
+
+/** Upper bound on `base..head` pairs per commit-range lookup, and on commits listed per range. */
+export const VCS_COMMIT_RANGES_MAX = 50
+export const VCS_COMMIT_RANGE_COMMITS_MAX = 100
+
+/**
+ * What shipped between two deploys: the stored commits after `base` up to and
+ * including `head` on one repo's tracked branch. `unavailable` when either end is
+ * not a stored commit of the same repo (a short sha, a tag, an untracked branch).
+ */
+export class VcsCommitRangeResponse extends Schema.Class<VcsCommitRangeResponse>("VcsCommitRangeResponse")({
+	base: Schema.String,
+	head: Schema.String,
+	status: Schema.Literals(["resolved", "unavailable"]),
+	repoFullName: Schema.String,
+	totalCount: Schema.Number,
+	commits: Schema.Array(VcsCommitDetailResponse),
+	/** True when `totalCount` is a lower bound. */
+	truncated: Schema.Boolean,
+}) {}
+
+export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesResponse>("VcsCommitRangesResponse")(
+	{
+		ranges: Schema.Array(VcsCommitRangeResponse),
+	},
+) {}
+
+export class RailwayEnvironmentStatus extends Schema.Class<RailwayEnvironmentStatus>(
+	"RailwayEnvironmentStatus",
+)({
+	projectId: Schema.String,
+	projectName: Schema.String,
+	environmentId: Schema.String,
+	environmentName: Schema.String,
+	serviceCount: Schema.Number,
+	enabled: Schema.Boolean,
+	lastSyncedAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
+/** Connection state of the Railway metrics integration (token-based, one per org). */
+export class RailwayIntegrationStatus extends Schema.Class<RailwayIntegrationStatus>(
+	"RailwayIntegrationStatus",
+)({
+	connected: Schema.Boolean,
+	workspaceNames: Schema.NullOr(Schema.String),
+	connectedByUserId: Schema.NullOr(UserId),
+	connectedAt: Schema.NullOr(Schema.Number),
+	/** True when Railway rejected the stored token; polling is paused until a new one is saved. */
+	authFailed: Schema.Boolean,
+	lastSyncedAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+	environments: Schema.Array(RailwayEnvironmentStatus),
+}) {}
+
+export class RailwayConnectRequest extends Schema.Class<RailwayConnectRequest>("RailwayConnectRequest")({
+	token: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(8), Schema.isMaxLength(512)),
+}) {}
+
+export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectResponse>(
+	"RailwayDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
 
 export class IntegrationsForbiddenError extends HttpTaggedError<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
@@ -978,14 +1039,12 @@ export type IntegrationHttpError =
 	| IntegrationsPersistenceError
 
 /**
- * The `/api/integrations/planetscale/*` operations are gone — `/v2/integrations/
- * planetscale` (`http/v2/integrations-planetscale.ts`) is the whole surface now:
- * scoped API keys, snake_case + ISO wire format, and the documented error
- * envelope. The schemas below stay because v2 and `PlanetScaleService` use them.
+ * Dashboard control surface for the Hazel, Cloudflare, Railway and GitHub
+ * integrations, plus VCS lookups. Internal transport: session-only, absent from
+ * the public docs. PlanetScale and chat connectors are public v2 resources.
  *
- * The OAuth callback and the webhook receiver are NOT part of that retirement.
- * They keep their version-neutral raw-router paths because PlanetScale stores
- * those URLs on its side — see `docs/api-v2.md`.
+ * The OAuth callbacks and webhook receivers are raw routers under `/api/...`,
+ * not part of this group: providers store those URLs on their side.
  */
 export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
@@ -1098,6 +1157,38 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.get("railwayStatus", "/railway/status", {
+			success: RailwayIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Validates the token against Railway (discovery + a metrics probe) before storing it.
+		HttpApiEndpoint.put("railwayConnect", "/railway", {
+			payload: RailwayConnectRequest,
+			success: RailwayIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		// Polls now instead of waiting for the 5-minute cron; returns the refreshed status.
+		HttpApiEndpoint.post("railwaySync", "/railway/sync", {
+			success: RailwayIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("railwayDisconnect", "/railway", {
+			success: RailwayDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("githubStatus", "/github/status", {
 			success: GithubIntegrationStatus,
 			error: IntegrationsPersistenceError,
@@ -1187,10 +1278,16 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		),
 	)
 	.add(
-		// The repository's most recent reviews, newest first.
-		HttpApiEndpoint.get("githubListPrReviews", "/github/repositories/:repositoryId/pr-reviews", {
-			params: { repositoryId: VcsRepositoryId },
-			success: GithubPrReviewsResponse,
+		// Organization-wide review settings: the model and the rules every repository inherits. Read by any member, written by admins.
+		HttpApiEndpoint.get("githubGetPrReviewSettings", "/github/pr-review/settings", {
+			success: GithubPrReviewSettingsResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("githubSetPrReviewSettings", "/github/pr-review/settings", {
+			payload: GithubPrReviewSettingsRequest,
+			success: GithubPrReviewSettingsResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)
@@ -1228,6 +1325,22 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		// `ranges` is `base..head` pairs, comma-separated, answered in request order.
+		// Raw strings like `shas` above: an unresolvable end reads `unavailable`.
+		HttpApiEndpoint.get("vcsCommitRanges", "/vcs/commit-ranges", {
+			query: Schema.Struct({
+				ranges: Schema.String.check(Schema.isMinLength(1)),
+				limit: Schema.optional(
+					Schema.FiniteFromString.check(
+						Schema.isBetween({ minimum: 0, maximum: VCS_COMMIT_RANGE_COMMITS_MAX }),
+					),
+				),
+			}),
+			success: VcsCommitRangesResponse,
+			error: [IntegrationsPersistenceError],
+		}),
+	)
+	.add(
 		// Scoped to one repository the org has connected, so the picker's options can
 		// never come from a repo this tenant cannot see. `limit` is bounded because
 		// the provider call behind it fetches a single page — this lists the PRs
@@ -1250,5 +1363,5 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			],
 		}),
 	)
-	.prefix("/api/integrations")
-	.middleware(Authorization) {}
+	.prefix("/internal/integrations")
+	.middleware(SessionAuthorization) {}

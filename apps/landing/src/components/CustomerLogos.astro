@@ -16,11 +16,8 @@
  */
 import { getCollection } from "astro:content";
 import * as m from "../paraglide/messages.js";
-import HazelLogo from "./icons/HazelLogo.astro";
-import SakuraLogo from "./icons/SakuraLogo.astro";
-import GymscoreLogo from "./icons/GymscoreLogo.astro";
-import SuperwallLogo from "./icons/SuperwallLogo.astro";
-import EffectLogomark from "./icons/EffectLogomark.astro";
+import { LOGOS } from "../lib/customer-logos";
+import { getSortedStories, getStoryCustomer } from "../lib/customers";
 
 interface Props {
 	variant?: "section" | "rail";
@@ -28,21 +25,19 @@ interface Props {
 
 const { variant = "section" } = Astro.props;
 
-// Entry id (filename) → brand mark. Add a new customer by dropping a
-// src/content/logos/<id>.md file and registering its logo component here.
-const LOGOS: Record<string, typeof HazelLogo>  = {
-	hazel: HazelLogo,
-	sakura: SakuraLogo,
-	gymscore: GymscoreLogo,
-	superwall: SuperwallLogo,
-	effect: EffectLogomark,
-} satisfies Record<string, typeof HazelLogo>;
-
 const entries = (await getCollection("logos"))
 	.filter((e) => LOGOS[e.id])
 	.sort((a, b) => a.data.order - b.data.order);
 
 const base = entries.map((e) => ({ id: e.id, name: e.data.name, href: e.data.href }));
+
+// The rail points at the featured (else newest) customer story, when one is
+// published. English-only, like /blog: a bare href, not l().
+const stories = await getSortedStories();
+const story = stories.find((s) => s.data.featured) ?? stories[0];
+const storyCustomer = story ? await getStoryCustomer(story) : undefined;
+const StoryLogo = storyCustomer ? LOGOS[storyCustomer.id] : undefined;
+const storyStat = story?.data.highlights[0];
 
 // The customer set is small, so repeat it until one "copy" is wide enough to
 // fill a large viewport, then duplicate that copy so the -50% translate loops
@@ -54,6 +49,7 @@ const belt = [...oneCopy, ...oneCopy];
 
 {
 	variant === "rail" ? (
+		<div class="flex flex-col gap-3">
 		<div class="flex flex-wrap items-center gap-x-7 gap-y-3">
 			<p class="w-full text-[10px] uppercase tracking-[0.2em] text-fg-muted sm:w-auto sm:mr-1">
 				{m.customers_eyebrow()}
@@ -82,6 +78,29 @@ const belt = [...oneCopy, ...oneCopy];
 					<span class="inline-flex items-center gap-3 text-fg-muted">{inner}</span>
 				);
 			})}
+		</div>
+		{story && storyCustomer && (
+			<a
+				href={`/customers/${story.id}`}
+				class="monument-story"
+				aria-label={`${storyCustomer.data.name}: ${storyStat ? `${storyStat.value} ${storyStat.label}. ` : ""}${m.customers_story_cta()}`}
+				data-track="cta_click"
+				data-track-location="hero_customer_story"
+				data-track-destination={`/customers/${story.id}`}
+			>
+				{StoryLogo && <StoryLogo class="monument-story__mark" />}
+				<span class="monument-story__name">{storyCustomer.data.name}</span>
+				{storyStat && (
+					<span class="monument-story__stat">
+						<strong>{storyStat.value}</strong> {storyStat.label}
+					</span>
+				)}
+				<span class="monument-story__cta">
+					{m.customers_story_cta()}
+					<span class="monument-story__arrow" aria-hidden="true">→</span>
+				</span>
+			</a>
+		)}
 		</div>
 	) : (
 		<Fragment>

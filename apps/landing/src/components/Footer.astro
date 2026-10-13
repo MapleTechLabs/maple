@@ -66,6 +66,7 @@ const stars = await getGitHubStars();
                     <li><a href="/docs" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_docs()}</a></li>
                     <li><a href="/guides" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_guides()}</a></li>
                     <li><a href="/blog" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_blog()}</a></li>
+                    <li><a href="/customers" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_customers()}</a></li>
                     <!-- English-only, like /docs and /blog above: bare href, not l(). -->
                     <li><a href="/changelog" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_changelog()}</a></li>
                 </ul>
@@ -94,6 +95,8 @@ const stars = await getGitHubStars();
                     <li><a href={l("/compare/dash0")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_dash0()}</a></li>
                     <li><a href={l("/compare/signoz")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_signoz()}</a></li>
                     <li><a href={l("/compare/axiom")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_axiom()}</a></li>
+                    <li><a href={l("/compare/better-stack")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_better_stack()}</a></li>
+                    <li><a href={l("/compare/honeycomb")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_honeycomb()}</a></li>
                 </ul>
 
                 <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4 mt-6">{m.footer_integrations()}</h4>

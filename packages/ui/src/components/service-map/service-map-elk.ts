@@ -1,0 +1,289 @@
+import type { Edge, Node } from "@xyflow/react"
+import type { ElkExtendedEdge, ElkNode, ELK } from "elkjs/lib/elk-api"
+import {
+	NS_LABEL_HEIGHT,
+	NS_PADDING_X,
+	NS_PADDING_Y,
+	nodeNamespace,
+	type LayoutConfig,
+	type PreviousPositions,
+	type ServiceEdgeData,
+	type ServiceNodeData,
+} from "./service-map-utils"
+
+export type { PreviousPositions }
+
+/** A layout-engine failure; `Error` satisfies it, so thrown errors pass through as-is. */
+export interface ServiceMapLayoutFailure {
+	readonly name: string
+	readonly message: string
+}
+
+/** BOUNDARY: normalizes whatever the layout engine threw or rejected with. */
+export function toLayoutFailure(thrown: unknown): ServiceMapLayoutFailure {
+	if (thrown instanceof Error) return thrown
+	// Still an `Error`, so reporters that branch on `instanceof Error` keep the message.
+	const failure = new Error(String(thrown))
+	failure.name = "UnknownError"
+	return failure
+}
+
+/** Sink for degraded-path warnings (worker unavailable, worker layout failed). */
+export type ElkWarningReporter = (event: string, failure: ServiceMapLayoutFailure) => void
+
+// ELK runs inside a dedicated web worker (elk-api + elk-worker) so laying out a
+// large graph never blocks the main thread. The worker is a singleton reused
+// across layouts and route visits. If the worker can't be constructed (no
+// `Worker` global — vitest/jsdom — or the worker chunk fails to load), we fall
+// back to the main-thread bundled build; a layout() failure on the worker path
+// additionally demotes to the fallback and retries once, so a broken worker
+// chunk degrades to today's behavior instead of a blank map.
+let workerElk: Promise<ELK> | null = null
+let mainThreadElk: Promise<ELK> | null = null
+let workerBroken = false
+
+async function createWorkerElk(): Promise<ELK> {
+	if (typeof Worker === "undefined") throw new Error("Worker unavailable")
+	const [{ default: ElkConstructor }, { default: ElkWorker }] = await Promise.all([
+		import("elkjs/lib/elk-api.js"),
+		import("elkjs/lib/elk-worker.min.js?worker"),
+	])
+	return new ElkConstructor({ workerFactory: () => new ElkWorker() })
+}
+
+function getMainThreadElk(): Promise<ELK> {
+	if (!mainThreadElk) {
+		mainThreadElk = import("elkjs/lib/elk.bundled.js").then((m) => new m.default())
+	}
+	return mainThreadElk
+}
+
+function getElk(onWarning: ElkWarningReporter | undefined): Promise<ELK> {
+	if (workerBroken) return getMainThreadElk()
+	if (!workerElk) {
+		workerElk = createWorkerElk().catch((error) => {
+			onWarning?.("service_map.elk_worker_unavailable", toLayoutFailure(error))
+			workerBroken = true
+			return getMainThreadElk()
+		})
+	}
+	return workerElk
+}
+
+const ELK_CONTAINER_PREFIX = "elkns:"
+
+// Above this node count, swap network-simplex node placement for the cheaper
+// Brandes-Köpf variant and cap layered thoroughness so worst-case layout time
+// stays bounded on very large orgs.
+const LARGE_GRAPH_NODE_COUNT = 300
+
+export interface ElkLayoutResult {
+	positions: Map<string, { x: number; y: number }>
+}
+
+// Below this share of known positions, the previous layout describes a graph too
+// different from this one to anchor it — seeding a mostly-new graph with a few
+// stale coordinates biases the result without buying any continuity, so fall
+// back to the deterministic model-order layout.
+const MIN_SEED_COVERAGE = 0.6
+
+/**
+ * The subset of `previous` covering the nodes being laid out, or `undefined`
+ * when coverage is too thin to be worth anchoring to.
+ */
+function seedablePositions(
+	nodes: Node<ServiceNodeData>[],
+	previous: PreviousPositions | undefined,
+): PreviousPositions | undefined {
+	if (!previous || previous.size === 0 || nodes.length === 0) return undefined
+	const known = new Map<string, { x: number; y: number }>()
+	for (const node of nodes) {
+		const at = previous.get(node.id)
+		if (at) known.set(node.id, at)
+	}
+	return known.size / nodes.length >= MIN_SEED_COVERAGE ? known : undefined
+}
+
+/**
+ * Build the ELK input graph. Each namespace becomes a compound container node
+ * (so same-namespace services stay together and the dotted boxes never
+ * overlap); databases and namespace-less services sit at the top level.
+ *
+ * Exported for unit tests — pure, no worker involved.
+ */
+export function buildElkGraph(
+	nodes: Node<ServiceNodeData>[],
+	edges: Edge<ServiceEdgeData>[],
+	config: LayoutConfig,
+	previous?: PreviousPositions,
+): ElkNode {
+	const lanes = new Map<string, Node<ServiceNodeData>[]>()
+	const topLevel: Node<ServiceNodeData>[] = []
+	for (const node of nodes) {
+		const ns = nodeNamespace(node)
+		if (ns === undefined) {
+			topLevel.push(node)
+			continue
+		}
+		const lane = lanes.get(ns)
+		if (lane) lane.push(node)
+		else lanes.set(ns, [node])
+	}
+	const hasContainers = lanes.size > 0
+
+	// Seeding: when most nodes carry a position from the previous layout, hand
+	// those coordinates to ELK as hints. Absolute coordinates are fine even for
+	// container children — INTERACTIVE strategies read them for RELATIVE order
+	// within a parent, and every child of a namespace shares its offset.
+	const seeded = seedablePositions(nodes, previous)
+	const toElkNode = (node: Node<ServiceNodeData>): ElkNode => {
+		const base: ElkNode = { id: node.id, width: config.nodeWidth, height: config.nodeHeight }
+		const at = seeded?.get(node.id)
+		return at ? { ...base, x: at.x, y: at.y } : base
+	}
+
+	const children: ElkNode[] = []
+	for (const ns of Array.from(lanes.keys()).sort()) {
+		const laneNodes = lanes.get(ns)
+		if (!laneNodes) continue
+		children.push({
+			id: `${ELK_CONTAINER_PREFIX}${ns}`,
+			children: laneNodes.map(toElkNode),
+			layoutOptions: {
+				// Reserve room at the top for the namespace label chip.
+				"elk.padding": `[top=${NS_LABEL_HEIGHT + NS_PADDING_Y},left=${NS_PADDING_X},bottom=${NS_PADDING_Y},right=${NS_PADDING_X}]`,
+			},
+		})
+	}
+	for (const node of topLevel) children.push(toElkNode(node))
+
+	const elkEdges: ElkExtendedEdge[] = edges.map((edge) => ({
+		id: edge.id,
+		sources: [edge.source],
+		targets: [edge.target],
+	}))
+
+	const layoutOptions: Record<string, string> = {
+		"elk.algorithm": "layered",
+		"elk.direction": "RIGHT",
+		// Edges are rendered as smooth-step curves by ReactFlow (matching the
+		// non-namespaced flat layout), not from ELK routes — so use POLYLINE here,
+		// which reserves far less inter-node space than ORTHOGONAL and keeps the
+		// graph compact instead of sprawling into long rectangular detours.
+		"elk.edgeRouting": "POLYLINE",
+		// Tighter layer gap: ORTHOGONAL routing needed wide channels; with curved
+		// edges we can pack columns much closer.
+		"elk.layered.spacing.nodeNodeBetweenLayers": String(
+			Math.max(70, Math.round((config.layerGapX - config.nodeWidth) * 0.6)),
+		),
+		"elk.spacing.nodeNode": String(config.nodeGapY),
+		"elk.spacing.edgeNode": "12",
+		"elk.layered.spacing.edgeNodeBetweenLayers": "12",
+		// Deterministic cycle breaking that follows the (sorted) model order, so
+		// back-edges in cyclic call graphs land the same way on every layout.
+		"elk.layered.cycleBreaking.strategy": "GREEDY_MODEL_ORDER",
+		// Stable, source-order-aware crossing minimization for deterministic output.
+		"elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+	} satisfies Record<string, string>
+
+	if (seeded) {
+		// A one-edge topology delta used to re-derive layer and barycenter order
+		// from scratch, which could flip both and move every node on the canvas
+		// (measured: 131 of 132 nodes displaced, mean ~1600 units). Seeded with the
+		// previous coordinates, INTERACTIVE keeps layering and in-layer order
+		// anchored to what the user is already looking at, so the delta moves the
+		// nodes it actually affects and leaves the rest put.
+		//
+		// `considerModelOrder` is dropped here deliberately: it competes with the
+		// positional hints for the same decision, and model order is exactly the
+		// thing that reshuffles when the node list changes.
+		layoutOptions["elk.layered.layering.strategy"] = "INTERACTIVE"
+		layoutOptions["elk.layered.crossingMinimization.strategy"] = "INTERACTIVE"
+		layoutOptions["elk.layered.cycleBreaking.strategy"] = "INTERACTIVE"
+		delete layoutOptions["elk.layered.considerModelOrder.strategy"]
+	}
+
+	if (nodes.length > LARGE_GRAPH_NODE_COUNT) {
+		layoutOptions["elk.layered.nodePlacement.strategy"] = "BRANDES_KOEPF"
+		layoutOptions["elk.layered.thoroughness"] = "3"
+	} else {
+		// Network-simplex node placement compacts the graph vertically (less
+		// wasted whitespace between rows than the default).
+		layoutOptions["elk.layered.nodePlacement.strategy"] = "NETWORK_SIMPLEX"
+	}
+
+	if (hasContainers) {
+		// Keep cross-namespace edges flowing left→right with the rest of the graph.
+		layoutOptions["elk.hierarchyHandling"] = "INCLUDE_CHILDREN"
+		// Pack namespace containers close together.
+		layoutOptions["elk.spacing.componentComponent"] = String(Math.round(config.componentGapY * 0.6))
+	} else {
+		// Flat graph: let ELK lay out each connected component independently and
+		// pack them into a viewport-shaped block instead of one tall stack.
+		// (Ignored by ELK when INCLUDE_CHILDREN hierarchy handling is active,
+		// which is why it's only set on the flat path.)
+		layoutOptions["elk.separateConnectedComponents"] = "true"
+		layoutOptions["elk.aspectRatio"] = "1.8"
+		layoutOptions["elk.spacing.componentComponent"] = String(config.componentGapY)
+	}
+
+	return {
+		id: "root",
+		layoutOptions,
+		children,
+		edges: elkEdges,
+	}
+}
+
+/**
+ * Lay the service map out with ELK's layered algorithm (in a web worker; see
+ * {@link getElk} for the fallback ladder).
+ *
+ * Only node POSITIONS are returned — edges are rendered as ReactFlow smooth-step
+ * curves. ELK's own orthogonal edge routing is intentionally not used: it turned
+ * long cross-namespace edges into a sprawl of rectangular detours.
+ *
+ * Deterministic: ELK layered uses no randomness, so the same topology yields the
+ * same layout (callers memoize on a topology key). Passing `previous` anchors
+ * the result to the layout already on screen — still deterministic, but now a
+ * function of (topology, previous) rather than topology alone.
+ */
+export async function layoutServiceMapWithElk(
+	nodes: Node<ServiceNodeData>[],
+	edges: Edge<ServiceEdgeData>[],
+	config: LayoutConfig,
+	previous?: PreviousPositions,
+	onWarning?: ElkWarningReporter,
+): Promise<ElkLayoutResult> {
+	const graph = buildElkGraph(nodes, edges, config, previous)
+
+	const result: ElkNode = await getElk(onWarning)
+		.then((elk) => elk.layout(graph))
+		.catch((error) => {
+			// A failure on the worker path (e.g. the worker chunk 404s at runtime)
+			// demotes to the main-thread build and retries once.
+			if (workerBroken) return Promise.reject(error)
+			onWarning?.("service_map.elk_worker_layout_failed", toLayoutFailure(error))
+			workerBroken = true
+			return getMainThreadElk().then((elk) => elk.layout(graph))
+		})
+
+	const positions = new Map<string, { x: number; y: number }>()
+
+	// Walk the result tree accumulating absolute offsets. Leaf nodes get
+	// positions; container nodes are synthetic (recurse into them).
+	const walk = (node: ElkNode, offsetX: number, offsetY: number) => {
+		for (const child of node.children ?? []) {
+			const ax = offsetX + (child.x ?? 0)
+			const ay = offsetY + (child.y ?? 0)
+			if (child.children && child.children.length > 0) {
+				walk(child, ax, ay)
+			} else {
+				positions.set(child.id, { x: ax, y: ay })
+			}
+		}
+	}
+	walk(result, 0, 0)
+
+	return { positions }
+}

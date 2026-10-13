@@ -1,7 +1,7 @@
 import type { TenantContext } from "@maple/auth"
 import { OrgId, UnauthorizedError, UserId } from "@maple/domain/http"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 import { TenantResolver, type TenantResolverApi } from "./auth/TenantResolver"
 import {
 	ElectricClient,

@@ -24,7 +24,7 @@ function MarkdownPresetPreview({ preset }: { preset: WidgetPresetDefinition }) {
 				// eslint-disable-next-line react/no-array-index-key -- fixed sample content
 				<div
 					key={index}
-					className={`truncate text-[9px] ${line.startsWith("#") ? "font-semibold" : "text-muted-foreground"}`}
+					className={`truncate text-4xs ${line.startsWith("#") ? "font-semibold" : "text-muted-foreground"}`}
 				>
 					{line.replace(/^#+\s*/, "").replace(/[*`]/g, "")}
 				</div>

@@ -20,7 +20,7 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
 import { OrgId } from "@maple/domain/primitives"
 import {
 	Context,
@@ -170,7 +170,7 @@ const ports = (
 	supportsIdentity: false,
 	resolveWorkspace: () => Effect.succeed(Option.some({ orgId: ORG })),
 	forgetWorkspace: () => Effect.void,
-	chatSession: () => stub,
+	chatSession: () => chatSessionClientFromStub(stub),
 	appBaseUrl: "https://app.maple.dev",
 	chartImageUrl: () => null,
 	announceUnlinked: Effect.succeed(false),
@@ -312,7 +312,6 @@ describe("settling a relayed turn", () => {
 			expect(chat.calls).toEqual([])
 			expect(logs).toHaveLength(1)
 			expect(logs[0]).toContain("A relayed turn could not be settled")
-			// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
 			const everything = JSON.stringify({
 				logs,
 				spans: spans.map((span) => ({

@@ -49,9 +49,10 @@ export function InvestigateBar({
 				size="sm"
 				variant={accent ? "default" : "secondary"}
 				className="h-6.5 shrink-0 px-3 text-xs"
-				disabled={busy || !trimmed}
+				loading={busy}
+				disabled={!trimmed}
 			>
-				{busy ? "Starting…" : "Investigate"}
+				Investigate
 			</Button>
 		</form>
 	)

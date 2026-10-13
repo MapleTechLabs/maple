@@ -11,6 +11,7 @@ import type {
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import { cn } from "@maple/ui/lib/utils"
+import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { CheckIcon, ChevronDownIcon, CircleWarningIcon } from "@/components/icons"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
 import {
@@ -21,12 +22,12 @@ import {
 } from "@/lib/alerts/diagnosis"
 import { worstState } from "@/lib/alerts/rule-status"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 
 const STATUS_ICON: Record<DiagnosisStageStatus, { className: string }> = {
-	pass: { className: "text-success" },
-	warn: { className: "text-warning" },
-	fail: { className: "text-destructive" },
+	pass: { className: "text-severity-info" },
+	warn: { className: "text-severity-warn" },
+	fail: { className: "text-severity-error" },
 	unknown: { className: "text-muted-foreground" },
 } satisfies Record<DiagnosisStageStatus, { className: string }>
 
@@ -144,7 +145,7 @@ export function RuleDiagnosisPanel({
 							{/* Group keys are opaque ids (often UUID-long), so the track
 							    overflows its row — scroll it instead of clipping. */}
 							<div className="-my-1 min-w-0 flex-1 overflow-x-auto py-1">
-								<AlertSegmentedSelect
+								<SegmentedSelect
 									className="w-max"
 									value={activeGroup ?? groupKeys[0]!}
 									onChange={(value) => setSelectedGroup(value)}
@@ -163,21 +164,21 @@ export function RuleDiagnosisPanel({
 						))}
 					</ol>
 					{hasHiddenSteps && (
-						<button
-							type="button"
+						<Button
+							variant="link"
+							size="xs"
 							onClick={() => setShowAll((v) => !v)}
-							className="mt-1.5 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+							className="mt-1.5 text-muted-foreground hover:text-foreground"
 						>
 							<ChevronDownIcon
-								size={13}
 								className={cn("shrink-0 transition-transform", showAll && "rotate-180")}
 							/>
 							{showAll
 								? "Show only issues"
 								: passingCount === hiddenCount
-									? `${passingCount} ${passingCount === 1 ? "check" : "checks"} passing`
-									: `Show ${hiddenCount} more ${hiddenCount === 1 ? "step" : "steps"}`}
-						</button>
+									? `${countLabel(passingCount, "check")} passing`
+									: `Show ${hiddenCount} more ${pluralize(hiddenCount, "step")}`}
+						</Button>
 					)}
 				</div>
 			)}
@@ -206,8 +207,8 @@ function DiagnosisStageRow({
 		<li
 			className={cn(
 				"rounded-md px-2 py-1",
-				stage.status === "fail" && "bg-destructive/5",
-				stage.status === "warn" && "bg-warning/5",
+				stage.status === "fail" && "bg-severity-error/5",
+				stage.status === "warn" && "bg-severity-warn/5",
 			)}
 		>
 			<div className="flex items-center gap-2.5">
@@ -221,7 +222,7 @@ function DiagnosisStageRow({
 					<span
 						className={cn(
 							"truncate text-xs",
-							stage.status === "fail" ? "text-destructive" : "text-muted-foreground",
+							stage.status === "fail" ? "text-severity-error" : "text-muted-foreground",
 						)}
 					>
 						{stage.summary}
@@ -240,13 +241,14 @@ function DiagnosisStageRow({
 					))}
 					{hiddenEvidence > 0 && (
 						<li>
-							<button
-								type="button"
+							<Button
+								variant="link"
+								size="xs"
 								onClick={() => setShowAllEvidence(true)}
-								className="text-xs text-muted-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
+								className="text-muted-foreground/80 hover:text-foreground"
 							>
 								+{hiddenEvidence} more
-							</button>
+							</Button>
 						</li>
 					)}
 				</ul>

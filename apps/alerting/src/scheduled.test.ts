@@ -1,10 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit, Fiber, Latch, Layer } from "effect"
 import { env as workerEnv } from "../test/stubs/cloudflare-workers"
-import { buildLayer, catchTickFailure, selectScheduledProgram, type ScheduledTickPrograms } from "./scheduled"
+import { layerTick, catchTickFailure, selectScheduledProgram, type ScheduledTickPrograms } from "./scheduled"
 
 const cronCases = [
-	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale"]],
+	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale", "railwayMetrics", "prReviewPostMerge"]],
 	["*/15 * * * *", ["digest"]],
 	["0 * * * *", ["serviceMapRollup"]],
 	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
@@ -12,7 +12,7 @@ const cronCases = [
 
 describe("alerting Effect root", () => {
 	it.effect("acquires the production layer graph", () =>
-		Effect.scoped(Layer.build(buildLayer(workerEnv))).pipe(Effect.asVoid),
+		Effect.scoped(Layer.build(layerTick(workerEnv))).pipe(Effect.asVoid),
 	)
 
 	for (const [cron, expected] of cronCases) {
@@ -28,6 +28,8 @@ describe("alerting Effect root", () => {
 				escalation: tick("escalation"),
 				fixVerification: tick("fixVerification"),
 				planetScale: tick("planetScale"),
+				prReviewPostMerge: tick("prReviewPostMerge"),
+				railwayMetrics: tick("railwayMetrics"),
 				serviceMapRollup: tick("serviceMapRollup"),
 			} satisfies ScheduledTickPrograms
 
@@ -57,6 +59,8 @@ describe("alerting Effect root", () => {
 				escalation: record("escalation"),
 				fixVerification: record("fixVerification"),
 				planetScale: record("planetScale"),
+				prReviewPostMerge: record("prReviewPostMerge"),
+				railwayMetrics: record("railwayMetrics"),
 				serviceMapRollup: record("serviceMapRollup"),
 			} satisfies ScheduledTickPrograms
 			const fiber = yield* Effect.forkChild(selectScheduledProgram("* * * * *", ticks))
@@ -82,6 +86,8 @@ describe("alerting Effect root", () => {
 			escalation: tick("escalation"),
 			fixVerification: tick("fixVerification"),
 			planetScale: tick("planetScale"),
+			prReviewPostMerge: tick("prReviewPostMerge"),
+			railwayMetrics: tick("railwayMetrics"),
 			serviceMapRollup: tick("serviceMapRollup"),
 		} satisfies ScheduledTickPrograms
 

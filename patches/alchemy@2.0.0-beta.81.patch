@@ -1,0 +1,243 @@
+diff --git a/lib/AWS/AutoScaling/AutoScalingGroup.js b/lib/AWS/AutoScaling/AutoScalingGroup.js
+index a0fcddc..bea6b3d 100644
+--- a/lib/AWS/AutoScaling/AutoScalingGroup.js
++++ b/lib/AWS/AutoScaling/AutoScalingGroup.js
+@@ -245,7 +245,17 @@ export const AutoScalingGroupProvider = () => Provider.effect(AutoScalingGroup,
+                     TerminationPolicies: news.terminationPolicies,
+                     Tags: toTags(autoScalingGroupName, desiredTags),
+                 })
+-                    .pipe(Effect.catch((error) => error?._tag === "AlreadyExistsFault" ? Effect.void : Effect.fail(error)));
++                    .pipe(
++                // maple patch: a just-created instance profile takes a few seconds to
++                // reach EC2, and the launch template is rejected until it does.
++                Effect.retry({
++                    while: (error) => error?._tag === "ValidationError" &&
++                        /Invalid IAM Instance Profile/i.test(String(error?.message ?? error)),
++                    schedule: Schedule.max([
++                        Schedule.recurs(10),
++                        Schedule.exponential("1 second"),
++                    ]),
++                }), Effect.catch((error) => error?._tag === "AlreadyExistsFault" ? Effect.void : Effect.fail(error)));
+                 existing = yield* describeGroup(autoScalingGroupName).pipe(Effect.filterOrFail(Boolean, () => new Error(`Auto Scaling Group '${autoScalingGroupName}' was not readable after create`)), Effect.retry({
+                     while: () => true,
+                     schedule: Schedule.max([Schedule.recurs(8), Schedule.exponential("250 millis")]),
+@@ -259,7 +269,9 @@ export const AutoScalingGroupProvider = () => Provider.effect(AutoScalingGroup,
+                 AutoScalingGroupName: autoScalingGroupName,
+                 MinSize: news.minSize,
+                 MaxSize: news.maxSize,
+-                DesiredCapacity: news.desiredCapacity ?? news.minSize,
++                // maple patch: an unset desiredCapacity leaves the live value alone, so a
++            // redeploy does not undo ECS managed scaling.
++            DesiredCapacity: news.desiredCapacity,
+                 LaunchTemplate: launchTemplate,
+                 VPCZoneIdentifier: news.subnetIds.join(","),
+                 HealthCheckType: healthCheckType,
+diff --git a/lib/AWS/ECS/CapacityProvider.js b/lib/AWS/ECS/CapacityProvider.js
+index 401c3eb..c060ef5 100644
+--- a/lib/AWS/ECS/CapacityProvider.js
++++ b/lib/AWS/ECS/CapacityProvider.js
+@@ -91,7 +91,7 @@ export const CapacityProviderProvider = () => Provider.effect(CapacityProvider,
+         read: Effect.fn(function* ({ id, olds, output }) {
+             const name = output?.name ?? (yield* toName(id, olds ?? {}));
+             const found = yield* describe(name);
+-            if (!found?.name || !found.capacityProviderArn) {
++            if (!found?.name || !found.capacityProviderArn || found.status === "INACTIVE") {
+                 return undefined;
+             }
+             const internalTags = yield* createInternalTags(id);
+diff --git a/lib/AWS/ECS/Service.js b/lib/AWS/ECS/Service.js
+index fff172b..8b857da 100644
+--- a/lib/AWS/ECS/Service.js
++++ b/lib/AWS/ECS/Service.js
+@@ -663,6 +663,8 @@ const transformServiceProps = (id, props) => Effect.gen(function* () {
+         return next;
+     }).pipe(Namespace.push(id));
+ });
++/** maple patch: whether the service's tasks get their own ENI. */
++const usesAwsvpc = (props) => (props?.networkMode ?? "awsvpc") === "awsvpc";
+ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+     const config = lbProp === true ? {} : isELBv2Listener(lbProp) ? { listener: lbProp } : lbProp;
+     const rules = config.rules ?? (config.listener !== undefined ? [{}] : []);
+@@ -955,7 +957,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+             vpcId: network.vpcId,
+             port: spec.port,
+             protocol: spec.protocol,
+-            targetType: "ip",
++            targetType: usesAwsvpc(props) ? "ip" : "instance",
+             healthCheckPath: isNetworkTg
+                 ? wantsHttpCheck
+                     ? (health?.path ?? "/")
+@@ -1790,7 +1792,9 @@ export const ServiceProvider = () => Provider.effect(Service, Effect.gen(functio
+         platformVersion: news.platformVersion,
+         deploymentConfiguration: news.deploymentConfiguration,
+         healthCheckGracePeriodSeconds: toWireSeconds(news.healthCheckGracePeriod),
+-        networkConfiguration: networkConfigurationOf(network, securityGroups),
++        networkConfiguration: usesAwsvpc(news)
++            ? networkConfigurationOf(network, securityGroups)
++            : undefined,
+         capacityProviderStrategy: news.capacityProviderStrategy,
+         placementConstraints: news.placementConstraints,
+         placementStrategy: news.placementStrategy,
+diff --git a/lib/Cloudflare/Workers/DurableObject.js b/lib/Cloudflare/Workers/DurableObject.js
+index cd388b9..b5c5f1c 100644
+--- a/lib/Cloudflare/Workers/DurableObject.js
++++ b/lib/Cloudflare/Workers/DurableObject.js
+@@ -968,22 +968,17 @@ export const DurableObject = taggedFunction(DurableObjectScope, function (...arg
+                 return Effect.die(new Error(`DurableObject '${namespace}' is not a DurableObject`));
+             }
+         }));
+-        return {
++        // maple patch: `jurisdiction` returns a client whose ids are minted in
++        // that jurisdiction, so the objects they address are stored only there.
++        const client = (resolve) => ({
+             Type: TypeId,
+             LogicalId: namespace,
+             name: namespace,
+             namespaceId: worker.durableObjectNamespaces.pipe(Output.map((durableObjectNamespaces) => durableObjectNamespaces?.[namespace])),
+-            getByName: (name, options) => makeRpcStub(binding.getByName(name, options), { errors }),
+-            // newUniqueId: () => use((ns) => ns.newUniqueId()),
+-            // idFromName: (name: string) => use((ns) => ns.idFromName(name)),
+-            // idFromString: (id: string) => use((ns) => ns.idFromString(id)),
+-            // get: (
+-            //   id: cf.DurableObjectId,
+-            //   options?: cf.DurableObjectNamespaceGetDurableObjectOptions,
+-            // ) => use((ns) => makeRpcStub(ns.get(id, options))),
+-            // jurisdiction: (jurisdiction: cf.DurableObjectJurisdiction) =>
+-            //   use((ns) => ns.jurisdiction(jurisdiction) as any),
+-        };
++            getByName: (name, options) => makeRpcStub(resolve().getByName(name, options), { errors }),
++            jurisdiction: (jurisdiction) => client(() => resolve().jurisdiction(jurisdiction)),
++        });
++        return client(() => binding);
+     });
+     // Class-form declarations (`DurableObject<Self>()("Name", props?)`) can
+     // carry `transferredFrom` so the host's local binding drives a
+diff --git a/src/AWS/AutoScaling/AutoScalingGroup.ts b/src/AWS/AutoScaling/AutoScalingGroup.ts
+index 25dac6f..93bab9d 100644
+--- a/src/AWS/AutoScaling/AutoScalingGroup.ts
++++ b/src/AWS/AutoScaling/AutoScalingGroup.ts
+@@ -453,6 +453,17 @@ export const AutoScalingGroupProvider = () =>
+                 Tags: toTags(autoScalingGroupName, desiredTags),
+               } as any)
+               .pipe(
++                // maple patch: a just-created instance profile takes a few seconds to
++                // reach EC2, and the launch template is rejected until it does.
++                Effect.retry({
++                  while: (error: any) =>
++                    error?._tag === "ValidationError" &&
++                    /Invalid IAM Instance Profile/i.test(String(error?.message ?? error)),
++                  schedule: Schedule.max([
++                    Schedule.recurs(10),
++                    Schedule.exponential("1 second"),
++                  ]),
++                }),
+                 Effect.catch((error: any) =>
+                   error?._tag === "AlreadyExistsFault" ? Effect.void : Effect.fail(error),
+                 ),
+@@ -481,7 +492,9 @@ export const AutoScalingGroupProvider = () =>
+             AutoScalingGroupName: autoScalingGroupName,
+             MinSize: news.minSize,
+             MaxSize: news.maxSize,
+-            DesiredCapacity: news.desiredCapacity ?? news.minSize,
++            // maple patch: an unset desiredCapacity leaves the live value alone, so a
++            // redeploy does not undo ECS managed scaling.
++            DesiredCapacity: news.desiredCapacity,
+             LaunchTemplate: launchTemplate,
+             VPCZoneIdentifier: (news.subnetIds as string[]).join(","),
+             HealthCheckType: healthCheckType,
+diff --git a/src/AWS/ECS/CapacityProvider.ts b/src/AWS/ECS/CapacityProvider.ts
+index cb68fdb..2857e7b 100644
+--- a/src/AWS/ECS/CapacityProvider.ts
++++ b/src/AWS/ECS/CapacityProvider.ts
+@@ -180,7 +180,13 @@ export const CapacityProviderProvider = () =>
+         read: Effect.fn(function* ({ id, olds, output }) {
+           const name = output?.name ?? (yield* toName(id, olds ?? {}));
+           const found = yield* describe(name);
+-          if (!found?.name || !found.capacityProviderArn) {
++          // A deleted provider stays describable as INACTIVE for a while; it
++          // cannot be updated, so it is not a provider we own.
++          if (
++            !found?.name ||
++            !found.capacityProviderArn ||
++            found.status === "INACTIVE"
++          ) {
+             return undefined;
+           }
+           const internalTags = yield* createInternalTags(id);
+diff --git a/src/AWS/ECS/Service.ts b/src/AWS/ECS/Service.ts
+index 48a26ed..1a933af 100644
+--- a/src/AWS/ECS/Service.ts
++++ b/src/AWS/ECS/Service.ts
+@@ -1609,6 +1609,11 @@ const transformServiceProps = (
+     }).pipe(Namespace.push(id));
+   });
+ 
++/** maple patch: whether the service's tasks get their own ENI. */
++const usesAwsvpc = (props: unknown) =>
++  ((props as { networkMode?: string } | undefined)?.networkMode ?? "awsvpc") ===
++  "awsvpc";
++
+ const composeManagedIngress = (
+   id: string,
+   props: ServiceProps,
+@@ -1998,7 +2003,9 @@ const composeManagedIngress = (
+           vpcId: network.vpcId as string,
+           port: spec.port as number,
+           protocol: spec.protocol,
+-          targetType: "ip",
++          // host/bridge tasks have no ENI of their own; the ALB reaches them
++          // through the container instance (maple patch).
++          targetType: usesAwsvpc(props) ? "ip" : "instance",
+           healthCheckPath: isNetworkTg
+             ? wantsHttpCheck
+               ? (health?.path ?? "/")
+@@ -3099,7 +3106,10 @@ export const ServiceProvider = () =>
+         platformVersion: news.platformVersion,
+         deploymentConfiguration: news.deploymentConfiguration,
+         healthCheckGracePeriodSeconds: toWireSeconds(news.healthCheckGracePeriod),
+-        networkConfiguration: networkConfigurationOf(network, securityGroups),
++        // ECS rejects an awsvpcConfiguration for host/bridge tasks (maple patch).
++        networkConfiguration: usesAwsvpc(news)
++          ? networkConfigurationOf(network, securityGroups)
++          : undefined,
+         capacityProviderStrategy: news.capacityProviderStrategy,
+         placementConstraints: news.placementConstraints,
+         placementStrategy: news.placementStrategy,
+diff --git a/src/Cloudflare/Workers/DurableObject.ts b/src/Cloudflare/Workers/DurableObject.ts
+index 07cea49..50e068f 100644
+--- a/src/Cloudflare/Workers/DurableObject.ts
++++ b/src/Cloudflare/Workers/DurableObject.ts
+@@ -1238,7 +1238,9 @@ export const DurableObject: DurableObjectClass = taggedFunction(
+           }),
+         );
+ 
+-        return {
++        // maple patch: `jurisdiction` returns a client whose ids are minted in
++        // that jurisdiction, so the objects they address are stored only there.
++        const client = (resolve: () => any): any => ({
+           Type: TypeId,
+           LogicalId: namespace,
+           name: namespace,
+@@ -1246,17 +1248,11 @@ export const DurableObject: DurableObjectClass = taggedFunction(
+             Output.map((durableObjectNamespaces) => durableObjectNamespaces?.[namespace]),
+           ),
+           getByName: (name: string, options?: DurableObjectGetDurableObjectOptions) =>
+-            makeRpcStub(binding.getByName(name, options), { errors }),
+-          // newUniqueId: () => use((ns) => ns.newUniqueId()),
+-          // idFromName: (name: string) => use((ns) => ns.idFromName(name)),
+-          // idFromString: (id: string) => use((ns) => ns.idFromString(id)),
+-          // get: (
+-          //   id: cf.DurableObjectId,
+-          //   options?: cf.DurableObjectNamespaceGetDurableObjectOptions,
+-          // ) => use((ns) => makeRpcStub(ns.get(id, options))),
+-          // jurisdiction: (jurisdiction: cf.DurableObjectJurisdiction) =>
+-          //   use((ns) => ns.jurisdiction(jurisdiction) as any),
+-        };
++            makeRpcStub(resolve().getByName(name, options), { errors }),
++          jurisdiction: (jurisdiction: DurableObjectJurisdiction) =>
++            client(() => resolve().jurisdiction(jurisdiction)),
++        });
++        return client(() => binding);
+       });
+ 
+     // Class-form declarations (`DurableObject<Self>()("Name", props?)`) can

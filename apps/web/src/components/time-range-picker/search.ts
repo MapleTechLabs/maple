@@ -53,3 +53,26 @@ export interface TimeRangeSearch {
 export function pickTimeRangeSearch(search: TimeRangeSearch): TimeRangeSearch {
 	return { startTime: search.startTime, endTime: search.endTime, timePreset: search.timePreset }
 }
+
+/** What an empty state's "Widen time range" switches to. */
+export const WIDEN_TIME_PRESET = "7d"
+
+const WIDE_TIME_PRESETS = new Set([
+	"7d",
+	"1w",
+	"10d",
+	"14d",
+	"2w",
+	"30d",
+	"6w",
+	"1mo",
+	"2mo",
+	"3mo",
+	"6mo",
+	"12mo",
+])
+
+/** Widening only helps from a short relative preset; a custom range or a week already says what it means. */
+export function canWidenTimeRange(search: TimeRangeSearch, defaultPreset: string): boolean {
+	return search.startTime === undefined && !WIDE_TIME_PRESETS.has(search.timePreset ?? defaultPreset)
+}

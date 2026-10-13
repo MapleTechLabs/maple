@@ -18,7 +18,7 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { AGENTS, agentForSession, buildSystemPrompt } from "./agents"
+import { AGENTS, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./tools"
@@ -98,14 +98,16 @@ describe("profileForTurn", () => {
 		}
 	})
 
-	it("offers a connector no internal-audience tool, so a channel cannot reach the sandbox", () => {
-		// `sandbox_exec` is code execution against the org's checkout, answering into a thread
-		// anyone can read, and nothing proposes it for approval first.
+	it("offers a connector the repository sandbox but no internal-audience tool", () => {
+		// The reviewer's pull request tools act on the org's behalf; a channel never reaches them.
 		const { tools } = toolsFor(connectorSession, CONNECTOR_ORIGIN)
 		const internal = mapleToolCatalog.filter((definition) => definition.audience === "internal")
 		assert.isNotEmpty(internal, "no internal tools in the catalog — this test would pass vacuously")
 		for (const definition of internal) {
 			assert.notProperty(tools, definition.name, `${definition.name} was offered to the connector`)
+		}
+		for (const name of ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]) {
+			assert.property(tools, name, `${name} was withheld from the connector`)
 		}
 	})
 
@@ -137,14 +139,5 @@ describe("profileForTurn", () => {
 		assert.equal(profile.surface, "chat")
 		assert.property(tools, "sandbox_exec")
 		for (const name of MUTATING_TOOL_NAMES) assert.notProperty(tools, name)
-	})
-})
-
-describe("buildSystemPrompt", () => {
-	it("is the agent's own persona, with no delegation guidance", () => {
-		for (const agent of Object.values(AGENTS)) {
-			assert.equal(buildSystemPrompt(agent), agent.prompt)
-			assert.notInclude(buildSystemPrompt(agent), "## Delegating")
-		}
 	})
 })

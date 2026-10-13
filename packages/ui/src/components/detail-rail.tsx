@@ -1,7 +1,10 @@
 import type * as React from "react"
 
 import { cn } from "../lib/utils"
+import { Eyebrow } from "./ui/eyebrow"
 import type { IconComponent } from "./icons"
+import { CopyButton } from "./ui/copy-button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip"
 
 /* -------------------------------------------------------------------------------------------------
  * DetailRail — the label/value rail every detail page hangs off its trailing edge.
@@ -33,9 +36,7 @@ function Group({
 				className,
 			)}
 		>
-			<h3 className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</h3>
+			<Eyebrow as="h3">{label}</Eyebrow>
 			<div className="flex flex-col gap-1">{children}</div>
 		</section>
 	)
@@ -82,9 +83,7 @@ function Row({
 				{Icon ? <Icon className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden /> : null}
 				<span className="flex min-w-0 flex-col">
 					<span className="truncate">{label}</span>
-					{hint ? (
-						<span className="truncate text-[10px] text-muted-foreground/70">{hint}</span>
-					) : null}
+					{hint ? <span className="truncate text-3xs text-muted-foreground/70">{hint}</span> : null}
 				</span>
 			</span>
 			<div className="flex min-w-0 items-center justify-end">{children}</div>
@@ -113,7 +112,7 @@ function Field({
 		<div data-slot="detail-rail-field" title={title} className="flex flex-col gap-1 py-1">
 			<span className="flex items-baseline gap-1.5 text-xs text-muted-foreground">
 				<span>{label}</span>
-				{hint ? <span className="text-[10px] text-muted-foreground/70">{hint}</span> : null}
+				{hint ? <span className="text-3xs text-muted-foreground/70">{hint}</span> : null}
 			</span>
 			<div className="min-w-0">{children}</div>
 		</div>
@@ -124,18 +123,55 @@ function Field({
  * Monospace metadata row for infra detail pages (node/workload/pod, host
  * metadata) — a denser, divider-separated sibling of `Row`. Renders nothing
  * for absent values so callers can list every candidate field unconditionally.
+ * `copyable` adds a hover-revealed copy button; `tooltip` explains the value.
  */
-function MetaRow({ label, value }: { label: string; value: string | null | undefined }) {
+function MetaRow({
+	label,
+	value,
+	copyable,
+	copyValue,
+	tooltip,
+}: {
+	label: string
+	value: string | null | undefined
+	copyable?: boolean
+	/** What the copy button copies, when it differs from the displayed value. */
+	copyValue?: string
+	tooltip?: string
+}) {
 	if (!value) return null
+	const valueNode = (
+		<span className="break-all text-right font-mono text-2xs tabular-nums text-foreground/85">
+			{value}
+		</span>
+	)
 	return (
 		<div
 			data-slot="detail-rail-meta-row"
-			className="flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 last:border-0"
+			className="group flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 last:border-0"
 		>
-			<span className="font-mono text-[11px] text-muted-foreground">{label}</span>
-			<span className="break-all text-right font-mono text-[11px] tabular-nums text-foreground/85">
-				{value}
-			</span>
+			<span className="font-mono text-2xs text-muted-foreground">{label}</span>
+			<div className="flex min-w-0 items-center gap-1.5 text-2xs">
+				{tooltip ? (
+					<Tooltip>
+						<TooltipTrigger render={<span />} className="cursor-default">
+							{valueNode}
+						</TooltipTrigger>
+						<TooltipContent>{tooltip}</TooltipContent>
+					</Tooltip>
+				) : (
+					valueNode
+				)}
+				{copyable || copyValue ? (
+					<CopyButton
+						value={copyValue ?? value}
+						label={label}
+						toast={false}
+						iconSize={11}
+						className="size-5 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+					/>
+				) : null}
+			</div>
 		</div>
 	)
 }

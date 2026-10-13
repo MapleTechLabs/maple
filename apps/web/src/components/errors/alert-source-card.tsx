@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import type { ErrorIssueDocument } from "@maple/domain/http"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { SectionHeading } from "@/components/common/section-heading"
 
 /**
  * Source panel for alert-backed issues: links back to the alert rule that
@@ -13,10 +15,8 @@ export function AlertSourceCard({ issue }: { issue: ErrorIssueDocument }) {
 	const groupKey = typeof sourceRef?.groupKey === "string" ? sourceRef.groupKey : null
 
 	return (
-		<div className="flex shrink-0 flex-col gap-2 rounded-xl border bg-card px-5 py-4">
-			<h2 className="font-display text-base font-semibold tracking-[-0.01em] text-foreground">
-				Alert source
-			</h2>
+		<Panel className="shrink-0 gap-2 px-5 py-4">
+			<SectionHeading title="Alert source" />
 			<p className="text-sm text-muted-foreground">
 				This issue is fed by alert rule incidents
 				{signalType ? ` (${signalType})` : ""}
@@ -31,6 +31,6 @@ export function AlertSourceCard({ issue }: { issue: ErrorIssueDocument }) {
 					View alert rule &rarr;
 				</Link>
 			) : null}
-		</div>
+		</Panel>
 	)
 }

@@ -1,4 +1,4 @@
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { useAtomValue } from "@/lib/effect-atom"
 
 import { ChartError, ChartLoading } from "@maple/ui/components/charts"
 
@@ -6,6 +6,7 @@ import { containerInfraTimeseriesResultAtom } from "@/lib/services/atoms/warehou
 import type { ContainerInfraMetric } from "@/api/warehouse/infra"
 import { K8sMetricChartView } from "./k8s-detail-chart"
 import { displayError } from "@/lib/error-messages"
+import { ResultView } from "@/components/common/result-view"
 
 const CHART_HEIGHT = 280
 
@@ -43,19 +44,23 @@ export function ContainerDetailChart({
 		}),
 	)
 
-	return Result.builder(result)
-		.onInitial(() => <ChartLoading variant="area" height={CHART_HEIGHT} />)
-		.onError((err) => <ChartError height={CHART_HEIGHT}>{displayError(err).message}</ChartError>)
-		.onSuccess((response, holder) => (
-			<K8sMetricChartView
-				rows={response.data}
-				unit={response.unit}
-				seriesLabel={CONTAINER_METRIC_LABELS[metric]}
-				showThreshold={metric === "cpu" || metric === "memory_percent"}
-				waiting={Boolean(holder.waiting)}
-				syncId={syncId}
-				chartId={`container-${metric}`}
-			/>
-		))
-		.render()
+	return (
+		<ResultView
+			result={result}
+			loading={<ChartLoading variant="area" height={CHART_HEIGHT} />}
+			error={(err) => <ChartError height={CHART_HEIGHT}>{displayError(err).message}</ChartError>}
+		>
+			{(response, { waiting }) => (
+				<K8sMetricChartView
+					rows={response.data}
+					unit={response.unit}
+					seriesLabel={CONTAINER_METRIC_LABELS[metric]}
+					showThreshold={metric === "cpu" || metric === "memory_percent"}
+					waiting={waiting}
+					syncId={syncId}
+					chartId={`container-${metric}`}
+				/>
+			)}
+		</ResultView>
+	)
 }

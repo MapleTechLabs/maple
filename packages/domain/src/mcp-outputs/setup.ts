@@ -107,6 +107,8 @@ export const SearchSourceCodeOutput = Schema.Struct({
 			htmlUrl: Schema.String,
 			/** Up to two snippets, each clipped. */
 			snippets: Schema.Array(Schema.String),
+			/** 1-based lines of the tracked branch that hold the query; only for the top matches. */
+			lines: Schema.optionalKey(Schema.Array(Schema.Number)),
 		}),
 	),
 })

@@ -34,7 +34,7 @@ import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { Predicate, Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 
 // https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time
 const CF_STARTUP_BUDGET_MS = 1_000
@@ -375,8 +375,7 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 			main: "./worker.js",
 			find_additional_modules: true,
 			rules: [{ type: "ESModule", globs: ["**/*.js"] }],
-			compatibility_date: "2026-04-08",
-			compatibility_flags: ["nodejs_compat"],
+			compatibility_date: "2026-10-01",
 		}),
 	)
 	console.error("→ profiling the Alchemy/Rolldown bundle with `wrangler check startup --no-bundle`…\n")

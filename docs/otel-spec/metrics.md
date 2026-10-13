@@ -302,12 +302,12 @@ Source: https://opentelemetry.io/docs/specs/otel/metrics/data-model/
 
 ### 3.1 Point kinds
 
-| Point kind               | Temporality?                     | Key fields                                                                                                                          | Status                                                                                                  |
-| ------------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Sum**                  | delta or cumulative              | attributes, `(start, end]` window, `monotonic: bool`, exemplars, flags                                                              | Stable                                                                                                  |
-| **Gauge**                | n/a (no aggregation temporality) | attributes, sampled value, `time_unix_nano`, optional `start_time_unix_nano`, exemplars, flags                                      | Stable                                                                                                  |
-| **Histogram**            | delta or cumulative              | attributes, window, `count`, `sum`, optional `min`/`max`, explicit bucket boundaries + per-bucket counts, exemplars, flags          | Stable                                                                                                  |
-| **ExponentialHistogram** | delta or cumulative              | same as Histogram but exponential bucket structure (`scale`, `zero_count`, `zero_threshold`, positive/negative bucket index ranges) | Stable                                                                                                  |
+| Point kind               | Temporality?                     | Key fields                                                                                                                          | Status                                                                                                   |
+| ------------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Sum**                  | delta or cumulative              | attributes, `(start, end]` window, `monotonic: bool`, exemplars, flags                                                              | Stable                                                                                                   |
+| **Gauge**                | n/a (no aggregation temporality) | attributes, sampled value, `time_unix_nano`, optional `start_time_unix_nano`, exemplars, flags                                      | Stable                                                                                                   |
+| **Histogram**            | delta or cumulative              | attributes, window, `count`, `sum`, optional `min`/`max`, explicit bucket boundaries + per-bucket counts, exemplars, flags          | Stable                                                                                                   |
+| **ExponentialHistogram** | delta or cumulative              | same as Histogram but exponential bucket structure (`scale`, `zero_count`, `zero_threshold`, positive/negative bucket index ranges) | Stable                                                                                                   |
 | **Summary (legacy)**     | n/a                              | attributes, `time_unix_nano`, `count`, `sum`, strictly-increasing quantile set `[0.0, 1.0]`                                         | Stable, but "not recommended for new applications"; points "cannot always be merged in a meaningful way" |
 
 **Sum monotonicity**: "Delta monotonic: reader SHOULD expect non-negative values" / "Cumulative
@@ -363,12 +363,12 @@ fields."
 
 Fields:
 
-| Field                 | Description                                                                                                                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `trace_id` (optional) | Trace associated with the recording                                                                                                                                  |
-| `span_id` (optional)  | Span associated with the recording                                                                                                                                   |
-| `time_unix_nano`      | Time of the observation                                                                                                                                              |
-| `value`               | The recorded value                                                                                                                                                   |
+| Field                 | Description                                                                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trace_id` (optional) | Trace associated with the recording                                                                                                                                       |
+| `span_id` (optional)  | Span associated with the recording                                                                                                                                        |
+| `time_unix_nano`      | Time of the observation                                                                                                                                                   |
+| `value`               | The recorded value                                                                                                                                                        |
 | `filtered_attributes` | Attributes present on the measurement but filtered out of the point's own attribute set; they "provide additional insight into the Context when the observation was made" |
 
 Value participation in the parent point:

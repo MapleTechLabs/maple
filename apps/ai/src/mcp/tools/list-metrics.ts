@@ -28,6 +28,7 @@ interface MetricSummaryRow {
 export function registerListMetricsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_metrics",
+		title: "List Metrics",
 		description:
 			"Discover custom metrics with their type, unit, monotonicity and data volume. Pass a discovered `metric_name` and `metric_type` to query_data source=metrics.",
 		parameters: Schema.Struct({
@@ -47,10 +48,10 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				metricType: params.metric_type ?? "all",
-				limit: params.limit,
-				offset: params.offset,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.metric_type": params.metric_type ?? "all",
+				"maple.ai.limit": params.limit,
+				"maple.ai.offset": params.offset,
 			})
 
 			const [metricsResult, summaryResult] = yield* Effect.all(

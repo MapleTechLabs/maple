@@ -45,7 +45,7 @@ export function transformSpan(raw: SpanHierarchyRow): Span {
 		serviceName: raw.serviceName,
 		spanKind: raw.spanKind,
 		durationMs: Number(raw.durationMs),
-		startTime: String(raw.startTime),
+		startTime: raw.startTime,
 		statusCode: raw.statusCode,
 		statusMessage: raw.statusMessage,
 		spanAttributes: parseAttributes(raw.spanAttributes),

@@ -327,7 +327,7 @@ function PlotLegendValue({ value, secondary }: { value: string; secondary?: stri
 function PlotLegendSwatch({ color, dashed }: { color: string; dashed?: boolean }) {
 	return (
 		<span
-			className={cn("size-2 shrink-0 rounded-[2px]", dashed && "border border-dashed")}
+			className={cn("size-2 shrink-0 rounded-xs", dashed && "border border-dashed")}
 			style={dashed ? { borderColor: color } : { backgroundColor: color }}
 		/>
 	)

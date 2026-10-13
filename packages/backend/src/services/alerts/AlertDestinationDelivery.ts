@@ -9,19 +9,23 @@ import {
 	type AlertRuleId,
 } from "@maple/domain/http"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
-import type { AlertDestinationRow } from "@maple/db"
 import { Effect, Result } from "effect"
+import { HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
 import type { ChatAlertPosterApi } from "./ChatAlertPoster"
 import { buildAlertChatUrl, type DispatchContext as DeliveryDispatchContext } from "./AlertDeliveryDispatch"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
-import type { DispatchResult } from "./delivery/context"
+import type { DispatchDestination, DispatchResult } from "./delivery/context"
 import {
 	hydrateDestinationRow,
 	type DestinationSecretConfig,
 	type EnrichedDestinationSecretConfig,
+	type StoredDestinationConfig,
 } from "./AlertDestinationHydration"
+
+/** The destination columns delivery reads; any stored row shape satisfies it. */
+type DeliverableDestination = DispatchDestination & StoredDestinationConfig
 import type { AlertRuntimeApi } from "./AlertRuntime"
 
 export type AlertDispatchContext = Omit<
@@ -61,11 +65,12 @@ export const makeAlertDestinationDelivery = (options: {
 	readonly encryptionKey: Buffer
 	readonly appBaseUrl: string
 	readonly runtime: AlertRuntimeApi
+	readonly httpClient: HttpClient.HttpClient
 	readonly email: EmailServiceApi
 	readonly postChatAlert: ChatAlertPosterApi["post"]
 }) => {
 	const hydrateDestination = Effect.fn("AlertsService.hydrateDestination")(function* (
-		row: AlertDestinationRow,
+		row: DeliverableDestination,
 	) {
 		const { publicConfig, secretConfig } = yield* hydrateDestinationRow(row, options.encryptionKey, {
 			onPublicConfigInvalid: (cause) =>
@@ -92,7 +97,7 @@ export const makeAlertDestinationDelivery = (options: {
 	})
 
 	const enrichSecretForDispatch = (
-		_row: AlertDestinationRow,
+		_row: DeliverableDestination,
 		secretConfig: DestinationSecretConfig,
 	): Effect.Effect<EnrichedDestinationSecretConfig, AlertDeliveryError> =>
 		// Hazel-OAuth webhooks embed their delivery token in the URL path, so
@@ -123,12 +128,11 @@ export const makeAlertDestinationDelivery = (options: {
 		dispatchDeliveryImpl(
 			context,
 			payloadJson,
-			options.runtime.fetch,
 			options.runtime.deliveryTimeoutMs(),
 			context.linkUrl,
 			composeChatUrl(context),
 			{ sendEmail, postChatAlert: options.postChatAlert },
-		)
+		).pipe(Effect.provideService(HttpClient.HttpClient, options.httpClient))
 
 	const buildPayloadValue = (context: AlertDeliveryPayloadContext, tenantId: string) =>
 		Result.gen(function* () {
@@ -215,7 +219,7 @@ export const makeAlertDestinationDelivery = (options: {
 		)
 
 	const sendImmediateNotification = Effect.fn("AlertsService.sendImmediateNotification")(function* (
-		destinationRow: AlertDestinationRow,
+		destinationRow: DeliverableDestination,
 		context: Omit<AlertDispatchContext, "destination" | "publicConfig" | "secretConfig">,
 	) {
 		const hydrated = yield* hydrateDestination(destinationRow)

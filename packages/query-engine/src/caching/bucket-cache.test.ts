@@ -140,15 +140,17 @@ describe("coalesceMissingRanges", () => {
 		const buckets = [bucket(MIN, 2 * MIN), bucket(4 * MIN, 5 * MIN), bucket(7 * MIN, 8 * MIN)]
 		const missing = findMissingRanges(buckets, 0, 10 * MIN, MIN, FAR_FUTURE_FLUX)
 		const coalesced = coalesceMissingRanges(missing)
-		for (const gap of missing) {
-			const covering = coalesced.find(
-				(span) =>
-					span.cachable === gap.cachable &&
-					span.range.startMs <= gap.range.startMs &&
-					span.range.endMs >= gap.range.endMs,
-			)
-			expect(covering).toBeDefined()
-		}
+		const uncovered = missing.filter(
+			(gap) =>
+				!coalesced.some(
+					(span) =>
+						span.cachable === gap.cachable &&
+						span.range.startMs <= gap.range.startMs &&
+						span.range.endMs >= gap.range.endMs,
+				),
+		)
+		expect(missing.length).toBeGreaterThan(0)
+		expect(uncovered).toEqual([])
 	})
 })
 
@@ -604,14 +606,16 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 		const writes: Array<{ key: string; value: unknown }> = []
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async (_bucket, key) => {
-				reads.push(key)
-				return undefined
-			},
-			put: async (_bucket, key, value) => {
-				writes.push({ key, value })
-			},
-			delete: async () => {},
+			get: (_bucket, key) =>
+				Effect.sync(() => {
+					reads.push(key)
+					return undefined
+				}),
+			put: (_bucket, key, value) =>
+				Effect.sync(() => {
+					writes.push({ key, value })
+				}),
+			delete: () => Effect.void,
 		}
 		const request = {
 			orgId,
@@ -650,11 +654,12 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 		let computes = 0
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: async () => await new Promise<never>(() => {}),
-			put: async (_bucket, _hash, value) => {
-				writes.push(value as BucketCacheSegmentData)
-			},
-			delete: async () => {},
+			get: () => Effect.never,
+			put: (_bucket, _hash, value) =>
+				Effect.sync(() => {
+					writes.push(value as BucketCacheSegmentData)
+				}),
+			delete: () => Effect.void,
 		}
 		const request = {
 			orgId,

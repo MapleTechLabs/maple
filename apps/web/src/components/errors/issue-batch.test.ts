@@ -1,6 +1,6 @@
 import type { ErrorIssueId } from "@maple/domain/http"
 import { Cause, Effect, Exit } from "effect"
-import * as Reactivity from "effect/unstable/reactivity/Reactivity"
+import * as Reactivity from "effect/reactivity/Reactivity"
 import { describe, expect, it } from "vitest"
 
 import { BULK_CONCURRENCY, batchOutcome, forEachIssue, ISSUES_KEY, issueKey } from "./issue-batch"

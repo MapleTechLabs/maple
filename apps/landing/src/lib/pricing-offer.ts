@@ -19,10 +19,10 @@ import * as m from "../paraglide/messages.js"
 const AUTUMN_API_VERSION = "2.3.0"
 
 /**
- * browser_sessions is metered per session, product_events per event; every
- * other signal is per GB.
+ * browser_sessions is metered per session, product_events per event, and
+ * ai_credits in dollars of model usage; every other signal is per GB.
  */
-export type Unit = "gb" | "sessions" | "events"
+export type Unit = "gb" | "sessions" | "events" | "usd"
 
 export interface Allotment {
 	featureId: string
@@ -30,14 +30,14 @@ export interface Allotment {
 	unit: Unit
 	included: number
 	/**
-	 * Autumn `unlimited`: no cap and no overage — the row reads "Unlimited · free
+	 * Autumn `unlimited`: no cap and no overage. The row reads "Unlimited · free
 	 * during beta" instead of a number and a rate. `included`/`rate` are ignored.
 	 */
 	unlimited?: boolean
 	/** Price per `rateUnits` units once `included` is used up. */
 	rate?: number
 	/**
-	 * Units the rate is quoted per — 1 for GB and sessions, 1,000 for events.
+	 * Units the rate is quoted per: 1 for GB and sessions, 1,000 for events.
 	 * Autumn's `billingUnits`; the rate is the price of one such block.
 	 */
 	rateUnits: number
@@ -55,16 +55,23 @@ export interface Offer {
 
 const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
 
-/** Canonical row order — Autumn can return items in any order. */
-const DATA_FEATURE_ORDER = ["logs", "traces", "metrics", "browser_sessions", "product_events"]
+/** Canonical row order: Autumn can return items in any order. */
+const DATA_FEATURE_ORDER = ["logs", "traces", "metrics", "browser_sessions", "product_events", "ai_credits"]
 
 const dataFeatureRank = (id: string | undefined) => {
 	const i = id ? DATA_FEATURE_ORDER.indexOf(id) : -1
 	return i === -1 ? DATA_FEATURE_ORDER.length : i
 }
 
-const unitFor = (featureId: string): Unit =>
-	featureId === "browser_sessions" ? "sessions" : featureId === "product_events" ? "events" : "gb"
+const FEATURE_UNITS = {
+	browser_sessions: "sessions",
+	product_events: "events",
+	ai_credits: "usd",
+} as const satisfies Record<string, Unit>
+
+const hasOwnUnit = (featureId: string): featureId is keyof typeof FEATURE_UNITS => featureId in FEATURE_UNITS
+
+const unitFor = (featureId: string): Unit => (hasOwnUnit(featureId) ? FEATURE_UNITS[featureId] : "gb")
 
 /**
  * Capitalized, localized labels for the metered rows, keyed by Autumn featureId
@@ -76,12 +83,13 @@ const dataFeatureLabels = (): Record<string, string> => ({
 	metrics: m.pricing_metrics(),
 	browser_sessions: m.nav_browser_sessions(),
 	product_events: m.pricing_product_events(),
+	ai_credits: m.pricing_ai_usage(),
 })
 
 /**
  * Everything the plan carries, as one run. With a single plan there is nothing
  * to compare against, so this is a "and all of this too" line rather than a
- * checklist — a checklist implies some rows might have been withheld.
+ * checklist, since a checklist implies some rows might have been withheld.
  */
 export const platformFeatures = (): string[] => [
 	m.pricing_30day_retention(),
@@ -96,7 +104,7 @@ export const platformFeatures = (): string[] => [
 
 /**
  * The live offer, or the `autumn.config.ts` mirror if Autumn is unreachable at
- * build time. The fallback carries browser sessions and product events too — a
+ * build time. The fallback carries browser sessions and product events too, since a
  * short fallback would render a meter that disagrees with the live one.
  */
 export async function getOffer(): Promise<Offer> {
@@ -132,7 +140,7 @@ export async function getOffer(): Promise<Offer> {
 				allotments: product.items
 					.filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
 					.map((item) => {
-						const featureId = item.featureId as string
+						const featureId = item.featureId
 						return {
 							featureId,
 							label: labels[featureId] ?? item.feature?.name ?? featureId,
@@ -189,9 +197,17 @@ export async function getOffer(): Promise<Offer> {
 				featureId: "product_events",
 				label: labels.product_events!,
 				unit: "events",
-				// Free and unlimited during beta — mirrors `apps/api/autumn.config.ts`.
+				// Free and unlimited during beta; mirrors `apps/api/autumn.config.ts`.
 				included: 0,
 				unlimited: true,
+				rateUnits: 1,
+			},
+			{
+				featureId: "ai_credits",
+				label: labels.ai_credits!,
+				unit: "usd",
+				included: 10,
+				rate: 1,
 				rateUnits: 1,
 			},
 		],
@@ -221,4 +237,16 @@ export const rateLabel = (n: number) => `$${n < 0.01 ? n.toFixed(3) : n.toFixed(
 export const rateBlock = (a: Allotment) => a.rateUnits.toLocaleString("en-US")
 
 export const volume = (a: Allotment, n: number) =>
-	a.unlimited ? m.pricing_unlimited() : a.unit === "gb" ? `${n} GB` : n.toLocaleString("en-US")
+	a.unlimited
+		? m.pricing_unlimited()
+		: a.unit === "gb"
+			? `${n} GB`
+			: a.unit === "usd"
+				? money(n)
+				: n.toLocaleString("en-US")
+
+/**
+ * AI usage has no flat rate: a credit is a dollar of model spend, priced per
+ * model from its token rates, so the row states how it bills instead of "$1 / $1".
+ */
+export const isUsageCredit = (a: Allotment) => a.unit === "usd"

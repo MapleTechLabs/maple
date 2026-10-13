@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Schema } from "effect"
 
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import {
 	IssueEscalationPolicyRule,
@@ -19,19 +17,22 @@ import { AlertDestinationId } from "@maple/domain/primitives"
 const decodeDestinationIds = Schema.decodeUnknownSync(Schema.Array(AlertDestinationId))
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Card } from "@maple/ui/components/ui/card"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 
-import {
-	AlertMultiSegmentedSelect,
-	type AlertSegmentedOption,
-} from "@/components/alerts/alert-segmented-select"
+import { MultiSegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badge"
+import { DocsLink } from "@/components/common/docs-link"
+import { ErrorState } from "@/components/common/error-state"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
 
 const CONFIDENCE_ANY = "any" as const
+const CONFIDENCE_CHOICES = [CONFIDENCE_ANY, "low", "medium", "high"] as const
 
 interface SeverityRuleDraft {
 	destinationIds: string[]
@@ -53,7 +54,7 @@ const emptyDraft = (): DraftRules => ({
  * detection-time alerts keep using the alert rule's own destinations.
  */
 export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
-	const policyQueryAtom = retainedQuery("errors", "getEscalationPolicy", {
+	const policyQueryAtom = retainedInternalQuery("errors", "getEscalationPolicy", {
 		reactivityKeys: ["issueEscalationPolicy"],
 	})
 	const policyResult = useAtomValue(policyQueryAtom)
@@ -61,14 +62,13 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 
 	const { result: destinationsResult } = useAlertDestinationsList()
 
-	const upsertMutation = useAtomSet(MapleApiAtomClient.mutation("errors", "upsertEscalationPolicy"), {
+	const upsertMutation = useAtomSet(MapleInternalAtomClient.mutation("errors", "upsertEscalationPolicy"), {
 		mode: "promiseExit",
 	})
 
 	const [enabled, setEnabled] = useState(false)
 	const [rules, setRules] = useState<DraftRules>(emptyDraft)
 	const [initialized, setInitialized] = useState(false)
-	const [isSaving, setIsSaving] = useState(false)
 
 	useEffect(() => {
 		if (initialized) return
@@ -87,68 +87,53 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 		}
 	}, [policyResult, initialized])
 
-	const save = async () => {
-		setIsSaving(true)
+	const [save, isSaving] = useAsyncAction(async () => {
 		const ruleList = SEVERITY_ORDER.filter((severity) => rules[severity].destinationIds.length > 0).map(
-			(severity) =>
-				new IssueEscalationPolicyRule({
+			(severity) => {
+				const minConfidence = rules[severity].minConfidence
+				return new IssueEscalationPolicyRule({
 					severity,
 					destinationIds: decodeDestinationIds(rules[severity].destinationIds),
-					...(!(rules[severity].minConfidence === CONFIDENCE_ANY)
-						? {
-								minConfidence: rules[severity].minConfidence as EscalationConfidence,
-							}
-						: undefined),
-				}),
+					...(minConfidence !== CONFIDENCE_ANY ? { minConfidence } : undefined),
+				})
+			},
 		)
 		const result = await upsertMutation({
 			payload: new IssueEscalationPolicyUpsertRequest({ enabled, rules: ruleList }),
 			reactivityKeys: ["issueEscalationPolicy"],
 		})
-		setIsSaving(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "Escalation policy saved", type: "success" })
-		} else {
-			toastManager.add({ title: "Failed to save escalation policy", type: "error" })
-		}
-	}
+		toastExit(result, { success: "Escalation policy saved", error: "Failed to save escalation policy" })
+	})
 
 	// Never render the editable form off a failed (or pending) policy load —
 	// saving a default draft would silently overwrite the real policy.
 	if (!initialized) {
 		return (
-			<div className="max-w-2xl">
+			<div>
 				{Result.builder(policyResult)
-					.onError(() => (
-						<Card className="flex flex-row items-center justify-between gap-4 p-4">
-							<p className="text-muted-foreground text-sm">
-								Failed to load the escalation policy.
-							</p>
-							<Button size="sm" variant="outline" onClick={() => refreshPolicy()}>
-								Retry
-							</Button>
-						</Card>
+					.onError((error) => (
+						<ErrorState
+							error={error}
+							title="Failed to load the escalation policy"
+							variant="row"
+							onRetry={() => refreshPolicy()}
+						/>
 					))
 					.orElse(() => (
-						<Skeleton className="h-40 w-full rounded-lg" />
+						<Skeleton className="h-40 w-full rounded-md" />
 					))}
 			</div>
 		)
 	}
 
 	return (
-		<div className="max-w-2xl space-y-4">
-			<Card className="space-y-4 p-4">
-				<div className="flex items-center justify-between gap-4">
-					<div>
-						<p className="text-sm font-medium">Severity escalation</p>
-						<p className="text-muted-foreground text-xs">
-							Route issues to destinations when AI triage or a teammate sets their severity.
-							Fires once per issue and severity level, upward only.
-						</p>
-					</div>
-					<Switch checked={enabled} onCheckedChange={setEnabled} disabled={!isAdmin} />
-				</div>
+		<div className="space-y-4">
+			<Panel padded className="gap-4">
+				<SettingRow
+					label="Severity escalation"
+					description="Route issues to destinations when AI triage or a teammate sets their severity. Fires once per issue and severity level, upward only."
+					control={<Switch checked={enabled} onCheckedChange={setEnabled} disabled={!isAdmin} />}
+				/>
 
 				{Result.builder(destinationsResult)
 					// Destinations come from the live-synced collection, which only
@@ -158,17 +143,22 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 					.onSuccess((response) => {
 						if (response.destinations.length === 0) {
 							return (
-								<p className="text-muted-foreground text-sm">
-									No destinations yet.{" "}
-									<Link
-										to="/alerts"
-										search={{ tab: "settings" }}
-										className="underline underline-offset-4 hover:text-foreground"
-									>
-										Create one in Alerts → Destinations
-									</Link>{" "}
-									first.
-								</p>
+								<div className="space-y-3">
+									<p className="text-muted-foreground text-sm">
+										Escalation sends triaged issues to a destination. Add a Slack, email
+										or webhook destination first.
+									</p>
+									<div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+										<Button
+											size="sm"
+											variant="outline"
+											render={<Link to="/alerts" search={{ tab: "settings" }} />}
+										>
+											Add a destination
+										</Button>
+										<DocsLink page="destinations" />
+									</div>
+								</div>
 							)
 						}
 						const destinationOptions = response.destinations.map((d) => ({
@@ -184,7 +174,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 									</span>
 								</span>
 							),
-						})) satisfies AlertSegmentedOption<string>[]
+						})) satisfies SegmentedOption<string>[]
 						return (
 							<div className="space-y-4">
 								{SEVERITY_ORDER.map((severity) => (
@@ -192,27 +182,27 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 										<div className="flex items-center justify-between gap-3">
 											<SeverityBadge severity={severity} />
 											<div className="flex items-center gap-2">
-												<span className="text-muted-foreground text-[11px]">
+												<span className="text-muted-foreground text-2xs">
 													Min. AI confidence
 												</span>
 												<Select
 													value={rules[severity].minConfidence}
 													disabled={!isAdmin}
-													onValueChange={(value) =>
+													onValueChange={(value) => {
+														const minConfidence = CONFIDENCE_CHOICES.find(
+															(c) => c === value,
+														)
+														if (!minConfidence) return
 														setRules((current) => ({
 															...current,
 															[severity]: {
 																...current[severity],
-																minConfidence:
-																	value as SeverityRuleDraft["minConfidence"],
+																minConfidence,
 															},
 														}))
-													}
+													}}
 												>
-													<SelectTrigger
-														size="sm"
-														className="h-7 w-[100px] text-xs"
-													>
+													<SelectTrigger size="sm" className="w-[100px]">
 														<SelectValue />
 													</SelectTrigger>
 													<SelectContent>
@@ -224,7 +214,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 												</Select>
 											</div>
 										</div>
-										<AlertMultiSegmentedSelect<string>
+										<MultiSegmentedSelect<string>
 											options={destinationOptions}
 											value={rules[severity].destinationIds}
 											onChange={(values) =>
@@ -247,11 +237,11 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 					.render()}
 
 				<div className="flex justify-end border-t border-border/60 pt-3">
-					<Button size="sm" onClick={save} disabled={!isAdmin || isSaving}>
-						{isSaving ? "Saving…" : "Save policy"}
+					<Button size="sm" onClick={save} loading={isSaving} disabled={!isAdmin}>
+						Save policy
 					</Button>
 				</div>
-			</Card>
+			</Panel>
 			{!isAdmin ? (
 				<p className="text-muted-foreground text-xs">
 					Only org admins can change the escalation policy.

@@ -15,8 +15,8 @@ import {
 } from "@effect/atom-react"
 import { Cause, Option } from "effect"
 import * as React from "react"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
-import * as Atom_ from "effect/unstable/reactivity/Atom"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
+import * as Atom_ from "effect/reactivity/Atom"
 import { getActiveOrgId, subscribeActiveOrgId } from "@/lib/services/common/auth-headers"
 
 export {
@@ -33,9 +33,9 @@ export {
 	useAtomSubscribe,
 	useAtomSuspense,
 }
-export * as Atom from "effect/unstable/reactivity/Atom"
-export * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi"
-export * as Registry from "effect/unstable/reactivity/AtomRegistry"
+export * as Atom from "effect/reactivity/Atom"
+export * as AtomHttpApi from "effect/reactivity/AtomHttpApi"
+export * as Registry from "effect/reactivity/AtomRegistry"
 export * as ScopedAtom from "@effect/atom-react/ScopedAtom"
 
 interface RetainedSuccess {

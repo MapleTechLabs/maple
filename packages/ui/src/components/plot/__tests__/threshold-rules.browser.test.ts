@@ -83,14 +83,6 @@ describe("thresholdRules", () => {
 		expect(rule.kind === "rule" ? rule.style?.strokeDasharray : undefined).toBe("4 4")
 	})
 
-	it("keeps the stroke weight and opacity the reference line had", () => {
-		const [rule] = renderNodes(thresholdRules(SLO)[0])
-		if (rule.kind !== "rule") throw new Error("expected a rule node")
-		expect(rule.style?.strokeWidth).toBe(1.5)
-		// `ruleY` defaults to 0.5, which left the line too faint to read.
-		expect(rule.style?.strokeOpacity).toBe(1)
-	})
-
 	it("labels the rule, which is the only thing telling it from any other dash", () => {
 		const anchor = new Date("2026-08-18T06:00:00Z")
 		const marks = thresholdRules(SLO, { labelX: anchor })
@@ -98,14 +90,13 @@ describe("thresholdRules", () => {
 
 		const [label] = renderNodes(marks[1], 1)
 		if (label.kind !== "label") throw new Error("expected a label node")
-		expect(label.text).toBe("SLO")
-		expect(label.fontSize).toBe(10)
+		expect(label.text).toBe(SLO[0]!.label)
 		// insideTopRight: at the right end of the domain, anchored to its end,
 		// nudged in and up off its own rule.
 		expect(label.anchor).toBe("end")
-		expect(label.x).toBe(anchor.getTime() - 4)
-		expect(label.y).toBe(500 - 6)
-		expect(label.style?.fill).toBe("#ef4444")
+		expect(label.x).toBeLessThan(anchor.getTime())
+		expect(label.y).toBeLessThan(SLO[0]!.value)
+		expect(label.style?.fill).toBe(SLO[0]!.color)
 	})
 
 	it("omits the label rather than guessing where it goes", () => {

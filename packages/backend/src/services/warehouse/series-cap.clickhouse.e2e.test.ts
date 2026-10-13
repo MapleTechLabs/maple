@@ -1,15 +1,19 @@
 // SAFETY-FILE: JSON is emitted by the isolated ClickHouse fixture and decoded by the real query schema.
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Schema } from "effect"
-import { compileUnsafe, from, param, table } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import { compileUnsafe, from, param, table } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import { finalizeTimeseries } from "../../../../query-engine/src/ch/queries/series-cap"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import { clickhouseE2eEnabled, clickhouseExec, uniqueDatabase } from "./clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_series_cap_e2e")
 const outputColumns = { bucket: T.string, groupName: T.string, value: T.nullable(T.float64), flag: T.bool }
-const inputs = table("series_inputs", { OrgId: T.string, ...outputColumns }, { tenantColumn: "OrgId" })
+const inputs = table("series_inputs", {
+	external: true,
+	columns: { OrgId: T.string, ...outputColumns },
+	tenantColumn: "OrgId",
+})
 const inner = from(inputs)
 	.select(($) => ({ bucket: $.bucket, groupName: $.groupName, value: $.value, flag: $.flag }))
 	.where(($) => [$.OrgId.eq(param.string("orgId"))])

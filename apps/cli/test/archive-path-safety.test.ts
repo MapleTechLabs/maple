@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
-import { ok, rejects, strictEqual } from "node:assert"
+import { ok, rejects, strictEqual, throws } from "node:assert"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -16,7 +16,7 @@ import {
 	rangeRoot,
 	shardsRoot,
 } from "../src/server/archives/paths"
-import { appendCatalog, promoteGeneration } from "../src/server/archives/generation"
+import { promoteGeneration } from "../src/server/archives/generation"
 import { rebuildCatalog, listActiveGenerations } from "../src/server/archives/listing"
 import { type ArchiveGenerationManifest } from "../src/server/archives/manifest"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
@@ -134,7 +134,7 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 			writeFileSync(sentinel, "sensitive")
 			mkdirSync(signalRootPath(archiveDir, "traces"), { recursive: true })
 			symlinkSync(sentinel, catalogPath(archiveDir, "traces"))
-			throwsSync(
+			throws(
 				() => assertNoSymlinkSync(archiveDir, catalogPath(archiveDir, "traces"), "catalog"),
 				/symlink/,
 			)
@@ -169,17 +169,6 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 				),
 			)
 			ok(!existsSync(join(outside, "traces-out", "2026-06-01", "active.json")))
-		})
-	})
-
-	it("appendCatalog refuses a symlinked catalog and leaves the outside target untouched", async () => {
-		await withArchive(async (archiveDir, outside) => {
-			const sentinel = join(outside, "catalog-sentinel.jsonl")
-			writeFileSync(sentinel, "preserve")
-			mkdirSync(signalRootPath(archiveDir, "traces"), { recursive: true })
-			symlinkSync(sentinel, catalogPath(archiveDir, "traces"))
-			await rejects(appendCatalog(archiveDir, "traces", manifest(randomUUID())), /symlink|real file/)
-			strictEqual(readFileSync(sentinel, "utf8"), "preserve")
 		})
 	})
 
@@ -257,7 +246,7 @@ describe("archive path safety — read-side symlink escapes (HIGH-1/HIGH-2)", ()
 				outsideGen,
 				join(generationsRootPath(archiveDir, "traces", "2026-06-01"), generationId),
 			)
-			throwsSync(
+			throws(
 				() => readArchiveGenerationManifest(archiveDir, "traces", "2026-06-01", generationId),
 				/symlink/,
 			)
@@ -317,13 +306,3 @@ const signalRootPath = (archiveDir: string, signal: string): string => join(arch
 
 const generationsRootPath = (archiveDir: string, signal: string, rangeDate: string): string =>
 	join(archiveDir, signal, rangeDate, "generations")
-
-const throwsSync = (fn: () => unknown, pattern: RegExp): void => {
-	try {
-		fn()
-		throw new Error("expected function to throw")
-	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error)
-		if (!pattern.test(msg)) throw new Error(`expected ${pattern}, got: ${msg}`)
-	}
-}

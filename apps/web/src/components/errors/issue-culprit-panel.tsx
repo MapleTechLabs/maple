@@ -1,8 +1,13 @@
+import { IssueField } from "./issue-field"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { cn } from "@maple/ui/lib/utils"
 
 import { SEVERITY_FILL } from "./severity-badge"
+
+/** Terminal color codes some runtimes bake into messages; they render as noise. */
+const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g")
+const stripAnsi = (text: string): string => text.replace(ANSI_ESCAPE, "")
 
 /**
  * What the error says, and where it came from.
@@ -21,7 +26,7 @@ import { SEVERITY_FILL } from "./severity-badge"
  * card showing past it and reads as a rendering bug.
  */
 export function IssueCulpritPanel({ issue }: { issue: ErrorIssueDocument }) {
-	const message = issue.exceptionMessage || issue.errorLabel
+	const message = stripAnsi(issue.exceptionMessage || issue.errorLabel)
 	const accent = issue.severity === null ? "bg-border" : SEVERITY_FILL[issue.severity]
 
 	return (
@@ -29,7 +34,7 @@ export function IssueCulpritPanel({ issue }: { issue: ErrorIssueDocument }) {
 			<span aria-hidden className={cn("w-[3px] shrink-0", accent)} />
 			<div className="flex min-w-0 flex-1 flex-col gap-4 px-6 py-5">
 				{message ? (
-					<p className="min-w-0 break-words whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+					<p className="max-h-48 min-w-0 overflow-y-auto break-words whitespace-pre-wrap text-sm leading-relaxed text-foreground">
 						{message}
 					</p>
 				) : (
@@ -38,7 +43,7 @@ export function IssueCulpritPanel({ issue }: { issue: ErrorIssueDocument }) {
 					</p>
 				)}
 
-				<Field label="Culprit">
+				<IssueField label="Culprit">
 					{issue.topFrame ? (
 						<Mono value={issue.topFrame} copyLabel="Top frame" />
 					) : (
@@ -46,25 +51,14 @@ export function IssueCulpritPanel({ issue }: { issue: ErrorIssueDocument }) {
 							No stack frame was attributed to this fingerprint.
 						</span>
 					)}
-				</Field>
+				</IssueField>
 
 				{issue.fingerprintHash ? (
-					<Field label="Fingerprint">
+					<IssueField label="Fingerprint">
 						<Mono value={issue.fingerprintHash} copyLabel="Fingerprint" />
-					</Field>
+					</IssueField>
 				) : null}
 			</div>
-		</div>
-	)
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-	return (
-		<div className="flex min-w-0 flex-col gap-1.5 border-t pt-3.5 first:border-t-0 first:pt-0">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
-			{children}
 		</div>
 	)
 }
@@ -83,7 +77,7 @@ function Mono({ value, copyLabel }: { value: string; copyLabel: string }) {
 				label={copyLabel}
 				toast={false}
 				tooltip
-				className="-my-0.5 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/mono:opacity-100"
+				className="-my-0.5 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/mono:opacity-100 pointer-coarse:opacity-100"
 			/>
 		</div>
 	)

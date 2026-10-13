@@ -1,12 +1,7 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { Schema } from "effect"
-import {
-	type ArchiveTuningRecord,
-	type TuningConfigIdentity,
-	LEGACY_TUNING_CONFIG_FORMAT_VERSION,
-	TUNING_CONFIG_FORMAT_VERSION,
-} from "./config"
+import type { ArchiveTuningRecord } from "./config"
 import { NonNegativeSafeInt, Sha256Lower } from "./schemas"
 import { KNOWN_COMPLEX_DIGEST_ALGORITHMS } from "./export"
 import {
@@ -41,6 +36,8 @@ import { isArchiveSignalName } from "./signals"
 //       reader rejects v2 (and v1) fail-closed, preserving files, because the
 //       config-identity semantics changed and a silent null would lose identity.
 //       (Older archives are not migrated in place; re-export to re-validate.)
+//       Calibration was later removed: new generations write `tuningConfig:
+//       null`, and older identities still parse.
 const MANIFEST_FORMAT_VERSION = 3
 const ACTIVE_POINTER_FORMAT_VERSION = 1
 
@@ -69,6 +66,21 @@ export interface ArchiveShardRecord {
 	readonly complexDigestAlgorithm: string
 }
 
+/**
+ * The identity of the calibration config that tuned an older generation.
+ * Calibration was removed, so new manifests record `null`; this stays readable.
+ */
+export interface TuningConfigIdentity {
+	readonly formatVersion: number
+	/** A safe logical name derived from the config file's basename (no path). */
+	readonly configName: string
+	/** SHA-256 of the exact config bytes loaded (64 lowercase hex chars). */
+	readonly sha256: string
+}
+
+/** Every calibration config format a published manifest may name. */
+const KNOWN_TUNING_CONFIG_FORMAT_VERSIONS: ReadonlySet<number> = new Set([1, 2, 3])
+
 export interface ArchiveGenerationManifest {
 	readonly formatVersion: 3
 	readonly generationId: string
@@ -84,12 +96,7 @@ export interface ArchiveGenerationManifest {
 	readonly sourceRowCount: number
 	readonly archivedRowCount: number
 	readonly tuning: ArchiveTuningRecord
-	/**
-	 * Structured identity of the calibration config that produced the effective
-	 * tuning, or `null` when defaults/CLI overrides were used. Versioned and
-	 * SHA-256-bound so a generation's exact config is reproducible. Replaces the
-	 * prior bare `tuningConfigName` string.
-	 */
+	/** The calibration config identity of an older generation; `null` for new ones. */
 	readonly tuningConfig: TuningConfigIdentity | null
 	readonly shards: ReadonlyArray<ArchiveShardRecord>
 }
@@ -179,12 +186,10 @@ const SAFE_CONFIG_NAME = /^[A-Za-z0-9._-]+$/
 
 /**
  * Strictly parse the structured `tuningConfig` identity field of a manifest.
- * Accepts `null` (no config was loaded) or a record with exactly
- * `{ formatVersion, configName, sha256 }`. Rejects unknown subfields, a bad
- * SHA-256, an unsafe config name, or a config formatVersion outside the two
- * explicitly known identities. Manifest v3 stores an opaque, hash-bound config
- * identity and can therefore safely describe legacy v1, symmetric v2, and
- * directional v3 documents; only the config loader refuses v1 for new writes.
+ * Accepts `null` (every new generation) or a record with exactly
+ * `{ formatVersion, configName, sha256 }` written by an older calibrated
+ * create. Rejects unknown subfields, a bad SHA-256, an unsafe config name, or
+ * a config formatVersion Maple never wrote.
  */
 const parseTuningConfig = (value: unknown): TuningConfigIdentity | null => {
 	if (value === null) return null
@@ -198,15 +203,9 @@ const parseTuningConfig = (value: unknown): TuningConfigIdentity | null => {
 		}
 	}
 	const formatVersion = value.formatVersion
-	if (
-		typeof formatVersion !== "number" ||
-		!Number.isSafeInteger(formatVersion) ||
-		(formatVersion !== 1 &&
-			formatVersion !== LEGACY_TUNING_CONFIG_FORMAT_VERSION &&
-			formatVersion !== TUNING_CONFIG_FORMAT_VERSION)
-	) {
+	if (typeof formatVersion !== "number" || !KNOWN_TUNING_CONFIG_FORMAT_VERSIONS.has(formatVersion)) {
 		throw new Error(
-			`invalid archive manifest tuningConfig.formatVersion (known versions: 1, ${LEGACY_TUNING_CONFIG_FORMAT_VERSION}, ${TUNING_CONFIG_FORMAT_VERSION}): ${String(formatVersion)}`,
+			`invalid archive manifest tuningConfig.formatVersion (known versions: 1, 2, 3): ${String(formatVersion)}`,
 		)
 	}
 	const configName = requiredString(value, "configName")

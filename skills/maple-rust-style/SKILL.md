@@ -38,8 +38,8 @@ use opentelemetry_sdk::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-const MAPLE_ENDPOINT: &str = "https://ingest.maple.dev";
-const MAPLE_KEY: &str = "MAPLE_TEST"; // set by maple-onboard skill on pairing
+const MAPLE_ENDPOINT: &str = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
+const MAPLE_KEY: &str = "MAPLE_TEST"; // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 pub fn init() -> Result<(SdkTracerProvider, SdkLoggerProvider, SdkMeterProvider), ExporterBuildError> {
     let auth = format!("Bearer {MAPLE_KEY}");
@@ -109,14 +109,18 @@ Call from `main` and shut down on exit:
 ```rust
 #[tokio::main]
 async fn main() {
-    let (tracer_provider, logger_provider, meter_provider) =
-        telemetry::init().expect("telemetry init");
+    // A telemetry setup error is logged, never fatal: the app runs without export.
+    let providers = telemetry::init()
+        .inspect_err(|err| eprintln!("telemetry disabled: {err}"))
+        .ok();
 
     // app run …
 
-    let _ = tracer_provider.shutdown();
-    let _ = logger_provider.shutdown();
-    let _ = meter_provider.shutdown();
+    if let Some((tracer_provider, logger_provider, meter_provider)) = providers {
+        let _ = tracer_provider.shutdown();
+        let _ = logger_provider.shutdown();
+        let _ = meter_provider.shutdown();
+    }
 }
 ```
 

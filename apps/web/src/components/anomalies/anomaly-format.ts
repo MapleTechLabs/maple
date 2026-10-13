@@ -4,6 +4,8 @@ import type {
 	AnomalySignalType,
 	AnomalyTriageStatus,
 } from "@maple/domain/http"
+import { countLabel, formatErrorRate } from "@maple/ui/lib/format"
+import { TONE_FILL, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { BoltIcon, ChartLineIcon, CircleWarningIcon, FileIcon, PulseIcon } from "@/components/icons"
 
 export const SIGNAL_LABEL: Record<AnomalySignalType, string> = {
@@ -58,14 +60,14 @@ export const SIGNAL_ICON: Record<AnomalySignalType, typeof PulseIcon> = {
 export function formatSignalValue(signalType: AnomalySignalType, value: number): string {
 	switch (signalType) {
 		case "error_rate":
-			return `${(value * 100).toFixed(1)}%`
+			return formatErrorRate(value)
 		case "latency_p95":
 			return value >= 1000 ? `${(value / 1000).toFixed(2)}s` : `${value.toFixed(0)}ms`
 		case "throughput":
 		case "log_volume":
 			return `${value.toFixed(1)}/min`
 		case "error_spike":
-			return `${Math.round(value)} occurrences / 30m`
+			return `${countLabel(Math.round(value), "occurrence")} / 30m`
 	}
 }
 
@@ -124,30 +126,27 @@ export function deviation(
 }
 
 export interface SeverityTone {
-	/** Badge/chip classes, e.g. "bg-destructive/10 text-destructive". */
+	/** Badge/chip classes, e.g. TONE_SOFT.crit. */
 	readonly badge: string
 	/** Solid accent (left bar, dots). */
 	readonly accent: string
 	/** Plain text tone. */
 	readonly text: string
+	/** The shared status tone, for `StatusDot`. */
+	readonly tone: Tone
 }
 
+const severityToneOf = (tone: Tone): SeverityTone => ({
+	badge: TONE_SOFT[tone],
+	accent: TONE_FILL[tone],
+	text: TONE_TEXT[tone],
+	tone,
+})
+
 export const SEVERITY_TONE: Record<"critical" | "warning" | "resolved", SeverityTone> = {
-	critical: {
-		badge: "bg-destructive/10 text-destructive",
-		accent: "bg-destructive",
-		text: "text-destructive",
-	},
-	warning: {
-		badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-		accent: "bg-amber-500",
-		text: "text-amber-600 dark:text-amber-400",
-	},
-	resolved: {
-		badge: "bg-muted text-muted-foreground",
-		accent: "bg-border/60",
-		text: "text-muted-foreground",
-	},
+	critical: severityToneOf("crit"),
+	warning: severityToneOf("warn"),
+	resolved: severityToneOf("done"),
 } satisfies Record<"critical" | "warning" | "resolved", SeverityTone>
 
 export function severityToneFor(
@@ -165,7 +164,10 @@ export const RESOLVE_REASON_LABEL: Record<AnomalyResolveReason, string> = {
 
 export const TRIAGE_STATUS_CHIP: Record<AnomalyTriageStatus, { label: string; tone: string } | null> = {
 	none: null,
-	pending: { label: "triaging…", tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-	completed: { label: "triaged", tone: "bg-success/10 text-success" },
-	skipped: { label: "triage skipped", tone: "bg-muted text-muted-foreground" },
+	pending: { label: "triaging…", tone: TONE_SOFT.warn },
+	completed: { label: "triaged", tone: TONE_SOFT.ok },
+	skipped: { label: "triage skipped", tone: TONE_SOFT.neutral },
 } satisfies Record<AnomalyTriageStatus, { label: string; tone: string } | null>
+
+/** Keeps the 20px / 11px meta-pill size on anomaly rows and cards (Badge `size="sm"` shrinks on sm+). */
+export const META_CHIP_CLASS = "h-5 gap-1.5 font-normal text-2xs sm:h-5 sm:text-2xs"

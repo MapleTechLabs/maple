@@ -55,15 +55,16 @@ writes: endpoint captures the Postgres txid on the mutating statement
 
 ### Shapes (server-pinned whitelist, `apps/electric-sync/src/shapes/registry.ts`)
 
-| shape                | table              | pinned columns / extra WHERE (besides org scope)                |
-| -------------------- | ------------------ | --------------------------------------------------------------- |
-| `dashboards`         | dashboards         | none                                                            |
-| `alert_rules`        | alert_rules        | none                                                            |
-| `alert_rule_states`  | alert_rule_states  | none                                                            |
-| `alert_incidents`    | alert_incidents    | none                                                            |
-| `alert_destinations` | alert_destinations | columns: drops the encrypted `secret_*`                         |
-| `api_keys`           | api_keys           | columns: drops `key_hash` / `metadata_json`                     |
-| `investigation_v2`   | investigations     | scoped to one `id` (client supplies the value as `$2`); columns |
+| shape                   | table              | pinned columns / extra WHERE (besides org scope)                |
+| ----------------------- | ------------------ | --------------------------------------------------------------- |
+| `dashboards`            | dashboards         | none                                                            |
+| `alert_rules`           | alert_rules        | none                                                            |
+| `alert_rule_states`     | alert_rule_states  | none                                                            |
+| `alert_incidents`       | alert_incidents    | none                                                            |
+| `alert_destinations`    | alert_destinations | columns: drops the encrypted `secret_*` (previous builds only)  |
+| `alert_destinations_v2` | alert_destinations | columns: as v1, plus `disabled_at` / `disabled_reason`          |
+| `api_keys`              | api_keys           | columns: drops `key_hash` / `metadata_json`                     |
+| `investigation_v2`      | investigations     | scoped to one `id` (client supplies the value as `$2`); columns |
 
 Shape `where`/columns are **immutable**. Changing a pinned predicate forces a
 full re-sync for every client. If you must change one, version the shape name
@@ -112,8 +113,8 @@ no upstream `ELECTRIC_URL`. Two causes:
 **Shapes 404 / `Database table public.<t> is missing from the publication`** (or
 `does not have its replica identity set to FULL`). The early publication migrations
 (`0009`, `0011`, `0014`, `0037`) wrap their DDL in `DO $$ … EXCEPTION WHEN OTHERS THEN
-RAISE NOTICE … END $$`. On real Postgres a failure inside one is swallowed, and drizzle
-or alchemy still records it as applied. The case that actually happened: on the fresh
+RAISE NOTICE … END $$`. On real Postgres a failure inside one is swallowed, and the
+migrator still records it as applied. The case that actually happened: on the fresh
 EU database the publication existed, empty, before the first migration ran. `0009`'s
 `CREATE PUBLICATION` raised `duplicate_object`, and that handler rolls back the entire
 block, `REPLICA IDENTITY FULL` included. The later migrations then `ADD`ed their own
@@ -207,7 +208,7 @@ as local docker does.
    `max_wal_senders>=10`, `max_slot_wal_keep_size>=4096`, `sync_replication_slots=on`,
    `hot_standby_feedback=on`. Already set for Cloud; unchanged.
 2. **The role is declared:** `Planetscale.PostgresRole("electric-db-role", { withReplication: true,
-inheritedRoles: ["postgres"] })` in `alchemy.run.ts`. The `REPLICATION` _attribute_ is never
+   inheritedRoles: ["postgres"] })` in `alchemy.run.ts`. The `REPLICATION` _attribute_ is never
    inherited through role membership. Electric's database validation rejects a role without it
    with a message that does not say so, and PlanetScale issues it only alongside `postgres`.
    Its DIRECT 5432 URL is the task's `DATABASE_URL`. Logical replication cannot run through
@@ -244,61 +245,18 @@ Electric Cloud never used that pair. It created its own generated
 service could run beside Cloud on the same database with no collision during the
 cutover.
 
-## PR previews (no Electric source; dormant since 2026-08, now also Cloud-less)
+## PR previews
 
-**PR previews no longer have an Electric source.** They stopped provisioning a
-PlanetScale branch (see `resolveDatabaseMode` in
-`packages/infra/src/cloudflare/stage.ts`), and with no Postgres to replicate from
-there is nothing for Electric to point at. `apps/electric-sync/src/worker.ts`
-therefore withholds `ELECTRIC_URL`/`ELECTRIC_SOURCE_ID`/`ELECTRIC_SECRET` on the
-`pr` stage. This is deliberate: a preview can never inherit the shared `dev`
-credentials and proxy its shapes at another stage's data. The sync worker deploys
-unconfigured and returns 503, so `/dashboards` falls back to its HTTP snapshot and
-the alerts lists show `SyncUnavailable`.
-
-Every path of `scripts/electric-pr-branch.ts` is now dead, not just `up`. The
-workflows still call `down` (on PR close) and `sweep` (from
-`cleanup-preview-orphans.yml`), but Electric Cloud is gone, so there are no
-environments left to reap. What follows is kept as the record of what previews used
-to do. Restoring live sync in a preview means pointing it at a self-hosted Electric,
-not at Cloud.
-
-The former lifecycle: an ephemeral Electric Cloud **environment** `pr-<n>` + a
-Postgres **source** per PR, mirroring the PlanetScale/Tinybird branch lifecycle.
-`scripts/electric-pr-branch.ts` (`up`/`down <pr-number>`, driven from
-`.github/workflows/deploy-pr-preview.yml`) used `@electric-sql/cli`
-(`ELECTRIC_API_TOKEN` auth). On open/synchronize it reused (or created under
-`ELECTRIC_PROJECT_ID`) the `pr-<n>` environment, reset its services, and created a
-fresh `postgres` source pointed at the PR branch's `MAPLE_PG_ELECTRIC_URL`. That URL
-was direct 5432 through a dedicated `--with-replication` role: Electric requires
-the REPLICATION role _attribute_, which is never inherited, and the main CI role
-stays non-replication because PlanetScale replication roles aren't grantable, which
-would break the in-place reset's role assumption. The script polled the source until
-active and exported `ELECTRIC_URL`/`ELECTRIC_SOURCE_ID`/`ELECTRIC_SECRET` to
-`$GITHUB_ENV`, where alchemy bound them to the electric-sync worker. On close it
-deleted the environment (cascading the source). Steps were gated on
-`ELECTRIC_API_TOKEN`, so previews stayed green (and the worker 503'd) until the token
-landed in Infisical.
-
-- The web build always reads through the sync path. Provisioning a source is what
-  would make live sync work in previews again.
-- **Publication:** the migrate step ran `0009` (creates
-  `electric_publication_default`) before the source was created. The script passed
-  `--manual-table-publishing` by default (prod parity: Electric reads that
-  migration-owned publication, its default name, instead of owning the tables).
-  `ELECTRIC_MANUAL_TABLE_PUBLISHING=false` let Electric auto-manage publishing
-  instead; `ELECTRIC_SERVICE_EXTRA_ARGS` was the flag escape hatch.
-  The script pins `@electric-sql/cli@0.0.10` (interface verified: `--json` is a
-  global flag, `environments create` returns `environmentId`, the postgres service
-  id is the shape-API `source_id`). Re-verify before bumping the pin.
-- **Caps:** each source counted against the Electric plan's max-databases limit and
-  held a PlanetScale replication slot, so teardown on close was mandatory.
+Each preview runs its own Electric on ECS (`electric-pr-<n>.maple.dev`), replicating from its
+Neon branch as the branch owner. That needs logical replication enabled on the Neon project.
+`apps/electric-sync/src/worker.ts` derives the preview's `ELECTRIC_URL` from that hostname and
+never reads the shared one, so a preview can never proxy shapes at another stage's data.
 
 ## Adding a synced table later
 
 1. New Drizzle migration (`db:generate --custom`) that adds the table with
    `ALTER TABLE "<t>" REPLICA IDENTITY FULL` and `ALTER PUBLICATION
-electric_publication_default ADD TABLE "<t>"`, each behind a catalog check
+   electric_publication_default ADD TABLE "<t>"`, each behind a catalog check
    (`pg_class.relreplident`, `pg_publication_tables`) as in
    `electric_publication_reconcile`. **No `EXCEPTION` handler.** PGlite (0.5+) runs
    `CREATE/ALTER PUBLICATION` and `pg_publication_tables`, so the guard the early
@@ -360,7 +318,7 @@ whether or not the table is published). Move the table from `SYNCED_TABLES` to
 **Done and verified**
 
 - Infra: docker `electric` + `wal_level=logical`; `0009_electric_publication`
-  (applies via both `drizzle-kit migrate` and the PGlite test path; see
+  (applies via both `db:migrate` and the PGlite test path; see
   `packages/db/src/migrations.test.ts`), with later publication migrations for
   wave-1 control-plane tables, `api_keys` and `investigations`.
 - Shape proxy with org-scoping + client-param pinning, extracted into the

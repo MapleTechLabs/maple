@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-	formatSeconds,
-	formatValueWithUnit,
-	isoToLabel,
-	makeBucketLabeler,
-	transformRows,
-} from "./chart-utils"
+import { formatSeconds, formatValueWithUnit, transformRows } from "./chart-utils"
 
 describe("formatValueWithUnit", () => {
 	it("renders a percentage with a % sign", () => {
@@ -51,46 +45,14 @@ describe("formatSeconds", () => {
 	})
 })
 
-describe("makeBucketLabeler", () => {
-	it("uses plain time-of-day labels while the buckets span a single day", () => {
-		const buckets = ["2026-07-03T10:00:00Z", "2026-07-03T22:00:00Z"]
-		const label = makeBucketLabeler(buckets)
-		expect(label(buckets[0]!)).toBe(isoToLabel(buckets[0]!))
-		expect(label(buckets[0]!)).not.toMatch(/Jul/)
-	})
-
-	it("prefixes the date and compacts the time once the buckets cross 24h", () => {
-		const buckets = ["2026-07-01T10:00:00Z", "2026-07-04T10:00:00Z"]
-		const label = makeBucketLabeler(buckets)
-		const onTheHour = new Date(2026, 6, 3, 15, 0)
-		const offTheHour = new Date(2026, 6, 3, 14, 35)
-		const expectedDate = onTheHour.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-		expect(label(onTheHour.toISOString())).toBe(`${expectedDate}, 3pm`)
-		expect(label(offTheHour.toISOString())).toBe(`${expectedDate}, 2:35pm`)
-		expect(label(new Date(2026, 6, 3, 0, 0).toISOString())).toBe(`${expectedDate}, 12am`)
-	})
-
-	it("labels in the given zone", () => {
-		const buckets = ["2026-07-01T10:00:00Z", "2026-07-04T10:00:00Z"]
-		// 15:00Z is 00:00 the next day in Tokyo.
-		expect(makeBucketLabeler(buckets, "Asia/Tokyo")("2026-07-03T15:00:00Z")).toBe("Jul 4, 12am")
-		expect(isoToLabel("2026-07-03T15:30:00Z", "Asia/Tokyo")).toBe("12:30 AM")
-	})
-
-	it("falls back to time-of-day for empty or unparsable input", () => {
-		expect(makeBucketLabeler([])("2026-07-03T14:35:00Z")).toBe(isoToLabel("2026-07-03T14:35:00Z"))
-	})
-})
-
 describe("transformRows", () => {
 	it("labels points with the provided labeler", () => {
 		const rows = [
 			{ bucket: "2026-07-01T10:00:00Z", attributeValue: "a", value: 1 },
 			{ bucket: "2026-07-04T10:00:00Z", attributeValue: "a", value: 2 },
 		]
-		const { data } = transformRows(rows, makeBucketLabeler(rows.map((r) => r.bucket)))
-		expect(data[0]?.time).toMatch(/^[A-Z][a-z]{2} \d{1,2}, /)
-		expect(data[1]?.time).toMatch(/^[A-Z][a-z]{2} \d{1,2}, /)
-		expect(data[0]?.time).not.toBe(data[1]?.time)
+		const { data } = transformRows(rows, (iso) => iso.slice(0, 10))
+		expect(data[0]?.time).toBe("2026-07-01")
+		expect(data[1]?.time).toBe("2026-07-04")
 	})
 })

@@ -16,7 +16,8 @@ export * from "@maple/domain/organization-feature-flags"
  * key is typed by hand in the Clerk dashboard.
  */
 export function isChatConnectorEnabled(metadata: unknown, connectorId: string): boolean {
-	if (chatConnectorManifests.some((manifest) => manifest.id === connectorId && manifest.released)) return true
+	if (chatConnectorManifests.some((manifest) => manifest.id === connectorId && manifest.released))
+		return true
 	if (typeof metadata !== "object" || metadata === null) return false
 	return Boolean((metadata as Record<string, unknown>)[`${connectorId}_bot`])
 }

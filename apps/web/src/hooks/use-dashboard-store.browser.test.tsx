@@ -20,11 +20,11 @@ const collection = {
 		const next = structuredClone(rows.get(id)!)
 		updater(next)
 		rows.set(id, next)
-		return { isPersisted: { promise: persistResult() } }
+		return { when: () => persistResult() }
 	},
 	delete: (id: string) => {
 		rows.delete(id)
-		return { isPersisted: { promise: persistResult() } }
+		return { when: () => persistResult() }
 	},
 	preload: () => Promise.resolve(),
 	utils: { awaitTxId: () => Promise.resolve(true) },

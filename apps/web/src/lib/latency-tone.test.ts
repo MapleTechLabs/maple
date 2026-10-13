@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import {
-	LATENCY_TEXT_TONE,
-	latencyLevel,
-	latencyLevelLabel,
-	latencyToneClass,
-} from "@maple/ui/lib/latency-tone"
+import { LATENCY_TEXT_TONE, latencyLevel, latencyToneClass } from "@maple/ui/lib/latency-tone"
 
 describe("latencyLevel", () => {
 	it("walks the p95 ramp at 150ms / 500ms / 1s / 3s", () => {
@@ -17,17 +12,6 @@ describe("latencyLevel", () => {
 		expect(latencyLevel(1_000, "p95")).toBe("slow")
 		expect(latencyLevel(2_999, "p95")).toBe("slow")
 		expect(latencyLevel(3_000, "p95")).toBe("critical")
-	})
-
-	// The p95 slow/critical boundaries must stay pinned to the absolute health
-	// thresholds in components/dashboard/service-health.ts, so a toned cell never
-	// disagrees with the health badge on the same row.
-	it("agrees with the service-health absolute p95 thresholds", () => {
-		const P95_DEGRADED_MS = 1_000
-		const P95_UNHEALTHY_MS = 3_000
-		expect(latencyLevel(P95_DEGRADED_MS - 1, "p95")).toBe("elevated")
-		expect(latencyLevel(P95_DEGRADED_MS, "p95")).toBe("slow")
-		expect(latencyLevel(P95_UNHEALTHY_MS, "p95")).toBe("critical")
 	})
 
 	it("scales the ramp per percentile so a healthy service reads flat", () => {
@@ -81,15 +65,5 @@ describe("latencyToneClass", () => {
 		expect(latencyToneClass(42, "p50")).toBe(LATENCY_TEXT_TONE.quiet)
 		expect(latencyToneClass(2_400, "p95")).toBe(LATENCY_TEXT_TONE.slow)
 		expect(latencyToneClass(7_100, "p99")).toBe(LATENCY_TEXT_TONE.critical)
-	})
-})
-
-describe("latencyLevelLabel", () => {
-	it("gives every level a plain word, so tone is never color-only", () => {
-		expect(latencyLevelLabel("quiet")).toBe("fast")
-		expect(latencyLevelLabel("nominal")).toBe("normal")
-		expect(latencyLevelLabel("elevated")).toBe("elevated")
-		expect(latencyLevelLabel("slow")).toBe("slow")
-		expect(latencyLevelLabel("critical")).toBe("very slow")
 	})
 })

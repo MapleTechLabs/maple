@@ -13,8 +13,8 @@
 import { BunHttpServer } from "@effect/platform-bun"
 import { Maple } from "@maple-dev/effect-sdk/server"
 import { Effect, Layer } from "effect"
-import { HttpMiddleware, HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpMiddleware, HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { NotifierApi } from "../shared/notifier-api.ts"
 import { NotificationService } from "./NotificationService.ts"
 

@@ -24,6 +24,8 @@ export type ProductEvent =
 	| "api_key_created"
 	| "dashboard_created"
 	| "chat_message_sent"
+	/** A member asked for a Slack Connect invite to the org's shared channel with the Maple team. */
+	| "support_channel_invite_sent"
 	/**
 	 * Client-side intent signal fired right before the Stripe redirect. The
 	 * server-side `plan_started` (Autumn webhook / inline attach) is the truth for

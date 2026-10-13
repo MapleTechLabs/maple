@@ -1,9 +1,18 @@
 import { memo } from "react"
 import { Link } from "@tanstack/react-router"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { shortId } from "@maple/ui/lib/ids"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
 import { cn } from "@maple/ui/lib/utils"
-import { WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
+import { WidgetEmptyState, WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
 import { columnVisibilityClass, formatCellValue } from "@/components/dashboard-builder/widgets/table-widget"
 import { resolveFieldPath } from "@/lib/resolve-field-path"
 import type { WidgetDataState, WidgetDisplayConfig, WidgetMode } from "@/components/dashboard-builder/types"
@@ -50,43 +59,30 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 			dataState={dataState}
 			mode={mode}
 			contentClassName="flex-1 min-h-0 overflow-auto p-0"
-			loadingSkeleton={
-				<div className="p-3 flex flex-col gap-2">
-					{Array.from({ length: 5 }).map((_, i) => (
-						<Skeleton key={i} className="h-6 w-full" />
-					))}
-				</div>
-			}
+			loadingSkeleton={<SkeletonList rows={5} rowClassName="h-6" gap="2" className="p-3" />}
 		>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						{effectiveColumns.map((col, colIndex) => (
-							<TableHead
-								key={col.field}
-								className={cn("text-xs", columnVisibilityClass(colIndex))}
-								style={{
-									textAlign: col.align ?? "left",
-									width: col.width ? `${col.width}px` : undefined,
-								}}
-							>
-								{col.header}
-							</TableHead>
-						))}
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{rows.length === 0 ? (
+			{rows.length === 0 ? (
+				<WidgetEmptyState />
+			) : (
+				<Table>
+					<TableHeader>
 						<TableRow>
-							<TableCell
-								colSpan={effectiveColumns.length}
-								className="text-center text-xs text-muted-foreground"
-							>
-								No data
-							</TableCell>
+							{effectiveColumns.map((col, colIndex) => (
+								<TableHead
+									key={col.field}
+									className={cn("text-xs", columnVisibilityClass(colIndex))}
+									style={{
+										textAlign: col.align ?? "left",
+										width: col.width ? `${col.width}px` : undefined,
+									}}
+								>
+									{col.header}
+								</TableHead>
+							))}
 						</TableRow>
-					) : (
-						rows.map((row, i) => (
+					</TableHeader>
+					<TableBody>
+						{rows.map((row, i) => (
 							<TableRow key={i}>
 								{effectiveColumns.map((col, colIndex) => {
 									const value = resolveFieldPath(row, col.field)
@@ -96,7 +92,7 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 
 									let content: React.ReactNode = displayValue
 									if (col.field === "traceId" && typeof value === "string" && value) {
-										const truncated = value.length > 8 ? value.slice(0, 8) : value
+										const truncated = shortId(value, "trace")
 										const tsRaw = row.timestamp ?? row.startTime
 										const t = typeof tsRaw === "string" ? tsRaw : undefined
 										content = (
@@ -127,6 +123,21 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 										)
 									}
 
+									// A log body is unbounded: let it take the spare width and truncate.
+									if (col.field === "body" && typeof displayValue === "string") {
+										return (
+											<TruncatedCell
+												key={col.field}
+												className={cn("text-xs", columnVisibilityClass(colIndex))}
+												style={{ textAlign: col.align ?? "left" }}
+											>
+												<span className="block truncate" title={displayValue}>
+													{displayValue}
+												</span>
+											</TruncatedCell>
+										)
+									}
+
 									return (
 										<TableCell
 											key={col.field}
@@ -138,10 +149,10 @@ export const ListWidget = memo(function ListWidget({ dataState, display, mode }:
 									)
 								})}
 							</TableRow>
-						))
-					)}
-				</TableBody>
-			</Table>
+						))}
+					</TableBody>
+				</Table>
+			)}
 		</WidgetFrame>
 	)
 })

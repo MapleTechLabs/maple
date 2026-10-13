@@ -88,7 +88,8 @@ export function vitalAttribution(metric: VitalWithAttribution): VitalAttributes 
 		}
 		case "INP": {
 			const a = metric.attribution
-			const region = regionOf(a.processedEventEntries[0]?.target)
+			// The interaction's own event; `processedEventEntries` is empty unless opted into.
+			const region = regionOf(metric.entries[0]?.target)
 			return {
 				region,
 				attributes: defined({

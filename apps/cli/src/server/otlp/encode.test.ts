@@ -255,6 +255,35 @@ describe("value-level spot checks", () => {
 			'["a","1"]',
 		)
 	})
+
+	it("decodes bytes attributes as text when they are valid UTF-8", () => {
+		expect(anyValueString({ bytesValue: btoa('{"messages":[]}') })).toBe('{"messages":[]}')
+		expect(anyValueString({ bytesValue: btoa("\xff\xfe\x01") })).toBe("fffe01")
+		// Valid UTF-8 that is really binary stays hex (all zero stays "").
+		expect(anyValueString({ bytesValue: btoa("\x01\x02\x7f") })).toBe("01027f")
+		expect(anyValueString({ bytesValue: btoa("\0\0\0\0") })).toBe("")
+		expect(anyValueString({ bytesValue: btoa("a\tb\r\nc") })).toBe("a\tb\r\nc")
+		// A leading BOM is kept, as the Rust encoder keeps it.
+		expect(anyValueString({ bytesValue: btoa("\xef\xbb\xbfa") })).toBe("﻿a")
+	})
+
+	it("keeps nested arrays and maps as JSON", () => {
+		expect(anyValueString({ kvlistValue: { values: [{ key: "n", value: { boolValue: true } }] } })).toBe(
+			'{"n":"true"}',
+		)
+		const part = { kvlistValue: { values: [{ key: "type", value: { stringValue: "text" } }] } }
+		const message = {
+			kvlistValue: {
+				values: [
+					{ key: "role", value: { stringValue: "user" } },
+					{ key: "parts", value: { arrayValue: { values: [part] } } },
+				],
+			},
+		}
+		expect(anyValueString({ arrayValue: { values: [message] } })).toBe(
+			'[{"role":"user","parts":[{"type":"text"}]}]',
+		)
+	})
 })
 
 describe("OTLP/JSON hex ids", () => {
@@ -370,5 +399,57 @@ describe("external OTLP protobuf compatibility", () => {
 		expect(row.span_kind).toBe("Client")
 		expect(row.resource_attributes["deployment.environment.name"]).toBe("test")
 		expect(row.span_attributes["url.full"]).toBe("http://127.0.0.1:18081/ping?i=2")
+	})
+})
+
+describe("non-finite metric values", () => {
+	const gauge = (asDouble: number | string) => ({
+		resourceMetrics: [
+			{ scopeMetrics: [{ metrics: [{ name: "g", gauge: { dataPoints: [{ asDouble }] } }] }] },
+		],
+	})
+	const valueOf = (req: unknown) => JSON.parse(encodeMetrics(req)[0]!.ndjson).value
+
+	it("keeps NaN and infinities instead of serializing them as null (stored as 0)", () => {
+		expect(valueOf(gauge(Number.NaN))).toBe("nan")
+		expect(valueOf(gauge(Number.POSITIVE_INFINITY))).toBe("inf")
+		expect(valueOf(gauge(Number.NEGATIVE_INFINITY))).toBe("-inf")
+		expect(valueOf(gauge(1.5))).toBe(1.5)
+	})
+
+	it("reads the proto3-JSON string forms of doubles", () => {
+		expect(valueOf(gauge("NaN"))).toBe("nan")
+		expect(valueOf(gauge("Infinity"))).toBe("inf")
+		expect(valueOf(gauge("-Infinity"))).toBe("-inf")
+		expect(valueOf(gauge("2.5"))).toBe(2.5)
+		expect(() => encodeMetrics(gauge("not-a-number"))).toThrow(OtlpFieldError)
+	})
+
+	it("preserves non-finite histogram sums, bounds and extrema", () => {
+		const [batch] = encodeMetrics({
+			resourceMetrics: [
+				{
+					scopeMetrics: [
+						{
+							metrics: [
+								{
+									name: "h",
+									histogram: {
+										dataPoints: [
+											{ sum: "NaN", explicitBounds: [1, "Infinity"], min: "-Infinity" },
+										],
+									},
+								},
+							],
+						},
+					],
+				},
+			],
+		})
+		const row = JSON.parse(batch!.ndjson)
+		expect(row.sum).toBe("nan")
+		expect(row.explicit_bounds).toEqual([1, "inf"])
+		expect(row.min).toBe("-inf")
+		expect(row.max).toBeNull()
 	})
 })

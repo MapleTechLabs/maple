@@ -2,8 +2,8 @@ name: deploy setup
 description: >-
     Everything an alchemy deploy job needs after checkout: the toolchain,
     Infisical secrets, AWS OIDC credentials, dependencies, and (optionally)
-    the prebuilt ingest binary. Shared by deploy-prd, deploy-pr-preview and
-    aws-probe so the order is decided once.
+    the prebuilt ingest binary. Shared by deploy-prd and deploy-pr-preview so
+    the order is decided once.
 
 inputs:
     infisical-env-slug:
@@ -20,9 +20,7 @@ inputs:
         required: true
     aws-region:
         description: >-
-            The AWS region the deploy's ECS resources live in — `resolveAwsRegion`
-            for the instance (us-east-1 for us, eu-central-1 for eu). The stack
-            refuses an AWS_REGION that disagrees with its stage.
+            `resolveAwsRegion` for the instance; the stack refuses a mismatch.
         required: false
         default: us-east-1
     ingest-binary:
@@ -53,11 +51,8 @@ runs:
               export-type: "env"
               secret-path: "/"
 
-        # AFTER Infisical: the OIDC exchange writes AWS_ACCESS_KEY_ID /
-        # AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN / AWS_REGION into the env,
-        # which is what alchemy's AWS auth reads (it picks the `env` method
-        # whenever CI=true), so these must win over anything stale of the same
-        # name coming out of Infisical.
+        # AFTER Infisical, so the OIDC AWS_* env vars (read by alchemy under CI=true)
+        # win over any stale ones from Infisical.
         - name: Configure AWS credentials (OIDC)
           id: aws
           uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
@@ -67,10 +62,8 @@ runs:
 
         - uses: ./.github/actions/bun-install
 
-        # `Dockerfile.prebuilt` builds for linux/arm64 (the ECS tasks are
-        # Graviton) and has a `RUN apt-get` layer, so this x86 runner needs the
-        # binfmt handlers to build it. The binary itself was compiled natively
-        # by build-ingest-binary.yml; only that one layer is emulated.
+        # `Dockerfile.prebuilt` targets linux/arm64 and has a `RUN apt-get` layer,
+        # so this x86 runner needs binfmt for that one layer.
         - name: Register arm64 binfmt handlers (QEMU)
           if: ${{ inputs.ingest-binary == 'true' }}
           uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
@@ -84,9 +77,7 @@ runs:
               name: maple-ingest
               path: apps/ingest/dist
 
-        # The artifact upload drops the exec bit and `Dockerfile.prebuilt`
-        # COPYs the file mode into the image, so restore it or the task exits
-        # on `permission denied`.
+        # Artifact upload drops the exec bit; the image copies the file mode as-is.
         - name: Restore exec bit on ingest binary
           if: ${{ inputs.ingest-binary == 'true' }}
           shell: bash

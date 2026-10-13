@@ -17,6 +17,8 @@ export const SECTIONS = [
 		groups: [
 			"Getting Started",
 			"Concepts",
+			"Explore",
+			"Errors",
 			"Session Replay",
 			"Product Events",
 			"Agent Sessions",
@@ -29,8 +31,8 @@ export const SECTIONS = [
 		id: "instrumentation",
 		icon: "Instrumentation",
 		label: "Instrumentation",
-		blurb: "Languages, frameworks, hosts and clusters.",
-		groups: ["Instrumentation", "Infrastructure"],
+		blurb: "Languages, frameworks, AI agents, hosts and clusters.",
+		groups: ["Instrumentation", "AI Frameworks", "AI Gateways", "Infrastructure"],
 	},
 	{
 		id: "local",
@@ -43,7 +45,7 @@ export const SECTIONS = [
 		id: "reference",
 		icon: "Reference",
 		label: "Reference",
-		blurb: "APIs, ingest, SQL, webhooks and limits.",
+		blurb: "APIs, CLI, ingest, SQL, webhooks and limits.",
 		groups: ["Reference"],
 	},
 ] as const
@@ -67,21 +69,3 @@ export const sectionForGroup = (group: string): DocSection =>
 
 /** Slug of the instrumentation overview — the "SDKs" entry point everywhere. */
 export const INSTRUMENTATION_SLUG = "instrumentation"
-
-/** One-line blurb per group for the docs index cards. */
-export const GROUP_BLURBS = {
-	"Getting Started": "What Maple is and the three steps to first data.",
-	Instrumentation: "Setup guides for every language, framework and runtime.",
-	Concepts: "How Maple reads OpenTelemetry data and what it expects from yours.",
-	"Session Replay": "Record browser sessions and play them back next to their traces.",
-	"Product Events": "Track signups, checkouts and plan starts from the browser, a span, or any backend.",
-	"Agent Sessions": "Trace AI agents: every model call, tool call and turn, grouped into sessions.",
-	Dashboards: "Build dashboards on your telemetry and embed their charts in your own product.",
-	Infrastructure: "Stream host, container and cluster metrics next to your services.",
-	Integrations: "Pull metrics and context from the services around your app.",
-	Alerting: "Route alerts to Slack, PagerDuty, Discord, Telegram or a webhook.",
-	"Local Mode": "The whole product as one binary on your machine.",
-	Reference: "The REST API, MCP server, ingest endpoint, SQL tables, alert webhooks and limits.",
-} satisfies Record<DocGroup, string>
-
-export const groupBlurb = (group: string): string => (isDocGroup(group) ? GROUP_BLURBS[group] : "")

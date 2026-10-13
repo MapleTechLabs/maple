@@ -1,20 +1,6 @@
 /**
- * Tinybird SDK - Exports Only
- *
- * This module exports all endpoint definitions and datasources.
- * Client creation should be done in the consuming application with proper configuration.
- *
- * @example
- * ```ts
- * import { Tinybird } from "@tinybirdco/sdk";
- * import { listTraces, spanHierarchy, listLogs } from "@maple/domain/tinybird";
- *
- * const tinybird = new Tinybird({
- *   baseUrl: process.env.TINYBIRD_HOST,
- *   token: process.env.TINYBIRD_TOKEN,
- *   pipes: { list_traces: listTraces, ... },
- * });
- * ```
+ * Warehouse schema: every datasource and materialized view, defined with
+ * `@maple-dev/effect-orm/tinybird`. A datasource is also the query table.
  */
 
 // Export all endpoints and their types
