@@ -42,6 +42,7 @@ import { errorMessage, toastExit } from "@/lib/error-toast"
 import { currentRegion } from "@/lib/region"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
+import { type RepositoryFilter, SEARCH_THRESHOLD, visibleRepositories } from "./repository-filter"
 import { ReviewRulesForm } from "./review-rules-form"
 
 const SETTINGS_KEY = "githubPrReviewSettings"
@@ -259,15 +260,11 @@ function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfi
 	)
 }
 
-type RepositoryFilter = "all" | "reviewed" | "off"
-
 const FILTER_LABELS = {
 	all: "All",
 	reviewed: "Reviewed",
 	off: "Not reviewed",
 } satisfies Record<RepositoryFilter, string>
-/** Below this the whole list fits at a glance and a search bar is noise. */
-const SEARCH_THRESHOLD = 8
 
 export function RepositoryList({
 	repositories,
@@ -289,19 +286,8 @@ export function RepositoryList({
 		off: repositories.length - enabled,
 	} satisfies Record<RepositoryFilter, number>
 	const showToolbar = repositories.length > SEARCH_THRESHOLD
-	// Without the toolbar there is no control to undo a search or filter, so neither applies.
-	const needle = showToolbar ? search.trim().toLowerCase() : ""
-	const activeFilter = showToolbar ? filter : "all"
-	const visible = repositories
-		.filter(
-			(repo) =>
-				(activeFilter === "all" || repo.prReviewEnabled === (activeFilter === "reviewed")) &&
-				(needle.length === 0 || repo.fullName.toLowerCase().includes(needle)),
-		)
-		.toSorted(
-			(a, b) =>
-				Number(pinned.has(b.id)) - Number(pinned.has(a.id)) || a.fullName.localeCompare(b.fullName),
-		)
+	const visible = visibleRepositories(repositories, { search, filter, pinned })
+	const searching = showToolbar && search.trim().length > 0
 
 	return (
 		<Panel>
@@ -342,9 +328,9 @@ export function RepositoryList({
 			{visible.length === 0 ? (
 				<div className="flex flex-col items-center gap-2 px-5 py-10 text-center text-sm text-muted-foreground">
 					<p>
-						{needle.length > 0
+						{searching
 							? `No repositories match “${search.trim()}”`
-							: activeFilter === "reviewed"
+							: filter === "reviewed"
 								? "No repositories are reviewed yet"
 								: "Every repository is reviewed"}
 					</p>
