@@ -72,9 +72,7 @@ const errorEnvelope = (body: unknown) => {
 
 const OpenRouterProtocol = makeRestProtocol<Config>({
 	// Resolved per request on the calling fiber, so each call runs on the key it was given.
-	credentials: Effect.gen(function* () {
-		return yield* Credentials
-	}),
+	credentials: Effect.service(Credentials),
 	baseUrl: (credentials) => credentials.apiBaseUrl,
 	headers: (credentials) => ({ Authorization: `Bearer ${Redacted.value(credentials.apiKey)}` }),
 	errorEnvelope,
