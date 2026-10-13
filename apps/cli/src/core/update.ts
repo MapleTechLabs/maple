@@ -35,8 +35,12 @@ export class UpdateError extends Schema.TaggedError<UpdateError>()("@maple/cli/U
 
 const REPO = "MapleTechLabs/maple"
 // Not `/releases/latest`: the npm packages cut GitHub releases too (`@maple-dev/alchemy@0.2.0`),
-// so "latest" is often not a CLI release. The list is newest first; take the first `v*` tag.
-const RELEASES_API = `https://api.github.com/repos/${REPO}/releases?per_page=100`
+// so "latest" is often not a CLI release. The list is newest first; take the first `v*` tag,
+// paging on while a page is all package releases.
+const RELEASES_PER_PAGE = 100
+const MAX_RELEASE_PAGES = 5
+const releasesPageUrl = (page: number) =>
+	`https://api.github.com/repos/${REPO}/releases?per_page=${RELEASES_PER_PAGE}&page=${page}`
 const CLI_RELEASE_TAG = /^v\d+\.\d+\.\d+$/
 /** Throttle window for the startup check — hit GitHub at most once per day. */
 export const CHECK_TTL_MS = 24 * 60 * 60 * 1000
@@ -122,11 +126,10 @@ const toUpdateError = (prefix: string, error: unknown): UpdateError =>
 		message: `${prefix}: ${error instanceof Error ? error.message : String(error)}`,
 	})
 
-/** Fetch the newest CLI release tag from the GitHub API (keeps the leading "v" for URL building). */
-export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+const fetchReleasesPage = (page: number) =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
-		const request = HttpClientRequest.get(RELEASES_API, {
+		const request = HttpClientRequest.get(releasesPageUrl(page), {
 			headers: { "User-Agent": "maple-cli", Accept: "application/vnd.github+json" },
 		})
 		const response = yield* client
@@ -140,20 +143,29 @@ export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateEr
 		const text = yield* response.text.pipe(
 			Effect.mapError((error) => toUpdateError("could not read GitHub release response", error)),
 		)
-		const releases = yield* Effect.try({
+		return yield* Effect.try({
 			try: () => Schema.decodeUnknownSync(Schema.fromJsonString(ReleasesResponse))(text),
 			catch: (error) => toUpdateError("could not decode GitHub release response", error),
 		})
+	})
+
+const findCliRelease = (page: number): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+	Effect.flatMap(fetchReleasesPage(page), (releases) => {
 		const latest = releases.find(
 			(r) => r.draft !== true && r.prerelease !== true && CLI_RELEASE_TAG.test(r.tag_name),
 		)
-		if (latest === undefined) {
-			return yield* new UpdateError({
-				message: "could not check for updates: no published release found",
-			})
+		if (latest !== undefined) return Effect.succeed(latest.tag_name)
+		if (releases.length < RELEASES_PER_PAGE || page >= MAX_RELEASE_PAGES) {
+			return Effect.fail(
+				new UpdateError({ message: "could not check for updates: no published release found" }),
+			)
 		}
-		return latest.tag_name
-	}).pipe(
+		return findCliRelease(page + 1)
+	})
+
+/** Fetch the newest CLI release tag from the GitHub API (keeps the leading "v" for URL building). */
+export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
+	findCliRelease(1).pipe(
 		Effect.timeoutOrElse({
 			duration: Duration.millis(timeoutMs),
 			orElse: () =>
