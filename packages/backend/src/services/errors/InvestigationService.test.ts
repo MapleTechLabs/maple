@@ -498,15 +498,19 @@ describe("InvestigationService", () => {
 		}).pipe(Effect.provide(harness.layer))
 	})
 
-	it.effect("settles an anomaly's pending triage when its investigation ends", () =>
-		Effect.gen(function* () {
+	it.effect("keeps an anomaly's triage status in step with its investigation", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
 			const database = yield* Database
 			const service = yield* InvestigationService
 			const asAnomalyId = Schema.decodeUnknownSync(AnomalyIncidentId)
-			const DONE_ID = "1a1a1a1a-0000-4000-8000-000000000001"
+			// Ordered so the status query below lists them in this order.
+			const FAST_ID = "1a1a1a1a-0000-4000-8000-000000000001"
 			const FAILED_ID = "2b2b2b2b-0000-4000-8000-000000000002"
+			const MANUAL_ID = "3c3c3c3c-0000-4000-8000-000000000003"
 			const now = Date.now()
-			const anomaly = (id: string) => ({
+			const anomaly = (id: string, triageStatus: "none" | "pending") => ({
 				id: asAnomalyId(id),
 				orgId: ORG,
 				detectorKey: `error_rate:checkout:${id}`,
@@ -521,13 +525,20 @@ describe("InvestigationService", () => {
 				lastObservedValue: 12,
 				firstTriggeredAt: now,
 				lastTriggeredAt: now,
-				triageStatus: "pending" as const,
+				triageStatus,
 				dedupeKey: id,
 				createdAt: now,
 				updatedAt: now,
 			})
 			yield* database.execute((db) =>
-				db.run(PG.insertInto(AnomalyIncidents).values([anomaly(DONE_ID), anomaly(FAILED_ID)])),
+				db.run(
+					PG.insertInto(AnomalyIncidents).values([
+						// Diagnosed before the detector marked it pending.
+						anomaly(FAST_ID, "none"),
+						anomaly(FAILED_ID, "pending"),
+						anomaly(MANUAL_ID, "pending"),
+					]),
+				),
 			)
 			const triage = (incidentId: string) =>
 				service.createInvestigation(
@@ -541,28 +552,35 @@ describe("InvestigationService", () => {
 						}),
 					}),
 				)
+			const statuses = database
+				.execute((db) =>
+					db.run(PG.from(AnomalyIncidents).select("id", "triageStatus").orderBy(["id", "asc"])),
+				)
+				.pipe(Effect.map((rows) => rows.map((row) => row.triageStatus)))
 
-			const done = yield* triage(DONE_ID)
+			const fast = yield* triage(FAST_ID)
 			yield* service.submitDiagnosis(
 				ORG,
-				done.id,
+				fast.id,
 				new SubmitDiagnosisRequest({ report: sampleReport() }),
 			)
 			const failed = yield* triage(FAILED_ID)
 			yield* service.failInvestigation(ORG, failed.id, "no_diagnosis: the pass ended in prose")
+			const manual = yield* triage(MANUAL_ID)
+			yield* service.updateStatus(ORG, manual.id, "resolved")
+			assert.deepStrictEqual(yield* statuses, ["completed", "skipped", "completed"])
 
-			const statuses = yield* database.execute((db) =>
-				db.run(PG.from(AnomalyIncidents).select("id", "triageStatus").orderBy(["id", "asc"])),
+			// A retry is triaging again, and its diagnosis completes it.
+			yield* service.restartInvestigation(ORG, failed.id)
+			assert.deepStrictEqual(yield* statuses, ["completed", "pending", "completed"])
+			yield* service.submitDiagnosis(
+				ORG,
+				failed.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
 			)
-			assert.deepStrictEqual(
-				statuses.map((row) => [row.id, row.triageStatus]),
-				[
-					[DONE_ID, "completed"],
-					[FAILED_ID, "skipped"],
-				],
-			)
-		}).pipe(Effect.provide(makeLayer())),
-	)
+			assert.deepStrictEqual(yield* statuses, ["completed", "completed", "completed"])
+		}).pipe(Effect.provide(harness.layer))
+	})
 
 	it.effect("starts an autonomous turn carrying the preserved context", () => {
 		const chat = chatSessionHarness()
