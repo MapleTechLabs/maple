@@ -963,7 +963,12 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
 	query: MetricsTimeseriesSpec,
-	range: { readonly startTime: string; readonly endTime: string; readonly bucketSeconds: number },
+	range: {
+		readonly startTime: string
+		readonly endTime: string
+		readonly bucketSeconds: number
+		readonly wholeRange?: boolean
+	},
 	contexts: { readonly value: string; readonly rate: string },
 ) {
 	const groupByAttributeKey = query.groupBy?.includes("attribute")
@@ -981,11 +986,14 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 		resourceAttributeFilters: query.filters.resourceAttributeFilters,
 		groupBy: query.groupBy,
 		seriesLimit: query.seriesLimit,
+		wholeRange: range.wholeRange,
 	}
 	const params = {
 		orgId: tenant.orgId,
 		metricName: query.filters.metricName,
-		...range,
+		startTime: range.startTime,
+		endTime: range.endTime,
+		bucketSeconds: range.bucketSeconds,
 	}
 	const groupByKey = groupByAttributeKey ?? groupByResourceAttributeKey
 
@@ -2414,6 +2422,8 @@ export interface AlertBucketRequest {
 	readonly source: AlertBucketSource
 	readonly startTime: string
 	readonly endTime: string
+	/** One bucket per group spanning [startTime, endTime], instead of the epoch-aligned grid. */
+	readonly wholeRange?: boolean
 }
 
 /** One warehouse row's contribution to an alert evaluation. */
@@ -2468,6 +2478,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 					groupBy: query.groupBy as readonly string[] | undefined,
 					apdexThresholdMs: query.metric === "apdex" ? query.apdexThresholdMs : undefined,
 					bucketSeconds,
+					wholeRange: request.wholeRange,
 				}),
 			{
 				orgId: tenant.orgId,
@@ -2497,7 +2508,13 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 				warehouse,
 				logsTimeseries,
 				tenant,
-				toLogsTimeseriesInput(request.startTime, request.endTime, query, bucketSeconds),
+				toLogsTimeseriesInput(
+					request.startTime,
+					request.endTime,
+					query,
+					bucketSeconds,
+					request.wholeRange,
+				),
 			),
 			logsTimeseries.id,
 		)
@@ -2516,7 +2533,13 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 				warehouse,
 				productEventsTimeseries,
 				tenant,
-				toProductEventsTimeseriesInput(request.startTime, request.endTime, query, bucketSeconds),
+				toProductEventsTimeseriesInput(
+					request.startTime,
+					request.endTime,
+					query,
+					bucketSeconds,
+					request.wholeRange,
+				),
 			),
 			productEventsTimeseries.id,
 		)
@@ -2535,7 +2558,12 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			warehouse,
 			tenant,
 			query,
-			{ startTime: request.startTime, endTime: request.endTime, bucketSeconds },
+			{
+				startTime: request.startTime,
+				endTime: request.endTime,
+				bucketSeconds,
+				wholeRange: request.wholeRange,
+			},
 			{ value: "metricsAlertEval", rate: "metricsRateIncreaseAlertEval" },
 		)
 		for (const row of execution.rows) {
@@ -2640,7 +2668,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
 	source: Extract<AlertBucketSource, { kind: "raw_sql" }>,
-	range: { readonly startTime: string; readonly endTime: string },
+	range: { readonly startTime: string; readonly endTime: string; readonly wholeRange?: boolean },
 ) {
 	const executeRawSql = makeExecuteRawSql<T, WarehouseQueryPathError | RawSqlValidationError>(warehouse)
 	// The same rule `prepareAlertEvaluation` applies to a spec source, and it has
@@ -2657,6 +2685,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		granularitySeconds,
 		workload: "alert",
 		context: "alertRawQuery",
+		wholeRange: range.wholeRange,
 	}).pipe(
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>
 			Effect.fail(
@@ -2777,10 +2806,13 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		const bucketSeconds = yield* prepareAlertEvaluation(request)
 
+		// The scheduler's window slides by the minute, so it rarely starts on the
+		// epoch grid; one bucket over exactly the range is the value it observes.
 		const bucketRequest = {
 			source: request.source,
 			startTime: request.startTime,
 			endTime: request.endTime,
+			wholeRange: true,
 		}
 		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds)
 		// Raw SQL may contain volatile functions. Keep its existing whole-result

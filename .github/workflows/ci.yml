@@ -489,6 +489,7 @@ jobs:
               run: >-
                   bun run --filter=@maple/backend test --
                   src/services/warehouse/WarehouseQueryService.clickhouse.e2e.test.ts
+                  src/services/warehouse/alert-window-alignment.clickhouse.e2e.test.ts
 
             # Type-checks every SQL shape the product can emit against the real
             # analyzer. ~80 shapes, ~2s — the unit tests only compare SQL text,

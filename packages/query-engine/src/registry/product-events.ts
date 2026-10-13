@@ -249,6 +249,7 @@ export interface ProductEventsTimeseriesInput {
 	readonly groupBy?: ProductEventsTimeseriesQuery["groupBy"]
 	readonly filters?: ProductEventsFilters
 	readonly seriesLimit?: number
+	readonly wholeRange?: boolean
 }
 
 export const toProductEventsTimeseriesInput = (
@@ -256,6 +257,7 @@ export const toProductEventsTimeseriesInput = (
 	endTime: string,
 	query: ProductEventsTimeseriesQuery,
 	bucketSeconds: number,
+	wholeRange?: boolean,
 ): ProductEventsTimeseriesInput => ({
 	startTime,
 	endTime,
@@ -264,13 +266,20 @@ export const toProductEventsTimeseriesInput = (
 	groupBy: query.groupBy,
 	filters: query.filters,
 	seriesLimit: query.seriesLimit,
+	...(wholeRange ? { wholeRange } : undefined),
 })
 
 export const productEventsTimeseries = defineQuery({
 	id: "productEventsTimeseries",
 	profile: "aggregation",
 	cache: makeTimeBucketQueryCachePolicy<ProductEventsTimeseriesInput>({
-		identity: ({ metric, filters, groupBy, seriesLimit }) => ({ metric, filters, groupBy, seriesLimit }),
+		identity: ({ metric, filters, groupBy, seriesLimit, wholeRange }) => ({
+			metric,
+			filters,
+			groupBy,
+			seriesLimit,
+			...(wholeRange ? { wholeRange } : undefined),
+		}),
 		fallback: 15,
 	}),
 	compile: (input: ProductEventsTimeseriesInput, orgId: OrgId) =>
@@ -281,6 +290,7 @@ export const productEventsTimeseries = defineQuery({
 				groupBy: input.groupBy,
 				bucketSeconds: input.bucketSeconds,
 				seriesLimit: input.seriesLimit,
+				wholeRange: input.wholeRange,
 			}),
 			{ orgId, startTime: input.startTime, endTime: input.endTime, bucketSeconds: input.bucketSeconds },
 		),

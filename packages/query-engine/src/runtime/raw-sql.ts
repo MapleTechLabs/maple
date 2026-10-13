@@ -30,6 +30,8 @@ export interface PrepareRawSqlInput {
 	readonly endTime: string
 	readonly granularitySeconds: number
 	readonly workload: RawSqlWorkload
+	/** `$__timeGroup` keys every row at the range start: one bucket per group. Alert evaluation sets it. */
+	readonly wholeRange?: boolean
 }
 
 export interface PreparedRawSql {
@@ -109,7 +111,9 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	const timeGroupMatches = [...sql.matchAll(/\$__timeGroup\(([^)]*)\)/g)]
 	for (const match of timeGroupMatches) {
 		const column = match[1].trim()
-		sql = sql.replace(match[0], () => `toStartOfInterval(${column}, INTERVAL ${granularity} SECOND)`)
+		sql = sql.replace(match[0], () =>
+			input.wholeRange ? startLiteral : `toStartOfInterval(${column}, INTERVAL ${granularity} SECOND)`,
+		)
 	}
 
 	// A trailing FORMAT is dropped rather than rejected: the wire format belongs

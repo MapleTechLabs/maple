@@ -18,7 +18,13 @@ import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import type { AttributeIndexMode, LogBodySearchMode } from "../../capabilities"
 import { edgeCondition, utcInteriorConditions } from "./rollup-splice"
-import { inclusionCondition, inclusionValues, severitySpellings, soleValue } from "./query-helpers"
+import {
+	inclusionCondition,
+	inclusionValues,
+	severitySpellings,
+	soleValue,
+	timeseriesBucket,
+} from "./query-helpers"
 
 // Shared options
 
@@ -267,6 +273,8 @@ export interface LogsTimeseriesOpts extends LogsQueryOpts {
 	 * with the largest total count (across all buckets) are fetched.
 	 */
 	seriesLimit?: number
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
 }
 
 export interface LogsTimeseriesOutput {
@@ -299,6 +307,8 @@ export function canUseLogsAggregatesHourly(
 	if (bucketSeconds === undefined || bucketSeconds < 3600 || bucketSeconds % 3600 !== 0) {
 		return false
 	}
+	// The MV path drops partial hours, which a sliding alert window almost always has.
+	if (opts.wholeRange) return false
 	if (opts.traceId) return false
 	if (opts.spanId) return false
 	if (opts.search) return false
@@ -366,7 +376,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 
 	const raw = from(Logs)
 		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: buildLogsGroupNameExpr($, groupByService, groupBySeverity),
 			count: CH.count(),
 		}))
