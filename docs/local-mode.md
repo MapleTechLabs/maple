@@ -656,7 +656,8 @@ until you compare it against the emitting service's logs.
 
 Set the repository Actions variable `MAPLE_RELEASE_ENABLED=true` to enable **Release**
 and **Local Binary Release**, including manual runs. Forks can leave it unset to skip
-these jobs. Use a repository or organization variable, not an environment variable.
+these jobs. Use a repository variable or an organization variable scoped to this
+repository, not an environment variable.
 Upstream maintainers must set it before merging the gate to keep releases running.
 
 ## Release bundle
