@@ -266,6 +266,8 @@ export const replyTool = Tool.make(SUBMIT_REPLY, {
 	parameters: PrReviewReplySubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	// See `diagnosisTool`: a rejected call is a result the model fixes, not a retried model call.
+	failureMode: "return",
 })
 
 export const proposeEditTool = Tool.make(PROPOSE_EDIT, {
@@ -277,6 +279,7 @@ export const proposeEditTool = Tool.make(PROPOSE_EDIT, {
 	parameters: PrReviewEditSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	failureMode: "return",
 })
 
 /**

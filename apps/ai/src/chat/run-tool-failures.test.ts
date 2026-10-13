@@ -6,7 +6,7 @@
  * the run — as a finished turn with the proposal open.
  */
 import { OrgId, UserId } from "@maple/domain"
-import { prReviewSessionId } from "@maple/domain/chat-session"
+import { prReplySessionId, prReviewSessionId } from "@maple/domain/chat-session"
 import { Effect, Exit, Layer, Schema, Stream } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
@@ -198,6 +198,47 @@ describe("runChatTurn diagnosis rejections", () => {
 		)
 		assert.lengthOf(filed, 1)
 		assert.deepInclude(filed[0], { suggestedActions: ["Roll back"] })
+	})
+})
+
+describe("runChatTurn reply rejections", () => {
+	it("hands a malformed propose_edit back to the model, which still replies", async () => {
+		const posted: Array<string> = []
+		const { model, prompts } = scriptedModel([
+			callTool("propose_edit", { path: "src/a.ts" }),
+			callTool("submit_reply", { body: "Done." }),
+			answer("Posted."),
+		])
+		const effect = runChatTurn({
+			sessionId: prReplySessionId(TENANT.orgId, "3c2e9a4b-7f1d-4c8d-8e2f-1a2b3c4d5e6f"),
+			messageId: "msg-1",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+			toolExecutor: rejectingExecutor,
+			model,
+			submitDiagnosis: () => Effect.die("no investigation in a reply session"),
+			submitReply: (_org, _id, body) => Effect.sync(() => (posted.push(body), "posted")),
+			stageEdit: () => Effect.die("a malformed edit must never reach staging"),
+			text: "@maple fix this",
+			history: [],
+			usage: makeRunUsage(),
+			holdsTurn: () => true,
+			append: () => {},
+		})
+
+		const exit = await Effect.runPromiseExit(effect)
+
+		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
+		const results = prompts[1]!.content.flatMap((message) =>
+			message.role === "tool" ? message.content : [],
+		)
+		assert.deepInclude(
+			results.map(
+				(part) => part.type === "tool-result" && { name: part.name, isFailure: part.isFailure },
+			),
+			{ name: "propose_edit", isFailure: true },
+		)
+		assert.deepEqual(posted, ["Done."])
 	})
 })
 
