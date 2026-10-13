@@ -11,6 +11,7 @@ import { Mode } from "./core/mode"
 import { annotateOutcome, isExpectedFailure, recoverExpected, renderUnexpected } from "./core/outcomes"
 import { TelemetryLayer } from "./core/telemetry"
 import { maybeNotifyUpdate } from "./core/update"
+import { maybeNotifyWhatsNew } from "./core/changelog"
 import { WarehouseExecutorFromMode } from "./core/warehouse"
 import { debugEnabled } from "./lib/debug"
 import { makeHelpCapture, usageHint } from "./lib/help"
@@ -77,7 +78,8 @@ if (checkpointProbeDataDir !== undefined) {
 
 	/* oxlint-disable effecttsgo/multiple-effect-provide */
 	/* oxlint-disable effecttsgo/strict-effect-provide */
-	maybeNotifyUpdate.pipe(
+	maybeNotifyWhatsNew.pipe(
+		Effect.andThen(maybeNotifyUpdate),
 		Effect.flatMap(() =>
 			Command.run(cli, { version: MAPLE_VERSION }).pipe(
 				Effect.track(cliInvocations),

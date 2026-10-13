@@ -456,7 +456,7 @@ const NOTIFY_SKIP_FLAGS = new Set(["--version", "-v", "--help", "-h"])
 
 /** Whether the throttled startup check should run at all. Skips dev builds, the
  *  opt-out env var, non-TTY (CI/pipes), and the update/version/help paths. */
-const shouldRunNotify = (argv: ReadonlyArray<string>): boolean => {
+export const shouldRunNotify = (argv: ReadonlyArray<string>): boolean => {
 	if (MAPLE_VERSION === "dev") return false
 	if (process.env.MAPLE_NO_UPDATE_CHECK) return false
 	if (process.stderr.isTTY !== true) return false
