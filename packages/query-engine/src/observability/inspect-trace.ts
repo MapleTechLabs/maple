@@ -122,7 +122,7 @@ export interface ProbeWindow {
 export const traceProbeWindows = (opts: {
 	readonly nowMs: number
 	readonly oldestMs: number
-	readonly coveredSinceMs?: number
+	readonly coveredSinceMs?: number | undefined
 }): ReadonlyArray<ProbeWindow> => {
 	const top = opts.coveredSinceMs
 	if (top !== undefined && top <= opts.oldestMs) return []
@@ -194,19 +194,16 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 			: yield* Effect.gen(function* () {
 					const probeWindow = (window: ProbeWindow) =>
 						executor.compiledQueryFirst(
-							CH.compile(
-								CH.recentTraceTimeProbeQuery({
-									traceId,
-									endBounded: window.endMs !== undefined,
-								}),
-								{
-									orgId: executor.orgId,
-									startTime: formatWarehouseDateTime(window.startMs),
-									...(window.endMs === undefined
-										? {}
-										: { endTime: formatWarehouseDateTime(window.endMs) }),
-								},
-							),
+							window.endMs === undefined
+								? CH.compile(CH.recentTraceTimeProbeQuery({ traceId }), {
+										orgId: executor.orgId,
+										startTime: formatWarehouseDateTime(window.startMs),
+									})
+								: CH.compile(CH.recentTraceTimeProbeQuery({ traceId, endBounded: true }), {
+										orgId: executor.orgId,
+										startTime: formatWarehouseDateTime(window.startMs),
+										endTime: formatWarehouseDateTime(window.endMs),
+									}),
 							{ profile: "discovery", context: "inspectTraceProbe" },
 						)
 					const probeTiers = (
@@ -226,7 +223,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 						traceProbeWindows({
 							nowMs,
 							oldestMs: probeStartMs,
-							...(usingDefaultLookback ? { coveredSinceMs: defaultLookbackStartMs } : {}),
+							coveredSinceMs: usingDefaultLookback ? defaultLookbackStartMs : undefined,
 						}),
 					)
 					const foundMs = Option.map(probe, (row) => DateTime.toEpochMillis(row.timestamp))

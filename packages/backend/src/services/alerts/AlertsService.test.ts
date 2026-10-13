@@ -1,4 +1,4 @@
-import { AlertDeliveryError, AlertValidationError } from "@maple/domain/http"
+import { AlertDeliveryError, AlertDeliveryRejectedError, AlertValidationError } from "@maple/domain/http"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
@@ -3735,7 +3735,8 @@ describe("AlertsService evaluation error persistence", () => {
 			assert.lengthOf(checks, 2)
 			assert.isTrue(checks.every((row) => row.ErrorCategory === "warehouse_unavailable"))
 			const rules = yield* alerts.listRules(orgId)
-			assert.isTrue(rules.rules.every((rule) => rule.lastEvaluationError === "HTTP 503"))
+			// Not the rule's fault, so the rule is not flagged as failing.
+			assert.isTrue(rules.rules.every((rule) => rule.lastEvaluationError === null))
 		}).pipe(
 			Effect.provide(
 				Layer.merge(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch }), captureLogs),
@@ -4695,7 +4696,11 @@ describe("AlertsService chat digests", () => {
 	const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("44444444-4444-4444-8444-444444444444")
 
 	/** Queues `count` trigger deliveries for one chat destination, runs a tick, and reads the queue. */
-	const runBurst = (count: number, outcome: "posted" | "rate_limited") => {
+	const runBurst = (
+		count: number,
+		outcome: "posted" | "rate_limited" | "rejected",
+		eventTypeOf: (n: number) => string = () => "trigger",
+	) => {
 		const testDb = createTestDb(trackedDbs)
 		const posts: Array<string> = []
 		const poster = Layer.succeed(ChatAlertPoster, {
@@ -4703,14 +4708,20 @@ describe("AlertsService chat digests", () => {
 				Effect.suspend(() => {
 					const card = request.blocks[0]
 					posts.push(card?.kind === "alert" ? card.title : "")
-					return outcome === "posted"
-						? Effect.succeed({ connectorName: "Test Chat", messageId: `message-${posts.length}` })
-						: Effect.fail(
-								new AlertDeliveryError({
-									message: "Discord kept rate limiting this message",
-									destinationType: "chat",
-								}),
-							)
+					if (outcome === "posted")
+						return Effect.succeed({
+							connectorName: "Test Chat",
+							messageId: `message-${posts.length}`,
+						})
+					const fields = {
+						message: "Discord refused this message",
+						destinationType: "chat" as const,
+					}
+					return Effect.fail(
+						outcome === "rejected"
+							? new AlertDeliveryRejectedError(fields)
+							: new AlertDeliveryError(fields),
+					)
 				}),
 			findChannel: () =>
 				Effect.succeed({
@@ -4740,11 +4751,14 @@ describe("AlertsService chat digests", () => {
 						ruleId: rule.id,
 						destinationId: destination.id,
 						deliveryKey: `digest-${n}`,
-						eventType: "trigger",
+						eventType: eventTypeOf(n),
 						attemptNumber: 1,
 						status: "queued",
 						scheduledAt: fixedTime - 100 + n,
-						payloadJson: JSON.stringify({ eventType: "trigger", dedupeKey: `digest-${n}` }),
+						payloadJson: JSON.stringify({
+							eventType: eventTypeOf(n) === "test" ? "test" : "trigger",
+							dedupeKey: `digest-${n}`,
+						}),
 					}),
 				),
 			)
@@ -4757,7 +4771,14 @@ describe("AlertsService chat digests", () => {
 					[],
 				),
 			)
-			return { posts, queue: queue?.summary ?? "" }
+			const health = yield* Effect.promise(() =>
+				queryFirstRow<{ failures: number; enabled: boolean }>(
+					testDb,
+					"select consecutive_failures as failures, enabled from alert_destinations where id = $1",
+					[destination.id],
+				),
+			)
+			return { posts, queue: queue?.summary ?? "", health }
 		}).pipe(
 			Effect.provide(
 				makeLayer(
@@ -4785,6 +4806,35 @@ describe("AlertsService chat digests", () => {
 			assert.lengthOf(posts, 2)
 			assert.notInclude(posts.join(","), "alert notifications")
 			assert.strictEqual(queue, "success@1,success@1")
+		}),
+	)
+
+	it.effect("counts a refused digest as one destination failure, not one per row", () =>
+		Effect.gen(function* () {
+			const { posts, queue, health } = yield* runBurst(4, "rejected")
+			assert.lengthOf(posts, 1)
+			assert.strictEqual(queue, Array(4).fill("failed@1").join(","))
+			assert.strictEqual(health?.failures, 1)
+			assert.isTrue(health?.enabled)
+		}),
+	)
+
+	it.effect("finishes every row of a failed digest even when one row's recovery fails", () =>
+		Effect.gen(function* () {
+			// The first row's stored event type cannot be read, so its retry insert fails.
+			const { queue } = yield* runBurst(4, "rate_limited", (n) =>
+				n === 1 ? "not-an-event-type" : "trigger",
+			)
+			assert.strictEqual(queue, [...Array(4).fill("failed@1"), ...Array(3).fill("queued@2")].join(","))
+		}),
+	)
+
+	it.effect("posts a digest where its first row sits in the batch, after earlier deliveries", () =>
+		Effect.gen(function* () {
+			const { posts } = yield* runBurst(5, "posted", (n) => (n === 1 ? "test" : "trigger"))
+			assert.lengthOf(posts, 2)
+			assert.notInclude(posts[0], "alert notifications")
+			assert.strictEqual(posts[1], "\u{1F514} 4 alert notifications")
 		}),
 	)
 

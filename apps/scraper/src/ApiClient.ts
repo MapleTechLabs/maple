@@ -45,8 +45,12 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 		const transportError = (error: { readonly message: string }) =>
 			new ApiRequestError({ message: `Maple API unreachable: ${error.message}`, status: null })
 
-		// One round-trip to the body text, retried while the failure is transient.
-		const roundTrip = (request: HttpClientRequest.HttpClientRequest, label: string) =>
+		// One round-trip to the body text, retried while `retryable` says the failure is transient.
+		const roundTrip = (
+			request: HttpClientRequest.HttpClientRequest,
+			label: string,
+			retryable: (status: number | null) => boolean,
+		) =>
 			Effect.gen(function* () {
 				const response = yield* client
 					.execute(request)
@@ -66,13 +70,13 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 					})
 				}
 				return text
-			}).pipe(Effect.retry({ schedule: TRANSIENT_RETRY, while: (error) => isTransientStatus(error.status) }))
+			}).pipe(Effect.retry({ schedule: TRANSIENT_RETRY, while: (error) => retryable(error.status) }))
 
 		const listTargets = Effect.fn("ApiClient.listTargets")(function* () {
 			const request = HttpClientRequest.get(`${env.MAPLE_API_URL}/api/internal/scrape-targets`, {
 				headers: authHeaders,
 			})
-			const text = yield* roundTrip(request, "scrape-targets")
+			const text = yield* roundTrip(request, "scrape-targets", isTransientStatus)
 			return yield* decodeJson(text).pipe(
 				Effect.mapError(
 					() =>
@@ -102,7 +106,9 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 			const request = HttpClientRequest.post(`${env.MAPLE_API_URL}/api/internal/scrape-results`, {
 				headers: authHeaders,
 			}).pipe(HttpClientRequest.bodyText(JSON.stringify(results), "application/json"))
-			yield* roundTrip(request, "scrape-results")
+			// Not idempotent: a timeout or dropped connection may follow a batch that landed, so only
+			// an explicit refusal (429/503) is retried here.
+			yield* roundTrip(request, "scrape-results", (status) => status === 429 || status === 503)
 		})
 
 		return { listTargets, reportResults } satisfies ApiClientApi

@@ -46,6 +46,31 @@ describe("maintenance lock recovery", () => {
 		})
 	})
 
+	it("refuses an old lock whose owner record cannot be read (EACCES)", async () => {
+		await withDataDir(async (dataDir) => {
+			const lockPath = lockPathOf(dataDir)
+			mkdirSync(lockPath, { mode: 0o700 })
+			writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.ppid }), { mode: 0o000 })
+			ageLock(lockPath, 10 * 60_000)
+			await expect(withMaintenanceLock(dataDir, randomUUID(), async () => "ran")).rejects.toThrow(
+				/ownership is uncertain/,
+			)
+			expect(existsSync(join(lockPath, "owner.json"))).toBe(true)
+		})
+	})
+
+	it("refuses an old lock whose owner record is malformed", async () => {
+		await withDataDir(async (dataDir) => {
+			const lockPath = lockPathOf(dataDir)
+			mkdirSync(lockPath, { mode: 0o700 })
+			writeFileSync(join(lockPath, "owner.json"), "{not json")
+			ageLock(lockPath, 10 * 60_000)
+			await expect(withMaintenanceLock(dataDir, randomUUID(), async () => "ran")).rejects.toThrow(
+				/ownership is uncertain/,
+			)
+		})
+	})
+
 	it("recovers a lock left under this PID by an earlier process instance", async () => {
 		await withDataDir(async (dataDir) => {
 			const lockPath = lockPathOf(dataDir)

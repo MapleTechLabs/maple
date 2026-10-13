@@ -36,8 +36,16 @@ export const ensurePrivateDirectory = async (
 	await ensureRealDirectory(path)
 	await setMode(path, 0o700).catch(async (error: NodeJS.ErrnoException) => {
 		// A bind mount or a dir pre-created by another uid: its mode is not ours
-		// to set, but a directory we can write into still works.
+		// to set, but one already private to its owner and writable by us is fine.
 		if (error.code !== "EPERM" || !(await isWritableDirectory(path))) throw error
+		const mode = (await lstat(path)).mode & 0o777
+		if ((mode & 0o077) !== 0) {
+			throw new DurableFileError({
+				path,
+				message: `cannot chmod ${path} to 0700 and its mode ${mode.toString(8)} lets group/other access it; restrict it to its owner`,
+				cause: error,
+			})
+		}
 		warnUnhardenedDirectory(path)
 	})
 }
@@ -52,7 +60,7 @@ const warnedDirectories = new Set<string>()
 const warnUnhardenedDirectory = (path: string): void => {
 	if (warnedDirectories.has(path)) return
 	warnedDirectories.add(path)
-	process.emitWarning(`cannot chmod ${path} to 0700 (owned by another user); continuing with its current mode`)
+	process.emitWarning(`cannot chmod ${path} to 0700 (owned by another user); continuing, it is already owner-only`)
 }
 
 /** Like {@link ensurePrivateDirectory}, but an already-existing directory keeps

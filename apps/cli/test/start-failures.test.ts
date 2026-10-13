@@ -14,7 +14,12 @@ import {
 	startFailureFingerprint,
 	startFailuresPath,
 } from "../src/commands/start-failures"
-import { LocalStoreDirtyError, ServerOptionError } from "../src/commands/server-errors"
+import {
+	BackgroundServerExitedError,
+	LocalStoreDirtyError,
+	ServerOptionError,
+} from "../src/commands/server-errors"
+import { ServerBindError } from "../src/server/serve"
 import { ChdbError, describeChdbOpenFailure } from "../src/server/chdb"
 
 const MINUTE = 60 * 1000
@@ -88,12 +93,9 @@ describe("guardStartFailures", () => {
 		process.exitCode = originalExitCode ?? 0
 	})
 
-	const run = <E>(error: E) =>
+	const run = <E>(error: E, options: { readonly detachedChild?: boolean } = {}) =>
 		Effect.runPromiseExit(
-			Effect.fail(error).pipe(
-				guardStartFailures(dataDir, { neverWait: true }),
-				Effect.provide(BunServices.layer),
-			),
+			Effect.fail(error).pipe(guardStartFailures(dataDir, options), Effect.provide(BunServices.layer)),
 		)
 	const clear = () => Effect.runPromise(clearStartFailures(dataDir).pipe(Effect.provide(BunServices.layer)))
 	const chdbFailure = new ChdbError({ message: "could not load libchdb at /x/libchdb.so" })
@@ -126,6 +128,39 @@ describe("guardStartFailures", () => {
 		expect(Exit.isFailure(await run(dirty))).toBe(true)
 		expect(Exit.isSuccess(await run(dirty))).toBe(true)
 		expect(process.exitCode).toBe(EXIT_START_REFUSED)
+	})
+
+	it("dedupes a taken port but keeps the ordinary exit code so supervisors retry", async () => {
+		const bind = new ServerBindError({
+			hostname: "127.0.0.1",
+			port: 4318,
+			message: "port 4318 is in use",
+		})
+		expect(Exit.isFailure(await run(bind))).toBe(true)
+		expect(Exit.isSuccess(await run(bind))).toBe(true)
+		expect(process.exitCode).toBe(0)
+	})
+
+	it("treats a start -d child that exited 78 as the same final refusal", async () => {
+		const exited = (exitCode: number) =>
+			new BackgroundServerExitedError({
+				logPath: "/x/maple.log",
+				exitCode,
+				message: "exited during startup",
+			})
+		expect(Exit.isFailure(await run(exited(EXIT_START_REFUSED)))).toBe(true)
+		expect(process.exitCode).toBe(EXIT_START_REFUSED)
+		expect(Exit.isSuccess(await run(exited(EXIT_START_REFUSED)))).toBe(true)
+
+		process.exitCode = 0
+		expect(Exit.isFailure(await run(exited(1)))).toBe(true)
+		expect(process.exitCode).toBe(0)
+	})
+
+	it("keeps a start -d child's streak apart from its parent's", async () => {
+		expect(Exit.isFailure(await run(chdbFailure, { detachedChild: true }))).toBe(true)
+		expect(Exit.isFailure(await run(chdbFailure))).toBe(true)
+		expect(Exit.isSuccess(await run(chdbFailure, { detachedChild: true }))).toBe(true)
 	})
 
 	it("passes other failures through untouched", async () => {
