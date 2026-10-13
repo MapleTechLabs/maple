@@ -140,6 +140,23 @@ describe("mapWarehouseError", () => {
 				)
 			})
 
+			// A 500 must not make a typo transient: only WarehouseUpstreamError is retried.
+			const typed500 = {
+				message:
+					"[Error] Unknown expression identifier `Status` in scope SELECT 1. (UNKNOWN_IDENTIFIER)",
+				status: 500,
+			}
+
+			it("lets a message-borne type outrank a 500 on caller SQL, so it is not retried", () => {
+				const mapped = classify("rawSqlQuery", typed500, "caller")
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
+				expect(mapped).not.toBeInstanceOf(WarehouseUpstreamError)
+			})
+
+			it("keeps a Maple query's untyped 500 a transient upstream failure", () => {
+				expect(classify("p", typed500, "maple")).toBeInstanceOf(WarehouseUpstreamError)
+			})
+
 			// The message-borne type is read for caller SQL only; Maple's own queries keep their rules.
 			it("does not read the exception type out of a Maple query's message", () => {
 				expect(

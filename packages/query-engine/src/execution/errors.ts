@@ -382,10 +382,10 @@ export const mapWarehouseError = (
 	}
 
 	const upstreamStatus = error.status ?? extractUpstreamStatus(rawMessage)
-	const hasIdentity = code !== undefined || type !== undefined
 	// Tinybird names the exception only in its text. Read it for caller SQL alone, so the
-	// classification of Maple's own queries is unchanged.
+	// classification of Maple's own queries is unchanged. A named type outranks the HTTP status.
 	const ruleType = type ?? (authoredBy === "caller" ? exceptionTypeFromMessage(rawMessage) : undefined)
+	const hasIdentity = code !== undefined || ruleType !== undefined
 	for (const rule of CLASSIFICATION_RULES) {
 		if (rule.authoredBy !== undefined && rule.authoredBy !== authoredBy) continue
 		const matches =
