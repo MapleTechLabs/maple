@@ -188,6 +188,9 @@ const MaintenanceOwnerSchema = Schema.Struct({
 	operationId: CheckpointOperationId,
 	pid: NonNegativeInt,
 	startedAt: IsoDateTime,
+	// Distinguishes this process from an earlier one that got the same PID
+	// (containers restart with deterministic PIDs).
+	instanceId: Schema.optionalKey(Schema.String),
 })
 
 type MaintenanceOwner = Schema.Schema.Type<typeof MaintenanceOwnerSchema>
@@ -1239,6 +1242,35 @@ const processIsAlive = (pid: number): boolean => {
 	}
 }
 
+const PROCESS_INSTANCE_ID = randomUUID()
+const ORPHANED_LOCK_GRACE_MS = 60_000
+
+// Only the holder's identity decides liveness, so a record written by another
+// format version still protects a live holder.
+const LockHolderSchema = Schema.Struct({
+	pid: NonNegativeInt,
+	instanceId: Schema.optionalKey(Schema.String),
+})
+type LockHolder = Schema.Schema.Type<typeof LockHolderSchema>
+
+const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "unreadable"> => {
+	const ownerPath = join(lockPath, "owner.json")
+	return assertRealFile(ownerPath, "maintenance lock owner")
+		.then(async () => Schema.decodeUnknownSync(LockHolderSchema)(JSON.parse(await readFile(ownerPath, "utf8"))))
+		.catch((): "unreadable" => "unreadable")
+}
+
+const lockIsOlderThan = (lockPath: string, ms: number): Promise<boolean> =>
+	stat(lockPath).then(
+		(info) => Date.now() - info.mtimeMs > ms,
+		() => false,
+	)
+
+/** Our own PID only counts as live when the record names this process
+ *  instance; otherwise an earlier container run wrote it under a reused PID. */
+const maintenanceOwnerIsLive = (owner: LockHolder): boolean =>
+	owner.pid === process.pid ? owner.instanceId === PROCESS_INSTANCE_ID : processIsAlive(owner.pid)
+
 const acquireMaintenance = async (
 	dataDir: string,
 	operationId: CheckpointOperationId,
@@ -1253,17 +1285,14 @@ const acquireMaintenance = async (
 		await mkdir(lockPath, { mode: 0o700 })
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
-		let owner: MaintenanceOwner
-		try {
-			const ownerPath = join(lockPath, "owner.json")
-			await assertRealFile(ownerPath, "maintenance lock owner")
-			owner = Schema.decodeUnknownSync(MaintenanceOwnerSchema)(
-				JSON.parse(readFileSync(ownerPath, "utf8")),
-			)
-		} catch {
-			throw new Error(`maintenance lock is present but ownership is uncertain: ${lockPath}`)
-		}
-		if (processIsAlive(owner.pid)) {
+		const owner = await readMaintenanceOwner(lockPath)
+		if (owner === "unreadable") {
+			// The owner record is written right after the lock dir, so an old lock
+			// without a readable record is a crash leftover, never a live holder.
+			if (!(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))) {
+				throw new Error(`maintenance lock is present but ownership is uncertain: ${lockPath}`)
+			}
+		} else if (maintenanceOwnerIsLive(owner)) {
 			throw new Error(`another Maple maintenance operation is active (PID ${owner.pid})`)
 		}
 		const quarantinedLock = `${lockPath}.quarantine-${randomUUID()}`
@@ -1275,6 +1304,7 @@ const acquireMaintenance = async (
 		operationId,
 		pid: process.pid,
 		startedAt: new Date().toISOString(),
+		instanceId: PROCESS_INSTANCE_ID,
 	}
 	await durableJson(join(lockPath, "owner.json"), owner)
 	return async () => {
