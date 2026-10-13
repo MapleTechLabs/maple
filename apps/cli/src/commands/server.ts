@@ -17,6 +17,7 @@ import {
 } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { ServerBindError, startServer } from "../server/serve"
+import { resolveProjectorModulePaths } from "../server/eventing/projector-modules"
 import { CURRENT_LOCAL_SCHEMA } from "../server/schema-identity"
 import {
 	adoptLegacySidecars,
@@ -544,6 +545,13 @@ const dataDirFlag = Flag.optional(
 	),
 )
 
+const projectorModuleFlag = Flag.String("projector-module").pipe(
+	Flag.withDescription(
+		"Load a trusted local projector .mjs module (repeatable; executes with Maple's permissions)",
+	),
+	Flag.atLeast(0),
+)
+
 const chdbConfigFileFlag = Flag.optional(
 	Flag.String("chdb-config-file").pipe(
 		Flag.withDescription(
@@ -956,6 +964,7 @@ const childFailureLine = (logPath: string, fromByte: number): string =>
 	)
 
 interface DetachedStart {
+	readonly projectorModules: readonly string[]
 	readonly bindHost: string
 	readonly advertiseHost: string
 	readonly port: number
@@ -989,6 +998,7 @@ const startDetached = (options: DetachedStart) =>
 		// not be forwarded. In dev (`bun run src/bin.ts`) argv[1] is the real
 		// script and Bun needs it; in the compiled binary execPath alone suffices.
 		const childArgs = buildDetachedChildArgs({
+			projectorModules: options.projectorModules,
 			entry: process.argv[1],
 			host: options.bindHost,
 			advertiseHost: options.advertiseHost,
@@ -1147,6 +1157,7 @@ export const start = Command.make("start", {
 	port,
 	dataDir: dataDirFlag,
 	chdbConfigFile: chdbConfigFileFlag,
+	projectorModules: projectorModuleFlag,
 	minimumRawTelemetryRetentionDays: minimumRawTelemetryRetentionDaysFlag,
 	background: backgroundFlag,
 	offline: offlineFlag,
@@ -1158,6 +1169,7 @@ export const start = Command.make("start", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const fs = yield* FileSystem
+			const projectorModules = yield* resolveProjectorModulePaths(a.projectorModules)
 			const dataDir = resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
 			const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
 			// Rejected up front, before anything is opened: a typo that quietly fell
@@ -1394,6 +1406,7 @@ export const start = Command.make("start", {
 
 					if (a.background) {
 						return yield* startDetached({
+							projectorModules,
 							bindHost,
 							advertiseHost,
 							port: a.port,
@@ -1416,6 +1429,7 @@ export const start = Command.make("start", {
 					const assets = yield* resolveUiAssets()
 
 					const { port: boundPort } = yield* startServer({
+						projectorModules,
 						hostname: bindHost,
 						browserHosts: Array.from(
 							new Set(

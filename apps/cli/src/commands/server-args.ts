@@ -142,6 +142,7 @@ export const storeChangedSince = (status: LocalStatus | undefined, sinceMs: numb
 	(status.lastDeleteAtMs != null && status.lastDeleteAtMs >= sinceMs)
 
 export interface DetachedChildArgs {
+	readonly projectorModules?: readonly string[]
 	readonly entry: string | undefined
 	readonly host: string
 	readonly advertiseHost: string
@@ -183,6 +184,7 @@ export const buildDetachedChildArgs = (options: DetachedChildArgs): string[] => 
 			? ["--minimum-raw-telemetry-retention-days", String(options.minimumRawTelemetryRetentionDays)]
 			: []),
 		...(options.offline ? ["--offline"] : []),
+		...(options.projectorModules ?? []).flatMap((path) => ["--projector-module", path]),
 	]
 }
 
