@@ -14,7 +14,7 @@ import {
 	startFailureFingerprint,
 	startFailuresPath,
 } from "../src/commands/start-failures"
-import { ServerOptionError } from "../src/commands/server-errors"
+import { LocalStoreDirtyError, ServerOptionError } from "../src/commands/server-errors"
 import { ChdbError, describeChdbOpenFailure } from "../src/server/chdb"
 
 const MINUTE = 60 * 1000
@@ -114,6 +114,18 @@ describe("guardStartFailures", () => {
 		await run(chdbFailure)
 		await clear()
 		expect(Exit.isFailure(await run(chdbFailure))).toBe(true)
+	})
+
+	it("dedupes a dirty-store refusal loop the same way", async () => {
+		const dirty = new LocalStoreDirtyError({
+			dataDir,
+			policy: "fail",
+			checkpointAvailable: true,
+			message: "the local store was not cleanly closed. Run `maple restore --yes`",
+		})
+		expect(Exit.isFailure(await run(dirty))).toBe(true)
+		expect(Exit.isSuccess(await run(dirty))).toBe(true)
+		expect(process.exitCode).toBe(EXIT_START_REFUSED)
 	})
 
 	it("passes other failures through untouched", async () => {

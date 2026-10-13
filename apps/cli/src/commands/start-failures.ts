@@ -17,6 +17,13 @@ import { dataDirSidecarPath } from "../server/store-version"
 const DETERMINISTIC_START_TAGS: ReadonlySet<string> = new Set([
 	"@maple/cli/ChdbError",
 	"@maple/cli/ServerBindError",
+	// The store refusals: each names a command a person has to run first.
+	"@maple/cli/LocalStoreDirtyError",
+	"@maple/cli/LocalStoreIncompatibleError",
+	"@maple/cli/LocalStoreSchemaStaleError",
+	"@maple/cli/LocalStoreFromNewerMapleError",
+	"@maple/cli/LocalStoreMigrationError",
+	"@maple/cli/ServerStateError",
 ])
 
 export const isDeterministicStartFailure = (error: unknown): boolean =>

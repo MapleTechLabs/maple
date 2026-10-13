@@ -219,7 +219,7 @@ port. `maple start -d` checks the port before spawning and reports ready only
 when `/local/status` answers with the child's pid (120s budget).
 
 **Under a supervisor.** A start refusal that retrying cannot fix (an unloadable
-libchdb, a taken port; the list is `DETERMINISTIC_START_TAGS` in
+libchdb, a taken port, a dirty or incompatible store; the list is `DETERMINISTIC_START_TAGS` in
 `apps/cli/src/commands/start-failures.ts`) exits with status **78**. Tell the
 supervisor not to restart on it: systemd `RestartPreventExitStatus=78`, launchd
 `KeepAlive` = `{ SuccessfulExit = false; }` plus a `ThrottleInterval`, Docker
