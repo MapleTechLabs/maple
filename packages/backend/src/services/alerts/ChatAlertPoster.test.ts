@@ -211,7 +211,7 @@ describe("ChatAlertPoster", () => {
 		}),
 	)
 
-	it.effect("reports a credential that will not open as needing a reinstall", () =>
+	it.effect("reports a credential that will not open as a retryable reinstall prompt", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(trackedDbs)
 			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
@@ -221,8 +221,10 @@ describe("ChatAlertPoster", () => {
 			)
 			yield* Effect.gen(function* () {
 				const failure = yield* post().pipe(Effect.flip)
-				assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryAuthError")
-				assert.include(failure.message, "reinstall")
+				// Maple's own credential, so retryable: it must never disable the destination.
+				assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryError")
+				assert.isTrue(failure.error.retryable)
+				assert.include(failure.message, "Reinstall")
 			}).pipe(Effect.provide(makeLayer(testDb, [])))
 		}),
 	)

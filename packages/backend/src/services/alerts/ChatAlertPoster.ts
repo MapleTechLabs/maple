@@ -128,15 +128,14 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 						// A failed LOOKUP is not a missing workspace: keep it retryable.
 						"@maple/backend/lib/DatabaseError": (cause) =>
 							Effect.fail(deliveryError("Failed to load the chat workspace", cause)),
-						// Only a reinstall writes a credential that opens.
+						// Maple could not open its own stored credential (for example after a
+						// key rotation): retryable, so no destination is disabled for it.
 						"@maple/backend/ChatWorkspaceCredentialsUnreadable": (cause) =>
 							Effect.fail(
-								new AlertDeliveryAuthError({
-									message:
-										"The chat workspace's stored credential is unreadable — reinstall the app to relink it",
-									destinationType: "chat",
+								deliveryError(
+									"The chat workspace's stored credential is unreadable. Reinstall the app to relink it",
 									cause,
-								}),
+								),
 							),
 					}),
 				)
