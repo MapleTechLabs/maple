@@ -107,3 +107,41 @@ describe("normalizeTriageSubmission", () => {
 		expect(report.unchecked).toBeUndefined()
 	})
 })
+
+/** The shapes prod models sent where a list belongs; each one used to end the turn. */
+describe("AiTriageSubmission list leniency", () => {
+	it("reads a bare string in evidence as one entry's note", () => {
+		expect(decode({ evidence: "p99 tripled at 14:02" }).evidence).toEqual([
+			{ note: "p99 tripled at 14:02" },
+		])
+	})
+
+	it("reads string entries inside evidence as notes", () => {
+		expect(decode({ evidence: ["a", { traceIds: ["t1"] }] }).evidence).toEqual([
+			{ note: "a" },
+			{ traceIds: ["t1"] },
+		])
+	})
+
+	it("wraps a single evidence object in a list", () => {
+		expect(decode({ evidence: { note: "n", traceIds: ["t1"] } }).evidence).toEqual([
+			{ note: "n", traceIds: ["t1"] },
+		])
+	})
+
+	it("parses a JSON-encoded evidence list", () => {
+		expect(decode({ evidence: '[{"note":"n"}]' }).evidence).toEqual([{ note: "n" }])
+	})
+
+	it("wraps a bare suggestedActions string", () => {
+		expect(decode({ suggestedActions: "Roll back" }).suggestedActions).toEqual(["Roll back"])
+	})
+
+	it("parses a JSON-encoded suggestedActions list", () => {
+		expect(decode({ suggestedActions: '["a","b"]' }).suggestedActions).toEqual(["a", "b"])
+	})
+
+	it("still rejects a value that is no list shape at all", () => {
+		expect(() => decode({ suggestedActions: 42 })).toThrow()
+	})
+})
