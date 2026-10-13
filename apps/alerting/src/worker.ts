@@ -19,6 +19,7 @@ import {
 	appUrlsEnv,
 	authEnv,
 	cloudflareOAuthEnv,
+	githubAppSourceEnv,
 	ingestKeyCryptoEnv,
 	merge,
 	optionalPlain,
@@ -65,6 +66,8 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		apnsEnv,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		// Ticks post pull-request replies through the GitHub App; without it each one fails.
+		githubAppSourceEnv,
 		// Outbound config for `chat` destinations' connectors.
 		...chatConnectorOutboundConfigKeys.map((key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),

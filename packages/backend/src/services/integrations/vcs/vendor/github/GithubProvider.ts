@@ -948,18 +948,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					return yield* client
 						.getCommit(installation.externalInstallationId, repo.owner, repo.name, sha)
 						.pipe(
-							Effect.map((commit) => Option.some(normalizeFetchedCommit(commit, now))),
-							// A 404 means this repo doesn't contain the SHA (or access was lost),
-							// and a 422 ("No commit found for SHA") is GitHub's answer for a
-							// well-formed SHA that names nothing — an unpushed or rewritten
-							// commit reported by a deploy. For a SHA-only probe both are "look
-							// in the next repo", not a failure. Every other GitHub failure is
-							// mapped to the port's semantic errors.
-							Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
-								error.status === 404 || error.status === 422
-									? Effect.succeed(Option.none<CommitUpsertInput>())
-									: Effect.fail(toVcsCommitError(error)),
-							),
+							// The client answers none for a SHA this repo lacks (404) or that names
+							// nothing (422): "look in the next repo", not a failure.
+							Effect.map(Option.map((commit) => normalizeFetchedCommit(commit, now))),
+							Effect.mapError(toVcsCommitError),
 						)
 				})
 
@@ -1050,8 +1042,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				client
 					.getSourceFile(installation.externalInstallationId, repo.owner, repo.name, path, ref)
 					.pipe(
-						Effect.map((file) =>
-							Option.some({
+						Effect.map(
+							Option.map((file) => ({
 								path: file.path,
 								sha: file.sha,
 								htmlUrl: file.html_url ?? `${repo.owner}/${repo.name}/${file.path}`,
@@ -1062,24 +1054,16 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 												"utf8",
 											)
 										: file.content,
-							}),
+							})),
 						),
-						Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
-							error.status === 404
-								? Effect.succeed(Option.none())
-								: Effect.fail(toVcsCommitError(error)),
-						),
+						Effect.mapError(toVcsCommitError),
 					)
 
 			const resolveRef: VcsProviderClient["resolveRef"] = (installation, repo, ref) =>
 				client.getCommit(installation.externalInstallationId, repo.owner, repo.name, ref).pipe(
-					Effect.map((commit) => Option.some(commit.sha)),
-					Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
-						// 422 is GitHub's answer for a ref that parses but names nothing.
-						error.status === 404 || error.status === 422
-							? Effect.succeed(Option.none())
-							: Effect.fail(toVcsCommitError(error)),
-					),
+					// None when the ref is absent (404) or parses but names nothing (422).
+					Effect.map(Option.map((commit) => commit.sha)),
+					Effect.mapError(toVcsCommitError),
 				)
 
 			const normalizeFileStatus = (status: string): PullRequestFile["status"] => {

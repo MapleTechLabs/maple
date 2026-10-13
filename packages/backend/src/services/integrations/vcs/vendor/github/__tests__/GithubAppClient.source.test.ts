@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import {
@@ -143,12 +143,40 @@ describe("GithubAppClient source access", () => {
 			)
 
 			const file = yield* client.getSourceFile("42", "octo", "shop", "src/checkout.ts", "main")
-			assert.strictEqual(file.content, Buffer.from("export const checkout = 1\n").toString("base64"))
+			assert.strictEqual(
+				Option.getOrUndefined(file)?.content,
+				Buffer.from("export const checkout = 1\n").toString("base64"),
+			)
 			assert.strictEqual(requests.length, 3, "the cached installation token should be reused")
 			assert.match(requests[1]!.url, /\/search\/code\?/)
 			assert.match(requests[1]!.url, /repo%3Aocto%2Fshop/)
 			assert.strictEqual(requests[1]!.headers.accept, "application/vnd.github.text-match+json")
 			assert.match(requests[2]!.url, /\/repos\/octo\/shop\/contents\/src\/checkout\.ts\?ref=main/)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("answers none for a file or commit GitHub does not have", () => {
+		const responses = [
+			jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" }),
+			new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
+			new Response(JSON.stringify({ message: "No commit found for SHA: abc" }), { status: 422 }),
+			new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
+		]
+		let nextResponse = 0
+		const http = fakeGithubHttp(() => responses[nextResponse++]!)
+		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
+			Layer.provide(http),
+			Layer.provide(env),
+		)
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const file = yield* client.getSourceFile("42", "octo", "shop", ".maple/review.md", "main")
+			const unknownSha = yield* client.getCommit("42", "octo", "shop", "a".repeat(40))
+			const otherRepo = yield* client.getCommit("42", "octo", "shop", "b".repeat(40))
+			assert.isTrue(Option.isNone(file))
+			assert.isTrue(Option.isNone(unknownSha))
+			assert.isTrue(Option.isNone(otherRepo))
 		}).pipe(Effect.provide(layer))
 	})
 })

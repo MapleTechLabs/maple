@@ -462,6 +462,7 @@ const GithubContentFileSchema = Schema.Struct({
 	encoding: Schema.String,
 	content: Schema.String,
 })
+type GithubContentFile = Schema.Schema.Type<typeof GithubContentFileSchema>
 
 const decodeOAuthToken = Schema.decodeUnknownEffect(GithubOAuthTokenResponse)
 const decodeUserInstallations = Schema.decodeUnknownEffect(GithubUserInstallationsResponse)
@@ -949,9 +950,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`,
 				)
+				// 404 (not in this repo) and 422 ("No commit found for SHA") are answers, not
+				// failures: none, so the span stays Ok.
+				if (response.status === 404 || response.status === 422) return Option.none<GithubApiCommit>()
 				if (!isOk(response)) return yield* failure(response, "Get commit", "repository")
 				const json = yield* parseJson(response, "Get commit")
 				return yield* decodeCommit(json).pipe(
+					Effect.map(Option.some),
 					Effect.mapError(
 						(cause) => new GithubAppError({ message: "Unexpected commit payload", cause }),
 					),
@@ -1840,9 +1845,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?${params.toString()}`,
 				)
+				// A path absent at that ref (rule files most repos lack, files a PR deletes) is none.
+				if (response.status === 404) return Option.none<GithubContentFile>()
 				if (!isOk(response)) return yield* failure(response, "Get repository file", "repository")
 				const json = yield* parseJson(response, "Get repository file")
 				return yield* decodeContentFile(json).pipe(
+					Effect.map(Option.some),
 					Effect.mapError(
 						(cause) =>
 							new GithubAppError({ message: "Unexpected repository file payload", cause }),
