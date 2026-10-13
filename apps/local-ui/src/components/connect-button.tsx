@@ -17,8 +17,11 @@ import { ConnectGuide } from "./connect-guide"
 export function ConnectButton() {
 	const [open, setOpen] = useState(false)
 	// The call to action until the first telemetry lands; a quiet outline after that.
+	// Latched: older binaries estimate last ingest from a short window, so it goes back
+	// to null when an app idles, and the button must not turn loud again then.
 	const status = useLocalServerStatus()
-	const hasIngested = (status.data?.lastIngestAtMs ?? null) !== null
+	const [hasIngested, setHasIngested] = useState(false)
+	if (!hasIngested && (status.data?.lastIngestAtMs ?? null) !== null) setHasIngested(true)
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
