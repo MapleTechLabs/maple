@@ -34,13 +34,22 @@ export class UpdateError extends Schema.TaggedError<UpdateError>()("@maple/cli/U
 }) {}
 
 const REPO = "MapleTechLabs/maple"
-const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`
+// Not `/releases/latest`: the npm packages cut GitHub releases too (`@maple-dev/alchemy@0.2.0`),
+// so "latest" is often not a CLI release. The list is newest first; take the first `v*` tag.
+const RELEASES_API = `https://api.github.com/repos/${REPO}/releases?per_page=100`
+const CLI_RELEASE_TAG = /^v\d+\.\d+\.\d+$/
 /** Throttle window for the startup check — hit GitHub at most once per day. */
 export const CHECK_TTL_MS = 24 * 60 * 60 * 1000
 const CHECKSUM_TIMEOUT = Duration.seconds(30)
 const DOWNLOAD_TIMEOUT = Duration.minutes(2)
 
-const LatestReleaseResponse = Schema.Struct({ tag_name: Schema.optionalKey(Schema.String) })
+const ReleasesResponse = Schema.Array(
+	Schema.Struct({
+		tag_name: Schema.String,
+		draft: Schema.optionalKey(Schema.Boolean),
+		prerelease: Schema.optionalKey(Schema.Boolean),
+	}),
+)
 
 /** Drop a leading "v" so release tags ("v0.6.0") compare against MAPLE_VERSION
  *  ("0.6.0", already stripped in version.ts). */
@@ -113,11 +122,11 @@ const toUpdateError = (prefix: string, error: unknown): UpdateError =>
 		message: `${prefix}: ${error instanceof Error ? error.message : String(error)}`,
 	})
 
-/** Fetch the latest release tag from the GitHub API (keeps the leading "v" for URL building). */
+/** Fetch the newest CLI release tag from the GitHub API (keeps the leading "v" for URL building). */
 export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
-		const request = HttpClientRequest.get(LATEST_API, {
+		const request = HttpClientRequest.get(RELEASES_API, {
 			headers: { "User-Agent": "maple-cli", Accept: "application/vnd.github+json" },
 		})
 		const response = yield* client
@@ -131,16 +140,19 @@ export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateEr
 		const text = yield* response.text.pipe(
 			Effect.mapError((error) => toUpdateError("could not read GitHub release response", error)),
 		)
-		const body = yield* Effect.try({
-			try: () => Schema.decodeUnknownSync(Schema.fromJsonString(LatestReleaseResponse))(text),
+		const releases = yield* Effect.try({
+			try: () => Schema.decodeUnknownSync(Schema.fromJsonString(ReleasesResponse))(text),
 			catch: (error) => toUpdateError("could not decode GitHub release response", error),
 		})
-		if (!body.tag_name) {
+		const latest = releases.find(
+			(r) => r.draft !== true && r.prerelease !== true && CLI_RELEASE_TAG.test(r.tag_name),
+		)
+		if (latest === undefined) {
 			return yield* new UpdateError({
 				message: "could not check for updates: no published release found",
 			})
 		}
-		return body.tag_name
+		return latest.tag_name
 	}).pipe(
 		Effect.timeoutOrElse({
 			duration: Duration.millis(timeoutMs),
