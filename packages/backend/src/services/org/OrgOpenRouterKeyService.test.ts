@@ -22,6 +22,8 @@ interface World {
 	openRouterStatus: number
 	/** OpenRouter's status for the EU instance's one-token chat completion. */
 	euChatStatus: number
+	/** OpenRouter's body for that completion. */
+	euChatBody: string
 	openRouterCalls: Array<string | null>
 	openRouterUrls: Array<string>
 	/** `MAPLE_REGION` for the service's Env. */
@@ -32,6 +34,7 @@ const makeWorld = (overrides: Partial<World> = {}): World => ({
 	autumn: "entitled",
 	openRouterStatus: 200,
 	euChatStatus: 200,
+	euChatBody: "{}",
 	openRouterCalls: [],
 	openRouterUrls: [],
 	region: "us",
@@ -72,8 +75,9 @@ const fetchStub = (world: World): typeof fetch =>
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		world.openRouterUrls.push(url)
 		world.openRouterCalls.push(new Headers(init?.headers).get("authorization"))
-		const status = url.endsWith("/chat/completions") ? world.euChatStatus : world.openRouterStatus
-		return new Response("{}", { status })
+		return url.endsWith("/chat/completions")
+			? new Response(world.euChatBody, { status: world.euChatStatus })
+			: new Response("{}", { status: world.openRouterStatus })
 	}) as typeof fetch
 
 const config = (region: World["region"]) =>
@@ -211,6 +215,26 @@ describe("OrgOpenRouterKeyService", () => {
 			}),
 		),
 	)
+
+	it.effect("refuses an EU key whose account settings leave the EU model no endpoint", () => {
+		const reason =
+			"No endpoints found for openai/gpt-6-luna. Drop Out-of-Region Endpoints After BYOK removed azure/eu."
+		return run(
+			createTestDb(trackedDbs),
+			makeWorld({
+				region: "eu",
+				euChatStatus: 404,
+				euChatBody: JSON.stringify({ error: { code: 404, message: reason } }),
+			}),
+			Effect.gen(function* () {
+				const keys = yield* OrgOpenRouterKeyService
+				const error = yield* Effect.flip(keys.set(ORG, USER, KEY))
+				assert.strictEqual(error._tag, "@maple/http/openrouter-key/OpenRouterKeyValidationError")
+				assert.include(error.message, reason)
+				assert.isFalse((yield* keys.get(ORG)).configured)
+			}),
+		)
+	})
 
 	it.effect("asks for a retry, without saving, when the EU check fails on OpenRouter's side", () =>
 		run(

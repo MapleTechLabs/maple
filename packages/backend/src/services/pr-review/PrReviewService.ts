@@ -500,32 +500,29 @@ const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined):
  *
  * `undefined` leaves the comment alone: a failure or a supersede only replaces its
  * own "reviewing" notice, so a late one cannot overwrite a summary that was already published.
+ * `null` deletes it: a superseded review's notice is noise next to the newer review's comment.
  */
 export const withReviewStatus = (
 	existing: string | undefined,
 	marker: string,
 	notice: PrReviewStatusNotice,
 	mention: string,
-): string | undefined => {
+): string | null | undefined => {
 	// Only a "reviewing" notice opens a comment; everything after it replaces that notice.
 	if (!PrReviewStatusNotice.guards.reviewing(notice) && !isReviewing(existing, notice.headSha)) {
 		return undefined
 	}
+	if (PrReviewStatusNotice.guards.superseded(notice)) return null
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
-	const lines = PrReviewStatusNotice.match(notice, {
-		reviewing: () => [
-			"> [!NOTE]",
-			`> ⏳ **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
-		],
-		failed: ({ reason }) => [
-			"> [!WARNING]",
-			`> ${failedSentence(sha, reason)} Comment \`${mention} review\` to try again.`,
-		],
-		superseded: () => [
-			"> [!NOTE]",
-			`> A newer push replaced ${sha} before its review finished. The latest commit is reviewed in a new comment.`,
-		],
-	})
+	const lines = PrReviewStatusNotice.guards.reviewing(notice)
+		? [
+				"> [!NOTE]",
+				`> ⏳ **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
+			]
+		: [
+				"> [!WARNING]",
+				`> ${failedSentence(sha, notice.reason)} Comment \`${mention} review\` to try again.`,
+			]
 	const status = encodeStatusMarker([STATUS_OPEN, notice.kind, " ", notice.headSha, " -->"])
 	return [marker, status, ...lines, STATUS_CLOSE].join("\n")
 }
@@ -1609,13 +1606,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									),
 								)
 							}
-							yield* update(orgId, row.id, {
+							// From an active state only, like completion: whichever moves the row first owns
+							// its comment, so a summary published meanwhile is never deleted.
+							const claimed = yield* updateWhere(orgId, row.id, ACTIVE_STATUSES, {
 								status: "skipped",
 								skipReason: "superseded",
 								finishedAt: nowMs,
 								updatedAt: nowMs,
 							})
-							// Its comment and check run would otherwise say it is reviewing forever.
+							if (!claimed) return
+							// Its comment would otherwise say it is reviewing forever: drop it, and skip the check.
 							yield* postReviewStatus(orgId, row.id, repo, number, {
 								kind: "superseded",
 								headSha: row.headSha,

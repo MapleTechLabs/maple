@@ -26,6 +26,7 @@ import {
 	formatTimestamp,
 	renderFields,
 	renderTable,
+	timestampMs,
 } from "./output"
 
 const right = "right" as const
@@ -36,6 +37,14 @@ const logColumns: ReadonlyArray<Column<LogEntry>> = [
 	{ header: "SERVICE", cell: (l) => l.serviceName },
 	{ header: "BODY", cell: (l) => l.body, maxWidth: 100 },
 ]
+
+const attributeColumn: Column<LogEntry> = {
+	header: "ATTRIBUTES",
+	cell: (l) =>
+		Object.entries(l.attributes ?? {})
+			.map(([k, v]) => `${k}=${v}`)
+			.join(" "),
+}
 
 const spanColumns: ReadonlyArray<Column<SpanResult>> = [
 	{ header: "TRACE ID", cell: (s) => s.traceId },
@@ -144,38 +153,26 @@ const flattenTree = (nodes: ReadonlyArray<SpanNode>): ReadonlyArray<TreeRow> => 
 	return rows
 }
 
-/**
- * A span start to epoch ms, keeping the sub-second part: local mode reports
- * `YYYY-MM-DD HH:mm:ss.fffffffff` UTC, remote mode ISO-8601.
- */
-const spanStartMs = (value: string): number => {
-	const iso = value
-		.trim()
-		.replace(" ", "T")
-		.replace(/(\.\d{3})\d+/, "$1")
-	return Date.parse(/Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`)
-}
-
-export const traceView: View<InspectTraceOutput> = {
+export const traceView: View<InspectTraceOutput & { readonly url?: string }> = {
 	isEmpty: (d) => d.spans.length === 0,
 	table: (d) => {
 		const rows = flattenTree(d.spans)
-		const starts = rows.map((r) => spanStartMs(r.span.startTime)).filter(Number.isFinite)
+		const starts = rows.map((r) => timestampMs(r.span.startTime)).filter(Number.isFinite)
 		const traceStartMs = starts.length === 0 ? Number.NaN : Math.min(...starts)
 		// Offset from the earliest span, so gaps and overlaps read straight off the column.
 		const offset = (r: TreeRow): string => {
-			const ms = spanStartMs(r.span.startTime) - traceStartMs
+			const ms = timestampMs(r.span.startTime) - traceStartMs
 			return Number.isFinite(ms) ? `+${formatDuration(ms)}` : ""
 		}
+		const summary: Array<readonly [string, string]> = [
+			["trace", d.traceId],
+			["duration", formatDuration(d.rootDurationMs)],
+			["spans", formatCount(d.spanCount)],
+			["services", formatCount(d.serviceCount)],
+		]
+		if (d.url !== undefined) summary.push(["open", d.url])
 		const sections: Array<Section> = [
-			{
-				body: renderFields([
-					["trace", d.traceId],
-					["duration", formatDuration(d.rootDurationMs)],
-					["spans", formatCount(d.spanCount)],
-					["services", formatCount(d.serviceCount)],
-				]),
-			},
+			{ body: renderFields(summary) },
 			{
 				title: "SPANS",
 				body: renderTable<TreeRow>(
@@ -260,13 +257,23 @@ export const diagnoseView: View<ServiceHealthOutput> = {
 	},
 }
 
-export const logsView = (empty: string): View<SearchLogsOutput> => ({
+export const logsView = (empty: string): View<SearchLogsOutput & { readonly url?: string }> => ({
 	empty,
 	isEmpty: (d) => d.logs.length === 0,
-	table: (d) => [{ body: renderTable(logColumns, d.logs) }],
+	table: (d) => [
+		{
+			body: renderTable(
+				d.logs.some((l) => l.attributes !== undefined)
+					? [...logColumns, attributeColumn]
+					: logColumns,
+				d.logs,
+			),
+		},
+	],
 	notes: (d) => [
 		`${formatCount(d.total)} matching log${d.total === 1 ? "" : "s"} in the window`,
 		...moreNote(d.pagination),
+		...(d.url === undefined ? [] : [`open in the UI: ${d.url}`]),
 	],
 })
 

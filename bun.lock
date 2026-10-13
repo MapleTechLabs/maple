@@ -124,6 +124,7 @@
     },
     "apps/cli": {
       "name": "@maple/cli",
+      "version": "0.0.23",
       "bin": {
         "maple": "./src/bin.ts",
       },

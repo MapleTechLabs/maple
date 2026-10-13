@@ -113,6 +113,7 @@ const layerFor = (
 		readonly embedder?: FindingEmbedderApi
 		/** Every body a summary comment was given, status notices and finished reviews alike. */
 		readonly comments?: Array<string>
+		readonly deleted?: Array<string>
 		/** Every check run state written before a result, as `<sha7>:<status or conclusion>`. */
 		readonly checks?: Array<string>
 		/** Present: the review reads these telemetry facts at start. */
@@ -204,7 +205,10 @@ const layerFor = (
 		writePullRequestSummaryComment: (_installation, _repo, input) =>
 			Effect.sync(() => {
 				const next = input.body(commentsByMarker.get(input.marker))
-				if (next !== undefined) {
+				if (next === null) {
+					commentsByMarker.delete(input.marker)
+					options.deleted?.push(input.marker)
+				} else if (next !== undefined) {
 					commentsByMarker.set(input.marker, next)
 					options.comments?.push(next)
 				}
@@ -656,9 +660,10 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
-	it.effect("closes a superseded review's comment instead of leaving it reviewing", () => {
+	it.effect("deletes a superseded review's comment instead of leaving it reviewing", () => {
 		const testDb = createTestDb(trackedDbs)
 		const comments: Array<string> = []
+		const deleted: Array<string> = []
 		return Effect.gen(function* () {
 			yield* seed(true)
 			const reviews = yield* PrReviewService
@@ -668,11 +673,10 @@ describe("PrReviewService.onPullRequestEvent", () => {
 				job({ action: "synchronize", headSha: HEAD_2 }),
 			)
 			const ofFirst = comments.filter((body) => body.startsWith(prReviewCommentMarker(first.reviewId!)))
-			assert.equal(ofFirst.length, 2)
-			assert.include(ofFirst[1]!, "A newer push replaced")
-			assert.notInclude(ofFirst[1]!, "is reviewing")
+			assert.equal(ofFirst.length, 1)
+			assert.deepEqual(deleted, [prReviewCommentMarker(first.reviewId!)])
 			assert.isTrue(comments.at(-1)!.startsWith(prReviewCommentMarker(second.reviewId!)))
-		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+		}).pipe(Effect.provide(layerFor(testDb, { comments, deleted })))
 	})
 
 	it.effect("records a review the agent could not start rather than losing it", () => {
@@ -1315,7 +1319,7 @@ describe("withReviewStatus", () => {
 		assert.notInclude(failed, "is reviewing")
 	})
 
-	it("closes its own notice when a newer push replaces the review", () => {
+	it("deletes its own notice when a newer push replaces the review", () => {
 		const reviewing = withReviewStatus(
 			undefined,
 			MARKER,
@@ -1328,8 +1332,7 @@ describe("withReviewStatus", () => {
 			{ kind: "superseded", headSha: HEAD },
 			"@maple-review-bot",
 		)
-		assert.include(superseded, "A newer push replaced")
-		assert.notInclude(superseded, "is reviewing")
+		assert.isNull(superseded)
 	})
 
 	it("leaves a finished summary alone when a review fails or is superseded late", () => {

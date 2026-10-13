@@ -156,4 +156,33 @@ describe("GithubAppClient paging", () => {
 			assert.include(requests[3], "/issues/comments/500")
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.effect("deletes the App's marked comment when the body asks for it", () => {
+		const requests: Array<string> = []
+		const ours = {
+			id: 500,
+			html_url: "https://github.com/octo/shop/pull/1#issuecomment-500",
+			body: "<!-- maple-summary --> old",
+			performed_via_github_app: { id: 123456 },
+		}
+		const layer = clientLayer(
+			[tokenResponse(), jsonResponse([ours]), new Response(null, { status: 204 })],
+			requests,
+		)
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const result = yield* client.upsertIssueComment(
+				"42",
+				"octo",
+				"shop",
+				1,
+				"<!-- maple-summary -->",
+				() => null,
+			)
+			assert.isUndefined(result)
+			assert.strictEqual(requests.length, 3)
+			assert.include(requests[2], "/issues/comments/500")
+		}).pipe(Effect.provide(layer))
+	})
 })

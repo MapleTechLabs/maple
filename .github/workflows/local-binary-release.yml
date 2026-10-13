@@ -206,13 +206,22 @@ jobs:
                   # may race here; ignore the "already exists" error.
                   # Write notes to a file using printf so we avoid heredoc indentation
                   # issues inside a YAML literal block scalar.
+                  # This version's section of the CLI changelog (written by the changesets
+                  # Version Packages PR) leads the notes; older tags have none.
+                  awk -v v="## ${TAG#v}" '$0 == v { on = 1; next } on && /^## / { exit } on' \
+                    apps/cli/CHANGELOG.md > "$RUNNER_TEMP/changes.md" || true
+                  if [ -s "$RUNNER_TEMP/changes.md" ]; then
+                    { cat "$RUNNER_TEMP/changes.md"; printf '\n---\n\n'; } > "$RUNNER_TEMP/release-notes.md"
+                  else
+                    : > "$RUNNER_TEMP/release-notes.md"
+                  fi
                   printf '%s\n\n%s\n```\n%s\n```\n\n%s\n\n%s\n' \
                     'Local Maple (`maple start`) bundles.' \
                     '**Install (macOS / Linux):**' \
                     'curl -fsSL https://maple.dev/cli/install | sh' \
                     'Or download a bundle below. Each archive contains `maple` + `libchdb.so` — keep both in the same directory. macOS: run `xattr -dr com.apple.quarantine maple libchdb.so` after extracting.' \
                     'Verify a downloaded bundle with `gh attestation verify <bundle>.tar.gz --repo MapleTechLabs/maple`. The `.sha256.sig` files are Ed25519 signatures over the `.sha256` files, checked by `maple update` and the installer.' \
-                    > "$RUNNER_TEMP/release-notes.md"
+                    >> "$RUNNER_TEMP/release-notes.md"
                   gh release create "$TAG" --repo "$REPO" \
                     --title "$TAG" \
                     --notes-file "$RUNNER_TEMP/release-notes.md" 2>/dev/null || true

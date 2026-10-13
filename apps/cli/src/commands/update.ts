@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
+import { MapleConfig } from "../core/config"
 import { releaseSignatureNotice } from "../core/release-signature"
 import { fetchLatestTag, isNewer, performUpdate, stripV, UpdateError } from "../core/update"
 import { amber, bold, cyan, dim, green } from "../lib/style"
@@ -89,9 +90,16 @@ export const update = Command.make("update", {
 				process.stderr.write(
 					`${green("✓")} updated to ${bold(stripV(result.tag))} ${dim(`(${result.installDir})`)}\n` +
 						(notice ? `  ${amber("!")} ${dim(notice)}\n` : "") +
-						`  ${dim("restart any running")} ${bold("maple start")}\n`,
+						`  ${dim("restart any running")} ${bold("maple start")}\n` +
+						// A pinned --tag can downgrade; there is nothing new to read then.
+						(isNewer(current, result.tag)
+							? `  ${dim("see what's new:")} ${bold(`maple changelog --since ${current}`)}\n`
+							: ""),
 				),
 			)
+			// The hint above already pointed at the notes; skip the next run's notice.
+			const config = yield* MapleConfig
+			yield* config.write({ lastSeenVersion: stripV(result.tag) }).pipe(Effect.ignore)
 		}),
 	),
 )

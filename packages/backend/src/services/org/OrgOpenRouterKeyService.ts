@@ -51,6 +51,13 @@ const toKeyError =
 				})
 			case "@maple/backend/openrouter/PaymentRequired":
 				return new OpenRouterKeyValidationError({ message: "This OpenRouter key has no credits left." })
+			// Only the EU check makes a chat call: OpenRouter could not route Maple's EU model on this
+			// key's account. Its message names the routing step at fault, so it is passed on.
+			case "@maple/backend/openrouter/BadRequest":
+			case "@maple/backend/openrouter/NotFound":
+				return new OpenRouterKeyValidationError({
+					message: `OpenRouter cannot serve ${EU_DEFAULT_OPENROUTER_MODEL} in the EU with this key: ${error.message} Check the provider keys and data region settings on your OpenRouter account.`,
+				})
 			default:
 				return new OpenRouterKeyPersistenceError({
 					message: `Could not check this key with OpenRouter (${error._tag}). Try again.`,

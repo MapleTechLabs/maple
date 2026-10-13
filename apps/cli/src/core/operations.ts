@@ -10,7 +10,7 @@
 // Every operation returns the same type in both modes, so commands and
 // renderers never learn which backend answered.
 
-import { Clock, DateTime, Effect, References, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, References, Schema } from "effect"
 import { CH, computeBucketSecondsForRange, type TracesMetric } from "@maple/query-engine"
 import { prepareRawSql } from "@maple/query-engine/runtime"
 import {
@@ -126,6 +126,15 @@ const dispatch = <A, E, R, E2, R2>(
 			? local.pipe(quietUnlessVerbose, Effect.mapError(localServerFailure(b.baseUrl)))
 			: Effect.mapError(remote(b), toWarehouseError(pipeName)),
 	)
+
+/** The local server's URL when commands run against it, for links into its UI. */
+export const localUiBase: Effect.Effect<Option.Option<string>, never, Mode> = Effect.flatMap(
+	Mode,
+	(mode) => mode.resolve,
+).pipe(
+	Effect.map((resolved) => (resolved._tag === "local" ? Option.some(resolved.baseUrl) : Option.none())),
+	Effect.orElseSucceed(() => Option.none<string>()),
+)
 
 /** Pipes whose compiled query filters on the `deployment_env` param. */
 const ENV_FILTERED_PIPES: ReadonlySet<string> = new Set(["list_traces", "list_logs", "logs_count"])
@@ -293,6 +302,7 @@ export const searchLogs = (p: {
 	environment?: string
 	limit?: number
 	offset?: number
+	includeAttributes?: boolean
 }) =>
 	dispatch(
 		obsSearchLogs({
@@ -303,10 +313,12 @@ export const searchLogs = (p: {
 			traceId: p.traceId,
 			limit: p.limit,
 			offset: p.offset,
+			includeAttributes: p.includeAttributes,
 		}).pipe(withEnvironment(p.environment)),
-		// A numeric offset needs the MCP tool, which has no environment filter.
+		// A numeric offset needs the MCP tool, which has no environment filter
+		// and no attributes; v2 then explains why --offset is unavailable.
 		({ v2, mcp }): Effect.Effect<SearchLogsOutput, unknown> =>
-			(p.offset ?? 0) > 0 && p.environment === undefined
+			(p.offset ?? 0) > 0 && p.environment === undefined && p.includeAttributes !== true
 				? RemoteMcp.searchLogs(mcp, p)
 				: Remote.searchLogs(v2, p),
 		"list_logs",
