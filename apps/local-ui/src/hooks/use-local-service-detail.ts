@@ -105,3 +105,61 @@ export function useLocalServiceOperationsTimeseries(
 					},
 	})
 }
+
+/** One bucket of the service's golden signals, shaped for the @maple/ui service charts. */
+export type GoldenSignalPoint = {
+	readonly bucket: string
+	/** Entry spans in the bucket; the throughput chart turns it into a rate. */
+	readonly throughput: number
+	readonly errorRate: number
+	readonly p50LatencyMs: number
+	readonly p95LatencyMs: number
+	readonly p99LatencyMs: number
+	readonly apdexScore: number
+}
+
+/**
+ * Latency, throughput, error rate and Apdex over the chart window, from the service's
+ * entry spans (the same `rootOnly` scope as the header stats). Empty buckets are filled
+ * with zero traffic so a quiet stretch reads as quiet, not as a gap.
+ */
+export function useLocalServiceGoldenSignals(serviceName: string, bounds: TimeBounds, window: ChartWindow) {
+	const { bucketSeconds, startMs, endMs } = window
+	return useQuery({
+		queryKey: ["local", "services", "golden-signals", serviceName, bucketSeconds, boundsKey(bounds)],
+		placeholderData: keepPreviousData,
+		queryFn: async ({ signal }): Promise<ReadonlyArray<GoldenSignalPoint>> => {
+			const rows = await executeLocalCompiledQuery(
+				CH.compile(
+					CH.tracesTimeseriesQuery({
+						metric: "count",
+						needsSampling: false,
+						allMetrics: true,
+						serviceName,
+						rootOnly: true,
+						bucketSeconds,
+					}),
+					{ ...localParams(bounds), bucketSeconds },
+				),
+				signal,
+			)
+			const byBucket = new Map(rows.map((row) => [DateTime.toEpochMillis(row.bucket), row] as const))
+			const stepMs = bucketSeconds * 1000
+			const firstMs = Math.floor(startMs / stepMs) * stepMs
+			const count = Math.max(0, Math.floor((endMs - firstMs) / stepMs) + 1)
+			return Array.from({ length: count }, (_, i): GoldenSignalPoint => {
+				const ms = firstMs + i * stepMs
+				const row = byBucket.get(ms)
+				return {
+					bucket: new Date(ms).toISOString(),
+					throughput: row?.count ?? 0,
+					errorRate: row?.errorRate ?? 0,
+					p50LatencyMs: row?.p50Duration ?? 0,
+					p95LatencyMs: row?.p95Duration ?? 0,
+					p99LatencyMs: row?.p99Duration ?? 0,
+					apdexScore: row?.apdexScore ?? 0,
+				}
+			})
+		},
+	})
+}
