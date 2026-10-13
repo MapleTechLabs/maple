@@ -3379,7 +3379,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							pipe: fields?.pipe,
 						}),
 					)
-					yield* persistEvaluationError(row, error.message, failureCategory)
+					yield* persistEvaluationError(row, error.message, failureCategory, true)
 				})
 
 				// The warehouse itself is down (a 5xx or unreachable backend): the rule is
@@ -3401,13 +3401,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						}),
 					)
 					yield* Metric.update(AlertingMetrics.rulesSkippedTotal, 1)
-					yield* persistEvaluationError(row, error.message, failureCategory)
+					yield* persistEvaluationError(row, error.message, failureCategory, false)
 				})
 
 				const persistEvaluationError = Effect.fnUntraced(function* (
 					row: StoredAlertRuleRow,
 					rawMessage: string,
 					failureCategory: string,
+					ruleAtFault: boolean,
 				) {
 					const failedAt = yield* now
 					const message = rawMessage.slice(0, 500)
@@ -3440,6 +3441,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							ErrorCategory: failureCategory,
 						}),
 					)
+
+					// An outage keeps the check row but not lastError, so the rule is not shown
+					// as broken for a fault that is not its own.
+					if (!ruleAtFault) return
 
 					// Persist the failure to alert_rule_states so listRules/Electric can
 					// surface it. Churn-gated (the states shape is Electric-synced): skip
