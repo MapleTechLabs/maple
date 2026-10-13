@@ -36,6 +36,17 @@ import { LogDetailSheet } from "./log-detail-sheet"
 /** Matches the query limit in `useLocalSpanLogs`; a full page means "at least". */
 const LOG_LIMIT = 100
 
+/**
+ * A deep-linked panel opens with nothing focused, so the trace view's Escape handler
+ * would never hear the key: take focus then. A click keeps focus where it was (the
+ * timeline's own keyboard navigation).
+ */
+const focusOnMount = (node: HTMLElement | null) => {
+	if (node && (document.activeElement === null || document.activeElement === document.body)) {
+		node.focus({ preventScroll: true })
+	}
+}
+
 interface SpanDetailPanelProps {
 	span: SpanNode
 	/** The trace's start and length, for the span's position bar. */
@@ -62,7 +73,11 @@ export function SpanDetailPanel({ span, traceStartTime, totalDurationMs, onClose
 	)
 
 	return (
-		<aside className="flex h-full w-full shrink-0 flex-col overflow-hidden border-l bg-background sm:w-[28rem]">
+		<aside
+			ref={focusOnMount}
+			tabIndex={-1}
+			className="flex h-full w-full shrink-0 flex-col overflow-hidden border-l bg-background focus:outline-none sm:w-[28rem]"
+		>
 			{/* Header: the left rail carries the span's service identity color */}
 			<div className="relative flex shrink-0 items-center justify-between border-b px-3 py-2">
 				<span
