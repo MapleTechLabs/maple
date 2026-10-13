@@ -415,8 +415,8 @@ export interface VcsProviderClient {
 		input: {
 			readonly number: number
 			readonly marker: string
-			/** `undefined` leaves the comment as it is. */
-			readonly body: (existing: string | undefined) => string | undefined
+			/** `undefined` leaves the comment as it is; `null` deletes it. */
+			readonly body: (existing: string | undefined) => string | null | undefined
 		},
 	) => Effect.Effect<
 		{ readonly url: string | null },
