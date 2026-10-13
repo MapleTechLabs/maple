@@ -445,7 +445,8 @@ pub fn wal_commit_internal_span(destination: &'static str) -> Span {
 ///
 /// One span per *attempt*, not per batch, so a retry storm is visible as a
 /// sequence rather than one long opaque span. `maple.ingest.outcome` is the
-/// field to filter on: `delivered` | `retry` | `dropped` | `shed_circuit_open`.
+/// field to filter on: `delivered` | `retry` | `dropped` | `deferred_circuit_open` |
+/// `shed_queue_age`.
 /// Only a terminal `dropped` sets `Error` — a retry that later succeeds is not
 /// a failure of the batch, and marking every attempt `Error` would turn a
 /// self-healing blip into an error-rate spike.

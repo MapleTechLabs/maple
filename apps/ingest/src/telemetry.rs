@@ -212,8 +212,8 @@ pub struct ClickHouseBreakerConfig {
     /// `0` disables the breaker entirely (every batch is allowed to run its
     /// full retry budget).
     pub failure_threshold: u32,
-    /// How long the breaker stays open (fast-shedding batches) before it lets a
-    /// single probe batch through to re-test the target.
+    /// How long the breaker stays open (deferring batches without calling the
+    /// target) before it lets a single probe batch through to re-test it.
     pub cooldown: Duration,
 }
 
@@ -221,9 +221,8 @@ impl Default for ClickHouseBreakerConfig {
     fn default() -> Self {
         Self {
             // Trip after 2 consecutive failures (not 4) so a stalled BYO-ClickHouse
-            // target enters fast-shed quickly, keeping the single-threaded lane
-            // worker draining instead of holding batches through the retry budget
-            // (which backs the bounded channel up into accept-path 503s).
+            // target stops being hammered quickly; batches then wait on the breaker
+            // instead of burning the retry budget against it.
             failure_threshold: 2,
             cooldown: Duration::from_secs(30),
         }
@@ -234,8 +233,8 @@ impl Default for ClickHouseBreakerConfig {
 enum BreakerDecision {
     /// The target looks healthy enough to attempt an export.
     Allow,
-    /// The target is in the open state; drop the batch immediately instead of
-    /// holding the lane worker through the retry budget.
+    /// The target is in the open state; make no attempt. The caller holds the
+    /// batch (and the WAL cursor) until a probe is admitted.
     Shed,
 }
 
@@ -298,6 +297,14 @@ impl ClickHouseBreakerRegistry {
 
     fn enabled(&self) -> bool {
         self.cfg.failure_threshold > 0
+    }
+
+    /// How often a breaker-deferred batch re-checks for a half-open probe slot.
+    fn poll_interval(&self) -> Duration {
+        self.cfg
+            .cooldown
+            .min(Duration::from_secs(1))
+            .max(Duration::from_millis(10))
     }
 
     fn state_for(&self, org_id: &str) -> Arc<Mutex<BreakerState>> {
@@ -2742,9 +2749,16 @@ impl ExportWorker {
             self.post_tinybird(&datasource, body, rows).await?;
         }
         for ((org_id, datasource), frames) in by_clickhouse {
+            // A breaker-deferred group waits at most until its oldest frame ages out.
+            let shed_at = frames
+                .iter()
+                .map(|frame| frame.enqueued_at)
+                .min()
+                .filter(|_| !max_age.is_zero())
+                .map(|oldest| oldest + max_age);
             let (body, rows) = combine_frames(frames);
             let outcome = self
-                .post_clickhouse(&org_id, &datasource, body, rows)
+                .post_clickhouse(&org_id, &datasource, body, rows, shed_at)
                 .await?;
             if outcome == ClickHouseExportOutcome::Dropped {
                 // Direct ClickHouse ingest is fail-closed to the chosen destination:
@@ -2959,6 +2973,7 @@ impl ExportWorker {
         datasource: &str,
         body: Vec<u8>,
         rows: usize,
+        shed_at: Option<Instant>,
     ) -> Result<ClickHouseExportOutcome, String> {
         let Some(mapping) = clickhouse_insert_mappings::mapping_for(datasource) else {
             metrics::clickhouse_export_dropped(datasource, "mapping_missing", rows as u64);
@@ -2981,31 +2996,67 @@ impl ExportWorker {
         // exhausted (which can only happen after at least one failure).
         let mut last_status: String;
 
+        let mut deferred = false;
+        let mut waited_on_breaker = false;
         loop {
-            // Fast-shed before doing any work: if this org's target has been
-            // failing, drop the batch instead of holding the lane worker through
-            // the retry budget. This bounds how long one unhealthy BYO-ClickHouse
-            // target can starve co-sharded ClickHouse orgs.
-            if self.clickhouse_breakers.decide(org_id, Instant::now()) == BreakerDecision::Shed {
-                // A shed makes no HTTP call, but it silently discards customer
-                // data — emit a span anyway or the drop is invisible in traces.
-                let span = clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
-                span.record("maple.ingest.outcome", "shed_circuit_open");
-                record_stage_error(&span, "circuit_open", "target circuit breaker open", true);
-                metrics::clickhouse_export_dropped(datasource, "circuit_open", rows as u64);
-                warn!(
-                    org_id,
-                    datasource,
-                    rows,
-                    attempt,
-                    "Shedding ClickHouse batch: target circuit breaker open"
-                );
-                return Ok(ClickHouseExportOutcome::Dropped);
+            // An open breaker is backpressure, not a drop: hold the batch (and so
+            // the WAL cursor) without calling the target until a probe is admitted.
+            let now = Instant::now();
+            if self.clickhouse_breakers.decide(org_id, now) == BreakerDecision::Shed {
+                if shed_at.is_some_and(|deadline| now >= deadline) {
+                    // The lane's max queue age is the one deliberate-loss bound.
+                    let span =
+                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
+                    span.record("maple.ingest.outcome", "shed_queue_age");
+                    record_stage_error(
+                        &span,
+                        "queue_age_exceeded",
+                        "target circuit breaker stayed open past the max queue age",
+                        true,
+                    );
+                    metrics::queue_age_shed(
+                        org_id,
+                        ExportDestination::ClickHouse.as_str(),
+                        datasource,
+                        rows as u64,
+                    );
+                    metrics::clickhouse_export_dropped(
+                        datasource,
+                        "queue_age_exceeded",
+                        rows as u64,
+                    );
+                    warn!(
+                        org_id,
+                        datasource,
+                        rows,
+                        attempt,
+                        "Shedding ClickHouse batch: breaker stayed open past the max queue age"
+                    );
+                    return Ok(ClickHouseExportOutcome::Dropped);
+                }
+                if !deferred {
+                    // One span per deferred batch, left Unset: waiting is not a failure.
+                    deferred = true;
+                    let span =
+                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
+                    span.record("maple.ingest.outcome", "deferred_circuit_open");
+                    metrics::clickhouse_export_retry(datasource, "circuit_open");
+                    warn!(
+                        org_id,
+                        datasource,
+                        rows,
+                        attempt,
+                        "Deferring ClickHouse batch: target circuit breaker open"
+                    );
+                }
+                waited_on_breaker = true;
+                sleep(self.clickhouse_breakers.poll_interval()).await;
+                continue;
             }
             // Backoff is taken here (before the attempt) so that when the breaker
-            // trips mid-batch the shed-check above can bail without first sleeping
-            // out the previous failure's backoff.
-            if attempt > 0 {
+            // trips mid-batch the shed-check above can wait without first sleeping
+            // out the previous failure's backoff; a breaker wait replaces it.
+            if attempt > 0 && !std::mem::take(&mut waited_on_breaker) {
                 backoff(attempt).await;
             }
 
@@ -5371,9 +5422,8 @@ mod tests {
     #[tokio::test]
     async fn clickhouse_breaker_sheds_after_threshold_failures() {
         // A persistently failing target must not burn the full retry budget on
-        // every batch: after `failure_threshold` failures the breaker bails the
-        // current batch and fast-sheds subsequent batches without touching the
-        // target, bounding how long it can hold the lane worker.
+        // every batch: after `failure_threshold` failures the breaker stops calling
+        // the target, and only the lane's max queue age turns the wait into a shed.
         let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -5393,6 +5443,7 @@ mod tests {
         cfg.queue_dir = queue_dir.clone();
         cfg.wal_shards = 1;
         cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.queue_max_age = Duration::from_millis(300);
         // Generous retry budget so the breaker — not the budget — is what stops
         // the hammering.
         cfg.export_max_attempts = 20;
@@ -5453,6 +5504,111 @@ mod tests {
             request_count.load(Ordering::SeqCst),
             2,
             "breaker-open batches must shed without hitting the target"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// ClickHouse target that answers 503 until `healthy` flips, then 200,
+    /// counting each kind of answer.
+    #[derive(Clone, Default)]
+    struct RecoveringClickHouse {
+        healthy: Arc<std::sync::atomic::AtomicBool>,
+        failed: Arc<std::sync::atomic::AtomicUsize>,
+        delivered: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    async fn recovering_clickhouse_handler(
+        State(target): State<RecoveringClickHouse>,
+        _body: Bytes,
+    ) -> StatusCode {
+        if target.healthy.load(Ordering::SeqCst) {
+            target.delivered.fetch_add(1, Ordering::SeqCst);
+            StatusCode::OK
+        } else {
+            target.failed.fetch_add(1, Ordering::SeqCst);
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+    }
+
+    #[tokio::test]
+    async fn clickhouse_breaker_open_holds_wal_cursor_until_target_recovers() {
+        // Regression for the 2026-10-13 BYO-ClickHouse 503 window: an open breaker
+        // dropped batches and advanced the cursor past them. It must hold them.
+        let target = RecoveringClickHouse::default();
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(recovering_clickhouse_handler))
+            .with_state(target.clone());
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("ch-breaker-holds");
+        let mut cfg = test_cfg();
+        cfg.endpoint = String::new();
+        cfg.token = String::new();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.clickhouse_breaker = ClickHouseBreakerConfig {
+            failure_threshold: 2,
+            cooldown: Duration::from_millis(200),
+        };
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_owned(),
+                password: String::new(),
+                database: "maple".to_owned(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse_validation(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            Some(provider),
+            false,
+        )
+        .await
+        .unwrap();
+
+        pipeline
+            .accept_logs_to(
+                "org_flap",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while target.failed.load(Ordering::SeqCst) < 2 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the target should fail enough to trip the breaker");
+        sleep(Duration::from_millis(100)).await;
+
+        let cursor_path = queue_dir.join("shard-000-clickhouse").join("lane.cursor");
+        assert_eq!(
+            read_cursor(&cursor_path),
+            SegmentCursor::default(),
+            "an open breaker must not advance the WAL cursor"
+        );
+        assert_eq!(target.delivered.load(Ordering::SeqCst), 0);
+
+        target.healthy.store(true, Ordering::SeqCst);
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::ClickHouse).await;
+        assert_eq!(
+            target.delivered.load(Ordering::SeqCst),
+            1,
+            "the held batch should be exported once the breaker closes"
         );
 
         drop(std::fs::remove_dir_all(queue_dir));
