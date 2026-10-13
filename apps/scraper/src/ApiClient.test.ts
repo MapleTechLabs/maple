@@ -177,28 +177,47 @@ describe("ApiClient", () => {
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
-	it.effect("retries a dropped connection and reports the results", () =>
+	it.effect("does not re-post results after a dropped connection, which may have landed", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const client = yield* ApiClient
+			const error = yield* client
+				.reportResults([
+					{ targetId: VALID_TARGET.id, scrapedAt: 1750000000000, error: null } as never,
+				])
+				.pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () => {
+							throw new TypeError("connection reset")
+						}),
+					),
+					Effect.flip,
+				)
+			assert.strictEqual(error.status, null)
+			assert.lengthOf(recorded, 1)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	it.effect("retries a dropped connection when listing targets", () =>
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
 			const client = yield* ApiClient
 			const fiber = yield* Effect.forkChild(
-				client
-					.reportResults([
-						{ targetId: VALID_TARGET.id, scrapedAt: 1750000000000, error: null } as never,
-					])
-					.pipe(
-						Effect.provideService(
-							FetchHttpClient.Fetch,
-							stubFetch(recorded, () => {
-								if (recorded.length === 1) throw new TypeError("connection reset")
-								return new Response(null, { status: 204 })
-							}),
-						),
+				client.listTargets().pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () => {
+							if (recorded.length === 1) throw new TypeError("connection reset")
+							return Response.json([VALID_TARGET])
+						}),
 					),
+				),
 			)
 			yield* settleAndAdvance(2)
-			yield* Fiber.join(fiber)
+			const targets = yield* Fiber.join(fiber)
 			assert.lengthOf(recorded, 2)
+			assert.lengthOf(targets, 1)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 })
