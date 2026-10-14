@@ -32,7 +32,9 @@ export const GcpConnectors = PG.table("gcp_connectors", {
 		lastReceivedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_received_at" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		// What the latest setup script run reported it set up in Google Cloud, written by the
-		// receiver. Null until a run reports: the switches above say what should be there.
+		// receiver. Null until a run reports. Logs: the switch above says what should be there.
+		// Metrics: the read-only service account every connection should have; `metrics_enabled`
+		// only switches the poller.
 		appliedLogsEnabled: PG.column(PG.nullable(PG.bool), { name: "applied_logs_enabled" }),
 		appliedMetricsEnabled: PG.column(PG.nullable(PG.bool), { name: "applied_metrics_enabled" }),
 		setupReportedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "setup_reported_at" }),

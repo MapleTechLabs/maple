@@ -10,6 +10,7 @@ import {
 	gcpConnectionState,
 	gcpCreateRequest,
 	gcpDraftEffect,
+	gcpEffectNeedsScript,
 	gcpApplicationLogsLine,
 	gcpLogFilterChoice,
 	gcpLogState,
@@ -134,15 +135,9 @@ describe("gcpMetricsState", () => {
 	const metrics = (over: Parameters<typeof connector>[0]) => gcpMetricsState(connector(over), NOW)
 	const SIGN_IN = "Maple can't sign in as this connection's read-only service account yet."
 
-	it("is off, and says whether the service account is still set up", () => {
-		expect(metrics({ metrics_enabled: false, applied_metrics_enabled: null })).toEqual({
-			kind: "off",
-			stillSetUp: false,
-		})
-		expect(metrics({ metrics_enabled: false, last_metrics_error: "x" })).toEqual({
-			kind: "off",
-			stillSetUp: true,
-		})
+	it("is off while switched off, whatever the poller said last", () => {
+		expect(metrics({ metrics_enabled: false, applied_metrics_enabled: null })).toEqual({ kind: "off" })
+		expect(metrics({ metrics_enabled: false, last_metrics_error: "x" })).toEqual({ kind: "off" })
 	})
 
 	it("is setup pending until a run reports, and hides the poller's sign-in error", () => {
@@ -252,7 +247,7 @@ describe("gcpMetricsState", () => {
 })
 
 describe("gcpConnectionState", () => {
-	const state = (over: Parameters<typeof connector>[0]) => gcpConnectionState(connector(over), NOW)
+	const state = (over: Parameters<typeof connector>[0]) => gcpConnectionState(connector(over), NOW, true)
 
 	it("needs attention when a capability is failing, incomplete or stalled", () => {
 		expect(state({ last_log_error: "wrapped" })).toBe("attention")
@@ -275,33 +270,52 @@ describe("gcpConnectionState", () => {
 		)
 	})
 
+	it("needs the script while the read-only service account is missing, with key metrics off too", () => {
+		const removed = { metrics_enabled: false, applied_metrics_enabled: false }
+		expect(state(removed)).toBe("changes-pending")
+		expect(state({ ...fresh, ...NEVER, logs_enabled: false, metrics_enabled: false })).toBe(
+			"setup-pending",
+		)
+		// A deployment without a Google identity sets no account up, so none is missing.
+		expect(gcpConnectionState(connector(removed), NOW, false)).toBe("healthy")
+		const neverRead = { ...NEVER, applied_metrics_enabled: null, last_log_received_at: ago(1) }
+		expect(gcpConnectionState(connector({ ...neverRead, metrics_enabled: false }), NOW, false)).toBe(
+			"healthy",
+		)
+	})
+
 	it("waits between the sections of a first run, and is setup pending if the second never reports", () => {
 		const midRun = { applied_metrics_enabled: null, setup_reported_at: ago(0), ...NEVER }
 		expect(state(midRun)).toBe("waiting")
-		expect(gcpSetupRunning(connector(midRun), NOW)).toBe(true)
-		expect(gcpScriptNeeded(connector(midRun), NOW)).toBeNull()
-		expect(gcpPendingChanges(connector(midRun), NOW)).toEqual([])
+		expect(gcpSetupRunning(connector(midRun), NOW, true)).toBe(true)
+		expect(gcpScriptNeeded(connector(midRun), NOW, true)).toBeNull()
+		expect(gcpPendingChanges(connector(midRun), NOW, true)).toEqual([])
+		// With key metrics off, the read-only account is the section still to come.
+		expect(gcpSetupRunning(connector({ ...midRun, metrics_enabled: false }), NOW, true)).toBe(true)
 
 		const stopped = { ...midRun, setup_reported_at: ago(3) }
 		expect(state(stopped)).toBe("setup-pending")
-		expect(gcpSetupRunning(connector(stopped), NOW)).toBe(false)
+		expect(gcpSetupRunning(connector(stopped), NOW, true)).toBe(false)
 	})
 
 	it("waits for data once the script reported", () => {
 		expect(state({ ...NEVER, setup_reported_at: ago(1) })).toBe("waiting")
 	})
 
-	it("is healthy while it receives, idles, or has a capability switched off and removed", () => {
+	it("is healthy while it receives, idles, or has a capability switched off", () => {
 		expect(state({})).toBe("healthy")
 		expect(state({ last_log_received_at: ago(3 * 24 * 60) })).toBe("healthy")
 		expect(state({ last_resources_error: "The resource list is incomplete." })).toBe("healthy")
-		expect(state({ metrics_enabled: false, applied_metrics_enabled: false })).toBe("healthy")
+		expect(state({ metrics_enabled: false })).toBe("healthy")
 		expect(state({ logs_enabled: false, applied_logs_enabled: null })).toBe("healthy")
+		expect(state({ logs_enabled: false, applied_logs_enabled: false, metrics_enabled: false })).toBe(
+			"healthy",
+		)
 	})
 })
 
 describe("gcpPendingChanges", () => {
-	const changes = (over: Parameters<typeof connector>[0]) => gcpPendingChanges(connector(over), NOW)
+	const changes = (over: Parameters<typeof connector>[0]) => gcpPendingChanges(connector(over), NOW, true)
 
 	it("lists nothing while the configuration matches the last report, or before the first run", () => {
 		expect(changes({})).toEqual([])
@@ -311,10 +325,8 @@ describe("gcpPendingChanges", () => {
 	const LOGS_START = "Log forwarding starts once the script has created the log sink."
 	const LOGS_STOP =
 		"Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink."
-	const METRICS_START =
-		"Metrics and resources start once the script has created the read-only service account."
-	const METRICS_STOP =
-		"The read-only service account stays in Google Cloud until the script has removed it."
+	const READER_START =
+		"Live metric queries and key metrics start once the script has created the read-only service account."
 
 	it("says what goes on until a re-run removes and creates", () => {
 		expect(changes({ logs_enabled: false })).toEqual([LOGS_STOP])
@@ -324,15 +336,27 @@ describe("gcpPendingChanges", () => {
 				applied_metrics_enabled: false,
 				last_metrics_received_at: ago(90),
 			}),
-		).toEqual([LOGS_STOP, METRICS_START])
+		).toEqual([LOGS_STOP, READER_START])
 		expect(
-			changes({ metrics_enabled: false, applied_logs_enabled: false, last_log_received_at: null }),
-		).toEqual([LOGS_START, METRICS_STOP])
+			changes({
+				metrics_enabled: false,
+				applied_metrics_enabled: false,
+				applied_logs_enabled: false,
+				last_log_received_at: null,
+			}),
+		).toEqual([
+			LOGS_START,
+			"Live metric queries start once the script has created the read-only service account.",
+		])
+	})
+
+	it("has nothing to say about key metrics switched off: the account stays for live queries", () => {
+		expect(changes({ metrics_enabled: false })).toEqual([])
 	})
 })
 
 describe("gcpScriptNeeded", () => {
-	const needed = (over: Parameters<typeof connector>[0]) => gcpScriptNeeded(connector(over), NOW)
+	const needed = (over: Parameters<typeof connector>[0]) => gcpScriptNeeded(connector(over), NOW, true)
 
 	it("is null while the configuration matches what the runs reported", () => {
 		expect(needed({})).toBeNull()
@@ -370,23 +394,17 @@ describe("gcpWorstState", () => {
 })
 
 describe("gcpScopeRoles", () => {
-	const both = { logs_enabled: true, metrics_enabled: true }
-
 	it("asks for nothing beyond Owner on a project", () => {
-		expect(gcpScopeRoles("project", both)).toEqual([])
+		expect(gcpScopeRoles("project", true, true)).toEqual([])
 	})
 
-	it("asks for the sink role with logs and the IAM role with metrics", () => {
-		expect(gcpScopeRoles("organization", both)).toEqual([
+	it("asks for the sink role with logs, and the IAM role wherever the deployment reads metrics", () => {
+		expect(gcpScopeRoles("organization", true, true)).toEqual([
 			"Logs Configuration Writer",
 			"Organization Administrator",
 		])
-		expect(gcpScopeRoles("folder", { logs_enabled: false, metrics_enabled: true })).toEqual([
-			"Folder IAM Admin",
-		])
-		expect(gcpScopeRoles("folder", { logs_enabled: true, metrics_enabled: false })).toEqual([
-			"Logs Configuration Writer",
-		])
+		expect(gcpScopeRoles("folder", false, true)).toEqual(["Folder IAM Admin"])
+		expect(gcpScopeRoles("folder", true, false)).toEqual(["Logs Configuration Writer"])
 	})
 })
 
@@ -417,24 +435,17 @@ describe("gcpOverlapNote", () => {
 describe("gcpCollectLock", () => {
 	const both = { logs_enabled: true, metrics_enabled: true }
 	const logsOnly = { logs_enabled: true, metrics_enabled: false }
-	const metricsOnly = { logs_enabled: false, metrics_enabled: true }
+	const neither = { logs_enabled: false, metrics_enabled: false }
 
-	it("leaves both free while both are on", () => {
-		expect(gcpCollectLock(both, "logs", true)).toBeNull()
-		expect(gcpCollectLock(both, "metrics", true)).toBeNull()
+	it("leaves both free, both off included, on a deployment that reads metrics", () => {
+		for (const flags of [both, logsOnly, neither]) {
+			expect(gcpCollectLock(flags, "logs", true)).toBeNull()
+			expect(gcpCollectLock(flags, "metrics", true)).toBeNull()
+		}
 	})
 
-	it("locks the last one that is on", () => {
-		expect(gcpCollectLock(logsOnly, "logs", true)).toBe("last-on")
-		expect(gcpCollectLock(metricsOnly, "metrics", true)).toBe("last-on")
-	})
-
-	it("lets the other be turned on", () => {
-		expect(gcpCollectLock(logsOnly, "metrics", true)).toBeNull()
-		expect(gcpCollectLock(metricsOnly, "logs", true)).toBeNull()
-	})
-
-	it("locks metrics off when the deployment cannot read them", () => {
+	it("keeps logs on and metrics off where the deployment can't read metrics", () => {
+		expect(gcpCollectLock(logsOnly, "logs", false)).toBe("logs-required")
 		expect(gcpCollectLock(logsOnly, "metrics", false)).toBe("metrics-unavailable")
 	})
 
@@ -455,8 +466,13 @@ describe("gcpDraftEffect", () => {
 		).toBe("starts-after-script")
 	})
 
+	it("starts key metrics at once while the read-only service account is in place", () => {
+		expect(gcpDraftEffect(connector({ metrics_enabled: false }), "metrics", true)).toBe("resumes-now")
+	})
+
 	it("changes nothing for a capability that stays as it is", () => {
 		expect(gcpDraftEffect(connector(), "logs", true)).toBeNull()
+		expect(gcpDraftEffect(connector({ metrics_enabled: false }), "metrics", false)).toBeNull()
 		expect(
 			gcpDraftEffect(
 				connector({ metrics_enabled: false, applied_metrics_enabled: false }),
@@ -479,12 +495,23 @@ describe("gcpDraftEffect", () => {
 		expect(gcpDraftEffect(connector({ ...fresh, ...NEVER }), "logs", false)).toBeNull()
 	})
 
-	it("leaves the removal to the script for a capability already off in Maple", () => {
+	it("leaves the removal to the script for log forwarding already off in Maple", () => {
 		expect(gcpDraftEffect(connector({ logs_enabled: false }), "logs", false)).toBe("removed-by-script")
 	})
 
 	it("resumes at once when a capability is turned back on before the script removed it", () => {
 		expect(gcpDraftEffect(connector({ logs_enabled: false }), "logs", true)).toBe("resumes-now")
+	})
+})
+
+describe("gcpEffectNeedsScript", () => {
+	it("sends a change to the script only when Google Cloud has something to set up or remove", () => {
+		expect(gcpEffectNeedsScript("logs", "stops-now")).toBe(true)
+		expect(gcpEffectNeedsScript("logs", "removed-by-script")).toBe(true)
+		expect(gcpEffectNeedsScript("metrics", "starts-after-script")).toBe(true)
+		expect(gcpEffectNeedsScript("metrics", "stops-now")).toBe(false)
+		expect(gcpEffectNeedsScript("metrics", "resumes-now")).toBe(false)
+		expect(gcpEffectNeedsScript("logs", null)).toBe(false)
 	})
 })
 
@@ -663,8 +690,11 @@ describe("gcpCreateRequest opt-ins", () => {
 		})
 	})
 
-	it("needs at least one opt-in", () => {
-		expect(Option.isNone(gcpCreateRequest(draft(false, false)))).toBe(true)
+	it("sends a connection for live queries only, with both off", () => {
+		expect(Option.getOrNull(gcpCreateRequest(draft(false, false)))).toMatchObject({
+			logs_enabled: false,
+			metrics_enabled: false,
+		})
 	})
 })
 
