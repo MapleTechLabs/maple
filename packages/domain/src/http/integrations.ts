@@ -21,6 +21,7 @@ import {
 	GcpPromQlRangeRequest,
 	GcpPromQlResult,
 	GcpPromQlTooManyProjectsError,
+	GcpPromQlTooManySeriesError,
 	GcpPromQlUnavailableError,
 } from "./gcp-promql"
 import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
@@ -1119,6 +1120,7 @@ const GCP_PROMQL_ERRORS = [
 	IntegrationsValidationError,
 	GcpPromQlInvalidQueryError,
 	GcpPromQlTooManyProjectsError,
+	GcpPromQlTooManySeriesError,
 	GcpPromQlFailedError,
 	IntegrationsUpstreamError,
 	IntegrationsPersistenceError,
