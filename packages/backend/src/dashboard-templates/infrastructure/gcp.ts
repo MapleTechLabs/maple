@@ -251,7 +251,6 @@ export const gcpTemplate: TemplateDefinition = {
 	requirement: {
 		kind: "integration",
 		label: "Google Cloud integration connected with Metrics and resources switched on",
-		missing: "not connected",
 		collector: "the Google Cloud integration with Metrics and resources switched on",
 		setupLabel: "the Google Cloud integration",
 		hint: "Connect a project, folder or organization, switch on Metrics and resources and run the setup script. Each widget fills in once its service reports.",

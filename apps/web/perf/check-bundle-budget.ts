@@ -96,7 +96,14 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // carries, the pill in the persistent top bar with its live clock, and the
 // hook's query and seen-flag atoms. The popover's panel and pointer are small
 // and render only while open, so nothing there is worth a lazy chunk.
-const maxGzipBytes = 695 * 1024
+// 699 KB from the Google Cloud integration (#1336, 2026-10-14): ~5.1 KB of
+// startup measured in CI against main's 693.7 — the gcpIntegration endpoints and
+// connector, setup-script and inventory schemas on the contracts every page's
+// client carries, the connector status rules the sidebar and the integrations
+// hub read, and the Infrastructure nav entry with its icon. Not broken down
+// further; the integration page, the Configure dialog and the /infra/gcp pages
+// stay in their route chunks.
+const maxGzipBytes = 699 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

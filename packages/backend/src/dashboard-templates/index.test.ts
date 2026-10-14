@@ -163,8 +163,12 @@ describe("dashboard template requirements", () => {
 			).toBeGreaterThan(0)
 			expect(requirement.setupLabel, `${template.id} needs a setupLabel`).toBeDefined()
 
+			// The gate is metric recency, never the connection itself, so an
+			// integration template must not claim "not connected": it reads that way
+			// for a connected integration that has been quiet for a day.
 			if (requirement.kind === "integration") {
-				expect(requirement.missing, `${template.id} needs an explicit missing label`).toBeDefined()
+				expect(prefixes, `${template.id} needs a real prefix to derive its status`).not.toContain("")
+				expect(requirement.missing, `${template.id} must derive its status`).toBeUndefined()
 			}
 			// `metrics` may omit `missing`; the picker derives `no <prefix>*`. It may
 			// not omit it when the prefix is the "any metric" sentinel, which would

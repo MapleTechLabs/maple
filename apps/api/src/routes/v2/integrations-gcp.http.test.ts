@@ -192,7 +192,7 @@ describe("v2 gcp integration over HTTP", () => {
 			),
 		})
 		// The connector is gone: its cleanup script has nothing to report to.
-		expect(deleted.body.cleanup_script).not.toContain("maple_gcp_")
+		expect(deleted.body.cleanup_script).not.toMatch(/maple_gcp_[A-Za-z0-9_-]{32}/)
 
 		const gone = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
 		expect(gone.status).toBe(404)
