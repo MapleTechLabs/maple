@@ -275,6 +275,9 @@ describe("inspectTrace not found", () => {
 		)
 		expect(Exit.isFailure(exit)).toBe(true)
 		const failure = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : Option.none()
-		expect(Option.getOrUndefined(failure)).toBeInstanceOf(CliNotFoundError)
+		const error = Option.getOrUndefined(failure)
+		expect(error).toBeInstanceOf(CliNotFoundError)
+		// The hint is what turns a dead end into a next step.
+		expect(error).toMatchObject({ hint: expect.stringContaining("maple traces") })
 	})
 })
