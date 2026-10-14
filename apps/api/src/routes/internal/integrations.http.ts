@@ -55,6 +55,7 @@ import {
 	type TopTrafficGroupDefinition,
 } from "@maple/backend/services/integrations/cloudflare-analytics/queries"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
+import { GcpPromQlService } from "@maple/backend/services/integrations/GcpPromQlService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
@@ -120,6 +121,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const railway = yield* RailwayMetricsService
 		const gcp = yield* GcpConnectorService
+		const gcpPromQl = yield* GcpPromQlService
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
 
@@ -471,6 +473,26 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						const tenant = yield* CurrentTenant.Context
 						return new GcpResourcesResponse(yield* gcp.resources(tenant.orgId, query))
 					}),
+				)
+				.handle("gcpPromQlQueryRange", ({ payload }) =>
+					Effect.flatMap(CurrentTenant.Context, (tenant) =>
+						gcpPromQl.queryRange(tenant.orgId, payload),
+					),
+				)
+				.handle("gcpPromQlQuery", ({ payload }) =>
+					Effect.flatMap(CurrentTenant.Context, (tenant) =>
+						gcpPromQl.queryInstant(tenant.orgId, payload),
+					),
+				)
+				.handle("gcpMetricSearch", ({ query }) =>
+					Effect.flatMap(CurrentTenant.Context, (tenant) =>
+						gcpPromQl.searchMetrics(tenant.orgId, query),
+					),
+				)
+				.handle("gcpMetricDescribe", ({ query }) =>
+					Effect.flatMap(CurrentTenant.Context, (tenant) =>
+						gcpPromQl.describeMetric(tenant.orgId, query),
+					),
 				)
 				.handle("githubStatus", () =>
 					Effect.gen(function* () {
