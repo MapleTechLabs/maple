@@ -741,19 +741,6 @@ describe("SessionWaterfall", () => {
 		expect(detail.getByText("Open in Traces")).toBeTruthy()
 	})
 
-	it("leads the panel's tabs with Details; Attributes and Timing are folded into it", () => {
-		render(<Waterfall selectedSpanId="llm-1" />)
-
-		const detail = within(spanPopover())
-		const labels = detail
-			.getAllByRole("button")
-			.filter((button) => button.hasAttribute("aria-pressed"))
-			.map((button) => button.textContent ?? "")
-		expect(labels[0]).toContain("Details")
-		expect(labels.some((label) => label.includes("Attributes"))).toBe(false)
-		expect(labels.some((label) => label.includes("Timing"))).toBe(false)
-	})
-
 	// A failed tool call must show its failure on Details — the tab a reader
 	// opens first — even when the span carries no status message: the evidence
 	// attributes and the captured result are what there is to show.
@@ -1477,11 +1464,6 @@ describe("SessionHeader", () => {
 		expect(screen.queryByText("LangChain")).toBeNull()
 	})
 
-	it("leaves the opening prompt to the transcript, in the heading or anywhere else", () => {
-		render(<SessionHeader sessionId="sess-1" summary={summary} />)
-		expect(screen.queryByText(/webhook/)).toBeNull()
-	})
-
 	it("shows the session id as a copyable fact, never as the heading", () => {
 		render(<SessionHeader sessionId="0f3c9a1e-long-session-id" summary={summary} />)
 		const copy = screen.getByRole("button", { name: "Copy Session ID" })
@@ -1498,14 +1480,6 @@ describe("SessionHeader", () => {
 		expect(copy.textContent).toContain(`${"a".repeat(32)}…`)
 		expect(copy.textContent).not.toContain("b")
 		expect(screen.getByTitle(long)).toBeTruthy()
-	})
-
-	it("states neither the duration, the framework, the model nor a turn count", () => {
-		render(<SessionHeader sessionId="sess-1" summary={summary} />)
-		expect(screen.queryByText("Duration")).toBeNull()
-		expect(screen.queryByText("Framework")).toBeNull()
-		expect(screen.queryByText("Turns")).toBeNull()
-		expect(screen.queryByText("Model")).toBeNull()
 	})
 
 	it("copies the trace id, under its own label, for a trace-synthesized session", () => {

@@ -128,7 +128,7 @@ describe("the v3 upgrade totality and idempotence", () => {
 		{ label: "widget is not an object", document: { widgets: [42] } },
 		{ label: "widget has no dataSource", document: { widgets: [{ id: "w" }] } },
 	])("returns $label unchanged rather than throwing", ({ document }) => {
-		expect(() => upgradeDocumentToV3(document)).not.toThrow()
+		expect(upgradeDocumentToV3(document)).toEqual(document)
 	})
 
 	it("carries an unrecognised endpoint through as a route, losing nothing", () => {

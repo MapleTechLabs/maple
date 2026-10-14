@@ -41,7 +41,8 @@ export type ChartUnit =
 	// whole seconds and renders anything at or below zero as an em dash.
 	| "milliseconds"
 	| "rate"
-	// A plain quantity: instances, connections, messages.
+	// A quantity: per-bucket event counts (requests, invocations) or levels (instances,
+	// connections), compact like "1.2K" and fractional below one.
 	| "count"
 
 /** Compact, human duration ("45s", "12m", "3h 20m", "2d 4h"). */

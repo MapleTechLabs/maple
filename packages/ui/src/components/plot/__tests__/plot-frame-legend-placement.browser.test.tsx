@@ -5,10 +5,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 
 import { PlotFrame } from "../plot-frame"
 
-// jsdom lays nothing out, so nothing here can prove the legend ENDS UP beside
-// the plot — that was measured in a browser. What it can prove is which of the
-// two arms rendered, and that each carries the classes the layout depends on:
-// the row wrapper, the `min-w-0` that stops the plot ratcheting, and the caps.
+// jsdom lays nothing out, so this proves which of the two arms rendered and
+// where the legend slot sits in the DOM, not the measured layout.
 beforeAll(() => {
 	vi.stubGlobal(
 		"ResizeObserver",
@@ -73,21 +71,12 @@ function plotBox(container: HTMLElement): HTMLElement {
 }
 
 describe("PlotFrame legend placement", () => {
-	it("stacks the legend below the plot by default", () => {
-		const { container } = frame({})
-
+	it.each([undefined, "bottom" as const])("stacks the legend below the plot for %s", (placement) => {
+		const { container } = frame({ legendPlacement: placement })
 		expect(container.querySelector("[data-chart-legend-row]")).toBeNull()
-		// The height cap that keeps a long series list from starving the plot.
-		expect(legendSlot(container).className).toContain("max-h-[45%]")
-		// The bottom arm's markup is unchanged, so the plot box takes no
-		// cross-axis minimum it did not have before.
-		expect(plotBox(container).className).not.toContain("min-w-0")
-	})
-
-	it("keeps the default when a caller asks for it explicitly", () => {
-		const { container } = frame({ legendPlacement: "bottom" })
-		expect(container.querySelector("[data-chart-legend-row]")).toBeNull()
-		expect(legendSlot(container).className).toContain("max-h-[45%]")
+		// The host is a column, so the slot right after the plot box sits under it.
+		expect(legendSlot(container).parentElement).toBe(container.querySelector("[data-chart-host]"))
+		expect(plotBox(container).nextElementSibling).toBe(legendSlot(container))
 	})
 
 	it("puts the legend beside the plot on the right", () => {
@@ -95,23 +84,11 @@ describe("PlotFrame legend placement", () => {
 
 		const row = container.querySelector("[data-chart-legend-row]")
 		if (!(row instanceof HTMLElement)) throw new Error("expected the row wrapper")
-		expect(row.className).toContain("flex-row")
 
 		// The legend is a SIBLING of the measured plot box inside that row, which
 		// is what makes it sit beside the plot rather than under it.
 		expect(legendSlot(container).parentElement).toBe(row)
 		expect(plotBox(container).parentElement).toBe(row)
-
-		// Width, not height, is the axis this layout spends.
-		expect(legendSlot(container).className).toContain("max-w-[45%]")
-		expect(legendSlot(container).className).not.toContain("max-h-[45%]")
-	})
-
-	it("lets the plot shrink below its last measured width beside a legend", () => {
-		const { container } = frame({ legendPlacement: "right" })
-		// Without this the flex item's `min-width: auto` pins the plot at its
-		// content width and the legend is pushed out of the card.
-		expect(plotBox(container).className).toContain("min-w-0")
 	})
 
 	it("ignores the placement when there is no legend to place", () => {

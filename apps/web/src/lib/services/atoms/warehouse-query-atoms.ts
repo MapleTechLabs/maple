@@ -47,6 +47,7 @@ import {
 	listPods,
 	podsSummary,
 	podDetailSummary,
+	podRestarts,
 	podInfraTimeseries,
 	listNodes,
 	nodeDetailSummary,
@@ -71,6 +72,7 @@ import {
 	getCloudflarePlatformResources,
 	getCloudflareTopTraffic,
 	getCloudflareWorkers,
+	getCloudflareWorkerDetail,
 	getCloudflareZoneBreakdown,
 	getCloudflareZoneDetail,
 	getCloudflareZoneDns,
@@ -598,6 +600,10 @@ export const podDetailSummaryResultAtom = makeQueryAtomFamily(podDetailSummary, 
 	staleTime: 30_000,
 })
 
+export const podRestartsResultAtom = makeQueryAtomFamily(podRestarts, {
+	staleTime: 30_000,
+})
+
 export const podInfraTimeseriesResultAtom = makeQueryAtomFamily(podInfraTimeseries, {
 	staleTime: 30_000,
 })
@@ -673,6 +679,10 @@ export const cloudflareZoneDetailResultAtom = makeQueryAtomFamily(getCloudflareZ
 })
 
 export const cloudflareWorkersResultAtom = makeQueryAtomFamily(getCloudflareWorkers, {
+	staleTime: 30_000,
+})
+
+export const cloudflareWorkerDetailResultAtom = makeQueryAtomFamily(getCloudflareWorkerDetail, {
 	staleTime: 30_000,
 })
 

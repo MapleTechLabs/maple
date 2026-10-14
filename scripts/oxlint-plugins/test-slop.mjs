@@ -1,0 +1,451 @@
+/**
+ * Local oxlint JS plugin for test cases that cannot catch a bug. Scoped to test files in
+ * `.oxlintrc.json`. Each rule is a shape the 2026-10 test audit found deleting was free:
+ * the case either mirrored the source, asserted nothing about the result, or grepped code.
+ */
+
+const TEST_CALLEES = new Set(["it", "test"])
+const TEST_MODIFIERS = new Set([
+	"effect",
+	"live",
+	"scoped",
+	"scopedLive",
+	"only",
+	"skip",
+	"fails",
+	"concurrent",
+	"prop",
+])
+
+/** `it(...)`, `it.effect(...)`, `it.each(rows)(...)`, `test.skip(...)`. */
+const isTestCall = (node) => {
+	let callee = node.callee
+	if (callee.type === "CallExpression") callee = callee.callee
+	if (callee.type === "Identifier") return TEST_CALLEES.has(callee.name)
+	if (callee.type !== "MemberExpression" || callee.computed) return false
+	if (callee.object.type !== "Identifier" || !TEST_CALLEES.has(callee.object.name)) return false
+	return TEST_MODIFIERS.has(callee.property.name) || callee.property.name === "each"
+}
+
+const testCallback = (node) => {
+	const last = node.arguments.at(-1)
+	if (last?.type === "ArrowFunctionExpression" || last?.type === "FunctionExpression") return last
+	return undefined
+}
+
+/** `expect(x).not.toBe(y)` → `{ subject: x, matcher: "toBe", negated: true, args: [y] }`. */
+const readExpect = (node) => {
+	if (node.callee.type !== "MemberExpression" || node.callee.computed) return undefined
+	const matcher = node.callee.property.name
+	let negated = false
+	let object = node.callee.object
+	while (object.type === "MemberExpression" && !object.computed) {
+		const name = object.property.name
+		if (name === "not") negated = true
+		else if (name !== "resolves" && name !== "rejects" && name !== "soft") return undefined
+		object = object.object
+	}
+	if (object.type !== "CallExpression") return undefined
+	const root = object.callee
+	const isExpect =
+		(root.type === "Identifier" && root.name === "expect") ||
+		(root.type === "MemberExpression" &&
+			root.object.type === "Identifier" &&
+			root.object.name === "expect")
+	if (!isExpect) return undefined
+	return { subject: object.arguments[0], matcher, negated, args: node.arguments }
+}
+
+/** `assert.strictEqual(a, b)` or a bare `strictEqual(a, b)` from `node:assert`. */
+const readAssert = (node, nodeAssertNames) => {
+	const callee = node.callee
+	if (
+		callee.type === "MemberExpression" &&
+		!callee.computed &&
+		callee.object.type === "Identifier" &&
+		callee.object.name === "assert"
+	) {
+		return { name: callee.property.name, args: node.arguments }
+	}
+	if (callee.type === "Identifier" && nodeAssertNames.has(callee.name)) {
+		return { name: nodeAssertNames.get(callee.name), args: node.arguments }
+	}
+	if (callee.type === "Identifier" && callee.name === "assert") return { name: "ok", args: node.arguments }
+	return undefined
+}
+
+const isLiteralValue = (node) => {
+	if (!node) return false
+	switch (node.type) {
+		case "Literal":
+			return true
+		case "TemplateLiteral":
+			return node.expressions.length === 0
+		case "UnaryExpression":
+			return node.operator === "-" && node.argument.type === "Literal"
+		case "ArrayExpression":
+			return node.elements.every((element) => element !== null && isLiteralValue(element))
+		case "ObjectExpression":
+			return node.properties.every(
+				(property) => property.type === "Property" && isLiteralValue(property.value),
+			)
+		default:
+			return false
+	}
+}
+
+const memberRoot = (node) => {
+	let current = node
+	while (current.type === "MemberExpression") current = current.object
+	return current
+}
+
+const SCREAMING_CASE = /^[A-Z][A-Z0-9_]*$/
+
+const NODE_ASSERT_MODULES = new Set(["assert", "node:assert", "assert/strict", "node:assert/strict"])
+
+/** Imported names, plus a local → original map of `node:assert` named imports. */
+const trackImports = (imported, nodeAssertNames) => (node) => {
+	const fromNodeAssert = NODE_ASSERT_MODULES.has(node.source.value)
+	for (const specifier of node.specifiers) {
+		imported.add(specifier.local.name)
+		if (fromNodeAssert && specifier.type === "ImportSpecifier") {
+			nodeAssertNames.set(specifier.local.name, specifier.imported.name ?? specifier.imported.value)
+		}
+	}
+}
+
+// --- no-constant-pin -------------------------------------------------------------------------
+
+const CONSTANT_PIN_MESSAGE =
+	"Do not assert an imported constant against a literal. The test restates the source and fails on every intended change. Test the behavior the constant drives, or delete the case."
+
+const PIN_MATCHERS = new Set([
+	"toBe",
+	"toEqual",
+	"toStrictEqual",
+	"toContain",
+	"toMatchObject",
+	"toContainEqual",
+])
+const PIN_ASSERTS = new Set([
+	"strictEqual",
+	"deepStrictEqual",
+	"equal",
+	"deepEqual",
+	"include",
+	"sameMembers",
+	"sameDeepMembers",
+])
+
+const isImportedConstant = (node, imported) => {
+	if (!node || (node.type !== "Identifier" && node.type !== "MemberExpression")) return false
+	const root = memberRoot(node)
+	return root.type === "Identifier" && imported.has(root.name) && SCREAMING_CASE.test(root.name)
+}
+
+const noConstantPin = {
+	meta: {
+		type: "suggestion",
+		docs: { description: "Disallow asserting an imported SCREAMING_CASE constant against a literal." },
+		messages: { noConstantPin: CONSTANT_PIN_MESSAGE },
+	},
+	create(context) {
+		const imported = new Set()
+		const nodeAssertNames = new Map()
+		return {
+			ImportDeclaration: trackImports(imported, nodeAssertNames),
+			CallExpression(node) {
+				const expectation = readExpect(node)
+				if (expectation) {
+					if (expectation.negated || !PIN_MATCHERS.has(expectation.matcher)) return
+					if (
+						isImportedConstant(expectation.subject, imported) &&
+						isLiteralValue(expectation.args[0])
+					) {
+						context.report({ node, messageId: "noConstantPin" })
+					}
+					return
+				}
+				const assertion = readAssert(node, nodeAssertNames)
+				if (!assertion || !PIN_ASSERTS.has(assertion.name)) return
+				if (isImportedConstant(assertion.args[0], imported) && isLiteralValue(assertion.args[1])) {
+					context.report({ node, messageId: "noConstantPin" })
+				}
+			},
+		}
+	},
+}
+
+// --- no-weak-only-assertions -----------------------------------------------------------------
+
+const WEAK_ONLY_MESSAGE =
+	"Every assertion in this test only checks that something exists or did not throw. Assert the value the code produced, or delete the case."
+
+const PRESENCE_MATCHERS = new Set(["toBeDefined"])
+const TRUTHY_MATCHERS = new Set(["toBeTruthy"])
+const WEAK_NEGATED_MATCHERS = new Set(["toThrow", "toThrowError", "toBeUndefined"])
+const PRESENCE_ASSERTS = new Set([
+	"isDefined",
+	"exists",
+	"isNotNull",
+	"isNotUndefined",
+	"doesNotThrow",
+	"isFunction",
+])
+const TRUTHY_ASSERTS = new Set(["ok", "isOk"])
+
+/** `expect(() => decode(Schema, body)).not.toThrow()` is a contract check, not a smoke test. */
+const VALIDATES = /decode|encode|validate|parse|assert/i
+const throwsOnInvalid = (fn) => {
+	let found = false
+	walk(fn, (child) => {
+		if (child.type !== "CallExpression") return
+		const name = calleeName(child.callee)
+		if (typeof name === "string" && VALIDATES.test(name)) found = true
+	})
+	return found
+}
+
+/** `ok(x)` only checks presence; `ok(isFailure(x))` or `ok(a === b)` checks a computed fact. */
+const isBareValue = (node) =>
+	node?.type === "Identifier" || node?.type === "MemberExpression" || node?.type === "ChainExpression"
+
+/** A Testing Library query throws when the element is missing, so asserting on it is real. */
+const isThrowingQuery = (node) => {
+	let current = node
+	if (current?.type === "AwaitExpression") current = current.argument
+	if (current?.type !== "CallExpression") return false
+	const callee = current.callee
+	const name = callee.type === "MemberExpression" ? callee.property.name : callee.name
+	return typeof name === "string" && /^(get|find)(All)?By/.test(name)
+}
+
+const isTypeofFunction = (expectation) =>
+	expectation.subject?.type === "UnaryExpression" &&
+	expectation.subject.operator === "typeof" &&
+	expectation.matcher === "toBe"
+
+/** `true` strong, `false` weak, `undefined` not an assertion. */
+const classifyAssertion = (node, nodeAssertNames) => {
+	const expectation = readExpect(node)
+	if (expectation) {
+		if (isThrowingQuery(expectation.subject)) return true
+		if (isTypeofFunction(expectation)) return false
+		if (expectation.negated && expectation.matcher.startsWith("toThrow"))
+			return throwsOnInvalid(expectation.subject)
+		if (expectation.negated) return !WEAK_NEGATED_MATCHERS.has(expectation.matcher)
+		if (expectation.matcher === "toHaveProperty") return expectation.args.length > 1
+		if (TRUTHY_MATCHERS.has(expectation.matcher)) return !isBareValue(expectation.subject)
+		return !PRESENCE_MATCHERS.has(expectation.matcher)
+	}
+	const assertion = readAssert(node, nodeAssertNames)
+	if (assertion) {
+		if (isThrowingQuery(assertion.args[0])) return true
+		if (assertion.name === "doesNotThrow") return throwsOnInvalid(assertion.args[0])
+		if (TRUTHY_ASSERTS.has(assertion.name)) return !isBareValue(assertion.args[0])
+		return !PRESENCE_ASSERTS.has(assertion.name)
+	}
+	const callee = node.callee
+	const name = callee.type === "MemberExpression" && !callee.computed ? callee.property.name : callee.name
+	// Helpers like `expectRow(...)` or `assertDecodes(...)` hide their assertions; trust them.
+	if (typeof name === "string" && /^(expect|assert|check|verify)[A-Z_]/.test(name)) return true
+	return undefined
+}
+
+const noWeakOnlyAssertions = {
+	meta: {
+		type: "suggestion",
+		docs: { description: "Disallow tests whose only assertions are existence or does-not-throw checks." },
+		messages: { noWeakOnlyAssertions: WEAK_ONLY_MESSAGE },
+	},
+	create(context) {
+		const nodeAssertNames = new Map()
+		const frames = []
+		return {
+			ImportDeclaration: trackImports(new Set(), nodeAssertNames),
+			CallExpression(node) {
+				if (isTestCall(node) && testCallback(node)) {
+					frames.push({ node, strong: 0, weak: 0 })
+					return
+				}
+				const frame = frames.at(-1)
+				if (!frame) return
+				const verdict = classifyAssertion(node, nodeAssertNames)
+				if (verdict === true) frame.strong++
+				else if (verdict === false) frame.weak++
+			},
+			"CallExpression:exit"(node) {
+				const frame = frames.at(-1)
+				if (frame?.node !== node) return
+				frames.pop()
+				// A type-level test's real assertion is the `@ts-expect-error` the compiler checks.
+				const typeLevel = context.sourceCode
+					.getCommentsInside(node)
+					.some((comment) => comment.value.includes("@ts-expect-error"))
+				if (frame.weak > 0 && frame.strong === 0 && !typeLevel)
+					context.report({ node, messageId: "noWeakOnlyAssertions" })
+			},
+		}
+	},
+}
+
+// --- no-source-text-assertions ---------------------------------------------------------------
+
+const SOURCE_TEXT_MESSAGE =
+	"Do not read source files in a test to assert on their text. That is a lint rule written as a test: it breaks on formatting and passes on equivalent spellings. Use an oxlint rule (`no-restricted-imports`, or a rule in scripts/oxlint-plugins/) instead."
+
+const READ_CALLS = new Set(["readFileSync", "readFile", "readdirSync", "readdir", "globSync", "glob", "file"])
+const FS_OBJECTS = new Set(["fs", "fsp", "promises", "Bun"])
+const EXEC_CALLS = new Set(["execFileSync", "execSync", "spawnSync"])
+const SOURCE_EXTENSION = /\.(m?[jt]sx?|rs|mdx?|astro|css)$/
+const FIXTURE_EXTENSION = /\.(json|sql|txt|csv|ndjson|bin|gz)$/
+
+const calleeName = (callee) => {
+	if (callee.type === "Identifier") return callee.name
+	if (callee.type === "MemberExpression" && !callee.computed) return callee.property.name
+	return undefined
+}
+
+/** `readFileSync(...)`, `fs.readFileSync(...)`, `Bun.file(...)`, `import.meta.glob(...)`; not `service.readFile(...)`. */
+const isFsRead = (callee) => {
+	if (callee.type === "Identifier") return READ_CALLS.has(callee.name) && callee.name !== "file"
+	if (callee.type !== "MemberExpression" || callee.computed || !READ_CALLS.has(callee.property.name))
+		return false
+	if (callee.object.type === "MetaProperty") return true
+	return callee.object.type === "Identifier" && FS_OBJECTS.has(callee.object.name)
+}
+
+const walk = (node, visit) => {
+	if (!node || typeof node !== "object") return
+	visit(node)
+	for (const key of Object.keys(node)) {
+		if (key === "parent") continue
+		const child = node[key]
+		if (Array.isArray(child)) for (const item of child) walk(item, visit)
+		else if (child && typeof child === "object" && typeof child.type === "string") walk(child, visit)
+	}
+}
+
+const scan = (nodes, anchored) => {
+	const found = { strings: [], anchored: false }
+	for (const node of nodes) {
+		walk(node, (child) => {
+			if (child.type === "Literal" && typeof child.value === "string") found.strings.push(child.value)
+			if (child.type === "TemplateElement") found.strings.push(child.value.cooked ?? "")
+			if (child.type === "MetaProperty") found.anchored = true
+			if (child.type === "Identifier" && (child.name === "__dirname" || anchored.has(child.name)))
+				found.anchored = true
+		})
+	}
+	return found
+}
+
+const noSourceTextAssertions = {
+	meta: {
+		type: "suggestion",
+		docs: { description: "Disallow tests that read the repo's own source files to grep them." },
+		messages: { noSourceTextAssertions: SOURCE_TEXT_MESSAGE },
+	},
+	create(context) {
+		// Names bound to a path derived from the test's own location (`new URL("..", import.meta.url)`).
+		const anchored = new Set()
+		return {
+			VariableDeclarator(node) {
+				// One level only: `join(ROOT, "out.json")` derived from an anchored root is usually a scratch dir.
+				// A path that names a data file or a fixtures dir is test data, not source.
+				if (node.id.type !== "Identifier" || !node.init) return
+				const found = scan([node.init], new Set())
+				if (found.strings.some((value) => FIXTURE_EXTENSION.test(value) || /fixtures/.test(value)))
+					return
+				if (found.anchored) anchored.add(node.id.name)
+			},
+			CallExpression(node) {
+				if (isFsRead(node.callee)) {
+					const found = scan(node.arguments, anchored)
+					if (found.strings.some((value) => FIXTURE_EXTENSION.test(value))) return
+					const listing =
+						node.callee.type === "Identifier"
+							? node.callee.name.startsWith("readdir")
+							: node.callee.property.name.startsWith("readdir")
+					if (
+						(found.anchored && !listing) ||
+						found.strings.some((value) => SOURCE_EXTENSION.test(value))
+					) {
+						context.report({ node, messageId: "noSourceTextAssertions" })
+					}
+					return
+				}
+				const name = calleeName(node.callee)
+				if (name !== undefined && EXEC_CALLS.has(name)) {
+					if (scan(node.arguments, anchored).strings.some((value) => /\bls-files\b/.test(value))) {
+						context.report({ node, messageId: "noSourceTextAssertions" })
+					}
+				}
+			},
+		}
+	},
+}
+
+// --- no-classname-assertions -----------------------------------------------------------------
+
+const CLASSNAME_MESSAGE =
+	"Do not assert on Tailwind classes. They pin styling, not behavior, and break on every restyle. Assert what the user can observe: role, name, text, state attributes (`aria-*`, `data-*`), or computed geometry."
+
+/** Theme and mode hooks own the class on `<html>`; that class IS their contract. */
+const isDocumentRoot = (node) =>
+	node?.type === "MemberExpression" &&
+	node.property.name === "documentElement" &&
+	node.object.type === "Identifier" &&
+	node.object.name === "document"
+
+const isClassRead = (node) => {
+	if (!node) return false
+	let target = node
+	while (target.type === "MemberExpression" || target.type === "CallExpression") {
+		if (isDocumentRoot(target)) return false
+		target = target.type === "CallExpression" ? target.callee : target.object
+	}
+	if (node.type === "MemberExpression" && !node.computed && node.property.name === "className") return true
+	if (node.type === "CallExpression") {
+		const name = calleeName(node.callee)
+		if (name === "getAttribute" && node.arguments[0]?.value === "class") return true
+		if (
+			name === "contains" &&
+			node.callee.object?.type === "MemberExpression" &&
+			node.callee.object.property?.name === "classList"
+		) {
+			return true
+		}
+	}
+	return false
+}
+
+const noClassnameAssertions = {
+	meta: {
+		type: "suggestion",
+		docs: { description: "Disallow assertions on an element's class list." },
+		messages: { noClassnameAssertions: CLASSNAME_MESSAGE },
+	},
+	create(context) {
+		return {
+			CallExpression(node) {
+				const expectation = readExpect(node)
+				if (!expectation) return
+				if (expectation.matcher === "toHaveClass" || isClassRead(expectation.subject)) {
+					context.report({ node, messageId: "noClassnameAssertions" })
+				}
+			},
+		}
+	},
+}
+
+export default {
+	meta: { name: "test-slop" },
+	rules: {
+		"no-classname-assertions": noClassnameAssertions,
+		"no-constant-pin": noConstantPin,
+		"no-source-text-assertions": noSourceTextAssertions,
+		"no-weak-only-assertions": noWeakOnlyAssertions,
+	},
+}

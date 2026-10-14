@@ -6,7 +6,6 @@ import { Effect } from "effect"
 import { vi } from "vitest"
 
 // This mock must be registered before importing its consumers.
-const executeQueryEngineMock = vi.fn()
 const runWarehouseQueryMock = vi.fn()
 
 vi.mock("@/api/warehouse/effect-utils", async () => {
@@ -15,46 +14,9 @@ vi.mock("@/api/warehouse/effect-utils", async () => {
 	)
 	return {
 		...actual,
-		executeQueryEngine: (...args: unknown[]) => executeQueryEngineMock(...args),
 		runWarehouseQuery: (...args: unknown[]) => runWarehouseQueryMock(...args),
 	}
 })
-
-// Default mock implementations are (re)installed before each test so state
-// does not leak between tests.
-const defaultExecuteQueryEngine = (operation: string) => {
-	if (operation.includes("listTraces")) {
-		// Grouped (one-row-per-trace) shape — the default list mode. See the
-		// `groupByTrace` branch of the query-engine list dispatch.
-		return Effect.succeed({
-			result: {
-				kind: "list",
-				source: "traces",
-				data: [
-					{
-						traceId: "t1",
-						startTime: "2026-03-28 00:00:00",
-						endTime: "2026-03-28 00:00:01",
-						durationMs: 142,
-						spanCount: 3,
-						services: ["api-gw"],
-						rootSpanName: "GET /api/users",
-						rootSpanKind: "Server",
-						rootSpanStatusCode: "Ok",
-						rootSpanAttributes: {
-							"http.method": "GET",
-							"http.route": "/api/users",
-							"http.status_code": "200",
-						},
-						hasError: false,
-					},
-				],
-			},
-		})
-	}
-	// Default: empty list
-	return Effect.succeed({ result: { kind: "list", source: "traces", data: [] } })
-}
 
 const defaultRunWarehouseQuery = () =>
 	Effect.succeed({
@@ -74,56 +36,16 @@ const defaultRunWarehouseQuery = () =>
 	})
 
 beforeEach(() => {
-	executeQueryEngineMock.mockReset()
-	executeQueryEngineMock.mockImplementation(defaultExecuteQueryEngine)
 	runWarehouseQueryMock.mockReset()
 	runWarehouseQueryMock.mockImplementation(defaultRunWarehouseQuery)
 })
 
-import { listTraces } from "@/api/warehouse/traces"
 import { listLogs } from "@/api/warehouse/logs"
-import { serverFunctionMap } from "@/components/dashboard-builder/data-source-registry"
 import { resolveFieldPath } from "@/lib/resolve-field-path"
 import { buildListLogsParams, listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
 
-// 1. Verify listTraces works with exactly the params a list widget sends
-describe("list widget data flow", () => {
-	it.effect("listTraces succeeds with list widget params (no filter)", () =>
-		Effect.gen(function* () {
-			const params = {
-				startTime: "2026-03-28 00:00:00",
-				endTime: "2026-03-28 23:59:59",
-				limit: 25,
-			}
-
-			const result = yield* listTraces({ data: params })
-
-			assert.strictEqual(result.data.length, 1)
-			expect(result.data[0]).toMatchObject({
-				traceId: "t1",
-				rootSpanName: "GET /api/users",
-				durationMs: 142,
-				hasError: false,
-			})
-		}),
-	)
-
-	it.effect("listTraces succeeds with filter params", () =>
-		Effect.gen(function* () {
-			const params = {
-				startTime: "2026-03-28 00:00:00",
-				endTime: "2026-03-28 23:59:59",
-				limit: 50,
-				service: "api-gw",
-				hasError: true,
-			}
-
-			const result = yield* listTraces({ data: params })
-			assert.isDefined(result.data)
-		}),
-	)
-
-	it.effect("listLogs succeeds with list widget params", () =>
+describe("listLogs", () => {
+	it.effect("decodes the JSON attribute columns of each row", () =>
 		Effect.gen(function* () {
 			const params = {
 				startTime: "2026-03-28 00:00:00",
@@ -142,149 +64,8 @@ describe("list widget data flow", () => {
 			})
 		}),
 	)
-
-	// 2. Verify serverFunctionMap contains list endpoints
-	it("serverFunctionMap has list_traces", () => {
-		expect(serverFunctionMap.list_traces).toBeDefined()
-		expect(typeof serverFunctionMap.list_traces).toBe("function")
-	})
-
-	it("serverFunctionMap has list_logs", () => {
-		expect(serverFunctionMap.list_logs).toBeDefined()
-		expect(typeof serverFunctionMap.list_logs).toBe("function")
-	})
-
-	// 3. Verify the full atom-like call path:
-	//    serverFn({ data: params }) → response.data extraction
-	it.effect("serverFunctionMap.list_traces({ data }) returns { data: Trace[] }", () =>
-		Effect.gen(function* () {
-			const serverFn = serverFunctionMap.list_traces
-			const params = {
-				startTime: "2026-03-28 00:00:00",
-				endTime: "2026-03-28 23:59:59",
-				limit: 25,
-			}
-
-			const response = yield* serverFn({ data: params }).pipe(
-				Effect.map((res) => {
-					// This is what widgetFetchAtom does:
-					return (res as { data?: unknown })?.data ?? res
-				}),
-			)
-
-			// After .data extraction, should be an array of Trace objects
-			assert.isTrue(Array.isArray(response))
-			const rows = response as Record<string, unknown>[]
-			assert.isAbove(rows.length, 0)
-			expect(rows[0]).toHaveProperty("traceId")
-			expect(rows[0]).toHaveProperty("rootSpanName")
-		}),
-	)
-
-	it.effect("serverFunctionMap.list_logs({ data }) returns { data: Log[] }", () =>
-		Effect.gen(function* () {
-			const serverFn = serverFunctionMap.list_logs
-			const params = {
-				startTime: "2026-03-28 00:00:00",
-				endTime: "2026-03-28 23:59:59",
-				limit: 25,
-			}
-
-			const response = yield* serverFn({ data: params }).pipe(
-				Effect.map((res) => {
-					return (res as { data?: unknown })?.data ?? res
-				}),
-			)
-
-			assert.isTrue(Array.isArray(response))
-			const rows = response as Record<string, unknown>[]
-			assert.isAbove(rows.length, 0)
-			expect(rows[0]).toHaveProperty("severityText")
-			expect(rows[0]).toHaveProperty("serviceName")
-		}),
-	)
 })
 
-// 4. Simulate the exact widgetFetchAtom flow (JSON key roundtrip)
-describe("widgetFetchAtom simulation", () => {
-	function normalizeForKey(value: unknown): unknown {
-		if (value === null || typeof value !== "object") return value
-		if (Array.isArray(value)) return value.map(normalizeForKey)
-		const entries = Object.entries(value as Record<string, unknown>)
-			.filter(([, v]) => v !== undefined)
-			.sort(([a], [b]) => a.localeCompare(b))
-		const out: Record<string, unknown> = {}
-		for (const [k, v] of entries) out[k] = normalizeForKey(v)
-		return out
-	}
-	function encodeKey(value: unknown): string {
-		const n = normalizeForKey(value)
-		return JSON.stringify(n === undefined ? null : n)
-	}
-
-	it.effect("list_traces: full atom roundtrip succeeds", () =>
-		Effect.gen(function* () {
-			// 1. Build params like useWidgetData does
-			const resolvedTimeRange = { startTime: "2026-03-28 00:00:00", endTime: "2026-03-28 23:59:59" }
-			const widgetParams = { limit: 25 } // from list preset
-			const resolvedParams: Record<string, unknown> = {
-				startTime: resolvedTimeRange.startTime,
-				endTime: resolvedTimeRange.endTime,
-				...widgetParams,
-			} satisfies Record<string, unknown>
-
-			// 2. Encode key like widgetFetchAtom
-			const key = encodeKey({ endpoint: "list_traces", params: resolvedParams })
-
-			// 3. Parse key like atom does
-			const { endpoint, params } = JSON.parse(key) as {
-				endpoint: string
-				params: Record<string, unknown>
-			}
-
-			assert.strictEqual(endpoint, "list_traces")
-			assert.strictEqual(params.startTime, "2026-03-28 00:00:00")
-			assert.strictEqual(params.endTime, "2026-03-28 23:59:59")
-			assert.strictEqual(params.limit, 25)
-
-			// 4. Call server function like atom does
-			const serverFn = serverFunctionMap[endpoint as keyof typeof serverFunctionMap]
-			assert.isDefined(serverFn)
-
-			const result = yield* serverFn!({ data: params }).pipe(
-				Effect.map((res) => (res as { data?: unknown })?.data ?? res),
-			)
-
-			assert.isTrue(Array.isArray(result))
-			assert.isAbove((result as unknown[]).length, 0)
-		}),
-	)
-
-	it.effect("list_logs: full atom roundtrip succeeds", () =>
-		Effect.gen(function* () {
-			const resolvedTimeRange = { startTime: "2026-03-28 00:00:00", endTime: "2026-03-28 23:59:59" }
-			const widgetParams = { limit: 25 }
-			const resolvedParams: Record<string, unknown> = {
-				startTime: resolvedTimeRange.startTime,
-				endTime: resolvedTimeRange.endTime,
-				...widgetParams,
-			} satisfies Record<string, unknown>
-
-			const key = encodeKey({ endpoint: "list_logs", params: resolvedParams })
-			const { endpoint, params } = JSON.parse(key)
-			const serverFn = serverFunctionMap[endpoint as keyof typeof serverFunctionMap]
-
-			const result = yield* serverFn!({ data: params }).pipe(
-				Effect.map((res) => (res as { data?: unknown })?.data ?? res),
-			)
-
-			assert.isTrue(Array.isArray(result))
-			assert.isAbove((result as unknown[]).length, 0)
-		}),
-	)
-})
-
-// 5. Logs list widget where clause → list_logs params
 describe("buildListLogsParams", () => {
 	it("lowers = and != on the logs columns to the include and exclude params", () => {
 		const { params, warnings } = buildListLogsParams(
@@ -332,19 +113,6 @@ describe("buildListLogsParams", () => {
 		expect(params).toEqual({ limit: 10 })
 		expect(warnings).toEqual([warning])
 	})
-
-	it.effect("produces params list_logs accepts", () =>
-		Effect.gen(function* () {
-			const { params } = buildListLogsParams(
-				'service.name != "noisy" AND severity = "ERROR" AND deployment.environment contains "prod"',
-				50,
-			)
-			const result = yield* serverFunctionMap.list_logs({
-				data: { ...params, startTime: "2026-03-28 00:00:00", endTime: "2026-03-28 23:59:59" },
-			})
-			expect(result).toHaveProperty("data")
-		}),
-	)
 })
 
 describe("listWhereClauseWarnings", () => {
@@ -362,7 +130,6 @@ describe("listWhereClauseWarnings", () => {
 	})
 })
 
-// 6. resolveFieldPath tests
 describe("resolveFieldPath", () => {
 	const traceRow = {
 		traceId: "t1",

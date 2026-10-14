@@ -1,0 +1,27 @@
+# @maple/cli
+
+## 0.0.26
+
+### Patch Changes
+
+- 9381435: `maple start` no longer spins when a supervisor restarts it after a failure that retrying cannot fix. It exits with status 78 (tell systemd `RestartPreventExitStatus=78`), waits before exiting when the same failure repeats, and reports it to telemetry at most once an hour. A libchdb the system refuses to load now says so and names the reinstall command.
+
+## 0.0.25
+
+### Patch Changes
+
+- c99708f: Releases are now signed. `maple update` verifies each release's Ed25519 signature before it trusts the checksum, and the installer does the same (on macOS it needs `brew install openssl@3`).
+
+    To install a release from before signing, pass `--insecure-skip-signature` to `maple update` or set `MAPLE_SKIP_SIGNATURE=1` for the installer.
+
+- 3901dab: `maple update` now shows each step as it runs (manifest check, download, checksum, unpack, install) with a spinner, and the download gets a live progress bar with size and speed. Piped or CI output prints only the finished steps.
+- 0d53337: The local dashboard looks like Maple again. It bundles the Geist fonts, uses the shared design tokens (amber in light mode, colored JSON highlighting), and no longer flashes dark on a light-mode OS. Service colors now show in the traces list, logs, metrics, span and session panels and every service filter, and severity colors show in the logs filter. Logs strip ANSI color codes, show `+N lines` for multi-line bodies, and only rail errors and warnings. New 5m, 15m, 30m and 12h time ranges. Fixes: the service map panel now matches its node when a service reports several environments, abandoned browser sessions no longer show as active forever, "Throughput by operation" is a per-second rate, and a failed metric preview says so.
+- f73ef32: The local service page opens with the same four charts as Maple Cloud: latency (p50/p95/p99), throughput, Apdex and error rate. Error rates on the page are colored from 1% up, not only above 5%, and the per-operation error rate is toned.
+- c5f67c5: The local trace page has a real header: the root span as the title, then total duration, span and service counts, status, HTTP code, environment, a copyable trace ID and the per-service time share. The span panel shows where the span sits in the trace, Escape closes it, and loading shows the page's shape instead of a spinner. The traces list gains a Status column. Fixes HTTP status codes going missing for apps on the current HTTP semantic conventions (`http.response.status_code`).
+
+## 0.0.24
+
+### Patch Changes
+
+- e248fee: Add `maple changelog` to read what changed in a release (`--since <version>` for every release after one). After an upgrade, the first interactive run names the new version and points at it, and `maple update` prints the command to run.
+- 9dfb924: Query output names its timezone: JSON timestamps are ISO-8601 UTC (`2026-10-13T16:09:29.577Z`) and table times end in `Z`. In local mode, `maple traces`, `maple slow-traces`, `maple trace` and `maple logs` include links into the local UI. `maple logs --attributes` returns every log attribute, e.g. `requestId`.

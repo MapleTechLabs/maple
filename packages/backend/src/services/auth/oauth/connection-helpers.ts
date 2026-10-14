@@ -586,11 +586,11 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				const nowMs = yield* Clock.currentTimeMillis
 				const memoized = connectionMemo.get(orgId)
 				if (memoized !== undefined && memoized.expiresAt > nowMs && rowIsValid(memoized.row, nowMs)) {
-					yield* Effect.annotateCurrentSpan("oauth.connection.memoHit", true)
+					yield* Effect.annotateCurrentSpan("maple.oauth.connection_memo_hit", true)
 					yield* usable(memoized.row)
 					return yield* accessTokenFromRow(memoized.row)
 				}
-				yield* Effect.annotateCurrentSpan("oauth.connection.memoHit", false)
+				yield* Effect.annotateCurrentSpan("maple.oauth.connection_memo_hit", false)
 
 				const row = yield* requireConnection(orgId)
 				yield* usable(row)

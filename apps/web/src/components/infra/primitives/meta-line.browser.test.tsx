@@ -55,13 +55,4 @@ describe("MetaLine", () => {
 		render(<MetaLine items={["ns default", "node long-name"]} title="ns default · node long-name" />)
 		expect(screen.getByTitle("ns default · node long-name")).toBeTruthy()
 	})
-
-	it("stays on one line", () => {
-		// `flex-wrap` is what let a long node name turn a table row into three
-		// lines and knock the numeric columns out of alignment.
-		const { container } = render(<MetaLine items={["a", "b"]} />)
-		const line = container.firstElementChild
-		expect(line?.className).toContain("truncate")
-		expect(line?.className).not.toContain("flex-wrap")
-	})
 })

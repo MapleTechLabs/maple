@@ -148,7 +148,7 @@ function GridPage({
 	endTime: string
 	onOpenMetric: (metric: Metric) => void
 }) {
-	const { pointsByMetric, loading } = usePageSparklines(entries, startTime, endTime)
+	const { pointsByMetric, loading, failedTypes } = usePageSparklines(entries, startTime, endTime)
 
 	return (
 		<>
@@ -158,6 +158,7 @@ function GridPage({
 					entry={entry}
 					points={pointsByMetric.get(`${entry.metricName}::${entry.metricType}`)}
 					loading={loading}
+					failed={failedTypes.has(entry.metricType)}
 					onOpen={() => onOpenMetric(entry.firstRow)}
 				/>
 			))}
@@ -211,10 +212,12 @@ function usePageSparklines(entries: ReadonlyArray<MetricPreviewEntry>, startTime
 	]
 
 	const pointsByMetric = new Map<string, MetricSparklinePoint[]>()
+	const failedTypes = new Set<string>()
 	let loading = false
 	for (const [metricType, result] of results) {
 		if (namesOfType(entries, metricType).length === 0) continue
 		if (!Result.isSuccess(result) && !Result.isFailure(result)) loading = true
+		if (Result.isFailure(result)) failedTypes.add(metricType)
 		if (Result.isSuccess(result)) {
 			for (const series of result.value.data) {
 				pointsByMetric.set(`${series.metricName}::${metricType}`, series.points)
@@ -222,5 +225,5 @@ function usePageSparklines(entries: ReadonlyArray<MetricPreviewEntry>, startTime
 		}
 	}
 
-	return { pointsByMetric, loading }
+	return { pointsByMetric, loading, failedTypes }
 }

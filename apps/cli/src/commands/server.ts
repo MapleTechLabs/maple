@@ -30,6 +30,8 @@ import {
 	SERVER_PID_NAME,
 	serverDiscoveryPath,
 	serverPidPath,
+	storeMarkerPath,
+	UNVERSIONED_STORE,
 } from "../server/store-version"
 import { durableWrite } from "../server/durable-files"
 import { abandonLocalStoreMigration, localMigrationIsIncomplete } from "../server/local-store-migrations"
@@ -46,6 +48,7 @@ import {
 	writeBackupConfig,
 } from "../server/checkpoints"
 import { resolveUiAssets } from "../server/ui-assets"
+import { clearStartFailures, guardStartFailures } from "./start-failures"
 import { debugLog } from "../lib/debug"
 import { MAPLE_VERSION } from "../version"
 import { jsonFormatRequested, writeJson } from "./json-output"
@@ -1309,7 +1312,13 @@ export const start = Command.make("start", {
 								`(store: ${compat.found}; build: ${compat.current}); loading it would crash chDB. ` +
 								`If a newer maple wrote it, reinstall that one (\`${bold("maple update")}\`). ` +
 								`Otherwise wipe it with \`${bold(mapleCommand("reset", scope))}\`, or start fresh via ` +
-								`\`${bold(mapleCommand("start --reset", scope))}\`.`,
+								`\`${bold(mapleCommand("start --reset", scope))}\`.` +
+								// The marker is a sidecar beside the data dir, so a volume mounted at
+								// the data dir itself loses it on every container re-creation.
+								(compat.found === UNVERSIONED_STORE
+									? ` The version marker lives beside the data dir (${prettyPath(storeMarkerPath(dataDir))}); ` +
+										`if ${prettyPath(dataDir)} is a mounted volume, mount its parent directory instead.`
+									: ""),
 						})
 					}
 
@@ -1434,6 +1443,7 @@ export const start = Command.make("start", {
 						assets,
 					})
 					started = true
+					yield* clearStartFailures(dataDir)
 
 					const bindAddr = serverUrl(bindHost, boundPort)
 					const connectAddr = serverUrl(advertiseHost, boundPort)
@@ -1501,7 +1511,7 @@ export const start = Command.make("start", {
 
 					return yield* Effect.never
 				}),
-			)
+			).pipe(guardStartFailures(dataDir, { detachedChild: pidHandoverFrom() !== undefined }))
 		}),
 	),
 )

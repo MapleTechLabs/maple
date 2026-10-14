@@ -65,8 +65,8 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 			const lastSeenPrecision: "minute" | "hour" = minutePrecision ? "minute" : "hour"
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				minutePrecision,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.minute_precision": minutePrecision,
 			})
 
 			const rows = yield* withTenantExecutor(

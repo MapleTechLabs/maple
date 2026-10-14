@@ -141,6 +141,47 @@ export async function processOrder(orderId: string) {
 
 Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
+## Attributes Maple uses
+
+Most attributes are optional. These unlock specific features.
+
+### Commits and GitHub
+
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. The resource in [Configure](#configure) already sets both. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+
+```bash
+export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
+```
+
+### Databases
+
+Database instrumentation sets these attributes for you. For a driver without instrumentation, set them on a `Client` span:
+
+```typescript
+import { SpanKind } from "@opentelemetry/api"
+
+const user = await tracer.startActiveSpan(
+	"SELECT users",
+	{
+		kind: SpanKind.CLIENT,
+		attributes: {
+			"db.system.name": "postgresql",
+			"db.namespace": "app",
+			"db.query.text": "SELECT * FROM users WHERE id = $1",
+		},
+	},
+	async (span) => {
+		try {
+			return await client.query("SELECT * FROM users WHERE id = $1", [id])
+		} finally {
+			span.end()
+		}
+	},
+)
+```
+
+`db.system.name` and `db.namespace` draw the database node on the [service map](/docs/explore/service-map). `db.query.text` groups statements into query shapes, so record it with placeholders, not bound values. See [Database queries](/docs/concepts/otel-conventions#database-queries) for the full list.
+
 ## Log correlation
 
 Log records emitted through the OpenTelemetry log SDK during an active server span carry its trace and span IDs, so Maple links each log line to its trace. To send logs from pino or winston, bridge the logger to the OpenTelemetry log SDK that `registerOTel` configured above.

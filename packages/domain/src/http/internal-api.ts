@@ -8,6 +8,7 @@ import { DemoApiGroup } from "./demo"
 import { DigestApiGroup } from "./digest"
 import { ErrorsApiGroup } from "./errors"
 import { IntegrationsApiGroup } from "./integrations"
+import { OpenRouterKeyApiGroup } from "./openrouter-key"
 import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
 import {
 	OrganizationCreationApiGroup,
@@ -51,6 +52,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(DigestApiGroup)
 	.add(ErrorsApiGroup)
 	.add(IntegrationsApiGroup)
+	.add(OpenRouterKeyApiGroup)
 	.add(OrgClickHouseSettingsApiGroup)
 	.add(OrganizationsApiGroup)
 	.add(OrganizationCreationApiGroup)

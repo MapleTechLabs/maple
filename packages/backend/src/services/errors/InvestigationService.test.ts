@@ -16,10 +16,16 @@ import {
 	OrgId,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
-import { ErrorIssueId } from "@maple/domain/primitives"
+import { AnomalyIncidentId, ErrorIssueId } from "@maple/domain/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AiTriageSettings, ErrorIssueEvents, ErrorIssues, Investigations } from "@maple/db/tables"
+import {
+	AiTriageSettings,
+	AnomalyIncidents,
+	ErrorIssueEvents,
+	ErrorIssues,
+	Investigations,
+} from "@maple/db/tables"
 import type { ChatSessions } from "@maple/backend/platform/bindings"
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
@@ -489,6 +495,90 @@ describe("InvestigationService", () => {
 			const diagnosed = yield* service.getInvestigation(ORG, started.id)
 			assert.strictEqual(diagnosed.status, "diagnosed")
 			assert.isNull(diagnosed.error)
+		}).pipe(Effect.provide(harness.layer))
+	})
+
+	it.effect("keeps an anomaly's triage status in step with its investigation", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
+			const database = yield* Database
+			const service = yield* InvestigationService
+			const asAnomalyId = Schema.decodeUnknownSync(AnomalyIncidentId)
+			// Ordered so the status query below lists them in this order.
+			const FAST_ID = "1a1a1a1a-0000-4000-8000-000000000001"
+			const FAILED_ID = "2b2b2b2b-0000-4000-8000-000000000002"
+			const MANUAL_ID = "3c3c3c3c-0000-4000-8000-000000000003"
+			const now = Date.now()
+			const anomaly = (id: string, triageStatus: "none" | "pending") => ({
+				id: asAnomalyId(id),
+				orgId: ORG,
+				detectorKey: `error_rate:checkout:${id}`,
+				signalType: "error_rate" as const,
+				serviceName: "checkout",
+				status: "open" as const,
+				severity: "warning" as const,
+				openedValue: 12,
+				baselineMedian: 1,
+				baselineSigma: 0.5,
+				thresholdValue: 4,
+				lastObservedValue: 12,
+				firstTriggeredAt: now,
+				lastTriggeredAt: now,
+				triageStatus,
+				dedupeKey: id,
+				createdAt: now,
+				updatedAt: now,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(AnomalyIncidents).values([
+						// Diagnosed before the detector marked it pending.
+						anomaly(FAST_ID, "none"),
+						anomaly(FAILED_ID, "pending"),
+						anomaly(MANUAL_ID, "pending"),
+					]),
+				),
+			)
+			const triage = (incidentId: string) =>
+				service.createInvestigation(
+					ORG,
+					null,
+					new InvestigationCreateRequest({
+						subject: new InvestigationIncidentSubject({
+							type: "incident",
+							incidentKind: "anomaly",
+							incidentId,
+						}),
+					}),
+				)
+			const statuses = database
+				.execute((db) =>
+					db.run(PG.from(AnomalyIncidents).select("id", "triageStatus").orderBy(["id", "asc"])),
+				)
+				.pipe(Effect.map((rows) => rows.map((row) => row.triageStatus)))
+
+			const fast = yield* triage(FAST_ID)
+			yield* service.submitDiagnosis(
+				ORG,
+				fast.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
+			const failed = yield* triage(FAILED_ID)
+			yield* service.failInvestigation(ORG, failed.id, "no_diagnosis: the pass ended in prose")
+			const manual = yield* triage(MANUAL_ID)
+			yield* service.updateStatus(ORG, manual.id, "resolved")
+			assert.deepStrictEqual(yield* statuses, ["completed", "skipped", "completed"])
+
+			// A retry is triaging again, and its diagnosis completes it.
+			yield* service.restartInvestigation(ORG, failed.id)
+			assert.deepStrictEqual(yield* statuses, ["completed", "pending", "completed"])
+			yield* service.submitDiagnosis(
+				ORG,
+				failed.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
+			assert.deepStrictEqual(yield* statuses, ["completed", "completed", "completed"])
 		}).pipe(Effect.provide(harness.layer))
 	})
 

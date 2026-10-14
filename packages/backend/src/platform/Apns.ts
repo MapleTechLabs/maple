@@ -18,7 +18,7 @@ import { Env, type EnvConfig } from "./Env"
  * clients that mint one per request.
  */
 
-export class ApnsError extends Schema.TaggedError<ApnsError>()("@maple/api/platform/ApnsError", {
+export class ApnsError extends Schema.TaggedError<ApnsError>()("@maple/backend/platform/ApnsError", {
 	message: Schema.String,
 	/** APNs `reason` from the response body, when the send reached Apple. */
 	reason: Schema.optionalKey(Schema.String),

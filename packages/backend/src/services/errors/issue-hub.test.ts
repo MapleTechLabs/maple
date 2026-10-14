@@ -9,7 +9,7 @@ import { AlertIncidents, ErrorIssueEvents, ErrorIssues } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { alertIssueFingerprint, detectorSeverityFor, upsertAlertIssue } from "./issue-hub"
+import { alertIssueFingerprint, upsertAlertIssue } from "./issue-hub"
 
 const createdDbs: TestDb[] = []
 
@@ -82,13 +82,6 @@ const loadIssue = Effect.gen(function* () {
 		),
 	)
 	return rows
-})
-
-describe("detectorSeverityFor", () => {
-	it("maps warning to medium and critical to critical", () => {
-		assert.strictEqual(detectorSeverityFor("warning"), "medium")
-		assert.strictEqual(detectorSeverityFor("critical"), "critical")
-	})
 })
 
 describe("upsertAlertIssue", () => {

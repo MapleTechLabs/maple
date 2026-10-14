@@ -7,8 +7,10 @@ import { SheetClose } from "@maple/ui/components/ui/sheet"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import { CopyableValue, tryParseJson } from "@/components/attributes"
+import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { highlightCode } from "@/lib/sugar-high"
-import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
+import { SeverityBadge, severityLabel } from "@maple/ui/components/logs/severity-badge"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import type { Log } from "@/api/warehouse/logs"
 import { ServiceDot } from "@maple/ui/components/service-dot"
@@ -42,7 +44,8 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 
 	// A JSON body (object/array) is pretty-printed and syntax-highlighted, like
 	// the Raw panel; anything else renders as plain text.
-	const parsed = tryParseJson(body)
+	const parsed = useMemo(() => tryParseJson(body), [body])
+	const displayBody = useMemo(() => stripAnsi(body), [body])
 	const isJson = parsed !== null
 	const formatted = useMemo(
 		() => (parsed !== null ? JSON.stringify(parsed, null, 2) : body),
@@ -71,16 +74,19 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 					clamp && "line-clamp-4",
 				)}
 			>
-				{body}
+				{displayBody}
 			</p>
 		)
 
 	return (
-		<div className="border-b px-4 py-3 shrink-0" style={heroToneStyle(log.severityText)}>
+		<div
+			className="border-b px-4 py-3 shrink-0"
+			style={heroToneStyle(severityLabel(log.severityText, log.severityNumber))}
+		>
 			<div className="flex items-center gap-2">
 				<Tooltip>
 					<TooltipTrigger render={<span className="cursor-help inline-flex" />}>
-						<SeverityBadge severity={log.severityText} />
+						<SeverityBadge severity={log.severityText} severityNumber={log.severityNumber} />
 					</TooltipTrigger>
 					<TooltipContent side="bottom">OTel severity number {log.severityNumber}</TooltipContent>
 				</Tooltip>
@@ -111,7 +117,20 @@ export function LogHeroHeader({ log, showClose = true }: LogHeroHeaderProps) {
 			 * flickered on toggle as the two nodes swapped mid-animation.
 			 */}
 			<div className="mt-3">
-				<CopyableValue value={copyValue}>{message(isLong && !expanded)}</CopyableValue>
+				<div className="flex items-start gap-1">
+					{/* Capped when expanded so a huge body cannot push the tabs below out of the sheet. */}
+					<div
+						className={cn("min-w-0 flex-1 select-text", expanded && "max-h-[45vh] overflow-auto")}
+					>
+						{message(isLong && !expanded)}
+					</div>
+					<CopyButton
+						value={copyValue}
+						label="message"
+						iconSize={12}
+						className="-mt-0.5 shrink-0"
+					/>
+				</div>
 				{isLong && (
 					<LogTextButton onClick={() => setExpanded((v) => !v)} className="mt-1.5">
 						{expanded ? "Show less" : "Show full message"}

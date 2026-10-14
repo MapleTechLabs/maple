@@ -1,12 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
-import {
-	buildTimeline,
-	COLLAPSED_GAP_MS,
-	parseChTimestampMs,
-	spanDisplayRange,
-	type InactiveInterval,
-} from "./replay-timeline"
+import { buildTimeline, COLLAPSED_GAP_MS, parseChTimestampMs, spanDisplayRange } from "./replay-timeline"
 
 describe("buildTimeline", () => {
 	it("is an identity mapping with no idle gaps", () => {
@@ -16,15 +10,6 @@ describe("buildTimeline", () => {
 		expect(t.toDisplay(30_000)).toBe(30_000)
 		expect(t.toDisplay(60_000)).toBe(60_000)
 		expect(t.toReal(30_000)).toBe(30_000)
-	})
-
-	it("is an identity mapping when intervals are empty (skip-idle off)", () => {
-		const intervals: InactiveInterval[] = []
-		const t = buildTimeline(intervals, 120_000)
-		expect(t.activeTotalMs).toBe(120_000)
-		for (const x of [0, 1_000, 75_000, 120_000]) {
-			expect(t.toReal(t.toDisplay(x))).toBeCloseTo(x, 5)
-		}
 	})
 
 	it("collapses a single large idle gap to COLLAPSED_GAP_MS", () => {

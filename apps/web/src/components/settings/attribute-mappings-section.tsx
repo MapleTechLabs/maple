@@ -244,7 +244,7 @@ export function AttributeMappingsSection() {
 						<div>
 							{/* column header */}
 							<div className="flex items-center gap-3 px-4 py-1.5">
-								<Eyebrow variant="mono" className="w-44 shrink-0" as="div">
+								<Eyebrow variant="mono" className="w-28 shrink-0 md:w-44" as="div">
 									Name
 								</Eyebrow>
 								<Eyebrow variant="mono" className="flex-1" as="div">
@@ -269,17 +269,22 @@ export function AttributeMappingsSection() {
 											!mapping.enabled && "opacity-55",
 										)}
 									>
-										<TruncatedText className="w-44 shrink-0 text-sm">
+										<TruncatedText className="w-28 shrink-0 text-sm md:w-44">
 											{mapping.name}
 										</TruncatedText>
 
 										<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">
-											<InlineCode variant="plain">{mapping.source_key}</InlineCode>
+											<InlineCode variant="plain" className="min-w-0 break-all">
+												{mapping.source_key}
+											</InlineCode>
 											<ArrowRightIcon
 												size={12}
 												className="text-muted-foreground shrink-0"
 											/>
-											<InlineCode variant="plain" className="text-foreground">
+											<InlineCode
+												variant="plain"
+												className="text-foreground min-w-0 break-all"
+											>
 												{mapping.target_key}
 											</InlineCode>
 										</div>
@@ -296,7 +301,7 @@ export function AttributeMappingsSection() {
 										</span>
 
 										<div className="flex w-28 shrink-0 items-center justify-end gap-1.5">
-											<div className="flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+											<div className="flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
 												<IconButton
 													className="text-muted-foreground hover:text-foreground"
 													onClick={() => openEditDialog(mapping)}

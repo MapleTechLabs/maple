@@ -30,7 +30,7 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				environment: params.environment ?? "all",
+				"maple.ai.environment": params.environment ?? "all",
 			})
 
 			const services = yield* listServices({

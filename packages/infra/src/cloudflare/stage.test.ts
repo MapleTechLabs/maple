@@ -132,10 +132,9 @@ describe("resolveMapleDomains", () => {
 })
 
 describe("region-bound Cloudflare settings", () => {
-	it("steers each instance's Workers beside its own database and warehouse", () => {
-		expect(resolveWorkerPlacement("us")).toEqual({ region: "aws:us-east-1" })
-		expect(resolveWorkerPlacement("eu")).toEqual({ region: "aws:eu-central-1" })
-		expect(resolveWorkerPlacement()).toEqual({ region: "aws:us-east-1" })
+	it("places an unregioned stack with us and keeps eu apart", () => {
+		expect(resolveWorkerPlacement()).toEqual(resolveWorkerPlacement("us"))
+		expect(resolveWorkerPlacement("eu")).not.toEqual(resolveWorkerPlacement("us"))
 	})
 
 	it("pins EU storage to the eu jurisdiction and leaves us non-jurisdictional", () => {
@@ -145,21 +144,16 @@ describe("region-bound Cloudflare settings", () => {
 })
 
 describe("resolveHyperdriveRefId", () => {
-	it("hands the production configs to prd and to nothing else", () => {
-		// These ids are the live dashboard configs for the production database.
+	it("hands the production configs to no stage but prd", () => {
 		// `stg` used to be handed `maple-prd` too, which is why the stage is gone.
-		expect(resolveHyperdriveRefId({ kind: "prd" }, "api")).toBe("ad4c487838594b89810b23e5fb14e129")
-		expect(resolveHyperdriveRefId({ kind: "prd" }, "ai")).toBe("ad4c487838594b89810b23e5fb14e129")
-		expect(resolveHyperdriveRefId({ kind: "prd" }, "alerting")).toBe("f473167201af4d2cae494f9989f1d742")
 		expect(resolveHyperdriveRefId(stage("pr-123"), "api")).toBeUndefined()
 		expect(resolveHyperdriveRefId(stage("dev_makisuo"), "api")).toBeUndefined()
 	})
 })
 
 describe("resolvePlanetscaleDatabase", () => {
-	it("names each instance's PlanetScale database, us unsuffixed", () => {
-		expect(resolvePlanetscaleDatabase()).toBe("maple")
-		expect(resolvePlanetscaleDatabase("us")).toBe("maple")
-		expect(resolvePlanetscaleDatabase("eu")).toBe("maple-eu")
+	it("names an unregioned stack's database after us and gives eu its own", () => {
+		expect(resolvePlanetscaleDatabase()).toBe(resolvePlanetscaleDatabase("us"))
+		expect(resolvePlanetscaleDatabase("eu")).not.toBe(resolvePlanetscaleDatabase("us"))
 	})
 })

@@ -34,7 +34,7 @@ const DELIVERY_TIMEOUT_MS = 15_000
 const NOTIFICATION_DELIVERY_CONCURRENCY = 5
 
 class NotificationDispatchError extends Schema.TaggedError<NotificationDispatchError>()(
-	"@maple/api/services/NotificationDispatchError",
+	"@maple/backend/services/NotificationDispatchError",
 	{
 		message: Schema.String,
 		cause: Schema.optionalKey(Schema.Defect()),
@@ -254,7 +254,7 @@ const make: Effect.Effect<
 					// not exist": "missing" is terminal to every consumer (escalation
 					// outbox, error policies), while "failed" keeps their retry
 					// machinery in play for what is a transient database error.
-					Effect.catchTag("@maple/api/lib/DatabaseError", () => Effect.succeedNone),
+					Effect.catchTag("@maple/backend/lib/DatabaseError", () => Effect.succeedNone),
 				)
 
 			if (Option.isNone(rowsOption)) {
@@ -309,7 +309,7 @@ const make: Effect.Effect<
 							),
 						),
 						Effect.catchTags({
-							"@maple/api/services/NotificationDispatchError": (error) =>
+							"@maple/backend/services/NotificationDispatchError": (error) =>
 								failedResult(row, error),
 							// Every delivery failure class reports the same way here. The
 							// distinction between them exists to drive the delivery

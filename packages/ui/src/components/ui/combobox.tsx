@@ -370,13 +370,22 @@ export function ComboboxChip({
 				// chips field's own surface, so a solid token renders the chip
 				// invisible. Tinting toward the foreground lifts it in dark mode and
 				// darkens it in light, so the chip reads as a tag in both.
-				"flex items-center gap-1 rounded-[calc(var(--radius-md)-1px)] border border-border/80 bg-foreground/8 ps-2 font-medium text-foreground text-sm outline-none dark:bg-foreground/12 sm:text-xs/(--text-xs--line-height) [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5",
+				"flex min-w-0 max-w-full items-center gap-1 rounded-[calc(var(--radius-md)-1px)] border border-border/80 bg-foreground/8 ps-2 font-medium text-foreground text-sm outline-none dark:bg-foreground/12 sm:text-xs/(--text-xs--line-height) [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5",
 				className,
 			)}
 			data-slot="combobox-chip"
 			{...props}
 		>
-			{children}
+			{/* Text children truncate so a long label never pushes the remove button out. */}
+			{React.Children.map(children, (child) =>
+				typeof child === "string" || typeof child === "number" ? (
+					<span className="min-w-0 truncate" title={String(child)}>
+						{child}
+					</span>
+				) : (
+					child
+				),
+			)}
 			<ComboboxChipRemove {...removeProps} />
 		</ComboboxPrimitive.Chip>
 	)

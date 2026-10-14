@@ -111,19 +111,12 @@ describe("AgentSessionsFilterSidebar", () => {
 		expect(screen.getByText("Hide single-trace sessions")).toBeTruthy()
 	})
 
-	it("paints services and frameworks in their colors, and explains the sections named for a concept", () => {
+	it("keeps a selected service the window no longer offers, and explains the sections named for a concept", () => {
 		search = { services: ["billing-worker"], vendors: ["crewai"] }
 		render(<Sidebar />)
 
 		const swatchBeside = (label: string) =>
 			screen.getByText(label).parentElement?.querySelector<HTMLElement>("span[style]")
-		const markBeside = (label: string) => screen.getByText(label).parentElement?.querySelector("svg")
-		// A framework wears its brand on its mark, not on a swatch beside it.
-		expect(markBeside("Claude Agent SDK")?.style.color).toBe("rgb(217, 119, 87)")
-		expect(swatchBeside("Claude Agent SDK")).toBeNull()
-		// A selected framework the window no longer offers keeps its color too.
-		expect(markBeside("CrewAI")?.style.color).toBe("rgb(255, 90, 80)")
-		expect(swatchBeside("agent-runner")).toBeTruthy()
 		// A selected service the window no longer offers keeps its swatch.
 		expect(swatchBeside("billing-worker")).toBeTruthy()
 

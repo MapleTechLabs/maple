@@ -1,7 +1,7 @@
 import { afterEach, assert, beforeAll, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Fiber, Layer, Logger, References, Tracer } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { GCP_ASSET_TYPES, GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -333,6 +333,8 @@ const run = <A, E>(
 		),
 		Effect.provideService(Tracer.Tracer, recorder.tracer),
 		Effect.provideService(Logger.CurrentLoggers, new Set([recorder.logger])),
+		// Header capture is opt-in; record every header so the credential checks see them.
+		Effect.provideService(HttpClient.TracerHeaderFilter, () => true),
 	)
 }
 
@@ -677,7 +679,11 @@ describe("GcpMetricsService", () => {
 					2,
 				)
 				assert.notInclude(recorder.text(), "must not be stored")
-				assert.deepStrictEqual(recorder.failedSpans(), [])
+				// The HTTP client fails its own span on the 403 (OTel client semantics); Maple's do not.
+				assert.deepStrictEqual(
+					recorder.failedSpans().filter((span) => !span.startsWith("POST: ")),
+					[],
+				)
 			}),
 			{ recorder },
 		)
@@ -1090,12 +1096,13 @@ describe("GcpMetricsService", () => {
 				assert.deepInclude(yield* pollAll, { polled: 11, deferred: 2 })
 				assert.isNotNull((yield* pollState(testDb, other)).metrics_watermark_at)
 
-				// Never polled sorts first: the two that waited go before the ones that are due again.
+				// Never polled sorts first: the two that waited are taken before the ones that are due
+				// again. Connectors run concurrently, so the call order is not the candidate order.
 				yield* TestClock.setTime(now + 5 * minute)
 				const before = calls.impersonate.length
 				assert.deepInclude(yield* pollAll, { polled: 11, deferred: 2 })
-				const order = calls.impersonate.slice(before).map((call) => call.account.split("@")[1])
-				assert.sameMembers(order.slice(0, 2), [
+				const taken = calls.impersonate.slice(before).map((call) => call.account.split("@")[1])
+				assert.includeMembers(taken, [
 					"acme-prod-10.iam.gserviceaccount.com",
 					"acme-prod-11.iam.gserviceaccount.com",
 				])

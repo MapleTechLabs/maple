@@ -34,6 +34,7 @@ import {
 	type TransformedPoint,
 } from "../chart-utils"
 import { LinkedCursorOverlay, linkedCursorChartProps } from "@/hooks/use-linked-cursor"
+import { chartEventMarkerMarks, placeMarkersInWindow, type ChartEventMarker } from "./chart-event-markers"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 /**
@@ -67,6 +68,10 @@ export interface InfraMetricChartProps {
 	 * apparent.
 	 */
 	xDomain?: ReadonlyArray<string>
+	/** Events drawn as vertical lines at their own instant (deploys); ones outside the window are dropped. */
+	markers?: ReadonlyArray<ChartEventMarker>
+	/** Fixed colours for series whose meaning the name hash can't see ("Script threw an exception"). */
+	seriesColors?: Readonly<Record<string, string>>
 	/**
 	 * With `xDomain`: a bucket of the domain that has no row ends the lines there, instead of
 	 * joining its neighbours. For a source that reports nothing while idle, where a line drawn
@@ -151,6 +156,8 @@ export function InfraMetricChart({
 	linkedChartId,
 	xDomain,
 	gaps = false,
+	markers,
+	seriesColors,
 	header,
 	waiting = false,
 	height,
@@ -248,7 +255,7 @@ export function InfraMetricChart({
 		return series.map((name) => ({
 			key: name,
 			label: labelFor(name),
-			color: tokens.get(name) ?? "--border",
+			color: seriesColors?.[name] ?? tokens.get(name) ?? "--border",
 			// Read off the pivoted ROW, so a stacked chart still prints every
 			// series at the hovered bucket rather than only the band under the
 			// cursor, the same reason the bar chart reads through `cell.row`.
@@ -258,7 +265,7 @@ export function InfraMetricChart({
 			},
 			format: (value: number) => formatValueWithUnit(value, unit),
 		}))
-	}, [series, labelFor, unit])
+	}, [series, labelFor, unit, seriesColors])
 	const plot = useCursorPlot(cursorSeries)
 	const colors = plot.colors
 
@@ -327,6 +334,11 @@ export function InfraMetricChart({
 				})
 			: []
 
+		const placed =
+			markers === undefined || markers.length === 0
+				? []
+				: placeMarkersInWindow(markers, xDomain ?? data.map((point) => point.bucket))
+
 		return defineChart({
 			gradients: stacked
 				? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
@@ -334,6 +346,7 @@ export function InfraMetricChart({
 			marks: [
 				// Labels sit at the domain's right end, whether that is the last row
 				// or a shared domain that outruns this chart's rows.
+				...chartEventMarkerMarks(placed, { yDomain }),
 				...thresholdRules(thresholds, {
 					labelX: axis.domainMs ? new Date(axis.domainMs[1]) : undefined,
 				}),
@@ -360,9 +373,30 @@ export function InfraMetricChart({
 			focusRing: false,
 			tooltip: plot.tooltip,
 		})
-	}, [data, series, axis, stacked, gaps, plot, gradientPrefix, yDomain, tickFormatter, showThreshold, unit])
+	}, [
+		data,
+		series,
+		axis,
+		stacked,
+		gaps,
+		plot,
+		gradientPrefix,
+		yDomain,
+		tickFormatter,
+		showThreshold,
+		unit,
+		markers,
+		xDomain,
+	])
 
-	if (data.length === 0) {
+	// Buckets with no finite value for any series plot nothing, so they count as empty too.
+	const hasValue = data.some((point) =>
+		series.some((name) => {
+			const value = point[name]
+			return typeof value === "number" && Number.isFinite(value)
+		}),
+	)
+	if (!hasValue) {
 		return <ChartEmpty height={height}>{CHART_EMPTY_MESSAGE}</ChartEmpty>
 	}
 

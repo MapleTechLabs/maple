@@ -8,6 +8,7 @@
 import { Effect, Schema } from "effect"
 import {
 	CloudflareInfraPlatformResourcesRequest,
+	CloudflareInfraWorkerDetailRequest,
 	CloudflareInfraWorkersRequest,
 	CloudflareInfraZoneBreakdownRequest,
 	CloudflareInfraZoneDetailRequest,
@@ -37,9 +38,16 @@ export interface CloudflareZoneRow {
 	errors5xx: number
 	/** 5xx error ratio, 0–1. */
 	errorRate: number
+	errors4xx: number
+	/** 4xx error ratio, 0–1. */
+	clientErrorRate: number
+	requests2xx: number
+	requests3xx: number
 	cacheHits: number
-	/** Served-by-cache ratio, 0–1. */
-	cacheHitRate: number
+	/** Requests Cloudflare could have cached (excludes none/dynamic/bypass). */
+	cacheableRequests: number
+	/** Served-by-cache share of CACHEABLE requests, 0–1; null when nothing was cacheable. */
+	cacheHitRate: number | null
 	bytes: number
 	visits: number
 	ttfbP50Ms: number
@@ -64,6 +72,8 @@ export interface CloudflareZoneTimeseriesRow {
 
 export interface CloudflareWorkerRow {
 	serviceName: string
+	/** Cloudflare account id; same-named scripts in two accounts are two rows. */
+	accountId: string
 	/** Script name with the `cloudflare-worker/` prefix stripped. */
 	scriptName: string
 	requests: number
@@ -166,15 +176,22 @@ export const getCloudflareZones = Effect.fn("QueryEngine.getCloudflareZones")(fu
 			const serviceName = String(row.serviceName ?? "")
 			const requests = Number(row.requests ?? 0)
 			const errors5xx = Number(row.errors5xx ?? 0)
+			const errors4xx = Number(row.errors4xx ?? 0)
 			const cacheHits = Number(row.cacheHits ?? 0)
+			const cacheableRequests = Number(row.cacheableRequests ?? 0)
 			return {
 				serviceName,
 				zoneName: stripPrefix(serviceName, ZONE_SERVICE_PREFIX),
 				requests,
 				errors5xx,
 				errorRate: ratio(errors5xx, requests),
+				errors4xx,
+				clientErrorRate: ratio(errors4xx, requests),
+				requests2xx: Number(row.requests2xx ?? 0),
+				requests3xx: Number(row.requests3xx ?? 0),
 				cacheHits,
-				cacheHitRate: ratio(cacheHits, requests),
+				cacheableRequests,
+				cacheHitRate: cacheableRequests > 0 ? cacheHits / cacheableRequests : null,
 				bytes: Number(row.bytes ?? 0),
 				visits: Number(row.visits ?? 0),
 				ttfbP50Ms: Number(row.ttfbP50Ms ?? 0),
@@ -306,6 +323,91 @@ export const getCloudflareZoneDetail = Effect.fn("QueryEngine.getCloudflareZoneD
 	}
 })
 
+export interface CloudflareWorkerOutcomeBucket {
+	bucket: string
+	/** success, scriptThrewException, clientDisconnected, internalError, … */
+	status: string
+	requests: number
+}
+
+export interface CloudflareWorkerLatencyBucket {
+	bucket: string
+	cpuP50Ms: number
+	cpuP99Ms: number
+	durationP50Ms: number
+	durationP99Ms: number
+	/** 0 when the Worker binds no Durable Objects. */
+	doWallP50Ms: number
+	doWallP99Ms: number
+}
+
+export interface CloudflareWorkerDurableObjectBucket {
+	bucket: string
+	requests: number
+	errors: number
+}
+
+export interface CloudflareWorkerDetail {
+	outcomeBuckets: ReadonlyArray<CloudflareWorkerOutcomeBucket>
+	latencyBuckets: ReadonlyArray<CloudflareWorkerLatencyBucket>
+	durableObjectBuckets: ReadonlyArray<CloudflareWorkerDurableObjectBucket>
+}
+
+const WorkerDetailInputSchema = Schema.Struct({
+	serviceName: Schema.String,
+	startTime: WarehouseDateTimeString,
+	endTime: WarehouseDateTimeString,
+	bucketSeconds: Schema.Number,
+	accountId: Schema.optional(Schema.String),
+})
+
+export type CloudflareWorkerDetailInput = (typeof WorkerDetailInputSchema)["Encoded"]
+
+export const getCloudflareWorkerDetail = Effect.fn("QueryEngine.getCloudflareWorkerDetail")(function* ({
+	data,
+}: {
+	data: CloudflareWorkerDetailInput
+}) {
+	const input = yield* decodeInput(WorkerDetailInputSchema, data, "getCloudflareWorkerDetail")
+	const base = {
+		serviceName: input.serviceName,
+		startTime: input.startTime,
+		endTime: input.endTime,
+		bucketSeconds: input.bucketSeconds,
+	}
+	const payload =
+		input.accountId === undefined || input.accountId === ""
+			? new CloudflareInfraWorkerDetailRequest(base)
+			: new CloudflareInfraWorkerDetailRequest({ ...base, accountId: input.accountId })
+	const result = yield* runWarehouseQuery("cloudflareInfraWorkerDetail", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.queryEngine.cloudflareInfraWorkerDetail({ payload })
+		}),
+	)
+	return {
+		outcomeBuckets: result.outcomeBuckets.map((row): CloudflareWorkerOutcomeBucket => ({
+			bucket: String(row.bucket ?? ""),
+			status: String(row.status || "unknown"),
+			requests: Number(row.requests ?? 0),
+		})),
+		latencyBuckets: result.latencyBuckets.map((row): CloudflareWorkerLatencyBucket => ({
+			bucket: String(row.bucket ?? ""),
+			cpuP50Ms: Number(row.cpuP50Ms ?? 0),
+			cpuP99Ms: Number(row.cpuP99Ms ?? 0),
+			durationP50Ms: Number(row.durationP50Ms ?? 0),
+			durationP99Ms: Number(row.durationP99Ms ?? 0),
+			doWallP50Ms: Number(row.doWallP50Ms ?? 0),
+			doWallP99Ms: Number(row.doWallP99Ms ?? 0),
+		})),
+		durableObjectBuckets: result.durableObjectBuckets.map((row): CloudflareWorkerDurableObjectBucket => ({
+			bucket: String(row.bucket ?? ""),
+			requests: Number(row.requests ?? 0),
+			errors: Number(row.errors ?? 0),
+		})),
+	} satisfies CloudflareWorkerDetail
+})
+
 export const getCloudflareWorkers = Effect.fn("QueryEngine.getCloudflareWorkers")(function* ({
 	data,
 }: {
@@ -331,6 +433,7 @@ export const getCloudflareWorkers = Effect.fn("QueryEngine.getCloudflareWorkers"
 			return {
 				serviceName,
 				scriptName: stripPrefix(serviceName, WORKER_SERVICE_PREFIX),
+				accountId: String(row.accountId ?? ""),
 				requests,
 				errors,
 				errorRate: ratio(errors, requests),
@@ -448,6 +551,7 @@ export const getCloudflareZoneDns = Effect.fn("QueryEngine.getCloudflareZoneDns"
 
 export interface CloudflareQueueRow {
 	serviceName: string
+	accountId: string
 	/** Queue id with the `cloudflare-queue/` prefix stripped. */
 	queueName: string
 	backlogMessages: number
@@ -458,6 +562,7 @@ export interface CloudflareQueueRow {
 
 export interface CloudflareDurableObjectRow {
 	serviceName: string
+	accountId: string
 	/** Implementing Worker script name. */
 	scriptName: string
 	requests: number
@@ -488,6 +593,7 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 				return {
 					serviceName,
 					queueName: stripPrefix(serviceName, QUEUE_SERVICE_PREFIX),
+					accountId: String(row.accountId ?? ""),
 					backlogMessages: Number(row.backlogMessages ?? 0),
 					backlogMessagesMax: Number(row.backlogMessagesMax ?? 0),
 					backlogBytes: Number(row.backlogBytes ?? 0),
@@ -501,6 +607,7 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 				return {
 					serviceName,
 					scriptName: stripPrefix(serviceName, WORKER_SERVICE_PREFIX),
+					accountId: String(row.accountId ?? ""),
 					requests,
 					errors,
 					errorRate: ratio(errors, requests),

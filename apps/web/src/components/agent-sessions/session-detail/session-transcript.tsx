@@ -650,6 +650,7 @@ function SystemBlock({
 						rendered={body.rendered}
 						raw={raw}
 						onRawChange={(next) => next !== raw && onToggleRow(rawKey)}
+						className="self-start"
 					/>
 					{/* Copies the prompt as captured, not its rendering. */}
 					<CopyButton value={row.text} label="system prompt" className="-my-1 shrink-0" />

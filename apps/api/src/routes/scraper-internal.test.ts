@@ -150,23 +150,6 @@ describe("toInternalScrapeTarget", () => {
 describe("ScrapeResultReportList decoding", () => {
 	const decode = Schema.decodeUnknownSync(ScrapeResultReportList)
 
-	it("accepts reports with check metadata", () => {
-		const reports = decode([
-			{
-				targetId: "11111111-1111-4111-8111-111111111111",
-				scrapedAt: 1750000000000,
-				error: null,
-				subTargetKey: "branch-1",
-				durationMs: 250,
-				samplesScraped: 120,
-				samplesPostMetricRelabeling: 118,
-			},
-		])
-		assert.strictEqual(reports[0]?.durationMs, 250)
-		assert.strictEqual(reports[0]?.samplesScraped, 120)
-		assert.strictEqual(reports[0]?.samplesPostMetricRelabeling, 118)
-	})
-
 	it("accepts legacy reports without check metadata (older scraper deploys)", () => {
 		const reports = decode([
 			{

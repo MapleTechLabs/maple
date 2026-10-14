@@ -324,7 +324,7 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 					.pipe(Effect.flip, Effect.withTracer(tracer)),
 			)
 
-			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			assert.strictEqual(error._tag, "@maple/backend/lib/DatabaseError")
 			assert.strictEqual(postgresErrorType(error), "23503")
 			assert.isFalse(isPostgresConnectionError(error))
 			assert.strictEqual(dbSpans(spans).at(-1)?.attributes.get("error.type"), "23503")

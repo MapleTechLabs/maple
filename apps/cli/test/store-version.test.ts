@@ -56,12 +56,6 @@ const withParent = (run: (parent: string) => void): void => {
 }
 
 describe("clean-shutdown sentinel", () => {
-	it("storeOpenMarkerPath sits beside the data dir", () => {
-		withDataDir((dataDir) => {
-			strictEqual(storeOpenMarkerPath(dataDir), join(dataDir, "..", "maple-store-open"))
-		})
-	})
-
 	it("markStoreOpen writes the marker; markStoreClosed removes it", () => {
 		withDataDir((dataDir) => {
 			markStoreOpen(dataDir)

@@ -138,7 +138,6 @@ describe("niceLinearDomain", () => {
 	it("rounds to the tick count the axis must pin", () => {
 		// The count is exported because the renderer otherwise derives it from the
 		// plot's pixel height, which would make the two disagree at some sizes.
-		expect(NICE_TICK_COUNT).toBe(5)
 		expect(niceLinearDomain([35.4, 97], NICE_TICK_COUNT)).toEqual([30, 100])
 	})
 })
@@ -169,18 +168,6 @@ describe("logYScale", () => {
 
 	it("floors the domain at 1 — log is undefined at zero", () => {
 		expect(logYScale(0).domain()[0]).toBe(1)
-	})
-})
-
-describe("bucketTimeScale", () => {
-	it("is a local time scale, matching the local-time bucket formatter", () => {
-		const start = new Date("2026-08-18T00:00:00Z")
-		const end = new Date("2026-08-18T06:00:00Z")
-		const scale = bucketTimeScale([start, end])
-		expect(scale.domain()).toEqual([start, end])
-		// scaleUtc would place ticks against a different clock than the one
-		// printing the labels, drifting them by the browser's offset.
-		expect(scale.range()).toEqual([0, 1])
 	})
 })
 

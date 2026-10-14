@@ -7,6 +7,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import {
 	AlertRuleUpsertRequest,
+	isRangeComparator,
 	QueryBuilderQueryDraftSchema,
 	type AlertRuleDocument,
 } from "@maple/domain/http"
@@ -87,8 +88,9 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 
 /**
  * `AlertRuleUpsertRequest` is a full replacement, not a patch, so the request is seeded from the
- * rule's current config and overlaid with only the params the caller provided. The service's
- * `normalizeRule` validates the merged result.
+ * rule's current config and overlaid with only the params the caller provided. A field the new
+ * signal type or comparator does not use is dropped rather than carried over, as v2 PATCH does,
+ * because `normalizeRule` rejects it.
  */
 export function buildUpdatedRequest(
 	current: AlertRuleDocument,
@@ -106,6 +108,9 @@ export function buildUpdatedRequest(
 					...(body === undefined ? undefined : { body }),
 				}
 		: current.notificationTemplate
+	const signalType = params.signal_type ?? current.signalType
+	const comparator = params.comparator ?? current.comparator
+	const keepsRawQuery = signalType === "raw_query"
 
 	return {
 		name: params.name ?? current.name,
@@ -125,19 +130,20 @@ export function buildUpdatedRequest(
 				: current.groupBy
 					? [...current.groupBy]
 					: null,
-		signalType: params.signal_type ?? current.signalType,
-		comparator: params.comparator ?? current.comparator,
+		signalType,
+		comparator,
 		threshold: params.threshold ?? current.threshold,
-		thresholdUpper: current.thresholdUpper,
+		thresholdUpper: isRangeComparator(comparator) ? current.thresholdUpper : null,
 		windowMinutes: params.window_minutes ?? current.windowMinutes,
 		minimumSampleCount: params.minimum_sample_count ?? current.minimumSampleCount,
 		consecutiveBreachesRequired: params.consecutive_breaches ?? current.consecutiveBreachesRequired,
 		consecutiveHealthyRequired: params.consecutive_healthy ?? current.consecutiveHealthyRequired,
 		renotifyIntervalMinutes: params.renotify_interval_minutes ?? current.renotifyIntervalMinutes,
 		apdexThresholdMs: params.apdex_threshold_ms ?? current.apdexThresholdMs,
-		queryBuilderDraft: params.query_builder_draft ?? current.queryBuilderDraft,
-		rawQuerySql: params.raw_query_sql ?? current.rawQuerySql,
-		rawQueryReducer: params.raw_query_reducer ?? current.rawQueryReducer,
+		queryBuilderDraft:
+			signalType === "builder_query" ? (params.query_builder_draft ?? current.queryBuilderDraft) : null,
+		rawQuerySql: keepsRawQuery ? (params.raw_query_sql ?? current.rawQuerySql) : null,
+		rawQueryReducer: keepsRawQuery ? (params.raw_query_reducer ?? current.rawQueryReducer) : null,
 		alertOnNoData: params.alert_on_no_data ?? current.noDataBehavior === "alert",
 		destinationIds: mergeDestinations(current.destinationIds, params),
 	}

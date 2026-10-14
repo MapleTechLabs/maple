@@ -1,39 +1,36 @@
+import { useMemo } from "react"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
+import { Schema } from "effect"
+
 import { ResultView } from "@/components/common/result-view"
 import { cn } from "@maple/ui/lib/utils"
-import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { Schema } from "effect"
 import { Result } from "@/lib/effect-atom"
-
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { ChartLoading } from "@maple/ui/components/charts"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { CloudflareIcon } from "@/components/icons"
 import { HeroChip, PageHero } from "@/components/common/page-hero"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
-import { EMPTY_VALUE, formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { CloudflareBreakdownPanel } from "@/components/infra/cloudflare/cloudflare-breakdown-panel"
 import {
 	CloudflareIngestEmpty,
 	CloudflareStalledAction,
 } from "@/components/infra/cloudflare/cloudflare-ingest-status"
 import { useCloudflareIngestPhase } from "@/components/infra/cloudflare/use-cloudflare-ingest-phase"
-import { CloudflareEdgeShareBand } from "@/components/infra/cloudflare/cloudflare-edge-share-band"
 import { CloudflareFilterChips } from "@/components/infra/cloudflare/cloudflare-filter-chips"
-import { CloudflareFilterSidebarView } from "@/components/infra/cloudflare/cloudflare-filter-sidebar"
+import { CloudflareFilterPopover } from "@/components/infra/cloudflare/cloudflare-filter-popover"
 import {
-	CloudflareZoneCacheChart,
-	CloudflareZoneLatencyChart,
-	CloudflareZoneStatusChart,
-} from "@/components/infra/cloudflare/cloudflare-zone-detail-charts"
+	CloudflareZoneSignals,
+	zoneSeverityClass,
+} from "@/components/infra/cloudflare/cloudflare-zone-signals"
+import { CloudflareZoneRail, type ZoneRailDns } from "@/components/infra/cloudflare/cloudflare-zone-rail"
 import { CloudflareZoneDnsSection } from "@/components/infra/cloudflare/cloudflare-zone-dns"
 import { CloudflareZoneSecuritySection } from "@/components/infra/cloudflare/cloudflare-zone-security"
-import { PanelScope } from "@/components/infra/cloudflare/panel-scope"
+import { zoneSignalTotals } from "@/components/infra/cloudflare/zone-signals"
+import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
 import {
 	cloudflareFilterSearchFields,
 	filtersFromSearch,
@@ -42,11 +39,12 @@ import {
 	type CloudflareFilterKey,
 	type CloudflareFilters,
 } from "@/components/infra/cloudflare/filters"
-import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
 	cloudflareZoneDetailResultAtom,
+	cloudflareZoneDnsResultAtom,
 	cloudflareZoneFacetsResultAtom,
+	cloudflareZoneSecurityResultAtom,
 	cloudflareZonesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -54,9 +52,13 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 
+const ZONE_TABS = ["traffic", "dns", "security"] as const
+type ZoneTab = (typeof ZONE_TABS)[number]
+
 const zoneDetailSearchSchema = Schema.Struct({
 	...cloudflareFilterSearchFields,
 	...TimeRangeSearchFields,
+	tab: Schema.optional(Schema.Literals(ZONE_TABS)),
 })
 
 export const Route = createFileRoute("/infra/cloudflare/$zoneName")({
@@ -79,6 +81,8 @@ function ZoneDetailPage() {
 	)
 	const serviceName = `${ZONE_SERVICE_PREFIX}${zoneName}`
 	const filters = filtersFromSearch(search)
+	const bucketSeconds = chartBucketSeconds(startTime, endTime)
+	const tab: ZoneTab = search.tab ?? "traffic"
 
 	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
@@ -100,12 +104,7 @@ function ZoneDetailPage() {
 
 	const onToggleFilter = (key: CloudflareFilterKey, value: string) => {
 		if (key === "pathContains") return
-		navigate({
-			search: (prev) => ({
-				...prev,
-				[key]: toggleFilterValue(filters[key], value),
-			}),
-		})
+		navigate({ search: (prev) => ({ ...prev, [key]: toggleFilterValue(filters[key], value) }) })
 	}
 
 	const onRemoveChip = (chip: ActiveFilterChip) => {
@@ -122,17 +121,79 @@ function ZoneDetailPage() {
 				startTime: search.startTime,
 				endTime: search.endTime,
 				timePreset: search.timePreset,
+				tab: search.tab,
 			},
 		})
 	}
 
-	// Retained, not bare: the selected filters are part of the atom key, so every checkbox toggle
-	// instantiates a fresh atom whose first emission is `Initial`. Reading that directly replaced the
-	// whole sidebar with a skeleton on each click and reset every section's open/search/show-all
-	// state. Retaining the last success keeps the sections in place and merely dims the counts.
+	const onTabChange = (next: ZoneTab) => {
+		navigate({
+			replace: true,
+			search: (prev) => ({ ...prev, tab: next === "traffic" ? undefined : next }),
+		})
+	}
+
+	const detailInput = { serviceName, startTime, endTime, bucketSeconds, ...filters }
+	// Retained: the filters are part of the atom keys, so a bare read would flash skeletons on every toggle.
 	const facetsResult = useRefreshableAtomValue(
 		cloudflareZoneFacetsResultAtom({ data: { serviceName, startTime, endTime, ...filters } }),
 	)
+	const detailResult = useRefreshableAtomValue(cloudflareZoneDetailResultAtom({ data: detailInput }))
+	const dnsResult = useRefreshableAtomValue(cloudflareZoneDnsResultAtom({ data: detailInput }))
+	const securityResult = useRefreshableAtomValue(cloudflareZoneSecurityResultAtom({ data: detailInput }))
+	// The list rollup carries bytes/visits/latency; picking this zone's row shares its cached atom.
+	const zonesResult = useRefreshableAtomValue(
+		cloudflareZonesResultAtom({ data: { startTime, endTime, ...filters } }),
+	)
+	const zoneRow = Result.builder(zonesResult)
+		.onSuccess((r) => r.zones.find((zone) => zone.serviceName === serviceName) ?? null)
+		.orElse(() => null)
+
+	const { statusResult, phase } = useCloudflareIngestPhase()
+	const zoneAccount = Result.builder(statusResult)
+		.onSuccess((status) => {
+			const accounts = status.accounts ?? []
+			const account = accounts.find((a) => a.zones.some((zone) => zone.name === zoneName))
+			if (account === undefined) return null
+			return {
+				id: account.accountId,
+				name: account.accountName ?? account.accountId,
+				multi: accounts.length > 1,
+				zoneError: account.zones.find((zone) => zone.name === zoneName)?.lastError ?? null,
+			}
+		})
+		.orElse(() => null)
+	const accountName = zoneAccount?.name ?? null
+
+	const dns = Result.builder(dnsResult)
+		.onSuccess((data): ZoneRailDns | null =>
+			data.names.length === 0 && data.buckets.length === 0
+				? null
+				: {
+						queries: data.buckets.reduce((acc, b) => acc + b.queries, 0),
+						alwaysNxdomain: data.names.filter((n) => n.queries > 0 && n.nxdomain >= n.queries)
+							.length,
+					},
+		)
+		.orElse(() => null)
+	const firewallEvents = Result.builder(securityResult)
+		.onSuccess((data) => data.buckets.reduce((acc, b) => acc + b.events, 0))
+		.orElse(() => null)
+
+	const tabs = useMemo(
+		() => [
+			{ value: "traffic" as const, label: "Traffic" },
+			...(dns === null ? [] : [{ value: "dns" as const, label: "DNS" }]),
+			...(firewallEvents === null || firewallEvents === 0
+				? []
+				: [{ value: "security" as const, label: "Security" }]),
+		],
+		[dns, firewallEvents],
+	)
+
+	const severity = Result.builder(detailResult)
+		.onSuccess((detail) => zoneSeverityClass(zoneSignalTotals(detail.statusBuckets, detail.cacheBuckets)))
+		.orElse(() => null)
 
 	return (
 		<DashboardPage
@@ -142,217 +203,153 @@ function ZoneDetailPage() {
 				{ label: zoneName },
 			]}
 			time={{ search, startTime, endTime, defaultPreset: "12h", onChange: handleTimeChange }}
-			filters={
-				<CloudflareFilterSidebarView
-					facetsResult={facetsResult}
-					filters={filters}
-					onFilterChange={onFilterChange}
-					onClearFilters={onClearFilters}
+			rightPanel={
+				<CloudflareZoneRail
+					serviceName={serviceName}
+					accountName={accountName}
+					zoneRow={zoneRow}
+					dns={dns}
+					firewallEvents={firewallEvents}
+					onOpenTab={onTabChange}
 				/>
 			}
 			gap="lg"
 		>
 			<PageHero
-				title={zoneName}
-				description="How the edge answered this zone's traffic: status mix, cache behavior, and latency percentiles where your plan exposes them."
-				trailing={<HeroChip>zone</HeroChip>}
+				title={
+					<span className="flex items-center gap-3">
+						{severity === null ? null : (
+							<span aria-hidden className={cn("size-2 shrink-0 rounded-full", severity)} />
+						)}
+						{zoneName}
+					</span>
+				}
+				actions={
+					tabs.length > 1 ? (
+						<SegmentPivot<ZoneTab>
+							ariaLabel="Zone view"
+							options={tabs}
+							value={tabs.some((t) => t.value === tab) ? tab : "traffic"}
+							onChange={onTabChange}
+						/>
+					) : null
+				}
 				meta={
-					<CloudflareFilterChips
-						filters={filters}
-						onRemove={onRemoveChip}
-						onClear={onClearFilters}
-					/>
+					<>
+						<HeroChip>zone</HeroChip>
+						{zoneAccount === null ? null : zoneAccount.multi ? (
+							<Link to="/infra/cloudflare" search={{ account: zoneAccount.id }}>
+								<HeroChip>account {zoneAccount.name}</HeroChip>
+							</Link>
+						) : (
+							<HeroChip>account {zoneAccount.name}</HeroChip>
+						)}
+						<CloudflareFilterChips
+							filters={filters}
+							onRemove={onRemoveChip}
+							onClear={onClearFilters}
+						/>
+						<CloudflareFilterPopover
+							facetsResult={facetsResult}
+							filters={filters}
+							onFilterChange={onFilterChange}
+							onClearFilters={onClearFilters}
+						/>
+					</>
 				}
 			/>
-			<ZoneDetailContent
-				zoneName={zoneName}
-				serviceName={serviceName}
-				startTime={startTime}
-				endTime={endTime}
-				filters={filters}
-				onToggleFilter={onToggleFilter}
-			/>
+			{zoneAccount?.zoneError ? (
+				<div className="rounded-md bg-severity-error/10 px-3 py-2 text-xs text-foreground">
+					This zone isn't syncing ({zoneAccount.zoneError}). The strips stop at its last sync; the
+					gap is missing data, not quiet traffic.
+				</div>
+			) : null}
+			{tab === "dns" && dns !== null ? (
+				<CloudflareZoneDnsSection
+					serviceName={serviceName}
+					startTime={startTime}
+					endTime={endTime}
+					bucketSeconds={bucketSeconds}
+					filters={filters}
+				/>
+			) : tab === "security" && firewallEvents !== null && firewallEvents > 0 ? (
+				<CloudflareZoneSecuritySection
+					serviceName={serviceName}
+					startTime={startTime}
+					endTime={endTime}
+					bucketSeconds={bucketSeconds}
+					filters={filters}
+				/>
+			) : (
+				<ResultView
+					result={detailResult}
+					loading={
+						<div className="space-y-6">
+							<Skeleton className="h-80 w-full" />
+							<Skeleton className="h-64 w-full" />
+						</div>
+					}
+				>
+					{(detail, { waiting }) => {
+						if (detail.statusBuckets.length === 0 && !waiting) {
+							// Before any data is collected, "this zone has no traffic" would be the wrong thing to say.
+							if (phase != null && phase.kind !== "live" && phase.kind !== "backfilling") {
+								return (
+									<CloudflareIngestEmpty phase={phase}>
+										{phase.kind === "stalled" ? <CloudflareStalledAction /> : null}
+									</CloudflareIngestEmpty>
+								)
+							}
+							return <ZoneEmpty />
+						}
+						return (
+							<div className="space-y-6">
+								<CloudflareZoneSignals
+									statusBuckets={detail.statusBuckets}
+									cacheBuckets={detail.cacheBuckets}
+									latencyBuckets={detail.latencyBuckets}
+									zoneRow={zoneRow}
+									ignoredFilters={detail.ignoredFilters}
+									latencyIgnoredFilters={detail.latencyIgnoredFilters}
+									waiting={waiting}
+								/>
+								<CloudflareBreakdownPanel
+									serviceName={serviceName}
+									zoneName={zoneName}
+									startTime={startTime}
+									endTime={endTime}
+									bucketSeconds={bucketSeconds}
+									filters={filters}
+									onToggleFilter={onToggleFilter}
+								/>
+							</div>
+						)
+					}}
+				</ResultView>
+			)}
 		</DashboardPage>
 	)
 }
 
-function ZoneDetailContent({
-	zoneName,
-	serviceName,
-	startTime,
-	endTime,
-	filters,
-	onToggleFilter,
-}: {
-	zoneName: string
-	serviceName: string
-	startTime: string
-	endTime: string
-	filters: CloudflareFilters
-	onToggleFilter: (key: CloudflareFilterKey, value: string) => void
-}) {
-	const bucketSeconds = chartBucketSeconds(startTime, endTime)
-	// A zone drilled into before any data has been collected would otherwise read as "this zone
-	// has no traffic", which is a different — and wrong — thing to tell someone.
-	const { phase } = useCloudflareIngestPhase()
-
-	const detailResult = useRefreshableAtomValue(
-		cloudflareZoneDetailResultAtom({
-			data: { serviceName, startTime, endTime, bucketSeconds, ...filters },
-		}),
-	)
-	// The list rollup carries the bytes/visits/latency KPIs; picking this
-	// zone's row client-side shares the 30s-cached atom with the list page.
-	const zonesResult = useRefreshableAtomValue(
-		cloudflareZonesResultAtom({ data: { startTime, endTime, ...filters } }),
-	)
-	const zoneRow = Result.builder(zonesResult)
-		.onSuccess((r) => r.zones.find((zone) => zone.serviceName === serviceName) ?? null)
-		.orElse(() => null)
-
+function ZoneEmpty() {
 	return (
-		<ResultView
-			result={detailResult}
-			loading={
-				<div className="space-y-6">
-					<StatRailLoading />
-					<Skeleton className="h-28 w-full" />
-					<div className="grid gap-4 lg:grid-cols-2">
-						<ChartLoading variant="area" height={224} />
-						<ChartLoading variant="area" height={224} />
-					</div>
-				</div>
-			}
-		>
-			{(detail, { waiting }) => {
-				if (detail.statusBuckets.length === 0 && !waiting) {
-					if (phase != null && phase.kind !== "live" && phase.kind !== "backfilling") {
-						return (
-							<CloudflareIngestEmpty phase={phase}>
-								{phase.kind === "stalled" ? <CloudflareStalledAction /> : null}
-							</CloudflareIngestEmpty>
-						)
-					}
-					return (
-						<Empty className="py-16">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<CloudflareIcon size={16} />
-								</EmptyMedia>
-								<EmptyTitle>No traffic for this zone in the selected window</EmptyTitle>
-								<EmptyDescription>
-									Widen the time range, clear the filters, or check the zone list for where
-									traffic is landing.
-								</EmptyDescription>
-							</EmptyHeader>
-							<EmptyActions>
-								<Button variant="outline" size="sm" render={<Link to="/infra/cloudflare" />}>
-									Back to zones
-								</Button>
-								<DocsLink page="cloudflare" />
-							</EmptyActions>
-						</Empty>
-					)
-				}
-
-				const requests = detail.statusBuckets.reduce((acc, b) => acc + b.requests, 0)
-				const errors5xx = detail.statusBuckets.reduce(
-					(acc, b) => acc + (b.statusClass === "5xx" ? b.requests : 0),
-					0,
-				)
-				const errorRate = requests > 0 ? errors5xx / requests : 0
-
-				return (
-					<div
-						className={cn("space-y-6", refreshingClass(waiting))}
-						aria-busy={waiting || undefined}
-					>
-						<StatRail>
-							<StatRailItem eyebrow="Edge requests" value={formatNumber(requests)} compact />
-							<StatRailItem
-								eyebrow="5xx error rate"
-								value={formatPercent(errorRate)}
-								tone={errorRateLevel(errorRate)}
-								compact
-							/>
-							<StatRailItem
-								eyebrow="Bandwidth"
-								value={zoneRow ? formatBytes(zoneRow.bytes) : EMPTY_VALUE}
-								compact
-							/>
-							<StatRailItem
-								eyebrow="Visits"
-								value={zoneRow ? formatNumber(zoneRow.visits) : EMPTY_VALUE}
-								compact
-							/>
-						</StatRail>
-						<CloudflareEdgeShareBand cacheBuckets={detail.cacheBuckets} />
-						<div className="grid gap-4 lg:grid-cols-2">
-							<CloudflareZoneStatusChart
-								buckets={detail.statusBuckets}
-								syncId="cf-zone-detail"
-								scope={
-									<PanelScope
-										filters={filters}
-										ignoredFilters={detail.ignoredFilters}
-										reason="This chart is grouped by status class"
-									/>
-								}
-							/>
-							<CloudflareZoneCacheChart
-								buckets={detail.cacheBuckets}
-								syncId="cf-zone-detail"
-								scope={
-									<PanelScope
-										filters={filters}
-										ignoredFilters={detail.ignoredFilters}
-										reason="This chart is grouped by cache status"
-									/>
-								}
-							/>
-						</div>
-						<CloudflareZoneLatencyChart
-							buckets={detail.latencyBuckets}
-							syncId="cf-zone-detail"
-							scope={
-								<PanelScope
-									filters={filters}
-									ignoredFilters={detail.latencyIgnoredFilters}
-									reason="Cloudflare reports latency percentiles for the whole zone"
-								/>
-							}
-						/>
-						<CloudflareBreakdownPanel
-							serviceName={serviceName}
-							zoneName={zoneName}
-							startTime={startTime}
-							endTime={endTime}
-							bucketSeconds={bucketSeconds}
-							filters={filters}
-							onToggleFilter={onToggleFilter}
-							syncId="cf-zone-detail"
-						/>
-						{/* Extended sections load independently and hide themselves when their
-					    dataset is absent for this zone (plan/config-dependent). */}
-						<CloudflareZoneSecuritySection
-							serviceName={serviceName}
-							startTime={startTime}
-							endTime={endTime}
-							bucketSeconds={bucketSeconds}
-							filters={filters}
-							syncId="cf-zone-detail"
-						/>
-						<CloudflareZoneDnsSection
-							serviceName={serviceName}
-							startTime={startTime}
-							endTime={endTime}
-							bucketSeconds={bucketSeconds}
-							filters={filters}
-							syncId="cf-zone-detail"
-						/>
-					</div>
-				)
-			}}
-		</ResultView>
+		<Empty className="py-16">
+			<EmptyHeader>
+				<EmptyMedia variant="icon">
+					<CloudflareIcon size={16} />
+				</EmptyMedia>
+				<EmptyTitle>No traffic for this zone in the selected window</EmptyTitle>
+				<EmptyDescription>
+					Widen the time range, clear the filters, or check the zone list for where traffic is
+					landing.
+				</EmptyDescription>
+			</EmptyHeader>
+			<EmptyActions>
+				<Button variant="outline" size="sm" render={<Link to="/infra/cloudflare" />}>
+					Back to zones
+				</Button>
+				<DocsLink page="cloudflare" />
+			</EmptyActions>
+		</Empty>
 	)
 }

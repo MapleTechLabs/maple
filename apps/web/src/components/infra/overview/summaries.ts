@@ -6,7 +6,7 @@ import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import {
@@ -51,6 +51,8 @@ export interface Finding {
 	readonly source: SourceId
 	readonly tone: FindingTone
 	readonly title: string
+	/** The entity name `title` starts with, so a row can truncate the name and keep the metric. */
+	readonly subject?: string
 	readonly detail: string
 	readonly target: FindingTarget
 }
@@ -97,6 +99,7 @@ export function summarizeHosts(hosts: ReadonlyArray<HostRow>, referenceTime: str
 			key: `host:${host.hostName}`,
 			source: "hosts",
 			tone: "crit",
+			subject: host.hostName,
 			title: `${host.hostName} at ${formatPercent(values[worst] ?? 0)} ${METRIC_NAMES[worst]}`,
 			detail: `CPU ${formatPercent(host.cpuPct)}, memory ${formatPercent(host.memoryPct)}, disk ${formatPercent(host.diskPct)}`,
 			target: { kind: "host", hostName: host.hostName },
@@ -234,16 +237,17 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 		key: `zone:${zone.zoneName}`,
 		source: "cloudflare",
 		tone: errorRateLevel(zone.errorRate) === "crit" ? "crit" : "warn",
-		title: `${zone.zoneName} returning ${formatPercent(zone.errorRate)} 5xx`,
+		subject: zone.zoneName,
+		title: `${zone.zoneName} returning ${formatErrorRate(zone.errorRate)} 5xx`,
 		detail: `${formatNumber(zone.requests)} requests, origin p99 ${Math.round(zone.originP99Ms)}ms`,
 		target: { kind: "zone", zoneName: zone.zoneName },
 	}))
 
 	let requests = 0
-	let cacheHits = 0
+	let clientErrors = 0
 	for (const zone of zones) {
 		requests += zone.requests
-		cacheHits += zone.cacheHits
+		clientErrors += zone.errors4xx
 	}
 	return {
 		resources: countLabel(zones.length, "zone"),
@@ -252,7 +256,8 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 			{ key: "elevated", count: erroring.length - crit },
 			{ key: "saturated", count: crit },
 		],
-		headline: `${formatNumber(requests)} requests, ${formatPercent(requests > 0 ? cacheHits / requests : 0)} cached`,
+		// 4xx, not cache share: hits over all requests read "0.1% cached" for any API-heavy account.
+		headline: `${formatNumber(requests)} requests, ${formatPercent(requests > 0 ? clientErrors / requests : 0)} 4xx`,
 		headlineTone: worstTone(findings),
 		findings,
 	}
@@ -266,6 +271,7 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 		key: `railway:${row.environmentId}:${row.serviceId}`,
 		source: "railway",
 		tone: "crit",
+		subject: row.serviceName || row.serviceId,
 		title: `${row.serviceName || row.serviceId} at its resource limit`,
 		detail: `${row.projectName} / ${row.environmentName}`,
 		target: { kind: "railway", serviceId: row.serviceId, environmentId: row.environmentId },
@@ -405,6 +411,7 @@ export function summarizePlanetScale(databases: ReadonlyArray<PlanetScaleDatabas
 				key: `planetscale:${db.database}:${gauge.id}`,
 				source: "planetscale",
 				tone: gauge.tone,
+				subject: db.database,
 				title: gauge.title,
 				detail: gauge.detail,
 				target: { kind: "planetscale", database: db.database },

@@ -168,13 +168,10 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
 			// The ingest gateway hashes a pushed secret with this key and looks the row up by it.
-			const lookupHmacKey = yield* Effect.try({
-				try: () => parseIngestKeyLookupHmacKey(Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY)),
-				catch: () =>
-					new IntegrationsPersistenceError({
-						message: "MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY is required",
-					}),
-			})
+			const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
+				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+				(message) => new IntegrationsPersistenceError({ message }),
+			)
 			const ingestBaseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
 			const mapleServiceAccountEmail = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_EMAIL)
 			const mapleUrl = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/integrations?integration=gcp`

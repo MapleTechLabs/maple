@@ -609,6 +609,27 @@ export class CloudflareInfraZoneDetailResponse extends Schema.Class<CloudflareIn
 	latencyIgnoredFilters: IgnoredFilters,
 }) {}
 
+// Worker detail page: one Worker pseudo-service (`cloudflare-worker/{scriptName}`) over time:
+// invocations by outcome, CPU/duration percentiles, and its Durable Objects.
+export class CloudflareInfraWorkerDetailRequest extends Schema.Class<CloudflareInfraWorkerDetailRequest>(
+	"CloudflareInfraWorkerDetailRequest",
+)({
+	serviceName: Schema.String,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	/** Narrows to one account when the same script name exists in several. */
+	accountId: Schema.optionalKey(Schema.String),
+}) {}
+
+export class CloudflareInfraWorkerDetailResponse extends Schema.Class<CloudflareInfraWorkerDetailResponse>(
+	"CloudflareInfraWorkerDetailResponse",
+)({
+	outcomeBuckets: Schema.Array(WireRow),
+	latencyBuckets: Schema.Array(WireRow),
+	durableObjectBuckets: Schema.Array(WireRow),
+}) {}
+
 export class CloudflareInfraWorkersRequest extends Schema.Class<CloudflareInfraWorkersRequest>(
 	"CloudflareInfraWorkersRequest",
 )({
@@ -2183,6 +2204,34 @@ export class PodDetailSummaryResponse extends Schema.Class<PodDetailSummaryRespo
 	),
 }) {}
 
+/**
+ * Container restarts for a set of pods, from the cluster receiver's
+ * `k8s.container.restarts`. One row per container; the pod list sends its page.
+ */
+export class PodRestartsRequest extends Schema.Class<PodRestartsRequest>("PodRestartsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	podNames: Schema.optional(StringArray),
+	namespace: Schema.optional(Schema.String),
+	limit: Schema.optional(Schema.Number),
+}) {}
+
+export class PodRestartsResponse extends Schema.Class<PodRestartsResponse>("PodRestartsResponse")({
+	data: Schema.Array(
+		Schema.Struct({
+			podName: Schema.String,
+			namespace: Schema.String,
+			containerName: Schema.String,
+			/** Restarts inside the window (last - first of the running total, floored at 0). */
+			restarts: Schema.Number,
+			/** The running total at the window's newest sample. */
+			totalRestarts: Schema.Number,
+			/** Why the container last terminated (OOMKilled, Error, ...); empty when it never has. */
+			lastTerminatedReason: Schema.String,
+		}),
+	),
+}) {}
+
 export class PodInfraTimeseriesRequest extends Schema.Class<PodInfraTimeseriesRequest>(
 	"PodInfraTimeseriesRequest",
 )({
@@ -2218,6 +2267,18 @@ export class ListNodesRequest extends Schema.Class<ListNodesRequest>("ListNodesR
 	offset: Schema.optional(Schema.Number),
 }) {}
 
+// Allocatable is 0 when the k8s_cluster receiver did not report it; utilizations are
+// usage / allocatable fractions (0-1) and are 0 in that case.
+const NodeCapacityFields = {
+	cpuUsage: Schema.Number,
+	cpuAllocatable: Schema.Number,
+	cpuUtilization: Schema.Number,
+	memoryUsage: Schema.Number,
+	memoryAllocatable: Schema.Number,
+	memoryUtilization: Schema.Number,
+	uptime: Schema.Number,
+}
+
 const NodeRow = Schema.Struct({
 	nodeName: Schema.String,
 	nodeUid: Schema.String,
@@ -2225,8 +2286,7 @@ const NodeRow = Schema.Struct({
 	environment: Schema.String,
 	kubeletVersion: Schema.String,
 	lastSeen: Schema.String,
-	cpuUsage: Schema.Number,
-	uptime: Schema.Number,
+	...NodeCapacityFields,
 })
 
 export class ListNodesResponse extends Schema.Class<ListNodesResponse>("ListNodesResponse")({
@@ -2269,8 +2329,7 @@ export class NodeDetailSummaryResponse extends Schema.Class<NodeDetailSummaryRes
 			containerRuntime: Schema.String,
 			firstSeen: Schema.String,
 			lastSeen: Schema.String,
-			cpuUsage: Schema.Number,
-			uptime: Schema.Number,
+			...NodeCapacityFields,
 		}),
 	),
 }) {}
@@ -2281,7 +2340,7 @@ export class NodeInfraTimeseriesRequest extends Schema.Class<NodeInfraTimeseries
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	nodeName: Schema.String,
-	metric: Schema.Literals(["cpu_usage", "uptime"]),
+	metric: Schema.Literals(["cpu_usage", "cpu_utilization", "memory_usage", "memory_utilization", "uptime"]),
 	bucketSeconds: Schema.optional(BucketSeconds),
 }) {}
 
@@ -2295,7 +2354,7 @@ export class NodeInfraTimeseriesResponse extends Schema.Class<NodeInfraTimeserie
 			value: Schema.Number,
 		}),
 	),
-	unit: Schema.Literals(["cores", "seconds"]),
+	unit: Schema.Literals(["cores", "percent", "bytes", "seconds"]),
 }) {}
 
 export class ListWorkloadsRequest extends Schema.Class<ListWorkloadsRequest>("ListWorkloadsRequest")({
@@ -2734,6 +2793,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("cloudflareInfraWorkerDetail", "/cloudflare-infra-worker-detail", {
+			payload: CloudflareInfraWorkerDetailRequest,
+			success: CloudflareInfraWorkerDetailResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("cloudflareInfraZoneSecurity", "/cloudflare-infra-zone-security", {
 			payload: CloudflareInfraZoneSecurityRequest,
 			success: CloudflareInfraZoneSecurityResponse,
@@ -2921,6 +2987,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("podDetailSummary", "/pod-detail-summary", {
 			payload: PodDetailSummaryRequest,
 			success: PodDetailSummaryResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("podRestarts", "/pod-restarts", {
+			payload: PodRestartsRequest,
+			success: PodRestartsResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

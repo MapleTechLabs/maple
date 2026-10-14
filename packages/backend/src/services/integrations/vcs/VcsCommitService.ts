@@ -13,7 +13,7 @@ import {
 	type VcsProviderId,
 	type VcsRepo,
 } from "@maple/domain/http"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Result, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Ref, Result, Schema } from "effect"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 
@@ -168,6 +168,12 @@ const detailFromInput = (
 	resolved: "fetched",
 })
 
+/** The first repository a commit SHA resolved in, and how many repos were probed to find it. */
+interface CommitProbeHit {
+	readonly normalized: CommitUpsertInput
+	readonly repository: VcsRepo
+	readonly reposProbed: number
+}
 export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommitServiceApi>()(
 	"@maple/api/services/vcs/VcsCommitService",
 	{
@@ -183,30 +189,15 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				sha: GitCommitSha,
 				installations: ReadonlyArray<VcsInstallation>,
 			) {
-				// `reposProbed` accumulates across the whole walk; it's reported in both
-				// the resolved and not-found outcomes. `found` carries the first repo that
-				// resolves and, once set, makes every later iteration a no-op — so no extra
-				// `fetchCommit` runs after a hit and the counter stops advancing, preserving
-				// the original early-`return` semantics exactly (forEach merely walks, but
-				// skips, the remaining items).
-				let reposProbed = 0
-				const hit: {
-					current: {
-						readonly normalized: CommitUpsertInput
-						readonly repository: VcsRepo
-						readonly reposProbed: number
-					} | null
-				} = { current: null } satisfies {
-					current: {
-						readonly normalized: CommitUpsertInput
-						readonly repository: VcsRepo
-						readonly reposProbed: number
-					} | null
-				}
+				// `reposProbed` accumulates across the whole walk and is reported in both outcomes.
+				// Once `hitRef` holds the first repo that resolves, every later item is skipped, so
+				// no `fetchCommit` runs after a hit and the counter stops advancing.
+				const reposProbedRef = yield* Ref.make(0)
+				const hitRef = yield* Ref.make<CommitProbeHit | null>(null)
 
 				yield* Effect.forEach(installations, (installation) =>
 					Effect.gen(function* () {
-						if (hit.current !== null) return
+						if ((yield* Ref.get(hitRef)) !== null) return
 						const provider = yield* registry
 							.resolve(installation.provider)
 							.pipe(
@@ -217,8 +208,11 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 						)
 						yield* Effect.forEach(repos, (repository) =>
 							Effect.gen(function* () {
-								if (hit.current !== null) return
-								reposProbed += 1
+								if ((yield* Ref.get(hitRef)) !== null) return
+								const reposProbed = yield* Ref.updateAndGet(
+									reposProbedRef,
+									(count) => count + 1,
+								)
 								const outcome = yield* Effect.result(
 									provider.fetchCommit(
 										installation,
@@ -243,25 +237,27 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 									"vcs.commit.outcome": "resolved",
 									"vcs.repository.id": repository.id,
 								})
-								hit.current = {
+								yield* Ref.set(hitRef, {
 									normalized: outcome.success.value,
 									repository,
 									reposProbed,
-								}
+								})
 							}),
 						)
 					}),
 				)
 
-				if (hit.current !== null) {
+				const hit = yield* Ref.get(hitRef)
+				if (hit !== null) {
 					return {
 						_tag: "resolved" as const,
-						normalized: hit.current.normalized,
-						repository: hit.current.repository,
-						reposProbed: hit.current.reposProbed,
+						normalized: hit.normalized,
+						repository: hit.repository,
+						reposProbed: hit.reposProbed,
 					}
 				}
 
+				const reposProbed = yield* Ref.get(reposProbedRef)
 				yield* Effect.annotateCurrentSpan({
 					"vcs.commit.repos_probed": reposProbed,
 					"vcs.commit.outcome": "not_found",

@@ -216,6 +216,8 @@ describe("rowToAlertDestinationDocument", () => {
 		config_json: { summary: "Telegram chat -100123", channelLabel: "-100123" },
 		last_tested_at: "2026-07-04T00:00:00.000Z",
 		last_test_error: null,
+		disabled_at: null,
+		disabled_reason: null,
 		created_at: "2026-06-01T00:00:00.000Z",
 		updated_at: "2026-07-04T00:00:00.000Z",
 	}
@@ -231,6 +233,17 @@ describe("rowToAlertDestinationDocument", () => {
 		assert.strictEqual(doc.lastTestedAt, "2026-07-04T00:00:00.000Z")
 		assert.strictEqual(doc.lastTestError, null)
 		assert.strictEqual(doc.createdAt, "2026-06-01T00:00:00.000Z")
+	})
+
+	it("carries why Maple auto-disabled a destination", () => {
+		const doc = rowToAlertDestinationDocument({
+			...base,
+			enabled: false,
+			disabled_at: "2026-07-05T00:00:00.000Z",
+			disabled_reason: "delivery failed with 404",
+		})
+		assert.strictEqual(doc.disabledAt, "2026-07-05T00:00:00.000Z")
+		assert.strictEqual(doc.disabledReason, "delivery failed with 404")
 	})
 
 	it("falls back to the server's invalid-config summary when config_json is unusable", () => {

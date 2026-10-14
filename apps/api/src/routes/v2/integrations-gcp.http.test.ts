@@ -6,7 +6,7 @@ import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -72,7 +72,7 @@ const makeHarness = (options: { readonly metricsAvailable: boolean } = { metrics
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),

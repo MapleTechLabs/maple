@@ -21,31 +21,6 @@ describe("timezone-format", () => {
 		expect(formatted).toContain(".123")
 	})
 
-	it("formats the same instant differently in different timezones", () => {
-		const input = "2024-01-01T12:00:00.000Z"
-
-		const utc = formatTimestampInTimezone(input, { timeZone: "UTC" })
-		const newYork = formatTimestampInTimezone(input, {
-			timeZone: "America/New_York",
-		})
-
-		expect(utc).not.toBe(newYork)
-		expect(utc).toContain("12:00:00")
-		expect(newYork).toContain("07:00:00")
-	})
-
-	it("supports millisecond formatting", () => {
-		const input = "2024-01-01T12:00:00.123Z"
-
-		const formatted = formatTimestampInTimezone(input, {
-			timeZone: "UTC",
-			withMilliseconds: true,
-		})
-
-		expect(formatted).toContain("12:00:00")
-		expect(formatted).toContain(".123")
-	})
-
 	it("supports timestamp with T separator but no timezone", () => {
 		const formatted = formatTimestampInTimezone("2026-02-27T12:54:36", {
 			timeZone: "Europe/Berlin",

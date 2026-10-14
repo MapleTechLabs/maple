@@ -1,4 +1,5 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { useState, type Dispatch, type SetStateAction } from "react"
@@ -212,7 +213,7 @@ function SelectedDestination({
 				bare
 				className="flex shrink-0"
 			/>
-			<span className="min-w-0 truncate text-sm font-medium">{primary}</span>
+			<MiddleTruncate text={primary} tail={16} className="text-sm font-medium" />
 			<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 				{paused ? <span className="text-severity-error">{paused} · </span> : null}
 				{secondary}
@@ -306,7 +307,7 @@ function AddDestinationMenu({
 										bare
 										className="flex shrink-0"
 									/>
-									<span className="min-w-0 flex-1 truncate">{primary}</span>
+									<MiddleTruncate text={primary} tail={16} className="flex-1" />
 									<span className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">
 										{secondary}
 									</span>

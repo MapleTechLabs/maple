@@ -100,6 +100,16 @@ export function DestinationCard({
 							)}
 						</div>
 
+						{!destination.enabled && destination.disabledReason && (
+							<Alert variant="crit" size="sm" className="mt-2 rounded-md">
+								<AlertWarningIcon size={12} />
+								<AlertDescription className="break-words text-severity-error">
+									Maple stopped delivering here after repeated failures:{" "}
+									{destination.disabledReason}. Fix the destination, then turn it back on.
+								</AlertDescription>
+							</Alert>
+						)}
+
 						{destination.lastTestError && (
 							<Alert variant="crit" size="sm" className="mt-2 rounded-md">
 								<AlertWarningIcon size={12} />

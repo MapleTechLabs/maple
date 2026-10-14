@@ -29,6 +29,26 @@ interface SpanRowProps {
 	onSelect?: (span: SpanNode) => void
 }
 
+/** Indent stops growing past this depth so deep traces keep room for the span name. */
+const MAX_INDENT_DEPTH = 10
+
+function DepthIndent({ depth }: { depth: number }) {
+	if (depth <= 0) return null
+	return (
+		<>
+			<div style={{ width: `${Math.min(depth, MAX_INDENT_DEPTH) * 24}px` }} className="shrink-0" />
+			{depth > MAX_INDENT_DEPTH && (
+				<span
+					className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground"
+					title={`Depth ${depth}`}
+				>
+					L{depth}
+				</span>
+			)}
+		</>
+	)
+}
+
 function SpanRowImpl({
 	span,
 	totalDurationMs,
@@ -49,7 +69,7 @@ function SpanRowImpl({
 				)}
 			>
 				<div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
-					{span.depth > 0 && <div style={{ width: `${span.depth * 24}px` }} className="shrink-0" />}
+					<DepthIndent depth={span.depth} />
 
 					{hasChildren ? (
 						<IconButton
@@ -140,7 +160,7 @@ function SpanRowImpl({
 			{/* overflow-hidden so the shrink-0 children clip rather than paint over the right section */}
 			<div className="@container flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
 				{/* Indentation spacer based on depth */}
-				{span.depth > 0 && <div style={{ width: `${span.depth * 24}px` }} className="shrink-0" />}
+				<DepthIndent depth={span.depth} />
 
 				{hasChildren ? (
 					<IconButton
@@ -158,7 +178,7 @@ function SpanRowImpl({
 					<div className="w-6 shrink-0" />
 				)}
 
-				<span className="flex shrink-0 items-center gap-1.5 font-mono text-3xs">
+				<span className="flex min-w-0 max-w-[30%] shrink items-center gap-1.5 font-mono text-3xs">
 					{platform && (
 						<platform.Icon
 							size={11}
@@ -167,8 +187,14 @@ function SpanRowImpl({
 						/>
 					)}
 					<ServiceDot serviceName={span.serviceName} className="size-1.5" />
-					<span style={{ color: getServiceColor(span.serviceName) }}>{span.serviceName}</span>
-					<span className="text-muted-foreground/60">{kindLabel}</span>
+					<span
+						className="min-w-0 truncate"
+						style={{ color: getServiceColor(span.serviceName) }}
+						title={span.serviceName}
+					>
+						{span.serviceName}
+					</span>
+					<span className="shrink-0 text-muted-foreground/60">{kindLabel}</span>
 				</span>
 
 				{platform?.edge && (

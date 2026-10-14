@@ -111,6 +111,14 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 		}),
 	)
 
+	it.live("asks for a rolling prompt-cache breakpoint so agent loops reuse their history", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureRequest(openRouterEnv, tags)
+
+			expect(captured.body.cache_control).toEqual({ type: "ephemeral" })
+		}),
+	)
+
 	it.live("omits session_id when the caller has no session to group by", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(openRouterEnv, { surface: "chat", orgId: "org_123" })
@@ -158,6 +166,7 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 			expect(captured.body).not.toHaveProperty("user")
 			expect(captured.body).not.toHaveProperty("session_id")
 			expect(captured.body).not.toHaveProperty("trace")
+			expect(captured.body).not.toHaveProperty("cache_control")
 		}),
 	)
 })

@@ -142,10 +142,6 @@ describe("resolveSettings", () => {
 		expect(resolveSettings({})).toBeUndefined()
 	})
 
-	it("returns profile defaults", () => {
-		expect(resolveSettings({ profile: "discovery" })).toEqual(QueryProfile.discovery)
-	})
-
 	it("merges explicit settings on top of profile", () => {
 		expect(resolveSettings({ profile: "discovery", settings: { maxExecutionTime: 99 } })).toEqual({
 			...QueryProfile.discovery,

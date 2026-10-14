@@ -247,7 +247,8 @@ export function PodPeekSheet({
 								</IconButton>
 								{position ? (
 									<span className="ml-1 font-mono text-2xs tabular-nums text-muted-foreground">
-										{position.index + 1} of {position.count}
+										{(position.index + 1).toLocaleString()} of{" "}
+										{position.count.toLocaleString()}
 									</span>
 								) : null}
 								<span className="ml-2 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex">
