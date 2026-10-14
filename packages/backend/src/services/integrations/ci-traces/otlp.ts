@@ -13,6 +13,9 @@ export const CI_SERVICE_NAME = "github-actions"
 const SCOPE_NAME = "@maple/ci-traces"
 
 const SPAN_KIND_INTERNAL = 1
+const SPAN_KIND_SERVER = 2
+/** `cicd.pipeline.action.name` of a workflow run: it executes the pipeline, it is not a build or sync. */
+const PIPELINE_ACTION = "RUN"
 const STATUS_UNSET = 0
 const STATUS_OK = 1
 const STATUS_ERROR = 2
@@ -142,6 +145,14 @@ const statusOf = (conclusion: string | null) => {
 	}
 }
 
+/**
+ * `error.type` for a failed run or task, which the conventions require on `failure` and `error`.
+ * The result itself is the error's class: GitHub says no more than that it failed, timed out or
+ * could not start.
+ */
+const errorTypeOf = (conclusion: string | null) =>
+	statusOf(conclusion).code === STATUS_ERROR ? resultOf(conclusion) : undefined
+
 const attrs = (entries: Record<string, string | number | null | undefined>): OtlpKeyValue[] =>
 	Object.entries(entries).flatMap(([key, value]) => {
 		if (value === null || value === undefined || value === "") return []
@@ -156,20 +167,27 @@ const attrs = (entries: Record<string, string | number | null | undefined>): Otl
 		]
 	})
 
-const resourceOf = (repoFullName: string) => {
+/** The repository's web URL, from a run or job URL under it (`.../owner/repo/actions/runs/1`). */
+const repositoryUrlOf = (url: string) => {
+	const actions = url.indexOf("/actions/")
+	return actions === -1 ? undefined : url.slice(0, actions)
+}
+
+const resourceOf = (repoFullName: string, url: string) => {
 	const slash = repoFullName.indexOf("/")
 	return attrs({
 		"service.name": CI_SERVICE_NAME,
 		"vcs.provider.name": "github",
 		"vcs.owner.name": slash === -1 ? undefined : repoFullName.slice(0, slash),
 		"vcs.repository.name": slash === -1 ? repoFullName : repoFullName.slice(slash + 1),
+		"vcs.repository.url.full": repositoryUrlOf(url),
 	})
 }
 
-const payloadOf = (repoFullName: string, spans: ReadonlyArray<OtlpSpan>): OtlpTracesPayload => ({
+const payloadOf = (repoFullName: string, url: string, spans: ReadonlyArray<OtlpSpan>): OtlpTracesPayload => ({
 	resourceSpans: [
 		{
-			resource: { attributes: resourceOf(repoFullName) },
+			resource: { attributes: resourceOf(repoFullName, url) },
 			scopeSpans: [{ scope: { name: SCOPE_NAME }, spans }],
 		},
 	],
@@ -181,13 +199,14 @@ const refAttrs = (headBranch: string | null, headSha: string | null) => ({
 })
 
 export const workflowRunToOtlp = (run: WorkflowRunJob): OtlpTracesPayload =>
-	payloadOf(run.repoFullName, [
+	payloadOf(run.repoFullName, run.url, [
 		{
 			traceId: ciTraceId(run),
 			spanId: ciRunSpanId(run),
 			parentSpanId: "",
-			name: run.workflowName,
-			kind: SPAN_KIND_INTERNAL,
+			// `{action} {pipeline}`, a SERVER span: the conventions' shape for a pipeline run.
+			name: `${PIPELINE_ACTION} ${run.workflowName}`,
+			kind: SPAN_KIND_SERVER,
 			startTimeUnixNano: unixNano(run.startedAtMs),
 			endTimeUnixNano: unixNano(run.completedAtMs),
 			attributes: attrs({
@@ -195,6 +214,8 @@ export const workflowRunToOtlp = (run: WorkflowRunJob): OtlpTracesPayload =>
 				"cicd.pipeline.run.id": run.runId,
 				"cicd.pipeline.run.url.full": run.url,
 				"cicd.pipeline.result": resultOf(run.conclusion),
+				"cicd.pipeline.action.name": PIPELINE_ACTION,
+				"error.type": errorTypeOf(run.conclusion),
 				...refAttrs(run.headBranch, run.headSha),
 				"vcs.change.id":
 					run.pullRequestNumbers[0] === undefined ? undefined : String(run.pullRequestNumbers[0]),
@@ -217,7 +238,6 @@ export const workflowJobToOtlp = (
 	const shared = {
 		"cicd.pipeline.name": job.workflowName,
 		"cicd.pipeline.run.id": job.runId,
-		"cicd.pipeline.task.run.id": job.jobId,
 		...refAttrs(job.headBranch, job.headSha),
 		"maple.cicd.run_attempt": job.runAttempt,
 	}
@@ -237,13 +257,15 @@ export const workflowJobToOtlp = (
 						endTimeUnixNano: unixNano(job.startedAtMs),
 						attributes: attrs({
 							...shared,
-							"cicd.pipeline.task.name": job.name,
+							"maple.cicd.job.name": job.name,
 							"maple.cicd.queue_duration_ms": queueMs,
 							"maple.cicd.runner_labels": job.labels.join(","),
 						}),
 						status: { code: STATUS_UNSET, message: "" },
 					},
 				]
+	// A step is a task too, nested in its job's: its own name, an id unique in the run, and a link
+	// to its line in the job's log.
 	const steps = job.steps.map((step): OtlpSpan => ({
 		traceId,
 		spanId: stepSpanId(job, step),
@@ -254,8 +276,13 @@ export const workflowJobToOtlp = (
 		endTimeUnixNano: unixNano(step.completedAtMs),
 		attributes: attrs({
 			...shared,
-			"cicd.pipeline.task.name": job.name,
+			"cicd.pipeline.task.name": ciStepName(step.name),
+			"cicd.pipeline.task.run.id": `${job.jobId}.${step.number}`,
+			"cicd.pipeline.task.run.url.full":
+				job.url === "" ? undefined : `${job.url}#step:${step.number}:1`,
 			"cicd.pipeline.task.run.result": resultOf(step.conclusion),
+			"error.type": errorTypeOf(step.conclusion),
+			"maple.cicd.job.name": job.name,
 			"maple.cicd.step.name": step.name,
 			"maple.cicd.step.number": step.number,
 		}),
@@ -274,7 +301,7 @@ export const workflowJobToOtlp = (
 			"code.line.number": annotation.startLine,
 		}),
 	}))
-	return payloadOf(job.repoFullName, [
+	return payloadOf(job.repoFullName, job.url, [
 		{
 			traceId,
 			spanId: jobSpan,
@@ -286,8 +313,10 @@ export const workflowJobToOtlp = (
 			attributes: attrs({
 				...shared,
 				"cicd.pipeline.task.name": job.name,
+				"cicd.pipeline.task.run.id": job.jobId,
 				"cicd.pipeline.task.run.url.full": job.url,
 				"cicd.pipeline.task.run.result": resultOf(job.conclusion),
+				"error.type": errorTypeOf(job.conclusion),
 				"cicd.worker.name": job.runnerName,
 				"maple.cicd.queue_duration_ms": queueMs,
 				"maple.cicd.runner_labels": job.labels.join(","),

@@ -48,6 +48,7 @@ const OtlpRequest = Schema.Struct({
 							spanId: Schema.String,
 							parentSpanId: Schema.String,
 							name: Schema.String,
+							kind: Schema.Number,
 							startTimeUnixNano: Schema.String,
 							endTimeUnixNano: Schema.String,
 							attributes: Schema.Array(OtlpKeyValue),
@@ -195,7 +196,7 @@ describe("CiTraceService", () => {
 
 			assert.deepStrictEqual(
 				[runSpan!.name, jobSpan!.name, queueSpan!.name, installStep!.name, testStep!.name],
-				["CI", "test", "Waiting for a runner", "Install", "Test"],
+				["RUN CI", "test", "Waiting for a runner", "Install", "Test"],
 			)
 			// The job span covers its 30s wait for a runner, which the queue span shows.
 			assert.strictEqual(jobSpan!.startTimeUnixNano, "1700000010000000000")
@@ -293,6 +294,41 @@ describe("CiTraceService", () => {
 			const spans = spansOf(calls[0]!)
 			assert.strictEqual(spans.length, 1 + job.steps.length)
 			assert.strictEqual(spans[0]!.startTimeUnixNano, "1700000040000000000")
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
+	})
+
+	it.live("follows the CI/CD semantic conventions for runs and tasks", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJob(orgId, job, [])
+			yield* sink.onWorkflowRun(orgId, run)
+			const [jobSpan, , installStep, testStep] = spansOf(calls[0]!)
+			const [runSpan] = spansOf(calls[1]!)
+
+			// A run is a SERVER span named `{action} {pipeline}`; tasks are INTERNAL.
+			assert.deepStrictEqual([runSpan!.kind, jobSpan!.kind, testStep!.kind], [2, 1, 1])
+			assert.strictEqual(attr(runSpan!.attributes, "cicd.pipeline.action.name"), "RUN")
+			// `error.type` on a failed run or task, never on one that passed.
+			assert.deepStrictEqual(
+				[runSpan!, jobSpan!, installStep!, testStep!].map((span) =>
+					attr(span.attributes, "error.type"),
+				),
+				["failure", "failure", undefined, "failure"],
+			)
+			// A step is a task of its own: its name, an id unique in the run, a link to its log line.
+			assert.strictEqual(attr(testStep!.attributes, "cicd.pipeline.task.name"), "Test")
+			assert.strictEqual(attr(testStep!.attributes, "cicd.pipeline.task.run.id"), "555.2")
+			assert.strictEqual(
+				attr(testStep!.attributes, "cicd.pipeline.task.run.url.full"),
+				"https://github.com/octo/repo/actions/runs/9001/job/555#step:2:1",
+			)
+			assert.strictEqual(attr(jobSpan!.attributes, "cicd.pipeline.task.run.id"), "555")
+			assert.strictEqual(
+				attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "vcs.repository.url.full"),
+				"https://github.com/octo/repo",
+			)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 
