@@ -49,7 +49,7 @@ import { HttpClient } from "effect/http"
 import { verboseLogging } from "../lib/debug"
 import { CliUsageError, LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
 import { isLocalUnreachable, isNotMapleServer, readOnlyRejection } from "../lib/failure"
-import type { ErrorRow, MetricSeriesOutput, TopOperationRow } from "../lib/views"
+import type { ErrorRow, MetricSeriesOutput, ServiceMapResult, TopOperationRow } from "../lib/views"
 import { LOCAL_ORG_ID, localDriverError } from "./executor"
 import { Mode, type ModeError } from "./mode"
 import * as Remote from "./remote-ops"
@@ -359,10 +359,44 @@ export const findSlowTraces = (p: { range: Range; service?: string; environment?
 		"slow_traces",
 	)
 
+const localServiceMap = (p: { range: Range; service?: string; environment?: string }) =>
+	Effect.gen(function* () {
+		const executor = yield* WarehouseExecutor
+		const params = { orgId: LOCAL_ORG_ID, startTime: p.range.startTime, endTime: p.range.endTime }
+		const allEdges = yield* obsServiceMap({
+			timeRange: p.range,
+			service: p.service,
+			environment: p.environment,
+		})
+		// `service_dependencies` does not scope by service, so keep the edges touching it here.
+		const edges =
+			p.service === undefined
+				? allEdges
+				: allEdges.filter((e) => e.sourceService === p.service || e.targetService === p.service)
+		const databases = yield* executor.compiledQuery(
+			p.service === undefined
+				? CH.serviceDbEdgesSQL({ deploymentEnv: p.environment }, params)
+				: CH.compile(
+						CH.serviceDbEdgesForServiceQuery({
+							serviceName: p.service,
+							deploymentEnv: p.environment,
+						}),
+						params,
+					),
+			{ profile: "aggregation", context: "cli.serviceMapDatabases" },
+		)
+		if (p.service === undefined) return { edges, databases } satisfies ServiceMapResult
+		const external = yield* executor.compiledQuery(
+			CH.serviceExternalEdgesSQL({ serviceName: p.service, deploymentEnv: p.environment }, params),
+			{ profile: "aggregation", context: "cli.serviceMapExternal" },
+		)
+		return { edges, databases, external } satisfies ServiceMapResult
+	})
+
 export const serviceMap = (p: { range: Range; service?: string; environment?: string }) =>
 	dispatch(
-		obsServiceMap({ timeRange: p.range, service: p.service, environment: p.environment }),
-		({ v2 }) => Remote.serviceMap(v2, p),
+		localServiceMap(p),
+		({ v2 }) => Effect.map(Remote.serviceMap(v2, p), (edges): ServiceMapResult => ({ edges })),
 		"service_dependencies",
 	)
 

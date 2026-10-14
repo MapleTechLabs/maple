@@ -10,7 +10,8 @@ import {
 } from "effect/http"
 import { LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
 import { Mode } from "./mode"
-import { rawQuery } from "./operations"
+import { rawQuery, serviceMap } from "./operations"
+import { WarehouseExecutorFromMode } from "./warehouse"
 
 const RANGE = { startTime: "2026-08-15 12:00:00", endTime: "2026-08-15 13:00:00" }
 
@@ -161,4 +162,82 @@ describe("rawQuery macros", () => {
 		assert.match(body, /SELECT 1/)
 		assert.doesNotMatch(body, /maple_raw_sql_limited/)
 	})
+})
+
+describe("serviceMap in local mode", () => {
+	const EDGE = { callCount: 3, errorCount: 0, avgDurationMs: 10, maxDurationMs: 20, estimatedSpanCount: 3 }
+	const STATS = { ...EDGE, p95DurationMs: 15 }
+
+	/** Answers each query by the rollup it reads; records every SQL the server receives. */
+	const run = (service?: string) =>
+		Effect.gen(function* () {
+			const sqls: Array<string> = []
+			// SAFETY: this focused fetch stub returns the only response shape the queries read.
+			const request = (async (_input: string | URL | Request, init?: RequestInit) => {
+				const raw = init?.body instanceof Uint8Array ? new TextDecoder().decode(init.body) : "{}"
+				// SAFETY: the local executor always posts a `{ sql }` JSON body.
+				const sql = (JSON.parse(raw) as { sql?: string }).sql ?? ""
+				sqls.push(sql)
+				const rows = sql.includes("service_map_db_edges_hourly")
+					? [{ sourceService: "api", dbSystem: "postgresql", dbNamespace: "shop", ...STATS }]
+					: sql.includes("service_external_edges_hourly")
+						? [
+								{
+									sourceService: "api",
+									targetType: "http",
+									targetSystem: "",
+									targetName: "api.stripe.com",
+									...STATS,
+								},
+							]
+						: [
+								{ sourceService: "web", targetService: "api", ...EDGE },
+								{ sourceService: "web", targetService: "billing", ...EDGE },
+							]
+				return new Response(JSON.stringify(rows), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				})
+			}) as unknown as typeof fetch
+			const modeLayer = Layer.succeed(Mode, {
+				resolve: Effect.succeed({ _tag: "local" as const, baseUrl: "http://127.0.0.1:4318" }),
+			})
+			const httpLayer = FetchHttpClient.layer.pipe(
+				Layer.provide(Layer.succeed(FetchHttpClient.Fetch, request)),
+			)
+			const result = yield* serviceMap({ range: RANGE, service }).pipe(
+				Effect.provide(
+					WarehouseExecutorFromMode.pipe(Layer.provideMerge(Layer.merge(modeLayer, httpLayer))),
+				),
+			)
+			return { result, sqls }
+		})
+
+	it.effect("lists databases org-wide and skips the per-service external query", () =>
+		Effect.gen(function* () {
+			const { result, sqls } = yield* run()
+			assert.strictEqual(result.edges.length, 2)
+			assert.deepStrictEqual(
+				result.databases?.map((d) => `${d.sourceService} -> ${d.dbSystem}/${d.dbNamespace}`),
+				["api -> postgresql/shop"],
+			)
+			assert.strictEqual(result.external, undefined)
+			assert.ok(!sqls.some((sql) => sql.includes("service_external_edges_hourly")))
+		}),
+	)
+
+	it.effect("keeps only the edges touching -s, with its databases and external calls", () =>
+		Effect.gen(function* () {
+			const { result } = yield* run("api")
+			assert.deepStrictEqual(
+				result.edges.map((e) => `${e.sourceService} -> ${e.targetService}`),
+				["web -> api"],
+			)
+			assert.strictEqual(result.databases?.length, 1)
+			assert.deepStrictEqual(
+				result.external?.map((e) => `${e.targetType} ${e.targetName}`),
+				["http api.stripe.com"],
+			)
+		}),
+	)
 })
