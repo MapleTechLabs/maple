@@ -275,9 +275,10 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 				{live ? null : <Icon className="size-3.5 shrink-0 text-muted-foreground/70" />}
 				<span
 					className={cn(
-						"shrink-0 font-medium",
+						"min-w-0 truncate font-medium",
 						status === "running" ? "shimmer text-foreground" : "text-muted-foreground",
 					)}
+					title={label}
 				>
 					{label}
 				</span>
@@ -299,13 +300,13 @@ export const ToolRow = memo(function ToolRow(props: ToolProps) {
 					{hasInput && (
 						<div>
 							<p className="mb-1 font-medium text-muted-foreground">Arguments</p>
-							<div className="space-y-0.5">
+							<div className="max-h-60 space-y-0.5 overflow-auto">
 								{Object.entries(input as Record<string, unknown>)
 									.filter(([, v]) => v != null)
 									.map(([key, value]) => (
 										<div key={key} className="flex gap-2">
 											<span className="shrink-0 text-muted-foreground">{key}:</span>
-											<span className="font-mono text-foreground">
+											<span className="min-w-0 font-mono break-all whitespace-pre-wrap text-foreground">
 												{typeof value === "string" ? value : JSON.stringify(value)}
 											</span>
 										</div>

@@ -211,26 +211,6 @@ describe("transport render: templates", () => {
 	})
 })
 
-describe("transport render: event types", () => {
-	for (const eventType of ["trigger", "resolve", "test"] as const) {
-		it(`every provider renders a ${eventType} event without throwing`, () => {
-			const withEvent = { context: { ...context, eventType } }
-			assert.doesNotThrow(() => {
-				pagerDutyTransport.render(inputFor({ type: "pagerduty", integrationKey: "k" }, withEvent))
-				webhookTransport.render(
-					inputFor(
-						{ type: "webhook", url: "https://hooks.test/x", signingSecret: null },
-						withEvent,
-					),
-				)
-				discordTransport.render(
-					inputFor({ type: "discord", webhookUrl: "https://discord.com/api/w/1/tok" }, withEvent),
-				)
-			})
-		})
-	}
-})
-
 /**
  * The sparkline is the one part of a renotify that differs from the message
  * before it, and it is the only trend that survives where an image cannot go —

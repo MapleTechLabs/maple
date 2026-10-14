@@ -56,6 +56,7 @@ import {
 	PlanetscaleEvents,
 	PlanetscaleIssueReceipts,
 } from "./planetscale-inventory"
+import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
 import { OrgSupportChannels } from "./support-channels"
@@ -67,6 +68,7 @@ import {
 	PrReviews,
 	PrReviewFindings,
 	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
 	PrReviewSettings,
@@ -105,6 +107,7 @@ export * from "./org-ingest-sampling-policies"
 export * from "./org-recommendation-issues"
 export * from "./planetscale-connections"
 export * from "./planetscale-inventory"
+export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
 export * from "./support-channels"
@@ -164,6 +167,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	OrgIngestAttributeMappings,
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
+	OrgOpenRouterKeys,
 	OrgRecommendationIssues,
 	PlanetscaleConnections,
 	PlanetscalePollState,
@@ -182,6 +186,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	PrReviews,
 	PrReviewFindings,
 	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
 	PrReviewSettings,

@@ -233,10 +233,10 @@ const callAutumn = (
 				// read an upstream 4xx becomes a generic 502 by design, so without this
 				// attribute there is nothing left to tell us WHY Autumn refused.
 				if (typeof errorBody.code === "string") {
-					yield* Effect.annotateCurrentSpan({ "autumn.code": errorBody.code })
+					yield* Effect.annotateCurrentSpan({ "maple.autumn.code": errorBody.code })
 				}
 				return { statusCode: response.status, response: errorBody }
-			}).pipe(Effect.withSpan("autumn.request", { attributes: { "autumn.route": route } }))
+			}).pipe(Effect.withSpan("autumn.request", { attributes: { "maple.autumn.route": route } }))
 
 type AutumnCall = Effect.Effect<AutumnResult, AutumnTransportFailure>
 
@@ -391,7 +391,7 @@ const callUpdateBillingControls = (
 				return { statusCode: response.status, response: responseBody } satisfies AutumnResult
 			}).pipe(
 				Effect.withSpan("autumn.request", {
-					attributes: { "autumn.route": "updateCustomerBillingControls" },
+					attributes: { "maple.autumn.route": "updateCustomerBillingControls" },
 				}),
 			)
 

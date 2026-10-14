@@ -29,10 +29,10 @@ import {
 	WorkflowStartError,
 	type WorkflowStarter,
 } from "@maple/backend/platform/bindings"
-import { bindChatSessions, chatSessionsLayer } from "@maple/backend/platform/chat-sessions"
+import { bindChatSessions, layerChatSessions } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
@@ -75,7 +75,7 @@ export const bindApiClients = Effect.gen(function* () {
 type ApiBindingClients = Effect.Success<typeof bindApiClients>
 
 /** The binding layers `bindApiClients` needs on the init. */
-export const ApiBindingLayers = Layer.mergeAll(
+export const ApiBindingsLive = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Queues.WriteQueueBinding,
 	Cloudflare.R2.ReadBucketBinding,
@@ -175,9 +175,9 @@ export const apiPorts = (
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
 		Layer.succeed(EmailSender, clients.email),
 		Layer.succeed(SchemaApplyWorkflow, workflowStarter(schemaApply)),
-		mapleDbConnectionLayer(env),
+		layerMapleDbConnection(env),
 		envPorts(env),
-		chatSessionsLayer(clients.chatSessions, env),
+		layerChatSessions(clients.chatSessions, env),
 	)
 
 export type ApiPortsLayer = ReturnType<typeof apiPorts>

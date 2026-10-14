@@ -1,114 +1,29 @@
-import * as React from "react"
-
-import { ServiceSpectrumBar, computeServiceShares } from "@maple/ui/components/traces/service-spectrum-bar"
-import { ServiceDot } from "@maple/ui/components/service-dot"
-import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
-import { httpStatusTone } from "@maple/ui/lib/http"
+import {
+	TraceAnatomyStrip as SharedTraceAnatomyStrip,
+	type TraceAnatomyStripProps,
+} from "@maple/ui/components/traces/trace-anatomy-strip"
 import { shortId } from "@maple/ui/lib/ids"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
 import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
-import { TraceIdBadge } from "@/components/traces/trace-id-badge"
-import type { Span } from "@/api/warehouse/traces"
-import { StatusDot } from "@maple/ui/components/ui/status-dot"
-import { StatFigure } from "@/components/common/stat-rail"
 
-interface TraceAnatomyStripProps {
-	spans: ReadonlyArray<Span>
-	totalDurationMs: number
-	traceId: string
-	hasError: boolean
-	httpStatusCode?: number | null
-	deploymentEnv?: string
-	commitSha?: string
-}
-
-// 4xx/5xx follow the shared status tone; 3xx keeps its own blue so redirects stand apart from 2xx.
-function httpStatusColor(code: number): string {
-	const tone = httpStatusTone(code)
-	if (tone !== "neutral") return TONE_TEXT[tone]
-	return code >= 300 ? "text-chart-p50" : TONE_TEXT.info
-}
-
-/**
- * The trace's vital signs: total duration as the dominant figure, a segmented
- * per-service share of wall-clock time ("where did the time go"), and the
- * remaining trace metadata as one quiet utility row.
- */
+/** The shared strip, with the root's commit SHA linked to the connected VCS provider. */
 export function TraceAnatomyStrip({
-	spans,
-	totalDurationMs,
-	traceId,
-	hasError,
-	httpStatusCode,
-	deploymentEnv,
 	commitSha,
-}: TraceAnatomyStripProps) {
-	const shares = React.useMemo(() => computeServiceShares(spans), [spans])
-
+	...props
+}: Omit<TraceAnatomyStripProps, "commit"> & { commitSha?: string }) {
 	return (
-		<div className="shrink-0 space-y-2">
-			<div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-				<StatFigure
-					value={formatDuration(totalDurationMs)}
-					unit={`${countLabel(spans.length, "span")} · ${countLabel(shares.length, "service")}`}
-					className="min-w-0"
-				/>
-
-				<div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-					<span
-						className={cn(
-							"flex items-center gap-1.5 font-medium",
-							hasError ? "text-severity-error" : "text-severity-info",
-						)}
+		<SharedTraceAnatomyStrip
+			{...props}
+			commit={
+				commitSha ? (
+					<CommitShaHoverCard
+						sha={commitSha}
+						copy={{ value: commitSha, label: "commit SHA" }}
+						className="font-mono text-xs text-muted-foreground hover:text-foreground"
 					>
-						<StatusDot tone={hasError ? "crit" : "ok"} />
-						{hasError ? "Error" : "OK"}
-					</span>
-
-					{httpStatusCode != null && (
-						<span className={cn("font-mono font-medium", httpStatusColor(httpStatusCode))}>
-							HTTP {httpStatusCode}
-						</span>
-					)}
-
-					{deploymentEnv && (
-						<span
-							className={
-								deploymentEnv === "production" ? "text-severity-warn" : "text-chart-p50"
-							}
-						>
-							{deploymentEnv}
-						</span>
-					)}
-
-					{commitSha && (
-						<CommitShaHoverCard
-							sha={commitSha}
-							copy={{ value: commitSha, label: "commit SHA" }}
-							className="font-mono text-xs text-muted-foreground hover:text-foreground"
-						>
-							{shortId(commitSha, "sha")}
-						</CommitShaHoverCard>
-					)}
-
-					<TraceIdBadge traceId={traceId} size="default" className="text-xs max-w-[10rem]" />
-				</div>
-			</div>
-
-			<ServiceSpectrumBar shares={shares} />
-
-			<div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-				{shares.map((share) => (
-					<span key={share.serviceName} className="flex items-center gap-1.5 font-mono text-xs">
-						<ServiceDot serviceName={share.serviceName} size="sm" />
-						<span>{share.serviceName}</span>
-						<span className="text-3xs text-muted-foreground tabular-nums">
-							{formatPercent(share.percent / 100)}
-						</span>
-					</span>
-				))}
-			</div>
-		</div>
+						{shortId(commitSha, "sha")}
+					</CommitShaHoverCard>
+				) : undefined
+			}
+		/>
 	)
 }

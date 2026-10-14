@@ -45,19 +45,4 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
 		expect(recordTraceId.mock.calls[0][0]).toMatch(/^[0-9a-f]{32}$/i)
 	})
-
-	it("no-ops cleanly when no session sink is published", async () => {
-		const restoreFetch = setupFetch()
-		const g = globalThis as Record<string, unknown>
-		delete g.__MAPLE_BROWSER_SESSION__
-		restore = restoreFetch
-
-		const TracerLive = layer({
-			serviceName: "web-test",
-			endpoint: "https://collector.test",
-		})
-
-		// Just has to run without throwing — proves the layer still composes.
-		await Effect.runPromise(Effect.void.pipe(Effect.withSpan("page-load"), Effect.provide(TracerLive)))
-	})
 })

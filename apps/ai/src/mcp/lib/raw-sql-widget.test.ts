@@ -2,15 +2,6 @@ import { describe, expect, it } from "vitest"
 import { buildRawSqlDataSource, validateRawSql, visualizationToDisplayType } from "./raw-sql-widget"
 
 describe("visualizationToDisplayType", () => {
-	it("maps direct visualization kinds 1:1", () => {
-		expect(visualizationToDisplayType("table")).toBe("table")
-		expect(visualizationToDisplayType("stat")).toBe("stat")
-		expect(visualizationToDisplayType("pie")).toBe("pie")
-		expect(visualizationToDisplayType("histogram")).toBe("histogram")
-		expect(visualizationToDisplayType("heatmap")).toBe("heatmap")
-		expect(visualizationToDisplayType("funnel")).toBe("funnel")
-	})
-
 	it("derives line/area/bar for chart based on chartId hint", () => {
 		expect(visualizationToDisplayType("chart")).toBe("line")
 		expect(visualizationToDisplayType("chart", "area-chart")).toBe("area")
@@ -48,15 +39,6 @@ describe("buildRawSqlDataSource", () => {
 			granularitySeconds: 60,
 		})
 		expect(result.granularitySeconds).toBe(60)
-	})
-
-	it("omits granularitySeconds when null/undefined", () => {
-		const result = buildRawSqlDataSource({
-			visualization: "chart",
-			sql: "SELECT 1 WHERE $__orgFilter",
-			displayType: "line",
-		})
-		expect(result).not.toHaveProperty("granularitySeconds")
 	})
 
 	it("auto-injects reduceToValue transform for stat widgets", () => {

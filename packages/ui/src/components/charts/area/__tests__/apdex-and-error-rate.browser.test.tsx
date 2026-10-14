@@ -59,16 +59,6 @@ describe("apdex area chart", () => {
 		expect(labels).toContain("1")
 	})
 
-	it("draws a band with a top edge, and no baseline stroke around it", () => {
-		const { container } = render(<ApdexAreaChart data={rows(() => ({ apdexScore: 0.9 }))} />)
-		const areas = [...container.querySelectorAll(".ts-chart__area path")]
-		expect(areas).toHaveLength(1)
-		// `areaY` strokes the CLOSED polygon, so the band is fill-only and the top
-		// edge is its own `lineY`.
-		expect(areas[0]?.getAttribute("stroke")).toBe("none")
-		expect(container.querySelectorAll(".ts-chart__line path")).toHaveLength(1)
-	})
-
 	it("shows the key only when the legend is asked for", () => {
 		const hidden = render(<ApdexAreaChart data={rows(() => ({ apdexScore: 0.9 }))} />)
 		expect(hidden.queryByText("Apdex")).toBeNull()

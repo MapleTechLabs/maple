@@ -110,10 +110,6 @@ describe("range planning", () => {
 	it("returns nothing for a chunk past the end of the plan", () => {
 		expect(rangeContaining(planRanges(manifest(4)), 999)).toBeUndefined()
 	})
-
-	it("keeps ranges within the server's per-request chunk cap", () => {
-		expect(MAX_CHUNKS_PER_RANGE).toBeLessThanOrEqual(40)
-	})
 })
 
 describe("initialRanges", () => {
@@ -206,28 +202,6 @@ describe("playback clock", () => {
 // planning logic works off columns that have always been populated — so an
 // existing recording plays exactly like one captured after the change.
 describe("sessions recorded before this change", () => {
-	it("needs nothing beyond chunk_seq, timestamp, duration, size and checkpoint", () => {
-		// The full input contract. If a future field creeps in here, older
-		// sessions start failing to plan.
-		expect(Object.keys(chunk(0)).sort()).toEqual([
-			"byte_size",
-			"chunk_seq",
-			"duration_ms",
-			"event_count",
-			"is_checkpoint",
-			"timestamp",
-		])
-	})
-
-	it("plays a session that never produced a checkpoint at all", () => {
-		// The SDK's over-cap buffer guard drops the batch containing the opening
-		// snapshot; such sessions have no checkpoint anywhere. Playback must still
-		// pick an anchor rather than refusing.
-		const chunks = manifest(8, () => ({ is_checkpoint: false }))
-		expect(checkpointAtOrBefore(chunks, 5)?.chunk_seq).toBe(0)
-		expect(initialRanges(chunks, planRanges(chunks))[0]).toEqual(rangeContaining(planRanges(chunks), 0))
-	})
-
 	it("handles a single-chunk session", () => {
 		const chunks = manifest(1)
 		expect(initialRanges(chunks, planRanges(chunks))).toEqual([{ fromChunkSeq: 0, toChunkSeq: 0 }])

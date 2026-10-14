@@ -73,7 +73,7 @@ export class BoundChatSessions extends Context.Service<BoundChatSessions, ChatSe
  * it is applied where ids are minted, not on the binding. The region resolves through the env's
  * `ConfigProvider`.
  */
-export const chatSessionsLayer = (namespace: ChatSessionNamespace, env: Record<string, unknown>) =>
+export const layerChatSessions = (namespace: ChatSessionNamespace, env: Record<string, unknown>) =>
 	Layer.effect(
 		ChatSessions,
 		Effect.gen(function* () {
@@ -87,4 +87,4 @@ export const chatSessionsLayer = (namespace: ChatSessionNamespace, env: Record<s
 export const chatSessionsLayerIfBound = (
 	namespace: ChatSessionNamespace | undefined,
 	env: Record<string, unknown>,
-) => (namespace === undefined ? Layer.empty : chatSessionsLayer(namespace, env))
+) => (namespace === undefined ? Layer.empty : layerChatSessions(namespace, env))

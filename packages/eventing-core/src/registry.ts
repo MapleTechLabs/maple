@@ -7,7 +7,12 @@ import type {
 	ProjectedEventData,
 	SignalProjectionSpec,
 } from "./model"
-import { timestampToEpochNanos, compileSignalPredicate, validateSignalProjectionSpec } from "./predicate"
+import {
+	timestampToEpochNanos,
+	compileSignalPredicate,
+	validateSignalProjectionSpec,
+	type CompiledSignalPredicate,
+} from "./predicate"
 import { SignalProjectionSpecSchema } from "./model"
 import { SignalSourceRegistry, validatePredicateAgainstSource } from "./source"
 
@@ -91,7 +96,7 @@ export class ProjectorRegistry {
 
 interface CompiledProjection {
 	readonly spec: SignalProjectionSpec
-	readonly evaluate: ReturnType<typeof compileSignalPredicate>
+	readonly evaluate: CompiledSignalPredicate
 	readonly projector: ErasedSignalProjector
 	readonly project: (signal: NormalizedSignal) => ProjectedEventData
 	readonly activeFromNanos: bigint
@@ -189,7 +194,16 @@ export class CompiledProjectionRegistry {
 					)
 				const compiled: CompiledProjection = {
 					spec,
-					evaluate: compileSignalPredicate(spec.selector),
+					evaluate: yield* compileSignalPredicate(spec.selector).pipe(
+						Result.mapError(
+							(cause) =>
+								new ProjectionInvalid({
+									message: cause.message,
+									projectionId: spec.id,
+									cause,
+								}),
+						),
+					),
 					projector,
 					project: yield* Result.try({
 						try: () => projector.prepare(spec.projector.config),

@@ -91,10 +91,10 @@ export const runPlanetScaleEventRetention = Effect.gen(function* () {
 	)
 
 	yield* Effect.annotateCurrentSpan({
-		"planetscale.event_retention.deleted_by_age": deletedByAge,
-		"planetscale.event_retention.deleted_receipts": deletedReceipts,
-		"planetscale.event_retention.orgs_capped": orgs,
-		"planetscale.event_retention.outcome": "completed",
+		"maple.planetscale.event_retention.deleted_by_age": deletedByAge,
+		"maple.planetscale.event_retention.deleted_receipts": deletedReceipts,
+		"maple.planetscale.event_retention.orgs_capped": orgs,
+		"maple.planetscale.event_retention.outcome": "completed",
 	})
 	yield* Effect.logInfo("[planetscale] event retention tick complete").pipe(
 		Effect.annotateLogs({ deletedByAge, orgsCapped: orgs }),
@@ -102,7 +102,7 @@ export const runPlanetScaleEventRetention = Effect.gen(function* () {
 }).pipe(
 	// tapCause lets the cause propagate so `withSpan` marks the tick as Error.
 	Effect.tapCause((cause) =>
-		Effect.annotateCurrentSpan({ "planetscale.event_retention.outcome": "failed" }).pipe(
+		Effect.annotateCurrentSpan({ "maple.planetscale.event_retention.outcome": "failed" }).pipe(
 			Effect.flatMap(() =>
 				Effect.logError("[planetscale] event retention tick failed").pipe(
 					Effect.annotateLogs({ error: String(cause) }),

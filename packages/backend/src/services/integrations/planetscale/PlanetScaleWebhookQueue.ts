@@ -42,7 +42,7 @@ export type PlanetScaleWebhookQueueMessage = Schema.Schema.Type<typeof PlanetSca
 export const MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES = 120 * 1024
 
 export class PlanetScaleWebhookQueueError extends Schema.TaggedError<PlanetScaleWebhookQueueError>()(
-	"@maple/api/services/planetscale/PlanetScaleWebhookQueueError",
+	"@maple/backend/services/planetscale/PlanetScaleWebhookQueueError",
 	{
 		message: Schema.String,
 		cause: Schema.optionalKey(Schema.Defect()),

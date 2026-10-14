@@ -17,7 +17,7 @@ import {
 	CirclePercentageIcon,
 	LayersIcon,
 } from "@/components/icons"
-import { WidgetSettings } from "@/components/dashboard-builder/config/settings-fields"
+import { WidgetSettings, parseRowLimit } from "@/components/dashboard-builder/config/settings-fields"
 import {
 	FunnelWidget,
 	HbarWidget,
@@ -42,7 +42,6 @@ import {
 	hasActiveGroupBy,
 	histogramValueColumn,
 	isProductEventsFunnel,
-	parsePositiveNumber,
 } from "@/lib/query-builder/widget-builder-shared"
 import {
 	compileFunnelStep,
@@ -328,7 +327,7 @@ export const histogramWidgetType: WidgetTypeDefinition = {
 		return makeQueryDataSource({
 			resultShape: "list",
 			queries: ctx.visibleQueries,
-			limit: parsePositiveNumber(ctx.state.tableLimit) ?? 200,
+			limit: parseRowLimit(ctx.state.tableLimit) ?? 200,
 			...(valueColumn ? { columns: [valueColumn] } : undefined),
 			...(!(ctx.sharedTransform === undefined) ? { transform: ctx.sharedTransform } : undefined),
 		})

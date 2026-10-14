@@ -10,6 +10,7 @@ import {
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
+	podRestartsQuery,
 	podGaugeTimeseriesQuery,
 	podFacetsQuery,
 	listNodesQuery,
@@ -39,6 +40,14 @@ describe("listHostsQuery (sanity)", () => {
 		expect(sql).toContain("ResourceAttributes['host.name']")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
+
+	it("derives cpuPct from the idle share and skips pseudo filesystems", () => {
+		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
+		expect(sql).toContain("Attributes['state'] = 'idle'")
+		expect(sql).not.toContain("Attributes['state'] != 'idle'")
+		expect(sql).toMatch(/greatest\(1 - ifNotFinite\(avgIf\(/)
+		expect(sql).toContain("NOT IN ('squashfs'")
+	})
 })
 
 describe("hostDetailSummaryQuery (sanity)", () => {
@@ -46,6 +55,35 @@ describe("hostDetailSummaryQuery (sanity)", () => {
 		const { sql } = compileUnsafe(hostDetailSummaryQuery({ hostName: "host-1" }), baseParams)
 		expect(sql).toContain("ResourceAttributes['host.name']")
 		expect(sql).toContain("'host-1'")
+	})
+})
+
+describe("hostGaugeTimeseriesQuery", () => {
+	it("pins the attribute named by attributeEquals", () => {
+		const { sql } = compileUnsafe(
+			hostGaugeTimeseriesQuery({
+				hostName: "h",
+				metricName: "system.filesystem.utilization",
+				groupByAttributeKey: "mountpoint",
+				attributeEquals: { key: "state", value: "used" },
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
+		expect(sql).toContain("Attributes['state'] = 'used'")
+		expect(sql).toContain("Attributes['mountpoint']")
+	})
+
+	it("leaves states unfiltered without attributeEquals", () => {
+		const { sql } = compileUnsafe(
+			hostGaugeTimeseriesQuery({
+				hostName: "h",
+				metricName: "system.cpu.utilization",
+				groupByAttributeKey: "state",
+			}),
+			baseParams,
+		)
+		expect(sql).not.toContain("Attributes['state'] =")
 	})
 })
 
@@ -299,6 +337,43 @@ describe("podDetailSummaryQuery", () => {
 	})
 })
 
+describe("podRestartsQuery", () => {
+	it("reads the running total per container and scopes to the org and window", () => {
+		const { sql } = compileUnsafe(podRestartsQuery({}), baseParams)
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("MetricName = 'k8s.container.restarts'")
+		expect(sql).toContain(
+			"greatest(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix) - argMin(metrics_gauge.Value, metrics_gauge.TimeUnix), 0)",
+		)
+		expect(sql).toContain("ResourceAttributes['k8s.container.status.last_terminated_reason']")
+		expect(sql).toMatch(/GROUP BY podName, namespace, containerName/)
+		expect(sql).not.toMatch(/__PARAM_\w+__/)
+	})
+
+	it("narrows to the page's pods, a namespace and a workload", () => {
+		const { sql } = compileUnsafe(
+			podRestartsQuery({
+				podNames: ["api-1", "api-2"],
+				namespace: "backend",
+				workloadKind: "statefulset",
+				workloadName: "db",
+				limit: 500,
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("'api-1'")
+		expect(sql).toContain("'api-2'")
+		expect(sql).toContain("ResourceAttributes['k8s.namespace.name'] = 'backend'")
+		expect(sql).toContain("ResourceAttributes['k8s.statefulset.name'] = 'db'")
+		expect(sql).toContain("LIMIT 500")
+	})
+
+	it("skips the pod-name filter for an empty page rather than emitting IN ()", () => {
+		const { sql } = compileUnsafe(podRestartsQuery({ podNames: [] }), baseParams)
+		expect(sql).not.toMatch(/IN \(\s*\)/)
+	})
+})
+
 describe("podGaugeTimeseriesQuery", () => {
 	it("buckets by toStartOfInterval and filters by metric name", () => {
 		const { sql } = compileUnsafe(
@@ -322,6 +397,37 @@ describe("listNodesQuery", () => {
 		expect(sql).toContain("k8s.node.cpu.usage")
 		expect(sql).toContain("k8s.node.uptime")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
+	})
+
+	it("joins kubelet usage with k8s_cluster allocatable capacity", () => {
+		const { sql } = compileUnsafe(listNodesQuery({}), baseParams)
+		expect(sql).toContain(
+			"MetricName IN ('k8s.node.cpu.usage', 'k8s.node.uptime', 'k8s.node.memory.working_set', 'k8s.node.allocatable_cpu', 'k8s.node.allocatable_memory')",
+		)
+		expect(sql).toContain(
+			"ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0) AS cpuAllocatable",
+		)
+		expect(sql).toContain(
+			"ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0) AS memoryAllocatable",
+		)
+		expect(sql).toMatch(
+			/k8s\.node\.cpu\.usage'\), 0\), 0\) \/ ifNotFinite\(maxIf\([^)]*'k8s\.node\.allocatable_cpu'\), 0\)[^\n]*AS cpuUtilization/,
+		)
+		expect(sql).toMatch(
+			/k8s\.node\.memory\.working_set'\), 0\), 0\) \/ ifNotFinite\(maxIf\([^)]*'k8s\.node\.allocatable_memory'\), 0\)[^\n]*AS memoryUtilization/,
+		)
+	})
+
+	it("reads string attributes from whichever receiver set them", () => {
+		const { sql } = compileUnsafe(listNodesQuery({}), baseParams)
+		expect(sql).toContain(
+			"anyIf(metrics_gauge.ResourceAttributes['k8s.kubelet.version'], metrics_gauge.ResourceAttributes['k8s.kubelet.version'] != '') AS kubeletVersion",
+		)
+	})
+
+	it("drops nodes that only k8s_cluster reports", () => {
+		const { sql } = compileUnsafe(listNodesQuery({}), baseParams)
+		expect(sql).toContain("HAVING countIf(metrics_gauge.MetricName = 'k8s.node.cpu.usage') > 0")
 	})
 
 	it("applies cluster/environment array filters", () => {
@@ -363,6 +469,21 @@ describe("nodeDetailSummaryQuery", () => {
 		expect(sql).toContain("'node-7'")
 		expect(sql).toContain("ResourceAttributes['k8s.pod.name'] = ''")
 	})
+
+	it("selects allocatable capacity and utilization", () => {
+		const { sql } = compileUnsafe(nodeDetailSummaryQuery({ nodeName: "node-7" }), baseParams)
+		expect(sql).toContain("'k8s.node.allocatable_cpu'")
+		expect(sql).toContain("'k8s.node.allocatable_memory'")
+		for (const alias of [
+			"cpuAllocatable",
+			"cpuUtilization",
+			"memoryUsage",
+			"memoryAllocatable",
+			"memoryUtilization",
+		]) {
+			expect(sql).toContain(`AS ${alias}`)
+		}
+	})
 })
 
 describe("nodeGaugeTimeseriesQuery", () => {
@@ -378,6 +499,21 @@ describe("nodeGaugeTimeseriesQuery", () => {
 		expect(sql).toContain("MetricName = 'k8s.node.cpu.usage'")
 		expect(sql).toContain("'node-7'")
 	})
+
+	it("divides usage by allocatable per bucket when given a capacity metric", () => {
+		const { sql } = compileUnsafe(
+			nodeGaugeTimeseriesQuery({
+				nodeName: "node-7",
+				metricName: "k8s.node.memory.working_set",
+				capacityMetricName: "k8s.node.allocatable_memory",
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("MetricName IN ('k8s.node.memory.working_set', 'k8s.node.allocatable_memory')")
+		expect(sql).toMatch(
+			/working_set'\), 0\), 0\) \/ ifNotFinite\(maxIf\([^)]*'k8s\.node\.allocatable_memory'\), 0\), 0\), 0\) AS avgValue/,
+		)
+	})
 })
 
 // Workloads
@@ -387,6 +523,12 @@ describe("listWorkloadsQuery", () => {
 		const { sql } = compileUnsafe(listWorkloadsQuery({ kind: "deployment" }), baseParams)
 		expect(sql).toContain("ResourceAttributes['k8s.deployment.name']")
 		expect(sql).toContain("uniq")
+	})
+
+	it("keeps same-named workloads in different namespaces/clusters apart", () => {
+		const { sql } = compileUnsafe(listWorkloadsQuery({ kind: "deployment" }), baseParams)
+		expect(sql).toMatch(/GROUP BY workloadName, namespace, clusterName/)
+		expect(sql).not.toContain("any(metrics_gauge.ResourceAttributes['k8s.namespace.name'])")
 	})
 
 	it("uses the right attribute for statefulset and daemonset", () => {

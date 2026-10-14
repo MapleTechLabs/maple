@@ -76,24 +76,30 @@ export function PlanetScaleActivityRow({
 			{/* Not SeverityDot: that primitive speaks host *status* (active/idle/…),
 			    which is a different vocabulary from event severity. */}
 			<StatusDot tone={presentation.tone} className="mt-1" />
-			<span className="min-w-0 flex-1 truncate text-foreground/90">{title}</span>
+			<span className="min-w-0 flex-1 truncate text-foreground/90" title={title}>
+				{title}
+			</span>
 			{branchName !== "" ? (
 				onSelectBranch !== undefined ? (
 					<button
 						type="button"
 						onClick={() => onSelectBranch(branchName)}
-						className="shrink-0 font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground"
+						className="min-w-0 max-w-[40%] truncate font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground"
+						title={branchName}
 					>
 						{branchName}
 					</button>
 				) : (
-					<span className="shrink-0 font-mono text-2xs text-muted-foreground">{branchName}</span>
+					<span
+						className="min-w-0 max-w-[40%] truncate font-mono text-2xs text-muted-foreground"
+						title={branchName}
+					>
+						{branchName}
+					</span>
 				)
 			) : null}
 			{actorLogin !== null ? (
-				<span className="hidden shrink-0 text-2xs text-muted-foreground sm:inline">
-					{actorLogin}
-				</span>
+				<span className="hidden shrink-0 text-2xs text-muted-foreground sm:inline">{actorLogin}</span>
 			) : null}
 			{url !== null ? (
 				<a

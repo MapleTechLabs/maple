@@ -4,10 +4,7 @@ import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { GitCommitSha, type PullRequestReviewPublication, type VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
-import {
-	GithubHttp,
-	type GithubHttpApi,
-} from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { GithubProvider } from "@maple/backend/services/integrations/vcs/vendor/github/GithubProvider"
 
 const privateKey = generateKeyPairSync("rsa", {
@@ -64,13 +61,11 @@ const providerLayer = (
 	bodies: Array<string> = [],
 ) => {
 	let next = 0
-	const http = Layer.succeed(GithubHttp, {
-		fetch: async (url, init) => {
-			requests.push(url)
-			bodies.push(typeof init?.body === "string" ? init.body : "")
-			return responses[next++]!
-		},
-	} satisfies GithubHttpApi)
+	const http = fakeGithubHttp(({ url, body }) => {
+		requests.push(url)
+		bodies.push(body ?? "")
+		return responses[next++]!
+	})
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(
 		Layer.provide(
 			Layer.effect(GithubAppClient, GithubAppClient.make).pipe(Layer.provide(http), Layer.provide(env)),
@@ -503,14 +498,12 @@ describe("GithubProvider changes since an earlier review", () => {
 			Layer.provide(
 				Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 					Layer.provide(
-						Layer.succeed(GithubHttp, {
-							fetch: async (url) => {
-								requests.push(url)
-								if (url.endsWith("/access_tokens")) return tokenResponse()
-								const range = new URL(url).pathname.split("/compare/")[1] ?? ""
-								return routes[range] ?? jsonResponse({ message: "Not Found" }, 404)
-							},
-						} satisfies GithubHttpApi),
+						fakeGithubHttp(({ url }) => {
+							requests.push(url)
+							if (url.endsWith("/access_tokens")) return tokenResponse()
+							const range = new URL(url).pathname.split("/compare/")[1] ?? ""
+							return routes[range] ?? jsonResponse({ message: "Not Found" }, 404)
+						}),
 					),
 					Layer.provide(env),
 				),

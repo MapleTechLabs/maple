@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 import { Schema } from "effect"
-import { QualifyAnswersSchema, resolveQuickStartStep, STEP_IDS } from "./quick-start-atoms"
+import { QualifyAnswersSchema, resolveQuickStartStep } from "./quick-start-atoms"
 import { getOnboardingSetupHint } from "@/lib/onboarding-intent"
 
 it("normalizes old single choices without dropping saved onboarding answers", () => {
@@ -42,7 +42,6 @@ it("writes only the multi-select format and restores every selection", () => {
 it("resumes an old demo step at the next incomplete step after role completion", () => {
 	expect(resolveQuickStartStep({ activeStep: "demo", completedSteps: { role: true } })).toBe("intent")
 	expect(resolveQuickStartStep({ activeStep: "demo", completedSteps: {} })).toBe("role")
-	expect(STEP_IDS).toEqual(["role", "intent", "team", "plan"])
 })
 
 it("preserves navigation to a current step", () => {

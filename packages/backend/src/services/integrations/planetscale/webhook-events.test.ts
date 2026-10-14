@@ -80,7 +80,7 @@ describe("classifyPlanetScaleEvent", () => {
 		if (Result.isFailure(invalid))
 			assert.strictEqual(
 				invalid.failure._tag,
-				"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+				"@maple/backend/planetscale/PlanetScaleWebhookProjectionInvalid",
 			)
 	})
 
@@ -604,7 +604,7 @@ describe("upsertPlanetScaleIssue", () => {
 			)
 
 			const error = yield* upsertPlanetScaleIssue(input).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			assert.strictEqual(error._tag, "@maple/backend/lib/DatabaseError")
 			const afterFailure = yield* Effect.promise(() =>
 				queryFirstRow<{ count: number }>(
 					testDb,

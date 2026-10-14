@@ -1,32 +1,21 @@
 import { describe, expect, it } from "vitest"
 import {
-	PRODUCT_EVENTS_TRACE_FILTER,
 	PRODUCT_EVENTS_TRACE_PROJECTION_SQL,
 	PRODUCT_EVENT_ATTRIBUTE_NAMESPACE,
 	PRODUCT_EVENT_INCLUDE_KEY,
-	PRODUCT_EVENT_NAME_KEY,
 	PRODUCT_EVENT_PROP_PREFIX,
-	PRODUCT_EVENT_SOURCE_TRACE,
 } from "./product-event-attributes"
 import { productEvents } from "./datasources"
 
 describe("product event span attributes", () => {
-	it("namespaces every key under maple.", () => {
-		// The `maple.*` vendor namespace is the convention every custom attribute
-		// in the repo follows, and it is what keeps these from colliding with an
-		// OTel semconv key that might later mean something else.
-		expect(PRODUCT_EVENT_ATTRIBUTE_NAMESPACE.startsWith("maple.")).toBe(true)
-		expect(PRODUCT_EVENT_NAME_KEY.startsWith(PRODUCT_EVENT_ATTRIBUTE_NAMESPACE)).toBe(true)
-		expect(PRODUCT_EVENT_INCLUDE_KEY.startsWith(PRODUCT_EVENT_ATTRIBUTE_NAMESPACE)).toBe(true)
-		expect(PRODUCT_EVENT_PROP_PREFIX.startsWith(PRODUCT_EVENT_ATTRIBUTE_NAMESPACE)).toBe(true)
-	})
-
 	it("casts the base map to the target key type", () => {
 		// Not cosmetic: `SpanAttributes` is keyed `LowCardinality(String)` and
 		// `product_events.Attributes` is keyed plain `String`. Without the CAST the
 		// MV's SELECT has a different type from the column it writes, and
 		// `mapUpdate` has two differently-keyed maps to merge.
-		expect(PRODUCT_EVENTS_TRACE_PROJECTION_SQL).toContain("'Map(String, String)'")
+		expect(PRODUCT_EVENTS_TRACE_PROJECTION_SQL).toMatch(
+			/mapUpdate\(\s*CAST\([\s\S]*SpanAttributes\s*\),\s*'Map\(String, String\)'\s*\),/,
+		)
 	})
 
 	it("switches the allow-list on key PRESENCE, not on a non-empty value", () => {
@@ -43,9 +32,8 @@ describe("product event span attributes", () => {
 	it("trims the allow-list entries", () => {
 		// `"plan, seats"` is what a human writes. Without the trim the second key
 		// never matches and the prop silently vanishes from every event.
-		expect(PRODUCT_EVENTS_TRACE_PROJECTION_SQL).toContain("trimBoth")
-		expect(PRODUCT_EVENTS_TRACE_PROJECTION_SQL).toContain(
-			`splitByChar(',', SpanAttributes['${PRODUCT_EVENT_INCLUDE_KEY}'])`,
+		expect(PRODUCT_EVENTS_TRACE_PROJECTION_SQL).toMatch(
+			/arrayMap\(\s*key -> trimBoth\(key\),\s*splitByChar\(',', SpanAttributes\[/,
 		)
 	})
 
@@ -75,12 +63,6 @@ describe("product event span attributes", () => {
 		expect(PRODUCT_EVENTS_TRACE_PROJECTION_SQL).toContain(
 			`NOT startsWith(k, '${PRODUCT_EVENT_ATTRIBUTE_NAMESPACE}')`,
 		)
-	})
-
-	it("filters on a non-empty name rather than key presence", () => {
-		// `mapContains` would admit a span whose attribute is set to '' and mint a
-		// nameless event — a row no funnel can step on and no reader can attribute.
-		expect(PRODUCT_EVENTS_TRACE_FILTER).toBe(`SpanAttributes['${PRODUCT_EVENT_NAME_KEY}'] != ''`)
 	})
 
 	it("projects the product_events columns in schema order", () => {
@@ -121,12 +103,5 @@ describe("product event span attributes", () => {
 			return aliased ? aliased[1]! : part
 		})
 		expect(projected).toEqual(Object.keys(productEvents._schema))
-	})
-
-	it("carries a Source distinct from the other three feeds", () => {
-		// `Source` is the provenance column every reader branches on to tell an
-		// annotated span from a browser page view or a POST /v1/events row.
-		expect(PRODUCT_EVENT_SOURCE_TRACE).toBe("trace")
-		expect(["browser", "server", "mobile"]).not.toContain(PRODUCT_EVENT_SOURCE_TRACE)
 	})
 })

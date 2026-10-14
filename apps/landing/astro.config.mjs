@@ -94,6 +94,10 @@ export default defineConfig({
 			fallbackType: "rewrite",
 		},
 	},
+	// Every same-origin link is fetched on hover/focus, and Chromium prerenders it
+	// via speculation rules, so a click swaps in an already-rendered page.
+	prefetch: { prefetchAll: true, defaultStrategy: "hover" },
+	experimental: { clientPrerender: true },
 	// Astro 7's HTML compressor strips whitespace with JSX rules by default,
 	// silently joining adjacent inline elements across the marketing pages.
 	compressHTML: true,

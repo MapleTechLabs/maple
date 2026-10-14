@@ -4,7 +4,7 @@ import type {
 	AnomalySignalType,
 	AnomalyTriageStatus,
 } from "@maple/domain/http"
-import { formatErrorRate } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate } from "@maple/ui/lib/format"
 import { TONE_FILL, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { BoltIcon, ChartLineIcon, CircleWarningIcon, FileIcon, PulseIcon } from "@/components/icons"
 
@@ -67,7 +67,7 @@ export function formatSignalValue(signalType: AnomalySignalType, value: number):
 		case "log_volume":
 			return `${value.toFixed(1)}/min`
 		case "error_spike":
-			return `${Math.round(value)} occurrences / 30m`
+			return `${countLabel(Math.round(value), "occurrence")} / 30m`
 	}
 }
 

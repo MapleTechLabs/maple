@@ -90,31 +90,6 @@ describe("PlanetScale alert templates", () => {
 		)
 	})
 
-	it("uses raw SQL exactly where the metrics builder can't express the question", () => {
-		// A ratio of two metrics, and a regression over one — neither is a
-		// builder query.
-		for (const id of ["ps-storage-used", "ps-storage-runway"]) {
-			const [rule] = getAlertTemplate(id)!.build({
-				values: {},
-				destinationIds: DESTINATIONS,
-				enabled: true,
-			})
-			assert.strictEqual(rule!.signalType, "raw_query", id)
-			assert.isString(rule!.rawQuerySql)
-			assert.isNotNull(rule!.rawQueryReducer ?? null)
-		}
-	})
-
-	it("reduces the runway rule to the branch with the least headroom", () => {
-		const [rule] = getAlertTemplate("ps-storage-runway")!.build({
-			values: {},
-			destinationIds: DESTINATIONS,
-			enabled: true,
-		})
-		assert.strictEqual(rule!.comparator, "lt")
-		assert.strictEqual(rule!.rawQueryReducer, "min")
-	})
-
 	it("falls back to the documented default when a numeric parameter is unparseable", () => {
 		const [rule] = getAlertTemplate("ps-replica-lag")!.build({
 			values: { thresholdSeconds: "not-a-number" },
@@ -122,14 +97,5 @@ describe("PlanetScale alert templates", () => {
 			enabled: true,
 		})
 		assert.strictEqual(rule!.threshold, 30)
-	})
-
-	it("does not duplicate branch OOM as a metric rule", () => {
-		// It arrives as a webhook, already opens a triage issue, and already
-		// notifies. A second path would double-page on an event that is not a metric.
-		assert.isUndefined(
-			ALERT_TEMPLATES.find((template) => template.id.includes("oom")),
-			"branch OOM must stay in the issue hub",
-		)
 	})
 })

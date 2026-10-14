@@ -25,7 +25,7 @@ export type DatabaseClient = MapleDb
  * `toDatabaseError` already lifts the root cause's message into `message`, so
  * the diagnostic half survives the narrowing.
  */
-export class DatabaseError extends Schema.TaggedError<DatabaseError>()("@maple/api/lib/DatabaseError", {
+export class DatabaseError extends Schema.TaggedError<DatabaseError>()("@maple/backend/lib/DatabaseError", {
 	message: Schema.String,
 	cause: Schema.Defect({ excludeCause: true }),
 }) {}
@@ -83,7 +83,7 @@ export const toDatabaseError = (cause: unknown): DatabaseError => {
 		const statement = cause instanceof Orm.DatabaseError ? capQueryMessage(cause.sql) : undefined
 		return new DatabaseError({
 			message: statement === undefined || statement === "" ? root : `${root} [while: ${statement}]`,
-			cause: driverSqlError(cause.cause) ?? new Error(cause.message),
+			cause: driverSqlError(cause.cause) ?? cause.message,
 		})
 	}
 	const message = cause instanceof Error ? cause.message : "Database operation failed"

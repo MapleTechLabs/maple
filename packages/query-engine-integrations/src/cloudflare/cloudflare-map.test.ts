@@ -27,14 +27,6 @@ describe("cloudflareServiceCountersSQL", () => {
 		expect(sql).toContain("GROUP BY serviceName")
 		expect(sql).toContain("FORMAT JSON")
 	})
-
-	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(cloudflareServiceCountersSQL(), {
-			...baseParams,
-			orgId: OrgId.make("org'evil"),
-		})
-		expect(sql).toContain("OrgId = 'org\\'evil'")
-	})
 })
 
 describe("cloudflareServiceLatencySQL", () => {

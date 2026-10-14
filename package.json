@@ -33,8 +33,12 @@
 		"alchemy:deploy:pr": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage pr-${PR_NUMBER}",
 		"alchemy:destroy:pr": "bun run alchemy:build-deps && alchemy destroy --yes --stage pr-${PR_NUMBER}",
 		"test": "turbo test",
+		"changeset": "changeset",
+		"changeset:version": "changeset version && bun install --lockfile-only",
+		"changeset:publish": "bun run ./scripts/publish-packages.ts",
 		"tinybird:manifest": "bun run ./scripts/generate-tinybird-project-manifest.ts",
 		"tinybird:manifest:check": "bun run ./scripts/generate-tinybird-project-manifest.ts --check",
+		"tinybird:deploy": "bun run ./scripts/tinybird-deploy.ts",
 		"tinybird:datafiles": "bun run ./scripts/write-tinybird-datafiles.ts",
 		"clickhouse:schema": "bun run ./scripts/generate-clickhouse-schema.ts && bun run ./scripts/generate-clickhouse-schema-sql.ts && bun run ./scripts/generate-clickhouse-insert-mappings.ts && bun run ./scripts/lint-clickhouse-schema.ts",
 		"clickhouse:schema:check": "bun run ./scripts/generate-clickhouse-schema.ts --check && bun run ./scripts/generate-clickhouse-schema-sql.ts --check && bun run ./scripts/generate-clickhouse-insert-mappings.ts --check && bun run ./scripts/lint-clickhouse-schema.ts && bun run ./scripts/check-local-schema-manifest.ts",
@@ -51,6 +55,7 @@
 		"pg": "^8.23.1"
 	},
 	"devDependencies": {
+		"@changesets/cli": "3.0.3",
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/platform-node": "catalog:effect",
 		"@effect/tsgo": "0.48.1",
@@ -70,8 +75,8 @@
 		"typescript": "catalog:tooling"
 	},
 	"overrides": {
-		"@effect/sql-d1": "4.0.1",
-		"@effect/sql-sqlite-do": "4.0.1",
+		"@effect/sql-d1": "4.0.4",
+		"@effect/sql-sqlite-do": "4.0.4",
 		"workerd": "1.20261002.1"
 	},
 	"packageManager": "bun@1.4.0",
@@ -84,21 +89,21 @@
 	"catalogs": {
 		"alchemy": {
 			"@cloudflare/workers-types": "5.20261005.1",
-			"alchemy": "2.0.0-beta.81"
+			"alchemy": "2.0.0-beta.83"
 		},
 		"charts": {
 			"@tanstack/charts": "1.0.0",
 			"@tanstack/charts-scales": "1.0.0"
 		},
 		"effect": {
-			"@effect/ai-openai-compat": "4.0.1",
-			"@effect/ai-openrouter": "4.0.1",
-			"@effect/atom-react": "4.0.1",
-			"@effect/language-service": "^0.87.3",
-			"@effect/platform-bun": "4.0.1",
-			"@effect/platform-node": "4.0.1",
-			"@effect/vitest": "4.0.1",
-			"effect": "4.0.1"
+			"@effect/ai-openai-compat": "4.0.4",
+			"@effect/ai-openrouter": "4.0.4",
+			"@effect/atom-react": "4.0.4",
+			"@effect/language-service": "^0.87.4",
+			"@effect/platform-bun": "4.0.4",
+			"@effect/platform-node": "4.0.4",
+			"@effect/vitest": "4.0.4",
+			"effect": "4.0.4"
 		},
 		"react": {
 			"@types/react": "^19.3.0",
@@ -124,10 +129,9 @@
 		}
 	},
 	"patchedDependencies": {
-		"@effect/ai-openrouter@4.0.1": "patches/@effect%2Fai-openrouter@4.0.1.patch",
-		"@effect/vitest@4.0.1": "patches/@effect%2Fvitest@4.0.1.patch",
-		"effect@4.0.1": "patches/effect@4.0.1.patch",
-		"alchemy@2.0.0-beta.81": "patches/alchemy@2.0.0-beta.81.patch",
+		"@effect/ai-openrouter@4.0.4": "patches/@effect%2Fai-openrouter@4.0.4.patch",
+		"@effect/vitest@4.0.4": "patches/@effect%2Fvitest@4.0.4.patch",
+		"effect@4.0.4": "patches/effect@4.0.4.patch",
 		"@cloudflare/workers-types@5.20261005.1": "patches/@cloudflare%2Fworkers-types@5.20261005.1.patch"
 	}
 }

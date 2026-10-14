@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 
 import { cn } from "../../lib/utils"
 import { useCopy } from "../../hooks/use-copy"
@@ -8,7 +8,7 @@ import { useMountEffect } from "../../hooks/use-mount-effect"
 import { Eyebrow } from "../ui/eyebrow"
 import { MinusIcon, PlusIcon } from "../icons"
 import { HoverCard, HoverCardContent } from "../ui/hover-card"
-import { tryParseJson, CopyableValue, CollapsibleJsonValue } from "../attributes"
+import { tryParseJson, CopyableValue, SelectableValue, CollapsibleJsonValue } from "../attributes"
 import type { ChipTone } from "../../lib/log-attributes"
 
 const TONE_CLASSES: Record<ChipTone, string> = {
@@ -80,7 +80,7 @@ export function LogAttributeChip({ attrKey, value, tone, className, onFilter }: 
 	const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const { copy } = useCopy({ successMessage: `Copied ${attrKey}` })
-	const parsed = tryParseJson(value)
+	const parsed = useMemo(() => tryParseJson(value), [value])
 	const displayValue = parsed !== null ? "{…}" : truncateValue(value)
 	const displayKey = shortKey(attrKey)
 
@@ -173,7 +173,7 @@ export function LogAttributeChip({ attrKey, value, tone, className, onFilter }: 
 					<HoverCardContent
 						align="start"
 						anchor={triggerRef}
-						className="w-80 p-0"
+						className="max-h-[60vh] w-80 overflow-auto p-0"
 						onPointerEnter={keepOpen}
 						onPointerLeave={scheduleClose}
 					>
@@ -193,7 +193,7 @@ export function LogAttributeChip({ attrKey, value, tone, className, onFilter }: 
 								{parsed !== null ? (
 									<CollapsibleJsonValue value={value} parsed={parsed} />
 								) : (
-									<CopyableValue value={value}>{value}</CopyableValue>
+									<SelectableValue value={value} label={attrKey} />
 								)}
 							</div>
 						</div>

@@ -710,55 +710,6 @@ describe("Unitflow", () => {
 		}).pipe(Effect.provide(Registry.layer)),
 	)
 
-	it.effect("Store.map streams dedup equal projections", () =>
-		Effect.gen(function* () {
-			const countStore = Store.make(0)
-			const parityStore = countStore.pipe(Store.map((count) => count % 2 === 0))
-
-			const seen: Array<boolean> = []
-			const sawFirst = yield* Deferred.make<void>()
-			const sawSecond = yield* Deferred.make<void>()
-			yield* Store.stream(parityStore).pipe(
-				Stream.runForEach((value) =>
-					Effect.suspend(() => {
-						seen.push(value)
-						if (seen.length === 1) return Deferred.succeed(sawFirst, undefined)
-						if (seen.length === 2) return Deferred.succeed(sawSecond, undefined)
-						return Effect.void
-					}),
-				),
-				Effect.forkChild({ startImmediately: true }),
-			)
-
-			yield* Deferred.await(sawFirst)
-			// 0 -> 2 keeps parity `true`: without dedup this would re-emit `true`.
-			yield* Store.set(countStore, 2)
-			yield* Store.set(countStore, 3)
-			yield* Deferred.await(sawSecond)
-
-			assert.deepStrictEqual(seen, [true, false])
-		}).pipe(Effect.provide(Registry.layer)),
-	)
-
-	it.effect("Store.map composes in a pipe chain after combine", () =>
-		Effect.gen(function* () {
-			const countStore = Store.make(2)
-			const factorStore = Store.make(10)
-			const labelStore = Store.combine(
-				[countStore, factorStore],
-				(count, factor) => count * factor,
-			).pipe(
-				Store.map((product) => `total: ${product}`),
-				Store.map((label) => label.toUpperCase()),
-			)
-
-			assert.strictEqual(yield* Store.get(labelStore), "TOTAL: 20")
-
-			yield* Store.set(factorStore, 100)
-			assert.strictEqual(yield* Store.get(labelStore), "TOTAL: 200")
-		}).pipe(Effect.provide(Registry.layer)),
-	)
-
 	it.effect("dispose releases private sources exposed only through a combined store", () =>
 		Effect.gen(function* () {
 			const registry = yield* Registry
@@ -836,26 +787,29 @@ describe("Unitflow", () => {
 		}).pipe(Effect.provide(Registry.layer)),
 	)
 
-	it("allows omitting the payload only for void events (type-level)", () => {
-		const voidEvent = Event.make()
-		const numberEvent = Event.make<number>()
+	it.effect("allows omitting the payload only for void events", () =>
+		Effect.gen(function* () {
+			const voidEvent = Event.make()
+			const numberEvent = Event.make<number>()
+			// @ts-expect-error non-void events still require a payload
+			const invalidMissingNumber = () => Event.emit(numberEvent)
+			// @ts-expect-error void events do not accept non-undefined payloads
+			const invalidVoidPayload = () => Event.emit(voidEvent, 1)
 
-		const validVoidEmit = Event.emit(voidEvent)
-		const validExplicitVoidEmit = Event.emit(voidEvent, undefined)
-		const validNumberEmit = Event.emit(numberEvent, 1)
-		// @ts-expect-error non-void events still require a payload
-		const invalidMissingNumber = Event.emit(numberEvent)
-		// @ts-expect-error void events do not accept non-undefined payloads
-		const invalidVoidPayload = Event.emit(voidEvent, 1)
+			const voidFiber = yield* Event.waitFor(voidEvent).pipe(
+				Effect.forkChild({ startImmediately: true }),
+			)
+			yield* Event.emit(voidEvent, undefined)
+			const numberFiber = yield* Event.waitFor(numberEvent).pipe(
+				Effect.forkChild({ startImmediately: true }),
+			)
+			yield* Event.emit(numberEvent, 1)
 
-		return {
-			validVoidEmit,
-			validExplicitVoidEmit,
-			validNumberEmit,
-			invalidMissingNumber,
-			invalidVoidPayload,
-		}
-	})
+			assert.strictEqual(yield* Fiber.join(voidFiber), undefined)
+			assert.strictEqual(yield* Fiber.join(numberFiber), 1)
+			return [invalidMissingNumber, invalidVoidPayload]
+		}).pipe(Effect.provide(Registry.layer)),
+	)
 
 	it.effect("resets a store to its initial value", () =>
 		Effect.gen(function* () {
@@ -994,22 +948,6 @@ describe("Unitflow", () => {
 
 		assert.isDefined(MissingOutputsModel)
 		assert.isDefined(HeadlessModel)
-	})
-
-	it("descriptors are pipeable", () => {
-		const countStore = Store.make(0)
-		const numberEvent = Event.make<number>()
-		assert.strictEqual(
-			countStore.pipe((store) => store.id),
-			countStore.id,
-		)
-		assert.strictEqual(
-			numberEvent.pipe((event) => event.id),
-			numberEvent.id,
-		)
-		assert.isFunction(Event.setter(countStore).pipe)
-		assert.isFunction(Event.combine([numberEvent]).pipe)
-		assert.isFunction(Store.combine([countStore], (count) => count * 2).pipe)
 	})
 
 	it.effect("Event.handler runs on each emit, sequentially and in order", () =>

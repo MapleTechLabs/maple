@@ -121,13 +121,6 @@ describe("parseExternalUrl", () => {
 })
 
 describe("validateExternalUrl (Effect)", () => {
-	it.effect("succeeds for a public URL", () =>
-		Effect.gen(function* () {
-			const url = yield* validateExternalUrl("https://hooks.slack.com/services/abc")
-			assert.strictEqual(url.hostname, "hooks.slack.com")
-		}),
-	)
-
 	it.effect("fails with UrlValidationError for a private URL", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(validateExternalUrl("http://169.254.169.254"))

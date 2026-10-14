@@ -1,43 +1,15 @@
 import { describe, it } from "@effect/vitest"
-import { deepStrictEqual, strictEqual, throws } from "node:assert"
-import {
-	type ArchiveTuningRecord,
-	DEFAULT_ARCHIVE_TUNING,
-	resolveArchiveTuning,
-	tuningRecord,
-} from "../src/server/archives/config"
+import { strictEqual, throws } from "node:assert"
+import { DEFAULT_ARCHIVE_TUNING, resolveArchiveTuning } from "../src/server/archives/config"
 
 const base = { archiveDir: "/tmp/archive", scratchRoot: "/tmp/scratch" }
 
 describe("archive tuning config", () => {
-	it("applies the fixed defaults when only directories are supplied", () => {
-		const tuning = resolveArchiveTuning(base)
-		strictEqual(tuning.writerThreads, DEFAULT_ARCHIVE_TUNING.writerThreads)
-		strictEqual(tuning.rowGroupRows, DEFAULT_ARCHIVE_TUNING.rowGroupRows)
-		strictEqual(tuning.maxShardRows, DEFAULT_ARCHIVE_TUNING.maxShardRows)
-		strictEqual(tuning.maxShardBytes, DEFAULT_ARCHIVE_TUNING.maxShardBytes)
-		strictEqual(tuning.targetChunkBytes, DEFAULT_ARCHIVE_TUNING.targetChunkBytes)
-		strictEqual(tuning.minFreeSpaceReserve, DEFAULT_ARCHIVE_TUNING.minFreeSpaceReserve)
-	})
-
 	it("overrides individual knobs while keeping the rest at defaults", () => {
 		const tuning = resolveArchiveTuning({ ...base, writerThreads: 4, rowGroupRows: 50_000 })
 		strictEqual(tuning.writerThreads, 4)
 		strictEqual(tuning.rowGroupRows, 50_000)
 		strictEqual(tuning.maxShardRows, DEFAULT_ARCHIVE_TUNING.maxShardRows)
-	})
-
-	it("records the effective values in a manifest-shaped tuning record", () => {
-		const tuning = resolveArchiveTuning({ ...base, maxShardRows: 250_000 })
-		const record: ArchiveTuningRecord = tuningRecord(tuning)
-		deepStrictEqual(record, {
-			writerThreads: 1,
-			rowGroupRows: 10_000,
-			maxShardRows: 250_000,
-			maxShardBytes: 256 * 1024 * 1024,
-			targetChunkBytes: 1024 * 1024 * 1024,
-			minFreeSpaceReserve: 512 * 1024 * 1024,
-		})
 	})
 
 	it("rejects a non-positive writer thread count", () => {

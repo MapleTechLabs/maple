@@ -18,6 +18,8 @@ const MONOCHROME: BrandColor = { light: "#000000", dark: "#FFFFFF" }
 const VENDOR_COLORS = {
 	// Anthropic's, as `VENDOR_BRAND_COLORS` in lib/ai-model-catalog lists it.
 	claude_agent_sdk: { light: "#D97757", dark: "#D97757" },
+	// Cloudflare's orange.
+	cloudflare_ai_gateway: { light: "#F38020", dark: "#F38020" },
 	crewai: { light: "#FF5A50", dark: "#FF5A50" },
 	effect_ai: MONOCHROME,
 	// eve is Vercel's agent framework, and Vercel's brand is black and white.

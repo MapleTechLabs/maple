@@ -81,10 +81,12 @@ export interface MobileDevicesServiceApi {
 	) => Effect.Effect<ReadonlyArray<MobileDevice>, MobileDevicePersistenceError>
 	/** The platform said the token is dead; stop sending until the app re-registers it. */
 	readonly disable: (
+		orgId: OrgId,
 		id: MobileDeviceId,
 		reason: string,
 	) => Effect.Effect<void, MobileDevicePersistenceError>
 	readonly markPushed: (
+		orgId: OrgId,
 		ids: ReadonlyArray<MobileDeviceId>,
 	) => Effect.Effect<void, MobileDevicePersistenceError>
 }
@@ -286,6 +288,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 			})
 
 			const disable = Effect.fn("MobileDevicesService.disable")(function* (
+				orgId: OrgId,
 				id: MobileDeviceId,
 				reason: string,
 			) {
@@ -294,12 +297,13 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 					db.run(
 						PG.update(MobileDevices)
 							.set({ disabledAt: now, disabledReason: reason, updatedAt: now })
-							.where(($) => [$.id.eq(id)]),
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
 					),
 				)
 			})
 
 			const markPushed = Effect.fn("MobileDevicesService.markPushed")(function* (
+				orgId: OrgId,
 				ids: ReadonlyArray<MobileDeviceId>,
 			) {
 				if (ids.length === 0) return
@@ -311,7 +315,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 							db.run(
 								PG.update(MobileDevices)
 									.set({ lastPushedAt: now })
-									.where(($) => [$.id.eq(id)]),
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
 							),
 						),
 					{ discard: true },

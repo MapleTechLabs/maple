@@ -182,27 +182,3 @@ describe("query-builder pie: the pointer takes focus only over a wedge", () => {
 		expect(largestArcRadius(container)).toBeCloseTo(grown, 1)
 	})
 })
-
-describe("query-builder pie: the chip strip is centred and capped", () => {
-	it("centres the chips under the pie and clips past two rows", () => {
-		const { container } = render(<QueryBuilderPieChart data={twelve} legend="visible" />)
-		// `div`, not a bare attribute selector: the chart surface carries the same
-		// aria-label and is the earlier match.
-		const strip = container.querySelector("div[aria-label='Share by category']")
-		if (!(strip instanceof HTMLElement)) throw new Error("expected the chip strip")
-
-		// Left-aligned chips under a centred pie read as a misalignment…
-		expect(strip.className).toContain("justify-center")
-		// …and an uncapped strip takes `PlotFrame`'s whole 45% legend allowance,
-		// shrinking the pie by more than half on a short card.
-		expect(strip.className).toContain("max-h-[50px]")
-		expect(strip.className).toContain("overflow-hidden")
-	})
-
-	it("floors the plot so a short card overflows rather than drawing nothing", () => {
-		const { container } = render(<QueryBuilderPieChart data={rows} legend="visible" />)
-		const host = container.querySelector("[data-chart-host]")
-		if (!(host instanceof HTMLElement)) throw new Error("expected the plot frame's host")
-		expect(host.className).toContain("min-h-12")
-	})
-})

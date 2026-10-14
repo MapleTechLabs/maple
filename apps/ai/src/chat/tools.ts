@@ -193,15 +193,21 @@ export const accumulateUsage = (usage: RunUsage): RunBudgetHook => ({
  * the model stream's error channel, which ends the run. Against a strict report schema that made
  * one missing key at the end of a full investigation throw the whole investigation away. The
  * handler normalizes instead, and records what the model left out.
+ *
+ * `failureMode: "return"` is what makes a call the schema still rejects a recoverable tool error:
+ * the engine defers validation for such tools instead of failing the model stream.
  */
 export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 	description:
 		"Record your structured diagnosis for THIS investigation. Call it exactly once, " +
-		"after you have gathered evidence, with your final assessment. It persists the report " +
-		"and renders it for the user. After calling it, stop unless the user asks a follow-up.",
+		"after you have gathered evidence, with your final assessment. `evidence` is an array of " +
+		"objects ({traceIds, logPatterns, relatedServices, note}); `suggestedActions`, `ruledOut` " +
+		"and `unchecked` are arrays of strings. It persists the report and renders it for the user. " +
+		"After calling it, stop unless the user asks a follow-up.",
 	parameters: AiTriageSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	failureMode: "return",
 })
 
 /** The investigation a session belongs to, or `undefined` for an ordinary conversation. */
@@ -260,6 +266,8 @@ export const replyTool = Tool.make(SUBMIT_REPLY, {
 	parameters: PrReviewReplySubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	// See `diagnosisTool`: a rejected call is a result the model fixes, not a retried model call.
+	failureMode: "return",
 })
 
 export const proposeEditTool = Tool.make(PROPOSE_EDIT, {
@@ -271,6 +279,7 @@ export const proposeEditTool = Tool.make(PROPOSE_EDIT, {
 	parameters: PrReviewEditSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	failureMode: "return",
 })
 
 /**

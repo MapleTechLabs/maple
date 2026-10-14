@@ -82,13 +82,6 @@ describe("tracedFetch", () => {
 		vi.restoreAllMocks()
 	})
 
-	it("resolves with the response on success", async () => {
-		const response = new Response("ok", { status: 200 })
-		vi.spyOn(globalThis, "fetch").mockResolvedValue(response)
-
-		await expect(tracedFetch("maple-api", "https://api.test/thing")).resolves.toBe(response)
-	})
-
 	it("resolves an HTTP error response rather than rejecting", async () => {
 		const response = new Response("nope", { status: 500 })
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(response)

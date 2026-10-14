@@ -97,7 +97,7 @@ describe("PlanetScaleWebhookQueue", () => {
 		return Effect.gen(function* () {
 			const queue = yield* PlanetScaleWebhookQueue
 			const error = yield* queue.send(preparePlanetScaleWebhookJob(job)).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/api/services/planetscale/PlanetScaleWebhookQueueError")
+			assert.strictEqual(error._tag, "@maple/backend/services/planetscale/PlanetScaleWebhookQueueError")
 			assert.strictEqual(error.message, "simulated queue outage")
 			assert.strictEqual(attempts, 1)
 		}).pipe(

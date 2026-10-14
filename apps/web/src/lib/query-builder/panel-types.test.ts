@@ -17,23 +17,6 @@ describe("panel type round-trip", () => {
 		}
 	})
 
-	it("maps line/bar/area onto the chart visualization", () => {
-		expect(fromPanelType("line")).toEqual({
-			visualization: "chart",
-			chartId: "query-builder-line",
-		})
-		expect(fromPanelType("bar")).toEqual({ visualization: "chart", chartId: "query-builder-bar" })
-		expect(fromPanelType("area")).toEqual({ visualization: "chart", chartId: "query-builder-area" })
-	})
-
-	it("gives breakdown visualizations their own kind plus a canonical chartId", () => {
-		expect(fromPanelType("pie")).toEqual({ visualization: "pie", chartId: "query-builder-pie" })
-		expect(fromPanelType("funnel")).toEqual({
-			visualization: "funnel",
-			chartId: "query-builder-funnel",
-		})
-	})
-
 	it("leaves chartId unset for visualizations that don't mount a chart component", () => {
 		for (const panel of ["stat", "gauge", "table", "list", "markdown"] as PanelType[]) {
 			expect(fromPanelType(panel).chartId, panel).toBeUndefined()

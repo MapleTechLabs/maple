@@ -72,6 +72,11 @@ const SCOPE_OPTIONS: ReadonlyArray<SegmentedOption<DashboardScope>> = [
 ]
 
 /** The glyph stands for what the dashboard reads, so the lane carries meaning. */
+/** A whitespace-only name would render a blank row and dialogs reading "Delete “ ”?". */
+function displayName(name: string | undefined): string {
+	return name?.trim() ? name : "Untitled dashboard"
+}
+
 function dashboardGlyph(dashboard: Dashboard) {
 	if (dashboard.widgets.length === 0) return GridIcon
 	const [primary] = dashboardDomains(dashboard)
@@ -141,7 +146,15 @@ function DashboardRow({
 				</span>
 
 				<span className="flex min-w-0 grow flex-col gap-0.5">
-					<span className="truncate text-sm font-medium text-foreground">{dashboard.name}</span>
+					<span
+						className={cn(
+							"truncate text-sm font-medium",
+							dashboard.name.trim() ? "text-foreground" : "text-muted-foreground",
+						)}
+						title={displayName(dashboard.name)}
+					>
+						{displayName(dashboard.name)}
+					</span>
 					{/* Below sm the scope lane collapses onto this line, so the row keeps
 					    its information when the column can't fit. */}
 					<span className="text-muted-foreground truncate font-mono text-2xs sm:hidden">
@@ -184,7 +197,11 @@ function DashboardRow({
 			<div className="flex shrink-0 items-center gap-0.5 pr-2 pl-1">
 				<IconButton
 					size="icon-xs"
-					label={isFavorite ? `Unstar ${dashboard.name}` : `Star ${dashboard.name}`}
+					label={
+						isFavorite
+							? `Unstar ${displayName(dashboard.name)}`
+							: `Star ${displayName(dashboard.name)}`
+					}
 					aria-pressed={isFavorite}
 					onClick={() => onToggleFavorite(dashboard.id)}
 					className={isFavorite ? "text-primary" : "text-muted-foreground/40"}
@@ -220,7 +237,10 @@ function DashboardRowMenu({
 	onEditTags: (dashboard: Dashboard) => void
 }) {
 	return (
-		<RowActionsMenu label={`More actions for ${dashboard.name}`} className="text-muted-foreground">
+		<RowActionsMenu
+			label={`More actions for ${displayName(dashboard.name)}`}
+			className="text-muted-foreground"
+		>
 			<DropdownMenuGroup>
 				{/* Export reads the payload the list already holds, so it survives a
 				    persistence error. Duplicate and delete write, so they don't. */}
@@ -486,7 +506,7 @@ export function DashboardList({
 				onOpenChange={(open) => {
 					if (!open) setPendingTags(null)
 				}}
-				dashboardName={pendingTags?.name ?? ""}
+				dashboardName={pendingTags ? displayName(pendingTags.name) : ""}
 				tags={pendingTags?.tags ?? []}
 				suggestions={allTags}
 				onSave={(next) => {
@@ -501,7 +521,7 @@ export function DashboardList({
 					if (!open) setPendingDelete(null)
 				}}
 				icon={<CircleWarningIcon className="text-destructive" />}
-				title={<>Delete “{pendingDelete?.name}”?</>}
+				title={<>Delete “{displayName(pendingDelete?.name)}”?</>}
 				description={
 					<>
 						This dashboard belongs to the whole org: deleting it removes it for everyone, not just

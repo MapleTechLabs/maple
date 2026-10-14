@@ -12,13 +12,13 @@ import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { computeTraceTimeWindow } from "@/lib/trace-time-window"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { formatDuration } from "@maple/domain/format"
 
-/** Span offset within the trace (`+123ms`) — not a relative-time label. */
+const LOG_LIMIT = 200
+
+/** Offset within the trace (`+12.0ms`), not a relative-time label. Negative is clock skew. */
 function formatTimelineOffset(ms: number): string {
-	if (ms < 1) return "+0ms"
-	if (ms < 1000) return `+${Math.round(ms)}ms`
-	if (ms < 10000) return `+${(ms / 1000).toFixed(1)}s`
-	return `+${Math.round(ms / 1000)}s`
+	return ms < 0 ? `\u2212${formatDuration(-ms)}` : `+${formatDuration(ms)}`
 }
 
 function isCurrentLog(log: Log, currentLog: Log): boolean {
@@ -46,7 +46,7 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 	const window = computeTraceTimeWindow(currentLog.timestamp)
 	const logsResult = useAtomValue(
 		currentLog.traceId
-			? listLogsResultAtom({ data: { traceId: currentLog.traceId, limit: 200, ...window } })
+			? listLogsResultAtom({ data: { traceId: currentLog.traceId, limit: LOG_LIMIT, ...window } })
 			: disabledResultAtom<LogsResponse>(),
 	)
 	const spansResult = useAtomValue(
@@ -66,14 +66,24 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 
 	if (!currentLog.traceId) return null
 
-	const logCount =
-		Result.isSuccess(logsResult) && logsResult.value.data.length > 1 ? logsResult.value.data.length : null
+	const returned = Result.isSuccess(logsResult) ? logsResult.value.data.length : 0
+	// The query caps at LOG_LIMIT and has no ordering param, so a full page is a sample.
+	const truncated = returned >= LOG_LIMIT
+	const logCount = returned > 1 ? (truncated ? `${LOG_LIMIT}+` : String(returned)) : null
+	const spanTraceStart = Result.isSuccess(spansResult) ? spansResult.value.traceStartTime : undefined
 
 	return (
 		<div className="space-y-1.5">
 			<h4 className="text-xs font-medium text-muted-foreground">
 				Trace Timeline
-				{logCount !== null && <span className="ml-1 text-muted-foreground/60">{logCount}</span>}
+				{logCount !== null && (
+					<span
+						className="ml-1 text-muted-foreground/60"
+						title={truncated ? `Showing the first ${LOG_LIMIT} logs returned` : undefined}
+					>
+						{logCount}
+					</span>
+				)}
 			</h4>
 			{Result.builder(logsResult)
 				.onInitial(() => (
@@ -99,7 +109,11 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 						return <EmptyMessage>No other logs in this trace</EmptyMessage>
 					}
 
-					const traceStart = new Date(logs[0].timestamp).getTime()
+					// Offsets read from the trace's first span; without spans, from the first log shown.
+					const spanStartMs = spanTraceStart ? new Date(spanTraceStart).getTime() : Number.NaN
+					const traceStart = Number.isFinite(spanStartMs)
+						? spanStartMs
+						: new Date(logs[0].timestamp).getTime()
 
 					const spanNameMap = new Map<string, string>()
 					if (Result.isSuccess(spansResult)) {
@@ -145,7 +159,19 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 													if (!isCurrent) onLogSelect(log)
 												}}
 											>
-												<span className="text-3xs text-muted-foreground tabular-nums shrink-0 w-[52px] text-right">
+												<span
+													className={cn(
+														"text-3xs tabular-nums shrink-0 w-[56px] truncate text-right",
+														relativeMs < 0
+															? "text-severity-warn"
+															: "text-muted-foreground",
+													)}
+													title={
+														Number.isFinite(spanStartMs)
+															? "Offset from the trace start"
+															: "Offset from the first log shown"
+													}
+												>
 													{formatTimelineOffset(relativeMs)}
 												</span>
 												{log.serviceName !== currentLog.serviceName && (

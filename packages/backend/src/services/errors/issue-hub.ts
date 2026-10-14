@@ -79,11 +79,11 @@ const describeIncident = (input: UpsertAlertIssueInput): string => {
  * make it reproducible.
  */
 class SystemActorMissingError extends Schema.TaggedError<SystemActorMissingError>()(
-	"@maple/api/errors/SystemActorMissingError",
+	"@maple/backend/errors/SystemActorMissingError",
 	{ orgId: Schema.String, agentName: Schema.String, message: Schema.String },
 ) {}
 
-const ensureSystemAlertsActor = Effect.fn("issueHub.ensureSystemAlertsActor")(function* (orgId: OrgId) {
+const ensureSystemAlertsActor = Effect.fn("IssueHub.ensureSystemAlertsActor")(function* (orgId: OrgId) {
 	const database = yield* Database
 	const select = () =>
 		database.execute((db) =>
@@ -145,7 +145,7 @@ const ensureSystemAlertsActor = Effect.fn("issueHub.ensureSystemAlertsActor")(fu
  */
 export const upsertAlertIssue: (
 	input: UpsertAlertIssueInput,
-) => Effect.Effect<UpsertAlertIssueResult, never, Database> = Effect.fn("issueHub.upsertAlertIssue")(
+) => Effect.Effect<UpsertAlertIssueResult, never, Database> = Effect.fn("IssueHub.upsertAlertIssue")(
 	function* (input: UpsertAlertIssueInput) {
 		const database = yield* Database
 		const fingerprintHash = alertIssueFingerprint(input.ruleId, input.groupKey)
@@ -368,7 +368,7 @@ export const upsertAlertIssue: (
 		),
 )
 
-const recordIssueEvent = Effect.fn("issueHub.recordIssueEvent")(function* (
+const recordIssueEvent = Effect.fn("IssueHub.recordIssueEvent")(function* (
 	orgId: OrgId,
 	issueId: ErrorIssueId,
 	actorId: ActorId,

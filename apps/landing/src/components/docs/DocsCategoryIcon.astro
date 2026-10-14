@@ -110,7 +110,7 @@ const base = {
 	</svg>
 )}
 
-{(name === "Agent Sessions" || name === "AI Agents") && (
+{(name === "Agent Sessions" || name === "AI Frameworks") && (
 	<svg class={className} {...base}>
 		<path d="M3 4H21V16H13L8 21V16H3V4Z" />
 		<path d="M8 9H8.01" />
@@ -145,7 +145,7 @@ const base = {
 	</svg>
 )}
 
-{name === "Integrations" && (
+{(name === "Integrations" || name === "AI Gateways") && (
 	<svg class={className} {...base}>
 		<path d="M16 2V7" />
 		<path d="M8 2V7" />
@@ -169,6 +169,24 @@ const base = {
 		<path d="M18 17V7" />
 		<path d="M4 19V17H20V19" />
 		<path d="M10 21H14" />
+	</svg>
+)}
+
+{name === "Infrastructure as Code" && (
+	<svg class={className} {...base}>
+		<path d="M12 16.01V16" />
+		<path d="M16 16.01V16" />
+		<path d="M8 16.01V16" />
+		<path d="M7 3H6" />
+		<path d="M17 3H18" />
+		<path d="M7 21H6" />
+		<path d="M17 21H18" />
+		<path d="M2 12H1" />
+		<path d="M22 12H23" />
+		<path d="M4 10V5" />
+		<path d="M20 10V5" />
+		<path d="M4 19V14" />
+		<path d="M20 19V14" />
 	</svg>
 )}
 

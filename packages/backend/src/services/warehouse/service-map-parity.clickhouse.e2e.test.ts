@@ -25,6 +25,8 @@
 //   - The raw edge and the rollup double-counting the same hour.
 //   - Sample-weighted estimates diverging from the raw counts they are derived
 //     from — the seed carries `SampleRate > 1` rows on both sides of a seam.
+//   - A DB span landing on both the database and the external layers. Spans
+//     carrying only the legacy `db.system` sit in the raw edge and the interior.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
@@ -83,6 +85,10 @@ interface SeedSpan {
 	/** Set for DB-client spans; empty for the service↔service topology spans. */
 	readonly dbSystem: string
 	readonly dbNamespace: string
+	/** Emit the pre-1.26 `db.system` key instead of `db.system.name`. */
+	readonly legacyDbSystem?: boolean
+	/** Replaces the derived SpanAttributes map literal, for non-DB client spans. */
+	readonly spanAttributes?: string
 	/** Topology join key: a Server span names the Client span it descends from. */
 	readonly traceId: string
 	readonly spanId: string
@@ -187,6 +193,21 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	dbSpan(START_MS + 2 * MINUTE_MS, { sampleRate: 10 }),
 	dbSpan(FIRST_FULL_HOUR_MS + 2 * MINUTE_MS, { sampleRate: 10, status: "Error" }),
 
+	// --- Legacy `db.system` only, with the `server.address` a real driver sets.
+	// One in the leading partial hour (raw edge), two in the interior (MV). ---
+	dbSpan(START_MS + 4 * MINUTE_MS, { legacyDbSystem: true, dbNamespace: "legacy" }),
+	dbSpan(FIRST_FULL_HOUR_MS + 5 * MINUTE_MS, { legacyDbSystem: true, dbNamespace: "legacy" }),
+	dbSpan(FIRST_FULL_HOUR_MS + 6 * MINUTE_MS, { legacyDbSystem: true, dbNamespace: "legacy" }),
+	// A plain HTTP call in each tier, so the external assertion is never vacuous.
+	dbSpan(START_MS + 5 * MINUTE_MS, {
+		dbSystem: "",
+		spanAttributes: "map('server.address', 'payments.example.com')",
+	}),
+	dbSpan(FIRST_FULL_HOUR_MS + 7 * MINUTE_MS, {
+		dbSystem: "",
+		spanAttributes: "map('server.address', 'payments.example.com')",
+	}),
+
 	// --- Service↔service topology, on the same seams. ---
 	...callPair(START_MS + 3 * SECOND_MS),
 	...callPair(FIRST_FULL_HOUR_MS - SECOND_MS),
@@ -207,9 +228,12 @@ const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replac
 const seed = async (): Promise<void> => {
 	const rows = SEED_SPANS.map((row) => {
 		const spanAttributes =
-			row.dbSystem === ""
+			row.spanAttributes ??
+			(row.dbSystem === ""
 				? "map('server.address', 'worker.internal')"
-				: `map('db.system.name', ${quote(row.dbSystem)}, 'db.namespace', ${quote(row.dbNamespace)}, 'db.query.text', 'SELECT 1')`
+				: row.legacyDbSystem
+					? `map('db.system', ${quote(row.dbSystem)}, 'db.namespace', ${quote(row.dbNamespace)}, 'server.address', 'pg.internal', 'db.query.text', 'SELECT 1')`
+					: `map('db.system.name', ${quote(row.dbSystem)}, 'db.namespace', ${quote(row.dbNamespace)}, 'db.query.text', 'SELECT 1')`)
 		return `(${quote(ORG_ID)}, ${quote(chDateTime(row.ms))}, ${quote(row.traceId)}, ${quote(row.spanId)}, ${quote(row.parentSpanId)}, ${quote("op")}, ${quote(row.kind)}, ${quote(row.service)}, ${row.durationNs}, ${quote(row.status)}, ${row.sampleRate}, '', ${spanAttributes}, map('deployment.environment', 'production'))`
 	}).join(",\n")
 
@@ -269,7 +293,7 @@ const num = (value: unknown): number => Number(value ?? 0)
 const DB_EDGE_TRUTH_SQL = `
 	SELECT
 		toString(ServiceName) AS sourceService,
-		SpanAttributes['db.system.name'] AS dbSystem,
+		coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) AS dbSystem,
 		SpanAttributes['db.namespace'] AS dbNamespace,
 		count() AS callCount,
 		countIf(StatusCode = 'Error') AS errorCount,
@@ -280,7 +304,7 @@ const DB_EDGE_TRUTH_SQL = `
 		AND Timestamp <= ${quote(END_TIME)}
 		AND SpanKind IN ('Client', 'Producer')
 		AND ServiceName != ''
-		AND SpanAttributes['db.system.name'] != ''
+		AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) != ''
 	GROUP BY sourceService, dbSystem, dbNamespace
 	ORDER BY sourceService ASC, dbSystem ASC, dbNamespace ASC
 `
@@ -406,7 +430,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 			runJson(`
 				SELECT
 					toString(ServiceName) AS sourceService,
-					SpanAttributes['db.system.name'] AS dbSystem,
+					coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) AS dbSystem,
 					SpanAttributes['db.namespace'] AS dbNamespace,
 					arrayElement(
 						quantilesTDigestWeighted(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))),
@@ -418,7 +442,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 					AND Timestamp <= ${quote(END_TIME)}
 					AND SpanKind IN ('Client', 'Producer')
 					AND ServiceName != ''
-					AND SpanAttributes['db.system.name'] != ''
+					AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) != ''
 				GROUP BY sourceService, dbSystem, dbNamespace
 			`),
 		])
@@ -455,6 +479,31 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 		const orders = rows.find((row) => String(row.dbNamespace) === "orders")
 		assert.isDefined(orders, "the `orders` edge is missing from the fixture")
 		assert.isAbove(num(orders?.maxDurationMs), num(orders?.p95DurationMs) * 2)
+	})
+
+	it("counts a legacy db.system span as a database edge and never as an external one", async () => {
+		const [dbEdges, externalEdges, externalHourly] = await Promise.all([
+			runJson(Effect.runSync(CH.serviceDbEdgesSQL({}, window)).sql),
+			runJson(Effect.runSync(CH.serviceExternalEdgesSQL({ serviceName: "api" }, window)).sql),
+			runJson("SELECT groupUniqArray(TargetName) AS names FROM service_external_edges_hourly"),
+		])
+
+		const legacy = dbEdges.find((row) => String(row.dbNamespace) === "legacy")
+		assert.isDefined(legacy, "the legacy db.system spans produced no database edge")
+		assert.strictEqual(String(legacy?.dbSystem), "postgresql")
+		assert.strictEqual(num(legacy?.callCount), 3)
+
+		const payments = externalEdges.find((row) => String(row.targetName) === "payments.example.com")
+		assert.isDefined(payments, "the plain HTTP control edge is missing")
+		assert.strictEqual(num(payments?.callCount), 2)
+		assert.isUndefined(
+			externalEdges.find((row) => String(row.targetName) === "pg.internal"),
+			"a legacy db.system span leaked into the external edges",
+		)
+		// The MV itself, not only the spliced read, must keep it out.
+		const names = (externalHourly[0]?.names ?? []) as ReadonlyArray<string>
+		assert.include(names, "payments.example.com")
+		assert.notInclude(names, "pg.internal")
 	})
 
 	it("matches a flat scan — service edges", async () => {

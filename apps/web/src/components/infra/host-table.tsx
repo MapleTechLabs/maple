@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
@@ -96,9 +97,12 @@ export function HostTable({ hosts, waiting }: HostTableProps) {
 				>
 					<div className="w-0 min-w-[260px] flex-1">
 						<div className="flex items-center gap-2">
-							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
-								{host.hostName}
-							</span>
+							<MiddleTruncate
+								text={host.hostName}
+								tail={12}
+								mono
+								className="text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+							/>
 							<HostStatusBadge quiet lastSeen={host.lastSeen} />
 						</div>
 						<MetaLine

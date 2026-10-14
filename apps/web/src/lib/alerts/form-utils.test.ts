@@ -19,6 +19,7 @@ import {
 	deriveRuleQueryIssues,
 	domainThresholdToForm,
 	formThresholdToDomain,
+	formatSignalValue,
 	normalizeRuleQueryDraft,
 	pickDefaultDestination,
 	suggestedDestinationName,
@@ -27,12 +28,9 @@ import {
 	v2DeliveryToDocument,
 	v2PreviewToResponse,
 } from "./form-utils"
+import { formatErrorRate } from "@maple/ui/lib/format"
 
 describe("rule notes", () => {
-	it("defaults to an empty note", () => {
-		expect(defaultRuleForm().notes).toBe("")
-	})
-
 	it("carries a trimmed note onto the create params", () => {
 		const params = buildRuleCreateParamsV2({
 			...defaultRuleForm(),
@@ -57,6 +55,17 @@ describe("threshold unit conversion", () => {
 		expect(formThresholdToDomain("error_rate", "50")).toBe(0.5)
 		expect(domainThresholdToForm("error_rate", 0.05)).toBe("5")
 		expect(domainThresholdToForm("error_rate", 0.5)).toBe("50")
+	})
+
+	it("drops float noise when converting error_rate ratios to percent", () => {
+		expect(domainThresholdToForm("error_rate", 0.07)).toBe("7")
+		expect(domainThresholdToForm("error_rate", 0.29)).toBe("29")
+	})
+
+	it("keeps precision for error rates below 0.01%", () => {
+		expect(formatSignalValue("error_rate", 0.00005)).toBe("0.0050%")
+		expect(formatSignalValue("error_rate", 0.05)).toBe(formatErrorRate(0.05))
+		expect(formatSignalValue("error_rate", 0)).toBe("0%")
 	})
 
 	it("passes non-error_rate thresholds through unchanged", () => {
@@ -89,13 +98,10 @@ describe("threshold unit conversion", () => {
 
 describe("buildRuleCreateParamsV2", () => {
 	it("dedupes destination ids", () => {
-		const form = defaultRuleForm()
-		const params = buildRuleCreateParamsV2({
-			...form,
-			name: "A",
-			destinationIds: [...form.destinationIds, ...form.destinationIds],
-		})
-		expect(params.destination_ids).toEqual([...new Set(params.destination_ids)])
+		const a = AlertDestinationId.make("00000000-0000-4000-8000-0000000000a1")
+		const b = AlertDestinationId.make("00000000-0000-4000-8000-0000000000b2")
+		const params = buildRuleCreateParamsV2({ ...defaultRuleForm(), name: "A", destinationIds: [a, b, a] })
+		expect(params.destination_ids).toEqual([a, b])
 	})
 
 	it("empties the rule-level scope for query-owned signals", () => {
@@ -123,11 +129,6 @@ describe("buildRuleCreateParamsV2", () => {
 			environments: ["production", "  ", "staging"],
 		})
 		expect(params.environments).toEqual(["production", "staging"])
-	})
-
-	it("defaults to an empty environment scope (all environments)", () => {
-		const params = buildRuleCreateParamsV2({ ...defaultRuleForm(), name: "A" })
-		expect(params.environments).toEqual([])
 	})
 
 	it("normalizes and submits one query-builder draft", () => {

@@ -3,14 +3,14 @@ import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Effect, Exit, Layer, Schema, Scope } from "effect"
 import { env as workerEnv } from "../test/stubs/cloudflare-workers"
-import { buildLayer } from "./scheduled"
+import { layerTick } from "./scheduled"
 
 /**
  * One cron fire the way alchemy's bridge runs it: the SDK telemetry is built
  * into the fire's scope exactly as `WorkerTelemetry` registers it, the tick
  * runs over its own layer graph inside that scope, and the scope closes after
  * the fire. What the SDK then POSTs is what production exports — so this pins
- * that `buildLayer` shadows neither the bridge's tracer nor its flush.
+ * that `layerTick` shadows neither the bridge's tracer nor its flush.
  */
 const ExportedTraces = Schema.Struct({
 	resourceSpans: Schema.optionalKey(
@@ -76,7 +76,7 @@ describe("alerting through alchemy's Worker bridge", () => {
 			// The shape of `runScheduled`: the tick graph provided around the tick,
 			// under the event context the bridge hands the cron listener.
 			yield* Effect.withSpan("alerting.scheduler_tick")(Effect.void).pipe(
-				Effect.provide(buildLayer(workerEnv)),
+				Effect.provide(layerTick(workerEnv)),
 				Effect.provide(services),
 			)
 			const flushedBeforeClose = recorded.length

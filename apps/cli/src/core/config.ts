@@ -30,6 +30,8 @@ export interface StoredConfig {
 	/** Latest release tag seen by the update check (e.g. "v0.6.0"), cached so the
 	 *  notice can render between probes without hitting the network. */
 	latestKnownVersion?: string
+	/** Version that last ran here, so the first run after an upgrade can point at its notes. */
+	lastSeenVersion?: string
 }
 
 /** The config file exists but cannot be read, parsed, or replaced. Names the
@@ -54,6 +56,7 @@ const StoredConfigFields = Schema.Struct({
 	defaultMode: Schema.optionalKey(Schema.Literals(["local", "remote"])),
 	lastUpdateCheck: Schema.optionalKey(Schema.String),
 	latestKnownVersion: Schema.optionalKey(Schema.String),
+	lastSeenVersion: Schema.optionalKey(Schema.String),
 })
 const KNOWN_KEYS = new Set(Object.keys(StoredConfigFields.fields))
 const decodeConfigObject = Schema.decodeUnknownResult(
@@ -160,6 +163,8 @@ export interface MapleConfigValues {
 	readonly lastUpdateCheck: Option.Option<string>
 	/** Latest release tag seen by the last update check, or `None`. */
 	readonly latestKnownVersion: Option.Option<string>
+	/** Version that last ran on this machine, or `None` before the first run that records it. */
+	readonly lastSeenVersion: Option.Option<string>
 	/** Persist config fields (merged with existing). */
 	readonly write: (next: StoredConfig) => Effect.Effect<void, ConfigFileError>
 	readonly saveRemoteCredential: (next: {
@@ -237,6 +242,7 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 			defaultApiUrl: env.MAPLE_API_URL ?? DEFAULT_API_URL,
 			lastUpdateCheck: Option.fromNullishOr(stored.lastUpdateCheck),
 			latestKnownVersion: Option.fromNullishOr(stored.latestKnownVersion),
+			lastSeenVersion: Option.fromNullishOr(stored.lastSeenVersion),
 			write: (next) => writeMerged(fs, (cur) => ({ ...cur, ...next })),
 			saveRemoteCredential: (next) =>
 				Effect.gen(function* () {

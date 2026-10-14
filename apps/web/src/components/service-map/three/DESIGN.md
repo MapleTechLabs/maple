@@ -1,65 +1,95 @@
-# Voxel service map
+# Maple service map
 
-The existing orthographic factory diorama is built from visible blocks. Keep Maple's
-Geist labels, warm app chrome, health colors, service badges, Atlas/Cascade layouts,
-and graph interactions. The shared 3D scene serves both the lab and the live service map.
+The 3D service map is an autumn sugar-bush drawn in isometric line art: every
+service is a machine, every call a belt. The same scene serves the live service
+map and the lab (`/lab/service-map-3d`).
 
-Machine shells use approximately 0.1-unit voxels with flat faces and subtle seeded
-tonal variation. Cylinders become stepped volumes, pipe cross-sections and collars
-become square, and moving requests are cubes. Terrain uses a coarser grid, with
-grass-topped dirt columns and block-built tree canopies.
+## Projection
 
-Use ochre processors, mineral-green storage, warm steel, rich meadow-green
-terrain, and golden/apricot/russet trees from the approved sunset reference. Health belongs to the small status lamps and
-HTML labels. Selection retains its amber base and adds a square ground marker.
+A locked 2:1 isometric orthographic camera (45° azimuth, about 30° elevation).
+The projection is part of the drawing, so the camera pans and zooms but never
+orbits. Left drag and one-finger drag pan; scroll and pinch zoom. A press that
+moves more than `DRAG_TOLERANCE` is a pan, never a select. The camera frames the
+zones plus a 2.5 unit meadow margin.
 
-Geometry must preserve machine footprints and connection anchors. Merge visible
-voxel faces into one geometry per machine part and instance landscape blocks.
-Keep the existing motion pause and reduced-motion handling. HTML controls and
-service labels remain the accessible way to inspect every node.
+## Drawing
 
-Lighting follows the supplied floating-island sunset video: peach and lilac sky,
-a pale sun behind the island, warm golden key light, lavender fill, and soft,
-lower-contrast shadows. The sunset scene palette remains consistent across app
-themes; product controls and labels retain their theme-aware contrast. Use a
-stable 4096-pixel soft shadow map, refreshed when geometry changes. Keep matte
-paint and fine voxel tinting. Separate adjoining surfaces to avoid flickering.
+- Unlit materials. Each solid bakes three face tones into vertex colors (roof
+  lightest, the two visible walls stepped down), then gets ink edges on top.
+  No lights, shadows, tone mapping or sky.
+- Faces use polygon offset so ink never flickers into paper.
+- Light: parchment paper, bark-brown ink, moss-on-soil zones, and maple red,
+  gold, rust and Maple amber accents. Dark is a night scene, not an inversion:
+  dark ink, lit mid-tone faces, lighter belt decks and warm lit windows
+  (`night` on the palette).
+- Dimmed parts fade toward the paper colour instead of using transparency.
+- Geometry is built once per mount and components are keyed on the inputs it
+  comes from, so live metrics remount rather than leak GPU buffers.
 
-The island has an irregular stepped shoreline within its conservative camera
-bounds. Sandy upper cliffs transition into mauve rock underneath, forming a
-tapered, closed voxel shell instead of a flat slab. Keep the small blocks, full
-service-platform support, and lush grass. The terrain has no unrelated buildings
-or implied service nodes.
+## Machines
 
-Use finer voxels throughout: approximately 0.4-unit ground cubes and elevation
-steps, 0.2-unit foliage and trunk voxels, 0.1-unit machine shells, and 0.03–0.09-unit
-mechanical details. Terrain elevation is sampled and quantized directly on the
-fine grid, producing more intermediate steps across the hills. There is no
-coarse elevation grid hidden behind subdivided blocks. Buildings and trees keep
-their overall size while their silhouettes and surfaces gain smaller voxel detail.
-Grass caps dirt columns; omit buried dirt cubes. Keep service aprons and routes
-clear and seat vegetation on the actual block heights.
+Machines are 2×2 modules (0.8 units each). In Atlas, request volume adds storeys
+(1 to 4); Cascade uses two storeys.
 
-The meadow is part of the finished scene: dense clusters of fine, stepped grass
-blades with varied height and green tones, plus scattered cream and yellow flowers.
-Seat each blade on its own terrain tile so tufts remain grounded at ledges. Keep
-tufts away from machine aprons and transport routes. Memoize the landscape against
-structural routes; metric refreshes must not regenerate or upload its instances.
+- Services are timber cabins: stone footing, shutters, lit windows, a porch
+  with a shingled canopy and lantern, a stone chimney with smoke.
+- Databases are sugaring vats with iron hoops, a shingled roof, a steam vent,
+  and a tap with a sap bucket.
+- Queues stack firewood beside a chopping stump and a log sled.
+- Gateways are open timber gates: four posts, a header board carrying the
+  health plates and badge, a cedar-shake roof and a leaf garland.
+- External services are log cabins with notched corners and a stone chimney.
 
-The sun is a simple pale, flat disc with broad atmospheric warmth, matching the
-reference's stylized sunset. It stays behind the island without spherical shading.
-Cloud banks remain solid stepped voxel volumes at different depths, with warm
-tops and lilac undersides; they provide orbit parallax. Background scenery is
-non-interactive, has no shadows on the graph, and adds one instanced draw call.
+Each machine is seeded by its node id: roof and shutter colour, chimney side,
+porch or stone steps, side windows, vat hoops, gate sign shape, and one or two
+yard props (vegetable patch, woodpile, rain barrel, bench, mailbox, washing
+line, pumpkins, cart).
 
-Autumn finishing: rich green ground, spatial patches of deep fern and lush meadow-green grass, fresh green
-tips and varied tuft orientations. Tree crowns deepen to russet underneath and
-catch honey tones above. Sparse seed heads, cream/gold late-season flowers, and
-small fallen voxel leaves under the trees complete the meadow. Keep it lush,
-keep all plants seated on the actual stepped terrain, and leave routes clear.
+## Live state
 
-Grass stays rich green, with deep bases and restrained fresh-green tips. Reserve
-gold for seed heads, flowers, tree crowns, and fallen leaves rather than turf blades.
+- Health is the painted door, hatch or header plate: teal healthy, amber
+  elevated, brick degraded.
+- Smoke follows request volume: none at 0 rps, a lazy wisp when nearly idle,
+  up to five quick puffs for the busiest services.
+- Elevated error rate: a worker with a wrench stands at the machine. Degraded:
+  windows and lantern go dark, smoke turns sooty, a red flag goes up and cabin
+  windows are boarded.
+- Busy docks get a woodcutter carrying a log.
+- Selection: a rope border on lantern posts around the pad; the selected
+  service's belts turn amber and everything else fades to a pencil sketch.
 
-Grass-covered ground blocks and terrace tops share the richer green palette of
-the meadow tufts. Autumn warmth remains in the foliage and sunset lighting.
+## Belts
+
+Routes are Manhattan belts on the ground plane with small rounded elbows,
+drawn as plank boardwalks (narrow calls read as flumes) over worn-earth trails.
+Failing belts show split planks in the error colour; a few long boardwalks get
+a covered span or a lantern post. Cargo is instanced and moved on the GPU
+(`factory-motion.ts`): 3 to 44 pieces per belt by length and call rate, a mix
+of slatted crates, sap buckets and literal logs. Period follows route length and
+latency. Reduced motion and the pause control stop all motion; nothing pulses
+or blinks.
+
+## Zones and labels
+
+Atlas zones are wobbly moss mats with grass along the edge; Cascade tiers are
+dry-stone terraces with timber steps between levels. HTML labels are wooden
+signs and hanging tags with their own `sign`/`signInk` colours, and stay the
+accessible way to inspect every node.
+
+## Forest
+
+The world follows the zones, not their bounding box. A distance field to the
+union of zone rectangles plus seeded noise drives the meadow outline and
+planting (`maple-scenery-field.tsx`, `maple-scenery-plan.tsx`): groves hug some
+zones, meadow bays open by others, and trees thin into the paper past an
+irregular edge. Clearances: small planting (grass, bushes, rocks, saplings)
+keeps 0.35 outside every zone and 0.75 from every belt sample; full trees need
+0.9 from zones and 1.1 from belts; landforms keep 0.9 from zones and 0.75 from
+belts. Plans rebuild only when zone or belt geometry changes.
+
+The meadow is lopsided, with a rocky outcrop on the far side, a lake with reeds,
+lily pads and a dock feeding a meandering creek, low mounds, footpaths, a
+campfire and a fence (`maple-scenery-land.tsx`). The forest is one merged
+drawing: maples, birches, pines, undergrowth, a deer, a fox, songbirds, ducks
+on the lake and birds gliding behind the map. Leaves fall and drift; dark mode
+adds steady fireflies.

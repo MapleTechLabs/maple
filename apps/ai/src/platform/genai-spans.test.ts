@@ -11,6 +11,7 @@ import {
 	messagesJson,
 	toolCallJson,
 	withReturnedToolFailuresOk,
+	withRunSessionAttributes,
 	withToolCallContent,
 } from "./genai-spans"
 
@@ -219,6 +220,35 @@ describe("withReturnedToolFailuresOk", () => {
 		Effect.gen(function* () {
 			const { failed } = yield* endedSpan("chat.turn", "returned-to-model")
 			assert.isTrue(failed)
+		}),
+	)
+})
+
+describe("withRunSessionAttributes", () => {
+	const SESSION = { "maple_ai.session.id": "review_1", "maple_ai.turn.id": "turn_1" }
+
+	it.effect("files a child agent's spans under the run's session, over its own thread", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			// The engine labels a child's spans with the child's own thread, as it does in production.
+			yield* Effect.void.pipe(
+				Effect.withSpan("execute_tool pr_changed_files", {
+					attributes: { "gen_ai.conversation.id": "thread-id_child" },
+				}),
+				Effect.withSpan("invoke_agent pr-review-worker", {
+					attributes: { "gen_ai.conversation.id": "thread-id_child" },
+				}),
+				Effect.withSpan("http.request"),
+				Effect.withTracer(withRunSessionAttributes(tracer, SESSION)),
+			)
+
+			const byName = (name: string) => spans.find((span) => span.name === name)
+			for (const name of ["invoke_agent pr-review-worker", "execute_tool pr_changed_files"]) {
+				assert.strictEqual(byName(name)?.attributes.get("maple_ai.session.id"), "review_1", name)
+				assert.strictEqual(byName(name)?.attributes.get("maple_ai.turn.id"), "turn_1", name)
+			}
+			// Nothing wider: an HTTP span is not an agent span.
+			assert.isUndefined(byName("http.request")?.attributes.get("maple_ai.session.id"))
 		}),
 	)
 })

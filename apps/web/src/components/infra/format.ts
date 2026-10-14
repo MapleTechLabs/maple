@@ -1,4 +1,4 @@
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatBytes } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { type UtilizationLevel, utilizationLevel } from "@maple/ui/lib/utilization"
 
@@ -40,3 +40,20 @@ export const formatWholePercent = (fraction: number) =>
 
 /** CPU usage in cores, two decimals. */
 export const formatCores = (cores: number) => (Number.isFinite(cores) ? cores.toFixed(2) : EMPTY_VALUE)
+
+/**
+ * A node's usage / allocatable fraction, or NaN when allocatable was not collected
+ * (the API sends 0 for both), so meters and percents render a dash instead of 0%.
+ */
+export const capacityFraction = (utilization: number, allocatable: number) =>
+	allocatable > 0 ? utilization : Number.NaN
+
+/** "0.42 / 3.92 cores"; usage alone when allocatable was not collected. */
+export const formatCoresOfAllocatable = (usage: number, allocatable: number) =>
+	allocatable > 0
+		? `${formatCores(usage)} / ${formatCores(allocatable)} cores`
+		: `${formatCores(usage)} cores`
+
+/** "3.1 GB / 15.6 GB"; usage alone when allocatable was not collected. */
+export const formatBytesOfAllocatable = (usage: number, allocatable: number) =>
+	allocatable > 0 ? `${formatBytes(usage)} / ${formatBytes(allocatable)}` : formatBytes(usage)

@@ -30,6 +30,7 @@ import {
 	spanFailed,
 	spanModel,
 	spanStartMs,
+	withoutInjectedBlocks,
 	type AiSpanCategory,
 	type SessionTurn,
 } from "./session-turns"
@@ -474,7 +475,7 @@ function buildTurn(
 		lastCallFailed: false,
 	}
 
-	const forest = buildForest(spans)
+	const forest = buildForest(spans, dedupeById(turn.spans))
 	const walk = walkLane(forest.roots, forest.children, {
 		context,
 		depth: 0,
@@ -588,14 +589,32 @@ interface SpanForest {
  * read this one, but it deliberately preserves input order where this sorts —
  * unifying them is a behavioural change to the waterfall, not a lift.
  */
-function buildForest(spans: readonly AiSessionSpan[]): SpanForest {
+/**
+ * The AI spans as a forest. A span whose parent is the app's own (a runtime's
+ * `AgentRuntime.model` wrapper around each model call) hangs off its nearest AI
+ * ancestor through it: promoted to a root instead, every model call of an agent
+ * would print after that agent's whole tool subtree.
+ */
+function buildForest(spans: readonly AiSessionSpan[], all: readonly AiSessionSpan[] = spans): SpanForest {
 	const present = new Set(spans.map((span) => span.spanId))
+	const byId = new Map(all.map((span) => [span.spanId, span]))
+	const aiParentOf = (span: AiSessionSpan): string | undefined => {
+		const seen = new Set<string>([span.spanId])
+		let parentId = span.parentSpanId
+		while (parentId !== "" && !seen.has(parentId)) {
+			if (present.has(parentId)) return parentId
+			seen.add(parentId)
+			parentId = byId.get(parentId)?.parentSpanId ?? ""
+		}
+		return undefined
+	}
 	const children = new Map<string, AiSessionSpan[]>()
 	const roots: AiSessionSpan[] = []
 	for (const span of spans) {
-		if (span.parentSpanId !== "" && present.has(span.parentSpanId)) {
-			const siblings = children.get(span.parentSpanId)
-			if (siblings === undefined) children.set(span.parentSpanId, [span])
+		const parentId = aiParentOf(span)
+		if (parentId !== undefined) {
+			const siblings = children.get(parentId)
+			if (siblings === undefined) children.set(parentId, [span])
 			else siblings.push(span)
 		} else {
 			roots.push(span)
@@ -1099,16 +1118,19 @@ function userRows(
 	const history = messages.filter((message) => message.origin === "input")
 	if (history.length === 0) return []
 
+	// The newest user message that says something: a framework's status block
+	// appended as a user message (`<run-status>`) is not what the user asked.
 	let index = -1
+	let text = ""
 	for (let i = history.length - 1; i >= 0; i--) {
-		if (history[i].role.toLowerCase() === "user") {
+		if (history[i].role.toLowerCase() !== "user") continue
+		text = withoutInjectedBlocks(textOf(history[i].parts)).trim()
+		if (text !== "") {
 			index = i
 			break
 		}
 	}
 	if (index === -1) return []
-	const text = textOf(history[index].parts)
-	if (text === "") return []
 
 	scope.context.userEmitted = true
 	return [
@@ -1277,7 +1299,7 @@ function capturedPromptText(messages: readonly SpanMessage[]): string | undefine
 	const input = messages.filter((message) => message.origin === "input")
 	for (let i = input.length - 1; i >= 0; i--) {
 		if (input[i].role.toLowerCase() !== "user") continue
-		const text = textOf(input[i].parts)
+		const text = withoutInjectedBlocks(textOf(input[i].parts)).trim()
 		if (text !== "") return text
 	}
 	return undefined

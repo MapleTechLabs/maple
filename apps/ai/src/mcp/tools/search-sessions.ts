@@ -117,10 +117,10 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				userId: params.user_id ?? "any",
-				eventType: params.event_type ?? "any",
-				limit: lim,
-				offset: off,
+				"maple.ai.user_id": params.user_id ?? "any",
+				"maple.ai.event_type": params.event_type ?? "any",
+				"maple.ai.limit": lim,
+				"maple.ai.offset": off,
 			})
 
 			const sessions = yield* withTenantExecutor(
