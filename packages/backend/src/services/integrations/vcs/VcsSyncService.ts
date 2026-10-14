@@ -20,6 +20,8 @@ import {
 	type VcsRepositoryBlockedError,
 	type VcsRepoUnavailableError,
 	VcsSyncJob,
+	type WorkflowJobJob,
+	type WorkflowRunJob,
 } from "@maple/domain/http"
 import { Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
@@ -31,6 +33,7 @@ import {
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
+import { WorkflowEventSink } from "./WorkflowEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 // Vendor-agnostic sync orchestrator. Decodes a queue message, resolves the
@@ -80,6 +83,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const sink = yield* PullRequestEventSink
 			const commentSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestCommentSink))
 			const checklistSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestChecklistSink))
+			const workflowSink = Option.getOrUndefined(yield* Effect.serviceOption(WorkflowEventSink))
 
 			// The repo's single tracked branch, with the default-branch fallback for a
 			// row whose `trackedBranch` was never set (legacy) — the one place the
@@ -864,6 +868,33 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				},
 			)
 
+			// CI runs and jobs touch no VCS table: they resolve the org and go to the sink, which turns
+			// them into spans. Not behind `ensureProcessable`, since CI traces need no synced commits.
+			const handleWorkflowRun = Effect.fn("VcsSyncService.handleWorkflowRun")(function* (
+				installation: VcsInstallation,
+				job: WorkflowRunJob,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.repository.external_id": job.externalRepoId,
+					"cicd.pipeline.run.id": job.runId,
+					"vcs.workflow.forwarded": workflowSink !== undefined,
+				})
+				if (workflowSink !== undefined) yield* workflowSink.onWorkflowRun(installation.orgId, job)
+			})
+
+			const handleWorkflowJob = Effect.fn("VcsSyncService.handleWorkflowJob")(function* (
+				installation: VcsInstallation,
+				job: WorkflowJobJob,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.repository.external_id": job.externalRepoId,
+					"cicd.pipeline.run.id": job.runId,
+					"cicd.pipeline.task.run.id": job.jobId,
+					"vcs.workflow.forwarded": workflowSink !== undefined,
+				})
+				if (workflowSink !== undefined) yield* workflowSink.onWorkflowJob(installation.orgId, job)
+			})
+
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
 					Effect.map(Option.some),
@@ -949,6 +980,12 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					),
 					Match.discriminator("kind")("pull-request-checklist", (job) =>
 						handlePullRequestChecklist(installation, job),
+					),
+					Match.discriminator("kind")("workflow-run", (job) =>
+						handleWorkflowRun(installation, job),
+					),
+					Match.discriminator("kind")("workflow-job", (job) =>
+						handleWorkflowJob(installation, job),
 					),
 					Match.exhaustive,
 				)

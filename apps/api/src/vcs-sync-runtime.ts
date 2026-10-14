@@ -22,6 +22,7 @@ import {
 	PullRequestChecklistSinkLive,
 	PullRequestCommentSinkLive,
 } from "@maple/backend/services/pr-review/pull-request-comment-handler"
+import { CiTraceSinkLive } from "@maple/backend/services/integrations/ci-traces/CiTraceService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 
@@ -59,6 +60,8 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(PullRequestCommentSinkLive),
 	// Ticked "Before merge" boxes on review comments.
 	Layer.provide(PullRequestChecklistSinkLive.pipe(Layer.provide(PrReviewLive))),
+	// Finished CI runs and jobs, written as spans into the org's traces.
+	Layer.provide(CiTraceSinkLive),
 	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
 )
 

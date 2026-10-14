@@ -1,15 +1,16 @@
 ---
 title: "GitHub"
-description: "Install the Maple GitHub App to sync repositories and commit history, resolve commit SHAs in your telemetry, and give the MCP server read access to your source code."
+description: "Install the Maple GitHub App to sync repositories and commit history, resolve commit SHAs in your telemetry, trace your GitHub Actions runs, and give the MCP server read access to your source code."
 group: "Integrations"
 order: 4
 ---
 
 The Maple GitHub App syncs your repositories and their commit history into Maple. You install the app, choose which repositories to share, and pick one branch to track per repository. Maple backfills the last 90 days of commits on that branch and keeps it current through GitHub webhooks.
 
-Once connected, the integration does two things:
+Once connected, the integration does three things:
 
 - **Commit context in telemetry.** When your services report the `vcs.ref.head.revision` resource attribute, Maple resolves the SHA against synced commits. The trace view and service pages show a commit hover card with the author, message, and a link to GitHub.
+- **CI traces.** Every finished GitHub Actions run becomes a trace under the `github-actions` service: the run is the root span, each job a child span, and each step a span inside its job. No workflow changes are needed.
 - **Source code tools for the MCP server.** The [MCP server](/docs/reference/mcp) gains three read-only tools that reach your repositories through the app installation: `list_source_repositories`, `search_source_code` (GitHub code search on the default branch), and `read_source_file` (a line range at a branch, tag, or commit SHA). An assistant can go from an exception in a trace to the code that raised it.
 
 ## Prerequisites
@@ -37,6 +38,16 @@ Changing the tracked branch is destructive. Maple deletes the repository's synce
 - **Webhooks** deliver pushes to a tracked branch as they happen. Force-pushes are reconciled. Repositories added to or removed from the installation, and a suspended app, are picked up automatically.
 - **A scheduled reconcile** runs every 12 hours for every installation, so a missed webhook does not leave gaps.
 
+## CI traces
+
+Maple receives GitHub's `workflow_run` and `workflow_job` webhooks for the repositories the app can see and writes one trace per run attempt. A re-run gets its own trace.
+
+- **Spans:** the run spans from when it started to when it finished. A job spans from when a runner picked it up to when it finished; the time it waited in the queue before that is on the job span as `maple.cicd.queue_duration_ms`. Steps that never ran are left out.
+- **Status:** failed and timed-out runs, jobs, and steps are `Error`, passing ones are `Ok`, and cancelled or skipped ones carry no status.
+- **Attributes:** spans follow the OpenTelemetry CI/CD conventions (`cicd.pipeline.name`, `cicd.pipeline.run.id`, `cicd.pipeline.task.name`, `cicd.pipeline.result`, `cicd.worker.name`) plus `vcs.ref.head.name`, `vcs.ref.head.revision`, and `vcs.change.id` (the pull request number). The resource carries `vcs.repository.name` and `vcs.owner.name`, so you can filter CI traces by repository.
+
+CI spans are ingested like any other telemetry and count toward your usage.
+
 ## Verify
 
 1. On **Integrations → GitHub**, every repository row reads **Synced** with a recent sync time. The card polls while backfills run, so you do not need to reload.
@@ -56,6 +67,7 @@ Changing the tracked branch is destructive. Maple deletes the repository's synce
 - **No repositories appear after connecting.** Discovery and the first backfill run in the background. The card polls and fills in as they complete.
 - **Commits don't show up for a repository.** Confirm the tracked branch is the one your commits land on. Only the tracked branch is synced.
 - **Traces show a SHA without a hover card.** The SHA must be a full 40-character commit on a synced tracked branch within the synced history.
+- **No CI traces appear.** Traces are written when a run or job finishes, so a run in progress has none yet. If finished runs are still missing, open the [GitHub App settings](https://github.com/settings/installations) and accept any pending permission request from the Maple app.
 - **`search_source_code` finds nothing.** GitHub code search indexes only the default branch and matches whole tokens. Search for exact identifiers or exception text.
 
 ## Next steps
