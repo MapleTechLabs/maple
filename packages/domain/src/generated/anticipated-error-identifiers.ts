@@ -51,6 +51,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/GcpPromQlFailedError",
 	"@maple/http/errors/GcpPromQlInvalidQueryError",
 	"@maple/http/errors/GcpPromQlTooManyProjectsError",
+	"@maple/http/errors/GcpPromQlTooManySeriesError",
 	"@maple/http/errors/GcpPromQlUnavailableError",
 	"@maple/http/errors/GcpScopeAlreadyConnectedError",
 	"@maple/http/errors/IncidentTriageUnauthorizedError",

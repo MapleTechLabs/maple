@@ -77,6 +77,7 @@ interface StubOptions {
 	readonly promql?: (call: PromQlCall) => Response | undefined
 	/** Projects under `folders/123`, as `[projectId, state]`. */
 	readonly folderProjects?: ReadonlyArray<readonly [string, string]>
+	readonly assets?: () => Response | undefined
 	readonly names?: ReadonlyArray<string>
 	readonly descriptors?: Record<string, unknown>
 }
@@ -107,14 +108,17 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 		}
 		if (url.host === "cloudasset.googleapis.com") {
 			calls.assets.push(`${url.pathname} ${url.searchParams.get("assetTypes")}`)
-			return json({
-				results: (options.folderProjects ?? []).map(([projectId, state]) => ({
-					name: `//cloudresourcemanager.googleapis.com/projects/${projectId.length}0001`,
-					assetType: "cloudresourcemanager.googleapis.com/Project",
-					state,
-					additionalAttributes: { projectId },
-				})),
-			})
+			return (
+				options.assets?.() ??
+				json({
+					results: (options.folderProjects ?? []).map(([projectId, state]) => ({
+						name: `//cloudresourcemanager.googleapis.com/projects/${projectId.length}0001`,
+						assetType: "cloudresourcemanager.googleapis.com/Project",
+						state,
+						additionalAttributes: { projectId },
+					})),
+				})
+			)
 		}
 		const promql = /^\/v1\/projects\/([^/]+)\/location\/global\/prometheus\/api\/v1\/(.+)$/.exec(
 			url.pathname,
@@ -123,7 +127,10 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 			const call = {
 				project: promql[1]!,
 				path: promql[2]!,
-				params: Object.fromEntries(url.searchParams),
+				params: Object.fromEntries([
+					...url.searchParams,
+					...new URLSearchParams(await new Response(init?.body ?? null).text()),
+				]),
 				reader,
 				quotaProject: headers.get("x-goog-user-project"),
 			}
@@ -263,16 +270,36 @@ describe("GcpPromQlService.queryRange", () => {
 									[T0 + 1800, "1.5"],
 								],
 							})
-						: matrix({
-								metric: { service: "checkout", project_id: call.project },
-								values: [[T0, "7"]],
-							}),
+						: // A project's metrics scope can answer for another project: Google's label stays,
+							// and acme-data, whose scope holds acme-shop, answers acme-shop's series again.
+							matrix(
+								{
+									metric: {
+										service: "checkout",
+										project_id:
+											call.project === "acme-shop" ? "acme-monitored" : call.project,
+									},
+									values: [[T0, "7"]],
+								},
+								...(call.project === "acme-data"
+									? [
+											{
+												metric: { service: "checkout", project_id: "acme-monitored" },
+												values: [[T0, "7"]] as Array<[number, string]>,
+											},
+										]
+									: []),
+							),
 			}),
 			Effect.gen(function* () {
 				yield* insertConnectors(testDb)
 				const result = yield* queryRange(range("sum by (service) (rate(x[5m]))"))
 
-				assert.deepStrictEqual<ReadonlyArray<string>>(result.projects, ["acme-data", "acme-prod", "acme-shop"])
+				assert.deepStrictEqual<ReadonlyArray<string>>(result.projects, [
+					"acme-data",
+					"acme-prod",
+					"acme-shop",
+				])
 				assert.deepStrictEqual(result.failures, [])
 				assert.strictEqual(result.resultType, "matrix")
 				// Identical label sets from different projects stay apart by `project_id`.
@@ -287,7 +314,7 @@ describe("GcpPromQlService.queryRange", () => {
 								[T0 + 1800, 1.5],
 							],
 						},
-						{ labels: { service: "checkout", project_id: "acme-shop" }, points: [[T0, 7]] },
+						{ labels: { service: "checkout", project_id: "acme-monitored" }, points: [[T0, 7]] },
 					],
 				)
 
@@ -347,22 +374,27 @@ describe("GcpPromQlService.queryRange", () => {
 	it.effect("refuses to read more than 20 projects unless they are chosen", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
-		const many = Array.from({ length: 21 }, (_, index) => [`acme-team-${index + 10}`, "ACTIVE"] as const)
+		const many = Array.from({ length: 20 }, (_, index) => [`acme-team-${index + 10}`, "ACTIVE"] as const)
 		return run(
 			testDb,
 			stubFetch(calls, { folderProjects: many }),
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, FOLDER_CONNECTOR, { projectId: "acme-host", folder: "123" })
-				const error = yield* Effect.flip(queryRange(range("up")))
+				const twenty = yield* queryRange(range("up"))
+				assert.lengthOf(twenty.projects, 20)
+
+				yield* insertConnector(testDb, PROJECT_CONNECTOR)
+				const promqlCalls = calls.promql.length
+				const error = yield* Effect.flip(queryRange(range("down")))
 				assert.strictEqual(error._tag, "@maple/http/errors/GcpPromQlTooManyProjectsError")
 				assert.lengthOf(
 					error._tag === "@maple/http/errors/GcpPromQlTooManyProjectsError" ? error.projects : [],
 					21,
 				)
-				assert.lengthOf(calls.promql, 0)
+				assert.lengthOf(calls.promql, promqlCalls)
 
-				const chosen = yield* queryRange(range("up", ["acme-team-10", "acme-team-30"]))
-				assert.deepStrictEqual<ReadonlyArray<string>>(chosen.projects, ["acme-team-10", "acme-team-30"])
+				const chosen = yield* queryRange(range("up", ["acme-team-10", "acme-prod"]))
+				assert.deepStrictEqual<ReadonlyArray<string>>(chosen.projects, ["acme-prod", "acme-team-10"])
 			}),
 		)
 	})
@@ -395,6 +427,12 @@ describe("GcpPromQlService.queryRange", () => {
 
 				const error = yield* Effect.flip(queryRange(range("up", ["acme-data", "acme-shop"])))
 				assert.strictEqual(error._tag, "@maple/http/errors/GcpPromQlFailedError")
+				assert.deepStrictEqual(
+					error._tag === "@maple/http/errors/GcpPromQlFailedError"
+						? error.failures.map((failure) => failure.scope)
+						: [],
+					["projects/acme-data", "projects/acme-shop"],
+				)
 			}),
 		)
 	})
@@ -432,7 +470,10 @@ describe("GcpPromQlService.queryRange", () => {
 		return run(
 			testDb,
 			stubFetch(calls, {
-				promql: () => json({ status: "error", errorType: "bad_data", error: refusal }, 400),
+				promql: (call) =>
+					call.params.query === "slow"
+						? json({ status: "error", errorType: "execution", error: "query timed out" }, 422)
+						: json({ status: "error", errorType: "bad_data", error: refusal }, 400),
 			}),
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
@@ -441,6 +482,97 @@ describe("GcpPromQlService.queryRange", () => {
 				)
 				assert.strictEqual(error._tag, "@maple/http/errors/GcpPromQlInvalidQueryError")
 				assert.strictEqual(error.message, refusal)
+				assert.strictEqual(
+					error._tag === "@maple/http/errors/GcpPromQlInvalidQueryError" ? error.projectId : "",
+					"acme-prod",
+				)
+
+				// A query that ran out of time is the project's failure, not the query's fault.
+				const slow = yield* Effect.flip(queryRange(range("slow")))
+				assert.strictEqual(slow._tag, "@maple/http/errors/GcpPromQlFailedError")
+			}),
+		)
+	})
+
+	it.effect("reports a folder whose projects cannot be listed, also on a cached answer", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			stubFetch(calls, {
+				assets: denied,
+				promql: (call) => matrix({ metric: { project_id: call.project }, values: [[T0, "1"]] }),
+			}),
+			Effect.gen(function* () {
+				yield* insertConnectors(testDb)
+				for (const _ of [1, 2]) {
+					const result = yield* queryRange(range("up"))
+					assert.deepStrictEqual<ReadonlyArray<string>>(result.projects, ["acme-prod"])
+					assert.deepStrictEqual(
+						result.failures.map((failure) => failure.scope),
+						["folders/123"],
+					)
+					assert.include(result.failures[0]!.message, "it grants Cloud Asset Viewer")
+				}
+				// The second answer came from the cache.
+				assert.lengthOf(calls.promql, 1)
+			}),
+		)
+	})
+
+	it.effect("never serves one organization's cached answer to another", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		const other = Schema.decodeSync(OrgId)(OTHER_ORG)
+		return run(
+			testDb,
+			stubFetch(calls, { names: ["run.googleapis.com/request_count"] }),
+			Effect.gen(function* () {
+				// Both organizations connected the same project, each with its own reader.
+				yield* insertConnector(testDb, PROJECT_CONNECTOR)
+				yield* insertConnector(testDb, OTHER_CONNECTOR, { orgId: OTHER_ORG })
+				yield* queryRange(range("up"))
+				yield* GcpPromQlService.use((gcp) => gcp.queryRange(other, range("up")))
+				yield* GcpPromQlService.use((gcp) => gcp.searchMetrics(ORG, { search: "run" }))
+				yield* GcpPromQlService.use((gcp) => gcp.searchMetrics(other, { search: "run" }))
+				assert.deepStrictEqual(
+					calls.promql.map((call) => [call.path, call.reader]),
+					[
+						["query_range", PROJECT_READER],
+						["query_range", readerOf(OTHER_CONNECTOR, "acme-prod")],
+						["label/__name__/values", PROJECT_READER],
+						["label/__name__/values", readerOf(OTHER_CONNECTOR, "acme-prod")],
+					],
+				)
+			}),
+		)
+	})
+
+	it.effect("refuses an answer of more than 500 series across its projects, never cut short", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			stubFetch(calls, {
+				folderProjects: FOLDER_PROJECTS,
+				// 250 series from each project: 750 in all, 500 from the folder alone.
+				promql: (call) =>
+					matrix(
+						...Array.from({ length: 250 }, (_, index) => ({
+							metric: { instance: `vm-${index}`, project_id: call.project },
+							values: [[T0, "1"]] as Array<[number, string]>,
+						})),
+					),
+			}),
+			Effect.gen(function* () {
+				yield* insertConnectors(testDb)
+				const error = yield* Effect.flip(queryRange(range("up")))
+				assert.strictEqual(error._tag, "@maple/http/errors/GcpPromQlTooManySeriesError")
+				assert.include(error.message, "750 series")
+				assert.include(error.message, "sum by")
+
+				const atTheCap = yield* queryRange(range("up", ["acme-shop", "acme-data"]))
+				assert.lengthOf(atTheCap.series, 500)
 			}),
 		)
 	})
@@ -563,7 +695,7 @@ describe("GcpPromQlService discovery", () => {
 					const search = yield* GcpPromQlService.use((gcp) =>
 						gcp.searchMetrics(ORG, { search: "RUN.googleapis" }),
 					)
-					assert.deepStrictEqual(search.projectId, "acme-prod")
+					assert.strictEqual(search.projectId, "acme-prod")
 					assert.deepStrictEqual(search.metrics, [
 						"run.googleapis.com/request_count",
 						"run.googleapis.com/request_latencies_bucket",

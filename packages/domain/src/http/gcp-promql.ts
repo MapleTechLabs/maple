@@ -13,6 +13,9 @@ import { BucketSeconds } from "./query-engine"
 export const GCP_PROMQL_MAX_PROJECTS = 20
 export const GCP_PROMQL_MAX_QUERY_LENGTH = 4_000
 export const GCP_PROMQL_MIN_STEP_SECONDS = 60
+export const GCP_PROMQL_MAX_POINTS = 11_000
+/** Series in one answer, across its projects. */
+export const GCP_PROMQL_MAX_SERIES = 500
 export const GCP_METRIC_SEARCH_MAX_LIMIT = 200
 
 /** `TinybirdDateTime` is UTC without a zone marker. */
@@ -30,21 +33,36 @@ const PromQlProjects = Schema.Array(GcpProjectId).check(
 	Schema.isMaxLength(GCP_PROMQL_MAX_PROJECTS),
 )
 
+/** The pattern admits `2026-13-45 99:99:99`, which parses to NaN. */
+const PromQlTime = TinybirdDateTime.check(
+	Schema.makeFilter((time: string) => !Number.isNaN(gcpPromQlTimeMs(time)) || "must be a valid datetime"),
+)
+
 export class GcpPromQlRangeRequest extends Schema.Class<GcpPromQlRangeRequest>("GcpPromQlRangeRequest")(
 	Schema.Struct({
 		query: PromQlQuery,
-		startTime: TinybirdDateTime,
-		endTime: TinybirdDateTime,
+		startTime: PromQlTime,
+		endTime: PromQlTime,
 		/** Point spacing. Start and end are aligned to it. */
-		stepSeconds: BucketSeconds.check(Schema.isGreaterThanOrEqualTo(GCP_PROMQL_MIN_STEP_SECONDS)),
+		stepSeconds: BucketSeconds.check(
+			Schema.isGreaterThanOrEqualTo(GCP_PROMQL_MIN_STEP_SECONDS),
+			Schema.isLessThanOrEqualTo(86_400),
+		),
 		projects: Schema.optionalKey(PromQlProjects),
 	}).check(
 		Schema.makeFilter(
-			(request: { readonly startTime: string; readonly endTime: string }) => {
+			(request: {
+				readonly startTime: string
+				readonly endTime: string
+				readonly stepSeconds: number
+			}) => {
 				const extentMs = gcpPromQlTimeMs(request.endTime) - gcpPromQlTimeMs(request.startTime)
-				// The pattern admits `2026-13-45 99:99:99`, which parses to NaN.
-				if (Number.isNaN(extentMs)) return "startTime and endTime must be valid datetimes"
-				return extentMs > 0 || "endTime must be after startTime"
+				if (extentMs <= 0) return "endTime must be after startTime"
+				// Google's limit per series, refused here as a request error.
+				return (
+					extentMs / 1000 / request.stepSeconds <= GCP_PROMQL_MAX_POINTS ||
+					`at most ${GCP_PROMQL_MAX_POINTS} points per series: widen stepSeconds`
+				)
 			},
 			{ identifier: "GcpPromQlWindow" },
 		),
@@ -54,11 +72,7 @@ export class GcpPromQlRangeRequest extends Schema.Class<GcpPromQlRangeRequest>("
 export class GcpPromQlInstantRequest extends Schema.Class<GcpPromQlInstantRequest>("GcpPromQlInstantRequest")(
 	{
 		query: PromQlQuery,
-		time: TinybirdDateTime.check(
-			Schema.makeFilter(
-				(time: string) => !Number.isNaN(gcpPromQlTimeMs(time)) || "time must be a valid datetime",
-			),
-		),
+		time: PromQlTime,
 		projects: Schema.optionalKey(PromQlProjects),
 	},
 ) {}
@@ -138,6 +152,21 @@ export class GcpPromQlTooManyProjectsError extends HttpTaggedError<GcpPromQlTooM
 		code: "gcp_promql_too_many_projects",
 		title: "Too many projects",
 		param: "projects",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The answer holds more than `GCP_PROMQL_MAX_SERIES` series. Never truncated. */
+export class GcpPromQlTooManySeriesError extends HttpTaggedError<GcpPromQlTooManySeriesError>()(
+	"@maple/http/errors/GcpPromQlTooManySeriesError",
+	{ message: Schema.String, series: Schema.Number },
+	{
+		status: 400,
+		code: "gcp_promql_too_many_series",
+		title: "Too many series",
+		param: "query",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "public_message",

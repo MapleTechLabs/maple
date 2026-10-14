@@ -435,9 +435,12 @@ const decodePromQlError = Schema.decodeUnknownOption(
 	Schema.Struct({ status: Schema.Literal("error"), errorType: Schema.String, error: Schema.String }),
 )
 
-/** Google's answer to a query it cannot run: `bad_data`, `invalid_argument` or `execution`. */
+/**
+ * Google's answer to a query it cannot parse or plan (400 `bad_data`). A 422 `execution` error,
+ * a timeout or too many samples, is the project's alone and stays a `GcpApiError`.
+ */
 const refuseQuery = (projectId: GcpProjectId) => (status: number, body: unknown) => {
-	if (status !== 400 && status !== 422) return undefined
+	if (status !== 400) return undefined
 	return Option.match(decodePromQlError(body), {
 		onNone: () => undefined,
 		onSome: ({ error }) => new GcpPromQlInvalidQueryError({ message: error.slice(0, 1_000), projectId }),
@@ -458,9 +461,10 @@ export const promQlQuery = (
 	call(
 		httpClient,
 		"Cloud Monitoring",
-		HttpClientRequest.get(promQlUrl(projectId, "time" in params ? "query" : "query_range")).pipe(
+		// A form body: a 4,000-character query would make a long URL.
+		HttpClientRequest.post(promQlUrl(projectId, "time" in params ? "query" : "query_range")).pipe(
 			asReader(reader),
-			HttpClientRequest.setUrlParams({ ...params, timeout: PROMQL_TIMEOUT }),
+			HttpClientRequest.bodyUrlParams({ ...params, timeout: PROMQL_TIMEOUT }),
 		),
 		decodePromQlResult,
 		refuseQuery(projectId),
@@ -487,7 +491,8 @@ const decodeNames = Schema.decodeUnknownEffect(Schema.Struct({ data: Schema.Arra
 
 /**
  * Every metric type the project has a descriptor for, data or not. Each comes twice, in PromQL's
- * UTF-8 form and the legacy `run_googleapis_com:request_count` form; only the first is kept.
+ * UTF-8 form and the legacy `run_googleapis_com:request_count` form (the first `/` a `:`, every
+ * other character outside `[A-Za-z0-9_]` a `_`); only the first is kept.
  */
 export const listPromQlMetricNames = (
 	httpClient: HttpClient.HttpClient,
@@ -499,7 +504,16 @@ export const listPromQlMetricNames = (
 		"Cloud Monitoring",
 		HttpClientRequest.get(promQlUrl(projectId, "label/__name__/values")).pipe(asReader(reader)),
 		decodeNames,
-	).pipe(Effect.map(({ data }) => data.filter((name) => !name.includes(":"))))
+	).pipe(
+		Effect.map(({ data }) => {
+			const legacy = new Set(
+				data
+					.filter((name) => name.includes("/"))
+					.map((name) => name.replace("/", ":").replace(/[^\w:]/gu, "_")),
+			)
+			return data.filter((name) => !legacy.has(name))
+		}),
+	)
 
 const decodeMetricDescriptors = Schema.decodeUnknownEffect(
 	Schema.Struct({
