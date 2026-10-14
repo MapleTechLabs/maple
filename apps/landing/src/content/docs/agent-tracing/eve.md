@@ -74,7 +74,8 @@ import { otel } from "eve/instrumentation/otel"
 export default otel({
 	resource: {
 		"service.name": "support-agent",
-		"deployment.environment.name": "production",
+		// VERCEL_ENV on Vercel; use your host's variable elsewhere
+		"deployment.environment.name": process.env.VERCEL_ENV ?? "development",
 	},
 })
 ```
@@ -139,15 +140,15 @@ Then move the old file over:
 | `recordInputs`, `recordOutputs` | The [conversation's audience](#set-the-audience-to-get-a-transcript-in-production), narrowed per destination with an `exportPolicy` |
 | `events["step.started"]` returning `runtimeContext` | `otelIntegration({ runtimeContext })` |
 
-The old file recorded no content unless you set `recordInputs` and `recordOutputs`. After the upgrade, eve records content during `eve dev` and for `public` conversations.
+From eve 0.35 to 0.61, the old file recorded no content unless you set `recordInputs` and `recordOutputs`. After the upgrade, eve records content during `eve dev` and for `public` conversations.
 
 ## Troubleshooting
 
-- **Nothing arrives.** eve doesn't log failed exports. Check the startup log for `MAPLE_INGEST_KEY is not set`, then send the key to the endpoint yourself. It answers `200` for a valid key and `401` with the reason for a wrong key or the wrong region:
+- **Nothing arrives.** eve doesn't log failed exports. Check the startup log for `MAPLE_INGEST_KEY is not set`, then send the key to the endpoint yourself, replacing `YOUR_INGEST_KEY`. It answers `200` for a valid key and `401` with the reason for a wrong key or the wrong region:
 
   ```bash
   curl -s -w "%{http_code}\n" -X POST https://ingest.maple.dev/v1/traces \
-    -H "Authorization: Bearer $MAPLE_INGEST_KEY" \
+    -H "Authorization: Bearer YOUR_INGEST_KEY" \
     -H "Content-Type: application/json" -d '{"resourceSpans":[]}'
   ```
 
