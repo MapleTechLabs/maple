@@ -256,19 +256,25 @@ describe("query_gcp_promql", () => {
 		}),
 	)
 
-	it.effect("refuses a step too fine for the window in the tool's own words", () =>
+	it.effect("widens a step too fine for the window and refuses one past a day", () =>
 		Effect.gen(function* () {
-			const error = yield* Effect.flip(
-				call(
-					"query_gcp_promql",
-					{
-						query: "up",
-						start_time: "2026-09-10 12:00:00",
-						end_time: "2026-10-15 12:00:00",
-						bucket_seconds: 60,
+			const seen: Array<GcpPromQlRangeRequest> = []
+			const month = { start_time: "2026-09-10 12:00:00", end_time: "2026-10-15 12:00:00" }
+			const answer = yield* call(
+				"query_gcp_promql",
+				{ query: "up", ...month, bucket_seconds: 60 },
+				{
+					queryRange: (_org, request) => {
+						seen.push(request)
+						return Effect.succeed(result([]))
 					},
-					{},
-				),
+				},
+			)
+			// 35 days in at most 500 points.
+			assert.strictEqual(seen[0]?.stepSeconds, 6_048)
+			assert.include(answer.text, "Step: 6048s")
+			const error = yield* Effect.flip(
+				call("query_gcp_promql", { query: "up", ...WINDOW, bucket_seconds: 100_000 }, {}),
 			)
 			assert.strictEqual(error._tag, "@maple/mcp/errors/McpInvalidInputError")
 			assert.include(error.message, "bucket_seconds")
@@ -298,7 +304,12 @@ describe("query_gcp_promql", () => {
 							Effect.fail(
 								new GcpPromQlFailedError({
 									message: "Run the setup script again.",
-									failures: [],
+									failures: [
+										{
+											scope: "projects/shop-prod",
+											message: "Run the setup script again.",
+										},
+									],
 								}),
 							),
 					},
@@ -306,6 +317,19 @@ describe("query_gcp_promql", () => {
 			)
 			assert.strictEqual(failed._tag, "@maple/mcp/errors/McpNotReadyError")
 			assert.include(failed.message, "setup script")
+			const empty = yield* Effect.flip(
+				call(
+					"query_gcp_promql",
+					{ query: "up", ...WINDOW },
+					{
+						queryRange: () =>
+							Effect.fail(
+								new GcpPromQlFailedError({ message: "No project to read.", failures: [] }),
+							),
+					},
+				),
+			)
+			assert.strictEqual(empty._tag, "@maple/mcp/errors/McpUnavailableError")
 		}),
 	)
 })

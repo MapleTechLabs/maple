@@ -7,6 +7,7 @@ import {
 	GcpMetricType,
 	GcpPromQlInstantRequest,
 	GcpPromQlRangeRequest,
+	gcpPromQlTimeMs,
 	type IntegrationsNotFoundError,
 } from "@maple/domain/http"
 import { FindGcpMetricsOutput, QueryGcpPromQlOutput } from "@maple/domain/mcp-outputs"
@@ -32,6 +33,8 @@ const WINDOW = P.timeWindow({ defaultHours: 1, maxHours: 42 * 24 })
 const MAX_SERIES = 100
 /** Series the model reads. */
 const SHOWN_SERIES = 20
+/** Points per series in the output, at most: a finer `bucket_seconds` is widened to keep it. */
+const MAX_POINTS = 500
 const DISTRIBUTION_SUFFIX = /_(bucket|count|sum)$/u
 const HINTS = { readOnly: true, openWorld: true } as const
 
@@ -63,9 +66,11 @@ const toMcpError =
 			case "@maple/http/errors/IntegrationsNotConnectedError":
 				return new McpUnavailableError({ message: error.message, capability: "gcp_connection" })
 			// Every project failed; the message says why per project and what fixes it (mostly a
-			// setup-script run whose grant takes minutes to apply).
+			// setup-script run whose grant takes minutes to apply). No failures: no project to read.
 			case "@maple/http/errors/GcpPromQlFailedError":
-				return new McpNotReadyError({ message: error.message, retryAfterSeconds: 300 })
+				return error.failures.length === 0
+					? new McpUnavailableError({ message: error.message, capability: "gcp_connection" })
+					: new McpNotReadyError({ message: error.message, retryAfterSeconds: 300 })
 			case "@maple/http/errors/IntegrationsUpstreamError":
 			case "@maple/http/errors/IntegrationsPersistenceError":
 				return new McpQueryError({ message: error.message, pipeName: tool, cause: error })
@@ -310,7 +315,7 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 			),
 			...WINDOW.fields,
 			bucket_seconds: P.optionalNumber(
-				"Point spacing in seconds, 60 to 86400 (timeseries only; default: from the window, about 100 points)",
+				"Point spacing in seconds, 60 to 86400 (timeseries only; default: from the window, about 100 points; widened to keep at most 500 points)",
 			),
 			projects: P.optionalList(
 				"Only these Google Cloud project ids, at most 20 (default: every connected project)",
@@ -326,7 +331,10 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 			const kind = params.kind ?? "timeseries"
 			const query = params.query.trim()
 			const projects = params.projects === undefined ? undefined : { projects: params.projects }
-			const stepSeconds = params.bucket_seconds ?? computeBucketSecondsForRange(st, et)
+			const stepSeconds = Math.max(
+				params.bucket_seconds ?? computeBucketSecondsForRange(st, et),
+				Math.ceil((gcpPromQlTimeMs(et) - gcpPromQlTimeMs(st)) / 1000 / MAX_POINTS),
+			)
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.ai.kind": kind })
 			const fail = toMcpError("query_gcp_promql", "projects")
 
@@ -373,10 +381,11 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 			const shown = output.series.slice(0, SHOWN_SERIES)
 			// A distribution's `_bucket` name describes too.
 			const metricType = /\{\s*"([^"]+)"/u.exec(output.query)?.[1]
+			const describable = metricType !== undefined && Schema.is(GcpMetricType)(metricType)
 			const rows = shown.map((series) => {
 				const values = series.points.map(([, value]) => value)
 				const name = truncate(seriesName(series.labels), 120)
-				if (instant) return [name, values.length === 0 ? "-" : formatValue(values[0])]
+				if (instant) return [name, values.length === 0 ? "-" : formatValue(values[values.length - 1])]
 				if (values.length === 0) return [name, "-", "-", "-", "-", "0"]
 				return [
 					name,
@@ -388,7 +397,7 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 				]
 			})
 			const next: Array<NextCall> = [
-				...(metricType === undefined
+				...(!describable
 					? []
 					: [
 							doc.next(
@@ -437,7 +446,11 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 								message: "Google returned no series.",
 								hints: [
 									"The metric may have no data in this window: widen start_time, or check the name with find_gcp_metrics.",
-									"An instant query looks back 5 minutes; a sparse metric needs kind=timeseries or a range selector.",
+									...(instant
+										? [
+												"An instant query looks back 5 minutes; a sparse metric needs kind=timeseries.",
+											]
+										: []),
 								],
 							},
 						}
