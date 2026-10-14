@@ -1,9 +1,11 @@
+import type { ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Panel } from "@maple/ui/components/ui/panel"
 
 import { useLinkedCursor } from "@/hooks/use-linked-cursor"
 import { InfraMetricChart, type InfraSeriesInfo } from "@/components/infra/primitives/infra-metric-chart"
+import type { ChartEventMarker } from "@/components/infra/primitives/chart-event-markers"
 import { formatValueWithUnit, type ChartUnit } from "@/components/infra/chart-utils"
 import { SeriesLegend } from "@/components/common/series-legend"
 
@@ -35,6 +37,10 @@ export interface StripSeries {
 	showThreshold?: boolean
 	/** Stacked bands rather than independent lines (per-pod CPU). */
 	stacked?: boolean
+	/** A trailing window summary at the strip's right edge; replaces the last-value caption. */
+	summary?: ReactNode
+	/** Fixed series colours, for names whose meaning the identity hash can't see. */
+	colors?: Readonly<Record<string, string>>
 }
 
 interface CorrelationStripsProps {
@@ -45,11 +51,19 @@ interface CorrelationStripsProps {
 	 * series and the kubeletstats gauges rarely cover the window identically.
 	 */
 	xDomain: ReadonlyArray<string>
+	/** Drawn on every strip at the same instant (deploys), so they read down the stack. */
+	markers?: ReadonlyArray<ChartEventMarker>
 	waiting?: boolean
 	className?: string
 }
 
-export function CorrelationStrips({ series, xDomain, waiting = false, className }: CorrelationStripsProps) {
+export function CorrelationStrips({
+	series,
+	xDomain,
+	markers,
+	waiting = false,
+	className,
+}: CorrelationStripsProps) {
 	// One cursor across all three strips. They are independent charts — the
 	// cursor is a CSS variable on the container, not a Recharts syncId, so
 	// hovering one does not rerender the others (see `useLinkedCursor`).
@@ -79,11 +93,18 @@ export function CorrelationStrips({ series, xDomain, waiting = false, className 
 							showThreshold={strip.showThreshold}
 							height={STRIP_HEIGHT}
 							xDomain={xDomain}
+							markers={markers}
+							seriesColors={strip.colors}
 							linkedChartId={`lens-${strip.id}`}
 							waiting={waiting}
-							header={LastValue}
+							header={strip.summary === undefined ? LastValue : undefined}
 						/>
 					</div>
+					{strip.summary === undefined ? null : (
+						<div className="flex w-[130px] shrink-0 flex-col items-end gap-0.5 text-right">
+							{strip.summary}
+						</div>
+					)}
 				</div>
 			))}
 		</Panel>

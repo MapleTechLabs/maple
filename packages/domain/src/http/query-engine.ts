@@ -544,6 +544,27 @@ export class CloudflareInfraZoneDetailResponse extends Schema.Class<CloudflareIn
 	latencyIgnoredFilters: IgnoredFilters,
 }) {}
 
+// Worker detail page: one Worker pseudo-service (`cloudflare-worker/{scriptName}`) over time:
+// invocations by outcome, CPU/duration percentiles, and its Durable Objects.
+export class CloudflareInfraWorkerDetailRequest extends Schema.Class<CloudflareInfraWorkerDetailRequest>(
+	"CloudflareInfraWorkerDetailRequest",
+)({
+	serviceName: Schema.String,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	/** Narrows to one account when the same script name exists in several. */
+	accountId: Schema.optionalKey(Schema.String),
+}) {}
+
+export class CloudflareInfraWorkerDetailResponse extends Schema.Class<CloudflareInfraWorkerDetailResponse>(
+	"CloudflareInfraWorkerDetailResponse",
+)({
+	outcomeBuckets: Schema.Array(WireRow),
+	latencyBuckets: Schema.Array(WireRow),
+	durableObjectBuckets: Schema.Array(WireRow),
+}) {}
+
 export class CloudflareInfraWorkersRequest extends Schema.Class<CloudflareInfraWorkersRequest>(
 	"CloudflareInfraWorkersRequest",
 )({
@@ -2682,6 +2703,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("cloudflareInfraZoneDetail", "/cloudflare-infra-zone-detail", {
 			payload: CloudflareInfraZoneDetailRequest,
 			success: CloudflareInfraZoneDetailResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("cloudflareInfraWorkerDetail", "/cloudflare-infra-worker-detail", {
+			payload: CloudflareInfraWorkerDetailRequest,
+			success: CloudflareInfraWorkerDetailResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

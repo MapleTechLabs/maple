@@ -1,7 +1,7 @@
 // One panel, every dimension.
 //
 // Replaces the standalone Hosts section and Top-traffic card: a dimension
-// switcher over a stacked timeseries plus a ranked table, where clicking a row
+// switcher over a ranked table, where clicking a row
 // name filters the whole page by it. Adding a dimension is a poller metric and
 // a registry row — not another card on an already-long page.
 //
@@ -12,8 +12,7 @@
 //     the dataset reads "not collected", never "no traffic".
 //   - The long tail. The toolbar filter narrows the keys already on screen;
 //     when that isn't enough, "Search all …" runs a live Cloudflare query that
-//     can see paths the stored top-N never kept. The chart hides there, because
-//     live mode has no history. Live is an action, never a side effect of
+//     can see paths the stored top-N never kept. Live is an action, never a side effect of
 //     typing — every keystroke used to be a Cloudflare GraphQL round trip.
 //   - Rank. Rows carry a share-proportional bar, so a hundred keys read as a
 //     decaying shape instead of a flat wall of names.
@@ -49,8 +48,6 @@ import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatBytes, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatDateInTimezone } from "@/lib/timezone-format"
-import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
-import { CACHE_STATUS_COLORS, CACHE_STATUS_ORDER, STATUS_CLASS_COLORS, STATUS_CLASS_ORDER } from "./constants"
 import { PanelScope } from "./panel-scope"
 import type { CloudflareFilterKey, CloudflareFilters } from "./filters"
 
@@ -70,8 +67,6 @@ interface DimensionDef {
 	readonly noun: string
 	/** Which page filter a row click toggles. */
 	readonly filterKey: CloudflareFilterKey
-	readonly colors?: Record<string, string>
-	readonly order?: ReadonlyArray<string>
 	/** Live Cloudflare search is only wired for the dimensions the proxy exposes. */
 	readonly liveDimension?: "host" | "path"
 }
@@ -101,8 +96,6 @@ const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 		column: "Status class",
 		noun: "status classes",
 		filterKey: "statusClasses",
-		colors: STATUS_CLASS_COLORS,
-		order: STATUS_CLASS_ORDER,
 	},
 	{
 		id: "cacheStatus",
@@ -110,8 +103,6 @@ const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 		column: "Cache status",
 		noun: "cache statuses",
 		filterKey: "cacheStatuses",
-		colors: CACHE_STATUS_COLORS,
-		order: CACHE_STATUS_ORDER,
 	},
 ]
 
@@ -130,7 +121,6 @@ export function CloudflareBreakdownPanel({
 	bucketSeconds,
 	filters,
 	onToggleFilter,
-	syncId,
 }: {
 	serviceName: string
 	zoneName: string
@@ -140,23 +130,13 @@ export function CloudflareBreakdownPanel({
 	bucketSeconds: number
 	filters: CloudflareFilters
 	onToggleFilter: (key: CloudflareFilterKey, value: string) => void
-	syncId?: string
 }) {
 	const [dimensionId, setDimensionId] = useState<CloudflareBreakdownDimension>("path")
-	const [search, setSearch] = useState("")
-	// Set only by the explicit "Search all …" action. Typing clears it, so the panel falls straight
-	// back to the stored rows instead of holding a stale Cloudflare result on screen.
-	const [liveQuery, setLiveQuery] = useState<string | null>(null)
-	const dimension = DIMENSIONS.find((d) => d.id === dimensionId) ?? DIMENSIONS[0]!
-	const live = liveQuery !== null
-
-	// Read here rather than inside StoredBreakdown so the header's scope marker can report the
-	// filters the server actually applied instead of guessing at them.
 	const storedResult = useRefreshableAtomValue(
 		cloudflareZoneBreakdownResultAtom({
 			data: {
 				serviceName,
-				dimension: dimension.id,
+				dimension: dimensionId,
 				startTime,
 				endTime,
 				bucketSeconds,
@@ -165,12 +145,52 @@ export function CloudflareBreakdownPanel({
 			},
 		}),
 	)
+	return (
+		<CloudflareBreakdownPanelBody
+			zoneName={zoneName}
+			startTime={startTime}
+			endTime={endTime}
+			filters={filters}
+			onToggleFilter={onToggleFilter}
+			dimensionId={dimensionId}
+			onDimensionChange={setDimensionId}
+			storedResult={storedResult}
+		/>
+	)
+}
+
+/** The panel over an already-fetched result, so the lab can render it from fixtures. */
+export function CloudflareBreakdownPanelBody({
+	zoneName,
+	startTime,
+	endTime,
+	filters,
+	onToggleFilter,
+	dimensionId,
+	onDimensionChange,
+	storedResult,
+}: {
+	zoneName: string
+	startTime: string
+	endTime: string
+	filters: CloudflareFilters
+	onToggleFilter: (key: CloudflareFilterKey, value: string) => void
+	dimensionId: CloudflareBreakdownDimension
+	onDimensionChange: (dimension: CloudflareBreakdownDimension) => void
+	storedResult: Result.Result<CloudflareZoneBreakdown, unknown>
+}) {
+	const [search, setSearch] = useState("")
+	// Set only by the explicit "Search all …" action. Typing clears it, so the panel falls straight
+	// back to the stored rows instead of holding a stale Cloudflare result on screen.
+	const [liveQuery, setLiveQuery] = useState<string | null>(null)
+	const dimension = DIMENSIONS.find((d) => d.id === dimensionId) ?? DIMENSIONS[0]!
+	const live = liveQuery !== null
 	const ignoredFilters = Result.builder(storedResult)
 		.onSuccess((data) => data.ignoredFilters)
 		.orElse(() => undefined)
 
 	const selectDimension = (id: CloudflareBreakdownDimension) => {
-		setDimensionId(id)
+		onDimensionChange(id)
 		setSearch("")
 		setLiveQuery(null)
 	}
@@ -234,7 +254,6 @@ export function CloudflareBreakdownPanel({
 					startTime={startTime}
 					filters={filters}
 					onToggleFilter={onToggleFilter}
-					syncId={syncId}
 					search={search}
 					onSearchChange={onSearchChange}
 					onSearchLive={() => setLiveQuery(search.trim())}
@@ -384,7 +403,6 @@ function StoredBreakdown({
 	startTime,
 	filters,
 	onToggleFilter,
-	syncId,
 	search,
 	onSearchChange,
 	onSearchLive,
@@ -395,7 +413,6 @@ function StoredBreakdown({
 	startTime: string
 	filters: CloudflareFilters
 	onToggleFilter: (key: CloudflareFilterKey, value: string) => void
-	syncId?: string
 	search: string
 	onSearchChange: (value: string) => void
 	onSearchLive: () => void
@@ -448,19 +465,6 @@ function StoredBreakdown({
 								) : null
 							}
 						/>
-						<div className="px-3 pb-2">
-							<StackedBreakdownChart
-								title={dimension.column}
-								rows={data.buckets.map((b) => ({
-									bucket: b.bucket,
-									attributeValue: b.key,
-									value: b.requests,
-								}))}
-								colors={dimension.colors ?? {}}
-								order={dimension.order ?? []}
-								syncId={syncId}
-							/>
-						</div>
 						<BreakdownTable
 							dimension={dimension}
 							rows={matches}
