@@ -1,7 +1,7 @@
 ---
 title: "Trace DSPy programs and ReAct agents with OpenTelemetry"
 description: "Send DSPy programs to Maple as one Agent Session per conversation, with transcript, model and tool calls, tokens and cost."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 27
 navLabel: "DSPy"
 icon: "python"

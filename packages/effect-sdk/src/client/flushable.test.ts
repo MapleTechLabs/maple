@@ -255,7 +255,15 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.flush()
 
 		const metricCall = calls.find((call) => call.url.endsWith("/v1/metrics"))
-		expect(metricCall).toBeDefined()
+		expect(metricCall?.body).toMatchObject({
+			resourceMetrics: [
+				{
+					scopeMetrics: [
+						{ metrics: [{ name: "late_grant_counter", sum: { dataPoints: [{ asDouble: 3 }] } }] },
+					],
+				},
+			],
+		})
 		await telemetry.dispose()
 	})
 

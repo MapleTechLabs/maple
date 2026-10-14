@@ -35,8 +35,8 @@ export function registerDbQueryVolumeTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				dbSystem: params.db_system ?? "all",
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.db_system": params.db_system ?? "all",
 			})
 
 			const rows = yield* withTenantExecutor(

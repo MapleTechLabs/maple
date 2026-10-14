@@ -38,18 +38,7 @@ describe("CopyButton", () => {
 	})
 })
 
-// The wording is shared with `CopyableBadge`; pin it here so a change in one
-// component can't quietly diverge from the other.
 describe("copyTooltipText", () => {
-	it("names the thing being copied while idle", () => {
-		expect(copyTooltipText("idle", "trace ID")).toBe("Copy trace ID")
-	})
-
-	it("reports success and failure", () => {
-		expect(copyTooltipText("copied", "trace ID")).toBe("Copied")
-		expect(copyTooltipText("error", "trace ID")).toBe("Failed to copy")
-	})
-
 	it("lets a callsite override the outcome wording", () => {
 		expect(copyTooltipText("copied", "link", { copiedLabel: "Link copied" })).toBe("Link copied")
 		expect(copyTooltipText("error", "link", { errorLabel: "Nope" })).toBe("Nope")

@@ -483,23 +483,23 @@ describe("archive operation journal v2 → v3 migration (Gate 3b)", () => {
 		strictEqual(parsed.operationId, operationId)
 	})
 
-	it("migrateV2CreateIntent rejects a corrupt v2 record rather than silently lifting it", () => {
+	it("migrateV2CreateIntent rejects a corrupt v2 record rather than silently lifting it", async () => {
 		const corrupt: Record<string, unknown> = {
 			formatVersion: 2,
 			// missing every required field
 		} satisfies Record<string, unknown>
-		rejects(
+		await rejects(
 			async () => migrateV2CreateIntent("/archive", corrupt),
 			/missing or not a string|operationId|phase|kind|invalid/,
 		)
 	})
 
-	it("migrateV2CreateIntent refuses a non-v2 record", () => {
-		rejects(
+	it("migrateV2CreateIntent refuses a non-v2 record", async () => {
+		await rejects(
 			async () => migrateV2CreateIntent("/archive", { formatVersion: 1 }),
 			/v2 migration requires formatVersion 2/,
 		)
-		rejects(
+		await rejects(
 			async () => migrateV2CreateIntent("/archive", { formatVersion: 3, kind: "create" }),
 			/v2 migration requires formatVersion 2/,
 		)
@@ -533,7 +533,7 @@ describe("archive operation journal v2 → v3 migration (Gate 3b)", () => {
 			}
 			writeFileSync(join(dir, "intent.json"), JSON.stringify(v2))
 			// A direct v3 parse REJECTS the v2 record (fail-closed, no silent reinterpret).
-			rejects(async () => parseArchiveOperationIntent(archiveDir, v2), /format version/)
+			await rejects(async () => parseArchiveOperationIntent(archiveDir, v2), /format version/)
 			// Migration lifts it to v3 on disk.
 			const migrated = await migrateActiveIntentIfLegacy(archiveDir)
 			strictEqual(migrated, true, "v2 intent was migrated")

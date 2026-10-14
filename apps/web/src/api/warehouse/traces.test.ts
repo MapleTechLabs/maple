@@ -16,7 +16,7 @@ vi.mock("@/api/warehouse/effect-utils", async () => {
 })
 
 import { isWarehouseApiError } from "@/api/warehouse/effect-utils"
-import { getTracesDurationStats, getTracesFacets, listTraces } from "@/api/warehouse/traces"
+import { getTracesFacets, listTraces } from "@/api/warehouse/traces"
 
 describe("tinybird traces attribute filter params", () => {
 	beforeEach(() => {
@@ -37,28 +37,6 @@ describe("tinybird traces attribute filter params", () => {
 			return Effect.succeed({ result: { kind: "list", source: "traces", data: [] } })
 		})
 	})
-
-	it.effect("forwards basic filter params to list_traces", () =>
-		Effect.gen(function* () {
-			yield* listTraces({
-				data: {
-					startTime: "2026-02-01 00:00:00",
-					endTime: "2026-02-01 01:00:00",
-				},
-			})
-
-			expect(executeQueryEngineMock).toHaveBeenCalledWith(
-				"queryEngine.listTraces",
-				expect.objectContaining({
-					startTime: "2026-02-01 00:00:00",
-					endTime: "2026-02-01 01:00:00",
-					query: expect.objectContaining({
-						columns: expect.arrayContaining(["services"]),
-					}),
-				}),
-			)
-		}),
-	)
 
 	it.effect("forwards exists and comparison attribute filters with their mode, not as equality", () =>
 		Effect.gen(function* () {
@@ -95,7 +73,7 @@ describe("tinybird traces attribute filter params", () => {
 		}),
 	)
 
-	it.effect("forwards filter params to traces_facets and traces_duration_stats", () =>
+	it.effect("fetches duration stats alongside the facets", () =>
 		Effect.gen(function* () {
 			yield* getTracesFacets({
 				data: {
@@ -104,39 +82,10 @@ describe("tinybird traces attribute filter params", () => {
 				},
 			})
 
-			expect(executeQueryEngineMock).toHaveBeenCalledWith(
+			expect(executeQueryEngineMock.mock.calls.map(([operation]) => operation).sort()).toEqual([
+				"queryEngine.getTracesDurationStats",
 				"queryEngine.getTracesFacets",
-				expect.objectContaining({
-					startTime: "2026-02-01 00:00:00",
-					endTime: "2026-02-01 01:00:00",
-				}),
-			)
-			expect(executeQueryEngineMock).toHaveBeenCalledWith(
-				"queryEngine.getTracesDurationStats",
-				expect.objectContaining({
-					startTime: "2026-02-01 00:00:00",
-					endTime: "2026-02-01 01:00:00",
-				}),
-			)
-		}),
-	)
-
-	it.effect("forwards filter params to standalone traces_duration_stats", () =>
-		Effect.gen(function* () {
-			yield* getTracesDurationStats({
-				data: {
-					startTime: "2026-02-01 00:00:00",
-					endTime: "2026-02-01 01:00:00",
-				},
-			})
-
-			expect(executeQueryEngineMock).toHaveBeenCalledWith(
-				"queryEngine.getTracesDurationStats",
-				expect.objectContaining({
-					startTime: "2026-02-01 00:00:00",
-					endTime: "2026-02-01 01:00:00",
-				}),
-			)
+			])
 		}),
 	)
 

@@ -1,4 +1,5 @@
 import { feature, plan, reward } from "atmn"
+import { OPENROUTER_BYOK_ADDON_ID, OPENROUTER_BYOK_FEATURE_ID } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
 // Features
@@ -68,6 +69,13 @@ export const aiOutputTokens = feature({
 export const bringYourOwnCloud = feature({
 	id: "bringyourowncloud",
 	name: "Bring Your Own Cloud",
+	type: "boolean",
+})
+
+// AI turns run on the org's own OpenRouter key, and its tokens stop being metered here.
+export const openRouterByok = feature({
+	id: OPENROUTER_BYOK_FEATURE_ID,
+	name: "Bring Your Own OpenRouter Key",
 	type: "boolean",
 })
 
@@ -159,6 +167,21 @@ export const bringYourOwnCloudAddOn = plan({
 	items: [
 		{
 			featureId: "bringyourowncloud",
+		},
+	],
+})
+
+export const openRouterByokAddOn = plan({
+	id: OPENROUTER_BYOK_ADDON_ID,
+	name: "Bring Your Own OpenRouter Key",
+	addOn: true,
+	price: {
+		amount: 15,
+		interval: "month",
+	},
+	items: [
+		{
+			featureId: OPENROUTER_BYOK_FEATURE_ID,
 		},
 	],
 })

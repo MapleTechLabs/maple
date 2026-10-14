@@ -1,18 +1,15 @@
 import { useMemo, type ReactNode } from "react"
-import { areaY, d3Curve, defineChart, lineY, stack } from "@tanstack/charts"
+import { areaY, d3Curve, defineChart, stack } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 
 import {
 	CursorPlot,
 	DASHED_Y_GRID,
-	bucketDate,
 	focusCrosshair,
-	focusDot,
 	linearYDomain,
 	makeBucketAxis,
 	niceLinearDomain,
-	roundCapDasharray,
 	useChartId,
 	useCursorPlot,
 	verticalGradient,
@@ -22,12 +19,7 @@ import { OTHER_COLOR } from "@maple/ui/components/charts"
 import { linkedCursorChartProps } from "@/hooks/use-linked-cursor"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
-import type {
-	CloudflareZoneCacheBucket,
-	CloudflareZoneLatencyBucket,
-	CloudflareZoneStatusBucket,
-} from "@/api/warehouse/cloudflare-infra"
-import { formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { formatNumber } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { transformRows } from "../chart-utils"
 import {
@@ -37,14 +29,7 @@ import {
 	ChartCardMessage,
 } from "@/components/common/chart-card"
 import { SeriesLegend } from "@/components/common/series-legend"
-import {
-	BREAKDOWN_OTHER_KEY,
-	BREAKDOWN_OTHER_LABEL,
-	CACHE_STATUS_COLORS,
-	CACHE_STATUS_ORDER,
-	STATUS_CLASS_COLORS,
-	STATUS_CLASS_ORDER,
-} from "./constants"
+import { BREAKDOWN_OTHER_KEY, BREAKDOWN_OTHER_LABEL } from "./constants"
 
 /**
  * Series ceiling for a dimension with no fixed vocabulary. The API already folds the tail into
@@ -271,225 +256,6 @@ export function StackedBreakdownChart({
 					/>
 				</div>
 			)}
-		</ChartCard>
-	)
-}
-
-export function CloudflareZoneStatusChart({
-	buckets,
-	syncId,
-	scope,
-}: {
-	buckets: ReadonlyArray<CloudflareZoneStatusBucket>
-	syncId?: string
-	scope?: ReactNode
-}) {
-	const rows = useMemo(
-		() => buckets.map((b) => ({ bucket: b.bucket, attributeValue: b.statusClass, value: b.requests })),
-		[buckets],
-	)
-	return (
-		<StackedBreakdownChart
-			title="Requests by status class"
-			rows={rows}
-			colors={STATUS_CLASS_COLORS}
-			order={STATUS_CLASS_ORDER}
-			syncId={syncId}
-			scope={scope}
-		/>
-	)
-}
-
-export function CloudflareZoneCacheChart({
-	buckets,
-	syncId,
-	scope,
-}: {
-	buckets: ReadonlyArray<CloudflareZoneCacheBucket>
-	syncId?: string
-	scope?: ReactNode
-}) {
-	const rows = useMemo(
-		() => buckets.map((b) => ({ bucket: b.bucket, attributeValue: b.cacheStatus, value: b.requests })),
-		[buckets],
-	)
-	return (
-		<StackedBreakdownChart
-			title="Requests by cache status"
-			rows={rows}
-			colors={CACHE_STATUS_COLORS}
-			order={CACHE_STATUS_ORDER}
-			syncId={syncId}
-			scope={scope}
-		/>
-	)
-}
-
-// Edge TTFB solid, origin duration dashed — the dash pattern is the visual cue
-// that origin lines describe the slower upstream leg of the same request.
-const LATENCY_SERIES: ReadonlyArray<{
-	key: keyof Omit<CloudflareZoneLatencyBucket, "bucket">
-	label: string
-	color: string
-	dashed?: boolean
-}> = [
-	{ key: "ttfbP50Ms", label: "TTFB p50", color: "var(--chart-p50)" },
-	{ key: "ttfbP95Ms", label: "TTFB p95", color: "var(--chart-2)" },
-	{ key: "ttfbP99Ms", label: "TTFB p99", color: "var(--chart-1)" },
-	{ key: "originP50Ms", label: "Origin p50", color: "var(--chart-p50)", dashed: true },
-	{ key: "originP95Ms", label: "Origin p95", color: "var(--chart-2)", dashed: true },
-	{ key: "originP99Ms", label: "Origin p99", color: "var(--chart-1)", dashed: true },
-]
-
-/** One bucket of latency percentiles, keyed by series. */
-type LatencyPoint = { bucket: string; date: Date } & Record<string, string | number | Date>
-
-export function CloudflareZoneLatencyChart({
-	buckets,
-	syncId,
-	scope,
-}: {
-	buckets: ReadonlyArray<CloudflareZoneLatencyBucket>
-	syncId?: string
-	scope?: ReactNode
-}) {
-	const { data, activeSeries } = useMemo(() => {
-		const points = buckets.map((b) => ({
-			bucket: b.bucket,
-			date: bucketDate(b.bucket),
-			...Object.fromEntries(LATENCY_SERIES.map((s) => [s.key, b[s.key]])),
-		}))
-		// Zones without plan-level quantiles (or without origin traffic) leave
-		// whole series at 0 — drop those lines instead of plotting a floor.
-		const active = LATENCY_SERIES.filter((s) => buckets.some((b) => b[s.key] > 0))
-		return { data: points, activeSeries: active }
-	}, [buckets])
-
-	// A time axis over the buckets' instants — see `makeBucketAxis` for why the
-	// label point scale this replaced folded a 24h window onto itself.
-	const { effectiveTimezone } = useTimezonePreference()
-	const axis = useMemo(
-		() =>
-			makeBucketAxis(
-				buckets.map((b) => b.bucket),
-				effectiveTimezone,
-			),
-		[buckets, effectiveTimezone],
-	)
-
-	const cursorSeries = useMemo<CursorPlotSeries<LatencyPoint>[]>(
-		() =>
-			activeSeries.map((entry) => ({
-				key: entry.key,
-				label: entry.label,
-				color: entry.color,
-				dashed: entry.dashed,
-				value: (point: LatencyPoint) => {
-					const value = point[entry.key]
-					return typeof value === "number" ? value : null
-				},
-				format: (value: number) => formatLatency(value),
-			})),
-		[activeSeries],
-	)
-	const plot = useCursorPlot(cursorSeries)
-
-	const yDomain = useMemo<[number, number]>(
-		() => niceLinearDomain(linearYDomain({ rows: data, keys: activeSeries.map((e) => e.key) })),
-		[data, activeSeries],
-	)
-
-	const definition = useMemo(() => {
-		const at = (point: LatencyPoint) => point.date
-		const valueOf = (key: string) => (point: LatencyPoint) => {
-			const value = point[key]
-			return typeof value === "number" ? value : null
-		}
-		const colorOf = plot.color
-		const curve = d3Curve(curveMonotoneX)
-
-		return defineChart({
-			marks: [
-				...activeSeries.map((entry) =>
-					lineY(data, {
-						id: entry.key,
-						x: at,
-						y: valueOf(entry.key),
-						stroke: colorOf(entry.key),
-						strokeWidth: 1.5,
-						// The origin series is drawn dashed, matching its legend swatch.
-						strokeDasharray: entry.dashed ? roundCapDasharray(4, 4, 1.5) : undefined,
-						curve,
-					}),
-				),
-				...activeSeries.map((entry) =>
-					focusDot(data, at, valueOf(entry.key), colorOf(entry.key), plot.chrome),
-				),
-				focusCrosshair(plot.chrome),
-			],
-			scales: {
-				x: axis.x,
-				y: {
-					grid: DASHED_Y_GRID,
-					scale: scaleLinear().domain(yDomain),
-					axis: {
-						line: false,
-						ticks: { size: 0, padding: 8, format: (v: number) => formatLatency(v) },
-					},
-				},
-			},
-			// `bottom` unset on purpose: a set side is a hard lock, and only a measured
-			// side reserves the x tick labels' height.
-			margin: { top: 12, right: 12, left: 60 },
-			focus: "group-x",
-			focusRing: false,
-			tooltip: plot.tooltip,
-		})
-	}, [data, activeSeries, axis, plot, yDomain])
-
-	// Latency quantiles are plan-gated on Cloudflare's side — say so instead of
-	// silently omitting the panel (the operator shouldn't wonder where it went).
-	if (activeSeries.length === 0) {
-		return (
-			<ChartCard title="Latency percentiles" legend={null}>
-				<p className="px-3 pb-3 pt-1.5 font-mono text-2xs text-muted-foreground">
-					No timing quantiles for this window — Cloudflare only exposes zone latency percentiles on
-					some plans.
-				</p>
-			</ChartCard>
-		)
-	}
-
-	return (
-		<ChartCard
-			title="Latency percentiles"
-			scope={scope}
-			legend={
-				<SeriesLegend
-					swatch="line"
-					items={activeSeries.map((s) => ({
-						key: s.key,
-						label: s.label,
-						color: s.color,
-						swatch: s.dashed ? "dashed" : undefined,
-					}))}
-				/>
-			}
-		>
-			<div
-				className="w-full"
-				style={{ height: CHART_HEIGHT }}
-				{...linkedCursorChartProps(syncId != null ? "cf-zone-latency" : undefined)}
-			>
-				<CursorPlot
-					plot={plot}
-					definition={definition}
-					series={cursorSeries}
-					heading={(point: LatencyPoint) => axis.heading(point.bucket)}
-					ariaLabel="Latency percentiles"
-					className="h-full w-full"
-				/>
-			</div>
 		</ChartCard>
 	)
 }

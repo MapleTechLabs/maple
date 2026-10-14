@@ -1,7 +1,7 @@
 ---
 title: "Trace Pydantic AI agents with OpenTelemetry"
 description: "Send Pydantic AI's built-in OpenTelemetry spans to Maple so each conversation shows up as one Agent Session."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 20
 navLabel: "Pydantic AI"
 icon: "pydantic"

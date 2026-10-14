@@ -94,6 +94,7 @@ describe("startEventCapture session counters", () => {
 		capture.stop()
 		// stop() uninstalls the listeners only. The sink outlives them, because a
 		// custom event fired while the tab is tearing down still has to land.
-		expect(getActiveSink()).toBeDefined()
+		getActiveSink()?.emit({ type: "error", message: "late" })
+		expect(getActiveSink()?.getErrorCount()).toBe(1)
 	})
 })

@@ -45,6 +45,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/cloudflare",
+		title: "Cloudflare",
+		description:
+			"The Cloudflare zone and Worker lists and the zone page, whole, over a copy of production data.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/onboarding",
 		title: "Onboarding",
 		description:
@@ -156,10 +164,25 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/code-review-repos",
+		title: "Code review repositories",
+		description: "The code review repository picker over 246 fixture repositories.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
 			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/worst-case",
+		title: "Worst case",
+		description:
+			"Existing components over worst-case fixture data (long names, extreme numbers, unbroken URLs, 8KB messages) behind a Demo data / Worst case toggle, for before and after screenshots.",
 		kind: "lab",
 		session: "none",
 	},

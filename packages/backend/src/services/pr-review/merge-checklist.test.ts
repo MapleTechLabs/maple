@@ -1,4 +1,12 @@
-import { GitCommitSha, PrReviewMergeStep, PrReviewReport, type PullRequestFile } from "@maple/domain/http"
+import {
+	GitCommitSha,
+	mergeStepKey,
+	mergeStepTickChanges,
+	PrReviewMergeStep,
+	PrReviewReport,
+	parseMergeStepTicks,
+	type PullRequestFile,
+} from "@maple/domain/http"
 import { Schema } from "effect"
 import { assert, describe, it } from "vitest"
 import {
@@ -6,9 +14,11 @@ import {
 	checklistAttributes,
 	detectMergeSteps,
 	type NameVerdict,
+	reconcileMergeSteps,
 	searchVerdict,
+	type StoredMergeStep,
 } from "./merge-checklist"
-import { renderSummaryComment } from "./PrReviewService"
+import { renderMergeReminder, renderSummaryComment } from "./PrReviewService"
 
 const file = (
 	path: string,
@@ -49,6 +59,24 @@ describe("detectMergeSteps", () => {
 				["env", "BILLING_URL", 13],
 				["secret", "BILLING_SIGNING", 13],
 			],
+		)
+	})
+
+	it("reads a name held in a constant named for config, and not one held in any constant", () => {
+		assert.deepEqual(
+			names([
+				file(
+					"packages/chat-platform/src/connectors/slack/api.ts",
+					[
+						"@@ -1 +1,4 @@",
+						'+export const CLIENT_ID_CONFIG = "MAPLE_SLACK_CLIENT_ID"',
+						'+export const SIGNING_SECRET_CONFIG: string = "MAPLE_SLACK_SIGNING_SECRET"',
+						'+const BOT_TOKEN = "MAPLE_SLACK_BOT"',
+						'+export const DEFAULT_LABEL = "READY_TO_SHIP"',
+					].join("\n"),
+				),
+			]),
+			["env:MAPLE_SLACK_CLIENT_ID", "secret:MAPLE_SLACK_SIGNING_SECRET", "secret:MAPLE_SLACK_BOT"],
 		)
 	})
 
@@ -160,10 +188,17 @@ describe("buildChecklist", () => {
 		const { steps, trace } = checklistOf([wrangler, envFile], { STRIPE_URL: "exists" }, reviewer)
 		// "wrangler" alone is not the file's subject, so the infra step stays.
 		assert.deepEqual(trace.replaced, ["STRIPE_KEY"])
+		// The replacement keeps the secret's identity, so its tick carries and it still sorts first.
 		assert.deepEqual(
-			steps.map((step) => step.source),
-			["diff", "diff", "reviewer", "reviewer"],
+			steps.map((step) => [step.source, step.kind, step.subject]),
+			[
+				["reviewer", "secret", "STRIPE_KEY"],
+				["diff", "env", "STRIPE_REGION"],
+				["diff", "infra", "apps/api/wrangler.jsonc"],
+				["reviewer", "manual", undefined],
+			],
 		)
+		assert.equal(steps[0]?.title, "Add `STRIPE_KEY` to the prd and dev secret stores")
 	})
 
 	it("drops steps under ignored paths and records them", () => {
@@ -209,5 +244,132 @@ describe("the Before merge section", () => {
 			`- [ ] **Secret** · Add secret \`STRIPE_KEY\` to every environment · [\`src/env.ts:1\`](https://github.com/acme/shop/blob/${"a".repeat(40)}/src/env.ts#L1)`,
 		)
 		assert.isBelow(body.indexOf("Adds Stripe webhooks."), body.indexOf("### Before merge"))
+	})
+})
+
+const stored = (key: string, status: StoredMergeStep["status"], extra: Partial<StoredMergeStep> = {}) => ({
+	key,
+	kind: "manual" as const,
+	title: key,
+	status,
+	doneBy: null,
+	...extra,
+})
+
+const manual = (title: string) => new PrReviewMergeStep({ kind: "manual", title, source: "reviewer" })
+
+describe("reconcileMergeSteps", () => {
+	it("keys every step, marks ticked ones done, and obsoletes open steps the head dropped", () => {
+		const { steps } = checklistOf([envFile], { STRIPE_URL: "exists", STRIPE_REGION: "exists" })
+		const result = reconcileMergeSteps(steps, [
+			stored("secret:STRIPE_KEY", "done", { kind: "secret", doneBy: "christo" }),
+			stored("env:OLD_FLAG", "open", { kind: "env" }),
+			stored("env:SHIPPED", "done", { kind: "env" }),
+		])
+		assert.deepEqual(
+			result.steps.map((step) => [step.key, step.done, step.doneBy]),
+			[["secret:STRIPE_KEY", true, "christo"]],
+		)
+		// A done step is never taken back, even when the head stops producing it.
+		assert.deepEqual(result.obsolete, ["env:OLD_FLAG"])
+	})
+
+	it("keeps a reworded manual step's tick, and never folds two different steps into one", () => {
+		const backfill = "Run the `issues_v3` backfill once the deploy is live"
+		const result = reconcileMergeSteps(
+			[
+				manual("Run the issues_v3 backfill after deploying"),
+				manual("Create the `prreview` flag in Clerk"),
+			],
+			[stored(mergeStepKey(manual(backfill)), "done", { title: backfill, doneBy: "david" })],
+		)
+		assert.deepEqual(
+			result.steps.map((step) => step.done === true),
+			[true, false],
+		)
+		assert.equal(result.steps[0]?.key, mergeStepKey(manual(backfill)))
+		assert.deepEqual(result.obsolete, [])
+	})
+
+	it("does not match a manual step on the subject alone", () => {
+		const result = reconcileMergeSteps(
+			[manual("Run the migration for STRIPE_EVENTS")],
+			[stored("manual:old", "open", { title: "Run the backfill for STRIPE_EVENTS" })],
+		)
+		assert.notEqual(result.steps[0]?.key, "manual:old")
+		assert.deepEqual(result.obsolete, ["manual:old"])
+	})
+})
+
+describe("mergeStepKey", () => {
+	it("never gives two different manual titles one key", () => {
+		const long = "Run the backfill for issues_v3 in every region after the deploy is live and then"
+		const keys = [
+			`${long} verify`,
+			`${long} confirm`,
+			"Créer le drapeau",
+			"Vérifier le drapeau",
+			"中文步骤一",
+			"中文步骤二",
+		].map((title) => mergeStepKey(manual(title)))
+		assert.strictEqual(new Set(keys).size, keys.length)
+		for (const key of keys) assert.match(key, /^manual:[a-z0-9-]+$/)
+		// A short ASCII title keeps its readable slug.
+		assert.strictEqual(
+			mergeStepKey(manual("Create the `prreview` flag")),
+			"manual:create-the-prreview-flag",
+		)
+	})
+})
+
+describe("ticks on the comment", () => {
+	const report = (beforeMerge: ReadonlyArray<PrReviewMergeStep>) =>
+		renderSummaryComment("<!-- maple-pr-review r 0 -->", {
+			report: new PrReviewReport({
+				verdict: "clean",
+				summary: "s",
+				coverage: [],
+				findings: [],
+				beforeMerge,
+			}),
+			partial: false,
+			headSha: Schema.decodeSync(GitCommitSha)("a".repeat(40)),
+			repositoryUrl: "https://github.com/acme/shop",
+		})
+
+	it("tags each task with its key and renders a done step ticked", () => {
+		const { steps } = reconcileMergeSteps(
+			checklistOf([envFile], { STRIPE_URL: "exists", STRIPE_REGION: "exists" }).steps,
+			[stored("secret:STRIPE_KEY", "done", { kind: "secret", doneBy: "christo" })],
+		)
+		const body = report(steps)
+		assert.match(body, /- \[x\] \*\*Secret\*\* .* · ticked by @christo <!-- ms:secret:STRIPE_KEY -->/)
+		assert.deepEqual([...parseMergeStepTicks(body)], [["secret:STRIPE_KEY", true]])
+	})
+
+	it("reads a person's tick as the boxes that changed, and nothing from a re-render", () => {
+		const before = report([
+			manual("Create the flag"),
+			new PrReviewMergeStep({ ...manual("Set X"), key: "env:X" }),
+		])
+		const after = before.replace(
+			"- [ ] **Manual** · Create the flag",
+			"- [x] **Manual** · Create the flag",
+		)
+		assert.deepEqual(mergeStepTickChanges(before, after), [{ key: "manual:create-the-flag", done: true }])
+		assert.deepEqual(mergeStepTickChanges(after, before), [
+			{ key: "manual:create-the-flag", done: false },
+		])
+		assert.deepEqual(mergeStepTickChanges(before, before), [])
+		assert.deepEqual(mergeStepTickChanges(before, `${before}\n- [x] spoof <!-- ms:secret:NEW -->`), [])
+	})
+
+	it("reminds at merge with every open step", () => {
+		const body = renderMergeReminder([
+			{ kind: "secret", title: "Add secret `FOO` to every environment" },
+			{ kind: "manual", title: "Run the backfill" },
+		])
+		assert.include(body, "Merged with 2 steps")
+		assert.include(body, "- **Secret** · Add secret `FOO` to every environment")
 	})
 })

@@ -1,7 +1,7 @@
 ---
 title: "Trace Mastra agents and workflows with OpenTelemetry"
 description: "Export Mastra's built-in spans to Maple with @mastra/otel-exporter and group each conversation into one Agent Session."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 11
 navLabel: "Mastra"
 icon: "mastra"

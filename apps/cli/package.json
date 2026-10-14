@@ -1,5 +1,6 @@
 {
 	"name": "@maple/cli",
+	"version": "0.0.26",
 	"private": true,
 	"bin": {
 		"maple": "./src/bin.ts"

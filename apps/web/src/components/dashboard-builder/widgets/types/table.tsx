@@ -2,7 +2,7 @@ import { WIDGET_TYPES } from "@maple/domain/http"
 import { makeQueryDataSource, dataSourceTransform } from "@maple/widgets/dashboard"
 
 import { GridIcon } from "@/components/icons"
-import { WidgetSettings } from "@/components/dashboard-builder/config/settings-fields"
+import { WidgetSettings, parseRowLimit } from "@/components/dashboard-builder/config/settings-fields"
 import { TableWidget } from "@/components/dashboard-builder/widgets/table-widget"
 import { tablePresets } from "@/components/dashboard-builder/widgets/widget-definitions"
 import {
@@ -14,7 +14,6 @@ import {
 	hasActiveGroupBy,
 	inferDisplayUnitForQuery,
 	isVisibleQuery,
-	parsePositiveNumber,
 } from "@/lib/query-builder/widget-builder-shared"
 
 /**
@@ -58,7 +57,7 @@ export const tableWidgetType: WidgetTypeDefinition = {
 	}),
 
 	buildDataSource: ({ base, state, sharedTransform, visibleQueries }) => {
-		const limit = parsePositiveNumber(state.tableLimit)
+		const limit = parseRowLimit(state.tableLimit)
 
 		if (visibleQueries.some(hasActiveGroupBy)) {
 			return makeQueryDataSource({

@@ -78,28 +78,26 @@ export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout):
 			const side = alongX ? "x" : "z"
 			a[side] += direction * 1.3
 			b[side] -= direction * 1.3
-			a.y += 0.72
-			b.y += 0.72
+			// Belts run on the ground plane. A hair of height per lane keeps
+			// overlapping decks from flickering where routes share a corridor.
+			a.y += 0.07 + (index % 4) * 0.004
+			b.y += 0.07 + (index % 4) * 0.004
 			const lead = a.clone()
 			lead[side] += direction * 0.6
 			const tail = b.clone()
 			tail[side] -= direction * 0.6
-			const high = Math.max(a.y, b.y) + (kind === "pipe" ? 0.75 + (index % 3) * 0.22 : 0)
-			const entry = lead.clone().setY(high),
-				exit = tail.clone().setY(high)
-			const middle = entry.clone()
-			middle[side] = (entry[side] + exit[side]) / 2
-			const turn = exit.clone()
+			const middle = lead.clone().setY(Math.max(a.y, b.y))
+			// Stagger where lanes cross over, never past either end of the run.
+			const span = Math.abs(tail[side] - lead[side])
+			middle[side] = (lead[side] + tail[side]) / 2 + ((index % 3) - 1) * Math.min(0.55, span / 4)
+			const turn = tail.clone().setY(middle.y)
 			turn[side] = middle[side]
-			const waypoints =
-				kind === "conveyor"
-					? [a, lead, middle, turn, tail, b]
-					: [a, lead, entry, middle, turn, exit, tail, b]
+			const waypoints = [a, lead, middle, turn, tail, b]
 			const clean = waypoints.filter((point, i) => {
 				const previous = waypoints[i - 1]
 				return !previous || point.distanceTo(previous) > 0.01
 			})
-			const curve = roundedRoute(clean, kind === "conveyor" ? 1.1 : 0.5)
+			const curve = roundedRoute(clean, 0.3)
 			return [
 				{
 					id: `link:${JSON.stringify([edge.source, edge.target])}`,

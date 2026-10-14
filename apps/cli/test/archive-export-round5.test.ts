@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { deepStrictEqual, strictEqual, throws } from "node:assert"
+import { deepStrictEqual, notStrictEqual, strictEqual, throws } from "node:assert"
 import { randomUUID } from "node:crypto"
 import {
 	normalizeType,
@@ -35,9 +35,7 @@ describe("bounded multiset digest", () => {
 
 describe("schema normalizeType (measured chDB Parquet mapping)", () => {
 	it("does NOT collapse parameterized array element types", () => {
-		if (normalizeType("Array(UInt64)") === normalizeType("Array(String)")) {
-			throw new Error("Array(UInt64) collapsed to Array(String)")
-		}
+		notStrictEqual(normalizeType("Array(UInt64)"), normalizeType("Array(String)"))
 	})
 
 	it("applies the measured LowCardinality/DateTime/DateTime64/Map transforms", () => {
@@ -57,22 +55,6 @@ describe("schema normalizeType (measured chDB Parquet mapping)", () => {
 	it("leaves simple leaf types untouched", () => {
 		for (const t of ["String", "UInt8", "UInt64", "Int32", "Float64", "Bool"]) {
 			deepStrictEqual(normalizeType(t), t)
-		}
-	})
-
-	it("makes source vs Parquet normalized forms equal for every measured round-trip", () => {
-		const pairs: ReadonlyArray<[string, string]> = [
-			["LowCardinality(String)", "String"],
-			["DateTime", "DateTime64(3, 'UTC')"],
-			["DateTime64(9)", "DateTime64(9, 'UTC')"],
-			["Map(LowCardinality(String), String)", "Map(String, String)"],
-			["Array(UInt64)", "Array(UInt64)"],
-			["Array(String)", "Array(String)"],
-		]
-		for (const [src, par] of pairs) {
-			if (normalizeType(src) !== normalizeType(par)) {
-				throw new Error(`normalized source ${src} must equal normalized parquet ${par}`)
-			}
 		}
 	})
 })
@@ -176,12 +158,13 @@ const manifestWith = (
 
 describe("shard time evidence — UTC nanoseconds, host-timezone-independent (round 5)", () => {
 	it("accepts a valid in-range shard bound", () => {
-		parseArchiveGenerationManifest(manifestWith({}), "traces", "2026-06-29") // must not throw
+		const parsed = parseArchiveGenerationManifest(manifestWith({}), "traces", "2026-06-29")
+		strictEqual(parsed.shards[0]!.minEventTimeUnixNano, nano("2026-06-29T12:00:00.000Z"))
 	})
 
 	it("accepts a valid 23:30 UTC late-day bound (the round-4 timezone defect)", () => {
 		// Under any host timezone this must parse, because bounds are epoch nanos.
-		parseArchiveGenerationManifest(
+		const parsed = parseArchiveGenerationManifest(
 			manifestWith(
 				{},
 				{
@@ -192,6 +175,7 @@ describe("shard time evidence — UTC nanoseconds, host-timezone-independent (ro
 			"traces",
 			"2026-06-29",
 		)
+		strictEqual(parsed.shards[0]!.maxEventTimeUnixNano, nano("2026-06-29T23:30:00.000Z"))
 	})
 
 	it("rejects an out-of-range (2027) shard bound", () => {

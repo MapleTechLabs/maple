@@ -4,10 +4,13 @@ import { formatDurationFromMs, formatPercent, formatNumber, truncate } from "../
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { DiagnoseServiceOutput } from "@maple/domain/mcp-outputs"
 import { diagnoseService } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { serviceInfrastructure } from "../lib/infra"
+import { kindTable } from "../lib/infra-render"
+import { warehouseErrorText } from "../lib/map-warehouse-error"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
 
@@ -30,13 +33,23 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 			const { st, et } = yield* WINDOW.resolve(params, "diagnose_service")
 			const tenant = yield* CurrentMcpTenant
 
-			const result = yield* diagnoseService({
-				serviceName: params.service,
-				timeRange: { startTime: st, endTime: et },
-				environment: params.environment,
-			}).pipe(
-				provideWarehouseExecutorFromTenant(tenant),
-				Effect.mapError(toMcpQueryError("service_overview")),
+			const [result, infrastructure] = yield* Effect.all(
+				[
+					diagnoseService({
+						serviceName: params.service,
+						timeRange: { startTime: st, endTime: et },
+						environment: params.environment,
+					}).pipe(
+						provideWarehouseExecutorFromTenant(tenant),
+						Effect.mapError(toMcpQueryError("service_overview")),
+					),
+					// Optional context: a failed lookup is reported beside the diagnosis, never instead of it.
+					serviceInfrastructure(params.service, { startTime: st, endTime: et }).pipe(
+						provideWarehouseExecutorFromTenant(tenant),
+						Effect.result,
+					),
+				],
+				{ concurrency: 2 },
 			)
 
 			return {
@@ -65,6 +78,11 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					spanId: l.spanId,
 				})),
 				...(params.environment === undefined ? undefined : { environment: params.environment }),
+				...(Result.isSuccess(infrastructure)
+					? infrastructure.success === undefined
+						? undefined
+						: { infrastructure: infrastructure.success }
+					: { infrastructureError: warehouseErrorText(infrastructure.failure) }),
 			}
 		}),
 		render: (output) => {
@@ -118,6 +136,32 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					),
 				)
 			}
+			const infra = output.infrastructure
+			if (infra !== undefined) {
+				blocks.push(
+					doc.heading("Infrastructure"),
+					doc.table(
+						["Workload", "Namespace", "Pods", "CPU of limit", "Memory of limit"],
+						infra.workloads.map((w) => [
+							`${w.kind}/${w.name}`,
+							w.namespace,
+							formatNumber(w.podCount),
+							w.cpu === undefined ? "no limit" : formatPercent(w.cpu),
+							w.memory === undefined ? "no limit" : formatPercent(w.memory),
+						]),
+					),
+				)
+				if (infra.pods.length > 0) {
+					blocks.push(
+						doc.text("Pods, closest to a limit first:"),
+						kindTable({ kind: "pods", rows: infra.pods, truncated: false }),
+					)
+				}
+			} else if (output.infrastructureError !== undefined) {
+				blocks.push(doc.text(`Infrastructure lookup failed: ${output.infrastructureError}`))
+			}
+			const workload = infra?.workloads.find((w) => w.kind !== "unknown")
+			const hotPod = infra?.pods.find((p) => (p.saturation ?? 0) >= 0.9)
 			return {
 				title: `Diagnosis: ${output.serviceName}`,
 				scope: [
@@ -138,6 +182,29 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 						.map((t) =>
 							doc.next("inspect_trace", { trace_id: t.traceId }, "inspect error trace"),
 						),
+					...(hotPod === undefined
+						? []
+						: [
+								doc.next(
+									"inspect_infra",
+									{ kind: "pod", name: hotPod.name, namespace: hotPod.namespace },
+									`${hotPod.name} is at a CPU or memory limit: see when it peaked`,
+								),
+							]),
+					...(workload === undefined || hotPod !== undefined
+						? []
+						: [
+								doc.next(
+									"inspect_infra",
+									{
+										kind: "workload",
+										name: workload.name,
+										namespace: workload.namespace,
+										workload_kind: workload.kind,
+									},
+									"check whether its pods were short of CPU or memory",
+								),
+							]),
 					doc.next(
 						"service_map",
 						{ service: output.serviceName },

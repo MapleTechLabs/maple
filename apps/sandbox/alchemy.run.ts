@@ -63,6 +63,8 @@ const props = Effect.gen(function* () {
 		workersDev: false,
 		observability: assetWorkerObservability(destinations),
 		env: {
+			// Fleet scheduling on purpose: `durable_object` has no `maxInstances` cap, and
+			// switching policy needs a new application and Durable Object namespace.
 			Sandbox: Cloudflare.Container<Sandbox>("Sandbox", {
 				context: SANDBOX_IMAGE_CONTEXT,
 				// Full clones exhaust the smaller tiers' disk. Named tiers are the only dial:

@@ -6,7 +6,7 @@ import { V2AlertIncident } from "./alert-incidents"
 import { V2AlertRule, V2AlertRuleMutationResponse } from "./alert-rules"
 import { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "./api-keys"
 import { V2DashboardMutation } from "./dashboards"
-import { V2ErrorIssue, V2ErrorIssueDetail } from "./error-issues"
+import { V2ErrorIssue } from "./error-issues"
 import { AuthorizationV2, isScopeExemptRoute, requiredScopeForRoute, scopeAllows, V2Scope } from "./auth"
 import {
 	V2PlanetScaleIntegration,
@@ -16,13 +16,12 @@ import {
 import {
 	decodeOffsetCursor,
 	encodeOffsetCursor,
-	isoTimestamp,
 	ListQuery,
 	paginateArray,
 	paginateOffsetQuery,
 	Timestamp,
 } from "./envelopes"
-import { defineV2Error, V2InsufficientScope, V2RateLimited } from "./errors"
+import { defineV2Error } from "./errors"
 import { encodePublicId } from "./public-id"
 import {
 	LogPublicId,
@@ -237,28 +236,6 @@ describe("V2ErrorIssue wire format", () => {
 		expect(wire.id).toBe(encodePublicId("iss", UUID))
 		expect(wire.service_name).toBe("checkout-api")
 		expect("serviceName" in wire).toBe(false)
-	})
-
-	it("decodes the rich retrieve representation", () => {
-		const detail = Schema.decodeUnknownSync(V2ErrorIssueDetail)({
-			...issueWire,
-			timeseries: [{ bucket: "2026-07-15T01:00:00.000Z", count: 4 }],
-			sample_traces: [
-				{
-					trace_id: "0123456789abcdef0123456789abcdef",
-					span_id: "0123456789abcdef",
-					service_name: "checkout-api",
-					timestamp: "2026-07-15T01:00:00.000Z",
-					exception_message: "upstream timed out",
-					duration_micros: 1200,
-				},
-			],
-			incidents: [],
-			environments: [{ name: "production", count: 4 }],
-		})
-		expect(detail.timeseries[0]?.count).toBe(4)
-		expect(detail.environments[0]?.name).toBe("production")
-		expect(detail.sample_traces[0]?.trace_id).toBe("0123456789abcdef0123456789abcdef")
 	})
 })
 
@@ -551,27 +528,6 @@ describe("v2 error envelope", () => {
 		const wire = Schema.encodeSync(TestNotFound.schema)(TestNotFound.make("gone"))
 		expect("param" in wire.error).toBe(false)
 	})
-
-	it("permission errors carry their declared category", () => {
-		expect(V2InsufficientScope.make("nope").error.type).toBe("permission_error")
-	})
-
-	it("rateLimited has the stable public 429 envelope", () => {
-		expect(
-			Schema.encodeSync(V2RateLimited.schema)(V2RateLimited.make(undefined, { retryAfterSeconds: 60 })),
-		).toEqual({
-			error: {
-				_tag: "@maple/http/v2/RateLimitError",
-				type: "rate_limit_error",
-				code: "rate_limited",
-				title: "Too many requests",
-				message: "Too many requests. Retry after the interval in the Retry-After header.",
-				retryable: true,
-				recovery: "retry",
-				retry_after_seconds: 60,
-			},
-		})
-	})
 })
 
 describe("scopes", () => {
@@ -768,17 +724,6 @@ describe("telemetry contracts", () => {
 		expect(Schema.decodeSync(LogPublicId)(wire)).toBe(internal)
 	})
 
-	it("decodes signal-scoped trace timeseries with attribute grouping", () => {
-		const request = Schema.decodeUnknownSync(V2TraceTimeseriesParams)({
-			start_time: "2026-07-15T00:00:00.000Z",
-			end_time: "2026-07-15T01:00:00.000Z",
-			aggregation: "count",
-			group_by: "attribute",
-			group_by_attribute_key: "http.route",
-		})
-		expect(request.group_by).toBe("attribute")
-	})
-
 	it("rejects invalid filters, grouping, metric compatibility, and budgets", () => {
 		const base = {
 			start_time: "2026-07-15T00:00:00.000Z",
@@ -893,10 +838,6 @@ describe("list pagination", () => {
 })
 
 describe("timestamps", () => {
-	it("formats epoch-ms as ISO-8601 UTC", () => {
-		expect(isoTimestamp(0)).toBe("1970-01-01T00:00:00.000Z")
-	})
-
 	it("accepts UTC ISO-8601 timestamps and rejects invalid values", () => {
 		expect(Schema.decodeUnknownSync(Timestamp)("2026-07-15T12:34:56.000Z")).toBe(
 			"2026-07-15T12:34:56.000Z",

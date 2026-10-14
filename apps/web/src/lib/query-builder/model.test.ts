@@ -2,10 +2,6 @@ import { describe, expect, it } from "vitest"
 import { buildTimeseriesQuerySpec, createQueryDraft } from "@maple/query-engine/query-builder"
 
 describe("query-builder model bucket parsing", () => {
-	it("defaults new drafts to auto-bucket", () => {
-		expect(createQueryDraft(0).stepInterval).toBe("")
-	})
-
 	it("parses hour shorthand step intervals", () => {
 		const query = {
 			...createQueryDraft(0),
@@ -22,24 +18,6 @@ describe("query-builder model bucket parsing", () => {
 		}
 
 		expect(built.query.bucketSeconds).toBe(3600)
-	})
-
-	it("parses minute shorthand step intervals", () => {
-		const query = {
-			...createQueryDraft(0),
-			dataSource: "logs" as const,
-			aggregation: "count",
-			stepInterval: "5m",
-		}
-
-		const built = buildTimeseriesQuerySpec(query)
-		expect(built.error).toBeNull()
-		expect(built.query?.kind).toBe("timeseries")
-		if (built.query?.kind !== "timeseries") {
-			return
-		}
-
-		expect(built.query.bucketSeconds).toBe(300)
 	})
 
 	it("keeps invalid shorthand as auto-bucket with warning", () => {

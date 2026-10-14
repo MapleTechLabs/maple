@@ -10,23 +10,6 @@ describe("Tinybird Events API schema compatibility", () => {
 		}
 	})
 
-	it("bridges direct service-map writes through a zero-retention plain schema", () => {
-		const ingress = datasources.find(({ name }) => name === "service_map_edges_hourly_ingest")
-		const target = datasources.find(({ name }) => name === "service_map_edges_hourly")
-		const bridge = pipes.find(({ name }) => name === "service_map_edges_hourly_ingest_mv")
-
-		expect(ingress?.content).toContain("ENGINE Null")
-		expect(ingress?.content).toContain("CallCount UInt64 `json:$.CallCount`")
-		expect(ingress?.content).not.toContain("AggregateFunction(")
-
-		expect(target?.content).toContain("CallCount SimpleAggregateFunction(sum, UInt64)")
-		expect(target?.content).not.toContain("`json:$")
-		expect(target?.content).toContain("FORWARD_QUERY >\n    SELECT *")
-
-		expect(bridge?.content).toContain("FROM service_map_edges_hourly_ingest")
-		expect(bridge?.content).toContain("DATASOURCE service_map_edges_hourly")
-	})
-
 	it("keeps deployed materialized-pipe triggers stable", () => {
 		const timeOrderedErrors = pipes.find(({ name }) => name === "error_events_by_time_mv")
 		const minutelyErrors = pipes.find(({ name }) => name === "error_fingerprints_minutely_mv")

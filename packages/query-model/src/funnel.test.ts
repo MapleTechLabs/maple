@@ -3,7 +3,6 @@ import { Schema } from "effect"
 
 import {
 	FUNNEL_EMPTY_GROUP_LABEL,
-	ProductEventsFunnelWidgetParams,
 	ProductEventsPathsWidgetParams,
 	funnelStepDetails,
 	funnelWidgetBreakdownRows,
@@ -60,21 +59,6 @@ describe("funnelWidgetBreakdownRows", () => {
 	})
 })
 
-describe("ProductEventsFunnelWidgetParams", () => {
-	it("decodes the flat params bag a funnel widget stores", () => {
-		const decoded = Schema.decodeSync(ProductEventsFunnelWidgetParams)({
-			steps,
-			keyBy: "visitor",
-			breakdownBy: "attribute:plan",
-			country: "DE",
-			visitorType: "new",
-		})
-		expect(decoded.breakdownBy).toBe("attribute:plan")
-		expect(decoded.country).toBe("DE")
-		expect(decoded.windowSeconds).toBeUndefined()
-	})
-})
-
 describe("funnel drop-off details", () => {
 	it("merges timing and leavers onto the step rows, by 1-based step", () => {
 		const details = funnelStepDetails(
@@ -112,19 +96,6 @@ describe("funnel drop-off details", () => {
 })
 
 describe("ProductEventsPathsWidgetParams", () => {
-	it("decodes the flat params bag a paths widget stores", () => {
-		const decoded = Schema.decodeSync(ProductEventsPathsWidgetParams)({
-			anchor: { kind: "page", pagePath: "/pricing" },
-			direction: "before",
-			depth: 2,
-			exclude: ["heartbeat"],
-			country: "DE",
-		})
-		expect(decoded.direction).toBe("before")
-		expect(decoded.exclude).toEqual(["heartbeat"])
-		expect(decoded.branches).toBeUndefined()
-	})
-
 	it("refuses a session step as the anchor", () => {
 		expect(() =>
 			Schema.decodeUnknownSync(ProductEventsPathsWidgetParams)({

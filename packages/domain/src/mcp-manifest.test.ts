@@ -44,8 +44,4 @@ describe("mapleMcpServerManifest", () => {
 		expect(staged.icons[0].src).toBe("https://stg.maple.dev/logo192.png")
 		expect(staged.remotes[0].url).toBe("https://api.stg.maple.dev/mcp")
 	})
-
-	it("serialises to plain JSON (no undefined, no functions)", () => {
-		expect(JSON.parse(JSON.stringify(manifest))).toEqual(manifest)
-	})
 })

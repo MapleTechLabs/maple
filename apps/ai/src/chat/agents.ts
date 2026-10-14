@@ -152,7 +152,12 @@ export const buildSystemPrompt = (agent: AgentDefinition): string => agent.promp
  * 2026-09-20, put the limit an order of magnitude above any prompt the agent sends, so compaction
  * never ran. `liveContextLimit` explains both bounds.
  */
-export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): AgentPolicy => {
+export const agentPolicyFor = (
+	agent: AgentDefinition,
+	contextTokens?: number,
+	/** Only an unattended pass gets the run-status line; an attended follow-up must answer, not file. */
+	autonomous = false,
+): AgentPolicy => {
 	const budget = agent.budget
 	return AgentPolicy.make({
 		maxTurns: budget.maxToolCalls,
@@ -167,7 +172,7 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 		// more without tools, to answer from what it found rather than stopping on a wall of tool
 		// rows. This is also what makes `tokenBudget` a deadline rather than a way to lose a run.
 		onExhaustion: "final-answer",
-		...(budget.runStatus === true ? { runStatus: "appended" as const } : undefined),
+		...(budget.runStatus === true && autonomous ? { runStatus: "appended" as const } : undefined),
 		...(contextTokens === undefined ? undefined : { contextTokenLimit: liveContextLimit(contextTokens) }),
 	})
 }
@@ -186,6 +191,8 @@ export const chatAgent = (
 	options: {
 		/** Set when a call to this tool settles the run. Never engine-required; see `tools.ts`. */
 		readonly completion?: { readonly tool: string; readonly required: boolean }
+		/** The turn is a machine-started pass; see {@link agentPolicyFor}. */
+		readonly autonomous?: boolean
 	} = {},
 ) =>
 	// `withModel` rather than providing the model Layer around the run: the engine builds the model
@@ -201,7 +208,7 @@ export const chatAgent = (
 			instructions: buildSystemPrompt(agent),
 			description: agent.description,
 			toolkit,
-			policy: agentPolicyFor(agent, model.limits.context),
+			policy: agentPolicyFor(agent, model.limits.context, options.autonomous === true),
 			...(options.completion === undefined
 				? undefined
 				: {

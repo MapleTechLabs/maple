@@ -4,7 +4,7 @@
  *
  * packages/ui/src/styles/tokens.css is the single source of truth for the
  * shared design tokens (see DESIGN.md "Token source of truth"). This script
- * fails if apps/web or apps/landing re-declare any token name defined there —
+ * fails if apps/web, apps/landing or apps/local-ui re-declare any token name defined there —
  * the exact duplication that let the landing page drift out of sync with the
  * product. App-local tokens (web's --sh-*, landing's --bg-elevated family)
  * are fine because they aren't declared in the shared file.
@@ -26,7 +26,7 @@ if (sharedTokens.size === 0) {
 	process.exit(1)
 }
 
-const SCAN_ROOTS = ["apps/web/src", "apps/landing/src"]
+const SCAN_ROOTS = ["apps/web/src", "apps/landing/src", "apps/local-ui/src"]
 const SCAN_EXT = /\.(css|astro)$/
 
 function* walk(dir: string): Generator<string> {

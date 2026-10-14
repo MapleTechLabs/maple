@@ -6,6 +6,7 @@ import { hostInfraTimeseriesResultAtom } from "@/lib/services/atoms/warehouse-qu
 import type { HostInfraMetric } from "@/api/warehouse/infra"
 import { formatValueWithUnit } from "./chart-utils"
 import { SeriesLegend } from "@/components/common/series-legend"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import {
 	InfraMetricChart,
 	INFRA_METRIC_CHART_HEIGHT,
@@ -101,11 +102,15 @@ function HostSeriesSummary({ series, colors, lastValues, labelFor, unit }: Infra
 	return (
 		<SeriesLegend
 			className="px-3 py-2"
+			// A host can mount dozens of filesystems; long mountpoints differ at the end.
+			maxItems={8}
 			items={series.map((name) => {
 				const value = lastValues[name]
+				const label = labelFor(name)
 				return {
 					key: name,
-					label: labelFor(name),
+					label: <MiddleTruncate text={label} tail={10} />,
+					title: label,
 					color: colors.get(name),
 					value: value === undefined ? undefined : formatValueWithUnit(value, unit),
 				}

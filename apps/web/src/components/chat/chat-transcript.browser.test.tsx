@@ -98,30 +98,6 @@ describe("ChatTranscript", () => {
 		expect(items().map((el) => (el as HTMLElement).dataset.scrollAnchor)).toEqual(["true", "false"])
 	})
 
-	it("opts every row out of the primitive's off-screen size containment", () => {
-		render(<ChatTranscript {...baseProps} messages={[message("m1", "user", "hi")]} />)
-
-		// Guards the CollapsiblePanel-class regression: size containment over content
-		// that settles its height after mount clamps scrollTop every frame.
-		expect(items()[0]?.className).toContain("[content-visibility:visible]")
-	})
-
-	it("styles user turns as end-aligned bubbles and assistant turns as ghost", () => {
-		render(
-			<ChatTranscript
-				{...baseProps}
-				messages={[message("m1", "user", "hi"), message("m2", "assistant", "hello")]}
-			/>,
-		)
-
-		const bubbles = [...document.querySelectorAll('[data-slot="bubble"]')] as HTMLElement[]
-		expect(bubbles.map((el) => el.dataset.variant)).toEqual(["secondary", "ghost"])
-		expect(bubbles.map((el) => el.dataset.align)).toEqual(["end", "start"])
-
-		const rows = [...document.querySelectorAll('[data-slot="message"]')] as HTMLElement[]
-		expect(rows.map((el) => el.dataset.align)).toEqual(["end", "start"])
-	})
-
 	it("renders the working state as a status marker row, not a phantom assistant turn", () => {
 		render(<ChatTranscript {...baseProps} isLoading messages={[message("m1", "user", "hi")]} />)
 

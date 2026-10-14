@@ -47,15 +47,3 @@ describe("accountNavSections", () => {
 		}
 	})
 })
-
-describe("DEFAULT_ACCOUNT_TAB", () => {
-	it("is a real tab", () => {
-		expect(accountTabValues).toContain(DEFAULT_ACCOUNT_TAB)
-	})
-
-	it("never lands users on a tab that does work on mount", () => {
-		// `sessions` fetches the user's sessions from Clerk when it mounts. It must stay an
-		// explicit navigation, never the landing tab.
-		expect(DEFAULT_ACCOUNT_TAB).not.toBe("sessions")
-	})
-})

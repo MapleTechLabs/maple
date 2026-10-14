@@ -47,10 +47,10 @@ describe("SyncConfig", () => {
 			})
 			assert.isTrue(Exit.isSuccess(exit))
 			if (!Exit.isSuccess(exit)) return
-			assert.deepStrictEqual(
-				Option.map(exit.value.ELECTRIC_SECRET, Redacted.value),
-				Option.some("sh_secret"),
-			)
+			const secret = Option.getOrThrow(exit.value.ELECTRIC_SECRET)
+			assert.isTrue(Redacted.isRedacted(secret))
+			assert.notInclude(String(secret), "sh_secret")
+			assert.strictEqual(Redacted.value(secret), "sh_secret")
 		}),
 	)
 

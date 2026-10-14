@@ -92,7 +92,7 @@ export const mcpResourceForRequest = (request: Request) => {
 	return `${protocol}://${host}/mcp`
 }
 
-export const resolveMcpTenantContext = Effect.fn("resolveMcpTenantContext")(
+export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantContext")(
 	function* (request: Request) {
 		const token = getBearerToken(request.headers)
 

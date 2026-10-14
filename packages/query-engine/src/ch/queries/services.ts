@@ -26,12 +26,7 @@ import {
 } from "../tables"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
-import {
-	apdexExprs,
-	serviceOverviewWhereConditions,
-	utcHourFloor,
-	type FacetOutput,
-} from "./query-helpers"
+import { apdexExprs, serviceOverviewWhereConditions, utcHourFloor, type FacetOutput } from "./query-helpers"
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 
 // Service overview
@@ -68,7 +63,7 @@ export interface ServiceWindowFilters {
 }
 
 /**
- * The bucket grain a service-history stream is reconstructed at.
+ * The bucket grain (`grain`) a service-history stream is reconstructed at.
  *
  * `"hour"` is the two-tier splice: raw partial boundary hours + the hourly
  * rollup's interior. Correct for any query that aggregates the whole window, and
@@ -80,19 +75,21 @@ export interface ServiceWindowFilters {
  * `bucketSeconds` is not a multiple of 3600 — an hour-floored row landing in a
  * sub-hour bucket puts a whole hour of traffic on the bucket containing `:00`
  * and leaves the rest of the hour reading zero.
+ *
+ * The hour grain always splices the hourly tier; only the minute grain can drop it.
  */
-export type OverviewGrain = "hour" | "minute"
-
-export interface ServiceWindowTiers {
-	readonly grain?: OverviewGrain
-	/**
-	 * Include the hourly tier. Must be `false` when the caller buckets the result
-	 * with a `bucketSeconds` that is not a whole multiple of 3600 — an hourly row
-	 * carries no sub-hour position, so `toStartOfInterval` would pile the whole
-	 * hour onto the bucket containing `:00`.
-	 */
-	readonly includeHourly?: boolean
-}
+export type ServiceWindowTiers =
+	| { readonly grain?: "hour"; readonly includeHourly?: true }
+	| {
+			readonly grain: "minute"
+			/**
+			 * Include the hourly tier. Must be `false` when the caller buckets the result
+			 * with a `bucketSeconds` that is not a whole multiple of 3600: an hourly row
+			 * carries no sub-hour position, so `toStartOfInterval` would pile the whole
+			 * hour onto the bucket containing `:00`.
+			 */
+			readonly includeHourly?: boolean
+	  }
 
 /**
  * Tier selection for a caller that buckets the stream by `bucketSeconds`.
@@ -206,9 +203,6 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 		.groupBy(...SERVICE_WINDOW_GROUP_KEYS)
 
 	if (grain === "hour") {
-		if (!includeHourly) {
-			throw new Error("serviceOverviewWindows: hour grain requires the hourly tier")
-		}
 		return fromUnion(unionAll(rawEdges, hourlyInterior), "service_windows")
 	}
 
@@ -465,6 +459,32 @@ export function serviceOverviewQuery(opts: ServiceOverviewOpts) {
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
+
+// Service presence
+
+export interface ServicePresenceOutput {
+	readonly spanCount: number
+}
+
+/**
+ * Span count for one service over the window, from the same tiers as
+ * `serviceOverviewQuery`. Group-less, so it always returns one row and is not
+ * bounded by the overview's row limit; the sorting keys lead with
+ * (OrgId, ServiceName), so the scan stays narrow.
+ */
+export function servicePresenceQuery(opts: { serviceName: string }) {
+	return (
+		serviceOverviewWindows({ serviceName: opts.serviceName })
+			.select(($) => ({ spanCount: CH.sum($.bSpanCount) }))
+			// The window builder drops a falsy name filter; pin it here so "" can't count every service.
+			.where(($) => [$.bServiceName.eq(opts.serviceName)])
+			.format("JSON")
+	)
+}
+
+export const servicePresenceRowSchema = Schema.Struct({
+	spanCount: CHNumber,
+}) satisfies CompiledQueryRowSchema<ServicePresenceOutput>
 
 // Service health snapshot
 

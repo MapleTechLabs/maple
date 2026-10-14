@@ -4,7 +4,18 @@ import { useState } from "react"
 import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { initialsFrom } from "@maple/ui/lib/initials"
 import { Avatar, AvatarFallback, AvatarImage } from "@maple/ui/components/ui/avatar"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { FormDialog } from "@maple/ui/components/ui/form-dialog"
@@ -22,12 +33,6 @@ import { PlusIcon, TrashIcon, ShieldIcon, UserIcon, EnvelopeIcon } from "@/compo
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatDateInTimezone } from "@/lib/timezone-format"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
-
-function getInitials(firstName?: string | null, lastName?: string | null) {
-	const first = firstName?.[0] ?? ""
-	const last = lastName?.[0] ?? ""
-	return (first + last).toUpperCase() || "?"
-}
 
 function roleBadge(role: string) {
 	if (role === "org:admin") {
@@ -210,29 +215,30 @@ export function MembersSection() {
 
 								return (
 									<TableRow key={member.id}>
-										<TableCell>
+										<TruncatedCell>
 											<div className="flex items-center gap-3">
-												<Avatar className="size-6">
+												<Avatar className="size-6 shrink-0">
 													<AvatarImage src={userData?.imageUrl} />
 													<AvatarFallback>
-														{getInitials(userData?.firstName, userData?.lastName)}
+														{initialsFrom(memberName)}
 													</AvatarFallback>
 												</Avatar>
 												<div className="min-w-0">
-													<div className="text-xs font-medium truncate">
-														{memberName}
+													<div className="flex min-w-0 text-xs font-medium">
+														<TruncatedText text={memberName} />
 														{isCurrentUser && (
-															<span className="text-muted-foreground ml-1">
+															<span className="text-muted-foreground ml-1 shrink-0">
 																(you)
 															</span>
 														)}
 													</div>
-													<div className="text-muted-foreground text-xs truncate">
-														{userData?.identifier}
-													</div>
+													<TruncatedText
+														text={userData?.identifier ?? ""}
+														className="text-muted-foreground text-xs"
+													/>
 												</div>
 											</div>
-										</TableCell>
+										</TruncatedCell>
 										<TableCell>{roleBadge(member.role)}</TableCell>
 										<TableCell className="text-muted-foreground text-xs">
 											{formatDateInTimezone(member.createdAt, {
@@ -279,6 +285,15 @@ export function MembersSection() {
 						</TableBody>
 					</Table>
 				)}
+				{memberships?.hasNextPage && (
+					<div className="flex justify-center border-t p-2">
+						<LoadMoreButton
+							variant="ghost"
+							loading={memberships.isFetching}
+							onClick={() => memberships.fetchNext?.()}
+						/>
+					</div>
+				)}
 			</SettingsSection>
 
 			{invitationList.length > 0 && (
@@ -299,16 +314,19 @@ export function MembersSection() {
 						<TableBody>
 							{invitationList.map((invitation) => (
 								<TableRow key={invitation.id}>
-									<TableCell>
+									<TruncatedCell>
 										<div className="flex items-center gap-3">
-											<Avatar className="size-6">
+											<Avatar className="size-6 shrink-0">
 												<AvatarFallback>
 													<EnvelopeIcon size={12} />
 												</AvatarFallback>
 											</Avatar>
-											<span className="text-xs">{invitation.emailAddress}</span>
+											<TruncatedText
+												text={invitation.emailAddress}
+												className="text-xs"
+											/>
 										</div>
-									</TableCell>
+									</TruncatedCell>
 									<TableCell>{roleBadge(invitation.role)}</TableCell>
 									<TableCell>
 										<Badge variant="secondary">Pending</Badge>
@@ -334,6 +352,15 @@ export function MembersSection() {
 							))}
 						</TableBody>
 					</Table>
+					{invitations?.hasNextPage && (
+						<div className="flex justify-center border-t p-2">
+							<LoadMoreButton
+								variant="ghost"
+								loading={invitations.isFetching}
+								onClick={() => invitations.fetchNext?.()}
+							/>
+						</div>
+					)}
 				</SettingsSection>
 			)}
 

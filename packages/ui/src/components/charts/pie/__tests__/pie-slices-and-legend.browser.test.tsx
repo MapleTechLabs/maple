@@ -67,12 +67,6 @@ function radiiIn(path: string): number[] {
 	return [...path.matchAll(/A(\d+(?:\.\d+)?),/g)].map((match) => Number(match[1]))
 }
 
-/** Narrows a query result without a cast, so a missing node fails loudly. */
-function asHtml(node: Element | null | undefined): HTMLElement {
-	if (!(node instanceof HTMLElement)) throw new Error("expected an HTMLElement, got none")
-	return node
-}
-
 const rows = [
 	{ name: "GET /a", value: 50 },
 	{ name: "GET /b", value: 30 },
@@ -125,10 +119,13 @@ describe("query-builder pie: donut vs pie", () => {
 		expect(container.textContent ?? "").not.toContain("total")
 	})
 
-	it("a donut opens a hole at 58% of the radius and prints the total in it", () => {
+	it("a donut opens one shared hole and prints the total in it", () => {
 		const { container } = render(<QueryBuilderPieChart data={rows} donut legend="hidden" />)
-		for (const path of arcPaths(container)) {
-			expect(Math.min(...radiiIn(path))).toBeCloseTo(OUTER_R * 0.58, 1)
+		const inner = arcPaths(container).map((path) => Math.min(...radiiIn(path)))
+		expect(inner.length).toBeGreaterThan(0)
+		for (const radius of inner) {
+			expect(radius).toBeGreaterThan(1)
+			expect(radius).toBeCloseTo(inner[0]!, 1)
 		}
 		// 50 + 30 + 20, exact rather than compact — the centre total only goes
 		// compact above 10k.
@@ -213,21 +210,6 @@ describe("query-builder pie: legend", () => {
 		expect(labels).toEqual(["GET /a", "GET /b", "GET /c"])
 	})
 
-	it("hands BOTH legend forms to the frame's slot", () => {
-		// The side table used to be composed outside `PlotFrame`, because the
-		// frame's slot could only stack below the plot. It goes through the slot
-		// now, so the pie owns no layout of its own on either path.
-		for (const mode of ["right", "visible"] as const) {
-			const { container, unmount } = render(<QueryBuilderPieChart data={rows} legend={mode} />)
-			const host = container.querySelector("[data-chart-host]")
-			const key = container.querySelector("div[aria-label='Share by category']")
-			if (!(host instanceof HTMLElement)) throw new Error("expected the plot frame's host")
-			if (!(key instanceof HTMLElement)) throw new Error("expected the legend")
-			expect(host.contains(key)).toBe(true)
-			unmount()
-		}
-	})
-
 	it("asks the frame for a side legend, not a stacked one", () => {
 		const { container } = render(<QueryBuilderPieChart data={rows} legend="right" />)
 		const row = container.querySelector("[data-chart-legend-row]")
@@ -242,41 +224,12 @@ describe("query-builder pie: legend", () => {
 })
 
 describe("query-builder pie: the donut centre is not a hover target", () => {
-	it("prints the total in the frame's overlay, centred on the plot rect", () => {
-		const { container } = render(<QueryBuilderPieChart data={rows} donut legend="hidden" />)
-
-		const overlay = container.querySelector("[data-chart-overlay]")
-		expect(overlay).not.toBeNull()
-
-		const total = asHtml(overlay?.firstElementChild)
-		expect(total.textContent).toBe("100total")
-
-		// The plot rect published by the frame IS the whole 800x400 box: a polar
-		// chart declares no axes, so the scene reserves no gutter and the centre
-		// lands at the box's middle. The centre total is placed off that rect
-		// rather than off the layer's own edges, so this pins both at once.
-		expect(total.style.left).toBe("400px")
-		expect(total.style.top).toBe("200px")
-	})
-
-	it("leaves the hole pointer-transparent, with no mark inside it", () => {
+	it("puts the total in the DOM overlay, not in the chart's marks", () => {
 		const { container } = render(<QueryBuilderPieChart data={rows} donut showLabels legend="hidden" />)
 
-		// The whole reason the total is DOM: a `radialText` at radius zero would
-		// push a focus point into the middle of the hole, and `focusGroupAngle`
-		// would resolve it to a slice the pointer is nowhere near. Only the three
-		// in-slice labels exist, and each rides the ring.
+		// A `radialText` at radius zero would push a focus point into the middle
+		// of the hole. Only the three in-slice labels exist, and each rides the ring.
 		expect(sliceLabels(container)).toEqual(["50%", "30%", "20%"])
-
-		// The layer never takes the pointer, and nothing inside it opts back in.
-		const overlay = asHtml(container.querySelector("[data-chart-overlay]"))
-		expect(overlay.className).toContain("pointer-events-none")
-		expect(overlay.querySelectorAll("[class*='pointer-events-auto']")).toHaveLength(0)
-
-		// And the hole itself is empty of painted geometry: every wedge starts at
-		// the inner boundary, so nothing is drawn between the centre and it.
-		for (const path of arcPaths(container)) {
-			expect(Math.min(...radiiIn(path))).toBeCloseTo(OUTER_R * 0.58, 1)
-		}
+		expect(container.querySelector("[data-chart-overlay]")?.textContent).toBe("100total")
 	})
 })

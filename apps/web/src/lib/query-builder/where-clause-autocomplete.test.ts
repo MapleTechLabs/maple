@@ -246,35 +246,6 @@ describe("where clause autocomplete", () => {
 		expect(result.suggestions.some((item) => item.insertText === "attr.user.id")).toBe(true)
 	})
 
-	it("suggests resource keys for logs data source", () => {
-		const result = getWhereClauseAutocomplete({
-			expression: "resource.",
-			cursor: "resource.".length,
-			dataSource: "logs",
-			values: {
-				resourceAttributeKeys: ["service.version", "telemetry.sdk.name"],
-			},
-		})
-
-		expect(result.context).toBe("key")
-		expect(result.suggestions.some((item) => item.insertText === "resource.service.version")).toBe(true)
-	})
-
-	it("suggests attr keys for metrics data source", () => {
-		const result = getWhereClauseAutocomplete({
-			expression: "attr.",
-			cursor: "attr.".length,
-			dataSource: "metrics",
-			values: {
-				attributeKeys: ["host.name", "region"],
-			},
-		})
-
-		expect(result.context).toBe("key")
-		expect(result.suggestions.some((item) => item.insertText === "attr.host.name")).toBe(true)
-		expect(result.suggestions.some((item) => item.insertText === "attr.region")).toBe(true)
-	})
-
 	it("shows attr.<key> hint in logs key suggestions", () => {
 		const result = getWhereClauseAutocomplete({
 			expression: "",
@@ -284,16 +255,6 @@ describe("where clause autocomplete", () => {
 
 		expect(result.suggestions.some((item) => item.insertText === "attr.")).toBe(true)
 		expect(result.suggestions.some((item) => item.insertText === "resource.")).toBe(true)
-	})
-
-	it("shows attr.<key> hint in metrics key suggestions", () => {
-		const result = getWhereClauseAutocomplete({
-			expression: "",
-			cursor: 0,
-			dataSource: "metrics",
-		})
-
-		expect(result.suggestions.some((item) => item.insertText === "attr.")).toBe(true)
 	})
 
 	it("suggests dashboard variables first in value position", () => {

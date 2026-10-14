@@ -316,7 +316,13 @@ export interface ServiceDependenciesForServiceOpts {
  * rather than by two hand-written inequalities agreeing. A window inside a
  * single hour has an empty interior and is served entirely by the raw branch.
  */
-export function serviceDependenciesQueryBase(opts: { serviceName?: string; deploymentEnv?: string }) {
+export function serviceDependenciesQueryBase(opts: {
+	serviceName?: string
+	/** Edges with this service on either end; applied before the limit, unlike a caller-side filter. */
+	involvingService?: string
+	deploymentEnv?: string
+}) {
+	const involving = opts.involvingService
 	const envFilterMv = (deploymentEnv: CH.Expr<string>) =>
 		opts.deploymentEnv ? deploymentEnv.eq(opts.deploymentEnv) : undefined
 
@@ -342,6 +348,7 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.SourceService.eq(opts.serviceName) : undefined,
+			involving ? $.SourceService.eq(involving).or($.TargetService.eq(involving)) : undefined,
 			...utcInteriorConditions($.Hour),
 			envFilterMv($.DeploymentEnv),
 		])
@@ -374,7 +381,10 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
 				bucketMaxDurationMs: CH.max_($.c.Duration.div(1000000)),
 				bucketEstimatedSpanCount: CH.sum(sampleWeightExpr($.c.TraceState)),
 			}))
-			.where(($) => [$.ServiceName.neq($.c.ServiceName)])
+			.where(($) => [
+				$.ServiceName.neq($.c.ServiceName),
+				involving ? $.ServiceName.eq(involving).or($.c.ServiceName.eq(involving)) : undefined,
+			])
 			.groupBy("sourceService", "targetService")
 
 	// Outer wrap: re-aggregate across both branches so avg duration uses
@@ -406,9 +416,17 @@ export function serviceDependenciesForServiceQuery(opts: ServiceDependenciesForS
 	return serviceDependenciesQueryBase(opts)
 }
 
+/** Inbound and outbound edges of one service, for `maple service-map -s`. */
+export function serviceDependenciesInvolvingServiceQuery(opts: ServiceDependenciesForServiceOpts) {
+	return serviceDependenciesQueryBase({
+		involvingService: opts.serviceName,
+		deploymentEnv: opts.deploymentEnv,
+	})
+}
+
 // Service ↔ database edges
 //
-// Surfaces DB calls (Client/Producer spans with `db.system.name` set) as a separate
+// Surfaces DB calls (Client/Producer spans with `db.system.name` or `db.system`) as a separate
 // dependency relation so the service map can reify databases as nodes.
 // One row per (sourceService, dbSystem).
 //
@@ -1211,7 +1229,7 @@ export function serviceExternalEdgesSQL(
 				$.Timestamp.lte(param.dateTime("endTime")),
 				edgeCondition("Timestamp"),
 				CH.inList($.SpanKind, ["Client", "Producer"]),
-				attr("db.system.name").eq(""),
+				dbSystemExpr($).eq(""),
 				attr("server.address")
 					.neq("")
 					.or(attr("http.host").neq(""))

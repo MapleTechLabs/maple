@@ -73,6 +73,25 @@ const SUBSCRIPTIONS = {
 			"updated_at",
 		],
 	},
+	// `_v2` adds the auto-disable state, so the browser can say why Maple stopped
+	// delivering. The v1 shape stays for clients still on the previous build.
+	alert_destinations_v2: {
+		table: "alert_destinations",
+		columns: [
+			"id",
+			"org_id",
+			"name",
+			"type",
+			"enabled",
+			"config_json",
+			"last_tested_at",
+			"last_test_error",
+			"disabled_at",
+			"disabled_reason",
+			"created_at",
+			"updated_at",
+		],
+	},
 	// The investigation shape is `scoped`: org alone is too wide here. An org
 	// accumulates investigations forever and a browser only ever renders one, so an
 	// org-wide shape would stream the entire history to read a single page. The

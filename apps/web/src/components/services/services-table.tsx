@@ -22,6 +22,7 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { Meter } from "@maple/ui/components/ui/meter"
 import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
@@ -626,6 +627,9 @@ function LoadingState() {
 	)
 }
 
+// Mirrors serviceOverviewQuery's default row limit (one row per service x environment).
+const SERVICE_OVERVIEW_ROW_CAP = 500
+
 export function ServicesTable({ filters }: ServicesTableProps) {
 	const navigate = useNavigate()
 	const pinnedNamespace = useGlobalNamespace()
@@ -949,9 +953,10 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 																	<ServiceDot
 																		serviceName={service.serviceName}
 																	/>
-																	<span className="truncate">
-																		{service.serviceName}
-																	</span>
+																	<MiddleTruncate
+																		text={service.serviceName}
+																		tail={12}
+																	/>
 																	{isUnnamedService(
 																		service.serviceName,
 																	) && <UnnamedServiceHint />}
@@ -1000,8 +1005,9 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 
 						<div className="flex items-center justify-between text-sm text-muted-foreground">
 							<span>
-								Showing {services.length} {healthFilter ?? ""}{" "}
-								{pluralize(services.length, "service")}
+								{overviewResponse.data.length >= SERVICE_OVERVIEW_ROW_CAP
+									? `Showing first ${SERVICE_OVERVIEW_ROW_CAP} services`
+									: `Showing ${[String(services.length), healthFilter, pluralize(services.length, "service")].filter(Boolean).join(" ")}`}
 							</span>
 							{(unhealthyCount > 0 || degradedCount > 0) && (
 								<span className="text-xs">

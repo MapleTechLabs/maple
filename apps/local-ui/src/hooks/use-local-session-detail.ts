@@ -1,17 +1,15 @@
 import { skipToken, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import { Option } from "effect"
-import type {
-	SessionReplayDetailOutput,
-	SessionTraceSummaryOutput,
-	SessionTranscriptOutput,
-} from "@maple/query-engine/ch"
+import type { SessionTraceSummaryOutput, SessionTranscriptOutput } from "@maple/query-engine/ch"
 import { executeLocalCompiledFirstRow, executeLocalCompiledQuery } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 
 /** Finalized metadata for one session (latest ReplacingMergeTree version). */
 export function useLocalSessionDetail(sessionId: string | undefined) {
-	return useQuery<SessionReplayDetailOutput | null>({
+	// Row type inferred from the query: the exported output interface leaves out the
+	// identity and heartbeat columns (userName, userEmail, lastActivityAt) the page needs.
+	return useQuery({
 		queryKey: ["local", "session", sessionId],
 		queryFn: sessionId
 			? async ({ signal }) => {

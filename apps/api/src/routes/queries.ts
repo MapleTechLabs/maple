@@ -7,6 +7,7 @@ import type {
 	HostInfraTimeseriesRequest,
 	CloudflareInfraZoneFacetsRequest,
 	CloudflareInfraZoneDetailRequest,
+	CloudflareInfraWorkerDetailRequest,
 	ServicePlanetScaleStatsRequest,
 	CloudflareInfraPlatformResourcesRequest,
 	CloudflareInfraWorkersRequest,
@@ -326,6 +327,54 @@ const cloudflareInfraZoneDetailLatency = defineQuery({
 		CH.compile(Integrations.cloudflareZoneLatencyTimeseriesSQL(), zoneDetailParams(payload, orgId)),
 })
 
+const workerDetailParams = (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) => ({
+	orgId,
+	serviceName: payload.serviceName,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	bucketSeconds: payload.bucketSeconds,
+	// Declared by the query either way; only read when `byAccount` adds the condition.
+	accountId: payload.accountId ?? "",
+})
+
+const workerDetailOpts = (payload: CloudflareInfraWorkerDetailRequest) => ({
+	// Rows without the account attribute carry "", which would match nothing: treat it as absent.
+	byAccount: (payload.accountId ?? "") !== "",
+})
+
+const cloudflareInfraWorkerDetailOutcomes = defineQuery({
+	id: "cloudflareInfraWorkerDetailOutcomes",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.cloudflareWorkerOutcomeTimeseriesSQL(workerDetailOpts(payload)),
+			workerDetailParams(payload, orgId),
+		),
+})
+
+const cloudflareInfraWorkerDetailLatency = defineQuery({
+	id: "cloudflareInfraWorkerDetailLatency",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.cloudflareWorkerLatencyTimeseriesSQL(workerDetailOpts(payload)),
+			workerDetailParams(payload, orgId),
+		),
+})
+
+const cloudflareInfraWorkerDetailDurableObjects = defineQuery({
+	id: "cloudflareInfraWorkerDetailDurableObjects",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.cloudflareWorkerDurableObjectTimeseriesSQL(workerDetailOpts(payload)),
+			workerDetailParams(payload, orgId),
+		),
+})
+
 // Each reads either the database-level or the branch-level rollup depending on
 // whether a database was requested. The branch lives inside `compile` so the id,
 // profile and row schema stay one decision per sub-query rather than two.
@@ -432,6 +481,7 @@ const hostInfraGaugeTimeseries = defineQuery({
 				hostName: payload.hostName,
 				metricName: spec.metricName,
 				groupByAttributeKey: spec.groupByAttributeKey,
+				attributeEquals: spec.attributeEquals,
 			}),
 			{
 				orgId,
@@ -651,7 +701,7 @@ export const Queries = {
 			CH.compile(
 				CH.nodeGaugeTimeseriesQuery({
 					nodeName: payload.nodeName,
-					metricName: nodeMetricSpec(payload.metric).metricName,
+					...nodeMetricSpec(payload.metric),
 				}),
 				{
 					orgId,
@@ -718,6 +768,9 @@ export const Queries = {
 	cloudflareInfraZoneDetailStatus,
 	cloudflareInfraZoneDetailCache,
 	cloudflareInfraZoneDetailLatency,
+	cloudflareInfraWorkerDetailOutcomes,
+	cloudflareInfraWorkerDetailLatency,
+	cloudflareInfraWorkerDetailDurableObjects,
 	planetscaleServiceGauges,
 	planetscaleServiceConnections,
 	planetscaleServiceStorage,

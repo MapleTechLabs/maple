@@ -5,15 +5,27 @@ interface Served {
 	readonly count: number
 }
 
-interface Stamp {
+export interface IsolateStamp {
 	readonly ageMs: number
 	readonly ordinal: number
 }
 
+/**
+ * Headers a Worker reached over a service binding answers with, so the caller can tell a cold
+ * callee apart. The callee's own span cannot: workerd's clock stands still during startup CPU.
+ */
+export const ISOLATE_ORDINAL_HEADER = "x-maple-isolate-ordinal"
+export const ISOLATE_AGE_HEADER = "x-maple-isolate-age-ms"
+
+export const isolateStampHeaders = ({ ageMs, ordinal }: IsolateStamp): Record<string, string> => ({
+	[ISOLATE_ORDINAL_HEADER]: String(ordinal),
+	[ISOLATE_AGE_HEADER]: String(ageMs),
+})
+
 /** Counts one request at `now`; the first one counted fixes the isolate's start. */
 const serve =
 	(now: number) =>
-	({ firstAt, count }: Served): readonly [Stamp, Served] => {
+	({ firstAt, count }: Served): readonly [IsolateStamp, Served] => {
 		const first = Option.getOrElse(firstAt, () => now)
 		return [
 			{ ageMs: now - first, ordinal: count + 1 },
@@ -22,8 +34,8 @@ const serve =
 	}
 
 export interface IsolateAgeApi {
-	/** Stamps the current span with the isolate's age and this request's ordinal. */
-	readonly record: Effect.Effect<void>
+	/** Stamps the current span with the isolate's age and this request's ordinal, and returns both. */
+	readonly record: Effect.Effect<IsolateStamp>
 }
 
 /**
@@ -36,11 +48,12 @@ export class IsolateAge extends Context.Service<IsolateAge, IsolateAgeApi>()("@m
 		const served = yield* Ref.make<Served>({ firstAt: Option.none(), count: 0 })
 		const record = Effect.gen(function* () {
 			const now = yield* Clock.currentTimeMillis
-			const { ageMs, ordinal } = yield* Ref.modify(served, serve(now))
+			const stamp = yield* Ref.modify(served, serve(now))
 			yield* Effect.annotateCurrentSpan({
-				"maple.isolate.age_ms": ageMs,
-				"maple.isolate.request_ordinal": ordinal,
+				"maple.isolate.age_ms": stamp.ageMs,
+				"maple.isolate.request_ordinal": stamp.ordinal,
 			})
+			return stamp
 		})
 		return { record } satisfies IsolateAgeApi
 	}),

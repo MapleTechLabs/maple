@@ -1,7 +1,7 @@
 ---
 title: "Trace CrewAI crews and flows with OpenTelemetry"
 description: "Send CrewAI crews and flows to Maple with OpenInference, one Agent Session per conversation."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 21
 navLabel: "CrewAI"
 icon: "crewai"

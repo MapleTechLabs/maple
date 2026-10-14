@@ -21,6 +21,8 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
+import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import {
 	DropdownMenu,
 	DropdownMenuTrigger,
@@ -129,7 +131,12 @@ export function WidgetShell({
 							<GripDotsIcon size={14} />
 						</button>
 					)}
-					<Eyebrow variant="label" render={<CardTitle />} className="min-w-0 truncate">
+					<Eyebrow
+						variant="label"
+						render={<CardTitle />}
+						className="min-w-0 truncate"
+						title={displayTitle}
+					>
 						{displayTitle}
 					</Eyebrow>
 					{titleHint && (
@@ -246,7 +253,7 @@ export function WidgetShell({
 					<CardAction
 						className={cn(
 							!isEditable &&
-								"opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100",
+								"opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100 pointer-coarse:opacity-100",
 							!isEditable && menuOpen && "opacity-100",
 						)}
 					>
@@ -438,13 +445,15 @@ export function WidgetFrame({
 						{dataState.message && (
 							<span
 								className={cn(
-									"text-3xs opacity-70 max-w-full text-center line-clamp-2",
+									"text-3xs opacity-70 max-w-full text-center line-clamp-2 break-words",
 									TONE_TEXT.crit,
 								)}
+								title={dataState.message}
 							>
 								{dataState.message}
 							</span>
 						)}
+						{dataState.message && <ErrorDetailsPopover message={dataState.message} />}
 						{fix && dataState.kind === "decode" && (
 							<Button
 								variant="outline"
@@ -462,5 +471,24 @@ export function WidgetFrame({
 				children
 			)}
 		</WidgetShell>
+	)
+}
+
+/** The card clamps the error to two lines; the full SQL/ClickHouse message lives here. */
+function ErrorDetailsPopover({ message }: { message: string }) {
+	return (
+		<Popover>
+			<PopoverTrigger render={<Button variant="ghost" size="xs" className="h-5 text-3xs" />}>
+				Details
+			</PopoverTrigger>
+			<PopoverContent className="w-96 max-w-[calc(100vw-2rem)]">
+				<div className="flex items-start gap-2">
+					<pre className="max-h-60 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">
+						{message}
+					</pre>
+					<CopyButton value={message} label="Error message" className="shrink-0" />
+				</div>
+			</PopoverContent>
+		</Popover>
 	)
 }

@@ -18,6 +18,7 @@ import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { durableJson } from "./durable-files"
 import { markStoreClosed, markStoreOpen, storeHasData } from "./store-version"
+import { MAPLE_VERSION } from "../version"
 
 /** A chDB failure — locating libchdb, opening the connection, or bootstrapping
  *  the schema. Carries the underlying message verbatim. */
@@ -473,6 +474,28 @@ export class Chdb {
 	}
 }
 
+const LIBRARY_LOAD_FAILURE = /^Failed to open library "([^"]+)": ([\s\S]*)$/
+
+/**
+ * The remedy for a libchdb the dynamic loader rejects. Retrying cannot help: a
+ * truncated file, or an upstream build dyld refuses (v26.1.0 on macOS arm64,
+ * "mis-aligned LINKEDIT string pool"), fails identically every start.
+ */
+export const describeChdbOpenFailure = (raw: string, version: string = MAPLE_VERSION): string => {
+	const match = LIBRARY_LOAD_FAILURE.exec(raw)
+	if (match === null) return raw
+	const [, path, reason] = match
+	const remedy =
+		version === "dev"
+			? "Point MAPLE_LIBCHDB at a working libchdb."
+			: `Reinstall the verified bundle with \`maple update\` (or \`maple update --tag v${version}\` ` +
+				"to keep this version; Homebrew: `brew reinstall maple`)."
+	return (
+		`could not load libchdb at ${path}: the dynamic loader rejected it (${reason?.split("\n")[0]?.trim()}). ` +
+		`The file is damaged or not loadable on this system, so every start fails the same way. ${remedy}`
+	)
+}
+
 /**
  * Acquire a chDB connection as a scoped resource: `Chdb.open` (which bootstraps
  * the schema) on acquire, `close()` as a finalizer. Open failures — a missing
@@ -492,7 +515,9 @@ export const acquireChdb = (options: ChdbOptions): Effect.Effect<Chdb, ChdbError
 				return db
 			},
 			catch: (error) =>
-				new ChdbError({ message: error instanceof Error ? error.message : String(error) }),
+				new ChdbError({
+					message: describeChdbOpenFailure(error instanceof Error ? error.message : String(error)),
+				}),
 		}),
 		(db) =>
 			Effect.sync(() => {

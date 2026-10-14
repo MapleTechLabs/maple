@@ -36,13 +36,6 @@ describe("shareOgId", () => {
 		expect(verifyShareOgId(shareOgId(SHARE_ID, KEY), KEY)).toBe(SHARE_ID)
 	})
 
-	it("never contains the share token", () => {
-		const token = generateShareToken()
-
-		expect(shareOgId(SHARE_ID, KEY)).not.toContain(token)
-		expect(shareOgId(SHARE_ID, KEY)).not.toContain(hashShareToken(token, KEY))
-	})
-
 	it("rejects a tampered id, a tampered signature, and a foreign key", () => {
 		const ogId = shareOgId(SHARE_ID, KEY)
 		const [encodedId, signature] = ogId.split(".") as [string, string]

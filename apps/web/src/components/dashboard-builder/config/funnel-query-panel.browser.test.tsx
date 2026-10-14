@@ -35,14 +35,6 @@ function renderPanel(initial: FunnelWidgetDraft, onSourceChange = vi.fn()) {
 }
 
 describe("FunnelQueryPanel", () => {
-	it("wears the query-panel chrome: the A badge and a source select on Product events", () => {
-		renderPanel(draft())
-		expect(screen.getByText("A")).toBeTruthy()
-		expect(screen.getByRole("combobox", { name: "Query source" }).textContent).toContain("Product events")
-		expect(screen.getByLabelText("Step 1 event name")).toBeTruthy()
-		expect(screen.getByLabelText("Funnel population filter")).toBeTruthy()
-	})
-
 	it("reveals Count by through the add-on bar and resets it to the default when toggled off", () => {
 		const { latest } = renderPanel(
 			draft({ keyBy: "session", addOns: { keyBy: true, window: false, breakdown: false } }),

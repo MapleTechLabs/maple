@@ -48,7 +48,11 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 			const limit = params.limit
 
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, kind: params.kind ?? "any", limit })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.kind": params.kind ?? "any",
+				"maple.ai.limit": limit,
+			})
 
 			// The query ranks every name; kind and name filters apply here so the limit still means
 			// "names shown". Fetch the full cap when narrowing.

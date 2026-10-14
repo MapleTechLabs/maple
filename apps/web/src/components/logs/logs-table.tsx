@@ -20,8 +20,11 @@ import { LogsTableToolbar } from "./logs-table-toolbar"
 import type { LogsSearchParams } from "@/routes/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useLogsViewPreferences, type LogsDensity } from "@/hooks/use-logs-view-preferences"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { LogTime } from "./log-time"
 import { getSeverityColor } from "@maple/ui/lib/severity"
+import { severityLabel } from "@maple/ui/components/logs/severity-badge"
+import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { isDialogOpen } from "@maple/ui/lib/keyboard"
 import { useInfiniteLogs, FETCH_THRESHOLD } from "@/hooks/use-infinite-logs"
 import { useVirtualReachEnd } from "@/components/common/reach-end-sentinel"
@@ -219,9 +222,11 @@ const LogRow = React.memo(function LogRow({
 			)
 			.slice(0, MAX_INLINE_CHIPS)
 	}, [log, pinnedColumns])
-	const { first, hidden } = React.useMemo(() => splitFirstLine(log.body), [log.body])
-	const severity = log.severityText.toUpperCase()
-	const severityColor = getSeverityColor(log.severityText)
+	// ANSI color codes are stripped for display only; copy keeps the raw body.
+	const body = React.useMemo(() => stripAnsi(log.body), [log.body])
+	const { first, hidden } = React.useMemo(() => splitFirstLine(body), [body])
+	const severity = severityLabel(log.severityText, log.severityNumber).toUpperCase()
+	const severityColor = getSeverityColor(severity)
 	const { copy } = useCopy({ successMessage: "Copied log message" })
 	const { copy: copyLink } = useCopy({ successMessage: "Copied link to log" })
 
@@ -280,14 +285,22 @@ const LogRow = React.memo(function LogRow({
 						className={cn("transition-transform", isExpanded && "rotate-90")}
 					/>
 				</button>
-				<span className="shrink-0 w-[92px] text-foreground/75 tabular-nums">
+				<span
+					className="shrink-0 w-[92px] text-foreground/75 tabular-nums"
+					title={formatTimestampInTimezone(log.timestamp, {
+						timeZone,
+						withMilliseconds: true,
+						withYear: true,
+					})}
+				>
 					<LogTime timestamp={log.timestamp} timeZone={timeZone} />
 				</span>
 				<span
-					className="shrink-0 w-11 text-3xs leading-4 uppercase tabular-nums font-semibold tracking-wide"
+					className="shrink-0 w-11 truncate text-3xs leading-4 uppercase tabular-nums font-semibold tracking-wide"
 					style={{ color: severityColor }}
+					title={severity}
 				>
-					{log.severityText}
+					{severity}
 				</span>
 				<span className="shrink-0 w-[128px] hidden md:flex h-4 items-center gap-1.5 min-w-0 text-muted-foreground">
 					<ServiceDot serviceName={log.serviceName} size="sm" />
@@ -321,7 +334,7 @@ const LogRow = React.memo(function LogRow({
 							wrap ? "whitespace-pre-wrap break-words" : "truncate",
 						)}
 					>
-						<HighlightedText text={wrap ? log.body : first} query={highlight} />
+						<HighlightedText text={wrap ? body : first} query={highlight} />
 					</span>
 					{!wrap && hidden > 0 && (
 						<Badge variant="meta" size="xs">
@@ -739,13 +752,15 @@ export function LogsTableView({
 							{traceId ? (
 								<>
 									No logs on trace{" "}
-									<span className="font-mono text-foreground">{traceId}</span> in this time
-									range
+									<span className="font-mono text-foreground break-all">{traceId}</span> in
+									this time range
 								</>
 							) : (
 								<>
 									No log message contains{" "}
-									<span className="font-mono text-foreground">“{searchText}”</span>
+									<span className="font-mono text-foreground break-all">
+										“{searchText}”
+									</span>
 								</>
 							)}
 						</span>
