@@ -427,7 +427,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 								metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
 							}
 							const invalid = capabilityError(flags.logsEnabled, patch.metricsEnabled === true)
-							// Switched back on, what a capability last reported no longer describes it: a
+							// Switched back on, a capability's last data and error no longer describe it: a
 							// log sink waits on the script, the poller on its next read.
 							const changes = {
 								...flags,

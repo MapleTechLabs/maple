@@ -196,7 +196,7 @@ describe("GcpConnectorService", () => {
 				userId,
 				projectScope("acme-prod", { logsEnabled: false, metricsEnabled: false }),
 			)
-			assert.isFalse(created.logsEnabled || created.metricsEnabled)
+			assert.deepStrictEqual([created.logsEnabled, created.metricsEnabled], [false, false])
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 

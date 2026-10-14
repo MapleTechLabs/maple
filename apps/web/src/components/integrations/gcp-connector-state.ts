@@ -232,7 +232,6 @@ export function gcpScriptNeeded(
 	if (gcpPendingChanges(connector, nowMs, metricsAvailable).length > 0) return "changes-pending"
 	const pending =
 		gcpLogState(connector, nowMs).kind === "setup-pending" ||
-		gcpMetricsState(connector, nowMs).kind === "setup-pending" ||
 		gcpAccessState(connector, nowMs, metricsAvailable) === "setup-pending"
 	return pending ? "setup-pending" : null
 }
@@ -244,7 +243,6 @@ export const gcpSetupRunning = (
 	metricsAvailable: boolean,
 ): boolean =>
 	gcpLogState(connector, nowMs).kind === "setup-running" ||
-	gcpMetricsState(connector, nowMs).kind === "setup-running" ||
 	gcpAccessState(connector, nowMs, metricsAvailable) === "setup-running"
 
 export function gcpConnectionState(

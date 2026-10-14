@@ -278,6 +278,10 @@ describe("gcpConnectionState", () => {
 		)
 		// A deployment without a Google identity sets no account up, so none is missing.
 		expect(gcpConnectionState(connector(removed), NOW, false)).toBe("healthy")
+		const neverRead = { ...NEVER, applied_metrics_enabled: null, last_log_received_at: ago(1) }
+		expect(gcpConnectionState(connector({ ...neverRead, metrics_enabled: false }), NOW, false)).toBe(
+			"healthy",
+		)
 	})
 
 	it("waits between the sections of a first run, and is setup pending if the second never reports", () => {

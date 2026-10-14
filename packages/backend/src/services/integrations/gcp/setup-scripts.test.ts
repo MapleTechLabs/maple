@@ -424,7 +424,13 @@ Done. Google Cloud is set up for Maple.
 			expect(commands).not.toContainEqual(expect.stringContaining("remove-iam-policy-binding"))
 			expect(commands).not.toContainEqual(expect.stringContaining("service-accounts delete"))
 			// Every grant is made again, so a run also restores one that was removed.
-			expect(commands).toEqual(expect.arrayContaining(readerSetupCommands(scope).slice(3)))
+			expect(commands).toEqual(
+				expect.arrayContaining(
+					readerSetupCommands(scope).filter((command) =>
+						command.includes("add-iam-policy-binding"),
+					),
+				),
+			)
 		}
 	})
 
@@ -1031,9 +1037,9 @@ esac
 			)
 			expect(stdout).not.toContain("\nRead-only access\n")
 			expect(commands).not.toContainEqual(expect.stringContaining("service-accounts"))
-			expect(commands).not.toContainEqual(
-				expect.stringContaining("iam-policy-binding --member=serviceAccount"),
-			)
+			expect(commands).not.toContainEqual(expect.stringContaining(`serviceAccount:${ACCOUNT}`))
+			// Nothing is said about the account: what an earlier run reported stands.
+			expect(script).not.toContain('"metrics":')
 		}
 	})
 

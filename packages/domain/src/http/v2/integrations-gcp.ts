@@ -74,7 +74,7 @@ export const V2GcpConnector = Schema.Struct({
 	}),
 	metrics_enabled: Schema.Boolean.annotate({
 		description:
-			"Whether Maple collects the scope's key Cloud Monitoring metrics every 5 minutes (for alert rules, the Infrastructure page and the Google Cloud dashboard template) and syncs its Cloud Asset resource inventory every hour. A change takes effect in Maple at once and needs no script run. Live metric queries work on every connector either way.",
+			"Whether Maple collects the scope's key Cloud Monitoring metrics every 5 minutes (for alert rules, the Infrastructure page and the Google Cloud dashboard template) and syncs its Cloud Asset resource inventory every hour. A change takes effect in Maple at once: the setup script does not depend on it. Collection and live metric queries both read as the read-only service account (see `applied_metrics_enabled`).",
 		examples: [true],
 	}),
 	created_at: Timestamp.annotate({ description: "When the connector was created." }),
@@ -156,7 +156,7 @@ const logsEnabledField = Schema.optionalKey(Schema.Boolean).annotate({
 })
 const metricsEnabledField = Schema.optionalKey(Schema.Boolean).annotate({
 	description:
-		"Collect key metrics every 5 minutes and the resource inventory every hour. Takes effect at once, with no script run. Rejected when the status reports `metrics_available: false`.",
+		"Collect key metrics every 5 minutes and the resource inventory every hour. Takes effect in Maple at once: the setup script does not depend on it. Rejected when the status reports `metrics_available: false`.",
 	examples: [false],
 })
 
@@ -194,7 +194,7 @@ export const V2GcpCreateConnectorRequest = Schema.Union([
 	identifier: "GcpCreateConnectorRequest",
 	title: "Google Cloud connector create request",
 	description:
-		"What to connect, discriminated on `scope_type`. `logs_enabled` defaults to `true` and `metrics_enabled` to `false`. Both may be off: the connector then serves live metric queries only.",
+		"What to connect, discriminated on `scope_type`. `logs_enabled` defaults to `true` and `metrics_enabled` to `false`. Both may be off, for a connector that serves live metric queries only, unless the status reports `metrics_available: false`.",
 	examples: [
 		wireExample({ scope_type: "project", scope_id: "acme-prod" }),
 		wireExample({

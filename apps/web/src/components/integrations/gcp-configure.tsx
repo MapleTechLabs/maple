@@ -114,8 +114,7 @@ const SCOPES = {
 const SCOPE_TYPES: ReadonlyArray<GcpScopeType> = ["organization", "folder", "project"]
 
 const LOCK_NOTES = {
-	"logs-required":
-		"This Maple deployment can't read Google Cloud metrics, so a connection forwards logs. To stop, disconnect.",
+	"logs-required": "This Maple deployment can't read Google Cloud metrics, so a connection forwards logs.",
 	"metrics-unavailable": "Not available on this Maple deployment.",
 } as const satisfies { readonly [Lock in GcpCollectLock]: string }
 
@@ -1062,10 +1061,7 @@ function ChooseStage({
 						<span className="whitespace-nowrap">{connector.scope_id}</span>?
 					</>
 				}
-				// Only a sink turned off leaves the script something to remove.
-				confirmLabel={
-					stopping.length > 0 ? (scripted ? "Turn off and continue" : "Turn off") : "Turn on"
-				}
+				confirmLabel={`Turn ${stopping.length > 0 ? "off" : "on"}${scripted ? " and continue" : ""}`}
 				onConfirm={save}
 			>
 				<dl className="flex flex-col gap-3 pb-3 text-sm">

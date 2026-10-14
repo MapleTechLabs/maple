@@ -250,9 +250,9 @@ describe("v2 gcp integration over HTTP", () => {
 		expect(patched.status).toBe(200)
 		expect(patched.body).toEqual({ ...created.body, logs_enabled: false })
 
-		const metricsOnly = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
-		expect(metricsOnly.body.setup_script).not.toContain("LOG_FILTER")
-		expect(metricsOnly.body.setup_script).toContain("gcloud logging sinks delete")
+		const logsOff = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
+		expect(logsOff.body.setup_script).not.toContain("LOG_FILTER")
+		expect(logsOff.body.setup_script).toContain("gcloud logging sinks delete")
 
 		// With both off the connection serves live queries, and the script keeps its reader.
 		const liveOnly = await harness.request("PATCH", path, admin.secret, { metrics_enabled: false })
