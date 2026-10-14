@@ -7,7 +7,7 @@
 		"./react": "./src/react.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"devDependencies": {
 		"@effect/atom-react": "catalog:effect",

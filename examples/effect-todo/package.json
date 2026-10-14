@@ -9,7 +9,7 @@
 		"notifier": "bun run --watch notifier/main.ts",
 		"web": "vite --config web/vite.config.ts",
 		"dev": "bun run server & bun run notifier & bun run web",
-		"typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json"
+		"typecheck": "tsrs -p tsconfig.json && tsrs -p web/tsconfig.json"
 	},
 	"dependencies": {
 		"@effect/atom-react": "catalog:effect",

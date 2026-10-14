@@ -51,7 +51,7 @@
 		"ios:openapi:check": "bun run ./scripts/generate-ios-openapi.ts --check",
 		"knip": "bun run --cwd apps/landing sync:i18n && knip",
 		"knip:fix": "bun run --cwd apps/landing sync:i18n && knip --fix --allow-remove-files",
-		"typecheck": "turbo typecheck && tsc -p tsconfig.alchemy.json"
+		"typecheck": "turbo typecheck && tsrs -p tsconfig.alchemy.json"
 	},
 	"dependencies": {
 		"pg": "^8.23.1"
@@ -73,6 +73,7 @@
 		"oxlint": "1.86.0",
 		"oxlint-tsgolint": "7.0.2003",
 		"portless": "^0.15.7",
+		"tsrs": "0.15.0-ts7.1.0-dev.20260929",
 		"turbo": "^2.11.7",
 		"typescript": "catalog:tooling"
 	},
