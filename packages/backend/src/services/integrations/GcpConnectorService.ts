@@ -268,6 +268,32 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 							.groupBy("assetType", "projectId"),
 					),
 				)
+				// The counts are by type and project: a name is counted on its own, uncapped.
+				const named =
+					filter.name === undefined
+						? []
+						: yield* dbExecute((db) =>
+								db.run(
+									ofOrg
+										.select(($) => ({
+											assetType: $.assetType,
+											count: PG.countDistinct($.name),
+										}))
+										.where(($) => [
+											filter.assetType === undefined
+												? undefined
+												: $.assetType.eq(filter.assetType),
+											filter.projectId === undefined
+												? undefined
+												: $.projectId.eq(filter.projectId),
+											filter.name === undefined
+												? undefined
+												: PG.sql
+														.cond`split_part(${$.name}, '/', -1) = ${filter.name}`,
+										])
+										.groupBy("assetType"),
+								),
+							)
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						ofOrg
@@ -309,8 +335,8 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				}
 				return {
 					resources: rows,
-					// The counts are by type and project: a name narrows to the rows themselves.
-					total: filter.name === undefined ? total : rows.length,
+					total:
+						filter.name === undefined ? total : named.reduce((sum, { count }) => sum + count, 0),
 					types: [...byType]
 						.map(([assetType, count]) => ({ assetType, count }))
 						.sort((a, b) => a.assetType.localeCompare(b.assetType)),
