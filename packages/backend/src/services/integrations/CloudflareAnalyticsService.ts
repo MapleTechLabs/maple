@@ -60,12 +60,14 @@ import {
 	Effect,
 	Layer,
 	Match,
+	Metric,
 	Option,
 	Ref,
 	Result,
 	Schema,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	graphqlQuery,
@@ -946,6 +948,59 @@ const documentRateLimited = (item: WorkItem, message: string): Array<PartResult>
 	return [{ part, outcome: { kind: "rate-limited", message } }]
 }
 
+/** What one chunk polled, so a stalled dataset or zone is one span query away. */
+const chunkSpanAttributes = (item: WorkItem, accountId: string, now: number) => {
+	const rows = item.parts.flatMap((part) => part.rows)
+	const zoneNames = Arr.dedupe(rows.flatMap((row) => (row.zoneName === null ? [] : [row.zoneName]))).sort()
+	return {
+		"maple.cloudflare.account_id": accountId,
+		"maple.cloudflare.scope": item.scope,
+		"maple.cloudflare.phase": item.phase,
+		"maple.cloudflare.datasets": item.parts.map((part) => part.dataset.id).join(","),
+		"maple.cloudflare.zone_count":
+			item.scope === "zone" ? Arr.dedupe(rows.map((row) => row.zoneId)).length : 0,
+		"maple.cloudflare.zones": zoneNames.join(","),
+		"maple.cloudflare.window.start": toGraphqlTime(item.window.start),
+		"maple.cloudflare.window.end": toGraphqlTime(item.window.end),
+		"maple.cloudflare.window.lag_ms": now - item.window.end,
+	}
+}
+
+/** A chunk's result for its span: the distinct outcome kinds and the rows it shipped. */
+const chunkOutcomeAttributes = (results: ReadonlyArray<PartResult>) => ({
+	"maple.cloudflare.outcome": Arr.dedupe(results.map(({ outcome }) => outcome.kind)).join(","),
+	"maple.cloudflare.rows_ingested": results.reduce(
+		(sum, { outcome }) => (outcome.kind === "advanced" ? sum + outcome.ingested : sum),
+		0,
+	),
+})
+
+interface DatasetLag {
+	readonly dataset: string
+	readonly zoneName: string | null
+	readonly lagMs: number
+}
+
+/** Worst watermark lag per dataset across enabled, already-polled rows. */
+const datasetLags = (rows: ReadonlyArray<CloudflareAnalyticsStateRow>, now: number): Array<DatasetLag> => {
+	const worst = new Map<string, DatasetLag>()
+	for (const row of rows) {
+		if (!row.enabled || row.watermarkAt === null || !DATASET_BY_ID.has(row.dataset)) continue
+		const lag = { dataset: row.dataset, zoneName: row.zoneName, lagMs: now - row.watermarkAt }
+		const current = worst.get(row.dataset)
+		if (current === undefined || lag.lagMs > current.lagMs) worst.set(row.dataset, lag)
+	}
+	return [...worst.values()]
+}
+
+type PollStopReason =
+	| "revoked"
+	| "ingest_refused"
+	| "rate_limited"
+	| "caught_up"
+	| "budget_exhausted"
+	| "no_progress"
+
 /**
  * Ingest refusing the org's metrics (402: no plan or limit reached; 401/403: key refused). A
  * state the tenant or Maple fixes, not a poll failure: one quiet outcome, recorded on the connection's
@@ -1602,7 +1657,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * map the clean parts, ingest them as one gateway batch, advance each clean part's frontier.
 		 * With a single part this is exactly the old single-dataset behavior.
 		 */
-		const pollDatasetChunk = Effect.fn("CloudflareAnalyticsService.pollDatasetChunk")(function* (
+		const runDatasetChunk = Effect.fnUntraced(function* (
 			item: WorkItem,
 			context: {
 				readonly orgId: OrgId
@@ -1837,6 +1892,18 @@ export class CloudflareAnalyticsService extends Context.Service<
 				)
 			})
 			return [...results, ...advanced]
+		})
+
+		/** The traced chunk poll: names what it polls up front and what came of it at the end. */
+		const pollDatasetChunk = Effect.fn("CloudflareAnalyticsService.pollDatasetChunk")(function* (
+			item: WorkItem,
+			context: Parameters<typeof runDatasetChunk>[1],
+			now: number,
+		) {
+			yield* Effect.annotateCurrentSpan(chunkSpanAttributes(item, context.accountId, now))
+			const results = yield* runDatasetChunk(item, context, now)
+			yield* Effect.annotateCurrentSpan(chunkOutcomeAttributes(results))
+			return results
 		})
 
 		// Hyperdrive config inventory (discovery-cadence, service-map consumer)
@@ -2337,6 +2404,56 @@ export class CloudflareAnalyticsService extends Context.Service<
 					return yield* Ref.get(progressedRef)
 				})
 				yield* Effect.repeat(round, { while: (again) => again })
+
+				// Why the loop ended and what it left behind: an account that ends with pending work
+				// on "budget_exhausted" is being starved by its siblings (see `budget_used_before`).
+				const [revoked, deliveryBlocked, rateLimited] = yield* Effect.all([
+					Ref.get(revokedRef),
+					Ref.get(deliveryBlockedRef),
+					Ref.get(rateLimitedRef),
+				])
+				const pendingItems = buildWorkItems(rows, now).length
+				const stopReason: PollStopReason = revoked
+					? "revoked"
+					: deliveryBlocked
+						? "ingest_refused"
+						: rateLimited
+							? "rate_limited"
+							: pendingItems === 0
+								? "caught_up"
+								: budget.calls >= MAX_CALLS_PER_GRANT_TICK
+									? "budget_exhausted"
+									: "no_progress"
+				const lags = datasetLags(rows, now)
+				const slowest = lags.reduce<DatasetLag | null>(
+					(worst, lag) => (worst === null || lag.lagMs > worst.lagMs ? lag : worst),
+					null,
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.cloudflare.stop_reason": stopReason,
+					"maple.cloudflare.pending_items": pendingItems,
+					"maple.cloudflare.budget_used_before": callsAtStart,
+				})
+				if (slowest !== null) {
+					yield* Effect.annotateCurrentSpan({
+						"maple.cloudflare.max_lag_ms": slowest.lagMs,
+						"maple.cloudflare.max_lag_dataset": slowest.dataset,
+						"maple.cloudflare.max_lag_zone": slowest.zoneName ?? "",
+					})
+				}
+				yield* Effect.forEach(
+					lags,
+					(lag) =>
+						Metric.update(
+							Metric.withAttributes(CloudflareAnalyticsMetrics.datasetLagSeconds, {
+								org_id: orgId,
+								account_id: accountId,
+								dataset: lag.dataset,
+							}),
+							Math.round(lag.lagMs / 1000),
+						),
+					{ discard: true },
+				)
 
 				const rowsIngested = yield* Ref.get(rowsIngestedRef)
 				// Metrics ship through the ingest gateway (see emitMetrics), so Autumn metering

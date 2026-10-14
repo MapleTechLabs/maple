@@ -13,7 +13,8 @@ import {
 	OAuthConnections,
 	OrgClickHouseSettings,
 } from "@maple/db/tables"
-import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Metric, Schema, Tracer } from "effect"
+import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -238,6 +239,20 @@ const readRequestBody = async (
 		return await new Response(init.body as BodyInit).text()
 	}
 	return input instanceof Request ? await input.text() : "{}"
+}
+
+/** A tracer that keeps every span, so a test can read what the poller annotated. */
+const recordSpans = () => {
+	const spans: Array<Tracer.NativeSpan> = []
+	const tracer = Tracer.make({
+		span(options) {
+			const span = new Tracer.NativeSpan(options)
+			spans.push(span)
+			return span
+		},
+	})
+	const named = (name: string) => spans.filter((span) => span.name === name)
+	return { tracer, named }
 }
 
 /** Read an outbound request header regardless of whether it's on the Request or the init. */
@@ -681,6 +696,57 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls })))
 	})
 
+	it.effect("each chunk span names its datasets, zones, window and outcome", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+
+			const chunks = named("CloudflareAnalyticsService.pollDatasetChunk")
+			const httpHead = chunks.find(
+				(span) =>
+					span.attributes.get("maple.cloudflare.scope") === "zone" &&
+					span.attributes.get("maple.cloudflare.phase") === "head",
+			)
+			assert.isDefined(httpHead)
+			const attr = (key: string) => httpHead!.attributes.get(key)
+			assert.include(String(attr("maple.cloudflare.datasets")).split(","), "http_requests")
+			assert.strictEqual(attr("maple.cloudflare.zones"), ZONE_NAME)
+			assert.strictEqual(attr("maple.cloudflare.zone_count"), 1)
+			assert.strictEqual(attr("maple.cloudflare.account_id"), ACCOUNT_ID)
+			assert.strictEqual(attr("maple.cloudflare.window.end"), "2026-07-02T11:50:00Z")
+			assert.strictEqual(attr("maple.cloudflare.window.lag_ms"), 10 * MIN)
+			assert.strictEqual(attr("maple.cloudflare.outcome"), "advanced")
+			assert.isAbove(Number(attr("maple.cloudflare.rows_ingested")), 0)
+
+			// The first tick runs out of budget with history still owed; later ticks drain it.
+			const [first] = named("CloudflareAnalyticsService.pollConnection")
+			assert.strictEqual(first!.attributes.get("maple.cloudflare.stop_reason"), "budget_exhausted")
+			assert.isAbove(Number(first!.attributes.get("maple.cloudflare.pending_items")), 0)
+			yield* service.pollOrg(ORG)
+			const next = recordSpans()
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(next.tracer))
+			const [poll] = next.named("CloudflareAnalyticsService.pollConnection")
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.stop_reason"), "caught_up")
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.pending_items"), 0)
+			// Caught up means the head sits at the safety horizon, 10 min behind now.
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.max_lag_ms"), 10 * MIN)
+
+			const lag = yield* Metric.value(
+				Metric.withAttributes(CloudflareAnalyticsMetrics.datasetLagSeconds, {
+					org_id: ORG,
+					account_id: ACCOUNT_ID,
+					dataset: "http_requests",
+				}),
+			)
+			assert.strictEqual(lag.value, 600)
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
 	it.effect("pollOrg polls every account of the grant, each with its own state rows and zones", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
@@ -901,6 +967,31 @@ describe("CloudflareAnalyticsService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, captured)))
 		},
 	)
+
+	it.effect("a budget-bound tick says so on the poll span, with the work it left behind", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedManyZones(12)
+
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+
+			const [poll] = named("CloudflareAnalyticsService.pollConnection")
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.stop_reason"), "budget_exhausted")
+			assert.isAbove(Number(poll!.attributes.get("maple.cloudflare.pending_items")), 0)
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.budget_used_before"), 0)
+			// Chunk spans tell head from backfill, so the cut-short history is visible per window.
+			const phases = named("CloudflareAnalyticsService.pollDatasetChunk").map((span) =>
+				span.attributes.get("maple.cloudflare.phase"),
+			)
+			assert.include(phases, "head")
+			assert.include(phases, "backfill")
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
 
 	it.effect("the backfill frontier walks down to the 24h floor over subsequent ticks, then stops", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -1241,6 +1332,7 @@ describe("CloudflareAnalyticsService", () => {
 	it.effect("a Cloudflare rate limit is a quiet org-wide backoff, not a per-dataset failure", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(T0)
 			yield* seedConnection()
@@ -1261,7 +1353,17 @@ describe("CloudflareAnalyticsService", () => {
 				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
-			const summary = yield* service.pollOrg(ORG)
+			const summary = yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+			// The poll span says why it stopped and that the windows are still owed.
+			const [poll] = named("CloudflareAnalyticsService.pollConnection")
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.stop_reason"), "rate_limited")
+			assert.isAbove(Number(poll!.attributes.get("maple.cloudflare.pending_items")), 0)
+			assert.include(
+				named("CloudflareAnalyticsService.pollDatasetChunk").map((span) =>
+					span.attributes.get("maple.cloudflare.outcome"),
+				),
+				"rate-limited",
+			)
 			// Classified as `rate-limited` → no failure outcome at all, so nothing reaches the
 			// observeDatasetFailure seam that records exception events.
 			assert.strictEqual(summary.failures.length, 0)
