@@ -261,6 +261,32 @@ describe("buildSessionSummary — tokens and models", () => {
 		expect(summary.cost).toBe(0.002)
 	})
 
+	it("lists a model once whatever snapshot each call answered with", () => {
+		const call = (spanId: string, startMs: number, responseModel?: string) =>
+			llmSpan({
+				spanId,
+				startMs,
+				durationMs: SECOND,
+				genAi: { requestModel: "openai/gpt-4o-mini", responseModel, usageInputTokens: 10, usageOutputTokens: 1 },
+			})
+		const summary = summarize([
+			call("a", 0, "gpt-4o-mini-2024-07-18"),
+			call("b", 2 * SECOND, "gpt-4o-mini"),
+			call("c", 4 * SECOND),
+			llmSpan({
+				spanId: "routed",
+				startMs: 6 * SECOND,
+				durationMs: SECOND,
+				genAi: { requestModel: "openrouter/auto", responseModel: "anthropic/claude-sonnet-4.5" },
+			}),
+		])
+
+		expect(summary.models.map((model) => model.model).sort()).toEqual([
+			"anthropic/claude-sonnet-4.5",
+			"openai/gpt-4o-mini",
+		])
+	})
+
 	it("counts usage at the deepest span that reports it", () => {
 		const summary = summarize([
 			// The framework reports a turn total on the agent span AND on each model
