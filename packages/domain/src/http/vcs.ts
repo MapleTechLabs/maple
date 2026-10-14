@@ -680,6 +680,20 @@ export const WorkflowJobJob = Schema.Struct({
 })
 export type WorkflowJobJob = Schema.Schema.Type<typeof WorkflowJobJob>
 
+/**
+ * What a CI job reported about itself: test failures, compiler errors and the runner's own
+ * `Process completed with exit code 1.`, as GitHub records them on the job's check run.
+ */
+export const WorkflowJobAnnotation = Schema.Struct({
+	/** `failure`, `warning` or `notice`. */
+	level: Schema.String,
+	message: Schema.String,
+	title: Schema.NullOr(Schema.String),
+	path: Schema.NullOr(Schema.String),
+	startLine: Schema.NullOr(Schema.Number),
+})
+export type WorkflowJobAnnotation = Schema.Schema.Type<typeof WorkflowJobAnnotation>
+
 /** A pull request's head as the reviewer needs it to answer, and to commit a fix. */
 export const PullRequestHead = Schema.Struct({
 	number: Schema.Number,

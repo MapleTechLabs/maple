@@ -1,4 +1,4 @@
-import type { WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
+import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import { Context, type Effect } from "effect"
 
@@ -11,7 +11,12 @@ import { Context, type Effect } from "effect"
  */
 export interface WorkflowEventSinkApi {
 	readonly onWorkflowRun: (orgId: OrgId, job: WorkflowRunJob) => Effect.Effect<void>
-	readonly onWorkflowJob: (orgId: OrgId, job: WorkflowJobJob) => Effect.Effect<void>
+	/** `annotations` are what a failed job reported about itself; empty for a job that passed. */
+	readonly onWorkflowJob: (
+		orgId: OrgId,
+		job: WorkflowJobJob,
+		annotations: ReadonlyArray<WorkflowJobAnnotation>,
+	) => Effect.Effect<void>
 }
 
 export class WorkflowEventSink extends Context.Service<WorkflowEventSink, WorkflowEventSinkApi>()(

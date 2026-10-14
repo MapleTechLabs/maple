@@ -94,7 +94,7 @@ const make = Effect.gen(function* () {
 
 	return {
 		onWorkflowRun: (orgId, job) => emit(orgId, "run", workflowRunToOtlp(job)),
-		onWorkflowJob: (orgId, job) => emit(orgId, "job", workflowJobToOtlp(job)),
+		onWorkflowJob: (orgId, job, annotations) => emit(orgId, "job", workflowJobToOtlp(job, annotations)),
 	} satisfies WorkflowEventSinkApi
 })
 

@@ -477,6 +477,17 @@ const decodePullRequest = Schema.decodeUnknownEffect(GithubApiPullRequestSchema)
 const decodePullRequestFiles = Schema.decodeUnknownEffect(GithubApiPullRequestFileList)
 const decodeCheckRun = Schema.decodeUnknownEffect(GithubApiCheckRunSchema)
 const decodeOwnCheckRunList = Schema.decodeUnknownEffect(GithubApiOwnCheckRunList)
+const decodeCheckRunAnnotations = Schema.decodeUnknownEffect(
+	Schema.Array(
+		Schema.Struct({
+			annotation_level: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			message: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			title: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			start_line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		}),
+	),
+)
 const decodePullRequestCommits = Schema.decodeUnknownEffect(GithubApiPullRequestCommitList)
 const decodeDiscussionComments = Schema.decodeUnknownEffect(GithubApiDiscussionCommentList)
 const decodeCheckRunList = Schema.decodeUnknownEffect(GithubApiCheckRunList)
@@ -1858,6 +1869,33 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			// An Actions job id is its check run id. Reading annotations needs only `checks: read`,
+			// which the App's `checks: write` covers. One page: CI traces want the first failures.
+			const listCheckRunAnnotations = Effect.fn("GithubAppClient.listCheckRunAnnotations")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				checkRunId: string,
+				limit: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs/${encodeURIComponent(checkRunId)}/annotations?per_page=${limit}`,
+				)
+				if (!isOk(response))
+					return yield* failure(response, "List check run annotations", "repository")
+				return yield* decodeCheckRunAnnotations(
+					yield* parseJson(response, "List check run annotations"),
+				).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected annotations payload", cause }),
+					),
+				)
+			})
+
 			// Used by the dashboard connect flow to populate the installation row.
 			const getInstallation = Effect.fn("GithubAppClient.getInstallation")(function* (
 				externalInstallationId: string,
@@ -1991,6 +2029,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				upsertIssueComment,
 				searchCode,
 				getSourceFile,
+				listCheckRunAnnotations,
 				mintCloneCredentials,
 				getInstallation,
 				exchangeUserOAuthCode,

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import type { WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
+import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
 import { OrgId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Exit, Layer, Schema, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -52,6 +52,14 @@ const OtlpRequest = Schema.Struct({
 							endTimeUnixNano: Schema.String,
 							attributes: Schema.Array(OtlpKeyValue),
 							status: Schema.Struct({ code: Schema.Number, message: Schema.String }),
+							events: Schema.optionalKey(
+								Schema.Array(
+									Schema.Struct({
+										name: Schema.String,
+										attributes: Schema.Array(OtlpKeyValue),
+									}),
+								),
+							),
 						}),
 					),
 				}),
@@ -166,7 +174,7 @@ describe("CiTraceService", () => {
 		return Effect.gen(function* () {
 			const sink = yield* WorkflowEventSink
 			// Jobs finish before their run, so the job arrives first.
-			yield* sink.onWorkflowJob(orgId, job)
+			yield* sink.onWorkflowJob(orgId, job, [])
 			yield* sink.onWorkflowRun(orgId, run)
 
 			assert.strictEqual(calls.length, 2)
@@ -174,9 +182,10 @@ describe("CiTraceService", () => {
 			assert.match(calls[0]!.authorization ?? "", /^Bearer maple_pk_/)
 			assert.strictEqual(calls[0]!.authorization, calls[1]!.authorization)
 
-			const [jobSpan, installStep, testStep] = spansOf(calls[0]!)
+			const [jobSpan, queueSpan, installStep, testStep] = spansOf(calls[0]!)
 			const [runSpan] = spansOf(calls[1]!)
 			assert.strictEqual(runSpan!.parentSpanId, "")
+			assert.strictEqual(queueSpan!.parentSpanId, jobSpan!.spanId)
 			assert.strictEqual(jobSpan!.traceId, runSpan!.traceId)
 			assert.strictEqual(jobSpan!.parentSpanId, runSpan!.spanId)
 			assert.strictEqual(installStep!.parentSpanId, jobSpan!.spanId)
@@ -185,11 +194,14 @@ describe("CiTraceService", () => {
 			assert.match(jobSpan!.spanId, /^[0-9a-f]{16}$/)
 
 			assert.deepStrictEqual(
-				[runSpan!.name, jobSpan!.name, installStep!.name, testStep!.name],
-				["CI", "test", "Install", "Test"],
+				[runSpan!.name, jobSpan!.name, queueSpan!.name, installStep!.name, testStep!.name],
+				["CI", "test", "Waiting for a runner", "Install", "Test"],
 			)
-			assert.strictEqual(jobSpan!.startTimeUnixNano, "1700000040000000000")
+			// The job span covers its 30s wait for a runner, which the queue span shows.
+			assert.strictEqual(jobSpan!.startTimeUnixNano, "1700000010000000000")
 			assert.strictEqual(jobSpan!.endTimeUnixNano, "1700000200000000000")
+			assert.strictEqual(queueSpan!.startTimeUnixNano, "1700000010000000000")
+			assert.strictEqual(queueSpan!.endTimeUnixNano, "1700000040000000000")
 			assert.strictEqual(attr(jobSpan!.attributes, "maple.cicd.queue_duration_ms"), "30000")
 			assert.strictEqual(attr(runSpan!.attributes, "vcs.change.id"), "612")
 			assert.strictEqual(
@@ -208,15 +220,79 @@ describe("CiTraceService", () => {
 		const calls: Array<IngestCall> = []
 		return Effect.gen(function* () {
 			const sink = yield* WorkflowEventSink
-			yield* sink.onWorkflowJob(orgId, job)
+			yield* sink.onWorkflowJob(orgId, job, [])
 			yield* sink.onWorkflowRun(orgId, { ...run, conclusion: "cancelled" })
-			const [jobSpan, installStep, testStep] = spansOf(calls[0]!)
+			const [jobSpan, , installStep, testStep] = spansOf(calls[0]!)
 			const [runSpan] = spansOf(calls[1]!)
 			assert.deepStrictEqual(
 				[jobSpan!.status.code, installStep!.status.code, testStep!.status.code, runSpan!.status.code],
 				[2, 1, 2, 0],
 			)
 			assert.strictEqual(attr(runSpan!.attributes, "cicd.pipeline.result"), "cancellation")
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
+	})
+
+	it.live("says why a job failed: the specific annotation, not the runner's exit code", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		const annotations: ReadonlyArray<WorkflowJobAnnotation> = [
+			{
+				level: "failure",
+				message: "Process completed with exit code 1.",
+				title: null,
+				path: ".github",
+				startLine: null,
+			},
+			{ level: "warning", message: "Node 16 is deprecated", title: null, path: null, startLine: null },
+			{
+				level: "failure",
+				message: "expected 2 to be 3",
+				title: "adds",
+				path: "src/math.test.ts",
+				startLine: 12,
+			},
+		]
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJob(orgId, job, annotations)
+			const [jobSpan] = spansOf(calls[0]!)
+			assert.strictEqual(jobSpan!.status.code, 2)
+			assert.strictEqual(jobSpan!.status.message, "src/math.test.ts:12: adds: expected 2 to be 3")
+			assert.strictEqual(
+				attr(jobSpan!.attributes, "maple.cicd.failure.reason"),
+				"src/math.test.ts:12: adds: expected 2 to be 3",
+			)
+			assert.deepStrictEqual(
+				(jobSpan!.events ?? []).map((event) =>
+					attr(event.attributes, "maple.cicd.annotation.message"),
+				),
+				annotations.map((annotation) => annotation.message),
+			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
+	})
+
+	it.live("names a step without the commit its action is pinned to", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		const pinned = "Run jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca"
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJob(orgId, { ...job, steps: [{ ...job.steps[0]!, name: pinned }] }, [])
+			const step = spansOf(calls[0]!).at(-1)!
+			assert.strictEqual(step.name, "Run jdx/mise-action")
+			assert.strictEqual(attr(step.attributes, "maple.cicd.step.name"), pinned)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
+	})
+
+	it.live("adds no queue span for a job that got a runner at once", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJob(orgId, { ...job, queuedAtMs: job.startedAtMs }, [])
+			const spans = spansOf(calls[0]!)
+			assert.strictEqual(spans.length, 1 + job.steps.length)
+			assert.strictEqual(spans[0]!.startTimeUnixNano, "1700000040000000000")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 

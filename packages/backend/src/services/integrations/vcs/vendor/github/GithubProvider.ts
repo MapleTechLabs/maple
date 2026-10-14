@@ -1705,6 +1705,46 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
 					.pipe(Effect.mapError(toVcsCommitError))
 
+			const fetchWorkflowJobAnnotations: VcsProviderClient["fetchWorkflowJobAnnotations"] = (
+				installation,
+				repo,
+				jobId,
+				limit,
+			) =>
+				client
+					.listCheckRunAnnotations(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						jobId,
+						limit,
+					)
+					.pipe(
+						Effect.map((annotations) =>
+							annotations.flatMap((annotation) =>
+								annotation.message === null || annotation.message === undefined
+									? []
+									: [
+											{
+												level: annotation.annotation_level ?? "failure",
+												message: annotation.message,
+												title: annotation.title ?? null,
+												path: annotation.path ?? null,
+												startLine: annotation.start_line ?? null,
+											},
+										],
+							),
+						),
+						Effect.mapError(toVcsCommitError),
+						Effect.withSpan("GithubProvider.fetchWorkflowJobAnnotations", {
+							attributes: {
+								"vcs.owner.name": repo.owner,
+								"vcs.repository.name": repo.name,
+								"cicd.pipeline.task.run.id": jobId,
+							},
+						}),
+					)
+
 			return {
 				id: PROVIDER,
 				reviewerMention,
@@ -1732,6 +1772,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchSourceFile,
 				resolveRef,
 				fetchCloneCredentials,
+				fetchWorkflowJobAnnotations,
 			} satisfies VcsProviderClient
 		}),
 	},

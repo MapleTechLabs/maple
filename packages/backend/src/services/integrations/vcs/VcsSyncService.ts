@@ -20,6 +20,7 @@ import {
 	type VcsRepositoryBlockedError,
 	type VcsRepoUnavailableError,
 	VcsSyncJob,
+	type WorkflowJobAnnotation,
 	type WorkflowJobJob,
 	type WorkflowRunJob,
 } from "@maple/domain/http"
@@ -51,6 +52,11 @@ export const BACKFILL_WINDOW_MS = 90 * 86_400_000 // 90 days
 export const MAX_BACKFILL_STALL_RETRIES = 10
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
+
+/** CI job conclusions worth asking the provider why about. */
+const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "timed_out", "startup_failure"])
+/** Annotations read per failed job: the first failures say why, the rest repeat it. */
+const MAX_WORKFLOW_ANNOTATIONS = 20
 
 // VcsInstallationGoneError is handled internally (→ disconnect) and never
 // surfaces here. VcsProviderError / VcsRepoUnavailableError that aren't caught
@@ -886,7 +892,39 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* workflowSink.onWorkflowRun(installation.orgId, job)
 			})
 
+			// A failed job's annotations say why it failed. Best effort: a job whose annotations
+			// cannot be read still becomes spans, just without the reason.
+			const workflowJobAnnotations = (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: WorkflowJobJob,
+			) => {
+				const slash = job.repoFullName.indexOf("/")
+				if (!WORKFLOW_FAILED_CONCLUSIONS.has(job.conclusion ?? "") || slash === -1)
+					return Effect.succeed<ReadonlyArray<WorkflowJobAnnotation>>([])
+				const ref = {
+					externalRepoId: job.externalRepoId,
+					owner: job.repoFullName.slice(0, slash),
+					name: job.repoFullName.slice(slash + 1),
+				}
+				return provider
+					.fetchWorkflowJobAnnotations(installation, ref, job.jobId, MAX_WORKFLOW_ANNOTATIONS)
+					.pipe(
+						Effect.tap((annotations) =>
+							Effect.annotateCurrentSpan({
+								"vcs.workflow.annotation_count": annotations.length,
+							}),
+						),
+						Effect.catchCause((cause) =>
+							Effect.annotateCurrentSpan({
+								"vcs.workflow.annotations_error": summarizeCause(cause),
+							}).pipe(Effect.as<ReadonlyArray<WorkflowJobAnnotation>>([])),
+						),
+					)
+			}
+
 			const handleWorkflowJob = Effect.fn("VcsSyncService.handleWorkflowJob")(function* (
+				provider: VcsProviderClient,
 				installation: VcsInstallation,
 				job: WorkflowJobJob,
 			) {
@@ -896,8 +934,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					"cicd.pipeline.task.run.id": job.jobId,
 					"vcs.workflow.forwarded": forwardsWorkflows(installation),
 				})
-				if (workflowSink !== undefined && installation.ciTracesEnabled)
-					yield* workflowSink.onWorkflowJob(installation.orgId, job)
+				if (workflowSink === undefined || !installation.ciTracesEnabled) return
+				const annotations = yield* workflowJobAnnotations(provider, installation, job)
+				yield* workflowSink.onWorkflowJob(installation.orgId, job, annotations)
 			})
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
@@ -990,7 +1029,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						handleWorkflowRun(installation, job),
 					),
 					Match.discriminator("kind")("workflow-job", (job) =>
-						handleWorkflowJob(installation, job),
+						handleWorkflowJob(provider, installation, job),
 					),
 					Match.exhaustive,
 				)

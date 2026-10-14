@@ -591,3 +591,39 @@ describe("GithubProvider changes since an earlier review", () => {
 		})
 	})
 })
+
+describe("GithubProvider reading why a CI job failed", () => {
+	it.effect("reads the job's check-run annotations, keeping only those with a message", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				jsonResponse([
+					{
+						annotation_level: "failure",
+						message: "expected 2 to be 3",
+						title: "adds",
+						path: "src/math.test.ts",
+						start_line: 12,
+					},
+					{ annotation_level: "notice", message: null, path: ".github" },
+				]),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555", 20)
+			assert.isTrue(requests[1]!.endsWith("/repos/octo/shop/check-runs/555/annotations?per_page=20"))
+			assert.deepStrictEqual(annotations, [
+				{
+					level: "failure",
+					message: "expected 2 to be 3",
+					title: "adds",
+					path: "src/math.test.ts",
+					startLine: 12,
+				},
+			])
+		}).pipe(Effect.provide(layer))
+	})
+})

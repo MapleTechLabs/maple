@@ -7,7 +7,7 @@
  * provider's own ids rather than generated, and both halves land in the same trace.
  */
 import { createHash } from "node:crypto"
-import type { WorkflowJobJob, WorkflowRunJob, WorkflowStep } from "@maple/domain/http"
+import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob, WorkflowStep } from "@maple/domain/http"
 
 export const CI_SERVICE_NAME = "github-actions"
 const SCOPE_NAME = "@maple/ci-traces"
@@ -24,6 +24,12 @@ interface OtlpKeyValue {
 	readonly value: OtlpValue
 }
 
+interface OtlpEvent {
+	readonly name: string
+	readonly timeUnixNano: string
+	readonly attributes: ReadonlyArray<OtlpKeyValue>
+}
+
 export interface OtlpSpan {
 	readonly traceId: string
 	readonly spanId: string
@@ -34,6 +40,7 @@ export interface OtlpSpan {
 	readonly endTimeUnixNano: string
 	readonly attributes: ReadonlyArray<OtlpKeyValue>
 	readonly status: { readonly code: number; readonly message: string }
+	readonly events?: ReadonlyArray<OtlpEvent>
 }
 
 export interface OtlpTracesPayload {
@@ -63,6 +70,38 @@ export const ciRunSpanId = (run: RunKey) => hashHex(`run:${runKey(run)}`, 16)
 const jobSpanId = (job: WorkflowJobJob) => hashHex(`job:${runKey(job)}:${job.jobId}`, 16)
 const stepSpanId = (job: WorkflowJobJob, step: WorkflowStep) =>
 	hashHex(`step:${runKey(job)}:${job.jobId}:${step.number}`, 16)
+const queueSpanId = (job: WorkflowJobJob) => hashHex(`queue:${runKey(job)}:${job.jobId}`, 16)
+
+/** Below this a job's wait for a runner is noise at GitHub's one-second resolution. */
+const MIN_QUEUE_SPAN_MS = 1000
+const MAX_ANNOTATION_MESSAGE_LENGTH = 1000
+/** The runner's own last word on any failed step; says nothing a real annotation would not. */
+const GENERIC_EXIT_MESSAGE = /^Process completed with exit code \d+\.?$/
+
+const truncate = (value: string, length: number) =>
+	value.length > length ? `${value.slice(0, length)}...` : value
+
+/**
+ * A step name without the commit an action is pinned to: `Run jdx/mise-action@2d8d4caf...` is
+ * `Run jdx/mise-action`, so a dependency bump does not split the step's history in two.
+ */
+const ciStepName = (name: string) => name.replace(/@[0-9a-f]{7,40}\b/g, "")
+
+/** The annotation that best says why a job failed: a specific failure before the runner's exit code. */
+const failureReason = (annotations: ReadonlyArray<WorkflowJobAnnotation>) => {
+	const failures = annotations.filter((annotation) => annotation.level === "failure")
+	const reason =
+		failures.find((annotation) => !GENERIC_EXIT_MESSAGE.test(annotation.message)) ?? failures[0]
+	if (reason === undefined) return undefined
+	const where =
+		reason.path === null
+			? ""
+			: `${reason.path}${reason.startLine === null ? "" : `:${reason.startLine}`}: `
+	return truncate(
+		`${where}${reason.title === null ? "" : `${reason.title}: `}${reason.message}`,
+		MAX_ANNOTATION_MESSAGE_LENGTH,
+	)
+}
 
 /** ms → unix-nanosecond string; six zeros keep it exact past 2^53. */
 const unixNano = (ms: number) => `${Math.trunc(ms)}000000`
@@ -169,7 +208,10 @@ export const workflowRunToOtlp = (run: WorkflowRunJob): OtlpTracesPayload =>
 		},
 	])
 
-export const workflowJobToOtlp = (job: WorkflowJobJob): OtlpTracesPayload => {
+export const workflowJobToOtlp = (
+	job: WorkflowJobJob,
+	annotations: ReadonlyArray<WorkflowJobAnnotation>,
+): OtlpTracesPayload => {
 	const traceId = ciTraceId(job)
 	const jobSpan = jobSpanId(job)
 	const shared = {
@@ -179,11 +221,34 @@ export const workflowJobToOtlp = (job: WorkflowJobJob): OtlpTracesPayload => {
 		...refAttrs(job.headBranch, job.headSha),
 		"maple.cicd.run_attempt": job.runAttempt,
 	}
+	const queueMs = job.startedAtMs - job.queuedAtMs
+	// The job span covers its wait for a runner, so a waterfall shows where the time went.
+	const queue: OtlpSpan[] =
+		queueMs < MIN_QUEUE_SPAN_MS
+			? []
+			: [
+					{
+						traceId,
+						spanId: queueSpanId(job),
+						parentSpanId: jobSpan,
+						name: "Waiting for a runner",
+						kind: SPAN_KIND_INTERNAL,
+						startTimeUnixNano: unixNano(job.queuedAtMs),
+						endTimeUnixNano: unixNano(job.startedAtMs),
+						attributes: attrs({
+							...shared,
+							"cicd.pipeline.task.name": job.name,
+							"maple.cicd.queue_duration_ms": queueMs,
+							"maple.cicd.runner_labels": job.labels.join(","),
+						}),
+						status: { code: STATUS_UNSET, message: "" },
+					},
+				]
 	const steps = job.steps.map((step): OtlpSpan => ({
 		traceId,
 		spanId: stepSpanId(job, step),
 		parentSpanId: jobSpan,
-		name: step.name,
+		name: ciStepName(step.name),
 		kind: SPAN_KIND_INTERNAL,
 		startTimeUnixNano: unixNano(step.startedAtMs),
 		endTimeUnixNano: unixNano(step.completedAtMs),
@@ -196,6 +261,19 @@ export const workflowJobToOtlp = (job: WorkflowJobJob): OtlpTracesPayload => {
 		}),
 		status: statusOf(step.conclusion),
 	}))
+	const status = statusOf(job.conclusion)
+	const reason = status.code === STATUS_ERROR ? failureReason(annotations) : undefined
+	const events = annotations.map((annotation): OtlpEvent => ({
+		name: "cicd.annotation",
+		timeUnixNano: unixNano(job.completedAtMs),
+		attributes: attrs({
+			"maple.cicd.annotation.level": annotation.level,
+			"maple.cicd.annotation.title": annotation.title,
+			"maple.cicd.annotation.message": truncate(annotation.message, MAX_ANNOTATION_MESSAGE_LENGTH),
+			"code.file.path": annotation.path,
+			"code.line.number": annotation.startLine,
+		}),
+	}))
 	return payloadOf(job.repoFullName, [
 		{
 			traceId,
@@ -203,7 +281,7 @@ export const workflowJobToOtlp = (job: WorkflowJobJob): OtlpTracesPayload => {
 			parentSpanId: ciRunSpanId(job),
 			name: job.name,
 			kind: SPAN_KIND_INTERNAL,
-			startTimeUnixNano: unixNano(job.startedAtMs),
+			startTimeUnixNano: unixNano(queue.length === 0 ? job.startedAtMs : job.queuedAtMs),
 			endTimeUnixNano: unixNano(job.completedAtMs),
 			attributes: attrs({
 				...shared,
@@ -211,11 +289,14 @@ export const workflowJobToOtlp = (job: WorkflowJobJob): OtlpTracesPayload => {
 				"cicd.pipeline.task.run.url.full": job.url,
 				"cicd.pipeline.task.run.result": resultOf(job.conclusion),
 				"cicd.worker.name": job.runnerName,
-				"maple.cicd.queue_duration_ms": job.startedAtMs - job.queuedAtMs,
+				"maple.cicd.queue_duration_ms": queueMs,
 				"maple.cicd.runner_labels": job.labels.join(","),
+				"maple.cicd.failure.reason": reason,
 			}),
-			status: statusOf(job.conclusion),
+			status: reason === undefined ? status : { code: STATUS_ERROR, message: reason },
+			events,
 		},
+		...queue,
 		...steps,
 	])
 }

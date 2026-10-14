@@ -12,6 +12,7 @@ import {
 	VcsSyncJob,
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
+	type WorkflowJobAnnotation,
 } from "@maple/domain/http"
 import { Array as Arr, Clock, Effect, Exit, Layer, Option, Schema } from "effect"
 import {
@@ -1636,6 +1637,11 @@ describe("VcsSyncService orchestrator", () => {
 
 	interface StubOpts {
 		readonly sent: Array<VcsSyncJob>
+		/** What the stubbed provider answers when asked why a CI job failed. */
+		readonly workflowAnnotations?: ReadonlyArray<WorkflowJobAnnotation>
+		readonly workflowAnnotationsError?: VcsProviderError
+		/** The annotations each forwarded CI job came with, in order. */
+		readonly forwardedAnnotations?: Array<ReadonlyArray<WorkflowJobAnnotation>>
 		readonly sentDelays?: Array<number | undefined>
 		/**
 		 * Pull-request events the sync service forwarded, in order. The sink is a
@@ -1707,6 +1713,10 @@ describe("VcsSyncService orchestrator", () => {
 							branches: opts.branches ?? [],
 							truncated: opts.branchesTruncated ?? false,
 						}),
+			fetchWorkflowJobAnnotations: () =>
+				opts.workflowAnnotationsError
+					? Effect.fail(opts.workflowAnnotationsError)
+					: Effect.succeed(opts.workflowAnnotations ?? []),
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
 			ids: ["github"],
@@ -1730,9 +1740,10 @@ describe("VcsSyncService orchestrator", () => {
 							Effect.sync(() => {
 								workflows.push({ orgId, kind: job.kind, runId: job.runId })
 							}),
-						onWorkflowJob: (orgId, job) =>
+						onWorkflowJob: (orgId, job, annotations) =>
 							Effect.sync(() => {
 								workflows.push({ orgId, kind: job.kind, runId: job.runId })
+								opts.forwardedAnnotations?.push(annotations)
 							}),
 					})
 		return Layer.effect(VcsSyncService, VcsSyncService.make).pipe(
@@ -1854,7 +1865,7 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, forwardedPullRequests })))
 	})
 
-	const workflowJob = (externalInstallationId: string): VcsSyncJob => ({
+	const workflowJob = (externalInstallationId: string, conclusion = "success"): VcsSyncJob => ({
 		kind: "workflow-job",
 		provider: "github",
 		externalInstallationId,
@@ -1865,7 +1876,7 @@ describe("VcsSyncService orchestrator", () => {
 		jobId: "555",
 		name: "test",
 		workflowName: "CI",
-		conclusion: "success",
+		conclusion,
 		headBranch: "main",
 		headSha: null,
 		runnerName: null,
@@ -1931,6 +1942,59 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
 			assert.strictEqual(forwardedWorkflows.length, 2)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedWorkflows })))
+	})
+
+	it.effect("forwards a failed CI job with the annotations that say why, a passed one without", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+		const forwardedAnnotations: Array<ReadonlyArray<WorkflowJobAnnotation>> = []
+		const annotation: WorkflowJobAnnotation = {
+			level: "failure",
+			message: "expected 2 to be 3",
+			title: "src/math.test.ts > adds",
+			path: "src/math.test.ts",
+			startLine: 12,
+		}
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_ci"))
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42", "failure")))
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
+			assert.deepStrictEqual(forwardedAnnotations, [[annotation], []])
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows,
+					forwardedAnnotations,
+					workflowAnnotations: [annotation],
+				}),
+			),
+		)
+	})
+
+	it.effect("still forwards a failed CI job when its annotations cannot be read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+		const forwardedAnnotations: Array<ReadonlyArray<WorkflowJobAnnotation>> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_ci"))
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42", "failure")))
+			assert.strictEqual(forwardedWorkflows.length, 1)
+			assert.deepStrictEqual(forwardedAnnotations, [[]])
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows,
+					forwardedAnnotations,
+					workflowAnnotationsError: new VcsProviderError({ message: "GitHub is down" }),
+				}),
+			),
+		)
 	})
 
 	it.effect("drops a pull-request event for an installation it does not know", () => {
