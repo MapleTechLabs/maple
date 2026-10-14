@@ -79,12 +79,15 @@ export function spanModel(span: AiSessionSpan): string | undefined {
 
 const RELEASE_DATE = /-(?:\d{4}-\d{2}-\d{2}|\d{8})$/
 
-/** `response` is `request` itself, compared without a provider prefix, a
- *  trailing release date or the dots some providers spell as dashes. */
+/** `response` is `request` itself: compared without a provider prefix or the
+ *  dots some providers spell as dashes, and, when the request names no
+ *  release, without the release date the response resolved it to. A pinned
+ *  request answered by another release is a different model. */
 function sameModel(request: string, response: string): boolean {
-	const base = (model: string) =>
-		(model.split("/").at(-1) ?? model).replace(RELEASE_DATE, "").replaceAll(".", "-").toLowerCase()
-	return base(request) === base(response)
+	const base = (model: string) => (model.split("/").at(-1) ?? model).replaceAll(".", "-").toLowerCase()
+	const [asked, answered] = [base(request), base(response)]
+	if (asked === answered) return true
+	return !RELEASE_DATE.test(asked) && answered.replace(RELEASE_DATE, "") === asked
 }
 
 export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {

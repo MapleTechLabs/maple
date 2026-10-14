@@ -317,10 +317,17 @@ describe("buildSessionSummary — tokens and models", () => {
 				durationMs: SECOND,
 				genAi: { requestModel: "openrouter/auto", responseModel: "anthropic/claude-sonnet-4.5" },
 			}),
+			llmSpan({
+				spanId: "pinned",
+				startMs: 8 * SECOND,
+				durationMs: SECOND,
+				genAi: { requestModel: "openai/gpt-4o-2024-05-13", responseModel: "gpt-4o-2024-08-06" },
+			}),
 		])
 
 		expect(summary.models.map((model) => model.model).sort()).toEqual([
 			"anthropic/claude-sonnet-4.5",
+			"gpt-4o-2024-08-06",
 			"openai/gpt-4o-mini",
 		])
 	})

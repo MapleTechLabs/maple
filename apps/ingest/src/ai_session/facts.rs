@@ -328,27 +328,32 @@ fn truncate(mut text: String, max: usize) -> String {
 }
 
 /// Whether `response` is `request` itself: compared without a provider
-/// prefix (`openai/`), a trailing release date (`-2024-07-18`, `-20251001`)
-/// or the dots some providers spell as dashes (`claude-haiku-4.5`).
+/// prefix (`openai/`) or the dots some providers spell as dashes
+/// (`claude-haiku-4.5`), and, when the request names no release, without the
+/// release date the response resolved it to (`-2024-07-18`, `-20251001`). A
+/// pinned request answered by another release is a different model.
 fn same_model(request: &str, response: &str) -> bool {
     fn base(model: &str) -> String {
         let name = model.rsplit('/').next().unwrap_or(model);
-        let name = strip_date(name);
         name.replace('.', "-").to_ascii_lowercase()
     }
-    fn strip_date(name: &str) -> &str {
+    fn strip_date(name: &str) -> Option<&str> {
         let digits =
             |part: &str, len: usize| part.len() == len && part.bytes().all(|b| b.is_ascii_digit());
         let parts: Vec<&str> = name.rsplitn(4, '-').collect();
         if parts.len() == 4 && digits(parts[0], 2) && digits(parts[1], 2) && digits(parts[2], 4) {
-            return parts[3];
+            return Some(parts[3]);
         }
         match name.rsplit_once('-') {
-            Some((head, tail)) if digits(tail, 8) => head,
-            _ => name,
+            Some((head, tail)) if digits(tail, 8) => Some(head),
+            _ => None,
         }
     }
-    base(request) == base(response)
+    let (request, response) = (base(request), base(response));
+    if request == response {
+        return true;
+    }
+    strip_date(&request).is_none() && strip_date(&response) == Some(request.as_str())
 }
 
 /// Decide every fact of one stamped span, as the stamps to write on it.
@@ -640,6 +645,13 @@ mod tests {
         ));
         assert!(!same_model("openai/gpt-4o", "gpt-4o-mini"));
         assert!(!same_model("gpt-5", "gpt-5-mini-2025-08-07"));
+        assert!(same_model("gpt-4o-2024-08-06", "openai/gpt-4o-2024-08-06"));
+        // A pinned release answered by another release is another model.
+        assert!(!same_model("openai/gpt-4o-2024-05-13", "gpt-4o-2024-08-06"));
+        assert!(!same_model(
+            "claude-haiku-4-5-20251001",
+            "claude-haiku-4-5-20260101"
+        ));
     }
 
     #[test]
