@@ -53,6 +53,7 @@ import {
 	gcpCollectLock,
 	gcpCreateRequest,
 	gcpDraftEffect,
+	gcpEffectNeedsScript,
 	gcpApplicationLogsLine,
 	gcpLogFilterChoice,
 	gcpOverlapNote,
@@ -113,7 +114,8 @@ const SCOPES = {
 const SCOPE_TYPES: ReadonlyArray<GcpScopeType> = ["organization", "folder", "project"]
 
 const LOCK_NOTES = {
-	"last-on": "A connection collects at least one of the two. To stop collecting, disconnect.",
+	"logs-required":
+		"This Maple deployment can't read Google Cloud metrics, so a connection forwards logs. To stop, disconnect.",
 	"metrics-unavailable": "Not available on this Maple deployment.",
 } as const satisfies { readonly [Lock in GcpCollectLock]: string }
 
@@ -138,22 +140,26 @@ const CAPABILITIES = {
 		},
 	},
 	metrics: {
-		title: "Metrics and resources",
+		title: "Key metrics",
 		flag: "metrics_enabled",
-		description: "Cloud Monitoring, read-only, every 5 minutes",
+		description: "Every 5 minutes, and resources hourly, for alerts, Infrastructure and dashboards",
 		effects: {
 			"starts-after-script": "Starts once the script has run",
-			"resumes-now": "Read again from the next 5-minute read",
-			"stops-now": "Maple stops reading when you save",
-			"removed-by-script": "Its service account stays in Google Cloud until the script has run",
+			"resumes-now": "Collected from the next 5-minute read",
+			"stops-now": "Maple stops collecting when you save",
+			// Never shown: the read-only service account stays for live queries.
+			"removed-by-script": "Nothing to remove in Google Cloud",
 		},
 		now: {
-			"stops-now": "Stops reading this connection's metrics and resources from the next 5-minute read.",
-			"resumes-now": "Reads this connection's metrics and resources again from the next 5-minute read.",
+			"stops-now":
+				"Stops collecting this connection's key metrics and resources from the next 5-minute read.",
+			"resumes-now":
+				"Collects this connection's key metrics and resources from the next 5-minute read.",
 		},
 		later: {
-			"stops-now": "Keeps the read-only service account and its roles until the script has run.",
-			"resumes-now": "Nothing to run: the read-only service account is still there.",
+			"stops-now":
+				"Nothing to run: the read-only service account stays, so live metric queries keep working.",
+			"resumes-now": "Nothing to run: the read-only service account is in place.",
 		},
 	},
 } as const satisfies {
@@ -496,8 +502,12 @@ function CollectFields({
 					)
 				})}
 			</div>
-			{/* A rule of the pair, so it stands under both and not under the one it happens to lock. */}
-			{locks.includes("last-on") ? <p className={SMALL}>{LOCK_NOTES["last-on"]}</p> : null}
+			{/* True of the pair whatever is ticked, so it stands under both. */}
+			<p className={SMALL}>
+				{metricsAvailable
+					? "Live queries of any Google Cloud metric work on every connection, with or without key metrics."
+					: LOCK_NOTES["logs-required"]}
+			</p>
 		</fieldset>
 	)
 }
@@ -896,23 +906,16 @@ function ConnectStage({
 							<AlertDescription className="leading-5 text-pretty">{overlap}</AlertDescription>
 						</Alert>
 					)}
-					<div className="flex flex-col gap-4">
-						<CollectFields
-							flags={{ logs_enabled: draft.logsEnabled, metrics_enabled: draft.metricsEnabled }}
-							onChange={(flags) =>
-								edit({
-									logsEnabled: flags.logs_enabled,
-									metricsEnabled: flags.metrics_enabled,
-								})
-							}
-							metricsAvailable={metricsAvailable}
-						/>
-						{draft.logsEnabled || draft.metricsEnabled ? null : (
-							<p className="text-xs text-destructive-foreground" role="alert">
-								Choose at least one.
-							</p>
-						)}
-					</div>
+					<CollectFields
+						flags={{ logs_enabled: draft.logsEnabled, metrics_enabled: draft.metricsEnabled }}
+						onChange={(flags) =>
+							edit({
+								logsEnabled: flags.logs_enabled,
+								metricsEnabled: flags.metrics_enabled,
+							})
+						}
+						metricsAvailable={metricsAvailable}
+					/>
 					{draft.logsEnabled ? (
 						<GcpLogFilterField sinkExists={false} filter={filter} onFilter={onFilter} />
 					) : null}
@@ -950,6 +953,7 @@ function ChooseStage({
 	filter,
 	onFilter,
 	onApply,
+	onClose,
 }: {
 	connector: V2GcpConnector
 	metricsAvailable: boolean
@@ -957,6 +961,8 @@ function ChooseStage({
 	onFilter: (filter: FilterState) => void
 	/** Leads into the apply stage, with what was saved if anything changed. */
 	onApply: (saved: GcpFlags | null) => void
+	/** After a change that leaves the script nothing to do. */
+	onClose: () => void
 }) {
 	const update = useAtomSet(MapleApiV2AtomClient.mutation("gcpIntegration", "updateConnector"), {
 		mode: "promiseExit",
@@ -978,11 +984,9 @@ function ChooseStage({
 		return acts === "stops-now" || acts === "resumes-now" ? [{ capability, acts }] : []
 	})
 	const stopping = immediate.filter(({ acts }) => acts === "stops-now")
-	// Whether the script has anything to do once this is saved. Turning back on what still exists leaves nothing.
-	const scripted = CAPABILITY_IDS.some((capability) => {
-		const acts = effect(capability)
-		return acts !== null && acts !== "resumes-now"
-	})
+	// Whether the script has anything to do once this is saved: key metrics are Maple's alone, and
+	// turning back on what still exists leaves nothing.
+	const scripted = CAPABILITY_IDS.some((capability) => gcpEffectNeedsScript(capability, effect(capability)))
 
 	// Only what changed is sent: the API leaves an omitted capability as it is, so a stale view of
 	// the other cannot overwrite it. Resolving to `false` keeps the confirmation open for a retry.
@@ -1001,7 +1005,8 @@ function ChooseStage({
 			showErrorToast(result, { title: "Failed to save the change" })
 			return false
 		}
-		onApply(draft)
+		if (scripted) onApply(draft)
+		else onClose()
 		return true
 	})
 
@@ -1052,13 +1057,15 @@ function ChooseStage({
 					<>
 						{`Turn ${(stopping.length > 0 ? stopping : immediate)
 							.map(({ capability }) => CAPABILITIES[capability].title.toLowerCase())
-							.join(" and ")} ${stopping.length > 0 ? "off" : "back on"}`}{" "}
+							.join(" and ")} ${stopping.length > 0 ? "off" : "on"}`}{" "}
 						for {GCP_SCOPE_NAMES[connector.scope_type]}{" "}
 						<span className="whitespace-nowrap">{connector.scope_id}</span>?
 					</>
 				}
-				// Turning off leaves something for the script to remove; turning back on leaves nothing to run.
-				confirmLabel={stopping.length > 0 ? "Turn off and continue" : "Turn on"}
+				// Only a sink turned off leaves the script something to remove.
+				confirmLabel={
+					stopping.length > 0 ? (scripted ? "Turn off and continue" : "Turn off") : "Turn on"
+				}
 				onConfirm={save}
 			>
 				<dl className="flex flex-col gap-3 pb-3 text-sm">
@@ -1098,6 +1105,7 @@ interface ApplyOpened {
 /** The second stage: the script that applies the configuration, and Maple's confirmation. */
 function ApplyStage({
 	connector,
+	metricsAvailable,
 	filter,
 	nowMs,
 	opened,
@@ -1105,6 +1113,7 @@ function ApplyStage({
 	onClose,
 }: {
 	connector: V2GcpConnector
+	metricsAvailable: boolean
 	filter: FilterState
 	nowMs: number
 	opened: ApplyOpened
@@ -1119,13 +1128,13 @@ function ApplyStage({
 	const reportedAt = connector.setup_reported_at
 	// A run's sections report one after the other: confirmed once the last one has.
 	const confirmed =
-		gcpScriptNeeded(connector, nowMs) === null &&
-		!gcpSetupRunning(connector, nowMs) &&
+		gcpScriptNeeded(connector, nowMs, metricsAvailable) === null &&
+		!gcpSetupRunning(connector, nowMs, metricsAvailable) &&
 		(!opened.rerun || reportedAt !== opened.seen)
 	useIntervalRefresh(refresh, { intervalMs: GCP_SETTLING_REFRESH_MS, enabled: !confirmed })
 	const overdue = !opened.rerun && gcpScriptOverdue(connector, opened.at, nowMs)
 
-	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
+	const scopeRoles = gcpScopeRoles(connector.scope_type, connector.logs_enabled, metricsAvailable)
 	const scopeName = GCP_SCOPE_NAMES[connector.scope_type].toLowerCase()
 	const role = (name: string) => <span className="text-foreground">{name}</span>
 
@@ -1146,8 +1155,14 @@ function ApplyStage({
 							</dd>
 						</>
 					) : null}
-					<dt>Metrics and resources</dt>
-					<dd>{gcpApplyLine(connector.metrics_enabled, connector.applied_metrics_enabled)}</dd>
+					<dt>Read-only access</dt>
+					<dd>
+						{!metricsAvailable
+							? "Not available on this Maple deployment"
+							: connector.applied_metrics_enabled === true
+								? "In place, for live metric queries and key metrics"
+								: "Created by this run, for live metric queries and key metrics"}
+					</dd>
 				</dl>
 				{confirmed ? (
 					<Alert variant="ok" size="sm" role="status">
@@ -1307,7 +1322,7 @@ function ConnectionStages({
 	// any other way, nobody has said a run is under way.
 	const [opened, setOpened] = useState<ApplyOpened | null>(() =>
 		initialStage === "apply"
-			? open(!created && gcpScriptNeeded(saved, Date.now()) !== "setup-pending")
+			? open(!created && gcpScriptNeeded(saved, Date.now(), metricsAvailable) !== "setup-pending")
 			: null,
 	)
 
@@ -1322,10 +1337,12 @@ function ConnectionStages({
 				setOpened(open(flags === null))
 				onStage("apply")
 			}}
+			onClose={onClose}
 		/>
 	) : (
 		<ApplyStage
 			connector={connector}
+			metricsAvailable={metricsAvailable}
 			filter={filter}
 			nowMs={nowMs}
 			opened={opened}

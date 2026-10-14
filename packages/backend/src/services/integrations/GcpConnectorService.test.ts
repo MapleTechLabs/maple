@@ -154,7 +154,7 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("switches capabilities; the setup script follows log forwarding and always sets up the reader", () => {
+	it.effect("switches capabilities, and the setup script follows log forwarding alone", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService

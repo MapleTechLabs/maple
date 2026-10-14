@@ -67,10 +67,7 @@ const SCOPES = {
 type Scope = (typeof SCOPES)[keyof typeof SCOPES]
 const scopeTypes = ["project", "folder", "organization"] as const
 
-const setupInput = (
-	scope: keyof typeof SCOPES,
-	logsEnabled: boolean,
-): GcpSetupScriptInput => ({
+const setupInput = (scope: keyof typeof SCOPES, logsEnabled: boolean): GcpSetupScriptInput => ({
 	...SCOPES[scope].target,
 	pushEndpoint: PUSH_ENDPOINT,
 	mapleServiceAccountEmail: MAPLE_ACCOUNT,
@@ -358,9 +355,7 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 	const host = scopeType === "project" ? "Project" : "Host project"
 
 	it("sets up logs and read-only access from nothing, at the right scope, one line per step", () => {
-		const { status, stdout, stderr, commands, access } = run(
-			setup(setupInput(scopeType, true)),
-		)
+		const { status, stdout, stderr, commands, access } = run(setup(setupInput(scopeType, true)))
 		expect(status).toBe(0)
 		expect(stderr).toBe("")
 		expect(commands).toEqual([
@@ -568,12 +563,9 @@ describe("the text that is copied", () => {
 
 describe("renderGcpSetupScript", () => {
 	it("reads a re-run as already in place and keeps the sink's filter", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", true)),
-			{
-				describe: "found",
-			},
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			describe: "found",
+		})
 		expect(status).toBe(0)
 		expect(commands.filter((command) => command.includes(" create "))).toEqual([])
 		expect(commands).not.toContainEqual(expect.stringContaining("--log-filter"))
@@ -656,12 +648,9 @@ Done. Everything is in place.
 	})
 
 	it("shows Google's answer and what to do when a step is refused, and stops there", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", true)),
-			{
-				fail: "sinks create",
-			},
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			fail: "sinks create",
+		})
 		expect(status).toBe(1)
 		expect(commands.at(-1)).toContain("logging sinks create")
 		expect(
@@ -736,12 +725,9 @@ ${UNFINISHED}`),
 	})
 
 	it("changes nothing when the project cannot be opened", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", true)),
-			{
-				fail: "projects describe",
-			},
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			fail: "projects describe",
+		})
 		expect(status).toBe(1)
 		expect(commands).toEqual([])
 		expect(stdout).toContain(`
@@ -863,17 +849,10 @@ ${UNFINISHED}`)
 	})
 
 	it("stops in the access check when an API is off and the account may not switch it on", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", true)),
-			{
-				apis: [
-					"pubsub.googleapis.com",
-					"logging.googleapis.com",
-					"cloudresourcemanager.googleapis.com",
-				],
-				lacking: "serviceusage.services.enable",
-			},
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			apis: ["pubsub.googleapis.com", "logging.googleapis.com", "cloudresourcemanager.googleapis.com"],
+			lacking: "serviceusage.services.enable",
+		})
 		expect(status).toBe(1)
 		expect(commands).toEqual([])
 		expect(stdout)
@@ -884,10 +863,9 @@ ${UNFINISHED}`)
 	})
 
 	it("reads an account without any of the permissions as a wrong ID first", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", true)),
-			{ lacking: "everything" },
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			lacking: "everything",
+		})
 		expect(status).toBe(1)
 		expect(commands).toEqual([])
 		expect(stdout)
@@ -928,12 +906,9 @@ ${UNFINISHED}`)
 	})
 
 	it("reads a folder this account can't see as a wrong ID, before the first change", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("folder", true)),
-			{
-				lacking: "unseen",
-			},
-		)
+		const { status, stdout, commands } = run(setup(setupInput("folder", true)), {
+			lacking: "unseen",
+		})
 		expect(status).toBe(1)
 		expect(commands).toEqual([])
 		expect(stdout).toContain(`  ✗ jane@acme.com can't see project acme-host.
@@ -1034,10 +1009,7 @@ case "$*" in
     fi ;;
 esac
 `
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", false)),
-			{ gcloud: slow },
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", false)), { gcloud: slow })
 		expect(status).toBe(0)
 		expect(stdout.match(/ {2}… waiting for Google to publish the new service account\n/g)).toHaveLength(1)
 		expect(commands.filter((command) => command.includes("roles/monitoring.viewer"))).toHaveLength(3)
@@ -1054,10 +1026,14 @@ esac
 			)
 			const { status, stdout, commands } = run(script, { describe: "found" })
 			expect(status).toBe(0)
-			expect(stdout).toContain("  Read-only access   not available on this Maple deployment, left as is\n")
+			expect(stdout).toContain(
+				"  Read-only access   not available on this Maple deployment, left as is\n",
+			)
 			expect(stdout).not.toContain("\nRead-only access\n")
 			expect(commands).not.toContainEqual(expect.stringContaining("service-accounts"))
-			expect(commands).not.toContainEqual(expect.stringContaining("iam-policy-binding --member=serviceAccount"))
+			expect(commands).not.toContainEqual(
+				expect.stringContaining("iam-policy-binding --member=serviceAccount"),
+			)
 		}
 	})
 
@@ -1225,10 +1201,7 @@ esac
 	})
 
 	it("keeps gcloud from writing its arguments, the secret among them, to its log files", () => {
-		for (const script of [
-			setup(setupInput("project", true)),
-			cleanup(SCOPES.project, PUSH_ENDPOINT),
-		]) {
+		for (const script of [setup(setupInput("project", true)), cleanup(SCOPES.project, PUSH_ENDPOINT)]) {
 			const { fileLogging } = run(script, { describe: "found" })
 			expect(fileLogging.length).toBeGreaterThan(0)
 			expect(new Set(fileLogging)).toEqual(new Set(["1"]))
