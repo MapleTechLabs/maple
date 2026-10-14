@@ -32,6 +32,7 @@ import { RelativeTime } from "@/components/common/relative-time"
 import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
 import {
 	AlertWarningIcon,
+	CheckIcon,
 	ChevronRightIcon,
 	CircleCheckIcon,
 	CircleInfoIcon,
@@ -429,7 +430,7 @@ type FilterState = GcpLogFilterDraft
 /** What an existing sink's filter can be left as or replaced with. */
 const FILTER_MODES = [
 	{ value: "keep", label: "Keep current filter", hint: "Leaves the sink as it is" },
-	{ value: "set", label: "Replace filter", hint: "Sets what is ticked below" },
+	{ value: "set", label: "Replace filter", hint: "Sets the filter below" },
 ] as const
 
 /**
@@ -505,7 +506,7 @@ function CollectFields({
  * The filter the script gives the log sink: whose application output comes with the platform logs,
  * a tick per runtime. A sink that exists keeps its filter unless asked to replace it.
  */
-function FilterField({
+export function GcpLogFilterField({
 	sinkExists,
 	filter,
 	onFilter,
@@ -553,53 +554,140 @@ function FilterField({
 				</Select>
 			) : null}
 			{choice.keep ? null : (
-				<fieldset className="flex flex-col gap-2.5">
-					<legend className="mb-2.5 text-xs/5 text-pretty text-muted-foreground">
-						<span className="text-foreground">
-							Platform, request and audit logs are always forwarded.
-						</span>{" "}
-						Application output (stdout and stderr) only from what you tick:
-					</legend>
-					<div className="divide-y rounded-md border">
-						{GCP_LOG_RUNTIMES.map(({ value, label, hint }) => (
-							<Field
-								key={value}
-								className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0.5 px-3.5 py-2.5 sm:grid-cols-[auto_11.875rem_1fr]"
-							>
-								<Checkbox
-									id={`${id}-${value}`}
-									checked={choice.runtimes.includes(value)}
-									onCheckedChange={(checked) =>
-										onFilter({
-											...filter,
-											runtimes:
-												checked === true
-													? [...choice.runtimes, value]
-													: choice.runtimes.filter((runtime) => runtime !== value),
-										})
-									}
-								/>
-								<FieldLabel htmlFor={`${id}-${value}`} className="sm:text-sm/5">
-									{label}
-								</FieldLabel>
-								<FieldDescription className="col-start-2 text-pretty sm:col-start-3">
-									{hint}
-								</FieldDescription>
-							</Field>
-						))}
-					</div>
-					{/* Maple does not know which workloads send their logs another way: the call is the admin's. */}
-					<p className="text-xs/5 text-pretty text-muted-foreground">
-						<span className="font-medium text-foreground">
-							Already sending a runtime&apos;s logs over OpenTelemetry?
-						</span>{" "}
-						Untick it. Otherwise you get every line twice, both count toward your plan, and the
-						copy from Google Cloud has no trace link.{" "}
-						<GcpExternalLink href={`${OTEL_DOCS}#application-output`}>Details</GcpExternalLink>
+				<div className="flex flex-col gap-2.5">
+					<dl className="divide-y rounded-md border">
+						<FilterSummaryRow
+							icon={<CheckIcon size={14} aria-hidden className="text-severity-info" />}
+							term="Platform logs"
+							detail="Requests, audit, deploys, crashes, scaling"
+						/>
+						<FilterSummaryRow
+							icon={<span aria-hidden>–</span>}
+							term="Application output"
+							detail={
+								choice.runtimes.length === 0
+									? "stdout and stderr, left in Google Cloud"
+									: `stdout and stderr, from ${runtimeLabels(choice.runtimes)} only`
+							}
+						/>
+					</dl>
+					<p className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs/5 text-pretty text-muted-foreground">
+						Send application logs with your OpenTelemetry setup, where they link to traces.
+						<GcpExternalLink href={OTEL_DOCS}>Set up OpenTelemetry</GcpExternalLink>
 					</p>
-				</fieldset>
+					{choice.forwardsOutput ? (
+						<RuntimeFields
+							id={id}
+							filter={filter}
+							runtimes={choice.runtimes}
+							onFilter={onFilter}
+						/>
+					) : (
+						// The ticks are an escape hatch: a workload sending over OpenTelemetry would store each line twice.
+						<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1">
+							<span className="text-xs/5 text-muted-foreground">
+								No way to add OpenTelemetry to a workload?
+							</span>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => onFilter({ ...filter, runtimes: [] })}
+							>
+								Can&apos;t forward via OpenTelemetry
+							</Button>
+						</div>
+					)}
+				</div>
 			)}
 		</Field>
+	)
+}
+
+/** One line of what the new filter forwards. */
+function FilterSummaryRow({ icon, term, detail }: { icon: React.ReactNode; term: string; detail: string }) {
+	return (
+		<div className="grid grid-cols-[1rem_1fr] items-center gap-x-3 gap-y-0.5 px-3.5 py-2.5 sm:grid-cols-[1rem_11.875rem_1fr]">
+			<span className="flex justify-center text-muted-foreground">{icon}</span>
+			<dt className="text-sm/5 font-medium">{term}</dt>
+			<dd className="col-start-2 text-xs text-pretty text-muted-foreground sm:col-start-3">{detail}</dd>
+		</div>
+	)
+}
+
+const runtimeLabels = (runtimes: ReadonlyArray<GcpLogRuntime>) =>
+	GCP_LOG_RUNTIMES.filter(({ value }) => runtimes.includes(value))
+		.map(({ label }) => label)
+		.join(", ")
+
+/** The runtimes whose application output Google Cloud forwards, once OpenTelemetry is ruled out. */
+function RuntimeFields({
+	id,
+	filter,
+	runtimes,
+	onFilter,
+}: {
+	id: string
+	filter: FilterState
+	runtimes: ReadonlyArray<GcpLogRuntime>
+	onFilter: (filter: FilterState) => void
+}) {
+	return (
+		<fieldset aria-labelledby={`${id}-forward`} className="flex flex-col gap-2.5 pt-1">
+			<div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs/5">
+				<span id={`${id}-forward`} className="font-medium">
+					Forward application output from Google Cloud
+				</span>
+				<Button
+					variant="link"
+					size="xs"
+					onClick={() => onFilter({ ...filter, runtimes: null })}
+					className={cn(
+						"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground",
+						GCP_LINK,
+					)}
+				>
+					Use OpenTelemetry instead
+				</Button>
+			</div>
+			<div className="divide-y rounded-md border">
+				{GCP_LOG_RUNTIMES.map(({ value, label, hint }) => (
+					<Field
+						key={value}
+						className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0.5 px-3.5 py-2.5 sm:grid-cols-[auto_11.875rem_1fr]"
+					>
+						<Checkbox
+							id={`${id}-${value}`}
+							checked={runtimes.includes(value)}
+							onCheckedChange={(checked) =>
+								onFilter({
+									...filter,
+									runtimes:
+										checked === true
+											? [...runtimes, value]
+											: runtimes.filter((runtime) => runtime !== value),
+								})
+							}
+						/>
+						<FieldLabel htmlFor={`${id}-${value}`} className="sm:text-sm/5">
+							{label}
+						</FieldLabel>
+						<FieldDescription className="col-start-2 text-pretty sm:col-start-3">
+							{hint}
+						</FieldDescription>
+					</Field>
+				))}
+			</div>
+			{/* Maple does not know which workloads send their logs another way: the call is the admin's. */}
+			<Alert variant="warn" size="sm" role="note">
+				<AlertWarningIcon size={14} />
+				<AlertTitle>Only for workloads that don&apos;t send logs over OpenTelemetry</AlertTitle>
+				<AlertDescription className="leading-5 text-pretty">
+					Otherwise every line arrives twice, both count toward your plan, and the Google Cloud copy
+					has no trace link.{" "}
+					<GcpExternalLink href={`${OTEL_DOCS}#application-output`}>Details</GcpExternalLink>
+				</AlertDescription>
+			</Alert>
+		</fieldset>
 	)
 }
 
@@ -826,7 +914,7 @@ function ConnectStage({
 						)}
 					</div>
 					{draft.logsEnabled ? (
-						<FilterField sinkExists={false} filter={filter} onFilter={onFilter} />
+						<GcpLogFilterField sinkExists={false} filter={filter} onFilter={onFilter} />
 					) : null}
 					{error !== null ? (
 						<p className="text-xs text-destructive-foreground" role="alert">
@@ -927,7 +1015,7 @@ function ChooseStage({
 					effect={effect}
 				/>
 				{draft.logs_enabled ? (
-					<FilterField
+					<GcpLogFilterField
 						sinkExists={sinkExists}
 						filter={filter}
 						onFilter={onFilter}

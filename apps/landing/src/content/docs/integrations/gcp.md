@@ -144,18 +144,20 @@ A connection collects at least one of the two: the last one that is on can't be 
 
 **Log filter** decides which filter the script writes onto the sink. It is in the first stage of **Connect Google Cloud** and of **Configure**, below **Collect**, while **Log forwarding** is ticked.
 
-Platform, request and audit logs are always forwarded. The ticks choose whose application output comes with them: what the code of a runtime writes to stdout and stderr.
+Platform, request and audit logs are always forwarded. Application output, what the code of a runtime writes to stdout and stderr, is not: send it with your [OpenTelemetry setup](/docs/integrations/gcp-opentelemetry), where each line links to its trace.
 
-| Runtime             | Ticked by default | Covers                                              |
-| ------------------- | ----------------- | --------------------------------------------------- |
-| **Cloud Run**       | Yes               | Services, jobs, worker pools and 2nd gen functions. |
-| **Cloud Functions** | Yes               | 1st gen functions.                                  |
-| **App Engine**      | Yes               | Standard and flexible.                              |
-| **GKE containers**  | No                | Every container of a cluster.                       |
+For workloads that can't send logs over OpenTelemetry, click **Can't forward via OpenTelemetry** and tick the runtimes whose application output to forward. None is ticked until you do. **Use OpenTelemetry instead** closes the ticks and forwards none again.
 
-Untick a runtime whose workloads already send their logs to Maple over OpenTelemetry. Otherwise each line is stored twice: see [Application output](/docs/integrations/gcp-opentelemetry#application-output). Maple does not check which workloads do.
+| Runtime             | Covers                                              |
+| ------------------- | --------------------------------------------------- |
+| **Cloud Run**       | Services, jobs, worker pools and 2nd gen functions. |
+| **Cloud Functions** | 1st gen functions.                                  |
+| **App Engine**      | Standard and flexible.                              |
+| **GKE containers**  | Every container of a cluster.                       |
 
-On a connection that already has a sink, the choice starts on **Keep current filter**: the script leaves the sink's filter as it is. Maple can't see that filter, so **Current filter in Log Router** opens it in the console. To change it, click **Configure**, choose **Replace filter**, set the ticks, click **Continue to the script** and run the script again.
+Don't tick a runtime whose workloads already send their logs to Maple over OpenTelemetry. Otherwise each line is stored twice: see [Application output](/docs/integrations/gcp-opentelemetry#application-output). Maple does not check which workloads do.
+
+On a connection that already has a sink, the choice starts on **Keep current filter**: the script leaves the sink's filter as it is. Maple can't see that filter, so **Current filter in Log Router** opens it in the console. To change it, click **Configure**, choose **Replace filter**, set the runtimes, click **Continue to the script** and run the script again.
 
 For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep current filter** leave your filter in place, while **Replace filter** replaces it.
 
@@ -256,13 +258,13 @@ Before it changes anything, the script asks Google which permissions the signed-
 
 Maple receives every entry the sink's filter lets through. The default filter excludes:
 
-| Excluded                                | Reason                                                                                                                                                                                                                      |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data Access audit logs                  | They record every API read.                                                                                                                                                                                                 |
-| Load balancer health checks             | Probes hit each backend every few seconds.                                                                                                                                                                                  |
-| Kubernetes lease renewals               | A GKE cluster renews its leader-election leases all day: hundreds of audit entries a minute for an idle node.                                                                                                               |
-| VM serial console output                | A VM writes thousands of lines of raw terminal output at boot.                                                                                                                                                              |
-| Application output of unticked runtimes | By default GKE containers: a cluster's workloads usually send their logs over OpenTelemetry already, so each line would be stored twice. See [Application output](/docs/integrations/gcp-opentelemetry#application-output). |
+| Excluded                                | Reason                                                                                                                                                                                         |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data Access audit logs                  | They record every API read.                                                                                                                                                                    |
+| Load balancer health checks             | Probes hit each backend every few seconds.                                                                                                                                                     |
+| Kubernetes lease renewals               | A GKE cluster renews its leader-election leases all day: hundreds of audit entries a minute for an idle node.                                                                                  |
+| VM serial console output                | A VM writes thousands of lines of raw terminal output at boot.                                                                                                                                 |
+| Application output of unticked runtimes | By default every runtime: workloads send their logs over OpenTelemetry, so each line would be stored twice. See [Application output](/docs/integrations/gcp-opentelemetry#application-output). |
 
 The filter, one clause per line in the same order:
 
@@ -271,16 +273,13 @@ NOT log_id("cloudaudit.googleapis.com/data_access")
 AND NOT httpRequest.userAgent:"GoogleHC"
 AND NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update"
 AND NOT logName:"serialconsole.googleapis.com"
-AND NOT resource.type="k8s_container"
-```
-
-The last clause is the unticked **GKE containers**: ticking it under [Log filter](#log-filter) removes the clause. Unticking another runtime adds its own:
-
-```text
 AND NOT (log_id("run.googleapis.com/stdout") OR log_id("run.googleapis.com/stderr"))
 AND NOT log_id("cloudfunctions.googleapis.com/cloud-functions")
 AND NOT (resource.type="gae_app" AND (log_id("stdout") OR log_id("stderr")))
+AND NOT resource.type="k8s_container"
 ```
+
+The last four clauses are the application output of each runtime: ticking one under [Log filter](#log-filter) removes its clause.
 
 The script reports to Maple through a log named `maple-setup`. Maple reads that entry as the report and does not store it, so don't write your own logs under that name.
 
@@ -470,8 +469,8 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 | **Rejected**: "The Pub/Sub subscription wraps each entry in an envelope Maple can't read." | The subscription was changed to deliver wrapped messages. Run the setup script again: it resets the subscription. Entries sent meanwhile are lost.                                                                                   |
 | **Rejected**: "Maple could not store an entry just now."                                   | Nothing to do. Pub/Sub retries the entry for up to a day, and the status returns to **Receiving** with the next accepted entry.                                                                                                      |
 | **Rejected**: "This Maple organization is over its plan limit, so Maple refuses new logs." | Raise the plan limit under **Settings → Billing**. Pub/Sub retries refused entries for up to a day.                                                                                                                                  |
-| A workload's logs appear twice                                                             | The sink forwards its application output and the workload also sends its logs over OpenTelemetry. In **Configure**, choose **Replace filter**, untick its runtime under [Log filter](#log-filter) and run the script again.          |
-| GKE container logs are missing                                                             | **GKE containers** is unticked by default. If the workloads don't send their logs over OpenTelemetry, tick it under [Log filter](#log-filter) in **Configure** and run the script again.                                             |
+| A workload's logs appear twice                                                             | The sink forwards its application output and the workload also sends its logs over OpenTelemetry. In **Configure**, choose **Replace filter**, leave its runtime unticked under [Log filter](#log-filter) and run the script again.  |
+| A workload's stdout and stderr are missing                                                 | Application output is not forwarded by default. Send it over OpenTelemetry, or tick its runtime under [Log filter](#log-filter) in **Configure** and run the script again.                                                           |
 
 ### Metrics and resources
 

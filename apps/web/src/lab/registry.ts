@@ -53,6 +53,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/gcp",
+		title: "Google Cloud log filter",
+		description:
+			"The Google Cloud configuration's Log filter for a new connection and an existing sink, with what each choice asks the setup script for.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/onboarding",
 		title: "Onboarding",
 		description:

@@ -4,7 +4,6 @@
 
 import { Option, Schema } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"
-import { GCP_DEFAULT_APPLICATION_LOGS } from "@maple/domain/gcp"
 import {
 	GcpProjectId,
 	GcpResourceNumber,
@@ -448,19 +447,28 @@ export const GCP_LOG_RUNTIMES = [
 export interface GcpLogFilterDraft {
 	/** Leave an existing sink's filter as it is. */
 	readonly keep: boolean | null
-	/** The runtimes whose application output a new filter forwards. */
+	/**
+	 * The runtimes whose application output a new filter forwards. Null until the admin says their
+	 * workloads can't send it over OpenTelemetry: until then none is forwarded or can be ticked.
+	 */
 	readonly runtimes: ReadonlyArray<GcpLogRuntime> | null
 }
 
 /**
  * What the configuration's log filter stands on. Nothing chosen: an existing sink keeps its filter,
- * so running the script again for another change never resets it, and a new sink forwards the
- * default runtimes. `applicationLogs` is what the script is asked for: undefined keeps the filter.
+ * so running the script again for another change never resets it, and a new sink forwards no
+ * application output. `applicationLogs` is what the script is asked for: undefined keeps the filter.
  */
 export const gcpLogFilterChoice = (draft: GcpLogFilterDraft, sinkExists: boolean) => {
 	const keep = sinkExists && (draft.keep ?? true)
-	const runtimes = draft.runtimes ?? GCP_DEFAULT_APPLICATION_LOGS
-	return { keep, runtimes, applicationLogs: keep ? undefined : runtimes }
+	const runtimes = draft.runtimes ?? []
+	return {
+		keep,
+		runtimes,
+		/** The runtime ticks are open: the admin can't send application output over OpenTelemetry. */
+		forwardsOutput: draft.runtimes !== null,
+		applicationLogs: keep ? undefined : runtimes,
+	}
 }
 
 /** One line of the apply step's recap: whose application output the new filter forwards. */

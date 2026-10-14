@@ -20,7 +20,7 @@ Your workloads send traces, logs and metrics straight to Maple over OpenTelemetr
 ### GKE
 
 1. Instrument each service with an OpenTelemetry SDK. Export to Maple, or to the [Maple Kubernetes collector](/docs/infrastructure/kubernetes) in the cluster.
-2. [Connect Google Cloud](/docs/integrations/gcp#connect) and leave **GKE containers** unticked under **Log filter**.
+2. [Connect Google Cloud](/docs/integrations/gcp#connect) and leave **Log filter** as it is: no application output is forwarded.
 
 The connection then adds node and cluster logs, audit logs and the `gcp.kubernetes.*` metrics.
 
@@ -42,16 +42,16 @@ The connection adds audit logs and the `gcp.compute.*` metrics.
 
 ## Application output
 
-Application output is what the code of a runtime writes to stdout and stderr. The connection forwards it per runtime, and you choose the runtimes under **Log filter**. Platform, request and audit logs are forwarded either way.
+Application output is what the code of a runtime writes to stdout and stderr. The connection forwards none by default: send it over OpenTelemetry. Platform, request and audit logs are forwarded either way. For workloads that can't, click **Can't forward via OpenTelemetry** under **Log filter** and tick their runtimes.
 
-| Runtime             | Forwarded by default | Left out when unticked                                                                                | Still forwarded                          |
-| ------------------- | -------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| **Cloud Run**       | Yes                  | `run.googleapis.com/stdout` and `stderr` of services, jobs, worker pools and 2nd gen functions        | Request logs, system logs, audit logs    |
-| **Cloud Functions** | Yes                  | `cloudfunctions.googleapis.com/cloud-functions` of 1st gen functions, with its start and finish lines | Audit logs                               |
-| **App Engine**      | Yes                  | `stdout` and `stderr` of `gae_app`                                                                    | Request logs, audit logs                 |
-| **GKE containers**  | No                   | Everything of `resource.type="k8s_container"`                                                         | Node, pod and cluster events, audit logs |
+| Runtime             | Left out when unticked                                                                                | Still forwarded                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| **Cloud Run**       | `run.googleapis.com/stdout` and `stderr` of services, jobs, worker pools and 2nd gen functions        | Request logs, system logs, audit logs    |
+| **Cloud Functions** | `cloudfunctions.googleapis.com/cloud-functions` of 1st gen functions, with its start and finish lines | Audit logs                               |
+| **App Engine**      | `stdout` and `stderr` of `gae_app`                                                                    | Request logs, audit logs                 |
+| **GKE containers**  | Everything of `resource.type="k8s_container"`                                                         | Node, pod and cluster events, audit logs |
 
-Untick a runtime when its workloads already send their logs to Maple:
+Don't tick a runtime whose workloads already send their logs to Maple:
 
 | Reason        | Detail                                                                                                                                                                                 |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -61,18 +61,16 @@ Untick a runtime when its workloads already send their logs to Maple:
 
 Maple does not check which workloads send their logs another way. A runtime with both kinds of workloads is one tick: tick it when the uninstrumented ones matter more, since Cloud Logging is the only place their lines exist.
 
-GKE containers are unticked by default because a cluster's logs usually reach Maple through OpenTelemetry or the [Maple Kubernetes collector](/docs/infrastructure/kubernetes).
-
 Other places your code runs have no tick and are always forwarded: Compute Engine logs collected by the Ops Agent, and the job output of Batch, Dataflow, Dataproc, Cloud Composer and Vertex AI. Leave them out with a filter of your own.
 
 ## Change the filter
 
-On the connection's row, click **Configure**. Under **Log filter**, choose **Replace filter** and tick the runtimes whose application output to forward. Click **Continue to the script**, then copy the script and run it in Cloud Shell again.
+On the connection's row, click **Configure**. Under **Log filter**, choose **Replace filter**. To forward application output, click **Can't forward via OpenTelemetry** and tick its runtimes. Click **Continue to the script**, then copy the script and run it in Cloud Shell again.
 
 | Log filter              | The sink forwards                                                                     |
 | ----------------------- | ------------------------------------------------------------------------------------- |
 | **Keep current filter** | What it forwards now. Preselected once a run has set log forwarding up.               |
-| **Replace filter**      | Platform, request and audit logs, plus the application output of the ticked runtimes. |
+| **Replace filter**      | Platform, request and audit logs, plus the application output of any ticked runtimes. |
 
 For any other filter, paste the script into an editor, edit `LOG_FILTER` near its top, set `LOG_FILTER_MODE` to `set` and run it. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language).
 

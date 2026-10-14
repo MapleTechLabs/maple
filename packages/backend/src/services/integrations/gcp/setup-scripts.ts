@@ -1,4 +1,4 @@
-import { GCP_DEFAULT_APPLICATION_LOGS, gcpConnectorResourceNames } from "@maple/domain/gcp"
+import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
 import {
 	type GcpConnectorId,
@@ -647,7 +647,7 @@ export interface GcpSetupScriptInput extends GcpScriptTarget {
 	readonly mapleServiceAccountEmail: string | undefined
 	readonly logsEnabled: boolean
 	readonly metricsEnabled: boolean
-	/** Null: an existing sink keeps its filter, a new one gets the default list. */
+	/** Null: an existing sink keeps its filter, a new one forwards no application output. */
 	readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null
 }
 
@@ -660,7 +660,7 @@ export interface GcpSetupScriptInput extends GcpScriptTarget {
  */
 export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 	const { scopeType, logsEnabled: logs } = input
-	const applicationLogs = input.applicationLogs ?? GCP_DEFAULT_APPLICATION_LOGS
+	const applicationLogs = input.applicationLogs ?? []
 	const leftOut = leftOutRuntimes(applicationLogs).map((runtime) => APPLICATION_LOGS[runtime].name)
 	// On for the connector while this deployment has lost its Google identity: nothing is set up
 	// and, above all, nothing a customer set up earlier is removed.

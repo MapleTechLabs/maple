@@ -671,13 +671,25 @@ describe("gcpCreateRequest opt-ins", () => {
 describe("gcpLogFilterChoice", () => {
 	const untouched = { keep: null, runtimes: null }
 
-	it("starts a new sink on the default runtimes and leaves an existing sink's filter alone", () => {
+	it("starts a new sink with no application output and leaves an existing sink's filter alone", () => {
 		expect(gcpLogFilterChoice(untouched, false)).toEqual({
 			keep: false,
-			runtimes: ["cloud_run", "cloud_functions", "app_engine"],
-			applicationLogs: ["cloud_run", "cloud_functions", "app_engine"],
+			runtimes: [],
+			forwardsOutput: false,
+			applicationLogs: [],
 		})
 		expect(gcpLogFilterChoice(untouched, true).applicationLogs).toBeUndefined()
+		// Replacing the filter without opening the runtime ticks forwards no application output either.
+		expect(gcpLogFilterChoice({ keep: false, runtimes: null }, true).applicationLogs).toEqual([])
+	})
+
+	it("opens the runtime ticks only once OpenTelemetry is ruled out, with none ticked", () => {
+		expect(gcpLogFilterChoice({ keep: null, runtimes: [] }, false)).toEqual({
+			keep: false,
+			runtimes: [],
+			forwardsOutput: true,
+			applicationLogs: [],
+		})
 	})
 
 	it("has no filter to keep before a sink exists", () => {
@@ -691,6 +703,7 @@ describe("gcpLogFilterChoice", () => {
 		expect(gcpLogFilterChoice({ keep: true, runtimes: ["gke"] }, true)).toEqual({
 			keep: true,
 			runtimes: ["gke"],
+			forwardsOutput: true,
 			applicationLogs: undefined,
 		})
 	})

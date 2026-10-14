@@ -221,7 +221,7 @@ export type V2GcpUpdateConnectorRequest = Schema.Schema.Type<typeof V2GcpUpdateC
 export const V2GcpSetupScriptsRequest = Schema.Struct({
 	application_logs: Schema.optionalKey(Schema.Array(GcpLogRuntime)).annotate({
 		description:
-			"The runtimes whose application output (what their code writes to stdout and stderr) the log sink forwards. Platform, request and audit logs are forwarded either way. Omitted: a sink that already exists keeps its filter, and a new one forwards Cloud Run, Cloud Functions and App Engine output, not GKE containers. Given: the script sets the filter to exactly this list, and an empty list forwards no application output. A workload that also sends its logs to Maple over OpenTelemetry has each line stored twice.",
+			"The runtimes whose application output (what their code writes to stdout and stderr) the log sink forwards. Platform, request and audit logs are forwarded either way. Omitted: a sink that already exists keeps its filter, and a new one forwards no application output: workloads send it over OpenTelemetry. Given: the script sets the filter to exactly this list, and an empty list forwards no application output. A workload that also sends its logs to Maple over OpenTelemetry has each line stored twice.",
 		examples: [["cloud_run", "cloud_functions", "app_engine"]],
 	}),
 }).annotate({

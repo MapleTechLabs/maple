@@ -4,7 +4,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { Effect, Schema } from "effect"
-import { GCP_DEFAULT_APPLICATION_LOGS } from "@maple/domain/gcp"
 import { GcpConnectorId, GcpLogRuntime, GcpProjectId, GcpResourceNumber } from "@maple/domain/primitives"
 import {
 	gcpLogFilter,
@@ -24,7 +23,7 @@ const WRITER = "serviceAccount:service-1@gcp-sa-logging.iam.gserviceaccount.com"
 const MAPLE_ACCOUNT = "collector@maple-prod.iam.gserviceaccount.com"
 const PUSH_ENDPOINT = `https://ingest.test/v1/logpush/gcp/${connectorId}?secret=${SECRET}`
 const MAPLE_URL = "https://app.maple.test/integrations?integration=gcp"
-const DEFAULT_LOG_FILTER = gcpLogFilter(GCP_DEFAULT_APPLICATION_LOGS)
+const DEFAULT_LOG_FILTER = gcpLogFilter([])
 
 const target = (scopeType: GcpScriptTarget["scopeType"]): GcpScriptTarget => ({
 	connectorId,
@@ -585,8 +584,8 @@ Done. Everything is in place.
 			setup({ ...setupInput("project", { logs: true, metrics: false }), applicationLogs })
 		const all = GcpLogRuntime.literals
 		expect(filtered(null)).toContain(`LOG_FILTER_MODE='keep'\nLOG_FILTER='${DEFAULT_LOG_FILTER}'`)
-		expect(filtered(GCP_DEFAULT_APPLICATION_LOGS)).toContain(
-			`LOG_FILTER_MODE='set'\nLOG_FILTER='${DEFAULT_LOG_FILTER}'`,
+		expect(filtered(["cloud_run"])).toContain(
+			`LOG_FILTER_MODE='set'\nLOG_FILTER='${gcpLogFilter(["cloud_run"])}'`,
 		)
 		expect(filtered(all)).toContain(`LOG_FILTER_MODE='set'\nLOG_FILTER='${gcpLogFilter(all)}'`)
 		expect(filtered([])).toContain(`LOG_FILTER_MODE='set'\nLOG_FILTER='${gcpLogFilter([])}'`)
@@ -604,7 +603,9 @@ Done. Everything is in place.
 # A workload that also sends its logs over OpenTelemetry would have those lines stored twice. The
 # choice is made under Log filter in Maple.
 # Details: https://maple.dev/docs/integrations/gcp-opentelemetry${MODE_COMMENT}`
-		expect(filtered(null)).toContain(leftOutComment("GKE containers"))
+		expect(filtered(null)).toContain(
+			leftOutComment("Cloud Run, Cloud Functions (1st gen), App Engine, GKE containers"),
+		)
 		expect(filtered(["gke", "cloud_run"])).toContain(
 			leftOutComment("Cloud Functions (1st gen), App Engine"),
 		)
@@ -1100,7 +1101,6 @@ esac
 			`${NOISE} AND NOT (resource.type="gae_app" AND (log_id("stdout") OR log_id("stderr")))`,
 		)
 		expect(without("gke")).toBe(`${NOISE} AND NOT resource.type="k8s_container"`)
-		expect(DEFAULT_LOG_FILTER).toBe(without("gke"))
 		// The clauses come in the runtimes' own order, whatever order the list is in.
 		expect(gcpLogFilter([])).toBe(
 			`${NOISE} AND NOT (log_id("run.googleapis.com/stdout") OR log_id("run.googleapis.com/stderr")) AND NOT log_id("cloudfunctions.googleapis.com/cloud-functions") AND NOT (resource.type="gae_app" AND (log_id("stdout") OR log_id("stderr"))) AND NOT resource.type="k8s_container"`,
