@@ -1,0 +1,34 @@
+diff --git a/lib/Cloudflare/Workers/ObservabilityDestination.js b/lib/Cloudflare/Workers/ObservabilityDestination.js
+index 1cbcfbac8a32c68db0ed62a78aba2f1564141748..2f241274b02fe993b349053fbef2d2c9b77d5d9f 100644
+--- a/lib/Cloudflare/Workers/ObservabilityDestination.js
++++ b/lib/Cloudflare/Workers/ObservabilityDestination.js
+@@ -96,12 +96,6 @@ export const ObservabilityDestinationProvider = () => Provider.succeed(Observabi
+         if (oldDataset !== undefined && oldDataset !== news.logpushDataset) {
+             return { action: "replace" };
+         }
+-        // State written by earlier versions holds `destinationConf` as a plain
+-        // string. Reconcile to re-read it as `Redacted`; without header or URL
+-        // drift this issues no PATCH.
+-        if (output !== undefined && !Redacted.isRedacted(output.destinationConf)) {
+-            return { action: "update" };
+-        }
+         return undefined;
+     }),
+     read: Effect.fn(function* ({ id, output, olds }) {
+diff --git a/src/Cloudflare/Workers/ObservabilityDestination.ts b/src/Cloudflare/Workers/ObservabilityDestination.ts
+index 5dad75a9b76c2b94f4b71cd1dfb1aa29706e2973..51f1974730e34d2a884379cdd33f2fe47bbad99b 100644
+--- a/src/Cloudflare/Workers/ObservabilityDestination.ts
++++ b/src/Cloudflare/Workers/ObservabilityDestination.ts
+@@ -205,12 +205,6 @@ export const ObservabilityDestinationProvider = () =>
+       if (oldDataset !== undefined && oldDataset !== news.logpushDataset) {
+         return { action: "replace" } as const;
+       }
+-      // State written by earlier versions holds `destinationConf` as a plain
+-      // string. Reconcile to re-read it as `Redacted`; without header or URL
+-      // drift this issues no PATCH.
+-      if (output !== undefined && !Redacted.isRedacted(output.destinationConf)) {
+-        return { action: "update" } as const;
+-      }
+       return undefined;
+     }),
+ 

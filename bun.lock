@@ -956,6 +956,7 @@
     "@cloudflare/workers-types@5.20261005.1": "patches/@cloudflare%2Fworkers-types@5.20261005.1.patch",
     "@effect/vitest@4.0.4": "patches/@effect%2Fvitest@4.0.4.patch",
     "@effect/ai-openrouter@4.0.4": "patches/@effect%2Fai-openrouter@4.0.4.patch",
+    "alchemy@2.0.0-beta.83": "patches/alchemy@2.0.0-beta.83.patch",
   },
   "overrides": {
     "@effect/sql-d1": "4.0.4",
