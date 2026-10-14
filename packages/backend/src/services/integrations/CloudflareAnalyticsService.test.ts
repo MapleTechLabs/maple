@@ -1018,6 +1018,115 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
+	// One account's state as of a steady tick: discovery and settings fresh, every row's head
+	// `behindMs` short of the horizon with history already complete, so the tick is all head work.
+	const seedBehindAccount = (accountId: string, zoneCount: number, behindMs: number) =>
+		Effect.gen(function* () {
+			const database = yield* Database
+			const stamps = {
+				orgId: ORG,
+				accountId,
+				settingsFetchedAt: T0 - 5 * MIN,
+				watermarkAt: HORIZON - behindMs,
+				backfillAt: BACKFILL_FLOOR,
+				createdAt: T0 - 60 * MIN,
+				updatedAt: T0 - 60 * MIN,
+			}
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(CloudflareAnalyticsState).values([
+						{
+							...stamps,
+							id: randomUUID(),
+							dataset: "workers_invocations",
+							zoneId: "",
+							discoveredAt: T0 - 5 * MIN,
+						},
+						...Array.from({ length: zoneCount }, (_, i) => ({
+							...stamps,
+							id: randomUUID(),
+							dataset: "http_requests",
+							zoneId: `${accountId}-zone-${i}`,
+							zoneName: `${accountId}-zone-${i}.example.com`,
+						})),
+					]),
+				),
+			)
+		})
+
+	const watermarksOf = (accountId: string) =>
+		loadStateRows.pipe(
+			Effect.map((rows) => rows.filter((row) => row.accountId === accountId)),
+			Effect.map((rows) => ({
+				http: rows.filter((row) => row.dataset === "http_requests").map((row) => row.watermarkAt),
+				workers: rows.find((row) => row.dataset === "workers_invocations")?.watermarkAt,
+			})),
+		)
+
+	it.effect("a busy account cannot starve the grant's other account of calls", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const SMALL = "acct-small"
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			// The busy account comes first in status order AND is further behind: 40 zones six
+			// hours back is ~30 head documents, more than the whole tick.
+			yield* seedConnection(ANALYTICS_SCOPE, [
+				{ id: ACCOUNT_ID, name: "Busy Account" },
+				{ id: SMALL, name: "Small Account" },
+			])
+			yield* seedBehindAccount(ACCOUNT_ID, 40, 6 * 60 * MIN)
+			yield* seedBehindAccount(SMALL, 1, 3 * 60 * MIN)
+
+			const service = yield* CloudflareAnalyticsService
+			const first = yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+			// The grant's total is unchanged; it is only split differently.
+			assert.strictEqual(first.callsMade, 20)
+			const polls = named("CloudflareAnalyticsService.pollConnection")
+			const smallPoll = polls.find(
+				(span) => span.attributes.get("maple.cloudflare.account_id") === SMALL,
+			)
+			assert.isAbove(Number(smallPoll!.attributes.get("maple.cloudflare.calls")), 0)
+
+			// Both of the small account's datasets moved in the very first tick...
+			const afterOne = yield* watermarksOf(SMALL)
+			assert.isAbove(afterOne.workers!, HORIZON - 3 * 60 * MIN)
+			assert.isAbove(afterOne.http[0]!, HORIZON - 3 * 60 * MIN)
+			// ...and the busy account still got the rest of the budget.
+			const busy = yield* watermarksOf(ACCOUNT_ID)
+			assert.isAbove(busy.workers!, HORIZON - 6 * 60 * MIN)
+			assert.isTrue(busy.http.every((watermark) => watermark! > HORIZON - 6 * 60 * MIN))
+
+			// One window per head document per tick: three ticks bring it to the horizon.
+			yield* service.pollOrg(ORG)
+			yield* service.pollOrg(ORG)
+			const caughtUp = yield* watermarksOf(SMALL)
+			assert.strictEqual(caughtUp.workers, HORIZON)
+			assert.deepStrictEqual(caughtUp.http, [HORIZON])
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	it.effect("an account dataset crowded out by zone documents leads the next tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			// 210 zones are 21 zone documents per window: one round of head work already
+			// outspends the tick, and the account document plans after them at equal windows.
+			yield* seedBehindAccount(ACCOUNT_ID, 210, 2 * 60 * MIN)
+
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG)
+			assert.strictEqual((yield* watermarksOf(ACCOUNT_ID)).workers, HORIZON - 2 * 60 * MIN)
+			// Its watermark is now the oldest, so it goes first instead of waiting for every zone
+			// to reach the horizon.
+			yield* service.pollOrg(ORG)
+			assert.strictEqual((yield* watermarksOf(ACCOUNT_ID)).workers, HORIZON - 60 * MIN)
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
 	it.effect("pollOrg disables state rows for vanished zones", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
@@ -1311,10 +1420,11 @@ describe("CloudflareAnalyticsService", () => {
 			// fully-broken integration was invisible to find_errors/logs for hours. It must now be a
 			// classified, first-class failure on the summary (which the seam turns into an exception
 			// event + ERROR log through Maple's own error pipeline).
-			const authz = summary.failures.find((failure) => failure.kind === "authz")
+			const authz = summary.failures.find(
+				(failure) => failure.kind === "authz" && failure.datasetId === "http_requests",
+			)
 			assert.isDefined(authz)
 			assert.strictEqual(authz!.scope, "zone")
-			assert.strictEqual(authz!.datasetId, "http_requests")
 			assert.include(authz!.message, "not authorized")
 			assert.strictEqual(summary.rowsIngested, 0)
 			const rows = yield* loadStateRows
