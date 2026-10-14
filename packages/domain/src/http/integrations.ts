@@ -10,6 +10,19 @@ import {
 } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
+import {
+	GCP_METRIC_SEARCH_MAX_LIMIT,
+	GcpMetricDescriptor,
+	GcpMetricSearchResponse,
+	GcpMetricType,
+	GcpPromQlFailedError,
+	GcpPromQlInstantRequest,
+	GcpPromQlInvalidQueryError,
+	GcpPromQlRangeRequest,
+	GcpPromQlResult,
+	GcpPromQlTooManyProjectsError,
+	GcpPromQlUnavailableError,
+} from "./gcp-promql"
 import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
 import {
 	GitCommitSha,
@@ -1100,6 +1113,17 @@ export class GcpMetricsUnavailableError extends HttpTaggedError<GcpMetricsUnavai
 	},
 ) {}
 
+const GCP_PROMQL_ERRORS = [
+	GcpPromQlUnavailableError,
+	IntegrationsNotConnectedError,
+	IntegrationsValidationError,
+	GcpPromQlInvalidQueryError,
+	GcpPromQlTooManyProjectsError,
+	GcpPromQlFailedError,
+	IntegrationsUpstreamError,
+	IntegrationsPersistenceError,
+] as const
+
 export type IntegrationHttpError =
 	| IntegrationsForbiddenError
 	| IntegrationsConfigurationError
@@ -1272,6 +1296,48 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: GcpResourcesResponse,
 			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpPromQlQueryRange", "/gcp/promql/query_range", {
+			payload: GcpPromQlRangeRequest,
+			success: GcpPromQlResult,
+			error: GCP_PROMQL_ERRORS,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpPromQlQuery", "/gcp/promql/query", {
+			payload: GcpPromQlInstantRequest,
+			success: GcpPromQlResult,
+			error: GCP_PROMQL_ERRORS,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("gcpMetricSearch", "/gcp/metrics/search", {
+			query: Schema.Struct({
+				/** Substring of the metric name, case-insensitive. */
+				search: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+				limit: Schema.optional(
+					Schema.FiniteFromString.check(
+						Schema.isInt(),
+						Schema.isBetween({ minimum: 1, maximum: GCP_METRIC_SEARCH_MAX_LIMIT }),
+					),
+				),
+				/** One of the organization's projects. Defaults to the first. */
+				project: Schema.optional(GcpProjectId),
+			}),
+			success: GcpMetricSearchResponse,
+			error: GCP_PROMQL_ERRORS,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("gcpMetricDescribe", "/gcp/metrics/describe", {
+			query: Schema.Struct({
+				type: GcpMetricType,
+				project: Schema.optional(GcpProjectId),
+			}),
+			success: GcpMetricDescriptor,
+			error: [...GCP_PROMQL_ERRORS, IntegrationsNotFoundError],
 		}),
 	)
 	.add(
