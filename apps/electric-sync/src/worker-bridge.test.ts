@@ -22,6 +22,7 @@ import {
  */
 const ExportedSpan = Schema.Struct({
 	name: Schema.String,
+	kind: Schema.optionalKey(Schema.Finite),
 	status: Schema.Struct({
 		code: Schema.optionalKey(Schema.Finite),
 		message: Schema.optionalKey(Schema.String),
@@ -31,6 +32,8 @@ const ExportedSpan = Schema.Struct({
 	),
 })
 type ExportedSpan = typeof ExportedSpan.Type
+/** OTLP `SPAN_KIND_SERVER`. Effect names server spans by method alone, so kind is what marks one. */
+const SERVER_KIND = 2
 
 const ExportedTraces = Schema.Struct({
 	resourceSpans: Schema.optionalKey(
@@ -106,7 +109,7 @@ const event = (path: string, app: ReturnType<typeof appLayer> = appLayer()) =>
 		return {
 			status: response.status,
 			flushedBeforeClose,
-			server: spans.filter((span) => span.name === "http.server GET"),
+			server: spans.filter((span) => span.kind === SERVER_KIND),
 		}
 	}).pipe(Effect.scoped)
 
