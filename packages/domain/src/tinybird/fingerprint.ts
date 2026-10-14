@@ -387,14 +387,12 @@ export function computeFingerprintInputs(args: {
  * stale rows retire deterministically, instead of sitting in `triage` until the
  * 14-day auto-resolve window catches up.
  *
- * That archive is safe only if a bump rotates EVERY hash: an issue whose hash
- * survived would be archived while still receiving occurrences, and nothing
- * un-archives it (the tick's upsert conflicts on `(orgId, fingerprintHash)` and
- * never clears `archivedAt`). A rule change alone rotates only the errors it
- * touches, so since v3 the version itself is hashed, as `FINGERPRINT_HASH_SALT`.
- * Bumping this constant now rotates every hash by construction. (The Apple frame
- * alternative and the attribute fallback predate the salt and skipped a bump for
- * exactly this reason.)
+ * That archive assumes a bump rotates EVERY hash, so since v3 the version itself
+ * is hashed, as `FINGERPRINT_HASH_SALT`. Where an old hash is still produced
+ * anyway (a self-hosted warehouse that has not applied the new view, or a deploy
+ * gap), the tick restores an archived open issue on its next occurrence and
+ * restamps its version. (The Apple frame alternative and the attribute fallback
+ * predate both and skipped a bump for that reason.)
  *
  * Deliberately NOT a ClickHouse column. Old and new hashes cannot collide, so
  * the warehouse needs no discriminator — only the Postgres row does.
