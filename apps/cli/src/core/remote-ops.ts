@@ -207,6 +207,10 @@ const buildSpanTree = (
 
 const TRACE_NOT_FOUND_TAG = "@maple/http/v2/TraceNotFoundError"
 
+/** A v2 client failure is the decoded public envelope, `{ error: { _tag, ... } }`. */
+const isV2ErrorTagged = (tag: string) => (error: unknown) =>
+	Predicate.hasProperty(error, "error") && Predicate.isTagged(error.error, tag)
+
 export const inspectTrace = (
 	client: MapleV2Client,
 	p: { traceId: string },
@@ -215,7 +219,7 @@ export const inspectTrace = (
 		const id = traceId(p.traceId)
 		const trace = yield* client.traces.retrieve({ params: { trace_id: id } }).pipe(
 			Effect.catchIf(
-				(error: unknown) => Predicate.isTagged(error, TRACE_NOT_FOUND_TAG),
+				isV2ErrorTagged(TRACE_NOT_FOUND_TAG),
 				() =>
 					Effect.fail(
 						new CliNotFoundError({

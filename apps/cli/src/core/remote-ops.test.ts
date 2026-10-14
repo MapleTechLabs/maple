@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test"
-import { Effect, Exit, Schema } from "effect"
+import { Cause, Effect, Exit, Option, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { CliNotFoundError } from "../lib/errors"
 import * as Remote from "./remote-ops"
 import { makeV2Client } from "./v2-client"
 
@@ -240,5 +241,40 @@ describe("remote-ops request shapes", () => {
 				"p99Duration",
 			].sort(),
 		)
+	})
+})
+
+describe("inspectTrace not found", () => {
+	it("turns a trace_not_found envelope into CliNotFoundError", async () => {
+		const notFound = Object.assign(
+			async () =>
+				new Response(
+					JSON.stringify({
+						error: {
+							_tag: "@maple/http/v2/TraceNotFoundError",
+							type: "not_found_error",
+							code: "trace_not_found",
+							title: "Trace not found",
+							message: "No such trace.",
+							retryable: false,
+							recovery: "none",
+						},
+					}),
+					{ status: 404, headers: { "content-type": "application/json" } },
+				),
+			{ preconnect: globalThis.fetch.preconnect },
+		) satisfies typeof fetch
+		const client = makeV2Client("https://api.maple.test", "maple_ak_testtoken").pipe(
+			Effect.provide(FetchHttpClient.layer),
+			Effect.provideService(FetchHttpClient.Fetch, notFound),
+		)
+		const exit = await Effect.runPromise(
+			Effect.flatMap(client, (v2) =>
+				Effect.exit(Remote.inspectTrace(v2, { traceId: "0af7651916cd43dd8448eb211c80319c" })),
+			),
+		)
+		expect(Exit.isFailure(exit)).toBe(true)
+		const failure = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : Option.none()
+		expect(Option.getOrUndefined(failure)).toBeInstanceOf(CliNotFoundError)
 	})
 })
