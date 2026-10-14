@@ -99,32 +99,33 @@ export function CloudflareTraceGapCallout({
 	tracedService: string
 }) {
 	return (
-		<div className="flex items-stretch overflow-hidden rounded-lg border border-severity-error/40">
-			<div className="flex-1 space-y-1 px-4 py-3">
-				<p className="text-sm font-medium text-foreground">
-					{formatNumber(exceptions)} exceptions Cloudflare saw,{" "}
-					{tracedErrors === 0 ? "none" : formatNumber(tracedErrors)} in your traces
-				</p>
-				<p className="text-xs text-muted-foreground">
-					{tracedService}'s spans recorded {tracedErrors === 0 ? "no" : "far fewer"} failures in
-					this window. These invocations most likely threw before a span was exported, so tracing
-					never saw them.
-				</p>
-			</div>
-			<div className="flex items-center gap-6 border-l px-5">
-				<Figure
-					value={formatNumber(exceptions)}
-					caption="Cloudflare"
-					className="text-severity-error"
-				/>
-				<Figure value={formatNumber(tracedErrors)} caption="traces" />
-				<Link
-					to="/logs"
-					search={{ services: [tracedService] }}
-					className="font-mono text-xs text-primary hover:text-primary/80"
-				>
-					Logs in this window
-				</Link>
+		<div className="@container rounded-lg border border-severity-error/40">
+			<div className="flex flex-col @2xl:flex-row @2xl:items-center">
+				<div className="flex-1 space-y-1 px-4 py-3">
+					<p className="text-sm font-medium text-foreground">
+						{formatNumber(exceptions)} exceptions in Cloudflare,{" "}
+						{tracedErrors === 0 ? "none" : formatNumber(tracedErrors)} in traces
+					</p>
+					<p className="max-w-prose text-xs text-muted-foreground">
+						These invocations most likely threw before {tracedService} exported a span, so tracing
+						never saw them.
+					</p>
+				</div>
+				<div className="flex items-center gap-6 border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5">
+					<Figure
+						value={formatNumber(exceptions)}
+						caption="Cloudflare"
+						className="text-severity-error"
+					/>
+					<Figure value={formatNumber(tracedErrors)} caption="traces" />
+					<Link
+						to="/logs"
+						search={{ services: [tracedService] }}
+						className="ml-auto font-mono text-xs text-primary hover:text-primary/80 @2xl:ml-0"
+					>
+						Logs in this window
+					</Link>
+				</div>
 			</div>
 		</div>
 	)
@@ -132,7 +133,7 @@ export function CloudflareTraceGapCallout({
 
 function Figure({ value, caption, className }: { value: string; caption: string; className?: string }) {
 	return (
-		<div className="flex flex-col items-end">
+		<div className="flex flex-col items-start @2xl:items-end">
 			<span className={cn("font-mono text-sm font-semibold tabular-nums text-foreground", className)}>
 				{value}
 			</span>

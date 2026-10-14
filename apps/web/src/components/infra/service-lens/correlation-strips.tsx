@@ -37,7 +37,7 @@ export interface StripSeries {
 	showThreshold?: boolean
 	/** Stacked bands rather than independent lines (per-pod CPU). */
 	stacked?: boolean
-	/** A trailing window summary at the strip's right edge; replaces the last-value caption. */
+	/** A window summary under the strip's label, so the plot keeps the full width; replaces the last-value caption. */
 	summary?: ReactNode
 	/** Fixed series colours, for names whose meaning the identity hash can't see. */
 	colors?: Readonly<Record<string, string>>
@@ -80,9 +80,12 @@ export function CorrelationStrips({
 					key={strip.id}
 					className={cn("flex items-center gap-4 px-4 py-3", index > 0 && "border-t")}
 				>
-					<div className="flex w-[150px] shrink-0 flex-col gap-0.5">
+					<div className="flex w-[140px] shrink-0 flex-col gap-0.5">
 						<span className="text-xs font-medium text-foreground">{strip.label}</span>
 						<span className="font-mono text-3xs text-muted-foreground">{strip.source}</span>
+						{strip.summary === undefined ? null : (
+							<div className="mt-2 flex flex-col gap-0.5">{strip.summary}</div>
+						)}
 					</div>
 					<div className="min-w-0 flex-1">
 						<InfraMetricChart
@@ -100,11 +103,6 @@ export function CorrelationStrips({
 							header={strip.summary === undefined ? LastValue : undefined}
 						/>
 					</div>
-					{strip.summary === undefined ? null : (
-						<div className="flex w-[130px] shrink-0 flex-col items-end gap-0.5 text-right">
-							{strip.summary}
-						</div>
-					)}
 				</div>
 			))}
 		</Panel>
