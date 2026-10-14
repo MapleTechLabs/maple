@@ -69,7 +69,8 @@ const make = Effect.gen(function* () {
 			}),
 		)
 
-	// Total by contract: a lost CI span is logged, never a failed webhook job.
+	// Total by contract: a lost CI span is logged, never a failed webhook job. The failure is
+	// swallowed outside the span, so the span itself still ends as Error.
 	const emit = (orgId: OrgId, kind: "run" | "job", payload: OtlpTracesPayload) =>
 		Effect.gen(function* () {
 			const spanCount = payload.resourceSpans[0]?.scopeSpans[0]?.spans.length ?? 0
@@ -77,16 +78,18 @@ const make = Effect.gen(function* () {
 			const keys = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID)
 			yield* post(keys.publicKey, payload)
 		}).pipe(
+			Effect.tapCause((cause) =>
+				Effect.annotateCurrentSpan({
+					"maple.cicd.outcome": "ingest_failed",
+					"maple.cicd.failure": summarizeCause(cause),
+				}),
+			),
+			Effect.withSpan("CiTraceService.emit", { attributes: { "maple.cicd.kind": kind } }),
 			Effect.catchCause((cause) =>
-				Effect.annotateCurrentSpan({ "maple.cicd.outcome": "dropped" }).pipe(
-					Effect.andThen(
-						Effect.logWarning("[CI traces] failed to ingest CI spans").pipe(
-							Effect.annotateLogs({ orgId, kind, cause: summarizeCause(cause) }),
-						),
-					),
+				Effect.logWarning("[CI traces] failed to ingest CI spans").pipe(
+					Effect.annotateLogs({ orgId, kind, cause: summarizeCause(cause) }),
 				),
 			),
-			Effect.withSpan(`CiTraceService.emit${kind === "run" ? "Run" : "Job"}`),
 		)
 
 	return {
