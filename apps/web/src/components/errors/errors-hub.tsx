@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 
 import type { ErrorIssueDocument, IssueKind } from "@maple/domain/http"
+import { ERROR_ISSUE_SEARCH_MAX_LENGTH } from "@maple/domain/http/v2"
 
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Atom, Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -142,7 +143,8 @@ export function ErrorsHub(props: ErrorsHubProps) {
 					: { state: props.view }),
 			// Done issues are archived two weeks after closing; they still belong in Closed.
 			...(props.view === "open" ? undefined : { include_archived: "true" as const }),
-			...(props.search ? { search: props.search } : undefined),
+			// A pasted log line can outrun the API's cap; clamp rather than fail the page.
+			...(props.search ? { search: props.search.slice(0, ERROR_ISSUE_SEARCH_MAX_LENGTH) } : undefined),
 			...(warehouseFirst ? { fingerprint_hash: rankedHashes.join(",") } : undefined),
 		}
 	}, [

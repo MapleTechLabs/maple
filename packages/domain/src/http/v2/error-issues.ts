@@ -131,6 +131,9 @@ export const V2ErrorIssueDetail = Schema.Struct({
 })
 export type V2ErrorIssueDetail = Schema.Schema.Type<typeof V2ErrorIssueDetail>
 
+/** Longest `search` term the list accepts; clients clamp to it rather than fail. */
+export const ERROR_ISSUE_SEARCH_MAX_LENGTH = 200
+
 export const V2ErrorIssueListQuery = Schema.Struct({
 	...ListQuery.fields,
 	workflow_state: Schema.optional(WorkflowState),
@@ -160,7 +163,7 @@ export const V2ErrorIssueListQuery = Schema.Struct({
 	// work is over or handed to verification (verifying, done, cancelled, wontfix).
 	state: Schema.optional(Schema.Literals(["open", "closed"])),
 	// Case-insensitive substring of the exception type, message, label or service.
-	search: Schema.optional(Schema.String.check(Schema.isMaxLength(200))),
+	search: Schema.optional(Schema.String.check(Schema.isMaxLength(ERROR_ISSUE_SEARCH_MAX_LENGTH))),
 	// Done issues are archived 14 days after they close; include them.
 	include_archived: Schema.optional(Schema.Literal("true")),
 	sort: Schema.optional(Schema.Literals(["last_seen", "severity"])),

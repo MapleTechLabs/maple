@@ -221,8 +221,9 @@ loop in verification without a human ever seeing it.
 - **Seed exceptions:** `bun run seed:demo:env`, then `MAPLE_DEV_ENV_FILE=.env.screenshots bun dev api web ingest alerting`
   and `bun run seed:demo -- --reset --follow`. The alerting Worker skips its crons off production unless
   `MAPLE_ALERTING_ALLOW_NONPROD=1` is set (the screenshot env sets it).
-- **Run the tick now:** `bun run errors:tick` fires the alerting minute cron once (errors tick plus fix
-  verification) instead of waiting for it. `--url` targets a branch stack's `<branch>.alerting.localhost`.
+- **Run the tick now:** `bun run errors:tick` fires the alerting minute cron once instead of waiting
+  for it. That cron runs the alert and escalation lanes too, not only the errors tick and fix
+  verification, so alert rules evaluate (and may notify) on the same fire. `--url` targets a branch stack's `<branch>.alerting.localhost`.
 - **Measure a fingerprint change before shipping it:** `bun run errors:replay -- --file <sample>` groups
   a sample of real error events with today's fingerprint and with the proposal in
   `scripts/errors-replay/candidate.ts`, checks the TS mirror is in parity with production's hashes, and

@@ -2,8 +2,9 @@
  * Fire the alerting Worker's minute cron once, on a local `bun dev` stack.
  *
  * That cron runs the errors tick (candidates -> issues, incidents, regressions)
- * and the fix-verification tick, so this is the way to see newly ingested
- * exceptions become issues without waiting for the next minute.
+ * with fix verification, and also the alert and escalation lanes
+ * (`apps/alerting/src/schedule.ts`): alert rules evaluate and may notify too.
+ * It is the way to see newly ingested exceptions become issues without waiting.
  *
  *   bun run errors:tick
  *   bun run errors:tick -- --url https://my-branch.alerting.localhost
