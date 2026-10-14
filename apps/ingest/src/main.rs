@@ -15,7 +15,7 @@ mod task_protection;
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -160,6 +160,8 @@ struct AppConfig {
     tinybird: TinybirdConfig,
     max_request_body_bytes: usize,
     org_max_in_flight: u64,
+    /// Per-org cap on concurrent GCP Pub/Sub pushes, inside `org_max_in_flight`.
+    gcp_org_max_in_flight: u64,
     /// Wall-clock deadline for one HTTP request, or `Duration::ZERO` to run
     /// without one. See `request_timeout_middleware`.
     request_timeout: Duration,
@@ -439,6 +441,18 @@ impl AppConfig {
         if org_max_in_flight == 0 {
             return Err("INGEST_ORG_MAX_IN_FLIGHT must be greater than 0".to_owned());
         }
+        // Pub/Sub pushes one log entry per request, and every request is its own
+        // WAL fsync on the org's lane. This bounds how deep one org's pushes can
+        // queue on that lane, ahead of every other request sharing it. Pub/Sub
+        // slows down on the 429.
+        let gcp_org_max_in_flight = parse_u64(
+            "INGEST_GCP_ORG_MAX_IN_FLIGHT",
+            std::env::var("INGEST_GCP_ORG_MAX_IN_FLIGHT").ok(),
+            32,
+        )?;
+        if gcp_org_max_in_flight == 0 {
+            return Err("INGEST_GCP_ORG_MAX_IN_FLIGHT must be greater than 0".to_owned());
+        }
 
         // 30s. Comfortably above a healthy p99 (single-digit ms) and below the
         // load balancer idle timeout, so the gateway answers rather than having
@@ -669,6 +683,7 @@ impl AppConfig {
             tinybird,
             max_request_body_bytes,
             org_max_in_flight,
+            gcp_org_max_in_flight,
             request_timeout,
             require_tls,
             key_store_backend,
@@ -781,6 +796,13 @@ const GCP_CONNECTORS_TABLE: &str = "gcp_connectors";
 /// log line.
 const GCP_CONNECTOR_HEALTH_WRITE_INTERVAL: Duration = Duration::from_mins(1);
 
+/// Setup reports one connector may write per `GCP_SETUP_REPORT_WINDOW`. A run
+/// sends at most two (logs, metrics); the rest is headroom for runs pasted
+/// again and Pub/Sub redeliveries. Each report is a Postgres write on the pool
+/// key resolution uses, so a connector that sends more is refused.
+const GCP_SETUP_REPORTS_PER_WINDOW: u32 = 10;
+const GCP_SETUP_REPORT_WINDOW: Duration = Duration::from_mins(1);
+
 struct GcpConnectorResolver {
     store: Arc<dyn KeyStore>,
     lookup_hmac_key: String,
@@ -793,6 +815,8 @@ struct GcpConnectorResolver {
     /// (connector id, succeeded) pairs already written within
     /// `GCP_CONNECTOR_HEALTH_WRITE_INTERVAL`.
     recent_health_writes: Cache<(String, bool), ()>,
+    /// Setup reports per connector in the current `GCP_SETUP_REPORT_WINDOW`.
+    recent_setup_reports: Cache<String, Arc<AtomicU32>>,
 }
 
 struct OrgRoutingResolver {
@@ -1185,6 +1209,8 @@ struct AppState {
     key_store_ready: Arc<AtomicBool>,
     resolver: IngestKeyResolver,
     org_inflight_limiter: OrgInFlightLimiter,
+    /// GCP pushes only, taken before `org_inflight_limiter`.
+    gcp_inflight_limiter: OrgInFlightLimiter,
     sampling_resolver: SamplingPolicyResolver,
     attribute_mapping_resolver: AttributeMappingResolver,
     cloudflare_resolver: CloudflareConnectorResolver,
@@ -1328,11 +1354,17 @@ impl Drop for InFlightGuard {
 struct OrgInFlightLimiter {
     max_per_org: u64,
     counts: Arc<DashMap<String, Arc<AtomicU64>>>,
+    /// The `org_throttled` reason.
+    throttle_reason: &'static str,
+    /// Only the org-wide limiter owns the per-org in-flight gauge; a route's
+    /// limiter writing the same series would overwrite it.
+    records_gauge: bool,
 }
 
 struct OrgInFlightPermit {
     org_id: String,
     counter: Arc<AtomicU64>,
+    records_gauge: bool,
 }
 
 impl OrgInFlightLimiter {
@@ -1340,6 +1372,17 @@ impl OrgInFlightLimiter {
         Self {
             max_per_org,
             counts: Arc::new(DashMap::new()),
+            throttle_reason: "in_flight",
+            records_gauge: true,
+        }
+    }
+
+    /// A tighter cap for one route, taken on top of the org-wide one.
+    fn for_route(max_per_org: u64, throttle_reason: &'static str) -> Self {
+        Self {
+            throttle_reason,
+            records_gauge: false,
+            ..Self::new(max_per_org)
         }
     }
 
@@ -1353,17 +1396,20 @@ impl OrgInFlightLimiter {
         loop {
             let current = counter.load(Ordering::Relaxed);
             if current >= self.max_per_org {
-                metrics::org_throttled(org_id, "in_flight");
+                metrics::org_throttled(org_id, self.throttle_reason);
                 return None;
             }
             if counter
                 .compare_exchange(current, current + 1, Ordering::AcqRel, Ordering::Relaxed)
                 .is_ok()
             {
-                metrics::org_requests_in_flight(org_id, current + 1);
+                if self.records_gauge {
+                    metrics::org_requests_in_flight(org_id, current + 1);
+                }
                 return Some(OrgInFlightPermit {
                     org_id: org_id.to_owned(),
                     counter,
+                    records_gauge: self.records_gauge,
                 });
             }
         }
@@ -1373,8 +1419,9 @@ impl OrgInFlightLimiter {
 impl Drop for OrgInFlightPermit {
     fn drop(&mut self) {
         let current = self.counter.fetch_sub(1, Ordering::AcqRel);
-        let next = current.saturating_sub(1);
-        metrics::org_requests_in_flight(&self.org_id, next);
+        if self.records_gauge {
+            metrics::org_requests_in_flight(&self.org_id, current.saturating_sub(1));
+        }
     }
 }
 
@@ -2496,6 +2543,10 @@ async fn main() {
             routing: Arc::clone(&org_routing_resolver),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
+        gcp_inflight_limiter: OrgInFlightLimiter::for_route(
+            config.gcp_org_max_in_flight,
+            "gcp_in_flight",
+        ),
         sampling_resolver: SamplingPolicyResolver {
             store: Arc::clone(&store),
             cache: sampling_policy_cache,
@@ -4917,11 +4968,38 @@ async fn handle_gcp_logpush_inner(
         resolved.key.clickhouse_ready,
     );
 
+    let _gcp_inflight_permit = state
+        .gcp_inflight_limiter
+        .try_acquire(org_id)
+        .ok_or_else(|| {
+            // Not `warn!`: a busy sink meets this cap by design, once per
+            // refused log line. `org_throttled` counts it.
+            debug!(
+                org_id,
+                connector_id, "Per-org in-flight GCP push limit exceeded"
+            );
+            (
+                ApiError::too_many_requests("Per-org ingest limit exceeded"),
+                "throttle",
+            )
+        })?;
+
     // A setup script run reporting what it applied. Ahead of everything a log
     // goes through: it is told to a connector whose log forwarding is off as
     // well, and it is neither stored nor metered. A report that cannot be
     // written is refused, so Pub/Sub delivers it again.
     if let Some(report) = gcp_logging::parse_setup_report(&body) {
+        if !state
+            .gcp_resolver
+            .take_setup_report_slot(connector_id)
+            .await
+        {
+            warn!(org_id, connector_id, "GCP setup report rate limit exceeded");
+            return Err((
+                ApiError::too_many_requests("Too many setup reports"),
+                "throttle",
+            ));
+        }
         state
             .gcp_resolver
             .store
@@ -6068,7 +6146,21 @@ impl GcpConnectorResolver {
                 .time_to_live(GCP_CONNECTOR_HEALTH_WRITE_INTERVAL)
                 .max_capacity(20_000)
                 .build(),
+            // The TTL runs from the first report, so each entry is one window.
+            recent_setup_reports: Cache::builder()
+                .time_to_live(GCP_SETUP_REPORT_WINDOW)
+                .max_capacity(10_000)
+                .build(),
         }
+    }
+
+    /// Whether this connector may write another setup report in this window.
+    async fn take_setup_report_slot(&self, connector_id: &str) -> bool {
+        let count = self
+            .recent_setup_reports
+            .get_with_by_ref(connector_id, async { Arc::new(AtomicU32::new(0)) })
+            .await;
+        count.fetch_add(1, Ordering::Relaxed) < GCP_SETUP_REPORTS_PER_WINDOW
     }
 
     async fn resolve_connector(
@@ -8409,6 +8501,7 @@ mod tests {
                 tinybird,
                 max_request_body_bytes: 1024 * 1024,
                 org_max_in_flight: 100,
+                gcp_org_max_in_flight: 100,
                 request_timeout: Duration::from_secs(30),
                 require_tls: false,
                 key_store_backend: KeyStoreBackend::Static {
@@ -8451,6 +8544,7 @@ mod tests {
                 routing: Arc::clone(&routing),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
+            gcp_inflight_limiter: OrgInFlightLimiter::for_route(100, "gcp_in_flight"),
             sampling_resolver: SamplingPolicyResolver {
                 store: Arc::clone(&key_store),
                 cache: Cache::builder()
@@ -9727,6 +9821,51 @@ mod tests {
         );
         assert_eq!(store.connector_successes.load(Ordering::Relaxed), 0);
         assert!(store.connector_failures.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_refuses_pushes_over_the_org_gcp_in_flight_cap() {
+        let (ch_url, _ch_rx) = spawn_fake_clickhouse().await;
+        let (state, _store, queue_dir) = gcp_logpush_state("gcp-logpush-cap", &ch_url).await;
+
+        // Every GCP slot of the org taken by pushes still in progress.
+        let held: Vec<_> = (0..state.config.gcp_org_max_in_flight)
+            .map(|_| state.gcp_inflight_limiter.try_acquire("org_gcp").unwrap())
+            .collect();
+        let refused = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
+        assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+        // The org's other ingest keeps its own slots.
+        assert!(state.org_inflight_limiter.try_acquire("org_gcp").is_some());
+
+        drop(held);
+        let accepted = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
+        assert_eq!(accepted.status(), StatusCode::OK);
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_refuses_setup_reports_past_the_window_limit() {
+        const REPORT: &str = r#"{"logName":"projects/p/logs/maple-setup","timestamp":"2026-10-09T10:00:00Z","jsonPayload":{"logs":true}}"#;
+        let (state, store, queue_dir) =
+            gcp_logpush_state("gcp-logpush-report-limit", "http://127.0.0.1:1").await;
+
+        for _ in 0..GCP_SETUP_REPORTS_PER_WINDOW {
+            let response = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), REPORT).await;
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+        let refused = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), REPORT).await;
+        assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+        // The limit is per connector.
+        let other = gcp_push(&state, "gcp_conn_off", Some("gcp-secret-off"), REPORT).await;
+        assert_eq!(other.status(), StatusCode::OK);
+
+        assert_eq!(
+            store.gcp_setup_reports.lock().unwrap().len(),
+            GCP_SETUP_REPORTS_PER_WINDOW as usize + 1
+        );
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
