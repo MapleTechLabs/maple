@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
 import { OrgId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Schema, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -244,10 +244,24 @@ describe("CiTraceService", () => {
 	it.live("gives up at once on a refused ingest key, without failing the webhook job", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: Array<IngestCall> = []
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
 		return Effect.gen(function* () {
 			const sink = yield* WorkflowEventSink
-			yield* sink.onWorkflowRun(orgId, run)
+			yield* sink.onWorkflowRun(orgId, run).pipe(Effect.provideService(Tracer.Tracer, tracer))
 			assert.strictEqual(calls.length, 1)
+			// The webhook job succeeds, but the emit span itself records the lost write.
+			const emit = spans.find((span) => span.name === "CiTraceService.emit")
+			assert.strictEqual(emit?.status._tag, "Ended")
+			if (emit?.status._tag !== "Ended") return
+			assert.isTrue(Exit.isFailure(emit.status.exit))
+			assert.strictEqual(emit.attributes.get("maple.cicd.outcome"), "ingest_failed")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [402]))))
 	})
 })
