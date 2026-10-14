@@ -13,9 +13,8 @@ eve owns the tracer provider and writes `gen_ai.conversation.id` (the root sessi
 
 Known gaps (tell the user, don't try to fix):
 
-- Framework shows **Unidentified** (vendor `unknown:genai`). Sessions, turns, transcript, tools, lanes and tokens are complete.
 - Outside `eve dev`, message content is exported only for `public` conversations (Step 4).
-- Cost shows as unpriced with a model called directly at its provider. With Vercel AI Gateway, eve writes `gen_ai.usage.cost` on the `agent.step` span; whether Maple shows it was not exercised.
+- Cost shows as unpriced with a model called directly at its provider. With Vercel AI Gateway, eve writes `gen_ai.usage.cost` on the `agent.step` span; Maple counts it in the session total (the per-model table has tokens, not cost).
 - eve does not log failed exports (Step 6).
 
 ## Step 0: Detect
@@ -159,7 +158,8 @@ Run one real conversation: `eve dev` (or `eve dev --no-ui` plus a script on `eve
 - A throwing tool is failed with its message; successful tools are not.
 - Subagents show as lanes named after their directory, inside the calling turn.
 - No span named `workflow.*`, `world.*`, `step.*`, `hook.*` or `queue.*` for the service (Maple MCP `search_traces`, or the Traces page).
-- Framework is Unidentified and cost unpriced (both expected, see Known gaps).
+- Framework shows **eve**, not Unidentified.
+- Cost: present for AI Gateway models, unpriced for direct provider models (see Known gaps).
 - Then start the production build once (`eve build && eve start`) and send one message. Expect the session without content unless the audience is `public`; tell the user which it is.
 
 Without Maple access: the curl check in Step 6 returns `200`, the startup log is clean, and a conversation ran. That shows delivery is possible, not that spans arrived; say so.

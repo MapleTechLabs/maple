@@ -112,9 +112,9 @@ Keep the `auth` list your project already uses. A public channel sends its messa
 2. Start the agent with `eve dev` and send it two messages, one of which uses a tool. eve sends the traces to Maple a few seconds after each reply.
 3. Open **Agent Sessions** in Maple ([US](https://app.maple.dev/agent-sessions) or [EU](https://app.eu.maple.dev/agent-sessions)).
 
-You should see one session for the conversation, titled with its first message, with one turn per message and the messages, replies and tool calls in its transcript. Subagents show up as separate lanes inside the turn that called them.
+You should see one session for the conversation with framework **eve**, titled with its first message, with one turn per message and the messages, replies and tool calls in its transcript. Subagents show up as separate lanes inside the turn that called them.
 
-Maple lists the framework as Unidentified for now. With a model called directly at its provider, cost shows as unpriced because eve doesn't report it.
+Cost shows for models that run through Vercel AI Gateway. With a model called directly at its provider, cost shows as unpriced because eve doesn't report it.
 
 ## Upgrade from eve 0.61 or older
 
