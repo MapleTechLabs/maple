@@ -12,7 +12,7 @@ import { connectors } from "@maple/chat-platform/connectors"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { MapleHttpTracingLive, workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
@@ -309,6 +309,7 @@ const inRuntime =
 					envPorts(env),
 					chatSessionsLayerIfBound(chatSessions, env),
 					telemetry.layer,
+					MapleHttpTracingLive,
 				),
 			),
 			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,

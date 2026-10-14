@@ -25,7 +25,7 @@ import type { PrReviewFailureReason } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { MapleHttpTracingLive, workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
@@ -296,7 +296,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(ReturnedToolFailuresOkLive.pipe(Layer.provideMerge(telemetry.layer))),
+			Layer.provideMerge(
+				ReturnedToolFailuresOkLive.pipe(
+					Layer.provideMerge(Layer.merge(telemetry.layer, MapleHttpTracingLive)),
+				),
+			),
 		),
 	)
 

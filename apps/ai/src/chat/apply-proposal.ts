@@ -25,7 +25,7 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { MapleHttpTracingLive, workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
@@ -183,7 +183,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(telemetry.layer),
+			Layer.provideMerge(Layer.merge(telemetry.layer, MapleHttpTracingLive)),
 		),
 	)
 

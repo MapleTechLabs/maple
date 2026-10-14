@@ -286,6 +286,32 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 		}),
 	)
 
+	it.effect("keeps a failed response write as its own error", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			const error = new HttpServerError.HttpServerError({
+				reason: new HttpServerError.ResponseError({
+					request: HttpServerRequest.fromWeb(new Request("http://localhost/api/sync/shape")),
+					response: HttpServerResponse.empty({ status: 500 }),
+					description: "Error writing raw response",
+					cause: new Error("socket hang up"),
+				}),
+			})
+			yield* Effect.annotateCurrentSpan({ "http.response.status_code": 500 }).pipe(
+				Effect.andThen(Effect.fail(error)),
+				Effect.withSpan("GET", { kind: "server" }),
+				Effect.provide(buffer.tracerLayer),
+				Effect.ignore,
+			)
+			const [span] = buffer.drain()
+			assert.strictEqual(span?.status.code, 2 /* Error */)
+			const types = span!.events
+				.filter((event) => event.name === "exception")
+				.map((event) => event.attributes.find((attribute) => attribute.key === "exception.type")?.value)
+			assert.deepStrictEqual(types, [{ stringValue: "HttpServerError" }])
+		}),
+	)
+
 	it.effect("keeps an exception the handler recorded itself instead of relabelling it", () =>
 		Effect.gen(function* () {
 			const buffer = makeSpanBuffer()

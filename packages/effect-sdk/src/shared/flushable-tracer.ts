@@ -259,7 +259,13 @@ const renderedServerError = (self: SpanImpl): number | undefined => {
 }
 
 // Effect 4.0.2+ fails a 5xx server span itself, with an `HttpServerError` whose reason is
-// `ResponseError`. That names nothing the rendered 5xx did not, so it takes the same road.
+// `ResponseError`. That names nothing the rendered 5xx did not, so it takes the same road. One
+// carrying a cause or description is a failed response write, a real error of its own.
+const isStatusOnlyResponseError = (error: unknown): boolean =>
+	Predicate.isTagged(error, "ResponseError") &&
+	(!Predicate.hasProperty(error, "cause") || error.cause === undefined) &&
+	(!Predicate.hasProperty(error, "description") || error.description === undefined)
+
 const isResponseFailure = (exit: Exit.Exit<unknown, unknown>): boolean => {
 	if (exit._tag === "Success") return true
 	const [reason, ...rest] = exit.cause.reasons
@@ -269,7 +275,7 @@ const isResponseFailure = (exit: Exit.Exit<unknown, unknown>): boolean => {
 		Cause.isFailReason(reason) &&
 		Predicate.isTagged(reason.error, "HttpServerError") &&
 		Predicate.hasProperty(reason.error, "reason") &&
-		Predicate.isTagged(reason.error.reason, "ResponseError")
+		isStatusOnlyResponseError(reason.error.reason)
 	)
 }
 
