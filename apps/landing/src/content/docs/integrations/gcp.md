@@ -422,7 +422,7 @@ With **Key metrics** off on every connection, the page leaves the sidebar and th
 
 ## Live queries
 
-A dashboard widget can chart any Cloud Monitoring metric with a PromQL query, read from Google each time the widget loads. Nothing is stored in Maple. Live queries work on every connection, whether or not it collects **Metrics and resources**.
+A dashboard widget can chart any Cloud Monitoring metric with a PromQL query, read from Google each time the widget loads. Nothing is stored in Maple. Live queries work on every connection, with **Key metrics** on or off, once its setup script has run.
 
 To add one, edit a widget, choose a line, area, bar, stat or gauge panel, and pick **Google Cloud** as the source. **Start from a metric** searches the metric names of your projects and writes a starter query for the one you pick: a rate for counters, an average for gauges, the 95th percentile for distributions. Click **Run preview** to read it.
 
