@@ -3803,6 +3803,56 @@ describe("AlertsService evaluation error persistence", () => {
 		)
 	})
 
+	it.effect("skips the rest of an org's rules once its warehouse is down this tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			rows: [],
+			ingested: [] as Array<Record<string, unknown>>,
+			failure: new WarehouseUpstreamError({
+				message: "HTTP 503",
+				pipeName: "tracesAlertEval",
+				upstreamStatus: 503,
+			}),
+		}
+		const base = failingWarehouseStub(state)
+		let warehouseQueries = 0
+		const counted = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+			Effect.suspend(() => {
+				warehouseQueries += 1
+				return effect
+			})
+		const stub: WarehouseQueryServiceApi = {
+			...base,
+			sqlQuery: (...args) => counted(base.sqlQuery(...args)),
+			rawSqlQuery: (...args) => counted(base.rawSqlQuery(...args)),
+			compiledQuery: (...args) => counted(base.compiledQuery(...args)),
+			compiledQueryWithCapabilities: (...args) => counted(base.compiledQueryWithCapabilities(...args)),
+			compiledQueryFirst: (...args) => counted(base.compiledQueryFirst(...args)),
+		}
+		const ruleCount = 8
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_outage_breaker")
+			const userId = asUserId("user_alert_outage_breaker")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			for (const n of Array.from({ length: ruleCount }, (_, i) => i)) {
+				yield* createErrorRateRule(alerts, orgId, userId, destination.id, `Outage rule ${n}`)
+			}
+
+			const tick = yield* alerts.runSchedulerTick()
+
+			// Every rule is accounted for as an outage skip, none as the rule's fault.
+			assert.strictEqual(tick.warehouseUnavailableSkipCount, ruleCount)
+			assert.strictEqual(tick.evaluationFailureCount, 0)
+			// Only the rules already in flight when the first failure landed queried
+			// the warehouse; the rest were skipped without waiting on it.
+			assert.isBelow(warehouseQueries, ruleCount)
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+	})
+
 	it.effect("still counts a 4xx upstream rejection as an evaluation failure", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
@@ -4469,16 +4519,16 @@ describe("AlertsService delivery lease freshness", () => {
 	it.effect("claims later rows with a fresh timestamp, not the batch head's", () => {
 		const fixedTime = 1_710_000_400_000
 		const testDb = createTestDb(trackedDbs)
-		// Virtual scheduler clock: the first delivery "takes" longer than the
-		// lease TTL, so a claim dated from the batch-head timestamp would be
-		// born expired and an overlapping tick could re-send the event.
+		// Virtual scheduler clock: the first delivery "takes" most of the drain
+		// budget, so a second claim dated from the batch-head timestamp would
+		// expire mid-delivery and an overlapping tick could re-send the event.
 		let virtualNow = fixedTime
 		let call = 0
 		let laterRowLeaseExpiry: number | null = null
 		const fetchImpl = (async () => {
 			call += 1
 			if (call === 1) {
-				virtualNow += 31_000
+				virtualNow += 19_000
 			} else {
 				const row = await queryFirstRow<{ claimExpiresAt: Date | null }>(
 					testDb,
@@ -4535,10 +4585,105 @@ describe("AlertsService delivery lease freshness", () => {
 
 			assert.strictEqual(call, 2)
 			// The second claim must be dated from its own claim time (after the
-			// 31s "slow" first delivery), so its lease is still alive while the
-			// delivery is in flight. A batch-head lease would already be expired.
+			// 19s "slow" first delivery). A batch-head lease would end at
+			// fixedTime + TTL, 19s short of the one this delivery holds.
 			assert.isNotNull(laterRowLeaseExpiry)
-			assert.isAbove(laterRowLeaseExpiry ?? 0, fixedTime + 31_000)
+			assert.isAbove(laterRowLeaseExpiry ?? 0, fixedTime + 30_000)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: fetchImpl,
+					now: Effect.sync(() => virtualNow),
+				}),
+			),
+		)
+	})
+})
+
+describe("AlertsService delivery drain across destinations", () => {
+	it.effect("a slow destination costs its own rows, not another destination's page", () => {
+		const fixedTime = 1_710_000_450_000
+		const testDb = createTestDb(trackedDbs)
+		// Virtual clock: every delivery to the slow endpoint "takes" 15s.
+		let virtualNow = fixedTime
+		const delivered: Array<string> = []
+		const fetchImpl = (async (input: RequestInfo | URL) => {
+			const url = String(input)
+			if (url === "https://example.com/maple-alerts") virtualNow += 15_000
+			delivered.push(url)
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_drain_fairness")
+			const userId = asUserId("user_drain_fairness")
+			const slow = yield* createWebhookDestination(alerts, orgId, userId)
+			const fast = yield* alerts.createDestination(orgId, userId, adminRoles, {
+				type: "webhook",
+				name: "Fast webhook",
+				enabled: true,
+				url: "https://example.com/fast",
+				signingSecret: "webhook-secret",
+			})
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, slow.id)
+			// Break the rule's stored query so the tick queues nothing of its own.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "update alert_rules set query_spec_json = $1::jsonb where id = $2", [
+					"{}",
+					rule.id,
+				]),
+			)
+
+			// Three rows for the slow endpoint, queued ahead of the fast one's.
+			const queued = [
+				[slow.id, "slow-1"],
+				[slow.id, "slow-2"],
+				[slow.id, "slow-3"],
+				[fast.id, "fast-1"],
+			] as const
+			for (const [index, [destinationId, deliveryKey]] of queued.entries()) {
+				yield* Effect.promise(() =>
+					insertDeliveryEventRow(testDb, {
+						id: `00000000-0000-4000-8000-00000000040${index}`,
+						orgId,
+						incidentId: null,
+						ruleId: rule.id,
+						destinationId,
+						deliveryKey,
+						eventType: "test",
+						attemptNumber: 1,
+						status: "queued",
+						scheduledAt: fixedTime - 10 + index,
+						payloadJson: JSON.stringify({
+							eventType: "test",
+							incidentId: null,
+							incidentStatus: "resolved",
+							dedupeKey: deliveryKey,
+							observed: { value: 0, sampleCount: 0 },
+						}),
+					}),
+				)
+			}
+			yield* alerts.runSchedulerTick()
+
+			const statuses = yield* Effect.promise(() =>
+				testDb.pglite.query<{ deliveryKey: string; status: string }>(
+					`select delivery_key as "deliveryKey", status from alert_delivery_events order by delivery_key`,
+				),
+			)
+			assert.include(delivered, "https://example.com/fast")
+			assert.deepStrictEqual(
+				statuses.rows.map((row) => [row.deliveryKey, row.status]),
+				[
+					["fast-1", "success"],
+					["slow-1", "success"],
+					["slow-2", "success"],
+					// Started past the drain budget, so it waits for the next tick.
+					["slow-3", "queued"],
+				],
+			)
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {

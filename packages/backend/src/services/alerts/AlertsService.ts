@@ -375,6 +375,9 @@ const isProviderDeliveryFailure = (error: unknown): error is AlertDeliveryFailur
 // empty or DELIVERY_DRAIN_BUDGET_MS has passed; the rest wait for the next tick.
 const DELIVERY_DRAIN_LIMIT = 50
 const DELIVERY_DRAIN_BUDGET_MS = 20_000
+// Destinations drained at once. Small: each in-flight delivery holds one of the
+// invocation's outbound connections, which the Postgres pool also draws on.
+const DELIVERY_DESTINATION_CONCURRENCY = 3
 
 // Logs and drops a typed failure or a defect, so one rule, chunk or delivery
 // cannot end the tick. Interruption still propagates.
@@ -1770,7 +1773,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				},
 			)
 
-			const processDeliveryBatch = Effect.fn("AlertsService.processDeliveryBatch")(function* () {
+			const processDeliveryBatch = Effect.fn("AlertsService.processDeliveryBatch")(function* (
+				deadline: number,
+			) {
 				const currentTime = yield* now
 				const rows = yield* dbExecute((db) =>
 					db.run(
@@ -2246,7 +2251,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					digestGroups.flatMap((group) => group.map((row) => [row.id, group] as const)),
 				)
 
-				yield* Effect.forEach(rows, (row) => {
+				const deliverRow = (row: AlertDeliveryEventRow) => {
 					const group = digestOf.get(row.id)
 					if (group !== undefined) {
 						const destinationRow = destinationMap.get(row.destinationId)
@@ -2265,7 +2270,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						Effect.catchDefect((defect) => recoverDeliveryDefect(row, defect)),
 						isolate("Alert delivery recovery failed", { deliveryKey: row.deliveryKey }),
 					)
-				})
+				}
+
+				// Serial within a destination (its failure streak and ordering), parallel
+				// across them, so one dead webhook costs its own rows and not every org's.
+				// The budget is checked per row: a row past it is left unclaimed for the
+				// next tick rather than started.
+				yield* Effect.forEach(
+					Object.values(Arr.groupBy(rows, (row) => row.destinationId)),
+					(destinationRows) =>
+						Effect.forEach(
+							destinationRows,
+							(row) =>
+								Effect.flatMap(now, (time) =>
+									time < deadline ? deliverRow(row) : Effect.void,
+								),
+							{ discard: true },
+						),
+					{ concurrency: DELIVERY_DESTINATION_CONCURRENCY, discard: true },
+				)
 
 				return {
 					claimedCount: rows.length,
@@ -2279,7 +2302,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const processQueuedDeliveries = Effect.fn("AlertsService.processQueuedDeliveries")(function* () {
 				const deadline = (yield* now) + DELIVERY_DRAIN_BUDGET_MS
 				const totals = yield* Ref.make({ processedCount: 0, failureCount: 0 })
-				yield* processDeliveryBatch().pipe(
+				yield* processDeliveryBatch(deadline).pipe(
 					Effect.tap((batch) =>
 						Ref.update(totals, (sum) => ({
 							processedCount: sum.processedCount + batch.processedCount,
@@ -3798,6 +3821,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Claims won but never started, released after the pool drains.
 				const unstartedClaims = yield* Ref.make(Chunk.empty<{ id: AlertRuleId; timestamp: number }>())
 				const evaluatedRules = yield* Ref.make(0)
+				// Orgs whose warehouse was down or hung on a rule this tick. Their other
+				// rules are skipped rather than evaluated: each would fail the same way
+				// after holding one of the five evaluation lanes until its timeout.
+				const unavailableOrgs = yield* Ref.make(HashSet.empty<OrgId>())
+				const markOrgUnavailable = (orgId: OrgId) => Ref.update(unavailableOrgs, HashSet.add(orgId))
 
 				const evaluateBeforeDeadline = (orgId: OrgId, rule: NormalizedRule) =>
 					Effect.flatMap(now, (startedAt) =>
@@ -3823,6 +3851,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// which processEvaluation stamps on state and incident rows.
 				const evaluateClaimedRule = (row: StoredAlertRuleRow, timestamp: number) =>
 					Effect.gen(function* () {
+						if (HashSet.has(yield* Ref.get(unavailableOrgs), row.orgId)) {
+							return yield* new WarehouseUpstreamError({
+								message: "Skipped: this org's warehouse failed earlier in the tick",
+								pipeName: "alertEvaluation",
+							})
+						}
 						const ruleStart = yield* now
 						const normalized = yield* normalizeRuleRow(row)
 
@@ -3963,35 +3997,49 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						Effect.catch((error) =>
 							Option.match(warehouseOutageOf(error), {
 								onSome: (outage) =>
-									recordWarehouseUnavailableSkip(
-										row,
-										outage,
-										outage.error.code,
-										outage.upstreamStatus,
+									markOrgUnavailable(row.orgId).pipe(
+										Effect.andThen(
+											recordWarehouseUnavailableSkip(
+												row,
+												outage,
+												outage.error.code,
+												outage.upstreamStatus,
+											),
+										),
 									),
 								onNone: () =>
-									recordEvaluationFailure(
-										row,
-										error,
-										error.error.code,
-										"pipeName" in error
-											? {
-													pipe: error.pipeName,
-													...(error._tag ===
-													"@maple/http/errors/WarehouseQuotaExceededError"
-														? {
-																quotaSetting: error.setting,
-															}
-														: undefined),
-													...(error._tag ===
-														"@maple/http/errors/WarehouseUpstreamError" ||
-													error._tag === "@maple/http/errors/WarehouseAuthError"
-														? {
-																upstreamStatus: error.upstreamStatus,
-															}
-														: undefined),
-												}
-											: undefined,
+									// A timeout still counts against this rule (it may be its own
+									// query), but the org's later rules are spared the same wait.
+									(error._tag === "@maple/http/errors/QueryEngineTimeoutError"
+										? markOrgUnavailable(row.orgId)
+										: Effect.void
+									).pipe(
+										Effect.andThen(
+											recordEvaluationFailure(
+												row,
+												error,
+												error.error.code,
+												"pipeName" in error
+													? {
+															pipe: error.pipeName,
+															...(error._tag ===
+															"@maple/http/errors/WarehouseQuotaExceededError"
+																? {
+																		quotaSetting: error.setting,
+																	}
+																: undefined),
+															...(error._tag ===
+																"@maple/http/errors/WarehouseUpstreamError" ||
+															error._tag ===
+																"@maple/http/errors/WarehouseAuthError"
+																? {
+																		upstreamStatus: error.upstreamStatus,
+																	}
+																: undefined),
+														}
+													: undefined,
+											),
+										),
 									),
 							}),
 						),
