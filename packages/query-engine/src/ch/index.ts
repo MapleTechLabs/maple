@@ -430,6 +430,7 @@ export {
 export {
 	serviceDependenciesSQL,
 	serviceDependenciesForServiceQuery,
+	serviceDependenciesInvolvingServiceQuery,
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
 	serviceDbQuerySummarySQL,
