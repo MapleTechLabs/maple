@@ -2,13 +2,16 @@ import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
 import {
 	chPattern,
 	chRedactChain,
+	EFFECT_SPAN_FRAME_MARKER,
+	ERROR_MSG_REDACTIONS,
+	FINGERPRINT_HASH_SALT,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
 	JSON_VALUE_REDACTIONS,
 	MAX_FINGERPRINT_FRAMES,
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
-	MSG_TEXT_REDACTIONS,
+	NAMESPACED_TYPE_MAX_FRAMES,
 } from "./fingerprint"
 import {
 	serviceUsage,
@@ -732,8 +735,8 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
  * are absent, reads `exception.*` then `error.*` span attributes. Computes a
  * cityHash64 FingerprintHash used to group occurrences into Issues.
  *
- * Fingerprint inputs: (OrgId, ServiceName, ExceptionType, top-3 normalized frames,
- * message signature).
+ * Fingerprint inputs: (OrgId, ServiceName, ExceptionType, top-3 normalized frames
+ * (1 for a namespaced type), message signature, FINGERPRINT_HASH_SALT).
  * - Stack lines are filtered by frame SHAPE — one alternative per runtime's frame
  *   syntax — not by "contains `:NUMBER`". The old rule accepted any colon-digit
  *   line, so Drizzle's `params:` line (actual row values) and `Type: message`
@@ -806,10 +809,12 @@ const errorEventsSelectSql = `
           -- the SQL that actually runs, silently.
           arraySlice(
             arrayFilter(
-              line -> match(line, ${chPattern(FRAME_LINE_PATTERN)}),
+              line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
+                AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0,
               splitByChar('\\n', _exStack)
             ),
-            1, ${MAX_FINGERPRINT_FRAMES}
+            -- A namespaced type names one failure: keep only its throw site.
+            1, if(position(_exType, '/') > 0, ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})
           ) AS _rawFrames,
           -- Redact every volatile token a frame line can carry: the URL origin
           -- (so preview hosts share one fingerprint), Vite's 8-char bundle
@@ -847,12 +852,12 @@ const errorEventsSelectSql = `
           -- restores that discrimination, and it cannot reinflate cardinality the
           -- way a raw prefix would because everything variable is redacted first:
           -- emails, URL origins, home directories, query strings, quoted values,
-          -- then ids and every digit run. See MSG_TEXT_REDACTIONS for the order,
+          -- then ids and every digit run. See ERROR_MSG_REDACTIONS for the order,
           -- what is deliberately kept, and the one residual it cannot reach.
           multiIf(
             _isJsonObj, _jsonSig,
             substringUTF8(
-              ${chRedactChain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`, MSG_TEXT_REDACTIONS)},
+              ${chRedactChain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`, ERROR_MSG_REDACTIONS)},
               1, ${MSG_SIGNATURE_CHARS}
             )
           ) AS _msgSig,
@@ -906,7 +911,7 @@ const errorEventsSelectSql = `
           _exMsg AS ExceptionMessage,
           _exStack AS ExceptionStacktrace,
           _topFrame AS TopFrame,
-          cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig) AS FingerprintHash,
+          cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)}) AS FingerprintHash,
           StatusMessage,
           Duration,
           _errorLabel AS ErrorLabel,

@@ -52,12 +52,21 @@ export interface FingerprintInputs {
  * constants, so a change here reaches both or neither.
  *
  * Everything must stay inside the RE2 subset ClickHouse supports: no
- * backreferences, no lookaround. Replacements must contain no `$` (JS) and no
- * backslash (ClickHouse), since both treat those as capture-group syntax.
+ * backreferences in a pattern, no lookaround. A replacement may name a capture
+ * group as `$1`..`$9`, written the JS way; `chRedactChain` renders it as `\1`.
+ * No other `$` and no backslash may appear in a replacement.
  */
 
 /** Frames considered for the hash, from the top of the stack down. */
 export const MAX_FINGERPRINT_FRAMES = 3
+/**
+ * Frames kept for a namespaced type (`@maple/http/errors/Foo`, `effect/ai/AiError`).
+ * Such a type already names one failure, so frames 2-3 are only its callers: one
+ * upstream 503 became one issue per query that happened to hit it.
+ */
+export const NAMESPACED_TYPE_MAX_FRAMES = 1
+/** Marks an Effect span frame, which varies the stack depth of one call path. */
+export const EFFECT_SPAN_FRAME_MARKER = "(definition)"
 /** How much of StatusMessage is scanned before redaction. */
 export const MSG_SCAN_CHARS = 400
 /** How much of the redacted result reaches the hash. */
@@ -105,6 +114,9 @@ export type Redactions = ReadonlyArray<readonly [pattern: string, replacement: s
  * re-splits every browser and Worker issue that has already been triaged.
  */
 export const FRAME_REDACTIONS: Redactions = [
+	// pnpm/bun store paths carry the package version; a dependency bump is not a new bug.
+	["@[0-9]+\\.[0-9]+\\.[0-9]+[^/ )]*", "@#"],
+	["\\(index [0-9]+\\)", "(index #)"],
 	["https?://[^/ )]+", ""],
 	["-[A-Za-z0-9_-]{8}\\.js", ".js"],
 	["-[A-Za-z0-9_-]{8}\\.css", ".css"],
@@ -112,7 +124,7 @@ export const FRAME_REDACTIONS: Redactions = [
 ]
 
 /** Redaction for the JSON-object branch of the signature. */
-export const JSON_VALUE_REDACTIONS: Redactions = [["[0-9a-fA-F]{8,}|[0-9]+", "#"]]
+export const JSON_VALUE_REDACTIONS: Redactions = [["[0-9a-fA-F-]{6,}|[0-9]+", "#"]]
 
 /**
  * Redaction for the plain-text branch, outermost first.
@@ -169,6 +181,27 @@ export const MSG_TEXT_REDACTIONS: Redactions = [
 	["[0-9a-fA-F-]{6,}|[0-9]+", "#"],
 ]
 
+const FS_ROOTS = "tmp|var|srv|private|opt|mnt|data|Volumes|System|app|work|run"
+
+/**
+ * The error-issue signature: `MSG_TEXT_REDACTIONS` behind four v3 passes. Kept
+ * apart from that list because the AI tool-error fingerprint and the web's
+ * masked display share it, and v3 targets issue grouping alone.
+ *
+ * A ClickHouse error echoes the failing query, so it is cut to its error class.
+ * A filesystem path rooted where a route never is becomes `PATH`, matched only at
+ * the start of a token so `/api/data/x` is not read as `/data`; it runs before the
+ * home-dir pass. Prefixed ids (`org_...`, `cus_...`) and ULIDs become `ID`.
+ */
+export const ERROR_MSG_REDACTIONS: Redactions = [
+	["(DB::Exception: [A-Za-z ]+?)[:.(][\\s\\S]*", "$1"],
+	["^(\\[Error\\] [A-Za-z ]+?)[`'\"#:.(][\\s\\S]*", "$1"],
+	[`(^|[ \\t\\r\\n'"(\`=])(~|/(${FS_ROOTS}|Users/[^/ ]+|home/[^/ ]+))(/[^ '"\`:,)]*)?`, "$1PATH"],
+	["\\b[a-z]{2,8}_[A-Za-z0-9]{10,}\\b", "ID"],
+	["\\b[0-9A-HJKMNP-TV-Z]{26}\\b", "ID"],
+	...MSG_TEXT_REDACTIONS,
+]
+
 /**
  * Escape a pattern or replacement for embedding in a ClickHouse single-quoted
  * string literal.
@@ -183,17 +216,17 @@ export const chPattern = (value: string): string => `'${value.replace(/\\/g, "\\
 export const chRedactChain = (expr: string, redactions: Redactions): string =>
 	redactions.reduce(
 		(inner, [pattern, replacement]) =>
-			`replaceRegexpAll(${inner}, ${chPattern(pattern)}, ${chPattern(replacement)})`,
+			`replaceRegexpAll(${inner}, ${chPattern(pattern)}, ${chPattern(replacement.replace(/\$([1-9])/g, "\\$1"))})`,
 		expr,
 	)
 
 /**
- * Apply a redaction list in TypeScript. The replacement is passed as a function
- * so JS never reinterprets `$&` and friends — ClickHouse would not.
+ * Apply a redaction list in TypeScript. `$1`..`$9` expand to capture groups, as
+ * `\1`..`\9` do in ClickHouse.
  */
 export const applyRedactions = (value: string, redactions: Redactions): string =>
 	redactions.reduce(
-		(acc, [pattern, replacement]) => acc.replace(new RegExp(pattern, "g"), () => replacement),
+		(acc, [pattern, replacement]) => acc.replace(new RegExp(pattern, "g"), replacement),
 		value,
 	)
 
@@ -278,7 +311,7 @@ function normalizeFrame(line: string): string {
 function messageSignature(statusMessage: string): string {
 	const obj = tryParseJsonObject(statusMessage)
 	if (obj !== undefined) return jsonSignature(obj)
-	return applyRedactions(statusMessage.slice(0, MSG_SCAN_CHARS), MSG_TEXT_REDACTIONS).slice(
+	return applyRedactions(statusMessage.slice(0, MSG_SCAN_CHARS), ERROR_MSG_REDACTIONS).slice(
 		0,
 		MSG_SIGNATURE_CHARS,
 	)
@@ -292,8 +325,8 @@ export function computeFingerprintInputs(args: {
 }): FingerprintInputs {
 	const rawFrames = args.exceptionStacktrace
 		.split("\n")
-		.filter((line) => FRAME_LINE_RE.test(line))
-		.slice(0, MAX_FINGERPRINT_FRAMES)
+		.filter((line) => FRAME_LINE_RE.test(line) && !line.includes(EFFECT_SPAN_FRAME_MARKER))
+		.slice(0, args.exceptionType.includes("/") ? NAMESPACED_TYPE_MAX_FRAMES : MAX_FINGERPRINT_FRAMES)
 
 	const topFrames = rawFrames.map(normalizeFrame)
 	const topFrame = topFrames[0] ?? ""
@@ -316,37 +349,33 @@ export function computeFingerprintInputs(args: {
  * stale rows retire deterministically, instead of sitting in `triage` until the
  * 14-day auto-resolve window catches up.
  *
+ * That archive is safe only if a bump rotates EVERY hash: an issue whose hash
+ * survived would be archived while still receiving occurrences, and nothing
+ * un-archives it (the tick's upsert conflicts on `(orgId, fingerprintHash)` and
+ * never clears `archivedAt`). A rule change alone rotates only the errors it
+ * touches, so since v3 the version itself is hashed, as `FINGERPRINT_HASH_SALT`.
+ * Bumping this constant now rotates every hash by construction. (The Apple frame
+ * alternative and the attribute fallback predate the salt and skipped a bump for
+ * exactly this reason.)
+ *
  * Deliberately NOT a ClickHouse column. Old and new hashes cannot collide, so
- * the warehouse needs no discriminator — only the Postgres row does, and keeping
- * it there means a future bump is a constant change plus a sweep, with no
- * datasource migration or materialized-view backfill.
+ * the warehouse needs no discriminator — only the Postgres row does.
  *
  * Changing the view does NOT rewrite history: rows already in `error_events`
- * keep their v1 hashes for the rest of their 90-day TTL, so a v2 issue's detail
- * view, occurrence sparkline and sample traces all start empty and fill from
- * cutover forward. That is expected, not a regression — there is no backfill
- * short of replaying the raw traces.
+ * keep their old hashes for the rest of their 90-day TTL, so a new issue's
+ * detail view, occurrence sparkline and sample traces all start empty and fill
+ * from cutover forward. That is expected, not a regression.
  *
- * v1 → v2 (this change): frame lines are matched by shape rather than by
- * "contains a colon-digit", and the message signature is always folded in and
- * additionally strips quoted values and query strings.
+ * v1 → v2: frame lines are matched by shape rather than by "contains a
+ * colon-digit", and the message signature is always folded in and additionally
+ * strips quoted values and query strings.
  *
- * **Adding the Apple frame alternative deliberately did NOT bump this**, even
- * though it rotates hashes for iOS crashes that are still occurring, which is
- * what the rule above otherwise calls for. The retirement this version drives is
- * version-keyed, not hash-keyed: `ErrorsService` archives every `kind: "error"`
- * issue whose `fingerprintVersion` is below this constant, on the premise stated
- * in `error_issues.fingerprintVersion` that a row on an older version can never
- * receive another occurrence. That premise holds only when a bump rotates
- * *every* hash. The Apple change rotates iOS hashes alone, so a bump would
- * archive every Node, Python, Go and browser issue in every org — and nothing
- * un-archives them, because the tick's upsert conflicts on
- * `(orgId, fingerprintHash)` and never clears `archivedAt`.
- *
- * The cost of not bumping is small and bounded: the collapsed iOS issues stop
- * receiving occurrences the moment their hash changes, and retire through the
- * ordinary resolved window instead of on sight. Teaching the sweep to retire by
- * hash rather than by version is what would let a partial-rotation change bump
- * this safely.
+ * v2 → v3: a namespaced type keeps only its throw site, Effect span frames are
+ * dropped, frames lose package versions and `(index N)`, the message signature
+ * cuts ClickHouse query echoes and redacts filesystem paths, prefixed ids and
+ * ULIDs, JSON values lose UUIDs, and the version salt enters the hash.
  */
-export const FINGERPRINT_VERSION = 2
+export const FINGERPRINT_VERSION = 3
+
+/** Hashed into `FingerprintHash` so a version bump rotates every issue. */
+export const FINGERPRINT_HASH_SALT = `fp${FINGERPRINT_VERSION}`
