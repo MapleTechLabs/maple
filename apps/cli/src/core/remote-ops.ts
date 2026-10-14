@@ -230,15 +230,13 @@ export const inspectTrace = (
 	Effect.gen(function* () {
 		const id = traceId(p.traceId)
 		const trace = yield* client.traces.retrieve({ params: { trace_id: id } }).pipe(
-			Effect.catchIf(
-				(error: unknown) => Predicate.isTagged(error, TRACE_NOT_FOUND_TAG),
-				() =>
-					Effect.fail(
-						new CliNotFoundError({
-							message: `trace ${p.traceId} not found in the workspace`,
-							hint: "check the id, or look it up with `maple traces`",
-						}),
-					),
+			Effect.catchIf(isV2ErrorTagged(TRACE_NOT_FOUND_TAG), () =>
+				Effect.fail(
+					new CliNotFoundError({
+						message: `trace ${p.traceId} not found in the workspace`,
+						hint: "check the id, or look it up with `maple traces`",
+					}),
+				),
 			),
 		)
 		// v2 retrieves a trace by id alone, so `--since/--start/--end` do not
