@@ -59,6 +59,7 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | `compare_periods`            | read   | Error rate, throughput and P95 across two periods, overall and per service, with regressions flagged |
 | `explore_attributes`         | read   | Attribute keys and their values for filtering; `source=services` lists environments and commit SHAs  |
 | `list_metrics`               | read   | Custom metrics with type, unit, monotonicity and data volume                                         |
+| `find_gcp_metrics`           | read   | Google Cloud Monitoring metric types by name, or one described with a starter PromQL query           |
 | `describe_warehouse_tables`  | read   | Tables and columns available to raw SQL, with sorting keys and notes on units and casing             |
 
 ### Traces, logs and queries
@@ -72,6 +73,7 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | `search_logs`       | read   | Log entries, newest first, filtered by service, severity, body text, trace or span           |
 | `mine_log_patterns` | read   | Cluster log messages into templates with counts and a severity and service breakdown         |
 | `query_data`        | read   | Aggregate traces, logs, metrics or product events into a time series or top-N breakdown      |
+| `query_gcp_promql`  | read   | Run PromQL live against Google Cloud Monitoring in the connected projects                    |
 | `run_sql`           | read   | Run one read-only ClickHouse `SELECT`; see the [SQL reference](/docs/reference/sql)          |
 
 ### Errors

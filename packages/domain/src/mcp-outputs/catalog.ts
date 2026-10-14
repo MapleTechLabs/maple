@@ -3,6 +3,7 @@
  * each tool declares exactly this schema) and the chat UI's `StructuredToolOutput` derive from.
  */
 import { SendMapleFeedbackOutput } from "./feedback"
+import { FindGcpMetricsOutput, QueryGcpPromQlOutput } from "./gcp"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import {
 	CreateAlertRuleOutput,
@@ -115,6 +116,7 @@ export const McpToolOutputs = {
 	error_detail: ErrorDetailOutput,
 	explore_attributes: ExploreAttributesOutput,
 	find_errors: FindErrorsOutput,
+	find_gcp_metrics: FindGcpMetricsOutput,
 	find_slow_traces: FindSlowTracesOutput,
 	get_agent_session: GetAgentSessionOutput,
 	get_agent_session_transcript: GetAgentSessionTranscriptOutput,
@@ -156,6 +158,7 @@ export const McpToolOutputs = {
 	propose_fix: ProposeFixOutput,
 	query_data: QueryDataOutput,
 	query_funnel: QueryFunnelOutput,
+	query_gcp_promql: QueryGcpPromQlOutput,
 	read_source_file: ReadSourceFileOutput,
 	register_agent: RegisterAgentOutput,
 	release_error_issue: ReleaseErrorIssueOutput,

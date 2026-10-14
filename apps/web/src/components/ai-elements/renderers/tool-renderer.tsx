@@ -5,6 +5,7 @@ import { DataTable } from "./components/data-table"
 import { ErrorList } from "./components/error-list"
 import { LogList } from "./components/log-list"
 import { MetricsList } from "./components/metrics-list"
+import { promQlChartRows } from "./components/promql-chart-rows"
 import { QueryChart } from "./components/query-chart"
 import { SpanTree } from "./components/span-tree"
 import { StatCards } from "./components/stat-cards"
@@ -168,6 +169,31 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 				/>
 			)
 		}
+
+		case "query_gcp_promql":
+			if (output.data.kind === "timeseries") {
+				return (
+					<QueryChart
+						props={{
+							data: promQlChartRows(output.data.series),
+							metric: output.data.query,
+							unit: "number",
+							source: "metrics",
+						}}
+					/>
+				)
+			}
+			return (
+				<DataTable
+					props={{
+						headers: ["Series", "Value"],
+						rows: promQlChartRows(output.data.series).flatMap((row) =>
+							Object.entries(row.series).map(([name, value]) => [name, String(value)]),
+						),
+						title: output.data.query,
+					}}
+				/>
+			)
 
 		case "service_map":
 			return (

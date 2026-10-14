@@ -52,6 +52,7 @@ import { registerTransitionErrorIssuesTool } from "./transition-error-issues"
 import { registerUpdateErrorNotificationPolicyTool } from "./update-error-notification-policy"
 import { registerListDashboardsTool } from "./list-dashboards"
 import { registerListMetricsTool } from "./list-metrics"
+import { registerGcpPromQlTools } from "./gcp-promql"
 import { registerListServicesTool } from "./list-services"
 import { registerQueryDataTool } from "./query-data"
 import { registerRunSqlTool } from "./run-sql"
@@ -380,6 +381,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerErrorDetailTool(registrar)
 	registerListMetricsTool(registrar)
 	registerQueryDataTool(registrar)
+	registerGcpPromQlTools(registrar)
 	registerRunSqlTool(registrar)
 	registerServiceMapTool(registrar)
 	registerListAlertRulesTool(registrar)

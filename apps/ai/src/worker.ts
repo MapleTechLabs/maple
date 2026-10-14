@@ -61,6 +61,8 @@ const configuredEnv = ({ stage, region, domains, profile }: MapleStackContext) =
 		githubAppSourceEnv,
 		// Required wherever a sandbox Worker deploys: without it every sandbox call is refused.
 		...(profile.deploys.sandbox ? [requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")] : []),
+		// Sign-in for the live Google Cloud PromQL tools; unset answers them as unavailable.
+		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 	)
