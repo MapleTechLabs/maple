@@ -800,14 +800,15 @@ ${UNFINISHED}`)
 		)
 	})
 
-	it("stops before the first change without billing, a sign-in, or gcloud", () => {
+	it("stops before the first change without a sign-in or gcloud, and sets up without billing", () => {
 		const script = setup(setupInput("project", true))
+		// Only Maple's reads need billing: log forwarding and the account are set up anyway.
 		const unbilled = run(script, { billing: "False" })
-		expect(unbilled.commands).toEqual([])
-		expect(unbilled.stdout).toContain(`  ✗ Project acme-host has no billing account.
-
-    What to do: Cloud Monitoring only answers for projects with billing. Link one at https://console.cloud.google.com/billing/linkedaccount?project=acme-host
-${UNFINISHED}`)
+		expect(unbilled.status).toBe(0)
+		expect(unbilled.commands).toEqual(expect.arrayContaining(logsSetupCommands(SCOPES.project)))
+		expect(unbilled.stdout).toContain(
+			"  • Billing is off in project acme-host: live queries and key metrics stay unavailable until a billing account is linked at https://console.cloud.google.com/billing/linkedaccount?project=acme-host. The rest is set up regardless.\n",
+		)
 
 		const signedOut = run(script, { account: "" })
 		expect(signedOut.commands).toEqual([])

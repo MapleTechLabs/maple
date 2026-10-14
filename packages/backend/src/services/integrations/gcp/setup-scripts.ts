@@ -417,7 +417,8 @@ ${
 	checks.billing
 		? `case "$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)" in
   True) ok "Billing is enabled" ;;
-  False) stop "Project $PROJECT_ID has no billing account." "Cloud Monitoring only answers for projects with billing. Link one at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID" ;;
+  # Only Maple's reads need billing, and Maple explains a refused read: the rest is set up anyway.
+  False) note "Billing is off in project $PROJECT_ID: live queries and key metrics stay unavailable until a billing account is linked at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID. The rest is set up regardless." ;;
   *) note "Couldn't tell whether billing is on. Cloud Monitoring only answers for projects with billing." ;;
 esac
 `
