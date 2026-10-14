@@ -156,6 +156,13 @@ export const V2ErrorIssueListQuery = Schema.Struct({
 	// deploy introduced, rather than everything still occurring.
 	introduced_after: Schema.optional(Timestamp),
 	actionable: Schema.optional(Schema.Literal("true")),
+	// `open`: someone still has to act (same set as `actionable`). `closed`: the
+	// work is over or handed to verification (verifying, done, cancelled, wontfix).
+	state: Schema.optional(Schema.Literals(["open", "closed"])),
+	// Case-insensitive substring of the exception type, message, label or service.
+	search: Schema.optional(Schema.String.check(Schema.isMaxLength(200))),
+	// Done issues are archived 14 days after they close; include them.
+	include_archived: Schema.optional(Schema.Literal("true")),
 	sort: Schema.optional(Schema.Literals(["last_seen", "severity"])),
 }).annotate({
 	identifier: "ErrorIssueListQuery",
