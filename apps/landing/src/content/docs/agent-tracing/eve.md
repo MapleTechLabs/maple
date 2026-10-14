@@ -103,16 +103,14 @@ Keep the `auth` list your project already uses. A public channel sends its messa
 
 ## Check that it works
 
-1. Copy the public ingest key (`maple_pk_…`) from [Settings → Ingestion](https://app.maple.dev/settings?tab=ingestion) and add it to `.env.local` in your project:
+1. Copy the public ingest key (`maple_pk_…`) from **Settings → Ingestion** ([US](https://app.maple.dev/settings?tab=ingestion) or [EU](https://app.eu.maple.dev/settings?tab=ingestion)) and add it to `.env.local` in your project:
 
    ```env
    MAPLE_INGEST_KEY=maple_pk_...
    ```
 
 2. Start the agent with `eve dev` and send it two messages, one of which uses a tool. eve sends the traces to Maple a few seconds after each reply.
-3. Open [Agent Sessions](https://app.maple.dev/agent-sessions) in Maple.
-
-For an EU organization, open both pages on `app.eu.maple.dev` instead.
+3. Open **Agent Sessions** in Maple ([US](https://app.maple.dev/agent-sessions) or [EU](https://app.eu.maple.dev/agent-sessions)).
 
 You should see one session for the conversation, titled with its first message, with one turn per message and the messages, replies and tool calls in its transcript. Subagents show up as separate lanes inside the turn that called them.
 
