@@ -115,6 +115,14 @@ describe("toWidgetRequest — curated routes", () => {
 	})
 })
 
+describe("toWidgetRequest — Google Cloud PromQL", () => {
+	it("lowers onto a server function that reads Google live", () => {
+		const request = toWidgetRequest({ kind: "promql", query: "up", projects: ["shop-prod"] })
+		expect(request).toEqual({ endpoint: "gcp_promql", params: { query: "up", projects: ["shop-prod"] } })
+		expect(getServerFunction(request!.endpoint)).toBeDefined()
+	})
+})
+
 describe("toWidgetRequest — nothing to serve", () => {
 	it("returns null rather than a request that cannot resolve", () => {
 		// The hook reports this as a disabled tile. Returning a bogus endpoint

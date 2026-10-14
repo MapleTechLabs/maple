@@ -33,6 +33,7 @@ import { dataSourceQuerySet, toWidgetRequest } from "@maple/widgets/dashboard"
 import { Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { GcpPromQlService } from "@maple/backend/services/integrations/GcpPromQlService"
 import { DashboardWidgetDataService, shareViewerTenant } from "./DashboardWidgetDataService"
 import { makeServerQuerySetExecutor } from "./server-query-set-executor"
 import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
@@ -142,7 +143,14 @@ const makeHarness = () => {
 	} as any)
 	const runtime = ManagedRuntime.make(
 		Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make).pipe(
-			Layer.provide(Layer.mergeAll(queryEngine, warehouse)),
+			Layer.provide(
+				Layer.mergeAll(
+					queryEngine,
+					warehouse,
+					// oxlint-disable-next-line typescript/no-explicit-any
+					Layer.succeed(GcpPromQlService, {} as any),
+				),
+			),
 		),
 	)
 	return { runtime, captured, queryEngineLayer: queryEngine, warehouseLayer: warehouse }

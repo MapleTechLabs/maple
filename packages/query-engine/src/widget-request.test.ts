@@ -119,6 +119,21 @@ describe("planWidgetRequest", () => {
 		expect(plan).toEqual({ kind: "disabled", reason: "metric_not_selected" })
 	})
 
+	it("holds a PromQL tile with no query, and substitutes variables into one that has it", () => {
+		const blank = planWidgetRequest({
+			request: { endpoint: "gcp_promql", params: { query: "  " } },
+			dashboardWindow: DASHBOARD,
+		})
+		expect(blank).toEqual({ kind: "disabled", reason: "promql_query_empty" })
+
+		const plan = planWidgetRequest({
+			request: { endpoint: "gcp_promql", params: { query: 'sum({"m", service="$service"})' } },
+			dashboardWindow: DASHBOARD,
+			variableValues: { service: single("checkout") },
+		})
+		expect(plan.kind === "request" && plan.params.query).toBe('sum({"m", service="checkout"})')
+	})
+
 	it("ignores a disabled metrics draft with no metric", () => {
 		const plan = planWidgetRequest({
 			request: {

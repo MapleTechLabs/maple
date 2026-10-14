@@ -172,3 +172,21 @@ export const dataSourceRouteParams = (dataSource: unknown): Record<string, unkno
 	}
 	return isRecord(dataSource.params) ? dataSource.params : undefined
 }
+
+export interface PromQlDataSource {
+	readonly query: string
+	readonly projects?: ReadonlyArray<string>
+	readonly legend?: string
+}
+
+/** The PromQL payload of a `kind: "promql"` source. v3 only: no v2 form ever existed. */
+export const dataSourcePromQl = (dataSource: unknown): PromQlDataSource | null => {
+	if (!isRecord(dataSource) || dataSource.kind !== "promql") return null
+	return {
+		query: isString(dataSource.query) ? dataSource.query : "",
+		...(Array.isArray(dataSource.projects)
+			? { projects: dataSource.projects.filter(isString) }
+			: undefined),
+		...(isString(dataSource.legend) ? { legend: dataSource.legend } : undefined),
+	}
+}

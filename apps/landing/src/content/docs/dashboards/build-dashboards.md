@@ -65,10 +65,11 @@ Most types come with presets you can start from. Pick one, then edit its query.
 
 ### Queries
 
-A widget's editor has two tabs:
+A widget's editor has these source tabs:
 
 - **Query Builder** reads **Traces**, **Logs**, **Metrics** or **Product events**. Pick an aggregation, add filters and a group-by, and combine queries with a formula.
 - **Raw SQL** runs your own SQL. The query must reference `$__orgFilter`. See the [SQL reference](/docs/reference/sql).
+- **Google Cloud** charts a PromQL query over your Google Cloud Monitoring metrics, read live from Google. It is there for line, area, bar, stat and gauge widgets and needs a [Google Cloud connection](/docs/integrations/gcp). See [Live queries](/docs/integrations/gcp#live-queries).
 
 The preview updates as you edit. Save the widget to put it on the dashboard.
 
@@ -112,7 +113,7 @@ Open **⋮ → Share…** and pick who can open the dashboard's link:
 | Anyone in this organization | Signed-in members of your organization, from the link.                            |
 | Anyone with the link        | Anyone who has the link, without signing in. They see the dashboard and its data. |
 
-**Replace** issues a new link and stops the old one working. Shared views render query builder charts, raw SQL, notes, funnels, paths, and the errors, service and logs widgets. The dialog names any widget that will not render for viewers.
+**Replace** issues a new link and stops the old one working. Shared views render query builder charts, raw SQL, Google Cloud PromQL charts, notes, funnels, paths, and the errors, service and logs widgets. The dialog names any widget that will not render for viewers.
 
 To put a single chart into another page, see [Embed dashboard charts](/docs/dashboards/embed-charts).
 

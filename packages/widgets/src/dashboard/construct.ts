@@ -10,9 +10,10 @@ import type {
 	QueryResultContract,
 	QuerySet,
 } from "@maple/query-model"
-import type { RawSqlDataSource } from "./access"
+import type { PromQlDataSource, RawSqlDataSource } from "./access"
 import type { WidgetDataSourceTransformV2 } from "./shared/transform"
 import type {
+	PromQlWidgetDataSource,
 	QueryWidgetDataSource,
 	RawSqlWidgetDataSource,
 	RouteWidgetDataSource,
@@ -100,6 +101,19 @@ export const makeRawSqlDataSource = (input: RawSqlDataSourceInput): typeof RawSq
 	...(!(input.granularitySeconds === undefined)
 		? { granularitySeconds: input.granularitySeconds }
 		: undefined),
+	...(!(input.transform === undefined) ? { transform: input.transform } : undefined),
+})
+
+export interface PromQlDataSourceInput extends PromQlDataSource {
+	readonly transform?: WidgetDataSourceTransform
+}
+
+/** A widget charting a PromQL query over the organization's Google Cloud metrics. */
+export const makePromQlDataSource = (input: PromQlDataSourceInput): typeof PromQlWidgetDataSource.Type => ({
+	kind: "promql",
+	query: input.query,
+	...(!(input.projects === undefined) ? { projects: input.projects } : undefined),
+	...(!(input.legend === undefined) ? { legend: input.legend } : undefined),
 	...(!(input.transform === undefined) ? { transform: input.transform } : undefined),
 })
 

@@ -392,7 +392,18 @@ export function WidgetFrame({
 			title={title}
 			mode={mode}
 			contentClassName={contentClassName}
-			footer={dataState.status === "ready" ? footer : undefined}
+			footer={
+				dataState.status !== "ready" ? undefined : dataState.notice === undefined ? (
+					footer
+				) : (
+					<>
+						<span className={cn("block truncate", TONE_TEXT.warn)} title={dataState.notice}>
+							{dataState.notice}
+						</span>
+						{footer}
+					</>
+				)
+			}
 		>
 			{dataState.status === "loading" ? (
 				loadingSkeleton

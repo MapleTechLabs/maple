@@ -23,6 +23,7 @@ import { getQueryBuilderTimeseries } from "@/api/warehouse/query-builder-timeser
 import { getQueryBuilderBreakdown } from "@/api/warehouse/query-builder-breakdown"
 import { getQueryBuilderList } from "@/api/warehouse/query-builder-list"
 import { getRawSqlChart } from "@/api/warehouse/raw-sql-chart"
+import { getGcpPromQlChart } from "@/api/warehouse/gcp-promql"
 import { getProductEventsFunnelWidget, getProductEventsPathsWidget } from "@/api/warehouse/product-events"
 
 /**
@@ -67,6 +68,7 @@ export const serverFunctionMap: Record<DataSourceEndpoint, ServerFunction> = {
 	custom_query_builder_breakdown: getQueryBuilderBreakdown,
 	custom_query_builder_list: getQueryBuilderList,
 	raw_sql_chart: getRawSqlChart,
+	gcp_promql: getGcpPromQlChart,
 	product_events_funnel: getProductEventsFunnelWidget,
 	product_events_paths: getProductEventsPathsWidget,
 	markdown_static: markdownStaticServerFn,

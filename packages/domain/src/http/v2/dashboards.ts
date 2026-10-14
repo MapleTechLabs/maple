@@ -266,11 +266,21 @@ const V2StaticDataSource = Schema.Struct({
 	transform: optional(V2WidgetTransform),
 })
 
+// The stored query as written; Google validates it on every read.
+const V2PromQlDataSource = Schema.Struct({
+	kind: Schema.Literal("promql"),
+	query: Schema.String,
+	projects: optional(Schema.Array(Schema.String)),
+	legend: optional(Schema.String),
+	transform: optional(V2WidgetTransform),
+})
+
 export const V2WidgetDataSource = Schema.Union([
 	V2QueryDataSource,
 	V2RawSqlDataSource,
 	V2RouteDataSource,
 	V2StaticDataSource,
+	V2PromQlDataSource,
 ]).annotate({ identifier: "DashboardWidgetDataSource", title: "Dashboard widget data source" })
 
 const V2WidgetDisplayColumn = Schema.Struct({

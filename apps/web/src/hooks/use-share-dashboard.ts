@@ -22,7 +22,7 @@
  * is to fail slightly earlier.
  */
 import type { WidgetDataState } from "@/components/dashboard-builder/types"
-import { toReadyWidgetData } from "@/hooks/use-widget-data"
+import { toReadyWidgetData, widgetDataNotice } from "@/hooks/use-widget-data"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { getMapleAuthHeaders } from "@/lib/services/common/auth-headers"
 import { ShareWidgetDataResponse } from "@maple/domain/http"
@@ -463,6 +463,7 @@ export function useShareWidgetData(
 									? {
 											status: "ready",
 											data: toReadyWidgetData(result.data, transforms.get(id)),
+											...widgetDataNotice(result.data),
 										}
 									: {
 											status: "error",

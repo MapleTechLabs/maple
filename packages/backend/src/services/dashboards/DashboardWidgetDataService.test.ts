@@ -1,7 +1,17 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId } from "@maple/domain/http"
+import {
+	DashboardDocument,
+	DashboardId,
+	GcpPromQlInvalidQueryError,
+	type GcpPromQlRangeRequest,
+	GcpPromQlResult,
+	IsoDateTimeString,
+	OrgId,
+} from "@maple/domain/http"
+import { GcpProjectId } from "@maple/domain/primitives"
 import { MAX_LIST_RANGE_SECONDS } from "@maple/query-engine"
 import { Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { GcpPromQlService } from "@maple/backend/services/integrations/GcpPromQlService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { DashboardWidgetDataService } from "./DashboardWidgetDataService"
@@ -9,6 +19,7 @@ import { DashboardWidgetDataService } from "./DashboardWidgetDataService"
 const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const asOrgId = Schema.decodeUnknownSync(OrgId)
+const asProjectId = Schema.decodeUnknownSync(GcpProjectId)
 
 const ORG = asOrgId("org_share_widgets")
 const NOW = asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString())
@@ -25,6 +36,10 @@ const makeHarness = (
 	// execution-failure mapping is asserted, and pinning this to `never` forces
 	// the caller into a cast at exactly the point the test is about.
 	execute: (request: { startTime: string; endTime: string }) => Effect.Effect<unknown, unknown>,
+	queryRange: (
+		orgId: OrgId,
+		request: GcpPromQlRangeRequest,
+	) => Effect.Effect<GcpPromQlResult, unknown> = die,
 ) => {
 	const windows: Array<{ startTime: string; endTime: string }> = []
 	const queryEngine = Layer.succeed(QueryEngineService, {
@@ -41,9 +56,12 @@ const makeHarness = (
 	// oxlint-disable-next-line typescript/no-explicit-any
 	const warehouse = Layer.succeed(WarehouseQueryService, { rawSqlQuery: die } as any)
 
+	// oxlint-disable-next-line typescript/no-explicit-any
+	const gcpPromQl = Layer.succeed(GcpPromQlService, { queryRange } as any)
+
 	const runtime = ManagedRuntime.make(
 		Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make).pipe(
-			Layer.provide(Layer.mergeAll(queryEngine, warehouse)),
+			Layer.provide(Layer.mergeAll(queryEngine, warehouse, gcpPromQl)),
 		),
 	)
 	return { runtime, windows }
@@ -250,6 +268,87 @@ describe("DashboardWidgetDataService", () => {
 
 		expect(outcome.narrowedToSeconds).toBeUndefined()
 		expect(windows[0]).toMatchObject({ startTime: WINDOW.startTime, endTime: WINDOW.endTime })
+		await runtime.dispose()
+	})
+
+	it("runs a PromQL tile's stored query for the share's org and window", async () => {
+		const requests: Array<{ orgId: OrgId; request: GcpPromQlRangeRequest }> = []
+		const { runtime } = makeHarness(die, (orgId, request) => {
+			requests.push({ orgId, request })
+			return Effect.succeed(
+				new GcpPromQlResult({
+					resultType: "matrix",
+					series: [
+						{
+							labels: { service: "checkout", project_id: "shop-prod" },
+							points: [[1_767_225_600, 4]],
+						},
+					],
+					projects: [asProjectId("shop-prod")],
+					failures: [{ scope: "projects/shop-staging", message: "Run the setup script again." }],
+				}),
+			)
+		})
+
+		const outcome = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolve(
+					ORG,
+					document([
+						widget("w-promql", {
+							kind: "promql",
+							query: 'sum by (service) (rate({"run.googleapis.com/request_count", service="$service"}[5m]))',
+							projects: ["shop-prod", "shop-staging"],
+						}),
+					]),
+					{ widgetId: "w-promql", source: "primary" },
+					{ startTime: "2026-01-01 00:00:00", endTime: "2026-01-01 06:00:00" },
+					{ service: { value: "checkout", isAll: false, options: [] } },
+				),
+			),
+		)
+
+		expect(requests).toHaveLength(1)
+		expect(requests[0]?.orgId).toBe(ORG)
+		expect(requests[0]?.request).toMatchObject({
+			query: 'sum by (service) (rate({"run.googleapis.com/request_count", service="checkout"}[5m]))',
+			startTime: "2026-01-01 00:00:00",
+			endTime: "2026-01-01 06:00:00",
+			stepSeconds: 300,
+			projects: ["shop-prod", "shop-staging"],
+		})
+		expect(outcome.data).toEqual({
+			data: [{ bucket: "2026-01-01T00:00:00.000Z", "service=checkout": 4 }],
+			// The share names the scope that failed, not the setup advice.
+			notice: "Partial result: projects/shop-staging could not be read.",
+		})
+		await runtime.dispose()
+	})
+
+	it("keeps Google's refusal of a PromQL tile off the share", async () => {
+		const { runtime } = makeHarness(die, () =>
+			Effect.fail(
+				new GcpPromQlInvalidQueryError({
+					message: 'parse error near "internal_metric"',
+					projectId: asProjectId("shop-prod"),
+				}),
+			),
+		)
+
+		const outcome = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolve(
+					ORG,
+					document([widget("w-promql", { kind: "promql", query: "sum(internal_metric" })]),
+					{ widgetId: "w-promql", source: "primary" },
+					WINDOW,
+					{},
+				),
+			).pipe(Effect.flip),
+		)
+
+		expect(outcome._tag).toBe("@maple/http/errors/ShareWidgetExecutionError")
+		expect(outcome.message).not.toContain("internal_metric")
 		await runtime.dispose()
 	})
 })

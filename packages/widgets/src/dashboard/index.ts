@@ -27,11 +27,13 @@ export {
 } from "./migrations"
 export {
 	dataSourceEndpoint,
+	dataSourcePromQl,
 	dataSourceQuerySet,
 	dataSourceRawSql,
 	dataSourceRouteParams,
 	dataSourceTransform,
 	isQueryDataSource,
+	type PromQlDataSource,
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
 	type RawSqlDataSource,
@@ -41,6 +43,7 @@ export { toWidgetRequest, type WidgetRequest } from "./request"
 export {
 	makeProductEventsFunnelDataSource,
 	makeProductEventsPathsDataSource,
+	makePromQlDataSource,
 	makeQueryDataSource,
 	makeRawSqlDataSource,
 	makeRouteDataSource,
@@ -49,6 +52,7 @@ export {
 	PRODUCT_EVENTS_PATHS_ENDPOINT,
 	type ProductEventsFunnelDefinition,
 	type ProductEventsPathsDefinition,
+	type PromQlDataSourceInput,
 	type QueryDataSourceInput,
 	type RawSqlDataSourceInput,
 } from "./construct"
@@ -56,6 +60,7 @@ export {
 // exported for the upgrade transform and its tests, which must name a version
 // explicitly.
 export {
+	PromQlWidgetDataSource,
 	QueryWidgetDataSource,
 	RawSqlWidgetDataSource,
 	RouteWidgetDataSource,
@@ -66,7 +71,11 @@ export {
 } from "./v3/data-source"
 export { DashboardDocumentV3, PortableDashboardDocumentV3 } from "./v3/document"
 export { DashboardWidgetV3, WidgetDisplayConfigV3 } from "./v3/widget"
-export { MARKDOWN_STATIC_ENDPOINT, QUERY_ENDPOINT_RESULT_KINDS } from "./legacy-endpoints"
+export {
+	GCP_PROMQL_ENDPOINT,
+	MARKDOWN_STATIC_ENDPOINT,
+	QUERY_ENDPOINT_RESULT_KINDS,
+} from "./legacy-endpoints"
 // The one-shot upgrade the backfill script runs against Postgres. Deliberately
 // not a `DashboardMigration` — see the header of `upgrade-to-v3.ts`.
 export {

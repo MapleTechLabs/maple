@@ -126,6 +126,22 @@ export const StaticWidgetDataSource = Schema.Struct({
 })
 
 /**
+ * A PromQL query over the organization's Google Cloud Monitoring metrics, read live from Google on
+ * every view. Nothing is stored in Maple's warehouse. `projects` narrows the read to some of the
+ * projects the connections reach; `legend` names each series from its labels (`{{label}}`).
+ */
+export const PromQlWidgetDataSource = Schema.Struct({
+	kind: Schema.Literal("promql"),
+	query: Schema.String,
+	projects: Schema.optionalKey(Schema.Array(Schema.String)),
+	legend: Schema.optionalKey(Schema.String),
+	...transformField,
+}).annotate({
+	identifier: "@maple/PromQlWidgetDataSource",
+	title: "Google Cloud PromQL widget data source",
+})
+
+/**
  * The discriminant values, exported so tests can assert coverage.
  *
  * `dashboard-widget-parity.test.ts` drives its public-API encoder coverage off
@@ -133,7 +149,7 @@ export const StaticWidgetDataSource = Schema.Struct({
  * what the v2 HTTP API does with it. That is the structural successor to the
  * assignability assertions the union replaced.
  */
-export const WIDGET_DATA_SOURCE_KINDS = ["query", "raw_sql", "route", "static"] as const
+export const WIDGET_DATA_SOURCE_KINDS = ["query", "raw_sql", "route", "static", "promql"] as const
 export type WidgetDataSourceKind = (typeof WIDGET_DATA_SOURCE_KINDS)[number]
 
 export const WidgetDataSourceV3 = Schema.Union([
@@ -141,6 +157,7 @@ export const WidgetDataSourceV3 = Schema.Union([
 	RawSqlWidgetDataSource,
 	RouteWidgetDataSource,
 	StaticWidgetDataSource,
+	PromQlWidgetDataSource,
 ]).annotate({
 	identifier: "@maple/WidgetDataSource",
 	title: "Widget data source",
