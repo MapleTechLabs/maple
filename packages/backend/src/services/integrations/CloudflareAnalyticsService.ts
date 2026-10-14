@@ -179,16 +179,18 @@ const BACKFILL_MS = 24 * 60 * 60_000
  */
 const MAX_WINDOW_MS = 60 * 60_000
 /**
- * Hard per-GRANT call budget per tick so a pathological backfill can't blow the 300/5min limit.
- * Cloudflare's GraphQL rate limit is per ACCOUNT-holder — one grant is one holder however many
- * accounts it covers — and the tick runs `ORG_CONCURRENCY` orgs at a time: at 50 the six polled
- * orgs could ask for 300 queries in one tick — exactly the limit — which is how we rate-limited
- * ourselves into ~1.7k `Rate limiter budget depleted` errors a day. 20 keeps a full tick well
- * under the ceiling; backfill is resumable by construction, so a smaller budget only makes
- * history land slower. The budget is therefore shared across a grant's accounts (threaded from
- * `pollOrg` into each `pollConnection`), never one budget per account.
+ * Adaptive per-GRANT call cap per tick (additive increase, multiplicative decrease). Cloudflare
+ * meters GraphQL per holder (300 queries per 5 min by default) and returns no remaining-budget
+ * signal, while other traffic on the customer's login shares that limit. So a fixed cap is either
+ * far below the real limit (slow backfill) or above what's left (rate-limited every tick). The
+ * cap is shared across a grant's accounts (`planAccountBudgets`) and persisted on the org's
+ * workers anchor rows: a rate-limited tick halves it, a tick that spent it grows it by a step.
  */
-const MAX_CALLS_PER_GRANT_TICK = 20
+const GRANT_CAP_INITIAL = 60
+const GRANT_CAP_FLOOR = 5
+/** Half the default 300/5min holder limit, so our own polling never takes all of it. */
+const GRANT_CAP_CEILING = 150
+const GRANT_CAP_STEP = 5
 const LEASE_MS = 4 * 60_000
 /**
  * How long an org sits out after Cloudflare rate-limits it — Cloudflare's own message says "try
@@ -862,9 +864,10 @@ const planAccountBudgets = (
 	accountIds: ReadonlyArray<string>,
 	rows: ReadonlyArray<CloudflareAnalyticsStateRow>,
 	now: number,
+	grantCap: number,
 ): Array<AccountBudget> => {
 	// Zero once accounts outnumber the budget: then the oldest-first order alone rotates them.
-	const fairShare = Math.floor(MAX_CALLS_PER_GRANT_TICK / Math.max(1, accountIds.length))
+	const fairShare = Math.floor(grantCap / Math.max(1, accountIds.length))
 	const planned = accountIds
 		.map((accountId) => {
 			const accountRows = rows.filter((row) => row.accountId === accountId)
@@ -888,11 +891,29 @@ const planAccountBudgets = (
 		.sort((a, b) => (a.oldest === b.oldest ? 0 : a.oldest < b.oldest ? -1 : 1))
 	return planned.map(({ accountId }, index) => ({
 		accountId,
-		callLimit:
-			MAX_CALLS_PER_GRANT_TICK -
-			planned.slice(index + 1).reduce((sum, account) => sum + account.reserve, 0),
+		callLimit: grantCap - planned.slice(index + 1).reduce((sum, account) => sum + account.reserve, 0),
 	}))
 }
+
+const clampGrantCap = (cap: number) => Math.min(GRANT_CAP_CEILING, Math.max(GRANT_CAP_FLOOR, cap))
+
+/** The org's current cap: the lowest one stored on its workers anchor rows, else the start value. */
+const grantCapOf = (rows: ReadonlyArray<CloudflareAnalyticsStateRow>): number => {
+	const stored = rows.flatMap((row) =>
+		row.dataset === WORKERS_DATASET && row.zoneId === "" && row.grantCallCap !== null
+			? [row.grantCallCap]
+			: [],
+	)
+	return clampGrantCap(stored.length === 0 ? GRANT_CAP_INITIAL : Math.min(...stored))
+}
+
+/**
+ * The cap for the next tick. Only a tick that spent its whole cap grows it: a caught-up org
+ * never tested the higher cap, and growing it anyway would let the next backlog jump to the
+ * ceiling in one burst.
+ */
+const nextGrantCap = (cap: number, tick: { readonly rateLimited: boolean; readonly callsMade: number }) =>
+	clampGrantCap(tick.rateLimited ? Math.floor(cap / 2) : tick.callsMade >= cap ? cap + GRANT_CAP_STEP : cap)
 
 /**
  * Attribute a GraphQL error to the document part that owns it. Execution errors carry a `path`
@@ -1348,6 +1369,16 @@ export class CloudflareAnalyticsService extends Context.Service<
 							})),
 						)
 						.onConflictDoNothing(),
+				),
+			)
+
+		/** Persist the org's adaptive call cap on every one of its workers anchor rows. */
+		const storeGrantCap = (orgId: OrgId, cap: number) =>
+			dbExecute((db) =>
+				db.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({ grantCallCap: cap })
+						.where(($) => [$.orgId.eq(orgId), $.dataset.eq(WORKERS_DATASET), $.zoneId.eq("")]),
 				),
 			)
 
@@ -2072,6 +2103,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 			readonly callsMade: number
 			readonly rowsIngested: number
 			readonly failures: ReadonlyArray<DatasetPollFailure>
+			/** Cloudflare's rate limiter refused this account this tick; the org's cap halves. */
+			readonly rateLimited: boolean
 		}
 
 		const pollConnection = Effect.fn("CloudflareAnalyticsService.pollConnection")(function* (
@@ -2110,6 +2143,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						callsMade: 0,
 						rowsIngested: 0,
 						failures: [],
+						rateLimited: false,
 					} satisfies PollConnectionSummary),
 				)
 
@@ -2532,6 +2566,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					callsMade: budget.calls - callsAtStart,
 					rowsIngested,
 					failures: datasetFailures,
+					rateLimited,
 				} satisfies PollConnectionSummary
 			}).pipe(
 				Effect.ensuring(
@@ -2599,18 +2634,35 @@ export class CloudflareAnalyticsService extends Context.Service<
 				callsMade: 0,
 				rowsIngested: 0,
 				failures: [],
+				rateLimited: false,
 			}))
+			const stateRows = pollable.length === 0 ? [] : yield* loadStateRows(orgId)
+			const grantCap = grantCapOf(stateRows)
 			const plan =
 				pollable.length === 0
 					? []
 					: planAccountBudgets(
 							pollable.map((account) => account.accountId),
-							yield* loadStateRows(orgId),
+							stateRows,
 							yield* Clock.currentTimeMillis,
+							grantCap,
 						)
 			const polled = yield* Effect.forEach(plan, ({ accountId, callLimit }) =>
 				pollConnection(orgId, accountId, budget, callLimit, orgRefusal),
 			)
+			// A tick where every account skipped (e.g. still sitting out a backoff) says nothing
+			// about the limit, so the cap only moves after a tick that actually polled.
+			if (polled.some((summary) => summary.skipped === null)) {
+				const nextCap = nextGrantCap(grantCap, {
+					rateLimited: polled.some((summary) => summary.rateLimited),
+					callsMade: budget.calls,
+				})
+				yield* Effect.annotateCurrentSpan({
+					"maple.cloudflare.grant_cap": grantCap,
+					"maple.cloudflare.grant_cap_next": nextCap,
+				})
+				if (nextCap !== grantCap) yield* storeGrantCap(orgId, nextCap)
+			}
 			const summaries = [...skipped, ...polled]
 			if (summaries.length === 0) {
 				yield* Effect.annotateCurrentSpan("maple.cloudflare.skip_reason", "not connected")

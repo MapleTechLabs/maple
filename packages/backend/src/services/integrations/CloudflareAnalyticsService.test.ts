@@ -563,6 +563,27 @@ const loadStateRows = Effect.gen(function* () {
 	return yield* database.execute((db) => db.run(PG.from(CloudflareAnalyticsState).select()))
 })
 
+/** Pin the org's adaptive call cap on its existing workers anchor rows. */
+const seedGrantCap = (cap: number) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		yield* database.execute((db) =>
+			db.run(
+				PG.update(CloudflareAnalyticsState)
+					.set({ grantCallCap: cap })
+					.where(($) => [$.dataset.eq("workers_invocations"), $.zoneId.eq("")]),
+			),
+		)
+	})
+
+const grantCapsOf = loadStateRows.pipe(
+	Effect.map((rows) =>
+		rows
+			.filter((row) => row.dataset === "workers_invocations" && row.zoneId === "")
+			.map((row) => row.grantCallCap),
+	),
+)
+
 interface FlatMetric {
 	readonly name: string
 	readonly value: number
@@ -703,6 +724,8 @@ describe("CloudflareAnalyticsService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(T0)
 			yield* seedConnection()
+			// A small cap so the first tick ends with history still owed.
+			yield* seedStateRow({ dataset: "workers_invocations", grantCallCap: 20 })
 			const service = yield* CloudflareAnalyticsService
 			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
 
@@ -961,9 +984,9 @@ describe("CloudflareAnalyticsService", () => {
 					assert.isBelow(row.backfillAt!, HORIZON)
 				}
 				// Budget-bound tick (that's WHY history is incomplete) — the head still won the race.
-				// Pinned to the cap rather than a magic number so lowering MAX_CALLS_PER_ORG_TICK
-				// (done to stop rate-limiting ourselves) doesn't turn this into a false failure.
-				assert.isAtLeast(summary.callsMade, 20)
+				// Pinned to the floor rather than a magic number so retuning the adaptive cap
+				// doesn't turn this into a false failure.
+				assert.isAtLeast(summary.callsMade, 5)
 			}).pipe(Effect.provide(makeLayer(testDb, captured)))
 		},
 	)
@@ -1078,6 +1101,7 @@ describe("CloudflareAnalyticsService", () => {
 			])
 			yield* seedBehindAccount(ACCOUNT_ID, 40, 6 * 60 * MIN)
 			yield* seedBehindAccount(SMALL, 1, 3 * 60 * MIN)
+			yield* seedGrantCap(20)
 
 			const service = yield* CloudflareAnalyticsService
 			const first = yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
@@ -1120,6 +1144,7 @@ describe("CloudflareAnalyticsService", () => {
 			yield* seedBehindAccount(ACCOUNT_ID, 40, 6 * 60 * MIN)
 			// Head at the horizon, history complete, settings fresh: nothing to spend a call on.
 			yield* seedBehindAccount(IDLE, 1, 0)
+			yield* seedGrantCap(20)
 
 			const service = yield* CloudflareAnalyticsService
 			const summary = yield* service.pollOrg(ORG)
@@ -1136,12 +1161,14 @@ describe("CloudflareAnalyticsService", () => {
 			// 210 zones are 21 zone documents per window: one round of head work already
 			// outspends the tick, and the account document plans after them at equal windows.
 			yield* seedBehindAccount(ACCOUNT_ID, 210, 2 * 60 * MIN)
+			yield* seedGrantCap(20)
 
 			const service = yield* CloudflareAnalyticsService
 			yield* service.pollOrg(ORG)
 			assert.strictEqual((yield* watermarksOf(ACCOUNT_ID)).workers, HORIZON - 2 * 60 * MIN)
 			// Its watermark is now the oldest, so it goes first instead of waiting for every zone
-			// to reach the horizon.
+			// to reach the horizon. (The spent cap grew; pin it so the tick is one round again.)
+			yield* seedGrantCap(20)
 			yield* service.pollOrg(ORG)
 			assert.strictEqual((yield* watermarksOf(ACCOUNT_ID)).workers, HORIZON - 60 * MIN)
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
@@ -1525,6 +1552,85 @@ describe("CloudflareAnalyticsService", () => {
 				}),
 			),
 		)
+	})
+
+	it.effect("a rate-limited tick halves the grant's call cap, never below the floor", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedStateRow({
+				dataset: "workers_invocations",
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+			})
+			const service = yield* CloudflareAnalyticsService
+
+			// No stored cap yet: the tick runs at the starting cap and halves it.
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+			const [org] = named("CloudflareAnalyticsService.pollOrg")
+			assert.strictEqual(org!.attributes.get("maple.cloudflare.grant_cap"), 60)
+			assert.strictEqual(org!.attributes.get("maple.cloudflare.grant_cap_next"), 30)
+			assert.deepStrictEqual(yield* grantCapsOf, [30])
+
+			// Near the floor a halving clamps to it, and a further rate limit keeps it there.
+			yield* seedGrantCap(8)
+			yield* TestClock.setTime(T0 + 6 * MIN)
+			yield* service.pollOrg(ORG)
+			assert.deepStrictEqual(yield* grantCapsOf, [5])
+			yield* TestClock.setTime(T0 + 12 * MIN)
+			yield* service.pollOrg(ORG)
+			assert.deepStrictEqual(yield* grantCapsOf, [5])
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					graphqlErrors: [
+						{ message: "Rate limiter budget depleted. Please try again after 5 minutes." },
+					],
+				}),
+			),
+		)
+	})
+
+	it.effect("a tick that spends the whole cap grows it, up to the ceiling", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			// 100 zones with a full 24h backfill owed: far more work than any cap allows.
+			yield* seedManyZones(100)
+			const service = yield* CloudflareAnalyticsService
+
+			const first = yield* service.pollOrg(ORG)
+			assert.strictEqual(first.callsMade, 60)
+			assert.deepStrictEqual(yield* grantCapsOf, [65])
+
+			// Growth stops at the ceiling.
+			yield* seedGrantCap(148)
+			const second = yield* service.pollOrg(ORG)
+			assert.strictEqual(second.callsMade, 148)
+			assert.deepStrictEqual(yield* grantCapsOf, [150])
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	it.effect("a tick with calls to spare holds the cap where it is", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedBehindAccount(ACCOUNT_ID, 1, 30 * MIN)
+			yield* seedGrantCap(40)
+			const service = yield* CloudflareAnalyticsService
+
+			const summary = yield* service.pollOrg(ORG)
+			assert.isAbove(summary.callsMade, 0)
+			assert.isBelow(summary.callsMade, 40)
+			assert.deepStrictEqual(yield* grantCapsOf, [40])
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
 	it.effect("an unattributed 'disabled' error does not cascade across a batched document", () => {
