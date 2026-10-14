@@ -1923,6 +1923,13 @@ describe("VcsSyncService orchestrator", () => {
 				{ orgId, kind: "workflow-job", runId: "9001" },
 				{ orgId, kind: "workflow-run", runId: "9001" },
 			])
+
+			// An org that turned CI traces off gets nothing forwarded.
+			const installation = yield* repo.resolveInstallation("github", "42")
+			if (Option.isNone(installation)) return assert.fail("installation not seeded")
+			yield* repo.setCiTracesEnabled(orgId, installation.value.id, false)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
+			assert.strictEqual(forwardedWorkflows.length, 2)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedWorkflows })))
 	})
 
@@ -3574,6 +3581,7 @@ describe("GithubProvider rate-limit handling", () => {
 		repositorySelection: "all",
 		status: "active",
 		suspendedAt: null,
+		ciTracesEnabled: true,
 		installedByUserId: "user_1",
 		createdAt: 0,
 		updatedAt: 0,

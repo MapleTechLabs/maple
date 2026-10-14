@@ -697,6 +697,8 @@ export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatu
 		accountLogin: Schema.NullOr(Schema.String),
 		accountType: Schema.NullOr(VcsAccountType),
 		repositorySelection: Schema.NullOr(VcsRepoSelection),
+		/** Whether GitHub Actions runs become traces. True before the org has connected. */
+		ciTracesEnabled: Schema.Boolean,
 		repositories: Schema.Array(GithubRepoSummary),
 	},
 ) {}
@@ -740,6 +742,18 @@ export class GithubSetTrackedBranchResponse extends Schema.Class<GithubSetTracke
 	trackedBranch: Schema.String,
 	// True when the change enqueued a historical backfill of the new branch.
 	backfillQueued: Schema.Boolean,
+}) {}
+
+export class GithubSetCiTracesRequest extends Schema.Class<GithubSetCiTracesRequest>(
+	"GithubSetCiTracesRequest",
+)({
+	enabled: Schema.Boolean,
+}) {}
+
+export class GithubSetCiTracesResponse extends Schema.Class<GithubSetCiTracesResponse>(
+	"GithubSetCiTracesResponse",
+)({
+	enabled: Schema.Boolean,
 }) {}
 
 export class GithubSetPrReviewRequest extends Schema.Class<GithubSetPrReviewRequest>(
@@ -1230,6 +1244,14 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			},
 			payload: GithubSetTrackedBranchRequest,
 			success: GithubSetTrackedBranchResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Org-wide opt-out of CI traces from GitHub Actions. Admin only.
+		HttpApiEndpoint.put("githubSetCiTraces", "/github/ci-traces", {
+			payload: GithubSetCiTracesRequest,
+			success: GithubSetCiTracesResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)

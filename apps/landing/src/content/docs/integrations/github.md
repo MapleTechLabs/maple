@@ -46,7 +46,7 @@ Maple receives GitHub's `workflow_run` and `workflow_job` webhooks for the repos
 - **Status:** failed and timed-out runs, jobs, and steps are `Error`, passing ones are `Ok`, and cancelled or skipped ones carry no status.
 - **Attributes:** spans follow the OpenTelemetry CI/CD conventions (`cicd.pipeline.name`, `cicd.pipeline.run.id`, `cicd.pipeline.task.name`, `cicd.pipeline.result`, `cicd.worker.name`) plus `vcs.ref.head.name`, `vcs.ref.head.revision`, and `vcs.change.id` (the pull request number). The resource carries `vcs.repository.name` and `vcs.owner.name`, so you can filter CI traces by repository.
 
-CI spans are ingested like any other telemetry and count toward your usage.
+CI traces are on by default. CI spans are ingested like any other telemetry and count toward your usage. To stop them, an organization admin turns off **CI traces** on **Integrations → GitHub**; runs that finish while it is off are not recorded.
 
 ## Verify
 
@@ -67,7 +67,7 @@ CI spans are ingested like any other telemetry and count toward your usage.
 - **No repositories appear after connecting.** Discovery and the first backfill run in the background. The card polls and fills in as they complete.
 - **Commits don't show up for a repository.** Confirm the tracked branch is the one your commits land on. Only the tracked branch is synced.
 - **Traces show a SHA without a hover card.** The SHA must be a full 40-character commit on a synced tracked branch within the synced history.
-- **No CI traces appear.** Traces are written when a run or job finishes, so a run in progress has none yet. If finished runs are still missing, open the [GitHub App settings](https://github.com/settings/installations) and accept any pending permission request from the Maple app.
+- **No CI traces appear.** Traces are written when a run or job finishes, so a run in progress has none yet. Check that **CI traces** is on under **Integrations → GitHub**. If finished runs are still missing, open the [GitHub App settings](https://github.com/settings/installations) and accept any pending permission request from the Maple app.
 - **`search_source_code` finds nothing.** GitHub code search indexes only the default branch and matches whole tokens. Search for exact identifiers or exception text.
 
 ## Next steps

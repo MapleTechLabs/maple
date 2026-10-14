@@ -114,6 +114,8 @@ export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallat
 	repositorySelection: VcsRepoSelection,
 	status: VcsInstallStatus,
 	suspendedAt: Schema.NullOr(Schema.Number),
+	/** Whether finished CI workflow runs become traces. On unless the org turned it off. */
+	ciTracesEnabled: Schema.Boolean,
 	installedByUserId: UserId,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,

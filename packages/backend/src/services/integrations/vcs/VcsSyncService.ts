@@ -870,6 +870,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 
 			// CI runs and jobs touch no VCS table: they resolve the org and go to the sink, which turns
 			// them into spans. Not behind `ensureProcessable`, since CI traces need no synced commits.
+			// An org that turned CI traces off drops them here, before any span is built.
+			const forwardsWorkflows = (installation: VcsInstallation) =>
+				workflowSink !== undefined && installation.ciTracesEnabled
 			const handleWorkflowRun = Effect.fn("VcsSyncService.handleWorkflowRun")(function* (
 				installation: VcsInstallation,
 				job: WorkflowRunJob,
@@ -877,9 +880,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				yield* Effect.annotateCurrentSpan({
 					"vcs.repository.external_id": job.externalRepoId,
 					"cicd.pipeline.run.id": job.runId,
-					"vcs.workflow.forwarded": workflowSink !== undefined,
+					"vcs.workflow.forwarded": forwardsWorkflows(installation),
 				})
-				if (workflowSink !== undefined) yield* workflowSink.onWorkflowRun(installation.orgId, job)
+				if (workflowSink !== undefined && installation.ciTracesEnabled)
+					yield* workflowSink.onWorkflowRun(installation.orgId, job)
 			})
 
 			const handleWorkflowJob = Effect.fn("VcsSyncService.handleWorkflowJob")(function* (
@@ -890,9 +894,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					"vcs.repository.external_id": job.externalRepoId,
 					"cicd.pipeline.run.id": job.runId,
 					"cicd.pipeline.task.run.id": job.jobId,
-					"vcs.workflow.forwarded": workflowSink !== undefined,
+					"vcs.workflow.forwarded": forwardsWorkflows(installation),
 				})
-				if (workflowSink !== undefined) yield* workflowSink.onWorkflowJob(installation.orgId, job)
+				if (workflowSink !== undefined && installation.ciTracesEnabled)
+					yield* workflowSink.onWorkflowJob(installation.orgId, job)
 			})
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
