@@ -1,17 +1,17 @@
 ---
 title: "Trace eve agents with OpenTelemetry"
-description: "Send eve's built-in OpenTelemetry spans to Maple with one instrumentation file and see each eve session as one Agent Session."
+description: "Send your eve agent's traces to Maple and see each conversation as one Agent Session."
 group: "AI Frameworks"
 order: 17
 navLabel: "eve"
 icon: "vercel"
 ---
 
-eve traces every turn, model call, tool call and subagent itself. One file under `agent/instrumentation/` sends those spans to Maple. You don't start an OpenTelemetry SDK, and you don't pass a conversation id, because eve puts its session id on every span.
+Send your eve agent's traces to Maple and see each conversation as an Agent Session, with its messages, model calls, tool calls, subagents and token usage. The setup is one package and two files.
 
-Outside `eve dev`, eve only exports prompts, replies and tool payloads for conversations its channel classifies as `public`. A deployed agent can show complete sessions with an empty transcript until you [set the audience](#set-the-audience-to-get-a-transcript-in-production).
+To see message text from a deployed agent, you also [mark its conversations public](#show-message-text-in-production).
 
-You need `eve` 0.62 or newer and Node.js 24 or newer. On an older eve, [upgrade first](#upgrade-from-eve-061-or-older).
+You need `eve` 0.62 or newer and Node.js 24 or newer. On eve 0.61 or older, [upgrade first](#upgrade-from-eve-061-or-older).
 
 ## Quick setup with a coding agent
 
@@ -33,9 +33,9 @@ Your ingest key is in **Settings → Ingestion**. If your organization is in the
 npm install @vercel/otel
 ```
 
-## Add the Maple destination
+## Send traces to Maple
 
-eve loads every file in `agent/instrumentation/` at startup. Create one for Maple:
+Create `agent/instrumentation/maple.ts`:
 
 ```ts
 // agent/instrumentation/maple.ts
@@ -53,7 +53,7 @@ export default mapleKey
 				url: "https://ingest.maple.dev/v1/traces", // EU: https://ingest.eu.maple.dev/v1/traces
 				headers: { authorization: `Bearer ${mapleKey}` },
 			}),
-			// Keep the spans of a conversation; drop the workflow engine's own
+			// Leave out eve's internal workflow spans
 			exportPolicy: { span: ({ attributes }) => ({ emit: "gen_ai.conversation.id" in attributes }) },
 		})
 	: disableInstrumentation()
@@ -61,11 +61,11 @@ export default mapleKey
 
 Set `MAPLE_INGEST_KEY` to your ingest key from **Settings → Ingestion**: in `.env.local` for local runs, and in your host's environment variables for deployments.
 
-Keep the `exportPolicy`. Without it eve also exports the spans of its workflow engine, which were 1,031 of the 1,060 spans in a six-message test conversation.
+Keep the `exportPolicy` line. Without it, eve's internal workflow spans make up most of the data you send.
 
-## Name the service and environment
+## Name the service
 
-eve names the service after your `package.json`. To choose the name and add the environment, create the shared settings file:
+Without this step, the service in Maple is named after your `package.json`. To choose the name and add the environment, create `agent/instrumentation/otel.ts`:
 
 ```ts
 // agent/instrumentation/otel.ts
@@ -74,27 +74,19 @@ import { otel } from "eve/instrumentation/otel"
 export default otel({
 	resource: {
 		"service.name": "support-agent",
-		// VERCEL_ENV on Vercel; use your host's variable elsewhere
+		// Outside Vercel, use your host's environment variable
 		"deployment.environment.name": process.env.VERCEL_ENV ?? "development",
 	},
 })
 ```
 
-A project can have only one `otel()` file. If you already have one, add the two attributes to its `resource`.
+If the project already has an `otel()` file, add the two attributes to it instead. eve allows only one.
 
-## Set the audience to get a transcript in production
+## Show message text in production
 
-Every eve channel gives a conversation an audience when the session starts, and the audience decides whether eve exports its content:
+In `eve dev`, Maple shows every message, reply and tool call. A deployed agent sends that text only for conversations eve treats as public. Other conversations still appear with their turns, model calls, tools and tokens, but without any text.
 
-| Where it runs | Audience | Maple receives |
-| --- | --- | --- |
-| `eve dev` | any | Prompts, replies, tool arguments and results |
-| Preview or production | `public` | Prompts, replies, tool arguments and results |
-| Preview or production | `private` or `unknown` | Turns, model calls, tools, tokens and failures, without their content |
-
-The Slack channel treats public channels as `public`, and DMs, group DMs and private channels as `private`. The HTTP channel treats authenticated callers as `private` and anonymous callers as `unknown`.
-
-To record the content of every conversation on the HTTP channel, set the audience on it:
+eve's Slack channel treats public channels as public, and DMs and private channels as private. Its HTTP channel treats no conversation as public until you mark it:
 
 ```ts
 // agent/channels/eve.ts
@@ -107,44 +99,40 @@ export default eveChannel({
 })
 ```
 
-Keep the `auth` entries your project already uses. The audience doesn't change who may call the agent. It applies to every trace destination, including Vercel Agent Runs, so set it only when recording those conversations is acceptable. For other channels, see [eve's audience docs](https://eve.dev/docs/channels/overview#audience).
-
-A `tracePolicy` in `otel()` can't widen this. It only narrows what the audience allows.
+Keep the `auth` list your project already uses. A public channel sends its message text to every trace destination, including Vercel Agent Runs, so mark it public only if storing those conversations is acceptable. For other channels, see [eve's audience docs](https://eve.dev/docs/channels/overview#audience).
 
 ## Check that it works
 
-Run `eve dev`, send two messages with one that calls a tool, then open **Agent Sessions** in Maple. You should see one session per eve session, titled with its first message, one turn per message, and a transcript with the prompts, replies and tool calls. Subagents show as their own lanes inside the turn that called them.
+Run `eve dev`, send two messages, one of which uses a tool, then open **Agent Sessions** in Maple. You should see one session for the conversation, titled with its first message, with one turn per message and the messages, replies and tool calls in its transcript. Subagents show up as separate lanes inside the turn that called them.
 
 Maple lists the framework as Unidentified for now. With a model called directly at its provider, cost shows as unpriced because eve doesn't report it.
 
 ## Upgrade from eve 0.61 or older
 
-eve 0.61 and older read telemetry from a single `agent/instrumentation.ts` and ignore the `agent/instrumentation/` directory, so the files above export nothing and log no error. Upgrade eve first:
+eve 0.61 and older ignore the files in this guide without showing an error. Upgrade eve:
 
 ```bash
 npm install eve@latest
 ```
 
-Then move the old file over:
+Then:
 
-1. Delete `agent/instrumentation.ts`. Until you do, `eve build` stops with `Found removed instrumentation file`.
+1. Delete `agent/instrumentation.ts`. Newer eve versions refuse to build while it exists.
 2. If `agent.ts` sets `experimental: { instrumentationProviders: true }`, remove it.
-3. Add the [Maple destination](#add-the-maple-destination) and the [shared settings file](#name-the-service-and-environment).
-4. Move every other exporter from the old `setup` into a file of its own:
+3. Add the two files from this guide.
+4. If the old file did more than send traces to Maple, move each part:
 
-| In `agent/instrumentation.ts` | Now |
+| In the old `agent/instrumentation.ts` | After the upgrade |
 | --- | --- |
-| `setup` calling `registerOTel({ traceExporter })` | One `otelIntegration({ traceExporter })` file per exporter |
-| `serviceName` | `otel({ resource: { "service.name": ... } })` |
+| Another exporter in `registerOTel({ traceExporter })` | Its own file with `otelIntegration({ traceExporter })` |
+| `serviceName` | `service.name` in [`otel.ts`](#name-the-service) |
 | `functionId` | `otel({ functionId })` |
-| `recordInputs`, `recordOutputs` | The [conversation's audience](#set-the-audience-to-get-a-transcript-in-production), narrowed per destination with an `exportPolicy` |
+| `recordInputs`, `recordOutputs` | Not needed: message text depends on [whether the conversation is public](#show-message-text-in-production) |
 | `events["step.started"]` returning `runtimeContext` | `otelIntegration({ runtimeContext })` |
-
-From eve 0.35 to 0.61, the old file recorded no content unless you set `recordInputs` and `recordOutputs`. After the upgrade, eve records content during `eve dev` and for `public` conversations.
 
 ## Troubleshooting
 
-- **Nothing arrives.** eve doesn't log failed exports. Check the startup log for `MAPLE_INGEST_KEY is not set`, then send the key to the endpoint yourself, replacing `YOUR_INGEST_KEY`. It answers `200` for a valid key and `401` with the reason for a wrong key or the wrong region:
+- **Nothing arrives.** eve doesn't report failed exports, so check the key. The startup log must not say `MAPLE_INGEST_KEY is not set`. Then send this request with your key in place of `YOUR_INGEST_KEY`. `200` means the key works; `401` says what is wrong, including a key from the other region:
 
   ```bash
   curl -s -w "%{http_code}\n" -X POST https://ingest.maple.dev/v1/traces \
@@ -152,10 +140,9 @@ From eve 0.35 to 0.61, the old file recorded no content unless you set `recordIn
     -H "Content-Type: application/json" -d '{"resourceSpans":[]}'
   ```
 
-- **Sessions arrive without prompts, replies or turn titles.** The conversation's audience is `private` or `unknown`. [Set the audience](#set-the-audience-to-get-a-transcript-in-production).
-- **Thousands of `workflow.*`, `world.*` and `step.*` spans.** The destination has no `exportPolicy`.
-- **A turn that waited for an approval looks slow.** eve keeps the turn open while it waits, so the wait counts toward the turn and the tool call.
-- **A failed tool shows as successful.** The tool returned an error value. Throw from `execute` instead.
+- **Sessions have no message text.** The conversation isn't public. [Mark the channel public](#show-message-text-in-production). Setting a `tracePolicy` in `otel()` doesn't change this.
+- **Thousands of `workflow.*`, `world.*` and `step.*` spans.** The `exportPolicy` line is missing from `maple.ts`.
+- **A failed tool shows as successful.** The tool returned an error instead of throwing one. Throw from `execute`.
 
 ## Related
 
