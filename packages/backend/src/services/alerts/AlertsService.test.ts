@@ -638,6 +638,88 @@ describe("AlertsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
 	})
 
+	it.effect("a rule disabled while a tick evaluates it neither opens an incident nor pages", () => {
+		const testDb = createTestDb(trackedDbs)
+		const base = makeWarehouseStub({
+			tracesAggregateRows: [
+				tracesRow({
+					count: 200,
+					avgDuration: 40,
+					p50Duration: 20,
+					p95Duration: 120,
+					p99Duration: 240,
+					errorRate: 10,
+					satisfiedCount: 180,
+					toleratingCount: 10,
+					apdexScore: 0.925,
+				}),
+			],
+		})
+		// Runs before the next warehouse read, once; set when the edit should land.
+		let beforeQuery: Effect.Effect<void> = Effect.void
+		const hooked = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+			Effect.suspend(() => {
+				const hook = beforeQuery
+				beforeQuery = Effect.void
+				return Effect.andThen(hook, effect)
+			})
+		const stub: WarehouseQueryServiceApi = {
+			...base,
+			sqlQuery: (...args) => hooked(base.sqlQuery(...args)),
+			rawSqlQuery: (...args) => hooked(base.rawSqlQuery(...args)),
+			compiledQuery: (...args) => hooked(base.compiledQuery(...args)),
+			compiledQueryWithCapabilities: (...args) => hooked(base.compiledQueryWithCapabilities(...args)),
+			compiledQueryFirst: (...args) => hooked(base.compiledQueryFirst(...args)),
+		}
+		const requests: Array<string> = []
+		const fetchImpl = (async (input: RequestInfo | URL) => {
+			requests.push(String(input))
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alerts_edit_fence")
+			const userId = asUserId("user_alerts_edit_fence")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			yield* alerts.runSchedulerTick()
+
+			// The tick that would open the incident reads the warehouse after
+			// claiming the rule; the rule is disabled in between.
+			beforeQuery = alerts
+				.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						severity: "critical",
+						enabled: false,
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(Effect.orDie, Effect.asVoid)
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
+			assert.lengthOf((yield* alerts.listDeliveryEvents(orgId)).events, 0)
+			assert.deepStrictEqual(requests, [])
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: fetchImpl })))
+	})
+
 	it.effect("snapshots a custom notification template into the delivered payload", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
