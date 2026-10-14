@@ -854,7 +854,7 @@ interface AccountBudget {
 /**
  * Split the grant's per-tick call budget across its accounts, which poll sequentially. Accounts
  * go oldest head watermark first, and each one reserves a fair share (capped at its pending head
- * work) that the accounts before it may not spend. Without the reservation the first account in
+ * work, zero when it has none) that the accounts before it may not spend. Without the reservation the first account in
  * status order spent the whole budget and the others got no calls for days. Unreserved calls
  * still go to whoever needs them, so a busy account keeps its throughput when its siblings are idle.
  */
@@ -867,15 +867,22 @@ const planAccountBudgets = (
 	const fairShare = Math.floor(MAX_CALLS_PER_GRANT_TICK / Math.max(1, accountIds.length))
 	const planned = accountIds
 		.map((accountId) => {
-			const head = buildWorkItems(
-				rows.filter((row) => row.accountId === accountId),
-				now,
-			).filter((item) => item.phase === "head")
+			const accountRows = rows.filter((row) => row.accountId === accountId)
+			const head = buildWorkItems(accountRows, now).filter((item) => item.phase === "head")
+			// A caught-up account reserves nothing, so its idle share stays with the busy siblings.
+			// First discovery or a stale settings probe still needs a call even without head work.
+			const needsCall =
+				accountRows.length === 0 ||
+				head.length > 0 ||
+				accountRows.some(
+					(row) =>
+						row.enabled &&
+						(row.settingsFetchedAt == null || now - row.settingsFetchedAt > SETTINGS_TTL_MS),
+				)
 			return {
 				accountId,
 				oldest: head.reduce((min, item) => Math.min(min, item.window.start), Infinity),
-				// At least one call, so an account still being discovered can refresh its settings.
-				reserve: Math.min(fairShare, Math.max(1, head.length)),
+				reserve: needsCall ? Math.min(fairShare, Math.max(1, head.length)) : 0,
 			}
 		})
 		.sort((a, b) => (a.oldest === b.oldest ? 0 : a.oldest < b.oldest ? -1 : 1))

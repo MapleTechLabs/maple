@@ -1107,6 +1107,26 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
+	it.effect("a caught-up account leaves its share of the budget to a busy sibling", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const IDLE = "acct-idle"
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection(ANALYTICS_SCOPE, [
+				{ id: ACCOUNT_ID, name: "Busy Account" },
+				{ id: IDLE, name: "Idle Account" },
+			])
+			yield* seedBehindAccount(ACCOUNT_ID, 40, 6 * 60 * MIN)
+			// Head at the horizon, history complete, settings fresh: nothing to spend a call on.
+			yield* seedBehindAccount(IDLE, 1, 0)
+
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			assert.strictEqual(summary.callsMade, 20)
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
 	it.effect("an account dataset crowded out by zone documents leads the next tick", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
