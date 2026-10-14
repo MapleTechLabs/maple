@@ -748,7 +748,7 @@ export const V2DashboardTemplateRequirement = Schema.Struct({
 	missing: optional(
 		Schema.String.annotate({
 			description:
-				'Short statement of what is missing, e.g. "not connected". Absent for `metrics`, where clients derive `no <prefix>*` from `required_metric_prefixes`.',
+				'Short statement of what is missing, e.g. "no metrics". Usually absent; clients derive `no <prefix>*` from `required_metric_prefixes`.',
 		}),
 	),
 	collector: Schema.String.annotate({

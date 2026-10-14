@@ -157,7 +157,6 @@ export const planetscaleTemplate: TemplateDefinition = {
 	requirement: {
 		kind: "integration",
 		label: "PlanetScale integration connected (or a planetscale scrape target)",
-		missing: "not connected",
 		collector: "the PlanetScale integration, or a planetscale scrape target",
 		setupLabel: "the PlanetScale integration",
 		hint: "Connect it and every widget fills in on its own.",

@@ -41,15 +41,16 @@ export type TemplateParameterValues = Partial<Record<DashboardTemplateParameterK
  */
 export interface TemplateRequirement {
 	/**
-	 * `metrics` gates on `requiredMetricPrefixes`; `integration` on a connected
-	 * integration; `telemetry` is never gated (trace/log templates).
+	 * `metrics` and `integration` both gate on `requiredMetricPrefixes`
+	 * arriving recently; `integration` only changes where "Set up" points.
+	 * `telemetry` is never gated (trace/log templates).
 	 */
 	readonly kind: "metrics" | "integration" | "telemetry"
 	/** Full prose, surfaced as the public `requirements[]` field. */
 	readonly label: string
 	/**
-	 * Row-sized statement of what's missing, e.g. "not connected". Omit for
-	 * `kind: "metrics"` — the picker derives `no <prefix>*` from
+	 * Row-sized statement of what's missing, e.g. "no metrics". Omit unless the
+	 * prefix can't say it — the picker derives `no <prefix>*` from
 	 * `requiredMetricPrefixes`.
 	 */
 	readonly missing?: string

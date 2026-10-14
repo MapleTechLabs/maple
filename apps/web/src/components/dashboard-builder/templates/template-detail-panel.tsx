@@ -64,11 +64,9 @@ function RequirementBlock({
 								? requirement.kind === "telemetry"
 									? "trace data is arriving"
 									: "metrics are arriving"
-								: requirement.kind === "integration"
-									? "not connected"
-									: `no matching metrics in ${READINESS_WINDOW_LABEL}`}
+								: `no matching metrics in ${READINESS_WINDOW_LABEL}`}
 						</span>
-						{requirement.kind === "metrics" && readiness !== undefined && (
+						{requirement.kind !== "telemetry" && readiness !== undefined && (
 							<span className="text-muted-foreground ml-auto shrink-0 font-mono text-2xs">
 								{readiness.metricCount} {readiness.metricCount === 1 ? "metric" : "metrics"}
 								{age !== null && ` · last seen ${age}`}

@@ -54,10 +54,10 @@ describe("computeTemplateReadiness", () => {
 
 	it("prefers an explicit missing label over the derived one", () => {
 		const readiness = computeTemplateReadiness(
-			[template("cloudflare", ["cloudflare."], { kind: "integration", missing: "not connected" })],
-			[metric("postgresql.backends")],
+			[template("all", [""], { kind: "metrics", missing: "no metrics" })],
+			[],
 		)
-		expect(readiness.get("cloudflare")?.missingLabel).toBe("not connected")
+		expect(readiness.get("all")?.missingLabel).toBe("no metrics")
 	})
 
 	// A template charting two receivers renders half-empty if only one reports,
