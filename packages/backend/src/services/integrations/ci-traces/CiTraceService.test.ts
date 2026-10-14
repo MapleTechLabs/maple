@@ -267,7 +267,8 @@ describe("CiTraceService", () => {
 				(jobSpan!.events ?? []).map((event) =>
 					attr(event.attributes, "maple.cicd.annotation.message"),
 				),
-				annotations.map((annotation) => annotation.message),
+				// Failures first, then the rest.
+				[annotations[0]!.message, annotations[2]!.message, annotations[1]!.message],
 			)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
@@ -329,6 +330,23 @@ describe("CiTraceService", () => {
 				attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "vcs.repository.url.full"),
 				"https://github.com/octo/repo",
 			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
+	})
+
+	it.live("gives a job that never got a runner no wait span and no length", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			// How the provider maps a job skipped before it started: it starts when it completed.
+			yield* sink.onWorkflowJob(
+				orgId,
+				{ ...job, conclusion: "skipped", startedAtMs: job.completedAtMs, steps: [] },
+				[],
+			)
+			const [jobSpan, ...rest] = spansOf(calls[0]!)
+			assert.lengthOf(rest, 0)
+			assert.strictEqual(jobSpan!.startTimeUnixNano, jobSpan!.endTimeUnixNano)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 

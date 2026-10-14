@@ -1709,7 +1709,6 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				installation,
 				repo,
 				jobId,
-				limit,
 			) =>
 				client
 					.listCheckRunAnnotations(
@@ -1717,7 +1716,6 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						repo.owner,
 						repo.name,
 						jobId,
-						limit,
 					)
 					.pipe(
 						Effect.map((annotations) =>

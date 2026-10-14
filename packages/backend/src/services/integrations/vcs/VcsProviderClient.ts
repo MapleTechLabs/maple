@@ -477,12 +477,14 @@ export interface VcsProviderClient {
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 
-	/** The first `limit` annotations a finished CI job recorded: why it failed, in its own words. */
+	/**
+	 * The annotations a finished CI job recorded: why it failed, in its own words. Bounded by the
+	 * provider, which reads until it has a failure.
+	 */
 	readonly fetchWorkflowJobAnnotations: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
 		jobId: string,
-		limit: number,
 	) => Effect.Effect<
 		ReadonlyArray<WorkflowJobAnnotation>,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError

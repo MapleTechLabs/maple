@@ -78,6 +78,8 @@ const queueSpanId = (job: WorkflowJobJob) => hashHex(`queue:${runKey(job)}:${job
 /** Below this a job's wait for a runner is noise at GitHub's one-second resolution. */
 const MIN_QUEUE_SPAN_MS = 1000
 const MAX_ANNOTATION_MESSAGE_LENGTH = 1000
+/** Annotation events per job span, failures first: the rest repeat what those say. */
+const MAX_ANNOTATION_EVENTS = 20
 /** The runner's own last word on any failed step; says nothing a real annotation would not. */
 const GENERIC_EXIT_MESSAGE = /^Process completed with exit code \d+\.?$/
 
@@ -244,7 +246,8 @@ export const workflowJobToOtlp = (
 	const queueMs = job.startedAtMs - job.queuedAtMs
 	// The job span covers its wait for a runner, so a waterfall shows where the time went.
 	const queue: OtlpSpan[] =
-		queueMs < MIN_QUEUE_SPAN_MS
+		// A job skipped or cancelled before a runner picked it up never waited: it never ran.
+		queueMs < MIN_QUEUE_SPAN_MS || job.startedAtMs === job.completedAtMs
 			? []
 			: [
 					{
@@ -290,17 +293,22 @@ export const workflowJobToOtlp = (
 	}))
 	const status = statusOf(job.conclusion)
 	const reason = status.code === STATUS_ERROR ? failureReason(annotations) : undefined
-	const events = annotations.map((annotation): OtlpEvent => ({
-		name: "cicd.annotation",
-		timeUnixNano: unixNano(job.completedAtMs),
-		attributes: attrs({
-			"maple.cicd.annotation.level": annotation.level,
-			"maple.cicd.annotation.title": annotation.title,
-			"maple.cicd.annotation.message": truncate(annotation.message, MAX_ANNOTATION_MESSAGE_LENGTH),
-			"code.file.path": annotation.path,
-			"code.line.number": annotation.startLine,
-		}),
-	}))
+	const events = [
+		...annotations.filter((annotation) => annotation.level === "failure"),
+		...annotations.filter((annotation) => annotation.level !== "failure"),
+	]
+		.slice(0, MAX_ANNOTATION_EVENTS)
+		.map((annotation): OtlpEvent => ({
+			name: "cicd.annotation",
+			timeUnixNano: unixNano(job.completedAtMs),
+			attributes: attrs({
+				"maple.cicd.annotation.level": annotation.level,
+				"maple.cicd.annotation.title": annotation.title,
+				"maple.cicd.annotation.message": truncate(annotation.message, MAX_ANNOTATION_MESSAGE_LENGTH),
+				"code.file.path": annotation.path,
+				"code.line.number": annotation.startLine,
+			}),
+		}))
 	return payloadOf(job.repoFullName, job.url, [
 		{
 			traceId,

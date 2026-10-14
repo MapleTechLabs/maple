@@ -24,7 +24,7 @@ import {
 	type WorkflowJobJob,
 	type WorkflowRunJob,
 } from "@maple/domain/http"
-import { Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
+import { Clock, Duration, Effect, Context, Layer, Option, Schema, Match } from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
 import {
 	PullRequestChecklistSink,
@@ -55,8 +55,8 @@ const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
 
 /** CI job conclusions worth asking the provider why about. */
 const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "timed_out", "startup_failure"])
-/** Annotations read per failed job: the first failures say why, the rest repeat it. */
-const MAX_WORKFLOW_ANNOTATIONS = 20
+/** How long a CI job waits on its annotations before going out without them. */
+const WORKFLOW_ANNOTATIONS_BUDGET = Duration.seconds(10)
 
 // VcsInstallationGoneError is handled internally (→ disconnect) and never
 // surfaces here. VcsProviderError / VcsRepoUnavailableError that aren't caught
@@ -907,20 +907,26 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					owner: job.repoFullName.slice(0, slash),
 					name: job.repoFullName.slice(slash + 1),
 				}
-				return provider
-					.fetchWorkflowJobAnnotations(installation, ref, job.jobId, MAX_WORKFLOW_ANNOTATIONS)
-					.pipe(
-						Effect.tap((annotations) =>
+				return provider.fetchWorkflowJobAnnotations(installation, ref, job.jobId).pipe(
+					// Rate-limit backoff can wait inline; the reason is not worth holding the job's spans.
+					Effect.timeoutOrElse({
+						duration: WORKFLOW_ANNOTATIONS_BUDGET,
+						orElse: () =>
 							Effect.annotateCurrentSpan({
-								"vcs.workflow.annotation_count": annotations.length,
-							}),
-						),
-						Effect.catchCause((cause) =>
-							Effect.annotateCurrentSpan({
-								"vcs.workflow.annotations_error": summarizeCause(cause),
+								"vcs.workflow.annotations_error": "timed out",
 							}).pipe(Effect.as<ReadonlyArray<WorkflowJobAnnotation>>([])),
-						),
-					)
+					}),
+					Effect.tap((annotations) =>
+						Effect.annotateCurrentSpan({
+							"vcs.workflow.annotation_count": annotations.length,
+						}),
+					),
+					Effect.catchCause((cause) =>
+						Effect.annotateCurrentSpan({
+							"vcs.workflow.annotations_error": summarizeCause(cause),
+						}).pipe(Effect.as<ReadonlyArray<WorkflowJobAnnotation>>([])),
+					),
+				)
 			}
 
 			const handleWorkflowJob = Effect.fn("VcsSyncService.handleWorkflowJob")(function* (

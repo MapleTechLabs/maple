@@ -14,7 +14,8 @@ import {
 	VcsWebhookSignatureError,
 	type WorkflowJobAnnotation,
 } from "@maple/domain/http"
-import { Array as Arr, Clock, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Array as Arr, Clock, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -1640,6 +1641,8 @@ describe("VcsSyncService orchestrator", () => {
 		/** What the stubbed provider answers when asked why a CI job failed. */
 		readonly workflowAnnotations?: ReadonlyArray<WorkflowJobAnnotation>
 		readonly workflowAnnotationsError?: VcsProviderError
+		/** Completed when the provider is asked, which then never answers (GitHub stuck in backoff). */
+		readonly workflowAnnotationsHang?: Deferred.Deferred<void>
 		/** The annotations each forwarded CI job came with, in order. */
 		readonly forwardedAnnotations?: Array<ReadonlyArray<WorkflowJobAnnotation>>
 		readonly sentDelays?: Array<number | undefined>
@@ -1714,9 +1717,13 @@ describe("VcsSyncService orchestrator", () => {
 							truncated: opts.branchesTruncated ?? false,
 						}),
 			fetchWorkflowJobAnnotations: () =>
-				opts.workflowAnnotationsError
-					? Effect.fail(opts.workflowAnnotationsError)
-					: Effect.succeed(opts.workflowAnnotations ?? []),
+				opts.workflowAnnotationsHang
+					? Deferred.succeed(opts.workflowAnnotationsHang, undefined).pipe(
+							Effect.andThen(Effect.never),
+						)
+					: opts.workflowAnnotationsError
+						? Effect.fail(opts.workflowAnnotationsError)
+						: Effect.succeed(opts.workflowAnnotations ?? []),
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
 			ids: ["github"],
@@ -1992,6 +1999,34 @@ describe("VcsSyncService orchestrator", () => {
 					forwardedWorkflows,
 					forwardedAnnotations,
 					workflowAnnotationsError: new VcsProviderError({ message: "GitHub is down" }),
+				}),
+			),
+		)
+	})
+
+	it.effect("forwards a failed CI job without annotations once their read runs out of time", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+		const forwardedAnnotations: Array<ReadonlyArray<WorkflowJobAnnotation>> = []
+		const asked = Deferred.makeUnsafe<void>()
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_ci"))
+			const processing = yield* Effect.forkChild(
+				svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42", "failure"))),
+			)
+			yield* Deferred.await(asked)
+			yield* TestClock.adjust(Duration.seconds(11))
+			yield* Fiber.join(processing)
+			assert.deepStrictEqual(forwardedAnnotations, [[]])
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows,
+					forwardedAnnotations,
+					workflowAnnotationsHang: asked,
 				}),
 			),
 		)

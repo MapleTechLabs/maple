@@ -613,8 +613,10 @@ describe("GithubProvider reading why a CI job failed", () => {
 		)
 		return Effect.gen(function* () {
 			const provider = yield* GithubProvider
-			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555", 20)
-			assert.isTrue(requests[1]!.endsWith("/repos/octo/shop/check-runs/555/annotations?per_page=20"))
+			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555")
+			assert.isTrue(
+				requests[1]!.endsWith("/repos/octo/shop/check-runs/555/annotations?per_page=100&page=1"),
+			)
 			assert.deepStrictEqual(annotations, [
 				{
 					level: "failure",
@@ -624,6 +626,30 @@ describe("GithubProvider reading why a CI job failed", () => {
 					startLine: 12,
 				},
 			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("reads past a page of warnings to the failure, and no further", () => {
+		const requests: Array<string> = []
+		const warning = { annotation_level: "warning", message: "Node 16 is deprecated" }
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				jsonResponse(Array.from({ length: 100 }, () => warning)),
+				jsonResponse([
+					...Array.from({ length: 99 }, () => warning),
+					{ annotation_level: "failure", message: "expected 2 to be 3" },
+				]),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555")
+			// A full page holding the failure ends the read.
+			assert.lengthOf(requests, 3)
+			assert.lengthOf(annotations, 200)
+			assert.strictEqual(annotations.at(-1)?.message, "expected 2 to be 3")
 		}).pipe(Effect.provide(layer))
 	})
 })
