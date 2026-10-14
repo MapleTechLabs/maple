@@ -255,6 +255,7 @@ function GcpInfra({
 	}))
 	const timeSearch = pickTimeRangeSearch(search)
 	const activeScope = search.scope
+	const unread = fleet.filter((entry) => entry.failed)
 
 	// Metrics switched off, and nothing collected before in this range.
 	if (connectors.length === 0 && Result.isSuccess(fleetResult) && reporting.length === 0) {
@@ -299,6 +300,14 @@ function GcpInfra({
 							className={FLEET_BAND_BOXED}
 						/>
 					)}
+					{/* A service whose read failed has no workloads in the band: its count is unknown, not zero. */}
+					{unread.length === 0 ? null : (
+						<p className="text-xs text-severity-warn">
+							{unread.map((entry) => GCP_INFRA_SERVICES[entry.service].title).join(", ")}{" "}
+							metrics could not be read, so the band leaves{" "}
+							{unread.length === 1 ? "it" : "them"} out. Reload to try again.
+						</p>
+					)}
 					{/* Below the band, which counts every tab. The strip scrolls sideways on a phone. */}
 					<UnderlineTabStrip navigation label="Google Cloud services" bleed={false}>
 						{tabs.map((candidate) => (
@@ -316,7 +325,9 @@ function GcpInfra({
 								{/* With a band cell active: how many of its workloads each tab holds. */}
 								<UnderlineTabCount
 									count={
-										activeScope === undefined || candidate === GCP_RESOURCES_TAB
+										activeScope === undefined ||
+										candidate === GCP_RESOURCES_TAB ||
+										unread.some((entry) => entry.service === candidate)
 											? undefined
 											: (
 													inPlace.find((entry) => entry.service === candidate)
