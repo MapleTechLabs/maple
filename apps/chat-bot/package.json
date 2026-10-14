@@ -7,7 +7,6 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/backend": "workspace:*",
 		"@maple/chat-platform": "workspace:*",
 		"@maple/domain": "workspace:*",
