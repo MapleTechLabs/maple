@@ -1,7 +1,7 @@
 ---
 title: "Trace eve agents with OpenTelemetry"
 description: "Send eve's built-in OpenTelemetry spans to Maple with one instrumentation file and see each eve session as one Agent Session."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 17
 navLabel: "eve"
 icon: "vercel"

@@ -543,9 +543,15 @@ export function traceTimeProbeQuery(opts: { traceId: string }) {
 		.format("JSON")
 }
 
-/** {@link traceTimeProbeQuery} bounded below by the `startTime` param. */
-export function recentTraceTimeProbeQuery(opts: { traceId: string }) {
-	return traceTimeProbeQuery(opts).where(($) => [$.Timestamp.gte(param.dateTime("startTime"))])
+/**
+ * {@link traceTimeProbeQuery} bounded below by the `startTime` param, and with
+ * `endBounded` also below the `endTime` param, so tiered probes never overlap.
+ */
+export function recentTraceTimeProbeQuery(opts: { traceId: string; endBounded?: boolean }) {
+	return traceTimeProbeQuery(opts).where(($) => [
+		$.Timestamp.gte(param.dateTime("startTime")),
+		CH.whenTrue(opts.endBounded === true, () => $.Timestamp.lt(param.dateTime("endTime"))),
+	])
 }
 
 // Traces duration stats and facets

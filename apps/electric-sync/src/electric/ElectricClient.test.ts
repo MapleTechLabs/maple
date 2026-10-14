@@ -185,18 +185,21 @@ describe("buildUpstreamShapeUrl", () => {
 		assert.isNull(params.get("replica"))
 	})
 
-	it("pins a shape's column projection and drops the secret columns", () => {
-		const columns = buildUrl("alert_destinations").params.get("columns")?.split(",") ?? []
-		// PK + org scope must be present for Electric.
-		assert.include(columns, "id")
-		assert.include(columns, "org_id")
-		// The public config the browser renders is allowed…
-		assert.include(columns, "config_json")
-		// …but the encrypted secret columns must never be projected.
-		assert.notInclude(columns, "secret_ciphertext")
-		assert.notInclude(columns, "secret_iv")
-		assert.notInclude(columns, "secret_tag")
-	})
+	it.each(["alert_destinations", "alert_destinations_v2"] as const)(
+		"pins %s's column projection and drops the secret columns",
+		(shape) => {
+			const columns = buildUrl(shape).params.get("columns")?.split(",") ?? []
+			// PK + org scope must be present for Electric.
+			assert.include(columns, "id")
+			assert.include(columns, "org_id")
+			// The public config the browser renders is allowed…
+			assert.include(columns, "config_json")
+			// …but the encrypted secret columns must never be projected.
+			assert.notInclude(columns, "secret_ciphertext")
+			assert.notInclude(columns, "secret_iv")
+			assert.notInclude(columns, "secret_tag")
+		},
+	)
 
 	it("projects only safe API-key display fields", () => {
 		const { params } = buildUrl("api_keys")

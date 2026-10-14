@@ -1194,5 +1194,34 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		id: "local-0028-to-0029-external-edges-legacy-db-system",
+		from: 28,
+		to: 29,
+		description:
+			"Recreate service_external_edges_hourly_mv so spans with only the legacy db.system are excluded like db.system.name spans",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("service_external_edges_hourly_mv")],
+		plan: [
+			[
+				"rebuild-external-edges-view",
+				"Rebuild service_external_edges_hourly_mv to exclude spans that set only the legacy db.system",
+			],
+		],
+		verifies: "Verify the v29 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "service_external_edges_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Existing rows are preserved untouched, including legacy db.system spans counted as external targets; the rebuilt view excludes them from hours materialized after the migration, and the old rows age out with the table's TTL.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 365,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

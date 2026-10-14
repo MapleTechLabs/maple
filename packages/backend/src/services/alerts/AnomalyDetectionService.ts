@@ -1709,7 +1709,12 @@ const make: Effect.Effect<
 								db.run(
 									PG.update(AnomalyIncidents)
 										.set({ triageStatus, updatedAt: nowMs })
-										.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
+										// Only from `none`: a run that already finished set its own status.
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(incidentId),
+											$.triageStatus.eq("none"),
+										]),
 								),
 							)
 						}

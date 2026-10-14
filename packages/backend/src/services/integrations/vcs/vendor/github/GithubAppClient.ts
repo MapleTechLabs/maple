@@ -462,6 +462,7 @@ const GithubContentFileSchema = Schema.Struct({
 	encoding: Schema.String,
 	content: Schema.String,
 })
+type GithubContentFile = Schema.Schema.Type<typeof GithubContentFileSchema>
 
 const decodeOAuthToken = Schema.decodeUnknownEffect(GithubOAuthTokenResponse)
 const decodeUserInstallations = Schema.decodeUnknownEffect(GithubUserInstallationsResponse)
@@ -529,7 +530,7 @@ const pemToPkcs8 = (pem: string): ArrayBuffer => {
 }
 
 interface GithubRequestInit {
-	readonly method?: "GET" | "POST" | "PATCH"
+	readonly method?: "GET" | "POST" | "PATCH" | "DELETE"
 	readonly headers: Readonly<Record<string, string>>
 	readonly body?: string
 }
@@ -949,9 +950,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`,
 				)
+				// 404 (not in this repo) and 422 ("No commit found for SHA") are answers, not
+				// failures: none, so the span stays Ok.
+				if (response.status === 404 || response.status === 422) return Option.none<GithubApiCommit>()
 				if (!isOk(response)) return yield* failure(response, "Get commit", "repository")
 				const json = yield* parseJson(response, "Get commit")
 				return yield* decodeCommit(json).pipe(
+					Effect.map(Option.some),
 					Effect.mapError(
 						(cause) => new GithubAppError({ message: "Unexpected commit payload", cause }),
 					),
@@ -1076,7 +1081,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			})
 
 			const authedSend = (
-				method: "POST" | "PATCH",
+				method: "POST" | "PATCH" | "DELETE",
 				token: string,
 				url: string,
 				body: unknown,
@@ -1705,8 +1710,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				number: number,
 				marker: string,
 				// A function writes from the comment already there, so a status line keeps what it sits on;
-				// `undefined` from it leaves the comment alone, and the result is whatever is there.
-				body: string | ((existing: string | undefined) => string | undefined),
+				// `undefined` from it leaves the comment alone (the result is whatever is there), `null` deletes it.
+				body: string | ((existing: string | undefined) => string | null | undefined),
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
@@ -1746,6 +1751,20 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				yield* Effect.annotateCurrentSpan("vcs.pull_request.comment_updated", existing !== undefined)
 				const text = typeof body === "string" ? body : body(existing?.body ?? undefined)
 				if (text === undefined) return existing
+				if (text === null) {
+					if (existing === undefined) return undefined
+					const deleted = yield* authedSend(
+						"DELETE",
+						token,
+						`${base}/issues/comments/${existing.id}`,
+						undefined,
+						"Delete comment",
+					)
+					// Already gone is what was asked for.
+					if (!isOk(deleted) && deleted.status !== 404)
+						return yield* failure(deleted, "Delete pull request comment", "repository")
+					return undefined
+				}
 				const response =
 					existing === undefined
 						? yield* authedSend(
@@ -1826,9 +1845,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?${params.toString()}`,
 				)
+				// A path absent at that ref (rule files most repos lack, files a PR deletes) is none.
+				if (response.status === 404) return Option.none<GithubContentFile>()
 				if (!isOk(response)) return yield* failure(response, "Get repository file", "repository")
 				const json = yield* parseJson(response, "Get repository file")
 				return yield* decodeContentFile(json).pipe(
+					Effect.map(Option.some),
 					Effect.mapError(
 						(cause) =>
 							new GithubAppError({ message: "Unexpected repository file payload", cause }),

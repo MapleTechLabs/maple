@@ -3,7 +3,7 @@
 
 import { useMemo } from "react"
 import { QueryBuilderLineChart } from "@maple/ui/components/charts/line/query-builder-line-chart"
-import { Spinner } from "@maple/ui/components/ui/spinner"
+import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { pivotSeries, type GapFill, type SeriesPoint } from "../lib/chart-series"
 import type { ChartWindow } from "../lib/time"
@@ -29,8 +29,8 @@ export function SeriesChart({
 
 	if (isPending) {
 		return (
-			<div className={cn("flex items-center justify-center rounded-md border", heightClassName)}>
-				<Spinner />
+			<div className="rounded-md border p-3">
+				<ChartSkeleton variant="line" className={heightClassName} />
 			</div>
 		)
 	}

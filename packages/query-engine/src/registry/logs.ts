@@ -45,6 +45,7 @@ export interface LogsTimeseriesInput extends LogsCountInput {
 	readonly bucketSeconds: number
 	readonly groupBy?: LogsTimeseriesQuery["groupBy"]
 	readonly seriesLimit?: number
+	readonly wholeRange?: boolean
 }
 
 export const toLogsCountInput = (
@@ -62,6 +63,7 @@ export const toLogsTimeseriesInput = (
 	endTime: string,
 	query: LogsTimeseriesQuery,
 	bucketSeconds: number,
+	wholeRange?: boolean,
 ): LogsTimeseriesInput => ({
 	startTime,
 	endTime,
@@ -69,6 +71,7 @@ export const toLogsTimeseriesInput = (
 	filters: query.filters,
 	groupBy: query.groupBy,
 	seriesLimit: query.seriesLimit,
+	...(wholeRange ? { wholeRange } : undefined),
 })
 
 export const logsCount = defineQuery({
@@ -94,7 +97,12 @@ export const logsTimeseries = defineQuery({
 	revision: 1,
 	profile: "aggregation",
 	cache: makeTimeBucketQueryCachePolicy<LogsTimeseriesInput>({
-		identity: ({ filters, groupBy, seriesLimit }) => ({ filters, groupBy, seriesLimit }),
+		identity: ({ filters, groupBy, seriesLimit, wholeRange }) => ({
+			filters,
+			groupBy,
+			seriesLimit,
+			...(wholeRange ? { wholeRange } : undefined),
+		}),
 		fallback: 15,
 	}),
 	capabilityAware: true,
@@ -107,6 +115,7 @@ export const logsTimeseries = defineQuery({
 				groupBy: input.groupBy,
 				bucketSeconds: input.bucketSeconds,
 				seriesLimit: input.seriesLimit,
+				wholeRange: input.wholeRange,
 			}),
 			{
 				orgId,

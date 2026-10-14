@@ -610,9 +610,10 @@ export const serviceMapDbQuerySignaturesHourlyMv = defineMaterializedView(
 
 /**
  * Materialized view pre-aggregating service-to-external-target edges per hour.
- * Captures Client/Producer spans WITHOUT `db.system.name` set (DB calls go to
- * `service_map_db_edges_hourly_mv`) — i.e. plain HTTP outbound, messaging
- * producers, and RPC clients.
+ * Captures Client/Producer spans with no database system (DB calls go to
+ * `service_map_db_edges_hourly_mv`): plain HTTP outbound, messaging producers,
+ * and RPC clients. The exclusion uses the same `DB_SYSTEM_ATTR_SQL` coalesce as
+ * the db MV, so a span carrying only the legacy `db.system` is never both.
  *
  * `TargetType` precedence: messaging > rpc > http. A span carrying both
  * `messaging.system` and `server.address` (rare, but happens when a queue
@@ -625,8 +626,11 @@ export const serviceMapDbQuerySignaturesHourlyMv = defineMaterializedView(
  */
 export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_external_edges_hourly_mv", {
 	description:
-		"Pre-aggregates Client/Producer spans without db.system.name into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
+		"Pre-aggregates Client/Producer spans without a database system into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
 	datasource: serviceExternalEdgesHourly,
+	// Migration 0038 only narrows the WHERE and backfills nothing. Without this,
+	// Tinybird rebuilds the target by replaying `traces` through the new view.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_external_edges_hourly_mv_node",
@@ -665,7 +669,7 @@ export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_exte
           quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS DurationQuantiles
         FROM traces
         WHERE SpanKind IN ('Client', 'Producer')
-          AND SpanAttributes['db.system.name'] = ''
+          AND ${DB_SYSTEM_ATTR_SQL} = ''
           AND ServiceName != ''
           AND (
                SpanAttributes['server.address'] != ''

@@ -4231,7 +4231,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceExternalEdgesSQL:default  [a24b0a4c]
+-- builder:service-map:serviceExternalEdgesSQL:default  [5eb951e4]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetType AS targetType,
@@ -4281,7 +4281,7 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND traces.SpanKind IN ('Client', 'Producer')
-          AND traces.SpanAttributes['db.system.name'] = ''
+          AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = ''
           AND ((((((traces.SpanAttributes['server.address'] != '' OR traces.SpanAttributes['http.host'] != '') OR traces.SpanAttributes['url.authority'] != '') OR coalesce(nullIf(traces.SpanAttributes['messaging.destination.name'], ''), traces.SpanAttributes['messaging.destination']) != '') OR traces.SpanAttributes['messaging.system'] != '') OR traces.SpanAttributes['rpc.service'] != '') OR traces.SpanAttributes['rpc.system'] != '')
         GROUP BY sourceService, targetType, targetSystem, targetName
         HAVING targetName != ''
@@ -4300,7 +4300,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceExternalEdgesSQL:env-scoped  [616f7d2f]
+-- builder:service-map:serviceExternalEdgesSQL:env-scoped  [29394199]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetType AS targetType,
@@ -4351,7 +4351,7 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND traces.SpanKind IN ('Client', 'Producer')
-          AND traces.SpanAttributes['db.system.name'] = ''
+          AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = ''
           AND ((((((traces.SpanAttributes['server.address'] != '' OR traces.SpanAttributes['http.host'] != '') OR traces.SpanAttributes['url.authority'] != '') OR coalesce(nullIf(traces.SpanAttributes['messaging.destination.name'], ''), traces.SpanAttributes['messaging.destination']) != '') OR traces.SpanAttributes['messaging.system'] != '') OR traces.SpanAttributes['rpc.service'] != '') OR traces.SpanAttributes['rpc.system'] != '')
           AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'
         GROUP BY sourceService, targetType, targetSystem, targetName

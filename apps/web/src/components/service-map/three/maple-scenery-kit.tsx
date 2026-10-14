@@ -16,11 +16,6 @@ export interface Bounds {
 	floor: number
 }
 
-/** How far a point sits outside the bounds; negative inside. */
-export function clearance(bounds: Bounds, x: number, z: number) {
-	return Math.max(bounds.minX - x, x - bounds.maxX, bounds.minZ - z, z - bounds.maxZ)
-}
-
 export interface Pose {
 	position: Vec3
 	rotation?: Vec3

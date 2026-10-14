@@ -6,7 +6,6 @@ import type { DateTime } from "effect"
 import type { TracesMetric } from "@maple/domain/query-engine"
 import { subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { param } from "@maple-dev/effect-orm/clickhouse"
 import {
 	from,
 	fromUnion,
@@ -50,6 +49,8 @@ import {
 	type TracesBaseWhereOpts,
 	matchOrIn,
 	soleValue,
+	timeseriesBucket,
+	wholeRangeEnd,
 } from "./query-helpers"
 
 /**
@@ -383,6 +384,8 @@ export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	 * `apps/api/src/routes/internal/query-engine.http.ts`.
 	 */
 	overviewTiers?: "hour" | "minute"
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
 }
 
 export interface TracesTimeseriesOutput {
@@ -571,7 +574,7 @@ export function tracesTimeseriesQuery(
 
 		const rawEdges = from(ServiceOverviewSpans)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 				groupName: buildOverviewRollupGroupNameExpr($, opts.groupBy),
 				bCount: CH.count(),
 				bEstimatedSpanCount: CH.sum($.SampleRate),
@@ -591,12 +594,16 @@ export function tracesTimeseriesQuery(
 						)
 					: CH.lit(0),
 			}))
-			.where(($) => [...serviceOverviewWhereConditions($, opts), edgeCondition("Timestamp", edgeGrain)])
+			.where(($) => [
+				...serviceOverviewWhereConditions($, opts),
+				edgeCondition("Timestamp", edgeGrain),
+				wholeRangeEnd($.Timestamp, opts.wholeRange),
+			])
 			.groupBy("bucket", "groupName")
 
 		const minutelyInterior = from(ServiceOverviewMinutely)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Minute, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Minute, opts.wholeRange),
 				groupName: buildOverviewRollupGroupNameExpr($, opts.groupBy),
 				bCount: CH.sum($.SpanCount),
 				bEstimatedSpanCount: CH.sum($.EstimatedSpanCount),
@@ -619,7 +626,7 @@ export function tracesTimeseriesQuery(
 
 		const hourlyInterior = from(ServiceOverviewHourly)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Hour, opts.wholeRange),
 				groupName: buildOverviewRollupGroupNameExpr($, opts.groupBy),
 				bCount: CH.sum($.SpanCount),
 				bEstimatedSpanCount: CH.sum($.EstimatedSpanCount),
@@ -739,7 +746,7 @@ export function tracesTimeseriesQuery(
 		const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 		const rawEdges = from(Traces)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 				groupName: buildGroupNameExpr($, opts.groupBy, undefined),
 				bWeightedCount: CH.sum($.SampleRate),
 				// `toFloat64` is load-bearing: the MV side of this column is
@@ -762,12 +769,13 @@ export function tracesTimeseriesQuery(
 					matchOrIn($.SpanName, v, opts.matchModes?.spanName === "contains"),
 				),
 				edgeCondition("Timestamp"),
+				wholeRangeEnd($.Timestamp, opts.wholeRange),
 			])
 			.groupBy("bucket", "groupName")
 
 		const hourlyInterior = from(TracesAggregatesHourly)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Hour, opts.wholeRange),
 				groupName: buildAggregatesGroupNameExpr($, opts.groupBy),
 				bWeightedCount: CH.sum($.WeightedCount),
 				// The MV stores no raw row count, so the weighted value stands in for
@@ -834,11 +842,14 @@ export function tracesTimeseriesQuery(
 	if (canUseServiceOverviewMv(opts, opts.groupBy)) {
 		const mv = from(ServiceOverviewSpans)
 			.select(($) => ({
-				bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 				groupName: buildMvGroupNameExpr($, opts.groupBy),
 				...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
 			}))
-			.where(($) => serviceOverviewWhereConditions($, opts))
+			.where(($) => [
+				...serviceOverviewWhereConditions($, opts),
+				wholeRangeEnd($.Timestamp, opts.wholeRange),
+			])
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(mv, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
@@ -850,7 +861,7 @@ export function tracesTimeseriesQuery(
 
 	const raw = from(Traces)
 		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: buildGroupNameExpr(
 				$,
 				opts.groupBy,
@@ -859,7 +870,7 @@ export function tracesTimeseriesQuery(
 			),
 			...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
 		}))
-		.where(($) => buildWhereConditions($, opts))
+		.where(($) => [...buildWhereConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts) as CHQuery<

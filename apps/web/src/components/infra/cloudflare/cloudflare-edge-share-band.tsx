@@ -6,7 +6,7 @@ import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import type { CloudflareZoneCacheBucket } from "@/api/warehouse/cloudflare-infra"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { Panel } from "@maple/ui/components/ui/panel"
-import { StatFigure } from "@/components/common/stat-rail"
+import { StatFigure } from "@maple/ui/components/ui/stat-figure"
 import { EDGE_SERVED_STATUSES } from "./constants"
 
 /**

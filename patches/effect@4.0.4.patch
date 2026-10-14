@@ -1,8 +1,8 @@
 diff --git a/dist/ai/LanguageModel.js b/dist/ai/LanguageModel.js
-index 7a53537..7c25061 100644
+index 187aa7e..dd11574 100644
 --- a/dist/ai/LanguageModel.js
 +++ b/dist/ai/LanguageModel.js
-@@ -344,16 +344,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -337,16 +337,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        previousResponseId: undefined,
        incrementalPrompt: undefined
      };
@@ -35,7 +35,7 @@ index 7a53537..7c25061 100644
      const tracker = Option.getOrUndefined(yield* Effect.serviceOption(ResponseIdTracker.ResponseIdTracker));
      const toolChoice = options.toolChoice ?? "auto";
      const concurrency = options.concurrency ?? "unbounded";
-@@ -556,6 +559,43 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -560,6 +563,43 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
          if (part.type !== "response-metadata") emitted = true;
        })), Stream.catchReason("AiError", "InvalidRequestError", (_, error) => emitted ? Stream.fail(error) : params.streamText(fallbackOptions))) : params.streamText(requestOptions);
      };
@@ -79,9 +79,9 @@ index 7a53537..7c25061 100644
      // Check for pending approvals that need resolution
      const {
        approved: pendingApproved,
-@@ -585,14 +625,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -589,14 +629,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        }
-       const schema = Schema.NonEmptyArray(Response.StreamPart(Toolkit.empty));
+       const schema = Schema.NonEmptyArray(withUndeclaredToolCalls(Response.StreamPart(Toolkit.empty), deferToolCallValidation));
        const decodeParts = Schema.decodeEffect(schema);
 -      return pipe(streamWithNonIncrementalFallback(), Stream.mapArrayEffect(parts => decodeParts(parts).pipe(tracker ? Effect.tap(decodedParts => {
 -        for (const part of decodedParts) {
@@ -95,9 +95,9 @@ index 7a53537..7c25061 100644
      }
      // If there is a toolkit resolve and apply it to the provider options
      const toolkit = yield* resolveToolkit(options.toolkit);
-@@ -617,14 +650,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -621,14 +654,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        }
-       const schema = Schema.NonEmptyArray(Response.StreamPart(Toolkit.empty));
+       const schema = Schema.NonEmptyArray(withUndeclaredToolCalls(Response.StreamPart(Toolkit.empty), deferToolCallValidation));
        const decodeParts = Schema.decodeEffect(schema);
 -      return pipe(streamWithNonIncrementalFallback(), Stream.mapArrayEffect(parts => decodeParts(parts).pipe(tracker ? Effect.tap(decodedParts => {
 -        for (const part of decodedParts) {
@@ -111,11 +111,11 @@ index 7a53537..7c25061 100644
      }
      // Pre-resolve pending tool approvals before calling the LLM
      let preResolvedStreamParts = [];
-@@ -687,14 +713,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
-     // If tool call resolution is disabled, return the response without
+@@ -692,14 +718,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
      // resolving the tool calls that were generated
      if (options.disableToolCallResolution === true) {
--      return streamWithNonIncrementalFallback().pipe(Stream.mapArrayEffect(parts => decodeParts(parts).pipe(tracker ? Effect.tap(decodedParts => {
+       const encodedToolkit = deferToolCallValidation ? makeToolkitWithEncodedParameters(toolkit) : undefined;
+-      return streamWithNonIncrementalFallback().pipe(Stream.mapArrayEffect(parts => decodeParts(parts).pipe(encodedToolkit ? Effect.tap(() => validateProviderExecutedToolCalls(encodedToolkit, parts)) : identity, tracker ? Effect.tap(decodedParts => {
 -        for (const part of decodedParts) {
 -          if (part.type === "response-metadata" && Predicate.isNotUndefined(part.id)) {
 -            tracker.markParts(providerOptions.prompt.content, part.id);
@@ -123,15 +123,15 @@ index 7a53537..7c25061 100644
 -        }
 -        return Effect.void;
 -      }) : identity)));
-+      return deferDecodeFailure(streamWithNonIncrementalFallback(), decodeParts);
++      return deferDecodeFailure(streamWithNonIncrementalFallback(), encodedToolkit ? parts => decodeParts(parts).pipe(Effect.tap(() => validateProviderExecutedToolCalls(encodedToolkit, parts))) : decodeParts);
      }
      // Queue for decoded parts and tool results
      const queue = yield* Queue.make();
 diff --git a/dist/http-api/HttpApiBuilder.js b/dist/http-api/HttpApiBuilder.js
-index e1686d6..21ab531 100644
+index f9fa473..b9bb293 100644
 --- a/dist/http-api/HttpApiBuilder.js
 +++ b/dist/http-api/HttpApiBuilder.js
-@@ -372,7 +372,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
+@@ -373,7 +373,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
   */
  export function handlerToRoute(api, group, handler, context) {
    const endpoint = handler.endpoint;

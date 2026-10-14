@@ -2,12 +2,21 @@ import { useMemo, useRef, useState, type ReactNode } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import type { LogPattern } from "@maple/query-engine/observability"
 import { LogAttributeChip } from "@maple/ui/components/logs/log-attribute-chip"
+import { severityLabel } from "@maple/ui/components/logs/severity-badge"
+import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
+import { ServiceDot } from "@maple/ui/components/service-dot"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { countLabel } from "@maple/ui/lib/format"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
-import { getSeverityColor } from "@maple/ui/lib/severity"
+import { getSeverityColor, SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import { FilterSection, SearchableFilterSection } from "@maple/ui/components/filters/filter-section"
+import {
+	FilterSection,
+	SearchableFilterSection,
+	serviceColorMap,
+} from "@maple/ui/components/filters/filter-section"
 import {
 	FilterSidebarBody,
 	FilterSidebarFrame,
@@ -38,7 +47,7 @@ import {
 import { ErrorState, ListSkeleton } from "../components/view-states"
 
 const ROW_HEIGHT = 36
-const VISIBLE_CHIPS = 4
+const VISIBLE_CHIPS = 3
 
 type LogsMode = "list" | "patterns"
 
@@ -77,12 +86,14 @@ export function LogsView() {
 					options={severities.data ?? []}
 					selected={filters.severity ? [filters.severity] : []}
 					onChange={(vals) => setParams({ severity: vals.at(-1) ?? null })}
+					colorMap={SEVERITY_COLORS}
 				/>
 				<SearchableFilterSection
 					title="Service"
 					options={services.data ?? []}
 					selected={filters.service ? [filters.service] : []}
 					onChange={(vals) => setParams({ service: vals.at(-1) ?? null })}
+					colorMap={serviceColorMap(services.data ?? [])}
 				/>
 			</FilterSidebarBody>
 		</FilterSidebarFrame>
@@ -293,6 +304,18 @@ function LogListMode({
 	})
 }
 
+/** Left-edge rail (and, for errors, a tint) so a scan down the stream stops on what is wrong. */
+const SEVERITY_ROW = new Map([
+	["FATAL", "before:bg-severity-error bg-severity-error/[0.08]"],
+	["CRITICAL", "before:bg-severity-error bg-severity-error/[0.08]"],
+	["ERROR", "before:bg-severity-error bg-severity-error/[0.05]"],
+	["WARN", "before:bg-severity-warn"],
+	["WARNING", "before:bg-severity-warn"],
+])
+
+/** Debug and trace chatter is read last, so its message is set back a step. */
+const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
+
 function LogRow({
 	log,
 	search,
@@ -308,8 +331,28 @@ function LogRow({
 	selected: boolean
 	onClick: (log: LocalLog) => void
 }) {
-	const chips = useMemo(() => pickImportantAttributes(log, VISIBLE_CHIPS), [log])
-	const severityColor = getSeverityColor(log.severityText)
+	// Only chips that add to the message: resource attributes repeat down the whole
+	// stream, and a value the body already spells out is said twice.
+	const chips = useMemo(
+		() =>
+			pickImportantAttributes(log, Number.POSITIVE_INFINITY)
+				.filter(
+					(attr) =>
+						attr.source === "log" && !(attr.value.length >= 3 && log.body.includes(attr.value)),
+				)
+				.slice(0, VISIBLE_CHIPS),
+		[log],
+	)
+	// ANSI color codes are stripped for display only; copy and Raw keep the original.
+	// The row shows one line: the first, or the first that matches the search, so a
+	// hit further down a multi-line body is still visible in the row.
+	const firstLine = useMemo(() => {
+		const lines = stripAnsi(log.body).split("\n")
+		const needle = search?.toLowerCase()
+		const match = needle ? lines.find((line) => line.toLowerCase().includes(needle)) : undefined
+		return { text: match ?? lines[0] ?? "", hidden: lines.length - 1 }
+	}, [log.body, search])
+	const severity = severityLabel(log.severityText, log.severityNumber).toUpperCase()
 
 	return (
 		<div
@@ -320,13 +363,16 @@ function LogRow({
 				top: 0,
 				transform: `translateY(${top}px)`,
 				height,
-				borderLeftWidth: "3px",
-				borderLeftColor: severityColor,
 			}}
-			className="flex cursor-pointer items-center gap-3 border-b px-4 font-mono text-xs hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none data-[selected]:bg-primary/5"
+			className={cn(
+				"flex cursor-pointer items-center gap-3 border-b px-4 font-mono text-xs",
+				"before:absolute before:inset-y-0 before:left-0 before:w-0.5",
+				"hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none data-[selected]:bg-primary/5",
+				SEVERITY_ROW.get(severity),
+			)}
 			tabIndex={0}
 			role="listitem"
-			aria-label={`${log.severityText} ${log.serviceName}: ${log.body.slice(0, 120)}`}
+			aria-label={`${severity} ${log.serviceName}: ${log.body.slice(0, 120)}`}
 			onClick={() => onClick(log)}
 			onKeyDown={(e) => {
 				if (e.key === "Enter" || e.key === " ") {
@@ -336,27 +382,40 @@ function LogRow({
 			}}
 		>
 			<span
-				className="hidden w-12 shrink-0 text-[10px] font-semibold uppercase tabular-nums md:inline-block"
-				style={{ color: severityColor }}
-			>
-				{log.severityText}
-			</span>
-			<span
-				className="w-36 shrink-0 truncate text-muted-foreground tabular-nums"
+				className="w-36 shrink-0 truncate text-foreground/75 tabular-nums"
 				title={formatUtcTitle(log.timestamp)}
 			>
 				{formatLocalTimestamp(log.timestamp)}
 			</span>
 			<span
-				className="hidden w-32 shrink-0 truncate text-muted-foreground/70 lg:inline-block"
-				title={log.serviceName}
+				className="hidden w-11 shrink-0 truncate text-3xs font-semibold tracking-wide uppercase tabular-nums md:inline-block"
+				style={{ color: getSeverityColor(severity) }}
+				title={severity}
 			>
-				{log.serviceName}
+				{severity}
+			</span>
+			<span className="hidden w-32 min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground lg:flex">
+				<ServiceDot serviceName={log.serviceName} size="sm" />
+				<span className="truncate" title={log.serviceName}>
+					{log.serviceName}
+				</span>
 			</span>
 			{/* The message has priority: it keeps at least 40% of the row, and chips
 			    that do not fit wrap onto a clipped second line instead of squeezing it. */}
-			<span className="min-w-[40%] flex-1 truncate" title={log.body}>
-				<HighlightedText text={log.body} query={search} />
+			<span className="flex min-w-[40%] flex-1 items-center gap-2" title={log.body}>
+				<span
+					className={cn(
+						"min-w-0 truncate",
+						QUIET_SEVERITIES.has(severity) ? "text-muted-foreground" : "text-foreground",
+					)}
+				>
+					<HighlightedText text={firstLine.text} query={search} />
+				</span>
+				{firstLine.hidden > 0 && (
+					<Badge variant="meta" size="xs" className="shrink-0">
+						+{countLabel(firstLine.hidden, "line")}
+					</Badge>
+				)}
 			</span>
 			{chips.length > 0 && (
 				<div className="hidden h-5 min-w-0 max-w-[30%] flex-wrap items-center justify-end gap-1 overflow-hidden md:flex">

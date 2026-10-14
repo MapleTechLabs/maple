@@ -32,6 +32,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
+import { buildUpdatedRequest } from "../update-alert-rule"
 import type { McpToolResult } from "../types"
 
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
@@ -586,6 +587,28 @@ describe("alert tools", () => {
 			// Carried over from the saved rule, which skips empty windows.
 			alertOnNoData: false,
 		})
+	})
+
+	it("update_alert_rule drops fields the new signal type or comparator does not use", async () => {
+		const seen: Seen = {}
+		await ok(
+			"update_alert_rule",
+			{ rule_id: RAW_ID, signal_type: "error_rate", services: "checkout" },
+			seen,
+		)
+		expect(seen.updated).toMatchObject({
+			signalType: "error_rate",
+			rawQuerySql: null,
+			rawQueryReducer: null,
+		})
+
+		const range = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			comparator: "between",
+			thresholdUpper: 10,
+		})
+		expect(buildUpdatedRequest(range, { comparator: "gt" }).thresholdUpper).toBeNull()
+		expect(buildUpdatedRequest(range, { threshold: 2 }).thresholdUpper).toBe(10)
 	})
 
 	it("delete_alert_rule requires confirm and maps not-found to rule_id", async () => {

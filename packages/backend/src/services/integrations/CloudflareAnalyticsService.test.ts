@@ -224,6 +224,8 @@ interface FetchOptions {
 	readonly otlpCalls?: Array<OtlpCall>
 	/** HTTP status the mock gateway returns for `/v1/metrics` (default 200). */
 	readonly metricsStatus?: number
+	/** Raw `/v1/metrics` response body served as HTML with a `cf-ray` header (an edge block page). */
+	readonly metricsHtml?: string
 }
 
 /** Read the outbound request body regardless of how the HttpClient encodes it (string/bytes/stream). */
@@ -264,6 +266,12 @@ const mockCloudflareFetch =
 				authorization: readHeader(input, init, "authorization"),
 				payload: JSON.parse(await readRequestBody(input, init)) as OtlpMetricsPayload,
 			})
+			if (options.metricsHtml !== undefined) {
+				return new Response(options.metricsHtml, {
+					status: options.metricsStatus ?? 200,
+					headers: { "content-type": "text/html", "cf-ray": "8d1f2e3a4b5c6d7e-FRA" },
+				})
+			}
 			return jsonResponse({}, options.metricsStatus ?? 200)
 		}
 		if (url.includes("/graphql")) {
@@ -1698,6 +1706,96 @@ describe("CloudflareAnalyticsService", () => {
 			const anchor = rows.find((row) => row.dataset === "workers_invocations" && row.zoneId === "")
 			assert.isAbove(anchor!.leaseUntil!, T0)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 402 })))
+	})
+
+	// Production: an edge-blocked ingest key got a 403 HTML block page, and every dataset of every
+	// tick raised a poll error carrying the page. A refused key is health plus a backoff instead.
+	it.effect("a 403 HTML block page from ingest is a refusal: short message, no failure, lease held", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const otlpCalls: OtlpCall[] = []
+		const metricsHtml =
+			'<!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->\n' +
+			"<head><title>Attention Required! | Cloudflare</title></head><body>blocked</body></html>"
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			for (const dataset of ["http_requests", "firewall_events"]) {
+				yield* seedStateRow({
+					dataset,
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
+				})
+			}
+			yield* seedStateRow({
+				dataset: "workers_invocations",
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+			})
+			const service = yield* CloudflareAnalyticsService
+			const first = yield* service.pollOrg(ORG)
+			assert.strictEqual(first.failures.length, 0)
+			assert.strictEqual(otlpCalls.length, 1)
+			const rows = yield* loadStateRows
+			const httpRow = rows.find((row) => row.dataset === "http_requests")
+			assert.strictEqual(
+				httpRow!.lastError,
+				'Cloudflare metrics ingest returned 403: HTML response "Attention Required! | Cloudflare" (cf-ray 8d1f2e3a4b5c6d7e-FRA)',
+			)
+			assert.strictEqual(httpRow!.watermarkAt, T0 - 30 * MIN)
+			// The held lease makes the next tick skip the org instead of re-posting.
+			yield* TestClock.adjust(MIN)
+			yield* service.pollOrg(ORG)
+			assert.strictEqual(otlpCalls.length, 1)
+			yield* TestClock.adjust(10 * MIN)
+			yield* service.pollOrg(ORG)
+			assert.strictEqual(otlpCalls.length, 2)
+		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 403, metricsHtml })))
+	})
+
+	// Every account of an org posts with the same org key, so one refusal holds the siblings too.
+	it.effect("an ingest refusal on one account holds the org's other accounts without posting", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const otlpCalls: OtlpCall[] = []
+		const SECOND_ACCOUNT = "acct-2"
+		const secondZone = {
+			...zoneFixture,
+			id: "zone-2",
+			name: "beta.example",
+			account: { id: SECOND_ACCOUNT, name: "Second Account" },
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection(ANALYTICS_SCOPE, [
+				{ id: ACCOUNT_ID, name: "Test Account" },
+				{ id: SECOND_ACCOUNT, name: "Second Account" },
+			])
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			assert.strictEqual(summary.failures.length, 0)
+			assert.strictEqual(otlpCalls.length, 1)
+			const rows = yield* loadStateRows
+			const secondAnchor = rows.find(
+				(row) => row.accountId === SECOND_ACCOUNT && row.dataset === "workers_invocations",
+			)
+			assert.include(secondAnchor!.lastError ?? "", "ingest returned 403")
+			assert.isAbove(secondAnchor!.leaseUntil!, T0)
+			// Neither account posts again inside the backoff.
+			yield* TestClock.adjust(MIN)
+			yield* service.pollOrg(ORG)
+			assert.strictEqual(otlpCalls.length, 1)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					otlpCalls,
+					metricsStatus: 403,
+					zonesByAccount: { [ACCOUNT_ID]: [zoneFixture], [SECOND_ACCOUNT]: [secondZone] },
+				}),
+			),
+		)
 	})
 
 	it.effect("getStatus reflects zone and workers state rows", () => {

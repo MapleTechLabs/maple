@@ -15,6 +15,7 @@ import { migration_0026_ai_trace_index_filter_columns } from "./0026_ai_trace_in
 import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
 import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from "./0034_trace_facets_hourly"
 import { migration_0037_service_overview_spans_span_kind } from "./0037_service_overview_spans_span_kind"
+import { migration_0038_external_edges_legacy_db_system } from "./0038_external_edges_legacy_db_system"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { migrations } from "./index"
 
@@ -323,5 +324,19 @@ describe("migration 0037: service_overview_spans records why a row is an entry p
 			latestSnapshotStatements.find((stmt) => stmt.includes("service_overview_spans_mv TO")),
 		)
 		expect(create).toContain("toUInt8(ParentSpanId = '') AS IsRoot")
+	})
+})
+
+describe("migration 0038: legacy db.system spans stay off the external edges", () => {
+	it("recreates the view excluding on the db.system.name -> db.system coalesce", () => {
+		const [drop, create, ...rest] = migration_0038_external_edges_legacy_db_system.statements
+		expect(rest).toEqual([])
+		expect(drop).toBe("DROP VIEW IF EXISTS service_external_edges_hourly_mv")
+		expect(create).toBe(
+			latestSnapshotStatements.find((stmt) => stmt.includes("service_external_edges_hourly_mv TO")),
+		)
+		expect(create).toContain(
+			"AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = ''",
+		)
 	})
 })

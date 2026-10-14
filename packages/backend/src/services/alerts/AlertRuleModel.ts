@@ -628,7 +628,13 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 	const normalizeRuleRow = Effect.fn("AlertsService.normalizeRuleRow")(function* (
 		row: StoredAlertRuleRow,
 	): Effect.fn.Return<NormalizedRule, AlertRuleStoredConfigInvalidError> {
-		const stored = yield* decodeStoredAlertRuleMetadata(row)
+		const metadata = yield* decodeStoredAlertRuleMetadata(row)
+		// Rows written before the request normalizer dropped a builder query's
+		// service scope evaluate as the draft alone, once, like new ones.
+		const stored =
+			row.signalType === "builder_query"
+				? { ...metadata, serviceNames: [], excludeServiceNames: [] }
+				: metadata
 		const decoded = yield* Effect.try({
 			try: () => {
 				return {
@@ -691,18 +697,22 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		options?: { readonly forPreview?: boolean },
 	): Effect.fn.Return<NormalizedRule, AlertValidationError> {
 		const name = request.name.trim()
+		// A builder query's draft carries its own scope and never reads the
+		// service fields, so keeping them would only fan out identical queries.
+		const draftOwnsScope = request.signalType === "builder_query"
 		const serviceNames =
-			request.serviceNames && request.serviceNames.length > 0
+			request.serviceNames && request.serviceNames.length > 0 && !draftOwnsScope
 				? request.serviceNames
 						.map((service) => service.trim())
 						.filter((service) => service.length > 0)
 				: []
 		const serviceName = serviceNames.length === 1 ? (serviceNames[0] ?? null) : null
-		const excludeServiceNames = request.excludeServiceNames
-			? request.excludeServiceNames
-					.map((service) => service.trim())
-					.filter((service) => service.length > 0)
-			: []
+		const excludeServiceNames =
+			request.excludeServiceNames && !draftOwnsScope
+				? request.excludeServiceNames
+						.map((service) => service.trim())
+						.filter((service) => service.length > 0)
+				: []
 		const queryOwnsScope = request.signalType === "builder_query" || request.signalType === "raw_query"
 		const environments =
 			request.environments && !queryOwnsScope

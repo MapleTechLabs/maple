@@ -25,7 +25,7 @@ import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
-import { TraceIdBadge } from "@/components/traces/trace-id-badge"
+import { TraceIdBadge } from "@maple/ui/components/traces/trace-id-badge"
 import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 

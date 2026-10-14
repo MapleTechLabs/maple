@@ -14,6 +14,7 @@ import { OpenAiClient, OpenAiEmbeddingModel, OpenAiLanguageModel } from "@effect
 import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
+import { EU_DEFAULT_OPENROUTER_MODEL } from "@maple/domain/organization-regions"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { Config, Effect, Layer, Option, Redacted, Schema } from "effect"
 import type * as DecisionModel from "effect/ai/DecisionModel"
@@ -76,12 +77,8 @@ const openRouterRegion = (settings: LlmSettings): OpenRouterRegion =>
 export const openRouterApiUrl = (settings: LlmSettings): string =>
 	OPENROUTER_API_URLS[openRouterRegion(settings)]
 
-/**
- * The EU catalogue is a subset (66 models on 2026-09-25) and serves none of the US defaults, so
- * the EU instance runs chat, triage and reviews on one model that has an EU provider.
- */
-const EU_DEFAULT_OPENROUTER_MODEL = "openai/gpt-6-luna"
-const EU_DEFAULT_REVIEW_MODEL = "openai/gpt-6-luna"
+/** Reviews run on the EU chat default too; see {@link EU_DEFAULT_OPENROUTER_MODEL}. */
+const EU_DEFAULT_REVIEW_MODEL = EU_DEFAULT_OPENROUTER_MODEL
 
 /**
  * Default embedding model for the review's feedback filter. Changing it starts the filter from an
@@ -414,6 +411,12 @@ const instrumentedModel = <R>(
 		Layer.effect(LanguageModel.LanguageModel, instrumentLanguageModel(make, telemetry, options)),
 	)
 
+/**
+ * Output tokens one agent model call may produce, reasoning included. Far below the models' 128k so
+ * a runaway generation ends in minutes; room for a large `submit_review` after high-effort reasoning.
+ */
+export const MODEL_CALL_OUTPUT_TOKENS = 32_000
+
 const openRouterModel = (
 	settings: LlmSettings,
 	name: string,
@@ -425,12 +428,17 @@ const openRouterModel = (
 	unattended = false,
 ): ResolvedModel => {
 	const effort = readReasoningEffort(settings, effortKey) ?? fallbackEffort
+	const limits = limitsFor(settings, name, overridableLimits)
+	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
 		provider: "openrouter",
 		name,
 		layer: instrumentedModel(
 			name,
-			OpenRouterLanguageModel.make({ model: name, config: openRouterConfig(effort, tags) }),
+			OpenRouterLanguageModel.make({
+				model: name,
+				config: { ...openRouterConfig(effort, tags), max_tokens: maxTokens },
+			}),
 			{
 				providerName: genAiProviderName("openrouter"),
 				...(effort === undefined || effort === "off" ? undefined : { reasoningLevel: effort }),
@@ -438,7 +446,7 @@ const openRouterModel = (
 			},
 			{ coalesceDeltas: unattended },
 		),
-		limits: limitsFor(settings, name, overridableLimits),
+		limits,
 		tags,
 	}
 }

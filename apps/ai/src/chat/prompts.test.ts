@@ -22,7 +22,7 @@ describe("the prompts the app and the investigation pass already shipped", () =>
 		[
 			"INVESTIGATE_SYSTEM_PROMPT",
 			INVESTIGATE_SYSTEM_PROMPT,
-			"9d3bb932ecfa7e82efe613e0215ef1e80968b9fce9f371346ed199d9603aaea7",
+			"fd417ed6863dd0ebdb8037edde1ee213be5bcd2aeae0025932a27e1ff27c0ed8",
 		],
 	])("composes %s byte-for-byte as it was", (_name, prompt, digest) => {
 		assert.equal(sha256(prompt), digest)

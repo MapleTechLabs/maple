@@ -57,7 +57,7 @@ import {
 } from "@/components/icons"
 import { countryFlag, countryName } from "@/components/analytics/labels"
 import { ErrorState } from "@/components/common/error-state"
-import { StatFigure } from "@/components/common/stat-rail"
+import { StatFigure } from "@maple/ui/components/ui/stat-figure"
 import { browserIconFor, deviceIconFor } from "./session-icons"
 import { formatClock, formatSessionDuration, type ReplayPartitionWindow } from "./replay-format"
 import { useReplayClock } from "./replay-player-context"
@@ -1210,11 +1210,7 @@ function IdentityGroup({ session }: { session: SessionRailSession }) {
 				<DetailRail.Field label="Traits">
 					<div className="flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground">
 						{traits.map(([key, value]) => (
-							<TruncatedText
-								key={key}
-								className="max-w-full"
-								text={`${key}: ${value}`}
-							>
+							<TruncatedText key={key} className="max-w-full" text={`${key}: ${value}`}>
 								{key}=<span className="text-foreground/80">{value}</span>
 							</TruncatedText>
 						))}

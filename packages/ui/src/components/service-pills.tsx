@@ -1,15 +1,15 @@
-import { ServiceDot } from "@maple/ui/components/service-dot"
-import { Badge } from "@maple/ui/components/ui/badge"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { ServiceDot } from "./service-dot"
+import { Badge } from "./ui/badge"
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip"
 
 /** Pills drawn before the rest collapse into "+k". */
 const VISIBLE_SERVICES = 3
 
 /**
- * A row's services as coloured pills — the first few, then "+k" for the rest.
- * Shared by the traces and agent-sessions tables so a service reads the same in
- * both. The tooltip names every service, which is exactly what a truncated pill
- * and the "+k" leave out.
+ * A row's services as coloured pills: the first few, then "+k" for the rest.
+ * Shared by web's traces and agent-sessions tables and the local traces list, so a
+ * service reads the same everywhere. The tooltip names every service, which is
+ * exactly what a truncated pill and the "+k" leave out.
  */
 export function ServicePills({ services }: { services: ReadonlyArray<string> }) {
 	if (services.length === 0) return null

@@ -19,7 +19,7 @@ import {
 	orgIdParam,
 	utcSecondsParam,
 } from "../tables"
-import { resolveMetricTable, metricsSelectExprs } from "./query-helpers"
+import { resolveMetricTable, metricsSelectExprs, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
@@ -60,7 +60,10 @@ interface MetricsQueryOpts {
 	seriesLimit?: number
 }
 
-export interface MetricsTimeseriesOpts extends MetricsQueryOpts {}
+export interface MetricsTimeseriesOpts extends MetricsQueryOpts {
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
+}
 
 export interface MetricsTimeseriesOutput {
 	readonly bucket: DateTime.Utc
@@ -93,7 +96,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 
 	const q = from(tbl as typeof MetricsSum)
 		.select(($) => ({
-			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+			bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
 			serviceName: $.ServiceName,
 			// A query groups by at most one attribute dimension (enforced by
 			// runtime validation); resource takes the shared attributeValue slot
@@ -115,6 +118,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
+			wholeRangeEnd($.TimeUnix, opts.wholeRange),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
@@ -145,6 +149,8 @@ export interface MetricsRateTimeseriesOpts {
 	bucketSeconds?: number
 	/** How far before startTime to read for each series' previous sample. Default: bucketSeconds. */
 	lookbackSeconds?: number
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
 	serviceName?: string
 	/** Deployment environments to scope to. Empty/undefined means all. */
 	environments?: readonly string[]
@@ -195,6 +201,8 @@ function spanKindEqualsValue(filters: readonly AttributeFilter[] | undefined): s
 
 function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean {
 	return (
+		// Hour-grain rows cannot be cut to a sliding window.
+		!opts.wholeRange &&
 		// The hourly MV is keyed by a single MetricName; an `IN (...)` candidate set
 		// can't be served from it, so fall back to the raw path. The interactive UI
 		// (sub-hour buckets) never qualifies for this fast path anyway.
@@ -428,6 +436,7 @@ export function metricsTimeseriesRateQuery(
 				),
 			),
 			$.TimeUnix.lte(param.dateTime("endTime")),
+			wholeRangeEnd($.TimeUnix, opts.wholeRange),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
@@ -453,20 +462,17 @@ export function metricsTimeseriesRateQuery(
 		.select(($) => {
 			// Seconds of the bucket inside [startTime, endTime]: the edge buckets are
 			// partial, and dividing them by the full width understates their rate.
-			const bucketStart = CH.toUnixTimestamp(
-				CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			)
-			const coveredSeconds = CH.least_(
-				bucketStart.add(param.int("bucketSeconds")),
-				CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("endTime"))),
-			).sub(
-				CH.greatest_(
-					bucketStart,
-					CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("startTime"))),
-				),
-			)
+			// A `wholeRange` bucket is the whole range, whatever width the spec stored.
+			const bucketStart = CH.toUnixTimestamp(timeseriesBucket($.TimeUnix, opts.wholeRange))
+			const rangeStart = CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("startTime")))
+			const rangeEnd = CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("endTime")))
+			const coveredSeconds = opts.wholeRange
+				? rangeEnd.sub(rangeStart)
+				: CH.least_(bucketStart.add(param.int("bucketSeconds")), rangeEnd).sub(
+						CH.greatest_(bucketStart, rangeStart),
+					)
 			return {
-				bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
 				serviceName: $.ServiceName,
 				attributeValue: opts.groupByResourceAttributeKey
 					? $.resourceAttributeValue

@@ -601,7 +601,7 @@ export type ServiceMapDbQuerySignaturesHourlyRow = InferRow<typeof serviceMapDbQ
 export const serviceExternalEdgesHourly = defineDatasource("service_external_edges_hourly", {
 	tenantColumn: "OrgId",
 	description:
-		"Pre-aggregated hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab. Captures Client/Producer spans WITHOUT db.system.name. Populated by materialized view.",
+		"Pre-aggregated hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab. Captures Client/Producer spans without db.system.name or db.system. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),

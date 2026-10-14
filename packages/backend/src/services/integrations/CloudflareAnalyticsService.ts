@@ -96,6 +96,7 @@ import {
 	type CloudflareMetricRows,
 } from "./cloudflare-analytics/mapping"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
+import { isIngestRefusal, summarizeUpstreamBody } from "./upstream-body"
 import {
 	accountAnalyticsDocument,
 	DatasetSettings,
@@ -195,7 +196,7 @@ const LEASE_MS = 4 * 60_000
  */
 const RATE_LIMIT_BACKOFF_MS = 5 * 60_000
 /**
- * How long an org sits out after the ingest gateway refuses its metrics on billing grounds (402).
+ * How long an org sits out after ingest refuses its metrics (402 billing, 401/403 key refused).
  * Held the same way as the rate-limit backoff, so it stays under the `2 * LEASE_MS` escape hatch.
  */
 const PLAN_BLOCKED_BACKOFF_MS = 7 * 60_000
@@ -946,8 +947,8 @@ const documentRateLimited = (item: WorkItem, message: string): Array<PartResult>
 }
 
 /**
- * The gateway refusing the org's metrics (402: no active plan, or its limit reached). A billing
- * state the tenant fixes, not a Maple failure: one quiet outcome, recorded on the connection's
+ * Ingest refusing the org's metrics (402: no plan or limit reached; 401/403: key refused). A
+ * state the tenant or Maple fixes, not a poll failure: one quiet outcome, recorded on the connection's
  * health, never an exception event. Each tick used to raise one, which is ~1.5k errors a day.
  */
 const documentPlanBlocked = (item: WorkItem, message: string): Array<PartResult> => {
@@ -956,7 +957,7 @@ const documentPlanBlocked = (item: WorkItem, message: string): Array<PartResult>
 	return [{ part, outcome: { kind: "plan-blocked", message } }]
 }
 
-/** The ingest gateway's 402: returned, not failed, so the emit span is not an error. */
+/** An ingest refusal (401/402/403): returned, not failed, so the emit span is not an error. */
 interface IngestRefused {
 	readonly refused: string
 }
@@ -1552,7 +1553,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * Ship a chunk's metric rows to the ingest gateway as one OTLP/JSON request. Non-2xx and
 		 * transport failures surface as {@link IntegrationsUpstreamError} so the poll loop records
 		 * them and retries next tick (the watermark only advances on success). Returns the row count,
-		 * or {@link IngestRefused} when the gateway refuses the org on billing grounds.
+		 * or {@link IngestRefused} when the gateway refuses the org (billing or a refused key).
 		 */
 		const emitMetrics = Effect.fn("CloudflareAnalyticsService.emitMetrics")(
 			function* (ingestKey: string, rows: CloudflareMetricRows) {
@@ -1567,8 +1568,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 					.pipe(Effect.annotateSpans("peer.service", "ingest"))
 				if (response.status >= 300) {
 					const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-					const message = `Cloudflare metrics ingest returned ${response.status}: ${body.slice(0, 300)}`
-					if (response.status === 402) {
+					const message = `Cloudflare metrics ingest returned ${response.status}: ${summarizeUpstreamBody(body, response.headers)}`
+					// 402 is billing; 401/403 is the org's key refused (an edge block on a revoked key).
+					if (isIngestRefusal(response.status)) {
 						yield* Effect.annotateCurrentSpan("maple.cloudflare.ingest_refused", true)
 						return { refused: message } satisfies IngestRefused
 					}
@@ -1958,6 +1960,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// Shared across every account of the grant — Cloudflare meters the grant's holder, so
 			// a per-account budget would multiply a tick's calls by the account count.
 			budget: { calls: number },
+			// The org's ingest refusal this tick: every account posts with the same org key, so
+			// one refusal holds the siblings too instead of re-posting with a refused key.
+			orgRefusal: Ref.Ref<string | null>,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cloudflare.account_id": accountId })
 			// The budget is the grant's running total; this account's own spend is the delta, so
@@ -2005,12 +2010,18 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// Set when Cloudflare's GraphQL rate limiter refuses the account. Lives outside the body
 			// below so the lease-releasing finalizer can convert it into the backoff hold.
 			const rateLimitedRef = yield* Ref.make(false)
-			// Set when the ingest gateway refuses this org's metrics (402). It ends the tick, since
+			// Set when ingest refuses this org's metrics (401/402/403). It ends the tick, since
 			// every remaining document would rediscover the same org-level condition, and the
 			// finalizer holds the lease so the next ticks skip the org too.
 			const deliveryBlockedRef = yield* Ref.make(false)
 
 			return yield* Effect.gen(function* () {
+				const refusal = yield* Ref.get(orgRefusal)
+				if (refusal !== null) {
+					yield* recordConnectionError(orgId, accountId, refusal, now)
+					yield* Ref.set(deliveryBlockedRef, true)
+					return yield* skip("ingest refused the org")
+				}
 				// Token failures: revocation disables the connection's rows until reconnect;
 				// transient upstream failures record and retry next tick.
 				if (Result.isFailure(tokenResult)) {
@@ -2257,7 +2268,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 														// account budget, and the frontier only advances on success.
 														Effect.andThen(Ref.set(rateLimitedRef, true)),
 													),
-												// Billing, not a failure: the tenant sees it on the connection's health, and
+												// Billing or a refused key, not a failure: the tenant sees it on the connection's health, and
 												// the org sits out the backoff instead of re-fetching windows that have
 												// nowhere to land (the frontier only advances on acceptance).
 												"plan-blocked": ({ message }) =>
@@ -2269,7 +2280,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 													).pipe(
 														Effect.andThen(
 															Effect.logWarning(
-																"cloudflare-analytics ingest refused on billing grounds",
+																"cloudflare-analytics ingest refused the org",
 																{
 																	orgId,
 																	accountId,
@@ -2285,6 +2296,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 															),
 														),
 														Effect.andThen(Ref.set(deliveryBlockedRef, true)),
+														Effect.andThen(Ref.set(orgRefusal, message)),
 													),
 												// The one seam: record health to Postgres AND emit an observable signal.
 												failed: ({ failure }) =>
@@ -2391,6 +2403,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const status = yield* oauth.getStatus(orgId)
 			// One budget for the whole grant, spent by the accounts in order.
 			const budget = { calls: 0 }
+			const orgRefusal = yield* Ref.make<string | null>(null)
 			const summaries = yield* Effect.forEach(status.accounts, (account) =>
 				// Revocation is grant-wide (one token), but record it per account so the tick
 				// rollup names the real cause instead of falling through to "not connected".
@@ -2402,7 +2415,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 							rowsIngested: 0,
 							failures: [],
 						})
-					: pollConnection(orgId, account.accountId, budget),
+					: pollConnection(orgId, account.accountId, budget, orgRefusal),
 			)
 			if (summaries.length === 0) {
 				yield* Effect.annotateCurrentSpan("maple.cloudflare.skip_reason", "not connected")

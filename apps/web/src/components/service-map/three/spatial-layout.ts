@@ -137,7 +137,6 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 	return { positions, districts }
 }
 
-export const nodeHeight = (node: Node3D) => 0.5 + Math.log10(Math.max(1, node.throughput)) * 0.48
 // Shared thresholds (lib/error-rate); the 3D scene keeps its own hex palette below.
 const HEALTH_BY_LEVEL = { crit: "degraded", warn: "elevated", neutral: "healthy" } as const
 export const health = (rate: number) => HEALTH_BY_LEVEL[errorRateLevel(rate)]
