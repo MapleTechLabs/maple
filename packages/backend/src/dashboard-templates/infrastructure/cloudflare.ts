@@ -335,7 +335,6 @@ export const cloudflareTemplate: TemplateDefinition = {
 	requirement: {
 		kind: "integration",
 		label: "Cloudflare integration connected with analytics permissions",
-		missing: "not connected",
 		collector: "the Cloudflare integration with analytics scope",
 		setupLabel: "the Cloudflare integration",
 		hint: "Connect it with analytics permissions and every widget fills in on its own.",

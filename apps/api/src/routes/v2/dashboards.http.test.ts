@@ -359,7 +359,8 @@ describe("v2 dashboards over HTTP", () => {
 		expect(postgres.requirements).toEqual([postgres.requirement.label])
 
 		const cloudflare = listed.body.data.find((t: { name: string }) => t.name === "Cloudflare Edge")
-		expect(cloudflare.requirement).toMatchObject({ kind: "integration", missing: "not connected" })
+		expect(cloudflare.requirement).toMatchObject({ kind: "integration" })
+		expect(cloudflare.requirement.missing).toBeUndefined()
 
 		const blank = listed.body.data.find((t: { name: string }) => t.name === "Blank Dashboard")
 		expect(blank.requirement).toBeNull()
