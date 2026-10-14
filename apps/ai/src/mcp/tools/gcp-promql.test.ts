@@ -5,6 +5,7 @@ import {
 	GcpPromQlFailedError,
 	GcpPromQlInvalidQueryError,
 	GcpPromQlResult,
+	GcpPromQlTooManySeriesError,
 	GcpPromQlUnavailableError,
 	type GcpPromQlInstantRequest,
 	type GcpPromQlRangeRequest,
@@ -214,6 +215,28 @@ describe("query_gcp_promql", () => {
 			)
 			assert.strictEqual(error._tag, "@maple/mcp/errors/McpInvalidInputError")
 			assert.include(error.message, "expected range vector")
+		}),
+	)
+
+	it.effect("asks for aggregation when the answer holds too many series", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				call(
+					"query_gcp_promql",
+					{ query: "up", ...WINDOW },
+					{
+						queryRange: () =>
+							Effect.fail(
+								new GcpPromQlTooManySeriesError({
+									message: "Aggregate them, with sum by.",
+									series: 900,
+								}),
+							),
+					},
+				),
+			)
+			assert.strictEqual(error._tag, "@maple/mcp/errors/McpInvalidInputError")
+			assert.include(error.message, "sum by")
 		}),
 	)
 

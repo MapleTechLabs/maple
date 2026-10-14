@@ -49,6 +49,8 @@ const toMcpError =
 					message: `${error.message} Projects: ${error.projects.slice(0, 20).join(", ")}${error.projects.length > 20 ? ` and ${error.projects.length - 20} more` : ""}.`,
 					parameter: projectParameter,
 				})
+			case "@maple/http/errors/GcpPromQlTooManySeriesError":
+				return new McpInvalidInputError({ message: error.message, parameter: "query" })
 			case "@maple/http/errors/IntegrationsValidationError":
 				return new McpInvalidInputError({ message: error.message, parameter: projectParameter })
 			case "@maple/http/errors/IntegrationsNotFoundError":
