@@ -103,9 +103,19 @@ api_off() {
   echo "ERROR: (gcloud) API has not been used in project 1 before or it is disabled" >&2
   exit 1
 }
+echo "$CLOUDSDK_CORE_PROJECT" >> "$GCLOUD_LOG.project"
+echo "$CLOUDSDK_CORE_DISABLE_FILE_LOGGING" >> "$GCLOUD_LOG.filelogging"
 if [ -n "$GCLOUD_FAIL" ] && [[ "$*" == *"$GCLOUD_FAIL"* ]]; then denied; fi
+# GCLOUD_RACE: the first command that contains it loses a race with another policy change.
+if [ -n "$GCLOUD_RACE" ] && [[ "$*" == *"$GCLOUD_RACE"* ]] && [ ! -e "$GCLOUD_LOG.raced" ]; then
+  touch "$GCLOUD_LOG.raced"
+  echo "ERROR: (gcloud) ABORTED: There were concurrent policy changes. Please retry the whole read-modify-write with exponential backoff." >&2
+  exit 1
+fi
 case "$*" in
+  "version"*) echo "$GCLOUD_VERSION" ;;
   "config get-value account") echo "$GCLOUD_ACCOUNT" ;;
+  "config get-value auth/impersonate_service_account") echo "$GCLOUD_IMPERSONATE" ;;
   "auth print-access-token") echo "ya29.token" ;;
   "projects describe"*) echo "Acme Production" ;;
   "organizations describe"* | "resource-manager folders describe"*) echo "acme.com" ;;
@@ -119,6 +129,14 @@ case "$*" in
       denied) denied ;;
       api_off) api_off ;;
     esac ;;
+  *"subscriptions describe"*"--format=value(topic)")
+    case "$GCLOUD_DESCRIBE" in
+      found) echo "\${GCLOUD_TOPIC:-projects/acme-host/topics/${NAME}}" ;;
+      missing) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
+      denied) denied ;;
+      api_off) api_off ;;
+    esac ;;
+  *"subscriptions describe"*"--format=value(detached)") echo "\${GCLOUD_DETACHED:-False}" ;;
   *" describe "*)
     case "$GCLOUD_DESCRIBE" in
       missing) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
@@ -166,10 +184,12 @@ done
 case "$url" in
   *testIamPermissions)
     echo "$url $header" >> "$CURL_LOG"
-    [ "$CURL_IAM" != unanswered ] || exit 22
-    if [ "$CURL_IAM" = nothing ]; then echo "{}"; exit 0; fi
+    # With -w, the status follows the body on a line of its own.
+    [ "$CURL_IAM" != unanswered ] || exit 7
+    if [ "$CURL_IAM" = unseen ]; then printf '{"error":{"status":"PERMISSION_DENIED"}}\n403'; exit 0; fi
+    if [ "$CURL_IAM" = nothing ]; then printf '{}\n200'; exit 0; fi
     lacking="\\"$CURL_LACKING\\""
-    echo "\${data//$lacking/}" ;;
+    printf '%s\n200' "\${data//$lacking/}" ;;
   *)
     echo "$url $data" >> "$CURL_LOG"
     [ "$CURL_REPORT" = ok ] || exit 22 ;;
@@ -193,11 +213,14 @@ interface RunOptions {
 	/** The APIs that are on in the host project. None unless the test says so. */
 	apis?: ReadonlyArray<string>
 	/**
-	 * A permission the account does not hold, `everything` for an account without any, or
-	 * `unanswered` when Google cannot be asked.
+	 * A permission the account does not hold, `everything` for an account without any,
+	 * `unseen` for a resource it can't see (Google answers 403), or `unanswered` when Google
+	 * cannot be asked.
 	 */
 	lacking?: string
 	report?: "ok" | "unreachable"
+	/** Values the fake gcloud reads: GCLOUD_VERSION, GCLOUD_IMPERSONATE, GCLOUD_RACE, GCLOUD_TOPIC… */
+	env?: Readonly<Record<string, string>>
 	/** Extra arguments for the shell the text is fed to, and text typed after it. */
 	shell?: ReadonlyArray<string>
 	then?: string
@@ -231,13 +254,14 @@ const run = (script: string, options: RunOptions = {}) => {
 			GCLOUD_APIS: (options.apis ?? []).join("\n"),
 			CURL_LOG: join(dir, "curl.log"),
 			CURL_IAM:
-				options.lacking === "unanswered"
-					? "unanswered"
+				options.lacking === "unanswered" || options.lacking === "unseen"
+					? options.lacking
 					: options.lacking === "everything"
 						? "nothing"
 						: "ok",
 			CURL_LACKING: options.lacking ?? "",
 			CURL_REPORT: options.report ?? "ok",
+			...options.env,
 		},
 	})
 	return {
@@ -249,6 +273,10 @@ const run = (script: string, options: RunOptions = {}) => {
 		commands: read(log).filter((command) => !isAccessCheck(command)),
 		access: read(log).filter(isAccessCheck),
 		args: read(`${log}.args`),
+		/** The project each gcloud call was counted against. */
+		projects: read(`${log}.project`),
+		/** Whether each gcloud call ran with its file log off. */
+		fileLogging: read(`${log}.filelogging`),
 		curl: read(join(dir, "curl.log")),
 	}
 }
@@ -260,7 +288,7 @@ const RESOURCE_MANAGER_ON = "services enable cloudresourcemanager.googleapis.com
 const isAccessCheck = (command: string) =>
 	command === API_LOOKUP ||
 	command === RESOURCE_MANAGER_ON ||
-	/^(config get-value|auth print-access-token|projects describe|organizations describe|resource-manager folders describe|billing projects describe|logging read)/.test(
+	/^(version|config get-value|auth print-access-token|projects describe|organizations describe|resource-manager folders describe|billing projects describe|logging read)/.test(
 		command,
 	)
 
@@ -282,7 +310,7 @@ const logsSetupCommands = (scope: Scope) => [
 	"services enable pubsub.googleapis.com logging.googleapis.com --project=acme-host",
 	`pubsub topics describe ${NAME} --project=acme-host`,
 	`pubsub topics create ${NAME} --project=acme-host`,
-	`pubsub subscriptions describe ${NAME} --project=acme-host`,
+	`pubsub subscriptions describe ${NAME} --project=acme-host --format=value(topic)`,
 	`pubsub subscriptions create ${NAME} --topic=${NAME} --project=acme-host --push-endpoint=${PUSH_ENDPOINT} --push-no-wrapper --ack-deadline=30 --message-retention-duration=1d --expiration-period=never --min-retry-delay=10s --max-retry-delay=600s`,
 	`logging sinks create ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${gcpLogFilter(false)} ${scope.sinkWrite}`,
 	`logging sinks describe ${NAME} ${scope.sink} --format=value(writerIdentity)`,
@@ -317,9 +345,9 @@ const isLookup = (command: string) => command.includes(" describe ") || command 
 
 const metricsRemovalCommands = (scope: Scope) => [
 	ACCOUNT_LOOKUP,
-	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --condition=None`,
-	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --condition=None`,
-	`projects remove-iam-policy-binding acme-host --member=serviceAccount:${ACCOUNT} --role=roles/serviceusage.serviceUsageConsumer --condition=None`,
+	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --all`,
+	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --all`,
+	`projects remove-iam-policy-binding acme-host --member=serviceAccount:${ACCOUNT} --role=roles/serviceusage.serviceUsageConsumer --all`,
 	`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
 ]
 
@@ -341,8 +369,10 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 			publish('"metrics":true'),
 		])
 		expect(access).toEqual([
+			'version --format=value("Google Cloud SDK")',
 			"config get-value account",
 			"auth print-access-token",
+			"config get-value auth/impersonate_service_account",
 			API_LOOKUP,
 			RESOURCE_MANAGER_ON,
 			...scope.open,
@@ -400,7 +430,7 @@ Done. Google Cloud is set up for Maple.
 		// Everything exists already, so the log pipeline is updated in place, filter untouched.
 		expect(commands.filter((command) => command.includes(" create "))).toEqual([])
 		expect(commands).toContain(
-			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} ${scope.sinkWrite}`,
+			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --no-disabled ${scope.sinkWrite}`,
 		)
 		expect(commands).toContainEqual(
 			expect.stringMatching(/^pubsub subscriptions update .*--push-no-wrapper/),
@@ -493,7 +523,7 @@ describe("the text that is copied", () => {
 	it("is the script as a here-document for a child bash", () => {
 		const lines = script.split("\n")
 		expect(lines.slice(0, 3)).toEqual([
-			` { [ -z "\${BASH_VERSION-}" ] || case "$(history 1)" in *MAPLE_SETUP_SCRIPT*) history -d -1 ;; esac 2>/dev/null`,
+			` { [ -z "\${ZSH_VERSION-}" ] || case "\${HISTORY_IGNORE-}" in *"*MAPLE_SETUP_SCRIPT*"*) ;; *) HISTORY_IGNORE="(\${HISTORY_IGNORE:+$HISTORY_IGNORE|}*MAPLE_SETUP_SCRIPT*)" ;; esac; [ -z "\${BASH_VERSION-}" ] || case "$(history 1)" in *MAPLE_SETUP_SCRIPT*) history -d -1 ;; esac 2>/dev/null`,
 			"bash /dev/fd/3 3<<'MAPLE_SETUP_SCRIPT'",
 			"#!/usr/bin/env bash",
 		])
@@ -541,6 +571,17 @@ describe("the text that is copied", () => {
 			),
 		)
 		expect(result._tag).toBe("Failure")
+
+		// A terminal ends a pasted line at a CR, and a TAB is completion.
+		for (const hostileUrl of [
+			"https://x\rMAPLE_SETUP_SCRIPT\rtouch pwned",
+			"https://x\n\tMAPLE_SETUP_SCRIPT",
+		]) {
+			const pasted = Effect.runSync(
+				Effect.result(renderGcpSetupScript({ ...hostile, mapleUrl: hostileUrl })),
+			)
+			expect(pasted._tag).toBe("Failure")
+		}
 	})
 })
 
@@ -603,7 +644,7 @@ Done. Everything is in place.
 		// The closing line says what this run changed.
 		expect(stdout).not.toContain("Done. Everything is in place.")
 		expect(commands).toContain(
-			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${gcpLogFilter(true)} --project=acme-host`,
+			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --no-disabled --log-filter=${gcpLogFilter(true)} --project=acme-host`,
 		)
 	})
 
@@ -664,6 +705,14 @@ ${UNFINISHED}`),
 		})
 		expect(quoted.stdout).toContain("?secret=HIDDEN).")
 		expect(quoted.stdout).not.toContain(SECRET)
+		// However Google spells the endpoint back, escaped or encoded.
+		for (const spelled of [`secret\\u003d${SECRET}`, `secret%3D${SECRET}`, `'secret': '${SECRET}'`]) {
+			const answer = run(script, {
+				fail: "subscriptions create",
+				answer: `ERROR: (gcloud) INVALID_ARGUMENT: ${spelled}`,
+			})
+			expect(answer.stdout).not.toContain(SECRET)
+		}
 		expect(quoted.stdout).toContain(
 			"What to do: Read Google's answer above. If it is unclear, send this output to support@maple.dev.",
 		)
@@ -867,6 +916,80 @@ ${UNFINISHED}`)
 		expect(unanswered.stdout).not.toContain("has the permissions")
 	})
 
+	it("reads a folder this account can't see as a wrong ID, before the first change", () => {
+		const { status, stdout, commands } = run(
+			setup(setupInput("folder", { logs: true, metrics: false })),
+			{
+				lacking: "unseen",
+			},
+		)
+		expect(status).toBe(1)
+		expect(commands).toEqual([])
+		expect(stdout).toContain(`  ✗ jane@acme.com can't see project acme-host.
+
+    What to do: Check the ID in Maple.`)
+	})
+
+	it("says what it could not check instead of passing over it", () => {
+		const script = setup(setupInput("project", { logs: true, metrics: true }))
+		const { status, stdout } = run(script, { lacking: "unanswered", billing: "" as "True" })
+		expect(status).toBe(0)
+		expect(stdout).toContain(
+			"  • Couldn't tell whether billing is on. Cloud Monitoring only answers for projects with billing.\n",
+		)
+		expect(stdout).toContain(
+			"  • Couldn't ask Google which permissions jane@acme.com holds. A step it may not take says so.\n",
+		)
+	})
+
+	it("doesn't call a resource gone when its API is off, in the cleanup", () => {
+		const hostOff = `#!/usr/bin/env bash
+echo "$*" >> "$GCLOUD_LOG"
+case "$*" in
+  "config get-value account") echo jane@acme.com ;;
+  "auth print-access-token") echo ya29.token ;;
+  "projects describe"*) echo "Acme Production" ;;
+  *"sinks describe"*) echo "ERROR: (gcloud) NOT_FOUND: Resource not found" >&2; exit 1 ;;
+  *) echo "ERROR: (gcloud) API has not been used in project 1 before or it is disabled" >&2; exit 1 ;;
+esac
+`
+		const { stdout } = run(cleanup(SCOPES.project), { gcloud: hostOff })
+		expect(stdout).toContain(
+			"  • Couldn't look for the read-only service account: its API is off in project acme-host. If a setup run made one, switch the API on and paste this again.\n",
+		)
+		expect(stdout).toContain("\nDone, but not all of it could be checked: see above.\n")
+		expect(stdout).not.toContain("Everything the setup script created is gone")
+
+		// A setup run with the API off has made nothing there, so it has nothing to say.
+		const setupRun = run(setup(setupInput("project", { logs: true, metrics: false })), {
+			gcloud: hostOff,
+		})
+		expect(setupRun.stdout).not.toContain("its API is off")
+	})
+
+	it("takes a resource that is gone by the time it is deleted for removed", () => {
+		const { status, stdout } = run(cleanup(SCOPES.project), {
+			describe: "found",
+			fail: "topics delete",
+			answer: "ERROR: (gcloud.pubsub.topics.delete) NOT_FOUND: Resource not found (resource=maple).",
+		})
+		expect(status).toBe(0)
+		expect(stdout).toContain("  ✓ Topic deleted\n")
+	})
+
+	it("ends between two steps on Ctrl-C and says a re-run picks up from there", () => {
+		const script = setup(setupInput("project", { logs: true, metrics: true }))
+		// The signal lands where a step has just finished.
+		const marker = '\nsection "Log forwarding"\n'
+		expect(script).toContain(marker)
+		const { status, stdout } = run(script.replace(marker, () => `\nkill -INT $$${marker}`))
+		expect(status).toBe(130)
+		expect(stdout).toContain(
+			"\n\nSetup interrupted. Nothing needs undoing: paste the script again to finish it.\n",
+		)
+		expect(stdout).not.toContain("Topic created")
+	})
+
 	it("finishes when Maple cannot be reached, and does not claim a confirmation", () => {
 		const { status, stdout } = run(setup(setupInput("project", { logs: false, metrics: true })), {
 			report: "unreachable",
@@ -1034,9 +1157,97 @@ esac
 		)
 	})
 
+	it("makes the push subscription anew when its topic was deleted or it was detached", () => {
+		const script = setup(setupInput("project", { logs: true, metrics: false }))
+		const recreated = [
+			`pubsub subscriptions delete ${NAME} --project=acme-host --quiet`,
+			expect.stringMatching(`^pubsub subscriptions create ${NAME} --topic=${NAME} `),
+		]
+		for (const env of [{ GCLOUD_TOPIC: "_deleted-topic_" }, { GCLOUD_DETACHED: "True" }]) {
+			const { status, stdout, commands } = run(script, { describe: "found", env })
+			expect(status).toBe(0)
+			expect(commands.filter((command) => command.startsWith("pubsub subscriptions "))).toEqual([
+				`pubsub subscriptions describe ${NAME} --project=acme-host --format=value(topic)`,
+				...(env.GCLOUD_DETACHED === undefined
+					? []
+					: [`pubsub subscriptions describe ${NAME} --project=acme-host --format=value(detached)`]),
+				...recreated,
+			])
+			expect(stdout).toContain(
+				"  ✓ Push subscription cut off from the topic deleted\n  ✓ Push subscription created\n",
+			)
+		}
+
+		// One still on the topic is updated in place.
+		const attached = run(script, { describe: "found" })
+		expect(attached.commands).not.toContainEqual(expect.stringContaining("subscriptions delete"))
+	})
+
+	it("tries an IAM change again when it raced another change to the same policy", () => {
+		const granted = run(setup(setupInput("folder", { logs: true, metrics: true })), {
+			env: { GCLOUD_RACE: "add-iam-policy-binding" },
+		})
+		expect(granted.status).toBe(0)
+		expect(
+			granted.commands.filter((command) => command.includes("roles/logging.logWriter")),
+		).toHaveLength(2)
+		expect(granted.stdout).not.toContain("waiting for Google")
+
+		const removed = run(cleanup(SCOPES.folder), {
+			describe: "found",
+			env: { GCLOUD_RACE: "remove-iam-policy-binding" },
+		})
+		expect(removed.status).toBe(0)
+		expect(
+			removed.commands.filter((command) => command.includes("roles/monitoring.viewer")),
+		).toHaveLength(2)
+		expect(removed.commands.at(-1)).toBe(
+			`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+		)
+	})
+
+	it("stops before the first change on a gcloud whose sink update cannot re-run a folder setup", () => {
+		const script = setup(setupInput("folder", { logs: true, metrics: true }))
+		const old = run(script, { env: { GCLOUD_VERSION: "469.0.0" } })
+		expect(old.status).toBe(1)
+		expect(old.commands).toEqual([])
+		expect(old.stdout).toContain("  ✗ gcloud 469.0.0 is too old for this script.")
+		expect(run(script, { env: { GCLOUD_VERSION: "470.0.0" } }).status).toBe(0)
+	})
+
+	it("counts every gcloud call against the host project, whatever the caller's settings say", () => {
+		const { projects } = run(setup(setupInput("organization", { logs: true, metrics: true })), {
+			env: { CLOUDSDK_CORE_PROJECT: "unrelated-project" },
+		})
+		expect(new Set(projects)).toEqual(new Set(["acme-host"]))
+	})
+
+	it("keeps gcloud from writing its arguments, the secret among them, to its log files", () => {
+		for (const script of [
+			setup(setupInput("project", { logs: true, metrics: true })),
+			cleanup(SCOPES.project, PUSH_ENDPOINT),
+		]) {
+			const { fileLogging } = run(script, { describe: "found" })
+			expect(fileLogging.length).toBeGreaterThan(0)
+			expect(new Set(fileLogging)).toEqual(new Set(["1"]))
+		}
+	})
+
+	it("names the impersonated service account as the one that needs the roles", () => {
+		const { stdout } = run(setup(setupInput("project", { logs: true, metrics: true })), {
+			fail: "sinks create",
+			env: { GCLOUD_IMPERSONATE: "deployer@acme-host.iam.gserviceaccount.com" },
+		})
+		expect(stdout).toContain("  ✓ Signed in as deployer@acme-host.iam.gserviceaccount.com\n")
+		expect(stdout).toContain(
+			"What to do: deployer@acme-host.iam.gserviceaccount.com needs Logs Configuration Writer on project acme-host.",
+		)
+	})
+
 	it("carries no secret and reports nothing once the connector is gone", () => {
 		const script = cleanup(SCOPES.project)
-		expect(script).not.toContain("maple_gcp_")
+		expect(script).not.toMatch(/maple_gcp_[A-Za-z0-9_-]{20,}/)
+		expect(script).not.toContain("/v1/logpush/")
 		expect(script).not.toContain("PUSH_ENDPOINT=")
 		const { status, stdout, curl } = run(script, { describe: "found" })
 		expect(status).toBe(0)

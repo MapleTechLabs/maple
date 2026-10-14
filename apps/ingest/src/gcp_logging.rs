@@ -86,6 +86,12 @@ pub fn parse_setup_report(payload: &[u8]) -> Option<SetupReport> {
     if !text(&entry, "logName")?.ends_with(SETUP_REPORT_LOG) {
         return None;
     }
+    // Cloud Logging stamps every entry it routes. The script's report never
+    // passes through it, so a stamped one was written to the log by anyone in
+    // the scope who may write logs, and is only a log line.
+    if entry.contains_key("receiveTimestamp") {
+        return None;
+    }
     let applied = object(&entry, "jsonPayload")?;
     let flag = |key: &str| applied.get(key).and_then(JsonValue::as_bool);
     let report = SetupReport {
@@ -855,5 +861,13 @@ mod tests {
         });
         assert_eq!(parse_setup_report(elsewhere.to_string().as_bytes()), None);
         assert_eq!(parse_setup_report(b"not json /logs/maple-setup"), None);
+
+        // Written with `gcloud logging write maple-setup` and routed by the sink.
+        let routed = json!({
+            "logName": "projects/p/logs/maple-setup",
+            "receiveTimestamp": "2026-10-14T21:00:00.123Z",
+            "jsonPayload": { "logs": true }
+        });
+        assert_eq!(parse_setup_report(routed.to_string().as_bytes()), None);
     }
 }
