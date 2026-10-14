@@ -22,9 +22,9 @@ import { PublicId, PublicIdPrefixes } from "./public-id"
 
 // Google Cloud integration. No OAuth: an org registers a connector for a project, a folder or a
 // whole organization, and an administrator runs the generated `gcloud` script. The script routes
-// logs through Pub/Sub to the ingest gateway and lets Maple read metrics and the resource
-// inventory, each only if the connector opted in. Public v2 from the start so scripted setups can
-// use a scoped API key.
+// logs through Pub/Sub to the ingest gateway if the connector opted in, and lets Maple read
+// metrics and the resource inventory for every connector. Public v2 from the start so scripted
+// setups can use a scoped API key.
 
 /** `gcpc_…` public ID ⇄ internal `GcpConnectorId` (raw UUID). */
 export const GcpConnectorPublicId = PublicId(PublicIdPrefixes.gcpConnector, GcpConnectorId)
@@ -74,7 +74,7 @@ export const V2GcpConnector = Schema.Struct({
 	}),
 	metrics_enabled: Schema.Boolean.annotate({
 		description:
-			"Whether the setup script lets Maple read Cloud Monitoring metrics and the Cloud Asset resource inventory.",
+			"Whether Maple collects the scope's key Cloud Monitoring metrics every 5 minutes (for alert rules, the Infrastructure page and the Google Cloud dashboard template) and syncs its Cloud Asset resource inventory every hour. A change takes effect in Maple at once: the setup script does not depend on it. Collection and live metric queries both read as the read-only service account (see `applied_metrics_enabled`).",
 		examples: [true],
 	}),
 	created_at: Timestamp.annotate({ description: "When the connector was created." }),
@@ -93,7 +93,7 @@ export const V2GcpConnector = Schema.Struct({
 	}),
 	applied_metrics_enabled: Schema.NullOr(Schema.Boolean).annotate({
 		description:
-			"Whether metrics and resource access is set up in Google Cloud, as the latest setup script run reported it. `null` until a run reports. The setup script has to run while `metrics_enabled` is `true` and this is not, or `metrics_enabled` is `false` and this is `true`.",
+			"Whether the read-only service account Maple reads metrics and resources as is in place in Google Cloud, as the latest setup or cleanup script run reported it. `null` until a run reports. Live queries and, with `metrics_enabled`, collection need it. The setup script creates it for every connector while `metrics_available` is `true`: run it while this is not `true`.",
 		examples: [true],
 	}),
 	setup_reported_at: Schema.NullOr(Timestamp).annotate({
@@ -102,7 +102,7 @@ export const V2GcpConnector = Schema.Struct({
 	}),
 	last_metrics_received_at: Schema.NullOr(Timestamp).annotate({
 		description:
-			"When Maple last read the scope's metrics, or `null` before the first successful read. Stays `null` until the setup script has run with `metrics_enabled`.",
+			"When Maple last collected the scope's key metrics, or `null` before the first successful read. Only connectors with `metrics_enabled` are collected.",
 	}),
 	last_metrics_error: Schema.NullOr(Schema.String).annotate({
 		description:
@@ -132,7 +132,7 @@ export const V2GcpIntegration = Schema.Struct({
 	}),
 	metrics_available: Schema.Boolean.annotate({
 		description:
-			"Whether this Maple deployment can collect metrics and resources from Google Cloud. When `false`, `metrics_enabled` cannot be turned on.",
+			"Whether this Maple deployment has a Google identity to read Google Cloud metrics with: live queries on every connector, and key-metrics collection. When `false`, `metrics_enabled` cannot be turned on and `logs_enabled` must stay `true`.",
 		examples: [true],
 	}),
 	connectors: Schema.Array(V2GcpConnector).annotate({
@@ -150,12 +150,13 @@ export const V2GcpIntegration = Schema.Struct({
 export type V2GcpIntegration = Schema.Schema.Type<typeof V2GcpIntegration>
 
 const logsEnabledField = Schema.optionalKey(Schema.Boolean).annotate({
-	description: "Forward logs to Maple.",
+	description:
+		"Forward logs to Maple. Google Cloud follows once the setup script has run. Must stay `true` when the status reports `metrics_available: false`.",
 	examples: [true],
 })
 const metricsEnabledField = Schema.optionalKey(Schema.Boolean).annotate({
 	description:
-		"Let Maple read metrics and the resource inventory. Rejected when the status reports `metrics_available: false`.",
+		"Collect key metrics every 5 minutes and the resource inventory every hour. Takes effect in Maple at once: the setup script does not depend on it. Rejected when the status reports `metrics_available: false`.",
 	examples: [false],
 })
 
@@ -193,7 +194,7 @@ export const V2GcpCreateConnectorRequest = Schema.Union([
 	identifier: "GcpCreateConnectorRequest",
 	title: "Google Cloud connector create request",
 	description:
-		"What to connect, discriminated on `scope_type`. `logs_enabled` defaults to `true` and `metrics_enabled` to `false`; at least one must be on.",
+		"What to connect, discriminated on `scope_type`. `logs_enabled` defaults to `true` and `metrics_enabled` to `false`. Both may be off, for a connector that serves live metric queries only, unless the status reports `metrics_available: false`.",
 	examples: [
 		wireExample({ scope_type: "project", scope_id: "acme-prod" }),
 		wireExample({
@@ -213,7 +214,7 @@ export const V2GcpUpdateConnectorRequest = Schema.Struct({
 	identifier: "GcpUpdateConnectorRequest",
 	title: "Google Cloud connector update request",
 	description:
-		"What the connector collects; omitted fields are unchanged. At least one must stay on: delete the connector to disconnect.",
+		"What the connector collects; omitted fields are unchanged. Delete the connector to disconnect.",
 	examples: [wireExample({ metrics_enabled: true })],
 })
 export type V2GcpUpdateConnectorRequest = Schema.Schema.Type<typeof V2GcpUpdateConnectorRequest>
@@ -242,7 +243,7 @@ export const V2GcpSetupScripts = Schema.Struct({
 	}),
 	setup_script: Schema.String.annotate({
 		description:
-			"Text to paste into Cloud Shell: a bash script, wrapped so that it runs in a bash process of its own. It sets up what the connector has enabled, removes what it has not, and tells Maple what it applied, so run it again after changing `logs_enabled` or `metrics_enabled`. It embeds the connector's push secret: treat it as a credential.",
+			"Text to paste into Cloud Shell: a bash script, wrapped so that it runs in a bash process of its own. It sets up log forwarding while `logs_enabled` is `true` and removes it while it is not, creates the read-only service account Maple reads metrics as, and tells Maple what it applied, so run it again after changing `logs_enabled`. `metrics_enabled` does not change it. It embeds the connector's push secret: treat it as a credential.",
 		examples: [SCRIPT_EXAMPLE],
 	}),
 	cleanup_script: Schema.String.annotate({
@@ -311,7 +312,7 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "getGcpIntegration",
 				summary: "Retrieve Google Cloud integration status",
 				description:
-					"Returns the organization's Google Cloud connectors with what their setup script last reported and the time and outcome of their latest log push, and whether metrics collection is available. Requires the `integrations:read` scope.",
+					"Returns the organization's Google Cloud connectors with what their setup script last reported and the time and outcome of their latest log push, and whether this deployment can read Google Cloud metrics. Requires the `integrations:read` scope.",
 			}),
 		),
 	)
@@ -352,7 +353,7 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "updateGcpConnector",
 				summary: "Change what a connector collects",
 				description:
-					"Turns log forwarding or metrics and resource collection on or off. Maple cannot change Google Cloud itself: re-run the script from `setup_scripts` afterwards, which sets up what is now enabled and removes what is not. Requires an org-admin role and the `integrations:write` scope.",
+					"Turns log forwarding or key-metrics collection on or off. Key-metrics collection changes in Maple at once. Maple cannot change Google Cloud itself: after changing `logs_enabled`, re-run the script from `setup_scripts`, which sets up or removes the log sink. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)
@@ -391,6 +392,6 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 		OpenApi.annotations({
 			title: "Google Cloud Integration",
 			description:
-				"Connect Google Cloud projects, folders or organizations: register a connector, choose whether it forwards logs and whether Maple may read metrics and resources, fetch the `gcloud` scripts that set it up, and see whether logs are arriving.",
+				"Connect Google Cloud projects, folders or organizations: register a connector, choose whether it forwards logs and whether Maple collects key metrics and resources, fetch the `gcloud` scripts that set it up, and see whether logs are arriving.",
 		}),
 	) {}

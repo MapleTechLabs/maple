@@ -130,7 +130,7 @@ function GcpPage() {
 							<IntegrationNotConnected
 								icon={<GoogleCloudIcon size={16} />}
 								title="Connect Google Cloud to see your infrastructure"
-								description="Connect an organization, folder or project that collects metrics and resources. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install."
+								description="Connect an organization, folder or project with key metrics on. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install."
 								integration="gcp"
 								actionLabel="Connect Google Cloud"
 								docsPage="gcp"
@@ -144,7 +144,7 @@ function GcpPage() {
 							<IntegrationNotConnected
 								icon={<GoogleCloudIcon size={16} />}
 								title="Finish setting up Google Cloud"
-								description="Metrics and resources are on, but the setup script hasn't run yet."
+								description="Key metrics are on, but the setup script hasn't run yet."
 								integration="gcp"
 								actionLabel="Open the integration"
 								docsPage="gcp"
@@ -248,7 +248,7 @@ function GcpInfra({
 			<IntegrationNotConnected
 				icon={<GoogleCloudIcon size={16} />}
 				title="Turn on metrics for Google Cloud"
-				description="Your Google Cloud connections forward logs only. Turn on Metrics and resources under Configure in the Google Cloud integration, then run the setup script."
+				description="Your Google Cloud connections don't collect key metrics. Turn on Key metrics under Configure in the Google Cloud integration."
 				integration="gcp"
 				actionLabel="Open the integration"
 				docsPage="gcp"
@@ -382,8 +382,7 @@ function GcpNotice({ notice }: { notice: GcpInfraNotice }) {
 					<AlertTitle>Google Cloud metrics are off</AlertTitle>
 					<AlertDescription>
 						These tables show what Maple collected before they were turned off. To collect again,
-						turn on Metrics and resources under Configure in the Google Cloud integration, then
-						run the setup script.
+						turn on Key metrics under Configure in the Google Cloud integration.
 					</AlertDescription>
 					{integration("Open the integration")}
 				</Alert>

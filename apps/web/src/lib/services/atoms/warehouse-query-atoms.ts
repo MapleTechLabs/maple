@@ -88,6 +88,7 @@ import {
 } from "@/api/warehouse/planetscale-infra"
 import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
 import { getGcpInfraFleet, getGcpInfraTimeseries } from "@/api/warehouse/gcp-infra"
+import { getGcpMetricSearch } from "@/api/warehouse/gcp-promql"
 import {
 	getServiceHealthBaseline,
 	getServiceHealthSnapshot,
@@ -709,6 +710,11 @@ export const cloudflareZoneFacetsResultAtom = makeQueryAtomFamily(getCloudflareZ
 // Live Cloudflare GraphQL proxy — server edge-caches ~60s, so match that here.
 export const cloudflareTopTrafficResultAtom = makeQueryAtomFamily(getCloudflareTopTraffic, {
 	staleTime: 60_000,
+})
+
+// Google Cloud metric names for the PromQL editor; the API caches each project's list for an hour.
+export const gcpMetricSearchResultAtom = makeQueryAtomFamily(getGcpMetricSearch, {
+	staleTime: 300_000,
 })
 
 // Service-detail Overview tab bundle: primary chart + releases timeline +

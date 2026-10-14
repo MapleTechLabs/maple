@@ -270,6 +270,19 @@ export function toReadyWidgetData(
 	return applyTransform(envelope?.data ?? response, transform)
 }
 
+/** The caveat a response carries beside its rows (a PromQL answer missing some projects). */
+export function widgetDataNotice(response: unknown): { notice?: string } {
+	const notice = (response as { notice?: unknown } | null | undefined)?.notice
+	return typeof notice === "string" ? { notice } : {}
+}
+
+// Google Cloud setup states, not failures: the tile says what to do next, muted.
+const GCP_SETUP_ERROR_CODES = new Set([
+	"integration_not_connected",
+	"gcp_promql_unavailable",
+	"gcp_promql_too_many_projects",
+])
+
 class WidgetDataAtomError extends Schema.TaggedError<WidgetDataAtomError>()(
 	"@maple/web/hooks/WidgetDataAtomError",
 	{
@@ -505,7 +518,9 @@ export function useWidgetDataSource(
 					: executed?.kind === "disabled"
 						? executed.reason === "metric_not_selected"
 							? "No metric selected"
-							: "Unable to resolve this widget's time range"
+							: executed.reason === "promql_query_empty"
+								? "No query yet"
+								: "Unable to resolve this widget's time range"
 						: !hasServerFn
 							? `Unknown data source endpoint: ${request.endpoint}`
 							: null
@@ -581,6 +596,14 @@ export function useWidgetDataSource(
 				message: "Pick a metric in the query editor to run this tile.",
 			} as const
 		}
+		if (executed?.kind === "disabled" && executed.reason === "promql_query_empty") {
+			return {
+				status: "error",
+				kind: "config",
+				title: "No query yet",
+				message: "Write a PromQL query in the editor to draw this tile.",
+			} as const
+		}
 		if (!dataSource) {
 			return {
 				status: "error",
@@ -618,8 +641,8 @@ export function useWidgetDataSource(
 						message: "No query data found in selected time range",
 					} as const
 				}
-				const { title, message } = displayError(error)
-				const kind = classifyWidgetErrorKind(error)
+				const { title, message, code } = displayError(error)
+				const kind = GCP_SETUP_ERROR_CODES.has(code) ? "config" : classifyWidgetErrorKind(error)
 				return { status: "error", title, message, kind } as const
 			})
 			.onSuccess((rawData) =>
@@ -631,7 +654,11 @@ export function useWidgetDataSource(
 							kind: "empty",
 							message: "No query data found in selected time range",
 						} as const)
-					: ({ status: "ready", data: toReadyWidgetData(rawData, transform) } as const),
+					: ({
+							status: "ready",
+							data: toReadyWidgetData(rawData, transform),
+							...widgetDataNotice(rawData),
+						} as const),
 			)
 			.orElse(() => ({ status: "error", message: "Unknown error" }) as const)
 	}, [

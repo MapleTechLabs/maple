@@ -14,6 +14,7 @@ describe("unsupportedShareWidgets", () => {
 			widget("w1", { kind: "query", resultShape: "timeseries" }),
 			widget("w2", { kind: "raw_sql", sql: "select 1" }),
 			widget("w3", { kind: "static" }),
+			widget("w4", { kind: "promql", query: "up" }),
 		]
 		expect(unsupportedShareWidgets(widgets)).toEqual([])
 	})

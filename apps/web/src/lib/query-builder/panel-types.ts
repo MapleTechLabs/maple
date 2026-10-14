@@ -29,6 +29,9 @@ export const PANEL_TYPES: ReadonlyArray<{ value: PanelType; label: string }> = W
 	(meta) => ({ value: meta.panelType, label: meta.label }),
 )
 
+/** Panels that draw a time series, the only answer a Google Cloud PromQL source gives. */
+export const PROMQL_PANEL_TYPES: ReadonlySet<PanelType> = new Set(["line", "area", "bar", "stat", "gauge"])
+
 /**
  * The chartId written when a panel type needs one. Every widget kind that mounts
  * a `chartRegistry` component gets its canonical `query-builder-*` entry so the

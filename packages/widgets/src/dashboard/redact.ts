@@ -16,7 +16,13 @@
  * denylist would leak every future field by default, which is exactly the wrong
  * direction for a payload served without a session.
  */
-import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "./access"
+import {
+	dataSourceEndpoint,
+	dataSourcePromQl,
+	dataSourceQuerySet,
+	dataSourceRawSql,
+	dataSourceTransform,
+} from "./access"
 import type { DashboardVariable } from "./shared/variables"
 
 /**
@@ -30,7 +36,7 @@ import type { DashboardVariable } from "./shared/variables"
  * reveals a query.
  */
 export interface RedactedDataSource {
-	readonly kind: "query" | "raw_sql" | "route" | "static"
+	readonly kind: "query" | "raw_sql" | "route" | "static" | "promql"
 	readonly resultShape?: string
 	readonly transform?: unknown
 }
@@ -79,6 +85,11 @@ const redactDataSource = (dataSource: unknown): RedactedDataSource => {
 		// table names, filters, business logic — and a viewer needs none of it to
 		// render rows the server already computed.
 		return { kind: "raw_sql", ...transformField }
+	}
+
+	if (dataSourcePromQl(dataSource) !== null) {
+		// Drops `query`, `projects` and `legend`: the query and the org's project ids.
+		return { kind: "promql", ...transformField }
 	}
 
 	const querySet = dataSourceQuerySet(dataSource)

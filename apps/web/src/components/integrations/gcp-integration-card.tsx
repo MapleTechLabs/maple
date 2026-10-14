@@ -240,11 +240,13 @@ function ScriptDue({
 	connector,
 	needed,
 	nowMs,
+	metricsAvailable,
 	onRunScript,
 }: {
 	connector: V2GcpConnector
 	needed: "setup-pending" | "changes-pending"
 	nowMs: number
+	metricsAvailable: boolean
 	/** Absent for non-admins. */
 	onRunScript: (() => void) | null
 }) {
@@ -256,7 +258,7 @@ function ScriptDue({
 						? "Google Cloud has nothing of Maple's yet. Running the setup script takes about a minute."
 						: "The last run stopped part of the way. Run the script again: it continues where it stopped.",
 				]
-			: gcpPendingChanges(connector, nowMs)
+			: gcpPendingChanges(connector, nowMs, metricsAvailable)
 	return (
 		<Band
 			tone="warn"
@@ -287,12 +289,14 @@ function GcpConnection({
 	connector,
 	isAdmin,
 	nowMs,
+	metricsAvailable,
 	onConfigure,
 	onRemoved,
 }: {
 	connector: V2GcpConnector
 	isAdmin: boolean
 	nowMs: number
+	metricsAvailable: boolean
 	onConfigure: (stage: "choose" | "apply") => void
 	onRemoved: (removed: RemovedGcpConnector) => void
 }) {
@@ -330,7 +334,7 @@ function GcpConnection({
 	const log = gcpLogState(connector, nowMs)
 	const metrics = gcpMetricsState(connector, nowMs)
 	const resourcesError = metrics.kind === "receiving" ? metrics.resourcesError : null
-	const state = gcpConnectionState(connector, nowMs)
+	const state = gcpConnectionState(connector, nowMs, metricsAvailable)
 	const tone: Tone =
 		log.kind === "failing" || metrics.kind === "failing"
 			? "crit"
@@ -342,7 +346,7 @@ function GcpConnection({
 					? "neutral"
 					: "warn"
 	const onRunScript = isAdmin ? () => onConfigure("apply") : null
-	const needed = gcpScriptNeeded(connector, nowMs)
+	const needed = gcpScriptNeeded(connector, nowMs, metricsAvailable)
 	// The card has one filled button. The script being due takes it; else the first failure that
 	// another run repairs does.
 	const repairs = needed === null ? gcpRunAsked(connector, nowMs)[0] : undefined
@@ -388,7 +392,7 @@ function GcpConnection({
 						}
 					/>
 					<Status
-						name="Metrics"
+						name="Key metrics"
 						className="@5xl:w-84"
 						status={
 							metrics.kind === "off"
@@ -416,7 +420,13 @@ function GcpConnection({
 			</div>
 
 			{needed === null ? null : (
-				<ScriptDue connector={connector} needed={needed} nowMs={nowMs} onRunScript={onRunScript} />
+				<ScriptDue
+					connector={connector}
+					needed={needed}
+					nowMs={nowMs}
+					metricsAvailable={metricsAvailable}
+					onRunScript={onRunScript}
+				/>
 			)}
 			{log.kind === "failing" ? (
 				<Band tone="crit" run={rerun("logs")}>
@@ -537,7 +547,9 @@ export function GcpIntegrationCard() {
 	const connectors = status?.connectors ?? []
 	const metricsAvailable = status?.metrics_available === true
 
-	const settling = connectors.some((connector) => gcpConnectionState(connector, nowMs) !== "healthy")
+	const settling = connectors.some(
+		(connector) => gcpConnectionState(connector, nowMs, metricsAvailable) !== "healthy",
+	)
 	useIntervalRefresh(refreshStatus, {
 		intervalMs: settling ? GCP_SETTLING_REFRESH_MS : STEADY_REFRESH_MS,
 		enabled: connectors.length > 0,
@@ -621,7 +633,7 @@ export function GcpIntegrationCard() {
 						<IntegrationEmptyFeature
 							label="Metrics"
 							title="Workloads, no agents"
-							description="Cloud Run, GKE, Compute Engine, Cloud SQL and more, read every 5 minutes."
+							description="Query any metric live, and keep key ones from Cloud Run, GKE, Cloud SQL and more every 5 minutes."
 						/>
 						<IntegrationEmptyFeature
 							label="Access"
@@ -659,8 +671,8 @@ export function GcpIntegrationCard() {
 	// Worst first: what needs its admin is at the top, however many connections there are.
 	const ordered = connectors.toSorted(
 		(a, b) =>
-			GCP_STATE_ORDER.indexOf(gcpConnectionState(a, nowMs)) -
-			GCP_STATE_ORDER.indexOf(gcpConnectionState(b, nowMs)),
+			GCP_STATE_ORDER.indexOf(gcpConnectionState(a, nowMs, metricsAvailable)) -
+			GCP_STATE_ORDER.indexOf(gcpConnectionState(b, nowMs, metricsAvailable)),
 	)
 
 	return (
@@ -685,6 +697,7 @@ export function GcpIntegrationCard() {
 						connector={connector}
 						isAdmin={isAdmin}
 						nowMs={nowMs}
+						metricsAvailable={metricsAvailable}
 						onConfigure={(stage) => setTarget({ kind: "connection", id: connector.id, stage })}
 						onRemoved={(entry) => setRemoved([...removed, entry])}
 					/>

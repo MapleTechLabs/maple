@@ -60,6 +60,7 @@ export type DataSourceEndpoint =
 	| "custom_query_builder_breakdown"
 	| "custom_query_builder_list"
 	| "raw_sql_chart"
+	| "gcp_promql"
 	| "product_events_funnel"
 	| "product_events_paths"
 	| "markdown_static"
@@ -128,7 +129,8 @@ type WidgetErrorKind = "decode" | "runtime" | "range" | "config" | "empty"
 export type WidgetDataState =
 	| { status: "loading" }
 	| { status: "error"; title?: string; message?: string; kind?: WidgetErrorKind }
-	| { status: "ready"; data: unknown }
+	/** `notice`: a one-line caveat drawn under ready data, e.g. a partial answer. */
+	| { status: "ready"; data: unknown; notice?: string }
 
 // `timeRange` is re-typed for the same reason `Dashboard["timeRange"]` is: the
 // schema brands its ISO strings, and every producer in the UI (the time-range

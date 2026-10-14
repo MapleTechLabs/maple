@@ -22,7 +22,7 @@ import { useDashboardTimeRange } from "@/components/dashboard-builder/dashboard-
 import { resolveTimeRange } from "@/atoms/dashboard-time-range-atoms"
 import { WidgetBuilderForm } from "@/atoms/widget-query-builder-atoms"
 import { useAtom } from "@/lib/effect-atom"
-import { PANEL_TYPES, fromPanelType, toPanelType } from "@/lib/query-builder/panel-types"
+import { PANEL_TYPES, PROMQL_PANEL_TYPES, fromPanelType, toPanelType } from "@/lib/query-builder/panel-types"
 import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import {
 	STAT_AGGREGATES,
@@ -42,8 +42,8 @@ import {
 
 export type LegendPosition = "bottom" | "right" | "hidden"
 
-/** Raw SQL mode hides settings that are built from query-builder state. */
-type SourceMode = "builder" | "rawSql"
+/** Raw SQL and PromQL modes hide settings that are built from query-builder state. */
+export type SourceMode = "builder" | "rawSql" | "promql"
 
 const SourceModeContext = createContext<SourceMode>("builder")
 
@@ -162,14 +162,18 @@ function Description() {
 }
 
 function TypePicker() {
-	const { state, set } = useSettings()
+	const { state, sourceMode, set } = useSettings()
 	const panelType = toPanelType(state.visualization, state.chartId)
 	return (
 		<RailSetting label="Type">
 			{/* Three columns, not four: "Histogram" overflows a quarter of the
 			    272px rail and collides with its neighbour. */}
 			<SegmentedSelect
-				options={PANEL_TYPES}
+				options={
+					sourceMode === "promql"
+						? PANEL_TYPES.filter((option) => PROMQL_PANEL_TYPES.has(option.value))
+						: PANEL_TYPES
+				}
 				value={panelType}
 				onChange={(next) => set(fromPanelType(next, state.chartId))}
 				size="sm"

@@ -129,7 +129,7 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 
-	it.effect("requires one capability to stay on and refuses metrics without a Google identity", () => {
+	it.effect("without a Google identity, refuses key metrics and a connection that forwards no logs", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
@@ -154,7 +154,7 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("switches capabilities, and the scripts follow the stored flags", () => {
+	it.effect("switches capabilities, and the setup script follows log forwarding alone", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
@@ -183,6 +183,20 @@ describe("GcpConnectorService", () => {
 			})
 			assert.deepStrictEqual(logsOnly, { ...connector, metricsEnabled: false })
 			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [logsOnly])
+			// The key-metrics switch is Maple's alone: the reader stays for live queries.
+			const keyMetricsOff = yield* gcp.scripts(orgId, connector.id, scriptOptions)
+			assert.include(keyMetricsOff.setupScript, `MAPLE_SERVICE_ACCOUNT='${MAPLE_ACCOUNT}'`)
+			assert.notInclude(keyMetricsOff.setupScript, "service-accounts delete")
+
+			// Both off is a connection for live queries only.
+			const liveOnly = yield* gcp.update(orgId, connector.id, { logsEnabled: false })
+			assert.deepStrictEqual(liveOnly, { ...connector, logsEnabled: false, metricsEnabled: false })
+			const created = yield* gcp.create(
+				orgId,
+				userId,
+				projectScope("acme-prod", { logsEnabled: false, metricsEnabled: false }),
+			)
+			assert.deepStrictEqual([created.logsEnabled, created.metricsEnabled], [false, false])
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 

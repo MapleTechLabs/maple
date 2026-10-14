@@ -1,11 +1,13 @@
 import {
 	dataSourceEndpoint,
+	dataSourcePromQl,
 	dataSourceQuerySet,
 	dataSourceRawSql,
 	dataSourceRouteParams,
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
 } from "./access"
+import { GCP_PROMQL_ENDPOINT } from "./legacy-endpoints"
 
 /**
  * A stored data source lowered to "which endpoint, with which params".
@@ -54,6 +56,9 @@ export function toWidgetRequest(dataSource: unknown): WidgetRequest | null {
 			},
 		}
 	}
+
+	const promQl = dataSourcePromQl(dataSource)
+	if (promQl !== null) return { endpoint: GCP_PROMQL_ENDPOINT, params: { ...promQl } }
 
 	const querySet = dataSourceQuerySet(dataSource)
 	if (querySet !== null) {

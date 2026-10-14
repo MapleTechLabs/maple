@@ -282,7 +282,7 @@ unbind() {
 // APIs in the host project. Cloud Resource Manager is what gcloud reads projects and grants
 // roles through.
 const LOG_APIS = ["pubsub.googleapis.com", "logging.googleapis.com", "cloudresourcemanager.googleapis.com"]
-const METRIC_APIS = [
+const READER_APIS = [
 	"monitoring.googleapis.com",
 	"cloudasset.googleapis.com",
 	"iam.googleapis.com",
@@ -417,7 +417,8 @@ ${
 	checks.billing
 		? `case "$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)" in
   True) ok "Billing is enabled" ;;
-  False) stop "Project $PROJECT_ID has no billing account." "Cloud Monitoring only answers for projects with billing. Link one at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID" ;;
+  # Only Maple's reads need billing, and Maple explains a refused read: the rest is set up anyway.
+  False) note "Billing is off in project $PROJECT_ID: live queries and key metrics stay unavailable until a billing account is linked at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID. The rest is set up regardless." ;;
   *) note "Couldn't tell whether billing is on. Cloud Monitoring only answers for projects with billing." ;;
 esac
 `
@@ -441,13 +442,13 @@ fi
 `
 }${checks.sink === undefined ? "" : sinkAndFilter(checks.sink)}`
 
-/** What the enabled sections need, asked of Google before the first change. */
+/** What the sections that set something up need, asked of Google before the first change. */
 const permissionChecks = (
 	scopeType: GcpScopeType,
 	logs: boolean,
-	metrics: boolean,
+	reader: boolean,
 ): AccessChecks["permissions"] => {
-	if (!logs && !metrics) return []
+	if (!logs && !reader) return []
 	const scope = SCOPES[scopeType]
 	const administrator = "or have an administrator run this script."
 	const host = [
@@ -467,7 +468,7 @@ const permissionChecks = (
 					"pubsub.subscriptions.update",
 				]
 			: []),
-		...(metrics
+		...(reader
 			? ["iam.serviceAccounts.get", "iam.serviceAccounts.create", "iam.serviceAccounts.setIamPolicy"]
 			: []),
 	]
@@ -476,14 +477,14 @@ const permissionChecks = (
 	if (scopeType === "project") {
 		return [["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, [...host, ...sink]]]
 	}
-	const roles = [...(logs ? ["Logs Configuration Writer"] : []), ...(metrics ? [scope.iamRole] : [])]
+	const roles = [...(logs ? ["Logs Configuration Writer"] : []), ...(reader ? [scope.iamRole] : [])]
 	return [
 		["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, host],
 		[
 			`${scopeType}s/$SCOPE_ID`,
 			"$SCOPE",
 			`Ask for ${roles.join(" and ")} there, ${administrator} If the ID looks wrong, check it with: ${scope.list}`,
-			[...sink, ...(metrics ? [`resourcemanager.${scopeType}s.setIamPolicy`] : [])],
+			[...sink, ...(reader ? [`resourcemanager.${scopeType}s.setIamPolicy`] : [])],
 		],
 	]
 }
@@ -622,9 +623,12 @@ ${notifies ? `notify "Maple notified" '"logs":false'\n` : ""}`
 
 const serviceAccountMember = '--member="serviceAccount:$SERVICE_ACCOUNT_EMAIL"'
 
-const metricsSetup = (scopeType: GcpScopeType): string => `
-# ---- Metrics and resources: on ----
-section "Metrics and resources"
+const readerSetup = (scopeType: GcpScopeType): string => `
+# ---- Read-only access ----
+# Every connection has it. Maple queries the scope's metrics live as this account and, while key
+# metrics are on in Maple, reads them every 5 minutes and lists resources every hour. A re-run
+# never removes it: only the cleanup script does.
+section "Read-only access"
 
 # APIs in ${scopeType === "project" ? "the project" : "the host project, the project Maple's reads are made through"}:
 #   monitoring.googleapis.com      Cloud Monitoring, to read metrics
@@ -633,11 +637,11 @@ section "Metrics and resources"
 #   iamcredentials.googleapis.com  short-lived tokens for that account; no key is ever created
 #   cloudresourcemanager.googleapis.com  what gcloud grants the roles below through
 apis "Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager" \\
-  ${METRIC_APIS.join(" ")}
+  ${READER_APIS.join(" ")}
 
-# A service account that an earlier run deleted (metrics switched off) fails this describe as
-# well and is created again. Google makes that a new account under the same name, with none of
-# the old one's roles, so every grant below is made for it.
+# A service account that was deleted (by a cleanup run, or by a setup run from when key metrics
+# were off) fails this describe as well and is created again. Google makes that a new account
+# under the same name, with none of the old one's roles, so every grant below is made for it.
 if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
   ok "Read-only service account already exists"
 else
@@ -648,8 +652,8 @@ else
 fi
 
 # Read-only roles on the ${scopeType}${scopeType === "project" ? "" : ", inherited by every project under it"}:
-#   roles/monitoring.viewer  read metrics (monitoring.timeSeries.list)
-#   roles/cloudasset.viewer  list resources (cloudasset.assets.searchAllResources)
+#   roles/monitoring.viewer  read metrics (monitoring.timeSeries.list), live or every 5 minutes
+#   roles/cloudasset.viewer  list resources and the scope's projects (cloudasset.assets.searchAllResources)
 # These are the narrowest predefined roles for the two calls. Both are read-only, and broader
 # than the calls: Cloud Asset Viewer can also read resource metadata and IAM policies.
 for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
@@ -670,12 +674,13 @@ grant "Couldn't let Maple use the service account." "$OWNER" \\
   --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator \\
   --condition=None
 ok "Maple allowed to read as that account"
+# "metrics" in a report is this account: in place (true) or removed (false).
 notify "Maple notified" '"metrics":true'
 `
 
-const metricsRemoval = (scopeType: GcpScopeType, notifies: boolean): string => `
-# ---- Metrics and resources: off. Remove what an earlier run created. ----
-section "Metrics and resources"
+const readerRemoval = (scopeType: GcpScopeType): string => `
+# ---- Read-only access: remove what a setup run created. ----
+section "Read-only access"
 # Looked up in the list: for 30 days after a service account is deleted, describing it answers
 # PERMISSION_DENIED even to an Owner, which would read as "may still be there" on every re-run.
 # A list that fails is read like a failed describe.
@@ -704,7 +709,7 @@ if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
 else
   ok "Nothing left to remove"
 fi
-${notifies ? `notify "Maple notified" '"metrics":false'\n` : ""}`
+`
 
 /**
  * The text that is copied: the script as a here-document for a child bash. Pasted at a prompt,
@@ -737,42 +742,35 @@ ${body}${marker}
 export interface GcpSetupScriptInput extends GcpScriptTarget {
 	/** The ingest gateway's receiver URL for this connector, including its secret. */
 	readonly pushEndpoint: string
-	/** Maple's own Google service account. Undefined: the metrics setup is left untouched. */
+	/** Maple's own Google service account. Undefined: the read-only access is left as it is. */
 	readonly mapleServiceAccountEmail: string | undefined
 	readonly logsEnabled: boolean
-	readonly metricsEnabled: boolean
 	/** Null: an existing sink keeps its filter, a new one forwards no application output. */
 	readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null
 }
 
 /**
  * The script an administrator pastes into Cloud Shell. Logs: a Log Router sink on the scope into
- * a Pub/Sub topic whose push subscription delivers each LogEntry to Maple. Metrics and resources:
- * a read-only service account Maple may impersonate. The script converges: what the connector has
- * enabled is created or updated, what it has not is removed, so a re-run applies an opt-out. Each
- * section ends by telling Maple what it applied.
+ * a Pub/Sub topic whose push subscription delivers each LogEntry to Maple; the script converges,
+ * so a re-run removes the sink once log forwarding is off. Every connection: a read-only service
+ * account Maple may impersonate, for live metric queries and, while `metrics_enabled`, the poller.
+ * Each section ends by telling Maple what it applied.
  */
 export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
-	const { scopeType, logsEnabled: logs } = input
+	const { scopeType, logsEnabled: logs, mapleServiceAccountEmail: maple } = input
 	const applicationLogs = input.applicationLogs ?? []
 	const leftOut = leftOutRuntimes(applicationLogs).map((runtime) => APPLICATION_LOGS[runtime].name)
-	// On for the connector while this deployment has lost its Google identity: nothing is set up
-	// and, above all, nothing a customer set up earlier is removed.
-	const metrics = !input.metricsEnabled
-		? "off"
-		: input.mapleServiceAccountEmail === undefined
-			? "lost"
-			: "on"
-	const state = (on: boolean) => (on ? "on" : "off, removing")
-	const metricsState =
-		metrics === "lost" ? "not available on this Maple deployment, left as is" : state(metrics === "on")
+	// Without a Google identity Maple can't read as the account: nothing is set up and, above all,
+	// nothing a customer set up earlier is removed.
+	const reader = maple !== undefined
+	const readerState = reader ? "on" : "not available on this Maple deployment, left as is"
 	return forPaste(
 		"MAPLE_SETUP_SCRIPT",
 		`#!/usr/bin/env bash
 # Maple setup for Google Cloud ${scopeType} ${input.scopeId}
-#   Log forwarding:        ${logs ? "on" : "off"}
-#   Metrics and resources: ${metrics === "lost" ? metricsState : metrics}
-# Safe to run again: it sets up what is on and removes what is off.
+#   Log forwarding:   ${logs ? "on" : "off"}
+#   Read-only access: ${readerState}
+# Safe to run again: it sets up what is on and removes log forwarding when it is off.
 # Keep it private: PUSH_ENDPOINT contains this connection's secret.
 set -euo pipefail
 # gcloud would log every argument, the secret too, and the access token to ~/.config/gcloud/logs.
@@ -803,9 +801,7 @@ LOG_FILTER=${sh(gcpLogFilter(applicationLogs))}
 		: ""
 }${variables(input, [
 			`PUSH_ENDPOINT=${sh(input.pushEndpoint)}`,
-			...(input.mapleServiceAccountEmail === undefined || metrics !== "on"
-				? []
-				: [`MAPLE_SERVICE_ACCOUNT=${sh(input.mapleServiceAccountEmail)}`]),
+			...(maple === undefined ? [] : [`MAPLE_SERVICE_ACCOUNT=${sh(maple)}`]),
 		])}SINK_CREATED=0
 FILTER_REPLACED=0
 ACCOUNT_CREATED=0
@@ -843,22 +839,16 @@ apis() {
   fi
   ok "APIs enabled ($names)"
 }
-${logs || metrics === "on" ? GRANT : ""}${logs && metrics === "on" ? "" : REMOVAL_HELPERS}
+${logs || reader ? GRANT : ""}${logs ? "" : REMOVAL_HELPERS}
 printf 'Maple setup for %s\\n' "$SCOPE"
-printf '  Log forwarding          %s\\n  Metrics and resources   %s\\n' ${sh(state(logs))} ${sh(metricsState)}
+printf '  Log forwarding     %s\\n  Read-only access   %s\\n' ${sh(logs ? "on" : "off, removing")} ${sh(readerState)}
 ${access(scopeType, {
-	apis: [...new Set([...(logs ? LOG_APIS : []), ...(metrics === "on" ? METRIC_APIS : [])])],
+	apis: [...new Set([...(logs ? LOG_APIS : []), ...(reader ? READER_APIS : [])])],
 	sink: logs ? SCOPES[scopeType].sink : undefined,
-	scopeMustOpen: metrics === "on",
-	billing: metrics === "on",
-	permissions: permissionChecks(scopeType, logs, metrics === "on"),
-})}${logs ? logsSetup(scopeType) : logsRemoval(scopeType, true)}${
-			metrics === "on"
-				? metricsSetup(scopeType)
-				: metrics === "off"
-					? metricsRemoval(scopeType, true)
-					: ""
-		}
+	scopeMustOpen: reader,
+	billing: reader,
+	permissions: permissionChecks(scopeType, logs, reader),
+})}${logs ? logsSetup(scopeType) : logsRemoval(scopeType, true)}${reader ? readerSetup(scopeType) : ""}
 if [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED$FILTER_REPLACED" = 0000 ]; then
   printf '\\nDone. Everything is in place.\\n'
 elif [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED" = 000 ]; then
@@ -873,7 +863,7 @@ if [ "$SINK_CREATED" = 1 ]; then
   printf '  Logs:    a new sink can take about 10 minutes to start forwarding. What is logged before\\n'
   printf '           it does is not forwarded later.\\n'
 fi
-if [ "$ACCOUNT_CREATED" = 1 ]; then printf '  Metrics: the first read lands within about 10 minutes.\\n'; fi
+if [ "$ACCOUNT_CREATED" = 1 ]; then printf '  Metrics: Maple can query them within a few minutes.\\n'; fi
 `,
 	)
 }
@@ -901,7 +891,7 @@ ${output(
 	"Cleanup interrupted. Paste the script again: it continues where it stopped.",
 )}${REMOVAL_HELPERS}
 printf 'Maple cleanup for %s\\n' "$SCOPE"
-${access(input.scopeType, { apis: [], sink: undefined, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${metricsRemoval(input.scopeType, false)}${
+${access(input.scopeType, { apis: [], sink: undefined, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${readerRemoval(input.scopeType)}${
 			input.pushEndpoint === undefined
 				? ""
 				: `

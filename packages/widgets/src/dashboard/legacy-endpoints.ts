@@ -53,3 +53,6 @@ export const RAW_SQL_ENDPOINT = "raw_sql_chart"
  * encoder, and the web registry that stops needing a server function for it).
  */
 export const MARKDOWN_STATIC_ENDPOINT = "markdown_static"
+
+/** The transport name of a `kind: "promql"` source: a live Google Cloud PromQL range query. */
+export const GCP_PROMQL_ENDPOINT = "gcp_promql"
