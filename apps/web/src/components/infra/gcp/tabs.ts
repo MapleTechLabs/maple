@@ -316,16 +316,6 @@ export const gcpWorkloadTone = (workload: GcpWorkload): ErrorRateLevel =>
 			? "warn"
 			: "neutral"
 
-export const GCP_SCOPES = ["saturated", "elevated", "erroring"] as const
-export type GcpScope = (typeof GCP_SCOPES)[number]
-
-export const gcpInScope = (workload: GcpWorkload, scope: GcpScope): boolean =>
-	scope === "saturated"
-		? workload.saturation === "crit"
-		: scope === "elevated"
-			? workload.saturation === "warn"
-			: workload.errors !== "neutral"
-
 const identityValue = (
 	service: GcpInfraServiceId,
 	keys: ReadonlyArray<string>,

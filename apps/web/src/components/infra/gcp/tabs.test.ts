@@ -5,11 +5,9 @@ import { GCP_ASSET_TYPES } from "@maple/domain/gcp-metrics"
 import {
 	GCP_INFRA_COLUMNS,
 	GCP_NAME_SORT,
-	GCP_SCOPES,
 	formatGcpValue,
 	gcpAssetTypeLabel,
 	gcpHasRegion,
-	gcpInScope,
 	gcpInfraNotice,
 	gcpInfraSetupPending,
 	gcpInfraTabs,
@@ -179,13 +177,8 @@ describe("workload health", () => {
 		expect(service(1, 1)).toMatchObject({ values: expect.arrayContaining([0.5]), errors: "neutral" })
 	})
 
-	it("puts a workload in every scope it belongs to, and tones it by the worse signal", () => {
-		const scopes = (workload: ReturnType<typeof service>) =>
-			GCP_SCOPES.filter((scope) => gcpInScope(workload, scope))
-		expect(scopes(database(0.95, 0.1))).toEqual(["saturated"])
-		expect(scopes(database(0.7, 0.1))).toEqual(["elevated"])
-		expect(scopes(service(900, 100))).toEqual(["erroring"])
-		expect(scopes(service(1000, 0))).toEqual([])
+	it("tones a workload by the worse of its saturation and error rate", () => {
+		expect(gcpWorkloadTone(database(0.95, 0.1))).toBe("crit")
 		expect(gcpWorkloadTone(database(0.7, 0.1))).toBe("warn")
 		expect(gcpWorkloadTone(service(900, 100))).toBe("crit")
 		expect(gcpWorkloadTone(service(1000, 0))).toBe("neutral")

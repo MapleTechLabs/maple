@@ -11,25 +11,15 @@ import { Spinner } from "@maple/ui/components/ui/spinner"
 
 import { PageHero } from "@/components/common/page-hero"
 import { ResultView } from "@/components/common/result-view"
-import {
-	UnderlineTabCount,
-	UnderlineTabStrip,
-	underlineTabClass,
-} from "@/components/common/underline-link-tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { CircleInfoIcon, CircleWarningIcon, GoogleCloudIcon } from "@/components/icons"
 import { GcpResources } from "@/components/infra/gcp/gcp-resources"
-import {
-	GcpServiceTable,
-	GcpServiceTableLoading,
-	GcpSummaryBand,
-	GcpSummaryBandLoading,
-} from "@/components/infra/gcp/gcp-service-table"
+import { GcpServiceTable, GcpServiceTableLoading } from "@/components/infra/gcp/gcp-service-table"
 import {
 	GCP_INFRA_TABS,
 	GCP_RESOURCES_TAB,
 	NO_GCP_FLEET,
 	gcpFleet,
-	gcpInScope,
 	gcpInfraNotice,
 	gcpInfraSetupPending,
 	gcpInfraTabs,
@@ -39,7 +29,6 @@ import {
 	type GcpInfraNotice,
 	type GcpInfraTab,
 } from "@/components/infra/gcp/tabs"
-import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
 import { IntegrationNotConnected } from "@/components/infra/primitives/integration-not-connected"
 import { gcpMetricsState } from "@/components/integrations/gcp-connector-state"
 import { GcpMessage } from "@/components/integrations/gcp-integration-card"
@@ -62,12 +51,10 @@ import { gcpInfraFleetResultAtom } from "@/lib/services/atoms/warehouse-query-at
 const gcpSearchSchema = Schema.Struct({
 	// A plain string: a stale or mistyped link falls back to the first tab instead of the error page.
 	tab: Schema.optional(Schema.String),
-	/** Every tab: the project. Service tabs: the region, a name search and a health scope. */
+	/** Every tab: the project. Service tabs: the region and a name search. */
 	project: Schema.optional(Schema.String),
 	region: Schema.optional(Schema.String),
 	q: Schema.optional(Schema.String),
-	// Spelled out, as on the sibling pages: importing the list would put the tab model in the startup bundle.
-	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "erroring"])),
 	/** Resources tab: the asset type. */
 	type: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
@@ -205,7 +192,7 @@ function GcpInfra({
 	endTime: string
 	onSearchChange: (patch: Partial<GcpSearchParams>) => void
 }) {
-	// Every reporting service at once: the band counts them all, and a tab switch reads nothing.
+	// Every reporting service at once: a tab switch reads nothing.
 	const fleetAtom = gcpInfraFleetResultAtom({ data: { startTime, endTime } })
 	const fleetResult = useRefreshableAtomValue(fleetAtom)
 	const refreshFleet = useAtomRefresh(fleetAtom)
@@ -254,8 +241,6 @@ function GcpInfra({
 		),
 	}))
 	const timeSearch = pickTimeRangeSearch(search)
-	const activeScope = search.scope
-	const unread = fleet.filter((entry) => entry.failed)
 
 	// Metrics switched off, and nothing collected before in this range.
 	if (connectors.length === 0 && Result.isSuccess(fleetResult) && reporting.length === 0) {
@@ -276,66 +261,30 @@ function GcpInfra({
 			errorTitle="Failed to load Google Cloud workloads"
 			onRetry={refreshFleet}
 			loading={
-				<div className="space-y-6">
-					<GcpSummaryBandLoading className={FLEET_BAND_BOXED} />
-					<GcpServiceTableLoading
-						service={
-							requested === undefined || requested === GCP_RESOURCES_TAB
-								? "cloudRun"
-								: requested
-						}
-					/>
-				</div>
+				<GcpServiceTableLoading
+					service={
+						requested === undefined || requested === GCP_RESOURCES_TAB ? "cloudRun" : requested
+					}
+				/>
 			}
 		>
 			{(_, { waiting: refreshing }) => (
 				<div className="space-y-6">
 					{notice === null ? null : <GcpNotice notice={notice} />}
-					{reporting.length === 0 ? null : (
-						<GcpSummaryBand
-							workloads={inPlace.flatMap((entry) => entry.workloads)}
-							activeScope={search.scope}
-							onScopeChange={(scope) => onSearchChange({ scope })}
-							waiting={refreshing}
-							className={FLEET_BAND_BOXED}
-						/>
-					)}
-					{/* A service whose read failed has no workloads in the band: its count is unknown, not zero. */}
-					{unread.length === 0 ? null : (
-						<p className="text-xs text-severity-warn">
-							{unread.map((entry) => GCP_INFRA_SERVICES[entry.service].title).join(", ")}{" "}
-							metrics could not be read, so the band leaves{" "}
-							{unread.length === 1 ? "it" : "them"} out. Reload to try again.
-						</p>
-					)}
-					{/* Below the band, which counts every tab. The strip scrolls sideways on a phone. */}
+					{/* The strip scrolls sideways on a phone. */}
 					<UnderlineTabStrip navigation label="Google Cloud services" bleed={false}>
 						{tabs.map((candidate) => (
 							<Link
 								key={candidate}
 								to="/infra/gcp"
-								// The place and scope carry over; a name search and the asset type do not.
-								search={{ ...timeSearch, ...place, scope: activeScope, tab: candidate }}
+								// The place carries over; a name search and the asset type do not.
+								search={{ ...timeSearch, ...place, tab: candidate }}
 								aria-current={candidate === tab ? "page" : undefined}
 								className={underlineTabClass(candidate === tab)}
 							>
 								{candidate === GCP_RESOURCES_TAB
 									? "Resources"
 									: GCP_INFRA_SERVICES[candidate].title}
-								{/* With a band cell active: how many of its workloads each tab holds. */}
-								<UnderlineTabCount
-									count={
-										activeScope === undefined ||
-										candidate === GCP_RESOURCES_TAB ||
-										unread.some((entry) => entry.service === candidate)
-											? undefined
-											: (
-													inPlace.find((entry) => entry.service === candidate)
-														?.workloads ?? []
-												).filter((workload) => gcpInScope(workload, activeScope))
-													.length
-									}
-								/>
 							</Link>
 						))}
 					</UnderlineTabStrip>
@@ -355,7 +304,6 @@ function GcpInfra({
 							truncated={fleet.some((entry) => entry.service === tab && entry.truncated)}
 							failed={fleet.some((entry) => entry.service === tab && entry.failed)}
 							query={search.q ?? ""}
-							scope={search.scope}
 							place={place}
 							projects={options(places.map((place) => place.project))}
 							regions={options(places.map((place) => place.region))}

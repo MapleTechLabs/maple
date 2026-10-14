@@ -5,7 +5,6 @@ import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-in
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { countLabel } from "@maple/ui/lib/format"
-import { TONE_FILL } from "@maple/ui/lib/tone"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -15,7 +14,6 @@ import { SearchToolbar } from "@/components/common/search-toolbar"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useSortState } from "@/hooks/use-table-sort"
 
-import { FleetBand, FleetBandLoading } from "../primitives/fleet-band"
 import { MetaLine } from "../primitives/meta-line"
 import { BAR_VALUE_TONE } from "../severity-tokens"
 import { FilterSelect } from "./gcp-resources"
@@ -24,86 +22,16 @@ import {
 	GCP_NAME_SORT,
 	formatGcpValue,
 	gcpHasRegion,
-	gcpInScope,
 	gcpWorkloadName,
 	gcpWorkloadNoun,
 	gcpWorkloadSearch,
-	gcpWorkloadTone,
 	sortGcpWorkloads,
 	type GcpColumn,
-	type GcpScope,
 	type GcpWorkload,
 } from "./tabs"
 
 const NAME_WIDTH = "w-0 flex-1 min-w-[240px]"
 const VALUE_WIDTH = "w-[104px]"
-
-/** Every service's workloads by health; each cell narrows the tables to its workloads. */
-export function GcpSummaryBand({
-	workloads,
-	activeScope,
-	onScopeChange,
-	waiting,
-	className,
-}: {
-	workloads: ReadonlyArray<GcpWorkload>
-	activeScope: GcpScope | undefined
-	onScopeChange: (scope: GcpScope | undefined) => void
-	waiting?: boolean
-	className?: string
-}) {
-	const inScope = (scope: GcpScope) => workloads.filter((workload) => gcpInScope(workload, scope))
-	const erroring = inScope("erroring")
-	const toned = (tone: "crit" | "warn") =>
-		workloads.filter((workload) => gcpWorkloadTone(workload) === tone).length
-	return (
-		<FleetBand<GcpScope>
-			total={workloads.length}
-			noun="workload"
-			caption="share of workloads by average use of a limit and by error rate"
-			segments={[
-				{
-					key: "healthy",
-					count: workloads.length - toned("warn") - toned("crit"),
-					className: "bg-muted-foreground/35",
-				},
-				{ key: "elevated", count: toned("warn"), className: TONE_FILL.warn },
-				{ key: "critical", count: toned("crit"), className: TONE_FILL.crit },
-			]}
-			cells={[
-				{
-					scope: "saturated",
-					label: "Saturated",
-					hint: "≥90%",
-					value: inScope("saturated").length,
-					tone: "crit",
-				},
-				{
-					scope: "elevated",
-					label: "Elevated",
-					hint: "≥60%",
-					value: inScope("elevated").length,
-					tone: "warn",
-				},
-				{
-					scope: "erroring",
-					label: "Erroring",
-					hint: "≥1% failed",
-					value: erroring.length,
-					tone: erroring.some((workload) => workload.errors === "crit") ? "crit" : "warn",
-				},
-			]}
-			activeScope={activeScope}
-			onScopeChange={onScopeChange}
-			waiting={waiting}
-			className={className}
-		/>
-	)
-}
-
-export function GcpSummaryBandLoading({ className }: { className?: string }) {
-	return <FleetBandLoading cells={3} className={className} />
-}
 
 /** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
 function Columns({ service, sort }: { service: GcpInfraServiceId; sort?: SortControls<string> }) {
@@ -163,8 +91,8 @@ interface GcpPlaceFilter {
 }
 
 /**
- * One service's workloads over the window: searchable, filtered by project, region and health
- * scope, sortable by any column. A row opens the workload's page.
+ * One service's workloads over the window: searchable, filtered by project and region,
+ * sortable by any column. A row opens the workload's page.
  */
 export function GcpServiceTable({
 	service,
@@ -172,7 +100,6 @@ export function GcpServiceTable({
 	truncated,
 	failed,
 	query,
-	scope,
 	place,
 	projects,
 	regions,
@@ -189,7 +116,6 @@ export function GcpServiceTable({
 	/** The tab's query failed. */
 	failed: boolean
 	query: string
-	scope: GcpScope | undefined
 	place: GcpPlaceFilter
 	/** The projects and regions of every service's workloads: the filters' options. */
 	projects: ReadonlyArray<string>
@@ -210,13 +136,11 @@ export function GcpServiceTable({
 	const needle = query.trim().toLowerCase()
 	const shown = useMemo(() => {
 		const matching = workloads.filter(
-			(workload) =>
-				(scope === undefined || gcpInScope(workload, scope)) &&
-				(needle === "" || workload.keys.join(" ").toLowerCase().includes(needle)),
+			(workload) => needle === "" || workload.keys.join(" ").toLowerCase().includes(needle),
 		)
 		return sortGcpWorkloads(service, matching, { key: sortKey ?? GCP_NAME_SORT, dir: sortDir })
-	}, [service, workloads, scope, needle, sortKey, sortDir])
-	// The service has workloads (or a place filter hides them), and the search, filters or scope left none.
+	}, [service, workloads, needle, sortKey, sortDir])
+	// The service has workloads (or a place filter hides them), and the search or filters left none.
 	const filteredOut =
 		shown.length === 0 &&
 		!failed &&
@@ -255,10 +179,7 @@ export function GcpServiceTable({
 				) : null}
 			</SearchToolbar>
 			{filteredOut ? (
-				<FilteredEmpty
-					noun={`${noun}s`}
-					description="Clear the search, filters or scope to see them all."
-				/>
+				<FilteredEmpty noun={`${noun}s`} description="Clear the search or filters to see them all." />
 			) : (
 				<DataTable.Root ariaLabel={title} waiting={waiting}>
 					<DataTable.Head>
