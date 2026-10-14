@@ -162,19 +162,20 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 			)
 
 		// One placed invocation per lane, so a stalled lane cannot hold up the others.
+		// Answers whether the lane still has to run inline.
 		const dispatchLane = (cron: string, lane: string, env: Record<string, unknown>) =>
 			dispatchTick(cron, lane, env).pipe(
 				Effect.andThen(Effect.annotateCurrentSpan("maple.alerting.dispatch", "placed")),
+				Effect.as(false),
 				Effect.catchTags({
 					"@maple/alerting/errors/TickDispatchUnavailable": () =>
-						runTick(cron, lane, env).pipe(
-							Effect.annotateSpans("maple.alerting.dispatch", "inline"),
-						),
+						Effect.annotateCurrentSpan("maple.alerting.dispatch", "inline").pipe(Effect.as(true)),
 					// A failed hop is not retried inline: the placed handler may have run part of the lane.
 					"@maple/alerting/errors/TickDispatchError": (error) =>
 						Effect.logError("Placed alerting tick failed", error).pipe(
 							Effect.annotateLogs({ "maple.alerting.cron": cron, "maple.alerting.lane": lane }),
 							Effect.andThen(Effect.annotateCurrentSpan("maple.alerting.dispatch", "failed")),
+							Effect.as(false),
 						),
 				}),
 				Effect.withSpan("alerting.lane", {
@@ -203,8 +204,16 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 						Effect.annotateLogs({ cron: controller.cron }),
 					)
 				}
-				yield* Effect.forEach(schedule.lanes, (lane) => dispatchLane(controller.cron, lane, env), {
-					concurrency: "unbounded",
+				const inline = yield* Effect.filter(
+					schedule.lanes,
+					(lane) => dispatchLane(controller.cron, lane, env),
+					{
+						concurrency: "unbounded",
+					},
+				)
+				// One at a time: inline lanes share this invocation's six outbound
+				// connections, and each lane's pool may open up to five.
+				yield* Effect.forEach(inline, (lane) => runTick(controller.cron, lane, env), {
 					discard: true,
 				})
 			})

@@ -165,10 +165,14 @@ class AlertRuleClaimLostError extends Schema.TaggedError<AlertRuleClaimLostError
 	},
 ) {}
 
-/** The claim a tick holds on a rule: its `alert_rule_claims.last_scheduled_at`. */
+/**
+ * The claim a tick holds on a rule: its `alert_rule_claims.last_scheduled_at`,
+ * plus the `alert_rules.updated_at` of the config the tick is evaluating.
+ */
 interface RuleClaim {
 	readonly ruleId: AlertRuleId
 	readonly claimedAt: number
+	readonly ruleUpdatedAt: number
 }
 
 /** One delivery row an incident event will queue, built before the write that queues it. */
@@ -561,6 +565,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									if (currentClaimAt !== claim.claimedAt) {
 										return yield* new AlertRuleClaimLostError({
 											message: "Alert rule was re-claimed by a later scheduler tick",
+											ruleId: claim.ruleId,
+											claimedAt: claim.claimedAt,
+											currentClaimAt,
+										})
+									}
+									// The claim alone does not cover an edit: a tick holding a
+									// snapshot from before it can claim the rule afresh. Locked so
+									// an edit waits for this write rather than slipping past it.
+									const rule = yield* db.run(
+										PG.from(AlertRules)
+											.select("updatedAt")
+											.where(($) => [$.id.eq(claim.ruleId)])
+											.forUpdate(),
+									)
+									if (rule[0]?.updatedAt !== claim.ruleUpdatedAt) {
+										return yield* new AlertRuleClaimLostError({
+											message: "Alert rule was edited after this tick loaded it",
 											ruleId: claim.ruleId,
 											claimedAt: claim.claimedAt,
 											currentClaimAt,
@@ -2337,7 +2358,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// later tick re-claims the rule, the next write fails with
 				// AlertRuleClaimLostError and the rest of the rule is left to that tick.
 				// Slow notification reads happen before or after a write, never inside it.
-				const claim: RuleClaim = { ruleId: row.id, claimedAt: timestamp }
+				const claim: RuleClaim = {
+					ruleId: row.id,
+					claimedAt: timestamp,
+					ruleUpdatedAt: row.updatedAt,
+				}
 				const evaluateTransition = Effect.fnUntraced(function* () {
 					// Both reads come from the tick-head prefetch rather than a query per
 					// group. Safe because this function is the only writer of either key
@@ -3821,9 +3846,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Claims won but never started, released after the pool drains.
 				const unstartedClaims = yield* Ref.make(Chunk.empty<{ id: AlertRuleId; timestamp: number }>())
 				const evaluatedRules = yield* Ref.make(0)
-				// Orgs whose warehouse was down or hung on a rule this tick. Their other
-				// rules are skipped rather than evaluated: each would fail the same way
-				// after holding one of the five evaluation lanes until its timeout.
+				// Orgs whose warehouse was down (5xx or unreachable) on a rule this tick.
+				// Their other rules are skipped rather than evaluated: each would fail the
+				// same way while holding one of the five evaluation lanes. A timeout does
+				// not trip it: that may be one rule's query or the tick's own deadline.
 				const unavailableOrgs = yield* Ref.make(HashSet.empty<OrgId>())
 				const markOrgUnavailable = (orgId: OrgId) => Ref.update(unavailableOrgs, HashSet.add(orgId))
 
@@ -4008,38 +4034,28 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										),
 									),
 								onNone: () =>
-									// A timeout still counts against this rule (it may be its own
-									// query), but the org's later rules are spared the same wait.
-									(error._tag === "@maple/http/errors/QueryEngineTimeoutError"
-										? markOrgUnavailable(row.orgId)
-										: Effect.void
-									).pipe(
-										Effect.andThen(
-											recordEvaluationFailure(
-												row,
-												error,
-												error.error.code,
-												"pipeName" in error
-													? {
-															pipe: error.pipeName,
-															...(error._tag ===
-															"@maple/http/errors/WarehouseQuotaExceededError"
-																? {
-																		quotaSetting: error.setting,
-																	}
-																: undefined),
-															...(error._tag ===
-																"@maple/http/errors/WarehouseUpstreamError" ||
-															error._tag ===
-																"@maple/http/errors/WarehouseAuthError"
-																? {
-																		upstreamStatus: error.upstreamStatus,
-																	}
-																: undefined),
-														}
-													: undefined,
-											),
-										),
+									recordEvaluationFailure(
+										row,
+										error,
+										error.error.code,
+										"pipeName" in error
+											? {
+													pipe: error.pipeName,
+													...(error._tag ===
+													"@maple/http/errors/WarehouseQuotaExceededError"
+														? {
+																quotaSetting: error.setting,
+															}
+														: undefined),
+													...(error._tag ===
+														"@maple/http/errors/WarehouseUpstreamError" ||
+													error._tag === "@maple/http/errors/WarehouseAuthError"
+														? {
+																upstreamStatus: error.upstreamStatus,
+															}
+														: undefined),
+												}
+											: undefined,
 									),
 							}),
 						),

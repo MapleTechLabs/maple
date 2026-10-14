@@ -687,7 +687,10 @@ describe("AlertsService", () => {
 			yield* alerts.runSchedulerTick()
 
 			// The tick that would open the incident reads the warehouse after
-			// claiming the rule; the rule is disabled in between.
+			// claiming the rule; the rule is disabled in between. The claim is then
+			// put back at this tick's time, as a tick still holding the pre-edit
+			// snapshot would when it claims the rule afresh.
+			const tickAt = DEFAULT_CLOCK_EPOCH_MS + 60_000
 			beforeQuery = alerts
 				.updateRule(
 					orgId,
@@ -710,7 +713,19 @@ describe("AlertsService", () => {
 						destinationIds: [destination.id],
 					}),
 				)
-				.pipe(Effect.orDie, Effect.asVoid)
+				.pipe(
+					Effect.orDie,
+					Effect.andThen(
+						Effect.promise(() =>
+							executeSql(
+								testDb,
+								"insert into alert_rule_claims (rule_id, org_id, last_scheduled_at) values ($1, $2, $3) on conflict (rule_id) do update set last_scheduled_at = excluded.last_scheduled_at",
+								[rule.id, orgId, new Date(tickAt).toISOString()],
+							),
+						),
+					),
+					Effect.asVoid,
+				)
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
