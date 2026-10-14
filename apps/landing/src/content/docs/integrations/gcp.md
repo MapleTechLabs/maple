@@ -433,7 +433,7 @@ sum by (service_name) (rate({"run.googleapis.com/request_count", monitored_resou
 - A distribution metric is three series: `_bucket`, `_count` and `_sum`. For a percentile, use `histogram_quantile(0.95, sum by (le) (rate({"run.googleapis.com/request_latencies_bucket"}[5m])))`.
 - **Legend** names each series from its labels, for example `{{service_name}}`. Without one, a series is named after all its labels.
 
-Maple runs the query once per project and every series carries a `project_id` label, so an aggregation such as `sum` adds up within a project, never across projects. A query reads up to 20 projects: with more, list the projects to read in **Projects**. When some projects could not be read, the widget shows the rest and names the ones missing under the chart.
+Maple runs the query once per project and every series carries a `project_id` label, so an aggregation such as `sum` adds up within a project, never across projects. A query reads up to 20 projects: with more, list the projects to read in **Projects**. An answer holds up to 500 series across its projects; past that the widget asks you to aggregate with `sum by` or `avg by`, or to narrow the selector. When some projects could not be read, the widget shows the rest and names the ones missing under the chart.
 
 Data arrives in Cloud Monitoring within about 2 minutes. How far back a query reaches is Google's retention: 24 months for Compute Engine, GKE, Cloud SQL and a few other services, six weeks for most other Google Cloud metrics. See **Data retention** in [Cloud Monitoring quotas and limits](https://cloud.google.com/monitoring/quotas). A widget shared through a link runs its saved query; viewers can change the time range and dashboard variables, not the query.
 
