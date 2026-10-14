@@ -21,9 +21,10 @@ Known gaps (tell the user, don't try to fix):
 ## Step 0: Detect
 
 - `eve` version in `package.json` / lockfile.
-  - `>= 0.78`: this skill (written against 0.78.0).
-  - `0.62` to `0.77`: same file API, not exercised. Upgrade to latest first.
-  - `< 0.62`: telemetry lives in `agent/instrumentation.ts` (`defineInstrumentation({ setup })` calling `registerOTel`). Upgrade eve, then follow https://eve.dev/docs/observability/instrumentation-migration. A leftover `agent/instrumentation.ts` fails `eve build`.
+  - `>= 0.62`: this skill. Exercised on 0.62.0, 0.70.3, 0.72.1, 0.77.0 and 0.78.0 with the Step 2/3 files unchanged; every version produced complete sessions in Maple.
+  - `0.62` to `0.71`: each tool call is an `agent.action` span wrapping `execute_tool`. Maple shows the wrapper as a structure row and counts one tool call. Expected.
+  - `< 0.62`: telemetry lives in `agent/instrumentation.ts` (`defineInstrumentation({ setup })` calling `registerOTel`), and eve ignores `agent/instrumentation/` without an error: the Step 2 files export nothing (tested on 0.61.1). With `experimental: { instrumentationProviders: true }` in `agent.ts` they export, but the `exportPolicy` is ignored and every workflow span goes out. Don't use the flag: upgrade (`npm install eve@latest`), delete `agent/instrumentation.ts` (until then `eve build` fails with `Found removed instrumentation file`), remove the flag, then do Steps 2-3. Move every other exporter from the old `setup` into its own `otelIntegration({ traceExporter })` file; `serviceName` becomes `otel({ resource })`, `functionId` becomes `otel({ functionId })`, `events["step.started"]` runtime context becomes `otelIntegration({ runtimeContext })`. See https://eve.dev/docs/observability/instrumentation-migration.
+  - Tell the user: the old file recorded no content unless `recordInputs`/`recordOutputs` were set; after the upgrade, content is recorded during `eve dev` and for `public` conversations (Step 4). The first `eve dev` after the upgrade deletes the local `.eve/.workflow-data` (incompatible storage layout), so open local dev sessions are lost.
 - Node.js `>= 24` at runtime; eve enforces it. bun or pnpm as the package manager is fine.
 - Layout: one agent in `agent/`, or a workspace with `agents/<name>/agent/`. In a workspace add the files to each member's `agent/instrumentation/` (not exercised; run Step 7 per member).
 - Existing files in `agent/instrumentation/`:

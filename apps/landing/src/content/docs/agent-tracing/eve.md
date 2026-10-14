@@ -11,7 +11,7 @@ eve traces every turn, model call, tool call and subagent itself. One file under
 
 Outside `eve dev`, eve only exports prompts, replies and tool payloads for conversations its channel classifies as `public`. A deployed agent can show complete sessions with an empty transcript until you [set the audience](#set-the-audience-to-get-a-transcript-in-production).
 
-You need `eve` 0.78 or newer and Node.js 24 or newer.
+You need `eve` 0.62 or newer and Node.js 24 or newer. On an older eve, [upgrade first](#upgrade-from-eve-061-or-older).
 
 ## Quick setup with a coding agent
 
@@ -62,8 +62,6 @@ export default mapleKey
 Set `MAPLE_INGEST_KEY` to your ingest key from **Settings → Ingestion**: in `.env.local` for local runs, and in your host's environment variables for deployments.
 
 Keep the `exportPolicy`. Without it eve also exports the spans of its workflow engine, which were 1,031 of the 1,060 spans in a six-message test conversation.
-
-An `agent/instrumentation.ts` left over from eve 0.61 or older fails the build. [Split it into files](https://eve.dev/docs/observability/instrumentation-migration) first.
 
 ## Name the service and environment
 
@@ -117,6 +115,31 @@ A `tracePolicy` in `otel()` can't widen this. It only narrows what the audience 
 Run `eve dev`, send two messages with one that calls a tool, then open **Agent Sessions** in Maple. You should see one session per eve session, titled with its first message, one turn per message, and a transcript with the prompts, replies and tool calls. Subagents show as their own lanes inside the turn that called them.
 
 Maple lists the framework as Unidentified for now. With a model called directly at its provider, cost shows as unpriced because eve doesn't report it.
+
+## Upgrade from eve 0.61 or older
+
+eve 0.61 and older read telemetry from a single `agent/instrumentation.ts` and ignore the `agent/instrumentation/` directory, so the files above export nothing and log no error. Upgrade eve first:
+
+```bash
+npm install eve@latest
+```
+
+Then move the old file over:
+
+1. Delete `agent/instrumentation.ts`. Until you do, `eve build` stops with `Found removed instrumentation file`.
+2. If `agent.ts` sets `experimental: { instrumentationProviders: true }`, remove it.
+3. Add the [Maple destination](#add-the-maple-destination) and the [shared settings file](#name-the-service-and-environment).
+4. Move every other exporter from the old `setup` into a file of its own:
+
+| In `agent/instrumentation.ts` | Now |
+| --- | --- |
+| `setup` calling `registerOTel({ traceExporter })` | One `otelIntegration({ traceExporter })` file per exporter |
+| `serviceName` | `otel({ resource: { "service.name": ... } })` |
+| `functionId` | `otel({ functionId })` |
+| `recordInputs`, `recordOutputs` | The [conversation's audience](#set-the-audience-to-get-a-transcript-in-production), narrowed per destination with an `exportPolicy` |
+| `events["step.started"]` returning `runtimeContext` | `otelIntegration({ runtimeContext })` |
+
+The old file recorded no content unless you set `recordInputs` and `recordOutputs`. After the upgrade, eve records content during `eve dev` and for `public` conversations.
 
 ## Troubleshooting
 
