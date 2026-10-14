@@ -29,6 +29,7 @@ const ExportedAttribute = Schema.Struct({
 })
 const ExportedSpan = Schema.Struct({
 	name: Schema.String,
+	kind: Schema.optionalKey(Schema.Finite),
 	status: Schema.Struct({ code: Schema.optionalKey(Schema.Finite) }),
 	attributes: Schema.Array(ExportedAttribute),
 	events: Schema.optionalKey(
@@ -36,6 +37,8 @@ const ExportedSpan = Schema.Struct({
 	),
 })
 type ExportedSpan = typeof ExportedSpan.Type
+/** OTLP `SPAN_KIND_SERVER`. Effect names server spans by method alone, so kind is what marks one. */
+const SERVER_KIND = 2
 const ExportedTraces = Schema.Struct({
 	resourceSpans: Schema.optionalKey(
 		Schema.Array(
@@ -79,7 +82,7 @@ const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSp
 		.filter((request) => request.url.endsWith("/v1/traces"))
 		.flatMap((request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [])
 		.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
-		.filter((span) => span.name.startsWith("http.server "))
+		.filter((span) => span.kind === SERVER_KIND)
 
 const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> =>
 	recorded
@@ -253,10 +256,17 @@ describe("the api Worker through alchemy's bridge", () => {
 				"/broken",
 				Effect.fail(new GraphBuildFailure({ message: "fixture" })),
 			)
+			// Forwarded paths count too; this one answers 503 because the fixture has no binding.
+			const forwarded = yield* event(
+				"POST",
+				"/mcp",
+				Effect.succeed(Effect.succeed(HttpServerResponse.text("ok"))),
+			)
 			assert.strictEqual(success.response.status, 200)
 			assert.strictEqual(failed.response.status, 504)
+			assert.strictEqual(forwarded.response.status, 503)
 			assert.strictEqual(success.response.headers.get("timing-allow-origin"), "*")
-			for (const result of [success, failed]) {
+			for (const result of [success, failed, forwarded]) {
 				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.request_ordinal"), "1")
 				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.age_ms"), "0")
 			}

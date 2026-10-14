@@ -2,6 +2,7 @@ import * as S from "@maple-dev/effect-orm/schema"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { latestSnapshotStatements } from "../generated/clickhouse-schema"
+import { clickHouseOnlyColumns } from "./clickhouse-only-columns"
 import * as Datasources from "../tinybird/datasources"
 import * as Materializations from "../tinybird/materializations"
 
@@ -74,7 +75,28 @@ describe("effect-orm DDL parity", () => {
 	const rendered = new Map(
 		S.renderSchema(Effect.runSync(S.entitiesOf(objects))).map((sql) => [nameOf(sql), normalize(sql)]),
 	)
-	const shipped = new Map(latestSnapshotStatements.map((sql) => [nameOf(sql), normalize(sql)]))
+	const shippedWithClickHouseOnly = new Map(
+		latestSnapshotStatements.map((sql) => [nameOf(sql), normalize(sql)]),
+	)
+	// The emitter appends ClickHouse-only columns that the shared definitions leave out.
+	const shipped = new Map(
+		[...shippedWithClickHouseOnly].map(([name, sql]) => [
+			name,
+			(clickHouseOnlyColumns.get(name) ?? []).reduce(
+				(acc, column) => acc.replace(`, ${column}`, ""),
+				sql,
+			),
+		]),
+	)
+
+	it("ships each ClickHouse-only column", () => {
+		for (const [name, columns] of clickHouseOnlyColumns) {
+			for (const column of columns) {
+				expect(shippedWithClickHouseOnly.get(name)).toContain(column)
+				expect(rendered.get(name)).not.toContain(column)
+			}
+		}
+	})
 
 	it("renders every object the emitter ships, and nothing else", () => {
 		expect([...rendered.keys()].sort()).toEqual([...shipped.keys()].sort())

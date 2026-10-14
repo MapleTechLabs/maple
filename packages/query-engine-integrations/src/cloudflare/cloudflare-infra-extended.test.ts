@@ -163,6 +163,7 @@ describe("CHNumber row-schema coercion (BYO-CH string-encoded aggregates)", () =
 		expect(
 			decodeFirst(compiled, {
 				serviceName: "cloudflare-queue/q-1",
+				accountId: "acct-1",
 				backlogMessages: "12.5",
 				backlogMessagesMax: "40",
 				backlogBytes: "2048",
@@ -170,6 +171,7 @@ describe("CHNumber row-schema coercion (BYO-CH string-encoded aggregates)", () =
 			}),
 		).toEqual({
 			serviceName: "cloudflare-queue/q-1",
+			accountId: "acct-1",
 			backlogMessages: 12.5,
 			backlogMessagesMax: 40,
 			backlogBytes: 2048,
@@ -182,10 +184,16 @@ describe("CHNumber row-schema coercion (BYO-CH string-encoded aggregates)", () =
 		expect(
 			decodeFirst(compiled, {
 				serviceName: "cloudflare-worker/do-worker",
+				accountId: "acct-1",
 				requests: "50000",
 				errors: "12",
 			}),
-		).toEqual({ serviceName: "cloudflare-worker/do-worker", requests: 50000, errors: 12 })
+		).toEqual({
+			serviceName: "cloudflare-worker/do-worker",
+			accountId: "acct-1",
+			requests: 50000,
+			errors: 12,
+		})
 	})
 
 	it("still accepts managed-Tinybird numeric aggregates (the union's other branch)", () => {
@@ -193,9 +201,15 @@ describe("CHNumber row-schema coercion (BYO-CH string-encoded aggregates)", () =
 		expect(
 			decodeFirst(compiled, {
 				serviceName: "cloudflare-worker/do-worker",
+				accountId: "acct-1",
 				requests: 50000,
 				errors: 12,
 			}),
-		).toEqual({ serviceName: "cloudflare-worker/do-worker", requests: 50000, errors: 12 })
+		).toEqual({
+			serviceName: "cloudflare-worker/do-worker",
+			accountId: "acct-1",
+			requests: 50000,
+			errors: 12,
+		})
 	})
 })

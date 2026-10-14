@@ -29,7 +29,7 @@ export class InboundHandler extends Context.Service<InboundHandler, InboundHandl
 	"@maple/chat-bot/InboundHandler",
 ) {
 	/** The handler this Worker runs: over the relay objects alchemy binds (`ConnectorRelayObject`). */
-	static readonly layer = (relays: ConnectorRelayClient): Layer.Layer<InboundHandler> =>
+	static readonly layerFromRelays = (relays: ConnectorRelayClient): Layer.Layer<InboundHandler> =>
 		Layer.succeed(
 			InboundHandler,
 			InboundHandler.of(

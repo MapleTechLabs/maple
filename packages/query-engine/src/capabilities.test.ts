@@ -3,6 +3,7 @@ import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
 	deriveWarehouseCapabilities,
+	hasWarehouseTable,
 	logBodySearchMode,
 } from "./capabilities"
 
@@ -20,6 +21,27 @@ const logsTextColumns = [
 ] as const
 
 describe("warehouse capabilities", () => {
+	it("marks an optional rollup absent only when the columns probe saw traces", () => {
+		const probe = (columns: ReadonlyArray<{ table: string; name: string }>) =>
+			deriveWarehouseCapabilities({ indexes: [], columns, optionalTables: ["trace_facets_hourly"] })
+
+		expect(hasWarehouseTable(probe([{ table: "traces", name: "TraceId" }]), "trace_facets_hourly")).toBe(
+			false,
+		)
+		expect(
+			hasWarehouseTable(
+				probe([
+					{ table: "traces", name: "TraceId" },
+					{ table: "trace_facets_hourly", name: "TraceCount" },
+				]),
+				"trace_facets_hourly",
+			),
+		).toBe(true)
+		// A denied or failed probe returns no rows and proves nothing.
+		expect(hasWarehouseTable(probe([]), "trace_facets_hourly")).toBe(true)
+		expect(hasWarehouseTable(baselineWarehouseCapabilities(), "trace_facets_hourly")).toBe(true)
+	})
+
 	it("uses the conservative scan baseline when metadata is unavailable", () => {
 		const capabilities = baselineWarehouseCapabilities()
 		expect(logBodySearchMode(capabilities)).toBe("scan")

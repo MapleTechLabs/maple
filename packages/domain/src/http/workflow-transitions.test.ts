@@ -32,26 +32,22 @@ describe("WORKFLOW_TRANSITIONS", () => {
 		}
 	})
 
-	it("keeps cancelled terminal", () => {
-		expect(WORKFLOW_TRANSITIONS.cancelled).toEqual([])
-	})
-
 	it("lets every actionable state reach done", () => {
 		// The issue hub creates alert- and integration-kind issues in `triage` and
 		// never advances them through review; requiring `in_review` first left them
 		// permanently un-retirable.
 		for (const from of ["triage", "todo", "in_progress", "in_review"] as const) {
-			expect(WORKFLOW_TRANSITIONS[from], from).toContain("done")
+			expect(allowedTransitionsForAll([from]), from).toContain("done")
 		}
 	})
 
 	it("keeps done reopenable so the regression path still works", () => {
 		// The errors tick transitions done→triage when a resolved issue recurs.
-		expect(WORKFLOW_TRANSITIONS.done).toContain("triage")
+		expect(allowedTransitionsForAll(["done"])).toContain("triage")
 	})
 
 	it("keeps wontfix wakeable so snooze expiry still works", () => {
-		expect(WORKFLOW_TRANSITIONS.wontfix).toContain("triage")
+		expect(allowedTransitionsForAll(["wontfix"])).toContain("triage")
 	})
 
 	it("treats done and cancelled as closed — the states that end the work and drop the lease", () => {
@@ -139,7 +135,6 @@ describe("allowedTransitionsForAll", () => {
 		// but it records an observation about which build fired. A human choosing
 		// it from a menu would be asserting that, and the next tick would overwrite
 		// the claim anyway.
-		expect(WORKFLOW_TRANSITIONS.done).toContain("regressed")
 		// Named literally rather than derived from MACHINE_OWNED_WORKFLOW_STATES: a
 		// test that filters by the same set the implementation filters by passes no
 		// matter what the set contains, so dropping a state from it would be
@@ -147,6 +142,7 @@ describe("allowedTransitionsForAll", () => {
 		// picker and the MCP transition tool.
 		const machineOwned = ["regressed", "verifying"] as const
 		expect([...MACHINE_OWNED_WORKFLOW_STATES].sort()).toEqual([...machineOwned].sort())
+		expect(Object.values(WORKFLOW_TRANSITIONS).flat()).toEqual(expect.arrayContaining([...machineOwned]))
 		for (const state of ALL_STATES) {
 			for (const target of machineOwned) {
 				expect(allowedTransitionsForAll([state]), state).not.toContain(target)

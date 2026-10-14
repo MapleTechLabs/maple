@@ -134,6 +134,8 @@ export interface LogEntry {
 	readonly body: string
 	readonly traceId: string
 	readonly spanId: string
+	/** Every non-empty log attribute; only when the search asked for them. */
+	readonly attributes?: Readonly<Record<string, string>>
 }
 
 export interface SearchLogsInput {
@@ -145,6 +147,8 @@ export interface SearchLogsInput {
 	readonly spanId?: string
 	readonly limit?: number
 	readonly offset?: number
+	/** Return each entry's full attribute map, not just the error-carrying keys. */
+	readonly includeAttributes?: boolean
 }
 
 export interface SearchLogsOutput {

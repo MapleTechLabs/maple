@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * `bun run screenshots`: capture the landing site's app screenshots from the
- * local stack. Seed it first with `bun run seed:demo` at the repo root; the
+ * local stack (`--set thread` for the feature-thread PNGs). Seed it first with `bun run seed:demo` at the repo root; the
  * time ranges come from that run's anchor.
  *
  * Signs in with a one-shot Clerk ticket (dev instances only, like
@@ -14,10 +14,32 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { chromium, type BrowserContext, type Page } from "playwright"
 import { RELABEL, SHOTS, TIMEZONE, VIEWPORT, type Shot } from "./shots"
+import { THREAD_RELABEL, THREAD_SHOTS } from "./thread-shots"
 
 const ROOT = new URL("../../../../", import.meta.url).pathname
 const SEED_STATE = `${ROOT}scripts/seed-demo/.last-seed.json`
-const OUT_DIR = new URL("../../public/screenshots/", import.meta.url).pathname
+
+interface ShotSet {
+	readonly shots: ReadonlyArray<Shot>
+	readonly relabel: Readonly<Record<string, string>>
+	readonly outDir: string
+	readonly format: "webp" | "png"
+}
+
+const SETS = {
+	landing: {
+		shots: SHOTS,
+		relabel: RELABEL,
+		outDir: new URL("../../public/screenshots/", import.meta.url).pathname,
+		format: "webp",
+	},
+	thread: {
+		shots: THREAD_SHOTS,
+		relabel: THREAD_RELABEL,
+		outDir: new URL("../../../../feature-thread/", import.meta.url).pathname,
+		format: "png",
+	},
+} satisfies Record<string, ShotSet>
 const DEV_EMAIL = "david+clerk_test@gmail.com"
 const MINUTE = 60_000
 
@@ -88,7 +110,7 @@ const FREEZE_CSS = `
 [data-sonner-toaster], #react-scan-root, .tsqd-parent-container { display: none !important; }
 `
 
-const relabel = (page: Page) =>
+const relabel = (page: Page, labels: ShotSet["relabel"]) =>
 	pw("relabel", () =>
 		page.evaluate((pairs) => {
 			const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
@@ -97,7 +119,7 @@ const relabel = (page: Page) =>
 					if (node.nodeValue?.includes(from)) node.nodeValue = node.nodeValue.replaceAll(from, to)
 				}
 			}
-		}, Object.entries(RELABEL)),
+		}, Object.entries(labels)),
 	)
 
 /** Network quiet and no skeletons left: the page is showing data, not a loading state. */
@@ -140,6 +162,7 @@ const capture = Effect.fn("capture.shot")(function* (
 	base: string,
 	shot: Shot,
 	anchor: number,
+	set: ShotSet,
 ) {
 	const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 	const fs = yield* FileSystem.FileSystem
@@ -147,6 +170,10 @@ const capture = Effect.fn("capture.shot")(function* (
 		pw("open page", () => context.newPage(), shot.id),
 		(page) => Effect.promise(() => page.close()),
 	)
+	const fakeNow = shot.fakeNowMinutes
+	if (fakeNow !== undefined) {
+		yield* pw("clock", () => page.clock.setFixedTime(new Date(anchor + fakeNow * MINUTE)), shot.id)
+	}
 	yield* pw("navigate", () => page.goto(shotUrl(base, shot, anchor)), shot.id)
 	yield* pw("freeze", () => page.addStyleTag({ content: FREEZE_CSS }), shot.id)
 	yield* settle(page, shot.id)
@@ -155,18 +182,20 @@ const capture = Effect.fn("capture.shot")(function* (
 		yield* pw("setup", () => setup(page), shot.id)
 		yield* settle(page, shot.id)
 	}
-	yield* relabel(page)
+	yield* relabel(page, set.relabel)
 
 	const png = yield* fs.makeTempFileScoped({ suffix: ".png" })
 	yield* pw("screenshot", () => page.screenshot({ path: png }), shot.id)
-	const out = `${OUT_DIR}${shot.id}.webp`
-	yield* spawner
-		.string(ChildProcess.make("cwebp", ["-quiet", "-q", "90", png, "-o", out]))
-		.pipe(
-			Effect.mapError(
-				(cause) => new CaptureError({ message: `cwebp: ${cause.message}`, shot: shot.id }),
-			),
-		)
+	const out = `${set.outDir}${shot.id}.${set.format}`
+	yield* (
+		set.format === "png"
+			? fs.copyFile(png, out)
+			: spawner.string(ChildProcess.make("cwebp", ["-quiet", "-q", "90", png, "-o", out]))
+	).pipe(
+		Effect.mapError(
+			(cause) => new CaptureError({ message: `write ${out}: ${cause.message}`, shot: shot.id }),
+		),
+	)
 	yield* Console.log(`  ✓ ${shot.id}  ${out.replace(ROOT, "")}`)
 }, Effect.scoped)
 
@@ -175,6 +204,10 @@ const capture = Effect.fn("capture.shot")(function* (
 const command = Command.make(
 	"capture-screenshots",
 	{
+		set: Flag.Literals("set", ["landing", "thread"]).pipe(
+			Flag.withDescription("Which shot list to capture"),
+			Flag.withDefault("landing"),
+		),
 		only: Flag.String("only").pipe(Flag.withDescription("Comma-separated shot ids"), Flag.optional),
 		web: Flag.String("web").pipe(
 			Flag.withDescription("Local web origin"),
@@ -198,8 +231,9 @@ const command = Command.make(
 			),
 		)
 		const anchor = DateTime.toEpochMillis(state.anchor)
+		const set: ShotSet = SETS[flags.set]
 		const wanted = Option.map(flags.only, (only) => new Set(only.split(",").map((id) => id.trim())))
-		const shots = SHOTS.filter((shot) =>
+		const shots = set.shots.filter((shot) =>
 			Option.match(wanted, { onNone: () => true, onSome: (ids) => ids.has(shot.id) }),
 		)
 		if (shots.length === 0) return yield* new CaptureError({ message: "no shots match --only" })
@@ -234,7 +268,9 @@ const command = Command.make(
 			await signIn.close()
 		})
 
-		yield* Effect.forEach(shots, (shot) => capture(context, flags.web, shot, anchor), { discard: true })
+		yield* Effect.forEach(shots, (shot) => capture(context, flags.web, shot, anchor, set), {
+			discard: true,
+		})
 	}, Effect.scoped),
 ).pipe(Command.withDescription("Capture landing screenshots from the seeded local stack"))
 

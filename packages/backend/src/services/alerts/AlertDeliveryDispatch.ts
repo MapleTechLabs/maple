@@ -7,6 +7,7 @@
  * is a value in, a value out, which is what makes the Discord/Telegram
  * output assertable without any HTTP stub.
  */
+import { Option } from "effect"
 import type {
 	AlertComparator,
 	AlertDestinationType,
@@ -307,6 +308,22 @@ export const buildTemplateContext = (
 	}
 }
 
+const renderResolved = Option.liftThrowable(
+	(
+		resolved: ReturnType<typeof resolveTemplate>,
+		context: TemplateRenderContext,
+		linkUrl: string,
+		chatUrl: string,
+	): { title: string; body: string } => {
+		const templateCtx = buildTemplateContext(context, linkUrl, chatUrl)
+		const title =
+			renderTemplate(resolved.title ?? DEFAULT_TITLE_TEMPLATE, templateCtx).text.trim() ||
+			context.ruleName
+		const body = renderTemplate(resolved.body ?? DEFAULT_BODY_TEMPLATE, templateCtx).text
+		return { title, body }
+	},
+)
+
 /**
  * Resolve + render the effective title/body for a destination. Returns `null`
  * when the rule has no custom template (caller falls back to the hardcoded
@@ -321,16 +338,7 @@ export const renderTitleBody = (
 ): { title: string; body: string } | null => {
 	const resolved = resolveTemplate(context.template, destinationType)
 	if (!hasCustomTemplate(resolved)) return null
-	try {
-		const templateCtx = buildTemplateContext(context, linkUrl, chatUrl)
-		const title =
-			renderTemplate(resolved.title ?? DEFAULT_TITLE_TEMPLATE, templateCtx).text.trim() ||
-			context.ruleName
-		const body = renderTemplate(resolved.body ?? DEFAULT_BODY_TEMPLATE, templateCtx).text
-		return { title, body }
-	} catch {
-		return null
-	}
+	return Option.getOrNull(renderResolved(resolved, context, linkUrl, chatUrl))
 }
 
 export const buildDiscordEmbedsFromTemplate = (

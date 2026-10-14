@@ -11,6 +11,7 @@ import {
 	formatBytesPerSecond,
 	formatLatency,
 	formatLoad,
+	formatNumber,
 	formatPercent,
 	formatThroughput,
 } from "@maple/ui/lib/format"
@@ -40,6 +41,8 @@ export type ChartUnit =
 	// whole seconds and renders anything at or below zero as an em dash.
 	| "milliseconds"
 	| "rate"
+	// A per-bucket event count (requests, invocations), compact like "1.2K".
+	| "count"
 
 /** Compact, human duration ("45s", "12m", "3h 20m", "2d 4h"). */
 export function formatSeconds(seconds: number): string {
@@ -77,6 +80,8 @@ export function formatValueWithUnit(value: number, unit: ChartUnit): string {
 			return formatLatency(value)
 		case "rate":
 			return formatThroughput(value, "/s")
+		case "count":
+			return formatNumber(value)
 	}
 }
 

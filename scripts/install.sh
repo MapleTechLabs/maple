@@ -35,9 +35,8 @@ REPO="MapleTechLabs/maple"
 INSTALL_DIR="${MAPLE_INSTALL_DIR:-$HOME/.maple/bin}"
 
 # Base64 SPKI of the Ed25519 release key: MAPLE_RELEASE_PUBLIC_KEY in
-# apps/cli/src/core/release-signature.ts (a test keeps them equal). Empty until
-# the key is provisioned, and then signatures are not checked.
-release_public_key=""
+# apps/cli/src/core/release-signature.ts (a test keeps them equal).
+release_public_key="MCowBQYDK2VwAyEAT58nYzFjZrHs2utGCW2xooSnljsEl2je33QEJ4VspnI="
 
 # RFC 8032 test vector 2 (message "r"). An openssl must verify it before its
 # verdict on a real signature counts: LibreSSL (macOS) and FIPS builds cannot.
@@ -163,9 +162,15 @@ esac
 tag="${MAPLE_VERSION:-}"
 if [ -z "$tag" ]; then
 	# Use -sS (not -f) so a 404 "no releases yet" doesn't print a confusing
-	# curl error — we give our own clear message below.
-	tag="$(curl -sSL "https://api.github.com/repos/$REPO/releases/latest" \
-		| sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
+	# curl error — we give our own clear message below. Not /releases/latest:
+	# the npm packages publish releases too, so take the newest `v*` tag. Drafts
+	# are invisible to anonymous calls and CLI prereleases are not tagged `vX.Y.Z`.
+	# Pages on while a page holds only package releases.
+	for page in 1 2 3 4 5; do
+		tag="$(curl -sSL "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page" \
+			| sed -n 's/.*"tag_name": *"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' | head -1)"
+		[ -n "$tag" ] && break
+	done
 fi
 [ -n "$tag" ] || die "no release found for $REPO — check https://github.com/$REPO/releases or set MAPLE_VERSION to pin a tag"
 

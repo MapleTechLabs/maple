@@ -18,6 +18,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgIngestAttributeMappings, type OrgIngestAttributeMappingRow } from "@maple/db/tables"
 import { Array, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
 type MappingRow = OrgIngestAttributeMappingRow
 
@@ -53,21 +54,6 @@ export interface IngestAttributeMappingServiceApi {
 
 const toPersistenceError = (error: DatabaseError) =>
 	new IngestAttributeMappingPersistenceError({ message: error.message })
-
-// Logs the underlying Cause before collapsing the database failure into a
-// persistence error, so a failed query stays visible in traces and logs.
-const runDb = <A>(
-	operation: string,
-	effect: Effect.Effect<A, DatabaseError>,
-): Effect.Effect<A, IngestAttributeMappingPersistenceError> =>
-	effect.pipe(
-		Effect.tapCause((cause) =>
-			Effect.logError("Attribute mapping database operation failed").pipe(
-				Effect.annotateLogs({ operation, cause }),
-			),
-		),
-		Effect.mapError(toPersistenceError),
-	)
 
 const decodeMappingIdSync = Schema.decodeUnknownSync(IngestAttributeMappingId)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -113,6 +99,7 @@ export class IngestAttributeMappingService extends Context.Service<
 >()("@maple/api/services/IngestAttributeMappingService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "IngestAttributeMappingService", toPersistenceError)
 
 		const selectById = Effect.fn("IngestAttributeMappingService.selectById")(function* (
 			orgId: OrgId,
@@ -122,15 +109,12 @@ export class IngestAttributeMappingService extends Context.Service<
 				orgId,
 				"maple.ingest_attribute_mapping.id": mappingId,
 			})
-			const rows = yield* runDb(
-				"selectById",
-				database.execute((db) =>
-					db.run(
-						PG.from(OrgIngestAttributeMappings)
-							.select()
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)])
-							.limit(1),
-					),
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OrgIngestAttributeMappings)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)])
+						.limit(1),
 				),
 			)
 
@@ -159,18 +143,15 @@ export class IngestAttributeMappingService extends Context.Service<
 
 		const list = Effect.fn("IngestAttributeMappingService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			const rows = yield* runDb(
-				"list",
-				database.execute((db) =>
-					db.run(
-						PG.from(OrgIngestAttributeMappings)
-							.select()
-							.where(($) => [$.orgId.eq(orgId)])
-							.orderBy(($) => [
-								[$.createdAt, "desc"],
-								[$.id, "desc"],
-							]),
-					),
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OrgIngestAttributeMappings)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)])
+						.orderBy(($) => [
+							[$.createdAt, "desc"],
+							[$.id, "desc"],
+						]),
 				),
 			)
 
@@ -190,23 +171,20 @@ export class IngestAttributeMappingService extends Context.Service<
 			const id = decodeMappingIdSync(randomUUID())
 			yield* Effect.annotateCurrentSpan("maple.ingest_attribute_mapping.id", id)
 
-			yield* runDb(
-				"create",
-				database.execute((db) =>
-					db.run(
-						PG.insertInto(OrgIngestAttributeMappings).values({
-							id,
-							orgId,
-							name: request.name.trim(),
-							sourceContext: request.sourceContext,
-							sourceKey: request.sourceKey.trim(),
-							targetKey: request.targetKey.trim(),
-							operation: request.operation,
-							enabled: request.enabled ?? true,
-							createdAt: now,
-							updatedAt: now,
-						}),
-					),
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(OrgIngestAttributeMappings).values({
+						id,
+						orgId,
+						name: request.name.trim(),
+						sourceContext: request.sourceContext,
+						sourceKey: request.sourceKey.trim(),
+						targetKey: request.targetKey.trim(),
+						operation: request.operation,
+						enabled: request.enabled ?? true,
+						createdAt: now,
+						updatedAt: now,
+					}),
 				),
 			)
 
@@ -252,14 +230,11 @@ export class IngestAttributeMappingService extends Context.Service<
 				enabled: request.enabled,
 			}
 
-			yield* runDb(
-				"update",
-				database.execute((db) =>
-					db.run(
-						PG.update(OrgIngestAttributeMappings)
-							.set(updates)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)]),
-					),
+			yield* dbExecute((db) =>
+				db.run(
+					PG.update(OrgIngestAttributeMappings)
+						.set(updates)
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)]),
 				),
 			)
 
@@ -284,14 +259,11 @@ export class IngestAttributeMappingService extends Context.Service<
 				orgId,
 				"maple.ingest_attribute_mapping.id": mappingId,
 			})
-			const rows = yield* runDb(
-				"delete",
-				database.execute((db) =>
-					db.run(
-						PG.deleteFrom(OrgIngestAttributeMappings)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)])
-							.returning("id"),
-					),
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.deleteFrom(OrgIngestAttributeMappings)
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(mappingId)])
+						.returning("id"),
 				),
 			)
 

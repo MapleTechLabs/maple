@@ -38,7 +38,7 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				search: search ?? "none",
+				"maple.ai.search": search ?? "none",
 				"result.rowCount": dashboards.length,
 			})
 

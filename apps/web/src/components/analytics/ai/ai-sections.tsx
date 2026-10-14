@@ -27,7 +27,7 @@ import {
 } from "@/components/icons"
 import type { WebAnalyticsAiCrawler, WebAnalyticsAiCrawlerFormat } from "@/api/warehouse/web-analytics"
 import { AiProductIcon } from "./ai-product-icon"
-import { StatFigure } from "@/components/common/stat-rail"
+import { StatFigure } from "@maple/ui/components/ui/stat-figure"
 import { RelativeTime } from "@/components/common/relative-time"
 import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
 import {

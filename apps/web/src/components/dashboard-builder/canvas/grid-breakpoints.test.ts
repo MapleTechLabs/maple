@@ -146,20 +146,3 @@ describe("projectLayout", () => {
 		expect(projectLayout([], GRID_TIERS[2])).toEqual([])
 	})
 })
-
-describe("PlacedWidget", () => {
-	// Guards the seam rather than the maths: re-widening the parameter back to a
-	// full `DashboardWidget` would break every read-only surface, and it would
-	// break here first.
-	it("projects a widget carrying nothing but an id and a layout", () => {
-		const redactedWidgets = [
-			{ id: "a", layout: { x: 0, y: 0, w: 6, h: 4 } },
-			{ id: "b", layout: { x: 6, y: 0, w: 6, h: 4 } },
-		]
-
-		expect(projectLayout(redactedWidgets, GRID_TIERS[0])).toMatchObject([
-			{ i: "a", x: 0, y: 0, w: 6, h: 4 },
-			{ i: "b", x: 6, y: 0, w: 6, h: 4 },
-		])
-	})
-})

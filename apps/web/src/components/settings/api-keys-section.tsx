@@ -31,7 +31,7 @@ import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { RelativeTime } from "@/components/common/relative-time"
 import { ArrowPathIcon, CodeIcon, KeyIcon, PlusIcon, SquareTerminalIcon, TrashIcon } from "@/components/icons"
-import { apiBaseUrl } from "@/lib/services/common/api-base-url"
+import { apiPublicUrl } from "@/lib/services/common/api-base-url"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
 import { SyncUnavailable } from "@/components/common/sync-unavailable"
 import { retryOrgCollections } from "@/lib/collections/org-collections"
@@ -401,9 +401,9 @@ const SCOPE_FAMILY_ROWS = [
 	{ id: "audit_log", label: "Audit log", description: "Read the audit log (org admins only)" },
 ] as const
 
-const docsUrl = `${apiBaseUrl}/v2/docs`
+const docsUrl = `${apiPublicUrl}/v2/docs`
 
-const curlExample = `curl ${apiBaseUrl}/v2/alerts/rules \\
+const curlExample = `curl ${apiPublicUrl}/v2/alerts/rules \\
   -H "Authorization: Bearer maple_ak_..."`
 
 /**
@@ -429,11 +429,13 @@ function ApiReference() {
 				}
 			>
 				<div className="space-y-4">
-					<CopyableField label="Base URL" value={`${apiBaseUrl}/v2`} />
+					<CopyableField label="Base URL" value={`${apiPublicUrl}/v2`} />
 					<div className="space-y-1">
 						<span className="text-xs text-muted-foreground">Quick start</span>
 						<Panel tone="muted" className="flex-row items-start justify-between gap-2 px-3 py-2">
-							<pre className="overflow-x-auto font-mono text-sm leading-6">{curlExample}</pre>
+							<pre className="min-w-0 flex-1 overflow-x-auto font-mono text-sm leading-6">
+								{curlExample}
+							</pre>
 							<CopyButton value={curlExample} label="curl example" size="icon-sm" />
 						</Panel>
 					</div>
@@ -453,14 +455,17 @@ function ApiReference() {
 			>
 				<div className="divide-y">
 					{SCOPE_FAMILY_ROWS.map((family) => (
-						<div key={family.id} className="flex items-center justify-between gap-4 px-4 py-2.5">
-							<div className="min-w-0 space-y-0.5">
+						<div
+							key={family.id}
+							className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 py-2.5"
+						>
+							<div className="min-w-0 flex-1 space-y-0.5">
 								<div className="text-sm font-medium">{family.label}</div>
 								<TruncatedText className="text-xs text-muted-foreground">
 									{family.description}
 								</TruncatedText>
 							</div>
-							<div className="flex shrink-0 items-center gap-1.5">
+							<div className="flex shrink-0 basis-full items-center gap-1.5 sm:basis-auto">
 								<Badge variant="outline" mono className="text-2xs">
 									{family.id}:read
 								</Badge>
@@ -544,9 +549,10 @@ function ApiKeyRow({
 				</div>
 				<div className="flex min-w-0 flex-col gap-0.5">
 					<div className="flex min-w-0 items-center gap-1.5">
-						<span className="text-foreground truncate text-sm font-medium leading-none">
-							{apiKey.name}
-						</span>
+						<TruncatedText
+							text={apiKey.name}
+							className="text-foreground text-sm font-medium leading-none"
+						/>
 						{isMcp && (
 							<Badge variant="info" size="sm">
 								MCP

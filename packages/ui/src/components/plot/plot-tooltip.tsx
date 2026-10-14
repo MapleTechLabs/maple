@@ -165,6 +165,39 @@ export interface PlotTooltipSeries<TDatum> {
 	position?: (datum: TDatum) => number | null | undefined
 }
 
+export const TOOLTIP_MAX_ROWS = 12
+
+export interface TooltipRow<TDatum> {
+	spec: PlotTooltipSeries<TDatum>
+	index: number
+	value: number
+}
+
+/**
+ * Non-null rows in series order; past `TOOLTIP_MAX_ROWS`, the largest values
+ * sorted desc, always keeping the highlighted series. Pure for testing.
+ */
+export function capTooltipRows<TDatum>(
+	series: readonly PlotTooltipSeries<TDatum>[],
+	datum: TDatum,
+	highlightLabel: string | undefined,
+	max: number = TOOLTIP_MAX_ROWS,
+): { visible: TooltipRow<TDatum>[]; hiddenCount: number } {
+	const rows = series.flatMap((spec, index) => {
+		const value = spec.value(datum)
+		return value == null ? [] : [{ spec, index, value }]
+	})
+	if (rows.length <= max) return { visible: rows, hiddenCount: 0 }
+	const sorted = [...rows].sort((a, b) => b.value - a.value)
+	const top = sorted.slice(0, max)
+	const pinned = sorted.find((row) => row.spec.label === highlightLabel)
+	const visible =
+		pinned && !top.includes(pinned)
+			? [...top.slice(0, max - 1), pinned].sort((a, b) => b.value - a.value)
+			: top
+	return { visible, hiddenCount: rows.length - visible.length }
+}
+
 /**
  * The label of the series nearest the cursor, or `undefined` for none.
  *
@@ -247,15 +280,15 @@ export function PlotTooltipBody<TDatum>({
 	const highlightLabel =
 		highlight && series.length > 1 ? highlight(datum) : resolveTooltipHighlight(series, datum, focus)
 
+	const { visible, hiddenCount } = capTooltipRows(series, datum, highlightLabel)
+
 	return (
-		<div className="grid min-w-[9rem] items-start gap-1.5">
+		<div className="grid min-w-[9rem] max-w-[22rem] items-start gap-1.5">
 			<div className="border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight">
 				{heading(datum)}
 			</div>
 			<div className="grid gap-1.5">
-				{series.map((spec, index) => {
-					const value = spec.value(datum)
-					if (value == null) return null
+				{visible.map(({ spec, index, value }) => {
 					return (
 						<div
 							// Position-qualified: two series CAN share a label (a chart
@@ -286,14 +319,19 @@ export function PlotTooltipBody<TDatum>({
 							 * moves between buckets.
 							 */}
 							<div className="flex flex-1 items-center justify-between gap-3 leading-none">
-								<span className="text-muted-foreground">{spec.label}</span>
-								<span className="font-mono font-semibold text-foreground tabular-nums">
+								<span className="min-w-0 truncate text-muted-foreground" title={spec.label}>
+									{spec.label}
+								</span>
+								<span className="shrink-0 font-mono font-semibold text-foreground tabular-nums">
 									{spec.format(value)}
 								</span>
 							</div>
 						</div>
 					)
 				})}
+				{hiddenCount > 0 && (
+					<div className="text-muted-foreground leading-none">+{hiddenCount} more</div>
+				)}
 			</div>
 		</div>
 	)

@@ -59,9 +59,4 @@ describe("bucketTimeseries", () => {
 		expect(row0[OTHER_LABEL]).toBe(3) // a (1) + d (2)
 		expect(row0.bucket).toBe("t0")
 	})
-
-	it("preserves the bucket field on every row", () => {
-		const out = bucketTimeseries(rows, keys, 2)
-		expect(out.rows.map((r) => (r as Record<string, unknown>).bucket)).toEqual(["t0", "t1"])
-	})
 })

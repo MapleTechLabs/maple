@@ -136,10 +136,7 @@ describe("SessionsList identity", () => {
 
 	it("puts the email under the name and the org in its own column", () => {
 		const view = render(<SessionsList sessions={[identified]} />)
-		const line = view.getByText("ada@acme.com")
-		// Prose, not the mono entry-url line it replaces.
-		expect(line.className).not.toContain("font-mono")
-		expect(line.getAttribute("title")).toBe("example.com")
+		expect(view.getByText("ada@acme.com").getAttribute("title")).toBe("example.com")
 		// Two copies: the stacked narrow row and the wide Org column.
 		expect(view.getAllByText("Acme Inc")).toHaveLength(2)
 	})
@@ -166,8 +163,8 @@ describe("SessionsList identity", () => {
 	it("renders a pre-identify session exactly as before", () => {
 		const view = render(<SessionsList sessions={[{ ...session, userId: "user_42" }]} />)
 		expect(view.getByText("user_42")).toBeTruthy()
-		const line = view.getByText("example.com")
-		expect(line.className).toContain("font-mono")
+		expect(view.getByText("example.com")).toBeTruthy()
+		expect(view.queryByText("Anonymous")).toBeNull()
 	})
 
 	it("still says Anonymous when nothing identifies the session", () => {

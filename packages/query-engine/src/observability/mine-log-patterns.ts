@@ -123,8 +123,8 @@ export const mineLogPatterns = Effect.fn("Observability.mineLogPatterns")(functi
 
 	const { patterns, clusterCount } = clusterLogPatterns(result.data, limit)
 
-	yield* Effect.annotateCurrentSpan("totalSampled", result.data.length)
-	yield* Effect.annotateCurrentSpan("clusterCount", clusterCount)
+	yield* Effect.annotateCurrentSpan("result.sampledCount", result.data.length)
+	yield* Effect.annotateCurrentSpan("result.clusterCount", clusterCount)
 
 	return {
 		timeRange: input.timeRange,

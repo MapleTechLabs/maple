@@ -72,6 +72,7 @@ use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::span::Event;
 
 mod claude_code;
+mod cloudflare_ai_gateway;
 mod facts;
 mod usage;
 
@@ -173,6 +174,9 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                     }
                     claude_code::normalize(span);
                 }
+                if classification.vendor == cloudflare_ai_gateway::VENDOR_ID {
+                    cloudflare_ai_gateway::normalize(span);
+                }
                 let mut stamps = facts::stamps(span, classification.vendor);
                 // One reserve, not a doubling realloc per push that each copy
                 // every existing KeyValue.
@@ -265,6 +269,7 @@ struct ScopeFacts {
     claude: bool,
     dspy: bool,
     eve: bool,
+    eve_agent: bool,
     flue: bool,
     genkit: bool,
     google_adk: bool,
@@ -299,6 +304,7 @@ const SCOPE_NAMES: &[&str] = &[
     "com.anthropic.claude_code.",
     "openinference.instrumentation.",
     "eve",
+    "eve.agent",
     "@flue/opentelemetry",
     "genkit-tracer",
     "gcp.vertex.agent",
@@ -344,6 +350,7 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         "com.anthropic.claude_code" => facts.claude = true,
         "openinference.instrumentation.dspy" => facts.dspy = true,
         "eve" => facts.eve = true,
+        "eve.agent" => facts.eve_agent = true,
         "@flue/opentelemetry" => facts.flue = true,
         "genkit-tracer" => facts.genkit = true,
         "gcp.vertex.agent" | "openinference.instrumentation.google_adk" => {
@@ -394,6 +401,7 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
     facts.any = facts.claude
         || facts.dspy
         || facts.eve
+        || facts.eve_agent
         || facts.flue
         || facts.google_adk
         || facts.haystack
@@ -963,6 +971,11 @@ static VENDORS: &[Vendor] = &[
         session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
+        id: cloudflare_ai_gateway::VENDOR_ID,
+        detect: detect_cloudflare_ai_gateway,
+        session_keys: cloudflare_ai_gateway::SESSION_KEYS,
+    },
+    Vendor {
         id: "openrouter",
         detect: detect_openrouter,
         session_keys: &["session.id"],
@@ -1163,8 +1176,10 @@ fn detect_dspy(c: &Ctx) -> bool {
 }
 
 fn detect_eve(c: &Ctx) -> bool {
-    // "eve" alone is a bare English word; require the turn span name too.
-    c.scope.eve && c.span_name == "ai.eve.turn"
+    // eve 0.78 traces a whole turn under its own `eve.agent` scope. eve 0.25
+    // used the scope "eve", a bare English word, so there the turn span name
+    // is required too.
+    c.scope.eve_agent || (c.scope.eve && c.span_name == "ai.eve.turn")
 }
 
 fn detect_flue(c: &Ctx) -> bool {
@@ -1203,6 +1218,12 @@ fn detect_litellm(c: &Ctx) -> bool {
     // No `litellm.` attr-prefix clause: that would steal the host framework's
     // spans (litellm.call_id rides along inside other frameworks' spans).
     c.scope.litellm
+}
+
+fn detect_cloudflare_ai_gateway(c: &Ctx) -> bool {
+    // Scope `ai` is shared with the Vercel AI SDK, so the gateway is told
+    // apart by its span name, which nothing else emits.
+    c.span_name == cloudflare_ai_gateway::SPAN_NAME
 }
 
 fn detect_openrouter(c: &Ctx) -> bool {
@@ -2007,6 +2028,63 @@ mod tests {
     fn eve_requires_scope_and_turn_span_name() {
         assert!(classify("eve", "other", &[], &[]).is_none());
         assert!(classify("other", "ai.eve.turn", &[], &[]).is_none());
+    }
+
+    #[test]
+    fn eve_agent_scope_is_eve_for_every_span_of_a_turn() {
+        // eve_user / eve_agents (eve 0.78): the turn, its steps, model calls,
+        // tools and approvals share one scope, and the session is the
+        // conversation id. The tool span's `gen_ai.execute_tool.duration` used
+        // to send it to the Vercel AI SDK and the rest to `unknown:genai`.
+        let session = ("gen_ai.conversation.id", "wrun_1");
+        let cases: &[(&str, &[(&str, &str)])] = &[
+            (
+                "invoke_agent support-agent",
+                &[("gen_ai.operation.name", "invoke_agent"), session],
+            ),
+            (
+                "agent.step",
+                &[("gen_ai.operation.name", "workflow"), session],
+            ),
+            (
+                "chat openai/gpt-4o-mini",
+                &[
+                    ("gen_ai.operation.name", "chat"),
+                    ("ai.response.finish_reason", "stop"),
+                    session,
+                ],
+            ),
+            (
+                "execute_tool get_weather",
+                &[
+                    ("gen_ai.operation.name", "execute_tool"),
+                    ("gen_ai.execute_tool.duration", "0.002"),
+                    session,
+                ],
+            ),
+            (
+                "agent.approval",
+                &[("gen_ai.operation.name", "workflow"), session],
+            ),
+        ];
+        for (span_name, attrs) in cases {
+            classified("eve.agent", span_name, attrs, &[], "eve", Some("wrun_1"));
+        }
+    }
+
+    #[test]
+    fn eve_agent_tool_span_outside_the_scope_stays_vercel() {
+        classified(
+            "gen_ai",
+            "execute_tool get_weather",
+            &[
+                ("gen_ai.operation.name", "execute_tool"),
+                ("gen_ai.execute_tool.duration", "0.002"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            None,
+        );
     }
 
     #[test]

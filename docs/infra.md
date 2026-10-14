@@ -206,7 +206,7 @@ the shared `ManagedMapleDb` or `WorkersObservabilityDestinations` (alchemy regis
 resource by id, so a second module yielding the same one gets the first's). `impl` runs once
 per isolate on the first event and returns the handlers. No hand-written `export default
 { fetch }`, no factory arguments. A Worker that binds another (web's `API` service binding to
-the api, api's and alerting's `AI_WORKER`) takes it as a service the root provides after
+the api, which also carries the browser's same-origin `/_api/*` calls, api's and alerting's `AI_WORKER`) takes it as a service the root provides after
 yielding it (`ApiWorker`, `AiWorker` in `@maple/infra/cloudflare`). A `Worker.ref` reads
 stored state and cannot see a sibling the same deploy creates.
 
@@ -251,7 +251,7 @@ What each kind of Worker keeps beside the module:
   `Cloudflare.Workflows.task` over an Effect whose failure rejects the step, so Cloudflare
   retries it per config. The body reads `Database`, `Cloudflare.WorkerEnvironment` and
   `Cloudflare.WorkflowStep` as services. The class wraps a run in `withPgConnectionScope` +
-  `layerPg` (one Postgres connection per run) and the run's own `eventTelemetry`
+  `DatabasePgLive` (one Postgres connection per run) and the run's own `eventTelemetry`
   (`maple-schema-apply`), which flushes when alchemy closes the run's scope. The Workflow is
   imported statically (check startup CPU with `apps/api/scripts/bench-startup-cpu.ts`). The
   yield is the
@@ -335,7 +335,8 @@ What each kind of Worker keeps beside the module:
   generates its entry (`makeEffectVirtualEntry`) and exports only the bridge classes it
   created. A plain module is used verbatim, so the exports in `apps/sandbox/src/worker.ts`
   are what bind, and the declaration lives in `apps/sandbox/alchemy.run.ts`. The container
-  uses the `default` scheduling policy, the only one alchemy can declare; the image is built
+  uses the `default` (fleet) scheduling policy: `durable_object` drops `maxInstances` and the
+  per-stage `instanceType`, and switching needs a new application and DO namespace. The image is built
   from `apps/sandbox/image/Dockerfile`, which copies `sandbox-shim` from the
   `cloudflare/sandbox` tag matching the package version. It has no route and no
   hostname. maple-ai, whose agents run the sandbox tools, reaches it over a `SANDBOX`

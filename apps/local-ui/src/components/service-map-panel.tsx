@@ -2,7 +2,7 @@
 // app's panel (accent stripe, health dot, metric tiles, caller/callee rows),
 // minus the cloud-only integrations; links go to the local service and trace pages.
 
-import type { ReactNode } from "react"
+import { useMemo, type ReactNode } from "react"
 import type { ServiceOverview } from "@maple/query-engine"
 import { MagnifierIcon, XmarkIcon } from "@maple/ui/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
@@ -16,6 +16,7 @@ import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { cn } from "@maple/ui/lib/utils"
 import { resolveDbNodePresentation, withAlpha } from "@maple/ui/components/service-map/service-map-db"
 import {
+	aggregateServiceOverviews,
 	dbNodeId,
 	getServiceMapNodeColor,
 	type ServiceMapColorMode,
@@ -213,13 +214,12 @@ export function ServiceMapServicePanel({
 	onFocus: () => void
 	onClose: () => void
 }) {
-	// Several environments can report one service; the map node uses the busiest row too.
-	const overview = overviews
-		.filter((o) => o.serviceName === serviceName)
-		.reduce<ServiceOverview | undefined>(
-			(best, o) => (!best || o.throughput > best.throughput ? o : best),
-			undefined,
-		)
+	// Several environments can report one service: merge them exactly as the map node does,
+	// so the panel's numbers match the node it was opened from.
+	const overview = useMemo(
+		() => aggregateServiceOverviews(overviews).get(serviceName),
+		[overviews, serviceName],
+	)
 	const errorRate = overview?.errorRate ?? 0
 	const p50 = overview?.p50LatencyMs ?? 0
 	const p95 = overview?.p95LatencyMs ?? 0
@@ -307,17 +307,17 @@ export function ServiceMapServicePanel({
 								unit="req/s"
 							/>
 							<MetricTile
-								label="Error Rate"
+								label="Error rate"
 								value={formatErrorRate(errorRate)}
 								className={errorRateClass(errorRate, { neutral: "text-foreground" })}
 							/>
 							<MetricTile
-								label="P50 Latency"
+								label="P50 latency"
 								value={formatLatency(p50)}
 								className={latencyToneClass(p50, "p50")}
 							/>
 							<MetricTile
-								label="P95 Latency"
+								label="P95 latency"
 								value={formatLatency(p95)}
 								// A p95 far above the service's own p50 is a tail problem worth flagging.
 								className={
@@ -407,24 +407,24 @@ export function ServiceMapDatabasePanel({
 								unit="calls/s"
 							/>
 							<MetricTile
-								label="Error Rate"
+								label="Error rate"
 								value={formatErrorRate(errorRate)}
 								className={errorRateClass(errorRate, { neutral: "text-foreground" })}
 							/>
 							<MetricTile
-								label="Avg Latency"
+								label="Avg latency"
 								value={formatLatency(avgLatencyMs)}
 								className={latencyToneClass(avgLatencyMs, "avg")}
 							/>
 							{p95 > 0 ? (
 								<MetricTile
-									label="P95 Latency"
+									label="P95 latency"
 									value={formatLatency(p95)}
 									className={latencyToneClass(p95, "p95")}
 								/>
 							) : (
 								<MetricTile
-									label="Max Latency"
+									label="Max latency"
 									value={formatLatency(max)}
 									title="Slowest call in the window"
 								/>

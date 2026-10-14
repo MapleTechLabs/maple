@@ -8,6 +8,7 @@ import { MAPLE_AI_STAMP_ATTRS } from "./gen-ai"
 // literals are pinned against the Rust sources that write them.
 const gatewaySource = ["facts.rs", "usage.rs"]
 	.map((file) =>
+		// oxlint-disable-next-line test-slop/no-source-text-assertions -- cross-language contract with the Rust writer; no shared codegen yet.
 		readFileSync(new URL(`../../../apps/ingest/src/ai_session/${file}`, import.meta.url), "utf8"),
 	)
 	.join("\n")

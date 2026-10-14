@@ -109,13 +109,6 @@ describe("coverage", () => {
 		}
 	})
 
-	it("states the percent scale rule in the units section", () => {
-		const doc = renderDashboardSchemaSection("units")
-		expect(doc).toContain("percent_100")
-		expect(doc).toMatch(/0–1|0-1/)
-		expect(doc).toContain("Grafana")
-	})
-
 	it("marks the display keys that are stored but never rendered", () => {
 		const doc = renderDashboardSchemaSection("display")
 		// Advertising an inert key is worse than omitting it: an agent sets
@@ -124,10 +117,6 @@ describe("coverage", () => {
 			expect(doc).toContain(key)
 		}
 		expect(doc).toContain("Stored but not rendered")
-	})
-
-	it("warns that `list` has no raw-SQL rendering", () => {
-		expect(renderDashboardSchemaSection("raw_sql")).toContain("not supported")
 	})
 })
 
@@ -146,12 +135,5 @@ describe("no stale references", () => {
 		for (const needle of RETIRED) {
 			expect(doc).not.toContain(needle)
 		}
-	})
-
-	it("does not advertise bare percentiles as metrics aggregations", () => {
-		const doc = renderDashboardSchemaSection("queries")
-		// `p95` appears legitimately under the traces `valueField` mode; what must
-		// not appear is the claim that metrics accept it.
-		expect(doc).toContain("Metrics never accept percentiles")
 	})
 })

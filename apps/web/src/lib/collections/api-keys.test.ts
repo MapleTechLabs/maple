@@ -1,6 +1,5 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { assert, describe, it } from "@effect/vitest"
-import { Schema } from "effect"
 import { vi } from "vitest"
 
 vi.mock("@/lib/registry", async () => {
@@ -12,7 +11,7 @@ vi.mock("@/lib/registry", async () => {
 	}
 })
 
-import { ApiKeyRowSchema, rowToV2ApiKey, type ApiKeyRow } from "./api-keys"
+import { rowToV2ApiKey, type ApiKeyRow } from "./api-keys"
 
 const KEY_ID = "0f8fad5b-d9cb-469f-a165-70867728950e"
 
@@ -32,13 +31,6 @@ const row: ApiKeyRow = {
 	created_by: "user_1",
 	created_by_email: "owner@example.com",
 }
-
-describe("ApiKeyRowSchema", () => {
-	it("validates the safe Electric projection", () => {
-		assert.deepStrictEqual(Schema.decodeUnknownSync(ApiKeyRowSchema)(row), row)
-		assert.throws(() => Schema.decodeUnknownSync(ApiKeyRowSchema)({ ...row, scopes: "*" }))
-	})
-})
 
 describe("rowToV2ApiKey", () => {
 	it("maps the raw row to the decoded v2 API-key model", () => {

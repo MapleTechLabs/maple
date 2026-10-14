@@ -86,7 +86,10 @@ export function registerIngestUsageTool(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.ingestUsage")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, service: params.service ?? "all" })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.service": params.service ?? "all",
+			})
 
 			const rows = yield* withTenantExecutor(
 				Effect.gen(function* () {

@@ -22,7 +22,7 @@ import { EMPTY_VALUE, countLabel, formatNumber } from "@maple/ui/lib/format"
 import { formatCount } from "@maple/ui/components/filters/range-filter-section"
 import { cn } from "@maple/ui/lib/utils"
 import { FaceRobotIcon, GearIcon, PixelSparkleIcon, type IconComponent } from "@/components/icons"
-import { ServicePills } from "@/components/common/service-pills"
+import { ServicePills } from "@maple/ui/components/service-pills"
 import { ROW_LIFT_TOOLTIPS, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { SortableHeader } from "@/components/common/sortable-header"
@@ -414,6 +414,7 @@ export function AgentSessionsList({
 				noun="agent sessions"
 				purpose="Replay each AI agent conversation, with its LLM and tool calls in order."
 				guideDocs="agentSessions"
+				setupDocs="agentSessions"
 				filtered={filtered}
 				onClearFilters={onClearFilters}
 			/>

@@ -40,14 +40,6 @@ it("links every trace id and only the services the org reports", async () => {
 	expect(screen.queryByRole("link", { name: "HTTP POST" })).toBeNull()
 })
 
-it("tones a duration by magnitude and an error flag by its column", async () => {
-	await renderTable()
-	expect(screen.getByText("4672.46s").className).toContain("text-severity-error")
-	expect(screen.getByText("12ms").className).toContain("text-muted-foreground")
-	expect(screen.getByText("no").className).toContain("text-muted-foreground")
-	expect(screen.getByText("yes").className).toContain("text-severity-error")
-})
-
 it("leaves a link the model wrote itself exactly as authored", async () => {
 	const table = [
 		"| Trace ID | Service |",

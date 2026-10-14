@@ -193,12 +193,12 @@ describe("user-facing text", () => {
 
 describe("embedded release public key", () => {
 	it("matches scripts/install.sh", () => {
+		// oxlint-disable-next-line test-slop/no-source-text-assertions -- the shell installer embeds the same key; no shared source.
 		const installer = installerPublicKey(readFileSync(join(REPO_ROOT, "scripts/install.sh"), "utf8"))
 		strictEqual(installer, MAPLE_RELEASE_PUBLIC_KEY)
 	})
 
-	it("is an Ed25519 key once provisioned", async () => {
-		if (MAPLE_RELEASE_PUBLIC_KEY === "") return
+	it("is an Ed25519 key", async () => {
 		const error = await Effect.runPromise(
 			Effect.flip(verifyReleaseManifest(MANIFEST, SIGNATURE, MAPLE_RELEASE_PUBLIC_KEY)),
 		)

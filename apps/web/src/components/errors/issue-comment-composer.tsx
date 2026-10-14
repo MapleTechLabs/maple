@@ -1,4 +1,5 @@
 import type { ActorDocument } from "@maple/domain/http"
+import { initialsFrom } from "@maple/ui/lib/initials"
 import { Button } from "@maple/ui/components/ui/button"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { Kbd, KbdGroup } from "@maple/ui/components/ui/kbd"
@@ -51,7 +52,7 @@ export function IssueCommentComposer({
 				name: me.name,
 				detail: me.email,
 				imageUrl: me.imageUrl,
-				initials: me.name.slice(0, 2).toUpperCase(),
+				initials: initialsFrom(me.name),
 				seed: me.userId,
 			}
 		: null

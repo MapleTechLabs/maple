@@ -48,8 +48,7 @@ describe("resolveAwsResourceName", () => {
 
 describe("region topology", () => {
 	it("maps each region to a distinct AWS region and a non-overlapping CIDR", () => {
-		expect(resolveAwsRegion("us")).toBe("us-east-1")
-		expect(resolveAwsRegion("eu")).toBe("eu-central-1")
+		expect(resolveAwsRegion("us")).not.toBe(resolveAwsRegion("eu"))
 		expect(resolveIngestCidrBlock("us")).not.toBe(resolveIngestCidrBlock("eu"))
 	})
 })

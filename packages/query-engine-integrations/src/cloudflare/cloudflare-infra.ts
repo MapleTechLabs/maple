@@ -51,6 +51,9 @@ const WORKER_GAUGE_METRIC_NAMES = ["cloudflare.worker.duration", "cloudflare.wor
  */
 const CACHE_SERVED_STATUSES = ["hit", "stale", "revalidated", "updating"] as const
 
+/** Cache statuses for traffic Cloudflare was never going to cache, plus a missing status ("" in a Map read); excluded from the hit-rate denominator. */
+const CACHE_UNCACHEABLE_STATUSES = ["", "none", "dynamic", "bypass", "unknown"] as const
+
 // `avgIf` over a metric with no matching rows is NaN, which serializes to
 // JSON `null` and would break row decoding — so guard each with
 // `if(countIf > 0, avgIf, 0)`. (Same guard as cloudflare-map.ts.)
@@ -69,6 +72,12 @@ export interface CloudflareZoneCountersOutput {
 	readonly bytes: number
 	/** Visits (initial page loads). */
 	readonly visits: number
+	readonly requests2xx: number
+	readonly requests3xx: number
+	/** Requests with a 4xx edge response status. */
+	readonly errors4xx: number
+	/** Requests Cloudflare could have cached: every cache status except none/dynamic/bypass/unknown. */
+	readonly cacheableRequests: number
 }
 
 export interface CloudflareZoneLatencyOutput {
@@ -108,6 +117,26 @@ const zoneCounterColumns = ($: ColumnAccessor<typeof MetricsSum.columns>) => ({
 	visits: CH.sumIf($.Value, $.MetricName.eq("cloudflare.http.visits")),
 })
 
+/** Status mix and cacheable volume, for the zone list only; the timeseries doesn't need them. */
+const zoneMixColumns = ($: ColumnAccessor<typeof MetricsSum.columns>) => {
+	const requestsWhere = (status: string) =>
+		CH.sumIf(
+			$.Value,
+			$.MetricName.eq("cloudflare.http.requests").and($.Attributes.get("http.status_class").eq(status)),
+		)
+	return {
+		requests2xx: requestsWhere("2xx"),
+		requests3xx: requestsWhere("3xx"),
+		errors4xx: requestsWhere("4xx"),
+		cacheableRequests: CH.sumIf(
+			$.Value,
+			$.MetricName.eq("cloudflare.http.requests").and(
+				$.Attributes.get("cache.status").notIn(...CACHE_UNCACHEABLE_STATUSES),
+			),
+		),
+	}
+}
+
 /**
  * Filters applicable to the main HTTP cube (`host`, `cacheStatus`, `statusClass`). All three
  * counter metrics share the same attribute set, so one row of {@link CF_FILTERABLE} covers them.
@@ -121,6 +150,7 @@ export function cloudflareZoneCountersSQL(opts: CloudflareFilterOpts = {}) {
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			...zoneCounterColumns($),
+			...zoneMixColumns($),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -299,6 +329,8 @@ export function cloudflareZoneLatencyTimeseriesSQL() {
 
 export interface CloudflareWorkerCountersOutput {
 	readonly serviceName: string
+	/** Same-named scripts in two accounts are two rows. */
+	readonly accountId: string
 	/** Worker invocations. */
 	readonly requests: number
 	/** Worker invocation errors. */
@@ -309,6 +341,7 @@ export interface CloudflareWorkerCountersOutput {
 
 export interface CloudflareWorkerLatencyOutput {
 	readonly serviceName: string
+	readonly accountId: string
 	readonly cpuP50Ms: number
 	readonly cpuP99Ms: number
 	readonly durationP50Ms: number
@@ -320,6 +353,7 @@ export function cloudflareWorkerCountersSQL() {
 	return from(MetricsSum)
 		.select(($) => ({
 			serviceName: $.ServiceName,
+			accountId: $.ResourceAttributes.get("cloudflare.account.id"),
 			requests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.worker.requests")),
 			errors: CH.sumIf($.Value, $.MetricName.eq("cloudflare.worker.errors")),
 			subrequests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.worker.subrequests")),
@@ -330,7 +364,7 @@ export function cloudflareWorkerCountersSQL() {
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
-		.groupBy("serviceName")
+		.groupBy("serviceName", "accountId")
 		.orderBy(["requests", "desc"])
 		.limit(500)
 		.format("JSON")
@@ -345,6 +379,7 @@ export function cloudflareWorkerLatencySQL() {
 	return from(MetricsGauge)
 		.select(($) => ({
 			serviceName: $.ServiceName,
+			accountId: $.ResourceAttributes.get("cloudflare.account.id"),
 			cpuP50Ms: avgWhere(
 				$.Value,
 				$.MetricName.eq("cloudflare.worker.cpu_time").and($.Attributes.get("quantile").eq("0.5")),
@@ -368,7 +403,114 @@ export function cloudflareWorkerLatencySQL() {
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
-		.groupBy("serviceName")
+		.groupBy("serviceName", "accountId")
 		.limit(500)
+		.format("JSON")
+}
+
+// Worker detail page: one Worker pseudo-service (`cloudflare-worker/{scriptName}`) over time.
+
+/** Same-named scripts in two accounts share a service name; `byAccount` narrows to one of them. */
+export interface CloudflareWorkerDetailOpts {
+	readonly byAccount?: boolean
+}
+
+const accountCondition = (
+	$: ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsGauge.columns>,
+	opts: CloudflareWorkerDetailOpts,
+) => (opts.byAccount ? [$.ResourceAttributes.get("cloudflare.account.id").eq(param.string("accountId"))] : [])
+
+export interface CloudflareWorkerOutcomeTimeseriesOutput {
+	/** Bucket start, ISO-8601 UTC. */
+	readonly bucket: string
+	/** Cloudflare's invocation status: success, scriptThrewException, clientDisconnected, … */
+	readonly status: string
+	readonly requests: number
+}
+
+export interface CloudflareWorkerLatencyTimeseriesOutput {
+	readonly bucket: string
+	readonly cpuP50Ms: number
+	readonly cpuP99Ms: number
+	readonly durationP50Ms: number
+	readonly durationP99Ms: number
+	/** Durable Object wall time; 0 for a Worker that binds none. */
+	readonly doWallP50Ms: number
+	readonly doWallP99Ms: number
+}
+
+export interface CloudflareWorkerDurableObjectTimeseriesOutput {
+	readonly bucket: string
+	readonly requests: number
+	readonly errors: number
+}
+
+/** Invocations per bucket split by how they ended (`worker.status`). */
+export function cloudflareWorkerOutcomeTimeseriesSQL(opts: CloudflareWorkerDetailOpts = {}) {
+	return from(MetricsSum)
+		.select(($) => ({
+			bucket: isoBucket($.TimeUnix),
+			status: $.Attributes.get("worker.status"),
+			requests: CH.sum($.Value),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.ServiceName.eq(param.string("serviceName")),
+			$.MetricName.eq("cloudflare.worker.requests"),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			...accountCondition($, opts),
+		])
+		.groupBy("bucket", "status")
+		.orderBy(["bucket", "asc"], ["status", "asc"])
+		.format("JSON")
+}
+
+/** CPU, duration and Durable Object wall-time percentiles per bucket for one Worker. */
+export function cloudflareWorkerLatencyTimeseriesSQL(opts: CloudflareWorkerDetailOpts = {}) {
+	const quantileAvg =
+		(metricName: string, quantile: string) => ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+			avgWhere($.Value, $.MetricName.eq(metricName).and($.Attributes.get("quantile").eq(quantile)))
+	return from(MetricsGauge)
+		.select(($) => ({
+			bucket: isoBucket($.TimeUnix),
+			cpuP50Ms: quantileAvg("cloudflare.worker.cpu_time", "0.5")($),
+			cpuP99Ms: quantileAvg("cloudflare.worker.cpu_time", "0.99")($),
+			durationP50Ms: quantileAvg("cloudflare.worker.duration", "0.5")($),
+			durationP99Ms: quantileAvg("cloudflare.worker.duration", "0.99")($),
+			doWallP50Ms: quantileAvg("cloudflare.durable_object.wall_time", "0.5")($),
+			doWallP99Ms: quantileAvg("cloudflare.durable_object.wall_time", "0.99")($),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.ServiceName.eq(param.string("serviceName")),
+			$.MetricName.in_(...WORKER_GAUGE_METRIC_NAMES, "cloudflare.durable_object.wall_time"),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			...accountCondition($, opts),
+		])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.format("JSON")
+}
+
+/** Durable Object calls and errors per bucket on the Worker that implements them. */
+export function cloudflareWorkerDurableObjectTimeseriesSQL(opts: CloudflareWorkerDetailOpts = {}) {
+	return from(MetricsSum)
+		.select(($) => ({
+			bucket: isoBucket($.TimeUnix),
+			requests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.durable_object.requests")),
+			errors: CH.sumIf($.Value, $.MetricName.eq("cloudflare.durable_object.errors")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.ServiceName.eq(param.string("serviceName")),
+			$.MetricName.in_("cloudflare.durable_object.requests", "cloudflare.durable_object.errors"),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			...accountCondition($, opts),
+		])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
 		.format("JSON")
 }

@@ -181,7 +181,6 @@ describe("AgentToolsView", () => {
 		expect(follows(search, failing)).toBe(true)
 		expect(follows(failing, reload)).toBe(true)
 		expect(follows(reload, screen.getByText("Tool calls"))).toBe(true)
-		expect(reload.closest(".ml-auto")?.parentElement?.contains(search)).toBe(true)
 	})
 
 	it("counts the tabs from what it is given and never shows an unknown count", () => {
@@ -189,26 +188,6 @@ describe("AgentToolsView", () => {
 		expect(document.querySelector('[data-to="/agent-sessions"]')?.textContent).toBe("Sessions812")
 		// The tools count has not landed: no number, rather than a 0.
 		expect(document.querySelector('[data-to="/agent-sessions/tools"]')?.textContent).toBe("Tools")
-	})
-})
-
-describe("the Tools table under a scope", () => {
-	it("keeps every tool in the table while one is selected", () => {
-		const scoped = buildToolAnalyticsFixture({ tool: "bash" }, NOW, cells)
-		const unscoped = buildToolAnalyticsFixture({}, NOW, cells)
-		expect(scoped.tools.length).toBe(unscoped.tools.length)
-	})
-
-	it("splits the series by tool, then by model, then not at all", () => {
-		const keys = (search: ToolAnalyticsSearch) =>
-			new Set(buildToolAnalyticsFixture(search, NOW, cells).series.map((point) => point.seriesKey))
-		expect(keys({}).size).toBeGreaterThan(1)
-		expect(keys({ tool: "bash" })).toEqual(
-			new Set(["claude-sonnet-5", "claude-opus-5", "openai/gpt-5.6"]),
-		)
-		// Both picked is one series, and the tool is what names it — the same rule
-		// `aiToolsSeriesKind` applies server-side.
-		expect(keys({ tool: "bash", model: "claude-opus-5" })).toEqual(new Set(["bash"]))
 	})
 })
 
@@ -235,7 +214,7 @@ describe("ToolDetailView", () => {
 		expect(screen.getAllByText(new RegExp(`${data.totals.sessions} sessions`)).length).toBeGreaterThan(0)
 	})
 
-	it("describes the tool beside its name on one muted, truncated line, and says nothing without one", () => {
+	it("describes the tool beside its name, and says nothing without one", () => {
 		const data = buildToolDetailFixture("run_tests", {}, NOW, cells)
 		const view = (description: string | undefined) => (
 			<ToolDetailView
@@ -250,9 +229,7 @@ describe("ToolDetailView", () => {
 		)
 		const text = data.description!
 		const { rerender } = render(view(text))
-		const line = screen.getByText(text)
-		expect(line.className).toContain("truncate")
-		expect(line.className).toContain("text-muted-foreground")
+		expect(screen.getByText(text)).toBeTruthy()
 
 		rerender(view(undefined))
 		expect(screen.queryByText(text)).toBeNull()

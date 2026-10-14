@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import {
 	DEFAULT_WIDGET_WIDTH_PX,
-	MIN_BAR_WIDTH_PX,
 	WIDTH_STEP_PX,
 	maxDataPointsForWidth,
 	quantizeWidthPx,
@@ -30,6 +29,7 @@ describe("maxDataPointsForWidth", () => {
 	})
 
 	it("gives bars a minimum width", () => {
-		expect(maxDataPointsForWidth(1400, "bar")).toBe(Math.floor(1400 / MIN_BAR_WIDTH_PX))
+		// 6px per bar: 1400 / 6 rounded down.
+		expect(maxDataPointsForWidth(1400, "bar")).toBe(233)
 	})
 })

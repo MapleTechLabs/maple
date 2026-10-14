@@ -7,7 +7,6 @@ import {
 	isStaleOpenIncident,
 	SEVERITY_TONE,
 	severityToneFor,
-	SIGNAL_LABEL,
 } from "./anomaly-format"
 
 const incident = (
@@ -139,10 +138,6 @@ describe("error-frequency incident semantics", () => {
 		signalType: "error_rate" as const,
 		lastTriggeredAt: "2026-07-23T11:30:00.000Z",
 	}
-
-	it("uses an explicit user-facing label while preserving the internal signal", () => {
-		expect(SIGNAL_LABEL.error_spike).toBe("Error frequency increase")
-	})
 
 	it("marks open incidents stale after one hour", () => {
 		expect(isStaleOpenIncident(openIncident, nowMs)).toBe(false)

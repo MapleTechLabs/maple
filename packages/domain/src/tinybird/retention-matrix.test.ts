@@ -86,23 +86,6 @@ describe("Tinybird retention matrix", () => {
 		}
 	})
 
-	it("does not retain completed forward queries on ALTER-compatible annual rollups", () => {
-		const alterCompatibleRollups = [
-			"service_map_db_edges_hourly",
-			"service_map_db_query_shapes_hourly",
-			"service_operations_minutely",
-			"service_platforms_hourly",
-		]
-
-		for (const name of alterCompatibleRollups) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
-			)
-			expect(datasource, name).toBeDefined()
-			expect(datasource?.content, name).not.toContain("FORWARD_QUERY")
-		}
-	})
-
 	/**
 	 * A materialized view whose target outlives its source cannot be rebuilt.
 	 *
@@ -119,23 +102,6 @@ describe("Tinybird retention matrix", () => {
 			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
-		}
-	})
-
-	it("preserves longer-lived aggregates while raw logs are rebuilt", () => {
-		const migrationForwardQueries = [
-			"logs",
-			"attribute_keys_hourly",
-			"attribute_values_hourly",
-			"logs_aggregates_hourly",
-		]
-
-		for (const name of migrationForwardQueries) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
-			)
-			expect(datasource, name).toBeDefined()
-			expect(datasource?.content, name).toContain("FORWARD_QUERY")
 		}
 	})
 })

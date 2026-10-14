@@ -53,7 +53,7 @@ import { durableStep, type DurableStepConfig } from "@maple/backend/platform/dur
  * request will ever read — but the shared edge-cache entry is the one that
  * matters: it is what every API isolate reads on a memo miss, and at a 6h TTL
  * it would otherwise hand back the pre-apply `schema_version` (and so a wrong
- * `clickhouse.schemaDrift`) for the rest of the day.
+ * `maple.clickhouse.schema_drift`) for the rest of the day.
  *
  * Best-effort by design: `invalidate` already swallows backend failures, and
  * `Effect.ignore` covers the case where this isolate has no Cache API at all.
@@ -98,8 +98,8 @@ export type OptionalFeatureState =
 	| { readonly available: false; readonly reason: string }
 
 /**
- * A durable step that failed surfaces as a defect (its retries are spent), so
- * the reason is read off the whole cause, not the typed error channel.
+ * A durable step that failed has spent its retries, as a typed failure or a
+ * terminal defect, so the reason is read off the whole cause.
  */
 const causeMessage = (cause: Cause.Cause<unknown>): string => {
 	const error = Cause.squash(cause)
@@ -465,29 +465,27 @@ const reconcileSchemaSnapshot = (
 		const desired = parseDesiredTables()
 		const desiredByName = new Map(desired.map((t) => [t.name, t]))
 		const actual = yield* fetchActualSchema(cfg)
-		for (const entry of computeSchemaDiff({ tables: desired }, actual)) {
+		const statements = computeSchemaDiff({ tables: desired }, actual).flatMap((entry) => {
+			const table = desiredByName.get(entry.name)
+			if (!table) return []
 			if (entry.status === "missing") {
-				const table = desiredByName.get(entry.name)
-				if (table) {
-					yield* execClickHouse(
-						cfg,
-						qualifyStatementForDatabase(table.createStatement, cfg.database),
-					)
-				}
-			} else if (entry.status === "drifted" && entry.kind === "table") {
-				const table = desiredByName.get(entry.name)
-				if (!table) continue
-				for (const drift of entry.columnDrifts.filter((d) => d.kind === "missing")) {
-					const colDef = extractColumnDefinition(table.createStatement, drift.column)
-					if (colDef) {
-						yield* execClickHouse(
-							cfg,
-							`ALTER TABLE ${quote(cfg.database)}.${quote(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
-						)
-					}
-				}
+				return [qualifyStatementForDatabase(table.createStatement, cfg.database)]
 			}
-		}
+			if (entry.status !== "drifted" || entry.kind !== "table") return []
+			return entry.columnDrifts
+				.filter((drift) => drift.kind === "missing")
+				.flatMap((drift) => {
+					const colDef = extractColumnDefinition(table.createStatement, drift.column)
+					return colDef
+						? [
+								`ALTER TABLE ${quote(cfg.database)}.${quote(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
+							]
+						: []
+				})
+		})
+		yield* Effect.forEach(statements, (statement) => execClickHouse(cfg, statement), {
+			discard: true,
+		})
 	})
 
 // --- orchestration ----------------------------------------------------------
@@ -498,14 +496,14 @@ interface SkippedFeature {
 }
 
 /**
- * Typed failures (a bad payload, a missing encryption key) propagate rather than
- * die: alchemy's bridge rejects the run with either, and steps already retry on their own.
+ * Typed failures (a bad payload, a missing encryption key, a step whose retries
+ * are spent) propagate rather than die: alchemy's bridge rejects the run with any of them.
  */
 export const runClickHouseSchemaApply = (
 	payload: SchemaApplyWorkflowPayload,
 ): Effect.Effect<
 	SchemaApplyWorkflowResult,
-	SchemaApplyPayloadError | SchemaApplyConfigError,
+	SchemaApplyPayloadError | SchemaApplyConfigError | ClickHouseExecError | DatabaseError,
 	Database | Cloudflare.WorkflowStep | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
@@ -528,7 +526,7 @@ export const runClickHouseSchemaApply = (
 					status: "failed",
 					errorMessage: message,
 					finishedAt,
-				}).pipe(Effect.ignore)
+				}).pipe(Effect.ignore({ log: true, message: "Failed to mark schema apply run failed" }))
 				yield* database
 					.execute((db) =>
 						db.run(
@@ -541,7 +539,12 @@ export const runClickHouseSchemaApply = (
 								.where(($) => [$.orgId.eq(orgId)]),
 						),
 					)
-					.pipe(Effect.ignore)
+					.pipe(
+						Effect.ignore({
+							log: true,
+							message: "Failed to record schema apply error on settings",
+						}),
+					)
 				yield* bustRuntimeConfigCache(orgId)
 			})
 
@@ -590,36 +593,43 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 		const applied = yield* durableStep("read-applied", readAppliedVersions(cfg), STEP)
 		const appliedSet = new Set(applied)
 
-		for (const migration of clickHouseMigrations) {
-			if (migration.requiredForIngest === false) continue
-			if (appliedSet.has(migration.version)) continue
-
-			const steps = yield* durableStep(
-				`plan-m${migration.version}`,
-				planMigrationSteps(cfg, migration),
-				STEP,
-			)
-			for (const [index, s] of steps.entries()) {
-				// Progress rides inside the step: the body replays, so a write there
-				// would repeat, and a clock read there would differ per replay.
-				yield* durableStep(
-					`m${migration.version}:${s.name}`,
-					updateRun(database, orgId, {
-						phase: `migration ${migration.version} · ${s.name}`,
-						currentMigration: migration.version,
-						stepsTotal: steps.length,
-						stepsDone: index,
-					}).pipe(Effect.andThen(execClickHouse(cfg, s.sql))),
-					STEP,
-				)
-			}
-			yield* durableStep(
-				`record-m${migration.version}`,
-				recordVersion(cfg, migration.version, migration.description),
-				STEP,
-			)
-			appliedVersions.push(migration.version)
-		}
+		yield* Effect.forEach(
+			clickHouseMigrations.filter(
+				(migration) => migration.requiredForIngest !== false && !appliedSet.has(migration.version),
+			),
+			(migration) =>
+				Effect.gen(function* () {
+					const steps = yield* durableStep(
+						`plan-m${migration.version}`,
+						planMigrationSteps(cfg, migration),
+						STEP,
+					)
+					yield* Effect.forEach(
+						steps,
+						(s, index) =>
+							// Progress rides inside the step: the body replays, so a write there
+							// would repeat, and a clock read there would differ per replay.
+							durableStep(
+								`m${migration.version}:${s.name}`,
+								updateRun(database, orgId, {
+									phase: `migration ${migration.version} · ${s.name}`,
+									currentMigration: migration.version,
+									stepsTotal: steps.length,
+									stepsDone: index,
+								}).pipe(Effect.andThen(execClickHouse(cfg, s.sql))),
+								STEP,
+							),
+						{ discard: true },
+					)
+					yield* durableStep(
+						`record-m${migration.version}`,
+						recordVersion(cfg, migration.version, migration.description),
+						STEP,
+					)
+					appliedVersions.push(migration.version)
+				}),
+			{ discard: true },
+		)
 
 		// Snapshot-diff additive pass: create snapshot objects missing on the
 		// cluster + add missing columns (metadata-only, fits a step easily).
@@ -656,46 +666,54 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 			STEP,
 		)
 
-		for (const migration of clickHouseMigrations) {
-			if (migration.requiredForIngest !== false || appliedSet.has(migration.version)) continue
-			const applyPerformanceMigration = Effect.gen(function* () {
-				const steps = yield* durableStep(
-					`plan-performance-m${migration.version}`,
-					planMigrationSteps(cfg, migration),
-					STEP,
-				)
-				for (const [index, migrationStep] of steps.entries()) {
-					yield* durableStep(
-						`performance-m${migration.version}:${migrationStep.name}`,
-						updateRun(database, orgId, {
-							phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
-							currentMigration: migration.version,
-							stepsTotal: steps.length,
-							stepsDone: index,
-						}).pipe(Effect.andThen(execClickHouse(cfg, migrationStep.sql))),
-						STEP,
+		yield* Effect.forEach(
+			clickHouseMigrations,
+			(migration) =>
+				Effect.gen(function* () {
+					if (migration.requiredForIngest !== false || appliedSet.has(migration.version)) return
+					const applyPerformanceMigration = Effect.gen(function* () {
+						const steps = yield* durableStep(
+							`plan-performance-m${migration.version}`,
+							planMigrationSteps(cfg, migration),
+							STEP,
+						)
+						yield* Effect.forEach(
+							steps,
+							(migrationStep, index) =>
+								durableStep(
+									`performance-m${migration.version}:${migrationStep.name}`,
+									updateRun(database, orgId, {
+										phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
+										currentMigration: migration.version,
+										stepsTotal: steps.length,
+										stepsDone: index,
+									}).pipe(Effect.andThen(execClickHouse(cfg, migrationStep.sql))),
+									STEP,
+								),
+							{ discard: true },
+						)
+						yield* durableStep(
+							`record-performance-m${migration.version}`,
+							recordVersion(cfg, migration.version, migration.description),
+							STEP,
+						)
+						appliedSet.add(migration.version)
+						appliedVersions.push(migration.version)
+					})
+					// A performance migration that cannot be installed is skipped, never fatal.
+					return yield* applyPerformanceMigration.pipe(
+						Effect.catchCause((cause) =>
+							Effect.sync(() => {
+								skippedFeatures.push({
+									id: `migration_${migration.version}`,
+									reason: causeMessage(cause),
+								})
+							}),
+						),
 					)
-				}
-				yield* durableStep(
-					`record-performance-m${migration.version}`,
-					recordVersion(cfg, migration.version, migration.description),
-					STEP,
-				)
-				appliedSet.add(migration.version)
-				appliedVersions.push(migration.version)
-			})
-			// A performance migration that cannot be installed is skipped, never fatal.
-			yield* applyPerformanceMigration.pipe(
-				Effect.catchCause((cause) =>
-					Effect.sync(() => {
-						skippedFeatures.push({
-							id: `migration_${migration.version}`,
-							reason: causeMessage(cause),
-						})
-					}),
-				),
-			)
-		}
+				}),
+			{ discard: true },
+		)
 
 		const optionalFeatureState = yield* loadOptionalFeatureState({
 			ensureBookkeeping: durableStep("ensure-feature-bookkeeping", ensureFeaturesTable(cfg), STEP),
@@ -717,62 +735,70 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 		}
 		if (optionalFeatureState.available) {
 			const { serverVersion, appliedFeatureRevisions } = optionalFeatureState
-			for (const feature of clickHouseSchemaFeatures) {
-				if (!featureSupportedByVersion(feature, serverVersion)) {
-					skippedFeatures.push({
-						id: feature.id,
-						reason: `requires ClickHouse ${feature.minClickHouseVersion}+`,
-					})
-					continue
-				}
-				if ((appliedFeatureRevisions.get(feature.id) ?? 0) >= feature.revision) continue
-
-				const applyFeature = Effect.gen(function* () {
-					const sortingKeyRequirement = feature.satisfiedBySortingKey
-					const satisfied = sortingKeyRequirement
-						? yield* durableStep(
-								`feature-${feature.id}:inspect`,
-								Effect.gen(function* () {
-									const table = sortingKeyRequirement.table.replace(/'/g, "''")
-									const result = yield* execClickHouse(
-										cfg,
-										`SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = '${table}' FORMAT JSONEachRow`,
-									)
-									const row = parseSortingKeyRows(result)[0]
-									return (
-										normalizeExpression(row?.sorting_key ?? "") ===
-										normalizeExpression(sortingKeyRequirement.expected)
-									)
-								}),
-								STEP,
-							)
-						: false
-
-					if (!satisfied) {
-						for (const [index, statement] of feature.statements.entries()) {
-							yield* durableStep(
-								`feature-${feature.id}:${index + 1}`,
-								updateRun(database, orgId, {
-									phase: `feature ${feature.id} · ${index + 1}/${feature.statements.length}`,
-								}).pipe(Effect.andThen(execClickHouse(cfg, statement))),
-								STEP,
-							)
+			yield* Effect.forEach(
+				clickHouseSchemaFeatures,
+				(feature) =>
+					Effect.gen(function* () {
+						if (!featureSupportedByVersion(feature, serverVersion)) {
+							skippedFeatures.push({
+								id: feature.id,
+								reason: `requires ClickHouse ${feature.minClickHouseVersion}+`,
+							})
+							return
 						}
-					}
-					yield* durableStep(
-						`feature-${feature.id}:record`,
-						recordFeature(cfg, feature.id, feature.revision, feature.description),
-						STEP,
-					)
-				})
-				yield* applyFeature.pipe(
-					Effect.catchCause((cause) =>
-						Effect.sync(() => {
-							skippedFeatures.push({ id: feature.id, reason: causeMessage(cause) })
-						}),
-					),
-				)
-			}
+						if ((appliedFeatureRevisions.get(feature.id) ?? 0) >= feature.revision) return
+
+						const applyFeature = Effect.gen(function* () {
+							const sortingKeyRequirement = feature.satisfiedBySortingKey
+							const satisfied = sortingKeyRequirement
+								? yield* durableStep(
+										`feature-${feature.id}:inspect`,
+										Effect.gen(function* () {
+											const table = sortingKeyRequirement.table.replace(/'/g, "''")
+											const result = yield* execClickHouse(
+												cfg,
+												`SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = '${table}' FORMAT JSONEachRow`,
+											)
+											const row = parseSortingKeyRows(result)[0]
+											return (
+												normalizeExpression(row?.sorting_key ?? "") ===
+												normalizeExpression(sortingKeyRequirement.expected)
+											)
+										}),
+										STEP,
+									)
+								: false
+
+							if (!satisfied) {
+								yield* Effect.forEach(
+									feature.statements,
+									(statement, index) =>
+										durableStep(
+											`feature-${feature.id}:${index + 1}`,
+											updateRun(database, orgId, {
+												phase: `feature ${feature.id} · ${index + 1}/${feature.statements.length}`,
+											}).pipe(Effect.andThen(execClickHouse(cfg, statement))),
+											STEP,
+										),
+									{ discard: true },
+								)
+							}
+							yield* durableStep(
+								`feature-${feature.id}:record`,
+								recordFeature(cfg, feature.id, feature.revision, feature.description),
+								STEP,
+							)
+						})
+						return yield* applyFeature.pipe(
+							Effect.catchCause((cause) =>
+								Effect.sync(() => {
+									skippedFeatures.push({ id: feature.id, reason: causeMessage(cause) })
+								}),
+							),
+						)
+					}),
+				{ discard: true },
+			)
 		}
 
 		yield* durableStep(

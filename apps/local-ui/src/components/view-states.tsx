@@ -19,7 +19,17 @@ import { CopyableField } from "@maple/ui/components/ui/copyable-field"
 import { DEFAULT_LOCAL_PORT, isHostedUi, LOCAL_OTLP_ENDPOINT, localServerPort } from "../lib/constants"
 import { DOCS_CLI_REFERENCE, DOCS_LOCAL_MODE_INSTALL, INSTALL_METHODS } from "../lib/links"
 
-export function EmptyState({ icon, title, hint }: { icon?: ReactNode; title: string; hint?: ReactNode }) {
+export function EmptyState({
+	icon,
+	title,
+	hint,
+	action,
+}: {
+	icon?: ReactNode
+	title: string
+	hint?: ReactNode
+	action?: ReactNode
+}) {
 	return (
 		<Empty className="h-full">
 			{icon ? <EmptyMedia variant="icon">{icon}</EmptyMedia> : null}
@@ -27,6 +37,7 @@ export function EmptyState({ icon, title, hint }: { icon?: ReactNode; title: str
 				<EmptyTitle>{title}</EmptyTitle>
 				{hint ? <EmptyDescription>{hint}</EmptyDescription> : null}
 			</EmptyHeader>
+			{action ? <EmptyContent>{action}</EmptyContent> : null}
 		</Empty>
 	)
 }
@@ -194,9 +205,25 @@ function DocsLink({ href, children }: { href: string; children: ReactNode }) {
 
 /**
  * Content-shaped loading placeholder: `table` for row lists, `card` for the
- * card stacks.
+ * card stacks, `grid` for the metrics card grid.
  */
-export function ListSkeleton({ rows = 8, variant = "table" }: { rows?: number; variant?: "table" | "card" }) {
+export function ListSkeleton({
+	rows = 8,
+	variant = "table",
+}: {
+	rows?: number
+	variant?: "table" | "card" | "grid"
+}) {
+	if (variant === "grid") {
+		return (
+			<SkeletonList
+				rows={rows}
+				gap="3"
+				className="m-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+				rowClassName="h-[124px] rounded-md"
+			/>
+		)
+	}
 	return (
 		<SkeletonList
 			rows={rows}

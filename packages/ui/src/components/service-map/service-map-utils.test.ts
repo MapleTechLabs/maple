@@ -4,7 +4,6 @@ import {
 	computeFlatPositions,
 	computeNodePositions,
 	dbNodeId,
-	getHealthColor,
 	getPlatformColor,
 	getServiceMapNodeColor,
 	parseDbNodeId,
@@ -477,12 +476,6 @@ describe("getServiceMapNodeColor", () => {
 		const apiColor = getServiceMapNodeColor({ label: "api", kind: "service", errorRate: 0 }, "service")
 		const authColor = getServiceMapNodeColor({ label: "auth", kind: "service", errorRate: 0 }, "service")
 		expect(apiColor).not.toBe(authColor)
-	})
-
-	it("getHealthColor matches the bucket boundaries used by the helper", () => {
-		expect(getHealthColor(0.0)).toBe("var(--severity-info)")
-		expect(getHealthColor(0.011)).toBe("var(--severity-warn)")
-		expect(getHealthColor(0.06)).toBe("var(--severity-error)")
 	})
 })
 

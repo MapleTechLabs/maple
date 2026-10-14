@@ -17,7 +17,7 @@ import { Effect, Option, Schema } from "effect"
 export const SVIX_TOLERANCE_SECONDS = 5 * 60
 
 export class SvixVerificationError extends Schema.TaggedError<SvixVerificationError>()(
-	"@maple/api/services/product-events/SvixVerificationError",
+	"@maple/backend/services/product-events/SvixVerificationError",
 	{
 		message: Schema.String,
 		reason: Schema.Literals([

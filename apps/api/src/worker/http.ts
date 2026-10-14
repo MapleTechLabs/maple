@@ -18,7 +18,7 @@ import {
 import { aiUnavailableResponse, forwardsToAi, forwardToAi } from "./ai-forward"
 import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
 import { AiWorkerFetcher, type MapleDbConnection } from "@maple/backend/platform/bindings"
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import type { ApiPortsLayer } from "./bindings"
@@ -79,7 +79,7 @@ export const buildApp = (
 				isolate,
 				QueryRoutes.pipe(
 					Layer.provideMerge(WorkerPlatformLive),
-					Layer.provideMerge(layerPg),
+					Layer.provideMerge(DatabasePgLive),
 					Layer.provide(ports),
 				),
 				memoMap,
@@ -95,7 +95,7 @@ export const buildApp = (
 				Layer.provideMerge(HttpServicesLive),
 				Layer.provideMerge(ApiAuthLive),
 				Layer.provideMerge(WorkerPlatformLive),
-				Layer.provideMerge(layerPg),
+				Layer.provideMerge(DatabasePgLive),
 				Layer.provideMerge(FetchHttpClient.layer),
 				Layer.provide(ports),
 			),
@@ -201,6 +201,11 @@ export const makeFetch = (
 					}),
 				})
 			}
+			// The unattributed 500s all landed within ~60ms of an isolate's first request, so the
+			// span carries that shape. Counted before the graph builds, so build failures count too,
+			// and before the forward, so a forwarded call's cold cost splits by both isolates.
+			yield* isolateAge.record
+
 			// The agent surfaces moved to maple-ai; this origin keeps serving them.
 			// Ahead of the route graph on purpose: that is the whole point of the
 			// split, so a `/mcp` call no longer builds `AllRoutes` and `ApiAuthLive`.
@@ -216,10 +221,6 @@ export const makeFetch = (
 				}
 				return yield* forwardToAi(aiWorker.value, request)
 			}
-
-			// The unattributed 500s all landed within ~60ms of an isolate's first request, so the
-			// span carries that shape. Counted before the graph builds, so build failures count too.
-			yield* isolateAge.record
 
 			const selectedApp =
 				path === "/internal/query-engine" || path.startsWith("/internal/query-engine/")
@@ -238,9 +239,7 @@ export const makeFetch = (
 			)
 
 			return response
-		}).pipe(
-			Effect.map(HttpServerResponse.setHeader("timing-allow-origin", API_TIMING_ALLOW_ORIGIN)),
-		)
+		}).pipe(Effect.map(HttpServerResponse.setHeader("timing-allow-origin", API_TIMING_ALLOW_ORIGIN)))
 		// Outside the wrapper, so the preflight stays byte-equal to HttpRouter.cors.
 		return Effect.gen(function* () {
 			const request = yield* HttpServerRequest.HttpServerRequest

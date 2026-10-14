@@ -196,7 +196,7 @@ export class AlertReadModelsService extends Context.Service<
 
 		const dbExecute = makeDbExecute(database, "AlertReadModelsService", makePersistenceError)
 
-		const listIncidents = Effect.fn("AlertsService.listIncidents")(function* (
+		const listIncidents = Effect.fn("AlertReadModelsService.listIncidents")(function* (
 			orgId: OrgId,
 			options: ListAlertIncidentsOptions = {},
 		) {
@@ -226,11 +226,11 @@ export class AlertReadModelsService extends Context.Service<
 			})
 		})
 
-		const getIncident = Effect.fn("AlertsService.getIncident")(function* (
+		const getIncident = Effect.fn("AlertReadModelsService.getIncident")(function* (
 			orgId: OrgId,
 			incidentId: AlertIncidentId,
 		) {
-			yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.incident_id": incidentId })
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertIncidents)
@@ -249,7 +249,7 @@ export class AlertReadModelsService extends Context.Service<
 			return rowToIncidentDocument(incident)
 		})
 
-		const listRuleChecks = Effect.fn("AlertsService.listRuleChecks")(function* (
+		const listRuleChecks = Effect.fn("AlertReadModelsService.listRuleChecks")(function* (
 			orgId: OrgId,
 			ruleId: AlertRuleId,
 			options: {
@@ -370,7 +370,7 @@ export class AlertReadModelsService extends Context.Service<
 			return new AlertChecksListResponse({ checks })
 		})
 
-		const summarizeRuleChecks = Effect.fn("AlertsService.summarizeRuleChecks")(function* (
+		const summarizeRuleChecks = Effect.fn("AlertReadModelsService.summarizeRuleChecks")(function* (
 			orgId: OrgId,
 			ruleId: AlertRuleId,
 			options: { readonly since: string; readonly until: string },
@@ -457,7 +457,7 @@ export class AlertReadModelsService extends Context.Service<
 			return { bucketSeconds, topGroupKeys, points, totals } satisfies AlertChecksSummary
 		})
 
-		const listDeliveryEvents = Effect.fn("AlertsService.listDeliveryEvents")(function* (
+		const listDeliveryEvents = Effect.fn("AlertReadModelsService.listDeliveryEvents")(function* (
 			orgId: OrgId,
 			options: ListAlertDeliveryEventsOptions = {},
 		) {

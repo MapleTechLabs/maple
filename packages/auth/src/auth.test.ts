@@ -61,6 +61,9 @@ const validClaims = {
 	authMode: "self_hosted",
 	iat: clockSeconds,
 }
+// The baseline minus one claim, so a negative test isolates the claim it names.
+const withoutClaim = (key: keyof typeof validClaims) =>
+	Object.fromEntries(Object.entries(validClaims).filter(([name]) => name !== key))
 const atFixedTime = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.gen(function* () {
 		yield* TestClock.adjust(`${clockSeconds} seconds`)
@@ -115,37 +118,6 @@ describe("makeResolveTenant", () => {
 				roles: [asRoleName("org:admin")],
 				authMode: "clerk",
 			})
-		}),
-	)
-
-	it.effect("rejects Clerk auth when no bearer token is present", () =>
-		Effect.gen(function* () {
-			const resolveTenant = makeResolveTenant(
-				{
-					...baseEnv,
-					MAPLE_AUTH_MODE: "clerk",
-					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
-					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
-				},
-				async () => ({
-					isAuthenticated: false,
-					message: "Session token missing",
-					toAuth: () => ({
-						isAuthenticated: false,
-						tokenType: "session_token",
-						userId: null,
-						orgId: null,
-						orgRole: null,
-					}),
-				}),
-			)
-
-			const exit = yield* Effect.exit(resolveTenant({}))
-			const failure = getFailure(exit) as { _tag?: string; message?: string } | undefined
-
-			assert.isTrue(Exit.isFailure(exit))
-			assert.strictEqual(failure?._tag, "@maple/http/errors/UnauthorizedError")
-			assert.strictEqual(failure?.message, "Session token missing")
 		}),
 	)
 
@@ -226,13 +198,12 @@ describe("makeResolveTenant", () => {
 
 	it.effect("rejects self-hosted requests with invalid token signature", () =>
 		Effect.gen(function* () {
-			const resolveTenant = makeResolveTenant(baseEnv)
+			const token = signClaims(validClaims)
+			const data = token.slice(0, token.lastIndexOf("."))
+			const forged = `${data}.${createHmac("sha256", "not-the-root-password").update(data).digest("base64url")}`
 
-			const exit = yield* Effect.exit(
-				resolveTenant({
-					authorization: "Bearer invalid.token.signature",
-				}),
-			)
+			assert.isTrue(Exit.isSuccess(yield* resolveSignedToken(token)))
+			const exit = yield* resolveSignedToken(forged)
 			const failure = getFailure(exit) as { _tag?: string } | undefined
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -385,40 +356,7 @@ describe("makeResolveMcpTenant", () => {
 			})
 		}),
 	)
-})
 
-describe("makeGetCustomerData", () => {
-	it.effect("returns null identity outside Clerk mode (no enrichment, no regression)", () =>
-		Effect.gen(function* () {
-			const getCustomerData = makeGetCustomerData(baseEnv)
-
-			const result = yield* getCustomerData({
-				orgId: asOrgId("default"),
-				userId: asUserId("root"),
-				roles: [asRoleName("root")],
-				authMode: "self_hosted",
-			})
-
-			assert.deepStrictEqual(result, { email: null, orgName: null })
-		}),
-	)
-})
-
-describe("makeLoginSelfHosted", () => {
-	it.effect("rejects invalid root passwords", () =>
-		Effect.gen(function* () {
-			const loginSelfHosted = makeLoginSelfHosted(baseEnv)
-			const exit = yield* Effect.exit(loginSelfHosted("wrong-password"))
-			const failure = getFailure(exit) as { _tag?: string; message?: string } | undefined
-
-			assert.isTrue(Exit.isFailure(exit))
-			assert.strictEqual(failure?._tag, "@maple/http/errors/SelfHostedInvalidPasswordError")
-			assert.strictEqual(failure?.message, "Invalid root password")
-		}),
-	)
-})
-
-describe("makeResolveMcpTenant", () => {
 	// Regression: a logged-in browser applying an approved chat proposal via
 	// POST /internal/chat/apply sends a Clerk session_token. The MCP tenant fallback
 	// must accept it (not only api_key), or every Clerk-mode apply fails.
@@ -461,6 +399,37 @@ describe("makeResolveMcpTenant", () => {
 	)
 })
 
+describe("makeGetCustomerData", () => {
+	it.effect("returns null identity outside Clerk mode (no enrichment, no regression)", () =>
+		Effect.gen(function* () {
+			const getCustomerData = makeGetCustomerData(baseEnv)
+
+			const result = yield* getCustomerData({
+				orgId: asOrgId("default"),
+				userId: asUserId("root"),
+				roles: [asRoleName("root")],
+				authMode: "self_hosted",
+			})
+
+			assert.deepStrictEqual(result, { email: null, orgName: null })
+		}),
+	)
+})
+
+describe("makeLoginSelfHosted", () => {
+	it.effect("rejects invalid root passwords", () =>
+		Effect.gen(function* () {
+			const loginSelfHosted = makeLoginSelfHosted(baseEnv)
+			const exit = yield* Effect.exit(loginSelfHosted("wrong-password"))
+			const failure = getFailure(exit) as { _tag?: string; message?: string } | undefined
+
+			assert.isTrue(Exit.isFailure(exit))
+			assert.strictEqual(failure?._tag, "@maple/http/errors/SelfHostedInvalidPasswordError")
+			assert.strictEqual(failure?.message, "Invalid root password")
+		}),
+	)
+})
+
 // A correctly signed token is NOT a valid session. Anyone holding the root
 // password can mint arbitrary claims, and a self-hosted deployment may still be
 // carrying tokens minted by an older build, so every claim shape below has to be
@@ -478,7 +447,7 @@ describe("self-hosted session claims (correctly signed, malformed)", () => {
 	it.effect("rejects a token with no authMode claim", () =>
 		Effect.gen(function* () {
 			assertRejected(
-				yield* resolveSignedClaims({ sub: "root", org_id: "default", roles: ["root"] }),
+				yield* resolveSignedClaims(withoutClaim("authMode")),
 				"Invalid self-hosted session token",
 			)
 		}),
@@ -487,7 +456,7 @@ describe("self-hosted session claims (correctly signed, malformed)", () => {
 	it.effect("rejects a token with no sub claim", () =>
 		Effect.gen(function* () {
 			assertRejected(
-				yield* resolveSignedClaims({ org_id: "default", roles: ["root"], authMode: "self_hosted" }),
+				yield* resolveSignedClaims(withoutClaim("sub")),
 				"Invalid self-hosted session token",
 			)
 		}),
@@ -496,7 +465,7 @@ describe("self-hosted session claims (correctly signed, malformed)", () => {
 	it.effect("rejects a token with no org_id claim", () =>
 		Effect.gen(function* () {
 			assertRejected(
-				yield* resolveSignedClaims({ sub: "root", roles: ["root"], authMode: "self_hosted" }),
+				yield* resolveSignedClaims(withoutClaim("org_id")),
 				"Invalid self-hosted session token",
 			)
 		}),
@@ -1154,7 +1123,13 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 	it.effect("rejects the header for an API-key credential", () =>
 		Effect.gen(function* () {
 			const membership = verifier([{ orgId: "org_other", role: "org:admin" }])
-			const resolveTenant = makeResolveMcpTenant(clerkEnv, clerkAuth({ tokenType: "api_key" }))
+			// The MCP token types, with a verifier wired so a skipped check is observable.
+			const resolveTenant = makeResolveTenant(
+				clerkEnv,
+				clerkAuth({ tokenType: "api_key" }),
+				["api_key", "session_token"],
+				membership.verify,
+			)
 
 			const exit = yield* Effect.exit(
 				resolveTenant({

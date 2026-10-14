@@ -7,7 +7,7 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer } from "effect"
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import type { ApiPortsLayer } from "./bindings"
 import { runEvent, settleFire } from "./events"
 import { vcsSyncModule } from "./modules"
@@ -43,7 +43,7 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 				// The jobs talk only to Postgres, so the layer is the database alone.
 				return yield* runEvent(
 					Effect.andThen(runScrapeCheckRetention, runPlanetScaleEventRetention),
-					layerPg.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
+					DatabasePgLive.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
 				)
 			}).pipe(settleFire(SCRAPE_RETENTION_CRON)),
 		)
