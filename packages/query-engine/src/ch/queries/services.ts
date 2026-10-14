@@ -473,9 +473,13 @@ export interface ServicePresenceOutput {
  * (OrgId, ServiceName), so the scan stays narrow.
  */
 export function servicePresenceQuery(opts: { serviceName: string }) {
-	return serviceOverviewWindows({ serviceName: opts.serviceName })
-		.select(($) => ({ spanCount: CH.sum($.bSpanCount) }))
-		.format("JSON")
+	return (
+		serviceOverviewWindows({ serviceName: opts.serviceName })
+			.select(($) => ({ spanCount: CH.sum($.bSpanCount) }))
+			// The window builder drops a falsy name filter; pin it here so "" can't count every service.
+			.where(($) => [$.bServiceName.eq(opts.serviceName)])
+			.format("JSON")
+	)
 }
 
 export const servicePresenceRowSchema = Schema.Struct({

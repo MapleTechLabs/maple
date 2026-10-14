@@ -734,11 +734,13 @@ const localServiceHasTelemetry = (service: string, range: Range) =>
  * so unlike `knownServices` it is not limited to the busiest page of services.
  */
 export const serviceHasTelemetry = (service: string, range: Range) =>
-	dispatch(
-		localServiceHasTelemetry(service, range),
-		({ v2 }) => Remote.serviceHasTelemetry(v2, { service, range }),
-		"service_presence",
-	)
+	service.trim() === ""
+		? Effect.succeed(false)
+		: dispatch(
+				localServiceHasTelemetry(service, range),
+				({ v2 }) => Remote.serviceHasTelemetry(v2, { service, range }),
+				"service_presence",
+			)
 
 /** Service names with trace telemetry in the window, busiest first. */
 export const knownServices = (range: Range) =>

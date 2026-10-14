@@ -4956,7 +4956,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:services:servicePresenceQuery:default  [eca95a42]
+-- builder:services:servicePresenceQuery:default  [3abd8978]
 SELECT
           sum(service_windows.bSpanCount) AS spanCount
         FROM (
@@ -5005,6 +5005,7 @@ SELECT
           AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
         GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
 ) AS service_windows
+        WHERE service_windows.bServiceName = 'checkout'
         FORMAT JSON
 
 -- builder:session-events:sessionActivityQuery:default  [bb249b01]
