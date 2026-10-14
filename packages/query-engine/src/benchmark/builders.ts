@@ -1636,6 +1636,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			CH.compileUnsafe(CH.serviceDependenciesForServiceQuery({ serviceName: "web" }), window),
 	},
 	{
+		module: "service-map",
+		name: "serviceDependenciesInvolvingServiceQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceDependenciesInvolvingServiceQuery({ serviceName: "web" }), window),
+	},
+	{
 		// Hourly MV UNION ALL the two partial hours from raw traces. Absent from
 		// this catalog until 2026-08-30, which is how its splice drifted: the
 		// hourly branch floored the start to the hour while the raw branch covered
