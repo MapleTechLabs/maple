@@ -54,6 +54,7 @@ import { Route as LabAgentSessionsRouteImport } from './routes/lab/agent-session
 import { Route as LabAgentToolsRouteImport } from './routes/lab/agent-tools'
 import { Route as LabChartsRouteImport } from './routes/lab/charts'
 import { Route as LabChatRouteImport } from './routes/lab/chat'
+import { Route as LabCloudflareRouteImport } from './routes/lab/cloudflare'
 import { Route as LabCodeReviewReposRouteImport } from './routes/lab/code-review-repos'
 import { Route as LabErrorsRouteImport } from './routes/lab/errors'
 import { Route as LabFlowRouteImport } from './routes/lab/flow'
@@ -109,6 +110,7 @@ import { Route as LabBenchServiceDetailRouteImport } from './routes/lab/bench/se
 import { Route as LabBenchServiceMapRouteImport } from './routes/lab/bench/service-map'
 import { Route as LabBenchTanstackRouteImport } from './routes/lab/bench/tanstack'
 import { Route as DashboardsDashboardIdWidgetsWidgetIdRouteImport } from './routes/dashboards/$dashboardId_.widgets.$widgetId'
+import { Route as InfraCloudflareWorkersScriptNameRouteImport } from './routes/infra/cloudflare/workers/$scriptName'
 import { Route as InfraKubernetesNodesIndexRouteImport } from './routes/infra/kubernetes/nodes/index'
 import { Route as InfraKubernetesNodesNodeNameRouteImport } from './routes/infra/kubernetes/nodes/$nodeName'
 import { Route as InfraKubernetesPodsIndexRouteImport } from './routes/infra/kubernetes/pods/index'
@@ -341,6 +343,11 @@ const LabChartsRoute = LabChartsRouteImport.update({
 const LabChatRoute = LabChatRouteImport.update({
   id: '/chat',
   path: '/chat',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabCloudflareRoute = LabCloudflareRouteImport.update({
+  id: '/cloudflare',
+  path: '/cloudflare',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabCodeReviewReposRoute = LabCodeReviewReposRouteImport.update({
@@ -623,6 +630,12 @@ const DashboardsDashboardIdWidgetsWidgetIdRoute =
     path: '/dashboards/$dashboardId/widgets/$widgetId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const InfraCloudflareWorkersScriptNameRoute =
+  InfraCloudflareWorkersScriptNameRouteImport.update({
+    id: '/infra/cloudflare/workers/$scriptName',
+    path: '/infra/cloudflare/workers/$scriptName',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const InfraKubernetesNodesIndexRoute =
   InfraKubernetesNodesIndexRouteImport.update({
     id: '/infra/kubernetes/nodes/',
@@ -708,6 +721,7 @@ export interface FileRoutesByFullPath {
   '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/chat': typeof LabChatRoute
+  '/lab/cloudflare': typeof LabCloudflareRoute
   '/lab/code-review-repos': typeof LabCodeReviewReposRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
@@ -773,6 +787,7 @@ export interface FileRoutesByFullPath {
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
   '/infra/railway/': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
+  '/infra/cloudflare/workers/$scriptName': typeof InfraCloudflareWorkersScriptNameRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
   '/infra/kubernetes/services/$serviceName': typeof InfraKubernetesServicesServiceNameRoute
@@ -817,6 +832,7 @@ export interface FileRoutesByTo {
   '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/chat': typeof LabChatRoute
+  '/lab/cloudflare': typeof LabCloudflareRoute
   '/lab/code-review-repos': typeof LabCodeReviewReposRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
@@ -882,6 +898,7 @@ export interface FileRoutesByTo {
   '/infra/planetscale': typeof InfraPlanetscaleIndexRoute
   '/infra/railway': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
+  '/infra/cloudflare/workers/$scriptName': typeof InfraCloudflareWorkersScriptNameRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
   '/infra/kubernetes/services/$serviceName': typeof InfraKubernetesServicesServiceNameRoute
@@ -928,6 +945,7 @@ export interface FileRoutesById {
   '/lab/agent-tools': typeof LabAgentToolsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/chat': typeof LabChatRoute
+  '/lab/cloudflare': typeof LabCloudflareRoute
   '/lab/code-review-repos': typeof LabCodeReviewReposRoute
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
@@ -993,6 +1011,7 @@ export interface FileRoutesById {
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
   '/infra/railway/': typeof InfraRailwayIndexRoute
   '/dashboards/$dashboardId_/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
+  '/infra/cloudflare/workers/$scriptName': typeof InfraCloudflareWorkersScriptNameRoute
   '/infra/kubernetes/nodes/$nodeName': typeof InfraKubernetesNodesNodeNameRoute
   '/infra/kubernetes/pods/$podName': typeof InfraKubernetesPodsPodNameRoute
   '/infra/kubernetes/services/$serviceName': typeof InfraKubernetesServicesServiceNameRoute
@@ -1040,6 +1059,7 @@ export interface FileRouteTypes {
     | '/lab/agent-tools'
     | '/lab/charts'
     | '/lab/chat'
+    | '/lab/cloudflare'
     | '/lab/code-review-repos'
     | '/lab/errors'
     | '/lab/flow'
@@ -1105,6 +1125,7 @@ export interface FileRouteTypes {
     | '/infra/planetscale/'
     | '/infra/railway/'
     | '/dashboards/$dashboardId/widgets/$widgetId'
+    | '/infra/cloudflare/workers/$scriptName'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
     | '/infra/kubernetes/services/$serviceName'
@@ -1149,6 +1170,7 @@ export interface FileRouteTypes {
     | '/lab/agent-tools'
     | '/lab/charts'
     | '/lab/chat'
+    | '/lab/cloudflare'
     | '/lab/code-review-repos'
     | '/lab/errors'
     | '/lab/flow'
@@ -1214,6 +1236,7 @@ export interface FileRouteTypes {
     | '/infra/planetscale'
     | '/infra/railway'
     | '/dashboards/$dashboardId/widgets/$widgetId'
+    | '/infra/cloudflare/workers/$scriptName'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
     | '/infra/kubernetes/services/$serviceName'
@@ -1259,6 +1282,7 @@ export interface FileRouteTypes {
     | '/lab/agent-tools'
     | '/lab/charts'
     | '/lab/chat'
+    | '/lab/cloudflare'
     | '/lab/code-review-repos'
     | '/lab/errors'
     | '/lab/flow'
@@ -1324,6 +1348,7 @@ export interface FileRouteTypes {
     | '/infra/planetscale/'
     | '/infra/railway/'
     | '/dashboards/$dashboardId_/widgets/$widgetId'
+    | '/infra/cloudflare/workers/$scriptName'
     | '/infra/kubernetes/nodes/$nodeName'
     | '/infra/kubernetes/pods/$podName'
     | '/infra/kubernetes/services/$serviceName'
@@ -1405,6 +1430,7 @@ export interface RootRouteChildren {
   InfraPlanetscaleIndexRoute: typeof InfraPlanetscaleIndexRoute
   InfraRailwayIndexRoute: typeof InfraRailwayIndexRoute
   DashboardsDashboardIdWidgetsWidgetIdRoute: typeof DashboardsDashboardIdWidgetsWidgetIdRoute
+  InfraCloudflareWorkersScriptNameRoute: typeof InfraCloudflareWorkersScriptNameRoute
   InfraKubernetesNodesNodeNameRoute: typeof InfraKubernetesNodesNodeNameRoute
   InfraKubernetesPodsPodNameRoute: typeof InfraKubernetesPodsPodNameRoute
   InfraKubernetesServicesServiceNameRoute: typeof InfraKubernetesServicesServiceNameRoute
@@ -1730,6 +1756,13 @@ declare module '@tanstack/react-router' {
       path: '/chat'
       fullPath: '/lab/chat'
       preLoaderRoute: typeof LabChatRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/cloudflare': {
+      id: '/lab/cloudflare'
+      path: '/cloudflare'
+      fullPath: '/lab/cloudflare'
+      preLoaderRoute: typeof LabCloudflareRouteImport
       parentRoute: typeof LabRouteRoute
     }
     '/lab/code-review-repos': {
@@ -2117,6 +2150,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardsDashboardIdWidgetsWidgetIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/infra/cloudflare/workers/$scriptName': {
+      id: '/infra/cloudflare/workers/$scriptName'
+      path: '/infra/cloudflare/workers/$scriptName'
+      fullPath: '/infra/cloudflare/workers/$scriptName'
+      preLoaderRoute: typeof InfraCloudflareWorkersScriptNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/infra/kubernetes/nodes/': {
       id: '/infra/kubernetes/nodes/'
       path: '/infra/kubernetes/nodes'
@@ -2182,6 +2222,7 @@ interface LabRouteRouteChildren {
   LabAgentToolsRoute: typeof LabAgentToolsRoute
   LabChartsRoute: typeof LabChartsRoute
   LabChatRoute: typeof LabChatRoute
+  LabCloudflareRoute: typeof LabCloudflareRoute
   LabCodeReviewReposRoute: typeof LabCodeReviewReposRoute
   LabErrorsRoute: typeof LabErrorsRoute
   LabFlowRoute: typeof LabFlowRoute
@@ -2215,6 +2256,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabAgentToolsRoute: LabAgentToolsRoute,
   LabChartsRoute: LabChartsRoute,
   LabChatRoute: LabChatRoute,
+  LabCloudflareRoute: LabCloudflareRoute,
   LabCodeReviewReposRoute: LabCodeReviewReposRoute,
   LabErrorsRoute: LabErrorsRoute,
   LabFlowRoute: LabFlowRoute,
@@ -2318,6 +2360,7 @@ const rootRouteChildren: RootRouteChildren = {
   InfraRailwayIndexRoute: InfraRailwayIndexRoute,
   DashboardsDashboardIdWidgetsWidgetIdRoute:
     DashboardsDashboardIdWidgetsWidgetIdRoute,
+  InfraCloudflareWorkersScriptNameRoute: InfraCloudflareWorkersScriptNameRoute,
   InfraKubernetesNodesNodeNameRoute: InfraKubernetesNodesNodeNameRoute,
   InfraKubernetesPodsPodNameRoute: InfraKubernetesPodsPodNameRoute,
   InfraKubernetesServicesServiceNameRoute:

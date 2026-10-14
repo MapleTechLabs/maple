@@ -291,6 +291,9 @@ export {
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
 	servicesFacetsQuery,
+	servicePresenceQuery,
+	servicePresenceRowSchema,
+	type ServicePresenceOutput,
 	type ServiceOverviewOpts,
 	type ServiceOverviewOutput,
 	type ServiceCatalogOpts,
@@ -427,6 +430,7 @@ export {
 export {
 	serviceDependenciesSQL,
 	serviceDependenciesForServiceQuery,
+	serviceDependenciesInvolvingServiceQuery,
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
 	serviceDbQuerySummarySQL,

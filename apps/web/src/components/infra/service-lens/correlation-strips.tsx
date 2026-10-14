@@ -1,9 +1,11 @@
+import type { ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Panel } from "@maple/ui/components/ui/panel"
 
 import { useLinkedCursor } from "@/hooks/use-linked-cursor"
 import { InfraMetricChart, type InfraSeriesInfo } from "@/components/infra/primitives/infra-metric-chart"
+import type { ChartEventMarker } from "@/components/infra/primitives/chart-event-markers"
 import { formatValueWithUnit, type ChartUnit } from "@/components/infra/chart-utils"
 import { SeriesLegend } from "@/components/common/series-legend"
 
@@ -35,6 +37,10 @@ export interface StripSeries {
 	showThreshold?: boolean
 	/** Stacked bands rather than independent lines (per-pod CPU). */
 	stacked?: boolean
+	/** A window summary under the strip's label, so the plot keeps the full width; replaces the last-value caption. */
+	summary?: ReactNode
+	/** Fixed series colours, for names whose meaning the identity hash can't see. */
+	colors?: Readonly<Record<string, string>>
 }
 
 interface CorrelationStripsProps {
@@ -45,11 +51,19 @@ interface CorrelationStripsProps {
 	 * series and the kubeletstats gauges rarely cover the window identically.
 	 */
 	xDomain: ReadonlyArray<string>
+	/** Drawn on every strip at the same instant (deploys), so they read down the stack. */
+	markers?: ReadonlyArray<ChartEventMarker>
 	waiting?: boolean
 	className?: string
 }
 
-export function CorrelationStrips({ series, xDomain, waiting = false, className }: CorrelationStripsProps) {
+export function CorrelationStrips({
+	series,
+	xDomain,
+	markers,
+	waiting = false,
+	className,
+}: CorrelationStripsProps) {
 	// One cursor across all three strips. They are independent charts — the
 	// cursor is a CSS variable on the container, not a Recharts syncId, so
 	// hovering one does not rerender the others (see `useLinkedCursor`).
@@ -66,9 +80,12 @@ export function CorrelationStrips({ series, xDomain, waiting = false, className 
 					key={strip.id}
 					className={cn("flex items-center gap-4 px-4 py-3", index > 0 && "border-t")}
 				>
-					<div className="flex w-[150px] shrink-0 flex-col gap-0.5">
+					<div className="flex w-[140px] shrink-0 flex-col gap-0.5">
 						<span className="text-xs font-medium text-foreground">{strip.label}</span>
 						<span className="font-mono text-3xs text-muted-foreground">{strip.source}</span>
+						{strip.summary === undefined ? null : (
+							<div className="mt-2 flex flex-col gap-0.5">{strip.summary}</div>
+						)}
 					</div>
 					<div className="min-w-0 flex-1">
 						<InfraMetricChart
@@ -79,9 +96,11 @@ export function CorrelationStrips({ series, xDomain, waiting = false, className 
 							showThreshold={strip.showThreshold}
 							height={STRIP_HEIGHT}
 							xDomain={xDomain}
+							markers={markers}
+							seriesColors={strip.colors}
 							linkedChartId={`lens-${strip.id}`}
 							waiting={waiting}
-							header={LastValue}
+							header={strip.summary === undefined ? LastValue : undefined}
 						/>
 					</div>
 				</div>

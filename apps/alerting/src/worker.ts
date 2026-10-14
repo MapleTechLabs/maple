@@ -37,6 +37,7 @@ import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
 import { HttpServerResponse } from "effect/http"
+import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
 import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
 
@@ -102,9 +103,6 @@ const props = Effect.gen(function* () {
 	}
 })
 
-/** Dispatched to tick groups by `selectScheduledProgram`. */
-const ALERTING_CRONS = ["* * * * *", "*/5 * * * *", "*/15 * * * *", "0 * * * *"] as const
-
 /**
  * Non-prod stages share live org data, so their crons would iterate real orgs
  * with stage-local credentials (failures, duplicate emails). Off unless overridden.
@@ -145,19 +143,44 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
 
-		const runTick = (cron: string, env: Record<string, unknown>) =>
+		const runTick = (cron: string, lane: string, env: Record<string, unknown>) =>
 			Effect.gen(function* () {
 				const { runScheduled } = yield* scheduled
-				yield* runScheduled(cron, env, email, chatSessions)
+				yield* runScheduled(cron, lane, env, email, chatSessions)
 			}).pipe(
 				// Interrupts are isolate teardown, not a failed run.
 				Effect.catchCause((cause) =>
 					Cause.hasInterruptsOnly(cause)
 						? Effect.void
 						: Effect.logError("Alerting scheduled run failed", cause).pipe(
-								Effect.annotateLogs({ "maple.alerting.cron": cron }),
+								Effect.annotateLogs({
+									"maple.alerting.cron": cron,
+									"maple.alerting.lane": lane,
+								}),
 							),
 				),
+			)
+
+		// One placed invocation per lane, so a stalled lane cannot hold up the others.
+		// Answers whether the lane still has to run inline.
+		const dispatchLane = (cron: string, lane: string, env: Record<string, unknown>) =>
+			dispatchTick(cron, lane, env).pipe(
+				Effect.andThen(Effect.annotateCurrentSpan("maple.alerting.dispatch", "placed")),
+				Effect.as(false),
+				Effect.catchTags({
+					"@maple/alerting/errors/TickDispatchUnavailable": () =>
+						Effect.annotateCurrentSpan("maple.alerting.dispatch", "inline").pipe(Effect.as(true)),
+					// A failed hop is not retried inline: the placed handler may have run part of the lane.
+					"@maple/alerting/errors/TickDispatchError": (error) =>
+						Effect.logError("Placed alerting tick failed", error).pipe(
+							Effect.annotateLogs({ "maple.alerting.cron": cron, "maple.alerting.lane": lane }),
+							Effect.andThen(Effect.annotateCurrentSpan("maple.alerting.dispatch", "failed")),
+							Effect.as(false),
+						),
+				}),
+				Effect.withSpan("alerting.lane", {
+					attributes: { "maple.alerting.cron": cron, "maple.alerting.lane": lane },
+				}),
 			)
 
 		const onFire = (controller: ScheduledController) =>
@@ -175,33 +198,35 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 					}
 					return
 				}
-				yield* dispatchTick(controller.cron, env).pipe(
-					Effect.andThen(Effect.annotateCurrentSpan("maple.alerting.dispatch", "placed")),
-					Effect.catchTags({
-						"@maple/alerting/errors/TickDispatchUnavailable": () =>
-							runTick(controller.cron, env).pipe(
-								Effect.annotateSpans("maple.alerting.dispatch", "inline"),
-							),
-						// A failed hop is not retried inline: the placed handler may have run part of the tick.
-						"@maple/alerting/errors/TickDispatchError": (error) =>
-							Effect.logError("Placed alerting tick failed", error).pipe(
-								Effect.annotateLogs({ "maple.alerting.cron": controller.cron }),
-								Effect.andThen(
-									Effect.annotateCurrentSpan("maple.alerting.dispatch", "failed"),
-								),
-							),
-					}),
+				const schedule = scheduleFor(controller.cron)
+				if (schedule === undefined) {
+					return yield* Effect.logWarning("Skipping unknown alerting cron schedule").pipe(
+						Effect.annotateLogs({ cron: controller.cron }),
+					)
+				}
+				const inline = yield* Effect.filter(
+					schedule.lanes,
+					(lane) => dispatchLane(controller.cron, lane, env),
+					{
+						concurrency: "unbounded",
+					},
 				)
+				// One at a time: inline lanes share this invocation's six outbound
+				// connections, and each lane's pool may open up to five.
+				yield* Effect.forEach(inline, (lane) => runTick(controller.cron, lane, env), {
+					discard: true,
+				})
 			})
 
 		// Reached only through `SELF_BINDING`: the Worker has no route and no workers.dev URL.
 		const fetch = Effect.gen(function* () {
 			const request = yield* Cloudflare.Request
 			const env = yield* Cloudflare.WorkerEnvironment
-			const tick = yield* authorizeTickRequest(request, env, ALERTING_CRONS)
-			yield* runTick(tick.cron, env).pipe(
+			const tick = yield* authorizeTickRequest(request, env)
+			yield* runTick(tick.cron, tick.lane, env).pipe(
 				Effect.annotateSpans({
 					"maple.alerting.dispatch": "placed",
+					"maple.alerting.lane": tick.lane,
 					"maple.colo": tick.colo,
 					"maple.placement": tick.placement,
 				}),

@@ -242,11 +242,18 @@ export const makeAlertRulePersistence = (options: {
 									})
 									.returning(() => ({ txid: currentTxid })),
 							)
-						: yield* db.run(
-								PG.update(AlertRules)
-									.set(ruleFields)
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
-									.returning(() => ({ txid: currentTxid })),
+						: yield* Effect.andThen(
+								// Ends any tick's claim on the old config: its next fenced write
+								// fails with AlertRuleClaimLostError instead of paging on it.
+								db.run(
+									PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(existingId)]),
+								),
+								db.run(
+									PG.update(AlertRules)
+										.set(ruleFields)
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
+										.returning(() => ({ txid: currentTxid })),
+								),
 							)
 				}),
 			),

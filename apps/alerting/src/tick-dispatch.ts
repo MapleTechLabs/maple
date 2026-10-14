@@ -8,6 +8,7 @@ import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Config, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { isLaneOf, type TickLane } from "./schedule.ts"
 
 /** The service binding to this Worker itself, declared in the Worker's props. */
 export const SELF_BINDING = "ALERTING_SELF"
@@ -62,13 +63,15 @@ const internalTokenFor = (env: Record<string, unknown>) =>
 	)
 
 /**
- * Runs `cron`'s tick in the placed fetch handler. Fails with `TickDispatchUnavailable` when it did
- * not run there (no binding, no token, or the handler refused it), so the caller runs it inline.
+ * Runs one lane of `cron` in the placed fetch handler. Fails with `TickDispatchUnavailable` when it
+ * did not run there (no binding, no token, or the handler refused it), so the caller runs it inline.
  */
 export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 	cron: string,
+	lane: string,
 	env: Record<string, unknown>,
 ) {
+	yield* Effect.annotateCurrentSpan("maple.alerting.lane", lane)
 	const binding = env[SELF_BINDING]
 	const token = yield* internalTokenFor(env)
 	if (!isFetcher(binding)) {
@@ -87,6 +90,7 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 	const client = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(withManualRedirects(binding)))
 	const request = HttpClientRequest.post(TICK_URL).pipe(
 		HttpClientRequest.setUrlParam("cron", cron),
+		HttpClientRequest.setUrlParam("lane", lane),
 		HttpClientRequest.bearerToken(token.value),
 	)
 	const response = yield* HttpClient.execute(request).pipe(
@@ -109,17 +113,17 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 
 export interface PlacedTick {
 	readonly cron: string
+	readonly lane: TickLane
 	/** The data center that ran the handler, e.g. `IAD`. */
 	readonly colo: string
 	/** Cloudflare's `cf-placement` header, e.g. `remote-IAD` or `local-FRA`. */
 	readonly placement: string
 }
 
-/** Validates a request to the tick route against `env`'s internal token and the known crons. */
+/** Validates a request to the tick route against `env`'s internal token and the schedule. */
 export const authorizeTickRequest = Effect.fnUntraced(function* (
 	request: Request,
 	env: Record<string, unknown>,
-	crons: ReadonlyArray<string>,
 ) {
 	const url = new URL(request.url)
 	if (request.method !== "POST" || url.pathname !== TICK_PATH) {
@@ -134,11 +138,13 @@ export const authorizeTickRequest = Effect.fnUntraced(function* (
 		return yield* new TickRequestRefused({ message: "Missing or invalid internal bearer", status: 401 })
 	}
 	const cron = url.searchParams.get("cron")
-	if (cron === null || !crons.includes(cron)) {
-		return yield* new TickRequestRefused({ message: "Unknown cron", status: 400 })
+	const lane = url.searchParams.get("lane")
+	if (cron === null || lane === null || !isLaneOf(cron, lane)) {
+		return yield* new TickRequestRefused({ message: "Unknown cron or lane", status: 400 })
 	}
 	return {
 		cron,
+		lane,
 		colo: typeof request.cf?.colo === "string" ? request.cf.colo : "unknown",
 		placement: request.headers.get("cf-placement") ?? "none",
 	} satisfies PlacedTick

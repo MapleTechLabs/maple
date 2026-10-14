@@ -4098,6 +4098,73 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
+-- builder:service-map:serviceDependenciesInvolvingServiceQuery:default  [010fb51f]
+SELECT
+          edges.sourceService AS sourceService,
+          edges.targetService AS targetService,
+          sum(edges.bucketCallCount) AS callCount,
+          sum(edges.bucketErrorCount) AS errorCount,
+          ifNull(ifNotFinite(sum(edges.bucketDurationSumMs) / nullIf(sum(edges.bucketCallCount), 0), 0), 0) AS avgDurationMs,
+          max(edges.bucketMaxDurationMs) AS maxDurationMs,
+          sum(edges.bucketEstimatedSpanCount) AS estimatedSpanCount
+        FROM (
+SELECT
+          service_map_edges_hourly.SourceService AS sourceService,
+          service_map_edges_hourly.TargetService AS targetService,
+          sum(service_map_edges_hourly.CallCount) AS bucketCallCount,
+          sum(service_map_edges_hourly.ErrorCount) AS bucketErrorCount,
+          sum(service_map_edges_hourly.DurationSumMs) AS bucketDurationSumMs,
+          max(service_map_edges_hourly.MaxDurationMs) AS bucketMaxDurationMs,
+          sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
+        FROM service_map_edges_hourly
+        WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND (service_map_edges_hourly.SourceService = 'web' OR service_map_edges_hourly.TargetService = 'web')
+          AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY sourceService, targetService
+UNION ALL
+SELECT
+          p.ServiceName AS sourceService,
+          c.ServiceName AS targetService,
+          count() AS bucketCallCount,
+          countIf(c.StatusCode = 'Error') AS bucketErrorCount,
+          sum(c.Duration / 1000000) AS bucketDurationSumMs,
+          max(c.Duration / 1000000) AS bucketMaxDurationMs,
+          sum(multiIf(match(c.TraceState, 'th:[0-9a-f]+'), 1.0 / greatest(1.0 - reinterpretAsUInt64(reverse(unhex(rightPad(extract(c.TraceState, 'th:([0-9a-f]+)'), 16, '0')))) / pow(2.0, 64), 0.0001), 1.0)) AS bucketEstimatedSpanCount
+        FROM (SELECT
+          service_map_spans.OrgId AS OrgId,
+          service_map_spans.Timestamp AS Timestamp,
+          service_map_spans.TraceId AS TraceId,
+          service_map_spans.SpanId AS SpanId,
+          service_map_spans.ServiceName AS ServiceName,
+          service_map_spans.DeploymentEnv AS DeploymentEnv
+        FROM service_map_spans
+        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+          AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
+          AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
+          AND service_map_spans.OrgId = 'org_sql_catalog'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+        INNER JOIN (SELECT
+          service_map_children.TraceId AS TraceId,
+          service_map_children.ParentSpanId AS ParentSpanId,
+          service_map_children.ServiceName AS ServiceName,
+          service_map_children.Duration AS Duration,
+          service_map_children.StatusCode AS StatusCode,
+          service_map_children.TraceState AS TraceState
+        FROM service_map_children
+        WHERE service_map_children.Timestamp >= toDateTime('2026-01-01 10:30:00')
+          AND service_map_children.Timestamp < toDateTime('2026-01-03 14:15:00')
+          AND service_map_children.OrgId = 'org_sql_catalog'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS c ON (p.SpanId = c.ParentSpanId AND p.TraceId = c.TraceId)
+        WHERE p.ServiceName != c.ServiceName
+          AND (p.ServiceName = 'web' OR c.ServiceName = 'web')
+        GROUP BY sourceService, targetService
+) AS edges
+        GROUP BY sourceService, targetService
+        ORDER BY callCount DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- builder:service-map:serviceDependenciesSQL:default  [2aa810d6]
 SELECT
           edges.sourceService AS sourceService,
@@ -4887,6 +4954,58 @@ SELECT
         ORDER BY estimatedSpanCount DESC, serviceName ASC
         LIMIT 50
         OFFSET 0
+        FORMAT JSON
+
+-- builder:services:servicePresenceQuery:default  [3abd8978]
+SELECT
+          sum(service_windows.bSpanCount) AS spanCount
+        FROM (
+SELECT
+          toStartOfHour(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bServiceName,
+          service_overview_spans.ServiceNamespace AS bServiceNamespace,
+          service_overview_spans.DeploymentEnv AS bEnvironment,
+          service_overview_spans.CommitSha AS bCommitSha,
+          count() AS bSpanCount,
+          sum(service_overview_spans.SampleRate) AS bEstimatedSpanCount,
+          countIf(service_overview_spans.StatusCode = 'Error') AS bErrorCount,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(service_overview_spans.Timestamp) AS bFirstSeen,
+          countIf((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration < 500000000)) AS bApdexSatisfiedCount,
+          countIf(((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration >= 500000000) AND service_overview_spans.Duration < 2000000000)) AS bApdexToleratingCount
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName = 'checkout'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bServiceName,
+          service_overview_hourly.ServiceNamespace AS bServiceNamespace,
+          service_overview_hourly.DeploymentEnv AS bEnvironment,
+          service_overview_hourly.CommitSha AS bCommitSha,
+          sum(service_overview_hourly.SpanCount) AS bSpanCount,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_hourly.ErrorCount) AS bErrorCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_hourly.FirstSeen) AS bFirstSeen,
+          sum(service_overview_hourly.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_hourly.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.ServiceName = 'checkout'
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+) AS service_windows
+        WHERE service_windows.bServiceName = 'checkout'
         FORMAT JSON
 
 -- builder:session-events:sessionActivityQuery:default  [bb249b01]

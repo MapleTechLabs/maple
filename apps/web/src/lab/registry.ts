@@ -45,6 +45,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/cloudflare",
+		title: "Cloudflare",
+		description:
+			"The Cloudflare zone and Worker lists and the zone page, whole, over a copy of production data.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/onboarding",
 		title: "Onboarding",
 		description:

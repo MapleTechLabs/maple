@@ -227,10 +227,10 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 	}))
 
 	let requests = 0
-	let cacheHits = 0
+	let clientErrors = 0
 	for (const zone of zones) {
 		requests += zone.requests
-		cacheHits += zone.cacheHits
+		clientErrors += zone.errors4xx
 	}
 	return {
 		resources: countLabel(zones.length, "zone"),
@@ -239,7 +239,8 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 			{ key: "elevated", count: erroring.length - crit },
 			{ key: "saturated", count: crit },
 		],
-		headline: `${formatNumber(requests)} requests, ${formatPercent(requests > 0 ? cacheHits / requests : 0)} cached`,
+		// 4xx, not cache share: hits over all requests read "0.1% cached" for any API-heavy account.
+		headline: `${formatNumber(requests)} requests, ${formatPercent(requests > 0 ? clientErrors / requests : 0)} 4xx`,
 		headlineTone: worstTone(findings),
 		findings,
 	}

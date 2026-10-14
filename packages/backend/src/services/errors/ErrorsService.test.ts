@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { Cause, Clock, ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
+import { Cause, Clock, ConfigProvider, Effect, Exit, Latch, Layer, Ref, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	ErrorPersistenceError,
@@ -1474,6 +1474,89 @@ describe("ErrorsService.runTick", () => {
 			Effect.provide(makeErrorsLayer(() => rows, undefined, undefined, undefined, retryingDispatcher)),
 		)
 	})
+
+	it.effect(
+		"leases each outbox row from its own claim, so a slow drain never holds an expired lease",
+		() => {
+			// Set once the test has the database; the dispatcher reads each row's lease
+			// while that row is being delivered.
+			let inspect: (deliveryKey: string) => Effect.Effect<void> = () => Effect.void
+			const dispatcher: (typeof NotificationDispatcher)["Service"] = {
+				dispatch: (_orgId, _destinationIds, context) =>
+					inspect(context.deliveryKey).pipe(Effect.as({ delivered: 1, failed: 0 })),
+			}
+			return Effect.gen(function* () {
+				const errors = yield* ErrorsService
+				const database = yield* Database
+				yield* TestClock.setTime(TICK_MS)
+				// One more row than the drain's concurrency, so the last is claimed late.
+				yield* database.execute((db) =>
+					db.run(
+						PG.insertInto(ErrorNotificationDeliveries).values(
+							Array.from({ length: 6 }, (_, index) => ({
+								id: randomUUID(),
+								orgId: ORG,
+								destinationId: asDestinationId("7d31c9e1-0000-4000-8000-000000000001"),
+								deliveryKey: `lease-${index}`,
+								payloadJson: {
+									kind: "open",
+									issueId: randomUUID(),
+									incidentId: randomUUID(),
+									serviceName: "checkout",
+									exceptionType: "TypeError",
+									severity: "warning",
+									threshold: 1,
+									count: 1,
+								},
+								status: "queued" as const,
+								attemptCount: 0,
+								scheduledAt: TICK_MS - 1_000,
+								claimedAt: null,
+								claimExpiresAt: null,
+								claimedBy: null,
+								attemptedAt: null,
+								errorMessage: null,
+								createdAt: TICK_MS - 1_000,
+								updatedAt: TICK_MS - 1_000,
+							})),
+						),
+					),
+				)
+
+				// The first five deliveries hold their slots until all five are in
+				// flight, then take longer than the lease TTL; the sixth row is claimed
+				// only after that.
+				const allInFlight = yield* Latch.make(false)
+				const arrivals = yield* Ref.make(0)
+				const leaseHeadroomMs: Array<number> = []
+				inspect = (deliveryKey) =>
+					Effect.gen(function* () {
+						const [row] = yield* database.execute((db) =>
+							db.run(
+								PG.from(ErrorNotificationDeliveries)
+									.select("claimExpiresAt")
+									.where(($) => [$.deliveryKey.eq(deliveryKey)]),
+							),
+						)
+						const now = yield* Clock.currentTimeMillis
+						leaseHeadroomMs.push((row?.claimExpiresAt ?? 0) - now)
+						if ((yield* Ref.updateAndGet(arrivals, (n) => n + 1)) === 5) {
+							yield* TestClock.adjust("31 seconds")
+							yield* allInFlight.open
+						}
+						yield* allInFlight.await
+					}).pipe(Effect.orDie)
+
+				yield* errors.runTick()
+
+				assert.lengthOf(leaseHeadroomMs, 6)
+				assert.isTrue(
+					leaseHeadroomMs.every((headroom) => headroom > 0),
+					`a row was delivered under an expired lease: ${leaseHeadroomMs.join(", ")}`,
+				)
+			}).pipe(Effect.provide(makeErrorsLayer(() => [], undefined, undefined, undefined, dispatcher)))
+		},
+	)
 
 	it.effect("overlapping ticks dispatch each incident notification exactly once", () => {
 		let rows: ReadonlyArray<Record<string, unknown>> = [scanRow()]

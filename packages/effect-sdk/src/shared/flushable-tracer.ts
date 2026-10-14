@@ -258,6 +258,21 @@ const renderedServerError = (self: SpanImpl): number | undefined => {
 	return Number.isInteger(code) && code >= 500 ? code : undefined
 }
 
+// Effect 4.0.2+ fails a 5xx server span itself, with an `HttpServerError` whose reason is
+// `ResponseError`. That names nothing the rendered 5xx did not, so it takes the same road.
+const isResponseFailure = (exit: Exit.Exit<unknown, unknown>): boolean => {
+	if (exit._tag === "Success") return true
+	const [reason, ...rest] = exit.cause.reasons
+	return (
+		rest.length === 0 &&
+		reason !== undefined &&
+		Cause.isFailReason(reason) &&
+		Predicate.isTagged(reason.error, "HttpServerError") &&
+		Predicate.hasProperty(reason.error, "reason") &&
+		Predicate.isTagged(reason.error.reason, "ResponseError")
+	)
+}
+
 const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<string>): OtlpSpan => {
 	const status = self.status as ExtractTag<Tracer.SpanStatus, "Ended">
 	const attributes = OtlpResource.entriesToAttributes(self.attributes.entries())
@@ -269,7 +284,7 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 	}))
 
 	let otelStatus: Status
-	const serverError = status.exit._tag === "Success" ? renderedServerError(self) : undefined
+	const serverError = isResponseFailure(status.exit) ? renderedServerError(self) : undefined
 	if (serverError !== undefined) {
 		const method = self.attributes.get("http.request.method")
 		const path = self.attributes.get("url.path")

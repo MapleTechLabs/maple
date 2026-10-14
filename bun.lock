@@ -187,6 +187,8 @@
         "@shikijs/themes": "^4.5.0",
         "@shikijs/transformers": "^4.5.0",
         "@tailwindcss/vite": "catalog:tailwind",
+        "@takumi-rs/helpers": "2.14.0",
+        "@takumi-rs/wasm": "2.14.0",
         "@tanstack/charts": "catalog:charts",
         "@types/react": "catalog:react",
         "@types/react-dom": "catalog:react",
@@ -209,6 +211,7 @@
         "playwright": "catalog:",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
+        "woff2-encoder": "^2.0.0",
       },
     },
     "apps/local-ui": {
