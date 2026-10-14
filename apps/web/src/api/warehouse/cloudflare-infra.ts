@@ -376,7 +376,7 @@ export const getCloudflareWorkerDetail = Effect.fn("QueryEngine.getCloudflareWor
 		bucketSeconds: input.bucketSeconds,
 	}
 	const payload =
-		input.accountId === undefined
+		input.accountId === undefined || input.accountId === ""
 			? new CloudflareInfraWorkerDetailRequest(base)
 			: new CloudflareInfraWorkerDetailRequest({ ...base, accountId: input.accountId })
 	const result = yield* runWarehouseQuery("cloudflareInfraWorkerDetail", () =>

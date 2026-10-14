@@ -2475,7 +2475,7 @@ SELECT
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '2xx')) AS requests2xx,
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '3xx')) AS requests3xx,
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '4xx')) AS errors4xx,
-          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] NOT IN ('none', 'dynamic', 'bypass', 'unknown'))) AS cacheableRequests
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] NOT IN ('', 'none', 'dynamic', 'bypass', 'unknown'))) AS cacheableRequests
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('cloudflare.http.requests', 'cloudflare.http.bytes', 'cloudflare.http.visits')
@@ -2497,7 +2497,7 @@ SELECT
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '2xx')) AS requests2xx,
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '3xx')) AS requests3xx,
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '4xx')) AS errors4xx,
-          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] NOT IN ('none', 'dynamic', 'bypass', 'unknown'))) AS cacheableRequests
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] NOT IN ('', 'none', 'dynamic', 'bypass', 'unknown'))) AS cacheableRequests
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('cloudflare.http.requests', 'cloudflare.http.bytes', 'cloudflare.http.visits')

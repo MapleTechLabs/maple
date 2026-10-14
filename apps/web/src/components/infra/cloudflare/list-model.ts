@@ -6,6 +6,10 @@ import type {
 	CloudflareZoneRow,
 } from "@/api/warehouse/cloudflare-infra"
 
+// Here, not beside the list views: the route's search schema needs it, and it loads at startup.
+export const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
+export type CloudflareView = (typeof CLOUDFLARE_VIEWS)[number]
+
 /** Below this many requests a rate is noise: 1 failure in 11 requests is not a 9% error rate. */
 export const MIN_RATED_REQUESTS = 500
 /** A 4xx share this high is the zone's story, whatever its 5xx rate says. */
@@ -21,11 +25,16 @@ export type WorkerScope = (typeof WORKER_SCOPES)[number]
 
 export type ZoneHealth = "serving5xx" | "mostly4xx" | "ok" | "lowVolume"
 
-export function zoneHealth(zone: CloudflareZoneRow): ZoneHealth {
-	if (zone.requests < MIN_RATED_REQUESTS) return "lowVolume"
-	if (zone.errorRate >= ERROR_RATE_WARN) return "serving5xx"
-	if (zone.clientErrorRate >= CLIENT_ERROR_NOTABLE) return "mostly4xx"
+/** One rule for the list row and the detail header, so a zone never reads differently on each. */
+export function classifyZone(requests: number, serverErrorRate: number, clientErrorRate: number): ZoneHealth {
+	if (requests < MIN_RATED_REQUESTS) return "lowVolume"
+	if (serverErrorRate >= ERROR_RATE_WARN) return "serving5xx"
+	if (clientErrorRate >= CLIENT_ERROR_NOTABLE) return "mostly4xx"
 	return "ok"
+}
+
+export function zoneHealth(zone: CloudflareZoneRow): ZoneHealth {
+	return classifyZone(zone.requests, zone.errorRate, zone.clientErrorRate)
 }
 
 export function zoneInScope(zone: CloudflareZoneRow, scope: ZoneScope): boolean {

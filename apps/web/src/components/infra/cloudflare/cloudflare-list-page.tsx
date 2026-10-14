@@ -17,13 +17,14 @@ import {
 	CloudflareQueuesView,
 	CloudflareWorkersView,
 	CloudflareZonesView,
-	type CloudflareView,
 } from "./cloudflare-list-views"
 import { CloudflareBandLoading } from "./cloudflare-summary-bands"
 import { CloudflareZoneTableLoading } from "./cloudflare-zone-table"
 import {
 	WORKER_SCOPES,
 	ZONE_SCOPES,
+	CLOUDFLARE_VIEWS,
+	type CloudflareView,
 	type WorkerListRow,
 	type WorkerScope,
 	type ZoneScope,
@@ -87,9 +88,8 @@ export function CloudflareListPage({
 		workers: workerRows?.length ?? null,
 		queues: queues?.length ?? null,
 	}
-	// A view with nothing in it falls back to whichever view has something, zones first.
-	const view: CloudflareView =
-		state.view ?? (counts.zones === 0 && (counts.workers ?? 0) > 0 ? "workers" : "zones")
+	// A view with nothing in it falls back to the first view that has something, zones first.
+	const view: CloudflareView = state.view ?? CLOUDFLARE_VIEWS.find((v) => (counts[v] ?? 0) > 0) ?? "zones"
 	const showAccountColumn = multiAccount && accountId === undefined
 	const scopedAccount = accounts.find((a) => a.accountId === accountId)
 	const setAccount = (next: string | undefined) => onStateChange({ account: next, scope: undefined })
@@ -112,7 +112,13 @@ export function CloudflareListPage({
 			{showAccountColumn ? (
 				<CloudflareAccountsStrip
 					accounts={accounts}
-					share={accountShares(view, allZones ?? [], allWorkerRows ?? [], zoneAccount)}
+					share={accountShares(
+						view,
+						allZones ?? [],
+						allWorkerRows ?? [],
+						allQueues ?? [],
+						zoneAccount,
+					)}
 					counts={accountCounts(accounts, allZones ?? [], allWorkerRows ?? [], zoneAccount)}
 					onSelect={setAccount}
 				/>
@@ -171,11 +177,12 @@ export function CloudflareListPage({
 	)
 }
 
-/** Each account's share of the current view's traffic: edge requests for zones, invocations otherwise. */
+/** Each account's share of the current view: edge requests, invocations, or queue backlog. */
 function accountShares(
 	view: CloudflareView,
 	zones: ReadonlyArray<{ serviceName: string; requests: number }>,
 	workers: ReadonlyArray<{ accountId: string; requests: number }>,
+	queues: ReadonlyArray<{ accountId: string; backlogMessages: number }>,
 	zoneAccount: ReadonlyMap<string, string>,
 ): ReadonlyMap<string, number> {
 	const totals = new Map<string, number>()
@@ -183,6 +190,7 @@ function accountShares(
 		if (id !== undefined) totals.set(id, (totals.get(id) ?? 0) + n)
 	}
 	if (view === "zones") for (const z of zones) add(zoneAccount.get(z.serviceName), z.requests)
+	else if (view === "queues") for (const q of queues) add(q.accountId, q.backlogMessages)
 	else for (const w of workers) add(w.accountId, w.requests)
 	const sum = [...totals.values()].reduce((a, b) => a + b, 0)
 	return new Map([...totals].map(([id, n]) => [id, sum > 0 ? n / sum : 0]))

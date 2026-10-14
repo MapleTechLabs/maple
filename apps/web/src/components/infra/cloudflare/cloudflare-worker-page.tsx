@@ -157,9 +157,13 @@ export function CloudflareWorkerSignals({
 	const xDomain = useMemo(
 		() =>
 			[
-				...new Set([...detail.outcomeBuckets, ...detail.latencyBuckets].map((b) => b.bucket)),
+				...new Set(
+					[...detail.outcomeBuckets, ...detail.latencyBuckets, ...detail.durableObjectBuckets].map(
+						(b) => b.bucket,
+					),
+				),
 			].toSorted(),
-		[detail.outcomeBuckets, detail.latencyBuckets],
+		[detail.outcomeBuckets, detail.latencyBuckets, detail.durableObjectBuckets],
 	)
 	const series = useMemo(() => buildStrips(detail, row, totals), [detail, row, totals])
 	return <CorrelationStrips series={series} xDomain={xDomain} markers={markers} waiting={waiting} />

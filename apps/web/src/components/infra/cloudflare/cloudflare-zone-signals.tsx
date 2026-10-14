@@ -26,9 +26,7 @@ import {
 	zoneSignalTotals,
 	type ZoneSignalTotals,
 } from "./zone-signals"
-
-/** A 4xx share this high is the zone's story, whatever its 5xx rate says. */
-const CLIENT_ERROR_NOTABLE = 0.5
+import { CLIENT_ERROR_NOTABLE, classifyZone, type ZoneHealth } from "./list-model"
 
 /** The zone's signals on one time axis, each with its window total at the right edge. */
 export function CloudflareZoneSignals({
@@ -36,8 +34,14 @@ export function CloudflareZoneSignals({
 	cacheBuckets,
 	latencyBuckets,
 	zoneRow,
+	ignoredFilters = [],
+	latencyIgnoredFilters = [],
 	waiting,
 }: {
+	/** Active filters the traffic strips could not apply; they read as zone-wide when non-empty. */
+	ignoredFilters?: ReadonlyArray<string>
+	/** The same for latency, which no dimension filter narrows. */
+	latencyIgnoredFilters?: ReadonlyArray<string>
 	statusBuckets: ReadonlyArray<CloudflareZoneStatusBucket>
 	cacheBuckets: ReadonlyArray<CloudflareZoneCacheBucket>
 	latencyBuckets: ReadonlyArray<CloudflareZoneLatencyBucket>
@@ -51,17 +55,27 @@ export function CloudflareZoneSignals({
 		[statusBuckets, cacheBuckets],
 	)
 	const series = useMemo(
-		() => buildStrips({ statusBuckets, cacheBuckets, latencyBuckets, zoneRow, totals }),
-		[statusBuckets, cacheBuckets, latencyBuckets, zoneRow, totals],
+		() =>
+			buildStrips({ statusBuckets, cacheBuckets, latencyBuckets, zoneRow, totals }).map((strip) =>
+				(strip.id === "cf-latency" ? latencyIgnoredFilters : ignoredFilters).length > 0
+					? { ...strip, source: `zone-wide, filters not applied · ${strip.source}` }
+					: strip,
+			),
+		[statusBuckets, cacheBuckets, latencyBuckets, zoneRow, totals, ignoredFilters, latencyIgnoredFilters],
 	)
 
 	return <CorrelationStrips series={series} xDomain={xDomain} waiting={waiting} />
 }
 
+const ZONE_HEALTH_DOT = {
+	serving5xx: "bg-severity-error",
+	mostly4xx: "bg-severity-warn",
+	ok: "bg-severity-info",
+	lowVolume: "bg-muted-foreground",
+} satisfies Record<ZoneHealth, string>
+
 export function zoneSeverityClass(totals: ZoneSignalTotals): string {
-	if (totals.serverErrorRate >= 0.01) return "bg-severity-error"
-	if (totals.clientErrorRate >= CLIENT_ERROR_NOTABLE) return "bg-severity-warn"
-	return "bg-severity-info"
+	return ZONE_HEALTH_DOT[classifyZone(totals.requests, totals.serverErrorRate, totals.clientErrorRate)]
 }
 
 function buildStrips({

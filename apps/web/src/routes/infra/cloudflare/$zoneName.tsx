@@ -309,6 +309,8 @@ function ZoneDetailPage() {
 									cacheBuckets={detail.cacheBuckets}
 									latencyBuckets={detail.latencyBuckets}
 									zoneRow={zoneRow}
+									ignoredFilters={detail.ignoredFilters}
+									latencyIgnoredFilters={detail.latencyIgnoredFilters}
 									waiting={waiting}
 								/>
 								<CloudflareBreakdownPanel

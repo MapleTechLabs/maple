@@ -70,6 +70,13 @@ describe("accountHealth", () => {
 		expect(accountHealth(stale, NOW)).toEqual({ tone: "warn", message: "Delayed · last sync 47m ago" })
 	})
 
+	it("does not let a fresh Workers sync hide a zone that stopped syncing", () => {
+		expect(accountHealth(account([zone("a.com", NOW - 47 * MINUTE)]), NOW)).toEqual({
+			tone: "warn",
+			message: "Delayed · last sync 47m ago",
+		})
+	})
+
 	it("flags a failing Workers dataset when zones are fine", () => {
 		expect(accountHealth(account([zone("a.com", NOW)], "permission denied"), NOW).tone).toBe("warn")
 	})

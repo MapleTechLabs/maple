@@ -20,9 +20,13 @@ import {
 import { CloudflareNotConnected } from "@/components/infra/cloudflare/cloudflare-not-connected"
 import { cloudflareAccounts } from "@/components/infra/cloudflare/accounts"
 import { CloudflareListPage } from "@/components/infra/cloudflare/cloudflare-list-page"
-import { CLOUDFLARE_VIEWS } from "@/components/infra/cloudflare/cloudflare-list-views"
 import { CloudflareBandLoading } from "@/components/infra/cloudflare/cloudflare-summary-bands"
-import { mergeWorkerRows, WORKER_SCOPES, ZONE_SCOPES } from "@/components/infra/cloudflare/list-model"
+import {
+	CLOUDFLARE_VIEWS,
+	mergeWorkerRows,
+	WORKER_SCOPES,
+	ZONE_SCOPES,
+} from "@/components/infra/cloudflare/list-model"
 import type { CloudflareIngestPhase } from "@/components/infra/cloudflare/ingest-phase"
 import { useCloudflareIngestPhase } from "@/components/infra/cloudflare/use-cloudflare-ingest-phase"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
@@ -34,6 +38,7 @@ import {
 	cloudflareZoneTimeseriesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useLiveClock } from "@/hooks/use-live-clock"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
@@ -143,7 +148,9 @@ function CloudflareData({
 		cloudflarePlatformResourcesResultAtom({ data: { startTime, endTime } }),
 	)
 
-	const accounts = useMemo(() => cloudflareAccounts(status.accounts ?? [], Date.now()), [status])
+	// Ticks so "synced 2m ago" ages and a stalled account turns Delayed while the page stays open.
+	const now = useLiveClock({ intervalMs: 60_000 })
+	const accounts = useMemo(() => cloudflareAccounts(status.accounts ?? [], now), [status, now])
 
 	const zones = Result.builder(zonesResult)
 		.onSuccess((r) => r.zones)

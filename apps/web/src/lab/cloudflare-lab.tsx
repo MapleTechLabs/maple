@@ -7,7 +7,7 @@ import type { CloudflareBreakdownDimension } from "@/api/warehouse/cloudflare-in
 import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import { CloudflareBreakdownPanelBody } from "@/components/infra/cloudflare/cloudflare-breakdown-panel"
-import type { CloudflareView } from "@/components/infra/cloudflare/cloudflare-list-views"
+import type { CloudflareView } from "@/components/infra/cloudflare/list-model"
 import {
 	CloudflareListPage,
 	type CloudflareListState,

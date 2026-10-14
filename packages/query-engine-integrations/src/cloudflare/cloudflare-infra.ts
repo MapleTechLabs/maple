@@ -51,8 +51,8 @@ const WORKER_GAUGE_METRIC_NAMES = ["cloudflare.worker.duration", "cloudflare.wor
  */
 const CACHE_SERVED_STATUSES = ["hit", "stale", "revalidated", "updating"] as const
 
-/** Cache statuses for traffic Cloudflare was never going to cache; excluded from the hit-rate denominator. */
-const CACHE_UNCACHEABLE_STATUSES = ["none", "dynamic", "bypass", "unknown"] as const
+/** Cache statuses for traffic Cloudflare was never going to cache, plus a missing status ("" in a Map read); excluded from the hit-rate denominator. */
+const CACHE_UNCACHEABLE_STATUSES = ["", "none", "dynamic", "bypass", "unknown"] as const
 
 // `avgIf` over a metric with no matching rows is NaN, which serializes to
 // JSON `null` and would break row decoding — so guard each with

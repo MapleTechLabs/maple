@@ -37,17 +37,19 @@ export function accountHealth(account: CloudflareConnectedAccountStatus, now: nu
 					: `${failing.length} of ${zones.length} zones not syncing`,
 		}
 	}
-	const synced = [...zones.map((zone) => zone.lastSyncedAt), account.workers?.lastSyncedAt ?? null].filter(
-		(at): at is number => at !== null,
-	)
-	const latest = synced.length === 0 ? null : Math.max(...synced)
-	if (latest !== null && now - latest > STALE_SYNC_MS) {
-		return { tone: "warn", message: `Delayed · last sync ${minutesAgo(now, latest)}m ago` }
+	// The oldest dataset, not the newest: a fresh Workers sync must not hide a zone that stopped.
+	const synced = [
+		...zones.map((zone) => zone.lastSyncedAt),
+		account.workers?.enabled ? account.workers.lastSyncedAt : null,
+	].filter((at): at is number => at !== null)
+	const oldest = synced.length === 0 ? null : Math.min(...synced)
+	if (oldest !== null && now - oldest > STALE_SYNC_MS) {
+		return { tone: "warn", message: `Delayed · last sync ${minutesAgo(now, oldest)}m ago` }
 	}
 	if (account.workers?.lastError) return { tone: "warn", message: "Workers analytics failing" }
 	return {
 		tone: "ok",
-		message: latest === null ? "waiting for first sync" : `synced ${minutesAgo(now, latest)}m ago`,
+		message: oldest === null ? "waiting for first sync" : `synced ${minutesAgo(now, oldest)}m ago`,
 	}
 }
 

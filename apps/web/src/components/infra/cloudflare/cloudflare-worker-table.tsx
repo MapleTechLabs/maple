@@ -93,7 +93,10 @@ export function CloudflareWorkerTable({
 						to="/infra/cloudflare/workers/$scriptName"
 						params={{ scriptName: row.scriptName }}
 						// A shared name is only one Worker once the account is pinned.
-						search={{ account: row.nameInOtherAccounts ? row.accountId : undefined }}
+						search={{
+							account:
+								row.nameInOtherAccounts && row.accountId !== "" ? row.accountId : undefined,
+						}}
 						className={ROW_LINK_CLASS}
 					>
 						<span

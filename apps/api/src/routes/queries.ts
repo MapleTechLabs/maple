@@ -338,7 +338,8 @@ const workerDetailParams = (payload: CloudflareInfraWorkerDetailRequest, orgId: 
 })
 
 const workerDetailOpts = (payload: CloudflareInfraWorkerDetailRequest) => ({
-	byAccount: payload.accountId !== undefined,
+	// Rows without the account attribute carry "", which would match nothing: treat it as absent.
+	byAccount: (payload.accountId ?? "") !== "",
 })
 
 const cloudflareInfraWorkerDetailOutcomes = defineQuery({

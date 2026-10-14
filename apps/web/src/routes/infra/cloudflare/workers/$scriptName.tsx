@@ -100,8 +100,13 @@ function WorkerDetailPage() {
 			)
 		})
 		.orElse(() => null)
+	// Releases carry no account, so for a name shared across accounts they would mix both Workers.
 	const releases = Result.builder(releasesResult)
-		.onSuccess((r) => r.releases.filter((release) => release.serviceName === scriptName))
+		.onSuccess((r) =>
+			row?.nameInOtherAccounts
+				? null
+				: r.releases.filter((release) => release.serviceName === scriptName),
+		)
 		.orElse(() => null)
 	const accountName = Result.builder(statusResult)
 		.onSuccess((status) => {

@@ -17,16 +17,15 @@ import { CloudflareWorkerBand, CloudflareZoneBand } from "./cloudflare-summary-b
 import { CloudflareWorkerTable } from "./cloudflare-worker-table"
 import { CloudflareZoneTable } from "./cloudflare-zone-table"
 import {
+	CLOUDFLARE_VIEWS,
 	sortWorkersByAttention,
 	workerInScope,
 	zoneInScope,
+	type CloudflareView,
 	type WorkerListRow,
 	type WorkerScope,
 	type ZoneScope,
 } from "./list-model"
-
-export const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
-export type CloudflareView = (typeof CLOUDFLARE_VIEWS)[number]
 
 const VIEW_LABEL = { zones: "Zones", workers: "Workers", queues: "Queues" } satisfies Record<
 	CloudflareView,
