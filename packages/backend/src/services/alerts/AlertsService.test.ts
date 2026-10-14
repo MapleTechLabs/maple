@@ -72,6 +72,7 @@ import {
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 
 const trackedDbs: TestDb[] = []
 
@@ -5461,13 +5462,23 @@ describe("AlertsService scheduler pool", () => {
 			schedulerTickBudgetMs: () => tickBudgetMs,
 			schedulerEvalTimeoutMs: () => 800,
 		}
+		const { spans, tracer } = makeRecordingTracer()
 		return Effect.gen(function* () {
 			const alerts = yield* AlertsService
 			yield* createPoolRules(alerts)
 
 			const startedAt = yield* Clock.currentTimeMillis
-			const firstTick = yield* alerts.runSchedulerTick()
+			const firstTick = yield* alerts.runSchedulerTick().pipe(Effect.withTracer(tracer))
 			const wallMs = (yield* Clock.currentTimeMillis) - startedAt
+
+			// The deferred rules are counted on the tick span, where tick dashboards look.
+			assert.isAbove(firstTick.deferredCount, 0)
+			assert.deepStrictEqual(
+				spansNamed(spans, "AlertsService.runSchedulerTick").map((span) =>
+					span.attributes.get("maple.alerting.rules_deferred"),
+				),
+				[firstTick.deferredCount],
+			)
 
 			// Slack for a loaded CI runner; without the deadline the stuck rule never returns.
 			assert.isBelow(wallMs, tickBudgetMs + 2_500)
@@ -5630,4 +5641,85 @@ describe("AlertsService claim fence", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, stub, overrides)))
 		},
 	)
+})
+
+describe("AlertsService post-evaluation writes", () => {
+	const GROUPS = 30
+	const EXECUTE_DELAY_MS = 100
+
+	// Every `Database.execute` waits first, like a Hyperdrive round trip at peak.
+	const slowDb = (testDb: TestDb): TestDb => ({
+		...testDb,
+		layer: Layer.effect(
+			Database,
+			Effect.gen(function* () {
+				const inner = yield* Database
+				return Database.of({
+					execute: (fn) =>
+						Effect.sleep(Duration.millis(EXECUTE_DELAY_MS)).pipe(
+							Effect.andThen(inner.execute(fn)),
+						),
+				})
+			}),
+		).pipe(Layer.provide(testDb.layer)),
+	})
+
+	it.live("writes a grouped rule's state rows in one batch, not one transaction per group", () => {
+		const testDb = createTestDb(trackedDbs)
+		const services = Arr.makeBy(GROUPS, (index) => `svc-${String(index).padStart(2, "0")}`)
+		const stub = makeWarehouseStub({
+			tracesAggregateRows: services.map((groupName) =>
+				tracesRow({ groupName, count: 200, errorRate: 0.5, estimatedSpanCount: 200 }),
+			),
+		})
+		const { spans, tracer } = makeRecordingTracer()
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_state_batch")
+			const userId = asUserId("user_state_batch")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Grouped error rate",
+					severity: "warning",
+					enabled: true,
+					groupBy: ["service.name"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					destinationIds: [destination.id],
+				}),
+			)
+
+			const startedAt = yield* Clock.currentTimeMillis
+			const tick = yield* alerts.runSchedulerTick().pipe(Effect.withTracer(tracer))
+			const wallMs = (yield* Clock.currentTimeMillis) - startedAt
+
+			assert.strictEqual(tick.evaluatedCount, 1)
+			// One transaction per group would spend GROUPS * EXECUTE_DELAY_MS on writes alone.
+			assert.isBelow(wallMs, GROUPS * EXECUTE_DELAY_MS)
+			const flushes = spansNamed(spans, "AlertsService.flushRuleStates")
+			assert.deepStrictEqual(
+				flushes.map((span) => span.attributes.get("maple.alerting.state_rows")),
+				[GROUPS],
+			)
+
+			const stored = yield* Effect.promise(() =>
+				queryFirstRow<{ groups: number; healthy: number }>(
+					testDb,
+					`select count(*)::int as "groups",
+					        count(*) filter (where last_status = 'healthy' and consecutive_healthy = 1)::int as "healthy"
+					   from alert_rule_states where rule_id = $1`,
+					[rule.id],
+				),
+			)
+			assert.deepStrictEqual(stored, { groups: GROUPS, healthy: GROUPS })
+		}).pipe(Effect.provide(makeLayer(slowDb(testDb), stub, { fetch: okFetch })))
+	})
 })
