@@ -209,38 +209,36 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 							"No Google Cloud connection yet. Connect a project, folder or organization first.",
 					})
 				}
-				const listed = yield* Effect.forEach(
-					connectors,
-					(connector) =>
-						connector.scopeType === "project"
-							? Effect.succeed({
-									connector,
-									projects: isProjectId(connector.scopeId) ? [connector.scopeId] : [],
-								})
-							: edgeCache
-									.getOrCompute(
-										{
-											bucket: "gcp-projects",
-											key: `${orgId}:${connector.id}`,
-											ttlSeconds: HOUR_SECONDS,
-											schema: Schema.Array(GcpProjectId),
-										},
-										searchProjects(key, connector),
-									)
-									.pipe(
-										Effect.map(({ value }) => ({ connector, projects: value })),
-										Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
-											Effect.succeed({
-												connector,
-												projects: [],
-												failure: {
-													scope: scopeName(connector),
-													message: describeGcpApiError(error, connector, true),
-												},
-											}),
-										),
+				// One connection at a time, so a cold isolate signs in as Maple once.
+				const listed = yield* Effect.forEach(connectors, (connector) =>
+					connector.scopeType === "project"
+						? Effect.succeed({
+								connector,
+								projects: isProjectId(connector.scopeId) ? [connector.scopeId] : [],
+							})
+						: edgeCache
+								.getOrCompute(
+									{
+										bucket: "gcp-projects",
+										key: `${orgId}:${connector.id}`,
+										ttlSeconds: HOUR_SECONDS,
+										schema: Schema.Array(GcpProjectId),
+									},
+									searchProjects(key, connector),
+								)
+								.pipe(
+									Effect.map(({ value }) => ({ connector, projects: value })),
+									Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
+										Effect.succeed({
+											connector,
+											projects: [],
+											failure: {
+												scope: scopeName(connector),
+												message: describeGcpApiError(error, connector, true),
+											},
+										}),
 									),
-					{ concurrency: CONCURRENCY },
+								),
 				)
 				// Overlapping connections read a project through the oldest.
 				const projects = new Map<GcpProjectId, Connector>()
@@ -290,13 +288,29 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				yield* Effect.annotateCurrentSpan({ "maple.gcp.projects": selected.length })
 
 				const compute = Effect.gen(function* () {
+					// Signed in one connection at a time, so a cold isolate signs in as Maple once. A
+					// connection that cannot sign in fails once, not once per project.
+					const readers = new Map<Connector, GcpReader>()
+					const failures: Array<GcpPromQlFailure> = []
+					for (const connector of new Set(selected.map(([, connector]) => connector))) {
+						const reader = yield* readerFor(key, connector).pipe(
+							Effect.catchTag("@maple/api/integrations/GcpApiError", (error) => {
+								failures.push({
+									scope: scopeName(connector),
+									message: describeGcpApiError(error, connector, true),
+								})
+								return Effect.succeed(undefined)
+							}),
+						)
+						if (reader !== undefined) readers.set(connector, reader)
+					}
 					const answers = yield* Effect.forEach(
-						selected,
-						([projectId, connector]) =>
-							readerFor(key, connector).pipe(
-								Effect.flatMap((reader) =>
-									promQlQuery(httpClient, reader, projectId, params),
-								),
+						selected.flatMap(([projectId, connector]) => {
+							const reader = readers.get(connector)
+							return reader === undefined ? [] : [{ projectId, connector, reader }]
+						}),
+						({ projectId, connector, reader }) =>
+							promQlQuery(httpClient, reader, projectId, params).pipe(
 								Effect.map((series) => ({ projectId, series })),
 								Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
 									Effect.succeed({
@@ -307,8 +321,8 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 							),
 						{ concurrency: CONCURRENCY },
 					)
-					const failures = answers.flatMap((answer) =>
-						"failure" in answer ? [answer.failure] : [],
+					failures.push(
+						...answers.flatMap((answer) => ("failure" in answer ? [answer.failure] : [])),
 					)
 					const answered = answers.flatMap((answer) => ("series" in answer ? [answer] : []))
 					// Not cached: a fixed setup is read again on the next try.

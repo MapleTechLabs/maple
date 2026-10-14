@@ -129,31 +129,36 @@ const call = <A, E = never>(
 	decode: (body: unknown) => Effect.Effect<A, Schema.SchemaError>,
 	refuse?: (status: number, body: unknown) => E | undefined,
 ): Effect.Effect<A, GcpApiError | E> => {
-	const failed = (what: string) => () =>
-		Effect.fail(new GcpApiError({ message: `${api} ${what}`, api, kind: "upstream" }))
+	const failed = (what: string) => new GcpApiError({ message: `${api} ${what}`, api, kind: "upstream" })
 	return Effect.gen(function* () {
 		const response = yield* httpClient.execute(request)
 		const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
-		if (response.status >= 300) {
-			const refused = refuse?.(response.status, body)
-			if (refused !== undefined) return yield* Effect.fail(refused)
-			const kind = errorKind(response.status)
-			const reason = errorReason(body, kind)
-			return yield* new GcpApiError({
-				message: `${api} returned ${response.status}${errorCode(body)}${reason === undefined ? "" : `, ${reason}`}`,
-				api,
-				kind,
-				...(reason === undefined ? undefined : { reason }),
-			})
-		}
-		return yield* decode(body)
+		return { status: response.status, body }
 	}).pipe(
 		Effect.timeout(REQUEST_TIMEOUT),
 		Effect.catchTags({
-			HttpClientError: failed("request failed"),
-			TimeoutError: failed("request timed out"),
-			SchemaError: failed("answered with an unexpected body"),
+			HttpClientError: () => Effect.fail(failed("request failed")),
+			TimeoutError: () => Effect.fail(failed("request timed out")),
 		}),
+		Effect.flatMap(({ status, body }) =>
+			Effect.gen(function* () {
+				if (status >= 300) {
+					const refused = refuse?.(status, body)
+					if (refused !== undefined) return yield* Effect.fail(refused)
+					const kind = errorKind(status)
+					const reason = errorReason(body, kind)
+					return yield* new GcpApiError({
+						message: `${api} returned ${status}${errorCode(body)}${reason === undefined ? "" : `, ${reason}`}`,
+						api,
+						kind,
+						...(reason === undefined ? undefined : { reason }),
+					})
+				}
+				return yield* decode(body).pipe(
+					Effect.mapError(() => failed("answered with an unexpected body")),
+				)
+			}),
+		),
 		Effect.annotateSpans("peer.service", "google-cloud"),
 	)
 }
@@ -414,6 +419,8 @@ const decodePromQlResult = Schema.decodeUnknownEffect(
 				resultType: Schema.Literal("vector"),
 				result: Schema.Array(Schema.Struct({ metric: Labels, value: Sample })),
 			}),
+			// `1 + 1`, `time()`: answered as one series without labels.
+			Schema.Struct({ resultType: Schema.Literal("scalar"), result: Sample }),
 		]),
 	}),
 )
@@ -458,11 +465,22 @@ export const promQlQuery = (
 		decodePromQlResult,
 		refuseQuery(projectId),
 	).pipe(
-		Effect.map(({ data }) =>
-			data.resultType === "matrix"
-				? data.result.map((series) => ({ labels: series.metric, points: toPoints(series.values) }))
-				: data.result.map((series) => ({ labels: series.metric, points: toPoints([series.value]) })),
-		),
+		Effect.map(({ data }) => {
+			switch (data.resultType) {
+				case "matrix":
+					return data.result.map((series) => ({
+						labels: series.metric,
+						points: toPoints(series.values),
+					}))
+				case "vector":
+					return data.result.map((series) => ({
+						labels: series.metric,
+						points: toPoints([series.value]),
+					}))
+				case "scalar":
+					return [{ labels: {}, points: toPoints([data.result]) }]
+			}
+		}),
 	)
 
 const decodeNames = Schema.decodeUnknownEffect(Schema.Struct({ data: Schema.Array(Schema.String) }))
