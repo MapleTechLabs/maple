@@ -579,6 +579,65 @@ describe("AlertsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
 	})
 
+	it.effect("never opens an incident whose trigger delivery could not be queued", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			tracesAggregateRows: [
+				tracesRow({
+					count: 200,
+					avgDuration: 40,
+					p50Duration: 20,
+					p95Duration: 120,
+					p99Duration: 240,
+					errorRate: 10,
+					satisfiedCount: 180,
+					toleratingCount: 10,
+					apdexScore: 0.925,
+				}),
+			],
+		}
+		const requests: Array<string> = []
+		const fetchImpl = (async (input: RequestInfo | URL) => {
+			requests.push(String(input))
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+		const sql = (statement: string) => Effect.promise(() => executeSql(testDb, statement))
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alerts_outbox")
+			const userId = asUserId("user_alerts_outbox")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			yield* alerts.runSchedulerTick()
+
+			// The tick that opens the incident cannot queue its delivery.
+			yield* sql(
+				"CREATE FUNCTION refuse_delivery() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'delivery insert refused'; END $$ LANGUAGE plpgsql",
+			)
+			yield* sql(
+				"CREATE TRIGGER refuse_delivery BEFORE INSERT ON alert_delivery_events FOR EACH ROW EXECUTE FUNCTION refuse_delivery()",
+			)
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
+
+			yield* sql("DROP TRIGGER refuse_delivery ON alert_delivery_events")
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			const incidents = yield* alerts.listIncidents(orgId)
+			const events = yield* alerts.listDeliveryEvents(orgId)
+			assert.strictEqual(incidents.incidents[0]?.status, "open")
+			assert.deepStrictEqual(
+				events.events.map((event) => [event.eventType, event.status]),
+				[["trigger", "success"]],
+			)
+			assert.deepStrictEqual(requests, ["https://example.com/maple-alerts"])
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
+	})
+
 	it.effect("snapshots a custom notification template into the delivered payload", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
