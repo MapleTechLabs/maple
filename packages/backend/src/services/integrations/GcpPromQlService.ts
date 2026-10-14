@@ -20,6 +20,8 @@ import {
 	type GcpPromQlRangeRequest,
 	GcpPromQlResult,
 	GcpPromQlTooManyProjectsError,
+	GcpPromQlTooManySeriesError,
+	GCP_PROMQL_MAX_SERIES,
 	gcpPromQlTimeMs,
 	GcpPromQlUnavailableError,
 	IntegrationsNotConnectedError,
@@ -73,6 +75,7 @@ export type GcpPromQlError =
 	| IntegrationsValidationError
 	| GcpPromQlInvalidQueryError
 	| GcpPromQlTooManyProjectsError
+	| GcpPromQlTooManySeriesError
 	| GcpPromQlFailedError
 	| IntegrationsUpstreamError
 	| IntegrationsPersistenceError
@@ -342,26 +345,33 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 					const answered = answers.flatMap((answer) => ("series" in answer ? [answer] : []))
 					// Not cached: a fixed setup is read again on the next try.
 					if (answered.length === 0) return yield* nothingRead([...targets.failures, ...failures])
+					// Identical label sets from two projects stay apart by `project_id`. A project
+					// whose metrics scope holds another answers for both: kept once.
+					const series = [
+						...new Map(
+							answered.flatMap(({ projectId, series }) =>
+								series.map((one) => {
+									const labels = {
+										...one.labels,
+										project_id: one.labels.project_id ?? projectId,
+									}
+									return [
+										JSON.stringify(Object.entries(labels).sort()),
+										{ labels, points: one.points },
+									] as const
+								}),
+							),
+						).values(),
+					]
+					if (series.length > GCP_PROMQL_MAX_SERIES) {
+						return yield* new GcpPromQlTooManySeriesError({
+							message: `The query returned ${series.length} series, and one answer holds at most ${GCP_PROMQL_MAX_SERIES}. Aggregate them, with sum by (…) or avg by (…), or narrow the selector.`,
+							series: series.length,
+						})
+					}
 					return new GcpPromQlResult({
 						resultType,
-						series: [
-							// Identical label sets from two projects stay apart by `project_id`. A
-							// project whose metrics scope holds another answers for both: kept once.
-							...new Map(
-								answered.flatMap(({ projectId, series }) =>
-									series.map((one) => {
-										const labels = {
-											...one.labels,
-											project_id: one.labels.project_id ?? projectId,
-										}
-										return [
-											JSON.stringify(Object.entries(labels).sort()),
-											{ labels, points: one.points },
-										] as const
-									}),
-								),
-							).values(),
-						],
+						series,
 						projects: answered.map(({ projectId }) => projectId),
 						failures,
 					})

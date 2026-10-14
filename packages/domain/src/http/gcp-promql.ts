@@ -14,6 +14,8 @@ export const GCP_PROMQL_MAX_PROJECTS = 20
 export const GCP_PROMQL_MAX_QUERY_LENGTH = 4_000
 export const GCP_PROMQL_MIN_STEP_SECONDS = 60
 export const GCP_PROMQL_MAX_POINTS = 11_000
+/** Series in one answer, across its projects. */
+export const GCP_PROMQL_MAX_SERIES = 500
 export const GCP_METRIC_SEARCH_MAX_LIMIT = 200
 
 /** `TinybirdDateTime` is UTC without a zone marker. */
@@ -150,6 +152,21 @@ export class GcpPromQlTooManyProjectsError extends HttpTaggedError<GcpPromQlTooM
 		code: "gcp_promql_too_many_projects",
 		title: "Too many projects",
 		param: "projects",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The answer holds more than `GCP_PROMQL_MAX_SERIES` series. Never truncated. */
+export class GcpPromQlTooManySeriesError extends HttpTaggedError<GcpPromQlTooManySeriesError>()(
+	"@maple/http/errors/GcpPromQlTooManySeriesError",
+	{ message: Schema.String, series: Schema.Number },
+	{
+		status: 400,
+		code: "gcp_promql_too_many_series",
+		title: "Too many series",
+		param: "query",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "public_message",

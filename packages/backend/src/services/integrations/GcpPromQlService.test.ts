@@ -548,6 +548,35 @@ describe("GcpPromQlService.queryRange", () => {
 		)
 	})
 
+	it.effect("refuses an answer of more than 500 series across its projects, never cut short", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			stubFetch(calls, {
+				folderProjects: FOLDER_PROJECTS,
+				// 250 series from each project: 750 in all, 500 from the folder alone.
+				promql: (call) =>
+					matrix(
+						...Array.from({ length: 250 }, (_, index) => ({
+							metric: { instance: `vm-${index}`, project_id: call.project },
+							values: [[T0, "1"]] as Array<[number, string]>,
+						})),
+					),
+			}),
+			Effect.gen(function* () {
+				yield* insertConnectors(testDb)
+				const error = yield* Effect.flip(queryRange(range("up")))
+				assert.strictEqual(error._tag, "@maple/http/errors/GcpPromQlTooManySeriesError")
+				assert.include(error.message, "750 series")
+				assert.include(error.message, "sum by")
+
+				const atTheCap = yield* queryRange(range("up", ["acme-shop", "acme-data"]))
+				assert.lengthOf(atTheCap.series, 500)
+			}),
+		)
+	})
+
 	it.effect("signs in once and reuses the tokens for later queries", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
