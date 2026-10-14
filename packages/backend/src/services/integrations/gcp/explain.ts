@@ -1,7 +1,7 @@
 import type { GcpConnectorRow } from "@maple/db/tables"
 import type { GcpApiError } from "./api"
 
-const RETRIES = "Maple retries in 5 minutes."
+export const RETRIES = "Maple retries in 5 minutes."
 
 type ExplainedConnector = Pick<
 	GcpConnectorRow,
@@ -12,7 +12,7 @@ type ExplainedConnector = Pick<
  * Why a failed call failed and what to do about it, in the customer's terms. `live` is a query a
  * person is waiting on, which nothing retries; otherwise it is the poller's.
  */
-export const explainGcpApiError = (error: GcpApiError, connector: ExplainedConnector, live = false) => {
+const explainGcpApiError = (error: GcpApiError, connector: ExplainedConnector, live = false) => {
 	// The host project is the one Google checks for billing, enabled APIs and quota. A project
 	// scope is its own host, and reads as "the project".
 	const host = `${connector.scopeType === "project" ? "project" : "host project"} ${connector.projectId}`

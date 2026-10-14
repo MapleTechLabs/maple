@@ -20,6 +20,8 @@ describe("GcpPromQlRangeRequest", () => {
 		["a query over 4,000 characters", { query: `sum(${"x".repeat(4_000)})` }],
 		["a step under a minute", { stepSeconds: 30 }],
 		["a fractional step", { stepSeconds: 90.5 }],
+		["a step over a day", { stepSeconds: 86_401 }],
+		["more than 11,000 points a series", { startTime: "2026-09-01 00:00:00" }],
 		["an inverted window", { startTime: valid.endTime, endTime: valid.startTime }],
 		["an impossible date", { endTime: "2026-13-45 99:99:99" }],
 		["a project id that is not one", { projects: ["../../organizations/1"] }],
@@ -33,7 +35,7 @@ describe("GcpPromQlInstantRequest", () => {
 	it("refuses an impossible time", () => {
 		const decode = Schema.decodeUnknownExit(GcpPromQlInstantRequest)
 		expect(decode({ query: "up", time: "2026-10-15 12:00:00" })._tag).toBe("Success")
-		expect(decode({ query: "up", time: "2026-02-30 25:00:00" })._tag).toBe("Failure")
+		expect(decode({ query: "up", time: "2026-10-15 25:00:00" })._tag).toBe("Failure")
 	})
 })
 
