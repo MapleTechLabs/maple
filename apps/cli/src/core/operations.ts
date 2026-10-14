@@ -715,6 +715,33 @@ const localCompareServiceOverview = (p: { current: Range; previous: Range; envir
 		return result.data
 	})
 
+const localServiceHasTelemetry = (service: string, range: Range) =>
+	Effect.gen(function* () {
+		const executor = yield* WarehouseExecutor
+		const rows = yield* executor.compiledQuery(
+			CH.compile(
+				CH.servicePresenceQuery({ serviceName: service }),
+				{ orgId: LOCAL_ORG_ID, startTime: range.startTime, endTime: range.endTime },
+				{ rowSchema: CH.servicePresenceRowSchema },
+			),
+			{ profile: "list", context: "cli.servicePresence" },
+		)
+		return rows.some((r) => r.spanCount > 0)
+	})
+
+/**
+ * Whether one service has trace telemetry in the window. Scoped to that service,
+ * so unlike `knownServices` it is not limited to the busiest page of services.
+ */
+export const serviceHasTelemetry = (service: string, range: Range) =>
+	service.trim() === ""
+		? Effect.succeed(false)
+		: dispatch(
+				localServiceHasTelemetry(service, range),
+				({ v2 }) => Remote.serviceHasTelemetry(v2, { service, range }),
+				"service_presence",
+			)
+
 /** Service names with trace telemetry in the window, busiest first. */
 export const knownServices = (range: Range) =>
 	Effect.map(listServices({ range }), (services) =>

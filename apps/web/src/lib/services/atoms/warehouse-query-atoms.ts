@@ -72,6 +72,7 @@ import {
 	getCloudflarePlatformResources,
 	getCloudflareTopTraffic,
 	getCloudflareWorkers,
+	getCloudflareWorkerDetail,
 	getCloudflareZoneBreakdown,
 	getCloudflareZoneDetail,
 	getCloudflareZoneDns,
@@ -677,6 +678,10 @@ export const cloudflareZoneDetailResultAtom = makeQueryAtomFamily(getCloudflareZ
 })
 
 export const cloudflareWorkersResultAtom = makeQueryAtomFamily(getCloudflareWorkers, {
+	staleTime: 30_000,
+})
+
+export const cloudflareWorkerDetailResultAtom = makeQueryAtomFamily(getCloudflareWorkerDetail, {
 	staleTime: 30_000,
 })
 

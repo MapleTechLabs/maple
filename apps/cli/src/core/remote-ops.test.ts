@@ -281,3 +281,70 @@ describe("inspectTrace not found", () => {
 		expect(error).toMatchObject({ hint: expect.stringContaining("maple traces") })
 	})
 })
+
+describe("serviceHasTelemetry", () => {
+	const clientAnswering = (status: number, body: unknown) => {
+		const urls: Array<string> = []
+		const respond = Object.assign(
+			async (input: string | URL | Request) => {
+				urls.push(input instanceof Request ? input.url : String(input))
+				return new Response(JSON.stringify(body), {
+					status,
+					headers: { "content-type": "application/json" },
+				})
+			},
+			{ preconnect: globalThis.fetch.preconnect },
+		) satisfies typeof fetch
+		const client = makeV2Client("https://api.maple.test", "maple_ak_testtoken").pipe(
+			Effect.provide(FetchHttpClient.layer),
+			Effect.provideService(FetchHttpClient.Fetch, respond),
+		)
+		return { urls, client }
+	}
+	const check = (status: number, body: unknown) => {
+		const { urls, client } = clientAnswering(status, body)
+		return Effect.runPromise(
+			Effect.flatMap(client, (v2) =>
+				Remote.serviceHasTelemetry(v2, { service: "checkout", range: RANGE }),
+			),
+		).then((present) => ({ present, urls }))
+	}
+
+	it("looks the service up by name rather than in a list page", async () => {
+		const { present, urls } = await check(200, {
+			object: "service",
+			name: "checkout",
+			service_namespaces: [],
+			deployment_environments: ["production"],
+			throughput: 5,
+			traced_throughput: 5,
+			span_count: 5,
+			error_count: 0,
+			error_rate: 0,
+			p50_latency_ms: 1,
+			p95_latency_ms: 2,
+			p99_latency_ms: 3,
+			has_sampling: false,
+			sampling_weight: 1,
+		})
+		expect(present).toBe(true)
+		const url = new URL(urls[0]!)
+		expect(url.pathname).toBe("/v2/services/checkout")
+		expect(url.searchParams.get("start_time")).toBe("2026-08-15T12:00:00.000Z")
+	})
+
+	it("reads service_not_found as no telemetry", async () => {
+		const { present } = await check(404, {
+			error: {
+				_tag: "@maple/http/v2/ServiceNotFoundError",
+				type: "not_found_error",
+				code: "service_not_found",
+				title: "Service not found",
+				message: "No such service.",
+				retryable: false,
+				recovery: "none",
+			},
+		})
+		expect(present).toBe(false)
+	})
+})

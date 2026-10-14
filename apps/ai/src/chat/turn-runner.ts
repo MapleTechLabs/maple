@@ -18,14 +18,13 @@
  *     `env: workerEnv ?? {}` fallback silently degrading the model config when a caller forgot to
  *     thread the worker env through.
  */
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import type { PrReviewFailureReason } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
@@ -91,13 +90,11 @@ const ENGINE_BOOKKEEPING_SPANS = [
 
 // Deliberately not `maple-api`: background work sharing the request-facing
 // service's name skewed its percentiles (p99 32s, 2026-09-04).
-const telemetry = MapleCloudflareSDK.make(
-	workerTelemetryConfig({
-		serviceName: "maple-chat",
-		anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-		dropSpanNames: ENGINE_BOOKKEEPING_SPANS,
-	}),
-)
+const telemetry = runtimeTelemetry({
+	serviceName: "maple-chat",
+	anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+	dropSpanNames: ENGINE_BOOKKEEPING_SPANS,
+})
 
 export interface RunChatSessionTurnInput {
 	/** The Durable Object itself. Appends are direct calls, not stub RPC. */

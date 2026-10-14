@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { strict as assert } from "node:assert"
-import { Effect, Layer, Tracer } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Tracer } from "effect"
 import {
 	FetchHttpClient,
 	HttpClient,
@@ -8,7 +8,8 @@ import {
 	type HttpClientRequest,
 	HttpClientResponse,
 } from "effect/http"
-import { LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
+import { CliNotFoundError, LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
+import { assertKnownService } from "../commands/services"
 import { Mode } from "./mode"
 import { rawQuery, serviceMap } from "./operations"
 import { WarehouseExecutorFromMode } from "./warehouse"
@@ -161,6 +162,83 @@ describe("rawQuery macros", () => {
 		const body = await sent("SELECT 1")
 		assert.match(body, /SELECT 1/)
 		assert.doesNotMatch(body, /maple_raw_sql_limited/)
+	})
+})
+
+describe("assertKnownService", () => {
+	const modeLayer = Layer.succeed(Mode, {
+		resolve: Effect.succeed({ _tag: "local" as const, baseUrl: "http://127.0.0.1:4318" }),
+	})
+	const overviewRow = (serviceName: string) => ({
+		serviceName,
+		serviceNamespace: "",
+		environment: "production",
+		throughput: 10,
+		errorCount: 0,
+		estimatedErrorCount: 0,
+		spanCount: 10,
+		p50LatencyMs: 1,
+		p95LatencyMs: 2,
+		p99LatencyMs: 3,
+		estimatedSpanCount: 10,
+		firstSeen: "2026-08-15 12:00:00",
+		commits: [],
+	})
+	// A local server whose service list is one full page that never reaches
+	// `checkout`, the way a busy workspace's capped overview does.
+	const run = (presentSpans: number) =>
+		Effect.runPromise(
+			Effect.exit(assertKnownService("checkout", RANGE, "the last hour")).pipe(
+				Effect.provide(
+					WarehouseExecutorFromMode.pipe(
+						Layer.provideMerge(
+							Layer.merge(
+								modeLayer,
+								Layer.succeed(
+									HttpClient.HttpClient,
+									HttpClient.make((request) =>
+										Effect.sync(() => {
+											const body =
+												request.body._tag === "Uint8Array"
+													? new TextDecoder().decode(request.body.body)
+													: ""
+											const rows = body.includes("throughput")
+												? [overviewRow("api"), overviewRow("worker")]
+												: body.includes("spanCount")
+													? [
+															{
+																spanCount: body.includes("'checkout'")
+																	? presentSpans
+																	: 0,
+															},
+														]
+													: []
+											return HttpClientResponse.fromWeb(
+												request,
+												new Response(JSON.stringify(rows), { status: 200 }),
+											)
+										}),
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+		)
+
+	it("accepts a service with telemetry that the capped service list leaves out", async () => {
+		const exit = await run(42)
+		assert.ok(Exit.isSuccess(exit))
+	})
+
+	it("names the known services when the service has no telemetry", async () => {
+		const exit = await run(0)
+		assert.ok(Exit.isFailure(exit))
+		const error = Cause.findErrorOption(exit.cause)
+		assert.ok(Option.isSome(error) && error.value instanceof CliNotFoundError)
+		assert.strictEqual(error.value.message, "no telemetry for 'checkout' in the last hour")
+		assert.match(error.value.hint ?? "", /known services: (api, worker|worker, api)/)
 	})
 })
 

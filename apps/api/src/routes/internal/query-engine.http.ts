@@ -23,6 +23,7 @@ import {
 	CloudflareInfraZonesResponse,
 	CloudflareInfraZoneTimeseriesResponse,
 	CloudflareInfraZoneDetailResponse,
+	CloudflareInfraWorkerDetailResponse,
 	CloudflareInfraZoneSecurityResponse,
 	CloudflareInfraZoneBreakdownResponse,
 	CloudflareInfraZoneDnsResponse,
@@ -829,7 +830,11 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								serviceName: row.serviceName,
 								requests: row.requests,
 								errors5xx: row.errors5xx,
+								errors4xx: row.errors4xx,
+								requests2xx: row.requests2xx,
+								requests3xx: row.requests3xx,
 								cacheHits: row.cacheHits,
+								cacheableRequests: row.cacheableRequests,
 								bytes: row.bytes,
 								visits: row.visits,
 								ttfbP50Ms: latency?.ttfbP50Ms ?? 0,
@@ -889,6 +894,25 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								Integrations.CF_METRIC.edgeTtfb,
 								Integrations.CF_METRIC.originDuration,
 							]),
+						})
+					}),
+				)
+				.handle("cloudflareInfraWorkerDetail", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [outcomeRows, latencyRows, durableObjectRows] = yield* Effect.all(
+							[
+								runQuery(Queries.cloudflareInfraWorkerDetailOutcomes, tenant, payload),
+								runQuery(Queries.cloudflareInfraWorkerDetailLatency, tenant, payload),
+								runQuery(Queries.cloudflareInfraWorkerDetailDurableObjects, tenant, payload),
+							],
+							{ concurrency: 3 },
+						)
+						return new CloudflareInfraWorkerDetailResponse({
+							outcomeBuckets: outcomeRows.map((row) => ({ ...row })),
+							latencyBuckets: latencyRows.map((row) => ({ ...row })),
+							durableObjectBuckets: durableObjectRows.map((row) => ({ ...row })),
 						})
 					}),
 				)
@@ -1057,11 +1081,15 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							],
 							{ concurrency: 2 },
 						)
-						const latencyByService = new Map(latencyRows.map((row) => [row.serviceName, row]))
+						// Keyed by account too: same-named scripts in two accounts are different Workers.
+						const workerKey = (row: { serviceName: string; accountId: string }) =>
+							`${row.accountId}|${row.serviceName}`
+						const latencyByWorker = new Map(latencyRows.map((row) => [workerKey(row), row]))
 						const data = counterRows.map((row) => {
-							const latency = latencyByService.get(row.serviceName)
+							const latency = latencyByWorker.get(workerKey(row))
 							return {
 								serviceName: row.serviceName,
+								accountId: row.accountId,
 								requests: row.requests,
 								errors: row.errors,
 								subrequests: row.subrequests,

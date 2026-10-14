@@ -11,7 +11,6 @@
  * connector half of the approval policy; a connector approver's chat account rides along as
  * forensic context on the audit entry.
  */
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import {
 	connectorApprovalTenant,
 	decidedBy,
@@ -25,19 +24,17 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { toTenantContext, withConnectorActor } from "./turn-actor"
 
 /** Its own instance, at module scope, so an approval exports its spans from the isolate it ran in. */
-const telemetry = MapleCloudflareSDK.make(
-	workerTelemetryConfig({
-		serviceName: "maple-chat",
-		anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-	}),
-)
+const telemetry = runtimeTelemetry({
+	serviceName: "maple-chat",
+	anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+})
 
 export type ApplyChatProposalInput = ChatProposalApproval & {
 	readonly env: Record<string, unknown>
