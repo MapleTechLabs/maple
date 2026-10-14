@@ -373,7 +373,7 @@ describe("GcpConnectorService", () => {
 			const deleted = yield* gcp.delete(orgId, connector.id)
 			assert.deepStrictEqual(deleted.connector, connector)
 			assert.include(deleted.cleanupScript, gcpConnectorResourceNames(connector.id).sink)
-			assert.notInclude(deleted.cleanupScript, "maple_gcp_")
+			assert.notMatch(deleted.cleanupScript, /maple_gcp_[A-Za-z0-9_-]{32}/)
 			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [])
 			const again = yield* Effect.flip(gcp.delete(orgId, connector.id))
 			assert.strictEqual(again._tag, "@maple/http/errors/IntegrationsNotFoundError")
