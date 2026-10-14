@@ -268,7 +268,7 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 											...(resources.length > 1
 												? [
 														doc.text(
-															`The \`monitored_resource\` matcher is required: this metric has ${resources.length} resource types (${resources.join(", ")}).`,
+															`The \`monitored_resource\` matcher is required: the starter query reads ${resources[0]}; the metric also exists for ${resources.slice(1).join(", ")}.`,
 														),
 													]
 												: []),
@@ -343,8 +343,11 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 				Math.max(60, Math.floor(params.bucket_seconds ?? computeBucketSecondsForRange(st, et))),
 			)
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.ai.kind": kind })
+			// The request schema names the step by its HTTP name.
 			const invalid = (error: Schema.SchemaError) =>
-				new McpInvalidInputError({ message: error.message })
+				new McpInvalidInputError({
+					message: error.message.replaceAll("stepSeconds", "bucket_seconds"),
+				})
 			const fail = toMcpError("query_gcp_promql", "projects")
 
 			const result =

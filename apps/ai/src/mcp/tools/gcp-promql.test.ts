@@ -5,6 +5,7 @@ import {
 	GcpPromQlFailedError,
 	GcpPromQlInvalidQueryError,
 	GcpPromQlResult,
+	GcpPromQlTooManyProjectsError,
 	GcpPromQlTooManySeriesError,
 	GcpPromQlUnavailableError,
 	type GcpPromQlInstantRequest,
@@ -218,25 +219,53 @@ describe("query_gcp_promql", () => {
 		}),
 	)
 
-	it.effect("asks for aggregation when the answer holds too many series", () =>
+	it.effect("points the agent at the parameter to change", () =>
+		Effect.gen(function* () {
+			const failWith = (error: GcpPromQlTooManySeriesError | GcpPromQlTooManyProjectsError) =>
+				Effect.flip(
+					call(
+						"query_gcp_promql",
+						{ query: "up", ...WINDOW },
+						{ queryRange: () => Effect.fail(error) },
+					),
+				)
+			const series = yield* failWith(
+				new GcpPromQlTooManySeriesError({ message: "Aggregate them.", series: 900 }),
+			)
+			assert.deepInclude(series, { _tag: "@maple/mcp/errors/McpInvalidInputError", parameter: "query" })
+			const projects = yield* failWith(
+				new GcpPromQlTooManyProjectsError({
+					message: "Choose the projects to query.",
+					projects: Array.from({ length: 25 }, (_, index) =>
+						Schema.decodeUnknownSync(GcpProjectId)(`shop-${String(index).padStart(2, "0")}`),
+					),
+				}),
+			)
+			assert.deepInclude(projects, {
+				_tag: "@maple/mcp/errors/McpInvalidInputError",
+				parameter: "projects",
+			})
+			assert.include(projects.message, "shop-19 and 5 more.")
+		}),
+	)
+
+	it.effect("refuses a step too fine for the window in the tool's own words", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
 				call(
 					"query_gcp_promql",
-					{ query: "up", ...WINDOW },
 					{
-						queryRange: () =>
-							Effect.fail(
-								new GcpPromQlTooManySeriesError({
-									message: "Aggregate them, with sum by.",
-									series: 900,
-								}),
-							),
+						query: "up",
+						start_time: "2026-09-10 12:00:00",
+						end_time: "2026-10-15 12:00:00",
+						bucket_seconds: 60,
 					},
+					{},
 				),
 			)
 			assert.strictEqual(error._tag, "@maple/mcp/errors/McpInvalidInputError")
-			assert.include(error.message, "sum by")
+			assert.include(error.message, "bucket_seconds")
+			assert.notInclude(error.message, "stepSeconds")
 		}),
 	)
 
@@ -249,7 +278,10 @@ describe("query_gcp_promql", () => {
 					{ queryRange: () => Effect.fail(new GcpPromQlUnavailableError({ message: "no key" })) },
 				),
 			)
-			assert.strictEqual(unavailable._tag, "@maple/mcp/errors/McpUnavailableError")
+			assert.deepInclude(unavailable, {
+				_tag: "@maple/mcp/errors/McpUnavailableError",
+				capability: "gcp_live_query",
+			})
 			const failed = yield* Effect.flip(
 				call(
 					"query_gcp_promql",
