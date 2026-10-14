@@ -5,7 +5,7 @@ import { DataTable } from "./components/data-table"
 import { ErrorList } from "./components/error-list"
 import { LogList } from "./components/log-list"
 import { MetricsList } from "./components/metrics-list"
-import { promQlChartRows } from "./components/promql-chart-rows"
+import { promQlChartRows, seriesKey } from "./components/promql-chart-rows"
 import { QueryChart } from "./components/query-chart"
 import { SpanTree } from "./components/span-tree"
 import { StatCards } from "./components/stat-cards"
@@ -187,9 +187,10 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 				<DataTable
 					props={{
 						headers: ["Series", "Value"],
-						rows: promQlChartRows(output.data.series).flatMap((row) =>
-							Object.entries(row.series).map(([name, value]) => [name, String(value)]),
-						),
+						rows: output.data.series.map((series) => [
+							seriesKey(series.labels),
+							String(series.points[0]?.[1] ?? "-"),
+						]),
 						title: output.data.query,
 					}}
 				/>

@@ -72,20 +72,6 @@ const toMcpError =
 		}
 	}
 
-const decodeProject = (project: string | undefined) =>
-	project === undefined
-		? Effect.succeed(undefined)
-		: Schema.decodeUnknownEffect(GcpProjectId)(project).pipe(
-				Effect.mapError(
-					() =>
-						new McpInvalidInputError({
-							message: `\`${project}\` is not a Google Cloud project id.`,
-							parameter: "project",
-							example: 'project="my-project-123"',
-						}),
-				),
-			)
-
 /** A query for a metric type's kind: rate for counters, avg for gauges, p95 for distributions. */
 export const starterQuery = (metric: {
 	readonly type: string
@@ -100,7 +86,8 @@ export const starterQuery = (metric: {
 			? `, monitored_resource="${metric.monitoredResourceTypes[0]}"`
 			: ""
 	if (metric.valueType === "DISTRIBUTION") {
-		return `histogram_quantile(0.95, sum by (le) (rate({"${metric.type}_bucket"${resource}}[5m])))`
+		const buckets = `{"${metric.type}_bucket"${resource}}`
+		return `histogram_quantile(0.95, sum by (le) (${metric.metricKind === "GAUGE" ? buckets : `rate(${buckets}[5m])`}))`
 	}
 	const selector = `{"${metric.type}"${resource}}`
 	return metric.metricKind === "GAUGE" ? `avg(${selector})` : `sum(rate(${selector}[5m]))`
@@ -108,13 +95,13 @@ export const starterQuery = (metric: {
 
 const seriesName = (labels: Readonly<Record<string, string>>): string => {
 	const entries = Object.entries(labels).filter(([key]) => key !== "__name__")
-	return `{${entries.map(([key, value]) => `${key}="${value}"`).join(", ")}}`
+	return `{${entries.map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(", ")}}`
 }
 
 const formatValue = (value: number): string => value.toLocaleString("en-US", { maximumSignificantDigits: 4 })
 
 const lastValue = (points: ReadonlyArray<readonly [number, number]>): number =>
-	points.at(-1)?.[1] ?? Number.NEGATIVE_INFINITY
+	points.at(-1)?.[1] ?? -Number.MAX_VALUE
 
 export function registerGcpPromQlTools(server: McpToolRegistrar) {
 	server.define({
@@ -151,7 +138,14 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 					example: 'metric="run.googleapis.com/request_count"',
 				})
 			}
-			const project = yield* decodeProject(params.project)
+			const project = params.project
+			if (project !== undefined && !Schema.is(GcpProjectId)(project)) {
+				return yield* new McpInvalidInputError({
+					message: `\`${project}\` is not a Google Cloud project id.`,
+					parameter: "project",
+					example: 'project="my-project-123"',
+				})
+			}
 			const tenant = yield* CurrentMcpTenant
 			const gcp = yield* GcpPromQlService
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
@@ -180,13 +174,7 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 							Effect.map((descriptor) => {
 								const query = starterQuery(descriptor)
 								return {
-									type: descriptor.type,
-									metricKind: descriptor.metricKind,
-									valueType: descriptor.valueType,
-									unit: descriptor.unit,
-									description: descriptor.description,
-									monitoredResourceTypes: descriptor.monitoredResourceTypes,
-									labels: descriptor.labels,
+									...descriptor,
 									...(query === undefined ? undefined : { starterQuery: query }),
 								}
 							}),
@@ -248,7 +236,7 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 									["Value type", metric.valueType],
 									["Unit", metric.unit === "" ? "-" : metric.unit],
 									["Resource types", resources.join(", ")],
-									["Description", metric.description],
+									["Description", truncate(metric.description, 300)],
 								]),
 								...(metric.labels.length === 0
 									? []
@@ -338,42 +326,34 @@ export function registerGcpPromQlTools(server: McpToolRegistrar) {
 			const kind = params.kind ?? "timeseries"
 			const query = params.query.trim()
 			const projects = params.projects === undefined ? undefined : { projects: params.projects }
-			const stepSeconds = Math.min(
-				86_400,
-				Math.max(60, Math.floor(params.bucket_seconds ?? computeBucketSecondsForRange(st, et))),
-			)
+			const stepSeconds = params.bucket_seconds ?? computeBucketSecondsForRange(st, et)
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.ai.kind": kind })
-			// The request schema names the step by its HTTP name.
-			const invalid = (error: Schema.SchemaError) =>
-				new McpInvalidInputError({
-					message: error.message.replaceAll("stepSeconds", "bucket_seconds"),
-				})
 			const fail = toMcpError("query_gcp_promql", "projects")
 
-			const result =
+			const result = yield* (
 				kind === "instant"
-					? yield* Schema.decodeUnknownEffect(GcpPromQlInstantRequest)({
+					? Schema.decodeUnknownEffect(GcpPromQlInstantRequest)({
 							query,
 							time: et,
 							...projects,
-						}).pipe(
-							Effect.mapError(invalid),
-							Effect.flatMap((request) =>
-								gcp.queryInstant(tenant.orgId, request).pipe(Effect.mapError(fail)),
-							),
-						)
-					: yield* Schema.decodeUnknownEffect(GcpPromQlRangeRequest)({
+						}).pipe(Effect.flatMap((request) => gcp.queryInstant(tenant.orgId, request)))
+					: Schema.decodeUnknownEffect(GcpPromQlRangeRequest)({
 							query,
 							startTime: st,
 							endTime: et,
 							stepSeconds,
 							...projects,
-						}).pipe(
-							Effect.mapError(invalid),
-							Effect.flatMap((request) =>
-								gcp.queryRange(tenant.orgId, request).pipe(Effect.mapError(fail)),
-							),
-						)
+						}).pipe(Effect.flatMap((request) => gcp.queryRange(tenant.orgId, request)))
+			).pipe(
+				Effect.mapError((error) =>
+					Schema.isSchemaError(error)
+						? // The request schema names the step by its HTTP name.
+							new McpInvalidInputError({
+								message: error.message.replaceAll("stepSeconds", "bucket_seconds"),
+							})
+						: fail(error),
+				),
+			)
 			yield* Effect.annotateCurrentSpan("result.seriesCount", result.series.length)
 			return {
 				query,

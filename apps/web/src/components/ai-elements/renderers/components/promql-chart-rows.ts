@@ -2,8 +2,9 @@ import type { StructuredToolData } from "@maple/domain"
 
 type PromQlSeries = StructuredToolData<"query_gcp_promql">["series"][number]
 
-const seriesKey = (labels: PromQlSeries["labels"]): string => {
-	const entries = Object.entries(labels).filter(([key]) => key !== "__name__")
+/** A series' name in the chart and table: every label, `__name__` included, so no two collide. */
+export const seriesKey = (labels: PromQlSeries["labels"]): string => {
+	const entries = Object.entries(labels)
 	return entries.length === 0 ? "value" : entries.map(([key, value]) => `${key}=${value}`).join(", ")
 }
 

@@ -1,18 +1,13 @@
 /** Output schemas for the live Google Cloud Monitoring tools (PromQL through Google's API). */
 import { Schema } from "effect"
-import { GcpPromQlFailure, GcpPromQlSeries } from "../http/gcp-promql"
+import { GcpMetricDescriptor, GcpPromQlFailure, GcpPromQlSeries } from "../http/gcp-promql"
+import { GcpProjectId } from "../primitives"
 import { OutputTimeRange } from "./shared"
 
 // find_gcp_metrics
 
 export const GcpMetricDescription = Schema.Struct({
-	type: Schema.String,
-	metricKind: Schema.String,
-	valueType: Schema.String,
-	unit: Schema.String,
-	description: Schema.String,
-	monitoredResourceTypes: Schema.Array(Schema.String),
-	labels: Schema.Array(Schema.Struct({ key: Schema.String, description: Schema.String })),
+	...GcpMetricDescriptor.fields,
 	/** A query for query_gcp_promql. Absent for a value type PromQL cannot read (STRING). */
 	starterQuery: Schema.optionalKey(Schema.String),
 })
@@ -23,7 +18,7 @@ export const FindGcpMetricsOutput = Schema.Struct({
 		Schema.Struct({
 			text: Schema.String,
 			/** The project whose metric list was searched. */
-			projectId: Schema.String,
+			projectId: GcpProjectId,
 			metrics: Schema.Array(Schema.String),
 			/** More names matched than `metrics` holds. */
 			truncated: Schema.Boolean,
@@ -45,6 +40,6 @@ export const QueryGcpPromQlOutput = Schema.Struct({
 	series: Schema.Array(GcpPromQlSeries),
 	/** Series Google returned, before the cap. */
 	totalSeries: Schema.Number,
-	projects: Schema.Array(Schema.String),
+	projects: Schema.Array(GcpProjectId),
 	failures: Schema.Array(GcpPromQlFailure),
 })

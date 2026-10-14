@@ -116,6 +116,13 @@ describe("starterQuery", () => {
 		)
 	})
 
+	it("reads a gauge distribution's buckets without rate", () => {
+		assert.strictEqual(
+			starterQuery({ ...metric, metricKind: "GAUGE", valueType: "DISTRIBUTION" }),
+			'histogram_quantile(0.95, sum by (le) ({"run.googleapis.com/request_count_bucket"}))',
+		)
+	})
+
 	it("offers none for a STRING metric, which PromQL cannot read", () => {
 		assert.isUndefined(starterQuery({ ...metric, metricKind: "GAUGE", valueType: "STRING" }))
 	})

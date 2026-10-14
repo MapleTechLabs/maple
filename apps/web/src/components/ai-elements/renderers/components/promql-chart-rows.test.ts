@@ -14,10 +14,16 @@ describe("promQlChartRows", () => {
 			{ labels: { project_id: "shop-dev", service: "api" }, points: [[1_760_000_060, 5]] },
 		])
 		expect(rows).toEqual([
-			{ bucket: "2025-10-09T08:53:20.000Z", series: { "project_id=shop-prod, service=api": 1 } },
+			{
+				bucket: "2025-10-09T08:53:20.000Z",
+				series: { "__name__=x, project_id=shop-prod, service=api": 1 },
+			},
 			{
 				bucket: "2025-10-09T08:54:20.000Z",
-				series: { "project_id=shop-prod, service=api": 2, "project_id=shop-dev, service=api": 5 },
+				series: {
+					"__name__=x, project_id=shop-prod, service=api": 2,
+					"project_id=shop-dev, service=api": 5,
+				},
 			},
 		])
 	})
