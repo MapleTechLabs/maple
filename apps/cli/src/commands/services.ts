@@ -182,7 +182,12 @@ export const serviceMap = Command.make("service-map", {
 			})
 			if (service !== undefined && isEmptyResult(result))
 				yield* assertKnownService(service, range, window)
-			yield* printResult(result, serviceMapView(`No dependencies in ${window}`))
+			// Remote mode never queried databases or external calls, so an empty map must say so.
+			const empty =
+				result.databases === undefined
+					? `No service-to-service calls in ${window}; databases and external calls are only listed in local mode`
+					: `No dependencies in ${window}`
+			yield* printResult(result, serviceMapView(empty))
 		}),
 	),
 )

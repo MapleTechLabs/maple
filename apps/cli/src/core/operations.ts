@@ -32,6 +32,7 @@ import {
 	type MineLogPatternsOutput,
 	type SearchLogsOutput,
 	type SearchTracesOutput,
+	type ServiceEdge,
 } from "@maple/query-engine/observability"
 import { MetricType } from "@maple/domain"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
@@ -363,16 +364,27 @@ const localServiceMap = (p: { range: Range; service?: string; environment?: stri
 	Effect.gen(function* () {
 		const executor = yield* WarehouseExecutor
 		const params = { orgId: LOCAL_ORG_ID, startTime: p.range.startTime, endTime: p.range.endTime }
-		const allEdges = yield* obsServiceMap({
-			timeRange: p.range,
-			service: p.service,
-			environment: p.environment,
-		})
-		// `service_dependencies` does not scope by service, so keep the edges touching it here.
+		// With -s, filter inside the query: the org-wide one keeps its top 200 edges first.
 		const edges =
 			p.service === undefined
-				? allEdges
-				: allEdges.filter((e) => e.sourceService === p.service || e.targetService === p.service)
+				? yield* obsServiceMap({ timeRange: p.range, environment: p.environment })
+				: (yield* executor.compiledQuery(
+						CH.compile(
+							CH.serviceDependenciesInvolvingServiceQuery({
+								serviceName: p.service,
+								deploymentEnv: p.environment,
+							}),
+							params,
+						),
+						{ profile: "aggregation", context: "cli.serviceMapEdges" },
+					)).map((e): ServiceEdge => ({
+						sourceService: e.sourceService,
+						targetService: e.targetService,
+						callCount: e.callCount,
+						errorCount: e.errorCount,
+						avgDurationMs: e.avgDurationMs,
+						maxDurationMs: e.maxDurationMs,
+					}))
 		const databases = yield* executor.compiledQuery(
 			p.service === undefined
 				? CH.serviceDbEdgesSQL({ deploymentEnv: p.environment }, params)

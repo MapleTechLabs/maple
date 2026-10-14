@@ -192,7 +192,7 @@ describe("serviceMap in local mode", () => {
 							]
 						: [
 								{ sourceService: "web", targetService: "api", ...EDGE },
-								{ sourceService: "web", targetService: "billing", ...EDGE },
+								{ sourceService: "api", targetService: "billing", ...EDGE },
 							]
 				return new Response(JSON.stringify(rows), {
 					status: 200,
@@ -226,12 +226,17 @@ describe("serviceMap in local mode", () => {
 		}),
 	)
 
-	it.effect("keeps only the edges touching -s, with its databases and external calls", () =>
+	it.effect("scopes -s inside the query, both directions, with its databases and external calls", () =>
 		Effect.gen(function* () {
-			const { result } = yield* run("api")
+			const { result, sqls } = yield* run("api")
+			// Filtering a capped org-wide list would drop a quiet service's inbound edges.
+			const edgesSql = sqls.find((sql) => sql.includes("service_map_edges_hourly"))
+			assert.ok(edgesSql)
+			assert.match(edgesSql, /SourceService = 'api' OR [\w.]*TargetService = 'api'/)
+			assert.match(edgesSql, /p\.ServiceName = 'api' OR c\.ServiceName = 'api'/)
 			assert.deepStrictEqual(
 				result.edges.map((e) => `${e.sourceService} -> ${e.targetService}`),
-				["web -> api"],
+				["web -> api", "api -> billing"],
 			)
 			assert.strictEqual(result.databases?.length, 1)
 			assert.deepStrictEqual(
