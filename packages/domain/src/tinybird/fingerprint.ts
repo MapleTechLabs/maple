@@ -117,9 +117,11 @@ export const FRAME_REDACTIONS: Redactions = [
 	// pnpm/bun store paths carry the package version; a dependency bump is not a new bug.
 	["@[0-9]+\\.[0-9]+\\.[0-9]+[^/ )]*", "@#"],
 	["\\(index [0-9]+\\)", "(index #)"],
+	["file:///bundle/", ""],
 	["https?://[^/ )]+", ""],
-	["-[A-Za-z0-9_-]{8}\\.js", ".js"],
-	["-[A-Za-z0-9_-]{8}\\.css", ".css"],
+	["(-[A-Za-z0-9_-]{8})+\\.js", ".js"],
+	["(-[A-Za-z0-9_-]{8})+\\.css", ".css"],
+	["(/_astro/[^/ ).]+)\\.[A-Za-z0-9_-]{8}\\.js", "$1.js"],
 	[":[0-9]+|line [0-9]+|0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|[0-9]{6,}", ""],
 ]
 
@@ -182,24 +184,47 @@ export const MSG_TEXT_REDACTIONS: Redactions = [
 ]
 
 const FS_ROOTS = "tmp|var|srv|private|opt|mnt|data|Volumes|System|app|work|run"
+const PATH_DELIMS = ` \\t\\r\\n'"\`:,)`
+const PATH_RULE = `(^|[ \\t\\r\\n'"(\`=])/(${FS_ROOTS}|Users/[^/${PATH_DELIMS}]+|home/[^/${PATH_DELIMS}]+)([/.][^${PATH_DELIMS}]*)?([${PATH_DELIMS}]|$)`
 
 /**
- * The error-issue signature: `MSG_TEXT_REDACTIONS` behind four v3 passes. Kept
+ * The error-issue signature: `MSG_TEXT_REDACTIONS` wrapped in the v3 passes. Kept
  * apart from that list because the AI tool-error fingerprint and the web's
  * masked display share it, and v3 targets issue grouping alone.
  *
- * A ClickHouse error echoes the failing query, so it is cut to its error class.
  * A filesystem path rooted where a route never is becomes `PATH`, matched only at
  * the start of a token so `/api/data/x` is not read as `/data`; it runs before the
  * home-dir pass. Prefixed ids (`org_...`, `cus_...`) and ULIDs become `ID`.
+ *
+ * The HTTP status pass tags a status with `§` before the number pass and untags it
+ * after, which is how one entry of the replaced number pass keeps its digits.
  */
 export const ERROR_MSG_REDACTIONS: Redactions = [
-	["(DB::Exception: [A-Za-z ]+?)[:.(][\\s\\S]*", "$1"],
-	["^(\\[Error\\] [A-Za-z ]+?)[`'\"#:.(][\\s\\S]*", "$1"],
-	[`(^|[ \\t\\r\\n'"(\`=])(~|/(${FS_ROOTS}|Users/[^/ ]+|home/[^/ ]+))(/[^ '"\`:,)]*)?`, "$1PATH"],
-	["\\b[a-z]{2,8}_[A-Za-z0-9]{10,}\\b", "ID"],
+	// Terminal colour codes: the same error printed to a TTY is the same error.
+	["\\x1b\\[[0-9;]*m", ""],
+	// A ClickHouse error echoes the failing query after its own text; cut only the
+	// echo, so the identifier, function or type that names the bug stays.
+	[
+		"^((\\[Error\\]|[\\s\\S]*?DB::Exception:)[\\s\\S]*?)( [Ii]n scope | [Ww]hile processing )[\\s\\S]*",
+		"$1",
+	],
+	[`(^|[ \\t\\r\\n'"(\`=])~/[^ '"\`:,)]*`, "$1PATH"],
+	// The root must end at "/", "." or a delimiter, so `/datasets` is not `/data`.
+	// Twice: a match consumes the delimiter the next adjacent path starts after.
+	[PATH_RULE, "$1PATH$4"],
+	[PATH_RULE, "$1PATH$4"],
+	// The id part must hold a digit or capital, so `top_operations` stays a name.
+	["\\b[a-z]{2,8}_[a-z]*[A-Z0-9][A-Za-z0-9]{8,}\\b", "ID"],
 	["\\b[0-9A-HJKMNP-TV-Z]{26}\\b", "ID"],
-	...MSG_TEXT_REDACTIONS,
+	// An HTTP status names the failure: tag it so the number pass keeps it. A 4xx
+	// keeps its code (401 and 404 are different bugs); every 5xx is one class, because
+	// one outage answers 502, 520 and 524 in turn and must stay one issue.
+	["\\b(HTTP|[Ss]tatus|returned|code|failed|failed with)(:? ?)([1-4][0-9][0-9]|500)\\b", "$1$2§$3"],
+	["\\b(HTTP|[Ss]tatus|returned|code|failed|failed with)(:? ?)5(0[1-9]|[1-9][0-9])\\b", "$1$2§5xx"],
+	...MSG_TEXT_REDACTIONS.slice(0, -1),
+	// MSG_TEXT_REDACTIONS' own number pass, unchanged except that it keeps tagged statuses.
+	["(§[1-4][0-9][0-9]|§500|§5xx)|[0-9a-fA-F-]{6,}|[0-9]+", "$1#"],
+	["§([1-4][0-9][0-9]|500|5xx)#", "$1"],
 ]
 
 /**
@@ -231,6 +256,9 @@ export const applyRedactions = (value: string, redactions: Redactions): string =
 	)
 
 const FRAME_LINE_RE = new RegExp(FRAME_LINE_PATTERN)
+/** `  at [2]["params"]`: a schema error's key path, not a stack frame. */
+export const SCHEMA_PATH_LINE_PATTERN = "^[ \\t]*at \\["
+const SCHEMA_PATH_LINE_RE = new RegExp(SCHEMA_PATH_LINE_PATTERN)
 
 // Display-only candidate keys for the human label (NOT used by the fingerprint).
 const LABEL_KEYS = ["title", "message", "error", "_tag", "reason", "name"] as const
@@ -323,16 +351,26 @@ export function computeFingerprintInputs(args: {
 	readonly exceptionStacktrace: string
 	readonly statusMessage: string
 }): FingerprintInputs {
+	const msgSignature = messageSignature(args.statusMessage)
+	// A namespaced type plus its message names the failure, so the throw site is enough.
+	// With no message the frames are the only identity left; keep all three.
+	const maxFrames =
+		args.exceptionType.includes("/") && msgSignature !== ""
+			? NAMESPACED_TYPE_MAX_FRAMES
+			: MAX_FINGERPRINT_FRAMES
 	const rawFrames = args.exceptionStacktrace
 		.split("\n")
-		.filter((line) => FRAME_LINE_RE.test(line) && !line.includes(EFFECT_SPAN_FRAME_MARKER))
-		.slice(0, args.exceptionType.includes("/") ? NAMESPACED_TYPE_MAX_FRAMES : MAX_FINGERPRINT_FRAMES)
+		.filter(
+			(line) =>
+				FRAME_LINE_RE.test(line) &&
+				!line.includes(EFFECT_SPAN_FRAME_MARKER) &&
+				!SCHEMA_PATH_LINE_RE.test(line),
+		)
+		.slice(0, maxFrames)
 
 	const topFrames = rawFrames.map(normalizeFrame)
 	const topFrame = topFrames[0] ?? ""
 	const fpFrames = topFrames.join("\n")
-
-	const msgSignature = messageSignature(args.statusMessage)
 
 	const label = args.exceptionType !== "" ? args.exceptionType : statusLabel(args.statusMessage)
 

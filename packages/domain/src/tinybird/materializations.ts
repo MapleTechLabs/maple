@@ -12,6 +12,7 @@ import {
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
 	NAMESPACED_TYPE_MAX_FRAMES,
+	SCHEMA_PATH_LINE_PATTERN,
 } from "./fingerprint"
 import {
 	serviceUsage,
@@ -794,39 +795,6 @@ const errorEventsSelectSql = `
             if(_useAttrs, SpanAttributes['exception.stacktrace'], '')
           ) AS _exStack,
           if(_useAttrs, _exMsg, StatusMessage) AS _msgText,
-          -- Frame lines are matched by SHAPE, not by "contains :NUMBER". The old
-          -- rule accepted any line with a colon-digit, which let non-frame lines
-          -- in: Drizzle's \`params: <row values>\` line, and the \`Type: message\`
-          -- header (\`Code: 62\`, \`position 1628\`, embedded timestamps). Row values
-          -- and message text then entered the hash and split one bug into
-          -- thousands of issues — 23,035 fingerprints for six real
-          -- AnomalyPersistenceError call sites, 15,051 for thirteen DatabaseError
-          -- ones.
-          --
-          -- The pattern is rendered from FRAME_LINE_PATTERN in fingerprint.ts,
-          -- as is every redaction below. They used to be hand-copied here, which
-          -- let the reference implementation the tests exercise drift away from
-          -- the SQL that actually runs, silently.
-          arraySlice(
-            arrayFilter(
-              line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
-                AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0,
-              splitByChar('\\n', _exStack)
-            ),
-            -- A namespaced type names one failure: keep only its throw site.
-            1, if(position(_exType, '/') > 0, ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})
-          ) AS _rawFrames,
-          -- Redact every volatile token a frame line can carry: the URL origin
-          -- (so preview hosts share one fingerprint), Vite's 8-char bundle
-          -- content hash (so a deploy does not re-split every triaged browser and
-          -- Worker issue), then line numbers, hex pointers and long id runs. See
-          -- FRAME_REDACTIONS for the order and the reasoning.
-          arrayMap(
-            line -> ${chRedactChain("line", FRAME_REDACTIONS)},
-            _rawFrames
-          ) AS _topFrames,
-          if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
-          arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
           -- JSON detection for the message signature below.
           isValidJSON(_msgText) AS _isJson,
           _isJson AND JSONType(_msgText) = 'Object' AS _isJsonObj,
@@ -861,6 +829,41 @@ const errorEventsSelectSql = `
               1, ${MSG_SIGNATURE_CHARS}
             )
           ) AS _msgSig,
+          -- Frame lines are matched by SHAPE, not by "contains :NUMBER". The old
+          -- rule accepted any line with a colon-digit, which let non-frame lines
+          -- in: Drizzle's \`params: <row values>\` line, and the \`Type: message\`
+          -- header (\`Code: 62\`, \`position 1628\`, embedded timestamps). Row values
+          -- and message text then entered the hash and split one bug into
+          -- thousands of issues — 23,035 fingerprints for six real
+          -- AnomalyPersistenceError call sites, 15,051 for thirteen DatabaseError
+          -- ones.
+          --
+          -- The pattern is rendered from FRAME_LINE_PATTERN in fingerprint.ts,
+          -- as is every redaction below. They used to be hand-copied here, which
+          -- let the reference implementation the tests exercise drift away from
+          -- the SQL that actually runs, silently.
+          arraySlice(
+            arrayFilter(
+              line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
+                AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0
+                AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)}),
+              splitByChar('\\n', _exStack)
+            ),
+            -- A namespaced type plus its message names one failure: keep only the
+            -- throw site. With no message the frames are all that is left; keep 3.
+            1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})
+          ) AS _rawFrames,
+          -- Redact every volatile token a frame line can carry: the URL origin
+          -- (so preview hosts share one fingerprint), Vite's 8-char bundle
+          -- content hash (so a deploy does not re-split every triaged browser and
+          -- Worker issue), then line numbers, hex pointers and long id runs. See
+          -- FRAME_REDACTIONS for the order and the reasoning.
+          arrayMap(
+            line -> ${chRedactChain("line", FRAME_REDACTIONS)},
+            _rawFrames
+          ) AS _topFrames,
+          if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
+          arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
           -- Display-only, best-effort human label (decoupled from the fingerprint:
           -- many labels may map to one hash). The broad key list here is a DISPLAY
           -- heuristic only; the fingerprint above makes no key-name assumption.

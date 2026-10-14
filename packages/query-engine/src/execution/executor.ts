@@ -585,7 +585,7 @@ WHERE name = 'enable_full_text_index'`,
 								// this client timeout into the retry loop.
 								Effect.fail(
 									new WarehouseQueryError({
-										message: `Warehouse query exceeded ${attemptTimeoutMs}ms client timeout`,
+										message: `Warehouse query ${pipe} exceeded ${attemptTimeoutMs}ms client timeout`,
 										pipeName: pipe,
 									}),
 								),

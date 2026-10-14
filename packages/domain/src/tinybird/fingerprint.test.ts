@@ -12,6 +12,7 @@ import {
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
 	NAMESPACED_TYPE_MAX_FRAMES,
+	SCHEMA_PATH_LINE_PATTERN,
 } from "./fingerprint"
 import { ERROR_EVENTS_MV_SQL } from "./materializations"
 
@@ -586,6 +587,9 @@ describe("SQL parity", () => {
 	it("renders the frame matcher and every redaction from the shared constants", () => {
 		expect(sql).toContain(`match(line, ${chPattern(FRAME_LINE_PATTERN)})`)
 		expect(sql).toContain(`position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0`)
+		expect(sql).toContain(`NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})`)
+		// The frame limit reads _msgSig, so the signature must be defined first.
+		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _rawFrames"))
 		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
@@ -610,7 +614,7 @@ describe("SQL parity", () => {
 
 	it("keeps the frame limit in step", () => {
 		expect(sql).toContain(
-			`1, if(position(_exType, '/') > 0, ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})\n          ) AS _rawFrames`,
+			`1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})\n          ) AS _rawFrames`,
 		)
 	})
 
@@ -769,9 +773,46 @@ describe("fingerprint v3", () => {
 
 			expect(key(type, a, "upstream 503")).toBe(key(type, b, "upstream 503"))
 			expect(
-				computeFingerprintInputs({ exceptionType: type, exceptionStacktrace: a, statusMessage: "" })
-					.fpFrames,
+				computeFingerprintInputs({
+					exceptionType: type,
+					exceptionStacktrace: a,
+					statusMessage: "upstream 503",
+				}).fpFrames,
 			).toBe("    at toUpstreamError (/app/src/upstream.ts)")
+		})
+
+		it("keeps all 3 frames for a namespaced type with no message, since frames are all that is left", () => {
+			const throwSite = "    at fail (/app/src/fail.ts:4:1)"
+			const a = stack(throwSite, "    at listTraces (/app/src/traces.ts:12:3)")
+			const b = stack(throwSite, "    at serviceMap (/app/src/map.ts:88:7)")
+			const type = "@maple/discord/RateLimited"
+
+			expect(key(type, a, "")).not.toBe(key(type, b, ""))
+		})
+
+		it("ignores a schema error's key path as a frame", () => {
+			const withPath = stack('  at [2]["params"]', "    at decode (/app/src/schema.ts:9:4)")
+
+			expect(key("ParseError", withPath, "")).toBe(
+				key("ParseError", stack("    at decode (/app/src/schema.ts:9:4)"), ""),
+			)
+		})
+
+		it("strips file:///bundle/, repeated bundle hashes and Astro asset hashes", () => {
+			const top = (line: string) =>
+				computeFingerprintInputs({
+					exceptionType: "Error",
+					exceptionStacktrace: stack(line),
+					statusMessage: "",
+				}).topFrame
+
+			expect(top("    at a (file:///bundle/worker.js:1:2)")).toBe("    at a (worker.js)")
+			expect(top("    at a (https://x.dev/assets/index-AbCd1234-EfGh5678.js:1:2)")).toBe(
+				"    at a (/assets/index.js)",
+			)
+			expect(top("    at a (https://x.dev/_astro/Layout.AbCd1234.js:1:2)")).toBe(
+				"    at a (/_astro/Layout.js)",
+			)
 		})
 
 		it("keeps generic TypeErrors thrown at different callers apart", () => {
@@ -821,25 +862,67 @@ describe("fingerprint v3", () => {
 			computeFingerprintInputs({ exceptionType: "", exceptionStacktrace: "", statusMessage })
 				.msgSignature
 
-		it("cuts a ClickHouse error to its class, dropping the echoed query", () => {
+		it("cuts only the query a ClickHouse error echoes, keeping the identifier that names the bug", () => {
+			const echo = (query: string) =>
+				signature(
+					`Code: 47. DB::Exception: Unknown expression identifier \`ServiceVersion\` in scope ${query}`,
+				)
+
+			expect(echo("SELECT ServiceVersion FROM traces")).toBe(
+				"Code: #. DB::Exception: Unknown expression identifier `ServiceVersion`",
+			)
+			expect(echo("SELECT * FROM (SELECT ServiceVersion FROM logs)")).toBe(
+				echo("SELECT ServiceVersion FROM traces"),
+			)
 			expect(
-				signature("DB::Exception: Syntax error: failed at position 12 (SELECT foo FROM bar)"),
-			).toBe("DB::Exception: Syntax error")
-			expect(signature("Code: 62. DB::Exception: Syntax error: failed at position 99 (SELECT 1)")).toBe(
-				signature("Code: 62. DB::Exception: Syntax error: failed at position 4 (SELECT name FROM t)"),
+				signature(
+					"DB::Exception: Illegal type String of argument of function plus: While processing plus(a, 1)",
+				),
+			).toBe("DB::Exception: Illegal type String of argument of function plus:")
+		})
+
+		it("keeps different missing identifiers apart", () => {
+			expect(signature("[Error] Unknown identifier `TraceIdd` in scope SELECT 1")).not.toBe(
+				signature("[Error] Unknown identifier `Severity` in scope SELECT 1"),
 			)
 		})
 
-		it("keeps different ClickHouse error classes apart", () => {
-			expect(signature("DB::Exception: Syntax error: at 1")).not.toBe(
-				signature("DB::Exception: Memory limit exceeded: would use 9 GiB"),
-			)
-		})
-
-		it("cuts the `[Error] <class>` envelope at the echoed query", () => {
+		it("cuts the echoed query from the `[Error]` envelope", () => {
 			expect(
 				signature("[Error] Unknown identifier `TraceIdd` in scope SELECT TraceIdd FROM traces"),
-			).toBe("[Error] Unknown identifier ")
+			).toBe("[Error] Unknown identifier `TraceIdd`")
+		})
+
+		it("strips terminal colour codes", () => {
+			expect(signature("\x1b[31mconnection refused\x1b[0m")).toBe("connection refused")
+		})
+
+		it("ends a filesystem root at a separator, so `/data.x` is a path and `/datasets` is not", () => {
+			expect(signature("cannot open /data.quarantine-x1/store")).toBe(
+				signature("cannot open /data/store"),
+			)
+			expect(signature("read /datasets/x failed")).toBe("read /datasets/x failed")
+		})
+
+		it("replaces `~/` paths and adjacent paths, but not a `~` before a number", () => {
+			expect(signature("open ~/.maple/data failed")).toBe("open PATH failed")
+			expect(signature("copy /tmp/a /var/b")).toBe("copy PATH PATH")
+			expect(signature("retry in ~5 min")).toBe("retry in ~# min")
+		})
+
+		it("keeps a snake_case name with no digit or capital", () => {
+			expect(signature("unknown key top_operations")).toBe("unknown key top_operations")
+		})
+
+		it("keeps a 4xx and 500 exact and folds every other 5xx into one class", () => {
+			const returned = (status: number) => signature(`upstream returned ${status}`)
+
+			expect(new Set([returned(401), returned(404), returned(500)]).size).toBe(3)
+			expect(returned(502)).toBe("upstream returned 5xx")
+			expect(returned(520)).toBe(returned(502))
+			expect(returned(524)).toBe(returned(502))
+			expect(signature("status: 429 too many")).toBe("status: 429 too many")
+			expect(signature("HTTP 503 from gateway")).toBe("HTTP 5xx from gateway")
 		})
 
 		it("replaces filesystem-rooted paths with PATH", () => {

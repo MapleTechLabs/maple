@@ -111,6 +111,50 @@ const SEEDS: ReadonlyArray<Seed> = [
 		message: JSON.stringify({ error: "not_found", id: "550e8400-e29b-41d4-a716-446655440000", n: 42 }),
 		stacktrace: "",
 	},
+	// v3.1
+	{
+		spanId: "namespaced-empty-message",
+		type: "@maple/discord/RateLimited",
+		message: "",
+		stacktrace: frames("    at fail (/app/src/fail.ts:4:1)", "    at send (/app/src/send.ts:9:2)"),
+	},
+	{
+		spanId: "bundle-frames",
+		type: "Error",
+		message: "failed",
+		stacktrace: frames(
+			'  at [2]["params"]',
+			"    at a (file:///bundle/worker.js:1:2)",
+			"    at b (https://x.dev/assets/index-AbCd1234-EfGh5678.js:1:2)",
+			"    at c (https://x.dev/_astro/Layout.AbCd1234.js:1:2)",
+		),
+	},
+	{
+		spanId: "ansi",
+		type: "",
+		message: "\x1b[31mconnection refused\x1b[0m",
+		stacktrace: "",
+	},
+	{
+		spanId: "ch-while-processing",
+		type: "",
+		message:
+			"DB::Exception: Illegal type String of argument of function plus: While processing plus(a, 1)",
+		stacktrace: "",
+	},
+	{
+		spanId: "path-variants",
+		type: "",
+		message:
+			"copy /data.quarantine-x1/store /var/b, ~/.maple/x, read /datasets/x, retry in ~5 min, key top_operations",
+		stacktrace: "",
+	},
+	...[401, 404, 500, 502, 520, 524].map((status) => ({
+		spanId: `http-${status}`,
+		type: "",
+		message: `upstream returned ${status}, HTTP ${status} after 3 tries`,
+		stacktrace: "",
+	})),
 ]
 
 const seed = async (): Promise<void> => {
