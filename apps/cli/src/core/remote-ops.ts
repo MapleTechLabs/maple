@@ -64,6 +64,22 @@ export const listServices = (
 			})),
 	)
 
+const SERVICE_NOT_FOUND_TAG = "@maple/http/v2/ServiceNotFoundError"
+
+/** A v2 client failure is the decoded public envelope, `{ error: { _tag, ... } }`. */
+const isV2ErrorTagged = (tag: string) => (error: unknown) =>
+	Predicate.hasProperty(error, "error") && Predicate.isTagged(error.error, tag)
+
+/** `services.retrieve` looks the name up directly, so no list page can hide it. */
+export const serviceHasTelemetry = (
+	client: MapleV2Client,
+	p: { service: string; range: Range },
+): Effect.Effect<boolean, unknown> =>
+	client.services.retrieve({ params: { name: serviceName(p.service) }, query: toV2Window(p.range) }).pipe(
+		Effect.as(true),
+		Effect.catchIf(isV2ErrorTagged(SERVICE_NOT_FOUND_TAG), () => Effect.succeed(false)),
+	)
+
 export const serviceMap = (
 	client: MapleV2Client,
 	p: { range: Range; service?: string; environment?: string },

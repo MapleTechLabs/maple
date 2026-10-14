@@ -16,8 +16,8 @@ import * as Ops from "../core/operations"
  */
 export const assertKnownService = (service: string, range: Range, window: string) =>
 	Effect.gen(function* () {
+		if (yield* Ops.serviceHasTelemetry(service, range)) return
 		const known = yield* Ops.knownServices(range)
-		if (known.includes(service)) return
 		const shown = known.slice(0, 8)
 		return yield* new CliNotFoundError({
 			message: `no telemetry for '${service}' in ${window}`,

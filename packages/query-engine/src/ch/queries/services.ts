@@ -460,6 +460,28 @@ export function serviceOverviewQuery(opts: ServiceOverviewOpts) {
 		.format("JSON")
 }
 
+// Service presence
+
+export interface ServicePresenceOutput {
+	readonly spanCount: number
+}
+
+/**
+ * Span count for one service over the window, from the same tiers as
+ * `serviceOverviewQuery`. Group-less, so it always returns one row and is not
+ * bounded by the overview's row limit; the sorting keys lead with
+ * (OrgId, ServiceName), so the scan stays narrow.
+ */
+export function servicePresenceQuery(opts: { serviceName: string }) {
+	return serviceOverviewWindows({ serviceName: opts.serviceName })
+		.select(($) => ({ spanCount: CH.sum($.bSpanCount) }))
+		.format("JSON")
+}
+
+export const servicePresenceRowSchema = Schema.Struct({
+	spanCount: CHNumber,
+}) satisfies CompiledQueryRowSchema<ServicePresenceOutput>
+
 // Service health snapshot
 
 export interface ServiceHealthSnapshotOpts {
