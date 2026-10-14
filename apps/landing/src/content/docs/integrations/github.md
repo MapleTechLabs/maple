@@ -40,7 +40,7 @@ Changing the tracked branch is destructive. Maple deletes the repository's synce
 ## Verify
 
 1. On **Integrations → GitHub**, every repository row reads **Synced** with a recent sync time. The card polls while backfills run, so you do not need to reload.
-2. Deploy a service that sets `vcs.ref.head.revision` to the commit SHA it was built from. See [OpenTelemetry conventions](/docs/concepts/otel-conventions).
+2. Deploy a service that sets `vcs.ref.head.revision` to the full commit SHA it was built from. See [Set up span attributes](/docs/guides/span-attributes#link-telemetry-to-github).
 3. Open a trace from that service. The short SHA in the trace header shows the commit author and message on hover.
 
 ## Managing the connection

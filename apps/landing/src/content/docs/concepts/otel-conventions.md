@@ -13,7 +13,7 @@ Maple stores every OTel attribute you send verbatim. A curated set gets special 
 
 ## Sending data
 
-This page covers what to put on your telemetry. Endpoints, authentication headers, content types and the standard `OTEL_*` environment variables are in the [Ingest API reference](/docs/reference/ingest). To set up an SDK, start at [Instrument your application](/docs/instrumentation).
+This page covers what to put on your telemetry. For step-by-step setup with code, see [Set up span attributes](/docs/guides/span-attributes). Endpoints, authentication headers, content types and the standard `OTEL_*` environment variables are in the [Ingest API reference](/docs/reference/ingest). To set up an SDK, start at [Instrument your application](/docs/instrumentation).
 
 ## Service identity
 

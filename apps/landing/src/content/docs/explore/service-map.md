@@ -85,7 +85,7 @@ The [MCP server](/docs/reference/mcp) tool `service_map` returns the edges with 
 
 - **"No service map yet".** Maple has not seen a cross-service call or a database call. Instrument at least two services that call each other, or a service with database instrumentation. If your services are active, widen the time range.
 - **Two services are not connected.** The callee is not instrumented, or the caller drops the `traceparent` header (common across proxies, queues, and custom HTTP clients). Open a trace for the call and check that the callee's `Server` span has the client span as its parent.
-- **Every database collapses into one node.** Set `db.namespace` on database spans, or at least `server.address`.
+- **Every database collapses into one node.** Set `db.namespace` on database spans, or at least `server.address`. See [Set up span attributes](/docs/guides/span-attributes#databases).
 - **The same database appears twice.** Services spell `db.system.name` differently (for example `postgresql` and `PostgreSQL`). Use the OpenTelemetry well-known values.
 - **The Infrastructure tab says "No Kubernetes workloads found".** The service's spans lack Kubernetes workload attributes. See [Kubernetes](/docs/infrastructure/kubernetes).
 
