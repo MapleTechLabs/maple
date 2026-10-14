@@ -253,10 +253,20 @@ describe("v2 gcp integration over HTTP", () => {
 		const metricsOnly = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
 		expect(metricsOnly.body.setup_script).not.toContain("LOG_FILTER")
 		expect(metricsOnly.body.setup_script).toContain("gcloud logging sinks delete")
+
+		// With both off the connection serves live queries, and the script keeps its reader.
+		const liveOnly = await harness.request("PATCH", path, admin.secret, { metrics_enabled: false })
+		expect(liveOnly.status).toBe(200)
+		expect(liveOnly.body).toMatchObject({ logs_enabled: false, metrics_enabled: false })
+		const reader = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
+		expect(reader.body.setup_script).toContain(
+			"MAPLE_SERVICE_ACCOUNT='collector@maple-prod.iam.gserviceaccount.com'",
+		)
+		expect(reader.body.setup_script).not.toContain("service-accounts delete")
 		await harness.dispose()
 	})
 
-	it("keeps one capability on, and refuses metrics on a deployment without a Google identity", async () => {
+	it("refuses key metrics, and a connection without log forwarding, on a deployment without a Google identity", async () => {
 		const harness = makeHarness({ metricsAvailable: false })
 		const admin = await harness.adminKey()
 
