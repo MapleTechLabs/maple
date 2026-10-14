@@ -24,7 +24,7 @@ Then read the installed `SKILL.md` and follow it. If `npx skills` is unavailable
 | Dependency | Skill |
 | --- | --- |
 | `@mastra/core` | `maple-agent-tracing-mastra` |
-| `eve` (Vercel's eve framework, an `agent/` directory with `agent.ts` or `instructions.md`) | `maple-agent-tracing-eve` |
+| `eve` (Vercel's eve framework, an `agent/` directory with `agent.ts` or `instructions.md`) | `maple-agent-tracing-eve`, loaded with `npx skills use MapleTechLabs/maple/skills --skill maple-agent-tracing-eve` instead of `skills add`: in an eve project `skills add` installs into the eve agent's own `agent/skills/` |
 | `@openai/agents`, `openai-agents` | `maple-agent-tracing-openai-agents` |
 | `langchain`, `langgraph`, `langchain-core` (Python) | `maple-agent-tracing-langchain` |
 | LangChain.js / LangGraph.js (`langchain`, `@langchain/core`, `@langchain/langgraph`) | `maple-agent-tracing-langchain` (TypeScript: `references/typescript.md`) |

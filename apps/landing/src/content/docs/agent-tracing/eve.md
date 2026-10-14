@@ -15,12 +15,12 @@ You need `eve` 0.62 or newer and Node.js 24 or newer. On eve 0.61 or older, [upg
 
 ## Quick setup with a coding agent
 
-Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It installs the [maple-agent-tracing-eve](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-eve) skill and follows it.
+Copy this prompt into a coding agent that can run shell commands, such as Claude Code, Codex or Cursor. It loads the [maple-agent-tracing-eve](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-eve) skill and follows it.
 
 ```text
 Set up Maple agent tracing for eve in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-eve -y`, then follow it.
+Load the skill with `npx skills use MapleTechLabs/maple/skills --skill maple-agent-tracing-eve`, then follow it.
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```

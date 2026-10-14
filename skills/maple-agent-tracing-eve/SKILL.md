@@ -33,6 +33,8 @@ Known gaps (tell the user, don't try to fix):
   - `agent-runs.ts`, `local.ts`: leave them.
 - Search for `NodeSDK`, `registerOTel(`, `registerTelemetry(`, `@ai-sdk/otel`, `NodeTracerProvider`. eve replaces all of them with `otelIntegration()`; don't add one, and tell the user if one exists.
 - `eve` depends on `ai`. Use this skill, not `maple-agent-tracing-vercel-ai-sdk`.
+- `agent/skills/maple-agent-tracing-eve/` exists (an `npx skills add` run in an eve project installs into the eve agent's own skills, and `skills-lock.json` records it): it would ship with the agent as a runtime skill. Tell the user and remove both the directory and its `skills-lock.json` entry once setup is done, unless they want it there.
+- Models: a string id in `agent.ts` (`model: "openai/gpt-…"`) runs through Vercel AI Gateway; a provider object (`openai()` from `eve/models/openai`, `createOpenRouter(...)`, `anthropic()`) calls the provider directly. This decides the cost line in Step 7.
 
 ## Step 1: Key and region
 
