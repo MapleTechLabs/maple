@@ -25,6 +25,7 @@ import {
 	IntegrationsNotConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
+	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 } from "@maple/domain/http"
 import { GcpProjectId, type OrgId } from "@maple/domain/primitives"
@@ -48,14 +49,16 @@ import {
 import { describeGcpApiError } from "./gcp/explain"
 import { mapGcpResource } from "./gcp/mapping"
 
-/** Google's tokens live 600 s; one is reused until a minute before that. */
-const TOKEN_REUSE_MS = 9 * 60_000
+/** Google's tokens live 600 s. Three minutes to spare outlast the slowest fan-out. */
+const TOKEN_REUSE_MS = 7 * 60_000
 const CONCURRENCY = 4
 /** Projects a folder or organization search reads, 500 a page. */
 const MAX_PROJECT_PAGES = 4
 const HOUR_SECONDS = 3_600
 /** A window ending this close to now still gains points: its result is kept a minute, else ten. */
 const FRESH_MS = 5 * 60_000
+/** Above the default: a miss here costs a Google fan-out, not a row lookup. */
+const CACHE_READ_TIMEOUT_MS = 250
 const DISTRIBUTION_SUFFIX = /_(bucket|count|sum)$/u
 
 const isProjectId = Schema.is(GcpProjectId)
@@ -71,6 +74,7 @@ export type GcpPromQlError =
 	| GcpPromQlInvalidQueryError
 	| GcpPromQlTooManyProjectsError
 	| GcpPromQlFailedError
+	| IntegrationsUpstreamError
 	| IntegrationsPersistenceError
 
 export interface GcpPromQlServiceApi {
@@ -151,11 +155,20 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				const cached = readers.get(connector.id)
 				if (cached !== undefined && cached.until > now) return cached.reader
 				if (mapleToken === undefined || mapleToken.until <= now) {
-					const signer = yield* importServiceAccountKey(key)
-					mapleToken = {
-						token: yield* fetchMapleAccessToken(httpClient, signer, now),
-						until: now + TOKEN_REUSE_MS,
-					}
+					// Maple's own sign-in: its failure is no connection's, and its cause is not the customer's.
+					const token = yield* importServiceAccountKey(key).pipe(
+						Effect.flatMap((signer) => fetchMapleAccessToken(httpClient, signer, now)),
+						Effect.tapError((error) =>
+							Effect.logError("gcp sign-in as Maple failed", { error: error.message }),
+						),
+						Effect.mapError(
+							() =>
+								new IntegrationsUpstreamError({
+									message: "Maple could not sign in to Google Cloud",
+								}),
+						),
+					)
+					mapleToken = { token, until: now + TOKEN_REUSE_MS }
 				}
 				const reader = yield* impersonateReader(httpClient, mapleToken.token, connector)
 				readers.set(connector.id, { reader, until: now + TOKEN_REUSE_MS })
@@ -214,7 +227,8 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 					connector.scopeType === "project"
 						? Effect.succeed({
 								connector,
-								projects: isProjectId(connector.scopeId) ? [connector.scopeId] : [],
+								// A project scope is its own host.
+								projects: [connector.projectId],
 							})
 						: edgeCache
 								.getOrCompute(
@@ -222,6 +236,7 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 										bucket: "gcp-projects",
 										key: `${orgId}:${connector.id}`,
 										ttlSeconds: HOUR_SECONDS,
+										readTimeoutMs: CACHE_READ_TIMEOUT_MS,
 										schema: Schema.Array(GcpProjectId),
 									},
 									searchProjects(key, connector),
@@ -290,7 +305,7 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				const compute = Effect.gen(function* () {
 					// Signed in one connection at a time, so a cold isolate signs in as Maple once. A
 					// connection that cannot sign in fails once, not once per project.
-					const readers = new Map<Connector, GcpReader>()
+					const signedIn = new Map<Connector, GcpReader>()
 					const failures: Array<GcpPromQlFailure> = []
 					for (const connector of new Set(selected.map(([, connector]) => connector))) {
 						const reader = yield* readerFor(key, connector).pipe(
@@ -302,11 +317,11 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 								return Effect.succeed(undefined)
 							}),
 						)
-						if (reader !== undefined) readers.set(connector, reader)
+						if (reader !== undefined) signedIn.set(connector, reader)
 					}
 					const answers = yield* Effect.forEach(
 						selected.flatMap(([projectId, connector]) => {
-							const reader = readers.get(connector)
+							const reader = signedIn.get(connector)
 							return reader === undefined ? [] : [{ projectId, connector, reader }]
 						}),
 						({ projectId, connector, reader }) =>
@@ -329,13 +344,24 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 					if (answered.length === 0) return yield* nothingRead([...targets.failures, ...failures])
 					return new GcpPromQlResult({
 						resultType,
-						// Identical label sets from two projects stay apart.
-						series: answered.flatMap(({ projectId, series }) =>
-							series.map((one) => ({
-								labels: { ...one.labels, project_id: one.labels.project_id ?? projectId },
-								points: one.points,
-							})),
-						),
+						series: [
+							// Identical label sets from two projects stay apart by `project_id`. A
+							// project whose metrics scope holds another answers for both: kept once.
+							...new Map(
+								answered.flatMap(({ projectId, series }) =>
+									series.map((one) => {
+										const labels = {
+											...one.labels,
+											project_id: one.labels.project_id ?? projectId,
+										}
+										return [
+											JSON.stringify(Object.entries(labels).sort()),
+											{ labels, points: one.points },
+										] as const
+									}),
+								),
+							).values(),
+						],
 						projects: answered.map(({ projectId }) => projectId),
 						failures,
 					})
@@ -348,6 +374,7 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 						ttlSeconds: (result) =>
 							result.failures.length > 0 || endMs > now - FRESH_MS ? 60 : 600,
 						schema: GcpPromQlResult,
+						readTimeoutMs: CACHE_READ_TIMEOUT_MS,
 					},
 					compute,
 				)
@@ -397,7 +424,8 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				return {
 					projectId,
 					reader: readerFor(key, connector),
-					failed: (error: GcpApiError) => nothingRead([failure(projectId, connector, error)]),
+					failed: (error: GcpApiError) =>
+						Effect.fail(nothingRead([failure(projectId, connector, error)])),
 				}
 			})
 
@@ -413,6 +441,7 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 							bucket: "gcp-metric-names",
 							key: `${orgId}:${target.projectId}`,
 							ttlSeconds: HOUR_SECONDS,
+							readTimeoutMs: CACHE_READ_TIMEOUT_MS,
 							schema: Schema.Array(Schema.String),
 						},
 						target.reader.pipe(
@@ -421,7 +450,7 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 							),
 						),
 					)
-					.pipe(Effect.mapError(target.failed))
+					.pipe(Effect.catchTag("@maple/api/integrations/GcpApiError", target.failed))
 				const search = request.search.toLowerCase()
 				return new GcpMetricSearchResponse({
 					projectId: target.projectId,
@@ -443,7 +472,7 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 						Effect.flatMap((reader) =>
 							getMetricDescriptor(httpClient, reader, target.projectId, type),
 						),
-						Effect.mapError(target.failed),
+						Effect.catchTag("@maple/api/integrations/GcpApiError", target.failed),
 					)
 				const descriptor =
 					(yield* find(request.type)) ??

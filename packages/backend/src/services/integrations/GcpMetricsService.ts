@@ -33,7 +33,7 @@ import {
 	type GcpReader,
 	type GcpTimeSeriesQuery,
 } from "./gcp/api"
-import { describeGcpApiError } from "./gcp/explain"
+import { describeGcpApiError, RETRIES } from "./gcp/explain"
 import { mapGcpResource, mapGcpTimeSeries, type GcpMetricRows } from "./gcp/mapping"
 
 const MINUTE_MS = 60_000
@@ -71,7 +71,6 @@ const METRICS = GCP_METRIC_GROUPS.flatMap((group) => group.metrics.map((metric) 
 
 const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-gcp-metrics")
 
-const RETRIES = "Maple retries in 5 minutes."
 const NOT_STORED = `${RETRIES} Nothing to do.`
 
 /** What helps a scope too large for one read. A project has no parts to connect instead. */
