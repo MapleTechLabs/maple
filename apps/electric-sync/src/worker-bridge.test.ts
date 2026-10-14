@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { MapleHttpTracingLive, workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Exit, Layer, Schema, Scope } from "effect"
 import { HttpRouter } from "effect/http"
@@ -73,7 +73,11 @@ const appLayer = (options: { readonly ensureConfigured?: Effect.Effect<void, nev
 
 const env = { MAPLE_INGEST_KEY: "maple_sk_test", MAPLE_ENDPOINT: "http://ingest.test" }
 
-const event = (path: string, app: ReturnType<typeof appLayer> = appLayer()) =>
+const event = (
+	path: string,
+	app: ReturnType<typeof appLayer> = appLayer(),
+	headers: Record<string, string> = {},
+) =>
 	Effect.gen(function* () {
 		const recorded: Array<RecordedRequest> = []
 		const realFetch = globalThis.fetch
@@ -87,17 +91,21 @@ const event = (path: string, app: ReturnType<typeof appLayer> = appLayer()) =>
 		const isolate = yield* Scope.make()
 		const handler = yield* HttpRouter.toHttpEffect(app).pipe(Scope.provide(isolate))
 		const request = yield* Scope.make()
+		// What `WorkerTelemetry` registers with alchemy: the SDK and the header allowlist.
 		const services = yield* Layer.buildWithScope(
-			MapleCloudflareSDK.make(
-				workerTelemetryConfig({ serviceName: "electric-sync" }),
-			).requestLayer.pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+			Layer.merge(
+				MapleCloudflareSDK.make(
+					workerTelemetryConfig({ serviceName: "electric-sync" }),
+				).requestLayer.pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+				MapleHttpTracingLive,
+			),
 			request,
 		)
 		const fetchEvent: Effect.Effect<Response, unknown, Scope.Scope> | undefined =
 			Cloudflare.Workers.makeRequestHandler(handler)({
 				kind: "Cloudflare.Workers.WorkerEvent",
 				type: "fetch",
-				input: new Request(`http://sync.maple.test${path}`),
+				input: new Request(`http://sync.maple.test${path}`, { headers }),
 			})
 		assert.isDefined(fetchEvent)
 		const response = yield* fetchEvent!.pipe(Effect.provide(services), Scope.provide(request))
@@ -145,6 +153,20 @@ describe("electric-sync through alchemy's Worker bridge", () => {
 			assert.strictEqual(server.length, 1)
 			assert.strictEqual(server[0]?.status.code, 2 /* Error */)
 			assert.strictEqual(statusCodeOf(server[0]), 500)
+		}),
+	)
+
+	it.effect("records the allowlisted request headers on the server span and no credential", () =>
+		Effect.gen(function* () {
+			const { server } = yield* event("/nope", appLayer(), {
+				"cf-ray": "8f1a2b3c4d5e6f70-IAD",
+				authorization: "Bearer secret",
+				cookie: "session=secret",
+			})
+			const keys = (server[0]?.attributes ?? []).map((attribute) => attribute.key)
+			assert.include(keys, "http.request.header.cf-ray")
+			assert.notInclude(keys, "http.request.header.authorization")
+			assert.notInclude(keys, "http.request.header.cookie")
 		}),
 	)
 })

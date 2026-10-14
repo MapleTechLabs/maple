@@ -18,28 +18,37 @@ export const MAPLE_REPOSITORY_URL = "https://github.com/MapleTechLabs/maple"
  * redaction list knows about (a customer's ClickHouse password goes out as `x-clickhouse-key`).
  */
 const RECORDED_HEADERS = {
-	// Which host and client a request came through: OAuth redirect URIs are built from these.
+	// Which host and client a request came through: OAuth redirect URIs are built from these. No
+	// client IP: country is enough, and an address on every span is personal data.
 	request: new Set([
 		"host",
 		"x-forwarded-host",
 		"x-forwarded-proto",
 		"origin",
+		"accept",
 		"content-type",
 		"content-length",
 		"cf-ray",
-		"cf-connecting-ip",
 		"cf-ipcountry",
 		"mcp-protocol-version",
 	]),
-	// Vendor request ids and rate-limit state, what a 429 or a support ticket needs.
+	// Vendor request ids, rate-limit state and auth challenges: what a 429, a 401 or a support
+	// ticket needs. ClickHouse's query id is the key into the customer's `system.query_log`.
 	response: new Set([
 		"content-type",
 		"content-length",
 		"cf-ray",
 		"cf-placement",
+		"cf-cache-status",
+		"www-authenticate",
 		"retry-after",
+		"request-id",
 		"x-request-id",
+		"x-github-request-id",
 		"x-slack-req-id",
+		"x-clickhouse-query-id",
+		"x-clickhouse-exception-code",
+		"x-clickhouse-summary",
 		"ratelimit",
 		"ratelimit-policy",
 		"ratelimit-limit",
@@ -51,8 +60,9 @@ const RECORDED_HEADERS = {
 	]),
 } as const
 
+// Effect lowercases header names before the filter sees them.
 const isRecordedHeader = (name: string, phase: "request" | "response"): boolean =>
-	RECORDED_HEADERS[phase].has(name.toLowerCase())
+	RECORDED_HEADERS[phase].has(name)
 
 /** Header capture for every HTTP span a Maple Worker records, server and client. */
 export const MapleHttpTracingLive = Layer.mergeAll(
@@ -101,3 +111,13 @@ export const eventTelemetry = (
 		),
 		MapleHttpTracingLive,
 	)
+
+/**
+ * The SDK for a runtime the Worker bridge does not wrap (a Durable Object's own
+ * `ManagedRuntime`), its `layer` already carrying {@link MapleHttpTracingLive}. Call once at
+ * module scope: buffers are per isolate.
+ */
+export const runtimeTelemetry = (options: WorkerTelemetryOptions): MapleCloudflareSDK.Telemetry => {
+	const telemetry = MapleCloudflareSDK.make(workerTelemetryConfig(options))
+	return { ...telemetry, layer: Layer.merge(telemetry.layer, MapleHttpTracingLive) }
+}
