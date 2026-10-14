@@ -56,15 +56,19 @@ const GROUP_ART = new Map([
 ])
 const DEFAULT_ART = "log-management"
 
-/** `sdk` ids that have a brand mark under another name, or at all. */
-const SDK_MARKS = new Map<LanguageId, BrandMarkId>([
-	["effect", "effect"],
-	["node", "nodejs"],
-	["nextjs", "nextjs"],
-	["python", "python"],
-	["go", "go"],
-	["csharp", "dotnet"],
-])
+/** The mark each `sdk` language shows on the card, as the sidebar's `LanguageLogo` does. */
+const SDK_MARKS = {
+	effect: "effect",
+	node: "nodejs",
+	nextjs: "nextjs",
+	python: "python",
+	go: "go",
+	rust: "rust",
+	java: "openjdk",
+	kotlin: "kotlin",
+	csharp: "csharp",
+	laravel: "laravel",
+} satisfies Record<LanguageId, BrandMarkId>
 
 /** Same path as `packages/ui/src/components/icons/maple-mark.tsx`. */
 const MAPLE_PATH =
@@ -106,7 +110,7 @@ const titleSize = (title: string): number =>
 const artSrc = (group: string): string => `art/features/${GROUP_ART.get(group) ?? DEFAULT_ART}.webp`
 
 const docsOgCard = (input: DocsOgInput): Node => {
-	const markId = input.icon ?? (input.sdk ? SDK_MARKS.get(input.sdk) : undefined)
+	const markId = input.icon ?? (input.sdk ? SDK_MARKS[input.sdk] : undefined)
 	const mark = markId ? BRAND_MARKS[markId] : undefined
 
 	return container({
