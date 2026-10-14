@@ -92,11 +92,17 @@ const truncate = (value: string, length: number) =>
  */
 const ciStepName = (name: string) => name.replace(/@[0-9a-f]{7,40}\b/g, "")
 
-/** The annotation that best says why a job failed: a specific failure before the runner's exit code. */
+/**
+ * The annotation that best says why a job failed: a failure that names where it happened, then any
+ * specific failure, and the runner's exit code only when there is nothing else.
+ */
 const failureReason = (annotations: ReadonlyArray<WorkflowJobAnnotation>) => {
 	const failures = annotations.filter((annotation) => annotation.level === "failure")
+	const specific = failures.filter((annotation) => !GENERIC_EXIT_MESSAGE.test(annotation.message))
 	const reason =
-		failures.find((annotation) => !GENERIC_EXIT_MESSAGE.test(annotation.message)) ?? failures[0]
+		specific.find((annotation) => annotation.path !== null || annotation.title !== null) ??
+		specific[0] ??
+		failures[0]
 	if (reason === undefined) return undefined
 	const where =
 		reason.path === null
@@ -171,7 +177,8 @@ const attrs = (entries: Record<string, string | number | null | undefined>): Otl
 
 /** The repository's web URL, from a run or job URL under it (`.../owner/repo/actions/runs/1`). */
 const repositoryUrlOf = (url: string) => {
-	const actions = url.indexOf("/actions/")
+	// The last match: a repository may itself be named `actions` or `runs`.
+	const actions = url.lastIndexOf("/actions/runs/")
 	return actions === -1 ? undefined : url.slice(0, actions)
 }
 

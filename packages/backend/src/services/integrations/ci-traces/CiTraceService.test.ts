@@ -273,6 +273,42 @@ describe("CiTraceService", () => {
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
 	})
 
+	it.live("prefers a failure that says where over a bare summary", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJob(orgId, job, [
+				{ level: "failure", message: "Tests failed", title: null, path: null, startLine: null },
+				{
+					level: "failure",
+					message: "expected 2 to be 3",
+					title: null,
+					path: "src/a.test.ts",
+					startLine: 4,
+				},
+			])
+			assert.strictEqual(spansOf(calls[0]!)[0]!.status.message, "src/a.test.ts:4: expected 2 to be 3")
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
+	})
+
+	it.live("finds the repository URL of a repository named actions", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowRun(orgId, {
+				...run,
+				repoFullName: "octo/actions",
+				url: "https://github.com/octo/actions/actions/runs/9001",
+			})
+			assert.strictEqual(
+				attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "vcs.repository.url.full"),
+				"https://github.com/octo/actions",
+			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
+	})
+
 	it.live("names a step without the commit its action is pinned to", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: Array<IngestCall> = []
