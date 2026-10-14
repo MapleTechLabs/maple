@@ -1092,6 +1092,15 @@ export interface CloudflareAnalyticsServiceApi {
 	>
 }
 
+/**
+ * Gzipped JSON for the ingest POST. The body carries customers' raw request paths (scanner probes
+ * like `/${jndi:…}` included), which the edge WAF's managed rules match as an attack and block.
+ */
+const gzipJson = (value: unknown): Promise<Uint8Array> =>
+	new Response(new Blob([JSON.stringify(value)]).stream().pipeThrough(new CompressionStream("gzip")))
+		.arrayBuffer()
+		.then((buffer) => new Uint8Array(buffer))
+
 export class CloudflareAnalyticsService extends Context.Service<
 	CloudflareAnalyticsService,
 	CloudflareAnalyticsServiceApi
@@ -1559,10 +1568,12 @@ export class CloudflareAnalyticsService extends Context.Service<
 			function* (ingestKey: string, rows: CloudflareMetricRows) {
 				const total = rows.sumRows.length + rows.gaugeRows.length
 				if (total === 0) return 0
-				const payload = metricRowsToOtlp(rows.sumRows, rows.gaugeRows)
+				const body = yield* Effect.tryPromise(() =>
+					gzipJson(metricRowsToOtlp(rows.sumRows, rows.gaugeRows)),
+				)
 				const request = HttpClientRequest.post(ingestMetricsUrl, {
-					headers: { authorization: `Bearer ${ingestKey}`, "content-type": "application/json" },
-				}).pipe(HttpClientRequest.bodyJsonUnsafe(payload))
+					headers: { authorization: `Bearer ${ingestKey}`, "content-encoding": "gzip" },
+				}).pipe(HttpClientRequest.bodyUint8Array(body, "application/json"))
 				const response = yield* httpClient
 					.execute(request)
 					.pipe(Effect.annotateSpans("peer.service", "ingest"))

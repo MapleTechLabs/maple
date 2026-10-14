@@ -145,6 +145,9 @@ const blockedIngestKeys = Config.schema(
  * Edge block for abusive ingest keys (`INGEST_BLOCKED_KEYS`), so their
  * traffic never reaches the ALB. This owns the zone's whole custom-WAF phase: a rule added
  * in the dashboard is overwritten, so add it here instead. One owner (us) covers both regions.
+ *
+ * Ingest also skips the managed rules: telemetry routinely carries attack strings (a scanner's
+ * `/${jndi:…}` path recorded as a span or metric attribute), which they block as an exploit.
  */
 const blockIngestKeys = (stage: MapleStage) =>
 	Effect.gen(function* () {
@@ -160,8 +163,8 @@ const blockIngestKeys = (stage: MapleStage) =>
 			zone,
 			phase: "http_request_firewall_custom",
 			description: "Managed by alchemy (apps/ingest/alchemy.run.ts)",
-			rules:
-				keys.length === 0
+			rules: [
+				...(keys.length === 0
 					? []
 					: [
 							{
@@ -172,7 +175,15 @@ const blockIngestKeys = (stage: MapleStage) =>
 									`any(http.request.headers["authorization"][*] in ${set(keys.map((key) => `Bearer ${key}`))}) or ` +
 									`any(http.request.headers["x-maple-ingest-key"][*] in ${set(keys)}))`,
 							},
-						],
+						]),
+				{
+					description: "Skip managed rules on ingest",
+					action: "skip",
+					expression: `http.host in ${set(hosts)}`,
+					actionParameters: { phases: ["http_request_firewall_managed"] },
+					logging: { enabled: true },
+				},
+			],
 		})
 	})
 

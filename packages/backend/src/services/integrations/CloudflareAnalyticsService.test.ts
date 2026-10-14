@@ -189,6 +189,7 @@ const workersData = {
 
 interface OtlpCall {
 	readonly authorization: string
+	readonly contentEncoding: string
 	readonly payload: OtlpMetricsPayload
 }
 
@@ -240,6 +241,22 @@ const readRequestBody = async (
 	return input instanceof Request ? await input.text() : "{}"
 }
 
+/** The outbound body as text, gunzipped when the request says `content-encoding: gzip`. */
+const readDecodedBody = async (
+	input: Parameters<typeof globalThis.fetch>[0],
+	init: RequestInit | undefined,
+	contentEncoding: string,
+): Promise<string> => {
+	const raw =
+		init?.body != null
+			? new Response(init.body as BodyInit)
+			: input instanceof Request
+				? input
+				: new Response("{}")
+	if (contentEncoding !== "gzip" || raw.body === null) return await raw.text()
+	return await new Response(raw.body.pipeThrough(new DecompressionStream("gzip"))).text()
+}
+
 /** Read an outbound request header regardless of whether it's on the Request or the init. */
 const readHeader = (
 	input: Parameters<typeof globalThis.fetch>[0],
@@ -262,9 +279,13 @@ const mockCloudflareFetch =
 	async (input, init) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		if (url.includes("/v1/metrics")) {
+			const contentEncoding = readHeader(input, init, "content-encoding")
 			options.otlpCalls?.push({
 				authorization: readHeader(input, init, "authorization"),
-				payload: JSON.parse(await readRequestBody(input, init)) as OtlpMetricsPayload,
+				contentEncoding,
+				payload: JSON.parse(
+					await readDecodedBody(input, init, contentEncoding),
+				) as OtlpMetricsPayload,
 			})
 			if (options.metricsHtml !== undefined) {
 				return new Response(options.metricsHtml, {
@@ -1624,6 +1645,8 @@ describe("CloudflareAnalyticsService", () => {
 			// Attributed to the org via its public ingest key → the gateway routes it per-org
 			// (managed Tinybird or the org's BYO ClickHouse), and meters it there.
 			assert.isTrue(otlpCalls.every((call) => call.authorization.startsWith("Bearer maple_pk_")))
+			// Gzipped, so the edge WAF never sees customers' raw request paths in the body.
+			assert.isTrue(otlpCalls.every((call) => call.contentEncoding === "gzip"))
 
 			// A well-formed OTLP envelope: request counts are a DELTA-temporality monotonic sum.
 			const requestsMetric = otlpCalls
