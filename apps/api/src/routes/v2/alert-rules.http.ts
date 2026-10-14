@@ -6,6 +6,7 @@ import {
 	AlertRuleNotFoundError,
 	CurrentTenant,
 	IsoDateTimeString,
+	isRangeComparator,
 	QueryBuilderQueryDraftSchema,
 } from "@maple/domain/http"
 import type {
@@ -251,6 +252,7 @@ const mergeUpsertRequest = (
 ): Effect.Effect<AlertRuleUpsertRequest, ReturnType<typeof V2ParameterInvalid.make>> =>
 	Effect.gen(function* () {
 		const signalType = patch.signal_type ?? doc.signalType
+		const comparator = patch.comparator ?? doc.comparator
 		const queryBuilderDraft =
 			signalType !== "builder_query"
 				? null
@@ -292,9 +294,15 @@ const mergeUpsertRequest = (
 			tags: patch.tags ?? doc.tags,
 			groupBy: patch.group_by !== undefined ? patch.group_by : doc.groupBy,
 			signalType,
-			comparator: patch.comparator ?? doc.comparator,
+			comparator,
 			threshold: patch.threshold ?? doc.threshold,
-			thresholdUpper: patch.threshold_upper !== undefined ? patch.threshold_upper : doc.thresholdUpper,
+			// Dropped, not carried over, when the comparator stops being a range.
+			thresholdUpper:
+				patch.threshold_upper !== undefined
+					? patch.threshold_upper
+					: isRangeComparator(comparator)
+						? doc.thresholdUpper
+						: null,
 			windowMinutes: patch.window_minutes ?? doc.windowMinutes,
 			minimumSampleCount: patch.minimum_sample_count ?? doc.minimumSampleCount,
 			consecutiveBreachesRequired:

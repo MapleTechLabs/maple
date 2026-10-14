@@ -43,6 +43,7 @@ const recordingEdgeCache = () => {
 		rawGetDetailed: () => Effect.succeed({ status: "miss", value: Option.none(), readMs: 0 }),
 		rawGet: () => Effect.succeed(Option.none()),
 		rawPut: () => Effect.void,
+		rawDelete: () => Effect.void,
 	}
 	const layer = Layer.succeed(EdgeCacheService, api)
 	return { invalidated, layer }
@@ -223,7 +224,7 @@ describe("MembershipRevocationService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(refreshFailure._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
+			expect(refreshFailure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
 
 			expect(yield* countRows(db, "select count(*)::int as count from mobile_devices")).toBe(0)
 			expect(yield* countRows(db, "select count(*)::int as count from cli_device_authorizations")).toBe(

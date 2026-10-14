@@ -19,12 +19,10 @@ import {
 	compile,
 	compileUnion,
 	QueryBuilderError,
-	type CHQuery,
 	type CompiledQuery,
-	type NeedsSelect,
 } from "@maple-dev/effect-orm/clickhouse"
-import { rawCompiledQuery } from "./raw-sql"
-import { Array as A, type DateTime, Effect, Match, Option, Result, Schema } from "effect"
+import { compilePeriodCompare } from "./period-compare"
+import { Array as A, type DateTime, Effect, Match, Option, Result } from "effect"
 import type * as CH from "@maple-dev/effect-orm/expr"
 import { parseUtc } from "../datetime"
 import { exactDateTime64 } from "./tables"
@@ -80,9 +78,6 @@ import {
 	type TracesBreakdownOpts,
 	type TracesTimeseriesOpts,
 } from "./queries/traces"
-
-/** A query `compile` accepts, whatever it selects. */
-type CompileTarget<Output extends Record<string, unknown>> = CHQuery<any, Output> & NeedsSelect<Output>
 
 export type PipeCompiledQuery = CompiledQuery<unknown>
 
@@ -167,67 +162,6 @@ export function compilePipeQuery(
 		const key = str(keyParam)
 		return key === undefined ? undefined : [{ key, value: str(valueParam), mode: "equals" as const }]
 	}
-
-	// The service-free constraint is `CompiledQueryRowSchema`'s, pushed one level
-	// up: a row schema decodes bytes off a socket, so it cannot ask for a service,
-	// and a struct is service-free exactly when its fields are.
-	const compileCompare = <
-		Output extends Record<string, unknown>,
-		Fields extends Schema.Struct.Fields & Record<PropertyKey, Schema.Codec<any, any, never, never>>,
-	>(
-		query: CompileTarget<Output>,
-		ranges: {
-			currentStart: string
-			currentEnd: string
-			previousStart: string
-			previousEnd: string
-		},
-		/**
-		 * The branch query's row schema, required rather than optional: the union
-		 * is handwritten SQL, so nothing derives a schema for it, and without one
-		 * it decoded nothing — on a backend that quotes 64-bit integers every
-		 * count came back as a string. Taking a `Schema.Struct` rather than a bare
-		 * `Schema` is what makes the `period` field spreadable below, and every
-		 * `*RowSchema` export already is one. See ../schema.ts.
-		 */
-		rowSchema: Schema.Struct<Fields>,
-	): PipeCompiled =>
-		Effect.gen(function* () {
-			const current = yield* compile(
-				query,
-				{ orgId, startTime: ranges.currentStart, endTime: ranges.currentEnd },
-				{ skipFormat: true },
-			)
-			const previous = yield* compile(
-				query,
-				{ orgId, startTime: ranges.previousStart, endTime: ranges.previousEnd },
-				{ skipFormat: true },
-			)
-			return rawCompiledQuery({
-				sql:
-					`SELECT 'current' AS period, * FROM (\n${current.sql}\n)\n` +
-					`UNION ALL\n` +
-					`SELECT 'previous' AS period, * FROM (\n${previous.sql}\n)\n` +
-					`FORMAT JSON`,
-				reason: "param-varied-union",
-				justification:
-					"One builder over a current and a previous window; params are substituted once per compile, so a single CHQuery cannot carry both.",
-				// Both branches are the same builder over different windows, so the
-				// union is scoped exactly when the branch is.
-				tenantScope:
-					current.tenantScope === "single-tenant" && previous.tenantScope === "single-tenant"
-						? "single-tenant"
-						: "cross-tenant",
-				// `period` is typed as a plain String, not a `"current" | "previous"`
-				// literal union. The value is produced by our own SELECT so it is
-				// always one of the two at runtime — but the row schema describes the
-				// WIRE type, and ClickHouse reports the column as String. The SQL
-				// catalog's analyzer sweep decodes a synthetic zero-value row built
-				// from DESCRIBE output, where a String column is `""`; a literal union
-				// rejects that and fails the gate.
-				rowSchema: Schema.Struct({ period: Schema.String, ...rowSchema.fields }),
-			})
-		})
 
 	// Kept in four groups because Pipeable.pipe's typed overloads stop at 20 transformations.
 	// oxlint-disable-next-line effecttsgo/unnecessary-pipe-chain
@@ -434,19 +368,22 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("service_overview_compare", () =>
-				compileCompare(
-					serviceOverviewQuery({
-						environments: str("environments")?.split(",").filter(Boolean),
-						namespaces: str("namespaces")?.split(",").filter(Boolean),
-						commitShas: str("commit_shas")?.split(",").filter(Boolean),
-					}),
-					{
-						currentStart: str("current_start_time") ?? startTime,
-						currentEnd: str("current_end_time") ?? endTime,
-						previousStart: str("previous_start_time") ?? startTime,
-						previousEnd: str("previous_end_time") ?? endTime,
-					},
-					serviceOverviewRowSchema,
+				eraseType(
+					compilePeriodCompare(
+						serviceOverviewQuery({
+							environments: str("environments")?.split(",").filter(Boolean),
+							namespaces: str("namespaces")?.split(",").filter(Boolean),
+							commitShas: str("commit_shas")?.split(",").filter(Boolean),
+						}),
+						{
+							orgId,
+							currentStart: str("current_start_time") ?? startTime,
+							currentEnd: str("current_end_time") ?? endTime,
+							previousStart: str("previous_start_time") ?? startTime,
+							previousEnd: str("previous_end_time") ?? endTime,
+						},
+						serviceOverviewRowSchema,
+					),
 				),
 			),
 			Match.when("services_facets", () =>
@@ -493,18 +430,21 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("get_service_usage_compare", () =>
-				compileCompare(
-					serviceUsageQuery({
-						serviceName: str("service"),
-						serviceNames: str("services")?.split(",").filter(Boolean),
-					}),
-					{
-						currentStart: str("current_start_time") ?? startTime,
-						currentEnd: str("current_end_time") ?? endTime,
-						previousStart: str("previous_start_time") ?? startTime,
-						previousEnd: str("previous_end_time") ?? endTime,
-					},
-					serviceUsageRowSchema,
+				eraseType(
+					compilePeriodCompare(
+						serviceUsageQuery({
+							serviceName: str("service"),
+							serviceNames: str("services")?.split(",").filter(Boolean),
+						}),
+						{
+							orgId,
+							currentStart: str("current_start_time") ?? startTime,
+							currentEnd: str("current_end_time") ?? endTime,
+							previousStart: str("previous_start_time") ?? startTime,
+							previousEnd: str("previous_end_time") ?? endTime,
+						},
+						serviceUsageRowSchema,
+					),
 				),
 			),
 			Match.when("service_dependencies", () =>

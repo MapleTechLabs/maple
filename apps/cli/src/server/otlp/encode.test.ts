@@ -256,6 +256,46 @@ describe("value-level spot checks", () => {
 		)
 	})
 
+	it("keeps histogram start timestamps of 0 or beyond DateTime64(9) insertable", () => {
+		const histogramPoint = (startTimeUnixNano: string) => ({
+			startTimeUnixNano,
+			timeUnixNano: "1700000001000000000",
+			count: "1",
+			bucketCounts: ["1"],
+			explicitBounds: [],
+		})
+		const batches = encodeMetrics({
+			resourceMetrics: [
+				{
+					scopeMetrics: [
+						{
+							metrics: [
+								{
+									name: "h",
+									histogram: {
+										dataPoints: [histogramPoint("0"), histogramPoint("18446744073709551615")],
+									},
+								},
+							],
+						},
+					],
+				},
+			],
+		})
+		const rows = batches
+			.find((batch) => batch.datasource === "metrics_histogram")!
+			.ndjson.split("\n")
+			.map((line) => JSON.parse(line))
+		expect(rows.map((row) => row.start_timestamp)).toEqual([
+			"1970-01-01 00:00:00.000000000",
+			"1970-01-01 00:00:00.000000000",
+		])
+		expect(rows.map((row) => row.timestamp)).toEqual([
+			"2023-11-14 22:13:21.000000000",
+			"2023-11-14 22:13:21.000000000",
+		])
+	})
+
 	it("decodes bytes attributes as text when they are valid UTF-8", () => {
 		expect(anyValueString({ bytesValue: btoa('{"messages":[]}') })).toBe('{"messages":[]}')
 		expect(anyValueString({ bytesValue: btoa("\xff\xfe\x01") })).toBe("fffe01")

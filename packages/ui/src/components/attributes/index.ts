@@ -1,5 +1,6 @@
 export {
 	CopyableValue,
+	SelectableValue,
 	AttributesTable,
 	AttributesSection,
 	ResourceAttributesSection,

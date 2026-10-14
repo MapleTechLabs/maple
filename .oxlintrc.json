@@ -1,7 +1,11 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
 	"plugins": ["eslint", "unicorn", "typescript", "oxc", "react", "jsx-a11y"],
-	"jsPlugins": ["./scripts/oxlint-plugins/maple.mjs", "./scripts/oxlint-plugins/anti-slop/index.ts"],
+	"jsPlugins": [
+		"./scripts/oxlint-plugins/maple.mjs",
+		"./scripts/oxlint-plugins/anti-slop/index.ts",
+		"./scripts/oxlint-plugins/test-slop.mjs"
+	],
 	"options": {
 		"reportUnusedDisableDirectives": "deny",
 		"respectEslintDisableDirectives": false
@@ -35,6 +39,7 @@
 			"error",
 			{ "check": "unsafe", "allowFileSafetyComment": true }
 		],
+		"maple/dialog-body-padding": "error",
 		"maple/no-effect-die": "error",
 		"maple/no-ordie-compiled-query": "error",
 		"maple/no-raw-tool-layer": "error",
@@ -171,6 +176,56 @@
 				"typescript/no-non-null-assertion": "off"
 			}
 		},
+		// Test cases that cannot catch a bug: assertion-free, existence-only, constant pins,
+		// Tailwind class pins, and source greps. Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
+		{
+			"files": ["**/*.test.ts", "**/*.test.tsx"],
+			"plugins": ["vitest"],
+			"rules": {
+				"test-slop/no-classname-assertions": "error",
+				"test-slop/no-constant-pin": "error",
+				"test-slop/no-source-text-assertions": "error",
+				"test-slop/no-weak-only-assertions": "error",
+				"vitest/expect-expect": [
+					"error",
+					{
+						"assertFunctionNames": [
+							"expect",
+							"expect*",
+							"assert",
+							"assert*",
+							"assert.*",
+							"expect.*",
+							"*.assert*",
+							"strictEqual",
+							"deepStrictEqual",
+							"notStrictEqual",
+							"notDeepStrictEqual",
+							"equal",
+							"deepEqual",
+							"ok",
+							"rejects",
+							"doesNotReject",
+							"throws",
+							"doesNotThrow",
+							"match",
+							"doesNotMatch",
+							"fail",
+							"expectTypeOf"
+						]
+					}
+				],
+				"vitest/no-identical-title": "error",
+				// Plugin defaults that misread `it.effect` / `expect(value, message)` or are style-only.
+				"vitest/no-conditional-expect": "off",
+				"vitest/no-conditional-tests": "off",
+				"vitest/no-standalone-expect": "off",
+				"vitest/require-mock-type-parameters": "off",
+				"vitest/require-to-throw-message": "off",
+				"vitest/valid-expect": "off",
+				"vitest/valid-title": "off"
+			}
+		},
 		// "shape" is Electric's own protocol noun — `/v1/shape` is the endpoint this
 		// app proxies and `maple.electric.shape` is the span attribute naming which
 		// one. The rule is about `shape` as a stand-in for a domain role it could not
@@ -210,6 +265,328 @@
 							{
 								"group": ["**/vendor/*", "**/vendor/*/**"],
 								"message": "VCS provider implementations are private. Import through the provider-agnostic VCS services; only composition roots, provider tests, and the provider implementation may import vendor code."
+							}
+						]
+					}
+				]
+			}
+		},
+		// Replaces a source-grepping test: MCP-capable tracers must list the anticipated MCP errors.
+		{
+			"files": ["apps/ai/src/**/*.ts"],
+			"excludeFiles": ["**/*.test.ts"],
+			"rules": { "maple/mcp-tracer-anticipated-errors": "error" }
+		},
+		// Customer SDK bundle boundaries (were source-grepping architecture tests). Later overrides
+		// replace earlier rule options, so the narrower tiers repeat the broader patterns.
+		{
+			"files": ["packages/sdk-core/src/**/*.ts"],
+			"excludeFiles": ["**/*.test.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^effect($|/)",
+								"message": "sdk-core is bundled into the browser SDK eager chunk; it stays Effect-free."
+							},
+							{
+								"regex": "^@opentelemetry/",
+								"message": "sdk-core is bundled into the Effect SDK, which never ships OpenTelemetry."
+							},
+							{
+								"regex": "^(rrweb|rrweb-|@rrweb/)",
+								"message": "Only the SDKs' lazy replay chunk may reach rrweb."
+							},
+							{
+								"regex": "^@maple/browser-session/replay$",
+								"message": "The replay entry pulls rrweb in; only an SDK's lazy chunk may import it."
+							}
+						]
+					}
+				]
+			}
+		},
+		// The sdk-core root tier is bundled server-side: no DOM tier, no browser globals.
+		{
+			"files": ["packages/sdk-core/src/**/*.ts"],
+			"excludeFiles": ["**/*.test.ts", "packages/sdk-core/src/browser/**"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^effect($|/)",
+								"message": "sdk-core is bundled into the browser SDK eager chunk; it stays Effect-free."
+							},
+							{
+								"regex": "^@opentelemetry/",
+								"message": "sdk-core is bundled into the Effect SDK, which never ships OpenTelemetry."
+							},
+							{
+								"regex": "^(rrweb|rrweb-|@rrweb/)",
+								"message": "Only the SDKs' lazy replay chunk may reach rrweb."
+							},
+							{
+								"regex": "^@maple/browser-session/replay$",
+								"message": "The replay entry pulls rrweb in; only an SDK's lazy chunk may import it."
+							},
+							{
+								"regex": "^\\./browser",
+								"message": "The sdk-core root tier is bundled server-side; it must not import the DOM tier."
+							},
+							{
+								"regex": "^@maple/browser-session",
+								"message": "The sdk-core root tier is bundled server-side; it must not import the DOM tier."
+							},
+							{
+								"name": "web-vitals",
+								"message": "The sdk-core root tier is bundled server-side; it must not import the DOM tier."
+							}
+						]
+					}
+				],
+				"no-restricted-globals": [
+					"error",
+					"window",
+					"document",
+					"navigator",
+					"location",
+					"localStorage",
+					"indexedDB"
+				]
+			}
+		},
+		// browser-session: the always-loaded tier never reaches the lazy replay tier.
+		{
+			"files": ["packages/browser-session/src/**/*.ts"],
+			"excludeFiles": [
+				"**/*.test.ts",
+				"**/*.bench.ts",
+				"packages/browser-session/src/replay/**",
+				"packages/browser-session/src/session/replay-session.ts"
+			],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^(\\.\\.?/)+replay/",
+								"message": "replay/ is the lazily loaded tier; importing it from the always-loaded tier hoists rrweb into the base chunk."
+							},
+							{
+								"regex": "^(rrweb|rrweb-|@rrweb/)",
+								"message": "rrweb stays behind the lazy replay boundary."
+							}
+						]
+					}
+				]
+			}
+		},
+		// browser-session platform/ is the leaf layer.
+		{
+			"files": ["packages/browser-session/src/platform/**/*.ts"],
+			"excludeFiles": ["**/*.test.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^(\\.\\.?/)+replay/",
+								"message": "replay/ is the lazily loaded tier; importing it from the always-loaded tier hoists rrweb into the base chunk."
+							},
+							{
+								"regex": "^(rrweb|rrweb-|@rrweb/)",
+								"message": "rrweb stays behind the lazy replay boundary."
+							},
+							{
+								"regex": "^\\.\\./",
+								"message": "platform/ is the leaf layer: it must not import the domain layers back."
+							}
+						]
+					}
+				]
+			}
+		},
+		// Service-graph boundaries. These replace source-grepping tests; overrides replace (not merge)
+		// rule options, so files under the VCS vendor rule above repeat its pattern.
+		{
+			"files": [
+				"apps/ai/src/mcp/tools/list-alert-incidents.ts",
+				"apps/ai/src/mcp/tools/get-incident-timeline.ts",
+				"apps/ai/src/mcp/tools/list-alert-checks.ts"
+			],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "@maple/backend/services/alerts/AlertsService",
+								"message": "Read handlers go through AlertReadModelsService / AlertDestinationsService. AlertsService pulls in the whole evaluation and dispatch graph."
+							}
+						]
+					}
+				]
+			}
+		},
+		// Runtime entry points compose their own graph instead of the compatibility facade.
+		{
+			"files": ["apps/ai/src/chat/turn-runner.ts", "apps/ai/src/mcp/__evals__/eval-runtime.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "(^|/)app$",
+								"message": "Entry points compose their own service graph; the `app` compatibility facade (`MainLive`) drags every route and service in."
+							}
+						]
+					}
+				]
+			}
+		},
+		// The headless MCP root carries only what registered tools need.
+		{
+			"files": ["apps/ai/src/mcp/dispatcher.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "./service-graph",
+								"message": "The MCP root uses mcp-service-graph, not the full route graph."
+							}
+						],
+						"patterns": [
+							{
+								"regex": "/(DailySpendService|CloudflareAnalyticsService|AnomalyDetectionService|AiTriageService|DigestService|DemoService)$",
+								"message": "Route-only service; MCP tools never require it."
+							}
+						]
+					}
+				]
+			}
+		},
+		// The API service composition root stays free of HTTP routes and schemas.
+		{
+			"files": ["apps/api/src/runtime/service-graph.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "/routes/",
+								"message": "The service graph must not depend on HTTP routes."
+							},
+							{
+								"regex": "^@maple/domain/http",
+								"message": "The service graph must not depend on HTTP schemas."
+							},
+							{
+								"regex": "^effect/http",
+								"message": "The service graph must not depend on the HTTP layer."
+							}
+						]
+					}
+				]
+			}
+		},
+		// The HTTP entry point composes HttpServicesLive, not the compatibility facade.
+		{
+			"files": ["apps/api/src/worker/http.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "(^|/)app$",
+								"message": "Entry points compose their own service graph; the `app` compatibility facade (`MainLive`) drags every route and service in."
+							},
+							{
+								"group": ["**/vendor/*", "**/vendor/*/**"],
+								"message": "VCS provider implementations are private. Import through the provider-agnostic VCS services."
+							}
+						]
+					}
+				]
+			}
+		},
+		// Alert read and destination handlers use the narrow capability services.
+		{
+			"files": [
+				"apps/api/src/routes/v2/alert-destinations.http.ts",
+				"apps/api/src/routes/v2/alert-incidents.http.ts",
+				"apps/api/src/routes/v2/alert-deliveries.http.ts"
+			],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "@maple/backend/services/alerts/AlertsService",
+								"message": "Read handlers go through AlertReadModelsService / AlertDestinationsService. AlertsService pulls in the whole evaluation and dispatch graph."
+							}
+						],
+						"patterns": [
+							{
+								"group": ["**/vendor/*", "**/vendor/*/**"],
+								"message": "VCS provider implementations are private. Import through the provider-agnostic VCS services."
+							}
+						]
+					}
+				]
+			}
+		},
+		// AlertDestinationsService stays independent of evaluation and the warehouse.
+		{
+			"files": ["packages/backend/src/services/alerts/AlertDestinationsService.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^@maple/query-engine",
+								"message": "Destinations do not query the warehouse."
+							},
+							{
+								"regex": "/(QueryEngineService|WarehouseQueryService|OrgClickHouseSettingsService|AnomalyDetectionService|ErrorsService)$",
+								"message": "Destinations stay independent of alert evaluation and warehouse services."
+							},
+							{
+								"group": ["**/vendor/*", "**/vendor/*/**"],
+								"message": "VCS provider implementations are private. Import through the provider-agnostic VCS services."
+							}
+						]
+					}
+				]
+			}
+		},
+		// AlertReadModelsService reads persistence and the warehouse, never scheduling or delivery.
+		{
+			"files": ["packages/backend/src/services/alerts/AlertReadModelsService.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "/(AlertDestinationsService|AlertRuntime|EmailService|Env|OrgClickHouseSettingsService|QueryEngineService)$",
+								"message": "Read models must not depend on scheduler or delivery capabilities."
+							},
+							{
+								"group": ["**/vendor/*", "**/vendor/*/**"],
+								"message": "VCS provider implementations are private. Import through the provider-agnostic VCS services."
 							}
 						]
 					}

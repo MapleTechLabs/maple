@@ -55,7 +55,7 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 			// `peer.service` is deliberately low-cardinality (two values, not one per
 			// target) — a per-target name would fragment the service map into a node
 			// per scrape target.
-			const fetchTarget = Effect.fn("scraper.fetch_target", { kind: "client" })(function* (
+			const fetchTarget = Effect.fn("TargetFetcher.fetchTarget", { kind: "client" })(function* (
 				target: InternalScrapeTarget,
 			) {
 				const parsed = Option.liftThrowable(() => new URL(target.scrapeUrl))()
@@ -122,7 +122,7 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 			})
 
 			// Classified outside the client span: a target's 4xx/5xx answer leaves
-			// `scraper.fetch_target` Ok, the scrape span carries the failure.
+			// `TargetFetcher.fetchTarget` Ok, the scrape span carries the failure.
 			const fetch = (target: InternalScrapeTarget) =>
 				fetchTarget(target).pipe(
 					Effect.flatMap((response) =>

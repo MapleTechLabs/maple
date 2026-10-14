@@ -10,6 +10,7 @@
  * Workers and is worth testing without building a route graph. The binding
  * itself arrives already narrowed, as the `AiWorkerFetcher` port.
  */
+import { ISOLATE_AGE_HEADER, ISOLATE_ORDINAL_HEADER } from "@maple/infra/isolate-age"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -40,6 +41,29 @@ export const aiUnavailableResponse = (): HttpServerResponse.HttpServerResponse =
 /** The W3C header carrying this hop's span, sampled flag included, as `apps/web`'s fetch wrapper writes it. */
 const traceparentOf = (span: { readonly traceId: string; readonly spanId: string }): string =>
 	`00-${span.traceId}-${span.spanId}-01`
+
+const headerNumber = (response: HttpServerResponse.HttpServerResponse, name: string): Option.Option<number> =>
+	Option.filter(Option.fromNullishOr(response.headers[name]).pipe(Option.map(Number)), Number.isFinite)
+
+/**
+ * maple-ai's isolate stamp, moved from its response onto this span. A cold maple-ai isolate's
+ * startup CPU shows only here, since workerd's clock stands still while maple-ai's span runs.
+ */
+const recordAiIsolate = (response: HttpServerResponse.HttpServerResponse) =>
+	Effect.gen(function* () {
+		const ordinal = headerNumber(response, ISOLATE_ORDINAL_HEADER)
+		const ageMs = headerNumber(response, ISOLATE_AGE_HEADER)
+		if (Option.isSome(ordinal) && Option.isSome(ageMs)) {
+			yield* Effect.annotateCurrentSpan({
+				"maple.ai.isolate.request_ordinal": ordinal.value,
+				"maple.ai.isolate.age_ms": ageMs.value,
+			})
+		}
+		return response.pipe(
+			HttpServerResponse.removeHeader(ISOLATE_ORDINAL_HEADER),
+			HttpServerResponse.removeHeader(ISOLATE_AGE_HEADER),
+		)
+	})
 
 /**
  * Forward one request to maple-ai and answer with its response.
@@ -79,7 +103,10 @@ export const forwardToAi = (
 				return new Request(web, { headers })
 			},
 		})
-		return yield* Cloudflare.fromCloudflareFetcher(fetcher).fetch(HttpServerRequest.fromWeb(forwarded))
+		const response = yield* Cloudflare.fromCloudflareFetcher(fetcher).fetch(
+			HttpServerRequest.fromWeb(forwarded),
+		)
+		return yield* recordAiIsolate(response)
 	}).pipe(
 		Effect.catch((error) =>
 			Effect.logError("Forwarding to the AI worker failed", error).pipe(

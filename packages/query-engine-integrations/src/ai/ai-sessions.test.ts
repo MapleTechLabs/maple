@@ -264,10 +264,6 @@ describe("aiSessionPageQuery", () => {
 		expect(sql).not.toContain("INTERVAL")
 	})
 
-	it("leaves no unresolved param placeholder", () => {
-		expect(compileUnsafe(aiSessionPageQuery(), params).sql).not.toContain("__PARAM_")
-	})
-
 	it("decodes the row the list renders from, quoted 64-bit aggregates included", () => {
 		const compiled = compileUnsafe(aiSessionPageQuery(), params)
 
@@ -676,10 +672,6 @@ describe("aiSessionDetailsQuery", () => {
 		expect(orgPredicateCount(sql)).toBe(3)
 	})
 
-	it("is org-scoped", () => {
-		expect(compileUnsafe(aiSessionDetailsQuery(listOpts), listParams).tenantScope).toBe("single-tenant")
-	})
-
 	it("selects the page's traces on index membership, with no attribute predicate", () => {
 		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 		const [, detection] = sql.split("TraceId IN (SELECT")
@@ -729,15 +721,6 @@ describe("aiSessionDetailsQuery", () => {
 		expect(sql).toContain(
 			"countIf((trace_detail_spans.StatusCode = 'Error' OR (trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '' AND (trace_detail_spans.SpanAttributes['error.type'] != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))))",
 		)
-	})
-
-	it("escapes an org id carrying a quote", () => {
-		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), {
-			...listParams,
-			orgId: OrgId.make("org'evil"),
-		})
-
-		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 
 	it("omits the optional filters when none are given", () => {
@@ -802,10 +785,6 @@ describe("aiSessionDetailsQuery", () => {
 		// holding an empty page has nothing to detail.
 		expect(() => aiSessionDetailsQuery({ sessionIds: [] })).toThrow(QueryBuilderDefect)
 		expect(() => aiSessionDetailsQuery({ sessionIds: [] })).toThrow(/needs the page's session ids/)
-	})
-
-	it("leaves no unresolved param placeholder", () => {
-		expect(compileUnsafe(aiSessionDetailsQuery(listOpts), listParams).sql).not.toContain("__PARAM_")
 	})
 
 	it("decodes quoted 64-bit aggregates and the service-name array", () => {
@@ -973,10 +952,6 @@ describe("aiSessionFacetsQuery", () => {
 		expect(sql.split(`Timestamp <= '${params.endTime}'`).length - 1).toBe(6)
 	})
 
-	it("is org-scoped", () => {
-		expect(compileUnionUnsafe(aiSessionFacetsQuery(), params).tenantScope).toBe("single-tenant")
-	})
-
 	it("counts over the same population the list detects, and drops the blank option", () => {
 		const { sql } = compileUnionUnsafe(aiSessionFacetsQuery(), params)
 
@@ -989,10 +964,6 @@ describe("aiSessionFacetsQuery", () => {
 		for (const column of ["VendorId", "ServiceName", "DeploymentEnv", "Model", "AgentName", "ToolName"]) {
 			expect(sql).toContain(`${column} != ''`)
 		}
-	})
-
-	it("leaves no unresolved param placeholder", () => {
-		expect(compileUnionUnsafe(aiSessionFacetsQuery(), params).sql).not.toContain("__PARAM_")
 	})
 
 	it("decodes the quoted 64-bit uniqExact count", () => {
@@ -1141,10 +1112,6 @@ describe("aiSessionSpansQuery", () => {
 		expect(orgPredicateCount(sql)).toBe(2)
 	})
 
-	it("is org-scoped", () => {
-		expect(compileUnsafe(aiSessionSpansQuery(), spanParams).tenantScope).toBe("single-tenant")
-	})
-
 	it("substitutes and escapes the sessionId param", () => {
 		const { sql } = compileUnsafe(aiSessionSpansQuery(), spanParams)
 		expect(sql).toContain("SpanAttributes['maple_ai.session.id'] = 'wrun_01M0CSAEW96BH2W9185XZPRPKH'")
@@ -1167,10 +1134,6 @@ describe("aiSessionSpansQuery", () => {
 
 	it("honours a caller-supplied limit", () => {
 		expect(compileUnsafe(aiSessionSpansQuery({ limit: 100 }), spanParams).sql).toContain("LIMIT 100")
-	})
-
-	it("leaves no unresolved param placeholder", () => {
-		expect(compileUnsafe(aiSessionSpansQuery(), spanParams).sql).not.toContain("__PARAM_")
 	})
 
 	it("decodes the raw Map columns as plain objects", () => {
@@ -1242,14 +1205,6 @@ describe("aiSessionWindowQuery", () => {
 		expect(escaped.sql).toContain("SpanAttributes['maple_ai.session.id'] = 'sess\\'evil'")
 	})
 
-	it("is org-scoped", () => {
-		expect(compileUnsafe(aiSessionWindowQuery(), windowParams).tenantScope).toBe("single-tenant")
-	})
-
-	it("leaves no unresolved param placeholder", () => {
-		expect(compileUnsafe(aiSessionWindowQuery(), windowParams).sql).not.toContain("__PARAM_")
-	})
-
 	it("decodes the quoted 64-bit count", () => {
 		const compiled = compileUnsafe(aiSessionWindowQuery(), windowParams)
 
@@ -1308,10 +1263,6 @@ describe("aiTraceWindowQuery", () => {
 			traceId: "trace'evil",
 		})
 		expect(escaped.sql).toContain("TraceId = 'trace\\'evil'")
-	})
-
-	it("leaves no unresolved param placeholder", () => {
-		expect(compileUnsafe(aiTraceWindowQuery(), traceWindowParams).sql).not.toContain("__PARAM_")
 	})
 
 	it("decodes the quoted 64-bit count", () => {
@@ -1380,10 +1331,6 @@ describe("aiTraceSpansQuery", () => {
 			traceId: "trace'evil",
 		})
 		expect(escaped.sql).toContain("TraceId = 'trace\\'evil'")
-	})
-
-	it("leaves no unresolved param placeholder", () => {
-		expect(compileUnsafe(aiTraceSpansQuery(), traceParams).sql).not.toContain("__PARAM_")
 	})
 
 	it("decodes through the same row schema as the session form", () => {

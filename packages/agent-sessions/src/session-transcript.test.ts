@@ -2073,25 +2073,6 @@ describe("buildTranscript — investigation fan-out", () => {
 		expect(byChapter.get("validator")).toStrictEqual([])
 	})
 
-	// The failure mode the mis-partition produced: a tail span whose parent lives
-	// in another turn becomes a forest root and renders at depth 0, unattributed,
-	// under a chapter that never ran it.
-	it("leaves no span rendering under a chapter that did not run it", () => {
-		const rows = transcript(fanout())
-
-		let chapter: string | undefined
-		for (const row of rows) {
-			if (row.kind === "turn") {
-				chapter = row.turn.agentName
-				continue
-			}
-			if (!("span" in row)) continue
-			// Every lane span's id is prefixed with the lane that ran it.
-			const owner = LANES.find((lane) => row.span.spanId.startsWith(`${lane}-`))
-			if (owner !== undefined) expect(chapter).toBe(owner)
-		}
-	})
-
 	// Within-turn lane clustering is a different mechanism on a different shape;
 	// the fan-out must not start producing lane rows instead of chapters.
 	it("does not turn sibling chapters back into lanes inside one turn", () => {

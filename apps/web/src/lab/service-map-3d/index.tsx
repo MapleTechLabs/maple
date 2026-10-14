@@ -18,9 +18,9 @@ import {
 /**
  * THESIS: A service map should be a readable instrument. Two spatial models
  * expose ownership (Atlas) and dependency depth (Cascade) over the same graph.
- * OWN-WORLD: Maple's warm surfaces and Geist Mono, mineral green infrastructure,
- * amber elevated errors, clay degraded errors. Maple-branded voxel machinery in
- * a tiled meadow cutaway, block-built trees, square pipes and working cargo conveyors.
+ * OWN-WORLD: an autumn sugar-bush in isometric line art. Timber cabins, sugaring
+ * vats and boardwalk belts carrying crates and logs, inside a forest that grows
+ * around the zones; health on the painted doors, live state in smoke and lamps.
  * STORY: Survey the system, select a service, follow an actual inbound/outbound call.
  * FIRST VIEWPORT: A large orthographic map with a compact service inventory at
  * right. The two view controls lead; the inspector never covers the map.
@@ -214,11 +214,11 @@ export function ServiceMap3DLab() {
 										Service map
 									</h1>
 									<span className="rounded border px-1.5 py-0.5 text-3xs text-muted-foreground">
-										Voxel lab
+										Isometric lab
 									</span>
 								</div>
 								<p className="mt-1 text-xs text-muted-foreground">
-									A voxel landscape of services and their connections.
+									Every service a machine, every call a belt.
 								</p>
 							</div>
 							<div className="flex items-center gap-2 text-2xs text-muted-foreground">

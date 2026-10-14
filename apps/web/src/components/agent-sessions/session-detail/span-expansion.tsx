@@ -318,7 +318,12 @@ function SystemMessageRow({ message }: { message: SpanMessage }) {
 							proseClassName="text-sm"
 						/>
 					</div>
-					<ViewSwitch rendered={body.rendered} raw={raw} onRawChange={setRaw} />
+					<ViewSwitch
+						rendered={body.rendered}
+						raw={raw}
+						onRawChange={setRaw}
+						className="self-start"
+					/>
 					{/* Copies the instructions as captured, not their rendering. */}
 					<CopyButton value={text} label="system message" className="-my-1 shrink-0" />
 				</div>

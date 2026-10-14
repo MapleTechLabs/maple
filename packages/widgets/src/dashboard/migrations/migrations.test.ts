@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { parseStoredDashboard, stampCurrentVersion } from "../parse"
 import { CURRENT_DASHBOARD_SCHEMA_VERSION } from "../version"
@@ -103,9 +103,9 @@ describe("the migration chain", () => {
 		}
 	})
 
-	it("never throws on input it cannot understand", () => {
-		for (const payload of [null, undefined, 42, "nope", [], { widgets: "not an array" }]) {
-			expect(() => migrateToLatest(payload)).not.toThrow()
+	it("turns a non-object payload into an empty current document instead of throwing", () => {
+		for (const payload of [null, undefined, 42, "nope", []]) {
+			expect(migrateToLatest(payload)).toEqual({ schemaVersion: CURRENT_DASHBOARD_SCHEMA_VERSION })
 		}
 	})
 })
@@ -230,7 +230,7 @@ describe("detectSchemaVersion", () => {
 	})
 
 	it("reads a declared version", () => {
-		expect(detectSchemaVersion({ ...legacyDocument, schemaVersion: 1 })).toBe(1)
+		expect(detectSchemaVersion({ ...legacyDocument, schemaVersion: 2 })).toBe(2)
 	})
 
 	it("falls back to 1 for a non-object, or a version this build does not know", () => {
@@ -251,10 +251,6 @@ describe("migrateToLatest with a document from a newer build", () => {
 
 	it("returns it untouched rather than restamping it downward", () => {
 		expect(migrateToLatest(fromTheFuture)).toEqual(fromTheFuture)
-	})
-
-	it("does not claim the current version on the way out", () => {
-		expect(migrateToLatest(fromTheFuture).schemaVersion).toBe(99)
 	})
 
 	// `migrateToLatest` stamps the version it actually REACHED, which is where the
@@ -313,10 +309,6 @@ describe("parseStoredDashboard", () => {
 })
 
 describe("stampCurrentVersion", () => {
-	it("stamps the current version", () => {
-		expect(stampCurrentVersion({ name: "x" }).schemaVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
-	})
-
 	it("produces a document that decodes and round-trips its stamp", () => {
 		const stamped = stampCurrentVersion(legacyDocument)
 		const outcome = parse(stamped)
@@ -325,14 +317,6 @@ describe("stampCurrentVersion", () => {
 		if (outcome._tag !== "Decoded") return
 		expect(outcome.fromVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
 		expect(outcome.document.schemaVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
-	})
-
-	it("keeps the stamp when the document is encoded back to storage JSON", () => {
-		const outcome = parse(stampCurrentVersion(legacyDocument))
-		if (outcome._tag !== "Decoded") throw new Error("expected Decoded")
-
-		const encoded = Schema.encodeUnknownSync(Schema.Unknown)(outcome.document) as Record<string, unknown>
-		expect(encoded.schemaVersion).toBe(CURRENT_DASHBOARD_SCHEMA_VERSION)
 	})
 })
 

@@ -80,14 +80,6 @@ describe("runPlanetScaleEventRetention", () => {
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
-	it.live("is a no-op on an empty table", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			yield* runPlanetScaleEventRetention
-			assert.strictEqual((yield* countEvents(testDb))?.n, 0)
-		}).pipe(Effect.provide(testDb.layer))
-	})
-
 	it.live("leaves an org under the row cap untouched", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

@@ -12,6 +12,9 @@ import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../dispatcher"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
+import { AgentSpawner } from "@yielded/agent/agent-runtime"
+import { AgentId, RunId, ThreadId } from "@yielded/agent/identifiers"
+import { agentForSession, agentPolicyFor } from "../../chat/agents"
 import { APPROVAL_NOTE, buildMapleToolkit, splitToolResult, type ToolUiPayload } from "./llm-tools"
 
 const TENANT: TenantContext = {
@@ -31,6 +34,22 @@ const countingExecutor = () => {
 	}
 	return { executor, dispatched: () => dispatched }
 }
+
+/** The engine run a call is dispatched from; only its identity matters to the guard. */
+const inRun = (runId: string) =>
+	Effect.provideService(
+		AgentSpawner,
+		AgentSpawner.of({
+			policy: agentPolicyFor(agentForSession("org_test:tab-1")),
+			depth: 0,
+			parent: {
+				agentId: Schema.decodeSync(AgentId)("pr-review"),
+				threadId: Schema.decodeSync(ThreadId)("thread-1"),
+				runId: Schema.decodeSync(RunId)(runId),
+			},
+			spawn: () => Effect.die("no child spawns in this test"),
+		}),
+	)
 
 const handlerFor = (executor: McpToolExecutorApi, name: string) => {
 	const built = buildMapleToolkit(executor, TENANT, { surface: "chat" })
@@ -202,6 +221,22 @@ describe("buildMapleToolkit", () => {
 		assert.equal(dispatched(), 6)
 	})
 
+	it("counts the same arguments in another key order as the same call", async () => {
+		const { executor, dispatched } = countingExecutor()
+		const handler = handlerFor(executor, "list_services")
+		const orders = [
+			{ limit: 10, offset: 0 },
+			{ offset: 0, limit: 10 },
+			{ limit: 10, offset: 0 },
+		]
+
+		for (const params of orders) await Effect.runPromise(handler(params, {} as never))
+		const fourth = await Effect.runPromise(Effect.result(handler({ offset: 0, limit: 10 }, {} as never)))
+
+		assert.isTrue(Result.isFailure(fourth))
+		assert.equal(dispatched(), 3)
+	})
+
 	it("counts per build, so the next turn may ask the same question again", async () => {
 		const { executor, dispatched } = countingExecutor()
 
@@ -211,5 +246,25 @@ describe("buildMapleToolkit", () => {
 		}
 
 		assert.equal(dispatched(), 4)
+	})
+
+	it("counts per engine run, so review_files children sharing the build each get the full budget", async () => {
+		const { executor, dispatched } = countingExecutor()
+		const handler = handlerFor(executor, "list_services")
+		const call = (runId: string) =>
+			Effect.runPromise(Effect.result(handler({ limit: 10 }, {} as never).pipe(inRun(runId))))
+
+		// The parent spends its budget, then four children launched together ask the same question.
+		for (let attempt = 0; attempt < 3; attempt += 1) await call("run_parent")
+		for (const child of ["run_a", "run_b", "run_c", "run_d"]) {
+			const first = await call(child)
+			assert.isTrue(Result.isSuccess(first), `${child}'s first call should have run`)
+		}
+		assert.equal(dispatched(), 7)
+
+		// Each run still has its own guard.
+		const parentAgain = await call("run_parent")
+		assert.isTrue(Result.isFailure(parentAgain))
+		assert.equal(dispatched(), 7)
 	})
 })

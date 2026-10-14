@@ -32,7 +32,7 @@ export type TriageSeverityDb = MapleDb
  * if the row is deleted between the guarded insert and the re-read.
  */
 export class TriageActorMissingError extends Schema.TaggedError<TriageActorMissingError>()(
-	"@maple/api/services/TriageActorMissingError",
+	"@maple/backend/services/TriageActorMissingError",
 	{ message: Schema.String, orgId: OrgId },
 ) {}
 

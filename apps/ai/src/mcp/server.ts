@@ -28,8 +28,9 @@ const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message:
 	})
 
 /**
- * Public MCP transport backed by the same dispatcher as internal Worker RPC. The catalog's JSON
- * Schemas are costly to build, so tools register once per isolate, on the first authorized request.
+ * Public MCP transport backed by the same dispatcher as internal Worker RPC. Loading the catalog
+ * and building its JSON Schemas is costly, so tools register once per isolate, before the first
+ * authorized `tools/*` request.
  */
 export class McpToolRegistration extends Context.Service<
 	McpToolRegistration,

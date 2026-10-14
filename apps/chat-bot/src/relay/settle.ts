@@ -42,7 +42,7 @@ const CHECKPOINT_TTL_MS = 30 * 60 * 1000
 export type SettleOutcome = "pending" | "done"
 
 /** Anything that goes wrong is logged once, the cause summarized, and the checkpoint dropped. */
-export const settleRelayedTurn = Effect.fn("chat_bot.settle_turn")(
+export const settleRelayedTurn = Effect.fn("ChatBotRelay.settleTurn")(
 	function* <R>(checkpoint: RelayTurnCheckpoint, ports: RelayPorts<R>) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.session_id": checkpoint.sessionId })
 		const done: SettleOutcome = "done"

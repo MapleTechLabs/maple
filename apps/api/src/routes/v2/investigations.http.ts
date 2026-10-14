@@ -123,7 +123,7 @@ const toInternalSnapshot = (snapshot: V2InvestigationCreateParams["snapshot"] | 
 const toV2Investigation = Effect.fn("HttpV2Investigations.toV2Investigation")(function* (
 	doc: InvestigationDocument,
 ): Effect.fn.Return<V2Investigation, InvestigationDataCorruptionError> {
-	yield* Effect.annotateCurrentSpan("investigationId", doc.id)
+	yield* Effect.annotateCurrentSpan("maple.investigation.id", doc.id)
 	const decodeReportTraceId = (traceId: string) =>
 		Schema.decodeEffect(TraceId)(traceId).pipe(
 			Effect.mapError(

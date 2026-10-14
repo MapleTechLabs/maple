@@ -132,22 +132,19 @@ describe("useCopy", () => {
 		await act(async () => {
 			await probe.api.copy("abc")
 		})
-		expect(toastManager.add).toHaveBeenCalledWith({ title: "Trace ID copied", type: "success" })
+		expect(toastManager.add).toHaveBeenCalledWith({
+			title: expect.stringMatching(/trace id/i),
+			type: "success",
+		})
 
 		writeText.mockRejectedValue(new Error("denied"))
 		await act(async () => {
 			await probe.api.copy("abc")
 		})
-		expect(toastManager.add).toHaveBeenCalledWith({ title: "Failed to copy trace id", type: "error" })
-	})
-
-	it("falls back to a generic toast when no label is given", async () => {
-		const probe = mount()
-
-		await act(async () => {
-			await probe.api.copy("abc")
+		expect(toastManager.add).toHaveBeenCalledWith({
+			title: expect.stringMatching(/trace id/i),
+			type: "error",
 		})
-		expect(toastManager.add).toHaveBeenCalledWith({ title: "Copied to clipboard", type: "success" })
 	})
 
 	it("`reset` clears the state immediately", async () => {

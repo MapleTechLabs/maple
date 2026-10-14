@@ -1,3 +1,4 @@
+import { initialsFrom } from "@maple/ui/lib/initials"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { countLabel } from "@maple/ui/lib/format"
@@ -32,7 +33,7 @@ export function ActiveUserFilter({
 	clearLabel = "Clear user filter",
 	onClear,
 }: ActiveUserFilterProps) {
-	const initial = (userId[0] ?? "?").toUpperCase()
+	const initial = initialsFrom(userId)
 	return (
 		<div className="mb-3 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
 			<div

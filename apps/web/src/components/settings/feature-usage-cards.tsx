@@ -13,7 +13,7 @@ import {
 	type FeatureSpend,
 	type SpendModel,
 } from "@/lib/billing/spend"
-import { StatFigure } from "@/components/common/stat-rail"
+import { StatFigure } from "@maple/ui/components/ui/stat-figure"
 import { formatFeatureUsage } from "./format-feature-usage"
 
 /**

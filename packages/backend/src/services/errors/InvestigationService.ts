@@ -16,15 +16,16 @@ import {
 	InvestigationProgress,
 	type InvestigationStatus,
 	InvestigationSubject,
+	type AnomalyTriageStatus,
 	type OrgId,
 	type SubmitDiagnosisRequest,
 	type UserId,
 } from "@maple/domain/http"
-import { ErrorIssueId, InvestigationId } from "@maple/domain/primitives"
+import { AnomalyIncidentId, ErrorIssueId, InvestigationId } from "@maple/domain/primitives"
 
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Investigations, type InvestigationRow } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { AnomalyIncidents, Investigations, type InvestigationRow } from "@maple/db/tables"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import {
 	applyDiagnosisWrites,
 	applyInconclusiveWrites,
@@ -67,6 +68,11 @@ const selectStored = ($: PG.ColumnAccessor<typeof Investigations.columns>) => ({
 	reportJson: PG.undecoded($.reportJson),
 	progressJson: storedProgressJson($),
 })
+
+const decodeAnomalyIncidentId = Schema.decodeUnknownOption(AnomalyIncidentId)
+
+const triageStatusFor = (status: InvestigationStatus): AnomalyTriageStatus =>
+	status === "investigating" ? "pending" : status === "failed" ? "skipped" : "completed"
 
 const makePersistenceError = makePersistenceErrorMapper(
 	InvestigationPersistenceError,
@@ -346,8 +352,35 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			const isStale = (row: StoredInvestigationRow, nowMs: number): boolean =>
 				isInvestigationStale(row, nowMs)
 
+			// An anomaly's AI triage is an investigation anchored on the incident, so
+			// every status change of that investigation (start, restart, end, manual)
+			// sets the incident's triage status. Best-effort: it is display-only.
+			const settleAnomalyTriage = (
+				orgId: OrgId,
+				runs: ReadonlyArray<Pick<InvestigationRow, "incidentKind" | "incidentId">>,
+				status: InvestigationStatus,
+				nowMs: number,
+			) => {
+				const triageStatus = triageStatusFor(status)
+				const [first, ...rest] = Arr.getSomes(
+					Arr.map(runs, (run) =>
+						run.incidentKind === "anomaly" && run.incidentId !== null
+							? decodeAnomalyIncidentId(run.incidentId)
+							: Option.none(),
+					),
+				)
+				if (first === undefined) return Effect.void
+				return dbExecute((db) =>
+					db.run(
+						PG.update(AnomalyIncidents)
+							.set({ triageStatus, updatedAt: nowMs })
+							.where(($) => [$.orgId.eq(orgId), $.id.in_(first, ...rest)]),
+					),
+				).pipe(Effect.ignore({ log: "Warn", message: "Failed to settle anomaly triage status" }))
+			}
+
 			const failStaleInvestigations = Effect.fnUntraced(function* (orgId: OrgId, nowMs: number) {
-				yield* dbExecute((db) =>
+				const failed = yield* dbExecute((db) =>
 					db.run(
 						PG.update(Investigations)
 							.set({
@@ -359,9 +392,11 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								$.orgId.eq(orgId),
 								$.status.eq("investigating"),
 								$.startedAt.lt(nowMs - STALE_MS),
-							]),
+							])
+							.returning("incidentKind", "incidentId"),
 					),
-				).pipe(Effect.asVoid)
+				)
+				yield* settleAnomalyTriage(orgId, failed, "failed", nowMs)
 			})
 
 			/**
@@ -599,8 +634,11 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								autonomousTurns: $.autonomousTurns.add(1),
 								updatedAt: nowMs,
 							}))
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
+							.returning("incidentKind", "incidentId"),
 					),
+				).pipe(
+					Effect.tap((restarted) => settleAnomalyTriage(orgId, restarted, "investigating", nowMs)),
 				)
 				const restarting = new InvestigationDocument({
 					...existing,
@@ -626,7 +664,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						PG.update(Investigations)
 							.set({ status, updatedAt: nowMs })
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
-							.returning("id"),
+							.returning("id", "incidentKind", "incidentId"),
 					),
 				)
 				if (updated.length === 0) {
@@ -634,6 +672,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						new InvestigationNotFoundError({ message: `No such investigation: '${id}'` }),
 					)
 				}
+				yield* settleAnomalyTriage(orgId, updated, status, nowMs)
 				const row = yield* loadRow(orgId, id)
 				if (!row) {
 					return yield* Effect.fail(
@@ -698,6 +737,12 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					Effect.mapError(makePersistenceError),
 					Effect.provideService(Database, database),
 				)
+				yield* settleAnomalyTriage(
+					orgId,
+					[row],
+					request.partial === true ? "inconclusive" : "diagnosed",
+					nowMs,
+				)
 
 				// Deliberately does NOT meter. `request.inputTokens`/`outputTokens` are persisted onto
 				// the row above for display, but the charge is raised per *turn* in
@@ -737,13 +782,15 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			)(function* (orgId, id, error) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.investigation.id": id })
 				const nowMs = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
+				const failed = yield* dbExecute((db) =>
 					db.run(
 						PG.update(Investigations)
 							.set({ status: "failed", error, updatedAt: nowMs })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(id), $.status.eq("investigating")]),
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(id), $.status.eq("investigating")])
+							.returning("incidentKind", "incidentId"),
 					),
 				)
+				yield* settleAnomalyTriage(orgId, failed, "failed", nowMs)
 			})
 
 			return {

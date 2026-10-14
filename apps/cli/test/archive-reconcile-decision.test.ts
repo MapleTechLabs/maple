@@ -302,7 +302,8 @@ describe("decideReconciliation — decision identities", () => {
 		const intent = createIntent("promoted")
 		const snap = createSnapshot(intent, { promoted: true, manifestAtFinal: true })
 		const d = decideReconciliation(valid(snap))
-		if (d.kind !== "NoOp" && d.kind !== "FailClosed") {
+		strictEqual(d.kind, "CreateFinishPublication")
+		if (d.kind === "CreateFinishPublication") {
 			strictEqual(d.operationId, intent.operationId)
 			strictEqual(d.journalDigest, snap.journalDigest)
 		}

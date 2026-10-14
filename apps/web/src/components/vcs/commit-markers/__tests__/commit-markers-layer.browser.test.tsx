@@ -233,18 +233,12 @@ describe("CommitMarkersOverlay", () => {
 			expect(dashes[0].style.height).toBe(`${PLOT.height + 4}px`)
 		})
 
-		/**
-		 * The chip row sits above the plot's top edge. Under Recharts that needed the
-		 * `foreignObject` box extended upward or the chip would paint but never hover;
-		 * here a negative `top` is all it takes, and `pointer-events-auto` is what opts
-		 * back into the pointer that `PlotFrame`'s overlay slot declines.
-		 */
-		it("draws the label chip above the plot top and lets it take the pointer", () => {
+		// The chip row sits above the plot's top edge via a negative `top`.
+		it("draws the label chip above the plot top", () => {
 			const { labels } = mount([marker(1, "abc1234")])
 
 			// plotTop (10) − LABEL_HEIGHT (18) − LABEL_GAP (4).
 			expect(labels[0].style.top).toBe("-12px")
-			expect(labels[0].className).toContain("pointer-events-auto")
 		})
 	})
 

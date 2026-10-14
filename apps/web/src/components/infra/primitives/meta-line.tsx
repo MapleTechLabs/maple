@@ -42,6 +42,8 @@ export function MetaLine({
 		(item): item is ReactNode => item !== null && item !== undefined && item !== false && item !== "",
 	)
 	if (present.length === 0) return null
+	// Plain-text lines title themselves, so a long image ref is still readable.
+	const derivedTitle = present.every((item) => typeof item === "string") ? present.join(" · ") : undefined
 
 	return (
 		<div
@@ -49,14 +51,14 @@ export function MetaLine({
 				"mt-1 flex min-w-0 items-center gap-x-2 truncate font-mono text-2xs text-muted-foreground/80",
 				className,
 			)}
-			title={title}
+			title={title ?? derivedTitle}
 		>
 			{present.map((item, index) => (
 				// Index keys: these are positional fragments of one line, not a
-				// reorderable list.
+				// reorderable list. Long text items are capped so one image ref can't push the rest out.
 				<span key={index} className="flex shrink-0 items-center gap-x-2">
 					{index > 0 && <span className="text-foreground/20">·</span>}
-					{item}
+					{typeof item === "string" ? <span className="max-w-[28ch] truncate">{item}</span> : item}
 				</span>
 			))}
 		</div>

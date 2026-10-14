@@ -9,6 +9,13 @@ export type MapleRegion = Schema.Schema.Type<typeof MapleRegion>
 
 export const DEFAULT_MAPLE_REGION: MapleRegion = "us"
 
+/**
+ * The model the EU instance runs chat, triage and reviews on. OpenRouter's EU catalogue is a subset
+ * (66 models on 2026-09-25) and serves none of the US defaults. Saving an OpenRouter key on the EU
+ * instance asks this model for one token, so the key check and the agents cannot drift apart.
+ */
+export const EU_DEFAULT_OPENROUTER_MODEL = "openai/gpt-6-luna"
+
 const decodeRegion = Schema.decodeUnknownOption(MapleRegion)
 
 /** Parses an instance's own region setting. Anything unrecognised is the default region. */

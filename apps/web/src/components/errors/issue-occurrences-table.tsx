@@ -1,7 +1,16 @@
 import { Link } from "@tanstack/react-router"
 import type { ErrorIssueSampleTrace } from "@maple/domain/http"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TruncatedCell,
+} from "@maple/ui/components/ui/table"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { cn } from "@maple/ui/lib/utils"
 import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { RelativeTime } from "@/components/common/relative-time"
@@ -48,7 +57,11 @@ export function IssueOccurrencesTable({ traces }: IssueOccurrencesTableProps) {
 								<span>{trace.serviceName}</span>
 							</span>
 						</TableCell>
-						<TableCell className="max-w-sm truncate">{trace.exceptionMessage}</TableCell>
+						<TruncatedCell>
+							<TruncatedText text={trace.exceptionMessage}>
+								{trace.exceptionMessage.split("\n", 1)[0]}
+							</TruncatedText>
+						</TruncatedCell>
 						<TableCell>
 							<Link
 								to="/traces/$traceId"

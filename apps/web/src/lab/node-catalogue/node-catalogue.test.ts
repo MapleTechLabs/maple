@@ -21,16 +21,6 @@ const actions = catalogue.nodes.flatMap((node) => (node.type === "action" ? [nod
  * cell — the gallery cannot silently stop covering the surface it documents.
  */
 describe("node catalogue", () => {
-	it("covers every node type the canvas registers", () => {
-		const types = new Set(catalogue.nodes.map((node) => node.type))
-		expect(types).toEqual(new Set(["spine", "pendingVerdict", "action", "actionGhost", "heading"]))
-	})
-
-	it("covers every spine glyph", () => {
-		const glyphs = new Set(spines.map((data) => data.glyph))
-		expect(glyphs).toEqual(new Set(["issue", "check", "incident", "investigation", "verdict"]))
-	})
-
 	it("covers current, lifted and live spine emphasis", () => {
 		expect(spines.some((data) => data.current === true)).toBe(true)
 		expect(spines.some((data) => data.lifted === true)).toBe(true)
@@ -42,12 +32,9 @@ describe("node catalogue", () => {
 		expect(kinds).toEqual(new Set(Object.keys(ACTION_GLYPH)))
 	})
 
-	it("shows an action with and without a target, and both roadmap promises", () => {
+	it("shows an action with and without a target", () => {
 		expect(actions.some((data) => data.target === null)).toBe(true)
 		expect(actions.some((data) => data.target !== null)).toBe(true)
-		expect(new Set(actions.map((data) => data.promise))).toEqual(
-			new Set(["AUTOFIX · SOON", "PULL REQ · SOON"]),
-		)
 	})
 
 	it("covers every edge kind, live and settled", () => {

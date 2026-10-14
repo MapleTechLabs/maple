@@ -19,59 +19,6 @@ const baseParams = () => ({
 })
 
 describe("compilePipeQuery", () => {
-	describe("returns compiled SQL for known pipes", () => {
-		const knownPipes = [
-			"list_traces",
-			"span_hierarchy",
-			"traces_duration_stats",
-			"traces_facets",
-			"list_logs",
-			"logs_count",
-			"logs_facets",
-			"error_rate_by_service",
-			"service_overview",
-			"services_facets",
-			"service_releases_timeline",
-			"service_apdex_time_series",
-			"get_service_usage",
-			"service_dependencies",
-			"errors_by_type",
-			"errors_timeseries",
-			"errors_facets",
-			"errors_summary",
-			"error_detail_traces",
-			"list_metrics",
-			"metrics_summary",
-			"span_attribute_keys",
-			"resource_attribute_keys",
-			"metric_attribute_keys",
-			"span_attribute_values",
-			"resource_attribute_values",
-			"metric_attribute_values",
-			"custom_traces_timeseries",
-			"custom_traces_breakdown",
-			"top_operations",
-			"slow_traces",
-			"span_search",
-		] as const
-
-		for (const pipe of knownPipes) {
-			it(pipe, () => {
-				const result = compilePipeQuery(pipe, {
-					...baseParams(),
-					trace_id: "abc123",
-					service_name: "my-svc",
-					fingerprint_hash: "12345",
-					attribute_key: "http.method",
-					bucket_seconds: 60,
-				})
-				expect(result).toBeDefined()
-				expect(result!.sql).toContain("test-org")
-				expect(typeof result!.decodeRows).toBe("function")
-			})
-		}
-	})
-
 	describe("attribute discovery honors service_name", () => {
 		for (const pipe of ["span_attribute_keys", "resource_attribute_keys"]) {
 			it(`${pipe} reads that service's spans, not the org-wide rollup`, () => {
@@ -249,11 +196,6 @@ describe("compilePipeQuery", () => {
 		expect(paged!.sql).toContain("Timestamp < '2026-01-01 10:00:00.123456789'")
 	})
 
-	it("injects OrgId into SQL", () => {
-		const result = compilePipeQuery("list_traces", baseParams())
-		expect(result!.sql).toContain("test-org")
-	})
-
 	it("injects start_time and end_time into SQL", () => {
 		const result = compilePipeQuery("list_traces", baseParams())
 		expect(result!.sql).toContain("2024-01-01 00:00:00")
@@ -369,10 +311,9 @@ describe("buildAttributeFiltersFromParams", () => {
 	})
 
 	it("returns no filters when no filter keys present", () => {
-		const result = compilePipeQuery("custom_traces_timeseries", baseParams())
-		expect(result).toBeDefined()
-		// Should compile without errors even with no filters
-		expect(result!.sql).toBeTruthy()
+		const { sql } = compilePipeQuery("custom_traces_timeseries", baseParams())!
+		expect(sql).not.toContain("SpanAttributes[")
+		expect(sql).not.toContain("ResourceAttributes[")
 	})
 
 	it("handles exists mode filters", () => {

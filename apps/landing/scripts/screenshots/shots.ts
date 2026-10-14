@@ -14,6 +14,8 @@ export interface Shot {
 	readonly range?: { readonly fromMinutes: number; readonly toMinutes: number }
 	/** Clicks that reach the framed state once the page has data. */
 	readonly setup?: (page: Page) => Promise<void>
+	/** Minutes after the seed anchor to pin the page clock at, for pages that read "now". */
+	readonly fakeNowMinutes?: number
 }
 
 /** Dev-account labels swapped for the demo's before every capture. */

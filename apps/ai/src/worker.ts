@@ -34,7 +34,7 @@ import { ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { ChatSessionLive } from "./chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { WorkersAiGateway } from "./platform/WorkersAiHttpClient"
-import { aiPorts, AiBindingLayers, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
+import { aiPorts, AiBindingsLive, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
 import { buildApp, makeFetch } from "./worker/http"
 import { AiObservabilityLive } from "./worker/observability"
 
@@ -108,7 +108,7 @@ export default MapleAi.make(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
-				AiBindingLayers,
+				AiBindingsLive,
 				// The init runs once per isolate, so this is the isolate's request counter.
 				IsolateAge.layer,
 				// The DO's implementation. The gateway reaches it through activation, not env.

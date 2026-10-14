@@ -55,26 +55,6 @@ afterAll(async () => {
 const call = (name: string, params: Record<string, unknown>) =>
 	runToolDirect(rt, name, params) as Promise<McpToolResult>
 
-describe("query_funnel / list_product_events registration", () => {
-	it("both tools are in the catalog with object input schemas", () => {
-		for (const name of ["query_funnel", "list_product_events"]) {
-			const definition = mapleToolCatalog.find((d) => d.name === name)
-			expect(definition, name).toBeDefined()
-			expect(toInputSchema(definition!.schema).type).toBe("object")
-		}
-	})
-
-	it("query_funnel requires steps_json and nothing else", () => {
-		const definition = mapleToolCatalog.find((d) => d.name === "query_funnel")!
-		expect(toInputSchema(definition.schema).required).toEqual(["steps_json"])
-	})
-
-	it("list_product_events has only optional parameters", () => {
-		const definition = mapleToolCatalog.find((d) => d.name === "list_product_events")!
-		expect(toInputSchema(definition.schema).required ?? []).toEqual([])
-	})
-})
-
 describe("query_funnel identity", () => {
 	it("names an empty VisitorId instead of reporting nobody matched", async () => {
 		const result = await call("query_funnel", {

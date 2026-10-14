@@ -1,5 +1,5 @@
 import { predicateInputBudgetIssue } from "./input-budget"
-import { Option, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
 import type {
 	FieldRef,
 	NormalizedSignal,
@@ -42,11 +42,15 @@ export class SignalPredicateValidationError extends Schema.TaggedError<SignalPre
 	}
 }
 
-export const assertSignalProjectionInputBudget = (candidate: unknown): void => {
-	if (typeof candidate !== "object" || candidate === null || !("selector" in candidate)) return
+export const checkSignalProjectionInputBudget = (
+	candidate: unknown,
+): Result.Result<void, SignalPredicateValidationError> => {
+	if (typeof candidate !== "object" || candidate === null || !("selector" in candidate))
+		return Result.succeed(undefined)
 	const issue = predicateInputBudgetIssue(candidate.selector)
-	if (issue !== undefined)
-		throw SignalPredicateValidationError.create([{ path: "selector", message: issue }])
+	return issue === undefined
+		? Result.succeed(undefined)
+		: Result.fail(SignalPredicateValidationError.create([{ path: "selector", message: issue }]))
 }
 
 const Int64FromString = Schema.BigIntFromString.check(
@@ -222,11 +226,6 @@ export const validateSignalPredicate = (predicate: SignalPredicate): readonly Va
 	return issues
 }
 
-export const assertValidSignalPredicate = (predicate: SignalPredicate): void => {
-	const issues = validateSignalPredicate(predicate)
-	if (issues.length > 0) throw SignalPredicateValidationError.create(issues)
-}
-
 export const validateSignalProjectionSpec = (
 	projection: SignalProjectionSpec,
 ): readonly ValidationIssue[] => [
@@ -299,11 +298,15 @@ const scalarOrder = (left: SignalScalar, right: SignalScalar): number | null => 
 
 export type CompiledSignalPredicate = (signal: NormalizedSignal) => PredicateEvaluation
 
-export const compileSignalPredicate = (predicate: SignalPredicate): CompiledSignalPredicate => {
-	assertSignalProjectionInputBudget({ selector: predicate })
-	assertValidSignalPredicate(predicate)
+export const compileSignalPredicate = (
+	predicate: SignalPredicate,
+): Result.Result<CompiledSignalPredicate, SignalPredicateValidationError> => {
+	const budget = checkSignalProjectionInputBudget({ selector: predicate })
+	if (Result.isFailure(budget)) return Result.fail(budget.failure)
+	const issues = validateSignalPredicate(predicate)
+	if (issues.length > 0) return Result.fail(SignalPredicateValidationError.create(issues))
 
-	return (signal) => {
+	return Result.succeed((signal) => {
 		const typeMismatches: FieldRef[] = []
 		const readField = (field: FieldRef): SignalScalar | undefined => {
 			const value = signal.fields.get(fieldKey(field))
@@ -359,5 +362,5 @@ export const compileSignalPredicate = (predicate: SignalPredicate): CompiledSign
 		}
 
 		return { matches: evaluate(predicate), typeMismatches }
-	}
+	})
 }

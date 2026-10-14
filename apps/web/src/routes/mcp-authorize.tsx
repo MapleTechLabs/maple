@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { useState } from "react"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { CircleWarningIcon } from "@/components/icons"
 import { AuthLayout } from "@/components/layout/auth-layout"
 import { ClerkOrgSwitcherMenu } from "@/components/dashboard/org-switcher-menu"
@@ -185,10 +186,17 @@ function McpAuthorizePage() {
 					<div className="space-y-4">
 						<div className="space-y-1 border border-border bg-muted/30 p-3">
 							<p className="text-xs text-muted-foreground">Requesting client</p>
-							<p className="font-medium">{state.info.clientName}</p>
-							<p className="truncate text-xs text-muted-foreground">
-								Returns to {new URL(state.info.redirectUri).host}
+							<p
+								className="line-clamp-2 font-medium [overflow-wrap:anywhere]"
+								title={state.info.clientName}
+							>
+								{state.info.clientName}
 							</p>
+							<p className="text-3xs text-muted-foreground">Name provided by the app</p>
+							<div className="flex min-w-0 gap-1 text-xs text-muted-foreground">
+								<span className="shrink-0">Returns to</span>
+								<MiddleTruncate text={redirectTarget(state.info.redirectUri)} tail={16} />
+							</div>
 							<p className="text-xs text-muted-foreground">
 								Expires at {new Date(state.info.expiresAt).toLocaleTimeString()}
 							</p>
@@ -219,4 +227,14 @@ function McpAuthorizePage() {
 			</div>
 		</AuthLayout>
 	)
+}
+
+/**
+ * Where approval sends the user. Custom schemes (`cursor://...`) have an empty
+ * host, so those show `scheme:path`; anything unparseable shows the raw URI.
+ */
+function redirectTarget(uri: string): string {
+	if (!URL.canParse(uri)) return uri
+	const url = new URL(uri)
+	return url.host === "" ? `${url.protocol}${url.pathname}` : url.host
 }

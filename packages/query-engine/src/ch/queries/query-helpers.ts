@@ -23,6 +23,33 @@ import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shar
 import type { AttributeIndexMode } from "../../capabilities"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
+/**
+ * A timeseries row's bucket. `wholeRange` keys every row at `startTime`, so the
+ * query returns one aggregate per group over exactly its range: an alert window
+ * slides by the minute and rarely starts on the epoch grid `toStartOfInterval` uses.
+ */
+export function timeseriesBucket<Q>(column: CH.Expr<DateTime.Utc, Q>, wholeRange: boolean | undefined) {
+	const epochAligned = CH.toStartOfInterval(column, param.int("bucketSeconds"))
+	const rangeStart = CH.toDateTime(utcSecondsParam("startTime"))
+	const chosen = wholeRange ? rangeStart : epochAligned
+	// One expression type whichever branch is taken, declaring both branches' params.
+	return CH.makeExpr(CH.toFragment(chosen), CH.schemaOf<DateTime.Utc>(chosen), undefined, [
+		epochAligned,
+		rangeStart,
+	])
+}
+
+/**
+ * The half-open end of a `wholeRange` query: an alert window is [startTime, endTime),
+ * while the shared source filters keep their inclusive `<= endTime` for dashboards.
+ */
+export function wholeRangeEnd<Q>(
+	column: CH.Expr<DateTime.Utc, Q>,
+	wholeRange: boolean | undefined,
+): CH.Condition | undefined {
+	return wholeRange ? column.lt(utcSecondsParam("endTime")) : undefined
+}
+
 // APDEX expressions
 
 /**

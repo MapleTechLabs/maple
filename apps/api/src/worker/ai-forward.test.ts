@@ -48,11 +48,11 @@ describe("forwardsToAi", () => {
  * that and is asserted to the binding's type rather than growing a `connect`
  * this path never reaches.
  */
-const echoFetcher = (seen: Array<Request>) =>
+const echoFetcher = (seen: Array<Request>, headers: Record<string, string> = {}) =>
 	({
 		fetch: (input: RequestInfo | URL) => {
 			if (input instanceof Request) seen.push(input)
-			return Promise.resolve(new Response("forwarded", { status: 207 }))
+			return Promise.resolve(new Response("forwarded", { status: 207, headers }))
 		},
 	}) as Fetcher
 
@@ -81,6 +81,30 @@ describe("forwardToAi", () => {
 			// and the service map gains the edge between them.
 			assert.strictEqual(forwarded.headers.get("traceparent"), `00-${span.traceId}-${span.spanId}-01`)
 			assert.strictEqual(yield* Effect.promise(() => forwarded.text()), '{"method":"tools/list"}')
+		}).pipe(Effect.withSpan("test-root")),
+	)
+
+	it.effect("moves maple-ai's isolate stamp onto this span and off the response", () =>
+		Effect.gen(function* () {
+			const fetcher = echoFetcher([], {
+				"x-maple-isolate-ordinal": "1",
+				"x-maple-isolate-age-ms": "0",
+				"content-type": "application/json",
+			})
+			const response = yield* forwardToAi(
+				fetcher,
+				HttpServerRequest.fromWeb(new Request("https://api.maple.dev/mcp")),
+			)
+			const span = yield* Effect.currentSpan
+
+			assert.deepStrictEqual(
+				{
+					ordinal: span.attributes.get("maple.ai.isolate.request_ordinal"),
+					ageMs: span.attributes.get("maple.ai.isolate.age_ms"),
+				},
+				{ ordinal: 1, ageMs: 0 },
+			)
+			assert.deepStrictEqual(response.headers, { "content-type": "application/json" })
 		}).pipe(Effect.withSpan("test-root")),
 	)
 

@@ -37,7 +37,7 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				destinationType: params.type ?? "all",
+				"maple.ai.destination_type": params.type ?? "all",
 				"result.rowCount": destinations.length,
 			})
 

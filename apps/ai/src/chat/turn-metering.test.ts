@@ -134,6 +134,37 @@ const meter = (
 const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
 
 describe("meterTurn", () => {
+	it("charges nothing for a turn on the org's own OpenRouter key", async () => {
+		await Effect.runPromise(
+			meterTurn(
+				turn(`${ORG}:inv-${INVESTIGATION}`, "msg-1"),
+				tenant,
+				{ kind: "app" },
+				{
+					input: 1200,
+					output: 340,
+					charges: [
+						{
+							modelId: "openrouter/z-ai/glm-5.3-flash",
+							inputTokens: 1200,
+							outputTokens: 340,
+							cacheReadTokens: 0,
+							cacheWriteTokens: 0,
+							reasoningTokens: 0,
+						},
+					],
+				},
+				{ ownKey: true },
+			).pipe(
+				Effect.provide(config),
+				Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
+			),
+		)
+
+		assert.deepEqual(tracked, [])
+		assert.deepEqual(charged, [])
+	})
+
 	it("charges input and output under a key that carries the turn", async () => {
 		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1200, 340)
 

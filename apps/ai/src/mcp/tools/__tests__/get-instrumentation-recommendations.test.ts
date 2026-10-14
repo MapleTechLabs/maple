@@ -3,18 +3,7 @@
 // here we only guard the tool's severity mapping and coverage-gap derivation.
 
 import { describe, expect, it } from "vitest"
-import { deriveCoverageGaps, kindToSeverity } from "../get-instrumentation-recommendations"
-
-describe("kindToSeverity", () => {
-	it("maps rename and double-emission to warn", () => {
-		expect(kindToSeverity("rename")).toBe("warn")
-		expect(kindToSeverity("double-emission")).toBe("warn")
-	})
-
-	it("maps naming advisories to info", () => {
-		expect(kindToSeverity("naming")).toBe("info")
-	})
-})
+import { deriveCoverageGaps } from "../get-instrumentation-recommendations"
 
 describe("deriveCoverageGaps", () => {
 	const keys = (...names: string[]) => names.map((key) => ({ key }))

@@ -6,12 +6,7 @@
  * `ChatSessions` seam; each records what it was asked to do.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import {
-	GitCommitSha,
-	type PullRequestCommentJob,
-	type PullRequestHead,
-	PrReviewReplyId,
-} from "@maple/domain/http"
+import { GitCommitSha, type PullRequestCommentJob, type PullRequestHead } from "@maple/domain/http"
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -397,9 +392,5 @@ describe("PrReviewConversationService", () => {
 			),
 		)
 		return noWrite.pipe(Effect.andThen(fork), Effect.andThen(movedBranch))
-	})
-
-	it("decodes reply ids as UUIDs", () => {
-		assert.isTrue(Schema.is(PrReviewReplyId)("00000000-0000-4000-8000-000000000000"))
 	})
 })

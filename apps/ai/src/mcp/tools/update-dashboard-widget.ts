@@ -35,7 +35,7 @@ const widgetNotFound = (widgetId: string) =>
 	})
 
 /** The widget to save: `widget_json` as given, or the saved widget with the patch merged in. */
-const resolveReplacement = Effect.fn("McpTool.updateDashboardWidget.resolve")(function* (
+const resolveReplacement = Effect.fn("McpUpdateDashboardWidget.resolve")(function* (
 	dashboardId: string,
 	widgetId: string,
 	widgetJson: DashboardWidget | undefined,

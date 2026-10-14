@@ -59,10 +59,10 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 				: ("services_facets" as const)
 
 	yield* Effect.annotateCurrentSpan({
-		source: input.source,
-		scope: input.scope ?? "span",
-		service: input.service ?? "all",
-		pipe: pipeName,
+		"query.source": input.source,
+		"maple.query.attribute_scope": input.scope ?? "span",
+		"maple.query.service": input.service ?? "all",
+		"query.pipe": pipeName,
 	})
 
 	if (pipeName === "services_facets") {
@@ -123,11 +123,11 @@ export const exploreAttributeValues = Effect.fn("Observability.exploreAttributeV
 				: ("span_attribute_values" as const)
 
 	yield* Effect.annotateCurrentSpan({
-		source: input.source,
-		scope: input.scope ?? "span",
-		key: input.key,
-		service: input.service ?? "all",
-		pipe: pipeName,
+		"query.source": input.source,
+		"maple.query.attribute_scope": input.scope ?? "span",
+		"maple.query.attribute_key": input.key,
+		"maple.query.service": input.service ?? "all",
+		"query.pipe": pipeName,
 	})
 
 	const metricScope = yield* metricScopeParams(input)

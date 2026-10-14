@@ -65,13 +65,6 @@ describe("Reducer / Story", () => {
 		assert.throws(() => story.resolve("Reset", ResetCompleted), /no pending command named "Reset"/)
 	})
 
-	it("Command.define builds a named command per payload", () => {
-		const load = Command.define("Load", (_id: number) => Effect.succeed<CounterMsg>(ResetCompleted))
-		const command = load(7)
-		assert.strictEqual(command.name, "Load")
-		assert.isTrue(Command.isCommand(command))
-	})
-
 	it.effect("dispatch runs update, writes the state store, and cascades commands", () =>
 		Effect.gen(function* () {
 			const reducer = yield* Reducer.make({ initial, update, name: "counter" })

@@ -58,7 +58,7 @@ import { AGENTS } from "@/chat/agents"
 import type { ChatTurnEvent } from "@/chat/events"
 import { withToolTranscript } from "@/chat/close-out"
 import { PR_REVIEW_TOOLS } from "@/chat/permissions"
-import { normalizeArguments, argumentNotices } from "@/mcp/lib/decode-issues"
+import { normalizeArguments, argumentWarnings } from "@/mcp/lib/decode-issues"
 import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
 import { makeReviewCoverage } from "@/chat/review-coverage"
 import { makeReviewLedger } from "@/chat/review-ledger"
@@ -175,7 +175,7 @@ export const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
  * match and 1 on none; anything else (a missing commit) leaves the name unverified, as a failed
  * search does in the service.
  */
-const nameAtBase = (dir: string, baseSha: string, name: string): NameVerdict => {
+export const nameAtBase = (dir: string, baseSha: string, name: string): NameVerdict => {
 	const result = run(
 		["git", "grep", "-I", "-q", "-E", "-e", `(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`, baseSha, "--"],
 		dir,
@@ -766,9 +766,9 @@ export const makeExecutor = (input: {
 				return {
 					...result,
 					content: [
-						...argumentNotices(normalized, name).map((notice) => ({
+						...argumentWarnings(normalized, name).map((warning) => ({
 							type: "text" as const,
-							text: notice,
+							text: warning,
 						})),
 						...result.content,
 					],

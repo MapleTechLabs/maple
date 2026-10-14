@@ -26,7 +26,7 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				issueId: params.issue_id ?? "all",
+				"maple.issue.id": params.issue_id ?? "all",
 			})
 			const readModels = yield* ErrorIssueReadModelsService
 

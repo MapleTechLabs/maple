@@ -3,10 +3,11 @@ import * as THREE from "three"
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import type { Vec3 } from "./types"
-import { MachineBox } from "./factory-primitives"
+import { fade, type InkPalette } from "./appearance"
+import { InkBox } from "./factory-primitives"
 import type { MachineBadge } from "./factory-badge"
 
-/** Shared SVG artwork, including its knockouts, pressed into enamel. */
+/** Shared SVG artwork, including its knockouts, printed in ink on the sign. */
 function BadgeMark({ path, size, color }: { path: string; size: number; color: string }) {
 	const geometry = useMemo(() => {
 		const svg = new SVGLoader().parse(
@@ -28,8 +29,8 @@ function BadgeMark({ path, size, color }: { path: string; size: number; color: s
 	}, [path, size])
 	useMountEffect(() => () => geometry.dispose())
 	return (
-		<mesh geometry={geometry} position={[0, 0, 0.058]}>
-			<meshStandardMaterial color={color} roughness={0.9} side={THREE.DoubleSide} />
+		<mesh geometry={geometry} position={[0, 0, 0.032]}>
+			<meshBasicMaterial color={color} side={THREE.DoubleSide} />
 		</mesh>
 	)
 }
@@ -49,11 +50,11 @@ function BadgeWordmark({ text, color }: { text: string; color: string }) {
 	}, [text])
 	if (!canvas) return null
 	return (
-		<mesh position={[0, 0, 0.058]}>
+		<mesh position={[0, 0, 0.032]}>
 			<planeGeometry args={[0.7, 0.7]} />
-			<meshStandardMaterial color={color} transparent roughness={0.9}>
+			<meshBasicMaterial color={color} transparent>
 				<canvasTexture attach="map" args={[canvas]} colorSpace={THREE.SRGBColorSpace} />
-			</meshStandardMaterial>
+			</meshBasicMaterial>
 		</mesh>
 	)
 }
@@ -64,22 +65,20 @@ export function FactoryBadge({
 	scale = 1,
 	muted,
 	badge,
+	palette,
 }: {
 	position: Vec3
 	rotation: Vec3
 	scale?: number
 	muted: boolean
 	badge: MachineBadge
+	palette: InkPalette
 }) {
-	const color = muted ? "#777560" : "#293b39"
+	const color = muted ? fade(palette.ink, palette.paper, 0.72) : palette.ink
+	const face = muted ? fade(palette.face, palette.paper, 0.72) : palette.face
 	return (
 		<group position={[...position]} rotation={[...rotation]} scale={scale}>
-			<MachineBox size={[0.86, 0.86, 0.07]} color={muted ? "#81816b" : "#667569"} />
-			<MachineBox
-				size={[0.78, 0.78, 0.025]}
-				position={[0, 0, 0.04]}
-				color={muted ? "#aaa78b" : "#f2e9d3"}
-			/>
+			<InkBox size={[0.86, 0.86, 0.06]} color={face} ink={color} />
 			{badge.wordmark ? (
 				<BadgeWordmark key={badge.wordmark} text={badge.wordmark} color={color} />
 			) : badge.path ? (

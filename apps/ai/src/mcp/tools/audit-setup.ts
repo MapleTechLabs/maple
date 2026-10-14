@@ -78,9 +78,9 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				"audit.dataStatus": report.dataStatus,
-				"audit.critical": report.summary.critical,
-				"audit.warn": report.summary.warn,
+				"maple.audit.data_status": report.dataStatus,
+				"maple.audit.critical": report.summary.critical,
+				"maple.audit.warn": report.summary.warn,
 				"result.rowCount": report.checks.length,
 			})
 

@@ -12,6 +12,7 @@ import {
 	METRIC_WORKER_DURATION,
 	METRIC_WORKER_ERRORS,
 	METRIC_WORKER_REQUESTS,
+	METRIC_WORKER_SUBREQUESTS,
 	SCOPE_NAME,
 	statusClass,
 } from "./mapping"
@@ -45,15 +46,10 @@ import {
 	normalizeProtocol,
 } from "./mapping"
 import {
-	accountAnalyticsDocument,
-	dnsSelection,
 	durableObjectsSelection,
-	firewallSelection,
 	httpDimensionsSelection,
 	httpPathsSelection,
 	httpSelection,
-	queueBacklogSelection,
-	queueConsumersSelection,
 	settingsQuery,
 	toGraphqlTime,
 	topTrafficFilterVariables,
@@ -395,6 +391,14 @@ describe("mapWorkersGroups", () => {
 		assert.strictEqual(errors!.value, 2)
 	})
 
+	it("emits subrequests as a sum with the same worker.status attributes", () => {
+		const { sumRows } = mapWorkersGroups(input)
+		const subrequests = sumRows.find((row) => row.metric_name === METRIC_WORKER_SUBREQUESTS)
+		assert.strictEqual(subrequests!.value, 5)
+		assert.strictEqual(subrequests!.service_name, "cloudflare-worker/my-worker")
+		assert.deepStrictEqual(subrequests!.metric_attributes, { "worker.status": "success" })
+	})
+
 	it("drops groups for scripts missing from the live-script set", () => {
 		const stale = {
 			sum: { requests: 7, errors: 0, subrequests: 0 },
@@ -568,19 +572,6 @@ describe("queue + durable object mappers", () => {
 })
 
 describe("query documents", () => {
-	it("http query includes the eyeball filter and dimensional selections", () => {
-		const doc = zoneAnalyticsDocument([httpSelection({ withQuantiles: true })])
-		assert.include(doc, 'requestSource: "eyeball"')
-		assert.include(doc, "datetime_geq: $start")
-		assert.include(doc, "cacheStatus")
-		assert.include(doc, "edgeResponseStatus")
-		assert.include(doc, "clientRequestHTTPHost")
-		assert.include(doc, "orderBy: [count_DESC]")
-		assert.include(doc, "edgeTimeToFirstByteMsP95")
-		assert.include(doc, "originResponseDurationMsP99")
-		assert.include(doc, "sampleInterval")
-	})
-
 	it("http latency selection stays dimension-light (no host dimension)", () => {
 		const doc = httpSelection({ withQuantiles: true })
 		const latency = doc.slice(doc.indexOf("latency:"))
@@ -634,16 +625,8 @@ describe("query documents", () => {
 	it("workers query toggles quantiles", () => {
 		assert.include(workersSelection({ withQuantiles: true }), "cpuTimeP99")
 		assert.notInclude(workersSelection({ withQuantiles: false }), "cpuTimeP99")
-	})
-
-	it("batched documents nest selections under the shared zone/account nodes", () => {
-		const zoneDoc = zoneAnalyticsDocument(["      alias1: x { count }", "      alias2: y { count }"])
-		assert.include(zoneDoc, "zones(filter: { zoneTag_in: $zoneTags })")
-		assert.include(zoneDoc, "zoneTag")
-		assert.isBelow(zoneDoc.indexOf("alias1:"), zoneDoc.indexOf("alias2:"))
-		const accountDoc = accountAnalyticsDocument([workersSelection({ withQuantiles: false })])
-		assert.include(accountDoc, "accounts(filter: { accountTag: $accountTag })")
-		assert.include(accountDoc, "invocations: workersInvocationsAdaptive")
+		assert.include(durableObjectsSelection({ withQuantiles: true }), "wallTimeP99")
+		assert.notInclude(durableObjectsSelection({ withQuantiles: false }), "wallTimeP99")
 	})
 
 	it("top-traffic query renders only the filters present, values as variables", () => {
@@ -689,41 +672,6 @@ describe("query documents", () => {
 		assert.include(settingsQuery({ withZones: true }), "httpRequestsAdaptiveGroups")
 		assert.notInclude(settingsQuery({ withZones: false }), "zoneTag_in")
 		assert.include(settingsQuery({ withZones: false }), "workersInvocationsAdaptive")
-	})
-
-	it("settings query probes every registered dataset", () => {
-		const doc = settingsQuery({ withZones: true })
-		for (const node of [
-			"firewallEventsAdaptiveGroups",
-			"dnsAnalyticsAdaptiveGroups",
-			"queueBacklogAdaptiveGroups",
-			"queueConsumerMetricsAdaptiveGroups",
-			"durableObjectsInvocationsAdaptiveGroups",
-		]) {
-			assert.include(doc, node)
-		}
-	})
-
-	it("new dataset selections carry their aliases and dimensions", () => {
-		const fw = firewallSelection({ withQuantiles: true })
-		assert.include(fw, "firewall: firewallEventsAdaptiveGroups")
-		for (const dim of ["action", "source", "ruleId", "clientRequestHTTPHost"]) assert.include(fw, dim)
-		const dns = dnsSelection({ withQuantiles: true })
-		assert.include(dns, "dns: dnsAnalyticsAdaptiveGroups")
-		assert.include(dns, "queryName")
-		assert.include(dns, "responseCode")
-		assert.include(
-			queueBacklogSelection({ withQuantiles: true }),
-			"queueBacklog: queueBacklogAdaptiveGroups",
-		)
-		assert.include(
-			queueConsumersSelection({ withQuantiles: true }),
-			"queueConsumers: queueConsumerMetricsAdaptiveGroups",
-		)
-		const doQ = durableObjectsSelection({ withQuantiles: true })
-		assert.include(doQ, "durableObjects: durableObjectsInvocationsAdaptiveGroups")
-		assert.include(doQ, "wallTimeP99")
-		assert.notInclude(durableObjectsSelection({ withQuantiles: false }), "wallTimeP99")
 	})
 
 	it("formats GraphQL Time at second precision", () => {

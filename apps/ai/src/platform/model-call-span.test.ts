@@ -14,13 +14,14 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
-import { Cause, Effect, Exit, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import type { Tracer } from "effect"
 import { AiError, LanguageModel, Tool, Toolkit } from "effect/ai"
 import type { Response as AiResponse } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 import { instrumentLanguageModel } from "./genai-spans"
-import { layerLlm, resolveTriageModel } from "./Llm"
+import { layerLlm, MODEL_CALL_OUTPUT_TOKENS, resolveTriageModel } from "./Llm"
 
 /** Two frames, the first naming the response and the model that served it. */
 const SSE = [
@@ -646,6 +647,62 @@ describe("delta joining", () => {
 			assert.lengthOf(joined, 1)
 			assert.strictEqual(joined[0]!.type === "text-delta" ? joined[0]!.delta : "", "Looks safe.")
 			assert.lengthOf(yield* partsSeen(false), 3)
+		}),
+	)
+})
+
+describe("runaway model calls", () => {
+	/** A delta every 30s: never idle for the 2-minute idle timeout, and never finished. */
+	const trickle = Stream.fromIterable<AiResponse.StreamPartEncoded>([{ type: "text-start", id: "t" }]).pipe(
+		Stream.concat(
+			Stream.fromEffect(Effect.sleep("30 seconds")).pipe(
+				Stream.as<AiResponse.StreamPartEncoded>({ type: "text-delta", id: "t", delta: "." }),
+				Stream.forever,
+			),
+		),
+	)
+	const model = Layer.effect(
+		LanguageModel.LanguageModel,
+		instrumentLanguageModel(
+			LanguageModel.make({ generateText: () => Effect.succeed([]), streamText: () => trickle }),
+			{ providerName: "fake", sessionAttributes: {} },
+		),
+	)
+
+	it.effect("fails a call that keeps streaming past the per-call timeout", () =>
+		Effect.gen(function* () {
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.provide(model),
+				Effect.forkChild,
+			)
+			yield* TestClock.adjust("3 minutes")
+			assert.isUndefined(fiber.pollUnsafe(), "a call still inside its budget keeps streaming")
+			yield* TestClock.adjust("1 minute")
+			const exit = yield* Fiber.await(fiber)
+			assert.isTrue(Exit.isFailure(exit))
+			const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+			assert.isTrue(AiError.isAiError(error))
+			assert.include(
+				String(AiError.isAiError(error) ? error.message : ""),
+				"did not finish within 4 minutes",
+			)
+		}),
+	)
+
+	it.live("caps each call's output tokens far below the model's own limit", () =>
+		Effect.gen(function* () {
+			const bodies: Array<unknown> = []
+			const capture: typeof globalThis.fetch = (_input, init) => {
+				bodies.push(JSON.parse(String(init?.body)))
+				return sseFetch(_input, init)
+			}
+			yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.provide(Layer.provideMerge(resolveTriageModel(ENV).layer, layerLlm(ENV))),
+				Effect.provideService(FetchHttpClient.Fetch, capture),
+			)
+			assert.deepInclude(bodies[0], { max_tokens: MODEL_CALL_OUTPUT_TOKENS })
 		}),
 	)
 })

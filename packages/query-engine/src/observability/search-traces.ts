@@ -40,11 +40,11 @@ export const searchTraces = Effect.fn("Observability.searchTraces")(function* (i
 	const offset = safeUInt(input.offset, 0, MAX_OFFSET)
 
 	yield* Effect.annotateCurrentSpan(
-		"searchMode",
+		"maple.query.search_mode",
 		input.spanName && !input.rootOnly ? "span_level" : "root_level",
 	)
-	if (input.service) yield* Effect.annotateCurrentSpan("service", input.service)
-	if (input.spanName) yield* Effect.annotateCurrentSpan("spanName", input.spanName)
+	if (input.service) yield* Effect.annotateCurrentSpan("maple.query.service", input.service)
+	if (input.spanName) yield* Effect.annotateCurrentSpan("maple.query.span_name", input.spanName)
 
 	// Root-level search is backed by the `list_traces` pipe, which only takes a
 	// single attribute filter. Reject N>1 filters so callers know to switch to

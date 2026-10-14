@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { applyAttributeFilterAction, attributeFilterParam } from "./attribute-filter-actions"
-
-describe("attributeFilterParam", () => {
-	it("routes each scope to its own search param", () => {
-		expect(attributeFilterParam("span")).toBe("attributeFilters")
-		expect(attributeFilterParam("resource")).toBe("resourceAttributeFilters")
-	})
-})
+import { applyAttributeFilterAction } from "./attribute-filter-actions"
 
 describe("applyAttributeFilterAction", () => {
 	it("adds a negated entry for exclude", () => {

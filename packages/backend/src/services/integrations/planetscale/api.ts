@@ -9,7 +9,7 @@
  */
 import * as PlanetScale from "@distilled.cloud/planetscale"
 import { IntegrationsUpstreamError } from "@maple/domain/http"
-import { Duration, Effect, Layer, Schedule, Schema, Stream } from "effect"
+import { Duration, Effect, Layer, Redacted, Schedule, Schema, Stream } from "effect"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 
 /** Per HTTP request, body included, so a paginated listing gets the budget once per page. */
@@ -21,7 +21,7 @@ export const PLANETSCALE_TIMEOUT_STATUS = 504
 
 /** PlanetScale answered 401 for this access token. Never leaves the PlanetScale services. */
 export class PlanetScaleTokenRejectedError extends Schema.TaggedError<PlanetScaleTokenRejectedError>()(
-	"@maple/api/integrations/PlanetScaleTokenRejectedError",
+	"@maple/backend/integrations/PlanetScaleTokenRejectedError",
 	{ message: Schema.String },
 ) {}
 
@@ -71,7 +71,7 @@ const withRequestTimeout = (httpClient: HttpClient.HttpClient, timeoutRetries: n
  * an org it was not granted). Callers decide whether that means reconnect or a soft empty state.
  */
 export class PlanetScaleForbiddenError extends Schema.TaggedError<PlanetScaleForbiddenError>()(
-	"@maple/api/integrations/PlanetScaleForbiddenError",
+	"@maple/backend/integrations/PlanetScaleForbiddenError",
 	{ message: Schema.String },
 ) {}
 
@@ -146,7 +146,7 @@ export const runPlanetScale = <A, E extends SdkError>(
 		Effect.provide(
 			Layer.mergeAll(
 				PlanetScale.fromOAuth({
-					accessToken: target.accessToken,
+					accessToken: Redacted.make(target.accessToken),
 					// Operations take the organization in their input; this field is unused.
 					organization: "",
 					apiBaseUrl: `${target.apiBaseUrl.replace(/\/$/, "")}/v1`,
