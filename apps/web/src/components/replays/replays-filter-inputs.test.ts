@@ -40,13 +40,12 @@ describe("replaysFilterInputs", () => {
 		expect(listKey({})).toBe(listKey({ timePreset: "24h" }))
 	})
 
-	it("keys identically for an absolute window", () => {
+	it("passes an absolute window through unchanged", () => {
 		const search: ReplaysSearchState = {
 			startTime: "2026-08-01 00:00:00",
 			endTime: "2026-08-02 00:00:00",
 		}
 
-		expect(listKey(search)).toBe(listKey(search))
 		expect(replaysFilterInputs(search)).toMatchObject({
 			startTime: "2026-08-01 00:00:00",
 			endTime: "2026-08-02 00:00:00",

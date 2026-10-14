@@ -1,7 +1,7 @@
 ---
 title: "Trace Spring AI agents with OpenTelemetry"
 description: "Send Spring AI ChatClient, model and tool spans to Maple, with one session per chat memory conversation."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 31
 navLabel: "Spring AI"
 icon: "spring"

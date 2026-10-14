@@ -70,8 +70,8 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				identity: params.identity ?? "all",
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.identity": params.identity ?? "all",
 			})
 
 			const input = {

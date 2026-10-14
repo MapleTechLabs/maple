@@ -4,7 +4,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PlanetscaleConnections } from "@maple/db/tables"
 import { ConfigProvider, Context, Effect, Layer } from "effect"
-import { HttpRouter } from "effect/http"
+import { FetchHttpClient, HttpRouter } from "effect/http"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -15,6 +15,7 @@ import {
 	PlanetScaleWebhookQueueError,
 	type PlanetScaleWebhookJob,
 } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleWebhookRouter } from "./planetscale.http"
 
 const trackedDbs: TestDb[] = []
@@ -47,6 +48,8 @@ const makeRouterLayer = (
 		Effect.void,
 ) =>
 	PlanetScaleWebhookRouter.pipe(
+		Layer.provide(PlanetScaleConnectionService.layer),
+		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(testDb.layer),
 		Layer.provide(Layer.succeed(PlanetScaleWebhookQueue, { send: (prepared) => send(prepared.body) })),
 		Layer.provide(Env.layer),

@@ -323,6 +323,7 @@
 				},
 				"revision": {
 					"type": "integer",
+					"maximum": 9007199254740991,
 					"exclusiveMinimum": 0
 				},
 				"enabled": {
@@ -354,6 +355,7 @@
 						},
 						"version": {
 							"type": "integer",
+							"maximum": 9007199254740991,
 							"exclusiveMinimum": 0
 						},
 						"config": {}

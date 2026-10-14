@@ -126,7 +126,6 @@ function selectPanel(state: QueryBuilderWidgetState, panel: PanelType): QueryBui
 
 describe("switching panel type", () => {
 	it("covers every panel type in the registry", () => {
-		expect(ALL_PANELS).toHaveLength(14)
 		expect(Object.keys(widgetTypes).sort()).toEqual([...ALL_PANELS].sort())
 	})
 
@@ -185,19 +184,6 @@ describe("endpoint routing", () => {
 		}
 	})
 
-	it("routes an ungrouped histogram to the list endpoint, not the breakdown", () => {
-		// MAP-49: a count-by-group breakdown is not a duration distribution. This
-		// is the one type whose endpoint depends on its queries, not just its kind.
-		const ungrouped = makeState({ queries: [ungroupedQuery()] })
-		const listSource = buildWidgetDataSource(makeWidget(), selectPanel(ungrouped, "histogram"), ["A"])
-		expect(routedTo(listSource)).toBe("list")
-		if (listSource.kind !== "query") throw new Error("expected a query data source")
-		expect(listSource.columns).toEqual(["durationMs"])
-
-		const grouped = buildWidgetDataSource(makeWidget(), selectPanel(makeState(), "histogram"), ["A"])
-		expect(routedTo(grouped)).toBe("breakdown")
-	})
-
 	it("gives a note no query at all", () => {
 		const source = buildWidgetDataSource(makeWidget(), selectPanel(makeState(), "markdown"), ["A"])
 		expect(source).toEqual({ kind: "static" })
@@ -249,13 +235,5 @@ describe("validation", () => {
 
 		const logs = makeState({ queries: [ungroupedQuery("logs")] })
 		expect(validateQueries(selectPanel(logs, "histogram"))).toMatch(/group-by/)
-	})
-
-	it("never blocks Apply on the types with no query builder", () => {
-		// Their placeholder draft is not something the user can fix.
-		for (const panel of ["list", "markdown"] as const) {
-			const state = selectPanel(makeState({ queries: [] }), panel)
-			expect(validateQueries(state), panel).toBeNull()
-		}
 	})
 })

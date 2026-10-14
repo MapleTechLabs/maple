@@ -21,10 +21,9 @@ class BucketLookup implements Equal.Equal {
 	}
 }
 
-const CurrentBucketCache = Context.Reference<Cache.Cache<BucketLookup, Buckets, BucketError> | undefined>(
-	"@maple/query-engine/AlertEvaluationBucketCache",
-	{ defaultValue: () => undefined },
-)
+class CurrentBucketCache extends Context.Reference<
+	Cache.Cache<BucketLookup, Buckets, BucketError> | undefined
+>("@maple/query-engine/AlertEvaluationBucketCache", { defaultValue: () => undefined }) {}
 
 /**
  * Share alert bucket reads only inside this invocation. Call at the scheduler

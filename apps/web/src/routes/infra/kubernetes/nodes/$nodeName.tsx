@@ -11,7 +11,7 @@ import {
 	ResourceAttributesCardSkeleton,
 } from "@/components/infra/primitives/resource-attributes-card"
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
-import { EMPTY_VALUE, formatUptime } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatPercent, formatUptime } from "@maple/ui/lib/format"
 
 import type { NodeInfraMetric } from "@/api/warehouse/infra"
 import { ServerIcon } from "@/components/icons"
@@ -19,7 +19,12 @@ import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { NodeDetailChart } from "@/components/infra/k8s-detail-chart"
 import { PodTable } from "@/components/infra/pod-table"
 import { bucketSecondsForRange } from "@/components/infra/constants"
-import { formatCores } from "@/components/infra/format"
+import {
+	capacityFraction,
+	formatBytesOfAllocatable,
+	formatCoresOfAllocatable,
+	severityLevel,
+} from "@/components/infra/format"
 import { PageHero, HeroChip } from "@/components/common/page-hero"
 import { SegmentPivot } from "@/components/infra/primitives/segment-pivot"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
@@ -44,6 +49,9 @@ export const Route = createFileRoute("/infra/kubernetes/nodes/$nodeName")({
 
 const METRIC_OPTIONS = [
 	{ value: "cpu_usage", label: "CPU cores" },
+	{ value: "cpu_utilization", label: "CPU / allocatable" },
+	{ value: "memory_usage", label: "Memory" },
+	{ value: "memory_utilization", label: "Memory / allocatable" },
 	{ value: "uptime", label: "Uptime" },
 ] as const satisfies ReadonlyArray<{ value: NodeInfraMetric; label: string }>
 
@@ -101,7 +109,7 @@ function NodeDetailPage() {
 			<div className="space-y-6">
 				<PageHero
 					title={<span className="font-mono">{nodeName}</span>}
-					description="Node metrics from the kubelet stats receiver."
+					description="Usage from the kubelet stats receiver, allocatable capacity from the cluster receiver."
 					meta={
 						summary ? (
 							<>
@@ -117,11 +125,16 @@ function NodeDetailPage() {
 				/>
 
 				{summary ? (
-					<StatRail columns={3}>
-						<StatRailItem
-							eyebrow="CPU cores"
-							value={formatCores(summary.cpuUsage)}
-							compact
+					<StatRail columns={4}>
+						<CapacityStat
+							eyebrow="CPU / allocatable"
+							fraction={capacityFraction(summary.cpuUtilization, summary.cpuAllocatable)}
+							subline={formatCoresOfAllocatable(summary.cpuUsage, summary.cpuAllocatable)}
+						/>
+						<CapacityStat
+							eyebrow="Memory / allocatable"
+							fraction={capacityFraction(summary.memoryUtilization, summary.memoryAllocatable)}
+							subline={formatBytesOfAllocatable(summary.memoryUsage, summary.memoryAllocatable)}
 						/>
 						<StatRailItem eyebrow="Uptime" value={formatUptime(summary.uptime)} compact />
 						<StatRailItem
@@ -174,5 +187,25 @@ function NodeDetailPage() {
 				</div>
 			</div>
 		</KubernetesShell>
+	)
+}
+
+function CapacityStat({
+	eyebrow,
+	fraction,
+	subline,
+}: {
+	eyebrow: string
+	fraction: number
+	subline: string
+}) {
+	return (
+		<StatRailItem
+			eyebrow={eyebrow}
+			value={formatPercent(fraction)}
+			tone={severityLevel(fraction)}
+			subline={subline}
+			compact
+		/>
 	)
 }

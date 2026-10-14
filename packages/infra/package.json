@@ -25,8 +25,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@distilled.cloud/aws": "1.0.0-rc.13",
-		"@distilled.cloud/cloudflare": "1.0.0-rc.13",
+		"@distilled.cloud/aws": "1.0.0-rc.15",
+		"@distilled.cloud/cloudflare": "1.0.0-rc.15",
 		"@maple-dev/alchemy": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/alchemy-portless": "workspace:*",

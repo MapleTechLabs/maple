@@ -92,8 +92,8 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				ruleId: params.rule_id,
-				status: params.status ?? "all",
+				"maple.alert.rule_id": params.rule_id,
+				"maple.ai.status": params.status ?? "all",
 				"result.rowCount": checks.length,
 			})
 

@@ -150,7 +150,7 @@ export const selfObservabilityEnv = (
 				),
 		optionalPlain("MAPLE_ENDPOINT"),
 		derived("MAPLE_ENVIRONMENT", resolveDeploymentEnvironment(stage)),
-		// Read for Durable Object jurisdiction (`chatSessionsLayer`).
+		// Read for Durable Object jurisdiction (`layerChatSessions`).
 		derived("MAPLE_REGION", region),
 		// Tells the instances apart in the shared internal org.
 		derived("OTEL_RESOURCE_ATTRIBUTES", `maple.region=${region}`),
@@ -199,7 +199,7 @@ export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 )
 
 /**
- * The GitHub App as a repository reader, for api and maple-ai. The install flow's client
+ * The GitHub App as a repository reader, for api, maple-ai and alerting. The install flow's client
  * id/secret and the webhook secret stay api-only.
  */
 export const githubAppSourceEnv: Config.Config<WorkerEnv> = merge(

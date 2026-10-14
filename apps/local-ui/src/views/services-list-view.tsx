@@ -1,6 +1,7 @@
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -26,7 +27,7 @@ import {
 	ToolbarStat,
 	ToolbarStats,
 } from "../components/toolbar"
-import { ErrorState, ListSkeleton } from "../components/view-states"
+import { ErrorState } from "../components/view-states"
 
 export function ServicesListView() {
 	const [query, setParams] = useQueryParams()
@@ -86,7 +87,19 @@ export function ServicesListView() {
 	return (
 		<PageShell sidebar={sidebar} toolbar={toolbar} activeFilterCount={activeFilterCount}>
 			{catalog.query.isPending ? (
-				<ListSkeleton rows={8} />
+				<div className="p-4">
+					<TableSkeleton
+						rows={8}
+						columns={[
+							{ header: "Service", skeleton: "w-40" },
+							...["Spans", "Errors", "Error rate", "p50", "p95", "Logs"].map((header) => ({
+								header,
+								headClassName: "text-right",
+								skeleton: "ml-auto w-12",
+							})),
+						]}
+					/>
+				</div>
 			) : catalog.query.isError ? (
 				<ErrorState
 					label="services"

@@ -176,6 +176,7 @@
         "properties": {
           "attempt_number": {
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "attempted_at": {
@@ -549,6 +550,7 @@
               2
             ],
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "consecutive_healthy_required": {
@@ -557,6 +559,7 @@
               3
             ],
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "created_at": {
@@ -628,6 +631,7 @@
             "examples": [
               50
             ],
+            "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
           },
@@ -676,6 +680,7 @@
               60
             ],
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "service_names": {
@@ -2490,6 +2495,7 @@
         "properties": {
           "bucket_seconds": {
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "end_time": {
@@ -2825,6 +2831,7 @@
           },
           "bucket_seconds": {
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "end_time": {
@@ -2902,6 +2909,7 @@
           },
           "bucket_seconds": {
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "end_time": {

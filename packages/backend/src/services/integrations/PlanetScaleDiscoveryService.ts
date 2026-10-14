@@ -1,6 +1,5 @@
 import {
 	IntegrationsRevokedError,
-	OrgId,
 	ScrapeTargetAuthError,
 	ScrapeTargetEncryptionError,
 	ScrapeTargetPersistenceError,
@@ -263,8 +262,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			if (row.authType !== "planetscale_oauth") {
 				return yield* buildScrapeAuthHeaders(row, encryptionKey)
 			}
-			const orgId = yield* Schema.decodeEffect(OrgId)(row.orgId).pipe(Effect.orDie)
-			const { accessToken } = yield* psOAuth.getValidAccessToken(orgId)
+			const { accessToken } = yield* psOAuth.getValidAccessToken(row.orgId)
 			return { Authorization: planetScaleBearerHeader(accessToken) }
 		})
 

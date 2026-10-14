@@ -1,7 +1,7 @@
 ---
 title: "Trace Haystack agents with OpenTelemetry"
 description: "Send Haystack 3 Agent and pipeline runs to Maple as one Agent Session per conversation, with transcript, model, tokens, cost and failed tool calls."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 28
 navLabel: "Haystack"
 icon: "haystack"

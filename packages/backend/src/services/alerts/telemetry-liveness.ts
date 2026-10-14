@@ -179,7 +179,7 @@ const probeOrgWindow = (
  * to mean anything. Never fails — an unprovable probe is a veto, not an error.
  */
 export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<LivenessVerdict, never> = Effect.fn(
-	"telemetry.liveness",
+	"TelemetryLiveness.probeLiveness",
 )(function* (input) {
 	const { warehouse, tenant, serviceNames } = input
 	const { windowStartMs, windowEndMs, baselineStartMs, baselineEndMs } = input

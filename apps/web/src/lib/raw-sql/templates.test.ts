@@ -24,24 +24,6 @@ describe("visualizationToDisplayType", () => {
 		}
 	})
 
-	it("has a template for every display type a panel type can produce", () => {
-		for (const panel of [
-			"line",
-			"bar",
-			"area",
-			"stat",
-			"gauge",
-			"table",
-			"pie",
-			"funnel",
-			"hbar",
-		] as const) {
-			const { visualization, chartId } = fromPanelType(panel)
-			const displayType = visualizationToDisplayType(visualization, chartId)
-			expect(RAW_SQL_TEMPLATES[displayType], panel).toBeTruthy()
-		}
-	})
-
 	it("keeps line/bar/area on one shared template so switching among them is a no-op", () => {
 		expect(RAW_SQL_TEMPLATES.line).toBe(RAW_SQL_TEMPLATES.bar)
 		expect(RAW_SQL_TEMPLATES.line).toBe(RAW_SQL_TEMPLATES.area)

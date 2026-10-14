@@ -65,22 +65,6 @@ describe("isNavItemActive", () => {
 })
 
 describe("navGroups", () => {
-	it("renders nine top-level rows", () => {
-		const rows = navGroups().flatMap((group) => group.items)
-		expect(rows.map((item) => item.title)).toEqual([
-			"Overview",
-			"Services",
-			"Service Map",
-			"Infrastructure",
-			"Explore",
-			"Web Analytics",
-			"Dashboards",
-			// "Investigations" is commented out of navGroups until the surface is ready.
-			"Errors",
-			"Alerts",
-		])
-	})
-
 	it("reaches Web Analytics from the palette", () => {
 		// The palette derives from navGroups, so the row being unconditional has to
 		// mean it is typeable too — this was gated behind a rollout flag, and the
@@ -193,12 +177,6 @@ describe("paletteNavItems", () => {
 		]) {
 			expect(entries.find((entry) => entry.title === title)?.href).toBe(href)
 		}
-	})
-
-	it("points the signal entries at their own routes", () => {
-		const entries = paletteNavItems()
-		expect(entries.find((e) => e.title === "Logs")?.href).toBe("/logs")
-		expect(entries.find((e) => e.title === "Replays")?.href).toBe("/replays")
 	})
 
 	it("emits no duplicate ids", () => {

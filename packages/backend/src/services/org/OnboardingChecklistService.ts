@@ -253,8 +253,8 @@ const make = Effect.gen(function* () {
 		const report = evaluateOnboardingChecklist(inputs, now)
 		yield* Effect.annotateCurrentSpan({
 			orgId: tenant.orgId,
-			"onboarding.status": report.status,
-			"onboarding.completed": report.completedCount,
+			"maple.onboarding.status": report.status,
+			"maple.onboarding.completed": report.completedCount,
 		})
 		return report
 	})
@@ -348,7 +348,7 @@ const make = Effect.gen(function* () {
 		)
 		yield* unavailable("finalizeRewardClaim", onboarding.finalizeRewardClaim(orgId))
 		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
-		yield* Effect.annotateCurrentSpan({ orgId, "onboarding.rewardClaimed": true })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.onboarding.reward_claimed": true })
 
 		return { report: yield* read(tenant), newlyClaimed: true }
 	})

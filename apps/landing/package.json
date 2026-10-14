@@ -5,6 +5,7 @@
 	"scripts": {
 		"generate:og": "node scripts/generate-og.mjs",
 		"screenshots": "bun scripts/screenshots/capture.ts",
+		"screenshots:thread": "bun scripts/screenshots/capture.ts --set thread",
 		"dev": "bun run --silent sync:cli && exec env -u CLAUDECODE astro dev --port ${PORT:-3391} --host ${HOST:-127.0.0.1}",
 		"sync:i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy url baseLocale && astro sync",
 		"sync:cli": "mkdir -p public/cli && cp ../../scripts/install.sh public/cli/install && cp ../../scripts/uninstall.sh public/cli/uninstall",
@@ -30,6 +31,8 @@
 		"@shikijs/themes": "^4.5.0",
 		"@shikijs/transformers": "^4.5.0",
 		"@tailwindcss/vite": "catalog:tailwind",
+		"@takumi-rs/helpers": "2.14.0",
+		"@takumi-rs/wasm": "2.14.0",
 		"@tanstack/charts": "catalog:charts",
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
@@ -51,6 +54,7 @@
 		"@types/d3-scale": "^4.0.9",
 		"playwright": "catalog:",
 		"typescript": "catalog:tooling",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"woff2-encoder": "^2.0.0"
 	}
 }

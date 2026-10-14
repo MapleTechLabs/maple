@@ -19,7 +19,8 @@ import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { PodPeekSheet } from "@/components/infra/kubernetes/pod-peek-sheet"
 import { PodsFilterSidebarView, type PodFilters } from "@/components/infra/k8s-filter-sidebar"
-import { PodTable, PodTableLoading, podKey, type PodRow } from "@/components/infra/pod-table"
+import { PodTableLoading, podKey, type PodRow } from "@/components/infra/pod-table"
+import { PodTableWithRestarts } from "@/components/infra/kubernetes/pod-restarts-panel"
 import { FleetBand, FleetBandLoading, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
 import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { podFilterChips } from "@/lib/infra/pod-filter-chips"
@@ -36,6 +37,7 @@ import {
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { TONE_FILL } from "@maple/ui/lib/tone"
+import { OffsetPager, pageRangeLabel, useResettingPage } from "@/components/infra/primitives/offset-pager"
 
 const PAGE_SIZE = 50
 const DEFAULT_PRESET = "12h"
@@ -139,6 +141,10 @@ function PodsPage() {
 	// The server filters by name, so typing must not fire a query per keystroke.
 	const searchText = search.q ?? ""
 	const debouncedSearch = useDebouncedValue(searchText, 300)
+	const [pageIndex, setPageIndex] = useResettingPage(
+		JSON.stringify({ filters, q: debouncedSearch.trim(), scope, sortBy, sortDir }),
+	)
+	const offset = pageIndex * PAGE_SIZE
 
 	// "Ended" is the lifecycle dial, not a saturation bucket: the other three
 	// scopes narrow the live fleet, this one swaps which fleet is on screen.
@@ -153,6 +159,7 @@ function PodsPage() {
 			sortBy,
 			sortDir,
 			limit: PAGE_SIZE,
+			offset,
 		},
 	})
 	const podsResult = useAtomValue(podsAtom)
@@ -206,7 +213,8 @@ function PodsPage() {
 		.orElse(() => 0)
 
 	const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)
-	const hasAnyNarrowing = hasStructuredFilter || Boolean(searchText.trim()) || Boolean(scope)
+	const hasAnyNarrowing =
+		hasStructuredFilter || Boolean(searchText.trim()) || Boolean(scope) || pageIndex > 0
 
 	// The peek resolves against the page that's on screen. A key that no longer
 	// matches a row (the filter changed under it) just means the sheet is closed.
@@ -368,7 +376,11 @@ function PodsPage() {
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search all pods…"
-									trailing={countLabel(page.length, total, "pod")}
+									trailing={
+										offset > 0
+											? pageRangeLabel(offset, page.length, total, "pods")
+											: countLabel(page.length, total, "pod")
+									}
 								/>
 
 								<ActiveFilterChips
@@ -396,8 +408,10 @@ function PodsPage() {
 										clearLabel="Clear all filters"
 									/>
 								) : (
-									<PodTable
+									<PodTableWithRestarts
 										pods={page}
+										startTime={startTime}
+										endTime={endTime}
 										sortBy={sortBy}
 										sortDir={sortDir}
 										onSortChange={onSortChange}
@@ -408,6 +422,14 @@ function PodsPage() {
 										referenceTime={endTime}
 									/>
 								)}
+								<OffsetPager
+									offset={offset}
+									shown={page.length}
+									total={total}
+									pageSize={PAGE_SIZE}
+									noun="pods"
+									onPageChange={(direction) => setPageIndex(pageIndex + direction)}
+								/>
 							</div>
 						)
 					})

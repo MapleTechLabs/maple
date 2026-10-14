@@ -84,14 +84,13 @@ describe("HTTP error tag contract", () => {
 					})),
 			)
 
-			for (const { method, path, operation } of operations) {
-				for (const status of ["400", "500"]) {
-					expect(
-						operation.responses?.[status],
-						`${method.toUpperCase()} ${path} declares ${status}`,
-					).toBeDefined()
-				}
-			}
+			const missing = operations.flatMap(({ method, path, operation }) =>
+				["400", "500"]
+					.filter((status) => operation.responses?.[status] === undefined)
+					.map((status) => `${method.toUpperCase()} ${path} ${status}`),
+			)
+			expect(operations.length).toBeGreaterThan(0)
+			expect(missing).toEqual([])
 		},
 	)
 })

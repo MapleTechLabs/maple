@@ -1,7 +1,7 @@
 ---
 title: "Trace Agno agents and teams with OpenTelemetry"
 description: "Send Agno agent, team and tool spans to Maple as one Agent Session per conversation, with transcript, tokens and failed tools."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 26
 navLabel: "Agno"
 icon: "agno"

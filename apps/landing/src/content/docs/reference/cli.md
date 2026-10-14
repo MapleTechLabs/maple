@@ -188,6 +188,12 @@ Deep-dive one service: health, top errors, recent traces and logs.
 
 Service dependency edges with call counts, errors and latency. Flags: `--since` / `--start` / `--end`, `--service`, `--env`.
 
+- `edges`: service-to-service calls, drawn when an instrumented callee continues the caller's trace
+- `databases`: calls from client spans with `db.system.name` (or the legacy `db.system`), keyed by system and `db.namespace`
+- `external`: HTTP, messaging and RPC targets that are not a traced service; listed only with `--service`, since that query is scoped to one caller
+
+Databases and external calls are local-only. In remote mode the command prints `edges`, and `--service` keeps that service's outbound edges only; locally it keeps both directions.
+
 ### `maple top-ops <service-name>`
 
 Top operations (span names) for a service, ranked by a metric.

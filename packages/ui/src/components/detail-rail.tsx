@@ -126,12 +126,15 @@ function Field({
  * `copyable` adds a hover-revealed copy button; `tooltip` explains the value.
  */
 function MetaRow({
+	icon: Icon,
 	label,
 	value,
 	copyable,
 	copyValue,
 	tooltip,
 }: {
+	/** Optional glyph before the label; like `Row`, give every row in a rail one or none. */
+	icon?: IconComponent
 	label: string
 	value: string | null | undefined
 	copyable?: boolean
@@ -150,7 +153,12 @@ function MetaRow({
 			data-slot="detail-rail-meta-row"
 			className="group flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 last:border-0"
 		>
-			<span className="font-mono text-2xs text-muted-foreground">{label}</span>
+			<span className="flex shrink-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+				{Icon ? (
+					<Icon className="size-3.5 shrink-0 self-center text-muted-foreground/70" aria-hidden />
+				) : null}
+				{label}
+			</span>
 			<div className="flex min-w-0 items-center gap-1.5 text-2xs">
 				{tooltip ? (
 					<Tooltip>

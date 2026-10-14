@@ -1,4 +1,3 @@
-import { resolve } from "node:path"
 import * as AWS from "alchemy/AWS"
 import type * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
@@ -10,8 +9,15 @@ import { requiredPlain } from "@maple/infra/env"
 /** Port Electric's HTTP API binds (`ELECTRIC_PORT`, whose own default is 3000). */
 const ELECTRIC_PORT = 3000
 
-/** Absolute: alchemy has changed how a relative `dockerfile` resolves between releases. */
-const DOCKERFILE = resolve("apps/electric/Dockerfile")
+/**
+ * Upstream Electric, built into our registry by publish-electric-image.yml (upstream's Docker
+ * Hub repo was deleted, electric-sql/electric#4822). PINNED by digest: the shape cache format
+ * changes across minors, so an upgrade is a deliberate read of the release notes. Mirrored as an
+ * image ref, never built from a context: alchemy hashes a context together with `bun.lock`, so
+ * any unrelated dependency change would retag the image and restart this singleton.
+ */
+const ELECTRIC_IMAGE =
+	"ghcr.io/mapletechlabs/maple/electric:1.7.12@sha256:d8a377eee0edeac0d4dbbd77c22b92c1ef601184722ea2b7da5b3381e3bb8e2c"
 
 export interface CreateMapleElectricOptions extends Pick<
 	MapleStackContext,
@@ -114,8 +120,7 @@ export const createMapleElectric = ({
 			cluster,
 			serviceName: name("electric"),
 
-			context: "apps/electric",
-			dockerfile: DOCKERFILE,
+			image: ELECTRIC_IMAGE,
 			// Must match the image arch: a mismatch dies at start with `exec format error`.
 			runtimePlatform: { cpuArchitecture: "ARM64", operatingSystemFamily: "LINUX" },
 			cpu: taskSize.cpu,

@@ -4,6 +4,7 @@ import * as ErrorReporter from "effect/ErrorReporter"
 import { HttpApiSchemaError } from "effect/http-api/HttpApiError"
 import * as HttpServerError from "effect/http/HttpServerError"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { makeSpanBuffer } from "./flushable-tracer.js"
 
 // A benign error flagged exactly the way Effect's RouteNotFound is.
@@ -253,6 +254,72 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 			)
 		}),
 	)
+
+	it.effect("treats Effect's own failure for a 5xx response as the rendered 5xx", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			const request = HttpServerRequest.fromWeb(new Request("http://localhost/api/sync/shape"))
+			const error = new HttpServerError.HttpServerError({
+				reason: new HttpServerError.ResponseError({
+					request,
+					response: HttpServerResponse.empty({ status: 500 }),
+				}),
+			})
+			yield* Effect.annotateCurrentSpan({
+				"http.request.method": "GET",
+				"url.path": "/api/sync/shape",
+				"http.response.status_code": 500,
+			}).pipe(
+				Effect.andThen(Effect.fail(error)),
+				Effect.withSpan("GET", { kind: "server" }),
+				Effect.provide(buffer.tracerLayer),
+				Effect.ignore,
+			)
+			const [span] = buffer.drain()
+			assert.strictEqual(span!.status.message, "HTTP 500 (GET /api/sync/shape)")
+			const exceptions = span!.events.filter((event) => event.name === "exception")
+			assert.strictEqual(exceptions.length, 1)
+			assert.deepStrictEqual(
+				exceptions[0]!.attributes.find((attribute) => attribute.key === "exception.type")?.value,
+				{ stringValue: "HttpServerErrorResponse" },
+			)
+		}),
+	)
+
+	// `@effect/platform-node` builds these when writing the response fails.
+	const writeFailures = [
+		["a cause", { cause: new Error("socket hang up") }],
+		["a description", { description: "Error writing raw response" }],
+		["both", { description: "Error writing raw response", cause: new Error("socket hang up") }],
+	] as const
+
+	for (const [label, detail] of writeFailures) {
+		it.effect(`keeps a failed response write carrying ${label} as its own error`, () =>
+			Effect.gen(function* () {
+				const buffer = makeSpanBuffer()
+				const error = new HttpServerError.HttpServerError({
+					reason: new HttpServerError.ResponseError({
+						request: HttpServerRequest.fromWeb(new Request("http://localhost/api/sync/shape")),
+						response: HttpServerResponse.empty({ status: 500 }),
+						...detail,
+					}),
+				})
+				yield* Effect.annotateCurrentSpan({ "http.response.status_code": 500 }).pipe(
+					Effect.andThen(Effect.fail(error)),
+					Effect.withSpan("GET", { kind: "server" }),
+					Effect.provide(buffer.tracerLayer),
+					Effect.ignore,
+				)
+				const [span] = buffer.drain()
+				assert.isDefined(span)
+				assert.strictEqual(span!.status.code, 2 /* Error */)
+				const types = span!.events
+					.filter((event) => event.name === "exception")
+					.map((event) => event.attributes.find((attribute) => attribute.key === "exception.type")?.value)
+				assert.deepStrictEqual(types, [{ stringValue: "HttpServerError" }])
+			}),
+		)
+	}
 
 	it.effect("keeps an exception the handler recorded itself instead of relabelling it", () =>
 		Effect.gen(function* () {

@@ -41,7 +41,11 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const sort = params.sort ?? "count"
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, service: params.service ?? "all", sort })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.sort": sort,
+			})
 
 			const rows = yield* withTenantExecutor(
 				Effect.gen(function* () {

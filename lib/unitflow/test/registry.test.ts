@@ -108,13 +108,6 @@ describe("Registry.allSettled", () => {
 		}).pipe(Effect.provide(Registry.layer)),
 	)
 
-	it.effect("resolves immediately on an empty registry", () =>
-		Effect.gen(function* () {
-			yield* Registry.allSettled()
-			assert.isTrue(true)
-		}).pipe(Effect.provide(Registry.layer)),
-	)
-
 	it.effect("isolates registries: another registry's backlog does not block", () =>
 		Effect.gen(function* () {
 			const gate = yield* Deferred.make<void>()

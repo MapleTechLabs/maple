@@ -34,6 +34,7 @@ import {
 	buildSpanTree,
 	dedupeBySpanId,
 	parseAttributes,
+	traceWallClockMs,
 	transformSpan,
 	type SpanHierarchyRow,
 } from "@maple/ui/lib/span-tree"
@@ -543,7 +544,7 @@ const getSpanHierarchyEffect = Effect.fn("QueryEngine.getSpanHierarchy")(functio
 
 	const spans = dedupeBySpanId(result.data.map((raw) => transformSpan(raw as SpanHierarchyRow)))
 	const rootSpans = buildSpanTree(spans)
-	const totalDurationMs = spans.length > 0 ? Math.max(...spans.map((span) => span.durationMs)) : 0
+	const totalDurationMs = traceWallClockMs(spans)
 	const traceStartTime =
 		spans.length === 0
 			? undefined

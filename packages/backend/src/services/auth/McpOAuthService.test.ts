@@ -188,8 +188,8 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(wrongRedirect._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
-			if (wrongRedirect._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			expect(wrongRedirect._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			if (wrongRedirect._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(wrongRedirect.error).toBe("invalid_grant")
 			}
 			const tokens = yield* oauth.exchangeAuthorizationCode(
@@ -229,8 +229,8 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(reused._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
-			if (reused._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			expect(reused._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			if (reused._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(reused.error).toBe("invalid_grant")
 			}
 		}).pipe(Effect.provide(makeLayer(db)))
@@ -287,7 +287,7 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			if (replay._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			if (replay._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(replay.error).toBe("invalid_grant")
 			}
 			expect(Option.isNone(yield* apiKeys.resolveByKey(second.access_token))).toBe(true)
@@ -314,8 +314,8 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(failure._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
-			if (failure._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			expect(failure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			if (failure._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(failure.error).toBe("invalid_grant")
 			}
 
@@ -351,8 +351,8 @@ describe("McpOAuthService", () => {
 					"127.0.0.1",
 				)
 				.pipe(Effect.flip)
-			expect(failure._tag).toBe("@maple/api/errors/McpOAuthProtocolError")
-			if (failure._tag === "@maple/api/errors/McpOAuthProtocolError") {
+			expect(failure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			if (failure._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(failure.error).toBe("invalid_grant")
 			}
 		}).pipe(Effect.provide(makeLayer(db)))

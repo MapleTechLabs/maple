@@ -3,11 +3,17 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
-import { METRIC_TYPE_COLORS, MetricTypeBadge } from "@maple/ui/components/metrics/metric-type-badge"
+import {
+	METRIC_TYPE_COLORS,
+	MetricTypeBadge,
+	metricTypeLabel,
+} from "@maple/ui/components/metrics/metric-type-badge"
+import { ServiceDot } from "@maple/ui/components/service-dot"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	FilterSection,
 	SearchableFilterSection,
+	serviceColorMap,
 	type FilterOption,
 } from "@maple/ui/components/filters/filter-section"
 import {
@@ -83,12 +89,15 @@ export function MetricsListView() {
 					options={typeFacets}
 					selected={type ? [type] : []}
 					onChange={(vals) => setParams({ type: vals.at(-1) ?? null })}
+					getOptionLabel={metricTypeLabel}
+					colorMap={METRIC_TYPE_COLORS}
 				/>
 				<SearchableFilterSection
 					title="Service"
 					options={list.serviceFacets}
 					selected={service ? [service] : []}
 					onChange={(vals) => setParams({ service: vals.at(-1) ?? null })}
+					colorMap={serviceColorMap(list.serviceFacets)}
 				/>
 			</FilterSidebarBody>
 		</FilterSidebarFrame>
@@ -114,7 +123,7 @@ export function MetricsListView() {
 	return (
 		<PageShell sidebar={sidebar} toolbar={toolbar} activeFilterCount={activeFilterCount}>
 			{list.query.isPending ? (
-				<ListSkeleton variant="card" rows={6} />
+				<ListSkeleton variant="grid" rows={9} />
 			) : list.query.isError ? (
 				<ErrorState label="metrics" error={list.query.error} onRetry={() => list.query.refetch()} />
 			) : entries.length === 0 ? (
@@ -130,6 +139,7 @@ export function MetricsListView() {
 					entries={entries}
 					points={sparklines.data}
 					loading={sparklines.isPending}
+					failed={sparklines.isError}
 					query={query}
 					dimmed={list.query.isPlaceholderData}
 				/>
@@ -153,12 +163,14 @@ function MetricGrid({
 	entries,
 	points,
 	loading,
+	failed,
 	query,
 	dimmed,
 }: {
 	entries: ReadonlyArray<MetricEntry>
 	points: ReadonlyMap<string, SparklinePoint[]> | undefined
 	loading: boolean
+	failed: boolean
 	query: URLSearchParams
 	dimmed: boolean
 }) {
@@ -198,6 +210,7 @@ function MetricGrid({
 								entry={entry}
 								points={points?.get(entry.metricName)}
 								loading={loading}
+								failed={failed}
 								href={hrefFor(`/metrics/${encodeURIComponent(entry.metricName)}`, query)}
 							/>
 						))}
@@ -212,11 +225,13 @@ function MetricPreviewCard({
 	entry,
 	points,
 	loading,
+	failed,
 	href,
 }: {
 	entry: MetricEntry
 	points: ReadonlyArray<SparklinePoint> | undefined
 	loading: boolean
+	failed: boolean
 	href: string
 }) {
 	const rows = useMemo(() => previewValues(entry, points ?? []), [entry, points])
@@ -245,17 +260,22 @@ function MetricPreviewCard({
 						className="h-full w-full"
 					/>
 				) : (
-					<div className="flex h-full items-center text-[10px] text-muted-foreground">
-						{loading ? "Loading…" : "One datapoint so far"}
+					<div className="flex h-full items-center text-3xs text-muted-foreground">
+						{loading ? "Loading…" : failed ? "Preview unavailable" : "One datapoint so far"}
 					</div>
 				)}
 			</div>
 
-			<div className="flex w-full items-center justify-between gap-2 text-[10px] text-muted-foreground">
-				<span className="truncate">{services}</span>
+			<div className="flex w-full items-center justify-between gap-2 text-3xs text-muted-foreground">
+				<span className="flex min-w-0 items-center gap-1.5">
+					{entry.serviceNames.length === 1 ? (
+						<ServiceDot serviceName={entry.serviceNames[0]} size="sm" />
+					) : null}
+					<span className="truncate">{services}</span>
+				</span>
 				<span className="flex shrink-0 items-center gap-1.5">
 					{unit ? (
-						<Badge variant="outline" className="px-1 py-0 font-mono text-[9px]">
+						<Badge variant="outline" size="xs" mono className="text-4xs">
 							{unit}
 						</Badge>
 					) : null}

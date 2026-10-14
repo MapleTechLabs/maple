@@ -121,7 +121,7 @@ const make: Effect.Effect<SignalPresenceServiceApi, never, WarehouseQueryService
 		if (Option.isNone(rows)) {
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				"signals.warehouseAvailable": false,
+				"maple.signals.warehouse_available": false,
 			})
 			return {
 				generatedAt: now,
@@ -153,8 +153,8 @@ const make: Effect.Effect<SignalPresenceServiceApi, never, WarehouseQueryService
 
 		yield* Effect.annotateCurrentSpan({
 			orgId: tenant.orgId,
-			"signals.warehouseAvailable": true,
-			"signals.present": signals.filter((s) => s.status === "present").length,
+			"maple.signals.warehouse_available": true,
+			"maple.signals.present": signals.filter((s) => s.status === "present").length,
 		})
 
 		return {

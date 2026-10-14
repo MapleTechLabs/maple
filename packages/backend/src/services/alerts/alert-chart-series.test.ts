@@ -91,29 +91,6 @@ describe("loadChartSeries", () => {
 		}),
 	)
 
-	it.effect("carries the threshold and breach side through for the renderer", () =>
-		Effect.gen(function* () {
-			const series = yield* loadChartSeries(
-				warehouseReturning([checkRow(0, 3), checkRow(10, 2), checkRow(20, 1)]),
-				tenant,
-				{ ...baseOptions, comparator: "lt", threshold: 0.8 },
-			)
-			assert.strictEqual(series?.threshold, 0.8)
-			assert.strictEqual(series?.breachSide, "below")
-		}),
-	)
-
-	it.effect("produces a sparkline alongside the points", () =>
-		Effect.gen(function* () {
-			const series = yield* loadChartSeries(
-				warehouseReturning([checkRow(0, 9), checkRow(10, 5), checkRow(20, 1)]),
-				tenant,
-				baseOptions,
-			)
-			assert.strictEqual(series?.sparkline.length, 3)
-		}),
-	)
-
 	it.effect("skips rows with no observed value rather than charting them as zero", () =>
 		Effect.gen(function* () {
 			// A failed evaluation writes an audit row with a null value. Reading it

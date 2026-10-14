@@ -11,6 +11,7 @@ import { IngestionSection } from "@/components/settings/ingestion-section"
 import { ApiKeysSection } from "@/components/settings/api-keys-section"
 import { AuditLogSection } from "@/components/settings/audit-log-section"
 import { McpSection } from "@/components/settings/mcp-section"
+import { AiProviderSection } from "@/components/settings/ai-provider-section"
 import { NotificationsSection } from "@/components/settings/notifications-section"
 import { AutomationSection } from "@/components/settings/automation-section"
 import { OrgClickHouseSettingsSection } from "@/components/settings/org-clickhouse-settings-section"
@@ -113,6 +114,7 @@ function SettingsPage() {
 					{activeTab === "ingestion" && <IngestionSection />}
 					{activeTab === "api-keys" && <ApiKeysSection />}
 					{activeTab === "mcp" && <McpSection />}
+					{activeTab === "ai-provider" && <AiProviderSection />}
 					{activeTab === "notifications" && <NotificationsSection />}
 					{activeTab === "automation" && (
 						<AutomationSection isAdmin={isAdmin} hasEntitlement={canAccessAi} />

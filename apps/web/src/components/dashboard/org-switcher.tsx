@@ -31,7 +31,9 @@ function ClerkOrgSwitcher() {
 				>
 					<OrgAvatar name={orgName} imageUrl={orgImageUrl} />
 					<div className="grid flex-1 text-left text-sm leading-tight">
-						<span className="truncate font-medium">{orgName}</span>
+						<span className="truncate font-medium" title={orgName}>
+							{orgName}
+						</span>
 						{pinnedNamespace !== null ? (
 							<span className="truncate text-xs">
 								<span className="font-medium text-primary">{pinnedNamespace}</span>

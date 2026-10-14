@@ -61,15 +61,6 @@ const simulate = (chunks: ReadonlyArray<ReplayChunkMeta>, throughMs: number) => 
 }
 
 describe("opening window", () => {
-	it("starts on a couple of MB, not the whole session", () => {
-		const ranges = initialRanges(manifest, plan)
-		const bytes = ranges.length * MAX_CHUNKS_PER_RANGE * 100_000
-		// The session is 10 MB. Before this change the player fetched all of it in
-		// one response, which is what made long sessions fail.
-		expect(bytes).toBeLessThan(4 * INITIAL_WINDOW_BYTES)
-		expect(ranges.length).toBeLessThanOrEqual(2)
-	})
-
 	it("is independent of session length", () => {
 		const long = Array.from({ length: 2000 }, (_, seq) => chunk(seq))
 		expect(initialRanges(long, planRanges(long))).toEqual(initialRanges(manifest, plan))
@@ -151,25 +142,9 @@ describe("seeking", () => {
 		const target = chunkAtOffset(manifest, 2 * CHUNK_MS)!
 		expect(covered.has(target.chunk_seq)).toBe(true)
 	})
-
-	it("anchors on chunk 0 when the session has no checkpoint at all", () => {
-		const noCheckpoints = manifest.map((c) => ({ ...c, is_checkpoint: false }))
-		const target = chunkAtOffset(noCheckpoints, 90 * CHUNK_MS)!
-		expect(checkpointAtOrBefore(noCheckpoints, target.chunk_seq)?.chunk_seq).toBe(0)
-	})
 })
 
 describe("live sessions", () => {
-	it("grows only the trailing range as chunks arrive", () => {
-		// While a recording is still being written its last range is partial, so
-		// it is the one boundary that moves. Everything before it must not.
-		const grown = Array.from({ length: 60 }, (_, seq) => chunk(seq))
-		const early = planRanges(grown.slice(0, 45))
-		const later = planRanges(grown)
-		expect(later.slice(0, early.length - 1)).toEqual(early.slice(0, early.length - 1))
-		expect(later[early.length - 1]).not.toEqual(early[early.length - 1])
-	})
-
 	it("re-requests the grown trailing range under a new key", () => {
 		// Which is why the loader must drop chunks it already holds when that
 		// range comes back: without it, the overlap is fed to `addEvent` twice

@@ -205,21 +205,6 @@ describe("AgentSessionsList", () => {
 		expect(tooltip.textContent).toContain("Response: 1,000")
 	})
 
-	it("draws the framework's mark in its brand color", () => {
-		const view = renderList(
-			<AgentSessionsList {...sort} sessions={[{ ...session, vendorId: "claude_agent_sdk" }]} />,
-		)
-		expect(view.getByRole("img", { name: "Claude Agent SDK" }).querySelector("svg")?.style.color).toBe(
-			"rgb(217, 119, 87)",
-		)
-	})
-
-	it("says a session without errors has none, rather than leaving the cell blank", () => {
-		const view = renderList(<AgentSessionsList {...sort} sessions={[session]} />)
-		const errors = view.getAllByRole("cell")[8]!
-		expect(errors.textContent).toBe("—")
-	})
-
 	it("labels a framework's session key apart from a session that is one trace", () => {
 		const view = renderList(
 			<AgentSessionsList

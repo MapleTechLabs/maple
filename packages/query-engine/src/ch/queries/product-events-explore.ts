@@ -13,7 +13,7 @@ import type { AttributeFilter, ProductEventsGroupBy, ProductEventsMetric } from 
 import { ProductEvents, SessionReplays, orgIdParam } from "../tables"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
-import { soleValue } from "./query-helpers"
+import { soleValue, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
 import { replaysWhere, needsSessionSemiJoin, type WebAnalyticsFilters } from "./web-analytics"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 
@@ -56,6 +56,8 @@ export interface ProductEventsTimeseriesOpts extends ProductEventsQueryOpts {
 	groupBy?: readonly ProductEventsGroupByKey[]
 	bucketSeconds?: number
 	seriesLimit?: number
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
 }
 
 export interface ProductEventsTimeseriesOutput {
@@ -230,12 +232,12 @@ export function productEventsTimeseriesQuery(
 ): CHQuery<ColumnDefs, ProductEventsTimeseriesOutput, {}> {
 	const inner = from(ProductEvents)
 		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: groupNameExpr($, opts),
 			value: metricExpr($, opts.metric),
 			eventCount: CH.count(),
 		}))
-		.where(($) => eventConditions($, opts))
+		.where(($) => [...eventConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(inner, TS_COLUMNS, "value", opts) as CHQuery<

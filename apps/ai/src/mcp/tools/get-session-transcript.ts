@@ -102,10 +102,10 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				sessionId: params.session_id,
-				limit: lim,
-				offset: off,
-				errorsOnly,
+				"maple.ai.session.id": params.session_id,
+				"maple.ai.limit": lim,
+				"maple.ai.offset": off,
+				"maple.ai.errors_only": errorsOnly,
 			})
 
 			// Fetch one extra row to detect whether more events remain past this page.
@@ -122,7 +122,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 
 			const hasMore = rows.length > lim
 			const events = hasMore ? rows.slice(0, lim) : rows
-			yield* Effect.annotateCurrentSpan("eventCount", events.length)
+			yield* Effect.annotateCurrentSpan("result.eventCount", events.length)
 
 			return {
 				sessionId: params.session_id,

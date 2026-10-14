@@ -1,7 +1,9 @@
 import type { ActorDocument } from "@maple/domain/http"
 import { internalAgentLabel } from "@maple/domain/system-agents"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
+import { Avatar, AvatarFallback, AvatarImage } from "@maple/ui/components/ui/avatar"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { initialsFrom } from "@maple/ui/lib/initials"
 import { gradientFor } from "@maple/ui/lib/replay"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { AGENT_ACCENT } from "@maple/ui/lib/tone"
@@ -79,13 +81,6 @@ export function useActorIdentity(actor: ActorDocument | null): ActorIdentity | n
 	return actor ? resolveActorIdentity(actor, directory) : null
 }
 
-function initialsFrom(name: string): string {
-	const parts = name.trim().split(/\s+/).filter(Boolean)
-	if (parts.length === 0) return "?"
-	if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase()
-	return (parts[0]![0]! + parts.at(-1)![0]!).toUpperCase()
-}
-
 const SIZE_CLASS = {
 	sm: "size-5 text-4xs",
 	md: "size-7 text-2xs",
@@ -142,13 +137,20 @@ export function IdentityAvatar({
 	}
 
 	if (identity.imageUrl) {
+		// Avatar falls back to the initials when the photo 404s.
 		return (
-			<img
-				alt=""
-				aria-hidden
-				className={cn(base, "object-cover ring-1 ring-border/60")}
-				src={identity.imageUrl}
-			/>
+			<Avatar aria-hidden className={cn(base, "ring-1 ring-border/60")}>
+				<AvatarImage alt="" src={identity.imageUrl} />
+				<AvatarFallback
+					className={cn(
+						"bg-gradient-to-br text-white",
+						SIZE_CLASS[size],
+						gradientFor(identity.seed),
+					)}
+				>
+					{identity.initials}
+				</AvatarFallback>
+			</Avatar>
 		)
 	}
 

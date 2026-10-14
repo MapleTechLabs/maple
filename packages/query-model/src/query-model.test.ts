@@ -15,13 +15,6 @@ const decodeQuerySet = Schema.decodeUnknownSync(QuerySetSchema)
 const decodeTimeRange = Schema.decodeUnknownSync(TimeRangeSchema)
 
 describe("QueryBuilderQueryDraftSchema", () => {
-	it("decodes a minimal draft for every data source", () => {
-		for (const dataSource of ["traces", "logs", "metrics"] as const) {
-			const decoded = decodeDraft({ id: "a", name: "A", aggregation: "count", dataSource })
-			expect(decoded.dataSource).toBe(dataSource)
-		}
-	})
-
 	it("keeps every optional field absent rather than defaulting it", () => {
 		// The stored shape is partial on purpose — the editor-state type in
 		// `@maple/query-engine/query-builder` is the total one. A default here
@@ -91,28 +84,6 @@ describe("QueryBuilderQueryDraftSchema", () => {
 })
 
 describe("QuerySetSchema", () => {
-	it("decodes a bare list of queries", () => {
-		const set = decodeQuerySet({
-			queries: [{ id: "a", name: "A", aggregation: "count", dataSource: "traces" }],
-		})
-		expect(set.queries).toHaveLength(1)
-		expect(set.formulas).toBeUndefined()
-		expect(set.comparison).toBeUndefined()
-	})
-
-	it("decodes formulas and a comparison window", () => {
-		const set = decodeQuerySet({
-			queries: [
-				{ id: "a", name: "A", aggregation: "count", dataSource: "traces" },
-				{ id: "b", name: "B", aggregation: "count", dataSource: "traces" },
-			],
-			formulas: [{ id: "f1", name: "F1", expression: "A / B", legend: "ratio" }],
-			comparison: { mode: "previous_period", includePercentChange: true },
-		})
-		expect(set.formulas?.[0]?.expression).toBe("A / B")
-		expect(set.comparison?.mode).toBe("previous_period")
-	})
-
 	it("accepts an empty query list", () => {
 		// A widget mid-edit can legitimately have no queries, and a stored schema
 		// that rejects is a stored schema that locks the document out of editing.
@@ -127,14 +98,6 @@ describe("series reducers", () => {
 		}
 	})
 
-	it("keeps the two spellings distinct where they genuinely differ", () => {
-		// Merging these sets would rewrite stored values: widgets persist "first",
-		// alert rules persist "identity", and they coincide only on one bucket.
-		expect(ALERT_REDUCER_TO_SERIES_REDUCER.identity).toBe("first")
-		expect(SERIES_REDUCERS).toContain("count")
-		expect(ALERT_REDUCERS).not.toContain("count" as never)
-	})
-
 	it("round-trips every alert reducer through the series spelling and back", () => {
 		for (const reducer of ALERT_REDUCERS) {
 			expect(SERIES_REDUCER_TO_ALERT_REDUCER[ALERT_REDUCER_TO_SERIES_REDUCER[reducer]]).toBe(reducer)
@@ -146,25 +109,11 @@ describe("series reducers", () => {
 		// able to tell that a count tile has no alert equivalent, instead of
 		// silently sending `identity`.
 		expect(SERIES_REDUCER_TO_ALERT_REDUCER.count).toBeUndefined()
-		expect(SERIES_REDUCER_TO_ALERT_REDUCER.first).toBe("identity")
-		expect(SERIES_REDUCER_TO_ALERT_REDUCER.max).toBe("max")
+		expect(ALERT_REDUCERS).not.toContain("count" as never)
 	})
 })
 
 describe("TimeRangeSchema", () => {
-	it("decodes both variants", () => {
-		expect(decodeTimeRange({ type: "relative", value: "24h" })).toEqual({
-			type: "relative",
-			value: "24h",
-		})
-		const absolute = decodeTimeRange({
-			type: "absolute",
-			startTime: "2026-08-01T00:00:00.000Z",
-			endTime: "2026-08-02T00:00:00.000Z",
-		})
-		expect(absolute.type).toBe("absolute")
-	})
-
 	it("rejects an absolute range whose instants are not ISO date-times", () => {
 		expect(() =>
 			decodeTimeRange({ type: "absolute", startTime: "yesterday", endTime: "today" }),

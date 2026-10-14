@@ -13,7 +13,7 @@ import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer } from "effect"
 import { ApiObservabilityLive } from "./http/api-observability"
 import { apiConfiguredEnv } from "./resources/env"
-import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
+import { ApiBindingsLive, apiPorts, bindApiClients } from "./worker/bindings"
 import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
 import { makeAppGraphs, makeFetch } from "./worker/http"
@@ -67,7 +67,7 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
-				ApiBindingLayers,
+				ApiBindingsLive,
 				// The init runs once per isolate, so this is the isolate's request counter.
 				IsolateAge.layer,
 				Cloudflare.Workers.CronEventSourceLive,

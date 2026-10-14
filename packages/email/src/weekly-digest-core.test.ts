@@ -53,7 +53,7 @@ describe("computeDelta", () => {
 	})
 
 	it("computes an ordinary week-over-week percentage", () => {
-		expect(computeDelta(110, 100)).toEqual({ kind: "pct", value: 100 * (10 / 100) })
+		expect(computeDelta(110, 100)).toEqual({ kind: "pct", value: 10 })
 	})
 })
 

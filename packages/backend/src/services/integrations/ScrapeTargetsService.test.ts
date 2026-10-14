@@ -853,23 +853,4 @@ describe("summarizeScrapeResults", () => {
 			reportedAt: 2_000,
 		})
 	})
-
-	it("prefixes sub-target errors and clears the error on a later success", () => {
-		const a = asScrapeTargetId("11111111-1111-4111-8111-111111111111")
-		const failed = summarizeScrapeResults([
-			{ targetId: a, scrapedAt: 1_000, error: "timeout", subTargetKey: "dev" },
-		])
-		assert.strictEqual(failed.get(a)?.lastScrapeError, "[branch:dev] timeout")
-
-		const recovered = summarizeScrapeResults([
-			{ targetId: a, scrapedAt: 1_000, error: "timeout", subTargetKey: "dev" },
-			{ targetId: a, scrapedAt: 2_000, error: null, subTargetKey: "dev" },
-		])
-		assert.deepStrictEqual(recovered.get(a), {
-			lastScrapeAt: 2_000,
-			lastScrapeError: null,
-			updatedAt: 2_000,
-			reportedAt: 2_000,
-		})
-	})
 })

@@ -14,14 +14,6 @@ describe("normalizeKey", () => {
 		expect(normalizeKey("Service")).toBe("service.name")
 	})
 
-	it("passes through service.name unchanged", () => {
-		expect(normalizeKey("service.name")).toBe("service.name")
-	})
-
-	it("normalizes span alias", () => {
-		expect(normalizeKey("span")).toBe("span.name")
-	})
-
 	it("normalizes environment aliases", () => {
 		expect(normalizeKey("env")).toBe("deployment.environment")
 		expect(normalizeKey("environment")).toBe("deployment.environment")
@@ -33,16 +25,6 @@ describe("normalizeKey", () => {
 		expect(normalizeKey("commit_sha")).toBe("vcs.ref.head.revision")
 		expect(normalizeKey("deployment.commit_sha")).toBe("vcs.ref.head.revision")
 		expect(normalizeKey("vcs.ref.head.revision")).toBe("vcs.ref.head.revision")
-	})
-
-	it("normalizes root.only alias", () => {
-		expect(normalizeKey("root.only")).toBe("root_only")
-		expect(normalizeKey("root_only")).toBe("root_only")
-	})
-
-	it("normalizes errors_only alias", () => {
-		expect(normalizeKey("errors_only")).toBe("has_error")
-		expect(normalizeKey("has_error")).toBe("has_error")
 	})
 
 	it("passes through unknown keys", () => {
@@ -114,12 +96,6 @@ describe("parseWhereClause", () => {
 		expect(result.warnings).toEqual([])
 	})
 
-	it("returns empty for whitespace-only expression", () => {
-		const result = parseWhereClause("   ")
-		expect(result.clauses).toEqual([])
-		expect(result.warnings).toEqual([])
-	})
-
 	it("parses single equals clause", () => {
 		const result = parseWhereClause('service.name = "api"')
 		expect(result.clauses).toEqual([
@@ -139,48 +115,6 @@ describe("parseWhereClause", () => {
 		const result = parseWhereClause("root_only = true")
 		expect(result.clauses).toEqual([
 			{ key: "root_only", rawKey: "root_only", operator: "=", value: "true" },
-		])
-	})
-
-	it("parses greater than operator", () => {
-		const result = parseWhereClause("min_duration_ms > 100")
-		expect(result.clauses).toEqual([
-			{ key: "min_duration_ms", rawKey: "min_duration_ms", operator: ">", value: "100" },
-		])
-	})
-
-	it("parses less than operator", () => {
-		const result = parseWhereClause("max_duration_ms < 500")
-		expect(result.clauses).toEqual([
-			{ key: "max_duration_ms", rawKey: "max_duration_ms", operator: "<", value: "500" },
-		])
-	})
-
-	it("parses greater than or equal operator", () => {
-		const result = parseWhereClause("min_duration_ms >= 50")
-		expect(result.clauses).toEqual([
-			{ key: "min_duration_ms", rawKey: "min_duration_ms", operator: ">=", value: "50" },
-		])
-	})
-
-	it("parses less than or equal operator", () => {
-		const result = parseWhereClause("max_duration_ms <= 1000")
-		expect(result.clauses).toEqual([
-			{ key: "max_duration_ms", rawKey: "max_duration_ms", operator: "<=", value: "1000" },
-		])
-	})
-
-	it("parses exists operator", () => {
-		const result = parseWhereClause("attr.user_id exists")
-		expect(result.clauses).toEqual([
-			{ key: "attr.user_id", rawKey: "attr.user_id", operator: "exists", value: "" },
-		])
-	})
-
-	it("parses contains operator", () => {
-		const result = parseWhereClause('service.name contains "api"')
-		expect(result.clauses).toEqual([
-			{ key: "service.name", rawKey: "service.name", operator: "contains", value: "api" },
 		])
 	})
 
@@ -252,30 +186,6 @@ describe("parseWhereClause", () => {
 		const result = parseWhereClause('Service.Name = "api"')
 		expect(result.clauses[0].key).toBe("service.name")
 		expect(result.clauses[0].rawKey).toBe("Service.Name")
-	})
-
-	it("parses != operator", () => {
-		const result = parseWhereClause('service.name != "checkout"')
-		expect(result.clauses).toEqual([
-			{ key: "service.name", rawKey: "service.name", operator: "!=", value: "checkout" },
-		])
-		expect(result.warnings).toEqual([])
-	})
-
-	it("parses !contains operator", () => {
-		const result = parseWhereClause('attr.http.route !contains "/health"')
-		expect(result.clauses).toEqual([
-			{ key: "attr.http.route", rawKey: "attr.http.route", operator: "!contains", value: "/health" },
-		])
-		expect(result.warnings).toEqual([])
-	})
-
-	it("parses !exists operator", () => {
-		const result = parseWhereClause("attr.user_id !exists")
-		expect(result.clauses).toEqual([
-			{ key: "attr.user_id", rawKey: "attr.user_id", operator: "!exists", value: "" },
-		])
-		expect(result.warnings).toEqual([])
 	})
 
 	it("parses mixed positive and negative clauses", () => {

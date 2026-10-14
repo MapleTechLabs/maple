@@ -19,14 +19,14 @@ import { Scraper } from "./Scraper"
 import { TargetFetcher } from "./TargetFetcher"
 import { TargetRegistry } from "./TargetRegistry"
 
-const TelemetryLayer = Maple.layer({
+const TelemetryLive = Maple.layer({
 	serviceName: "scraper",
 	serviceNamespace: "core",
 	repositoryUrl: "https://github.com/MapleTechLabs/maple",
 	shutdownTimeout: "3 seconds",
 })
 
-const SchedulerLayer = ScrapeScheduler.layer.pipe(
+const SchedulerLive = ScrapeScheduler.layer.pipe(
 	Layer.provide(Layer.mergeAll(TargetRegistry.layer, ResultReporter.layer, Scraper.layer)),
 	Layer.provide(Layer.mergeAll(ApiClient.layer, OtlpIngest.layer, TargetFetcher.layer)),
 	Layer.provideMerge(ScraperEnv.layer),
@@ -57,7 +57,7 @@ const HealthServer = HttpRouter.serve(HealthRoutes, { disableLogger: true }).pip
 	),
 )
 
-const MainLayer = HealthServer.pipe(Layer.provideMerge(SchedulerLayer))
+const MainLive = HealthServer.pipe(Layer.provideMerge(SchedulerLive))
 
 const program = Effect.gen(function* () {
 	const scheduler = yield* ScrapeScheduler
@@ -65,9 +65,9 @@ const program = Effect.gen(function* () {
 	return yield* scheduler.run
 })
 
-// Telemetry intentionally owns the outer scope so its exporter flushes after MainLayer closes.
+// Telemetry intentionally owns the outer scope so its exporter flushes after MainLive closes.
 /* oxlint-disable effecttsgo/multiple-effect-provide */
 /* oxlint-disable effecttsgo/strict-effect-provide */
-program.pipe(Effect.provide(MainLayer), Effect.provide(TelemetryLayer), BunRuntime.runMain)
+program.pipe(Effect.provide(MainLive), Effect.provide(TelemetryLive), BunRuntime.runMain)
 /* oxlint-enable effecttsgo/strict-effect-provide */
 /* oxlint-enable effecttsgo/multiple-effect-provide */

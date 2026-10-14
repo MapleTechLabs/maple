@@ -27,7 +27,7 @@ import {
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { PrReviewFindingEmbeddings, PrReviewFindings, PrReviews } from "@maple/db/tables"
+import { PrReviewFindingEmbeddings, PrReviewFindings, PrReviewMergeSteps, PrReviews } from "@maple/db/tables"
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -113,6 +113,7 @@ const layerFor = (
 		readonly embedder?: FindingEmbedderApi
 		/** Every body a summary comment was given, status notices and finished reviews alike. */
 		readonly comments?: Array<string>
+		readonly deleted?: Array<string>
 		/** Every check run state written before a result, as `<sha7>:<status or conclusion>`. */
 		readonly checks?: Array<string>
 		/** Present: the review reads these telemetry facts at start. */
@@ -125,6 +126,12 @@ const layerFor = (
 		readonly searchSnippets?: Readonly<Record<string, ReadonlyArray<string>>>
 		/** The pull request's changed files. */
 		readonly prFiles?: ReadonlyArray<PullRequestFile>
+		/** Present: replies posted to the pull request's conversation are recorded here. */
+		readonly replies?: Array<string>
+		/** How many replies fail before one is accepted. */
+		readonly replyFailures?: { remaining: number }
+		/** Present and true: reading the pull request's files fails. */
+		readonly filesUnreadable?: { value: boolean }
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -141,7 +148,10 @@ const layerFor = (
 		fetchCommit: unused,
 		fetchPullRequests: unused,
 		fetchPullRequest: unused,
-		fetchPullRequestFiles: () => Effect.succeed(options.prFiles ?? []),
+		fetchPullRequestFiles: () =>
+			options.filesUnreadable?.value === true
+				? Effect.die("GitHub is down")
+				: Effect.succeed(options.prFiles ?? []),
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
 		resolveReviewThread: (_installation, _repo, input) =>
@@ -150,7 +160,18 @@ const layerFor = (
 			}),
 		fetchChangesSince: () => Effect.succeed({ paths: ["b.ts", "c.ts"], rewritten: false }),
 		fetchPullRequestHead: unused,
-		postPullRequestReply: unused,
+		postPullRequestReply: (_installation, _repo, input) =>
+			options.replies === undefined
+				? Effect.die("not used by the review service")
+				: options.replyFailures !== undefined && options.replyFailures.remaining > 0
+					? Effect.suspend(() => {
+							options.replyFailures!.remaining--
+							return Effect.die("GitHub refused the reply")
+						})
+					: Effect.sync(() => {
+							options.replies?.push(input.body)
+							return { url: "https://github.com/acme/shop/pull/1#reply" }
+						}),
 		reactToComment: unused,
 		fetchCommenterPermission: unused,
 		commitFiles: unused,
@@ -184,7 +205,10 @@ const layerFor = (
 		writePullRequestSummaryComment: (_installation, _repo, input) =>
 			Effect.sync(() => {
 				const next = input.body(commentsByMarker.get(input.marker))
-				if (next !== undefined) {
+				if (next === null) {
+					commentsByMarker.delete(input.marker)
+					options.deleted?.push(input.marker)
+				} else if (next !== undefined) {
 					commentsByMarker.set(input.marker, next)
 					options.comments?.push(next)
 				}
@@ -636,9 +660,10 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
-	it.effect("closes a superseded review's comment instead of leaving it reviewing", () => {
+	it.effect("deletes a superseded review's comment instead of leaving it reviewing", () => {
 		const testDb = createTestDb(trackedDbs)
 		const comments: Array<string> = []
+		const deleted: Array<string> = []
 		return Effect.gen(function* () {
 			yield* seed(true)
 			const reviews = yield* PrReviewService
@@ -648,11 +673,10 @@ describe("PrReviewService.onPullRequestEvent", () => {
 				job({ action: "synchronize", headSha: HEAD_2 }),
 			)
 			const ofFirst = comments.filter((body) => body.startsWith(prReviewCommentMarker(first.reviewId!)))
-			assert.equal(ofFirst.length, 2)
-			assert.include(ofFirst[1]!, "A newer push replaced")
-			assert.notInclude(ofFirst[1]!, "is reviewing")
+			assert.equal(ofFirst.length, 1)
+			assert.deepEqual(deleted, [prReviewCommentMarker(first.reviewId!)])
 			assert.isTrue(comments.at(-1)!.startsWith(prReviewCommentMarker(second.reviewId!)))
-		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+		}).pipe(Effect.provide(layerFor(testDb, { comments, deleted })))
 	})
 
 	it.effect("records a review the agent could not start rather than losing it", () => {
@@ -1295,7 +1319,7 @@ describe("withReviewStatus", () => {
 		assert.notInclude(failed, "is reviewing")
 	})
 
-	it("closes its own notice when a newer push replaces the review", () => {
+	it("deletes its own notice when a newer push replaces the review", () => {
 		const reviewing = withReviewStatus(
 			undefined,
 			MARKER,
@@ -1308,8 +1332,7 @@ describe("withReviewStatus", () => {
 			{ kind: "superseded", headSha: HEAD },
 			"@maple-review-bot",
 		)
-		assert.include(superseded, "A newer push replaced")
-		assert.notInclude(superseded, "is reviewing")
+		assert.isNull(superseded)
 	})
 
 	it("leaves a finished summary alone when a review fails or is superseded late", () => {
@@ -1988,10 +2011,15 @@ describe("PrReviewService before-merge checklist", () => {
 				assert.deepStrictEqual(
 					stored.report?.beforeMerge?.map((step) => [step.kind, step.subject ?? step.title]),
 					[
+						["secret", "BILLING_TOKEN"],
 						["env", "BILLING_REGION"],
 						["migration", "packages/db/drizzle/20261008_billing/migration.sql"],
-						["manual", "Add `BILLING_TOKEN` to the prd and dev secret stores"],
 					],
+				)
+				// The reviewer's wording, under the secret it replaced.
+				assert.strictEqual(
+					stored.report?.beforeMerge?.[0]?.title,
+					"Add `BILLING_TOKEN` to the prd and dev secret stores",
 				)
 				assert.include(published[0]!.summaryComment.body, "### Before merge")
 			}).pipe(
@@ -2037,5 +2065,175 @@ describe("PrReviewService before-merge checklist", () => {
 				["Create the flag"],
 			)
 		}).pipe(Effect.provide(layerFor(testDb, {})))
+	})
+})
+
+describe("PrReviewService before-merge steps across pushes", () => {
+	const secretFile = (name: string): PullRequestFile => ({
+		path: "apps/api/src/env.ts",
+		previousPath: null,
+		status: "modified",
+		additions: 1,
+		deletions: 0,
+		patch: `@@ -1,1 +1,2 @@\n export const env = merge(\n+\toptionalSecret("${name}"),`,
+	})
+
+	const submitWith = (headSha: string) =>
+		Effect.gen(function* () {
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: Schema.decodeSync(GitCommitSha)(headSha) }),
+			)
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			return Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+		})
+
+	const tick = (key: string, done: boolean) =>
+		Effect.gen(function* () {
+			const reviews = yield* PrReviewService
+			yield* reviews.onMergeStepsTicked(orgId, {
+				kind: "pull-request-checklist",
+				provider: "github",
+				externalInstallationId: "1",
+				externalRepoId: "7",
+				repoFullName: "acme/shop",
+				number: job().number,
+				commentId: "99",
+				editorLogin: "christo",
+				ticks: [{ key, done }],
+			})
+		})
+
+	it.effect("carries a tick to the next push's comment and obsoletes a step the head dropped", () => {
+		const testDb = createTestDb(trackedDbs)
+		const files: Array<PullRequestFile> = [secretFile("BILLING_TOKEN")]
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const first = yield* submitWith("a".repeat(40))
+			assert.deepStrictEqual(
+				first.report?.beforeMerge?.map((step) => [step.key, step.done === true]),
+				[["secret:BILLING_TOKEN", false]],
+			)
+			assert.include(published[0]!.summaryComment.body, "<!-- ms:secret:BILLING_TOKEN -->")
+			yield* tick("secret:BILLING_TOKEN", true)
+
+			files.push(secretFile("BILLING_REGION_KEY"))
+			const second = yield* submitWith("b".repeat(40))
+			assert.deepStrictEqual(
+				second.report?.beforeMerge?.map((step) => [step.key, step.done === true, step.doneBy]),
+				[
+					["secret:BILLING_TOKEN", true, "christo"],
+					["secret:BILLING_REGION_KEY", false, undefined],
+				],
+			)
+			assert.match(published[1]!.summaryComment.body, /- \[x\] \*\*Secret\*\* .*ticked by @christo/)
+
+			// The third head drops the region read: its open step goes obsolete, the ticked one stays.
+			files.splice(1)
+			yield* submitWith("c".repeat(40))
+			const db = yield* Database
+			const rows = yield* db.execute((client) =>
+				client.run(PG.from(PrReviewMergeSteps).select("key", "status").orderBy(["key", "asc"])),
+			)
+			assert.deepStrictEqual(rows, [
+				{ key: "secret:BILLING_REGION_KEY", status: "obsolete" },
+				{ key: "secret:BILLING_TOKEN", status: "done" },
+			])
+		}).pipe(Effect.provide(layerFor(testDb, { published, prFiles: files })))
+	})
+
+	it.effect("obsoletes nothing when the diff could not be read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const unreadable = { value: false }
+		return Effect.gen(function* () {
+			yield* seed(true)
+			yield* submitWith("a".repeat(40))
+			unreadable.value = true
+			yield* submitWith("b".repeat(40))
+			const db = yield* Database
+			const rows = yield* db.execute((client) =>
+				client.run(PG.from(PrReviewMergeSteps).select("status")),
+			)
+			assert.deepStrictEqual(rows, [{ status: "open" }])
+		}).pipe(
+			Effect.provide(
+				layerFor(testDb, { prFiles: [secretFile("BILLING_TOKEN")], filesUnreadable: unreadable }),
+			),
+		)
+	})
+
+	it.effect("releases the reminder when the post fails, so a redelivered close posts it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const replies: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			yield* submitWith("a".repeat(40))
+			const reviews = yield* PrReviewService
+			const merged = job({ action: "closed", merged: true, mergeCommitSha: "ccc", mergedAtMs: 1_000 })
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			assert.deepStrictEqual(replies, [])
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			assert.strictEqual(replies.length, 1)
+		}).pipe(
+			Effect.provide(
+				layerFor(testDb, {
+					prFiles: [secretFile("BILLING_TOKEN")],
+					replies,
+					replyFailures: { remaining: 1 },
+				}),
+			),
+		)
+	})
+
+	it.effect("reminds of the steps a review stores after the pull request merged", () => {
+		const testDb = createTestDb(trackedDbs)
+		const replies: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: Schema.decodeSync(GitCommitSha)("a".repeat(40)) }),
+			)
+			// The merge lands while the review runs: nothing is stored yet, so nothing is reminded.
+			yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "closed", merged: true, mergeCommitSha: "ccc", mergedAtMs: 1_000 }),
+			)
+			assert.deepStrictEqual(replies, [])
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+			assert.strictEqual(replies.length, 1)
+			assert.include(replies[0]!, "`BILLING_TOKEN`")
+		}).pipe(Effect.provide(layerFor(testDb, { prFiles: [secretFile("BILLING_TOKEN")], replies })))
+	})
+
+	it.effect("unticks, ignores ticks on obsolete steps, and reminds once at merge", () => {
+		const testDb = createTestDb(trackedDbs)
+		const replies: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			yield* submitWith("a".repeat(40))
+			yield* tick("secret:BILLING_TOKEN", true)
+			yield* tick("secret:BILLING_TOKEN", false)
+			yield* tick("secret:NEVER_LISTED", true)
+			const reviews = yield* PrReviewService
+			const merged = job({ action: "closed", merged: true, mergeCommitSha: "ccc", mergedAtMs: 1_000 })
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			// A redelivered close posts nothing more.
+			yield* reviews.onPullRequestEvent(orgId, merged)
+			assert.strictEqual(replies.length, 1)
+			assert.include(replies[0]!, "Merged with 1 step")
+			assert.include(replies[0]!, "`BILLING_TOKEN`")
+		}).pipe(Effect.provide(layerFor(testDb, { prFiles: [secretFile("BILLING_TOKEN")], replies })))
 	})
 })

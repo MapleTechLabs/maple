@@ -30,7 +30,11 @@ import { InboundHandler } from "../inbound.ts"
 class ConnectorUnavailable extends Schema.TaggedError<ConnectorUnavailable>()(
 	"@maple/chat-bot/ConnectorUnavailable",
 	{ connector: Schema.String, missing: Schema.Array(Schema.String) },
-) {}
+) {
+	override get message(): string {
+		return `Connector ${this.connector} is unavailable: missing ${this.missing.join(", ")}`
+	}
+}
 
 const problem = (status: number, detail: string) =>
 	Effect.as(

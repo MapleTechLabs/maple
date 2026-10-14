@@ -20,10 +20,13 @@ import { useTimeWindow } from "../hooks/use-time-window"
 import { hrefFor, useQueryParams } from "../lib/router"
 import { formatLocalDateTime, formatRelativeTime, formatUtcTitle, WIDEST_RANGE } from "../lib/time"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
+import { initialsFrom } from "@maple/ui/lib/initials"
+import { isLocalSessionLive, localSessionDurationMs } from "../lib/session-liveness"
 import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import {
 	FilterSection,
 	SearchableFilterSection,
+	serviceColorMap,
 	SingleCheckboxFilter,
 	type FilterOption,
 } from "@maple/ui/components/filters/filter-section"
@@ -90,6 +93,7 @@ export function SessionsListView() {
 					options={facetData ? withSelected(facetData.service, service) : []}
 					selected={service ? [service] : []}
 					onChange={(vals) => setSingle("service", vals)}
+					colorMap={serviceColorMap(facetData?.service ?? [])}
 				/>
 				<SearchableFilterSection
 					title="Browser"
@@ -120,7 +124,7 @@ export function SessionsListView() {
 			<ToolbarStats className="shrink-0">
 				<ToolbarStat value={sessions.length} label={hasNextPage ? "sessions+" : "sessions"} />
 				<ToolbarStat
-					value={sessions.filter((s) => s.status === "active").length}
+					value={sessions.filter((s) => isLocalSessionLive(s)).length}
 					label="active"
 					dot
 				/>
@@ -170,9 +174,9 @@ export function SessionsListView() {
 }
 
 function SessionCard({ session, href }: { session: SessionReplaysListOutput; href: string }) {
-	const label = session.userId || "Anonymous"
-	const initial = (label[0] ?? "?").toUpperCase()
-	const isActive = session.status === "active"
+	const label = session.userName || session.userEmail || session.userId || "Anonymous"
+	const initial = initialsFrom(label)
+	const isActive = isLocalSessionLive(session)
 	const DeviceIcon = isMobileDevice(session.deviceType) ? MobileIcon : ComputerIcon
 
 	return (
@@ -192,7 +196,7 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 					<StatusDot tone={isActive ? "ok" : "neutral"} title={isActive ? "active" : "ended"} />
 					<span className="font-mono text-xs text-muted-foreground">
 						{shortId(session.sessionId, "session", { length: 8 })} ·{" "}
-						{formatSessionDuration(session.durationMs)}
+						{formatSessionDuration(localSessionDurationMs(session))}
 					</span>
 				</div>
 				<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">

@@ -49,9 +49,9 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 ) {
 	const { context, messageId, outbound, target } = options
 	yield* Effect.annotateCurrentSpan({
-		"chat.connector": outbound.connectorId,
-		"chat.session_id": context.sessionId,
-		"chat.message_id": messageId,
+		"maple.chat.connector": outbound.connectorId,
+		"maple.chat.session_id": context.sessionId,
+		"maple.chat.message_id": messageId,
 	})
 
 	const transport = yield* outbound.transport
@@ -95,28 +95,34 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 			if (blocks.length === 0) blocks.push(running ? PENDING : NOTHING_SAID)
 
 			const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
-			for (let index = 0; index < Math.max(groups.length, posted.length); index++) {
-				// A retraction can shrink a turn below a message it had already needed, so a surplus
-				// message is emptied rather than left holding text the turn no longer says.
-				const group = index < groups.length ? groups[index] : NO_BLOCKS
-				// A fingerprint of what this message should now say, not a wire format — nothing decodes
-				// it, it is only ever compared with the previous flush's.
-				// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
-				const rendered = JSON.stringify(group)
-				if (index >= posted.length) {
-					posted.push(yield* transport.post(target, group))
-					sent.push(rendered)
-					// At least once: a run lost between the post and this report posts it again later.
-					if (options.onPosted !== undefined) yield* options.onPosted([...posted])
-					continue
-				}
-				// Only what changed. A turn cut into three messages would otherwise spend three edits
-				// per tick, almost all of them rewriting a message with what it already says — and a
-				// platform's edit budget is per channel, not per message.
-				if (sent[index] === rendered) continue
-				yield* transport.edit(posted[index], group)
-				sent[index] = rendered
-			}
+			// Messages a flush posts extend `posted` as it goes; the count is fixed up front.
+			yield* Effect.forEach(
+				Array.from({ length: Math.max(groups.length, posted.length) }, (_, index) => index),
+				(index) =>
+					Effect.gen(function* () {
+						// A retraction can shrink a turn below a message it had already needed, so a surplus
+						// message is emptied rather than left holding text the turn no longer says.
+						const group = index < groups.length ? groups[index] : NO_BLOCKS
+						// A fingerprint of what this message should now say, not a wire format — nothing decodes
+						// it, it is only ever compared with the previous flush's.
+						// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
+						const rendered = JSON.stringify(group)
+						if (index >= posted.length) {
+							posted.push(yield* transport.post(target, group))
+							sent.push(rendered)
+							// At least once: a run lost between the post and this report posts it again later.
+							if (options.onPosted !== undefined) yield* options.onPosted([...posted])
+							return
+						}
+						// Only what changed. A turn cut into three messages would otherwise spend three edits
+						// per tick, almost all of them rewriting a message with what it already says — and a
+						// platform's edit budget is per channel, not per message.
+						if (sent[index] === rendered) return
+						yield* transport.edit(posted[index], group)
+						sent[index] = rendered
+					}),
+				{ discard: true },
+			)
 		}),
 	)
 
@@ -182,7 +188,10 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	// settles the same way.
 	running = false
 	yield* flush
-	yield* Effect.annotateCurrentSpan({ "chat.turn.end_reason": endReason, "chat.messages": posted.length })
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.turn.end_reason": endReason,
+		"maple.chat.messages": posted.length,
+	})
 	return yield* outcome
 })
 

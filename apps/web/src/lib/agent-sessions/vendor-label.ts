@@ -7,6 +7,7 @@
  */
 const VENDOR_LABELS: Record<string, string> = {
 	claude_agent_sdk: "Claude Agent SDK",
+	cloudflare_ai_gateway: "Cloudflare AI Gateway",
 	crewai: "CrewAI",
 	dspy: "DSPy",
 	effect_ai: "Effect AI",

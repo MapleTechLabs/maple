@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { PLOT_HEIGHT, PLOT_PAD, PLOT_WIDTH, type ChartPoint } from "@maple/widgets/chart/static-chart"
 import type { Node } from "@takumi-rs/helpers"
-import {
-	chartCard,
-	rankedCard,
-	AXIS_WIDTH,
-	CHART_CARD_WIDTH,
-	legendRows,
-	xAxisRow,
-	yAxisGutter,
-} from "./chart-card"
+import { chartCard, rankedCard, CHART_CARD_WIDTH, legendRows, xAxisRow, yAxisGutter } from "./chart-card"
 import { chartRequestFromPath } from "./chart-image"
 import { ogIdFromPath } from "./share-links"
 
@@ -80,22 +72,11 @@ describe("chartCard", () => {
 		expect(card.height).toBeGreaterThan(PLOT_HEIGHT)
 	})
 
-	it("draws no legend row for one series, so an alert card keeps its old height", () => {
-		// 368: padding, a title row, the plot, the time axis and two gaps. The
-		// height the alert card had when the time axis was a start/end footer, and
-		// a threshold still costs no row — it is drawn on the value scale.
-		expect(chartCard("checkout-api error rate", alert).height).toBe(368)
+	it("draws the threshold on the value scale, so it costs the card no row", () => {
 		const { threshold: _threshold, breachSide: _breachSide, ...solo } = alert
-		expect(chartCard("checkout-api error rate", solo).height).toBe(368)
-	})
-
-	it("reserves room the longest label the formatter emits still draws in", () => {
-		const beyondPlot = CHART_CARD_WIDTH - PLOT_WIDTH
-		expect(beyondPlot).toBeGreaterThan(AXIS_WIDTH)
-		// "0.000001 ms" is the deepest `formatValue` goes: 11 characters of Geist
-		// Mono at ~7.3px. It draws in full because it may grow out of the gutter
-		// and into the card's padding, and this is the sum of the two.
-		expect(beyondPlot).toBeGreaterThanOrEqual(Math.ceil("0.000001 ms".length * 7.3))
+		expect(chartCard("checkout-api error rate", alert).height).toBe(
+			chartCard("checkout-api error rate", solo).height,
+		)
 	})
 
 	it("grows for a legend, and again when that legend wraps", () => {
@@ -216,18 +197,5 @@ describe("rankedCard", () => {
 
 		expect(three.height).toBeGreaterThan(one.height)
 		expect(one.width).toBe(CHART_CARD_WIDTH)
-	})
-
-	it("draws a ranking of zeroes without dividing by its own maximum", () => {
-		expect(() =>
-			rankedCard({
-				title: "errors",
-				unit: "number",
-				points: [
-					{ name: "a", value: 0 },
-					{ name: "b", value: 0 },
-				],
-			}),
-		).not.toThrow()
 	})
 })

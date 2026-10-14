@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Redacted } from "effect"
+import { Duration, Effect, Fiber, Layer, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { TestClock } from "effect/testing"
 import { ApiClient } from "./ApiClient"
 import { ScraperEnv, type ScraperEnvConfig } from "./Env"
 
@@ -17,6 +18,17 @@ const testEnv: ScraperEnvConfig = {
 const TestLayer = ApiClient.layer.pipe(
 	Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(ScraperEnv, testEnv))),
 )
+
+/** Lets the stubbed fetch settle on the real event loop, then moves the test clock past a backoff. */
+const settleAndAdvance = (steps: number, by: Duration.Input = "2 seconds") =>
+	Effect.forEach(
+		Array.from({ length: steps }),
+		() =>
+			Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0))).pipe(
+				Effect.andThen(TestClock.adjust(by)),
+			),
+		{ discard: true },
+	)
 
 interface RecordedRequest {
 	url: string
@@ -139,8 +151,35 @@ describe("ApiClient", () => {
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
-	it.effect("surfaces a 503 result-persistence response so the scheduler can re-buffer", () =>
+	it.effect("surfaces a 503 result-persistence response once retries run out", () =>
 		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const client = yield* ApiClient
+			const fiber = yield* Effect.forkChild(
+				client
+					.reportResults([
+						{ targetId: VALID_TARGET.id, scrapedAt: 1750000000000, error: null } as never,
+					])
+					.pipe(
+						Effect.provideService(
+							FetchHttpClient.Fetch,
+							stubFetch(recorded, () => new Response("persistence unavailable", { status: 503 })),
+						),
+						Effect.flip,
+					),
+			)
+			yield* settleAndAdvance(3)
+			const error = yield* Fiber.join(fiber)
+
+			assert.strictEqual(error._tag, "@maple/scraper/ApiRequestError")
+			assert.strictEqual(error.status, 503)
+			assert.lengthOf(recorded, 3)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	it.effect("does not re-post results after a dropped connection, which may have landed", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
 			const client = yield* ApiClient
 			const error = yield* client
 				.reportResults([
@@ -149,13 +188,36 @@ describe("ApiClient", () => {
 				.pipe(
 					Effect.provideService(
 						FetchHttpClient.Fetch,
-						stubFetch([], () => new Response("persistence unavailable", { status: 503 })),
+						stubFetch(recorded, () => {
+							throw new TypeError("connection reset")
+						}),
 					),
 					Effect.flip,
 				)
+			assert.strictEqual(error.status, null)
+			assert.lengthOf(recorded, 1)
+		}).pipe(Effect.provide(TestLayer)),
+	)
 
-			assert.strictEqual(error._tag, "@maple/scraper/ApiRequestError")
-			assert.strictEqual(error.status, 503)
+	it.effect("retries a dropped connection when listing targets", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const client = yield* ApiClient
+			const fiber = yield* Effect.forkChild(
+				client.listTargets().pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () => {
+							if (recorded.length === 1) throw new TypeError("connection reset")
+							return Response.json([VALID_TARGET])
+						}),
+					),
+				),
+			)
+			yield* settleAndAdvance(2)
+			const targets = yield* Fiber.join(fiber)
+			assert.lengthOf(recorded, 2)
+			assert.lengthOf(targets, 1)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 })

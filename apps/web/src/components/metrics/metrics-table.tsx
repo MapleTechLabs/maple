@@ -149,7 +149,9 @@ export function MetricsTable({
 												params={{ metricName: metric.metricName }}
 												search={{
 													...linkTime,
-													type: toQueryBuilderMetricType(metric.metricType) ?? undefined,
+													type:
+														toQueryBuilderMetricType(metric.metricType) ??
+														undefined,
 												}}
 												className={cn("block min-w-0", ROW_STRETCHED_LINK_CLASS)}
 											>
@@ -169,14 +171,22 @@ export function MetricsTable({
 									<TableCell className="hidden md:table-cell">
 										<MetricTypeBadge type={metric.metricType} />
 									</TableCell>
-									<TableCell className="hidden md:table-cell">
+									<TableCell className="hidden md:table-cell overflow-hidden">
 										{metric.serviceName ? (
-											<Badge variant="outline" size="xs" mono>
+											<Badge
+												variant="outline"
+												size="xs"
+												mono
+												className="max-w-full"
+												title={metric.serviceName}
+											>
 												<ServiceDot serviceName={metric.serviceName} size="sm" />
-												{metric.serviceName}
+												<span className="min-w-0 truncate">{metric.serviceName}</span>
 											</Badge>
 										) : (
-											<span className="text-xs text-muted-foreground">{EMPTY_VALUE}</span>
+											<span className="text-xs text-muted-foreground">
+												{EMPTY_VALUE}
+											</span>
 										)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell font-mono text-xs">

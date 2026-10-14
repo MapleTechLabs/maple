@@ -1,7 +1,7 @@
 ---
 title: "Trace Cloudflare Agents with OpenTelemetry"
 description: "Export the AI SDK spans of a Cloudflare Agents SDK agent from its Durable Object to Maple and group each chat into one Agent Session."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 15
 navLabel: "Cloudflare Agents"
 icon: "cloudflare"
