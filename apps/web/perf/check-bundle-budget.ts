@@ -98,7 +98,8 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // and render only while open, so nothing there is worth a lazy chunk.
 // 698.5 KB from the Google Cloud connectors (#1321, 2026-10-15): ~2.5 KB of
 // startup measured in CI against main's 694.6 — the connector group's endpoints
-// and schemas on the v2 contract every page's client carries.
+// and schemas on the v2 contract every page's client carries. Each Google Cloud
+// step below keeps ~1 KB of headroom, since CI measures the PR merged with main.
 const maxGzipBytes = 698.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
