@@ -621,10 +621,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						// immediate-redelivery loop after we stop spinning.
 						const exhausted = inlineRetries >= MAX_INLINE_RATE_LIMIT_RETRIES
 						if (waitS > INLINE_BACKOFF_CAP_S || exhausted) {
+							const retryAfterSeconds = exhausted ? Math.max(waitS, 60) : waitS
 							return yield* new GithubAppError({
-								message: `GitHub rate limited (retry after ${waitS}s)`,
+								message: `GitHub rate limited (retry after ${retryAfterSeconds}s)`,
 								status: response.status,
-								retryAfterSeconds: exhausted ? Math.max(waitS, 60) : waitS,
+								retryAfterSeconds,
 							})
 						}
 						// Surface the inline-wait on the active HTTP span so a slow GitHub call
