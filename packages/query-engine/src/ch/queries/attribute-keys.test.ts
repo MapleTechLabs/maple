@@ -182,14 +182,14 @@ describe("metricScopedAttributeValuesQuery", () => {
 		const q = metricScopedAttributeValuesQuery({
 			metricType: "gauge",
 			scope: "resource",
-			metricNames: ["gcp.run.container.instance_count", "gcp.cloudsql.database.cpu.utilization"],
+			metricNames: ["gcp.cloud_run.container.instance.count", "gcp.cloud_sql.cpu.utilization"],
 			attributeKey: "cloud.account.id",
 		})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("ResourceAttributes['cloud.account.id'] AS attributeValue")
 		expect(sql).toContain(
-			"MetricName IN ('gcp.run.container.instance_count', 'gcp.cloudsql.database.cpu.utilization')",
+			"MetricName IN ('gcp.cloud_run.container.instance.count', 'gcp.cloud_sql.cpu.utilization')",
 		)
 		expect(sql).not.toMatch(/\bAttributes\['/)
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
