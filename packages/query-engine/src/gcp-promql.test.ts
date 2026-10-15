@@ -56,6 +56,24 @@ describe("promQlChartRows", () => {
 		expect(rows).toEqual([{ bucket: iso(T0), "api requests": 1, "api requests (2)": 2, " requests": 3 }])
 	})
 
+	it("keeps metrics_scope, which tells a scope's projects apart behind one answering project", () => {
+		const rows = promQlChartRows(
+			[
+				{ labels: { metrics_scope: "shop-prod", service: "api" }, points: [[T0, 1]] },
+				{ labels: { metrics_scope: "shop-staging", service: "api" }, points: [[T0, 2]] },
+			],
+			1,
+		)
+
+		expect(rows).toEqual([
+			{
+				bucket: iso(T0),
+				"metrics_scope=shop-prod, service=api": 1,
+				"metrics_scope=shop-staging, service=api": 2,
+			},
+		])
+	})
+
 	it("calls an aggregate with no labels left `value`, the field a stat reads", () => {
 		const rows = promQlChartRows(
 			[
@@ -138,14 +156,14 @@ describe("promQlStarterQuery", () => {
 
 	it("rates a counter, grouped by its first label", () => {
 		expect(promQlStarterQuery("run.googleapis.com/request_count", descriptor({}))).toBe(
-			'sum by (response_code_class) (rate({"run.googleapis.com/request_count"}[5m]))',
+			'sum by (project_id, response_code_class) (rate({"run.googleapis.com/request_count"}[5m]))',
 		)
 		expect(
 			promQlStarterQuery(
 				"run.googleapis.com/request_count",
 				descriptor({ metricKind: "CUMULATIVE", labels: [] }),
 			),
-		).toBe('sum (rate({"run.googleapis.com/request_count"}[5m]))')
+		).toBe('sum by (project_id) (rate({"run.googleapis.com/request_count"}[5m]))')
 	})
 
 	it("averages a gauge", () => {
@@ -154,7 +172,7 @@ describe("promQlStarterQuery", () => {
 				"run.googleapis.com/container/instance_count",
 				descriptor({ type: "run.googleapis.com/container/instance_count", metricKind: "GAUGE" }),
 			),
-		).toBe('avg by (response_code_class) ({"run.googleapis.com/container/instance_count"})')
+		).toBe('avg by (project_id, response_code_class) ({"run.googleapis.com/container/instance_count"})')
 	})
 
 	it("takes the 95th percentile of a distribution and names the resource when there are several", () => {
@@ -165,11 +183,11 @@ describe("promQlStarterQuery", () => {
 		})
 
 		expect(promQlStarterQuery("run.googleapis.com/request_latencies_bucket", latencies)).toBe(
-			'histogram_quantile(0.95, sum by (le) (rate({"run.googleapis.com/request_latencies_bucket", monitored_resource="cloud_run_revision"}[5m])))',
+			'histogram_quantile(0.95, sum by (project_id, le) (rate({"run.googleapis.com/request_latencies_bucket", monitored_resource="cloud_run_revision"}[5m])))',
 		)
 		// A distribution's `_count` is a counter like any other.
 		expect(promQlStarterQuery("run.googleapis.com/request_latencies_count", latencies)).toBe(
-			'sum by (response_code_class) (rate({"run.googleapis.com/request_latencies_count", monitored_resource="cloud_run_revision"}[5m]))',
+			'sum by (project_id, response_code_class) (rate({"run.googleapis.com/request_latencies_count", monitored_resource="cloud_run_revision"}[5m]))',
 		)
 	})
 })

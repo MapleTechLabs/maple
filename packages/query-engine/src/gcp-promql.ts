@@ -42,6 +42,7 @@ const seriesKey = (
 	if (legend !== undefined && legend.trim() !== "") {
 		return legend.replace(LEGEND_LABEL, (_, name: string) => labels[name] ?? "")
 	}
+	// `metrics_scope` stays: within one scoping project it is what tells the monitored projects apart.
 	const pairs = Object.entries(labels)
 		.filter(([key]) => key !== "__name__" && !(oneProject && key === "project_id"))
 		.sort(([a], [b]) => a.localeCompare(b))
@@ -99,16 +100,17 @@ export const promQlWidgetData = (
 
 /**
  * A query that runs as written for a metric picked from the metric search: a rate for DELTA and
- * CUMULATIVE metrics, an average for a GAUGE, the 95th percentile for a distribution's buckets.
+ * CUMULATIVE metrics, an average for a GAUGE, the 95th percentile for a distribution's buckets,
+ * each kept per project.
  * Google refuses a selector without `monitored_resource` when the metric has several resource types.
  */
 export const promQlStarterQuery = (metric: string, descriptor: GcpMetricDescriptor): string => {
 	const [resource] = descriptor.monitoredResourceTypes
 	const matcher = descriptor.monitoredResourceTypes.length > 1 ? `, monitored_resource="${resource}"` : ""
 	const selector = (name: string) => `{"${name}"${matcher}}`
-	const by = descriptor.labels[0] === undefined ? "" : ` by (${descriptor.labels[0].key})`
+	const by = ` by (${["project_id", ...descriptor.labels.slice(0, 1).map((label) => label.key)].join(", ")})`
 	if (descriptor.valueType === "DISTRIBUTION" && !/_(count|sum)$/u.test(metric)) {
-		return `histogram_quantile(0.95, sum by (le) (rate(${selector(`${descriptor.type}_bucket`)}[5m])))`
+		return `histogram_quantile(0.95, sum by (project_id, le) (rate(${selector(`${descriptor.type}_bucket`)}[5m])))`
 	}
 	if (descriptor.metricKind === "GAUGE") return `avg${by} (${selector(metric)})`
 	return `sum${by} (rate(${selector(metric)}[5m]))`
