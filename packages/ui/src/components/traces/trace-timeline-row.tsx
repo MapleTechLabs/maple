@@ -297,7 +297,8 @@ function SpanEventMarkers({
 						render={
 							<span
 								data-span-event=""
-								aria-label={`${marker.name} at +${formatDuration(marker.offsetMs)}`}
+								tabIndex={0}
+								aria-label={`${marker.name || "(unnamed event)"} at ${marker.offsetLabel}`}
 								className="pointer-events-auto absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center"
 								// Clamped like the bar: off-view markers stay just outside the clipping cell.
 								style={{
@@ -321,7 +322,7 @@ function SpanEventMarkers({
 							{marker.name || "(unnamed event)"}
 						</span>{" "}
 						<span className="font-mono tabular-nums text-muted-foreground">
-							+{formatDuration(marker.offsetMs)}
+							{marker.offsetLabel}
 						</span>
 					</TooltipContent>
 				</Tooltip>
