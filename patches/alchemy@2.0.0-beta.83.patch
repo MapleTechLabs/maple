@@ -1,5 +1,5 @@
 diff --git a/lib/Cloudflare/Workers/ObservabilityDestination.js b/lib/Cloudflare/Workers/ObservabilityDestination.js
-index 1cbcfbac8a32c68db0ed62a78aba2f1564141748..2f241274b02fe993b349053fbef2d2c9b77d5d9f 100644
+index 1cbcfba..10f5f89 100644
 --- a/lib/Cloudflare/Workers/ObservabilityDestination.js
 +++ b/lib/Cloudflare/Workers/ObservabilityDestination.js
 @@ -96,12 +96,6 @@ export const ObservabilityDestinationProvider = () => Provider.succeed(Observabi
@@ -15,8 +15,41 @@ index 1cbcfbac8a32c68db0ed62a78aba2f1564141748..2f241274b02fe993b349053fbef2d2c9
          return undefined;
      }),
      read: Effect.fn(function* ({ id, output, olds }) {
+@@ -121,7 +115,7 @@ export const ObservabilityDestinationProvider = () => Provider.succeed(Observabi
+         const observed = yield* findByName(acct, name);
+         return observed ? Unowned(toAttributes(observed, acct)) : undefined;
+     }),
+-    reconcile: Effect.fn(function* ({ id, news, output }) {
++    reconcile: Effect.fn(function* ({ id, news, olds, output }) {
+         const { accountId } = yield* yield* CloudflareEnvironment;
+         // Prefer the deployed name: regenerating would target a different
+         // resource if the generator's output for this id ever drifts.
+@@ -130,6 +124,12 @@ export const ObservabilityDestinationProvider = () => Provider.succeed(Observabi
+         const url = news.url;
+         const headers = unwrapRedacted(news.headers ?? {});
+         const enabled = news.enabled ?? true;
++        // maple patch: settle an unchanged destination from its stored state.
++        // Observing lists the account's destinations, which the deploy token
++        // may not do, so a resumed no-change update would otherwise 403.
++        if (output?.slug && olds !== undefined && sameDesired(olds, url, headers, enabled)) {
++            return { ...output, destinationConf: Redacted.isRedacted(output.destinationConf) ? output.destinationConf : Redacted.make(output.destinationConf) };
++        }
+         // 1. Observe — the slug cached on `output` is a hint, not a
+         //    guarantee; fall back to the name (Cloudflare enforces name
+         //    uniqueness, and ownership of a name match has already been
+@@ -248,6 +248,10 @@ const freshObserved = (accountId, slug) => findBySlug(accountId, slug).pipe(Effe
+  * it unless the user explicitly pinned one, so an empty desired set is
+  * not perpetually "dirty".
+  */
++/** maple patch: whether the last-applied props already match the desired url, headers and enabled flag. */
++const sameDesired = (olds, url, headers, enabled) => olds.url === url &&
++    (olds.enabled ?? true) === enabled &&
++    sameHeaders(unwrapRedacted(olds.headers ?? {}), headers);
+ const sameHeaders = (observed, desired) => {
+     const normalized = Object.fromEntries(Object.entries(observed)
+         .filter(([key]) => key !== "content-type" || "content-type" in desired)
 diff --git a/src/Cloudflare/Workers/ObservabilityDestination.ts b/src/Cloudflare/Workers/ObservabilityDestination.ts
-index 5dad75a9b76c2b94f4b71cd1dfb1aa29706e2973..51f1974730e34d2a884379cdd33f2fe47bbad99b 100644
+index 5dad75a..39b6edb 100644
 --- a/src/Cloudflare/Workers/ObservabilityDestination.ts
 +++ b/src/Cloudflare/Workers/ObservabilityDestination.ts
 @@ -205,12 +205,6 @@ export const ObservabilityDestinationProvider = () =>
@@ -32,3 +65,48 @@ index 5dad75a9b76c2b94f4b71cd1dfb1aa29706e2973..51f1974730e34d2a884379cdd33f2fe4
        return undefined;
      }),
  
+@@ -233,7 +227,7 @@ export const ObservabilityDestinationProvider = () =>
+       return observed ? Unowned(toAttributes(observed, acct)) : undefined;
+     }),
+ 
+-    reconcile: Effect.fn(function* ({ id, news, output }) {
++    reconcile: Effect.fn(function* ({ id, news, olds, output }) {
+       const { accountId } = yield* yield* CloudflareEnvironment;
+       // Prefer the deployed name: regenerating would target a different
+       // resource if the generator's output for this id ever drifts.
+@@ -242,6 +236,17 @@ export const ObservabilityDestinationProvider = () =>
+       const url = news.url as string;
+       const headers = unwrapRedacted(news.headers ?? {});
+       const enabled = news.enabled ?? true;
++      // maple patch: settle an unchanged destination from its stored state.
++      // Observing lists the account's destinations, which the deploy token
++      // may not do, so a resumed no-change update would otherwise 403.
++      if (output?.slug && olds !== undefined && sameDesired(olds, url, headers, enabled)) {
++        return {
++          ...output,
++          destinationConf: Redacted.isRedacted(output.destinationConf)
++            ? output.destinationConf
++            : Redacted.make(output.destinationConf as unknown as string),
++        };
++      }
+ 
+       // 1. Observe — the slug cached on `output` is a hint, not a
+       //    guarantee; fall back to the name (Cloudflare enforces name
+@@ -405,6 +410,17 @@ const freshObserved = (accountId: string, slug: string) =>
+  * it unless the user explicitly pinned one, so an empty desired set is
+  * not perpetually "dirty".
+  */
++/** maple patch: whether the last-applied props already match the desired url, headers and enabled flag. */
++const sameDesired = (
++  olds: ObservabilityDestinationProps,
++  url: string,
++  headers: Record<string, string>,
++  enabled: boolean,
++) =>
++  olds.url === url &&
++  (olds.enabled ?? true) === enabled &&
++  sameHeaders(unwrapRedacted(olds.headers ?? {}), headers);
++
+ const sameHeaders = (observed: Record<string, unknown>, desired: Record<string, string>) => {
+   const normalized = Object.fromEntries(
+     Object.entries(observed)
