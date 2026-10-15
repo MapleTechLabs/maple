@@ -12,6 +12,7 @@
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import {
 	GCP_ASSET_TYPES,
+	GCP_PROJECT_ASSET_TYPE,
 	gcpMetricAligner,
 	type GcpMetric,
 	type GcpMetricGroup,
@@ -118,25 +119,37 @@ const errorReason = (body: unknown, kind: GcpApiError["kind"]): string | undefin
 		.flatMap((detail) => Option.toArray(decodeErrorInfo(detail)))[0]?.reason ??
 	(kind === "denied" ? reasonFromMessage(body) : undefined)
 
-/** The largest answer read. A poller page is about 1 MB; a bigger PromQL answer is refused. */
+/**
+ * The largest answer a live query reads: four in flight stay far below the Worker's 128 MB.
+ * The poller's calls are not capped.
+ */
 export const MAX_BODY_BYTES = 8 * 1024 * 1024
 const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
-/**
- * One JSON call. `api` names the Google service in the error. `refuse` turns a failed answer,
- * and `tooLarge` one past `MAX_BODY_BYTES`, into the caller's own error instead.
- */
+interface CallOptions<E, E2> {
+	/** Turns a failed answer into the caller's own error. */
+	readonly refuse?: (status: number, body: unknown) => E | undefined
+	/** Reads at most `MAX_BODY_BYTES`; `tooLarge` is the caller's error past it. */
+	readonly capped?: { readonly tooLarge?: () => E2 }
+}
+
+/** One JSON call. `api` names the Google service in the error. */
 const call = <A, E = never, E2 = never>(
 	httpClient: HttpClient.HttpClient,
 	api: GcpApiError["api"],
 	request: HttpClientRequest.HttpClientRequest,
 	decode: (body: unknown) => Effect.Effect<A, Schema.SchemaError>,
-	refuse?: (status: number, body: unknown) => E | undefined,
-	tooLarge?: () => E2,
+	options: CallOptions<E, E2> = {},
 ): Effect.Effect<A, GcpApiError | E | E2> => {
 	const failed = (what: string) => new GcpApiError({ message: `${api} ${what}`, api, kind: "upstream" })
 	return Effect.gen(function* () {
 		const response = yield* httpClient.execute(request)
+		if (options.capped === undefined) {
+			return {
+				status: response.status,
+				body: yield* response.json.pipe(Effect.orElseSucceed(() => null)),
+			}
+		}
 		// Read as it arrives, never trusting Content-Length: past the cap the rest is left unread.
 		const chunks: Array<Uint8Array> = []
 		let size = 0
@@ -161,11 +174,12 @@ const call = <A, E = never, E2 = never>(
 		Effect.flatMap(({ status, body }) =>
 			Effect.gen(function* () {
 				if (body === undefined) {
+					const tooLarge = options.capped?.tooLarge
 					if (tooLarge !== undefined) return yield* Effect.fail(tooLarge())
 					return yield* failed("answered with more than 8 MB")
 				}
 				if (status >= 300) {
-					const refused = refuse?.(status, body)
+					const refused = options.refuse?.(status, body)
 					if (refused !== undefined) return yield* Effect.fail(refused)
 					const kind = errorKind(status)
 					const reason = errorReason(body, kind)
@@ -499,11 +513,15 @@ export const promQlQuery = (
 			HttpClientRequest.bodyUrlParams({ ...params, timeout: PROMQL_TIMEOUT }),
 		),
 		decodePromQlResult,
-		refuseQuery(projectId),
-		() =>
-			new GcpPromQlTooManySeriesError({
-				message: `Google's answer for project ${projectId} is larger than 8 MB: too many series or points. Aggregate with sum by (…) or avg by (…), narrow the selector, or widen the step.`,
-			}),
+		{
+			refuse: refuseQuery(projectId),
+			capped: {
+				tooLarge: () =>
+					new GcpPromQlTooManySeriesError({
+						message: `Google's answer for project ${projectId} is larger than 8 MB: too many series or points. Aggregate with sum by (…) or avg by (…), narrow the selector, or widen the step.`,
+					}),
+			},
+		},
 	).pipe(
 		Effect.flatMap(({ data }) =>
 			Effect.gen(function* () {
@@ -566,6 +584,7 @@ export const getMetricsScope = (
 			`https://monitoring.googleapis.com/v1/locations/global/metricsScopes/${projectId}`,
 		).pipe(asReader(reader)),
 		decodeMetricsScope,
+		{ capped: {} },
 	).pipe(
 		Effect.map((scope) => ({
 			number: lastSegment(scope.name),
@@ -590,6 +609,7 @@ export const listPromQlMetricNames = (
 		"Cloud Monitoring",
 		HttpClientRequest.get(promQlUrl(projectId, "label/__name__/values")).pipe(asReader(reader)),
 		decodeNames,
+		{ capped: {} },
 	).pipe(
 		Effect.map(({ data }) => {
 			const legacy = new Set(
@@ -641,6 +661,7 @@ export const getMetricDescriptor = (
 			`https://monitoring.googleapis.com/v3/projects/${projectId}/metricDescriptors`,
 		).pipe(asReader(reader), HttpClientRequest.setUrlParams({ filter: `metric.type = "${metricType}"` })),
 		decodeMetricDescriptors,
+		{ capped: {} },
 	).pipe(Effect.map((body) => body.metricDescriptors?.find((descriptor) => descriptor.type === metricType)))
 
 // Cloud Asset Inventory
@@ -667,12 +688,13 @@ const decodeResourcePage = Schema.decodeUnknownEffect(
 	}),
 )
 
-export const searchResourcesPage = (
+const resourcePage = (
 	httpClient: HttpClient.HttpClient,
 	reader: GcpReader,
 	scope: string,
 	pageToken: string | undefined,
-	assetTypes: ReadonlyArray<string> = GCP_ASSET_TYPES,
+	assetTypes: ReadonlyArray<string>,
+	options: CallOptions<never, never> = {},
 ) =>
 	call(
 		httpClient,
@@ -687,4 +709,21 @@ export const searchResourcesPage = (
 			}),
 		),
 		decodeResourcePage,
+		options,
 	)
+
+/** One page of the resource inventory sync. */
+export const searchResourcesPage = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	scope: string,
+	pageToken: string | undefined,
+) => resourcePage(httpClient, reader, scope, pageToken, GCP_ASSET_TYPES)
+
+/** One page of the projects in a folder or organization, for a live query. */
+export const searchProjectsPage = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	scope: string,
+	pageToken: string | undefined,
+) => resourcePage(httpClient, reader, scope, pageToken, [GCP_PROJECT_ASSET_TYPE], { capped: {} })

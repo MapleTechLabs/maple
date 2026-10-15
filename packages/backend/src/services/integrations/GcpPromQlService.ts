@@ -8,7 +8,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { EdgeCacheService } from "@maple/cache"
 import { GcpConnectors, type GcpConnectorRow } from "@maple/db/tables"
-import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
 	GCP_PROMQL_MAX_PROJECTS,
 	GcpMetricDescriptor,
@@ -48,7 +47,7 @@ import {
 	impersonateReader,
 	listPromQlMetricNames,
 	promQlQuery,
-	searchResourcesPage,
+	searchProjectsPage,
 } from "./gcp/api"
 import { describeGcpApiError } from "./gcp/explain"
 import { mapGcpResource } from "./gcp/mapping"
@@ -213,9 +212,7 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				const projects: Array<GcpProjectId> = []
 				let pageToken: string | undefined
 				for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
-					const body = yield* searchResourcesPage(httpClient, reader, scope, pageToken, [
-						GCP_PROJECT_ASSET_TYPE,
-					])
+					const body = yield* searchProjectsPage(httpClient, reader, scope, pageToken)
 					for (const result of body.results ?? []) {
 						const projectId = mapGcpResource(result)?.projectId
 						// A project pending deletion answers nothing but errors.
