@@ -1160,6 +1160,11 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 				$.ResourceAttributes.get("k8s.container.status.last_terminated_reason"),
 				$.TimeUnix,
 			),
+			// When a restart counter first reached its high-water mark, i.e. its last restart.
+			// The key ranks by value, then by earliest time; both fit exactly in a Float64.
+			restartedAt: CH.toUnixTimestamp(
+				CH.argMax($.TimeUnix, $.Value.mul(4294967296).sub(CH.toUnixTimestamp($.TimeUnix))),
+			),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1175,6 +1180,7 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 		.select(($) => {
 			const isRestarts = $.metric.eq(CONTAINER_RESTARTS_METRIC)
 			const restartDelta = CH.greatest_($.latest.sub($.earliest), CH.lit(0))
+			const restartedWithReason = isRestarts.and($.latest.gt($.earliest)).and($.lastReason.neq(""))
 			const desiredReplicas = maxIfOrZero($.latest, $.metric.eq(replica.desired))
 			const readyReplicas = maxIfOrZero($.latest, $.metric.eq(replica.ready))
 			const peakCpuLimitPct = maxIfOrZero($.peak, $.metric.eq("k8s.pod.cpu_limit_utilization"))
@@ -1195,9 +1201,10 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 						: CH.greatest_(desiredReplicas.sub(readyReplicas), CH.lit(0)),
 				failedPods: maxIfOrZero($.latest, $.metric.eq(JOB_FAILED_METRIC)),
 				restarts: finiteOrZero(CH.sumIf(restartDelta, isRestarts)),
-				lastTerminatedReason: CH.anyIf(
-					$.lastReason,
-					isRestarts.and($.latest.gt($.earliest)).and($.lastReason.neq("")),
+				// The reason of whichever container restarted most recently.
+				lastTerminatedReason: CH.argMax(
+					CH.if_(restartedWithReason, $.lastReason, CH.lit("")),
+					CH.if_(restartedWithReason, $.restartedAt, CH.lit(0)),
 				),
 				peakCpuLimitPct,
 				peakMemoryLimitPct,

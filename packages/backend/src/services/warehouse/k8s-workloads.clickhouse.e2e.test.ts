@@ -66,11 +66,14 @@ const samples: ReadonlyArray<Sample> = [
 	...restarts("checkout-api", "a", "app", [0, 1, 4], "OOMKilled"),
 	...restarts("checkout-api", "b", "app", [10, 12], ""),
 	...restarts("checkout-api", "b", "sidecar", [5, 5], "Completed"),
+	// Errored 20 minutes before pod a's OOM kill, so the OOM kill is the workload's latest reason.
+	...restarts("checkout-api", "b", "worker", [3, 8, 8], "Error"),
 
 	// api: fully available. A Fargate pod near its CPU limit restarts twice; a node pod with
 	// no usage series restarts 7 times, which a Fargate filter must not count.
-	...restarts("api", "c", "app", [0, 2], "Error", { computeType: "fargate" }),
-	...restarts("api", "d", "app", [0, 7], "OOMKilled"),
+	// The Fargate pod's Error is the more recent restart; the node pod's OOM kills came first.
+	...restarts("api", "c", "app", [0, 0, 2], "Error", { computeType: "fargate" }),
+	...restarts("api", "d", "app", [0, 7, 7], "OOMKilled"),
 	{ metric: "k8s.deployment.desired", minutesBeforeEnd: 1, value: 3, attrs: deploy("api") },
 	{ metric: "k8s.deployment.available", minutesBeforeEnd: 1, value: 3, attrs: deploy("api") },
 	{
@@ -190,8 +193,10 @@ describe.skipIf(!clickhouseE2eEnabled)("listWorkloadsQuery against ClickHouse", 
 		assert.strictEqual(checkout!.readyReplicas, 2)
 		assert.strictEqual(checkout!.shortfall, 3)
 		assert.isAbove(checkout!.replicaSamples, 0)
-		// 0 → 4 on pod a's app, 10 → 12 on pod b's app, 5 → 5 on the sidecar; the other org's 500 is excluded.
-		assert.strictEqual(checkout!.restarts, 6)
+		// 0 → 4 on pod a's app, 10 → 12 on b's app, 3 → 8 on b's worker, 5 → 5 on the sidecar;
+		// the other org's 500 is excluded.
+		assert.strictEqual(checkout!.restarts, 11)
+		// a's OOM kill is the latest restart; b's worker errored earlier.
 		assert.strictEqual(checkout!.lastTerminatedReason, "OOMKilled")
 		assert.strictEqual(checkout!.podCount, 2)
 		// Only pod a still reports at the window's end.
@@ -205,6 +210,8 @@ describe.skipIf(!clickhouseE2eEnabled)("listWorkloadsQuery against ClickHouse", 
 		assert.closeTo(api!.saturation, 0.93, 1e-9)
 		assert.strictEqual(api!.shortfall, 0)
 		assert.strictEqual(api!.restarts, 9)
+		// c's Error is newer than d's OOM kills, whatever order the series are read in.
+		assert.strictEqual(api!.lastTerminatedReason, "Error")
 	})
 
 	it("lists jobs by failures, without calling a running job short of replicas", async () => {
