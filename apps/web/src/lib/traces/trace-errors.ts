@@ -1,12 +1,20 @@
-import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
+import { httpStatusTone } from "@maple/ui/lib/http"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNode } from "@maple/ui/lib/types"
+
+/** The span's HTTP response status, read off the attribute: `getHttpInfo` gives up on names with no method. */
+export function spanHttpStatus(span: SpanNode): number | undefined {
+	const raw =
+		span.spanAttributes?.["http.response.status_code"] || span.spanAttributes?.["http.status_code"]
+	const code = raw === undefined ? Number.NaN : Number.parseInt(raw, 10)
+	return Number.isNaN(code) ? undefined : code
+}
 
 /** A span failed when its status says so or it answered with a 5xx. */
 export function isErrorSpan(span: SpanNode): boolean {
 	if (span.isMissing) return false
 	if (span.statusCode === "Error") return true
-	return httpStatusTone(getHttpInfo(span)?.statusCode) === "crit"
+	return httpStatusTone(spanHttpStatus(span)) === "crit"
 }
 
 export interface TraceErrors {

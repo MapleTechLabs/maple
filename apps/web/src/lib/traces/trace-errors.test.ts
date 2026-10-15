@@ -79,6 +79,13 @@ describe("collectTraceErrors", () => {
 		expect(errors.spans.map((s) => s.spanName)).toEqual(["GET /a"])
 	})
 
+	it("counts a 5xx on a span whose name carries no HTTP method", () => {
+		const errors = collectTraceErrors([
+			node("HTTP GET /x", 0, { spanKind: "Server", spanAttributes: { "http.status_code": "502" } }),
+		])
+		expect(errors.origin?.spanName).toBe("HTTP GET /x")
+	})
+
 	it("reports no origin for a clean trace and skips missing-span placeholders", () => {
 		const errors = collectTraceErrors([
 			node("gap", 0, { isMissing: true, statusCode: "Error" }, [node("a", 1)]),

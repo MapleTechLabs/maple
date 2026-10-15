@@ -2,10 +2,9 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/comp
 import { Button } from "@maple/ui/components/ui/button"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { countLabel } from "@maple/ui/lib/format"
-import { getHttpInfo } from "@maple/ui/lib/http"
 import type { SpanNode } from "@maple/ui/lib/types"
 import { CircleXmarkIcon } from "@/components/icons"
-import type { TraceErrors } from "@/lib/traces/trace-errors"
+import { spanHttpStatus, type TraceErrors } from "@/lib/traces/trace-errors"
 
 /**
  * The failure up front: where the trace most likely broke and why, one click from
@@ -23,7 +22,7 @@ export function TraceErrorCallout({
 	const origin = errors.origin
 	if (!origin) return null
 
-	const httpStatus = getHttpInfo(origin)?.statusCode
+	const httpStatus = spanHttpStatus(origin)
 	const reason = origin.statusMessage || (httpStatus != null ? `HTTP ${httpStatus}` : undefined)
 
 	return (
