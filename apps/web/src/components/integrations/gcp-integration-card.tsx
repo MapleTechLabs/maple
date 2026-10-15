@@ -4,18 +4,18 @@ import { Link } from "@tanstack/react-router"
 import { Exit, Option } from "effect"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
-import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { countLabel } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
 
 import {
 	removedGcpConnectorsAtomFamily,
@@ -62,8 +62,9 @@ import {
 	gcpRunAsked,
 	gcpScopeLabel,
 	gcpScriptNeeded,
+	gcpWorstState,
 } from "./gcp-connector-state"
-import { GCP_ACCENT, gcpStatusQuery } from "./integration-catalog"
+import { GCP_ACCENT, HEALTH_TONE, gcpStatusQuery } from "./integration-catalog"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -100,53 +101,50 @@ function Linked({ text }: { text: string }) {
 
 /**
  * A failure in the API's own words, laid out to be scanned: its first sentence as the headline,
- * what to do under it, one sentence a line, and what Google answered as fine print.
+ * what to do under it, and what Google answered as code.
  */
 export function GcpMessage({ text }: { text: string }) {
 	const { headline, body, answer } = gcpMessageParts(text)
 	return (
-		<div className="flex flex-col gap-1 [overflow-wrap:anywhere]">
-			<p className="font-medium text-pretty text-foreground">
+		<div role="note" className="flex flex-col gap-1.5 [overflow-wrap:anywhere]">
+			<p className="font-semibold text-pretty text-foreground">
 				<Linked text={headline} />
 			</p>
-			{body.length === 0 ? null : body.length === 1 ? (
+			{body.length === 0 ? null : (
 				<p className="text-pretty text-muted-foreground">
-					<Linked text={body[0]} />
-				</p>
-			) : (
-				<ul className="list-disc pl-4 text-pretty text-muted-foreground">
-					{body.map((sentence) => (
-						<li key={sentence}>
+					{body.map((sentence, index) => (
+						<Fragment key={index}>
+							{index === 0 ? null : " "}
 							<Linked text={sentence} />
-						</li>
+						</Fragment>
 					))}
-				</ul>
+				</p>
 			)}
-			{answer === null ? null : <p className="text-2xs text-muted-foreground/80">{answer}</p>}
+			{answer === null ? null : (
+				<InlineCode className="block rounded-md px-2.5 py-1.5">{answer}</InlineCode>
+			)}
 		</div>
 	)
 }
 
 /** A hint under a capability: a headline, at most two short lines, then one thing to do. */
 function Notice({
-	tone,
 	title,
 	children,
 	action,
 }: {
-	tone?: "warn" | "crit"
-	title?: string
+	title: string
 	children?: React.ReactNode
 	action?: React.ReactNode
 }) {
 	return (
-		<Alert variant={tone} size="sm" role="note" className="mt-1">
-			{title === undefined ? null : <AlertTitle>{title}</AlertTitle>}
-			<AlertDescription className="gap-2 leading-5">
-				{children}
-				{action === undefined ? null : <div>{action}</div>}
-			</AlertDescription>
-		</Alert>
+		<div role="note" className="flex flex-col gap-1.5">
+			<p className="font-semibold text-pretty text-foreground">{title}</p>
+			{children === undefined ? null : (
+				<div className="text-pretty text-muted-foreground">{children}</div>
+			)}
+			{action}
+		</div>
 	)
 }
 
@@ -169,46 +167,42 @@ function Capability({
 	link?: React.ReactNode
 	children?: React.ReactNode
 }) {
-	const shown = facts.filter((fact) => fact !== null && fact !== undefined && fact !== false)
+	const shown = [...facts, link].filter((fact) => fact !== null && fact !== undefined && fact !== false)
 	return (
-		<section className="flex min-w-0 flex-col gap-1 px-4 py-3 text-xs/5">
-			{/* The state sits beside the name where both fit and under it where they don't, for both rows alike. */}
-			<div className="flex flex-col gap-x-4 @sm:flex-row @sm:items-center @sm:justify-between group-data-stacked/capabilities:@sm:justify-start">
-				<h4 className={GCP_TITLE}>{title}</h4>
-				<span className="flex items-center gap-1.5 font-medium">
-					{status.tone === null ? (
-						// Off: a hollow dot, so the label lines up with the rows that have one.
-						<span
-							aria-hidden
-							className="size-1.5 rounded-full border border-muted-foreground/60"
-						/>
-					) : (
-						<StatusDot tone={status.tone} />
-					)}
-					{status.label}
-				</span>
-			</div>
-			{shown.length === 0 && link === undefined ? null : (
-				<div className="flex flex-wrap items-center justify-between gap-x-4 text-muted-foreground group-data-stacked/capabilities:justify-start">
-					<span className="text-pretty">
+		<section className="flex min-w-0 flex-col gap-3 p-4 text-ui/5">
+			<div className="flex flex-col gap-1">
+				<div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+					<h4 className="text-sm font-semibold">{title}</h4>
+					<span className="flex items-center gap-1.5">
+						{status.tone === null ? (
+							// Off: a hollow dot, so the label lines up with the rows that have one.
+							<span
+								aria-hidden
+								className="size-1.5 rounded-full border border-muted-foreground/60"
+							/>
+						) : (
+							<StatusDot tone={status.tone} />
+						)}
+						{status.label}
+					</span>
+				</div>
+				{shown.length === 0 ? null : (
+					<p className="text-pretty text-muted-foreground">
 						{shown.map((fact, index) => (
 							<Fragment key={index}>
 								{index === 0 ? null : " · "}
 								{fact}
 							</Fragment>
 						))}
-					</span>
-					{link === undefined ? null : (
-						<span className="ml-auto group-data-stacked/capabilities:ml-0">{link}</span>
-					)}
-				</div>
-			)}
+					</p>
+				)}
+			</div>
 			{children}
 		</section>
 	)
 }
 
-const DATA_LINK = "inline-flex shrink-0 items-center gap-1 text-foreground/80 hover:text-foreground"
+const DATA_LINK = "inline-flex items-center gap-1 whitespace-nowrap text-foreground/80 hover:text-foreground"
 
 interface CapabilityProps {
 	readonly connector: V2GcpConnector
@@ -246,9 +240,7 @@ function LogCapability({ connector, nowMs }: CapabilityProps) {
 						),
 					]}
 				>
-					<Notice tone="crit">
-						<GcpMessage text={state.error} />
-					</Notice>
+					<GcpMessage text={state.error} />
 				</Capability>
 			)
 		case "setup-pending":
@@ -354,23 +346,19 @@ function MetricsCapability({ connector, nowMs }: CapabilityProps) {
 		case "failing":
 			return (
 				<Capability title={title} status={status} facts={[lastRead(state.lastMetricsReceivedAt)]}>
-					<Notice tone="crit">
-						<GcpMessage text={state.error} />
-					</Notice>
+					<GcpMessage text={state.error} />
 				</Capability>
 			)
 		case "incomplete":
 			return (
 				<Capability title={title} status={status} facts={[lastRead(state.lastMetricsReceivedAt)]}>
-					<Notice tone="warn">
-						<GcpMessage text={state.error} />
-					</Notice>
+					<GcpMessage text={state.error} />
 				</Capability>
 			)
 		case "stalled":
 			return (
 				<Capability title={title} status={status} facts={[lastRead(state.lastMetricsReceivedAt)]}>
-					<Notice tone="warn" title="No metrics in 30 minutes">
+					<Notice title="No metrics in 30 minutes">
 						<p>Maple retries every 5 minutes.</p>
 						<p>
 							If this lasts an hour, write to{" "}
@@ -397,11 +385,7 @@ function MetricsCapability({ connector, nowMs }: CapabilityProps) {
 						state.projectCount === null ? null : countLabel(state.projectCount, "project"),
 					]}
 				>
-					{state.resourcesError === null ? null : (
-						<Notice tone="warn">
-							<GcpMessage text={state.resourcesError} />
-						</Notice>
-					)}
+					{state.resourcesError === null ? null : <GcpMessage text={state.resourcesError} />}
 				</Capability>
 			)
 	}
@@ -444,36 +428,21 @@ function Attention({
 								: "Metrics report a failure that another run repairs.",
 					]
 	return (
-		<div
-			role="status"
-			className={cn(
-				"flex flex-col gap-3 border-t px-4 py-3 text-xs/5 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-6",
-				needed === null
-					? "border-severity-error/32 bg-severity-error/4"
-					: "border-severity-warn/32 bg-severity-warn/4",
-			)}
-		>
-			<div className="flex min-w-0 gap-2">
-				<AlertWarningIcon
-					size={14}
-					className={cn(
-						"mt-0.5 shrink-0",
-						needed === null ? "text-severity-error" : "text-severity-warn",
-					)}
-					aria-hidden
-				/>
-				<div className="min-w-0">
-					<p className="text-sm font-medium">
-						{needed === "setup-pending"
-							? "Setup pending"
-							: needed === "changes-pending"
-								? "Changes not applied in Google Cloud"
-								: "The setup script needs to run again"}
-					</p>
+		<div className="px-4 pt-4">
+			<Alert variant="warn" role="status">
+				<AlertWarningIcon aria-hidden />
+				<AlertTitle className="font-semibold">
+					{needed === "setup-pending"
+						? "Setup pending"
+						: needed === "changes-pending"
+							? "Changes not applied in Google Cloud"
+							: "The setup script needs to run again"}
+				</AlertTitle>
+				<AlertDescription className="gap-1 text-ui/5 text-pretty">
 					{lines.length === 1 ? (
-						<p className="text-pretty text-muted-foreground">{lines[0]}</p>
+						<p>{lines[0]}</p>
 					) : (
-						<ul className="list-disc pl-4 text-pretty text-muted-foreground">
+						<ul className="list-disc pl-4">
 							{lines.map((line) => (
 								<li key={line}>{line}</li>
 							))}
@@ -484,21 +453,21 @@ function Attention({
 							Ask a Maple organization admin to run the setup script.
 						</p>
 					) : needed === "changes-pending" && cleanedUp ? (
-						<p className="text-muted-foreground">
-							To remove the connection instead, choose Disconnect in its menu.
-						</p>
+						<p>To remove the connection instead, choose Disconnect in its menu.</p>
 					) : null}
-				</div>
-			</div>
-			{onRunScript === null ? null : (
-				<Button size="sm" className="shrink-0 self-start @xl:self-center" onClick={onRunScript}>
-					{needed === "setup-pending"
-						? "Finish setup"
-						: needed === "changes-pending"
-							? "Apply changes"
-							: "Run the script again"}
-				</Button>
-			)}
+				</AlertDescription>
+				{onRunScript === null ? null : (
+					<AlertAction>
+						<Button size="sm" onClick={onRunScript}>
+							{needed === "setup-pending"
+								? "Finish setup"
+								: needed === "changes-pending"
+									? "Apply changes"
+									: "Run the script again"}
+						</Button>
+					</AlertAction>
+				)}
+			</Alert>
 		</div>
 	)
 }
@@ -506,15 +475,12 @@ function Attention({
 function GcpConnection({
 	connector,
 	isAdmin,
-	alone,
 	nowMs,
 	onConfigure,
 	onRemoved,
 }: {
 	connector: V2GcpConnector
 	isAdmin: boolean
-	/** The only connection. */
-	alone: boolean
 	nowMs: number
 	onConfigure: (stage: "choose" | "apply") => void
 	onRemoved: (removed: RemovedGcpConnector) => void
@@ -550,46 +516,25 @@ function GcpConnection({
 		return true
 	})
 
-	const state = gcpConnectionState(connector, nowMs)
-	// Side by side while each is a line of status or a neutral hint of a line or two. A failure, a
-	// warning or a command to copy takes the card's width: no half of the card stays empty beside it.
-	const log = gcpLogState(connector, nowMs)
-	const metrics = gcpMetricsState(connector, nowMs)
-	const hinted =
-		log.kind === "failing" ||
-		(log.kind === "waiting" && log.overdue) ||
-		metrics.kind === "failing" ||
-		metrics.kind === "incomplete" ||
-		metrics.kind === "stalled" ||
-		(metrics.kind === "receiving" && metrics.resourcesError !== null)
 	const onRunScript = isAdmin ? () => onConfigure("apply") : null
 
 	return (
 		<Panel className="@container">
-			<div className="flex flex-col gap-2 px-4 py-3 @md:flex-row @md:items-start @md:justify-between @md:gap-3">
-				<div className="min-w-0">
-					<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-						<h3 className={GCP_TITLE}>
-							{GCP_SCOPE_NAMES[connector.scope_type]}{" "}
-							<span className="[overflow-wrap:anywhere]">{connector.scope_id}</span>
-						</h3>
-						{/* A state the band under the header spells out needs no badge beside it, and the
-						    only connection none at all: the page header names its state. */}
-						{alone ? null : state === "attention" ? (
-							<Badge variant="warn">{GCP_CONNECTION_LABEL[state]}</Badge>
-						) : state === "waiting" ? (
-							<Badge variant="outline">{GCP_CONNECTION_LABEL[state]}</Badge>
-						) : null}
-					</div>
-					{connector.scope_type !== "project" ? (
-						<p className="text-xs/5 text-muted-foreground">
-							Host project{" "}
-							<span className="font-mono [overflow-wrap:anywhere]">{connector.project_id}</span>
-						</p>
-					) : null}
-				</div>
+			<div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 border-b px-4 py-3">
+				<h3 className="flex min-w-0 items-center gap-2.5">
+					<Badge variant="meta">{GCP_SCOPE_NAMES[connector.scope_type]}</Badge>
+					<span className="font-mono text-sm font-medium [overflow-wrap:anywhere]">
+						{connector.scope_id}
+					</span>
+				</h3>
+				{connector.scope_type !== "project" ? (
+					<p className="text-ui/5 text-muted-foreground">
+						Host project{" "}
+						<span className="font-mono [overflow-wrap:anywhere]">{connector.project_id}</span>
+					</p>
+				) : null}
 				{isAdmin ? (
-					<div className="flex shrink-0 items-center gap-1">
+					<div className="ml-auto flex shrink-0 items-center gap-1">
 						<Button size="sm" variant="outline" onClick={() => onConfigure("choose")}>
 							Configure
 						</Button>
@@ -602,13 +547,8 @@ function GcpConnection({
 				) : null}
 			</div>
 			<Attention connector={connector} nowMs={nowMs} onRunScript={onRunScript} />
-			<div
-				data-stacked={hinted ? "" : undefined}
-				className={cn(
-					"group/capabilities grid grid-cols-1 divide-y divide-border/60 border-t border-border/60",
-					hinted ? null : "@2xl:grid-cols-2 @2xl:divide-x @2xl:divide-y-0",
-				)}
-			>
+			{/* Side by side wherever the panel is wide enough; a long error or command wraps in its column. */}
+			<div className="grid grid-cols-1 divide-y divide-border/60 @2xl:grid-cols-2 @2xl:divide-x @2xl:divide-y-0">
 				<LogCapability connector={connector} nowMs={nowMs} />
 				<MetricsCapability connector={connector} nowMs={nowMs} />
 			</div>
@@ -644,6 +584,76 @@ function GcpConnection({
 				/>
 			) : null}
 		</Panel>
+	)
+}
+
+/** The newest of the times, null when none has arrived yet. */
+const latest = (times: ReadonlyArray<string | null>): string | null =>
+	times.reduce<string | null>(
+		(newest, at) =>
+			at !== null && (newest === null || Date.parse(at) > Date.parse(newest)) ? at : newest,
+		null,
+	)
+
+/** Every connection, and the clock their states turn on. */
+function useGcpConnectors() {
+	const status = Option.getOrNull(AsyncResult.value(useAtomValue(gcpStatusQuery())))
+	return { connectors: status?.connectors ?? [], nowMs: useLiveClock() }
+}
+
+/** The page header's state: the worst connection's, and how many of several share it. */
+export function GcpHeaderStatus() {
+	const { connectors, nowMs } = useGcpConnectors()
+	const states = connectors.map((connector) => gcpConnectionState(connector, nowMs))
+	const worst = gcpWorstState(states)
+	const inWorst = states.filter((state) => state === worst).length
+	return (
+		<div className="flex items-center gap-1.5 font-display text-ui/5 text-muted-foreground">
+			<StatusDot tone={HEALTH_TONE[worst === "attention" || worst === "healthy" ? worst : "pending"]} />
+			{GCP_CONNECTION_LABEL[worst]}
+			{inWorst < connectors.length ? ` · ${inWorst} of ${connectors.length} connections` : null}
+		</div>
+	)
+}
+
+/** The page header's facts: when each kind of data last arrived, and how many projects send it. */
+export function GcpHeaderFacts() {
+	const { connectors } = useGcpConnectors()
+	const logs = connectors.filter((connector) => connector.logs_enabled)
+	const metrics = connectors.filter((connector) => connector.metrics_enabled)
+	const projects = connectors.reduce(
+		(sum, connector) =>
+			sum + (connector.scope_type === "project" ? 1 : connector.discovered_project_count),
+		0,
+	)
+	const when = (times: ReadonlyArray<string | null>) => {
+		const at = latest(times)
+		return at === null ? "none yet" : <RelativeTime value={at} />
+	}
+	const facts = [
+		logs.length === 0
+			? null
+			: {
+					label: "Last log entry",
+					value: when(logs.map((connector) => connector.last_log_received_at)),
+				},
+		metrics.length === 0
+			? null
+			: {
+					label: "Last metrics",
+					value: when(metrics.map((connector) => connector.last_metrics_received_at)),
+				},
+		projects === 0 ? null : { label: "Projects", value: projects },
+	].filter((fact) => fact !== null)
+	return (
+		<dl className="flex flex-wrap gap-x-8 gap-y-1 font-display text-ui/5">
+			{facts.map((fact) => (
+				<div key={fact.label} className="flex items-baseline gap-2">
+					<dt className="text-muted-foreground">{fact.label}</dt>
+					<dd className="font-mono text-foreground">{fact.value}</dd>
+				</div>
+			))}
+		</dl>
 	)
 }
 
@@ -801,8 +811,9 @@ export function GcpIntegrationCard() {
 			GCP_STATE_ORDER.indexOf(gcpConnectionState(b, nowMs)),
 	)
 
+	// Sans for words, mono for ids, times and commands.
 	return (
-		<div className="flex flex-col gap-4">
+		<div className="flex flex-col gap-4 font-display">
 			{cleanup}
 			<section className="flex min-w-0 flex-col gap-3">
 				<SectionHeading
@@ -821,7 +832,6 @@ export function GcpIntegrationCard() {
 						key={connector.id}
 						connector={connector}
 						isAdmin={isAdmin}
-						alone={connectors.length === 1}
 						nowMs={nowMs}
 						onConfigure={(stage) => setTarget({ kind: "connection", id: connector.id, stage })}
 						onRemoved={(entry) => setRemoved([...removed, entry])}
