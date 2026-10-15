@@ -21,6 +21,20 @@ export const GCP_METRIC_SEARCH_MAX_LIMIT = 200
 /** `TinybirdDateTime` is UTC without a zone marker. */
 export const gcpPromQlTimeMs = (value: string): number => Date.parse(`${value.replace(" ", "T")}Z`)
 
+/** The range Google is sent, in epoch seconds: start and end aligned to the step. */
+export const gcpPromQlRange = (request: {
+	readonly startTime: string
+	readonly endTime: string
+	readonly stepSeconds: number
+}) => {
+	const step = request.stepSeconds
+	return {
+		start: Math.floor(gcpPromQlTimeMs(request.startTime) / 1000 / step) * step,
+		end: Math.ceil(gcpPromQlTimeMs(request.endTime) / 1000 / step) * step,
+		step,
+	}
+}
+
 const PromQlQuery = Schema.String.check(
 	Schema.isTrimmed(),
 	Schema.isMinLength(1),
@@ -56,11 +70,13 @@ export class GcpPromQlRangeRequest extends Schema.Class<GcpPromQlRangeRequest>("
 				readonly endTime: string
 				readonly stepSeconds: number
 			}) => {
-				const extentMs = gcpPromQlTimeMs(request.endTime) - gcpPromQlTimeMs(request.startTime)
-				if (extentMs <= 0) return "endTime must be after startTime"
-				// Google's limit per series, refused here as a request error.
+				if (gcpPromQlTimeMs(request.endTime) <= gcpPromQlTimeMs(request.startTime)) {
+					return "endTime must be after startTime"
+				}
+				// Google's limit per series, on the range Google is sent, refused here as a request error.
+				const { start, end, step } = gcpPromQlRange(request)
 				return (
-					extentMs / 1000 / request.stepSeconds <= GCP_PROMQL_MAX_POINTS ||
+					(end - start) / step <= GCP_PROMQL_MAX_POINTS ||
 					`at most ${GCP_PROMQL_MAX_POINTS} points per series: widen stepSeconds`
 				)
 			},
@@ -78,9 +94,15 @@ export class GcpPromQlInstantRequest extends Schema.Class<GcpPromQlInstantReques
 ) {}
 
 export const GcpPromQlSeries = Schema.Struct({
-	/** Google's labels, `project_id` always among them. */
+	/**
+	 * Google's labels. A series without `project_id` gets the project it was read from, or, when
+	 * that project's metrics scope holds several projects, `metrics_scope` naming it instead.
+	 */
 	labels: Schema.Record(Schema.String, Schema.String),
-	/** `[epoch seconds, value]`, NaN and infinities dropped. An instant query has one point. */
+	/**
+	 * `[epoch seconds, value]`, NaN and infinities dropped. A `vector` has one point per series,
+	 * a `matrix` (any range query, or an instant query of a range selector) several.
+	 */
 	points: Schema.Array(Schema.Tuple([Schema.Number, Schema.Number])),
 })
 export type GcpPromQlSeries = Schema.Schema.Type<typeof GcpPromQlSeries>
@@ -96,7 +118,10 @@ export type GcpPromQlFailure = Schema.Schema.Type<typeof GcpPromQlFailure>
 export class GcpPromQlResult extends Schema.Class<GcpPromQlResult>("GcpPromQlResult")({
 	resultType: Schema.Literals(["matrix", "vector"]),
 	series: Schema.Array(GcpPromQlSeries),
-	/** The projects that answered. */
+	/**
+	 * The projects that answered. A project another connected project's metrics scope holds is
+	 * read through that one, once.
+	 */
 	projects: Schema.Array(GcpProjectId),
 	/** What could not be read. The rest is still returned. */
 	failures: Schema.Array(GcpPromQlFailure),
@@ -158,10 +183,13 @@ export class GcpPromQlTooManyProjectsError extends HttpTaggedError<GcpPromQlTooM
 	},
 ) {}
 
-/** The answer holds more than `GCP_PROMQL_MAX_SERIES` series. Never truncated. */
+/**
+ * The answer holds more than `GCP_PROMQL_MAX_SERIES` series, or one project's answer is larger
+ * than 8 MB. Never truncated.
+ */
 export class GcpPromQlTooManySeriesError extends HttpTaggedError<GcpPromQlTooManySeriesError>()(
 	"@maple/http/errors/GcpPromQlTooManySeriesError",
-	{ message: Schema.String, series: Schema.Number },
+	{ message: Schema.String },
 	{
 		status: 400,
 		code: "gcp_promql_too_many_series",

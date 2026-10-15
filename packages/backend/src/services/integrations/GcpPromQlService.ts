@@ -1,9 +1,9 @@
 /**
  * Live PromQL over the Google Cloud projects an organization has connected, through Google's
- * Prometheus-compatible API. Every connection is a target, whatever its metrics switch: a project
- * scope is its project, a folder or organization the active projects Cloud Asset finds under it.
- * Each project is read with its connection's read-only account, one call per project, and what
- * fails is reported beside what answered.
+ * Prometheus-compatible API. A connection whose read-only account is in place is a target: a
+ * project scope is its project, a folder or organization the active projects Cloud Asset finds
+ * under it. Each project is read with its connection's read-only account, one call per metrics
+ * scope, and what fails is reported beside what answered.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { EdgeCacheService } from "@maple/cache"
@@ -22,6 +22,7 @@ import {
 	GcpPromQlTooManyProjectsError,
 	GcpPromQlTooManySeriesError,
 	GCP_PROMQL_MAX_SERIES,
+	gcpPromQlRange,
 	gcpPromQlTimeMs,
 	GcpPromQlUnavailableError,
 	IntegrationsNotConnectedError,
@@ -39,6 +40,7 @@ import { Env } from "@maple/backend/platform/Env"
 import {
 	fetchMapleAccessToken,
 	getMetricDescriptor,
+	getMetricsScope,
 	type GcpApiError,
 	type GcpPromQlParams,
 	type GcpReader,
@@ -61,6 +63,8 @@ const HOUR_SECONDS = 3_600
 const FRESH_MS = 5 * 60_000
 /** Above the default: a miss here costs a Google fan-out, not a row lookup. */
 const CACHE_READ_TIMEOUT_MS = 250
+/** Why IAM Credentials refuses Maple's own project; impersonation does not go through the host. */
+const MAPLE_SIDE_REASONS = new Set(["SERVICE_DISABLED", "BILLING_DISABLED", "USER_PROJECT_DENIED"])
 const DISTRIBUTION_SUFFIX = /_(bucket|count|sum)$/u
 
 const isProjectId = Schema.is(GcpProjectId)
@@ -68,6 +72,12 @@ const isProjectId = Schema.is(GcpProjectId)
 type Connector = Pick<GcpConnectorRow, "id" | "scopeType" | "scopeId" | "projectId" | "lastMetricsReceivedAt">
 
 const scopeName = (connector: Connector) => `${connector.scopeType}s/${connector.scopeId}`
+
+/** A project's metrics scope: its number, and the numbers of the projects it reads, itself included. */
+const MetricsScope = Schema.Struct({ number: Schema.String, monitored: Schema.Array(Schema.String) })
+
+const NOT_SET_UP =
+	"This connection's read-only account is not in place yet, so live queries can't read through it. Run the setup script again: it creates the account. If the script stops at an organization policy that restricts sharing to your domain, follow the setup guide's section on domain-restricted sharing."
 
 export type GcpPromQlError =
 	| GcpPromQlUnavailableError
@@ -173,7 +183,22 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 					)
 					mapleToken = { token, until: now + TOKEN_REUSE_MS }
 				}
-				const reader = yield* impersonateReader(httpClient, mapleToken.token, connector)
+				const reader = yield* impersonateReader(httpClient, mapleToken.token, connector).pipe(
+					// Google's fault, or Maple's own project's (API off, no billing): not the connection's. A denial
+					// otherwise (`IAM_PERMISSION_DENIED`) is a grant the connection lacks.
+					Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
+						Effect.gen(function* () {
+							if (error.kind !== "upstream" && !MAPLE_SIDE_REASONS.has(error.reason ?? ""))
+								return yield* error
+							yield* Effect.logError("gcp impersonation failed on Maple's side", {
+								error: error.message,
+							})
+							return yield* new IntegrationsUpstreamError({
+								message: "Maple could not sign in to Google Cloud",
+							})
+						}),
+					),
+				)
 				readers.set(connector.id, { reader, until: now + TOKEN_REUSE_MS })
 				return reader
 			})
@@ -211,7 +236,14 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				const connectors = yield* dbExecute((db) =>
 					db.run(
 						PG.from(GcpConnectors)
-							.select("id", "scopeType", "scopeId", "projectId", "lastMetricsReceivedAt")
+							.select(
+								"id",
+								"scopeType",
+								"scopeId",
+								"projectId",
+								"lastMetricsReceivedAt",
+								"appliedMetricsEnabled",
+							)
 							.where(($) => [$.orgId.eq(orgId)])
 							.orderBy(($) => [
 								[$.createdAt, "asc"],
@@ -225,8 +257,16 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 							"No Google Cloud connection yet. Connect a project, folder or organization first.",
 					})
 				}
+				// The setup script reported the read-only account: the others are left out, and only
+				// when none has one is that the answer.
+				const ready = connectors.filter((connector) => connector.appliedMetricsEnabled === true)
+				if (ready.length === 0) {
+					return yield* nothingRead(
+						connectors.map((connector) => ({ scope: scopeName(connector), message: NOT_SET_UP })),
+					)
+				}
 				// One connection at a time, so a cold isolate signs in as Maple once.
-				const listed = yield* Effect.forEach(connectors, (connector) =>
+				const listed = yield* Effect.forEach(ready, (connector) =>
 					connector.scopeType === "project"
 						? Effect.succeed({
 								connector,
@@ -289,7 +329,11 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				let selected = [...targets.projects.entries()]
 				if (requested !== undefined) {
 					const unknown = requested.filter((projectId) => !targets.projects.has(projectId))
-					if (unknown.length > 0) return yield* notReadable(unknown)
+					if (unknown.length > 0) {
+						// A connection whose projects could not be listed may hold them.
+						if (targets.failures.length > 0) return yield* nothingRead(targets.failures)
+						return yield* notReadable(unknown)
+					}
 					selected = selected.filter(([projectId]) => requested.includes(projectId))
 				} else if (selected.length > GCP_PROMQL_MAX_PROJECTS) {
 					return yield* new GcpPromQlTooManyProjectsError({
@@ -297,10 +341,14 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 						projects: selected.map(([projectId]) => projectId),
 					})
 				}
-				const resultType = "time" in params ? "vector" : "matrix"
 				if (selected.length === 0) {
 					if (targets.failures.length > 0) return yield* nothingRead(targets.failures)
-					return new GcpPromQlResult({ resultType, series: [], projects: [], failures: [] })
+					return new GcpPromQlResult({
+						resultType: "time" in params ? "vector" : "matrix",
+						series: [],
+						projects: [],
+						failures: [],
+					})
 				}
 				selected.sort(([a], [b]) => a.localeCompare(b))
 				yield* Effect.annotateCurrentSpan({ "maple.gcp.projects": selected.length })
@@ -322,18 +370,72 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 						)
 						if (reader !== undefined) signedIn.set(connector, reader)
 					}
-					const answers = yield* Effect.forEach(
+					// A query on a project reads its whole metrics scope, so a target that another read
+					// target's scope holds is answered through that one, not read twice.
+					const scoped = yield* Effect.forEach(
 						selected.flatMap(([projectId, connector]) => {
 							const reader = signedIn.get(connector)
 							return reader === undefined ? [] : [{ projectId, connector, reader }]
 						}),
-						({ projectId, connector, reader }) =>
-							promQlQuery(httpClient, reader, projectId, params).pipe(
-								Effect.map((series) => ({ projectId, series })),
+						(target) =>
+							edgeCache
+								.getOrCompute(
+									{
+										bucket: "gcp-metrics-scopes",
+										key: `${orgId}:${target.projectId}`,
+										ttlSeconds: HOUR_SECONDS,
+										readTimeoutMs: CACHE_READ_TIMEOUT_MS,
+										schema: MetricsScope,
+									},
+									getMetricsScope(httpClient, target.reader, target.projectId),
+								)
+								.pipe(
+									Effect.map(({ value }) => ({ ...target, scope: value })),
+									Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
+										Effect.succeed({
+											...target,
+											failure: failure(target.projectId, target.connector, error),
+										}),
+									),
+								),
+						{ concurrency: CONCURRENCY },
+					)
+					failures.push(
+						...scoped.flatMap((target) => ("failure" in target ? [target.failure] : [])),
+					)
+					const withScope = scoped.flatMap((target) => ("scope" in target ? [target] : []))
+					const covered = new Set<string>()
+					const reads: typeof withScope = []
+					// Widest scopes first.
+					for (const target of [...withScope].sort(
+						(a, b) => b.scope.monitored.length - a.scope.monitored.length,
+					)) {
+						if (covered.has(target.scope.number)) continue
+						for (const number of target.scope.monitored) covered.add(number)
+						reads.push(target)
+					}
+
+					let seriesCount = 0
+					const answers = yield* Effect.forEach(
+						reads,
+						(read) =>
+							promQlQuery(httpClient, read.reader, read.projectId, params).pipe(
+								// Checked as each project answers, so a broad query stops early.
+								Effect.flatMap((answer) =>
+									Effect.gen(function* () {
+										seriesCount += answer.series.length
+										if (seriesCount > GCP_PROMQL_MAX_SERIES) {
+											return yield* new GcpPromQlTooManySeriesError({
+												message: `The query returned more than ${GCP_PROMQL_MAX_SERIES} series across its projects. Aggregate them with sum by (…) or avg by (…), or narrow the selector.`,
+											})
+										}
+										return { read, answer }
+									}),
+								),
 								Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
 									Effect.succeed({
-										projectId,
-										failure: failure(projectId, connector, error),
+										read,
+										failure: failure(read.projectId, read.connector, error),
 									}),
 								),
 							),
@@ -342,37 +444,37 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 					failures.push(
 						...answers.flatMap((answer) => ("failure" in answer ? [answer.failure] : [])),
 					)
-					const answered = answers.flatMap((answer) => ("series" in answer ? [answer] : []))
+					const answered = answers.flatMap((answer) => ("answer" in answer ? [answer] : []))
+					const [first] = answered
 					// Not cached: a fixed setup is read again on the next try.
-					if (answered.length === 0) return yield* nothingRead([...targets.failures, ...failures])
-					// Identical label sets from two projects stay apart by `project_id`. A project
-					// whose metrics scope holds another answers for both: kept once.
-					const series = [
-						...new Map(
-							answered.flatMap(({ projectId, series }) =>
-								series.map((one) => {
-									const labels = {
-										...one.labels,
-										project_id: one.labels.project_id ?? projectId,
-									}
-									return [
-										JSON.stringify(Object.entries(labels).sort()),
-										{ labels, points: one.points },
-									] as const
-								}),
-							),
-						).values(),
-					]
-					if (series.length > GCP_PROMQL_MAX_SERIES) {
-						return yield* new GcpPromQlTooManySeriesError({
-							message: `The query returned ${series.length} series, and one answer holds at most ${GCP_PROMQL_MAX_SERIES}. Aggregate them, with sum by (…) or avg by (…), or narrow the selector.`,
-							series: series.length,
-						})
-					}
+					if (first === undefined) return yield* nothingRead([...targets.failures, ...failures])
 					return new GcpPromQlResult({
-						resultType,
-						series,
-						projects: answered.map(({ projectId }) => projectId),
+						resultType: first.answer.resultType,
+						series: answered.flatMap(({ read, answer }) =>
+							answer.series.map((one) => ({
+								// Identical label sets from two projects stay apart. A scope of several
+								// projects names itself, not a project its series may not come from.
+								labels:
+									one.labels.project_id === undefined
+										? {
+												...one.labels,
+												[read.scope.monitored.length > 1
+													? "metrics_scope"
+													: "project_id"]: read.projectId,
+											}
+										: one.labels,
+								points: one.points,
+							})),
+						),
+						// A target answers through the read whose scope holds it.
+						projects: withScope
+							.filter((target) =>
+								answered.some(
+									({ read }) =>
+										read === target || read.scope.monitored.includes(target.scope.number),
+								),
+							)
+							.map((target) => target.projectId),
 						failures,
 					})
 				})
@@ -398,10 +500,8 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				request: GcpPromQlRangeRequest,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const step = request.stepSeconds
 				// Aligned to the step, so refreshes inside it share a cache entry.
-				const start = Math.floor(gcpPromQlTimeMs(request.startTime) / 1000 / step) * step
-				const end = Math.ceil(gcpPromQlTimeMs(request.endTime) / 1000 / step) * step
+				const { start, end, step } = gcpPromQlRange(request)
 				return yield* runQuery(
 					orgId,
 					request.projects,
@@ -428,7 +528,10 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				const targets = yield* targetsOf(orgId, key)
 				const projectId = project ?? targets.projects.keys().next().value
 				const connector = projectId === undefined ? undefined : targets.projects.get(projectId)
-				if (project !== undefined && connector === undefined) return yield* notReadable([project])
+				if (project !== undefined && connector === undefined) {
+					if (targets.failures.length > 0) return yield* nothingRead(targets.failures)
+					return yield* notReadable([project])
+				}
 				if (projectId === undefined || connector === undefined)
 					return yield* nothingRead(targets.failures)
 				return {

@@ -13,6 +13,10 @@ const valid = {
 describe("GcpPromQlRangeRequest", () => {
 	it("accepts a query over a window with a step of a minute or more", () => {
 		expect(decodeRange({ ...valid, projects: ["acme-prod"] })._tag).toBe("Success")
+		// Exactly 11,000 points.
+		expect(
+			decodeRange({ ...valid, startTime: "2026-10-15 00:00:00", endTime: "2026-10-22 15:20:00" })._tag,
+		).toBe("Success")
 	})
 
 	it.each([
@@ -22,6 +26,11 @@ describe("GcpPromQlRangeRequest", () => {
 		["a fractional step", { stepSeconds: 90.5 }],
 		["a step over a day", { stepSeconds: 86_401 }],
 		["more than 11,000 points a series", { startTime: "2026-09-01 00:00:00" }],
+		// 11,000 steps as given, 11,001 once start and end are aligned to the step.
+		[
+			"more than 11,000 points on the aligned range",
+			{ startTime: "2026-10-15 00:00:30", endTime: "2026-10-22 15:20:30" },
+		],
 		["an inverted window", { startTime: valid.endTime, endTime: valid.startTime }],
 		["an impossible date", { endTime: "2026-13-45 99:99:99" }],
 		["a project id that is not one", { projects: ["../../organizations/1"] }],
