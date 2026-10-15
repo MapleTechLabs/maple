@@ -43,6 +43,8 @@ const pod = (deployment: string, uid: string, extra: Record<string, string> = {}
 	"k8s.pod.uid": uid,
 	...extra,
 })
+const fargatePod = (deployment: string, uid: string) =>
+	pod(deployment, uid, { "eks.amazonaws.com/compute-type": "fargate" })
 const job = (name: string) => ({ ...cluster, "k8s.job.name": name })
 
 const samples: ReadonlyArray<Sample> = [
@@ -65,12 +67,22 @@ const samples: ReadonlyArray<Sample> = [
 	...restarts("checkout-api", "b", "app", [10, 12], ""),
 	...restarts("checkout-api", "b", "sidecar", [5, 5], "Completed"),
 
-	// api: fully available, one pod near its CPU limit, no restarts.
+	// api: fully available, one Fargate pod near its CPU limit, no restarts.
 	{ metric: "k8s.deployment.desired", minutesBeforeEnd: 1, value: 3, attrs: deploy("api") },
 	{ metric: "k8s.deployment.available", minutesBeforeEnd: 1, value: 3, attrs: deploy("api") },
-	{ metric: "k8s.pod.cpu_limit_utilization", minutesBeforeEnd: 15, value: 0.93, attrs: pod("api", "c") },
-	{ metric: "k8s.pod.cpu_limit_utilization", minutesBeforeEnd: 1, value: 0.4, attrs: pod("api", "c") },
-	{ metric: "k8s.pod.cpu.usage", minutesBeforeEnd: 1, value: 0.5, attrs: pod("api", "c") },
+	{
+		metric: "k8s.pod.cpu_limit_utilization",
+		minutesBeforeEnd: 15,
+		value: 0.93,
+		attrs: fargatePod("api", "c"),
+	},
+	{
+		metric: "k8s.pod.cpu_limit_utilization",
+		minutesBeforeEnd: 1,
+		value: 0.4,
+		attrs: fargatePod("api", "c"),
+	},
+	{ metric: "k8s.pod.cpu.usage", minutesBeforeEnd: 1, value: 0.5, attrs: fargatePod("api", "c") },
 
 	// orphan: wants 2 pods, none ever scheduled, so there is no pod usage at all.
 	{ metric: "k8s.deployment.desired", minutesBeforeEnd: 1, value: 2, attrs: deploy("orphan") },
@@ -202,12 +214,12 @@ describe.skipIf(!clickhouseE2eEnabled)("listWorkloadsQuery against ClickHouse", 
 		)
 	})
 
-	it("keeps the replica gauges when filtering by compute type, which only pod series carry", async () => {
-		const [orphan] = await run({
-			kind: "deployment",
-			workloadNames: ["orphan"],
-			computeTypes: ["fargate"],
-		})
-		assert.strictEqual(orphan?.desiredReplicas, 2)
+	it("lists only workloads with a matching pod when filtering by compute type, keeping their replica gauges", async () => {
+		const rows = await run({ kind: "deployment", computeTypes: ["fargate"] })
+		// orphan has no pods and checkout-api's pods carry no compute type: neither may leak in.
+		assert.deepEqual(
+			rows.map((row) => [row.workloadName, row.desiredReplicas, row.podCount]),
+			[["api", 3, 1]],
+		)
 	})
 })

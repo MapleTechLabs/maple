@@ -1112,7 +1112,8 @@ const workloadFilterConditions = (
 	opts.environments?.length
 		? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 		: undefined,
-	// Only pod series carry the compute-type label, so the filter must not drop the replica gauges.
+	// Only pod series carry the compute-type label, so the replica gauges stay in the scan;
+	// listWorkloadsQuery then drops workloads with no matching pod series.
 	opts.computeTypes?.length
 		? CH.notInList($.MetricName, POD_METRIC_NAMES).or(
 				CH.inList($.ResourceAttributes.get("eks.amazonaws.com/compute-type"), opts.computeTypes),
@@ -1169,7 +1170,7 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 		])
 		.groupBy("workloadName", "namespace", "clusterName", "podUid", "containerName", "metric")
 
-	return fromQuery(perSeries, "series")
+	const perWorkload = fromQuery(perSeries, "series")
 		.select(($) => {
 			const isRestarts = $.metric.eq(CONTAINER_RESTARTS_METRIC)
 			const restartDelta = CH.greatest_($.latest.sub($.earliest), CH.lit(0))
@@ -1206,6 +1207,30 @@ export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 			}
 		})
 		.groupBy("workloadName", "namespace", "clusterName")
+
+	// The builder has no HAVING, so the compute-type gate filters outside the grouping:
+	// a workload qualifies only if at least one of its pod series matched the filter.
+	return fromQuery(perWorkload, "workloads")
+		.select(($) => ({
+			workloadName: $.workloadName,
+			namespace: $.namespace,
+			clusterName: $.clusterName,
+			environment: $.environment,
+			podCount: $.podCount,
+			lastSeen: $.lastSeen,
+			desiredReplicas: $.desiredReplicas,
+			readyReplicas: $.readyReplicas,
+			replicaSamples: $.replicaSamples,
+			shortfall: $.shortfall,
+			failedPods: $.failedPods,
+			restarts: $.restarts,
+			lastTerminatedReason: $.lastTerminatedReason,
+			peakCpuLimitPct: $.peakCpuLimitPct,
+			peakMemoryLimitPct: $.peakMemoryLimitPct,
+			saturation: $.saturation,
+			cpuUsage: $.cpuUsage,
+		}))
+		.where(($) => [opts.computeTypes?.length ? $.podCount.gt(0) : undefined])
 		.orderBy(
 			["shortfall", "desc"],
 			["failedPods", "desc"],
