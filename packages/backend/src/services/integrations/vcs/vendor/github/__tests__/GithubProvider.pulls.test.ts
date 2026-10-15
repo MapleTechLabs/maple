@@ -591,3 +591,65 @@ describe("GithubProvider changes since an earlier review", () => {
 		})
 	})
 })
+
+describe("GithubProvider reading why a CI job failed", () => {
+	it.effect("reads the job's check-run annotations, keeping only those with a message", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				jsonResponse([
+					{
+						annotation_level: "failure",
+						message: "expected 2 to be 3",
+						title: "adds",
+						path: "src/math.test.ts",
+						start_line: 12,
+					},
+					{ annotation_level: "notice", message: null, path: ".github" },
+				]),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555")
+			assert.isTrue(
+				requests[1]!.endsWith("/repos/octo/shop/check-runs/555/annotations?per_page=100&page=1"),
+			)
+			assert.deepStrictEqual(annotations, [
+				{
+					level: "failure",
+					message: "expected 2 to be 3",
+					title: "adds",
+					path: "src/math.test.ts",
+					startLine: 12,
+				},
+			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("reads past a page of warnings to the failure, and no further", () => {
+		const requests: Array<string> = []
+		const warning = { annotation_level: "warning", message: "Node 16 is deprecated" }
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				jsonResponse(Array.from({ length: 100 }, () => warning)),
+				jsonResponse([
+					...Array.from({ length: 99 }, () => warning),
+					{ annotation_level: "failure", message: "expected 2 to be 3" },
+				]),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555")
+			// A full page holding the failure ends the read.
+			assert.lengthOf(requests, 3)
+			assert.lengthOf(annotations, 200)
+			assert.strictEqual(annotations.at(-1)?.message, "expected 2 to be 3")
+		}).pipe(Effect.provide(layer))
+	})
+})

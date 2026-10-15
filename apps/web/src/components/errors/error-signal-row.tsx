@@ -180,7 +180,7 @@ export function ErrorSignalHeader({
 				) : null}
 			</span>
 			<span className={LANE.severity} />
-			<span className={LANE.identity}>Error</span>
+			<span className={LANE.identity}>Issue</span>
 			<span className={LANE.volume}>
 				<span className={LANE.spark}>Trend · 24h</span>
 				<span className={LANE.count}>Events</span>
