@@ -1,0 +1,213 @@
+// SAFETY-FILE: JSON is emitted by the isolated ClickHouse fixture and decoded by the real query schema.
+// The workload list joins three collectors' series (replica gauges, container restarts,
+// pod usage) per workload. These seed each against the real schema and read the rows back.
+
+import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
+import { Schema } from "effect"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { OrgId } from "@maple/domain"
+import { listWorkloadsQuery, type ListWorkloadsOpts } from "../../../../query-engine/src/ch/queries/infra"
+import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
+import {
+	applyRealMigrations,
+	clickhouseE2eEnabled,
+	clickhouseExec,
+	uniqueDatabase,
+} from "./clickhouse-e2e-support"
+
+const database = uniqueDatabase("maple_k8s_workloads_e2e")
+const ORG = "org_k8s"
+
+const MINUTE_MS = 60_000
+// Anchored to now so the table TTL never drops the seed.
+const END_MS = Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS - 10 * MINUTE_MS
+const START_MS = END_MS - 60 * MINUTE_MS
+const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const minutesBeforeEnd = (minutes: number) => chDateTime(END_MS - minutes * MINUTE_MS)
+
+const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+
+interface Sample {
+	readonly org?: string
+	readonly metric: string
+	readonly minutesBeforeEnd: number
+	readonly value: number
+	readonly attrs: Record<string, string>
+}
+
+const cluster = { "k8s.cluster.name": "prod", "k8s.namespace.name": "payments" }
+const deploy = (name: string) => ({ ...cluster, "k8s.deployment.name": name })
+const pod = (deployment: string, uid: string, extra: Record<string, string> = {}) => ({
+	...deploy(deployment),
+	"k8s.pod.name": `${deployment}-${uid}`,
+	"k8s.pod.uid": uid,
+	...extra,
+})
+const job = (name: string) => ({ ...cluster, "k8s.job.name": name })
+
+const samples: ReadonlyArray<Sample> = [
+	// checkout-api: a rollout left 2 of 5 available, and two pods restart.
+	{ metric: "k8s.deployment.desired", minutesBeforeEnd: 50, value: 5, attrs: deploy("checkout-api") },
+	{ metric: "k8s.deployment.desired", minutesBeforeEnd: 1, value: 5, attrs: deploy("checkout-api") },
+	{ metric: "k8s.deployment.available", minutesBeforeEnd: 50, value: 5, attrs: deploy("checkout-api") },
+	{ metric: "k8s.deployment.available", minutesBeforeEnd: 1, value: 2, attrs: deploy("checkout-api") },
+	{ metric: "k8s.pod.cpu.usage", minutesBeforeEnd: 40, value: 0.6, attrs: pod("checkout-api", "a") },
+	{ metric: "k8s.pod.cpu.usage", minutesBeforeEnd: 1, value: 0.2, attrs: pod("checkout-api", "a") },
+	{
+		metric: "k8s.pod.memory_limit_utilization",
+		minutesBeforeEnd: 20,
+		value: 0.38,
+		attrs: pod("checkout-api", "a"),
+	},
+	// Pod b stopped reporting half an hour ago: it counts as a pod, not as cores in use now.
+	{ metric: "k8s.pod.cpu.usage", minutesBeforeEnd: 30, value: 0.9, attrs: pod("checkout-api", "b") },
+	...restarts("checkout-api", "a", "app", [0, 1, 4], "OOMKilled"),
+	...restarts("checkout-api", "b", "app", [10, 12], ""),
+	...restarts("checkout-api", "b", "sidecar", [5, 5], "Completed"),
+
+	// api: fully available, one pod near its CPU limit, no restarts.
+	{ metric: "k8s.deployment.desired", minutesBeforeEnd: 1, value: 3, attrs: deploy("api") },
+	{ metric: "k8s.deployment.available", minutesBeforeEnd: 1, value: 3, attrs: deploy("api") },
+	{ metric: "k8s.pod.cpu_limit_utilization", minutesBeforeEnd: 15, value: 0.93, attrs: pod("api", "c") },
+	{ metric: "k8s.pod.cpu_limit_utilization", minutesBeforeEnd: 1, value: 0.4, attrs: pod("api", "c") },
+	{ metric: "k8s.pod.cpu.usage", minutesBeforeEnd: 1, value: 0.5, attrs: pod("api", "c") },
+
+	// orphan: wants 2 pods, none ever scheduled, so there is no pod usage at all.
+	{ metric: "k8s.deployment.desired", minutesBeforeEnd: 1, value: 2, attrs: deploy("orphan") },
+	{ metric: "k8s.deployment.available", minutesBeforeEnd: 1, value: 0, attrs: deploy("orphan") },
+
+	// Another tenant's checkout-api must not leak into this org's row.
+	{
+		org: "org_other",
+		metric: "k8s.deployment.desired",
+		minutesBeforeEnd: 1,
+		value: 99,
+		attrs: deploy("checkout-api"),
+	},
+	...restarts("checkout-api", "z", "app", [0, 500], "Error", "org_other"),
+
+	// Jobs: one finished cleanly, one keeps failing.
+	{ metric: "k8s.job.desired_successful_pods", minutesBeforeEnd: 1, value: 1, attrs: job("nightly") },
+	{ metric: "k8s.job.successful_pods", minutesBeforeEnd: 1, value: 1, attrs: job("nightly") },
+	{ metric: "k8s.job.failed_pods", minutesBeforeEnd: 1, value: 0, attrs: job("nightly") },
+	{ metric: "k8s.job.desired_successful_pods", minutesBeforeEnd: 1, value: 1, attrs: job("broken") },
+	{ metric: "k8s.job.successful_pods", minutesBeforeEnd: 1, value: 0, attrs: job("broken") },
+	{ metric: "k8s.job.failed_pods", minutesBeforeEnd: 1, value: 2, attrs: job("broken") },
+]
+
+function restarts(
+	deployment: string,
+	uid: string,
+	container: string,
+	totals: ReadonlyArray<number>,
+	reason: string,
+	org?: string,
+): ReadonlyArray<Sample> {
+	return totals.map((value, index) => ({
+		org,
+		metric: "k8s.container.restarts",
+		minutesBeforeEnd: 45 - index * 20,
+		value,
+		attrs: pod(deployment, uid, {
+			"k8s.container.name": container,
+			"k8s.container.status.last_terminated_reason": reason,
+		}),
+	}))
+}
+
+const mapLiteral = (attrs: Record<string, string>) =>
+	`map(${Object.entries(attrs)
+		.flatMap(([key, value]) => [quote(key), quote(value)])
+		.join(", ")})`
+
+describe.skipIf(!clickhouseE2eEnabled)("listWorkloadsQuery against ClickHouse", () => {
+	beforeAll(async () => {
+		await clickhouseExec(`CREATE DATABASE ${database}`)
+		await applyRealMigrations(database)
+		const rows = samples
+			.map((sample) => {
+				const at = quote(minutesBeforeEnd(sample.minutesBeforeEnd))
+				return `(${quote(sample.org ?? ORG)}, '', ${quote(sample.metric)}, ${at}, ${at}, ${sample.value}, ${mapLiteral(sample.attrs)})`
+			})
+			.join(",\n")
+		await clickhouseExec(
+			`INSERT INTO metrics_gauge (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, ResourceAttributes) VALUES\n${rows}`,
+			database,
+		)
+	}, 120_000)
+
+	afterAll(async () => {
+		await clickhouseExec(`DROP DATABASE IF EXISTS ${database}`)
+	})
+
+	const run = async (opts: ListWorkloadsOpts) => {
+		const compiled = compileUnsafe(listWorkloadsQuery(opts), {
+			orgId: OrgId.make(ORG),
+			startTime: chDateTime(START_MS),
+			endTime: chDateTime(END_MS),
+		})
+		const body = JSON.parse(
+			await clickhouseExec(normalizeSqlForClickHouseClient(compiled.sql), database, {
+				default_format: "JSON",
+				output_format_json_quote_64bit_integers: "0",
+			}),
+		)
+		assert.isDefined(compiled.rowSchema)
+		return Schema.decodeUnknownSync(Schema.Array(compiled.rowSchema!))(body.data)
+	}
+
+	it("ranks missing replicas first, including a workload with no pods at all", async () => {
+		const rows = await run({ kind: "deployment" })
+		assert.deepEqual(
+			rows.map((row) => row.workloadName),
+			["checkout-api", "orphan", "api"],
+		)
+		const orphan = rows[1]!
+		assert.strictEqual(orphan.podCount, 0)
+		assert.strictEqual(orphan.shortfall, 2)
+	})
+
+	it("reads the latest replica gauges and sums restarts per container, not per sample", async () => {
+		const [checkout] = await run({ kind: "deployment", workloadNames: ["checkout-api"] })
+		assert.isDefined(checkout)
+		assert.strictEqual(checkout!.desiredReplicas, 5)
+		assert.strictEqual(checkout!.readyReplicas, 2)
+		assert.strictEqual(checkout!.shortfall, 3)
+		assert.isAbove(checkout!.replicaSamples, 0)
+		// 0 → 4 on pod a's app, 10 → 12 on pod b's app, 5 → 5 on the sidecar; the other org's 500 is excluded.
+		assert.strictEqual(checkout!.restarts, 6)
+		assert.strictEqual(checkout!.lastTerminatedReason, "OOMKilled")
+		assert.strictEqual(checkout!.podCount, 2)
+		// Only pod a still reports at the window's end.
+		assert.closeTo(checkout!.cpuUsage, 0.2, 1e-9)
+		assert.closeTo(checkout!.peakMemoryLimitPct, 0.38, 1e-9)
+	})
+
+	it("reports the worst pod's peak, not where it ended", async () => {
+		const [api] = await run({ kind: "deployment", workloadNames: ["api"] })
+		assert.closeTo(api!.peakCpuLimitPct, 0.93, 1e-9)
+		assert.closeTo(api!.saturation, 0.93, 1e-9)
+		assert.strictEqual(api!.shortfall, 0)
+		assert.strictEqual(api!.restarts, 0)
+	})
+
+	it("lists jobs by failures, without calling a running job short of replicas", async () => {
+		const rows = await run({ kind: "job" })
+		assert.deepEqual(
+			rows.map((row) => [row.workloadName, row.failedPods, row.readyReplicas, row.shortfall]),
+			[
+				["broken", 2, 0, 0],
+				["nightly", 0, 1, 0],
+			],
+		)
+	})
+
+	it("keeps the replica gauges when filtering by compute type, which only pod series carry", async () => {
+		const [orphan] = await run({
+			kind: "deployment",
+			workloadNames: ["orphan"],
+			computeTypes: ["fargate"],
+		})
+		assert.strictEqual(orphan?.desiredReplicas, 2)
+	})
+})

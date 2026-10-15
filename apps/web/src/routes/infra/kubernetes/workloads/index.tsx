@@ -37,7 +37,7 @@ const DEFAULT_PRESET = "12h"
 // The list query returns the most recently seen N workloads; the toolbar says so at the cap.
 const WORKLOAD_LIST_LIMIT = 200
 
-const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset"])
+const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset", "job"])
 
 /** A one-click scope from the band. `undefined` means every workload. */
 type WorkloadScope = "saturated" | "elevated" | "stale"
@@ -68,17 +68,13 @@ const KIND_OPTIONS = [
 	{ value: "deployment", label: "Deployments" },
 	{ value: "statefulset", label: "StatefulSets" },
 	{ value: "daemonset", label: "DaemonSets" },
+	{ value: "job", label: "Jobs" },
 ] as const satisfies ReadonlyArray<{ value: WorkloadKind; label: string }>
 
-/**
- * The workload list is average-over-window, not peak: the query aggregates per
- * workload and only carries the mean. So the band says "average", and a
- * workload that spikes without moving its mean stays out of the red here — the
- * pods view is where a spike shows.
- */
+/** Saturation is the worst pod's peak, so one pod at its limit marks the whole workload. */
 function scopeOf(workload: WorkloadRow, referenceTime: string): WorkloadScope | null {
 	if (deriveHostStatus(workload.lastSeen, referenceTime) === "ended") return "stale"
-	const level = severityLevel(Math.max(workload.avgCpuLimitPct, workload.avgMemoryLimitPct))
+	const level = severityLevel(Math.max(workload.peakCpuLimitPct, workload.peakMemoryLimitPct))
 	if (level === "crit") return "saturated"
 	if (level === "warn") return "elevated"
 	return null
@@ -230,14 +226,14 @@ function WorkloadsPage() {
 						{
 							scope: "saturated",
 							label: "Saturated",
-							hint: "avg ≥90%",
+							hint: "a pod ≥90%",
 							value: saturated,
 							tone: "crit",
 						},
 						{
 							scope: "elevated",
 							label: "Elevated",
-							hint: "avg ≥60%",
+							hint: "a pod ≥60%",
 							value: elevated,
 							tone: "warn",
 						},
