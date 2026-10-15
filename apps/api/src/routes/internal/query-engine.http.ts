@@ -7,6 +7,7 @@ import {
 	type RawSqlValidationError,
 	SpanHierarchyResponse,
 	SpanDetailResponse,
+	TraceSpanEventsResponse,
 	ErrorsByTypeResponse,
 	ErrorsSparkResponse,
 	ErrorsSummaryResponse,
@@ -114,6 +115,7 @@ import {
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
 	QueryEngineExecuteBatchResponse,
+	parseSpanEvents,
 	parseWarehouseDateTime,
 } from "@maple/query-engine"
 
@@ -517,14 +519,48 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const row = yield* runQueryFirst(Queries.spanDetail, tenant, payload)
+						if (!row) return new SpanDetailResponse({ data: null })
+						// `trace_detail_spans` has no Events columns; read them off `traces`
+						// by the sorting key the detail row just resolved.
+						const startMs = DateTime.toEpochMillis(row.startTime)
+						const events = yield* runQueryFirst(Queries.spanEvents, tenant, {
+							traceId: row.traceId,
+							spanId: row.spanId,
+							serviceName: row.serviceName,
+							spanName: row.rawSpanName,
+							startTime: formatWarehouseDateTime(startMs),
+							endTime: formatWarehouseDateTime(startMs + 1000),
+						}).pipe(
+							Effect.map((raw) => (raw ? parseSpanEvents(raw) : [])),
+							// Events are supplementary; a failed lookup must not hide the attributes.
+							Effect.tapError((error) => Effect.logWarning("span events lookup failed", error)),
+							Effect.orElseSucceed(() => []),
+						)
 						return new SpanDetailResponse({
-							data: row
-								? {
-										...row,
-										traceId: decodeTraceId(row.traceId),
-										spanId: decodeSpanId(row.spanId),
-									}
-								: null,
+							data: {
+								traceId: decodeTraceId(row.traceId),
+								spanId: decodeSpanId(row.spanId),
+								spanAttributes: row.spanAttributes,
+								resourceAttributes: row.resourceAttributes,
+								events,
+							},
+						})
+					}),
+				)
+				.handle("traceSpanEvents", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.traceSpanEvents, tenant, payload)
+						return new TraceSpanEventsResponse({
+							data: rows.flatMap((row) => {
+								const events = parseSpanEvents(row).map(({ name, offsetMs }) => ({
+									name,
+									offsetMs,
+								}))
+								return events.length === 0
+									? []
+									: [{ spanId: decodeSpanId(row.spanId), events }]
+							}),
 						})
 					}),
 				)

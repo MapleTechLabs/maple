@@ -5,12 +5,14 @@ import { cn } from "../../lib/utils"
 import { getServiceColor } from "../../lib/colors"
 import { countLabel, formatDuration } from "../../lib/format"
 import { describeSpan } from "../../lib/span-category"
+import { spanEventMarkers, type TimelineSpanEvent } from "../../lib/span-event-markers"
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
 import type { TimelineBar } from "./trace-timeline-types"
 import { DEPTH_INDENT, ROW_HEIGHT } from "./trace-timeline-types"
 
 /** Indent stops growing past this depth so deep traces keep room for the label. */
 const MAX_INDENT_DEPTH = 12
-import { TONE_TEXT } from "../../lib/tone"
+import { TONE_FILL, TONE_TEXT } from "../../lib/tone"
 
 interface TraceTimelineRowProps {
 	bar: TimelineBar
@@ -25,6 +27,8 @@ interface TraceTimelineRowProps {
 	matched: boolean
 	/** A single-service trace repeats one name down every row — the header already said it. */
 	showService: boolean
+	/** Span events, drawn as ticks along the bar. */
+	events?: ReadonlyArray<TimelineSpanEvent>
 	onSelect: (spanId: string) => void
 	/** `wholeSubtree` comes from an Alt/Option-click. */
 	onToggleCollapse: (spanId: string, wholeSubtree: boolean) => void
@@ -56,6 +60,7 @@ function TraceTimelineRowImpl({
 	dimmed,
 	matched,
 	showService,
+	events,
 	onSelect,
 	onToggleCollapse,
 	onZoomSpan,
@@ -214,6 +219,14 @@ function TraceTimelineRowImpl({
 						</span>
 					</div>
 
+					{events && events.length > 0 && (
+						<SpanEventMarkers
+							events={events}
+							durationMs={bar.span.durationMs}
+							onHover={onHover}
+						/>
+					)}
+
 					{/* Outside label for bars too narrow to hold one. Sits on the right by default;
 					    the decoration pass flips it left near the right edge of the column. */}
 					<span
@@ -250,6 +263,54 @@ function TraceTimelineRowImpl({
 			</div>
 		</div>
 	)
+}
+
+/**
+ * Event ticks inside the bar, positioned as a share of its width so pan and zoom
+ * move them with the bar for free. Exceptions take the error colour.
+ */
+function SpanEventMarkers({
+	events,
+	durationMs,
+	onHover,
+}: {
+	events: ReadonlyArray<TimelineSpanEvent>
+	durationMs: number
+	onHover: TraceTimelineRowProps["onHover"]
+}) {
+	const markers = React.useMemo(() => spanEventMarkers(events, durationMs), [events, durationMs])
+	return markers.map((marker, index) => (
+		<Tooltip key={index}>
+			<TooltipTrigger
+				render={
+					<span
+						data-span-event=""
+						aria-label={`${marker.name} at +${formatDuration(marker.offsetMs)}`}
+						className="absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center"
+						style={{ left: `${marker.percent}%` }}
+						// The marker has its own tooltip; keep the span tooltip out of its way.
+						onMouseEnter={() => onHover(null, null)}
+						onMouseMove={(e) => e.stopPropagation()}
+					/>
+				}
+			>
+				<span
+					className={cn(
+						"h-full w-0.5 rounded-full",
+						marker.isException ? TONE_FILL.crit : "bg-foreground/55",
+					)}
+				/>
+			</TooltipTrigger>
+			<TooltipContent side="top" className="text-xs">
+				<span className={cn("font-mono", marker.isException && TONE_TEXT.crit)}>
+					{marker.name || "(unnamed event)"}
+				</span>{" "}
+				<span className="font-mono tabular-nums text-muted-foreground">
+					+{formatDuration(marker.offsetMs)}
+				</span>
+			</TooltipContent>
+		</Tooltip>
+	))
 }
 
 export const TraceTimelineRow = React.memo(TraceTimelineRowImpl)

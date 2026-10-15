@@ -1,7 +1,7 @@
 import { warmAtoms } from "@effect-router/core"
 import * as React from "react"
 import { useNavigate, useRouterState, createFileRoute } from "@tanstack/react-router"
-import { useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Option, Schema } from "effect"
 import { TraceId } from "@maple/domain"
 
@@ -23,7 +23,10 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@maple/ui/
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
 import { type Span, type SpanNode, type SpanHierarchyResponse } from "@/api/warehouse/traces"
-import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import {
+	getSpanHierarchyResultAtom,
+	getTraceSpanEventsResultAtom,
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
@@ -265,6 +268,14 @@ function TraceDetailBody({
 
 	const isMobile = useIsMobile()
 
+	// Event markers arrive after the bars; until then (or on failure) the timeline draws none.
+	const spanEventsResult = useAtomValue(
+		getTraceSpanEventsResultAtom({
+			data: { traceId: data.traceId, traceStartTime, totalDurationMs: data.totalDurationMs },
+		}),
+	)
+	const spanEvents = Result.isSuccess(spanEventsResult) ? spanEventsResult.value : undefined
+
 	// Shared by both layouts below so the tabs keep their state across a breakpoint change.
 	const traceViewTabs = (
 		<TraceViewTabs
@@ -277,6 +288,7 @@ function TraceDetailBody({
 			onSelectSpan={handleSelectSpan}
 			view={search.view ?? "timeline"}
 			onViewChange={handleViewChange}
+			spanEvents={spanEvents}
 		/>
 	)
 

@@ -35,6 +35,7 @@ import {
 	ResourceAttributesSection,
 } from "@/components/attributes"
 import { TraceAttributeFilterProvider } from "./trace-attribute-filter-provider"
+import { SpanEventsSection } from "./span-events-section"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
@@ -473,6 +474,7 @@ export function SpanDetailPanel({
 									))
 									.onSuccess((detail) => (
 										<>
+											<SpanEventsSection events={detail.events} />
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={detail.spanAttributes}

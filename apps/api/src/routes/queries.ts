@@ -24,6 +24,7 @@ import type {
 	RailwayInfraServiceTimeseriesRequest,
 	ServiceCloudflareStatsRequest,
 	SpanDetailRequest,
+	TraceSpanEventsRequest,
 	WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
 import {
@@ -671,6 +672,50 @@ export const Queries = {
 				narrowByTime ? { orgId, startTime: payload.startTime, endTime: payload.endTime } : { orgId },
 			)
 		},
+	}),
+
+	/**
+	 * Events of a span `spanDetail` already resolved. Keyed by the span's exact
+	 * start second, so the row it reads is written and immutable.
+	 */
+	spanEvents: defineQuery({
+		id: "spanEvents",
+		profile: "discovery",
+		cache: 600,
+		compile: (
+			payload: {
+				readonly traceId: string
+				readonly spanId: string
+				readonly serviceName: string
+				readonly spanName: string
+				readonly startTime: string
+				readonly endTime: string
+			},
+			orgId: OrgId,
+		) =>
+			CH.compile(
+				CH.spanEventsQuery({
+					traceId: payload.traceId,
+					spanId: payload.spanId,
+					serviceName: payload.serviceName,
+					spanName: payload.spanName,
+				}),
+				{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			),
+	}),
+
+	/** Event times and names for every span of a trace, for the timeline markers. */
+	traceSpanEvents: defineQuery({
+		id: "traceSpanEvents",
+		profile: "list",
+		cache: (payload: TraceSpanEventsRequest, nowMs: number) =>
+			traceCacheTtlSeconds(payload.endTime, nowMs),
+		compile: (payload: TraceSpanEventsRequest, orgId: OrgId) =>
+			CH.compile(CH.spanEventsByTraceQuery({ traceId: payload.traceId }), {
+				orgId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+			}),
 	}),
 
 	podInfraTimeseries: defineQuery({
