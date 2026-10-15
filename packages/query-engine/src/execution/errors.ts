@@ -249,9 +249,11 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			"CANNOT_PARSE_DATETIME",
 			"NOT_AN_AGGREGATE",
 			"UNKNOWN_AGGREGATE_FUNCTION",
+			// `FROM t FINAL` on Tinybird, whose tenant filter turns every table into a subquery.
+			"UNSUPPORTED_METHOD",
 		]),
 		pattern:
-			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function/i,
+			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function|modifiers FINAL are not supported/i,
 		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
