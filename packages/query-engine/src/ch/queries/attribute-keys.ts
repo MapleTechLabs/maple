@@ -153,11 +153,13 @@ export interface MetricScopedAttributeValuesOpts {
 
 export function metricScopedAttributeValuesQuery(opts: MetricScopedAttributeValuesOpts) {
 	const { tbl } = resolveMetricTable(opts.metricType)
-	const attributes = ($: ColumnAccessor<typeof MetricsSum.columns>) =>
-		opts.scope === "resource" ? $.ResourceAttributes : $.Attributes
+	const attributeValue = ($: ColumnAccessor<typeof MetricsSum.columns>) =>
+		opts.scope === "resource"
+			? $.ResourceAttributes.get(opts.attributeKey)
+			: $.Attributes.get(opts.attributeKey)
 	return from(tbl as typeof MetricsSum)
 		.select(($) => ({
-			attributeValue: attributes($).get(opts.attributeKey),
+			attributeValue: attributeValue($),
 			usageCount: CH.count(),
 		}))
 		.where(($) => [
@@ -167,7 +169,7 @@ export function metricScopedAttributeValuesQuery(opts: MetricScopedAttributeValu
 				: $.MetricName.eq(param.string("metricName")),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
-			attributes($).get(opts.attributeKey).neq(""),
+			attributeValue($).neq(""),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
 		.groupBy("attributeValue")
