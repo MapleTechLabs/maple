@@ -917,6 +917,8 @@ export const GcpResource = Schema.Struct({
 	displayName: Schema.NullOr(Schema.String),
 	state: Schema.NullOr(Schema.String),
 	labels: Schema.Record(Schema.String, Schema.String),
+	/** A Cloud SQL instance's settings; null for every other type, and until the sync reads them. */
+	details: Schema.NullOr(GcpCloudSqlSettings),
 })
 export type GcpResource = Schema.Schema.Type<typeof GcpResource>
 

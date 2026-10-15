@@ -87,7 +87,13 @@ import {
 	getPlanetScaleQueryInsights,
 } from "@/api/warehouse/planetscale-infra"
 import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
-import { getGcpInfraFleet, getGcpInfraTimeseries } from "@/api/warehouse/gcp-infra"
+import {
+	getGcpCloudSqlTopQueries,
+	getGcpCloudSqlTraceSide,
+	getGcpInfraFleet,
+	getGcpInfraSparklines,
+	getGcpInfraTimeseries,
+} from "@/api/warehouse/gcp-infra"
 import {
 	getServiceHealthBaseline,
 	getServiceHealthSnapshot,
@@ -804,6 +810,18 @@ export const gcpInfraFleetResultAtom = makeQueryAtomFamily(getGcpInfraFleet, {
 })
 
 export const gcpInfraTimeseriesResultAtom = makeQueryAtomFamily(getGcpInfraTimeseries, {
+	staleTime: 15_000,
+})
+
+export const gcpInfraSparklinesResultAtom = makeQueryAtomFamily(getGcpInfraSparklines, {
+	staleTime: 15_000,
+})
+
+export const gcpCloudSqlTopQueriesResultAtom = makeQueryAtomFamily(getGcpCloudSqlTopQueries, {
+	staleTime: 15_000,
+})
+
+export const gcpCloudSqlTraceSideResultAtom = makeQueryAtomFamily(getGcpCloudSqlTraceSide, {
 	staleTime: 15_000,
 })
 

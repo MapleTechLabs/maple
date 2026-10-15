@@ -5,7 +5,14 @@
 // `metrics_gauge`. Nothing else writes these metric names, so they scope a query on their own.
 
 import * as CH from "@maple-dev/effect-orm/expr"
-import { from, fromUnion, param, unionAll, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import {
+	from,
+	fromQuery,
+	fromUnion,
+	param,
+	unionAll,
+	type ColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
 import {
 	GCP_INFRA_ROW_LIMIT,
 	GCP_INFRA_SERVICE_IDS,
@@ -15,7 +22,8 @@ import {
 	type GcpInfraServiceId,
 	type GcpInfraSourceId,
 } from "@maple/domain/gcp-infra"
-import { gcpMetricPointAttributes } from "@maple/domain/gcp-metrics"
+import { gcpMetricLabelAttribute, gcpMetricPointAttributes } from "@maple/domain/gcp-metrics"
+import { finiteOrZero } from "@maple/query-engine/ch/format"
 import {
 	MetricCatalog,
 	MetricsGauge,
@@ -27,11 +35,26 @@ import {
 /** Both metrics tables declare the columns read here alike. */
 type MetricsAccessor = ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsGauge.columns>
 
-/** What both metric queries read of one source: a point's label, and the window's points. */
-const reading = (source: GcpInfraSourceId) => {
-	const metrics = gcpInfraMetrics(source)
+/**
+ * Kept on the PostgreSQL connections so the page can name an instance's databases
+ * (`gcpCloudSqlDatabasesSQL`); every other reading adds them up.
+ */
+const DATABASE = gcpMetricLabelAttribute("database")
+
+/**
+ * The points behind a mean. A gauge kept per database is one reading per minute over all of
+ * them, so its points count once per minute.
+ */
+const samples = ($: { readonly t: CH.Expr<unknown>; readonly database: CH.Expr<string> }) =>
+	CH.countIf($.database.eq("")).add(CH.uniqIf($.t, $.database.neq("")))
+
+/** What the metric queries read of one source: a point's label, and the window's points. */
+const reading = (source: GcpInfraSourceId, metrics = gcpInfraMetrics(source)) => {
 	// A point carries at most one of these, so joining the candidates yields the one that is set.
-	const labels = ["quantile", ...new Set(metrics.flatMap(gcpMetricPointAttributes))]
+	const labels = [
+		"quantile",
+		...new Set(metrics.flatMap(gcpMetricPointAttributes).filter((label) => label !== DATABASE)),
+	]
 	return {
 		label: ($: MetricsAccessor) =>
 			CH.arrayStringConcat(
@@ -55,11 +78,22 @@ const reading = (source: GcpInfraSourceId) => {
 	}
 }
 
+/** One workload's points: `keys` are its identity values, a missing one matching an empty attribute. */
+const workloadIs = ($: MetricsAccessor, source: GcpInfraSourceId, keys: ReadonlyArray<string>) =>
+	[
+		// The table's second sort key column: narrows the read to the workload's service.
+		$.ServiceName.eq(gcpInfraServiceName(source, keys)),
+		...GCP_INFRA_SOURCES[source].identity.map(([, attribute], index) =>
+			$.ResourceAttributes.get(attribute).eq(keys[index] ?? ""),
+		),
+	] as const
+
 /**
  * Every curated metric of one service: one row per workload (`keys`, the values of the service's
  * `identity`), metric and `label` (the quantile, metric label value or direction, empty without
  * one). `total` sums the window's points and `samples`
  * counts them: a counter reads as `total`, a gauge or percentile as the mean `total / samples`.
+ * PostgreSQL's connections are added up over the instance's databases.
  *
  * Connections with overlapping scopes store a series once each, which multiplies its counters.
  */
@@ -71,8 +105,10 @@ export function gcpInfraMetricsSQL(service: GcpInfraServiceId) {
 				$.ResourceAttributes.get(attribute),
 			),
 		),
+		t: $.TimeUnix,
 		metric: $.MetricName,
 		label: label($),
+		database: $.Attributes.get(DATABASE),
 		value: $.Value,
 	})
 	return fromUnion(
@@ -91,7 +127,7 @@ export function gcpInfraMetricsSQL(service: GcpInfraServiceId) {
 			metric: $.metric,
 			label: $.label,
 			total: CH.sum($.value),
-			samples: CH.count(),
+			samples: samples($),
 		}))
 		.groupBy("keys", "metric", "label")
 		.orderBy(["keys", "asc"], ["metric", "asc"], ["label", "asc"])
@@ -110,17 +146,11 @@ export function gcpInfraTimeseriesSQL(source: GcpInfraSourceId, keys: ReadonlyAr
 		t: $.TimeUnix,
 		metric: $.MetricName,
 		label: label($),
+		database: $.Attributes.get(DATABASE),
 		value: $.Value,
 	})
 	const ofWorkload = ($: MetricsAccessor, sums: boolean) =>
-		[
-			...inWindow($, sums),
-			// The table's second sort key column: narrows the read to the workload's service.
-			$.ServiceName.eq(gcpInfraServiceName(source, keys)),
-			...GCP_INFRA_SOURCES[source].identity.map(([, attribute], index) =>
-				$.ResourceAttributes.get(attribute).eq(keys[index] ?? ""),
-			),
-		] as const
+		[...inWindow($, sums), ...workloadIs($, source, keys)] as const
 	return fromUnion(
 		unionAll(
 			from(MetricsSum)
@@ -137,10 +167,67 @@ export function gcpInfraTimeseriesSQL(source: GcpInfraSourceId, keys: ReadonlyAr
 			metric: $.metric,
 			label: $.label,
 			total: CH.sum($.value),
-			samples: CH.count(),
+			samples: samples($),
 		}))
 		.groupBy("bucket", "metric", "label")
 		.orderBy(["bucket", "asc"], ["metric", "asc"], ["label", "asc"])
+		.limit(GCP_INFRA_ROW_LIMIT)
+		.format("JSON")
+}
+
+/** The metrics a list row of a service draws as sparklines; a service without any draws none. */
+export type GcpInfraSparklineMetrics = { readonly [S in GcpInfraServiceId]?: ReadonlyArray<string> }
+
+/** Its volume, and a Pub/Sub subscription's backlog. A Cloud SQL instance's volume is Query Insights'. */
+export const GCP_INFRA_SPARKLINE_METRICS: GcpInfraSparklineMetrics = {
+	cloudRun: ["gcp.cloud_run.requests"],
+	cloudFunctions: ["gcp.cloud_functions.executions"],
+	cloudSql: ["gcp.cloud_sql.queries"],
+	pubsub: ["gcp.pubsub.subscription.sent_messages", "gcp.pubsub.subscription.undelivered_messages"],
+}
+
+/**
+ * The sparkline metrics of every workload of one service over time: one row per workload
+ * (`keys`, as in `gcpInfraMetricsSQL`), bucket and metric, every label value added up. A counter
+ * reads as `total`, a gauge as the mean `total / samples`. A service without sparklines reads
+ * nothing.
+ */
+export function gcpInfraSparklinesSQL(service: GcpInfraServiceId) {
+	const names = GCP_INFRA_SPARKLINE_METRICS[service] ?? []
+	const { inWindow } = reading(
+		service,
+		gcpInfraMetrics(service).filter((metric) => names.includes(metric.name)),
+	)
+	const point = ($: MetricsAccessor) => ({
+		keys: CH.arrayOf(
+			...GCP_INFRA_SOURCES[service].identity.map(([, attribute]) =>
+				$.ResourceAttributes.get(attribute),
+			),
+		),
+		t: $.TimeUnix,
+		metric: $.MetricName,
+		value: $.Value,
+	})
+	return fromUnion(
+		unionAll(
+			from(MetricsSum)
+				.select(point)
+				.where(($) => inWindow($, true)),
+			from(MetricsGauge)
+				.select(point)
+				.where(($) => inWindow($, false)),
+		),
+		"points",
+	)
+		.select(($) => ({
+			keys: $.keys,
+			bucket: CH.toStartOfInterval($.t, param.int("bucketSeconds")),
+			metric: $.metric,
+			total: CH.sum($.value),
+			samples: CH.count(),
+		}))
+		.groupBy("keys", "bucket", "metric")
+		.orderBy(["keys", "asc"], ["bucket", "asc"], ["metric", "asc"])
 		.limit(GCP_INFRA_ROW_LIMIT)
 		.format("JSON")
 }
@@ -163,5 +250,106 @@ export function gcpInfraPresenceSQL() {
 			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("metric")
+		.format("JSON")
+}
+
+// Query Insights per statement: the top group of `GCP_METRIC_GROUPS`.
+const STATEMENT = "gcp.cloud_sql.query.statement"
+const CALLS = `${STATEMENT}.calls`
+const EXECUTION = `${STATEMENT}.execution.time`
+const LOCK = `${STATEMENT}.lock.time`
+const IO = `${STATEMENT}.io.time`
+const ROWS = `${STATEMENT}.rows`
+const DURATION = `${STATEMENT}.duration`
+
+const TOP_QUERIES_LIMIT = 25
+
+/**
+ * A Cloud SQL instance's statements over the window by total execution time, from Query Insights:
+ * one row per query hash with its text, calls, seconds of execution, lock wait and I/O wait, and
+ * rows read or changed. `keys` are the instance's identity values, as in `gcpInfraTimeseriesSQL`.
+ *
+ * The poller keeps each poll's 25 statements that ran longest, so a statement counts only in the
+ * polls it ranked in. Its p50 and p95 are each poll's, averaged weighted by the poll's calls: an
+ * approximation, since quantiles do not add up. Zero without calls.
+ */
+export function gcpCloudSqlTopQueriesSQL(keys: ReadonlyArray<string>) {
+	const point = ($: MetricsAccessor) => ({
+		hash: $.Attributes.get(gcpMetricLabelAttribute("query_hash")),
+		t: $.TimeUnix,
+		metric: $.MetricName,
+		quantile: $.Attributes.get("quantile"),
+		statement: $.Attributes.get(gcpMetricLabelAttribute("querystring")),
+		value: $.Value,
+	})
+	const ofInstance = ($: MetricsAccessor, metrics: ReadonlyArray<string>) =>
+		[
+			$.OrgId.eq(orgIdParam),
+			CH.inList($.MetricName, metrics),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			...workloadIs($, "cloudSql", keys),
+		] as const
+	// One row per statement and poll.
+	const polls = fromUnion(
+		unionAll(
+			from(MetricsSum)
+				.select(point)
+				.where(($) => ofInstance($, [CALLS, EXECUTION, LOCK, IO, ROWS])),
+			from(MetricsGauge)
+				.select(point)
+				.where(($) => ofInstance($, [DURATION])),
+		),
+		"points",
+	)
+		.select(($) => ({
+			hash: $.hash,
+			t: $.t,
+			statement: CH.anyIf($.statement, $.statement.neq("")),
+			callCount: CH.sumIf($.value, $.metric.eq(CALLS)),
+			executionTime: CH.sumIf($.value, $.metric.eq(EXECUTION)),
+			lockTime: CH.sumIf($.value, $.metric.eq(LOCK)),
+			ioTime: CH.sumIf($.value, $.metric.eq(IO)),
+			rowCount: CH.sumIf($.value, $.metric.eq(ROWS)),
+			p50: CH.maxIf($.value, $.metric.eq(DURATION).and($.quantile.eq("0.5"))),
+			p95: CH.maxIf($.value, $.metric.eq(DURATION).and($.quantile.eq("0.95"))),
+		}))
+		.groupBy("hash", "t")
+	return fromQuery(polls, "polls")
+		.select(($) => ({
+			queryHash: $.hash,
+			statement: CH.anyIf($.statement, $.statement.neq("")),
+			calls: CH.sum($.callCount),
+			executionSeconds: CH.sum($.executionTime),
+			lockSeconds: CH.sum($.lockTime),
+			ioSeconds: CH.sum($.ioTime),
+			rowCount: CH.sum($.rowCount),
+			p50Seconds: finiteOrZero(CH.sum($.p50.mul($.callCount)).div(CH.sum($.callCount))),
+			p95Seconds: finiteOrZero(CH.sum($.p95.mul($.callCount)).div(CH.sum($.callCount))),
+		}))
+		.groupBy("queryHash")
+		.orderBy(["executionSeconds", "desc"], ["queryHash", "asc"])
+		.limit(TOP_QUERIES_LIMIT)
+		.format("JSON")
+}
+
+/**
+ * The databases of a Cloud SQL instance with connections in the window, from PostgreSQL's
+ * connections per database. `keys` as in `gcpCloudSqlTopQueriesSQL`.
+ */
+export function gcpCloudSqlDatabasesSQL(keys: ReadonlyArray<string>) {
+	return from(MetricsGauge)
+		.select(($) => ({ database: $.Attributes.get(DATABASE) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.MetricName.eq("gcp.cloud_sql.postgresql.connection.count"),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
+			...workloadIs($, "cloudSql", keys),
+			$.Attributes.get(DATABASE).neq(""),
+		])
+		.groupBy("database")
+		.orderBy(["database", "asc"])
+		.limit(GCP_INFRA_ROW_LIMIT)
 		.format("JSON")
 }
