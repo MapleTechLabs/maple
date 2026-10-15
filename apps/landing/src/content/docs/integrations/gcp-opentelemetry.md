@@ -22,7 +22,7 @@ Your workloads send traces, logs and metrics straight to Maple over OpenTelemetr
 1. Instrument each service with an OpenTelemetry SDK. Export to Maple, or to the [Maple Kubernetes collector](/docs/infrastructure/kubernetes) in the cluster.
 2. [Connect Google Cloud](/docs/integrations/gcp#connect) and keep the log filter on **Recommended: no GKE container logs**.
 
-The connection then adds node and cluster logs, audit logs and the `gcp.kubernetes.*` metrics.
+The connection then adds node and cluster logs, audit logs and the `gcp.gke.*` metrics.
 
 ### Cloud Run
 
@@ -30,7 +30,7 @@ The connection then adds node and cluster logs, audit logs and the `gcp.kubernet
 2. [Connect Google Cloud](/docs/integrations/gcp#connect).
 3. If the service exports logs over OpenTelemetry, [leave out its container output](#change-the-filter) too: the recommended filter forwards what a Cloud Run container writes to stdout and stderr.
 
-The connection adds Cloud Run's request logs and the `gcp.run.*` metrics. Cloud Run sends a `traceparent` header with every request. An SDK that continues it gives the server span the trace ID of Google's request log for that request, so the request log, your spans and your log lines join on one trace.
+The connection adds Cloud Run's request logs and the `gcp.cloud_run.*` metrics. Cloud Run sends a `traceparent` header with every request. An SDK that continues it gives the server span the trace ID of Google's request log for that request, so the request log, your spans and your log lines join on one trace.
 
 ### Compute Engine
 
@@ -38,7 +38,7 @@ The connection adds Cloud Run's request logs and the `gcp.run.*` metrics. Cloud 
 2. Run the OpenTelemetry Collector on the VM for [host metrics](/docs/infrastructure/hosts).
 3. [Connect Google Cloud](/docs/integrations/gcp#connect).
 
-The connection adds audit logs and the `gcp.compute.*` metrics.
+The connection adds audit logs and the `gcp.gce.*` metrics.
 
 ## GKE container logs
 

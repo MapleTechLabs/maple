@@ -14,8 +14,8 @@ import {
 import type { TemplateDefinition, WidgetDef } from "@maple/backend/dashboard-templates/types"
 
 // The Cloud Monitoring poller (GcpMetricsService) stores the metrics in `GCP_METRIC_GROUPS` at
-// one-minute resolution, so a widget takes its metric type and unit from that table. Counters are
-// delta sums (`sum`, not rate). Gauges are averaged, over the bucket and over the regions a
+// one-minute resolution, so a widget takes its metric type and unit from that table (types sharing
+// a name share both). Counters are delta sums (`sum`, not rate). Gauges are averaged, over the bucket and over the regions a
 // workload runs in: `sum` would add up every minute. Distributions are p50/p95/p99 gauges keyed
 // by the `quantile` attribute. Workloads chart by `service.name`. A chart grouped by an attribute
 // keeps one service's value per group, so those are used only where `service.name` is the
@@ -28,7 +28,6 @@ const STORED = new Map(
 )
 
 const DISPLAY_UNITS = new Map([
-	["ms", "duration_ms"],
 	["s", "duration_s"],
 	["By", "bytes"],
 	// Utilization is a 0-1 fraction, which is what `percent` expects.
@@ -37,6 +36,9 @@ const DISPLAY_UNITS = new Map([
 
 const WORKLOAD = "service.name"
 const label = (name: string) => `resource.gcp.resource.labels.${name}`
+const metricLabel = (name: string) => `attr.gcp.metric.labels.${name}`
+const NON_EVICTABLE = `${metricLabel("memory_type")} = "non-evictable"`
+const ACTIVE = `${metricLabel("state")} = "active"`
 const P95 = `attr.quantile = "0.95"`
 
 // `cloud.region` is set only for resources Cloud Monitoring labels with a location.
@@ -104,42 +106,42 @@ const TABS: ReadonlyArray<Tab> = [
 			{
 				id: "run-requests",
 				title: "Requests by Service",
-				metric: "gcp.run.request_count",
+				metric: "gcp.cloud_run.requests",
 				by: WORKLOAD,
 			},
 			{
 				id: "run-errors",
 				title: "5xx Responses by Service",
-				metric: "gcp.run.request_count",
+				metric: "gcp.cloud_run.requests",
 				by: WORKLOAD,
-				where: `attr.response_code_class = "5xx"`,
+				where: `${metricLabel("response_code_class")} = "5xx"`,
 				display: CHART_DISPLAY_BAR,
 			},
 			{
 				id: "run-latency",
 				title: "Request Latency p95 by Service",
-				metric: "gcp.run.request_latencies",
+				metric: "gcp.cloud_run.request.duration",
 				by: WORKLOAD,
 				where: P95,
 			},
 			{
 				id: "run-instances",
 				title: "Active Instances by Service",
-				metric: "gcp.run.container.instance_count",
+				metric: "gcp.cloud_run.container.instance.count",
 				by: WORKLOAD,
-				where: `attr.state = "active"`,
+				where: ACTIVE,
 			},
 			{
 				id: "run-cpu",
 				title: "CPU Utilization p95 by Service",
-				metric: "gcp.run.container.cpu.utilizations",
+				metric: "gcp.cloud_run.container.cpu.utilization",
 				by: WORKLOAD,
 				where: P95,
 			},
 			{
 				id: "run-memory",
 				title: "Memory Utilization p95 by Service",
-				metric: "gcp.run.container.memory.utilizations",
+				metric: "gcp.cloud_run.container.memory.utilization",
 				by: WORKLOAD,
 				where: P95,
 			},
@@ -152,27 +154,27 @@ const TABS: ReadonlyArray<Tab> = [
 			{
 				id: "functions-executions",
 				title: "Executions by Function",
-				metric: "gcp.cloudfunctions.function.execution_count",
+				metric: "gcp.cloud_functions.executions",
 				by: WORKLOAD,
 			},
 			{
 				id: "functions-execution-time",
 				title: "Execution Time p95 by Function",
-				metric: "gcp.cloudfunctions.function.execution_times",
+				metric: "gcp.cloud_functions.execution.duration",
 				by: WORKLOAD,
 				where: P95,
 			},
 			{
 				id: "functions-instances",
 				title: "Active Instances by Function",
-				metric: "gcp.cloudfunctions.function.instance_count",
+				metric: "gcp.cloud_functions.instance.count",
 				by: WORKLOAD,
-				where: `attr.state = "active"`,
+				where: ACTIVE,
 			},
 			{
 				id: "functions-memory",
 				title: "Peak Memory per Execution p95 by Function",
-				metric: "gcp.cloudfunctions.function.user_memory_bytes",
+				metric: "gcp.cloud_functions.memory.usage",
 				by: WORKLOAD,
 				where: P95,
 			},
@@ -185,43 +187,43 @@ const TABS: ReadonlyArray<Tab> = [
 			{
 				id: "gke-cpu",
 				title: "CPU Limit Utilization by Container",
-				metric: "gcp.kubernetes.container.cpu.limit_utilization",
+				metric: "gcp.gke.container.cpu.limit.utilization",
 				by: WORKLOAD,
 			},
 			{
 				// The kernel reclaims evictable memory under pressure, so non-evictable is the one to watch.
 				id: "gke-memory",
 				title: "Memory Limit Utilization by Container",
-				metric: "gcp.kubernetes.container.memory.limit_utilization",
+				metric: "gcp.gke.container.memory.limit.utilization",
 				by: WORKLOAD,
-				where: `attr.memory_type = "non-evictable"`,
+				where: NON_EVICTABLE,
 			},
 			{
 				id: "gke-restarts",
 				title: "Container Restarts",
-				metric: "gcp.kubernetes.container.restart_count",
+				metric: "gcp.gke.container.restarts",
 				by: WORKLOAD,
 				display: CHART_DISPLAY_BAR,
 			},
 			{
 				id: "gke-memory-used",
 				title: "Memory in Use by Container",
-				metric: "gcp.kubernetes.container.memory.used_bytes",
+				metric: "gcp.gke.container.memory.usage",
 				by: WORKLOAD,
-				where: `attr.memory_type = "non-evictable"`,
+				where: NON_EVICTABLE,
 			},
 			{
 				id: "gke-node-cpu",
 				title: "Node CPU Utilization by Cluster",
-				metric: "gcp.kubernetes.node.cpu.allocatable_utilization",
+				metric: "gcp.gke.node.cpu.allocatable.utilization",
 				by: "resource.k8s.cluster.name",
 			},
 			{
 				id: "gke-node-memory",
 				title: "Node Memory Utilization by Cluster",
-				metric: "gcp.kubernetes.node.memory.allocatable_utilization",
+				metric: "gcp.gke.node.memory.allocatable.utilization",
 				by: "resource.k8s.cluster.name",
-				where: `attr.memory_type = "non-evictable"`,
+				where: NON_EVICTABLE,
 			},
 		],
 	},
@@ -232,38 +234,42 @@ const TABS: ReadonlyArray<Tab> = [
 			{
 				id: "compute-cpu",
 				title: "CPU Utilization by Instance",
-				metric: "gcp.compute.instance.cpu.utilization",
+				metric: "gcp.gce.cpu.utilization",
 				by: WORKLOAD,
 			},
 			{
 				id: "compute-memory",
 				title: "Memory in Use by Instance (E2)",
-				metric: "gcp.compute.instance.memory.balloon.ram_used",
+				metric: "gcp.gce.memory.usage",
 				by: WORKLOAD,
 			},
 			{
 				id: "compute-network-received",
 				title: "Network Bytes Received by Instance",
-				metric: "gcp.compute.instance.network.received_bytes_count",
+				metric: "gcp.gce.network.io",
 				by: WORKLOAD,
+				where: `attr.network.io.direction = "receive"`,
 			},
 			{
 				id: "compute-network-sent",
 				title: "Network Bytes Sent by Instance",
-				metric: "gcp.compute.instance.network.sent_bytes_count",
+				metric: "gcp.gce.network.io",
 				by: WORKLOAD,
+				where: `attr.network.io.direction = "transmit"`,
 			},
 			{
 				id: "compute-disk-read",
 				title: "Disk Bytes Read by Instance",
-				metric: "gcp.compute.instance.disk.read_bytes_count",
+				metric: "gcp.gce.disk.io",
 				by: WORKLOAD,
+				where: `attr.disk.io.direction = "read"`,
 			},
 			{
 				id: "compute-disk-write",
 				title: "Disk Bytes Written by Instance",
-				metric: "gcp.compute.instance.disk.write_bytes_count",
+				metric: "gcp.gce.disk.io",
 				by: WORKLOAD,
+				where: `attr.disk.io.direction = "write"`,
 			},
 		],
 	},
@@ -274,37 +280,37 @@ const TABS: ReadonlyArray<Tab> = [
 			{
 				id: "sql-cpu",
 				title: "CPU Utilization by Instance",
-				metric: "gcp.cloudsql.database.cpu.utilization",
+				metric: "gcp.cloud_sql.cpu.utilization",
 				by: label("database_id"),
 			},
 			{
 				id: "sql-memory",
 				title: "Memory Utilization by Instance",
-				metric: "gcp.cloudsql.database.memory.utilization",
+				metric: "gcp.cloud_sql.memory.utilization",
 				by: label("database_id"),
 			},
 			{
 				id: "sql-connections",
-				title: "Connections (MySQL, SQL Server)",
-				metric: "gcp.cloudsql.database.network.connections",
+				title: "Connections by Instance",
+				metric: "gcp.cloud_sql.connection.count",
 				by: label("database_id"),
 			},
 			{
-				id: "sql-connections-postgres",
-				title: "Connections (PostgreSQL)",
-				metric: "gcp.cloudsql.database.postgresql.num_backends",
+				id: "sql-disk-operations",
+				title: "Disk Operations by Instance",
+				metric: "gcp.cloud_sql.disk.operations",
 				by: label("database_id"),
 			},
 			{
 				id: "sql-disk",
 				title: "Disk Utilization by Instance",
-				metric: "gcp.cloudsql.database.disk.utilization",
+				metric: "gcp.cloud_sql.disk.utilization",
 				by: label("database_id"),
 			},
 			{
 				id: "sql-replica-lag",
 				title: "Replica Lag by Instance",
-				metric: "gcp.cloudsql.database.replication.replica_lag",
+				metric: "gcp.cloud_sql.replication.lag",
 				by: label("database_id"),
 			},
 		],
@@ -316,38 +322,38 @@ const TABS: ReadonlyArray<Tab> = [
 			{
 				id: "pubsub-backlog",
 				title: "Unacknowledged Messages by Subscription",
-				metric: "gcp.pubsub.subscription.num_undelivered_messages",
+				metric: "gcp.pubsub.subscription.undelivered_messages",
 				by: label("subscription_id"),
 			},
 			{
 				id: "pubsub-oldest-unacked",
 				title: "Oldest Unacknowledged Message Age",
-				metric: "gcp.pubsub.subscription.oldest_unacked_message_age",
+				metric: "gcp.pubsub.subscription.oldest_unacked_message.age",
 				by: label("subscription_id"),
 			},
 			{
 				id: "pubsub-sent",
 				title: "Messages Sent by Subscription",
-				metric: "gcp.pubsub.subscription.sent_message_count",
+				metric: "gcp.pubsub.subscription.sent_messages",
 				by: label("subscription_id"),
 			},
 			{
 				id: "pubsub-acked",
 				title: "Messages Acknowledged by Subscription",
-				metric: "gcp.pubsub.subscription.ack_message_count",
+				metric: "gcp.pubsub.subscription.acked_messages",
 				by: label("subscription_id"),
 			},
 			{
 				id: "pubsub-dead-lettered",
 				title: "Dead-Lettered Messages by Subscription",
-				metric: "gcp.pubsub.subscription.dead_letter_message_count",
+				metric: "gcp.pubsub.subscription.dead_lettered_messages",
 				by: label("subscription_id"),
 				display: CHART_DISPLAY_BAR,
 			},
 			{
 				id: "pubsub-publish-requests",
 				title: "Publish Requests by Topic",
-				metric: "gcp.pubsub.topic.send_request_count",
+				metric: "gcp.pubsub.topic.publish_requests",
 				by: label("topic_id"),
 			},
 		],
@@ -360,26 +366,26 @@ const TABS: ReadonlyArray<Tab> = [
 			{
 				id: "lb-requests",
 				title: "Requests by URL Map",
-				metric: "gcp.loadbalancing.https.request_count",
+				metric: "gcp.load_balancing.requests",
 				by: label("url_map_name"),
 			},
 			{
 				id: "lb-response-classes",
 				title: "Requests by Response Class",
-				metric: "gcp.loadbalancing.https.request_count",
-				by: "attr.response_code_class",
+				metric: "gcp.load_balancing.requests",
+				by: metricLabel("response_code_class"),
 			},
 			{
 				id: "lb-total-latency",
 				title: "Total Latency p95 by URL Map",
-				metric: "gcp.loadbalancing.https.total_latencies",
+				metric: "gcp.load_balancing.request.duration",
 				by: label("url_map_name"),
 				where: P95,
 			},
 			{
 				id: "lb-backend-latency",
 				title: "Backend Latency p95 by URL Map",
-				metric: "gcp.loadbalancing.https.backend_latencies",
+				metric: "gcp.load_balancing.backend.request.duration",
 				by: label("url_map_name"),
 				where: P95,
 			},

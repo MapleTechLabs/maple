@@ -1,40 +1,37 @@
 import { describe, expect, it } from "@effect/vitest"
 import { GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
 import { mapGcpTimeSeries } from "@maple/backend/services/integrations/gcp/mapping"
+import type { MetricGaugeRow } from "@maple/backend/services/warehouse/metric-rows"
 import { gcpTemplate } from "./gcp"
 
-// What the poller stores for each curated metric: one series carrying every label the table
-// keeps, run through the poller's own mapping.
-const STORED = new Map(
-	GCP_METRIC_GROUPS.flatMap((group) =>
-		group.metrics.map((metric) => {
-			const labels = (names: ReadonlyArray<string>) =>
-				Object.fromEntries(names.map((name) => [name, "x"]))
-			const { sumRows, gaugeRows } = mapGcpTimeSeries({ group, metric, startMs: 0, endMs: 60_000 }, [
-				{
-					metric: { labels: labels(metric.labels) },
-					resource: { labels: labels(["project_id", ...group.resourceLabels]) },
-					points: [
-						{
-							interval: { endTime: new Date(60_000).toISOString() },
-							value: {
-								doubleValue: 1,
-								distributionValue: {
-									bucketOptions: { linearBuckets: { numFiniteBuckets: 1, width: 1 } },
-									bucketCounts: ["0", "1", "0"],
-								},
+// What the poller stores under each curated name: one series per type carrying every label the
+// table keeps, run through the poller's own mapping.
+const STORED = new Map<string, { metricType: "sum" | "gauge"; rows: Array<MetricGaugeRow> }>()
+for (const group of GCP_METRIC_GROUPS) {
+	for (const metric of group.metrics) {
+		const labels = (names: ReadonlyArray<string>) => Object.fromEntries(names.map((name) => [name, "x"]))
+		const { sumRows, gaugeRows } = mapGcpTimeSeries({ group, metric, startMs: 0, endMs: 60_000 }, [
+			{
+				metric: { labels: labels([...group.resourceMetricLabels, ...metric.labels]) },
+				resource: { labels: labels(["project_id", ...group.resourceLabels]) },
+				points: [
+					{
+						interval: { endTime: new Date(60_000).toISOString() },
+						value: {
+							doubleValue: 1,
+							distributionValue: {
+								bucketOptions: { linearBuckets: { numFiniteBuckets: 1, width: 1 } },
+								bucketCounts: ["0", "1", "0"],
 							},
 						},
-					],
-				},
-			])
-			return [
-				metric.name,
-				{ metricType: sumRows.length > 0 ? "sum" : "gauge", rows: [...sumRows, ...gaugeRows] },
-			] as const
-		}),
-	),
-)
+					},
+				],
+			},
+		])
+		const rows = [...(STORED.get(metric.name)?.rows ?? []), ...sumRows, ...gaugeRows]
+		STORED.set(metric.name, { metricType: sumRows.length > 0 ? "sum" : "gauge", rows })
+	}
+}
 
 describe("Google Cloud dashboard template", () => {
 	it("charts only metrics, attributes and quantiles the poller stores", () => {
@@ -56,7 +53,7 @@ describe("Google Cloud dashboard template", () => {
 					expect(stored.rows[0]?.service_name, widget.id).toMatch(/^gcp\//)
 				}
 
-				const attributeKeys = Object.keys(stored.rows[0]?.metric_attributes ?? {})
+				const attributeKeys = stored.rows.flatMap((row) => Object.keys(row.metric_attributes))
 				const resourceKeys = Object.keys(stored.rows[0]?.resource_attributes ?? {})
 				for (const token of [...query.groupBy, ...query.whereClause.split(/\s+/)]) {
 					if (token.startsWith("attr.")) {
