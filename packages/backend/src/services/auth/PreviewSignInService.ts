@@ -18,6 +18,9 @@ import { clerkRequest, type ClerkRequestError } from "@maple/backend/services/au
 export const PREVIEW_REVIEWER_EMAIL = "preview-reviewer+clerk_test@maple.dev"
 export const PREVIEW_REVIEWER_ORG_NAME = "Preview"
 
+/** Clerk's page maximum; the reviewer only ever joins orgs this service creates. */
+const MEMBERSHIP_PAGE_LIMIT = 500
+
 /** Long enough to survive the redirect to `/sign-in`, short enough to be useless if copied. */
 const TICKET_TTL_SECONDS = 120
 
@@ -25,7 +28,8 @@ const TICKET_TTL_SECONDS = 120
 export interface PreviewClerk {
 	readonly findUserIdByEmail: (email: string) => Effect.Effect<Option.Option<string>, ClerkRequestError>
 	readonly createUser: (email: string) => Effect.Effect<string, ClerkRequestError>
-	readonly hasOrganization: (userId: string) => Effect.Effect<boolean, ClerkRequestError>
+	/** Whether `userId` belongs to an organization called `name`; other memberships do not count. */
+	readonly isMemberOf: (userId: string, name: string) => Effect.Effect<boolean, ClerkRequestError>
 	readonly createOrganization: (userId: string, name: string) => Effect.Effect<void, ClerkRequestError>
 	readonly createSignInToken: (
 		userId: string,
@@ -81,7 +85,7 @@ export const makePreviewSignIn = (
 			: yield* clerk.createUser(PREVIEW_REVIEWER_EMAIL)
 		// Without an org the app parks the reviewer on `/org-required`; the preview's empty
 		// database provisions the org's rows on first request.
-		if (!(yield* clerk.hasOrganization(userId))) {
+		if (!(yield* clerk.isMemberOf(userId, PREVIEW_REVIEWER_ORG_NAME))) {
 			yield* clerk.createOrganization(userId, PREVIEW_REVIEWER_ORG_NAME)
 		}
 		return userId
@@ -124,10 +128,10 @@ const clerkPort = (secretKey: string): PreviewClerk => {
 					skipPasswordRequirement: true,
 				}),
 			).pipe(Effect.map((user) => user.id)),
-		hasOrganization: (userId) =>
+		isMemberOf: (userId, name) =>
 			clerkRequest("Clerk.users.getOrganizationMembershipList", { "tenant.userId": userId }, () =>
-				clerk.users.getOrganizationMembershipList({ userId, limit: 1 }),
-			).pipe(Effect.map((response) => response.data.length > 0)),
+				clerk.users.getOrganizationMembershipList({ userId, limit: MEMBERSHIP_PAGE_LIMIT }),
+			).pipe(Effect.map((response) => response.data.some((m) => m.organization.name === name))),
 		createOrganization: (userId, name) =>
 			clerkRequest("Clerk.organizations.createOrganization", { "tenant.userId": userId }, () =>
 				clerk.organizations.createOrganization({ name, createdBy: userId }),

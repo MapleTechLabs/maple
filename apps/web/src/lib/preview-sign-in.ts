@@ -3,9 +3,12 @@ import { tracedFetch } from "@/lib/services/common/telemetry"
 
 const PREVIEW_SIGN_IN_URL = `${apiBaseUrl}/api/auth/preview/sign-in`
 
-/** PR previews answer `enabled: true`; everywhere else, or on any failure, it is false. */
+/** The sign-in route waits on this probe, so a slow API must not hold back Clerk's card. */
+const STATUS_TIMEOUT_MS = 3_000
+
+/** PR previews answer `enabled: true`; everywhere else, or on any failure or timeout, it is false. */
 export const loadPreviewSignInEnabled = () =>
-	tracedFetch("maple-api", PREVIEW_SIGN_IN_URL)
+	tracedFetch("maple-api", PREVIEW_SIGN_IN_URL, { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) })
 		.then((response) => (response.ok ? (response.json() as Promise<{ enabled?: unknown }>) : null))
 		.then((body) => body?.enabled === true)
 		.catch(() => false)

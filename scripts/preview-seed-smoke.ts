@@ -13,8 +13,9 @@
  */
 const CLERK_API = "https://api.clerk.com/v1"
 const DEFAULT_EMAIL = "david+clerk_test@gmail.com"
-// Keep in step with `PREVIEW_REVIEWER_EMAIL` in `PreviewSignInService.ts`.
+// Keep in step with `PREVIEW_REVIEWER_EMAIL` / `_ORG_NAME` in `PreviewSignInService.ts`.
 const PREVIEW_REVIEWER_EMAIL = "preview-reviewer+clerk_test@maple.dev"
+const PREVIEW_REVIEWER_ORG_NAME = "Preview"
 const TOKEN_TTL_SECONDS = 1800
 const HEALTH_DEADLINE_MS = 180_000
 const REQUEST_TIMEOUT_MS = 60_000
@@ -96,9 +97,16 @@ const user = users[0] ?? fail(`No user with email ${email} on this Clerk instanc
 
 const resolveOrgId = async (): Promise<string> => {
 	if (process.env.PREVIEW_SEED_ORG_ID) return process.env.PREVIEW_SEED_ORG_ID
-	const memberships = await clerkFetch<{ data: Array<{ organization: { id: string } }> }>(
-		`/users/${user.id}/organization_memberships?limit=1`,
+	const memberships = await clerkFetch<{ data: Array<{ organization: { id: string; name: string } }> }>(
+		`/users/${user.id}/organization_memberships?limit=100`,
 	)
+	// The reviewer is what preview visitors sign in as, so seed the org they land in.
+	if (email === PREVIEW_REVIEWER_EMAIL) {
+		const preview = memberships.data.find((m) => m.organization.name === PREVIEW_REVIEWER_ORG_NAME)
+		return (
+			preview?.organization.id ?? fail(`${email} has no "${PREVIEW_REVIEWER_ORG_NAME}" organization.`)
+		)
+	}
 	return memberships.data[0]?.organization.id ?? fail(`${email} is not a member of any organization.`)
 }
 const orgId = await resolveOrgId()

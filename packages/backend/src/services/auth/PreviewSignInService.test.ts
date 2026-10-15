@@ -16,18 +16,20 @@ const previewEnv = {
 }
 
 /** An in-memory Clerk that records every write, starting with `users` already present. */
-const fakeClerk = (users: Record<string, { id: string; hasOrg: boolean }> = {}) => {
+const fakeClerk = (users: Record<string, { id: string; orgs: Array<string> }> = {}) => {
 	const writes: string[] = []
 	const clerk: PreviewClerk = {
 		findUserIdByEmail: (email) => Effect.succeed(Option.fromNullishOr(users[email]?.id)),
 		createUser: (email) =>
 			Effect.sync(() => {
 				writes.push(`createUser ${email}`)
-				users[email] = { id: "user_new", hasOrg: false }
+				users[email] = { id: "user_new", orgs: [] }
 				return "user_new"
 			}),
-		hasOrganization: (userId) =>
-			Effect.succeed(Object.values(users).some((user) => user.id === userId && user.hasOrg)),
+		isMemberOf: (userId, name) =>
+			Effect.succeed(
+				Object.values(users).some((user) => user.id === userId && user.orgs.includes(name)),
+			),
 		createOrganization: (userId, name) =>
 			Effect.sync(() => void writes.push(`createOrg ${userId} ${name}`)),
 		createSignInToken: (userId, ttl) => Effect.succeed(`ticket:${userId}:${ttl}`),
@@ -88,11 +90,24 @@ describe("makePreviewSignIn", () => {
 
 	it.effect("reuses an existing reviewer that already has an org", () =>
 		Effect.gen(function* () {
-			const { clerk, writes } = fakeClerk({ [PREVIEW_REVIEWER_EMAIL]: { id: "user_1", hasOrg: true } })
+			const { clerk, writes } = fakeClerk({
+				[PREVIEW_REVIEWER_EMAIL]: { id: "user_1", orgs: [PREVIEW_REVIEWER_ORG_NAME] },
+			})
 			const service = makePreviewSignIn(Option.some({ key: "shared-key", clerk }))
 			const { ticket } = yield* service.signIn("shared-key")
 			expect(ticket).toBe("ticket:user_1:120")
 			expect(writes).toEqual([])
+		}),
+	)
+
+	it.effect("creates the Preview org for a reviewer that only belongs to other orgs", () =>
+		Effect.gen(function* () {
+			const { clerk, writes } = fakeClerk({
+				[PREVIEW_REVIEWER_EMAIL]: { id: "user_1", orgs: ["Acme"] },
+			})
+			const service = makePreviewSignIn(Option.some({ key: "shared-key", clerk }))
+			yield* service.signIn("shared-key")
+			expect(writes).toEqual([`createOrg user_1 ${PREVIEW_REVIEWER_ORG_NAME}`])
 		}),
 	)
 })
