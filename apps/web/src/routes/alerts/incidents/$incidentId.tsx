@@ -17,6 +17,7 @@ import { DetailHeaderSkeleton } from "@/components/common/detail-header"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import { useAlertRulePreview } from "@/hooks/use-alert-rule-preview"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useAlertRuleStates } from "@/hooks/use-alert-rule-states"
 import { useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -172,7 +173,8 @@ function IncidentDetail({
 	const createInvestigation = useAtomSet(MapleApiV2AtomClient.mutation("investigations", "create"), {
 		mode: "promiseExit",
 	})
-	const startInvestigation = async () => {
+	// Pending while the create request runs, so repeat clicks cannot start duplicates.
+	const [startInvestigation, startingInvestigation] = useAsyncAction(async () => {
 		const result = await createInvestigation({
 			payload: {
 				subject:
@@ -214,7 +216,7 @@ function IncidentDetail({
 			return
 		}
 		toastExit(result, { error: "Failed to start investigation" })
-	}
+	})
 
 	return (
 		<DashboardPage
@@ -230,7 +232,7 @@ function IncidentDetail({
 					now={now}
 					timeZone={timeZone}
 					investigationId={investigation?.id ?? null}
-					investigationPending={Result.isInitial(investigationsResult)}
+					investigationPending={startingInvestigation || Result.isInitial(investigationsResult)}
 					onInvestigate={() => void startInvestigation()}
 				/>
 			}
