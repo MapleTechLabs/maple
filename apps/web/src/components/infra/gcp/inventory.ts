@@ -10,7 +10,7 @@ import {
 	type GcpInfraServiceId,
 	type GcpInfraSourceId,
 } from "@maple/domain/gcp-infra"
-import type { GcpResource } from "@maple/domain/http"
+import type { GcpCloudSqlSettings, GcpResource } from "@maple/domain/http"
 
 import { appendWhereFilter } from "@/components/metrics/metric-breakdown"
 import { encodeLogAttributeFilter } from "@/lib/logs/log-attribute-filters"
@@ -45,6 +45,32 @@ const RESOURCE_OF: Record<
 >
 
 const lastSegment = (name: string) => name.slice(name.lastIndexOf("/") + 1)
+
+/** A Cloud SQL instance's settings from the inventory, by the `<project>:<instance>` the metrics name it. */
+export interface GcpCloudSqlInstance extends GcpCloudSqlSettings {
+	readonly id: string
+	/** The instance's name within its project. */
+	readonly name: string
+}
+
+/** The inventory read that lists every Cloud SQL instance with its settings. */
+export const GCP_CLOUD_SQL_INVENTORY_QUERY = { assetType: SQL_INSTANCE }
+
+/** The Cloud SQL instances whose settings the inventory has synced. */
+export const gcpCloudSqlInstances = (
+	resources: ReadonlyArray<GcpResource>,
+): ReadonlyArray<GcpCloudSqlInstance> =>
+	resources.flatMap((resource) =>
+		resource.assetType !== SQL_INSTANCE || resource.details === null
+			? []
+			: [
+					{
+						...resource.details,
+						id: `${resource.projectId}:${lastSegment(resource.name)}`,
+						name: lastSegment(resource.name),
+					},
+				],
+	)
 
 /** The inventory read that finds a workload's resource: see `gcpMatchResource`. */
 export const gcpResourceQuery = (service: GcpInfraServiceId, keys: ReadonlyArray<string>) => ({

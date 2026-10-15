@@ -15,11 +15,15 @@ import {
 } from "@maple/backend/services/warehouse/metric-rows"
 import { timestampMs } from "@maple/backend/platform/time"
 import { Predicate } from "effect"
-import type { GcpBucketOptions, GcpResourceSearchResult, GcpTimeSeries } from "./api"
+import {
+	gcpAlignmentMs,
+	type GcpBucketOptions,
+	type GcpResourceSearchResult,
+	type GcpTimeSeries,
+} from "./api"
 
 export const GCP_SCOPE_NAME = "gcp.monitoring"
 
-const ALIGNMENT_MS = 60_000
 const QUANTILES = [0.5, 0.95, 0.99]
 const DELTA_TEMPORALITY = 1
 
@@ -74,7 +78,14 @@ export const gcpResourceAttributes = (
 		set("host.name", workload)
 		set("gcp.gce.instance.name", workload)
 	}
-	attributes["service.name"] = workload || `gcp/${resourceType}`
+	let service = resourceType
+	if (resourceType === "cloudsql_instance_database") {
+		// Query Insights: `resource_id` is the instance's `project:instance`, the `database_id` of
+		// its `cloudsql_database` series, so both read as one instance.
+		service = "cloudsql_database"
+		set("gcp.resource.labels.database_id", labels.resource_id)
+	}
+	attributes["service.name"] = workload || `gcp/${service}`
 
 	for (const [label, value] of Object.entries(labels)) attributes[`gcp.resource.labels.${label}`] = value
 	return attributes
@@ -150,6 +161,48 @@ export const mapGcpResource = (result: GcpResourceSearchResult) => {
 	}
 }
 
+/** A group of more series than Maple keeps: see `GcpMetricGroup.top`. */
+export type GcpTopGroup = GcpMetricGroup & { readonly top: NonNullable<GcpMetricGroup["top"]> }
+
+const resourceKey = (group: GcpMetricGroup, series: GcpTimeSeries) => {
+	const labels = series.resource.labels ?? {}
+	return JSON.stringify([labels.project_id, ...group.resourceLabels.map((label) => labels[label])])
+}
+
+/** A series of a top group by its resource and its item, whichever metric it is of. */
+export const gcpTopKey = (group: GcpTopGroup, series: GcpTimeSeries) =>
+	JSON.stringify([resourceKey(group, series), series.metric.labels?.[group.top.label]])
+
+/**
+ * The items a top group keeps, by `gcpTopKey`: per resource, the `limit` series of the ranking
+ * metric with the largest total over the window. An item with none is not kept.
+ */
+export const gcpTopSeries = (
+	group: GcpTopGroup,
+	series: ReadonlyArray<GcpTimeSeries>,
+): ReadonlySet<string> => {
+	const byResource = new Map<string, Array<{ readonly key: string; readonly total: number }>>()
+	for (const item of series) {
+		const total = (item.points ?? []).reduce(
+			(sum, point) => sum + (point.value.doubleValue ?? Number(point.value.int64Value ?? 0)),
+			0,
+		)
+		if (!(total > 0)) continue
+		const resource = resourceKey(group, item)
+		const ranked = byResource.get(resource) ?? []
+		ranked.push({ key: gcpTopKey(group, item), total })
+		byResource.set(resource, ranked)
+	}
+	return new Set(
+		[...byResource.values()].flatMap((ranked) =>
+			ranked
+				.toSorted((a, b) => b.total - a.total)
+				.slice(0, group.top.limit)
+				.map((item) => item.key),
+		),
+	)
+}
+
 /**
  * Rows for one metric's series. A point is kept when it ends inside `(startMs, endMs]`: the query
  * interval is closed, so the point ending at `startMs` was already taken by the previous window.
@@ -182,7 +235,7 @@ export const mapGcpTimeSeries = (
 		}
 		const row = (endMs: number, value: number, metricAttributes: MetricAttrs): MetricGaugeRow => ({
 			timestamp: fmtMetricTs(endMs),
-			start_timestamp: fmtMetricTs(metric.kind === "sum" ? endMs - ALIGNMENT_MS : endMs),
+			start_timestamp: fmtMetricTs(metric.kind === "sum" ? endMs - gcpAlignmentMs(query) : endMs),
 			metric_name: metric.name,
 			metric_description: metric.description,
 			metric_unit: metric.unit,
@@ -213,7 +266,9 @@ export const mapGcpTimeSeries = (
 				}
 				continue
 			}
-			const value = point.value.doubleValue ?? Number(point.value.int64Value ?? 0)
+			const value =
+				point.value.doubleValue ??
+				Number(point.value.int64Value ?? point.value.distributionValue?.count ?? 0)
 			if (!Number.isFinite(value)) continue
 			if (metric.kind === "gauge") {
 				rows.gaugeRows.push(row(endMs, value, attributes))

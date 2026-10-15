@@ -69,6 +69,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/gcp-infra",
+		title: "Google Cloud infrastructure",
+		description:
+			"The Google Cloud list (services, Pub/Sub, Cloud SQL) over fixtures that reproduce the Paper artboards: three projects, problems first.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-workload",
+		title: "Google Cloud workload",
+		description:
+			"The Google Cloud workload page, whole, over fixture series: a Cloud Run 5xx burst at peak instances and a Cloud SQL instance.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/onboarding",
 		title: "Onboarding",
 		description:

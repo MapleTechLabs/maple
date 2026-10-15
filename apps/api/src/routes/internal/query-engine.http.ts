@@ -20,6 +20,9 @@ import {
 	RailwayInfraRowsResponse,
 	GcpInfraMetricsResponse,
 	GcpInfraPresenceResponse,
+	GcpInfraSparklinesResponse,
+	GcpCloudSqlDatabasesResponse,
+	GcpCloudSqlTopQueriesResponse,
 	GcpInfraTimeseriesResponse,
 	ServiceCloudflareStatsResponse,
 	ServicePlanetScaleStatsResponse,
@@ -842,6 +845,29 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new GcpInfraTimeseriesResponse({
 							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
 						})
+					}),
+				)
+				.handle("gcpInfraSparklines", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraSparklines, tenant, payload)
+						return new GcpInfraSparklinesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("gcpCloudSqlTopQueries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpCloudSqlTopQueries, tenant, payload)
+						return new GcpCloudSqlTopQueriesResponse({ data: rows })
+					}),
+				)
+				.handle("gcpCloudSqlDatabases", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpCloudSqlDatabases, tenant, payload)
+						return new GcpCloudSqlDatabasesResponse({ databases: rows.map((row) => row.database) })
 					}),
 				)
 				.handle("cloudflareInfraZones", ({ payload }) =>

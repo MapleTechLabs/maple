@@ -18,6 +18,8 @@ import type {
 	ContainerInfraTimeseriesRequest,
 	GcpInfraMetricsRequest,
 	GcpInfraPresenceRequest,
+	GcpCloudSqlInstanceRequest,
+	GcpInfraSparklinesRequest,
 	GcpInfraTimeseriesRequest,
 	GetLogRequest,
 	NodeInfraTimeseriesRequest,
@@ -327,6 +329,44 @@ const gcpInfraTimeseries = defineQuery({
 			endTime: payload.endTime,
 			// The poller stores one point per minute.
 			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
+const gcpInfraSparklines = defineQuery({
+	id: "gcpInfraSparklines",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraSparklinesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraSparklinesSQL(payload.service), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			// The poller stores one point per minute.
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
+const gcpCloudSqlTopQueries = defineQuery({
+	id: "gcpCloudSqlTopQueries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpCloudSqlTopQueriesSQL(payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpCloudSqlDatabases = defineQuery({
+	id: "gcpCloudSqlDatabases",
+	profile: "list",
+	cache: 15,
+	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpCloudSqlDatabasesSQL(payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
 		}),
 })
 
@@ -808,6 +848,9 @@ export const Queries = {
 	gcpInfraPresence,
 	gcpInfraMetrics,
 	gcpInfraTimeseries,
+	gcpInfraSparklines,
+	gcpCloudSqlTopQueries,
+	gcpCloudSqlDatabases,
 
 	// ZoneDetail / PlanetScaleStats sub-queries, declared above.
 	cloudflareInfraZoneDetailStatus,

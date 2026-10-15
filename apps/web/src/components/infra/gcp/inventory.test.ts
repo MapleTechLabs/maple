@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { GCP_INFRA_SERVICE_IDS } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 import {
+	gcpCloudSqlInstances,
 	gcpConsolePage,
 	gcpExplorerWhere,
 	gcpMatchResource,
@@ -23,6 +24,7 @@ const resource = (
 	displayName: null,
 	state: "ACTIVE",
 	labels: {},
+	details: null,
 })
 
 const RUN = "run.googleapis.com/Service"
@@ -209,5 +211,34 @@ describe("gcpWorkloadTelemetry", () => {
 			expect(telemetry.serviceName, service).not.toBe("")
 			expect(telemetry.logsService, service).not.toBe("")
 		}
+	})
+})
+
+describe("gcpCloudSqlInstances", () => {
+	const SQL = "sqladmin.googleapis.com/Instance"
+	const settings = {
+		databaseVersion: "POSTGRES_15",
+		edition: "ENTERPRISE",
+		tier: "db-custom-4-16384",
+		cpus: 4,
+		memoryGb: 16,
+		availabilityType: "REGIONAL",
+		primary: null,
+		diskSizeGb: 100,
+		queryInsightsEnabled: true,
+		maxConnections: 500,
+		maxConnectionsSource: "default",
+	} as const
+
+	it("names an instance as its metrics do, and leaves out one without settings yet", () => {
+		const instances = gcpCloudSqlInstances([
+			{
+				...resource(SQL, "//cloudsql.googleapis.com/projects/acme-prod/instances/orders-db"),
+				details: settings,
+			},
+			resource(SQL, "//cloudsql.googleapis.com/projects/acme-prod/instances/new-db"),
+			api,
+		])
+		expect(instances).toEqual([{ ...settings, id: "acme-prod:orders-db", name: "orders-db" }])
 	})
 })

@@ -1,4 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { GcpCloudSqlSettings } from "@maple/domain/http"
 import { GcpConnectorId, OrgId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { GcpConnectors } from "./gcp-connectors"
@@ -8,7 +9,8 @@ import { GcpConnectors } from "./gcp-connectors"
  * projects (that is how a folder or organization scope is discovered) and the resources behind
  * the curated metrics, by full resource name (`//run.googleapis.com/projects/p/.../services/s`).
  * A sync replaces the connector's set, so a resource that is gone upstream is gone here;
- * `lastSeenAt` is the sync that last returned the row.
+ * `lastSeenAt` is the sync that last returned the row. `details` holds what the search does not
+ * answer: a Cloud SQL instance's settings, from a listing of the instances themselves.
  */
 export const GcpResources = PG.table("gcp_resources", {
 	columns: {
@@ -21,6 +23,7 @@ export const GcpResources = PG.table("gcp_resources", {
 		displayName: PG.column(PG.nullable(PG.text), { name: "display_name" }),
 		state: PG.nullable(PG.text),
 		labels: PG.jsonb(Schema.Record(Schema.String, Schema.String)),
+		details: PG.nullable(PG.jsonb(GcpCloudSqlSettings)),
 		resourceCreatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resource_created_at" }),
 		resourceUpdatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resource_updated_at" }),
 		lastSeenAt: PG.column(PG.timestamptzMillis, { name: "last_seen_at" }),

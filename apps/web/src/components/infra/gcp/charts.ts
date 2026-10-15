@@ -20,7 +20,7 @@ export interface GcpBucketPoint extends GcpMetricValue {
 	readonly bucket: string
 }
 
-interface GcpSeries {
+export interface GcpSeries {
 	readonly name: string
 	/** The metric it reads, which is where the chart's link into the metrics explorer opens. */
 	readonly metric: string
@@ -69,6 +69,9 @@ const count = (name: string, metric: string): GcpSeries => ({
 	metric,
 	value: (read) => read.total(metric),
 })
+
+/** The series builders, for a page that reads one metric of a chart on its own. */
+export const gcpSeries = { mean, rate, count } as const
 
 const percentiles = (metric: string, scale = 1): ReadonlyArray<GcpSeries> => [
 	mean("p50", metric, "0.5", scale),
