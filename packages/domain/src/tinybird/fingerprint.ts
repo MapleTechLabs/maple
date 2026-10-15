@@ -259,6 +259,13 @@ const FRAME_LINE_RE = new RegExp(FRAME_LINE_PATTERN)
 /** `  at [2]["params"]`: a schema error's key path, not a stack frame. */
 export const SCHEMA_PATH_LINE_PATTERN = "^[ \\t]*at \\["
 const SCHEMA_PATH_LINE_RE = new RegExp(SCHEMA_PATH_LINE_PATTERN)
+/**
+ * `    at http.client POST`: an Effect span frame with no location, no `(` and no
+ * `:<digit>`. Its text is the span name, so a span rename (effect 4.0.4 made it
+ * `at POST`) would otherwise rotate every fingerprint carrying it.
+ */
+export const SPAN_NAME_FRAME_PATTERN = "^[ \\t]*at ([^(:]|:[^0-9])*:?$"
+const SPAN_NAME_FRAME_RE = new RegExp(SPAN_NAME_FRAME_PATTERN)
 
 // Display-only candidate keys for the human label (NOT used by the fingerprint).
 const LABEL_KEYS = ["title", "message", "error", "_tag", "reason", "name"] as const
@@ -364,7 +371,8 @@ export function computeFingerprintInputs(args: {
 			(line) =>
 				FRAME_LINE_RE.test(line) &&
 				!line.includes(EFFECT_SPAN_FRAME_MARKER) &&
-				!SCHEMA_PATH_LINE_RE.test(line),
+				!SCHEMA_PATH_LINE_RE.test(line) &&
+				!SPAN_NAME_FRAME_RE.test(line),
 		)
 		.slice(0, maxFrames)
 
@@ -392,7 +400,8 @@ export function computeFingerprintInputs(args: {
  * anyway (a self-hosted warehouse that has not applied the new view, or a deploy
  * gap), the tick restores an archived open issue on its next occurrence and
  * restamps its version. (The Apple frame alternative and the attribute fallback
- * predate both and skipped a bump for that reason.)
+ * predate both and skipped a bump for that reason. Dropping location-less span
+ * frames also skipped one: it re-keys only the stacks carrying such a line.)
  *
  * Deliberately NOT a ClickHouse column. Old and new hashes cannot collide, so
  * the warehouse needs no discriminator — only the Postgres row does.
