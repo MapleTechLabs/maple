@@ -96,7 +96,11 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // carries, the pill in the persistent top bar with its live clock, and the
 // hook's query and seen-flag atoms. The popover's panel and pointer are small
 // and render only while open, so nothing there is worth a lazy chunk.
-const maxGzipBytes = 695 * 1024
+// 697 KB from the MCP integrations and alerts hub merges (#1494, #1500, #1502,
+// 2026-10-15): each fit against its own base (694.2, 694.8, 694.3), but main
+// with all three measures 695.6 against 694.6 before them. No lazy-only chunk
+// leaked; the growth is contract and route-registry weight every page carries.
+const maxGzipBytes = 697 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
