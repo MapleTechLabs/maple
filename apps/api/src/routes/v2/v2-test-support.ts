@@ -45,6 +45,7 @@ import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
 import { HttpV2GcpIntegrationsLive } from "./integrations-gcp.http"
 import { HttpV2PlanetScaleIntegrationsLive } from "./integrations.http"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
+import { GcpPromQlService } from "@maple/backend/services/integrations/GcpPromQlService"
 import { HttpV2ErrorIssuesLive } from "./error-issues.http"
 import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
@@ -158,7 +159,9 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 		),
 		HttpV2AgentFeedbackLive.pipe(Layer.provide(AgentFeedbackService.layer)),
 		// Same, plus the Env every harness provides as well.
-		HttpV2GcpIntegrationsLive.pipe(Layer.provide(GcpConnectorService.layer)),
+		HttpV2GcpIntegrationsLive.pipe(
+			Layer.provide(Layer.mergeAll(GcpConnectorService.layer, GcpPromQlService.layer)),
+		),
 		// Real reads over whichever `WarehouseQueryService` stub the test provides.
 		HttpV2SessionReplaysLive.pipe(
 			Layer.provide(

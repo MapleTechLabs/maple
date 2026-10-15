@@ -73,8 +73,33 @@ gcloud logging sinks create maple-7f3k "pubsub.googleapis.com/projects/$PROJECT/
 gcloud iam service-accounts create maple-7f3k --display-name="Maple (read-only)" --project="$PROJECT"
 `
 
+const TERRAFORM = `# Maple connection for Google Cloud project acme-prod. It holds no secret.
+module "maple_gcp_acme_prod" {
+  source = "github.com/MapleTechLabs/maple//deploy/terraform-google-maple?ref=terraform-google-maple-v1.0.0"
+
+  connector_id          = "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8"
+  scope_type            = "project"
+  scope_id              = "acme-prod"
+  project_id            = "acme-prod"
+  push_endpoint         = "https://ingest.maple.dev/v1/logpush/gcp/018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8"
+  maple_service_account = "maple@maple-prd.iam.gserviceaccount.com"
+  logs_enabled          = true
+  log_filter            = "NOT log_id(\\"cloudaudit.googleapis.com/data_access\\")"
+}
+`
+
 const FIRST_RUN: ApplyOpened = { at: NOW - 30_000, rerun: false, seen: null }
 const noop = () => {}
+/** The access check as it looks after a refusal: the check calls the API, which the lab has not. */
+const ACCESS = {
+	checking: false,
+	outcome: {
+		ok: false,
+		message:
+			"Maple can't sign in as the read-only account: grant Maple's service account Service Account Token Creator on it.",
+	},
+	onCheck: noop,
+}
 
 type ApplyFixture = Omit<GcpApplyViewProps, "onBack" | "onClose" | "nowMs">
 
@@ -101,8 +126,11 @@ const APPLY = {
 		created: true,
 		metricsAvailable: true,
 		logFilter: "Platform logs",
+		filterKept: false,
 		script: SCRIPT,
+		terraform: TERRAFORM,
 		failure: null,
+		access: ACCESS,
 		opened: FIRST_RUN,
 	},
 	reporting: {
@@ -111,8 +139,11 @@ const APPLY = {
 		created: true,
 		metricsAvailable: true,
 		logFilter: "Platform logs",
+		filterKept: false,
 		script: SCRIPT,
+		terraform: TERRAFORM,
 		failure: null,
+		access: ACCESS,
 		opened: FIRST_RUN,
 	},
 	overdue: {
@@ -121,8 +152,11 @@ const APPLY = {
 		created: true,
 		metricsAvailable: true,
 		logFilter: "Platform logs + GKE",
+		filterKept: false,
 		script: SCRIPT,
+		terraform: TERRAFORM,
 		failure: null,
+		access: ACCESS,
 		opened: FIRST_RUN,
 	},
 	removing: {
@@ -140,8 +174,11 @@ const APPLY = {
 		created: false,
 		metricsAvailable: true,
 		logFilter: "Current filter",
+		filterKept: true,
 		script: SCRIPT,
+		terraform: TERRAFORM,
 		failure: null,
+		access: ACCESS,
 		opened: { at: NOW - 30_000, rerun: false, seen: ago(60 * 24) },
 	},
 	failed: {
@@ -150,8 +187,11 @@ const APPLY = {
 		created: true,
 		metricsAvailable: true,
 		logFilter: "Platform logs",
+		filterKept: false,
 		script: null,
+		terraform: null,
 		failure: { message: "Couldn't load the script.", retry: noop, retrying: false },
+		access: ACCESS,
 		opened: FIRST_RUN,
 	},
 	connected: {
@@ -164,8 +204,11 @@ const APPLY = {
 		created: true,
 		metricsAvailable: true,
 		logFilter: "Platform logs",
+		filterKept: false,
 		script: SCRIPT,
+		terraform: TERRAFORM,
 		failure: null,
+		access: ACCESS,
 		opened: FIRST_RUN,
 	},
 	applied: {
@@ -182,8 +225,11 @@ const APPLY = {
 		created: false,
 		metricsAvailable: true,
 		logFilter: "Current filter",
+		filterKept: true,
 		script: SCRIPT,
+		terraform: TERRAFORM,
 		failure: null,
+		access: ACCESS,
 		opened: { at: NOW - 8 * 60_000, rerun: true, seen: ago(60 * 24) },
 	},
 } satisfies { readonly [State in Exclude<LabState, "new" | "configure">]: ApplyFixture }

@@ -30,7 +30,7 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 } from "@maple/domain/http"
-import { GcpProjectId, type OrgId } from "@maple/domain/primitives"
+import { type GcpConnectorId, GcpProjectId, type OrgId } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -112,6 +112,17 @@ export interface GcpPromQlServiceApi {
 		orgId: OrgId,
 		request: { readonly type: string; readonly project?: GcpProjectId | undefined },
 	) => Effect.Effect<GcpMetricDescriptor, GcpPromQlError | IntegrationsNotFoundError>
+	/**
+	 * Reads one page of a connection's projects as its read-only account. Success records the
+	 * account as in place, as a setup script's report does: Terraform sends no report.
+	 */
+	readonly checkAccess: (
+		orgId: OrgId,
+		connectorId: GcpConnectorId,
+	) => Effect.Effect<
+		{ readonly ok: boolean; readonly message: string | null },
+		GcpPromQlUnavailableError | IntegrationsNotFoundError | IntegrationsPersistenceError
+	>
 }
 
 const toPersistenceError = makePersistenceErrorMapper(
@@ -608,7 +619,70 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 				})
 			})
 
-			return { queryRange, queryInstant, searchMetrics, describeMetric } satisfies GcpPromQlServiceApi
+			const checkAccess = Effect.fn("GcpPromQlService.checkAccess")(function* (
+				orgId: OrgId,
+				connectorId: GcpConnectorId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
+				const [connector] = yield* dbExecute((db) =>
+					db.run(
+						PG.from(GcpConnectors)
+							.select("id", "scopeType", "scopeId", "projectId", "lastMetricsReceivedAt")
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)])
+							.limit(1),
+					),
+				)
+				if (connector === undefined) {
+					return yield* new IntegrationsNotFoundError({
+						message: "No such Google Cloud connector.",
+					})
+				}
+				const key = yield* signingKey
+				// A cached reader would answer for an account that was removed since.
+				readers.delete(connector.id)
+				const checked = yield* readerFor(key, connector).pipe(
+					Effect.flatMap((reader) =>
+						searchProjectsPage(
+							httpClient,
+							reader,
+							`${connector.scopeType}s/${encodeURIComponent(connector.scopeId)}`,
+							undefined,
+						),
+					),
+					Effect.as({ ok: true, message: null }),
+					Effect.catchTags({
+						"@maple/api/integrations/GcpApiError": (error) =>
+							Effect.succeed({
+								ok: false,
+								message: describeGcpApiError(error, connector, true),
+							}),
+						"@maple/http/errors/IntegrationsUpstreamError": (error) =>
+							Effect.succeed({
+								ok: false,
+								message: `${error.message}. Try again in a minute.`,
+							}),
+					}),
+				)
+				if (checked.ok) {
+					const now = yield* Clock.currentTimeMillis
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(GcpConnectors)
+								.set({ appliedMetricsEnabled: true, setupReportedAt: now, updatedAt: now })
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)]),
+						),
+					)
+				}
+				return checked
+			})
+
+			return {
+				queryRange,
+				queryInstant,
+				searchMetrics,
+				describeMetric,
+				checkAccess,
+			} satisfies GcpPromQlServiceApi
 		}),
 	},
 ) {

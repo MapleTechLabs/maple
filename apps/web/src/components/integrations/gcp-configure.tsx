@@ -954,7 +954,7 @@ function ScopeFields({
 				<Field className="items-stretch gap-2" invalid={hostInvalid}>
 					<FieldLabel htmlFor="gcp-host-project-id">Host project ID</FieldLabel>
 					<FieldDescription className="leading-5 text-pretty">
-						Holds Maple&apos;s Pub/Sub topic and read-only service account. A project inside the{" "}
+						Holds Maple&apos;s Pub/Sub topic and service accounts. A project inside the{" "}
 						{scopeName} with billing enabled that won&apos;t be deleted.
 					</FieldDescription>
 					<Input
@@ -1410,6 +1410,156 @@ function ScriptCard({
 	)
 }
 
+/**
+ * The Terraform module block: a few lines, shown whole. It holds no secret, so unlike the script it
+ * can be committed.
+ */
+function TerraformCard({ terraform, failure }: { terraform: string | null; failure: ScriptFailure | null }) {
+	const text = terraform?.trimEnd() ?? null
+	return (
+		<div className="overflow-clip rounded-lg border">
+			<div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
+				<span className="font-mono text-xs text-muted-foreground">
+					maple.tf{text === null ? null : ` · ${countLabel(text.split("\n").length, "line")}`}
+				</span>
+				<span className="ml-auto">
+					<GcpCopyScriptButton script={terraform} label="module" />
+				</span>
+			</div>
+			{failure !== null ? (
+				<div className="flex flex-wrap items-center gap-2 p-3">
+					<p className="text-xs text-severity-error" role="alert">
+						{failure.message}
+					</p>
+					<Button size="sm" variant="outline" onClick={failure.retry} loading={failure.retrying}>
+						Try again
+					</Button>
+				</div>
+			) : text === null ? (
+				<div className="p-3">
+					<Skeleton className="h-48 w-full" />
+				</div>
+			) : (
+				<pre
+					tabIndex={0}
+					role="region"
+					aria-label="The Terraform module block"
+					className={cn(
+						"max-h-80 overflow-auto p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+						REPLAY_BLOCK_CLASS,
+					)}
+				>
+					{text}
+				</pre>
+			)}
+			<div className="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs/5 text-muted-foreground">
+				<span className="min-w-0 flex-1 text-pretty">
+					No secret: Pub/Sub signs each push to Maple. Safe to commit.
+				</span>
+				<GcpExternalLink href={`${DOCS}#set-up-with-terraform`}>What it creates</GcpExternalLink>
+			</div>
+		</div>
+	)
+}
+
+/** Maple reading the scope as the read-only account, on request: Terraform reports nothing. */
+export interface GcpAccessCheck {
+	readonly checking: boolean
+	/** The last check's outcome; null before one. */
+	readonly outcome: { readonly ok: boolean; readonly message: string | null } | null
+	readonly onCheck: () => void
+}
+
+/**
+ * Under the module: what Maple has confirmed in Google Cloud. A Terraform run tells Maple nothing,
+ * so log forwarding is confirmed by its first signed push and read-only access by a check.
+ */
+function TerraformStatus({
+	connector,
+	metricsAvailable,
+	access,
+}: {
+	connector: V2GcpConnector
+	metricsAvailable: boolean
+	access: GcpAccessCheck
+}) {
+	const logsDone = connector.applied_logs_enabled === true
+	const accessDone = connector.applied_metrics_enabled === true
+	const rows = [
+		connector.logs_enabled
+			? {
+					key: "logs",
+					title: CAPABILITIES.logs.title,
+					state: logsDone ? ("done" as const) : ("running" as const),
+					detail: logsDone
+						? "Maple received a signed push"
+						: "Confirmed by the first entry, within about 10 minutes of the apply",
+				}
+			: logsDone
+				? {
+						key: "logs",
+						title: CAPABILITIES.logs.title,
+						state: "pending" as const,
+						// No push and no report says a sink is gone.
+						detail: "Removed by the apply. Maple isn't told: close this once it ran",
+					}
+				: null,
+		metricsAvailable
+			? {
+					key: "access",
+					title: "Read-only access",
+					state: accessDone ? ("done" as const) : ("pending" as const),
+					detail: accessDone ? "Maple read the scope as the account" : null,
+				}
+			: null,
+	].filter((row) => row !== null)
+	const done = rows.filter((row) => row.state === "done").length
+
+	return (
+		<div role="status" className="flex flex-col gap-3 border-t px-6 py-4">
+			<div className="flex items-center gap-2.5">
+				<Spinner className="size-3.5 shrink-0 text-severity-debug" />
+				<p className="text-sm font-medium">Waiting for Google Cloud</p>
+				<span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
+					{done > 0 ? `${done} of ${rows.length} done` : "Terraform reports nothing"}
+				</span>
+			</div>
+			<ul className="flex flex-col gap-1.5 pl-6">
+				{rows.map((row) => (
+					<li
+						key={row.key}
+						className="grid grid-cols-[auto_10rem_1fr] items-center gap-x-2.5 text-xs/5"
+					>
+						<RunRowMarker state={row.state} />
+						<span className="text-foreground">{row.title}</span>
+						{row.detail !== null ? (
+							<span className="text-muted-foreground">{row.detail}</span>
+						) : (
+							<span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+								<Button
+									size="xs"
+									variant="outline"
+									onClick={access.onCheck}
+									loading={access.checking}
+								>
+									Check access
+								</Button>
+								{access.outcome !== null && !access.outcome.ok ? (
+									<span className="text-pretty text-severity-error" role="alert">
+										{access.outcome.message}
+									</span>
+								) : (
+									<span className="text-muted-foreground">After the apply</span>
+								)}
+							</span>
+						)}
+					</li>
+				))}
+			</ul>
+		</div>
+	)
+}
+
 type RunRowState = "pending" | "running" | "done"
 
 function RunRowMarker({ state }: { state: RunRowState }) {
@@ -1570,7 +1720,7 @@ function Applied({
 						"Google Cloud matches this configuration"
 					)}
 				</h3>
-				<p className={SMALL}>The script finished. Data shows up in Maple on its own.</p>
+				<p className={SMALL}>Setup finished. Data shows up in Maple on its own.</p>
 			</div>
 			<ul className="w-full divide-y divide-border/60 rounded-lg border text-left">
 				{rows.map((row) => (
@@ -1603,7 +1753,9 @@ const runConfirmed = (
 function ApplyStage({
 	filter,
 	...view
-}: Omit<GcpApplyViewProps, "logFilter" | "script" | "failure"> & { filter: FilterState }) {
+}: Omit<GcpApplyViewProps, "logFilter" | "filterKept" | "script" | "terraform" | "failure" | "access"> & {
+	filter: FilterState
+}) {
 	const { connector, opened, nowMs, metricsAvailable } = view
 	const choice = gcpLogFilterChoice(filter, connector.applied_logs_enabled === true)
 	const { scripts, failure } = useGcpScripts(connector, choice.applicationLogs)
@@ -1612,12 +1764,27 @@ function ApplyStage({
 		intervalMs: GCP_SETTLING_REFRESH_MS,
 		enabled: !runConfirmed(connector, opened, nowMs, metricsAvailable),
 	})
+	const check = useAtomSet(MapleApiV2AtomClient.mutation("gcpIntegration", "checkAccess"), {
+		mode: "promiseExit",
+	})
+	const [outcome, setOutcome] = useState<GcpAccessCheck["outcome"]>(null)
+	const [onCheck, checking] = useAsyncAction(async () => {
+		const result = await check({ params: { id: connector.id }, reactivityKeys: GCP_REACTIVITY_KEYS })
+		if (Exit.isFailure(result)) {
+			showErrorToast(result, { title: "Couldn't check the read-only access" })
+			return
+		}
+		setOutcome(result.value)
+	})
 	return (
 		<GcpApplyView
 			{...view}
 			logFilter={filterShort(choice)}
+			filterKept={choice.keep}
 			script={scripts?.setup_script ?? null}
+			terraform={scripts?.terraform ?? null}
 			failure={failure}
+			access={{ checking, outcome, onCheck: () => void onCheck() }}
 		/>
 	)
 }
@@ -1631,8 +1798,13 @@ export interface GcpApplyViewProps {
 	metricsAvailable: boolean
 	/** The log filter in a few words. */
 	logFilter: string
+	/** An existing sink keeps its filter: the script leaves it, Terraform cannot. */
+	filterKept: boolean
 	script: string | null
+	/** The same setup as a Terraform module block. */
+	terraform: string | null
 	failure: ScriptFailure | null
+	access: GcpAccessCheck
 	nowMs: number
 	opened: ApplyOpened
 	onBack: () => void
@@ -1646,13 +1818,17 @@ export function GcpApplyView({
 	created,
 	metricsAvailable,
 	logFilter,
+	filterKept,
 	script,
+	terraform,
 	failure,
+	access,
 	nowMs,
 	opened,
 	onBack,
 	onClose,
 }: GcpApplyViewProps) {
+	const [method, setMethod] = useState<"script" | "terraform">("script")
 	const sinkExists = connector.applied_logs_enabled === true
 	const reportedAt = connector.setup_reported_at
 	const confirmed = runConfirmed(connector, opened, nowMs, metricsAvailable)
@@ -1687,13 +1863,41 @@ export function GcpApplyView({
 			<DialogPanel className="flex flex-col gap-5">
 				<RunSummary connector={connector} logFilter={logFilter} onEdit={onBack} />
 				<section className="flex flex-col gap-3">
-					<div className="flex flex-col gap-0.5">
-						<h3 className={GCP_TITLE}>Run this script in Cloud Shell</h3>
-						<p className={SMALL}>Nothing changes in Google Cloud until it runs.</p>
+					<div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+						<div className="flex flex-col gap-0.5">
+							<h3 className={GCP_TITLE}>
+								{method === "script"
+									? "Run this script in Cloud Shell"
+									: "Add this module to your Terraform"}
+							</h3>
+							<p className={SMALL}>
+								{method === "script"
+									? "Nothing changes in Google Cloud until it runs."
+									: "It creates what the script does, under the same names."}
+							</p>
+						</div>
+						<ToggleGroup
+							variant="outline"
+							size="sm"
+							aria-label="How to set it up"
+							value={[method]}
+							onValueChange={(values) => {
+								// Pressing the selected segment again empties the group: the view stays.
+								const next = values.find((value) => value !== method)
+								if (next === "script" || next === "terraform") setMethod(next)
+							}}
+						>
+							<ToggleGroupItem value="script">Cloud Shell</ToggleGroupItem>
+							<ToggleGroupItem value="terraform">Terraform</ToggleGroupItem>
+						</ToggleGroup>
 					</div>
-					<ScriptCard script={script} failure={failure} projectId={connector.project_id} />
+					{method === "script" ? (
+						<ScriptCard script={script} failure={failure} projectId={connector.project_id} />
+					) : (
+						<TerraformCard terraform={terraform} failure={failure} />
+					)}
 					<p className={SMALL}>
-						Run it as an {role("Owner")} of{" "}
+						{method === "script" ? "Run" : "Apply"} it as an {role("Owner")} of{" "}
 						{connector.scope_type === "project" ? null : "the host project "}
 						<Mono>{connector.project_id}</Mono>
 						{scopeRoles.map((name, index) => (
@@ -1703,22 +1907,42 @@ export function GcpApplyView({
 							</Fragment>
 						))}
 						{scopeRoles.length > 0 ? ` on the ${scopeName}` : null}.{" "}
-						{!connector.logs_enabled && sinkExists
-							? "Takes one to two minutes. "
-							: "Takes about a minute and is safe to run again. "}
-						<GcpExternalLink href={`${DOCS}#roles-for-running-the-script`}>
-							Roles if you aren&apos;t an Owner
-						</GcpExternalLink>
+						{method === "terraform" ? (
+							<>
+								{connector.logs_enabled
+									? filterKept
+										? "Terraform sets the log filter in full, so the kept filter becomes platform logs only. "
+										: "Terraform sets the log filter in full. "
+									: null}
+								A connection the script set up is taken over by importing its resources first.{" "}
+								<GcpExternalLink href={`${DOCS}#set-up-with-terraform`}>
+									Terraform setup
+								</GcpExternalLink>
+							</>
+						) : (
+							<>
+								{!connector.logs_enabled && sinkExists
+									? "Takes one to two minutes. "
+									: "Takes about a minute and is safe to run again. "}
+								<GcpExternalLink href={`${DOCS}#roles-for-running-the-script`}>
+									Roles if you aren&apos;t an Owner
+								</GcpExternalLink>
+							</>
+						)}
 					</p>
 				</section>
 			</DialogPanel>
-			<RunStatus
-				connector={connector}
-				opened={opened}
-				overdue={overdue}
-				nowMs={nowMs}
-				metricsAvailable={metricsAvailable}
-			/>
+			{method === "script" ? (
+				<RunStatus
+					connector={connector}
+					opened={opened}
+					overdue={overdue}
+					nowMs={nowMs}
+					metricsAvailable={metricsAvailable}
+				/>
+			) : (
+				<TerraformStatus connector={connector} metricsAvailable={metricsAvailable} access={access} />
+			)}
 			<DialogFooter>
 				<FooterNote>Saved. Close this any time and come back to it.</FooterNote>
 				<Button variant="outline" onClick={onClose}>
@@ -1948,7 +2172,7 @@ export function GcpDisconnectDialog({
 									<dl className="grid grid-cols-[auto_1fr] gap-x-3 text-xs/5">
 										<dt className="text-foreground">Deletes</dt>
 										<dd className="text-pretty text-muted-foreground">
-											The log sink, topic, subscription and read-only service account.
+											The log sink, topic, subscription and both service accounts.
 										</dd>
 										<dt className="text-foreground">Keeps</dt>
 										<dd className="text-muted-foreground">The APIs it switched on.</dd>
@@ -1962,6 +2186,10 @@ export function GcpDisconnectDialog({
 									</Script>
 									<p className={cn(SMALL, "text-foreground/80")}>
 										Waiting for the cleanup script. This updates on its own.
+									</p>
+									<p className={SMALL}>
+										Set up with Terraform? Remove the module and apply instead, then
+										disconnect anyway: Terraform tells Maple nothing.
 									</p>
 								</>
 							)}
