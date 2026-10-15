@@ -18,10 +18,16 @@ const explainGcpApiError = (error: GcpApiError, connector: ExplainedConnector, l
 	const host = `${connector.scopeType === "project" ? "project" : "host project"} ${connector.projectId}`
 	const scope = `${connector.scopeType} ${connector.scopeId}`
 	const retries = live ? "Try again in a few minutes." : RETRIES
-	if (error.reason === "BILLING_DISABLED") {
+	// Signing in does not go through the host project: a reason there is about Maple's own.
+	const hostReason = error.api === "IAM Credentials" ? undefined : error.reason
+	if (hostReason === "BILLING_DISABLED") {
 		return `The ${host} has no active billing account, and ${error.api} only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=${connector.projectId}${live ? "" : " Maple retries every 5 minutes."}`
 	}
-	if (error.reason === "SERVICE_DISABLED") {
+	// A PromQL query that ran out of samples or time; Google's text, in the status, says which.
+	if (error.reason === "QUERY_EXECUTION") {
+		return "Google could not finish the query on this project. Narrow the query or widen the step."
+	}
+	if (hostReason === "SERVICE_DISABLED") {
 		return `The ${error.api} API is switched off in the ${host}. Run the setup script again: it switches the API on.`
 	}
 	if (error.kind === "denied" || error.kind === "not_found") {
@@ -43,6 +49,10 @@ const explainGcpApiError = (error: GcpApiError, connector: ExplainedConnector, l
 	}
 	// Signing in is counted against Maple's own project, not the host project.
 	if (error.kind === "rate_limited" && error.api !== "IAM Credentials") {
+		// Google answers an answer past its size limit the same way as a spent quota.
+		if (live) {
+			return `Google refused the read for the ${host}: a rate limit, or an answer past Google's size limit. Narrow the query, or try again in a few minutes.`
+		}
 		return `Google rate-limited the ${error.api} API for the ${host}. ${retries} If this repeats, raise that API's quota on the project.`
 	}
 	return `Maple's request to Google's ${error.api} API failed. ${retries} If this repeats, write to support@maple.dev.`

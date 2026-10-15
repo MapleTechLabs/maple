@@ -70,6 +70,7 @@ interface Calls {
 	readonly promql: Array<PromQlCall>
 	readonly descriptors: Array<string>
 	readonly assets: Array<string>
+	readonly scopes: Array<string>
 }
 
 interface StubOptions {
@@ -80,7 +81,28 @@ interface StubOptions {
 	readonly assets?: () => Response | undefined
 	readonly names?: ReadonlyArray<string>
 	readonly descriptors?: Record<string, unknown>
+	/** Projects a project's metrics scope reads besides itself. */
+	readonly scopes?: Record<string, ReadonlyArray<string>>
 }
+
+/** A stand-in project number: Google names a metrics scope's projects by number. */
+const numberOf = (projectId: string) =>
+	String([...projectId].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 1_000_000_007, 7))
+
+const googleError = (status: number, code: string, reason?: string) =>
+	json(
+		{
+			error: {
+				code: status,
+				status: code,
+				message: "refused",
+				...(reason === undefined
+					? undefined
+					: { details: [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason }] }),
+			},
+		},
+		status,
+	)
 
 const matrix = (
 	...result: ReadonlyArray<{ metric: Record<string, string>; values: Array<[number, string]> }>
@@ -139,6 +161,17 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 				return json({ status: "success", data: options.names ?? [] })
 			return options.promql?.(call) ?? matrix()
 		}
+		const scope = /^\/v1\/locations\/global\/metricsScopes\/(.+)$/.exec(url.pathname)
+		if (url.host === "monitoring.googleapis.com" && scope !== null) {
+			const projectId = scope[1]!
+			calls.scopes.push(projectId)
+			return json({
+				name: `locations/global/metricsScopes/${numberOf(projectId)}`,
+				monitoredProjects: [projectId, ...(options.scopes?.[projectId] ?? [])].map((monitored) => ({
+					name: `locations/global/metricsScopes/${numberOf(projectId)}/projects/${numberOf(monitored)}`,
+				})),
+			})
+		}
 		if (url.host === "monitoring.googleapis.com" && url.pathname.endsWith("/metricDescriptors")) {
 			const type = /metric\.type = "([^"]+)"/.exec(url.searchParams.get("filter") ?? "")?.[1] ?? ""
 			calls.descriptors.push(type)
@@ -148,7 +181,14 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 		throw new Error(`unexpected request to ${url.href}`)
 	}) as typeof fetch
 
-const makeCalls = (): Calls => ({ oauth: 0, impersonate: [], promql: [], descriptors: [], assets: [] })
+const makeCalls = (): Calls => ({
+	oauth: 0,
+	impersonate: [],
+	promql: [],
+	descriptors: [],
+	assets: [],
+	scopes: [],
+})
 
 const run = <A, E>(
 	testDb: TestDb,
@@ -195,7 +235,8 @@ const insertConnector = (
 		readonly orgId?: string
 		readonly projectId?: string
 		readonly folder?: string
-		readonly metricsEnabled?: boolean
+		/** What the setup script reported: the read-only account is in place. */
+		readonly accountInPlace?: boolean | null
 	} = {},
 ) => {
 	const projectId = options.projectId ?? "acme-prod"
@@ -204,7 +245,7 @@ const insertConnector = (
 			testDb,
 			`INSERT INTO gcp_connectors
 			   (id, org_id, scope_type, scope_id, project_id, secret_ciphertext, secret_iv, secret_tag,
-			    secret_hash, metrics_enabled, created_by, created_at, updated_at)
+			    secret_hash, applied_metrics_enabled, created_by, created_at, updated_at)
 			 VALUES ($1, $2, $3, $4, $5, 'c', 'i', 't', $1, $6, 'user_1', now(), now())`,
 			[
 				id,
@@ -212,7 +253,7 @@ const insertConnector = (
 				options.folder === undefined ? "project" : "folder",
 				options.folder ?? projectId,
 				projectId,
-				options.metricsEnabled ?? false,
+				options.accountInPlace === undefined ? true : options.accountInPlace,
 			],
 		),
 	)
@@ -222,11 +263,7 @@ const insertConnector = (
 const insertConnectors = (testDb: TestDb) =>
 	Effect.all([
 		insertConnector(testDb, PROJECT_CONNECTOR),
-		insertConnector(testDb, FOLDER_CONNECTOR, {
-			projectId: "acme-host",
-			folder: "123",
-			metricsEnabled: true,
-		}),
+		insertConnector(testDb, FOLDER_CONNECTOR, { projectId: "acme-host", folder: "123" }),
 		insertConnector(testDb, OTHER_CONNECTOR, { orgId: OTHER_ORG, projectId: "rival-prod" }),
 	])
 
@@ -270,26 +307,15 @@ describe("GcpPromQlService.queryRange", () => {
 									[T0 + 1800, "1.5"],
 								],
 							})
-						: // A project's metrics scope can answer for another project: Google's label stays,
-							// and acme-data, whose scope holds acme-shop, answers acme-shop's series again.
-							matrix(
-								{
-									metric: {
-										service: "checkout",
-										project_id:
-											call.project === "acme-shop" ? "acme-monitored" : call.project,
-									},
-									values: [[T0, "7"]],
+						: // Google's own `project_id` stays.
+							matrix({
+								metric: {
+									service: "checkout",
+									project_id:
+										call.project === "acme-shop" ? "acme-monitored" : call.project,
 								},
-								...(call.project === "acme-data"
-									? [
-											{
-												metric: { service: "checkout", project_id: "acme-monitored" },
-												values: [[T0, "7"]] as Array<[number, string]>,
-											},
-										]
-									: []),
-							),
+								values: [[T0, "7"]],
+							}),
 			}),
 			Effect.gen(function* () {
 				yield* insertConnectors(testDb)
@@ -472,8 +498,26 @@ describe("GcpPromQlService.queryRange", () => {
 			stubFetch(calls, {
 				promql: (call) =>
 					call.params.query === "slow"
-						? json({ status: "error", errorType: "execution", error: "query timed out" }, 422)
-						: json({ status: "error", errorType: "bad_data", error: refusal }, 400),
+						? json(
+								{
+									status: "error",
+									errorType: "execution",
+									error: "query processing would load too many samples",
+								},
+								422,
+							)
+						: call.params.query === "slower"
+							? json(
+									{
+										status: "error",
+										errorType: "timeout",
+										error: "query timed out in expression evaluation",
+									},
+									503,
+								)
+							: call.params.query === "busy"
+								? googleError(429, "RESOURCE_EXHAUSTED")
+								: json({ status: "error", errorType: "bad_data", error: refusal }, 400),
 			}),
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
@@ -487,9 +531,28 @@ describe("GcpPromQlService.queryRange", () => {
 					"acme-prod",
 				)
 
-				// A query that ran out of time is the project's failure, not the query's fault.
-				const slow = yield* Effect.flip(queryRange(range("slow")))
-				assert.strictEqual(slow._tag, "@maple/http/errors/GcpPromQlFailedError")
+				// Too many samples, out of time, or past Google's size limit: the project's failure,
+				// with what to change about the query.
+				const failureOf = (query: string) =>
+					Effect.flip(queryRange(range(query))).pipe(
+						Effect.map((error) =>
+							error._tag === "@maple/http/errors/GcpPromQlFailedError"
+								? error.failures[0]!.message
+								: error._tag,
+						),
+					)
+				assert.strictEqual(
+					yield* failureOf("slow"),
+					"Google could not finish the query on this project. Narrow the query or widen the step. (Cloud Monitoring returned 422 execution: query processing would load too many samples)",
+				)
+				assert.strictEqual(
+					yield* failureOf("slower"),
+					"Google could not finish the query on this project. Narrow the query or widen the step. (Cloud Monitoring returned 503 timeout: query timed out in expression evaluation)",
+				)
+				assert.strictEqual(
+					yield* failureOf("busy"),
+					"Google refused the read for the project acme-prod: a rate limit, or an answer past Google's size limit. Narrow the query, or try again in a few minutes. (Cloud Monitoring returned 429 RESOURCE_EXHAUSTED)",
+				)
 			}),
 		)
 	})
@@ -516,6 +579,16 @@ describe("GcpPromQlService.queryRange", () => {
 				}
 				// The second answer came from the cache.
 				assert.lengthOf(calls.promql, 1)
+
+				// A project the failed listing may hold is not refused as unknown.
+				const error = yield* Effect.flip(queryRange(range("up", ["acme-shop"])))
+				assert.strictEqual(error._tag, "@maple/http/errors/GcpPromQlFailedError")
+				assert.deepStrictEqual(
+					error._tag === "@maple/http/errors/GcpPromQlFailedError"
+						? error.failures.map((failure) => failure.scope)
+						: [],
+					["folders/123"],
+				)
 			}),
 		)
 	})
@@ -568,11 +641,133 @@ describe("GcpPromQlService.queryRange", () => {
 				yield* insertConnectors(testDb)
 				const error = yield* Effect.flip(queryRange(range("up")))
 				assert.strictEqual(error._tag, "@maple/http/errors/GcpPromQlTooManySeriesError")
-				assert.include(error.message, "750 series")
-				assert.include(error.message, "sum by")
+				assert.strictEqual(
+					error.message,
+					"The query returned more than 500 series across its projects. Aggregate them with sum by (…) or avg by (…), or narrow the selector.",
+				)
 
 				const atTheCap = yield* queryRange(range("up", ["acme-shop", "acme-data"]))
 				assert.lengthOf(atTheCap.series, 500)
+			}),
+		)
+	})
+
+	it.effect("refuses a project's answer past 8 MB without reading the rest", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			stubFetch(calls, {
+				promql: () => matrix({ metric: { pod: "x".repeat(9 * 1024 * 1024) }, values: [[T0, "1"]] }),
+			}),
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, PROJECT_CONNECTOR)
+				const error = yield* Effect.flip(queryRange(range("up")))
+				assert.strictEqual(error._tag, "@maple/http/errors/GcpPromQlTooManySeriesError")
+				assert.strictEqual(
+					error.message,
+					"Google's answer for project acme-prod is larger than 8 MB: too many series or points. Aggregate with sum by (…) or avg by (…), narrow the selector, or widen the step.",
+				)
+			}),
+		)
+	})
+
+	it.effect("reads a project another target's metrics scope holds through that scope, once", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			stubFetch(calls, {
+				folderProjects: FOLDER_PROJECTS,
+				scopes: { "acme-data": ["acme-shop"] },
+				// What Google answers for `sum by (service)`: no `project_id`.
+				promql: (call) =>
+					matrix({
+						metric: { service: "checkout" },
+						values: [[T0, call.project === "acme-data" ? "9" : "3"]],
+					}),
+			}),
+			Effect.gen(function* () {
+				yield* insertConnectors(testDb)
+				const result = yield* queryRange(range("sum by (service) (rate(x[5m]))"))
+				assert.sameMembers(
+					calls.promql.map((call) => call.project),
+					["acme-data", "acme-prod"],
+				)
+				assert.deepStrictEqual<ReadonlyArray<string>>(result.projects, [
+					"acme-data",
+					"acme-prod",
+					"acme-shop",
+				])
+				// acme-data's sum covers acme-shop too, so it names the scope, not a project.
+				assert.sameDeepMembers(
+					result.series.map((series) => series.labels),
+					[
+						{ service: "checkout", metrics_scope: "acme-data" },
+						{ service: "checkout", project_id: "acme-prod" },
+					],
+				)
+			}),
+		)
+	})
+
+	it.effect("reads only connections whose read-only account is in place", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		const other = Schema.decodeSync(OrgId)(OTHER_ORG)
+		return run(
+			testDb,
+			stubFetch(calls, {
+				folderProjects: FOLDER_PROJECTS,
+				promql: (call) => matrix({ metric: { project_id: call.project }, values: [[T0, "1"]] }),
+			}),
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, PROJECT_CONNECTOR)
+				yield* insertConnector(testDb, FOLDER_CONNECTOR, {
+					projectId: "acme-host",
+					folder: "123",
+					accountInPlace: null,
+				})
+				yield* insertConnector(testDb, OTHER_CONNECTOR, {
+					orgId: OTHER_ORG,
+					projectId: "rival-prod",
+					accountInPlace: false,
+				})
+				// The folder is left out without a word while another connection reads.
+				const result = yield* queryRange(range("up"))
+				assert.deepStrictEqual<ReadonlyArray<string>>(result.projects, ["acme-prod"])
+				assert.deepStrictEqual(result.failures, [])
+				assert.deepStrictEqual(calls.assets, [])
+				assert.deepStrictEqual(calls.impersonate, [PROJECT_READER])
+
+				// With none in place, each connection says what to do.
+				const error = yield* Effect.flip(
+					GcpPromQlService.use((gcp) => gcp.queryRange(other, range("up"))),
+				)
+				assert.strictEqual(error._tag, "@maple/http/errors/GcpPromQlFailedError")
+				assert.deepStrictEqual(
+					error._tag === "@maple/http/errors/GcpPromQlFailedError"
+						? error.failures.map((failure) => failure.scope)
+						: [],
+					["projects/rival-prod"],
+				)
+				assert.include(error.message, "Run the setup script again: it creates the account.")
+			}),
+		)
+	})
+
+	it.effect("fails as Maple's own when IAM refuses Maple's project, not as the connection's", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			stubFetch(calls, {
+				impersonate: () => googleError(403, "PERMISSION_DENIED", "SERVICE_DISABLED"),
+			}),
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, PROJECT_CONNECTOR)
+				const error = yield* Effect.flip(queryRange(range("up")))
+				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
 			}),
 		)
 	})
@@ -639,7 +834,21 @@ describe("GcpPromQlService.queryInstant", () => {
 		return run(
 			testDb,
 			stubFetch(calls, {
-				promql: () => json({ status: "success", data: { resultType: "scalar", result: [T0, "2"] } }),
+				promql: (call) =>
+					call.params.query === "x[5m]"
+						? matrix({
+								metric: { project_id: "acme-prod" },
+								values: [
+									[T0, "1"],
+									[T0 + 60, "2"],
+								],
+							})
+						: call.params.query === '"text"'
+							? json({
+									status: "success",
+									data: { resultType: "string", result: [T0, "text"] },
+								})
+							: json({ status: "success", data: { resultType: "scalar", result: [T0, "2"] } }),
 			}),
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
@@ -655,6 +864,22 @@ describe("GcpPromQlService.queryInstant", () => {
 				assert.deepStrictEqual(result.series, [
 					{ labels: { project_id: "acme-prod" }, points: [[T0, 2]] },
 				])
+
+				// A range selector answers a matrix, as Google says.
+				const instant = (query: string) =>
+					GcpPromQlService.use((gcp) =>
+						gcp.queryInstant(
+							ORG,
+							new GcpPromQlInstantRequest({ query, time: "2026-10-15 11:00:42" }),
+						),
+					)
+				const window = yield* instant("x[5m]")
+				assert.strictEqual(window.resultType, "matrix")
+				assert.lengthOf(window.series[0]!.points, 2)
+
+				const text = yield* Effect.flip(instant('"text"'))
+				assert.strictEqual(text._tag, "@maple/http/errors/GcpPromQlInvalidQueryError")
+				assert.include(text.message, "String results are not supported")
 			}),
 		)
 	})
