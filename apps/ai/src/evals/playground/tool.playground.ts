@@ -14,6 +14,7 @@ import { afterAll, beforeAll, it } from "vitest"
 import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "@/mcp/__evals__/eval-runtime"
 import { infraFixtureRules } from "@/mcp/__evals__/infra-world"
+import { providerFixtureRules } from "@/mcp/__evals__/provider-world"
 import { inputSchemaOf, mapleToolCatalog } from "@/mcp/tools/registry"
 
 const env = process.env
@@ -23,7 +24,7 @@ const publicTools = mapleToolCatalog.filter((entry) => entry.audience === "publi
 let rt: EvalRuntime | undefined
 beforeAll(() => {
 	if (env.PLAYGROUND_CMD !== "call") return
-	installFakeWarehouse(infraFixtureRules(), undefined, "empty")
+	installFakeWarehouse([...providerFixtureRules(), ...infraFixtureRules()], undefined, "empty")
 	rt = makeEvalRuntime()
 })
 afterAll(async () => {

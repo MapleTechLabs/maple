@@ -150,6 +150,7 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | ------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
 | `audit_setup`                         | read   | Check the whole organization setup: alert routing, error notifications and per-service ingest coverage |
 | `get_instrumentation_recommendations` | read   | Span and resource attribute problems found in your live data                                           |
+| `list_integrations`                   | read   | Connected integrations, what each one feeds, and which resources are failing or stale                  |
 | `list_source_repositories`            | read   | Repositories connected through the [GitHub integration](/docs/integrations/github)                     |
 | `search_source_code`                  | read   | Search one connected repository through GitHub code search                                             |
 | `read_source_file`                    | read   | Read a line range from a file in a connected repository                                                |
