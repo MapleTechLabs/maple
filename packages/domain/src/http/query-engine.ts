@@ -1305,7 +1305,7 @@ export class HostInfraTimeseriesResponse extends Schema.Class<HostInfraTimeserie
 
 // Kubernetes (pods / nodes / workloads)
 
-const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset"])
+const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset", "job"])
 
 /**
  * `saturation` is the peak of CPU-vs-limit or memory-vs-limit over the window,
@@ -2313,9 +2313,24 @@ const WorkloadRow = Schema.Struct({
 	environment: Schema.String,
 	podCount: Schema.Number,
 	lastSeen: Schema.String,
-	avgCpuLimitPct: Schema.Number,
-	avgMemoryLimitPct: Schema.Number,
-	avgCpuUsage: Schema.Number,
+	/**
+	 * Latest desired / ready count from the cluster collector: replicas for a
+	 * Deployment or StatefulSet, scheduled nodes for a DaemonSet, completions for a
+	 * Job. Null when the cluster collector isn't reporting for this workload.
+	 */
+	desiredReplicas: Schema.NullOr(Schema.Number),
+	readyReplicas: Schema.NullOr(Schema.Number),
+	/** Jobs only: pods that failed. 0 for every other kind. */
+	failedPods: Schema.Number,
+	/** Container restarts in the window, across every pod. */
+	restarts: Schema.Number,
+	/** Why a restarting container last terminated (OOMKilled, Error, ...); empty without restarts. */
+	lastTerminatedReason: Schema.String,
+	/** The worst pod's peak against its limit, 0..1. */
+	peakCpuLimitPct: Schema.Number,
+	peakMemoryLimitPct: Schema.Number,
+	/** Cores in use at the window's end, summed over the pods still reporting. */
+	cpuUsage: Schema.Number,
 })
 
 export class ListWorkloadsResponse extends Schema.Class<ListWorkloadsResponse>("ListWorkloadsResponse")({

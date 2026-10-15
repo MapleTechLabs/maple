@@ -48,6 +48,7 @@ export function ErrorsLab() {
 	const [view, setView] = useState<HubView>("open")
 	const [sort, setSort] = useState<HubSort>("last_seen")
 	const [severity, setSeverity] = useState<SeverityFilter>("all")
+	const [search, setSearch] = useState("")
 	const [state, setState] = useState<LabState>("ready")
 	const [width, setWidth] = useState<number | null>(null)
 
@@ -60,7 +61,16 @@ export function ErrorsLab() {
 				if (severity === "unset") return signal.severity === null
 				return signal.severity === severity
 			})
-	}, [fixture.signals, state, view, severity])
+			.filter((signal) => {
+				// Mirrors the server's ILIKE over type, message, label and service.
+				const term = search.toLowerCase()
+				if (term === "") return true
+				const { issue } = signal
+				return [issue.exceptionType, issue.exceptionMessage, issue.errorLabel, issue.serviceName].some(
+					(field) => field.toLowerCase().includes(term),
+				)
+			})
+	}, [fixture.signals, state, view, severity, search])
 
 	return (
 		<DashboardLayout.Root>
@@ -92,6 +102,8 @@ export function ErrorsLab() {
 								onViewChange={setView}
 								onSortChange={setSort}
 								onSeverityChange={setSeverity}
+								search={search}
+								onSearchChange={(value) => setSearch(value ?? "")}
 								stats={<LabStatStrip summary={fixture.summary} />}
 								onRetry={() => setState("ready")}
 							/>
@@ -181,10 +193,8 @@ function LabStatStrip({
 	}
 }) {
 	const stats = [
-		{ value: formatNumber(summary.totalErrors), label: "errors" },
+		{ value: formatNumber(summary.totalErrors), label: "error events" },
 		{ value: formatErrorRate(summary.errorRate), label: "of all spans" },
-		{ value: formatNumber(summary.affectedServicesCount), label: "services" },
-		{ value: formatNumber(summary.affectedTracesCount), label: "traces" },
 	]
 	return (
 		<div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-xs">
@@ -194,7 +204,7 @@ function LabStatStrip({
 					<span className="text-muted-foreground">{stat.label}</span>
 				</span>
 			))}
-			<span className="text-muted-foreground/60">in the selected window</span>
+			<span className="text-muted-foreground/60">in the last 24 hours</span>
 		</div>
 	)
 }

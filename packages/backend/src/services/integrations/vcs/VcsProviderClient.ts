@@ -23,6 +23,7 @@ import type {
 	VcsSyncJob,
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
+	WorkflowJobAnnotation,
 } from "@maple/domain/http"
 
 // The single typed seam between the vendor-agnostic core and a VCS provider.
@@ -473,6 +474,19 @@ export interface VcsProviderClient {
 		ref: string,
 	) => Effect.Effect<
 		Option.Option<VcsSourceFile>,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/**
+	 * The annotations a finished CI job recorded: why it failed, in its own words. Bounded by the
+	 * provider, which reads until it has a failure.
+	 */
+	readonly fetchWorkflowJobAnnotations: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		jobId: string,
+	) => Effect.Effect<
+		ReadonlyArray<WorkflowJobAnnotation>,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 }

@@ -607,6 +607,31 @@ describe("GithubConnectService", () => {
 			return { orgId, repository: yield* repoFor(repo, orgId, "7") }
 		})
 
+	it.effect("CI traces are on for a new connection and an admin can turn them off and back on", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId } = yield* connectedRepo(svc, repo)
+			assert.strictEqual((yield* svc.getStatus(orgId)).ciTracesEnabled, true)
+			assert.strictEqual((yield* svc.setCiTracesEnabled(orgId, false)).enabled, false)
+			assert.strictEqual((yield* svc.getStatus(orgId)).ciTracesEnabled, false)
+			yield* svc.setCiTracesEnabled(orgId, true)
+			assert.strictEqual((yield* svc.getStatus(orgId)).ciTracesEnabled, true)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("setCiTracesEnabled refuses an organization without a GitHub connection", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const exit = yield* svc.setCiTracesEnabled(asOrgId("org_none"), false).pipe(Effect.exit)
+			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
 	it.effect("setPrReviewEnabled turns reviews on for a flagged organization", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []

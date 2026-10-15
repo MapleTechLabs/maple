@@ -26,12 +26,9 @@ import {
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
 import { SearchToolbar } from "@/components/common/search-toolbar"
 import { PageHero } from "@/components/common/page-hero"
-import {
-	RailwayServiceTable,
-	RailwaySummaryBand,
-	type RailwayScope,
-	railwayInScope,
-} from "@/components/infra/railway/railway-service-table"
+import { RailwayEnvironmentStatus } from "@maple/domain/http"
+import { RailwayFleetBand, RailwayServiceTable } from "@/components/infra/railway/railway-service-table"
+import { hasConfiguredLimits } from "@/components/infra/railway/list-model"
 
 const NOW = Date.now()
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
@@ -95,6 +92,28 @@ const RAILWAY: ReadonlyArray<RailwayServiceRow> = [
 	railway("web", 0.21, 1, 0.33, 1, 4),
 	railway("postgres", 0.24, 2, 1.8, 4, 1),
 	railway("nightly-export", 0.04, 0, 0.1, 0, 1),
+	{
+		...railway("preview-api", 0.12, 2, 0.6, 4, 1),
+		environmentId: "env-staging",
+		environmentName: "staging",
+	},
+]
+
+const railwayEnvironment = (environmentId: string, environmentName: string, lastError: string | null) =>
+	new RailwayEnvironmentStatus({
+		projectId: "proj-storefront",
+		projectName: "storefront",
+		environmentId,
+		environmentName,
+		serviceCount: 1,
+		enabled: true,
+		lastSyncedAt: NOW - 2 * 60_000,
+		lastError,
+	})
+
+const RAILWAY_ENVIRONMENTS = [
+	railwayEnvironment("env-prod", "production", null),
+	railwayEnvironment("env-staging", "staging", "Railway answered 429 Too Many Requests"),
 ]
 
 const zone = (
@@ -189,7 +208,6 @@ export function InfraLab() {
 	)
 	const [hostQuery, setHostQuery] = useState("")
 	const [hostScope, setHostScope] = useState<HostScope | undefined>()
-	const [railwayScope, setRailwayScope] = useState<RailwayScope | undefined>()
 
 	const hosts = useMemo(
 		() =>
@@ -200,7 +218,6 @@ export function InfraLab() {
 			),
 		[hostQuery, hostScope],
 	)
-	const services = RAILWAY.filter((row) => !railwayScope || railwayInScope(row, railwayScope))
 
 	return (
 		<div className="mx-auto max-w-6xl space-y-16 p-8">
@@ -258,19 +275,24 @@ export function InfraLab() {
 					description="CPU, memory, network and disk for every Railway service, polled from Railway's metrics API."
 				/>
 				<div className="space-y-4">
-					<RailwaySummaryBand
+					<RailwayFleetBand
 						services={RAILWAY}
-						activeScope={railwayScope}
-						onScopeChange={setRailwayScope}
+						environments={RAILWAY_ENVIRONMENTS}
+						authFailed={false}
 						className={FLEET_BAND_BOXED}
 					/>
 					<SearchToolbar
 						value=""
 						onChange={() => undefined}
 						placeholder="Search services…"
-						trailing={`${services.length} services`}
+						trailing={`${RAILWAY.length} services`}
 					/>
-					<RailwayServiceTable services={services} />
+					<RailwayServiceTable
+						services={RAILWAY}
+						environments={RAILWAY_ENVIRONMENTS}
+						authFailed={false}
+						showLimits={hasConfiguredLimits(RAILWAY)}
+					/>
 				</div>
 			</Frame>
 		</div>
