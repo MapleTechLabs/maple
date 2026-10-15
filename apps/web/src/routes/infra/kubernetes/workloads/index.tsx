@@ -34,7 +34,8 @@ import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker
 import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const DEFAULT_PRESET = "12h"
-// The list query returns the most recently seen N workloads; the toolbar says so at the cap.
+// The list query returns the N worst workloads (missing replicas, failures, restarts, saturation);
+// the toolbar says so at the cap.
 const WORKLOAD_LIST_LIMIT = 200
 
 const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset", "job"])
@@ -286,7 +287,7 @@ function WorkloadsPage() {
 									placeholder="Search workloads…"
 									trailing={
 										workloads.length >= WORKLOAD_LIST_LIMIT
-											? `${formatNumber(filtered.length)} of the ${formatNumber(WORKLOAD_LIST_LIMIT)} most recently seen workloads`
+											? `${formatNumber(filtered.length)} of the ${formatNumber(WORKLOAD_LIST_LIMIT)} least healthy workloads`
 											: countLabel(filtered.length, filtered.length, "workload")
 									}
 								>
