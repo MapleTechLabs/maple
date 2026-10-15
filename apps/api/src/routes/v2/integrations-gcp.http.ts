@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant } from "@maple/domain/http"
+import { CurrentTenant, GcpMetricsUnavailableError } from "@maple/domain/http"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import {
 	MapleApiV2,
@@ -14,6 +14,7 @@ import {
 	GcpConnectorService,
 	type GcpConnector,
 } from "@maple/backend/services/integrations/GcpConnectorService"
+import { GcpPromQlService } from "@maple/backend/services/integrations/GcpPromQlService"
 
 // Reading the status is open to every member. Everything else is admin-only: a connector decides
 // what may write logs into the org and what Maple reads, and its setup script carries the push
@@ -51,6 +52,7 @@ const auditMetadata = (connector: GcpConnector) => ({
 export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIntegration", (handlers) =>
 	Effect.gen(function* () {
 		const gcp = yield* GcpConnectorService
+		const gcpPromQl = yield* GcpPromQlService
 
 		return handlers
 			.handle("status", () =>
@@ -109,7 +111,20 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 						object: "gcp_connector.setup_scripts" as const,
 						setup_script: scripts.setupScript,
 						cleanup_script: scripts.cleanupScript,
+						terraform: scripts.terraform,
 					}
+				}),
+			)
+			.handle("checkAccess", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireAdmin(tenant.roles, adminOnly)
+					const checked = yield* gcpPromQl.checkAccess(tenant.orgId, params.id).pipe(
+						Effect.catchTag("@maple/http/errors/GcpPromQlUnavailableError", (error) =>
+							Effect.fail(new GcpMetricsUnavailableError({ message: error.message })),
+						),
+					)
+					return { object: "gcp_connector.access_check" as const, ...checked }
 				}),
 			)
 			.handle("deleteConnector", ({ params }) =>

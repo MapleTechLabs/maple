@@ -236,6 +236,8 @@ export type V2GcpSetupScriptsRequest = Schema.Schema.Type<typeof V2GcpSetupScrip
 // What a script field holds: the script as a here-document for a bash process of its own.
 const SCRIPT_EXAMPLE =
 	" { …\nbash /dev/fd/3 3<<'MAPLE_SETUP_SCRIPT'\n#!/usr/bin/env bash\n…\nMAPLE_SETUP_SCRIPT\n}\n"
+const TERRAFORM_EXAMPLE =
+	'module "maple_gcp_acme_prod" {\n  source = "github.com/MapleTechLabs/maple//deploy/terraform-google-maple?ref=…"\n\n  connector_id = "…"\n  …\n}\n'
 
 export const V2GcpSetupScripts = Schema.Struct({
 	object: Schema.Literal("gcp_connector.setup_scripts").annotate({
@@ -251,6 +253,11 @@ export const V2GcpSetupScripts = Schema.Struct({
 			"Text to paste into Cloud Shell that removes everything the setup script created and tells Maple that it ran. It embeds the connector's push secret: treat it as a credential.",
 		examples: [SCRIPT_EXAMPLE],
 	}),
+	terraform: Schema.String.annotate({
+		description:
+			"The same setup as a Terraform module block, for an administrator's own configuration. It creates the resources the setup script does, under the same names, so either can take over from the other, and `terraform destroy` removes them. It holds no secret: Pub/Sub signs each push as the connection's push service account. Terraform sets the log filter in full: `application_logs` omitted means none. Nothing reports a Terraform run to Maple: log forwarding shows as set up once the first entry arrives, and `check_access` confirms the read-only access.",
+		examples: [TERRAFORM_EXAMPLE],
+	}),
 }).annotate({
 	identifier: "GcpSetupScripts",
 	title: "Google Cloud setup scripts",
@@ -260,10 +267,30 @@ export const V2GcpSetupScripts = Schema.Struct({
 			object: "gcp_connector.setup_scripts",
 			setup_script: SCRIPT_EXAMPLE,
 			cleanup_script: SCRIPT_EXAMPLE,
+			terraform: TERRAFORM_EXAMPLE,
 		}),
 	],
 })
 export type V2GcpSetupScripts = Schema.Schema.Type<typeof V2GcpSetupScripts>
+
+export const V2GcpAccessCheck = Schema.Struct({
+	object: Schema.Literal("gcp_connector.access_check").annotate({
+		description: 'The object type — always `"gcp_connector.access_check"`.',
+	}),
+	ok: Schema.Boolean.annotate({
+		description:
+			"Whether Maple could read the scope as the connector's read-only account. `true` records the account as in place, as a setup script's report would.",
+	}),
+	message: Schema.NullOr(Schema.String).annotate({
+		description: "Why the check failed and what to do about it. `null` when `ok` is `true`.",
+	}),
+}).annotate({
+	identifier: "GcpAccessCheck",
+	title: "Google Cloud access check",
+	description: "The outcome of Maple reading a connector's scope as its read-only account.",
+	examples: [wireExample({ object: "gcp_connector.access_check", ok: true, message: null })],
+})
+export type V2GcpAccessCheck = Schema.Schema.Type<typeof V2GcpAccessCheck>
 
 export const V2GcpConnectorDeleteResponse = Schema.Struct({
 	id: GcpConnectorPublicId,
@@ -369,6 +396,20 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				summary: "Render a connector's setup and cleanup scripts",
 				description:
 					"Returns the `gcloud` scripts for one connector. Rendering changes nothing, but both scripts carry the connector's push secret, so this requires an org-admin role and the `integrations:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("checkAccess", "/connectors/:id/check_access", {
+			params: { id: GcpConnectorPublicId },
+			success: V2GcpAccessCheck,
+			error: [V2InsufficientPermissions.schema, connectorNotFound, metricsUnavailable, integrationPersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "checkGcpConnectorAccess",
+				summary: "Check a connector's read-only access",
+				description:
+					"Signs in as the connector's read-only service account and lists one page of the scope's projects. On success Maple records the account as in place, which live metric queries wait for. Use it after setting a connector up with Terraform, which sends Maple no report. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)
