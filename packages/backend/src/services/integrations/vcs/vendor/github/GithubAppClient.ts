@@ -1,4 +1,4 @@
-import { GitCommitSha } from "@maple/domain/http"
+import { GitCommitSha, VcsRepositoryBlockedError, VcsRepoUnavailableError } from "@maple/domain/http"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
@@ -28,6 +28,33 @@ export class GithubAppError extends Schema.TaggedError<GithubAppError>()(
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
+
+/** GitHub's answer for a resource that is gone or that this installation can no longer see. */
+export const isGoneStatus = (status?: number) => status === 404 || status === 410
+
+// GitHub answers 451 for a repository taken down for legal reasons, and carries
+// the same `{"block":{"reason":"dmca"}}` body on the 403 variant. Neither clears
+// on retry, so both are terminal — matched on the body rather than on 403 alone,
+// which is otherwise an ordinary (retryable) permission failure.
+const BLOCK_BODY = /"block"\s*:|Repository access blocked/
+export const isBlockedRepository = (error: GithubAppError) =>
+	error.status === 451 || (error.status === 403 && BLOCK_BODY.test(error.message))
+
+export type RepositoryListingError = GithubAppError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+
+// A gone or blocked repository is an answer the sync records, not a client fault. Failing with
+// the anticipated domain error keeps the listing span out of error tracking.
+const toRepositoryListingError = (error: GithubAppError): RepositoryListingError => {
+	if (error.retryAfterSeconds !== undefined) return error
+	if (isBlockedRepository(error)) {
+		return new VcsRepositoryBlockedError({
+			message: error.message,
+			...(error.status === undefined ? undefined : { status: error.status }),
+		})
+	}
+	if (isGoneStatus(error.status)) return new VcsRepoUnavailableError({ message: error.message })
+	return error
+}
 
 const GITHUB_API_VERSION = "2022-11-28"
 const USER_AGENT = "maple-vcs-integration"
@@ -852,7 +879,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							token,
 							`${base}?per_page=${PER_PAGE}&page=${page}`,
 						)
-						if (!isOk(response)) return yield* failure(response, "List branches", "repository")
+						if (!isOk(response))
+							return yield* failure(response, "List branches", "repository").pipe(
+								Effect.mapError(toRepositoryListingError),
+							)
 						const json = yield* parseJson(response, "List branches")
 						return yield* decodeBranchList(json).pipe(
 							Effect.mapError(
@@ -884,8 +914,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				repo: string,
 				params: { sha?: string; sinceIso?: string; untilIso?: string },
 			) {
-				const rateLimited = (error: GithubAppError, commits: ReadonlyArray<GithubApiCommit>) =>
-					error.retryAfterSeconds === undefined
+				const rateLimited = (
+					error: RepositoryListingError,
+					commits: ReadonlyArray<GithubApiCommit>,
+				) =>
+					!(error instanceof GithubAppError) || error.retryAfterSeconds === undefined
 						? Effect.fail(error)
 						: Effect.succeed({
 								commits,
@@ -908,7 +941,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						// Anything else non-2xx (incl. 404 = repo deleted / access lost) is
 						// surfaced as a repository-scoped failure so the orchestrator can mark
 						// the repo unavailable rather than mistaking it for an empty repo.
-						if (!isOk(response)) return yield* failure(response, "List commits", "repository")
+						if (!isOk(response))
+							return yield* failure(response, "List commits", "repository").pipe(
+								Effect.mapError(toRepositoryListingError),
+							)
 						const json = yield* parseJson(response, "List commits")
 						return yield* decodeCommitList(json).pipe(
 							Effect.mapError(
@@ -921,7 +957,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					const walk = (
 						page: number,
 						commits: ReadonlyArray<GithubApiCommit>,
-					): Effect.Effect<CommitWalk, GithubAppError> =>
+					): Effect.Effect<CommitWalk, RepositoryListingError> =>
 						page > COMMIT_PAGES_PER_INVOCATION
 							? // Full final page with no break → more remain; yield a continuation.
 								Effect.succeed({
@@ -932,7 +968,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							: fetchPage(page).pipe(
 									Effect.matchEffect({
 										onFailure: (error) => rateLimited(error, commits),
-										onSuccess: (decoded): Effect.Effect<CommitWalk, GithubAppError> => {
+										onSuccess: (
+											decoded,
+										): Effect.Effect<CommitWalk, RepositoryListingError> => {
 											if (decoded === undefined)
 												return Effect.succeed({ commits, complete: true as const })
 											const next = [...commits, ...decoded]
