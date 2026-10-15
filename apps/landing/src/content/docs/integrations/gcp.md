@@ -29,7 +29,7 @@ If your workloads also send telemetry over OpenTelemetry, read [Google Cloud wit
 | A folder        | Owner on the host project. On the folder: Logs Configuration Writer for the log sink, and Folder IAM Admin for the read-only roles.                 |
 | An organization | Owner on the host project. On the organization: Logs Configuration Writer for the log sink, and Organization Administrator for the read-only roles. |
 
-If you can't get Owner, see [Roles for running the script](#roles-for-running-the-script).
+For log forwarding alone, Owner on the host project and Logs Configuration Writer on a folder or organization are enough. The read-only access part of the script then stops with what it is missing, log forwarding stays set up, and the row says **Live queries not set up**. If you can't get Owner, see [Roles for running the script](#roles-for-running-the-script).
 
 The host project holds Maple's Pub/Sub topic, subscription and read-only service account. A project is its own host project. For a folder or organization, name a shared operations project inside it that won't be deleted. Google bills the Pub/Sub and Cloud Monitoring usage to the host project.
 
@@ -66,7 +66,6 @@ Maple setup for project acme-prod
 Checking access
   ✓ Signed in as jane@acme.com
   ✓ Project acme-prod found (Acme Production)
-  ✓ Billing is enabled
   ✓ jane@acme.com has the permissions this script needs
   ✓ Log filter accepted
 
@@ -80,10 +79,11 @@ Log forwarding
   ✓ Check message sent to Maple through the topic
 
 Read-only access
+  ✓ Billing is enabled
   ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account created
-  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple notified
 
 Done. Google Cloud is set up for Maple.
@@ -93,7 +93,7 @@ Done. Google Cloud is set up for Maple.
   Metrics: Maple can query them within a few minutes.
 ```
 
-If a step fails, the script stops and prints what to do. Fix it and paste the script again: it continues where it stopped. Running the script again is safe, and its last line says what the run did:
+If a step fails, the script stops and prints what to do. Fix it and paste the script again: it continues where it stopped. A failed step under **Read-only access** stops only that section while log forwarding is on: the run ends with "Done, except read-only access". Running the script again is safe, and its last line says what the run did:
 
 | The script ends with                                                             | The run                                                                                            |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -133,7 +133,7 @@ A change takes effect in Maple and in Google Cloud at different times:
 | **Log forwarding** on                                    | Starts once the script has run.                                            | The script creates the log sink.                                                                            |
 | **Log forwarding** back on while Google Cloud has a sink | At once: Maple stores the logs again as soon as you save.                  | Nothing changes.                                                                                            |
 | **Key metrics** off                                      | Maple stops collecting from the next 5-minute read.                        | Nothing changes. The read-only service account stays, so live metric queries keep working.                  |
-| **Key metrics** on                                       | Maple collects from the next 5-minute read.                                | Nothing changes.                                                                                            |
+| **Key metrics** on                                       | Maple collects from the next 5-minute read.                                | Nothing changes while the read-only service account exists. Without it, run the setup script.               |
 
 Until the script has run, the connection's row shows **Changes not applied in Google Cloud** and says what goes on until then, for example "Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink." Click **Apply changes** to open the dialog at the script. The same band shows while the read-only service account is missing: live metric queries and key metrics start once the script has run again.
 
@@ -198,7 +198,7 @@ Under **Connections**, each connection is a row, the worst state first, with a s
 | **Incomplete**                 | The last read is under 10 minutes old, but some metric queries failed or were cut short. The band says which.                                            |
 | **Stalled**                    | No read for 30 minutes and no error. Maple retries every 5 minutes.                                                                                      |
 | **Can't be read**              | Reads fail, and none has succeeded in the last 10 minutes. The band says why and what to do.                                                             |
-| **Off**                        | Turned off in **Configure**. Live metric queries keep working.                                                                                           |
+| **Off**                        | Turned off in **Configure**. Live metric queries work while the read-only service account exists.                                                        |
 
 The page header and the Integrations list show the connection's worst status: **Needs attention**, **Setup pending**, **Changes pending**, **Waiting for data** or **Healthy**.
 
@@ -209,6 +209,7 @@ A connection that needs the setup script shows a band with one button. The butto
 | **Setup pending**                       | **Finish setup**         | The script of a new connection has not reported, or its last run stopped part of the way.                                                                           |
 | **Changes not applied in Google Cloud** | **Apply changes**        | The saved configuration and what the script last reported differ, or the read-only service account is missing. The band says what goes on until the script has run. |
 | A failure's own message                 | **Run the script again** | The text of the failure asks for another run of the setup script.                                                                                                   |
+| **Live queries not set up**             | **Run the script again** | The last run could not create the read-only service account, for example for a missing role or an organization policy. Log forwarding is unaffected.                |
 
 Members who are not admins of the Maple organization see the statuses and the numbers, without **Configure**, the **⋮** menu or the band's button. The band asks them to have an admin run the setup script, and a line under the list says "Only Maple organization admins can add, configure or disconnect connections."
 
@@ -253,7 +254,7 @@ Owner on the host project is the simplest. Without it, these predefined roles to
 | The project, folder or organization | Logs Configuration Writer (`roles/logging.configWriter`)                                                                                                                                         | Log forwarding: the sink.                       |
 | The project, folder or organization | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`), Folder IAM Admin (`roles/resourcemanager.folderIamAdmin`) or Organization Administrator (`roles/resourcemanager.organizationAdmin`) | The read-only roles.                            |
 
-Before it changes anything, the script asks Google which permissions the signed-in account holds and stops with the missing ones.
+Before it changes anything, the script asks Google which permissions the signed-in account holds and stops with the missing ones. Read-only access asks for its own just before its section: what it lacks stops only that section while log forwarding is on, and the run ends with "Done, except read-only access".
 
 ## Collected data
 
@@ -530,13 +531,13 @@ On a self-hosted Maple, the **Key metrics** checkbox reads **Not available on th
 
 ### Domain restricted sharing
 
-An organization policy can restrict which identities may hold IAM roles in your organization (`constraints/iam.allowedPolicyMemberDomains`, or a custom constraint on member domains). Maple's service account lives outside your organization, so such a policy can reject a grant the script makes, most often the one that lets Maple read as your read-only service account. The script then stops with "An organization policy (domain restricted sharing) blocks granting Maple's service account".
+An organization policy can restrict which identities may hold IAM roles in your organization (`constraints/iam.allowedPolicyMemberDomains`, or a custom constraint on member domains). Maple's service account lives outside your organization, so such a policy can reject a grant the script makes for every connection: the one that lets Maple read as your read-only service account. Google turns this policy on by default for newer organizations. The script then prints "An organization policy (domain restricted sharing) blocks granting Maple's service account". With log forwarding on, log forwarding is set up anyway and the row says **Live queries not set up**; without it, the run stops.
 
 Don't turn the policy off or allow all principals for this. An Organization Policy Administrator can allow Maple's one service account on the host project, and nothing else:
 
 1. Use the managed constraint **Restrict allowed policy members in IAM allow policies** (`iam.managed.allowedPolicyMembers`). The older `iam.allowedPolicyMemberDomains` can't make an exception for a single principal.
 2. On the host project, set a policy for it whose allowed principals are your organization's principal set plus Maple's service account (`serviceAccount:` followed by the address the script's error names). Listing your organization keeps everyone in it allowed on the project. Google's steps: [Restrict identities with domain-restricted sharing](https://cloud.google.com/resource-manager/docs/organization-policy/restricting-domains).
-3. Paste the setup script again. It continues where it stopped.
+3. Paste the setup script again. It sets up read-only access, and live metric queries work within a few minutes.
 
 Google checks the policy when a grant is made, so leave the exception in place: a later re-run grants again.
 

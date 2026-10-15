@@ -253,7 +253,7 @@ export const gcpTemplate: TemplateDefinition = {
 		label: "Google Cloud integration connected with Key metrics switched on",
 		collector: "the Google Cloud integration with Key metrics switched on",
 		setupLabel: "the Google Cloud integration",
-		hint: "Connect a project, folder or organization with Key metrics switched on. Each widget fills in once its service reports.",
+		hint: "Connect a project, folder or organization, run its setup script and switch on Key metrics. Each widget fills in once its service reports.",
 	},
 	requiredMetricPrefixes: ["gcp."],
 	parameters: [
