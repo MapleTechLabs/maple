@@ -50,7 +50,7 @@ export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }
 						id="rule-name"
 						value={form.name}
 						onChange={(e) => onChange((c) => ({ ...c, name: e.target.value }))}
-						placeholder="Error Rate — Payments"
+						placeholder="Error rate on payments"
 					/>
 				</Field>
 

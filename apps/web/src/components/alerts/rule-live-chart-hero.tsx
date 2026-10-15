@@ -1,3 +1,4 @@
+import { conditionSubject } from "@/components/alerts/rule-condition-bar"
 import { useMemo, type ReactNode } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -26,7 +27,6 @@ import type { AlertIncidentDocument } from "@maple/domain/http"
 import {
 	displaySignalType,
 	formatSignalValue,
-	signalLabels,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
 
@@ -104,7 +104,7 @@ export function RuleLiveChartHero({
 			<div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2">
 				<div className="flex min-w-0 items-center gap-2">
 					<Badge variant="outline" className="font-mono text-xs">
-						{signalLabels[form.signalType]}
+						{conditionSubject(form)}
 					</Badge>
 					{groupBySummary && (
 						<span className="hidden max-w-[360px] truncate text-muted-foreground text-xs md:inline">

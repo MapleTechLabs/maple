@@ -2,6 +2,7 @@ import type { Dispatch, ReactNode, SetStateAction } from "react"
 
 import type { AlertComparator, AlertSeverity } from "@maple/domain/http"
 import { Card } from "@maple/ui/components/ui/card"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import {
 	InputGroup,
@@ -62,7 +63,7 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 ]
 
 /** What the threshold is compared against, in words: the aggregation for a query, the signal otherwise. */
-function conditionSubject(form: RuleFormState): string {
+export function conditionSubject(form: RuleFormState): string {
 	if (form.signalType === "raw_query") return "the SQL value"
 	if (form.signalType === "builder_query") {
 		const aggregation = form.queryBuilderDraft.aggregation.replaceAll("_", " ").trim()
@@ -91,7 +92,7 @@ interface RuleConditionFieldsProps {
 	saved: RuleFormState | null
 }
 
-/** Threshold, severity and evaluation as labeled fields; every one redraws the chart beside it. */
+/** Threshold, severity and evaluation as labeled fields in a grid under the chart; each redraws it. */
 export function RuleConditionFields({ form, onChange, saved }: RuleConditionFieldsProps) {
 	const rangeMode = isRangeComparator(form.comparator)
 	const unit = thresholdUnitLabel(form)
@@ -101,7 +102,7 @@ export function RuleConditionFields({ form, onChange, saved }: RuleConditionFiel
 
 	return (
 		<Card className="gap-0 p-0">
-			<div className="space-y-4 p-4">
+			<div className="grid items-start gap-4 p-4 md:grid-cols-3">
 				<Field className="items-stretch gap-1.5">
 					<FieldLabel>Alert when the value</FieldLabel>
 					<Select
@@ -128,7 +129,7 @@ export function RuleConditionFields({ form, onChange, saved }: RuleConditionFiel
 					)}
 				</Field>
 
-				<div className={cn("grid gap-3", rangeMode && "grid-cols-2")}>
+				<div className={cn("grid items-start gap-3", rangeMode && "grid-cols-2")}>
 					<NumberField
 						id="rule-threshold"
 						label={rangeMode ? "From" : "Threshold"}
@@ -183,8 +184,9 @@ export function RuleConditionFields({ form, onChange, saved }: RuleConditionFiel
 				</Field>
 			</div>
 
-			<div className="space-y-4 border-t p-4">
-				<p className="text-xs font-medium text-muted-foreground">How it is checked</p>
+			<div className="space-y-3 border-t p-4">
+				<Eyebrow as="h3">How it is checked</Eyebrow>
+				<div className="grid items-start gap-4 md:grid-cols-3">
 				<NumberField
 					id="rule-window-minutes"
 					label="Window"
@@ -212,6 +214,7 @@ export function RuleConditionFields({ form, onChange, saved }: RuleConditionFiel
 					previous={was((f) => f.minimumSampleCount)}
 					onChange={(value) => onChange((c) => ({ ...c, minimumSampleCount: value }))}
 				/>
+				</div>
 			</div>
 		</Card>
 	)

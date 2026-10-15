@@ -15,7 +15,11 @@ import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { RuleActionBar } from "@/components/alerts/rule-action-bar"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
-import { RuleConditionFields, describeRuleCondition } from "@/components/alerts/rule-condition-bar"
+import {
+	RuleConditionFields,
+	conditionSubject,
+	describeRuleCondition,
+} from "@/components/alerts/rule-condition-bar"
 import { RuleStep } from "@/components/alerts/rule-step"
 import { RuleLiveChartHero } from "@/components/alerts/rule-live-chart-hero"
 import { RuleNoiseSection } from "@/components/alerts/rule-noise-section"
@@ -36,7 +40,6 @@ import {
 	isRulePreviewReady,
 	pickDefaultDestination,
 	ruleToFormState,
-	signalLabels,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
 import { diffRuleForms, incidentsClearedByDraft } from "@/lib/alerts/preview-insights"
@@ -233,10 +236,11 @@ export function AlertCreateFormSurface({
 					{ label: editingRule ? "Edit rule" : "New rule" },
 				]}
 			>
-				<div className={cn("mx-auto w-full space-y-8", RULE_FORM_MAX_WIDTH)}>
+				<div className={cn("mx-auto w-full space-y-10", RULE_FORM_MAX_WIDTH)}>
 					<WidgetPrefillNoticeBanner notices={prefillNotices} />
 					<RuleStep
 						number={1}
+						divider={false}
 						title="What to watch"
 						hint="Pick a built-in signal, or build the query like a dashboard widget."
 						status="done"
@@ -252,43 +256,40 @@ export function AlertCreateFormSurface({
 					<RuleStep
 						number={2}
 						title="When to alert"
-						hint="The threshold draws on the chart. Shaded bands show when it would have fired."
+						hint="The dashed line is your threshold. Shaded bands show when the rule would have fired."
 						status={thresholdMissing ? "missing" : "done"}
 					>
-						<div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
-							<div className="space-y-4">
-								<RuleConditionFields form={ruleForm} onChange={setRuleForm} saved={savedForm} />
-								<RuleNoiseSection form={ruleForm} onChange={setRuleForm} />
-							</div>
-							<div className="min-w-0 lg:sticky lg:top-4">
-								<RuleLiveChartHero
-									form={ruleForm}
-									preview={preview}
-									previewLoading={previewLoading}
-									previewError={previewError}
-									onTestRule={() => void previewRule()}
-									testing={previewingRule}
-									previewResult={freshPreviewResult}
-									range={previewRange}
-									timeRange={previewTimeRange}
-									onTimeRangeChange={setPreviewTimeRange}
-									comparison={
-										savedForm !== null && changes.length > 0
-											? {
-													savedPreview: evaluationChanged ? savedReplay.preview : preview,
-													savedLoading: evaluationChanged && savedReplay.previewLoading,
-													changes,
-													clearedIncidents,
-												}
-											: null
-									}
-								/>
-							</div>
+						<div className="space-y-4">
+						<RuleLiveChartHero
+							form={ruleForm}
+							preview={preview}
+							previewLoading={previewLoading}
+							previewError={previewError}
+							onTestRule={() => void previewRule()}
+							testing={previewingRule}
+							previewResult={freshPreviewResult}
+							range={previewRange}
+							timeRange={previewTimeRange}
+							onTimeRangeChange={setPreviewTimeRange}
+							comparison={
+								savedForm !== null && changes.length > 0
+									? {
+											savedPreview: evaluationChanged ? savedReplay.preview : preview,
+											savedLoading: evaluationChanged && savedReplay.previewLoading,
+											changes,
+											clearedIncidents,
+										}
+									: null
+							}
+						/>
+							<RuleConditionFields form={ruleForm} onChange={setRuleForm} saved={savedForm} />
+							<RuleNoiseSection form={ruleForm} onChange={setRuleForm} />
 						</div>
 					</RuleStep>
-					<div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+					<div className="grid gap-6 border-t pt-8 lg:grid-cols-2 lg:items-start">
 						<RuleStep
 							number={3}
+							divider={false}
 							title="Who gets notified"
 							status={ruleForm.destinationIds.length === 0 ? "missing" : "done"}
 						>
@@ -308,6 +309,7 @@ export function AlertCreateFormSurface({
 						</RuleStep>
 						<RuleStep
 							number={4}
+							divider={false}
 							title="Name it"
 							status={ruleForm.name.trim().length === 0 ? "missing" : "done"}
 						>
@@ -423,7 +425,8 @@ function previewIdentityKey(form: RuleFormState): string {
 
 function makeSuggestedName(form: RuleFormState): string | null {
 	if (form.name.trim().length > 0) return null
-	const base = signalLabels[form.signalType]
+	const subject = conditionSubject(form)
+	const base = subject.charAt(0).toUpperCase() + subject.slice(1)
 	const queryGroupBy =
 		form.signalType === "builder_query" && form.queryBuilderDraft.addOns?.groupBy
 			? (form.queryBuilderDraft.groupBy ?? [])

@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react"
 
 import { Card } from "@maple/ui/components/ui/card"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import {
 	InputGroup,
@@ -11,7 +12,6 @@ import {
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 
-import { SectionHeading } from "@/components/common/section-heading"
 import { ruleFormIsGrouped, type RuleFormState } from "@/lib/alerts/form-utils"
 
 interface RuleNoiseSectionProps {
@@ -23,38 +23,40 @@ interface RuleNoiseSectionProps {
 export function RuleNoiseSection({ form, onChange }: RuleNoiseSectionProps) {
 	const grouped = ruleFormIsGrouped(form)
 	return (
-		<Card className="p-4">
-			<SectionHeading variant="eyebrow" id="rule-noise-heading" title="After it fires" />
-			<div className="space-y-3">
-				<NoiseRow
-					id="rule-consecutive-healthy"
-					label="Resolve after"
-					unit="healthy checks"
-					value={form.consecutiveHealthyRequired}
-					onChange={(value) => onChange((c) => ({ ...c, consecutiveHealthyRequired: value }))}
-				/>
-				<NoiseRow
-					id="rule-renotify"
-					label="Remind while open, every"
-					unit="min"
-					value={form.renotifyIntervalMinutes}
-					onChange={(value) => onChange((c) => ({ ...c, renotifyIntervalMinutes: value }))}
-				/>
-				<SettingRow
-					label="Alert when there is no data"
-					description={
-						grouped
-							? "Not available on split rules: a group that stops reporting keeps its incident open until telemetry returns."
-							: "Count an empty window as a breach. Off, those windows are skipped."
-					}
-					disabled={grouped}
-					control={
-						<Switch
-							checked={form.alertOnNoData && !grouped}
-							onCheckedChange={(checked) => onChange((c) => ({ ...c, alertOnNoData: checked }))}
-						/>
-					}
-				/>
+		<Card className="gap-0 p-0">
+			<div className="space-y-3 p-4">
+				<Eyebrow as="h3">After it fires</Eyebrow>
+				<div className="grid items-start gap-4 md:grid-cols-3">
+					<NoiseRow
+						id="rule-consecutive-healthy"
+						label="Resolve after"
+						unit="healthy checks"
+						value={form.consecutiveHealthyRequired}
+						onChange={(value) => onChange((c) => ({ ...c, consecutiveHealthyRequired: value }))}
+					/>
+					<NoiseRow
+						id="rule-renotify"
+						label="Remind while open, every"
+						unit="min"
+						value={form.renotifyIntervalMinutes}
+						onChange={(value) => onChange((c) => ({ ...c, renotifyIntervalMinutes: value }))}
+					/>
+					<SettingRow
+						label="Alert when there is no data"
+						description={
+							grouped
+								? "Not available on split rules: a quiet group keeps its incident open until data returns."
+								: "Count an empty window as a breach. Off, those windows are skipped."
+						}
+						disabled={grouped}
+						control={
+							<Switch
+								checked={form.alertOnNoData && !grouped}
+								onCheckedChange={(checked) => onChange((c) => ({ ...c, alertOnNoData: checked }))}
+							/>
+						}
+					/>
+				</div>
 			</div>
 		</Card>
 	)
