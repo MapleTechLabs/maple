@@ -96,21 +96,40 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // carries, the pill in the persistent top bar with its live clock, and the
 // hook's query and seen-flag atoms. The popover's panel and pointer are small
 // and render only while open, so nothing there is worth a lazy chunk.
-// 697.5 KB from the Google Cloud connectors (#1321, 2026-10-15): ~2.5 KB of
+// 699.5 KB from the Google Cloud connectors (#1321, 2026-10-15): ~2.5 KB of
 // startup measured in CI against main's 694.6 — the connector group's endpoints
 // and schemas on the v2 contract every page's client carries.
+<<<<<<< HEAD
 // 698.5 KB from the Google Cloud integration card (#1334, 2026-10-15): ~0.9 KB
 // of startup measured in CI against #1333's 697.3 from the card and its
 // contract additions.
-// 700.5 KB from the Infrastructure → Google Cloud page (#1336, 2026-10-15):
+<<<<<<< HEAD
+// 703.5 KB from the Infrastructure → Google Cloud page (#1336, 2026-10-15):
 // ~2 KB of startup measured in CI against #1335's 698.3 — the inventory
 // schemas on the contract, the connector status rules the sidebar and the
 // integrations hub read, and the Infrastructure nav entry with its icon. The
 // /infra/gcp pages stay in their route chunks.
+<<<<<<< HEAD
 // 701.5 KB from the PromQL query contract (#1475, 2026-10-15), measured in CI at 701.3.
+<<<<<<< HEAD
 // 702.5 KB from the connection access settings (#1477, 2026-10-15), measured in CI at 702.1.
-// 705 KB from the PromQL dashboard widget (#1480, 2026-10-15), measured in CI at 704.4.
-const maxGzipBytes = 705 * 1024
+<<<<<<< HEAD
+// 706 KB from the PromQL dashboard widget (#1480, 2026-10-15), measured in CI at 704.4.
+const maxGzipBytes = 706 * 1024
+=======
+const maxGzipBytes = 703.5 * 1024
+=======
+const maxGzipBytes = 703.5 * 1024
+=======
+const maxGzipBytes = 703.5 * 1024
+=======
+=======
+>>>>>>> origin/feat/gcp-metrics-poller
+const maxGzipBytes = 699.5 * 1024
+>>>>>>> origin/feat/gcp-dashboard-template
+>>>>>>> origin/feat/gcp-infra-page
+>>>>>>> origin/feat/gcp-promql-query
+>>>>>>> origin/feat/gcp-live-query-access
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
