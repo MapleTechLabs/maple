@@ -667,6 +667,15 @@ export const dirtyStoreRecoveryAdvice = (
 			`(${dim(availability.checkpointId)}), or \`${resetCommand}\` to wipe it.`
 		)
 	}
+	if (availability.reason === "other_build") {
+		const taken = `The last checkpoint (${dim(availability.checkpointId)}) was taken by another maple build, which this one cannot restore (${availability.detail}). `
+		return availability.restoreWith === null
+			? `${taken}Start fresh with \`${resetCommand}\`, which discards the live data.`
+			: taken +
+					`Restore it with maple ${availability.restoreWith}: \`${bold(mapleCommand(`update --tag v${availability.restoreWith}`, scope))}\`, ` +
+					`then \`${bold(mapleCommand("restore --yes", scope))}\`. ` +
+					`Or start fresh with \`${resetCommand}\`, which discards the live data.`
+	}
 	const why =
 		availability.reason === "none"
 			? "No checkpoint has ever been taken for this store, so there is nothing to restore from"
@@ -1841,8 +1850,14 @@ export const restore = Command.make("restore", {
 									? `no checkpoint exists under ${prettyPath(dataDir)}; nothing to restore. ` +
 										`Checkpoints are created by \`${bold(mapleCommand("checkpoint", scope))}\` while the server is running. ` +
 										`To start over from an unreadable store, use \`${bold(mapleCommand("start --reset", scope))}\`.`
-									: `the checkpoint registry under ${prettyPath(dataDir)} is unusable: ${availability.detail}. ` +
-										`Preserve it for inspection, or start over with \`${bold(mapleCommand("start --reset", scope))}\`.`,
+									: availability.reason === "other_build"
+										? `the last checkpoint under ${prettyPath(dataDir)} (${availability.checkpointId}) was taken by another maple build: ${availability.detail}. ` +
+											(availability.restoreWith === null
+												? `Start over with \`${bold(mapleCommand("start --reset", scope))}\`.`
+												: `Restore it with maple ${availability.restoreWith} (\`${bold(mapleCommand(`update --tag v${availability.restoreWith}`, scope))}\`), ` +
+													`or start over with \`${bold(mapleCommand("start --reset", scope))}\`.`)
+										: `the checkpoint registry under ${prettyPath(dataDir)} is unusable: ${availability.detail}. ` +
+											`Preserve it for inspection, or start over with \`${bold(mapleCommand("start --reset", scope))}\`.`,
 						})
 					}
 
