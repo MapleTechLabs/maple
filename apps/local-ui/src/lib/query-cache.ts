@@ -86,11 +86,14 @@ export const olderWindowUpdatedAt = (client: QueryClient, queryKey: QueryKey): n
 /** When the result `query` shows was fetched, if it is still an older window's stand-in. */
 export function standInSince(query: {
 	readonly queryHash: string
-	readonly state: { readonly data: unknown }
+	readonly state: { readonly data: unknown; readonly dataUpdatedAt: number }
 }): number | undefined {
 	const standIn = standIns.get(query.queryHash)
 	if (standIn === undefined) return undefined
-	if (standIn.data === query.state.data) return standIn.updatedAt
+	// Structural sharing keeps the reference when a refetch returns equal rows,
+	// but every successful fetch moves `dataUpdatedAt`.
+	if (standIn.data === query.state.data && query.state.dataUpdatedAt === standIn.updatedAt)
+		return standIn.updatedAt
 	standIns.delete(query.queryHash)
 	return undefined
 }

@@ -54,6 +54,20 @@ describe("windowed queries", () => {
 		unsubscribe()
 	})
 
+	it("stop being a stand-in when their own window returns the same rows", async () => {
+		const client = new LocalQueryClient()
+		const rows = [{ id: "same" }]
+		client.setQueryData(key("1h", anchor - MINUTE), rows, { updatedAt: anchor - MINUTE })
+		const observer = observe(client, () => Promise.resolve([{ id: "same" }]))
+		const unsubscribe = observer.subscribe(() => {})
+		await vi.waitFor(() => expect(observer.getCurrentResult().isFetching).toBe(false))
+		// Structural sharing kept the stand-in's reference for the equal result.
+		expect(observer.getCurrentResult().data).toBe(rows)
+		const query = client.getQueryCache().find({ queryKey: key("1h", anchor) })
+		expect(query && standInSince(query)).toBeUndefined()
+		unsubscribe()
+	})
+
 	it("never open on another range, other filters, or a later window", () => {
 		const client = new QueryClient()
 		client.setQueryData(key("6h", anchor - MINUTE), [{ id: "6h" }])
