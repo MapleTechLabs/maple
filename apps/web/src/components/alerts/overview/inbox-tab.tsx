@@ -51,7 +51,8 @@ export function InboxTab({
 
 	const held = sorted.filter((i) => i.holdReason !== null).length
 	const firing = sorted.length - held
-	const enabled = rules.filter((r) => r.enabled).length
+	const enabledRuleIds = rules.filter((r) => r.enabled).map((r) => r.id)
+	const enabled = enabledRuleIds.length
 	const disabled = rules.length - enabled
 	const quiet = sorted.length === 0
 
@@ -99,7 +100,7 @@ export function InboxTab({
 								lanes={lanes}
 								incidents={incidents}
 								range={timelineRange}
-								quietRules={rules.length}
+								enabledRuleIds={enabledRuleIds}
 							/>
 							<BlindSpotsList spots={spots} />
 						</div>
@@ -113,7 +114,7 @@ export function InboxTab({
 							lanes={lanes}
 							incidents={incidents}
 							range={timelineRange}
-							quietRules={rules.length}
+							enabledRuleIds={enabledRuleIds}
 						/>
 						<BlindSpotsList spots={spots} />
 					</div>
@@ -228,12 +229,13 @@ function FireStrip({
 	lanes,
 	incidents,
 	range,
-	quietRules,
+	enabledRuleIds,
 }: {
 	lanes: ReadonlyArray<FireLane>
 	incidents: ReadonlyArray<AlertIncidentDocument>
 	range: { readonly min: number; readonly max: number }
-	quietRules: number
+	/** Enabled rules only: a disabled rule is not "quiet", it is off. */
+	enabledRuleIds: ReadonlyArray<string>
 }) {
 	const inWindow = incidents.filter((i) => Date.parse(i.firstTriggeredAt) >= range.min)
 	const resolved = inWindow.filter((i) => i.resolvedAt !== null)
@@ -249,7 +251,15 @@ function FireStrip({
 					) / resolved.length,
 				)
 	const shown = lanes.slice(0, MAX_LANES)
-	const quiet = Math.max(0, quietRules - shown.length)
+	const fired = new Set(lanes.map((lane) => lane.ruleId))
+	const quiet = enabledRuleIds.filter((id) => !fired.has(id)).length
+	const hiddenFired = lanes.length - shown.length
+	const footer = [
+		hiddenFired > 0 ? `+ ${hiddenFired} more fired` : null,
+		quiet > 0 ? countLabel(quiet, "quiet rule") : null,
+	]
+		.filter((part) => part !== null)
+		.join(" · ")
 	const span = range.max - range.min
 
 	return (
@@ -305,7 +315,7 @@ function FireStrip({
 				</ul>
 			)}
 			<div className="grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 font-mono text-2xs text-muted-foreground">
-				<span>{quiet > 0 ? `+ ${countLabel(quiet, "quiet rule")}` : ""}</span>
+				<span>{footer}</span>
 				<div className="flex justify-between">
 					<span>{Math.round(span / HOUR_MS)}h ago</span>
 					<span>{Math.round(span / HOUR_MS / 2)}h ago</span>

@@ -2,7 +2,9 @@ import { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { blindSpots, fireLanes, ruleBucket, ruleHeadroom, ruleRibbon } from "./overview-derive"
+import { defaultRuleForm } from "./form-utils"
+import { blindSpots, fireLanes, ruleBucket, ruleConditionSummary, ruleHeadroom, ruleRibbon } from "./overview-derive"
+import { builtinToQueryDraft } from "./rule-modes"
 import type { DerivedRuleStatus } from "./rule-status"
 
 const decodeRule = Schema.decodeUnknownSync(AlertRuleDocument)
@@ -168,5 +170,16 @@ describe("blindSpots", () => {
 			[erroring.id, "error"],
 			[unrouted.id, "unrouted"],
 		])
+	})
+})
+
+describe("ruleConditionSummary", () => {
+	it("prints a builder error-rate threshold as a percent and names the aggregation", () => {
+		const rule = makeRule({
+			signalType: "builder_query",
+			threshold: 0.05,
+			queryBuilderDraft: builtinToQueryDraft(defaultRuleForm()),
+		})
+		expect(ruleConditionSummary(rule)).toBe("error rate > 5.0% · 5m")
 	})
 })

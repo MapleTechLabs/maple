@@ -1,6 +1,12 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 
-import { comparatorLabels, formatSignalValue, isRangeComparator, signalLabels } from "@/lib/alerts/form-utils"
+import {
+	comparatorLabels,
+	displaySignalType,
+	formatSignalValue,
+	isRangeComparator,
+	signalLabels,
+} from "@/lib/alerts/form-utils"
 import { type DerivedRuleStatus, needsAttention } from "@/lib/alerts/rule-status"
 
 /** The four mutually exclusive buckets the Rules tab filters by. */
@@ -16,13 +22,19 @@ export function ruleBucket(derived: DerivedRuleStatus | undefined): RuleBucket {
 
 /** "Error rate > 5% · 5m · per service.name · checkout" */
 export function ruleConditionSummary(rule: AlertRuleDocument): string {
+	// Builder rules format in the display unit (5%, not the stored 0.05) and name their aggregation.
+	const display = displaySignalType({
+		signalType: rule.signalType,
+		queryBuilderDraft: rule.queryBuilderDraft ?? undefined,
+	})
 	const threshold = isRangeComparator(rule.comparator)
-		? `${formatSignalValue(rule.signalType, rule.threshold)} and ${formatSignalValue(rule.signalType, rule.thresholdUpper)}`
-		: formatSignalValue(rule.signalType, rule.threshold)
-	const parts = [
-		`${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${threshold}`,
-		`${rule.windowMinutes}m`,
-	]
+		? `${formatSignalValue(display, rule.threshold)} and ${formatSignalValue(display, rule.thresholdUpper)}`
+		: formatSignalValue(display, rule.threshold)
+	const subject =
+		rule.signalType === "builder_query" && rule.queryBuilderDraft
+			? rule.queryBuilderDraft.aggregation.replaceAll("_", " ")
+			: signalLabels[rule.signalType]
+	const parts = [`${subject} ${comparatorLabels[rule.comparator]} ${threshold}`, `${rule.windowMinutes}m`]
 	if (rule.groupBy !== null) parts.push(`per ${rule.groupBy.join(", ")}`)
 	if (rule.serviceNames.length === 1) parts.push(rule.serviceNames[0] ?? "")
 	else if (rule.serviceNames.length > 1) parts.push(`${rule.serviceNames.length} services`)

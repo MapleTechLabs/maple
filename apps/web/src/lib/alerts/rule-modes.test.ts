@@ -74,6 +74,24 @@ describe("switching query modes", () => {
 		expect(back.notice).toContain("http.route = /v1/query")
 	})
 
+	it("says so when a split can't survive a named service", () => {
+		const draft = builtinToQueryDraft(builtin())
+		const form = builtin({
+			signalType: "builder_query",
+			queryBuilderDraft: {
+				...draft,
+				whereClause: 'service.name = "api"',
+				groupBy: ["http.route"],
+				addOns: { ...draft.addOns, groupBy: true },
+			},
+		})
+		const back = switchSignalKind(form, "builtin")
+
+		expect(back.form.serviceNames).toEqual(["api"])
+		expect(back.form.groupBy).toEqual([])
+		expect(back.notice).toContain("split by http.route")
+	})
+
 	it("reports a non-trace data source as dropped", () => {
 		const draft = builtinToQueryDraft(builtin())
 		const result = queryDraftToBuiltin(

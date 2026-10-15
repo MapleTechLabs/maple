@@ -111,6 +111,9 @@ export function queryDraftToBuiltin(form: RuleFormState): BuiltinFromDraft {
 	const groupTokens = draft.addOns.groupBy ? draft.groupBy.filter((t) => t !== "none" && t.length > 0) : []
 	// Several services already split per service; the token is implied, not a choice.
 	const groupBy = serviceNames.length > 1 ? groupTokens.filter((t) => t !== "service.name") : groupTokens
+	// Built-in splits per named service and cannot add another split on top, so say what goes.
+	const lostSplit = serviceNames.length > 0 ? groupBy.filter((t) => t !== "service.name") : []
+	if (lostSplit.length > 0) dropped.push(`split by ${lostSplit.join(", ")}`)
 
 	return {
 		fields: {
