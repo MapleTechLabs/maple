@@ -1,57 +1,31 @@
-import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
-import { countLabel } from "@maple/ui/lib/format"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 
-import { ColumnHead, DataTable, ROW_LINK_CLASS, type SortControls } from "@/components/common/data-table"
-import { FilteredEmpty } from "@/components/common/filtered-empty"
-import { SearchToolbar } from "@/components/common/search-toolbar"
+import { ColumnHead, DataTable, ROW_LINK_CLASS } from "@/components/common/data-table"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
-import { useSortState } from "@/hooks/use-table-sort"
 
 import { MetaLine } from "../primitives/meta-line"
 import { BAR_VALUE_TONE } from "../severity-tokens"
-import { FilterSelect } from "./gcp-resources"
-import {
-	GCP_INFRA_COLUMNS,
-	GCP_NAME_SORT,
-	formatGcpValue,
-	gcpHasRegion,
-	gcpWorkloadName,
-	gcpWorkloadNoun,
-	gcpWorkloadSearch,
-	sortGcpWorkloads,
-	type GcpColumn,
-	type GcpWorkload,
-} from "./tabs"
+import { GcpHealthDot, type GcpBandSpec } from "./gcp-bands"
+import { GCP_WORKLOAD_RULES, rowHealth, type GcpWorkloadRow, type GcpWorkloadScope } from "./list-model"
+import { GCP_INFRA_COLUMNS, formatGcpValue, gcpWorkloadId, gcpWorkloadSearch, type GcpColumn } from "./tabs"
 
 const NAME_WIDTH = "w-0 flex-1 min-w-[240px]"
 const VALUE_WIDTH = "w-[104px]"
 
 /** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
-function Columns({ service, sort }: { service: GcpInfraServiceId; sort?: SortControls<string> }) {
+function Columns({ service }: { service: GcpInfraServiceId }) {
 	return (
 		<>
-			<ColumnHead<string>
-				label={GCP_INFRA_SERVICES[service].identity[0][0]}
-				sortKey={GCP_NAME_SORT}
-				{...sort}
-				width={NAME_WIDTH}
-			/>
+			<div className="w-2 shrink-0" />
+			<ColumnHead label={GCP_INFRA_SERVICES[service].identity[0][0]} width={NAME_WIDTH} />
 			{GCP_INFRA_COLUMNS[service].map((spec) => (
-				<ColumnHead<string>
-					key={spec.label}
-					label={spec.label}
-					sortKey={spec.label}
-					{...sort}
-					align="right"
-					width={VALUE_WIDTH}
-				/>
+				<ColumnHead key={spec.label} label={spec.label} align="right" width={VALUE_WIDTH} />
 			))}
 		</>
 	)
@@ -64,6 +38,7 @@ export function GcpServiceTableLoading({ service }: { service: GcpInfraServiceId
 				<Columns service={service} />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={5}>
+				<div className="w-2 shrink-0" />
 				<div className={NAME_WIDTH}>
 					<Skeleton className="h-4 w-40" />
 					<Skeleton className="mt-1.5 h-3 w-28" />
@@ -85,157 +60,68 @@ export function gcpValueClass(spec: GcpColumn, value: number | undefined): strin
 	return "text-foreground/80"
 }
 
-interface GcpPlaceFilter {
-	readonly project?: string | undefined
-	readonly region?: string | undefined
-}
-
 /**
- * One service's workloads over the window: searchable, filtered by project and region,
- * sortable by any column. A row opens the workload's page.
+ * The workloads of a service without a list of its own (GKE containers, VMs, URL maps): its
+ * curated columns, rows already ordered problems first. A row opens the workload's page.
  */
 export function GcpServiceTable({
 	service,
-	workloads,
-	truncated,
-	failed,
-	query,
-	place,
-	projects,
-	regions,
-	onQueryChange,
-	onPlaceChange,
+	rows,
+	spec,
+	emptyMessage,
 	timeSearch,
 	waiting,
 }: {
 	service: GcpInfraServiceId
-	/** The service's workloads in the selected project and region. */
-	workloads: ReadonlyArray<GcpWorkload>
-	/** The tab's query hit its row cap. */
-	truncated: boolean
-	/** The tab's query failed. */
-	failed: boolean
-	query: string
-	place: GcpPlaceFilter
-	/** The projects and regions of every service's workloads: the filters' options. */
-	projects: ReadonlyArray<string>
-	regions: ReadonlyArray<string>
-	onQueryChange: (query: string) => void
-	onPlaceChange: (place: GcpPlaceFilter) => void
+	rows: ReadonlyArray<GcpWorkloadRow>
+	spec: GcpBandSpec<GcpWorkloadScope>
+	emptyMessage: string
 	timeSearch: TimeRangeSearch
 	waiting?: boolean
 }) {
 	const { title, identity } = GCP_INFRA_SERVICES[service]
 	const columns = GCP_INFRA_COLUMNS[service]
-	const noun = gcpWorkloadNoun(service)
-	const { sortKey, sortDir, handleSort } = useSortState<string>({
-		initialKey: columns[0].label,
-		stringKeys: [GCP_NAME_SORT],
-	})
-
-	const needle = query.trim().toLowerCase()
-	const shown = useMemo(() => {
-		const matching = workloads.filter(
-			(workload) => needle === "" || workload.keys.join(" ").toLowerCase().includes(needle),
-		)
-		return sortGcpWorkloads(service, matching, { key: sortKey ?? GCP_NAME_SORT, dir: sortDir })
-	}, [service, workloads, needle, sortKey, sortDir])
-	// The service has workloads (or a place filter hides them), and the search or filters left none.
-	const filteredOut =
-		shown.length === 0 &&
-		!failed &&
-		(workloads.length > 0 || place.project !== undefined || place.region !== undefined)
-
 	return (
-		<div className="space-y-4">
-			<SearchToolbar
-				value={query}
-				onChange={onQueryChange}
-				placeholder={`Search ${title}…`}
-				trailing={
-					shown.length === workloads.length
-						? countLabel(workloads.length, noun)
-						: `${shown.length} of ${countLabel(workloads.length, noun)}`
-				}
-			>
-				{projects.length > 1 || place.project !== undefined ? (
-					<FilterSelect
-						label="Project"
-						allLabel="All projects"
-						options={projects.map((project) => ({ value: project, label: project }))}
-						value={place.project}
-						onChange={(project) => onPlaceChange({ ...place, project })}
-					/>
-				) : null}
-				{/* A subscription and a URL map are global: no region to filter them by. */}
-				{(gcpHasRegion(service) && regions.length > 1) || place.region !== undefined ? (
-					<FilterSelect
-						label="Region"
-						allLabel="All regions"
-						options={regions.map((region) => ({ value: region, label: region }))}
-						value={place.region}
-						onChange={(region) => onPlaceChange({ ...place, region })}
-					/>
-				) : null}
-			</SearchToolbar>
-			{filteredOut ? (
-				<FilteredEmpty noun={`${noun}s`} description="Clear the search or filters to see them all." />
-			) : (
-				<DataTable.Root ariaLabel={title} waiting={waiting}>
-					<DataTable.Head>
-						<Columns
-							service={service}
-							sort={{ currentKey: sortKey, dir: sortDir, onSort: handleSort }}
+		<DataTable.Root ariaLabel={title} waiting={waiting}>
+			<DataTable.Head>
+				<Columns service={service} />
+			</DataTable.Head>
+			{rows.length === 0 ? <DataTable.Empty>{emptyMessage}</DataTable.Empty> : null}
+			{rows.map((row) => (
+				<Link
+					key={gcpWorkloadId(row.keys)}
+					to="/infra/gcp/$service/$name"
+					params={{ service, name: row.keys[0] }}
+					search={{ ...timeSearch, ...gcpWorkloadSearch(service, row.keys) }}
+					className={ROW_LINK_CLASS}
+				>
+					<GcpHealthDot spec={spec} health={rowHealth(GCP_WORKLOAD_RULES, row)} />
+					<div className={NAME_WIDTH}>
+						<div className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
+							{row.name}
+						</div>
+						<MetaLine
+							items={row.keys.slice(1)}
+							title={identity
+								.slice(1)
+								.map(([label], index) => `${label}: ${row.keys[index + 1]}`)
+								.join(" · ")}
 						/>
-					</DataTable.Head>
-					{shown.length === 0 ? (
-						<DataTable.Empty>
-							{failed
-								? `Maple could not read the ${title} metrics. Reload to try again.`
-								: `No ${title} metrics in this time range.`}
-						</DataTable.Empty>
-					) : null}
-					{shown.map((workload) => (
-						<Link
-							key={workload.keys.join("\u0000")}
-							to="/infra/gcp/$service/$name"
-							params={{ service, name: workload.keys[0] }}
-							search={{ ...timeSearch, ...gcpWorkloadSearch(service, workload.keys) }}
-							className={ROW_LINK_CLASS}
+					</div>
+					{columns.map((column, index) => (
+						<div
+							key={column.label}
+							className={cn(
+								"text-right font-mono text-xs tabular-nums",
+								VALUE_WIDTH,
+								gcpValueClass(column, row.workload.values[index]),
+							)}
 						>
-							<div className={NAME_WIDTH}>
-								<div className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
-									{gcpWorkloadName(service, workload.keys)}
-								</div>
-								<MetaLine
-									items={workload.keys.slice(1)}
-									title={identity
-										.slice(1)
-										.map(([label], index) => `${label}: ${workload.keys[index + 1]}`)
-										.join(" · ")}
-								/>
-							</div>
-							{columns.map((spec, index) => (
-								<div
-									key={spec.label}
-									className={cn(
-										"text-right font-mono text-xs tabular-nums",
-										VALUE_WIDTH,
-										gcpValueClass(spec, workload.values[index]),
-									)}
-								>
-									{formatGcpValue(spec.format, workload.values[index])}
-								</div>
-							))}
-						</Link>
+							{formatGcpValue(column.format, row.workload.values[index])}
+						</div>
 					))}
-				</DataTable.Root>
-			)}
-			{truncated ? (
-				<p className="text-xs text-muted-foreground">
-					This list is cut off: it shows the first workloads by name.
-				</p>
-			) : null}
-		</div>
+				</Link>
+			))}
+		</DataTable.Root>
 	)
 }

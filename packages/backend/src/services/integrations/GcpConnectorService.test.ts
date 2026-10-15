@@ -437,9 +437,33 @@ describe("GcpConnectorService", () => {
 						displayName: "shown",
 						state: "ACTIVE",
 						labels: { team: "core" },
+						details: null,
 					},
 				])
 				assert.strictEqual(services.total, 1)
+
+				// A Cloud SQL instance carries the settings the sync read.
+				const settings = {
+					databaseVersion: "POSTGRES_15",
+					edition: "ENTERPRISE",
+					tier: "db-custom-4-16384",
+					cpus: 4,
+					memoryGb: 16,
+					availabilityType: "REGIONAL",
+					primary: null,
+					diskSizeGb: 100,
+					queryInsightsEnabled: true,
+					maxConnections: 500,
+					maxConnectionsSource: "default",
+				} as const
+				yield* Effect.promise(() =>
+					executeSql(testDb, `UPDATE gcp_resources SET details = $1 WHERE asset_type = $2`, [
+						JSON.stringify(settings),
+						SQL,
+					]),
+				)
+				const [instance] = (yield* gcp.resources(orgId, { assetType: SQL })).resources
+				assert.deepStrictEqual(instance?.details, settings)
 				// The filter's options do not narrow with it.
 				assert.deepStrictEqual(services.types, all.types)
 				assert.deepStrictEqual(services.projects, all.projects)

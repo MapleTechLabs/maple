@@ -2,14 +2,16 @@
  * Google Cloud metrics and resource poller. Each alerting tick reads the curated Cloud Monitoring
  * metrics (`@maple/domain/gcp-metrics`) of every connector with metrics enabled, at the
  * connector's scope (project, folder or organization), and ships them to the ingest gateway as
- * OTLP. Hourly it also syncs the scope's resource inventory into `gcp_resources`.
+ * OTLP; of Query Insights' per-statement series it keeps each instance's top statements of the
+ * window. Hourly it also syncs the scope's resource inventory into `gcp_resources`, with each
+ * Cloud SQL instance's settings.
  *
  * Work per tick is bounded: connectors are taken least recently polled first, a few per
  * organization, until the tick's call or time budget runs out. A window is read again only when
  * nothing of it was ingested; the exceptions are an ingest failure and the hard timeout, which
  * repeat what a poll had already flushed.
  */
-import { GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
+import { GCP_METRIC_GROUPS, type GcpMetric, type GcpMetricGroup } from "@maple/domain/gcp-metrics"
 import { IntegrationsPersistenceError, UserId } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -27,14 +29,25 @@ import {
 	GcpApiError,
 	importServiceAccountKey,
 	impersonateReader,
+	listSqlInstancesPage,
 	listTimeSeriesPage,
 	RESOURCE_PAGE_SIZE,
 	searchResourcesPage,
 	type GcpReader,
+	type GcpSqlInstanceData,
+	type GcpTimeSeries,
 	type GcpTimeSeriesQuery,
 } from "./gcp/api"
+import { gcpSqlSettings } from "./gcp/cloud-sql"
 import { describeGcpApiError, RETRIES } from "./gcp/explain"
-import { mapGcpResource, mapGcpTimeSeries, type GcpMetricRows } from "./gcp/mapping"
+import {
+	gcpTopKey,
+	gcpTopSeries,
+	mapGcpResource,
+	mapGcpTimeSeries,
+	type GcpMetricRows,
+	type GcpTopGroup,
+} from "./gcp/mapping"
 
 const MINUTE_MS = 60_000
 const TICK_MS = 5 * MINUTE_MS
@@ -67,7 +80,35 @@ const FLUSH_ROWS = 5_000
 const BILLING_HOLD_MS = 60 * MINUTE_MS
 const RESOURCE_SYNC_INTERVAL_MS = 60 * MINUTE_MS
 
-const METRICS = GCP_METRIC_GROUPS.flatMap((group) => group.metrics.map((metric) => ({ group, metric })))
+const METRIC_COUNT = GCP_METRIC_GROUPS.reduce((sum, group) => sum + group.metrics.length, 0)
+
+/**
+ * What a poll reads in turn: a metric on its own, or a top group as one, its ranking metric
+ * first: the rest are read for the series it keeps.
+ */
+type MetricRead =
+	| { readonly group: GcpMetricGroup; readonly metric: GcpMetric }
+	| { readonly group: GcpTopGroup; readonly ranking: GcpMetric; readonly rest: ReadonlyArray<GcpMetric> }
+const READS = GCP_METRIC_GROUPS.flatMap((group): ReadonlyArray<MetricRead> => {
+	const top = group.top
+	return top === undefined
+		? group.metrics.map((metric) => ({ group, metric }))
+		: group.metrics
+				.filter((metric) => metric.name === top.by)
+				.map((ranking) => ({
+					group: { ...group, top },
+					ranking,
+					rest: group.metrics.filter((metric) => metric !== ranking),
+				}))
+})
+
+/** How one metric query went: answered in full or cut short, failed, or not run for a budget. */
+type ReadOutcome = boolean | GcpApiError | "skipped"
+type Read = readonly [GcpMetric, ReadOutcome]
+
+/** No access, or out of quota: every remaining query would fail the same way. */
+const halts = (outcome: ReadOutcome) =>
+	typeof outcome === "object" && (outcome.kind === "denied" || outcome.kind === "rate_limited")
 
 const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-gcp-metrics")
 
@@ -223,6 +264,38 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 			)
 
 			/**
+			 * Each Cloud SQL instance's settings onto its inventory row, which the search does not
+			 * answer. An instance the search did not return has no row to update.
+			 */
+			const syncSqlSettings = Effect.fnUntraced(function* (
+				connector: GcpConnectorRow,
+				tick: Tick,
+				scope: string,
+				reader: GcpReader,
+			) {
+				const instances: Array<{ readonly name: string; readonly data: GcpSqlInstanceData }> = []
+				let pageToken: string | undefined
+				for (let page = 0; page < MAX_RESOURCE_PAGES; page++) {
+					const body = yield* listSqlInstancesPage(tick.httpClient, reader, scope, pageToken)
+					for (const asset of body.assets ?? []) {
+						const data = asset.resource?.data
+						if (data !== undefined) instances.push({ name: asset.name, data })
+					}
+					pageToken = body.nextPageToken
+					if (pageToken === undefined) break
+				}
+				for (const [name, details] of gcpSqlSettings(instances)) {
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(GcpResources)
+								.set({ details })
+								.where(($) => [$.connectorId.eq(connector.id), $.name.eq(name)]),
+						),
+					)
+				}
+			})
+
+			/**
 			 * Replace the connector's inventory with what the scope holds now. Returns why it is
 			 * incomplete, or null. Rows the sync did not return are removed only once every page
 			 * was read.
@@ -234,8 +307,9 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				reader: GcpReader,
 			) {
 				const lastSeenAt = tick.now
+				let complete = false
 				let pageToken: string | undefined
-				for (let page = 0; page < MAX_RESOURCE_PAGES; page++) {
+				for (let page = 0; page < MAX_RESOURCE_PAGES && !complete; page++) {
 					const body = yield* searchResourcesPage(tick.httpClient, reader, scope, pageToken)
 					// Keyed by name: one statement cannot upsert the same row twice.
 					const rows = new Map(
@@ -283,9 +357,11 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 								]),
 							),
 						)
-						return null
+						complete = true
 					}
 				}
+				yield* syncSqlSettings(connector, tick, scope, reader)
+				if (complete) return null
 				return `The ${connector.scopeType} holds more than ${(MAX_RESOURCE_PAGES * RESOURCE_PAGE_SIZE).toLocaleString("en-US")} resources, so the resource list is incomplete. Metrics are unaffected. For a full list, ${whenTooLarge(connector)}.`
 			})
 
@@ -359,31 +435,105 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 
 					let buffer: GcpMetricRows = { sumRows: [], gaugeRows: [] }
 					let rowsIngested = 0
-					/** One metric, page by page; false when pages were left unread. */
-					const readMetric = Effect.fnUntraced(function* (query: GcpTimeSeriesQuery) {
-						let pageToken: string | undefined
-						for (let page = 0; page < MAX_PAGES_PER_METRIC; page++) {
-							if (page > 0 && (yield* outOfBudget)) return false
-							const body = yield* listTimeSeriesPage(
-								tick.httpClient,
-								reader,
-								query,
-								pageToken,
-							).pipe(
-								// One more try rides out a blip; a query that keeps failing is skipped.
-								Effect.retry({ times: 1, while: (error) => error.kind === "upstream" }),
-							)
-							const rows = mapGcpTimeSeries(query, body.timeSeries ?? [])
-							buffer.sumRows.push(...rows.sumRows)
-							buffer.gaugeRows.push(...rows.gaugeRows)
-							if (buffer.sumRows.length + buffer.gaugeRows.length >= FLUSH_ROWS) {
-								rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, buffer)
-								buffer = { sumRows: [], gaugeRows: [] }
-							}
-							pageToken = body.nextPageToken
-							if (pageToken === undefined) return true
+					/** A page's rows of one metric, `keep`'s series only; shipped once enough are buffered. */
+					const store = Effect.fnUntraced(function* (
+						query: GcpTimeSeriesQuery,
+						series: ReadonlyArray<GcpTimeSeries>,
+						keep?: (series: GcpTimeSeries) => boolean,
+					) {
+						const rows = mapGcpTimeSeries(
+							query,
+							keep === undefined ? series : series.filter(keep),
+						)
+						buffer.sumRows.push(...rows.sumRows)
+						buffer.gaugeRows.push(...rows.gaugeRows)
+						if (buffer.sumRows.length + buffer.gaugeRows.length >= FLUSH_ROWS) {
+							rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, buffer)
+							buffer = { sumRows: [], gaugeRows: [] }
 						}
-						return false
+					})
+					/**
+					 * One metric, page by page, each page's series through `read`; false when pages were
+					 * left unread. A Google failure is the outcome, not an error.
+					 */
+					const readMetric = <E>(
+						query: GcpTimeSeriesQuery,
+						read: (series: ReadonlyArray<GcpTimeSeries>) => Effect.Effect<void, E>,
+					) =>
+						Effect.gen(function* () {
+							let pageToken: string | undefined
+							for (let page = 0; page < MAX_PAGES_PER_METRIC; page++) {
+								if (page > 0 && (yield* outOfBudget)) return false
+								const body = yield* listTimeSeriesPage(
+									tick.httpClient,
+									reader,
+									query,
+									pageToken,
+								).pipe(
+									// One more try rides out a blip; a query that keeps failing is skipped.
+									Effect.retry({ times: 1, while: (error) => error.kind === "upstream" }),
+								)
+								yield* read(body.timeSeries ?? [])
+								pageToken = body.nextPageToken
+								if (pageToken === undefined) return true
+							}
+							return false
+						}).pipe(
+							Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
+								Effect.succeed(error),
+							),
+						)
+
+					/** One metric on its own. */
+					const readOne = Effect.fnUntraced(function* (group: GcpMetricGroup, metric: GcpMetric) {
+						if (yield* outOfBudget) return "skipped" as const
+						const query = { scope, group, metric, ...window }
+						return yield* readMetric(query, (series) => store(query, series))
+					})
+
+					/**
+					 * A top group: its ranking metric in full, then the rest for the series the ranking
+					 * kept. A ranking that failed leaves the rest unread; one that kept nothing leaves
+					 * nothing to read.
+					 */
+					const readTop = Effect.fnUntraced(function* (
+						group: GcpTopGroup,
+						ranking: GcpMetric,
+						rest: ReadonlyArray<GcpMetric>,
+					) {
+						if (yield* outOfBudget) {
+							return [ranking, ...rest].map((metric): Read => [metric, "skipped"])
+						}
+						const query = { scope, group, metric: ranking, ...window }
+						const series: Array<GcpTimeSeries> = []
+						const ranked = yield* readMetric(query, (page) =>
+							Effect.sync(() => {
+								series.push(...page)
+							}),
+						)
+						if (typeof ranked !== "boolean") {
+							// A type that never had data in the scope has nothing to rank.
+							const nothing =
+								ranked.kind === "not_found" ? rest.map((metric): Read => [metric, true]) : []
+							return [[ranking, ranked] satisfies Read, ...nothing]
+						}
+						const kept = gcpTopSeries(group, series)
+						const keep = (item: GcpTimeSeries) => kept.has(gcpTopKey(group, item))
+						yield* store(query, series, keep)
+						const reads: Array<Read> = [[ranking, ranked]]
+						for (const metric of rest) {
+							if (kept.size === 0) {
+								reads.push([metric, true])
+							} else if (yield* outOfBudget) {
+								reads.push([metric, "skipped"])
+							} else {
+								const next = { scope, group, metric, ...window }
+								const outcome = yield* readMetric(next, (page) => store(next, page, keep))
+								reads.push([metric, outcome])
+								if (halts(outcome)) break
+							}
+						}
+						return reads
 					})
 
 					/** Queries answered in full, cut short at a budget, and not started because of one. */
@@ -391,29 +541,27 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					let partial = 0
 					let skipped = 0
 					let firstFailure: { readonly type: string; readonly error: GcpApiError } | undefined
-					// A different metric goes first each tick, so a scope that always runs out of
-					// budget does not lose the same ones every time.
-					const first = Math.floor(window.endMs / TICK_MS) % METRICS.length
-					for (const { group, metric } of [...METRICS.slice(first), ...METRICS.slice(0, first)]) {
-						if (yield* outOfBudget) {
-							skipped += 1
-							continue
+					// A different read goes first each tick, so a scope that always runs out of budget
+					// does not lose the same ones every time.
+					const first = Math.floor(window.endMs / TICK_MS) % READS.length
+					for (const read of [...READS.slice(first), ...READS.slice(0, first)]) {
+						const reads: ReadonlyArray<Read> =
+							"metric" in read
+								? [[read.metric, yield* readOne(read.group, read.metric)] as const]
+								: yield* readTop(read.group, read.ranking, read.rest)
+						for (const [metric, outcome] of reads) {
+							if (outcome === "skipped") {
+								skipped += 1
+							} else if (outcome === false) {
+								partial += 1
+							} else if (outcome === true || outcome.kind === "not_found") {
+								// Cloud Monitoring answers 404 for a type that never had data in the scope.
+								complete += 1
+							} else {
+								firstFailure ??= { type: metric.type, error: outcome }
+							}
 						}
-						const result = yield* readMetric({ scope, group, metric, ...window }).pipe(
-							Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
-								Effect.succeed(error),
-							),
-						)
-						if (result === false) {
-							partial += 1
-						} else if (result === true || result.kind === "not_found") {
-							// Cloud Monitoring answers 404 for a type that never had data in the scope.
-							complete += 1
-						} else {
-							firstFailure ??= { type: metric.type, error: result }
-							// No access, or out of quota: every remaining query would fail the same way.
-							if (result.kind === "denied" || result.kind === "rate_limited") break
-						}
+						if (reads.some(([, outcome]) => halts(outcome))) break
 					}
 					// Nothing answered and nothing shipped: the window is left for the next poll.
 					if (rowsIngested === 0 && complete + partial === 0) {
@@ -422,20 +570,20 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, buffer)
 
 					const incomplete = partial + skipped
-					const failed = METRICS.length - complete - incomplete
+					const failed = METRIC_COUNT - complete - incomplete
 					// The note that ends in Google's status goes last.
 					const notes = [
 						...(incomplete === 0
 							? []
 							: [
-									`${incomplete} of ${METRICS.length} metric queries were not read in full: the ${connector.scopeType} holds more series than one read takes. To collect all of it, ${whenTooLarge(connector)}.`,
+									`${incomplete} of ${METRIC_COUNT} metric queries were not read in full: the ${connector.scopeType} holds more series than one read takes. To collect all of it, ${whenTooLarge(connector)}.`,
 								]),
 						...(firstFailure === undefined
 							? []
 							: [
 									firstFailure.error.kind === "rate_limited"
 										? describeGcpApiError(firstFailure.error, connector)
-										: `${failed} of ${METRICS.length} metric queries failed, first ${firstFailure.type}. The rest were stored. ${RETRIES} (${firstFailure.error.message})`,
+										: `${failed} of ${METRIC_COUNT} metric queries failed, first ${firstFailure.type}. The rest were stored. ${RETRIES} (${firstFailure.error.message})`,
 								]),
 					]
 					yield* updateConnector(connector.id, {
