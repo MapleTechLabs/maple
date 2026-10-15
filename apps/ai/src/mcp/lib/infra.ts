@@ -8,8 +8,8 @@ import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/quer
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import type { InfraEntityRow, InfraKind, InfraKindSection, InfraSeriesStats } from "@maple/domain/mcp-outputs"
 
-export type WorkloadKind = "deployment" | "statefulset" | "daemonset"
-export const WORKLOAD_KINDS: ReadonlyArray<WorkloadKind> = ["deployment", "statefulset", "daemonset"]
+export type WorkloadKind = "deployment" | "statefulset" | "daemonset" | "job"
+export const WORKLOAD_KINDS: ReadonlyArray<WorkloadKind> = ["deployment", "statefulset", "daemonset", "job"]
 
 export interface InfraWindow {
 	readonly startTime: string

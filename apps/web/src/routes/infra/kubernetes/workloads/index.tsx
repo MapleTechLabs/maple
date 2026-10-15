@@ -199,7 +199,7 @@ function WorkloadsPage() {
 							<InfraSetupEmpty
 								icon={<GridIcon size={16} />}
 								title={`No ${kindOption.label} reporting yet`}
-								description="Maple aggregates pod metrics by k8s.deployment.name, k8s.statefulset.name, and k8s.daemonset.name. If the Helm chart is not installed yet, install it so the k8sattributes processor can tag pod metrics with their workload. If it is, try another workload kind."
+								description="Maple aggregates pod metrics by k8s.deployment.name, k8s.statefulset.name, k8s.daemonset.name, and k8s.job.name. If the Helm chart is not installed yet, install it so the k8sattributes processor can tag pod metrics with their workload. If it is, try another workload kind."
 								installTab="kubernetes"
 								actionLabel="Install the Helm chart"
 								docs="kubernetes"
@@ -260,7 +260,7 @@ function WorkloadsPage() {
 							<FleetBand
 								total={workloads.length}
 								noun={kindOption.label.slice(0, -1).toLowerCase()}
-								caption="share of the fleet by average utilization"
+								caption="share of the fleet by its busiest pod's peak"
 								segments={[
 									{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 									{
