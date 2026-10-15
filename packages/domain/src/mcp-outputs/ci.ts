@@ -68,6 +68,8 @@ export const CiRunsOutput = Schema.Struct({
 	runs: Schema.Array(CiRunRow),
 	/** Runs read for the summary; when it hits the cap, older runs are not counted. */
 	runsRead: Schema.Number,
+	/** Runs read that pass the `result` filter, of which `runs` lists the newest `limit`. */
+	runsMatched: Schema.Number,
 	summaryCapped: Schema.Boolean,
 	/** The failed-jobs read hit its cap, so some failed runs may list fewer jobs than failed. */
 	failedJobsCapped: Schema.optionalKey(Schema.Boolean),

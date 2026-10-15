@@ -104,7 +104,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 
 			// The result filter narrows the listed runs only: the red analysis needs the passing runs
 			// around a failure streak to name its last green commit.
-			const { runs, listed, failedJobs, failedJobsCap } = yield* withTenantExecutor(
+			const { runs, matched, listed, failedJobs, failedJobsCap } = yield* withTenantExecutor(
 				Effect.gen(function* () {
 					const executor = yield* WarehouseExecutor
 					const window = { orgId: executor.orgId, startTime: st, endTime: et }
@@ -120,9 +120,10 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 						),
 						{ profile: "list", context: "ciRuns" },
 					)
-					const listed = runs
-						.filter((run) => params.result === undefined || run.result === params.result)
-						.slice(0, params.limit)
+					const matched = runs.filter(
+						(run) => params.result === undefined || run.result === params.result,
+					)
+					const listed = matched.slice(0, params.limit)
 					const failedIds = listed.filter((run) => FAILED.has(run.result)).map((run) => run.traceId)
 					const failedJobs =
 						failedIds.length === 0
@@ -137,7 +138,13 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 									),
 									{ profile: "list", context: "ciFailedJobs" },
 								)
-					return { runs, listed, failedJobs, failedJobsCap: failedIds.length * FAILED_JOBS_PER_RUN }
+					return {
+						runs,
+						matched,
+						listed,
+						failedJobs,
+						failedJobsCap: failedIds.length * FAILED_JOBS_PER_RUN,
+					}
 				}),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
 			yield* Effect.annotateCurrentSpan("result.rowCount", runs.length)
@@ -174,6 +181,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 						})),
 				})),
 				runsRead: runs.length,
+				runsMatched: matched.length,
 				summaryCapped: runs.length >= SUMMARY_CAP,
 				...(failedJobs.length > 0 && failedJobs.length >= failedJobsCap
 					? { failedJobsCapped: true }
@@ -329,8 +337,8 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 								),
 							]),
 				],
-				...(filters.result === undefined && output.runs.length < output.runsRead
-					? { truncation: { shown: output.runs.length, total: output.runsRead, noun: "runs" } }
+				...(output.runs.length < output.runsMatched
+					? { truncation: { shown: output.runs.length, total: output.runsMatched, noun: "runs" } }
 					: undefined),
 				next,
 			}

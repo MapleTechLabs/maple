@@ -81,6 +81,18 @@ describe("ci_runs", () => {
 		expect(output.pipelines.find((p) => p.pipeline === "CI")?.red?.lastGreenRevision).toBe(CI_WORLD.base)
 	})
 
+	it("says how many runs matched the result filter when the limit cut some off", async () => {
+		const result = await runToolDirect(member, "ci_runs", {
+			repository: "shop",
+			result: "failure",
+			limit: 1,
+		})
+		const output = decode(CiRunsOutput, result)
+		expect(output.runs).toHaveLength(1)
+		expect(output.runsMatched).toBe(3)
+		expect(markdown(result)).toContain("1 of 3 runs")
+	})
+
 	it("keeps the workflow summary when the result filter matches no run", async () => {
 		const result = await runToolDirect(member, "ci_runs", { repository: "shop", result: "cancellation" })
 		const output = decode(CiRunsOutput, result)
