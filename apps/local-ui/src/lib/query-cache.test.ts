@@ -102,6 +102,18 @@ describe("saved query cache", () => {
 		expect(restored.getQueryData(key("1h", anchor - 3 * MINUTE))).toEqual(rows)
 		expect(olderWindowData(restored, key("1h", anchor))).toEqual(rows)
 
+		const saved = JSON.parse(storage.get("cache") ?? "{}")
+		saved.entries.unshift({
+			key: ["local", "corrupt"],
+			data: { $t: "bigint", v: "abc" },
+			updatedAt: anchor,
+		})
+		storage.set("cache", JSON.stringify(saved))
+		const withCorrupt = new QueryClient()
+		restoreQueryCache(withCorrupt, "cache", anchor)
+		expect(withCorrupt.getQueryData(["local", "corrupt"])).toBeUndefined()
+		expect(withCorrupt.getQueryData(key("1h", anchor - 3 * MINUTE))).toEqual(rows)
+
 		const dayLater = new QueryClient()
 		restoreQueryCache(dayLater, "cache", anchor + 25 * 60 * MINUTE)
 		expect(dayLater.getQueryData(key("1h", anchor - 3 * MINUTE))).toBeUndefined()

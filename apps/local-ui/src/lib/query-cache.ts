@@ -171,9 +171,15 @@ export function restoreQueryCache(client: QueryClient, storageKey: string, now =
 	if (Option.isNone(saved)) return
 	for (const entry of saved.value.entries) {
 		if (now - entry.updatedAt > MAX_AGE_MS) continue
-		const queryKey = entry.key.map(decodeCacheValue)
+		// Storage can hold edited or corrupt values (`BigInt("abc")` throws); skip that entry, not startup.
+		const decoded = trySync(() => ({
+			queryKey: entry.key.map(decodeCacheValue),
+			data: decodeCacheValue(entry.data),
+		}))
+		if (Option.isNone(decoded)) continue
+		const { queryKey, data } = decoded.value
 		if (client.getQueryState(queryKey)?.data !== undefined) continue
-		client.setQueryData(queryKey, decodeCacheValue(entry.data), { updatedAt: entry.updatedAt })
+		client.setQueryData(queryKey, data, { updatedAt: entry.updatedAt })
 	}
 }
 
