@@ -65,6 +65,17 @@ describe("computeServiceShares", () => {
 		expect(computeServiceShares([])).toEqual([])
 	})
 
+	it("leaves an unparseable span's subtree to the parent instead of splitting with it", () => {
+		const broken: SpectrumSpan = {
+			serviceName: "bad",
+			startTime: "nope",
+			durationMs: 50,
+			children: [span("db", 10, 50)],
+		}
+		const shares = computeServiceShares([span("api", 0, 100, [broken])])
+		expect(shares.map((s) => [s.serviceName, s.durationMs])).toEqual([["api", 100]])
+	})
+
 	it("ignores spans with unparseable start times", () => {
 		const shares = computeServiceShares([
 			span("api", 0, 100),

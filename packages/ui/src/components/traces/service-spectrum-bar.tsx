@@ -56,16 +56,12 @@ export function computeServiceShares(rootSpans: ReadonlyArray<SpectrumSpan>): Ar
 	const visit = (span: SpectrumSpan) => {
 		if (!span.isMissing) {
 			const start = spanStartMs(span)
-			if (!Number.isNaN(start)) {
-				services.add(span.serviceName)
-				for (const [s, e] of selfIntervals(
-					start,
-					start + Math.max(span.durationMs, 0),
-					span.children,
-				)) {
-					events.push({ at: s, service: span.serviceName, delta: 1 })
-					events.push({ at: e, service: span.serviceName, delta: -1 })
-				}
+			// Skip the whole subtree: the parent already counts this span's time as its own.
+			if (Number.isNaN(start)) return
+			services.add(span.serviceName)
+			for (const [s, e] of selfIntervals(start, start + Math.max(span.durationMs, 0), span.children)) {
+				events.push({ at: s, service: span.serviceName, delta: 1 })
+				events.push({ at: e, service: span.serviceName, delta: -1 })
 			}
 		}
 		for (const child of span.children) visit(child)
