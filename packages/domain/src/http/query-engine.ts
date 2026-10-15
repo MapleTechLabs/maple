@@ -932,7 +932,14 @@ export class ServiceDbQuerySummaryResponse extends Schema.Class<ServiceDbQuerySu
 	topQueries: Schema.Array(ServiceDbTopQuery),
 }) {}
 
-const ServicePlatformLiteral = Schema.Literals(["kubernetes", "cloudflare", "lambda", "web", "unknown"])
+const ServicePlatformLiteral = Schema.Literals([
+	"kubernetes",
+	"cloudflare",
+	"gcp",
+	"lambda",
+	"web",
+	"unknown",
+])
 
 export class ServicePlatformsRequest extends Schema.Class<ServicePlatformsRequest>("ServicePlatformsRequest")(
 	{
