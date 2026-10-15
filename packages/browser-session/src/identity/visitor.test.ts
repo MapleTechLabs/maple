@@ -254,4 +254,17 @@ describe("visitor cookie", () => {
 		expect(store.size).toBe(0)
 		expect(jar.size).toBe(0)
 	})
+
+	it("opting out purges a cookie written under a broader scope than the current one", () => {
+		installStorage()
+		const jar = installCookies({ hostname: "app.example.com" })
+		getVisitorId()
+		expect(jar.get("maple_visitor")?.domain).toBe("example.com")
+
+		// A later page narrowed the scope to host-only before opting out.
+		resetVisitorCacheForTests()
+		configureVisitorCookie({ crossSubdomainCookie: false })
+		setVisitorTracking(false)
+		expect(jar.size).toBe(0)
+	})
 })
