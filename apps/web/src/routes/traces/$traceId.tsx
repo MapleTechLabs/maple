@@ -12,9 +12,11 @@ import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { DocsLink } from "@/components/common/docs-link"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
-import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
+import { TraceViewTabs, type TraceView } from "@maple/ui/components/traces/trace-view-tabs"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
+import { TraceErrorCallout } from "@/components/traces/trace-error-callout"
+import { collectTraceErrors } from "@/lib/traces/trace-errors"
 import { TraceProductEvents } from "@/components/traces/trace-product-events"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@maple/ui/components/ui/resizable"
@@ -26,7 +28,7 @@ import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { TraceIdBadge } from "@maple/ui/components/traces/trace-id-badge"
-import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
+import { getHttpInfo } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 
 const TraceDetailSearchSchema = Schema.Struct({
@@ -35,6 +37,8 @@ const TraceDetailSearchSchema = Schema.Struct({
 	// referring page. Used to narrow the ClickHouse partition scan to a ±1h
 	// window — without it the query reads every retained daily partition.
 	t: Schema.optional(Schema.String),
+	// The open view tab, so a reload or a shared link lands where it was.
+	view: Schema.optional(Schema.Literals(["waterfall", "timeline", "flow"])),
 })
 
 /** A pasted id may carry whitespace; anything still undecodable renders the not-found state. */
@@ -44,6 +48,7 @@ function buildBackToTracesHref(searchStr: string): string {
 	const params = new URLSearchParams(searchStr)
 	params.delete("spanId")
 	params.delete("t")
+	params.delete("view")
 	const nextSearch = params.toString()
 	return nextSearch ? `/traces?${nextSearch}` : "/traces"
 }
@@ -232,6 +237,16 @@ function TraceDetailBody({
 		[search.spanId, navigate],
 	)
 
+	const handleViewChange = React.useCallback(
+		(view: TraceView) => {
+			navigate({
+				search: (prev: Record<string, unknown>) => ({ ...prev, view }),
+				replace: true,
+			})
+		},
+		[navigate],
+	)
+
 	const handleCloseSpanDetails = React.useCallback(() => {
 		navigate({
 			search: (prev: Record<string, unknown>) => ({ ...prev, spanId: undefined }),
@@ -260,6 +275,8 @@ function TraceDetailBody({
 			services={services}
 			selectedSpanId={selectedSpan?.spanId}
 			onSelectSpan={handleSelectSpan}
+			view={search.view ?? "timeline"}
+			onViewChange={handleViewChange}
 		/>
 	)
 
@@ -268,27 +285,26 @@ function TraceDetailBody({
 		rootSpan.resourceAttributes?.["deployment.environment.name"] ||
 		rootSpan.resourceAttributes?.["deployment.environment"]
 	const commitSha = rootSpan.resourceAttributes?.["vcs.ref.head.revision"]
-	const hasError = data.spans.some((s: Span) => {
-		if (s.statusCode === "Error") return true
-		const httpStatus =
-			s.spanAttributes?.["http.response.status_code"] || s.spanAttributes?.["http.status_code"]
-		if (httpStatus) {
-			const code = typeof httpStatus === "string" ? parseInt(httpStatus) : httpStatus
-			if (typeof code === "number" && httpStatusTone(code) === "crit") return true
-		}
-		return false
-	})
+	const errors = React.useMemo(() => collectTraceErrors(data.rootSpans), [data.rootSpans])
 
 	return (
 		<div className="flex flex-1 flex-col gap-y-3 min-h-0">
 			<TraceAnatomyStrip
-				spans={data.spans}
+				rootSpans={data.rootSpans}
+				spanCount={data.spans.length}
+				startTime={traceStartTime}
 				totalDurationMs={data.totalDurationMs}
 				traceId={traceId}
-				hasError={hasError}
+				hasError={errors.spans.length > 0}
 				httpStatusCode={rootHttpInfo?.statusCode}
 				deploymentEnv={deploymentEnv}
 				commitSha={commitSha}
+			/>
+
+			<TraceErrorCallout
+				errors={errors}
+				selectedSpanId={selectedSpan?.spanId}
+				onSelectSpan={handleSelectSpan}
 			/>
 
 			<TraceProductEvents
@@ -317,6 +333,7 @@ function TraceDetailBody({
 							{selectedSpan && (
 								<SpanDetailPanel
 									span={selectedSpan}
+									onSelectSpanId={handleSelectSpanId}
 									onClose={handleCloseSpanDetails}
 									traceStartTime={traceStartTime}
 									totalDurationMs={data.totalDurationMs}
@@ -340,6 +357,7 @@ function TraceDetailBody({
 							<ResizablePanel defaultSize={40} minSize={25}>
 								<SpanDetailPanel
 									span={selectedSpan}
+									onSelectSpanId={handleSelectSpanId}
 									onClose={handleCloseSpanDetails}
 									traceStartTime={traceStartTime}
 									totalDurationMs={data.totalDurationMs}

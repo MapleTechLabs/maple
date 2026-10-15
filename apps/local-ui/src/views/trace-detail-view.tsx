@@ -136,7 +136,8 @@ export function TraceDetailView({ traceId, backLabel, onBack }: TraceDetailViewP
 						<div className="flex min-w-0 flex-1 flex-col">
 							<div className="shrink-0 border-b px-4 py-3">
 								<TraceAnatomyStrip
-									spans={trace.data.spans}
+									rootSpans={trace.data.rootSpans}
+									spanCount={trace.data.spans.length}
 									totalDurationMs={trace.data.totalDurationMs}
 									traceId={traceId}
 									hasError={hasError}
