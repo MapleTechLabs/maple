@@ -680,3 +680,14 @@ export {
 	type OperationTrafficOpts,
 	type OperationTrafficOutput,
 } from "./queries/pr-review"
+
+// Queries — CI pipeline runs (GitHub Actions traces)
+export {
+	CI_TRACES_SERVICE_NAME,
+	ciFailedJobsQuery,
+	ciRunsQuery,
+	type CiFailedJobsOpts,
+	type CiFailedJobsOutput,
+	type CiRunsOpts,
+	type CiRunsOutput,
+} from "./queries/ci-runs"

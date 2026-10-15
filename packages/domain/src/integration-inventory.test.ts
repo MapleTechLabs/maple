@@ -34,7 +34,10 @@ const cloudflareGrant = {
 	createdAt: NOW - 30 * 24 * 60 * MINUTE,
 }
 
-const zone = (zoneName: string, poll: { lastSuccessAt: number | null; lastErrorAt: number | null; lastError: string | null }) => ({
+const zone = (
+	zoneName: string,
+	poll: { lastSuccessAt: number | null; lastErrorAt: number | null; lastError: string | null },
+) => ({
 	dataset: "http_requests",
 	zoneName,
 	...poll,
@@ -59,7 +62,11 @@ describe("buildIntegrationInventory", () => {
 			{
 				oauthConnections: [cloudflareGrant],
 				cloudflareStates: [
-					zone("ok.example", { lastSuccessAt: NOW - 2 * MINUTE, lastErrorAt: null, lastError: null }),
+					zone("ok.example", {
+						lastSuccessAt: NOW - 2 * MINUTE,
+						lastErrorAt: null,
+						lastError: null,
+					}),
 					zone("broken.example", {
 						lastSuccessAt: NOW - 60 * MINUTE,
 						lastErrorAt: NOW - 3 * MINUTE,
@@ -121,14 +128,22 @@ describe("buildIntegrationInventory", () => {
 			"railway",
 		)
 		expect(railway?.status).toBe("stale")
-		expect(railway?.resources[0]).toMatchObject({ name: "shop / production", note: "3 services" })
+		expect(railway?.resources[0]).toMatchObject({
+			name: "shop / production",
+			note: "no successful update for 2 h (3 services)",
+		})
+		expect(railway?.problem).toBe(
+			"1 of 1 stale, e.g. environment shop / production: no successful update for 2 h (3 services)",
+		)
 	})
 
 	it("lets a revoked grant outrank healthy resources", () => {
 		const cloudflare = providerOf(
 			{
 				oauthConnections: [{ ...cloudflareGrant, revokedAt: NOW - MINUTE }],
-				cloudflareStates: [zone("ok.example", { lastSuccessAt: NOW - MINUTE, lastErrorAt: null, lastError: null })],
+				cloudflareStates: [
+					zone("ok.example", { lastSuccessAt: NOW - MINUTE, lastErrorAt: null, lastError: null }),
+				],
 			},
 			"cloudflare",
 		)
@@ -150,7 +165,7 @@ describe("buildIntegrationInventory", () => {
 			{
 				planetscaleConnection: {
 					psOrganization: "acme",
-					detectedPermissions: { read_databases: true, read_metrics_endpoints: false },
+					detectedPermissions: { readDatabases: true, readMetricsEndpoints: false },
 					lastInventoryAt: NOW - MINUTE,
 					lastInventoryError: null,
 					createdAt: NOW - 24 * 60 * MINUTE,
@@ -159,7 +174,7 @@ describe("buildIntegrationInventory", () => {
 			"planetscale",
 		)
 		expect(planetscale?.status).toBe("failing")
-		expect(planetscale?.problem).toContain("read_metrics_endpoints")
+		expect(planetscale?.problem).toContain("readMetricsEndpoints (database metrics)")
 	})
 
 	it("splits managed PlanetScale scrape targets from user Prometheus targets", () => {
@@ -194,7 +209,13 @@ describe("buildIntegrationInventory", () => {
 		const github = providerOf(
 			{
 				vcsInstallations: [
-					{ provider: "github", accountLogin: "acme", status: "active", ciTracesEnabled: false, createdAt: NOW },
+					{
+						provider: "github",
+						accountLogin: "acme",
+						status: "active",
+						ciTracesEnabled: false,
+						createdAt: NOW,
+					},
 				],
 				vcsRepositories: [
 					{
@@ -213,6 +234,9 @@ describe("buildIntegrationInventory", () => {
 		)
 		expect(github?.feeds.some((feed) => feed.includes("GitHub Actions"))).toBe(false)
 		expect(github?.status).toBe("failing")
-		expect(github?.resources[0]).toMatchObject({ lastError: "Not Found", note: "tracks main, PR review on" })
+		expect(github?.resources[0]).toMatchObject({
+			lastError: "Not Found",
+			note: "tracks main, PR review on",
+		})
 	})
 })

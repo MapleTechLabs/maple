@@ -24,6 +24,9 @@ import { RecommendationIssueService } from "@maple/backend/services/errors/Recom
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -299,9 +302,12 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	IntegrationInventoryService.layer,
 	IssueFixVerificationService.layer,
 	QueryEngineService.layer,
+	RailwayMetricsService.layer,
 	RecommendationIssueService.layer,
 	RepoSandboxService.layer,
+	ScrapeTargetsService.layer,
 	SetupAuditService.layer,
+	VcsCommitService.layer,
 	VcsSourceService.layer,
 	WarehouseQueryService.layer,
 ).pipe(

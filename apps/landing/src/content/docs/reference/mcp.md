@@ -53,7 +53,7 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | Tool                         | Access | What it does                                                                                         |
 | ---------------------------- | ------ | ---------------------------------------------------------------------------------------------------- |
 | `list_services`              | read   | Active services with throughput, error rate and P95 latency                                          |
-| `diagnose_service`           | read   | One service's health metrics, Apdex, top errors, recent traces and logs                              |
+| `diagnose_service`           | read   | One service's health, top errors, recent traces and logs, and the platform resources behind it       |
 | `get_service_top_operations` | read   | A service's top operations (endpoints or spans), ranked by a chosen metric                           |
 | `service_map`                | read   | Service-to-service dependencies with call counts, error rates and latency per edge                   |
 | `compare_periods`            | read   | Error rate, throughput and P95 across two periods, overall and per service, with regressions flagged |
@@ -154,8 +154,21 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | `list_source_repositories`            | read   | Repositories connected through the [GitHub integration](/docs/integrations/github)                     |
 | `search_source_code`                  | read   | Search one connected repository through GitHub code search                                             |
 | `read_source_file`                    | read   | Read a line range from a file in a connected repository                                                |
+| `ci_runs`                             | read   | GitHub Actions runs from CI traces: failures per workflow, durations, and why a failed job failed      |
+| `compare_commits`                     | read   | The commits between two deployed versions of a service, from the synced repository                     |
 
 The source-code tools only return results for repositories the organization's GitHub App installation can access.
+
+### Integrations
+
+| Tool                   | Access | What it does                                                                     |
+| ---------------------- | ------ | -------------------------------------------------------------------------------- |
+| `sync_railway`         | write  | Poll Railway now and report each environment's last sync                         |
+| `create_scrape_target` | write  | Start scraping a Prometheus endpoint that needs no credentials                   |
+| `update_scrape_target` | write  | Pause, resume or change a Prometheus scrape target                               |
+| `delete_scrape_target` | write  | Delete a Prometheus scrape target and its check history; its stored metrics stay |
+
+These are admin-only. Connecting a provider, and adding a scrape credential, stay in Settings → Integrations.
 
 ### Feedback
 

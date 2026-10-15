@@ -130,6 +130,79 @@ SELECT
         OFFSET 50
         FORMAT JSON
 
+-- builder:ci-runs:ciFailedJobsQuery:default  [85749449]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanAttributes['cicd.pipeline.task.name'] AS job,
+          traces.SpanAttributes['cicd.pipeline.task.run.result'] AS result,
+          traces.SpanAttributes['maple.cicd.failure.reason'] AS reason,
+          traces.SpanAttributes['cicd.pipeline.task.run.url.full'] AS url,
+          traces.Duration / 1000000 AS durationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.TraceId IN ('abc123')
+          AND traces.StatusCode = 'Error'
+          AND traces.SpanAttributes['cicd.pipeline.task.name'] != ''
+          AND traces.SpanAttributes['maple.cicd.step.number'] = ''
+        ORDER BY traceId ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunsQuery:allRuns  [76528573]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          traces.SpanAttributes['cicd.pipeline.run.id'] AS runId,
+          traces.SpanAttributes['cicd.pipeline.result'] AS result,
+          traces.SpanAttributes['cicd.pipeline.run.url.full'] AS url,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['vcs.ref.head.name'] AS branch,
+          traces.SpanAttributes['vcs.ref.head.revision'] AS revision,
+          traces.SpanAttributes['maple.cicd.run_attempt'] AS attempt,
+          traces.SpanAttributes['maple.cicd.trigger_event'] AS trigger,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startedAt
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+        ORDER BY startedAt DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunsQuery:filtered  [933732bb]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          traces.SpanAttributes['cicd.pipeline.run.id'] AS runId,
+          traces.SpanAttributes['cicd.pipeline.result'] AS result,
+          traces.SpanAttributes['cicd.pipeline.run.url.full'] AS url,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['vcs.ref.head.name'] AS branch,
+          traces.SpanAttributes['vcs.ref.head.revision'] AS revision,
+          traces.SpanAttributes['maple.cicd.run_attempt'] AS attempt,
+          traces.SpanAttributes['maple.cicd.trigger_event'] AS trigger,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startedAt
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.name'] = 'CI'
+          AND traces.ResourceAttributes['vcs.repository.name'] = 'api'
+          AND traces.SpanAttributes['vcs.ref.head.name'] = 'main'
+          AND traces.SpanAttributes['cicd.pipeline.result'] = 'failure'
+        ORDER BY startedAt DESC
+        LIMIT 50
+        FORMAT JSON
+
 -- builder:containers:containerCountersSummaryQuery:default  [1b4fe1f9]
 SELECT
           avg(hosts.memoryBytesAvg) AS memoryBytesAvg,

@@ -1120,6 +1120,34 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "allRuns",
+		compile: () => CH.compileUnsafe(CH.ciRunsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciRunsQuery({
+					pipeline: "CI",
+					repository: "api",
+					branch: "main",
+					result: "failure",
+					limit: 50,
+				}),
+				window,
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciFailedJobsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.ciFailedJobsQuery({ traceIds: ["abc123"] }), window),
+	},
+	{
 		module: "pr-review",
 		name: "operationTrafficHourlyQuery",
 		label: "allServices",

@@ -18,6 +18,7 @@
 
 import { Schema } from "effect"
 import { HttpTaggedError } from "./http/error-policy"
+import type { IntegrationEntry, IntegrationInventory } from "./integration-inventory"
 
 export class SetupAuditUnavailableError extends HttpTaggedError<SetupAuditUnavailableError>()(
 	"@maple/http/errors/SetupAuditUnavailableError",
@@ -203,6 +204,11 @@ export interface ConfigAuditInputs {
 		readonly lastScrapeError: string | null
 	}>
 	readonly openRecommendationCount: number
+	/**
+	 * Every connected integration with its derived health (`buildIntegrationInventory`), for the
+	 * providers the narrower inputs above do not cover. Absent when it could not be read.
+	 */
+	readonly integrationInventory?: IntegrationInventory
 }
 
 export interface AuditAttributeKey {
@@ -739,6 +745,34 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 	},
 ]
 
+/** One provider's problems from the inventory: its own condition first, then each unhealthy resource. */
+const inventoryFindings = (
+	inventory: IntegrationInventory | undefined,
+	provider: IntegrationEntry["provider"],
+	only?: { readonly kinds: ReadonlySet<string>; readonly failingOnly: boolean },
+): ReadonlyArray<AuditAffectedEntity> => {
+	const entry = inventory?.integrations.find((integration) => integration.provider === provider)
+	if (entry === undefined) return []
+	const resources = entry.resources
+		.filter((resource) =>
+			only?.failingOnly ? resource.status === "failing" : resource.status !== "healthy",
+		)
+		.filter((resource) => only === undefined || only.kinds.has(resource.kind))
+		.map((resource) => ({
+			kind: "integration" as const,
+			name: `${resource.kind} ${resource.name}`,
+			note: `${resource.status}: ${briefError(resource.lastError ?? resource.note ?? resource.status)}`,
+		}))
+	// A provider-wide problem the resources do not explain (a pending setup step, a rejected token).
+	// A revoked OAuth grant is CFG-INTEG-01's finding already.
+	const revoked = entry.status === "disconnected" && provider !== "railway"
+	const own =
+		only === undefined && !revoked && entry.problem !== null && resources.length === 0
+			? [{ kind: "integration" as const, name: provider, note: briefError(entry.problem) }]
+			: []
+	return [...own, ...resources]
+}
+
 const integrationChecks: ReadonlyArray<AuditCheck> = [
 	{
 		id: "CFG-INTEG-01",
@@ -810,6 +844,57 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 						`${plural(failing.length, "repository", "repositories")} failed to sync — release markers and commit context will be stale.`,
 						failing,
 					)
+		},
+	},
+	{
+		id: "CFG-INTEG-04",
+		category: "integrations",
+		title: "Railway metrics are being collected",
+		severity: "warn",
+		fixHint:
+			"Settings → Integrations → Railway: save a new API token if Railway rejected it; a stale environment usually means the token lost access to its project.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "railway")
+			return affected.length === 0
+				? PASS
+				: fail(
+						`Railway collection has ${plural(affected.length, "problem")}: charts for the affected environments stop at the last successful poll.`,
+						affected,
+					)
+		},
+	},
+	{
+		id: "CFG-INTEG-05",
+		category: "integrations",
+		title: "PlanetScale is fully set up and polling",
+		severity: "warn",
+		fixHint:
+			"Settings → Integrations → PlanetScale: finish picking the organization, or reconnect with the missing permissions.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "planetscale")
+			return affected.length === 0
+				? PASS
+				: fail(
+						`PlanetScale has ${plural(affected.length, "problem")}: database metrics, inventory or deploy requests are incomplete.`,
+						affected,
+					)
+		},
+	},
+	{
+		id: "CFG-INTEG-06",
+		category: "integrations",
+		title: "Cloudflare Logpush jobs are delivering",
+		severity: "warn",
+		fixHint:
+			"Check the Logpush job in the Cloudflare dashboard; its destination must be Maple's Logpush endpoint.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "cloudflare", {
+				kinds: new Set(["logpush"]),
+				failingOnly: true,
+			})
+			return affected.length === 0
+				? PASS
+				: fail(`${plural(affected.length, "Logpush job")} reported an error.`, affected)
 		},
 	},
 	{

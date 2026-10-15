@@ -19,6 +19,9 @@ const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOStrin
 
 type Output = typeof ListIntegrationsOutput.Type
 
+/** Providers whose data `list_infra` reads. */
+const PLATFORM_PROVIDERS: ReadonlySet<string> = new Set(["cloudflare", "railway", "planetscale"])
+
 /** Where each provider's data is read next, once the integration is known to deliver it. */
 const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<NextCall> => {
 	switch (integration.provider) {
@@ -26,13 +29,7 @@ const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<Nex
 			return [
 				doc.next("list_source_repositories", {}, "the repositories source tools can read"),
 				...(integration.feeds.some((feed) => feed.startsWith("GitHub Actions"))
-					? [
-							doc.next(
-								"search_traces",
-								{ service: "github-actions" },
-								"recent CI workflow runs as traces",
-							),
-						]
+					? [doc.next("ci_runs", {}, "recent workflow runs, failures and durations")]
 					: []),
 			]
 		case "prometheus":
@@ -147,12 +144,12 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 				filter === undefined
 					? [
 							doc.table(
-								["Provider", "Status", "Account", "Resources", "Problem"],
+								["Provider", "Status", "Account", "Unhealthy", "Problem"],
 								output.integrations.map((i) => [
 									i.provider,
 									i.status,
 									i.account ?? "",
-									String(i.resourceCount),
+									`${i.unhealthyCount} of ${i.resourceCount}`,
 									truncate(i.problem ?? "", 200),
 								]),
 							),
@@ -168,6 +165,9 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 											`Not connected: ${output.available.map((a) => a.provider).join(", ")}.`,
 										),
 									]),
+							doc.text(
+								"Only resources with a problem are listed. `list_integrations provider=<name>` lists every resource of one provider, with the tools that read its data.",
+							),
 						]
 					: output.integrations.flatMap((i) => [
 							doc.fields([
@@ -187,23 +187,40 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 				...(filter !== undefined && shown < total
 					? { truncation: { shown, total, noun: "resources" } }
 					: undefined),
-				next: [
-					...(unhealthy.length > 0
-						? [doc.next("audit_setup", {}, "the rest of the setup checks, with fix hints")]
-						: []),
-					...(filter === undefined
-						? unhealthy
-								.filter((i) => i.resourceCount > i.resources.length)
-								.map((i) =>
-									doc.next(
-										TOOL,
-										{ provider: i.provider },
-										`all ${i.resourceCount} ${i.provider} resources`,
+				// The overview stays short: the audit, drill-downs where problems were cut off, and one
+				// way into the platform data. A single provider gets the calls that read its data.
+				next:
+					filter === undefined
+						? [
+								...(unhealthy.length > 0
+									? [
+											doc.next(
+												"audit_setup",
+												{},
+												"the rest of the setup checks, with fix hints",
+											),
+										]
+									: []),
+								...unhealthy
+									.filter((i) => i.resources.length >= OVERVIEW_RESOURCES)
+									.map((i) =>
+										doc.next(
+											TOOL,
+											{ provider: i.provider },
+											`every ${i.provider} resource`,
+										),
 									),
-								)
-						: []),
-					...output.integrations.flatMap(nextFor),
-				],
+								...(output.integrations.some((i) => PLATFORM_PROVIDERS.has(i.provider))
+									? [
+											doc.next(
+												"list_infra",
+												{},
+												"what the connected platforms report: zones, Workers, Railway services, databases",
+											),
+										]
+									: []),
+							]
+						: output.integrations.flatMap(nextFor),
 			}
 		},
 	})
@@ -239,6 +256,7 @@ const toStructured = (
 						note: r.note,
 					})),
 				resourceCount: i.resources.length,
+				unhealthyCount: i.resources.filter((r) => r.status !== "healthy").length,
 			})),
 		available: inventory.available.map((a) => ({ provider: a.provider, feeds: a.feeds })),
 		...(provider === undefined ? undefined : { providerFilter: provider }),
