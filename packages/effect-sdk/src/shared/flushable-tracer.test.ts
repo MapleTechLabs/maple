@@ -430,6 +430,14 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 		}),
 	)
 
+	it.effect("lets an anticipated identifier record a 4xx client span as Ok", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ anticipatedErrorIdentifiers: new Set(["HttpClientError"]) })
+			yield* request(buffer, respond(401))
+			assert.strictEqual(clientSpan(buffer.drain())?.status.code, 1 /* Ok */)
+		}),
+	)
+
 	it.effect("keeps the exception on a 5xx client span", () =>
 		Effect.gen(function* () {
 			const buffer = makeSpanBuffer()

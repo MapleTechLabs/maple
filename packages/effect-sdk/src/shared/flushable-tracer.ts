@@ -362,6 +362,10 @@ const makeOtlpSpan = (
 			{ key: "span.label", value: { stringValue: "⚠︎ Interrupted" } },
 			{ key: "status.interrupted", value: { boolValue: true } },
 		)
+	} else if (isFullyAnticipated(status.exit.cause, anticipatedErrorIdentifiers)) {
+		// Expected business outcome (4xx). Keep the span (latency / status code
+		// stay visible) but don't flag it as an error or fingerprint it.
+		otelStatus = constOtelStatusSuccess
 	} else if (isClientStatus4xx(self, status.exit)) {
 		// Semconv keeps a 4xx client span `Error`, but without an `exception` event: error
 		// tracking skips a 4xx span that carries none, so the issue is the caller's to open.
@@ -372,10 +376,6 @@ const makeOtlpSpan = (
 	} else if (lostReason !== undefined) {
 		otelStatus = { code: StatusCode.Unset }
 		attributes.push({ key: "maple.connection_lost", value: { stringValue: lostReason } })
-	} else if (isFullyAnticipated(status.exit.cause, anticipatedErrorIdentifiers)) {
-		// Expected business outcome (4xx). Keep the span (latency / status code
-		// stay visible) but don't flag it as an error or fingerprint it.
-		otelStatus = constOtelStatusSuccess
 	} else {
 		const errors = Cause.prettyErrors(status.exit.cause)
 		otelStatus = { code: StatusCode.Error }

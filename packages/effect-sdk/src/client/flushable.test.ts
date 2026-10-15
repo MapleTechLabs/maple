@@ -507,12 +507,20 @@ describe("MapleFlush.make (client)", () => {
 		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(true)
 	})
 
-	it("registers no unload listeners when flushOnUnload is false", () => {
+	it("does not flush on unload when flushOnUnload is false", async () => {
+		const { calls, restore: rf } = setupFetch()
 		const dom = setupDom()
-		restore = dom.restore
-		make({ ...baseConfig, flushOnUnload: false })
-		expect(dom.listenerCount("pagehide")).toBe(0)
-		expect(dom.listenerCount("visibilitychange")).toBe(0)
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: false })
+		await recordSpans(telemetry, ["op"])
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		dom.fire("pagehide")
+		await tick()
+		expect(traceCalls(calls)).toHaveLength(0)
 	})
 
 	it("dispose() flushes buffered spans even without a manual flush", async () => {
@@ -992,6 +1000,23 @@ describe("MapleFlush.make (client)", () => {
 			expect(span?.attributes.find((a) => a.key === "maple.connection_lost")?.value.stringValue).toBe(
 				"page_unload",
 			)
+			await telemetry.dispose()
+		})
+
+		it("still recognises an unload when unload flushing is off", async () => {
+			const { calls, restore: rf } = setupFetch()
+			const dom = setupDom()
+			restore = () => {
+				rf()
+				dom.restore()
+			}
+			const telemetry = make({ ...baseConfig, flushOnUnload: false })
+
+			await Effect.runPromise(failRequest(telemetry, () => dom.fire("pagehide")))
+			dom.fire("pageshow")
+			await telemetry.flush()
+
+			expect(exportedClientSpan(calls)?.status.code).toBe(0)
 			await telemetry.dispose()
 		})
 
