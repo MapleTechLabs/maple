@@ -44,9 +44,9 @@ describe("mapGcpTimeSeries", () => {
 		// The idle minute is not stored.
 		expect(sumRows).toHaveLength(1)
 		expect(sumRows[0]).toMatchObject({
-			metric_name: "gcp.run.request_count",
+			metric_name: "gcp.cloud_run.requests",
 			metric_unit: "{request}",
-			metric_attributes: { response_code_class: "5xx" },
+			metric_attributes: { "gcp.metric.labels.response_code_class": "5xx" },
 			service_name: "checkout",
 			scope_name: GCP_SCOPE_NAME,
 			value: 7,
@@ -73,7 +73,7 @@ describe("mapGcpTimeSeries", () => {
 			["2026-10-08 12:01:00.000", "2026-10-08 12:01:00.000", 0],
 			["2026-10-08 12:02:00.000", "2026-10-08 12:02:00.000", 2.5],
 		])
-		expect(gaugeRows[0]!.metric_attributes).toEqual({ state: "idle" })
+		expect(gaugeRows[0]!.metric_attributes).toEqual({ "gcp.metric.labels.state": "idle" })
 	})
 
 	it("keeps the points that end inside (start, end]", () => {
@@ -90,7 +90,7 @@ describe("mapGcpTimeSeries", () => {
 		expect(gaugeRows.map((row) => row.value)).toEqual([1, 5])
 	})
 
-	it("turns a distribution into p50/p95/p99 gauges, converting the unit", () => {
+	it("turns a distribution into p50/p95/p99 gauges, in seconds", () => {
 		const { gaugeRows } = map("cloudfunctions.googleapis.com/function/execution_times", [
 			{
 				metric: { labels: { status: "ok" } },
@@ -113,15 +113,38 @@ describe("mapGcpTimeSeries", () => {
 				],
 			},
 		])
-		expect(gaugeRows.map((row) => [row.metric_attributes, Math.round(row.value)])).toEqual([
-			[{ quantile: "0.5" }, 100],
-			[{ quantile: "0.95" }, 190],
-			[{ quantile: "0.99" }, 198],
+		expect(gaugeRows.map((row) => [row.metric_attributes, Number(row.value.toFixed(6))])).toEqual([
+			[{ quantile: "0.5" }, 0.1],
+			[{ quantile: "0.95" }, 0.19],
+			[{ quantile: "0.99" }, 0.198],
 		])
 		expect(gaugeRows[0]).toMatchObject({
-			metric_name: "gcp.cloudfunctions.function.execution_times",
-			metric_unit: "ms",
+			metric_name: "gcp.cloud_functions.execution.duration",
+			metric_unit: "s",
 			service_name: "resize",
+		})
+	})
+
+	it("splits a byte counter by direction, and moves the instance name to the resource", () => {
+		const series = {
+			metric: { labels: { instance_name: "web-1" } },
+			resource: {
+				labels: { project_id: "acme-prod", instance_id: "8123456789", zone: "europe-west1-b" },
+			},
+			points: [{ interval: { endTime: at(2) }, value: { int64Value: "2048" } }],
+		}
+		const [received] = map("compute.googleapis.com/instance/network/received_bytes_count", [
+			series,
+		]).sumRows
+		const [sent] = map("compute.googleapis.com/instance/network/sent_bytes_count", [series]).sumRows
+		expect([received, sent].map((row) => [row!.metric_name, row!.metric_attributes])).toEqual([
+			["gcp.gce.network.io", { "network.io.direction": "receive" }],
+			["gcp.gce.network.io", { "network.io.direction": "transmit" }],
+		])
+		expect(received!.resource_attributes).toMatchObject({
+			"service.name": "web-1",
+			"host.name": "web-1",
+			"gcp.gce.instance.name": "web-1",
 		})
 	})
 
@@ -220,6 +243,7 @@ describe("gcpResourceAttributes", () => {
 		expect(instance).toMatchObject({
 			"service.name": "web-1",
 			"host.name": "web-1",
+			"gcp.gce.instance.name": "web-1",
 			"host.id": "8123456789",
 			"cloud.platform": "gcp_compute_engine",
 			"cloud.availability_zone": "europe-west1-b",
