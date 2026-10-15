@@ -19,7 +19,7 @@
 		"test:perf:dashboard-grid": "playwright test perf/dashboard-grid.perf.spec.ts --project=chromium-performance",
 		"test:perf:renders": "playwright test --grep \"React render work\"",
 		"test:perf:compare-renders": "bun perf/compare-react-render-reports.ts",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"og:fonts": "bun scripts/build-og-fonts.ts"
 	},
 	"dependencies": {

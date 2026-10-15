@@ -17,19 +17,20 @@ export const Route = createFileRoute("/errors/issues/")({
 	},
 })
 
-type HubView = "open" | "triage" | "active" | "resolved" | "all"
+type HubView = "open" | "closed" | "all"
 
 /** The old list's `workflowState` tabs map onto the hub's views. A Map rather
  *  than an object because the incoming value is unvalidated search-param text. */
 const VIEW_FOR_STATE = new Map<string, HubView>([
-	["triage", "triage"],
-	["regressed", "triage"],
-	["todo", "active"],
-	["in_progress", "active"],
-	["in_review", "active"],
-	["done", "resolved"],
-	["cancelled", "resolved"],
-	["wontfix", "resolved"],
+	["triage", "open"],
+	["regressed", "open"],
+	["todo", "open"],
+	["in_progress", "open"],
+	["in_review", "open"],
+	["verifying", "closed"],
+	["done", "closed"],
+	["cancelled", "closed"],
+	["wontfix", "closed"],
 	["all", "all"],
 ])
 
