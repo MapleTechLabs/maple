@@ -13,7 +13,7 @@ import {
 } from "@/components/dashboard-builder/dashboard-variables-context"
 import { ReadOnlyDashboardView } from "@/components/dashboard-builder/read-only-dashboard-view"
 import { VariableSelects } from "@/components/dashboard-builder/toolbar/variable-selects"
-import type { DashboardVariable, WidgetDataState } from "@/components/dashboard-builder/types"
+import type { DashboardVariable, WidgetDataState, WidgetDisplayConfig } from "@/components/dashboard-builder/types"
 import { visualizationFor } from "@/components/dashboard-builder/widgets/types"
 import fixture from "@/lab/gcp-dashboard-fixture.json"
 
@@ -124,10 +124,10 @@ function hash(text: string): number {
 function fixtureRows(widget: Widget, values: VariableValues): Array<Record<string, string | number>> {
 	if (widget.dataSource.kind !== "query") return []
 	const query = widget.dataSource.queries[0]
-	const groupBy = query?.groupBy[0] ?? ""
+	const groupBy = query?.groupBy?.[0] ?? ""
 	const resources =
 		(groupBy === "service.name" ? WORKLOADS.get(widget.tabId ?? "") : GROUPS.get(groupBy)) ?? []
-	const filters = [...ATTRIBUTE.keys()].filter((name) => query?.whereClause.includes(`$${name}`))
+	const filters = [...ATTRIBUTE.keys()].filter((name) => query?.whereClause?.includes(`$${name}`))
 	const kept = resources.filter((resource) =>
 		filters.every((name) => {
 			const selected = values[name]
@@ -157,7 +157,7 @@ function LabWidget({ widget }: { widget: Widget }) {
 		() => ({ status: "ready", data: fixtureRows(widget, values) }),
 		[widget, values],
 	)
-	return <Visualization dataState={dataState} display={widget.display} mode="view" />
+	return <Visualization dataState={dataState} display={widget.display as WidgetDisplayConfig} mode="view" />
 }
 
 /**
