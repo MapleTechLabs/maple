@@ -291,7 +291,7 @@ jobs:
                   # `typecheck` script chains it, and CI calls turbo directly.
                   - name: Typecheck Alchemy entrypoints
                     if: ${{ matrix.shard == 'quality' }}
-                    run: bunx tsc -p tsconfig.alchemy.json
+                    run: bunx tsrs -p tsconfig.alchemy.json
 
                   # Guard the code-split web bundle: initial-load gzip budget and no
                   # chat/replay code in the startup graph. Reads the dist/ the turbo

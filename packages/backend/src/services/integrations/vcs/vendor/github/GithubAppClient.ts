@@ -37,6 +37,8 @@ const MAX_COMPARE_FILES = 300
 // Paginate effectively to the end (up to 100k items) while still bounding a
 // pathological loop. Hitting this cap is logged — truncation is never silent.
 const MAX_PAGES = 1000
+/** Pages of check-run annotations read looking for a failure, past warnings and notices. */
+const MAX_ANNOTATION_PAGES = 3
 /** GitHub lists at most 3,000 files for one pull request. */
 const MAX_PR_FILE_PAGES = 30
 
@@ -477,6 +479,17 @@ const decodePullRequest = Schema.decodeUnknownEffect(GithubApiPullRequestSchema)
 const decodePullRequestFiles = Schema.decodeUnknownEffect(GithubApiPullRequestFileList)
 const decodeCheckRun = Schema.decodeUnknownEffect(GithubApiCheckRunSchema)
 const decodeOwnCheckRunList = Schema.decodeUnknownEffect(GithubApiOwnCheckRunList)
+const decodeCheckRunAnnotations = Schema.decodeUnknownEffect(
+	Schema.Array(
+		Schema.Struct({
+			annotation_level: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			message: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			title: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			start_line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		}),
+	),
+)
 const decodePullRequestCommits = Schema.decodeUnknownEffect(GithubApiPullRequestCommitList)
 const decodeDiscussionComments = Schema.decodeUnknownEffect(GithubApiDiscussionCommentList)
 const decodeCheckRunList = Schema.decodeUnknownEffect(GithubApiCheckRunList)
@@ -1858,6 +1871,45 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			// An Actions job id is its check run id. Reading annotations needs only `checks: read`,
+			// which the App's `checks: write` covers. Paging stops at the first page holding a failure:
+			// that is what CI traces want, and warnings before it should not hide it.
+			const listCheckRunAnnotations = Effect.fn("GithubAppClient.listCheckRunAnnotations")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				checkRunId: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const url = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs/${encodeURIComponent(checkRunId)}/annotations`
+				const pages = yield* Stream.paginate(1, (page: number) =>
+					Effect.gen(function* () {
+						const response = yield* authedGet(
+							config,
+							token,
+							`${url}?per_page=${PER_PAGE}&page=${page}`,
+						)
+						if (!isOk(response))
+							return yield* failure(response, "List check run annotations", "repository")
+						const annotations = yield* decodeCheckRunAnnotations(
+							yield* parseJson(response, "List check run annotations"),
+						).pipe(
+							Effect.mapError(
+								(cause) =>
+									new GithubAppError({ message: "Unexpected annotations payload", cause }),
+							),
+						)
+						const more =
+							annotations.length >= PER_PAGE &&
+							page < MAX_ANNOTATION_PAGES &&
+							!annotations.some((annotation) => annotation.annotation_level === "failure")
+						return [[annotations], more ? Option.some(page + 1) : Option.none<number>()] as const
+					}),
+				).pipe(Stream.runCollect)
+				return pages.flat()
+			})
+
 			// Used by the dashboard connect flow to populate the installation row.
 			const getInstallation = Effect.fn("GithubAppClient.getInstallation")(function* (
 				externalInstallationId: string,
@@ -1991,6 +2043,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				upsertIssueComment,
 				searchCode,
 				getSourceFile,
+				listCheckRunAnnotations,
 				mintCloneCredentials,
 				getInstallation,
 				exchangeUserOAuthCode,

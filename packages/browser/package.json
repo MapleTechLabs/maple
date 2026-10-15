@@ -41,7 +41,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run",
 		"size": "bun scripts/size.ts"
 	},

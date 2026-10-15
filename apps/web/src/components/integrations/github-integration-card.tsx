@@ -6,6 +6,7 @@ import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Exit, Option } from "effect"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import {
+	GithubSetCiTracesRequest,
 	GithubSetTrackedBranchRequest,
 	type GithubIntegrationStatus,
 	type GithubRepoSummary,
@@ -22,6 +23,7 @@ import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Switch } from "@maple/ui/components/ui/switch"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import {
@@ -42,6 +44,7 @@ import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-a
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
@@ -474,6 +477,8 @@ function ConnectedView({
 				</ItemActions>
 			</Item>
 
+			<CiTracesSetting enabled={status.ciTracesEnabled} />
+
 			{prReviewRolledOut ? (
 				<SettingRow
 					framed
@@ -615,6 +620,58 @@ function ConnectedView({
 				</Panel>
 			) : null}
 		</div>
+	)
+}
+
+/** The org-wide opt-out for GitHub Actions runs as traces. On by default; admins can turn it off. */
+function CiTracesSetting({ enabled: serverEnabled }: { enabled: boolean }) {
+	const isAdmin = useIsOrgAdmin()
+	const setCiTraces = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetCiTraces"), {
+		mode: "promiseExit",
+	})
+	const [enabled, setEnabled] = useState(serverEnabled)
+	// A fresh server value wins over the optimistic one; adjusted during render, not in an effect.
+	const [seenServer, setSeenServer] = useState(serverEnabled)
+	if (seenServer !== serverEnabled) {
+		setSeenServer(serverEnabled)
+		setEnabled(serverEnabled)
+	}
+
+	const [toggle, busy] = useAsyncAction(async (next: boolean) => {
+		setEnabled(next)
+		const result = await setCiTraces({
+			payload: new GithubSetCiTracesRequest({ enabled: next }),
+			reactivityKeys: ["githubIntegrationStatus"],
+		})
+		const ok = toastExit(result, {
+			success: next ? "GitHub Actions runs will show up as traces" : "CI traces turned off",
+			error: "Failed to change CI traces.",
+		})
+		if (!ok) setEnabled(!next)
+	})
+
+	return (
+		<SettingRow
+			framed
+			className="bg-card px-4 py-3"
+			label="CI traces"
+			description={
+				<>
+					Each finished GitHub Actions run becomes a trace under the{" "}
+					<span className="font-mono text-foreground">github-actions</span> service, with a span per
+					job and step. Counts toward your usage.
+				</>
+			}
+			control={
+				<Switch
+					checked={enabled}
+					aria-busy={busy}
+					disabled={!isAdmin}
+					// Ignored while a change is in flight, so keyboard focus stays on the switch.
+					onCheckedChange={(next) => (busy ? undefined : void toggle(next))}
+				/>
+			}
+		/>
 	)
 }
 

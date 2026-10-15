@@ -17,7 +17,7 @@
 		"./reducer": "./src/reducer/index.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run"
 	},
 	"dependencies": {

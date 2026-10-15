@@ -11,7 +11,7 @@
 		"./tables": "./src/tables/index.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run --passWithNoTests",
 		"db:generate": "bun --bun effect-orm generate",
 		"db:check": "bun --bun effect-orm check",

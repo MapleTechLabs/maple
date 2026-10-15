@@ -1223,5 +1223,35 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// TODO(v29 -> v30): what changes, and what is NOT backfilled. Fill beforeBootstrap
+		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
+		// plan line and dispositions. The v30 physical verify fails an unfinished row.
+		id: "local-0029-to-0030-error-fingerprint-v3",
+		from: 29,
+		to: 30,
+		description: "Rebuild the error-events views with fingerprint v3 grouping and a version-salted hash",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so new occurrences are hashed with fingerprint v3",
+			],
+		],
+		verifies: "Verify the v30 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their v2 FingerprintHash untouched; occurrences materialized after the migration carry v3 hashes, and the v2 rows age out with the retention window.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

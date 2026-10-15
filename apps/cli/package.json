@@ -9,7 +9,7 @@
 	"scripts": {
 		"start": "bun run src/bin.ts",
 		"test": "bun test --max-concurrency=1 test/*.test.ts src/server/otlp/encode.test.ts src/core/*.test.ts",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"@effect/platform-bun": "catalog:effect",
