@@ -23,6 +23,13 @@ import type {
  * that hosts the class, and `apps/api`, which holds a cross-script reference to it. Keeping the
  * shape in one place is what makes that reference structurally safe.
  */
+/** Why a turn was aborted: recorded on its `chat.turn` span as `maple.chat.abort_reason`. */
+export const CHAT_ABORT_REASONS = ["user", "superseded", "stale", "evicted"] as const
+export type ChatAbortReason = (typeof CHAT_ABORT_REASONS)[number]
+
+export const isChatAbortReason = (value: unknown): value is ChatAbortReason =>
+	CHAT_ABORT_REASONS.some((reason) => reason === value)
+
 /**
  * The `ChatSession` Durable Object's RPC surface, as the object answers it over Workers RPC.
  *
@@ -79,7 +86,8 @@ export interface ChatSessionStub {
 	readonly settleProposal: (input: ChatProposalSettlement) => Promise<ChatProposalOutcome>
 	readonly holdsTurn: (messageId: string) => Promise<boolean>
 	readonly endTurn: (messageId: string) => Promise<void>
-	readonly abort: () => Promise<void>
+	/** Abort the running turn; `reason` defaults to `"user"`. */
+	readonly abort: (reason?: ChatAbortReason) => Promise<void>
 }
 
 /** The stub's surface with each method's Promise lifted to an Effect. */
@@ -139,7 +147,7 @@ export const chatSessionClient = (rpc: ChatSessionRpc): ChatSessionClient => ({
 	settleProposal: (input) => rpc.settleProposal(input).pipe(Effect.mapError(callFailed("settleProposal"))),
 	holdsTurn: (messageId) => rpc.holdsTurn(messageId).pipe(Effect.mapError(callFailed("holdsTurn"))),
 	endTurn: (messageId) => rpc.endTurn(messageId).pipe(Effect.mapError(callFailed("endTurn"))),
-	abort: () => rpc.abort().pipe(Effect.mapError(callFailed("abort"))),
+	abort: (reason) => rpc.abort(reason).pipe(Effect.mapError(callFailed("abort"))),
 })
 
 /** A client over a Promise-shaped stub: an in-process session, or a test's fake. */
@@ -161,6 +169,6 @@ export const chatSessionClientFromStub = (stub: ChatSessionStub): ChatSessionCli
 		settleProposal: call("settleProposal", (input: ChatProposalSettlement) => stub.settleProposal(input)),
 		holdsTurn: call("holdsTurn", (messageId: string) => stub.holdsTurn(messageId)),
 		endTurn: call("endTurn", (messageId: string) => stub.endTurn(messageId)),
-		abort: call("abort", () => stub.abort()),
+		abort: call("abort", (reason?: ChatAbortReason) => stub.abort(reason)),
 	}
 }

@@ -14,6 +14,7 @@ import {
 	GithubDeleteRepositoryResponse,
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
+	GithubSetCiTracesResponse,
 	GithubSetPrReviewResponse,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewSettingsResponse,
@@ -482,6 +483,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							accountLogin: status.accountLogin,
 							accountType: status.accountType,
 							repositorySelection: status.repositorySelection,
+							ciTracesEnabled: status.ciTracesEnabled,
 							repositories: status.repositories,
 						})
 					}),
@@ -524,6 +526,14 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							payload.trackedBranch,
 						)
 						return new GithubSetTrackedBranchResponse(result)
+					}),
+				)
+				.handle("githubSetCiTraces", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* github.setCiTracesEnabled(tenant.orgId, payload.enabled)
+						return new GithubSetCiTracesResponse(result)
 					}),
 				)
 				.handle("githubSetPrReview", ({ params, payload }) =>

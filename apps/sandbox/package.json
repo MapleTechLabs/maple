@@ -5,7 +5,7 @@
 	"scripts": {
 		"test": "vitest run",
 		"verify:image": "bun scripts/verify-image.ts",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"@cloudflare/sandbox": "1.0.0",
