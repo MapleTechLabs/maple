@@ -239,9 +239,27 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		privacy: config.privacy,
 	})
 
+	// Each time the page goes away or offline. A request in flight across one was cancelled
+	// by the browser, so its transport failure is not the app's.
+	let connectionLosses = 0
+	let lastLossReason = ""
+	const noteLost = (reason: string): void => {
+		connectionLosses += 1
+		lastLossReason = reason
+	}
+	const watchConnection = () => {
+		const lossesAtStart = connectionLosses
+		return (): string | undefined => {
+			if (browserNavigator()?.onLine === false) return "offline"
+			if (browserDocument()?.visibilityState === "hidden") return "page_hidden"
+			return connectionLosses !== lossesAtStart ? lastLossReason : undefined
+		}
+	}
+
 	const spans: SpanBuffer = makeSpanBuffer({
 		dropSpan,
 		anticipatedErrorIdentifiers: anticipatedIdentifiers,
+		watchConnection,
 	})
 	const logs: LogBuffer = makeLogBuffer({
 		excludeLogSpans: config.excludeLogSpans,
@@ -407,22 +425,29 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		globalThis.addEventListener("unhandledrejection", onUnhandledRejection)
 	}
 
+	// Connection-loss tracking needs these events even when unload flushing is off.
+	const flushOnUnload = config.flushOnUnload ?? true
 	const onPageHide = (): void => {
 		unloading = true
 		pageHides += 1
-		void pageHideFlush()
+		noteLost("page_unload")
+		if (flushOnUnload) void pageHideFlush()
 	}
 	const onPageShow = (): void => {
 		unloading = false
 	}
 	const onVisibilityChange = (): void => {
-		if (browserDocument()?.visibilityState === "hidden") void hiddenFlush()
+		if (browserDocument()?.visibilityState !== "hidden") return
+		noteLost("page_hidden")
+		if (flushOnUnload) void hiddenFlush()
 	}
-	const canListen = (config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
+	const onOffline = (): void => noteLost("offline")
+	const canListen = typeof globalThis.addEventListener === "function"
 	if (canListen) {
 		globalThis.addEventListener("pagehide", onPageHide)
 		globalThis.addEventListener("pageshow", onPageShow)
 		globalThis.addEventListener("visibilitychange", onVisibilityChange)
+		globalThis.addEventListener("offline", onOffline)
 	}
 
 	const dispose = async (): Promise<void> => {
@@ -434,6 +459,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 			globalThis.removeEventListener("pagehide", onPageHide)
 			globalThis.removeEventListener("pageshow", onPageShow)
 			globalThis.removeEventListener("visibilitychange", onVisibilityChange)
+			globalThis.removeEventListener("offline", onOffline)
 		}
 		if (canCaptureGlobals) {
 			globalThis.removeEventListener("error", onWindowError)
