@@ -205,7 +205,7 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 	await target(
 		"6f1c2a52-6b0e-4d7e-9a7e-0c1d2e3f4a51",
 		"node-exporter",
-		"https://metrics.acme.dev/node",
+		"https://metrics.acme.dev/node?token=fixture-secret",
 		1,
 		null,
 	)

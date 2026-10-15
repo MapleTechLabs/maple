@@ -70,7 +70,8 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		output: CompareCommitsOutput,
-		hints: { readOnly: true },
+		// An unknown SHA is probed against the connected repositories on GitHub.
+		hints: { readOnly: true, openWorld: true },
 		phrases: ["Comparing commits", "Listing what shipped"],
 		handler: Effect.fn("McpTool.compareCommits")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

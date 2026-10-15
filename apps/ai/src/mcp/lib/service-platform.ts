@@ -18,8 +18,10 @@ const fleet = (
 	window: InfraWindow,
 ) =>
 	listProviderKind(kind, { window, filters: {}, sort: "name", limit: FLEET_LIMIT }).pipe(
-		Effect.map(({ section }) => section.rows),
+		Effect.map(({ section }) => ({ rows: section.rows, truncated: section.truncated })),
 	)
+
+const NONE = { rows: [], truncated: false }
 
 /** Databases the service's spans called (`db.namespace`), from the service-map edges. */
 const calledDatabases = (service: string, window: InfraWindow) =>
@@ -45,9 +47,9 @@ export const servicePlatform = (
 	Effect.gen(function* () {
 		const [railway, workers, databases, namespaces] = yield* Effect.all(
 			[
-				connected.has("railway") ? fleet("railway_services", window) : Effect.succeed([]),
-				connected.has("cloudflare") ? fleet("cloudflare_workers", window) : Effect.succeed([]),
-				connected.has("planetscale") ? fleet("planetscale_databases", window) : Effect.succeed([]),
+				connected.has("railway") ? fleet("railway_services", window) : Effect.succeed(NONE),
+				connected.has("cloudflare") ? fleet("cloudflare_workers", window) : Effect.succeed(NONE),
+				connected.has("planetscale") ? fleet("planetscale_databases", window) : Effect.succeed(NONE),
 				connected.has("planetscale")
 					? calledDatabases(service, window)
 					: Effect.succeed(new Set<string>()),
@@ -56,22 +58,23 @@ export const servicePlatform = (
 		)
 		const inEnvironment = (row: { readonly environment?: string }) =>
 			environment === undefined || row.environment === undefined || row.environment === environment
+		// A capped fleet read can miss the match, so the section carries the cap instead of claiming completeness.
 		const sections: Array<InfraKindSection> = [
 			{
 				kind: "railway_services",
-				rows: railway.filter((row) => row.name === service && inEnvironment(row)),
-				truncated: false,
+				rows: railway.rows.filter((row) => row.name === service && inEnvironment(row)),
+				truncated: railway.truncated,
 			},
 			{
 				kind: "cloudflare_workers",
-				rows: workers.filter((row) => row.name === service),
-				truncated: false,
+				rows: workers.rows.filter((row) => row.name === service),
+				truncated: workers.truncated,
 			},
 			{
 				kind: "planetscale_databases",
-				rows: databases.filter((row) => namespaces.has(row.name)),
-				truncated: false,
+				rows: databases.rows.filter((row) => namespaces.has(row.name)),
+				truncated: databases.truncated,
 			},
 		]
-		return sections.filter((section) => section.rows.length > 0)
+		return sections.filter((section) => section.rows.length > 0 || section.truncated)
 	})

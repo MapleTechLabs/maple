@@ -2,6 +2,8 @@
 // fills `IntegrationInventoryInputs` (narrow column projections, epoch ms), then
 // `buildIntegrationInventory` derives every status, same shape as `./setup-audit`.
 
+import { redactUrlSecrets } from "./url-redaction"
+
 export const INTEGRATION_PROVIDERS = [
 	"github",
 	"cloudflare",
@@ -477,7 +479,9 @@ const scrapeResource = (
 		status,
 		lastSuccessAt: target.lastScrapeAt,
 		lastError: target.lastScrapeError,
-		note: target.serviceName ? `${target.url} → service ${target.serviceName}` : target.url,
+		note: target.serviceName
+			? `${redactUrlSecrets(target.url)} → service ${target.serviceName}`
+			: redactUrlSecrets(target.url),
 	}
 }
 

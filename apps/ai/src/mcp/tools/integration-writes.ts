@@ -12,6 +12,7 @@ import {
 } from "@maple/domain/mcp-outputs"
 import { CreateScrapeTargetRequest, UpdateScrapeTargetRequest } from "@maple/domain/http"
 import { ScrapeIntervalSeconds } from "@maple/domain/primitives"
+import { redactUrlSecrets } from "@maple/domain/url-redaction"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
@@ -63,7 +64,8 @@ const toRow = (target: {
 }): TargetRow => ({
 	id: target.id,
 	name: target.name,
-	url: target.url,
+	// Scheme, host and path only: a Settings-created URL may carry a token in its userinfo or query.
+	url: redactUrlSecrets(target.url),
 	serviceName: target.serviceName,
 	scrapeIntervalSeconds: target.scrapeIntervalSeconds,
 	enabled: target.enabled,

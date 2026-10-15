@@ -205,6 +205,26 @@ describe("buildIntegrationInventory", () => {
 		expect(prometheus?.resources.map((r) => r.name)).toEqual(["node-exporter"])
 	})
 
+	it("never shows a scrape URL's userinfo or query, where tokens live", () => {
+		const prometheus = providerOf(
+			{
+				scrapeTargets: [
+					{
+						name: "private",
+						url: "https://user:s3cret@metrics.example/metrics?token=abc",
+						serviceName: "billing",
+						managedBy: null,
+						scrapeIntervalSeconds: 15,
+						lastScrapeAt: NOW - MINUTE,
+						lastScrapeError: null,
+					},
+				],
+			},
+			"prometheus",
+		)
+		expect(prometheus?.resources[0]?.note).toBe("https://metrics.example/metrics → service billing")
+	})
+
 	it("drops the CI traces feed when no GitHub installation has CI traces on", () => {
 		const github = providerOf(
 			{

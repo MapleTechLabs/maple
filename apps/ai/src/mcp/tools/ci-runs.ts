@@ -15,6 +15,8 @@ const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_DISCOVERY_MAX_
 const RESULTS = ["success", "failure", "timeout", "cancellation", "skip", "error"] as const
 /** Results that mean the run broke, as opposed to being cancelled or skipped. */
 const FAILED: ReadonlySet<string> = new Set(["failure", "timeout", "error"])
+/** Failed jobs read per failed run: a matrix workflow can fail dozens of jobs at once. */
+const FAILED_JOBS_PER_RUN = 50
 /** Runs read for the per-workflow summary; the listed runs are the newest `limit` of these. */
 const SUMMARY_CAP = 500
 
@@ -102,7 +104,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 
 			// The result filter narrows the listed runs only: the red analysis needs the passing runs
 			// around a failure streak to name its last green commit.
-			const { runs, listed, failedJobs } = yield* withTenantExecutor(
+			const { runs, listed, failedJobs, failedJobsCap } = yield* withTenantExecutor(
 				Effect.gen(function* () {
 					const executor = yield* WarehouseExecutor
 					const window = { orgId: executor.orgId, startTime: st, endTime: et }
@@ -126,10 +128,16 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 						failedIds.length === 0
 							? []
 							: yield* executor.compiledQuery(
-									CH.compile(CH.ciFailedJobsQuery({ traceIds: failedIds }), window),
+									CH.compile(
+										CH.ciFailedJobsQuery({
+											traceIds: failedIds,
+											limit: failedIds.length * FAILED_JOBS_PER_RUN,
+										}),
+										window,
+									),
 									{ profile: "list", context: "ciFailedJobs" },
 								)
-					return { runs, listed, failedJobs }
+					return { runs, listed, failedJobs, failedJobsCap: failedIds.length * FAILED_JOBS_PER_RUN }
 				}),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
 			yield* Effect.annotateCurrentSpan("result.rowCount", runs.length)
@@ -167,6 +175,9 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 				})),
 				runsRead: runs.length,
 				summaryCapped: runs.length >= SUMMARY_CAP,
+				...(failedJobs.length > 0 && failedJobs.length >= failedJobsCap
+					? { failedJobsCapped: true }
+					: undefined),
 			}
 		}),
 		render: (output) => {
@@ -265,6 +276,13 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 							]
 						: []),
 					doc.heading("Runs, newest first"),
+					...(output.failedJobsCapped === true
+						? [
+								doc.text(
+									"More jobs failed than were read, so some failed runs may list fewer failed jobs. Narrow `limit` or filter by workflow.",
+								),
+							]
+						: []),
 					doc.table(
 						[
 							"Started",

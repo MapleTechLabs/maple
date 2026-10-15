@@ -69,6 +69,8 @@ export const CiRunsOutput = Schema.Struct({
 	/** Runs read for the summary; when it hits the cap, older runs are not counted. */
 	runsRead: Schema.Number,
 	summaryCapped: Schema.Boolean,
+	/** The failed-jobs read hit its cap, so some failed runs may list fewer jobs than failed. */
+	failedJobsCapped: Schema.optionalKey(Schema.Boolean),
 })
 
 // ---------------------------------------------------------------------------------------------

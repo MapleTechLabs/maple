@@ -203,7 +203,19 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 				blocks.push(doc.text(`Infrastructure lookup failed: ${output.infrastructureError}`))
 			}
 			if (output.platform !== undefined) {
-				blocks.push(doc.heading("Platform"), ...output.platform.map((section) => kindTable(section)))
+				blocks.push(
+					doc.heading("Platform"),
+					...output.platform.flatMap((section) => [
+						...(section.rows.length === 0 ? [] : [kindTable(section)]),
+						...(section.truncated
+							? [
+									doc.text(
+										`Only part of the ${section.kind.replace("_", " ")} fleet was read, so a match may be missing; inspect_infra by name checks one directly.`,
+									),
+								]
+							: []),
+					]),
+				)
 			} else if (output.platformError !== undefined) {
 				blocks.push(doc.text(`Platform lookup failed: ${output.platformError}`))
 			}
