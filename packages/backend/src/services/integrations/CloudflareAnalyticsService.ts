@@ -60,12 +60,14 @@ import {
 	Effect,
 	Layer,
 	Match,
+	Metric,
 	Option,
 	Ref,
 	Result,
 	Schema,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	graphqlQuery,
@@ -177,16 +179,18 @@ const BACKFILL_MS = 24 * 60 * 60_000
  */
 const MAX_WINDOW_MS = 60 * 60_000
 /**
- * Hard per-GRANT call budget per tick so a pathological backfill can't blow the 300/5min limit.
- * Cloudflare's GraphQL rate limit is per ACCOUNT-holder — one grant is one holder however many
- * accounts it covers — and the tick runs `ORG_CONCURRENCY` orgs at a time: at 50 the six polled
- * orgs could ask for 300 queries in one tick — exactly the limit — which is how we rate-limited
- * ourselves into ~1.7k `Rate limiter budget depleted` errors a day. 20 keeps a full tick well
- * under the ceiling; backfill is resumable by construction, so a smaller budget only makes
- * history land slower. The budget is therefore shared across a grant's accounts (threaded from
- * `pollOrg` into each `pollConnection`), never one budget per account.
+ * Adaptive per-GRANT call cap per tick (additive increase, multiplicative decrease). Cloudflare
+ * meters GraphQL per holder (300 queries per 5 min by default) and returns no remaining-budget
+ * signal, while other traffic on the customer's login shares that limit. So a fixed cap is either
+ * far below the real limit (slow backfill) or above what's left (rate-limited every tick). The
+ * cap is shared across a grant's accounts (`planAccountBudgets`) and persisted on the org's
+ * workers anchor rows: a rate-limited tick halves it, a tick that spent it grows it by a step.
  */
-const MAX_CALLS_PER_GRANT_TICK = 20
+const GRANT_CAP_INITIAL = 60
+const GRANT_CAP_FLOOR = 5
+/** Half the default 300/5min holder limit, so our own polling never takes all of it. */
+const GRANT_CAP_CEILING = 150
+const GRANT_CAP_STEP = 5
 const LEASE_MS = 4 * 60_000
 /**
  * How long an org sits out after Cloudflare rate-limits it — Cloudflare's own message says "try
@@ -751,7 +755,9 @@ interface WorkItem {
 
 /**
  * Plan one poll round. The HEAD pass (newest windows) is emitted before the BACKFILL pass so the
- * caller spends its per-tick call budget on live data first and history second. Within each pass,
+ * caller spends its per-tick call budget on live data first and history second. Head items run
+ * oldest window first, so a dataset or zone the budget cut short last tick (its watermark now the
+ * oldest) leads the next one instead of losing to the same zone documents forever. Within each pass,
  * all rows sharing an identical (window, quantile-flag) — the steady state — merge into ONE
  * GraphQL document per scope, with each dataset contributing aliased selections: GROUP_LIMIT is
  * per selection, so batching datasets costs nothing on the row cap and keeps the steady-state
@@ -836,8 +842,78 @@ const buildWorkItems = (rows: ReadonlyArray<CloudflareAnalyticsStateRow>, now: n
 		}
 		return items
 	}
-	return [...planPass("head", headWindow), ...planPass("backfill", backfillWindow)]
+	// Stable sort: equal windows keep the zone-then-account registry order.
+	const head = [...planPass("head", headWindow)].sort((a, b) => a.window.start - b.window.start)
+	return [...head, ...planPass("backfill", backfillWindow)]
 }
+
+/** One account's slice of the grant's tick: the cumulative call count it may spend up to. */
+interface AccountBudget {
+	readonly accountId: string
+	readonly callLimit: number
+}
+
+/**
+ * Split the grant's per-tick call budget across its accounts, which poll sequentially. Accounts
+ * go oldest head watermark first, and each one reserves a fair share (capped at its pending head
+ * work, zero when it has none) that the accounts before it may not spend. Without the reservation the first account in
+ * status order spent the whole budget and the others got no calls for days. Unreserved calls
+ * still go to whoever needs them, so a busy account keeps its throughput when its siblings are idle.
+ */
+const planAccountBudgets = (
+	accountIds: ReadonlyArray<string>,
+	rows: ReadonlyArray<CloudflareAnalyticsStateRow>,
+	now: number,
+	grantCap: number,
+): Array<AccountBudget> => {
+	// Zero once accounts outnumber the budget: then the oldest-first order alone rotates them.
+	const fairShare = Math.floor(grantCap / Math.max(1, accountIds.length))
+	const planned = accountIds
+		.map((accountId) => {
+			const accountRows = rows.filter((row) => row.accountId === accountId)
+			const head = buildWorkItems(accountRows, now).filter((item) => item.phase === "head")
+			// A caught-up account reserves nothing, so its idle share stays with the busy siblings.
+			// First discovery or a stale settings probe still needs a call even without head work.
+			const needsCall =
+				accountRows.length === 0 ||
+				head.length > 0 ||
+				accountRows.some(
+					(row) =>
+						row.enabled &&
+						(row.settingsFetchedAt == null || now - row.settingsFetchedAt > SETTINGS_TTL_MS),
+				)
+			return {
+				accountId,
+				oldest: head.reduce((min, item) => Math.min(min, item.window.start), Infinity),
+				reserve: needsCall ? Math.min(fairShare, Math.max(1, head.length)) : 0,
+			}
+		})
+		.sort((a, b) => (a.oldest === b.oldest ? 0 : a.oldest < b.oldest ? -1 : 1))
+	return planned.map(({ accountId }, index) => ({
+		accountId,
+		callLimit: grantCap - planned.slice(index + 1).reduce((sum, account) => sum + account.reserve, 0),
+	}))
+}
+
+const clampGrantCap = (cap: number) => Math.min(GRANT_CAP_CEILING, Math.max(GRANT_CAP_FLOOR, cap))
+
+/** The org's current cap: the lowest one stored on its workers anchor rows, else the start value. */
+const grantCapOf = (rows: ReadonlyArray<CloudflareAnalyticsStateRow>): number => {
+	const stored = rows.flatMap((row) =>
+		row.dataset === WORKERS_DATASET && row.zoneId === "" && row.grantCallCap !== null
+			? [row.grantCallCap]
+			: [],
+	)
+	return clampGrantCap(stored.length === 0 ? GRANT_CAP_INITIAL : Math.min(...stored))
+}
+
+/**
+ * The cap for the next tick. Only a tick that spent its whole cap grows it: a caught-up org
+ * never tested the higher cap, and growing it anyway would let the next backlog jump to the
+ * ceiling in one burst.
+ */
+const nextGrantCap = (cap: number, tick: { readonly rateLimited: boolean; readonly callsMade: number }) =>
+	clampGrantCap(tick.rateLimited ? Math.floor(cap / 2) : tick.callsMade >= cap ? cap + GRANT_CAP_STEP : cap)
 
 /**
  * Attribute a GraphQL error to the document part that owns it. Execution errors carry a `path`
@@ -945,6 +1021,59 @@ const documentRateLimited = (item: WorkItem, message: string): Array<PartResult>
 	if (!part) return []
 	return [{ part, outcome: { kind: "rate-limited", message } }]
 }
+
+/** What one chunk polled, so a stalled dataset or zone is one span query away. */
+const chunkSpanAttributes = (item: WorkItem, accountId: string, now: number) => {
+	const rows = item.parts.flatMap((part) => part.rows)
+	const zoneNames = Arr.dedupe(rows.flatMap((row) => (row.zoneName === null ? [] : [row.zoneName]))).sort()
+	return {
+		"maple.cloudflare.account_id": accountId,
+		"maple.cloudflare.scope": item.scope,
+		"maple.cloudflare.phase": item.phase,
+		"maple.cloudflare.datasets": item.parts.map((part) => part.dataset.id).join(","),
+		"maple.cloudflare.zone_count":
+			item.scope === "zone" ? Arr.dedupe(rows.map((row) => row.zoneId)).length : 0,
+		"maple.cloudflare.zones": zoneNames.join(","),
+		"maple.cloudflare.window.start": toGraphqlTime(item.window.start),
+		"maple.cloudflare.window.end": toGraphqlTime(item.window.end),
+		"maple.cloudflare.window.lag_ms": now - item.window.end,
+	}
+}
+
+/** A chunk's result for its span: the distinct outcome kinds and the rows it shipped. */
+const chunkOutcomeAttributes = (results: ReadonlyArray<PartResult>) => ({
+	"maple.cloudflare.outcome": Arr.dedupe(results.map(({ outcome }) => outcome.kind)).join(","),
+	"maple.cloudflare.rows_ingested": results.reduce(
+		(sum, { outcome }) => (outcome.kind === "advanced" ? sum + outcome.ingested : sum),
+		0,
+	),
+})
+
+interface DatasetLag {
+	readonly dataset: string
+	readonly zoneName: string | null
+	readonly lagMs: number
+}
+
+/** Worst watermark lag per dataset across enabled, already-polled rows. */
+const datasetLags = (rows: ReadonlyArray<CloudflareAnalyticsStateRow>, now: number): Array<DatasetLag> => {
+	const worst = new Map<string, DatasetLag>()
+	for (const row of rows) {
+		if (!row.enabled || row.watermarkAt === null || !DATASET_BY_ID.has(row.dataset)) continue
+		const lag = { dataset: row.dataset, zoneName: row.zoneName, lagMs: now - row.watermarkAt }
+		const current = worst.get(row.dataset)
+		if (current === undefined || lag.lagMs > current.lagMs) worst.set(row.dataset, lag)
+	}
+	return [...worst.values()]
+}
+
+type PollStopReason =
+	| "revoked"
+	| "ingest_refused"
+	| "rate_limited"
+	| "caught_up"
+	| "budget_exhausted"
+	| "no_progress"
 
 /**
  * Ingest refusing the org's metrics (402: no plan or limit reached; 401/403: key refused). A
@@ -1243,6 +1372,16 @@ export class CloudflareAnalyticsService extends Context.Service<
 				),
 			)
 
+		/** Persist the org's adaptive call cap on every one of its workers anchor rows. */
+		const storeGrantCap = (orgId: OrgId, cap: number) =>
+			dbExecute((db) =>
+				db.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({ grantCallCap: cap })
+						.where(($) => [$.orgId.eq(orgId), $.dataset.eq(WORKERS_DATASET), $.zoneId.eq("")]),
+				),
+			)
+
 		/**
 		 * Claim the connection's tick lease via its workers anchor row. Returns the claimed anchor
 		 * (it carries the zone-discovery timestamp) or null — no anchor yet, or another tick owns it.
@@ -1410,6 +1549,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			rows: ReadonlyArray<CloudflareAnalyticsStateRow>,
 			now: number,
 			budget: { calls: number },
+			callLimit: number,
 		) {
 			const stale = rows.filter(
 				(row) =>
@@ -1453,8 +1593,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					state.stopped
 						? Effect.succeed(state)
 						: Effect.gen(function* () {
-								if (budget.calls >= MAX_CALLS_PER_GRANT_TICK)
-									return { ...state, stopped: true }
+								if (budget.calls >= callLimit) return { ...state, stopped: true }
 								budget.calls += 1
 								const result = yield* graphqlQuery(
 									accessToken,
@@ -1602,7 +1741,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * map the clean parts, ingest them as one gateway batch, advance each clean part's frontier.
 		 * With a single part this is exactly the old single-dataset behavior.
 		 */
-		const pollDatasetChunk = Effect.fn("CloudflareAnalyticsService.pollDatasetChunk")(function* (
+		const runDatasetChunk = Effect.fnUntraced(function* (
 			item: WorkItem,
 			context: {
 				readonly orgId: OrgId
@@ -1839,6 +1978,18 @@ export class CloudflareAnalyticsService extends Context.Service<
 			return [...results, ...advanced]
 		})
 
+		/** The traced chunk poll: names what it polls up front and what came of it at the end. */
+		const pollDatasetChunk = Effect.fn("CloudflareAnalyticsService.pollDatasetChunk")(function* (
+			item: WorkItem,
+			context: Parameters<typeof runDatasetChunk>[1],
+			now: number,
+		) {
+			yield* Effect.annotateCurrentSpan(chunkSpanAttributes(item, context.accountId, now))
+			const results = yield* runDatasetChunk(item, context, now)
+			yield* Effect.annotateCurrentSpan(chunkOutcomeAttributes(results))
+			return results
+		})
+
 		// Hyperdrive config inventory (discovery-cadence, service-map consumer)
 
 		/**
@@ -1952,6 +2103,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 			readonly callsMade: number
 			readonly rowsIngested: number
 			readonly failures: ReadonlyArray<DatasetPollFailure>
+			/** Cloudflare's rate limiter refused this account this tick; the org's cap halves. */
+			readonly rateLimited: boolean
 		}
 
 		const pollConnection = Effect.fn("CloudflareAnalyticsService.pollConnection")(function* (
@@ -1960,11 +2113,18 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// Shared across every account of the grant — Cloudflare meters the grant's holder, so
 			// a per-account budget would multiply a tick's calls by the account count.
 			budget: { calls: number },
+			// The running total this account may spend up to; the rest is reserved for siblings
+			// polled after it (see `planAccountBudgets`).
+			callLimit: number,
 			// The org's ingest refusal this tick: every account posts with the same org key, so
 			// one refusal holds the siblings too instead of re-posting with a refused key.
 			orgRefusal: Ref.Ref<string | null>,
 		) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.cloudflare.account_id": accountId })
+			yield* Effect.annotateCurrentSpan({
+				orgId,
+				"maple.cloudflare.account_id": accountId,
+				"maple.cloudflare.call_limit": callLimit,
+			})
 			// The budget is the grant's running total; this account's own spend is the delta, so
 			// the org summary's `callsMade` stays a sum rather than counting siblings' calls again.
 			const callsAtStart = budget.calls
@@ -1983,6 +2143,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						callsMade: 0,
 						rowsIngested: 0,
 						failures: [],
+						rateLimited: false,
 					} satisfies PollConnectionSummary),
 				)
 
@@ -2126,7 +2287,14 @@ export class CloudflareAnalyticsService extends Context.Service<
 					rows = yield* loadStateRows(orgId, accountId)
 				}
 
-				const settingsWrote = yield* refreshSettings(accessToken, accountId, rows, now, budget)
+				const settingsWrote = yield* refreshSettings(
+					accessToken,
+					accountId,
+					rows,
+					now,
+					budget,
+					callLimit,
+				)
 				if (settingsWrote) rows = yield* loadStateRows(orgId, accountId)
 
 				// The org's public ingest key authenticates the gateway POSTs (minted on first use).
@@ -2155,9 +2323,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					Ref.get(revokedRef),
 					Ref.get(deliveryBlockedRef),
 					Ref.get(rateLimitedRef),
-				]).pipe(
-					Effect.map((flags) => flags.some(Boolean) || budget.calls >= MAX_CALLS_PER_GRANT_TICK),
-				)
+				]).pipe(Effect.map((flags) => flags.some(Boolean) || budget.calls >= callLimit))
 				// One round; succeeds with whether another round should run.
 				const round = Effect.gen(function* () {
 					if (yield* stopped) return false
@@ -2338,6 +2504,56 @@ export class CloudflareAnalyticsService extends Context.Service<
 				})
 				yield* Effect.repeat(round, { while: (again) => again })
 
+				// Why the loop ended and what it left behind: an account that ends with pending work
+				// on "budget_exhausted" spent its share (see `call_limit` and `budget_used_before`).
+				const [revoked, deliveryBlocked, rateLimited] = yield* Effect.all([
+					Ref.get(revokedRef),
+					Ref.get(deliveryBlockedRef),
+					Ref.get(rateLimitedRef),
+				])
+				const pendingItems = buildWorkItems(rows, now).length
+				const stopReason: PollStopReason = revoked
+					? "revoked"
+					: deliveryBlocked
+						? "ingest_refused"
+						: rateLimited
+							? "rate_limited"
+							: pendingItems === 0
+								? "caught_up"
+								: budget.calls >= callLimit
+									? "budget_exhausted"
+									: "no_progress"
+				const lags = datasetLags(rows, now)
+				const slowest = lags.reduce<DatasetLag | null>(
+					(worst, lag) => (worst === null || lag.lagMs > worst.lagMs ? lag : worst),
+					null,
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.cloudflare.stop_reason": stopReason,
+					"maple.cloudflare.pending_items": pendingItems,
+					"maple.cloudflare.budget_used_before": callsAtStart,
+				})
+				if (slowest !== null) {
+					yield* Effect.annotateCurrentSpan({
+						"maple.cloudflare.max_lag_ms": slowest.lagMs,
+						"maple.cloudflare.max_lag_dataset": slowest.dataset,
+						"maple.cloudflare.max_lag_zone": slowest.zoneName ?? "",
+					})
+				}
+				yield* Effect.forEach(
+					lags,
+					(lag) =>
+						Metric.update(
+							Metric.withAttributes(CloudflareAnalyticsMetrics.datasetLagSeconds, {
+								org_id: orgId,
+								account_id: accountId,
+								dataset: lag.dataset,
+							}),
+							Math.round(lag.lagMs / 1000),
+						),
+					{ discard: true },
+				)
+
 				const rowsIngested = yield* Ref.get(rowsIngestedRef)
 				// Metrics ship through the ingest gateway (see emitMetrics), so Autumn metering
 				// happens there — no self-report here.
@@ -2350,6 +2566,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					callsMade: budget.calls - callsAtStart,
 					rowsIngested,
 					failures: datasetFailures,
+					rateLimited,
 				} satisfies PollConnectionSummary
 			}).pipe(
 				Effect.ensuring(
@@ -2394,29 +2611,59 @@ export class CloudflareAnalyticsService extends Context.Service<
 		/**
 		 * Poll every connected account of one org, sequentially, sharing ONE call budget —
 		 * Cloudflare meters the grant's holder, not the individual accounts, so a per-account
-		 * budget would multiply a tick's calls by the account count. Revoked and
+		 * budget would multiply a tick's calls by the account count. `planAccountBudgets` sets the
+		 * order and each account's share so no account starves its siblings. Revoked and
 		 * scope-incapable connections are skipped without touching their state rows
 		 * (the status endpoint already surfaces both conditions per account).
 		 */
 		const pollOrg = Effect.fn("CloudflareAnalyticsService.pollOrg")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const status = yield* oauth.getStatus(orgId)
-			// One budget for the whole grant, spent by the accounts in order.
+			// One budget for the whole grant, spent by the accounts in planned order.
 			const budget = { calls: 0 }
 			const orgRefusal = yield* Ref.make<string | null>(null)
-			const summaries = yield* Effect.forEach(status.accounts, (account) =>
-				// Revocation is grant-wide (one token), but record it per account so the tick
-				// rollup names the real cause instead of falling through to "not connected".
-				account.revoked || !hasAnalyticsScopes(account.scope)
-					? Effect.succeed<PollConnectionSummary>({
-							accountId: account.accountId,
-							skipped: account.revoked ? "revoked" : "missing analytics scopes",
-							callsMade: 0,
-							rowsIngested: 0,
-							failures: [],
-						})
-					: pollConnection(orgId, account.accountId, budget, orgRefusal),
+			const canPoll = (account: (typeof status.accounts)[number]) =>
+				!account.revoked && hasAnalyticsScopes(account.scope)
+			const pollable = status.accounts.filter(canPoll)
+			const incapable = status.accounts.filter((account) => !canPoll(account))
+			// Revocation is grant-wide (one token), but record it per account so the tick
+			// rollup names the real cause instead of falling through to "not connected".
+			const skipped = incapable.map((account): PollConnectionSummary => ({
+				accountId: account.accountId,
+				skipped: account.revoked ? "revoked" : "missing analytics scopes",
+				callsMade: 0,
+				rowsIngested: 0,
+				failures: [],
+				rateLimited: false,
+			}))
+			const stateRows = pollable.length === 0 ? [] : yield* loadStateRows(orgId)
+			const grantCap = grantCapOf(stateRows)
+			const plan =
+				pollable.length === 0
+					? []
+					: planAccountBudgets(
+							pollable.map((account) => account.accountId),
+							stateRows,
+							yield* Clock.currentTimeMillis,
+							grantCap,
+						)
+			const polled = yield* Effect.forEach(plan, ({ accountId, callLimit }) =>
+				pollConnection(orgId, accountId, budget, callLimit, orgRefusal),
 			)
+			// A tick where every account skipped (e.g. still sitting out a backoff) says nothing
+			// about the limit, so the cap only moves after a tick that actually polled.
+			if (polled.some((summary) => summary.skipped === null)) {
+				const nextCap = nextGrantCap(grantCap, {
+					rateLimited: polled.some((summary) => summary.rateLimited),
+					callsMade: budget.calls,
+				})
+				yield* Effect.annotateCurrentSpan({
+					"maple.cloudflare.grant_cap": grantCap,
+					"maple.cloudflare.grant_cap_next": nextCap,
+				})
+				if (nextCap !== grantCap) yield* storeGrantCap(orgId, nextCap)
+			}
+			const summaries = [...skipped, ...polled]
 			if (summaries.length === 0) {
 				yield* Effect.annotateCurrentSpan("maple.cloudflare.skip_reason", "not connected")
 				return {

@@ -43,7 +43,7 @@ const workloadDetailSearchSchema = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-const WorkloadKindSchema = Schema.Literals(["deployment", "statefulset", "daemonset"])
+const WorkloadKindSchema = Schema.Literals(["deployment", "statefulset", "daemonset", "job"])
 
 const paramsSchema = Schema.Struct({
 	kind: WorkloadKindSchema,
@@ -70,6 +70,7 @@ const KIND_LABEL: Record<WorkloadKind, string> = {
 	deployment: "Deployment",
 	statefulset: "StatefulSet",
 	daemonset: "DaemonSet",
+	job: "Job",
 } satisfies Record<WorkloadKind, string>
 
 function WorkloadDetailPage() {

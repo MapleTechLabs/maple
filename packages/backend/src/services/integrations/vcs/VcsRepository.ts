@@ -117,6 +117,7 @@ const rowToInstallation = (row: VcsInstallationRow): VcsInstallation =>
 		repositorySelection: row.repositorySelection,
 		status: row.status,
 		suspendedAt: row.suspendedAt,
+		ciTracesEnabled: row.ciTracesEnabled,
 		installedByUserId: row.installedByUserId,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
@@ -351,6 +352,22 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					PG.update(VcsInstallations)
 						.set({ status, suspendedAt: status === "suspended" ? now : null, updatedAt: now })
 						.where(($) => [$.id.eq(installationId)]),
+				),
+			)
+		})
+
+		// Org-scoped, so an installation id from another tenant no-ops.
+		const setCiTracesEnabled = Effect.fn("VcsRepository.setCiTracesEnabled")(function* (
+			orgId: OrgId,
+			installationId: VcsInstallationId,
+			enabled: boolean,
+		) {
+			const now = yield* Clock.currentTimeMillis
+			yield* dbExecute((db) =>
+				db.run(
+					PG.update(VcsInstallations)
+						.set({ ciTracesEnabled: enabled, updatedAt: now })
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)]),
 				),
 			)
 		})
@@ -1129,6 +1146,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			listAllInstallations,
 			upsertInstallation,
 			markInstallationStatus,
+			setCiTracesEnabled,
 			listRepositoriesByInstallation,
 			resolveRepository,
 			getRepositoryById,
