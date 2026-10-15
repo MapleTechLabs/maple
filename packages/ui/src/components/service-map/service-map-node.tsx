@@ -15,6 +15,7 @@ import {
 	CloudflareBrandIcon,
 	CubeIcon,
 	GlobeIcon,
+	GoogleCloudIcon,
 	type IconComponent,
 	KubernetesIcon,
 	ServerIcon,
@@ -34,6 +35,8 @@ function getPlatformIcon(platform: ServicePlatform | undefined): {
 			return { Icon: KubernetesIcon, label: "Kubernetes", branded: true }
 		case "cloudflare":
 			return { Icon: CloudflareBrandIcon, label: "Cloudflare Workers", branded: true }
+		case "gcp":
+			return { Icon: GoogleCloudIcon, label: "Google Cloud", branded: true }
 		case "lambda":
 			return { Icon: AwsLambdaIcon, label: "AWS Lambda", branded: true }
 		case "web":
