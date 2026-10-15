@@ -177,6 +177,23 @@ describe("metricScopedAttributeValuesQuery", () => {
 		expect(sql).toContain("LIMIT 50")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
+
+	it("reads resource attributes across several named metrics", () => {
+		const q = metricScopedAttributeValuesQuery({
+			metricType: "gauge",
+			scope: "resource",
+			metricNames: ["gcp.run.container.instance_count", "gcp.cloudsql.database.cpu.utilization"],
+			attributeKey: "cloud.account.id",
+		})
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("FROM metrics_gauge")
+		expect(sql).toContain("ResourceAttributes['cloud.account.id'] AS attributeValue")
+		expect(sql).toContain(
+			"MetricName IN ('gcp.run.container.instance_count', 'gcp.cloudsql.database.cpu.utilization')",
+		)
+		expect(sql).not.toMatch(/\bAttributes\['/)
+		expect(sql).not.toMatch(/__PARAM_\w+__/)
+	})
 })
 
 describe("serviceScopedAttributeKeysQuery", () => {

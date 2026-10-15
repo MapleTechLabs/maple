@@ -80,4 +80,42 @@ describe("Google Cloud dashboard template", () => {
 		}
 		expect(checked).toBe(widgets.length)
 	})
+
+	it("lists every filter's values from stored gauges that carry the filtered attribute", () => {
+		const { variables = [], widgets } = gcpTemplate.build({})
+		for (const variable of variables) {
+			const source = variable.type === "query" ? variable.source : undefined
+			expect(source?.kind, variable.name).toBe("metric")
+			if (source?.kind !== "metric") continue
+			const { metricNames, metricType, scope, attributeKey } = source
+			expect(scope, variable.name).toBe("resource")
+			for (const name of metricNames) {
+				const stored = STORED.get(name)
+				expect(stored?.metricType, `${variable.name}: ${name}`).toBe(metricType)
+				expect(Object.keys(stored?.rows[0]?.resource_attributes ?? {}), `${variable.name}: ${name}`).toContain(
+					attributeKey,
+				)
+			}
+		}
+
+		// A widget filters on a variable only where its own series carry the attribute, so
+		// picking a region never empties a chart of global resources.
+		const declared = new Set(variables.map((variable) => variable.name))
+		for (const widget of widgets) {
+			if (widget.dataSource.kind !== "query") continue
+			for (const query of widget.dataSource.queries) {
+				for (const [, name] of query.whereClause.matchAll(/\$([A-Za-z]\w*)/g)) {
+					expect(declared, `${widget.id}: $${name}`).toContain(name)
+					const variable = variables.find((candidate) => candidate.name === name)
+					if (variable?.type !== "query" || variable.source.kind !== "metric") continue
+					if (query.dataSource !== "metrics") continue
+					const stored = STORED.get(query.metricName)
+					expect(
+						Object.keys(stored?.rows[0]?.resource_attributes ?? {}),
+						`${widget.id}: $${name}`,
+					).toContain(variable.source.attributeKey)
+				}
+			}
+		}
+	})
 })

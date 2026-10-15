@@ -14,6 +14,7 @@ import { createContext, useCallback, useContext, useMemo, type ReactNode } from 
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getLogsFacetValuesResultAtom,
+	getMetricAttributeValuesResultAtom,
 	getResourceAttributeValuesResultAtom,
 	getSpanAttributeValuesResultAtom,
 	getTracesFacetValuesResultAtom,
@@ -83,7 +84,17 @@ function readVariableOptions(
 
 	if (query.kind === "attributeValues") {
 		const atom =
-			query.scope === "resource"
+			query.source === "metrics"
+				? getMetricAttributeValuesResultAtom({
+						data: {
+							...window,
+							attributeKey: query.attributeKey,
+							metricNames: query.metricNames,
+							metricType: query.metricType,
+							scope: query.scope === "resource" ? "resource" : "metric",
+						},
+					})
+				: query.scope === "resource"
 				? getResourceAttributeValuesResultAtom({
 						data: { ...window, attributeKey: query.attributeKey },
 					})
