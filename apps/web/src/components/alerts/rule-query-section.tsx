@@ -11,7 +11,6 @@ import type { AlertSignalType } from "@maple/domain/http"
 import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
-import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import {
 	InputGroup,
@@ -88,11 +87,8 @@ export function RuleQuerySection(props: RuleQuerySectionProps) {
 	}
 
 	return (
-		<section aria-labelledby="rule-query-heading" className="space-y-2">
+		<div className="space-y-2">
 			<div className="flex flex-wrap items-center gap-3">
-				<Eyebrow id="rule-query-heading" variant="label">
-					Query
-				</Eyebrow>
 				<SegmentedSelect<SignalKind>
 					options={KIND_OPTIONS}
 					value={kind}
@@ -107,7 +103,7 @@ export function RuleQuerySection(props: RuleQuerySectionProps) {
 			)}
 			{kind === "builder_query" && <AlertQueryPanel {...props} />}
 			{kind === "raw_query" && <RawQueryEditor form={form} onChange={onChange} />}
-		</section>
+		</div>
 	)
 }
 

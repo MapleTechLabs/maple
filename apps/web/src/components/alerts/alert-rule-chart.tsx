@@ -787,9 +787,8 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			{preview?.truncatedToStart != null && (
 				<p className="text-2xs text-muted-foreground">
 					{clampedToPreview ? "Axis starts at " : "Query series starts at "}
-					{formatTime(Date.parse(preview.truncatedToStart), "tooltip")} — the selected range needs
-					more evaluation windows than one preview replays. Widen the rule's window or shorten the
-					range for full coverage.
+					{formatTime(Date.parse(preview.truncatedToStart), "tooltip")}. The range needs more
+					windows than one preview replays: widen the rule's window or shorten the range.
 				</p>
 			)}
 

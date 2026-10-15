@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react"
 
 import { Card } from "@maple/ui/components/ui/card"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import {
 	InputGroup,
 	InputGroupAddon,
@@ -23,7 +24,7 @@ export function RuleNoiseSection({ form, onChange }: RuleNoiseSectionProps) {
 	const grouped = ruleFormIsGrouped(form)
 	return (
 		<Card className="p-4">
-			<SectionHeading variant="eyebrow" id="rule-noise-heading" title="Noise" />
+			<SectionHeading variant="eyebrow" id="rule-noise-heading" title="After it fires" />
 			<div className="space-y-3">
 				<NoiseRow
 					id="rule-consecutive-healthy"
@@ -34,7 +35,7 @@ export function RuleNoiseSection({ form, onChange }: RuleNoiseSectionProps) {
 				/>
 				<NoiseRow
 					id="rule-renotify"
-					label="Remind while open every"
+					label="Remind while open, every"
 					unit="min"
 					value={form.renotifyIntervalMinutes}
 					onChange={(value) => onChange((c) => ({ ...c, renotifyIntervalMinutes: value }))}
@@ -73,11 +74,9 @@ function NoiseRow({
 	onChange: (value: string) => void
 }) {
 	return (
-		<div className="flex items-center justify-between gap-3">
-			<label htmlFor={id} className="text-sm text-muted-foreground">
-				{label}
-			</label>
-			<InputGroup className="h-8 w-auto">
+		<Field className="items-stretch gap-1.5">
+			<FieldLabel htmlFor={id}>{label}</FieldLabel>
+			<InputGroup className="h-9">
 				<InputGroupInput
 					id={id}
 					type="number"
@@ -85,13 +84,12 @@ function NoiseRow({
 					min={1}
 					value={value}
 					onChange={(event) => onChange(event.target.value)}
-					className="w-14"
 					controlClassName="font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 				/>
 				<InputGroupAddon align="inline-end">
 					<InputGroupText>{unit}</InputGroupText>
 				</InputGroupAddon>
 			</InputGroup>
-		</div>
+		</Field>
 	)
 }

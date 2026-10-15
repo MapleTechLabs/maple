@@ -13,6 +13,8 @@ interface RuleActionBarProps {
 	changeCount?: number | null
 	saving: boolean
 	validationIssues: string[]
+	/** The rule as one sentence, so the whole condition reads without scrolling. */
+	summary?: string
 	onCancel: () => void
 	onSave: () => void
 	onShowTemplates?: () => void
@@ -34,6 +36,7 @@ export function RuleActionBar({
 	changeCount = null,
 	saving,
 	validationIssues,
+	summary,
 	onCancel,
 	onSave,
 	onShowTemplates,
@@ -69,12 +72,19 @@ export function RuleActionBar({
 							Templates
 						</Button>
 					)}
-					<ValidationSummary
+					<div className="flex min-w-0 flex-col gap-0.5">
+						{summary && (
+							<p className="truncate text-sm text-foreground" title={summary}>
+								{summary}
+							</p>
+						)}
+						<ValidationSummary
 						ready={ready}
 						visibleIssues={visibleIssues}
 						hiddenCount={hiddenCount}
 						fullList={validationIssues}
 					/>
+					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
 					{changeCount !== null && (

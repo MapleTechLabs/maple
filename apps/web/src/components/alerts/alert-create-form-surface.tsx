@@ -15,7 +15,8 @@ import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { RuleActionBar } from "@/components/alerts/rule-action-bar"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
-import { RuleConditionBar } from "@/components/alerts/rule-condition-bar"
+import { RuleConditionFields, describeRuleCondition } from "@/components/alerts/rule-condition-bar"
+import { RuleStep } from "@/components/alerts/rule-step"
 import { RuleLiveChartHero } from "@/components/alerts/rule-live-chart-hero"
 import { RuleNoiseSection } from "@/components/alerts/rule-noise-section"
 import { RuleQuerySection } from "@/components/alerts/rule-query-section"
@@ -221,6 +222,7 @@ export function AlertCreateFormSurface({
 	// Drop the verdict as soon as the user edits anything it depended on.
 	const currentPreviewKey = previewIdentityKey(ruleForm)
 	const freshPreviewResult = previewResult?.key === currentPreviewKey ? previewResult : null
+	const thresholdMissing = !Number.isFinite(Number(ruleForm.threshold)) || ruleForm.threshold.trim() === ""
 
 	return (
 		<>
@@ -230,62 +232,91 @@ export function AlertCreateFormSurface({
 					{ label: editingRule ? "Edit rule" : "New rule" },
 				]}
 			>
-				<div className={cn("mx-auto w-full space-y-6", RULE_FORM_MAX_WIDTH)}>
+				<div className={cn("mx-auto w-full space-y-8", RULE_FORM_MAX_WIDTH)}>
 					<WidgetPrefillNoticeBanner notices={prefillNotices} />
-					{/* Chart first and full width: every field in the condition bar under it
-					    redraws the threshold line or the would-fire bands. */}
-					<RuleLiveChartHero
-						form={ruleForm}
-						preview={preview}
-						previewLoading={previewLoading}
-						previewError={previewError}
-						onTestRule={() => void previewRule()}
-						testing={previewingRule}
-						previewResult={freshPreviewResult}
-						range={previewRange}
-						timeRange={previewTimeRange}
-						onTimeRangeChange={setPreviewTimeRange}
-						comparison={
-							savedForm !== null && changes.length > 0
-								? {
-										savedPreview: evaluationChanged ? savedReplay.preview : preview,
-										savedLoading: evaluationChanged && savedReplay.previewLoading,
-										changes,
-										clearedIncidents,
-									}
-								: null
-						}
+					<RuleStep
+						number={1}
+						title="What to watch"
+						hint="Pick a built-in signal, or build the query like a dashboard widget."
+						status="done"
 					>
-						<RuleConditionBar form={ruleForm} onChange={setRuleForm} saved={savedForm} />
-					</RuleLiveChartHero>
-					<RuleQuerySection
-						form={ruleForm}
-						onChange={setRuleForm}
-						autocompleteValues={autocompleteValues}
-						serviceNameOptions={serviceNameOptions}
-						environmentOptions={environmentOptions}
-					/>
-					<div className="grid gap-4 lg:grid-cols-3 lg:items-start">
-						<RuleNoiseSection form={ruleForm} onChange={setRuleForm} />
-						<NotificationsSection
+						<RuleQuerySection
 							form={ruleForm}
 							onChange={setRuleForm}
-							destinations={destinations}
-							onSendTest={() => void sendTestNotification()}
-							testing={sendingTestNotification}
-							onAddDestination={
-								isAdmin
-									? (preset) => destinationManager.openDialog(undefined, preset)
-									: undefined
-							}
-							onQuickCreate={isAdmin ? destinationManager.quickCreate : undefined}
+							autocompleteValues={autocompleteValues}
+							serviceNameOptions={serviceNameOptions}
+							environmentOptions={environmentOptions}
 						/>
-						<DetailsSection
-							form={ruleForm}
-							onChange={setRuleForm}
-							suggestedName={suggestedName}
-							tagSuggestions={tagSuggestions}
-						/>
+					</RuleStep>
+					<RuleStep
+						number={2}
+						title="When to alert"
+						hint="The threshold draws on the chart. Shaded bands show when it would have fired."
+						status={thresholdMissing ? "missing" : "done"}
+					>
+						<div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
+							<div className="space-y-4">
+								<RuleConditionFields form={ruleForm} onChange={setRuleForm} saved={savedForm} />
+								<RuleNoiseSection form={ruleForm} onChange={setRuleForm} />
+							</div>
+							<div className="min-w-0 lg:sticky lg:top-4">
+								<RuleLiveChartHero
+									form={ruleForm}
+									preview={preview}
+									previewLoading={previewLoading}
+									previewError={previewError}
+									onTestRule={() => void previewRule()}
+									testing={previewingRule}
+									previewResult={freshPreviewResult}
+									range={previewRange}
+									timeRange={previewTimeRange}
+									onTimeRangeChange={setPreviewTimeRange}
+									comparison={
+										savedForm !== null && changes.length > 0
+											? {
+													savedPreview: evaluationChanged ? savedReplay.preview : preview,
+													savedLoading: evaluationChanged && savedReplay.previewLoading,
+													changes,
+													clearedIncidents,
+												}
+											: null
+									}
+								/>
+							</div>
+						</div>
+					</RuleStep>
+					<div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+						<RuleStep
+							number={3}
+							title="Who gets notified"
+							status={ruleForm.destinationIds.length === 0 ? "missing" : "done"}
+						>
+							<NotificationsSection
+								form={ruleForm}
+								onChange={setRuleForm}
+								destinations={destinations}
+								onSendTest={() => void sendTestNotification()}
+								testing={sendingTestNotification}
+								onAddDestination={
+									isAdmin
+										? (preset) => destinationManager.openDialog(undefined, preset)
+										: undefined
+								}
+								onQuickCreate={isAdmin ? destinationManager.quickCreate : undefined}
+							/>
+						</RuleStep>
+						<RuleStep
+							number={4}
+							title="Name it"
+							status={ruleForm.name.trim().length === 0 ? "missing" : "done"}
+						>
+							<DetailsSection
+								form={ruleForm}
+								onChange={setRuleForm}
+								suggestedName={suggestedName}
+								tagSuggestions={tagSuggestions}
+							/>
+						</RuleStep>
 					</div>
 				</div>
 
@@ -294,6 +325,7 @@ export function AlertCreateFormSurface({
 					changeCount={editingRule ? changes.length : null}
 					saving={savingRule}
 					validationIssues={validationIssues}
+					summary={describeRuleCondition(ruleForm)}
 					onCancel={() => navigate({ to: "/alerts" })}
 					onSave={() => void handleSave()}
 					onShowTemplates={editingRule ? undefined : () => setTemplatesOpen(true)}
