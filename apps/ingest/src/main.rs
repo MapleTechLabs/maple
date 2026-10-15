@@ -47,6 +47,7 @@ use maple_ingest::ai_session;
 use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
 use maple_ingest::gcp_logging;
+use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
 use maple_ingest::metrics;
 use maple_ingest::otel::{
     accept_internal_span, auth_internal_span, build_resource, decode_internal_span,
@@ -817,6 +818,8 @@ struct GcpConnectorResolver {
     recent_health_writes: Cache<(String, bool), ()>,
     /// Setup reports per connector in the current `GCP_SETUP_REPORT_WINDOW`.
     recent_setup_reports: Cache<String, Arc<AtomicU32>>,
+    /// Verifies the ID tokens Pub/Sub signs pushes with.
+    push_auth: GooglePushAuth,
 }
 
 struct OrgRoutingResolver {
@@ -900,6 +903,12 @@ trait KeyStore: Send + Sync {
         secret_hash: &str,
     ) -> Result<Option<GcpConnectorRow>, String>;
 
+    /// For a push signed by Google: the caller checks the signing account.
+    async fn fetch_gcp_connector_by_id(
+        &self,
+        connector_id: &str,
+    ) -> Result<Option<GcpConnectorRow>, String>;
+
     async fn fetch_sampling_policy(
         &self,
         org_id: &str,
@@ -962,7 +971,11 @@ struct ConnectorRow {
 #[derive(Clone, Debug)]
 struct GcpConnectorRow {
     org_id: String,
+    /// The host project: its push service account signs the connector's pushes.
+    project_id: String,
     logs_enabled: bool,
+    /// What a setup run last reported; `None` before any report.
+    applied_logs_enabled: Option<bool>,
     self_managed: bool,
     clickhouse_ready: bool,
 }
@@ -1031,12 +1044,14 @@ struct GcpConnectorIdentity {
     org_id: String,
     secret_key_id: String,
     logs_enabled: bool,
+    confirms_log_forwarding: bool,
 }
 
 impl GcpConnectorIdentity {
     fn into_resolved(self, routing: &OrgRouting) -> ResolvedGcpConnector {
         ResolvedGcpConnector {
             logs_enabled: self.logs_enabled,
+            confirms_log_forwarding: self.confirms_log_forwarding,
             key: ResolvedIngestKey {
                 org_id: self.org_id,
                 key_type: IngestKeyType::Connector,
@@ -1263,6 +1278,10 @@ struct ResolvedCloudflareConnector {
 struct ResolvedGcpConnector {
     /// False once the org turns log forwarding off; the sink may still push.
     logs_enabled: bool,
+    /// A signed push to a connector no setup run has reported on: one set up
+    /// with Terraform, which sends no report. The push itself proves the sink,
+    /// topic and subscription are in place.
+    confirms_log_forwarding: bool,
     key: ResolvedIngestKey,
 }
 
@@ -2566,6 +2585,7 @@ async fn main() {
             config.lookup_hmac_key.clone(),
             org_routing_resolver,
             Duration::from_secs(config.ingest_key_cache_ttl_secs),
+            GooglePushAuth::new(http_client.clone()),
         ),
         telemetry_pipeline,
         http_client,
@@ -4831,6 +4851,7 @@ async fn handle_gcp_logpush(
     State(state): State<Arc<AppState>>,
     Path(connector_id): Path<String>,
     Query(query): Query<LogpushQuery>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     let start = Instant::now();
@@ -4854,6 +4875,7 @@ async fn handle_gcp_logpush(
         "maple.org_id" = tracing::field::Empty,
         "maple.gcp.connector_id" = tracing::field::Empty,
         "maple.gcp.setup_report" = tracing::field::Empty,
+        "maple.gcp.push_auth" = tracing::field::Empty,
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
@@ -4861,7 +4883,18 @@ async fn handle_gcp_logpush(
     );
     let span_handle = span.clone();
 
-    let result = handle_gcp_logpush_inner(&state, &connector_id, query.secret.as_deref(), body)
+    // Set up by the current script or Terraform: a token Pub/Sub signed.
+    // Earlier subscriptions carry the secret in the URL.
+    let token = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let credential = match (token, query.secret.as_deref()) {
+        (Some(token), _) => Some(GcpPushCredential::Token(token)),
+        (None, Some(secret)) => Some(GcpPushCredential::Secret(secret)),
+        (None, None) => None,
+    };
+    let result = handle_gcp_logpush_inner(&state, &connector_id, credential, body)
         .instrument(span)
         .await;
     let duration = start.elapsed().as_secs_f64();
@@ -4923,12 +4956,17 @@ async fn handle_gcp_logpush(
     }
 }
 
+enum GcpPushCredential<'a> {
+    Token(&'a str),
+    Secret(&'a str),
+}
+
 /// Returns Ok((ack response, what the ack means)) or
 /// Err((ApiError, error_kind_label)).
 async fn handle_gcp_logpush_inner(
     state: &AppState,
     connector_id: &str,
-    secret: Option<&str>,
+    credential: Option<GcpPushCredential<'_>>,
     body: Bytes,
 ) -> Result<(Response, GcpPushOutcome), (ApiError, &'static str)> {
     let unauthorized = || {
@@ -4937,17 +4975,34 @@ async fn handle_gcp_logpush_inner(
             "auth",
         )
     };
-    let secret = secret.map(str::trim).filter(|value| !value.is_empty());
-    let (Some(secret), true) = (secret, is_connector_id(connector_id)) else {
-        warn!("Missing GCP connector secret or malformed connector id");
+    let credential = credential.filter(|credential| match credential {
+        GcpPushCredential::Token(value) | GcpPushCredential::Secret(value) => {
+            !value.trim().is_empty()
+        }
+    });
+    let (Some(credential), true) = (credential, is_connector_id(connector_id)) else {
+        warn!("Missing GCP connector credentials or malformed connector id");
         return Err(unauthorized());
     };
     Span::current().record("maple.gcp.connector_id", connector_id);
 
-    let resolved = state
-        .gcp_resolver
-        .resolve_connector(connector_id, secret)
-        .await
+    let lookup = match credential {
+        GcpPushCredential::Token(token) => {
+            Span::current().record("maple.gcp.push_auth", "oidc");
+            state
+                .gcp_resolver
+                .resolve_connector_by_token(connector_id, token.trim())
+                .await
+        }
+        GcpPushCredential::Secret(secret) => {
+            Span::current().record("maple.gcp.push_auth", "secret");
+            state
+                .gcp_resolver
+                .resolve_connector(connector_id, secret.trim())
+                .await
+        }
+    };
+    let resolved = lookup
         .map_err(|error| {
             error!(error = %error, connector_id, "GCP connector resolution failed");
             (
@@ -4962,6 +5017,12 @@ async fn handle_gcp_logpush_inner(
     let org_id = resolved.key.org_id.as_str();
 
     Span::current().record("maple.org_id", org_id);
+    if resolved.confirms_log_forwarding {
+        state
+            .gcp_resolver
+            .confirm_log_forwarding(connector_id)
+            .await;
+    }
     Span::current().record("maple.ingest.self_managed", resolved.key.self_managed);
     Span::current().record(
         "maple.ingest.clickhouse_ready",
@@ -5104,6 +5165,17 @@ async fn handle_gcp_logpush_inner(
 
 /// Connector ids are generated by the API; anything outside this alphabet is
 /// refused before it reaches this handler's span, its logs, or Postgres.
+/// The push service account a connector's setup creates in its host project,
+/// named as `gcpConnectorResourceNames` in `@maple/domain/gcp` names it.
+fn gcp_push_service_account(connector_id: &str, project_id: &str) -> String {
+    let hex: String = connector_id
+        .chars()
+        .filter(|c| *c != '-')
+        .take(19)
+        .collect();
+    format!("maple-push-{hex}@{project_id}.iam.gserviceaccount.com")
+}
+
 fn is_connector_id(value: &str) -> bool {
     (1..=128).contains(&value.len())
         && value
@@ -6129,6 +6201,7 @@ impl GcpConnectorResolver {
         lookup_hmac_key: String,
         routing: Arc<OrgRoutingResolver>,
         cache_ttl: Duration,
+        push_auth: GooglePushAuth,
     ) -> Self {
         Self {
             store,
@@ -6151,6 +6224,7 @@ impl GcpConnectorResolver {
                 .time_to_live(GCP_SETUP_REPORT_WINDOW)
                 .max_capacity(10_000)
                 .build(),
+            push_auth,
         }
     }
 
@@ -6195,6 +6269,7 @@ impl GcpConnectorResolver {
             org_id: row.org_id,
             secret_key_id: cache_key.1.chars().take(16).collect(),
             logs_enabled: row.logs_enabled,
+            confirms_log_forwarding: false,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -6203,6 +6278,102 @@ impl GcpConnectorResolver {
             .await;
 
         Ok(Some(identity.into_resolved(&routing)))
+    }
+
+    /// A push Pub/Sub signed as the connector's push service account, for an
+    /// audience naming this connector. `Err` only when Google's keys can't be
+    /// fetched, which a redelivery may get past.
+    async fn resolve_connector_by_token(
+        &self,
+        connector_id: &str,
+        token: &str,
+    ) -> Result<Option<ResolvedGcpConnector>, String> {
+        let now_secs = u64::try_from(current_time_millis() / 1000).unwrap_or_default();
+        let push = match self.push_auth.verify(token, now_secs).await {
+            Ok(push) => push,
+            Err(PushAuthError::Invalid(reason)) => {
+                debug!(connector_id, reason, "GCP push token refused");
+                return Ok(None);
+            }
+            Err(PushAuthError::KeysUnavailable(error)) => return Err(error),
+        };
+        // The audience is the receiver URL; its host is whatever the
+        // subscription was given, the path names the connector.
+        let audience_path = url::Url::parse(&push.audience)
+            .map(|url| url.path().to_owned())
+            .unwrap_or_default();
+        if audience_path != format!("/v1/logpush/gcp/{connector_id}") {
+            debug!(connector_id, "GCP push token is for another audience");
+            return Ok(None);
+        }
+
+        let cache_key = (connector_id.to_owned(), format!("oidc:{}", push.email));
+        if let Some(identity) = self.cache.get(&cache_key).await {
+            let routing = self.routing.resolve_org_routing(&identity.org_id).await?;
+            return Ok(Some(identity.into_resolved(&routing)));
+        }
+        if self.negative_cache.contains_key(&cache_key) {
+            return Ok(None);
+        }
+        let row = self
+            .store
+            .fetch_gcp_connector_by_id(connector_id)
+            .await?
+            .filter(|row| push.email == gcp_push_service_account(connector_id, &row.project_id));
+        let Some(row) = row else {
+            self.negative_cache.insert(cache_key, ()).await;
+            return Ok(None);
+        };
+
+        let routing = OrgRouting {
+            self_managed: row.self_managed,
+            clickhouse_ready: row.clickhouse_ready,
+        };
+        let identity = GcpConnectorIdentity {
+            org_id: row.org_id,
+            // Names the signing account, as a secret's hash prefix names the secret.
+            secret_key_id: push.email.chars().take(16).collect(),
+            logs_enabled: row.logs_enabled,
+            confirms_log_forwarding: row.applied_logs_enabled.is_none(),
+        };
+        self.cache.insert(cache_key, identity.clone()).await;
+        self.routing
+            .remember_org_routing(&identity.org_id, routing.clone())
+            .await;
+        Ok(Some(identity.into_resolved(&routing)))
+    }
+
+    /// Records log forwarding as set up, once. The cached identities stop
+    /// asking first, so a busy sink writes once rather than once per entry
+    /// until the write lands; a failed write lets a later push try again.
+    async fn confirm_log_forwarding(&self, connector_id: &str) {
+        // Collected first: the cache's iterator is not held across an await.
+        let pending: Vec<_> = self
+            .cache
+            .iter()
+            .filter(|(key, identity)| key.0 == connector_id && identity.confirms_log_forwarding)
+            .collect();
+        for (key, identity) in &pending {
+            let confirmed = GcpConnectorIdentity {
+                confirms_log_forwarding: false,
+                ..identity.clone()
+            };
+            self.cache.insert((**key).clone(), confirmed).await;
+        }
+        let report = gcp_logging::SetupReport {
+            logs: Some(true),
+            metrics: None,
+        };
+        if let Err(error) = self
+            .store
+            .record_gcp_setup_report(connector_id, report, current_time_millis())
+            .await
+        {
+            warn!(error = %error, connector_id, "Failed to record GCP log forwarding as set up");
+            for (key, _) in &pending {
+                self.cache.invalidate(&**key).await;
+            }
+        }
     }
 
     /// Writes `last_received_at` (`error == None`) or `last_error`, at most
@@ -6373,6 +6544,27 @@ fn schema_revision_at_least(stamped: &str, needed: i32) -> bool {
 /// which would take down every ingest-key lookup, not just one org's routing.
 const SCHEMA_REVISION_COMPATIBLE_SQL: &str =
     "(CASE WHEN s.schema_version ~ '^[0-9]+$' THEN s.schema_version::int ELSE -1 END >= $1)";
+
+/// A `GcpConnectorRow`'s columns over `gcp_connectors c` joined to
+/// `org_clickhouse_settings s`, with the schema revision as `$1`.
+fn gcp_connector_columns() -> String {
+    format!(
+        "c.org_id, c.project_id, c.logs_enabled, c.applied_logs_enabled, \
+         COALESCE(s.sync_status = 'connected', false) AS self_managed, \
+         COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready"
+    )
+}
+
+fn gcp_connector_row(row: &tokio_postgres::Row) -> GcpConnectorRow {
+    GcpConnectorRow {
+        org_id: row.get("org_id"),
+        project_id: row.get("project_id"),
+        logs_enabled: row.get("logs_enabled"),
+        applied_logs_enabled: row.get("applied_logs_enabled"),
+        self_managed: row.get("self_managed"),
+        clickhouse_ready: row.get("clickhouse_ready"),
+    }
+}
 
 #[async_trait::async_trait]
 impl ClickHouseTargetProvider for ClickHouseTargetResolver {
@@ -6678,10 +6870,9 @@ impl KeyStore for PostgresKeyStore {
         let revision = required_schema_revision();
         let client = self.client().await?;
         // No `enabled` column: deleting the row is how a connector is turned off.
+        let columns = gcp_connector_columns();
         let sql = format!(
-            "SELECT c.org_id, c.logs_enabled, \
-                    COALESCE(s.sync_status = 'connected', false) AS self_managed, \
-                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
+            "SELECT {columns} \
              FROM gcp_connectors c \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
              WHERE c.id = $2 AND c.secret_hash = $3 LIMIT 1"
@@ -6696,15 +6887,33 @@ impl KeyStore for PostgresKeyStore {
             ))
             .await
             .map_err(|error| format!("postgres fetch_gcp_connector failed: {error}"))?;
-        let Some(row) = rows.into_iter().next() else {
-            return Ok(None);
-        };
-        Ok(Some(GcpConnectorRow {
-            org_id: row.get("org_id"),
-            logs_enabled: row.get("logs_enabled"),
-            self_managed: row.get("self_managed"),
-            clickhouse_ready: row.get("clickhouse_ready"),
-        }))
+        Ok(rows.first().map(gcp_connector_row))
+    }
+
+    async fn fetch_gcp_connector_by_id(
+        &self,
+        connector_id: &str,
+    ) -> Result<Option<GcpConnectorRow>, String> {
+        let revision = required_schema_revision();
+        let client = self.client().await?;
+        let columns = gcp_connector_columns();
+        let sql = format!(
+            "SELECT {columns} \
+             FROM gcp_connectors c \
+             LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             WHERE c.id = $2 LIMIT 1"
+        );
+        let rows = client
+            .query(&sql, &[&revision, &connector_id])
+            .instrument(postgres_client_span(
+                "fetch_gcp_connector_by_id",
+                "SELECT",
+                GCP_CONNECTORS_TABLE,
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_gcp_connector_by_id failed: {error}"))?;
+        Ok(rows.first().map(gcp_connector_row))
     }
 
     async fn fetch_sampling_policy(
@@ -6954,6 +7163,13 @@ impl KeyStore for StaticKeyStore {
         &self,
         _connector_id: &str,
         _secret_hash: &str,
+    ) -> Result<Option<GcpConnectorRow>, String> {
+        Ok(None)
+    }
+
+    async fn fetch_gcp_connector_by_id(
+        &self,
+        _connector_id: &str,
     ) -> Result<Option<GcpConnectorRow>, String> {
         Ok(None)
     }
@@ -8212,6 +8428,18 @@ mod tests {
                 .get(&(connector_id.to_owned(), secret_hash.to_owned()))
                 .cloned())
         }
+        async fn fetch_gcp_connector_by_id(
+            &self,
+            connector_id: &str,
+        ) -> Result<Option<GcpConnectorRow>, String> {
+            Ok(self
+                .gcp_connectors
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|((id, _), _)| id == connector_id)
+                .map(|(_, row)| row.clone()))
+        }
         async fn fetch_sampling_policy(
             &self,
             _org_id: &str,
@@ -8573,6 +8801,7 @@ mod tests {
                 "test-hmac-key".to_owned(),
                 routing,
                 Duration::from_mins(1),
+                GooglePushAuth::with_keys(gcp_push_test_keys()),
             ),
             autumn_tracker: None,
             autumn_entitlements: None,
@@ -9610,24 +9839,29 @@ mod tests {
         (url, rx)
     }
 
-    /// One org with two connectors: `gcp_conn_1`, and `gcp_conn_off` whose log
-    /// forwarding is turned off.
+    /// One org with three connectors: `gcp_conn_1`, `gcp_conn_off` whose log
+    /// forwarding is turned off, both set up by an earlier script that put the
+    /// secret in the push URL, and `GCP_SIGNED_CONNECTOR`, set up with
+    /// Terraform and never reported on, whose pushes Pub/Sub signs.
     async fn gcp_logpush_state(
         name: &str,
         clickhouse_url: &str,
     ) -> (Arc<AppState>, Arc<FakeKeyStore>, PathBuf) {
         let queue_dir = unique_main_test_dir(name);
         let store = Arc::new(FakeKeyStore::default());
-        for (connector_id, secret, logs_enabled) in [
-            ("gcp_conn_1", "gcp-secret", true),
-            ("gcp_conn_off", "gcp-secret-off", false),
+        for (connector_id, secret, logs_enabled, applied_logs_enabled) in [
+            ("gcp_conn_1", "gcp-secret", true, Some(true)),
+            ("gcp_conn_off", "gcp-secret-off", false, Some(true)),
+            (GCP_SIGNED_CONNECTOR, "gcp-secret-signed", true, None),
         ] {
             store.insert_gcp_connector(
                 connector_id,
                 secret,
                 GcpConnectorRow {
                     org_id: "org_gcp".to_owned(),
+                    project_id: "acme-host".to_owned(),
                     logs_enabled,
+                    applied_logs_enabled,
                     self_managed: true,
                     clickhouse_ready: true,
                 },
@@ -9667,9 +9901,152 @@ mod tests {
             Query(LogpushQuery {
                 secret: secret.map(str::to_owned),
             }),
+            HeaderMap::new(),
             Bytes::from_static(body.as_bytes()),
         )
         .await
+    }
+
+    const GCP_SIGNED_CONNECTOR: &str = "0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9";
+    const GCP_SIGNED_ACCOUNT: &str =
+        "maple-push-0a1b2c3d4e5f4071829@acme-host.iam.gserviceaccount.com";
+    const GCP_PUSH_TEST_KEY: &[u8] = include_bytes!("testdata/gcp-push-test-key.pk8");
+    const GCP_PUSH_TEST_KEY_N: &str = include_str!("testdata/gcp-push-test-key.n");
+
+    fn gcp_push_test_keys() -> maple_ingest::gcp_push_auth::Keys {
+        maple_ingest::gcp_push_auth::Keys::from([(
+            "key-1".to_owned(),
+            maple_ingest::gcp_push_auth::RsaKey {
+                n: URL_SAFE_NO_PAD.decode(GCP_PUSH_TEST_KEY_N.trim()).unwrap(),
+                e: vec![1, 0, 1],
+            },
+        )])
+    }
+
+    /// An ID token as Pub/Sub signs it for a push subscription's account.
+    fn gcp_push_token(email: &str, audience: &str) -> String {
+        use ring::signature::{RsaKeyPair, RSA_PKCS1_SHA256};
+        let now = current_time_millis() / 1000;
+        let encode = |value: serde_json::Value| URL_SAFE_NO_PAD.encode(value.to_string());
+        let signed = format!(
+            "{}.{}",
+            encode(serde_json::json!({ "alg": "RS256", "kid": "key-1", "typ": "JWT" })),
+            encode(serde_json::json!({
+                "iss": "https://accounts.google.com",
+                "aud": audience,
+                "iat": now,
+                "exp": now + 3600,
+                "email": email,
+                "email_verified": true,
+            })),
+        );
+        let pair = RsaKeyPair::from_pkcs8(GCP_PUSH_TEST_KEY).unwrap();
+        let mut signature = vec![0; pair.public().modulus_len()];
+        pair.sign(
+            &RSA_PKCS1_SHA256,
+            &ring::rand::SystemRandom::new(),
+            signed.as_bytes(),
+            &mut signature,
+        )
+        .unwrap();
+        format!("{signed}.{}", URL_SAFE_NO_PAD.encode(signature))
+    }
+
+    async fn gcp_signed_push(
+        state: &Arc<AppState>,
+        connector_id: &str,
+        token: &str,
+        body: &'static str,
+    ) -> Response {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
+        );
+        handle_gcp_logpush(
+            State(Arc::clone(state)),
+            Path(connector_id.to_owned()),
+            Query(LogpushQuery { secret: None }),
+            headers,
+            Bytes::from_static(body.as_bytes()),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_accepts_a_push_signed_as_the_connectors_push_account() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-signed", &ch_url).await;
+        let token = gcp_push_token(
+            GCP_SIGNED_ACCOUNT,
+            &format!("https://ingest.test/v1/logpush/gcp/{GCP_SIGNED_CONNECTOR}"),
+        );
+
+        for _ in 0..2 {
+            let response =
+                gcp_signed_push(&state, GCP_SIGNED_CONNECTOR, &token, GCP_LOG_ENTRY).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            tokio::time::timeout(Duration::from_secs(2), ch_rx.recv())
+                .await
+                .expect("the entry is stored")
+                .expect("fake ClickHouse is running");
+        }
+        // Nothing reported on it before: the first push proves log forwarding
+        // is set up, and only the first records it.
+        assert_eq!(
+            *store.gcp_setup_reports.lock().unwrap(),
+            [(
+                GCP_SIGNED_CONNECTOR.to_owned(),
+                gcp_logging::SetupReport {
+                    logs: Some(true),
+                    metrics: None
+                }
+            )]
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_refuses_a_token_for_another_account_or_connector() {
+        let (state, store, queue_dir) =
+            gcp_logpush_state("gcp-logpush-signed-refused", "http://127.0.0.1:1").await;
+        let audience = format!("https://ingest.test/v1/logpush/gcp/{GCP_SIGNED_CONNECTOR}");
+
+        for (case, connector_id, token) in [
+            (
+                "the same name in another project",
+                GCP_SIGNED_CONNECTOR,
+                gcp_push_token(
+                    "maple-push-0a1b2c3d4e5f4071829@attacker.iam.gserviceaccount.com",
+                    &audience,
+                ),
+            ),
+            (
+                "a token for another connector's endpoint",
+                GCP_SIGNED_CONNECTOR,
+                gcp_push_token(
+                    GCP_SIGNED_ACCOUNT,
+                    "https://ingest.test/v1/logpush/gcp/gcp_conn_1",
+                ),
+            ),
+            (
+                "another connector's endpoint with this token",
+                "gcp_conn_1",
+                gcp_push_token(GCP_SIGNED_ACCOUNT, &audience),
+            ),
+            (
+                "not a token",
+                GCP_SIGNED_CONNECTOR,
+                "gcp-secret-signed".to_owned(),
+            ),
+        ] {
+            let response = gcp_signed_push(&state, connector_id, &token, GCP_LOG_ENTRY).await;
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{case}");
+        }
+        assert!(store.gcp_setup_reports.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
     }
 
     #[tokio::test]

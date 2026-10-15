@@ -216,11 +216,26 @@ describe("v2 gcp integration over HTTP", () => {
 			application_logs: ["cloud_run", "cloud_functions", "app_engine", "gke"],
 		})
 		expect(both.status).toBe(200)
-		expect(Object.keys(both.body).sort()).toEqual(["cleanup_script", "object", "setup_script"])
+		expect(Object.keys(both.body).sort()).toEqual([
+			"cleanup_script",
+			"object",
+			"setup_script",
+			"terraform",
+		])
 		expect(both.body.object).toBe("gcp_connector.setup_scripts")
+		// The subscription is given no secret; only the script's own reports carry it.
 		expect(both.body.setup_script).toMatch(
-			/PUSH_ENDPOINT='https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}\?secret=maple_gcp_/,
+			/PUSH_ENDPOINT='https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}'\n/,
 		)
+		expect(both.body.setup_script).toMatch(
+			/REPORT_ENDPOINT='https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}\?secret=maple_gcp_/,
+		)
+		expect(both.body.terraform).toMatch(/^ {2}scope_type += "folder"$/m)
+		expect(both.body.terraform).toMatch(/^ {2}project_id += "acme-host"$/m)
+		expect(both.body.terraform).toContain(
+			'NOT protoPayload.methodName=\\"io.k8s.coordination.v1.leases.update\\"',
+		)
+		expect(both.body.terraform).not.toMatch(/maple_gcp_[A-Za-z0-9_-]{32}|secret=/)
 		expect(both.body.setup_script).toContain("PROJECT_ID='acme-host'")
 		expect(both.body.setup_script).toContain("SCOPE_ID='123456789012'")
 		expect(both.body.setup_script).toContain('--folder="$SCOPE_ID" --include-children')
@@ -262,7 +277,7 @@ describe("v2 gcp integration over HTTP", () => {
 		expect(reader.body.setup_script).toContain(
 			"MAPLE_SERVICE_ACCOUNT='collector@maple-prod.iam.gserviceaccount.com'",
 		)
-		expect(reader.body.setup_script).not.toContain("service-accounts delete")
+		expect(reader.body.setup_script).not.toContain('service-accounts delete "$SERVICE_ACCOUNT_EMAIL"')
 		await harness.dispose()
 	})
 
@@ -295,6 +310,11 @@ describe("v2 gcp integration over HTTP", () => {
 		const turnOff = await harness.request("PATCH", path, admin.secret, { logs_enabled: false })
 		expect(turnOff.status).toBe(400)
 		expect(turnOff.body.error.code).toBe("integration_request_invalid")
+
+		// Without a Google identity there is no account to read as.
+		const check = await harness.request("POST", `${path}/check_access`, admin.secret)
+		expect(check.status).toBe(409)
+		expect(check.body.error.code).toBe("gcp_metrics_unavailable")
 		await harness.dispose()
 	})
 
@@ -310,6 +330,7 @@ describe("v2 gcp integration over HTTP", () => {
 			["POST", CONNECTORS, { scope_type: "project", scope_id: "other-project" }],
 			["PATCH", path, { metrics_enabled: true }],
 			["POST", `${path}/setup_scripts`, {}],
+			["POST", `${path}/check_access`, undefined],
 			["DELETE", path, undefined],
 		] as const) {
 			const asMember = await harness.request(method, target, member.secret, body)
