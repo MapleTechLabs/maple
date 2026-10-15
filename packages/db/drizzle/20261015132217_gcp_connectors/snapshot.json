@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "5c9b427359d9ed071f9315c14436e3a7a45982daa38c8e68fd82bca545017584",
+	"id": "07cb1858dcef99be1aaa58d1cd8109f0ed5e6d6f979a00467ef0a2c42926b57b",
 	"prevIds": [
-		"bc5f085e30340d63b371a71ec52b98b88451aec4818d283f307d251318828cbf"
+		"825059598ee5dc6c0dcb9a96c757752ad3f35c4bd83401351d640f65239930b6"
 	],
 	"entities": [
 		{
@@ -3448,8 +3448,18 @@
 		{
 			"kind": "column",
 			"table": "cloudflare_analytics_state",
-			"name": "last_success_at",
+			"name": "grant_call_cap",
 			"position": 14,
+			"type": "integer",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloudflare_analytics_state",
+			"name": "last_success_at",
+			"position": 15,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -3459,7 +3469,7 @@
 			"kind": "column",
 			"table": "cloudflare_analytics_state",
 			"name": "last_error",
-			"position": 15,
+			"position": 16,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -3469,16 +3479,6 @@
 			"kind": "column",
 			"table": "cloudflare_analytics_state",
 			"name": "last_error_at",
-			"position": 16,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cloudflare_analytics_state",
-			"name": "lease_until",
 			"position": 17,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -3488,8 +3488,18 @@
 		{
 			"kind": "column",
 			"table": "cloudflare_analytics_state",
-			"name": "created_at",
+			"name": "lease_until",
 			"position": 18,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cloudflare_analytics_state",
+			"name": "created_at",
+			"position": 19,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -3499,7 +3509,7 @@
 			"kind": "column",
 			"table": "cloudflare_analytics_state",
 			"name": "updated_at",
-			"position": 19,
+			"position": 20,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -10758,8 +10768,18 @@
 		{
 			"kind": "column",
 			"table": "vcs_installations",
-			"name": "installed_by_user_id",
+			"name": "ci_traces_enabled",
 			"position": 11,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vcs_installations",
+			"name": "installed_by_user_id",
+			"position": 12,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -10769,7 +10789,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "created_at",
-			"position": 12,
+			"position": 13,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -10779,7 +10799,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "updated_at",
-			"position": 13,
+			"position": 14,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
