@@ -27,9 +27,12 @@ export async function pricingFaq(): Promise<FaqItem[]> {
 	const gbRate = rateLabel(gb?.rate ?? 0)
 	const includedSessions = (sessions?.included ?? 0).toLocaleString("en-US")
 	const sessionRate = rateLabel(sessions?.rate ?? 0)
+	// Quote an events rate only when the catalog prices them; an unlimited item has none.
 	const events = offer.allotments.find((a) => a.unit === "events")
-	const eventsIncluded = events ? volume(events, events.included) : "0"
-	const eventsRate = money(events?.rate ?? 0)
+	const eventsAnswer =
+		events === undefined || events.unlimited || events.rate === undefined
+			? m.faq_events_beta()
+			: m.faq_events_priced({ included: volume(events, events.included), rate: money(events.rate) })
 
 	return [
 		{ question: m.faq_measure_q(), answer: m.faq_measure_a({ included: includedGB }) },
@@ -38,12 +41,7 @@ export async function pricingFaq(): Promise<FaqItem[]> {
 		{ question: m.faq_metrics_q(), answer: m.faq_metrics_a({ included: includedGB, rate: gbRate }) },
 		{
 			question: m.faq_sessions_q(),
-			answer: m.faq_sessions_a({
-				included: includedSessions,
-				rate: sessionRate,
-				events_included: eventsIncluded,
-				events_rate: eventsRate,
-			}),
+			answer: `${m.faq_sessions_a({ included: includedSessions, rate: sessionRate })} ${eventsAnswer}`,
 		},
 		{ question: m.faq_retention_q(), answer: m.faq_retention_a() },
 		{ question: m.faq_trial_q(), answer: m.faq_trial_a() },
