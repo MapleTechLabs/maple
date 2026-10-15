@@ -980,6 +980,7 @@ describe("converted queries", () => {
 		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
 		expect(sql).toContain("Timestamp <= '2026-04-15 13:00:05'")
 		expect(sql).toContain("notEmpty(traces.EventsName)")
+		expect(sql).toMatch(/ORDER BY spanStart ASC\s+LIMIT 10/)
 		expect(sql).toContain("toJSONString(traces.EventsName) AS eventsName")
 		expect(sql).not.toContain("EventsAttributes")
 		expect(sql).toContain("LIMIT 10")

@@ -37,5 +37,8 @@ export function describeSpanEvent(event: SpanEvent): DescribedSpanEvent {
 /** `+12.400ms`: the event's offset into its span, to the microsecond. */
 export function formatEventOffset(offsetMs: number): string {
 	const sign = offsetMs < 0 ? "-" : "+"
-	return `${sign}${formatDurationAtStep(Math.abs(offsetMs), 0.001)}`
+	const magnitude = Math.abs(offsetMs)
+	// Past a second the shared formatter rounds to the millisecond; keep the microseconds.
+	if (magnitude >= 1000) return `${sign}${(magnitude / 1000).toFixed(6).replace(/0{1,3}$/, "")}s`
+	return `${sign}${formatDurationAtStep(magnitude, 0.001)}`
 }

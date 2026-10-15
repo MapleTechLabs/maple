@@ -13,23 +13,25 @@ export type SpanEventsBySpanId = ReadonlyMap<string, ReadonlyArray<TimelineSpanE
 export interface SpanEventMarker {
 	readonly name: string
 	readonly offsetMs: number
-	/** Position along the bar, 0-100. */
-	readonly percent: number
+	/** Trace-relative time the marker sits at, like the bar's `--b0`/`--b1`; kept inside the span. */
+	readonly atMs: number
 	readonly isException: boolean
 }
 
 /**
- * Place events along a span's bar. Offsets outside the span (clock skew, or an
- * event recorded after `end()`) pin to the nearest edge rather than escaping it.
+ * Place events on the trace's time axis, so they are positioned like the bar itself rather
+ * than inside its viewport-clamped box. Offsets outside the span (clock skew, or an event
+ * recorded after `end()`) pin to the nearest edge rather than escaping it.
  */
 export function spanEventMarkers(
 	events: ReadonlyArray<TimelineSpanEvent>,
+	spanStartMs: number,
 	durationMs: number,
 ): ReadonlyArray<SpanEventMarker> {
 	return events.map((event) => ({
 		name: event.name,
 		offsetMs: event.offsetMs,
-		percent: durationMs > 0 ? Math.min(100, Math.max(0, (event.offsetMs / durationMs) * 100)) : 0,
+		atMs: spanStartMs + Math.min(Math.max(durationMs, 0), Math.max(0, event.offsetMs)),
 		isException: event.name === "exception",
 	}))
 }

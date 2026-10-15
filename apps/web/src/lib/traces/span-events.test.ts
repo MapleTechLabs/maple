@@ -46,5 +46,8 @@ describe("formatEventOffset", () => {
 		expect(formatEventOffset(0.25)).toBe("+250μs")
 		expect(formatEventOffset(-1.5)).toBe("-1.500ms")
 		expect(formatEventOffset(2500)).toBe("+2.500s")
+		expect(formatEventOffset(1000)).toBe("+1.000s")
+		expect(formatEventOffset(1000.123)).toBe("+1.000123s")
+		expect(formatEventOffset(-61_000.5)).toBe("-61.0005s")
 	})
 })

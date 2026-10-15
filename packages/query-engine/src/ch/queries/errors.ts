@@ -582,22 +582,27 @@ const notEmpty = defineCondFn<[CH.Expr<ReadonlyArray<string>>]>("notEmpty")
  * `startTime`/`endTime` window keep this to a few granules.
  */
 export function spanEventsByTraceQuery(opts: { traceId: string; limit?: number }) {
-	return from(Traces)
-		.select(($) => ({
-			spanId: $.SpanId,
-			spanStart: CH.toString_($.Timestamp),
-			eventsTimestamp: CH.toJSONString($.EventsTimestamp),
-			eventsName: CH.toJSONString($.EventsName),
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
-			$.TraceId.eq(opts.traceId),
-			notEmpty($.EventsName),
-		])
-		.limit(opts.limit ?? SPAN_HIERARCHY_MAX_SPANS)
-		.format("JSON")
+	return (
+		from(Traces)
+			.select(($) => ({
+				spanId: $.SpanId,
+				spanStart: CH.toString_($.Timestamp),
+				eventsTimestamp: CH.toJSONString($.EventsTimestamp),
+				eventsName: CH.toJSONString($.EventsName),
+			}))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				$.TraceId.eq(opts.traceId),
+				notEmpty($.EventsName),
+			])
+			// Earliest first, like `spanHierarchyQuery`, so the cap keeps the spans the timeline shows.
+			// `spanStart` is fixed-width DateTime64 text, so it sorts in time order.
+			.orderBy(["spanStart", "asc"])
+			.limit(opts.limit ?? SPAN_HIERARCHY_MAX_SPANS)
+			.format("JSON")
+	)
 }
 
 // Trace timestamp probe — resolve any one span timestamp for a trace

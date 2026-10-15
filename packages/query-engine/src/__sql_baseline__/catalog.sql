@@ -881,7 +881,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:spanEventsByTraceQuery:default  [bfef7dd0]
+-- builder:errors:spanEventsByTraceQuery:default  [b03e077c]
 SELECT
           traces.SpanId AS spanId,
           toString(traces.Timestamp) AS spanStart,
@@ -893,6 +893,7 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
           AND notEmpty(traces.EventsName)
+        ORDER BY spanStart ASC
         LIMIT 5000
         FORMAT JSON
 

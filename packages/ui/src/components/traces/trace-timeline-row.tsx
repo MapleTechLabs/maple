@@ -219,14 +219,6 @@ function TraceTimelineRowImpl({
 						</span>
 					</div>
 
-					{events && events.length > 0 && (
-						<SpanEventMarkers
-							events={events}
-							durationMs={bar.span.durationMs}
-							onHover={onHover}
-						/>
-					)}
-
 					{/* Outside label for bars too narrow to hold one. Sits on the right by default;
 					    the decoration pass flips it left near the right edge of the column. */}
 					<span
@@ -241,6 +233,15 @@ function TraceTimelineRowImpl({
 						{bar.span.spanName} · {durationLabel}
 					</span>
 				</div>
+
+				{events && events.length > 0 && (
+					<SpanEventMarkers
+						events={events}
+						spanStartMs={bar.offsetStartMs}
+						durationMs={bar.span.durationMs}
+						onHover={onHover}
+					/>
+				)}
 
 				{/* Clipping chevrons, pinned to the cell edges (Jaeger). Toggled by the decoration
 				    pass — CSS can't tell whether the clamp above actually bit. */}
@@ -266,51 +267,67 @@ function TraceTimelineRowImpl({
 }
 
 /**
- * Event ticks inside the bar, positioned as a share of its width so pan and zoom
- * move them with the bar for free. Exceptions take the error colour.
+ * Event ticks over the bar, positioned on the time axis with the same `--vp0`/`--vpk` transform
+ * as the bar, so pan and zoom move them for free and a clamped bar can't shift them.
+ * Exceptions take the error colour.
  */
 function SpanEventMarkers({
 	events,
+	spanStartMs,
 	durationMs,
 	onHover,
 }: {
 	events: ReadonlyArray<TimelineSpanEvent>
+	spanStartMs: number
 	durationMs: number
 	onHover: TraceTimelineRowProps["onHover"]
 }) {
-	const markers = React.useMemo(() => spanEventMarkers(events, durationMs), [events, durationMs])
-	return markers.map((marker, index) => (
-		<Tooltip key={index}>
-			<TooltipTrigger
-				render={
-					<span
-						data-span-event=""
-						aria-label={`${marker.name} at +${formatDuration(marker.offsetMs)}`}
-						className="absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center"
-						style={{ left: `${marker.percent}%` }}
-						// The marker has its own tooltip; keep the span tooltip out of its way.
-						onMouseEnter={() => onHover(null, null)}
-						onMouseMove={(e) => e.stopPropagation()}
-					/>
-				}
-			>
-				<span
-					className={cn(
-						"h-full w-0.5 rounded-full",
-						marker.isException ? TONE_FILL.crit : "bg-foreground/55",
-					)}
-				/>
-			</TooltipTrigger>
-			<TooltipContent side="top" className="text-xs">
-				<span className={cn("font-mono", marker.isException && TONE_TEXT.crit)}>
-					{marker.name || "(unnamed event)"}
-				</span>{" "}
-				<span className="font-mono tabular-nums text-muted-foreground">
-					+{formatDuration(marker.offsetMs)}
-				</span>
-			</TooltipContent>
-		</Tooltip>
-	))
+	const markers = React.useMemo(
+		() => spanEventMarkers(events, spanStartMs, durationMs),
+		[events, spanStartMs, durationMs],
+	)
+	return (
+		<div
+			className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2"
+			style={{ height: ROW_HEIGHT - 8 }}
+		>
+			{markers.map((marker, index) => (
+				<Tooltip key={index}>
+					<TooltipTrigger
+						render={
+							<span
+								data-span-event=""
+								aria-label={`${marker.name} at +${formatDuration(marker.offsetMs)}`}
+								className="pointer-events-auto absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center"
+								// Clamped like the bar: off-view markers stay just outside the clipping cell.
+								style={{
+									left: `clamp(-10%, calc((${marker.atMs} - var(--vp0)) * var(--vpk) * 1%), 110%)`,
+								}}
+								// The marker has its own tooltip; keep the span tooltip out of its way.
+								onMouseEnter={() => onHover(null, null)}
+								onMouseMove={(e) => e.stopPropagation()}
+							/>
+						}
+					>
+						<span
+							className={cn(
+								"h-full w-0.5 rounded-full",
+								marker.isException ? TONE_FILL.crit : "bg-foreground/55",
+							)}
+						/>
+					</TooltipTrigger>
+					<TooltipContent side="top" className="text-xs">
+						<span className={cn("font-mono", marker.isException && TONE_TEXT.crit)}>
+							{marker.name || "(unnamed event)"}
+						</span>{" "}
+						<span className="font-mono tabular-nums text-muted-foreground">
+							+{formatDuration(marker.offsetMs)}
+						</span>
+					</TooltipContent>
+				</Tooltip>
+			))}
+		</div>
+	)
 }
 
 export const TraceTimelineRow = React.memo(TraceTimelineRowImpl)
