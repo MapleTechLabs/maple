@@ -13,6 +13,7 @@ import { SpanDetailPanel } from "../components/span-detail-panel"
 import { RefreshButton } from "../components/toolbar"
 import { EmptyState, ErrorState } from "../components/view-states"
 import { useQueryParams } from "../lib/router"
+import { failedWithoutData } from "../lib/query"
 
 interface TraceDetailViewProps {
 	traceId: string
@@ -123,7 +124,7 @@ export function TraceDetailView({ traceId, backLabel, onBack }: TraceDetailViewP
 			<div className="min-h-0 flex-1">
 				{trace.isPending ? (
 					<TraceDetailLoading />
-				) : trace.isError ? (
+				) : failedWithoutData(trace) ? (
 					<ErrorState label="trace" error={trace.error} onRetry={() => trace.refetch()} />
 				) : trace.data.spans.length === 0 ? (
 					<EmptyState

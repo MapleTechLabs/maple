@@ -34,6 +34,7 @@ import { useQueryParams } from "../lib/router"
 import { PageShell } from "../components/page-shell"
 import { Toolbar, ToolbarStat, ToolbarStats } from "../components/toolbar"
 import { EmptyState } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 interface Submission {
 	readonly sql: string
@@ -197,7 +198,7 @@ function QuerySidebar({ onPick }: { onPick: (sql: string) => void }) {
 					<div className="flex h-12 items-center justify-center">
 						<Spinner className="size-4" />
 					</div>
-				) : tables.isError ? (
+				) : failedWithoutData(tables) ? (
 					<p className="text-xs break-all text-destructive">
 						{describeQueryError(tables.error).detail}
 					</p>

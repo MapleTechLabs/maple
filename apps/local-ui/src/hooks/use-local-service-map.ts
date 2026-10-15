@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { CH, coerceServiceOverviewRows, summarizeSampling, type ServiceOverview } from "@maple/query-engine"
 import type {
 	ServiceMapDbEdgeRow,
@@ -8,6 +8,7 @@ import type {
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import type { TimeBounds } from "../lib/time"
+import { windowed } from "../lib/query-cache"
 
 export interface LocalServiceMapData {
 	readonly edges: ReadonlyArray<ServiceMapEdgeRow>
@@ -120,8 +121,7 @@ export function classifyPlatform(row: CH.ServicePlatformsOutput): ServicePlatfor
  */
 export function useLocalServiceMap(bounds: TimeBounds, durationSeconds: number) {
 	return useQuery({
-		queryKey: ["local", "service-map", boundsKey(bounds), durationSeconds],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "service-map", durationSeconds, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<LocalServiceMapData> => {
 			const params = localParams(bounds)
 			const [edgeRows, dbEdgeRows, overviewRows, platformRows] = await Promise.all([

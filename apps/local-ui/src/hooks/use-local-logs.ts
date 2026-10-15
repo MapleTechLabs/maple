@@ -1,9 +1,10 @@
-import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import type { FilterOption } from "@maple/ui/components/filters/filter-section"
 import { boundsKey, executeLocalCompiledQuery, localParams, noCursor } from "@/lib/query"
 import { compareSeverity, normalizeLog, type LocalLog } from "../lib/log-shape"
 import type { TimeBounds } from "../lib/time"
+import { windowed } from "../lib/query-cache"
 
 const PAGE_SIZE = 50
 
@@ -25,9 +26,8 @@ type LogCursor = NonNullable<CH.LogsListOpts["cursorIdentity"]>
  */
 export function useLocalLogs(filters: LogFilters, bounds: TimeBounds) {
 	return useInfiniteQuery({
-		queryKey: ["local", "logs", filters, boundsKey(bounds)],
+		...windowed(["local", "logs", filters, boundsKey(bounds)]),
 		initialPageParam: noCursor<LogCursor>(),
-		placeholderData: keepPreviousData,
 		queryFn: async ({ pageParam, signal }): Promise<ReadonlyArray<LocalLog>> => {
 			const compiled = CH.compile(
 				CH.logsListQuery({
@@ -63,15 +63,14 @@ export function useLocalLogs(filters: LogFilters, bounds: TimeBounds) {
  */
 export function useLocalLogSeverities(filters: LogFilters, bounds: TimeBounds) {
 	return useQuery<ReadonlyArray<FilterOption>>({
-		queryKey: [
+		...windowed([
 			"local",
 			"log-severities",
 			filters.service ?? null,
 			filters.search ?? null,
 			boundsKey(bounds),
-		],
+		]),
 		staleTime: 60_000,
-		placeholderData: keepPreviousData,
 		queryFn: async ({ signal }) => {
 			const compiled = CH.compile(
 				CH.logsBreakdownQuery({

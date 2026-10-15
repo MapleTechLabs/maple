@@ -1,10 +1,11 @@
-import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
+import { skipToken, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import type { FilterOption } from "@maple/ui/components/filters/filter-section"
 import type { DurationStats } from "@maple/ui/components/filters/duration-range-filter"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import type { TimeBounds } from "../lib/time"
 import type { TraceFilters } from "./use-local-traces"
+import { windowed } from "../lib/query-cache"
 
 export type { DurationStats }
 
@@ -94,9 +95,8 @@ function facetOpts(filters: TraceFilters): CH.TracesFacetsOpts {
  */
 export function useLocalTraceFacets(filters: TraceFilters, bounds: TimeBounds, enabled = true) {
 	return useQuery<TraceFacets>({
-		queryKey: ["local", "trace-facets", filters, boundsKey(bounds)],
+		...windowed(["local", "trace-facets", filters, boundsKey(bounds)]),
 		staleTime: 15_000,
-		placeholderData: keepPreviousData,
 		queryFn: !enabled
 			? skipToken
 			: async ({ signal }) => {

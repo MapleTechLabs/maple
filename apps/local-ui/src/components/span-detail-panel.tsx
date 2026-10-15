@@ -32,6 +32,7 @@ import { ErrorSection } from "@maple/ui/components/error-section"
 import { logKey, type LocalLog } from "../lib/log-shape"
 import { formatLocalDateTime, formatLocalTimestamp, formatUtcTitle } from "../lib/time"
 import { LogDetailSheet } from "./log-detail-sheet"
+import { failedWithoutData } from "../lib/query"
 
 /** Matches the query limit in `useLocalSpanLogs`; a full page means "at least". */
 const LOG_LIMIT = 100
@@ -247,7 +248,11 @@ export function SpanDetailPanel({ span, traceStartTime, totalDurationMs, onClose
 					</TabsContent>
 
 					<TabsContent value="logs" className="mt-0">
-						<SpanLogs logs={logs.data ?? []} isPending={logs.isPending} isError={logs.isError} />
+						<SpanLogs
+							logs={logs.data ?? []}
+							isPending={logs.isPending}
+							isError={failedWithoutData(logs)}
+						/>
 					</TabsContent>
 				</Tabs>
 			</ScrollArea>
