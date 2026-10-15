@@ -16,10 +16,10 @@ describe("gcpInfraMetricsSQL", () => {
 		const { sql, tenantScope } = compileUnsafe(gcpInfraMetricsSQL("cloudRun"), params)
 		expect(tenantScope).toBe("single-tenant")
 		expect(sql).toContain(
-			"FROM metrics_sum\n        WHERE metrics_sum.OrgId = 'org_1'\n          AND metrics_sum.MetricName IN ('gcp.run.request_count', 'gcp.run.container.billable_instance_time')",
+			"FROM metrics_sum\n        WHERE metrics_sum.OrgId = 'org_1'\n          AND metrics_sum.MetricName IN ('gcp.cloud_run.requests', 'gcp.cloud_run.container.billable_time')",
 		)
 		expect(sql).toContain("FROM metrics_gauge\n        WHERE metrics_gauge.OrgId = 'org_1'")
-		expect(sql).toContain("'gcp.run.request_latencies', 'gcp.run.container.instance_count'")
+		expect(sql).toContain("'gcp.cloud_run.request.duration', 'gcp.cloud_run.container.instance.count'")
 		expect(sql.match(/TimeUnix >= '2026-07-02 00:00:00.000'/g)).toHaveLength(2)
 		expect(sql.match(/TimeUnix <= '2026-07-03 00:00:00.000'/g)).toHaveLength(2)
 		expect(sql).toContain(
@@ -27,8 +27,16 @@ describe("gcpInfraMetricsSQL", () => {
 		)
 		// The quantile and the metric's own label share one column.
 		expect(sql).toContain(
-			"arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_code_class'], metrics_gauge.Attributes['state']], '') AS label",
+			"arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_code_class'], metrics_gauge.Attributes['gcp.metric.labels.state']], '') AS label",
 		)
+	})
+
+	it("reads the direction of a byte counter as its label, and each shared name once", () => {
+		const { sql } = compileUnsafe(gcpInfraMetricsSQL("computeEngine"), params)
+		expect(sql).toContain(
+			"arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['network.io.direction'], metrics_sum.Attributes['disk.io.direction']], '') AS label",
+		)
+		expect(sql).toContain("metrics_sum.MetricName IN ('gcp.gce.network.io', 'gcp.gce.disk.io')")
 		expect(sql).toContain("GROUP BY keys, metric, label")
 		expect(sql).toContain("LIMIT 10000")
 		expect(sql).toContain("FORMAT JSON")
@@ -38,13 +46,18 @@ describe("gcpInfraMetricsSQL", () => {
 		for (const service of GCP_INFRA_SERVICE_IDS) {
 			const { sql } = compileUnsafe(gcpInfraMetricsSQL(service), params)
 			expect(sql, service).not.toContain("IN ()")
-			// Metric names only: `gcp.resource.labels.*` are identity attributes.
-			const names = [...sql.matchAll(/'(gcp\.(?!resource\.)[a-z_.]+)'/g)].map((match) => match[1])
-			expect(names.sort(), service).toEqual(
-				gcpInfraMetrics(service)
-					.map((metric) => metric.name)
-					.sort(),
+			// Metric names only: `gcp.resource.labels.*` are identity attributes, and
+			// `gcp.metric.labels.*` point attributes.
+			const names = [...sql.matchAll(/'(gcp\.(?!resource\.|metric\.)[a-z_.]+)'/g)].map(
+				(match) => match[1],
 			)
+			expect(names.sort(), service).toEqual([
+				...new Set(
+					gcpInfraMetrics(service)
+						.map((metric) => metric.name)
+						.sort(),
+				),
+			])
 		}
 	})
 
@@ -56,7 +69,7 @@ describe("gcpInfraMetricsSQL", () => {
 
 	// A BYO ClickHouse quotes 64-bit integers in JSON: the derived row schema unquotes the count.
 	it("decodes a quoted point count to a number", () => {
-		const point = { keys: ["api", "acme-prod", "europe-west1"], metric: "gcp.run.request_count" }
+		const point = { keys: ["api", "acme-prod", "europe-west1"], metric: "gcp.cloud_run.requests" }
 		const rows = Effect.runSync(
 			compileUnsafe(gcpInfraMetricsSQL("cloudRun"), params).decodeRows([
 				{ ...point, label: "2xx", total: 12.5, samples: "60" },
@@ -83,7 +96,7 @@ describe("gcpInfraTimeseriesSQL", () => {
 			expect(sql).toContain(`${table}.ResourceAttributes['cloud.region'] = 'europe-west1'`)
 		}
 		expect(sql).toContain(
-			"metrics_sum.MetricName IN ('gcp.run.request_count', 'gcp.run.container.billable_instance_time')",
+			"metrics_sum.MetricName IN ('gcp.cloud_run.requests', 'gcp.cloud_run.container.billable_time')",
 		)
 		expect(sql.match(/TimeUnix >= '2026-07-02 00:00:00.000'/g)).toHaveLength(2)
 		expect(sql.match(/TimeUnix <= '2026-07-03 00:00:00.000'/g)).toHaveLength(2)
@@ -98,7 +111,7 @@ describe("gcpInfraTimeseriesSQL", () => {
 			bucketed,
 		)
 		expect(sql).not.toContain("IN ()")
-		expect(sql).toContain("'gcp.kubernetes.node.cpu.allocatable_utilization'")
+		expect(sql).toContain("'gcp.gke.node.cpu.allocatable.utilization'")
 		// A managed resource's series are stored under its resource type.
 		expect(sql).toContain("metrics_gauge.ServiceName = 'gcp/k8s_node'")
 		expect(sql).toContain("metrics_gauge.ResourceAttributes['k8s.cluster.name'] = 'prod'")
@@ -131,7 +144,7 @@ describe("gcpInfraTimeseriesSQL", () => {
 			compileUnsafe(gcpInfraTimeseriesSQL("cloudRun", ["api"]), bucketed).decodeRows([
 				{
 					bucket: "2026-07-02 00:05:00",
-					metric: "gcp.run.request_count",
+					metric: "gcp.cloud_run.requests",
 					label: "2xx",
 					total: 12.5,
 					samples: "5",
@@ -139,7 +152,7 @@ describe("gcpInfraTimeseriesSQL", () => {
 			]),
 		)
 		expect(rows[0]).toMatchObject({
-			metric: "gcp.run.request_count",
+			metric: "gcp.cloud_run.requests",
 			label: "2xx",
 			total: 12.5,
 			samples: 5,

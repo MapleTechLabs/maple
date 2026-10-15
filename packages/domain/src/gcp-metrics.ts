@@ -50,6 +50,15 @@ export interface GcpMetricGroup {
 export const gcpMetricAligner = (metric: GcpMetric) =>
 	metric.kind === "gauge" ? "ALIGN_MEAN" : "ALIGN_DELTA"
 
+/** The attribute a kept Cloud Monitoring metric label is stored as. */
+export const gcpMetricLabelAttribute = (label: string) => `gcp.metric.labels.${label}`
+
+/** The attributes, besides `quantile`, that tell a metric's points apart. */
+export const gcpMetricPointAttributes = (metric: GcpMetric): ReadonlyArray<string> => [
+	...metric.labels.map(gcpMetricLabelAttribute),
+	...Object.keys(metric.attributes),
+]
+
 const metric = (
 	kind: GcpMetric["kind"],
 	type: string,

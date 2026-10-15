@@ -6,7 +6,7 @@
  * metrics and logs land on the same service: compute workloads are named after the workload,
  * everything else is `gcp/<resource type>`.
  */
-import type { GcpMetric, GcpMetricGroup } from "@maple/domain/gcp-metrics"
+import { gcpMetricLabelAttribute, type GcpMetric, type GcpMetricGroup } from "@maple/domain/gcp-metrics"
 import {
 	fmtMetricTs,
 	type MetricAttrs,
@@ -178,7 +178,7 @@ export const mapGcpTimeSeries = (
 		const attributes: MetricAttrs = { ...metric.attributes }
 		for (const label of metric.labels) {
 			const value = metricLabels[label]
-			if (value !== undefined) attributes[`gcp.metric.labels.${label}`] = value
+			if (value !== undefined) attributes[gcpMetricLabelAttribute(label)] = value
 		}
 		const row = (endMs: number, value: number, metricAttributes: MetricAttrs): MetricGaugeRow => ({
 			timestamp: fmtMetricTs(endMs),

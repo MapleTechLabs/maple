@@ -165,14 +165,14 @@ describe("summarizeGcp", () => {
 				service: "cloudRun",
 				failed: false,
 				points: [
-					point(api, "gcp.run.request_count", "2xx", 1000 - requests5xx),
-					point(api, "gcp.run.request_count", "5xx", requests5xx),
+					point(api, "gcp.cloud_run.requests", "2xx", 1000 - requests5xx),
+					point(api, "gcp.cloud_run.requests", "5xx", requests5xx),
 				],
 			},
 			{
 				service: "cloudSql",
 				failed: false,
-				points: [point(db, "gcp.cloudsql.database.disk.utilization", "", disk)],
+				points: [point(db, "gcp.cloud_sql.disk.utilization", "", disk)],
 			},
 		])
 
