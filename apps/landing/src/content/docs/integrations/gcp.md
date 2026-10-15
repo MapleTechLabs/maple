@@ -295,9 +295,20 @@ Each entry gets its `service.name` from the resource that wrote it, so workload 
 | App Engine              | The module ID.                                                    |
 | Everything else         | `gcp/<resource type>`, for example `gcp/cloudsql_database`.       |
 
-Every entry also carries `cloud.provider` (`gcp`), `gcp.resource.type` and the resource's labels as `gcp.resource.labels.*`, plus `cloud.account.id` (the project ID) and `cloud.region` when the resource has them. GKE container entries add `k8s.cluster.name`, `k8s.namespace.name`, `k8s.pod.name` and `k8s.container.name`.
+Every entry also carries `cloud.provider` (`gcp`), `gcp.resource.type` and the resource's labels as `gcp.resource.labels.*`, plus `cloud.account.id` (the project ID) and `cloud.region` when the resource has them. GKE container entries add `k8s.cluster.name`, `k8s.namespace.name`, `k8s.pod.name` and `k8s.container.name`. Cloud Run service entries add `faas.name`, `faas.version` (the revision) and `faas.instance`, Cloud Run job entries `gcp.cloud_run.job.execution` and `gcp.cloud_run.job.task_index`, and Compute Engine entries `host.id`, `host.name` and `gcp.gce.instance.name`.
 
 The log body is `textPayload`, or the `message` or `msg` field of `jsonPayload`, or the whole `jsonPayload` as JSON when it has neither. The other `jsonPayload` fields become log attributes. Audit logs use the method name as the body, and request logs the method, URL and status. An entry's `trace` and `spanId` become the log's trace and span IDs.
+
+Entry fields that have an OpenTelemetry semantic convention take its name and type:
+
+| Cloud Logging field                                      | Attribute                                                                                                                                                                                           |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `httpRequest`                                            | `http.request.method`, `url.full`, `http.response.status_code`, `http.request.size`, `http.response.size`, `user_agent.original`, `client.address`, `server.address`, `http.request.header.referer` |
+| `sourceLocation`                                         | `code.file.path`, `code.line.number`, `code.function.name`                                                                                                                                          |
+| `insertId`                                               | `log.record.uid`                                                                                                                                                                                    |
+| Audit `authenticationInfo.principalEmail`, `status.code` | `user.email`, `rpc.response.status_code` (the code name, for example `PERMISSION_DENIED`)                                                                                                           |
+
+Other fields keep their Cloud Logging names under `gcp.`: `gcp.log_name`, `gcp.labels.*`, `gcp.http_request.*` (for example `latency`), `gcp.source_location.*` and `gcp.audit.*`.
 
 | Cloud Logging severity           | Maple severity |
 | -------------------------------- | -------------- |
