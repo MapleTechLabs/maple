@@ -28,7 +28,10 @@ export interface GcpMetricRows {
 	readonly gaugeRows: Array<MetricGaugeRow>
 }
 
-/** `labels` are the series' resource labels: the project plus the group's `resourceLabels`. */
+/**
+ * `labels` are the series' resource labels: the project plus the group's `resourceLabels`;
+ * `metricLabels` its metric labels, of which the group's `resourceMetricLabels` are read here.
+ */
 export const gcpResourceAttributes = (
 	resourceType: string,
 	labels: MetricAttrs,
@@ -69,6 +72,7 @@ export const gcpResourceAttributes = (
 		set("cloud.platform", "gcp_compute_engine")
 		set("host.id", labels.instance_id)
 		set("host.name", workload)
+		set("gcp.gce.instance.name", workload)
 	}
 	attributes["service.name"] = workload || `gcp/${resourceType}`
 
@@ -171,12 +175,11 @@ export const mapGcpTimeSeries = (
 			item.resource.labels ?? {},
 			metricLabels,
 		)
-		const attributes = Object.fromEntries(
-			metric.labels.flatMap((label) => {
-				const value = metricLabels[label]
-				return value === undefined ? [] : [[label, value]]
-			}),
-		)
+		const attributes: MetricAttrs = { ...metric.attributes }
+		for (const label of metric.labels) {
+			const value = metricLabels[label]
+			if (value !== undefined) attributes[`gcp.metric.labels.${label}`] = value
+		}
 		const row = (endMs: number, value: number, metricAttributes: MetricAttrs): MetricGaugeRow => ({
 			timestamp: fmtMetricTs(endMs),
 			start_timestamp: fmtMetricTs(metric.kind === "sum" ? endMs - ALIGNMENT_MS : endMs),
@@ -205,7 +208,8 @@ export const mapGcpTimeSeries = (
 			if (metric.kind === "quantiles") {
 				for (const q of QUANTILES) {
 					const value = distributionQuantile(point.value.distributionValue ?? {}, q)
-					if (value !== undefined) rows.gaugeRows.push(row(endMs, value, { quantile: String(q) }))
+					if (value !== undefined)
+						rows.gaugeRows.push(row(endMs, value, { ...attributes, quantile: String(q) }))
 				}
 				continue
 			}

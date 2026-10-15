@@ -474,6 +474,14 @@ describe("GcpMetricsService", () => {
 						["aggregation.groupByFields", "metric.label.response_code_class"],
 					],
 				)
+				// The Compute Engine instance name is a metric label: grouped on, for the resource.
+				const network = calls.monitoring.find(
+					(call) => call.metricType === "compute.googleapis.com/instance/network/sent_bytes_count",
+				)!
+				assert.include(
+					network.params.getAll("aggregation.groupByFields"),
+					"metric.label.instance_name",
+				)
 
 				assert.lengthOf(calls.ingest, 1)
 				assert.match(calls.ingest[0]!.authorization ?? "", /^Bearer maple_pk_/)
@@ -493,7 +501,7 @@ describe("GcpMetricsService", () => {
 					"cloud.account.id": "acme-prod",
 				})
 				const metric = resource.scopeMetrics[0].metrics[0]
-				assert.strictEqual(metric.name, "gcp.run.request_count")
+				assert.strictEqual(metric.name, "gcp.cloud_run.requests")
 				assert.strictEqual(metric.sum.aggregationTemporality, 1)
 				assert.deepStrictEqual(
 					metric.sum.dataPoints.map((point: { asDouble: number }) => point.asDouble),
