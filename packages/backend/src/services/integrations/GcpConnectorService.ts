@@ -27,6 +27,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
+import { renderGcpTerraform } from "./gcp/terraform"
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId
@@ -114,7 +115,7 @@ export interface GcpConnectorServiceApi {
 		connectorId: GcpConnectorId,
 		options: { readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null },
 	) => Effect.Effect<
-		{ readonly setupScript: string; readonly cleanupScript: string },
+		{ readonly setupScript: string; readonly cleanupScript: string; readonly terraform: string },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
 	/** What the latest inventory syncs of the org's connectors found. */
@@ -472,22 +473,27 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						}),
 					secretAad(row.id),
 				)
+				// Pub/Sub signs each push as the connection's push account, so the subscription carries
+				// no secret. Only the scripts' own reports, which no Google identity signs, use it.
+				const pushEndpoint = `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}`
 				const target = {
 					connectorId,
 					scopeType: row.scopeType,
 					scopeId: row.scopeId,
 					projectId: row.projectId,
 					mapleUrl,
-					pushEndpoint: `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}?secret=${secret}`,
+					reportEndpoint: `${pushEndpoint}?secret=${secret}`,
+				}
+				const configuration = {
+					mapleServiceAccountEmail,
+					logsEnabled: row.logsEnabled,
+					applicationLogs: options.applicationLogs,
+					pushEndpoint,
 				}
 				return {
-					setupScript: yield* renderGcpSetupScript({
-						...target,
-						mapleServiceAccountEmail,
-						logsEnabled: row.logsEnabled,
-						applicationLogs: options.applicationLogs,
-					}),
+					setupScript: yield* renderGcpSetupScript({ ...target, ...configuration }),
 					cleanupScript: yield* renderGcpCleanupScript(target),
+					terraform: renderGcpTerraform({ ...target, ...configuration }),
 				}
 			})
 
@@ -513,7 +519,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						scopeId: row.scopeId,
 						projectId: row.projectId,
 						mapleUrl,
-						pushEndpoint: undefined,
+						reportEndpoint: undefined,
 					}),
 				}
 			})

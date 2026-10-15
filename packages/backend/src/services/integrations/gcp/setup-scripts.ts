@@ -118,6 +118,8 @@ SUBSCRIPTION=${sh(names.subscription)}
 SINK=${sh(names.sink)}
 SERVICE_ACCOUNT=${sh(names.serviceAccountId)}
 SERVICE_ACCOUNT_EMAIL="$SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com"
+PUSH_SERVICE_ACCOUNT=${sh(names.pushServiceAccountId)}
+PUSH_SERVICE_ACCOUNT_EMAIL="$PUSH_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com"
 ${more.map((line) => `${line}\n`).join("")}MAPLE_URL=${sh(target.mapleUrl)}
 SCOPE="${target.scopeType} $SCOPE_ID"
 OWNER="Owner on project $PROJECT_ID"
@@ -214,7 +216,7 @@ notify() {
   if ${
 		throughTopic
 			? `gcloud pubsub topics publish "$TOPIC" --project="$PROJECT_ID" --message="$(report "$2")"`
-			: `${POST_REPORT} --data "$(report "$2")" "$PUSH_ENDPOINT"`
+			: `${POST_REPORT} --data "$(report "$2")" "$REPORT_ENDPOINT"`
   } >/dev/null 2>&1; then
     ok "$1"
   elif [ "$CONFIRMED" = 1 ]; then
@@ -253,6 +255,22 @@ api_off() {
   UNCHECKED=1
 }
 
+# account_remains <what it is> <gcloud iam service-accounts list ...>: looked up in the list. For
+# 30 days after a service account is deleted, describing it answers PERMISSION_DENIED even to an
+# Owner, which would read as "may still be there" on every re-run. A list that fails is read like
+# a failed describe.
+account_remains() {
+  local what="$1" output
+  shift
+  if output="$("$@" 2>/dev/null)"; then
+    [ -n "$output" ]
+    return
+  fi
+  output="$("$@" 2>&1 || true)"
+  case "$output" in *"has not been used"* | *"is disabled"*) api_off "$what"; return 1 ;; esac
+  stop "Couldn't check whether $what still exists." "$(fix "$output" "$OWNER")" "$output"
+}
+
 # remove <line when it worked> <line when it failed> <role that allows it> <gcloud ... delete ...>:
 # one that is gone already, a moment after it was seen, is fine.
 remove() {
@@ -283,7 +301,12 @@ unbind() {
 
 // APIs in the host project. Cloud Resource Manager is what gcloud reads projects and grants
 // roles through.
-const LOG_APIS = ["pubsub.googleapis.com", "logging.googleapis.com", "cloudresourcemanager.googleapis.com"]
+const LOG_APIS = [
+	"pubsub.googleapis.com",
+	"logging.googleapis.com",
+	"iam.googleapis.com",
+	"cloudresourcemanager.googleapis.com",
+]
 const READER_APIS = [
 	"monitoring.googleapis.com",
 	"cloudasset.googleapis.com",
@@ -436,6 +459,12 @@ const logPermissionChecks = (scopeType: GcpScopeType): AccessChecks["permissions
 		"pubsub.subscriptions.get",
 		"pubsub.subscriptions.create",
 		"pubsub.subscriptions.update",
+		// The push service account: created, Pub/Sub's agent allowed to sign as it, and attached to
+		// the subscription, which takes actAs.
+		"iam.serviceAccounts.get",
+		"iam.serviceAccounts.create",
+		"iam.serviceAccounts.setIamPolicy",
+		"iam.serviceAccounts.actAs",
 	]
 	const sink = ["logging.sinks.get", "logging.sinks.create", "logging.sinks.update"]
 	const askHost = `Ask for Owner there, ${ADMINISTRATOR}`
@@ -465,7 +494,7 @@ const GRANT = `
 # grant <line when it failed> <role that allows it> <gcloud ... add-iam-policy-binding ...>
 # Waited out, for a minute at most: a change that raced another one, and a service account Google
 # has not published yet. Until then it answers that the account does not exist, or for the policy
-# of a reader this run created (gcloud iam service-accounts ...), that the caller may not change it.
+# of an account this run created (gcloud iam service-accounts ...), that the caller may not change it.
 WAITED=0
 grant() {
   local failed="$1" role="$2" output tries=0
@@ -474,7 +503,7 @@ grant() {
     tries=$((tries + 1))
     conflict "$output" || case "$output" in
       *"does not exist"* | *NOT_FOUND*) ;;
-      *PERMISSION_DENIED*) { [ "$ACCOUNT_CREATED" = 1 ] && [ "$3" = service-accounts ]; } || tries=20 ;;
+      *PERMISSION_DENIED*) { [ "$NEW_ACCOUNT" = 1 ] && [ "$3" = service-accounts ]; } || tries=20 ;;
       *) tries=20 ;;
     esac
     if [ "$tries" -ge 20 ]; then stop "$failed" "$(fix "$output" "$role")" "$output"; fi
@@ -493,8 +522,9 @@ section "Log forwarding"
 DESTINATION="pubsub.googleapis.com/projects/$PROJECT_ID/topics/$TOPIC"
 
 # APIs in ${hostProject(scopeType)}: Pub/Sub carries the log entries, Cloud Logging routes them,
-# and Cloud Resource Manager is what gcloud grants the roles below through.
-apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" ${LOG_APIS.join(" ")}
+# IAM holds the push service account, and Cloud Resource Manager is what gcloud grants the roles
+# below through.
+apis "Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager" ${LOG_APIS.join(" ")}
 
 if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
   ok "Topic already exists"
@@ -503,11 +533,34 @@ else
     gcloud pubsub topics create "$TOPIC" --project="$PROJECT_ID"
 fi
 
-# One LogEntry per request, unwrapped. A day of retention bounds what is replayed after an
-# outage, and the subscription never expires while it is idle.
+# What Pub/Sub signs each push to Maple as. It holds no role anywhere. Maple accepts a push only
+# with an ID token for this account, so PUSH_ENDPOINT carries no secret.
+if exists gcloud iam service-accounts describe "$PUSH_SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
+  ok "Push service account already exists"
+else
+  run "Push service account created" "Couldn't create the push service account." "$OWNER" \\
+    gcloud iam service-accounts create "$PUSH_SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
+    --display-name="Maple log push identity" --description="Signs Pub/Sub push requests to Maple. Holds no roles."
+  NEW_ACCOUNT=1
+fi
+# Pub/Sub's service agent mints those tokens. Projects created after April 2021 allow it by
+# default; older ones need this grant. After the topic: Google creates the agent on first use.
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null || true)"
+[ -n "$PROJECT_NUMBER" ] ||
+  stop "Couldn't read the number of project $PROJECT_ID." "Wait a minute and paste the script again."
+grant "Couldn't let Pub/Sub sign pushes as the push service account." "$OWNER" \\
+  gcloud iam service-accounts add-iam-policy-binding "$PUSH_SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
+  --member="serviceAccount:service-$PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com" \\
+  --role=roles/iam.serviceAccountTokenCreator --condition=None
+ok "Pub/Sub allowed to sign pushes as that account"
+
+# One LogEntry per request, unwrapped, signed as the push service account for this connection. A
+# day of retention bounds what is replayed after an outage, and the subscription never expires
+# while it is idle.
 SUBSCRIPTION_FLAGS=(
   --project="$PROJECT_ID"
   --push-endpoint="$PUSH_ENDPOINT" --push-no-wrapper
+  --push-auth-service-account="$PUSH_SERVICE_ACCOUNT_EMAIL" --push-auth-token-audience="$PUSH_ENDPOINT"
   --ack-deadline=30 --message-retention-duration=1d --expiration-period=never
   --min-retry-delay=10s --max-retry-delay=600s
 )
@@ -584,6 +637,11 @@ if remains "the push subscription" "$OWNER" gcloud pubsub subscriptions describe
   remove "Push subscription deleted" "Couldn't delete the push subscription." "$OWNER" \\
     gcloud pubsub subscriptions delete "$SUBSCRIPTION" --project="$PROJECT_ID" --quiet
 fi
+if account_remains "the push service account" gcloud iam service-accounts list --project="$PROJECT_ID" \\
+  --filter="email=$PUSH_SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
+  remove "Push service account deleted" "Couldn't delete the push service account." "$OWNER" \\
+    gcloud iam service-accounts delete "$PUSH_SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
+fi
 if remains "the topic" "$OWNER" gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
   remove "Topic deleted" "Couldn't delete the Pub/Sub topic." "$OWNER" \\
     gcloud pubsub topics delete "$TOPIC" --project="$PROJECT_ID" --quiet
@@ -639,6 +697,7 @@ else
     gcloud iam service-accounts create "$SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
     --display-name="Maple metrics and resource reader"
   ACCOUNT_CREATED=1
+  NEW_ACCOUNT=1
 fi
 
 # Maple's own account may mint short-lived tokens for this one service account, nothing else.
@@ -684,20 +743,7 @@ esac
 const readerRemoval = (scopeType: GcpScopeType): string => `
 # ---- Read-only access: remove what a setup run created. ----
 section "Read-only access"
-# Looked up in the list: for 30 days after a service account is deleted, describing it answers
-# PERMISSION_DENIED even to an Owner, which would read as "may still be there" on every re-run.
-# A list that fails is read like a failed describe.
-account_remains() {
-  local output
-  if output="$("$@" 2>/dev/null)"; then
-    [ -n "$output" ]
-    return
-  fi
-  output="$("$@" 2>&1 || true)"
-  case "$output" in *"has not been used"* | *"is disabled"*) api_off "the read-only service account"; return 1 ;; esac
-  stop "Couldn't check whether the read-only service account still exists." "$(fix "$output" "$OWNER")" "$output"
-}
-if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
+if account_remains "the read-only service account" gcloud iam service-accounts list --project="$PROJECT_ID" \\
   --filter="email=$SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
   # Role bindings first: once the account is deleted they can no longer be removed by name.
   for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
@@ -743,8 +789,10 @@ ${body}${marker}
 			)
 
 export interface GcpSetupScriptInput extends GcpScriptTarget {
-	/** The ingest gateway's receiver URL for this connector, including its secret. */
+	/** The ingest gateway's receiver URL for this connector, and the audience of its push tokens. */
 	readonly pushEndpoint: string
+	/** The receiver URL with the connector's secret: the script's own reports go there directly. */
+	readonly reportEndpoint: string
 	/** Maple's own Google service account. Undefined: the read-only access is left as it is. */
 	readonly mapleServiceAccountEmail: string | undefined
 	readonly logsEnabled: boolean
@@ -774,7 +822,7 @@ export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 #   Log forwarding:   ${logs ? "on" : "off"}
 #   Read-only access: ${readerState}
 # Safe to run again: it sets up what is on and removes log forwarding when it is off.
-# Keep it private: PUSH_ENDPOINT contains this connection's secret.
+# Keep it private: REPORT_ENDPOINT contains this connection's secret. Google Cloud never gets it.
 set -euo pipefail
 # gcloud would log every argument, the secret too, and the access token to ~/.config/gcloud/logs.
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1 CLOUDSDK_CORE_DISABLE_FILE_LOGGING=1
@@ -804,10 +852,12 @@ LOG_FILTER=${sh(gcpLogFilter(applicationLogs))}
 		: ""
 }${variables(input, [
 			`PUSH_ENDPOINT=${sh(input.pushEndpoint)}`,
+			`REPORT_ENDPOINT=${sh(input.reportEndpoint)}`,
 			...(maple === undefined ? [] : [`MAPLE_SERVICE_ACCOUNT=${sh(maple)}`]),
 		])}SINK_CREATED=0
 FILTER_REPLACED=0
 ACCOUNT_CREATED=0
+NEW_ACCOUNT=0
 REMOVED=0
 READER_FAILED=0
 ${output(
@@ -839,13 +889,15 @@ missing() {
 
 # apis <their names> <api...>: switches on the ones the access check found off.
 apis() {
-  local names="$1" missing
+  local names="$1" missing api
   shift
   missing="$(missing "$@")"
   if [ -n "$missing" ]; then
     # Unquoted on purpose: one argument per API.
     try "Couldn't switch on:$missing." "Service Usage Admin on project $PROJECT_ID" \\
       gcloud services enable $missing --project="$PROJECT_ID"
+    # A later section that needs one of them too finds it on.
+    for api in $missing; do APIS_OFF="\${APIS_OFF/ $api/}"; done
   fi
   ok "APIs enabled ($names)"
 }
@@ -880,22 +932,22 @@ if [ "$ACCOUNT_CREATED" = 1 ]; then printf '  Metrics: Maple can query them with
 }
 
 export interface GcpCleanupScriptInput extends GcpScriptTarget {
-	/** Set while the connector exists: the script then tells Maple that it ran. */
-	readonly pushEndpoint: string | undefined
+	/** Set while the connector exists, with its secret: the script then tells Maple that it ran. */
+	readonly reportEndpoint: string | undefined
 }
 
-/** Removes what the setup script created. Without a push endpoint it carries no secret. */
+/** Removes what the setup script created. Without a report endpoint it carries no secret. */
 export const renderGcpCleanupScript = (input: GcpCleanupScriptInput) =>
 	forPaste(
 		"MAPLE_CLEANUP_SCRIPT",
 		`#!/usr/bin/env bash
 # Maple cleanup for Google Cloud ${input.scopeType} ${input.scopeId}
 # Removes what the Maple setup script created. The APIs it switched on stay on.
-# Safe to run again.${input.pushEndpoint === undefined ? "" : "\n# Keep it private: PUSH_ENDPOINT contains this connection's secret."}
+# Safe to run again.${input.reportEndpoint === undefined ? "" : "\n# Keep it private: REPORT_ENDPOINT contains this connection's secret."}
 set -euo pipefail
 # gcloud would log every argument, the secret too, and the access token to ~/.config/gcloud/logs.
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1 CLOUDSDK_CORE_DISABLE_FILE_LOGGING=1
-${variables(input, input.pushEndpoint === undefined ? [] : [`PUSH_ENDPOINT=${sh(input.pushEndpoint)}`])}REMOVED=0
+${variables(input, input.reportEndpoint === undefined ? [] : [`REPORT_ENDPOINT=${sh(input.reportEndpoint)}`])}REMOVED=0
 ANY_API_OFF_MATTERS=1
 ${output(
 	"Cleanup did not finish. Fix this and paste the script again: it continues where it stopped.",
@@ -903,11 +955,11 @@ ${output(
 )}${REMOVAL_HELPERS}
 printf 'Maple cleanup for %s\\n' "$SCOPE"
 ${access(input.scopeType, { apis: [], sink: undefined, permissions: [] })}${logsRemoval(input.scopeType, false)}${readerRemoval(input.scopeType)}${
-			input.pushEndpoint === undefined
+			input.reportEndpoint === undefined
 				? ""
 				: `
 # Tells Maple the cleanup ran. Maple refuses this once the connection is deleted, which is fine.
-${POST_REPORT} --data "$(report '"logs":false,"metrics":false')" "$PUSH_ENDPOINT" >/dev/null 2>&1 || true
+${POST_REPORT} --data "$(report '"logs":false,"metrics":false')" "$REPORT_ENDPOINT" >/dev/null 2>&1 || true
 `
 		}
 if [ "$UNCHECKED" = 1 ]; then
@@ -917,5 +969,5 @@ else
 fi
 printf '  Left in place: the APIs it switched on, and the Logs Writer role of Google'"'"'s logging\\n'
 printf '  service account on %s, which other sinks share.\\n' "$PROJECT_ID"
-${input.pushEndpoint === undefined ? "" : `printf '  Now disconnect in Maple: %s\\n' "$MAPLE_URL"\n`}`,
+${input.reportEndpoint === undefined ? "" : `printf '  Now disconnect in Maple: %s\\n' "$MAPLE_URL"\n`}`,
 	)
