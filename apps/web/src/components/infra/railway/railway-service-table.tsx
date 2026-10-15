@@ -107,7 +107,7 @@ export function RailwayFleetBand({
 						{formatBytes(total)}
 					</span>
 					<span className="text-2xs text-muted-foreground">
-						average memory across {services.length} {pluralize(services.length, "service")}
+						summed average memory across {services.length} {pluralize(services.length, "service")}
 					</span>
 				</span>
 				<SegmentedBar
