@@ -320,6 +320,7 @@ const TimeSeries = Schema.Struct({
 					int64Value: Schema.optionalKey(Schema.String),
 					distributionValue: Schema.optionalKey(
 						Schema.Struct({
+							count: Schema.optionalKey(Schema.String),
 							bucketOptions: Schema.optionalKey(BucketOptions),
 							bucketCounts: Schema.optionalKey(Schema.Array(Schema.String)),
 						}),
@@ -348,9 +349,13 @@ export interface GcpTimeSeriesQuery {
 	readonly endMs: number
 }
 
+/** A point per minute; a top group's one point covers the whole window. */
+export const gcpAlignmentMs = (query: Pick<GcpTimeSeriesQuery, "group" | "startMs" | "endMs">) =>
+	query.group.top === undefined ? 60_000 : query.endMs - query.startMs
+
 /**
- * One page of one metric type over `[startMs, endMs]` for everything in the scope, aligned to
- * 60 seconds and reduced to the project plus the labels the table keeps.
+ * One page of one metric type over `[startMs, endMs]` for everything in the scope, aligned per
+ * `gcpAlignmentMs` and reduced to the project plus the labels the table keeps.
  */
 export const listTimeSeriesPage = (
 	httpClient: HttpClient.HttpClient,
@@ -367,7 +372,7 @@ export const listTimeSeriesPage = (
 				filter: `metric.type = "${query.metric.type}" AND resource.type = "${query.group.resourceType}"`,
 				"interval.startTime": new Date(query.startMs).toISOString(),
 				"interval.endTime": new Date(query.endMs).toISOString(),
-				"aggregation.alignmentPeriod": "60s",
+				"aggregation.alignmentPeriod": `${gcpAlignmentMs(query) / 1000}s`,
 				"aggregation.perSeriesAligner": gcpMetricAligner(query.metric),
 				"aggregation.crossSeriesReducer": query.metric.reducer,
 				"aggregation.groupByFields": [
@@ -428,4 +433,75 @@ export const searchResourcesPage = (
 			}),
 		),
 		decodeResourcePage,
+	)
+
+/** What Maple reads of a Cloud SQL instance: the Cloud SQL Admin API's `DatabaseInstance`. */
+const SqlInstanceData = Schema.Struct({
+	name: Schema.String,
+	project: Schema.String,
+	region: Schema.optionalKey(Schema.String),
+	databaseVersion: Schema.optionalKey(Schema.String),
+	/** `project:instance`. */
+	masterInstanceName: Schema.optionalKey(Schema.String),
+	settings: Schema.optionalKey(
+		Schema.Struct({
+			tier: Schema.optionalKey(Schema.String),
+			edition: Schema.optionalKey(Schema.String),
+			availabilityType: Schema.optionalKey(Schema.String),
+			// int64, as a string.
+			dataDiskSizeGb: Schema.optionalKey(Schema.String),
+			databaseFlags: Schema.optionalKey(
+				Schema.Array(
+					Schema.Struct({ name: Schema.String, value: Schema.optionalKey(Schema.String) }),
+				),
+			),
+			insightsConfig: Schema.optionalKey(
+				Schema.Struct({ queryInsightsEnabled: Schema.optionalKey(Schema.Boolean) }),
+			),
+		}),
+	),
+})
+export type GcpSqlInstanceData = typeof SqlInstanceData.Type
+
+const decodeSqlInstancePage = Schema.decodeUnknownEffect(
+	Schema.Struct({
+		assets: Schema.optionalKey(
+			Schema.Array(
+				Schema.Struct({
+					/** The full resource name, as the search answers it. */
+					name: Schema.String,
+					resource: Schema.optionalKey(
+						Schema.Struct({ data: Schema.optionalKey(SqlInstanceData) }),
+					),
+				}),
+			),
+		),
+		nextPageToken: Schema.optionalKey(Schema.String),
+	}),
+)
+
+/**
+ * One page of the Cloud SQL instances in a scope with their settings, for the inventory sync:
+ * `assets.list` answers the resource itself, which search does not. Cloud Asset Viewer holds the
+ * permission.
+ */
+export const listSqlInstancesPage = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	scope: string,
+	pageToken: string | undefined,
+) =>
+	call(
+		httpClient,
+		"Cloud Asset Inventory",
+		HttpClientRequest.get(`https://cloudasset.googleapis.com/v1/${scope}/assets`).pipe(
+			asReader(reader),
+			HttpClientRequest.setUrlParams({
+				assetTypes: "sqladmin.googleapis.com/Instance",
+				contentType: "RESOURCE",
+				pageSize: RESOURCE_PAGE_SIZE,
+				pageToken,
+			}),
+		),
+		decodeSqlInstancePage,
 	)

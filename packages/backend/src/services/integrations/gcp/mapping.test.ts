@@ -5,8 +5,11 @@ import {
 	distributionQuantile,
 	GCP_SCOPE_NAME,
 	gcpResourceAttributes,
+	gcpTopKey,
+	gcpTopSeries,
 	mapGcpResource,
 	mapGcpTimeSeries,
+	type GcpTopGroup,
 } from "./mapping"
 
 const startMs = Date.UTC(2026, 9, 8, 12, 0, 0)
@@ -146,6 +149,61 @@ describe("mapGcpTimeSeries", () => {
 			"host.name": "web-1",
 			"gcp.gce.instance.name": "web-1",
 		})
+	})
+
+	it("stores Query Insights as the instance, its latency count as queries run", () => {
+		const series = {
+			metric: {},
+			resource: {
+				labels: {
+					project_id: "acme-prod",
+					resource_id: "acme-prod:orders-db",
+					location: "us-central1",
+				},
+			},
+			points: [
+				{
+					interval: { endTime: at(2) },
+					value: {
+						distributionValue: {
+							count: "40",
+							// Finite bucket [0, 1000us): every query below a millisecond.
+							bucketOptions: { linearBuckets: { numFiniteBuckets: 1, width: 1_000 } },
+							bucketCounts: ["0", "40", "0"],
+						},
+					},
+				},
+			],
+		}
+		// Read twice: once for its quantiles, once for its count.
+		const latencies = (name: string) => {
+			const group = GCP_METRIC_GROUPS.find((one) => one.resourceType === "cloudsql_instance_database")!
+			const metric = group.metrics.find((one) => one.name === name)!
+			return mapGcpTimeSeries({ group, metric, startMs, endMs }, [series])
+		}
+		const [queries] = latencies("gcp.cloud_sql.queries").sumRows
+		expect(queries).toMatchObject({ metric_name: "gcp.cloud_sql.queries", value: 40 })
+		const durations = latencies("gcp.cloud_sql.query.duration").gaugeRows
+		expect(durations.map((row) => [row.metric_attributes.quantile, row.value])).toEqual([
+			["0.5", 0.0005],
+			["0.95", 0.00095],
+			["0.99", 0.00099],
+		])
+
+		// The same identity as the instance's own metrics.
+		const instance = gcpResourceAttributes(
+			"cloudsql_database",
+			{ project_id: "acme-prod", database_id: "acme-prod:orders-db", region: "us-central1" },
+			{},
+		)
+		for (const key of [
+			"service.name",
+			"cloud.account.id",
+			"cloud.region",
+			"gcp.resource.labels.database_id",
+		]) {
+			expect(queries!.resource_attributes[key], key).toBe(instance[key])
+		}
 	})
 
 	it("drops a load balancer series that names no URL map", () => {
@@ -318,5 +376,64 @@ describe("mapGcpResource", () => {
 				location: "global",
 			}),
 		).toMatchObject({ projectId: "acme-prod", displayName: "orders" })
+	})
+})
+
+describe("gcpTopSeries", () => {
+	const statements = GCP_METRIC_GROUPS.find((group) => group.top !== undefined)!
+	const group: GcpTopGroup = { ...statements, top: { ...statements.top!, limit: 2 } }
+	const series = (instance: string, hash: string, microseconds: number): GcpTimeSeries => ({
+		metric: { labels: { query_hash: hash } },
+		resource: {
+			labels: {
+				project_id: "acme-prod",
+				resource_id: `acme-prod:${instance}`,
+				location: "us-central1",
+			},
+		},
+		points: [{ interval: { endTime: at(5) }, value: { int64Value: String(microseconds) } }],
+	})
+
+	it("keeps the items with the largest totals of each resource, and none that ran no time", () => {
+		const all = [
+			series("orders-db", "a", 10),
+			series("orders-db", "b", 30),
+			series("orders-db", "c", 20),
+			series("billing-db", "a", 5),
+			series("billing-db", "idle", 0),
+		]
+		const kept = gcpTopSeries(group, all)
+		expect(
+			all
+				.filter((item) => kept.has(gcpTopKey(group, item)))
+				.map((item) => item.metric.labels?.query_hash),
+		).toEqual(["b", "c", "a"])
+		// The key is the resource and the item, whichever metric's series it is.
+		expect(
+			kept.has(
+				gcpTopKey(group, {
+					...series("billing-db", "a", 1),
+					metric: { labels: { query_hash: "a" } },
+				}),
+			),
+		).toBe(true)
+	})
+
+	it("stores a point per window, its counter's start at the window's start", () => {
+		const metric = statements.metrics.find((candidate) => candidate.name === statements.top!.by)!
+		const { sumRows } = mapGcpTimeSeries({ group, metric, startMs, endMs }, [
+			{
+				...series("orders-db", "a", 2_000_000),
+				metric: { labels: { query_hash: "a", querystring: "select $1" } },
+			},
+		])
+		expect(sumRows).toHaveLength(1)
+		expect(sumRows[0]).toMatchObject({
+			start_timestamp: "2026-10-08 12:00:00.000",
+			timestamp: "2026-10-08 12:05:00.000",
+			value: 2,
+			metric_attributes: { "gcp.metric.labels.query_hash": "a", "db.query.text": "select $1" },
+			service_name: "gcp/cloudsql_database",
+		})
 	})
 })
