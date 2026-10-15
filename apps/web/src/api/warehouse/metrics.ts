@@ -248,7 +248,9 @@ const GetMetricAttributeValuesInputSchema = Schema.Struct({
 	endTime: Schema.optional(WarehouseDateTimeString),
 	attributeKey: Schema.String,
 	metricName: Schema.optional(Schema.String),
+	metricNames: Schema.optional(Schema.Array(Schema.String)),
 	metricType: Schema.optional(MetricTypeSchema),
+	scope: Schema.optional(Schema.Literals(["metric", "resource"])),
 })
 
 export type GetMetricAttributeValuesInput = Schema.Schema.Type<typeof GetMetricAttributeValuesInputSchema>
@@ -283,9 +285,10 @@ const getMetricAttributeValuesEffect = Effect.fn("QueryEngine.getMetricAttribute
 			query: {
 				kind: "attributeValues" as const,
 				source: "metrics" as const,
-				scope: "metric" as const,
+				scope: input.scope ?? "metric",
 				attributeKey: input.attributeKey,
 				metricName: input.metricName,
+				metricNames: input.metricNames,
 				metricType: input.metricType,
 			},
 		}),
