@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto"
+import { Effect } from "effect"
 
 export type IngestKeyType = "public" | "private"
 
@@ -14,14 +15,16 @@ export const inferIngestKeyType = (rawKey: string): IngestKeyType | null => {
 	return null
 }
 
-export const parseIngestKeyLookupHmacKey = (raw: string): string => {
-	const trimmed = raw.trim()
-	if (trimmed.length === 0) {
-		throw new Error("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY is required")
-	}
-
-	return trimmed
-}
+export const parseIngestKeyLookupHmacKey = <E>(
+	raw: string,
+	onError: (message: string) => E,
+): Effect.Effect<string, E> =>
+	Effect.suspend(() => {
+		const trimmed = raw.trim()
+		return trimmed.length === 0
+			? Effect.fail(onError("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY is required"))
+			: Effect.succeed(trimmed)
+	})
 
 export const hashIngestKey = (rawKey: string, hmacKey: string): string =>
 	createHmac("sha256", hmacKey).update(rawKey, "utf8").digest("base64url")

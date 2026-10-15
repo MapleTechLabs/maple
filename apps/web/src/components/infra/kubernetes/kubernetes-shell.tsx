@@ -71,7 +71,7 @@ export function KubernetesShell({
 					: { label: current.title },
 				...trail,
 			]}
-			titleContent={<KubernetesViewTabs view={view} timeSearch={window} />}
+			tabs={<KubernetesViewTabs view={view} timeSearch={window} />}
 			time={{ search: timeSearch, startTime, endTime, defaultPreset, onChange: onTimeChange }}
 			filters={filters}
 			filtersWidth={filtersWidth}

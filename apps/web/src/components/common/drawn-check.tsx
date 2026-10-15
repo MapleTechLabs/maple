@@ -11,7 +11,7 @@ export function DrawnCheck({ checked, className }: { checked: boolean; className
 		<span
 			aria-hidden="true"
 			className={cn(
-				"flex size-4 shrink-0 items-center justify-center rounded-[.25rem] border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
+				"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
 				checked
 					? "border-primary bg-primary text-primary-foreground"
 					: "border-input bg-background group-hover:border-foreground/40",

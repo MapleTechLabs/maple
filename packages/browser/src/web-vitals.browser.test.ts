@@ -3,23 +3,12 @@ import type { ReadableLogRecord } from "@opentelemetry/sdk-logs"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 const exportedLogs: ReadableLogRecord[] = []
-vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
-	OTLPLogExporter: class {
+vi.mock("./otlp", async (original) => ({
+	...(await original<typeof import("./otlp")>()),
+	OtlpExporter: class {
+		constructor(private readonly url: string) {}
 		export(items: ReadableLogRecord[], callback: (result: { code: number }) => void): void {
-			exportedLogs.push(...items)
-			callback({ code: 0 })
-		}
-		forceFlush(): Promise<void> {
-			return Promise.resolve()
-		}
-		shutdown(): Promise<void> {
-			return Promise.resolve()
-		}
-	},
-}))
-vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
-	OTLPTraceExporter: class {
-		export(_spans: unknown[], callback: (result: { code: number }) => void): void {
+			if (this.url.endsWith("/v1/logs")) exportedLogs.push(...items)
 			callback({ code: 0 })
 		}
 		forceFlush(): Promise<void> {

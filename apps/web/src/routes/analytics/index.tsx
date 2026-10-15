@@ -1,12 +1,12 @@
 import { useState } from "react"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
-import { Result } from "@/lib/effect-atom"
+import { Result, useAtomRefresh } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ChartLoading } from "@maple/ui/components/charts"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import type { TimeRange } from "@/components/time-range-picker/types"
@@ -100,14 +100,6 @@ function WebAnalyticsPage() {
 	const filters = filtersFromSearch(search)
 	const activeTab = decodeTab(search.tab)
 
-	const onTabChange = (value: unknown) => {
-		const next = decodeTab(value)
-		navigate({
-			replace: true,
-			search: (prev) => ({ ...prev, tab: next === "overview" ? undefined : next }),
-		})
-	}
-
 	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
 		navigate({
 			replace: options?.replace,
@@ -188,25 +180,27 @@ function WebAnalyticsPage() {
 							/>
 						}
 					>
-						<PlayRotateClockwiseIcon size={14} />
+						<PlayRotateClockwiseIcon />
 						<span className="hidden sm:inline">Replays</span>
 					</Button>
 				</>
 			}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
-			// View tabs share the header row with the range controls on wide
-			// screens, same as Hosts; the header stacks them on narrow ones.
-			titleContent={
-				<Tabs value={activeTab} onValueChange={onTabChange} className="min-w-0">
-					<TabsList variant="underline" className="-mx-2 gap-x-1 py-0">
-						<TabsTrigger value="overview" className="h-8 px-2 text-sm sm:h-8">
-							Overview
-						</TabsTrigger>
-						<TabsTrigger value="ai" className="h-8 px-2 text-sm sm:h-8">
-							AI traffic
-						</TabsTrigger>
-					</TabsList>
-				</Tabs>
+			tabs={
+				<UnderlineTabStrip navigation label="Analytics views">
+					{ANALYTICS_TABS.map((tab) => (
+						<Link
+							key={tab}
+							to="/analytics"
+							replace
+							search={(prev) => ({ ...prev, tab: tab === "overview" ? undefined : tab })}
+							aria-current={tab === activeTab ? "page" : undefined}
+							className={underlineTabClass(tab === activeTab)}
+						>
+							{tab === "overview" ? "Overview" : "AI traffic"}
+						</Link>
+					))}
+				</UnderlineTabStrip>
 			}
 			filters={
 				<AnalyticsFilterSidebar
@@ -237,13 +231,14 @@ function WebAnalyticsPage() {
 							{chip.label} ✕
 						</Badge>
 					))}
-					<button
-						type="button"
+					<Button
+						variant="link"
+						size="xs"
 						onClick={onClearFilters}
-						className="px-1 text-3xs text-muted-foreground underline-offset-2 hover:underline"
+						className="h-auto px-1 text-3xs text-muted-foreground sm:text-3xs"
 					>
 						Clear all
-					</button>
+					</Button>
 				</div>
 			) : null}
 			{activeTab === "ai" ? (
@@ -328,6 +323,12 @@ function AnalyticsContent({
 	const [picked, setPicked] = useState<AnalyticsMetricKey | null>(null)
 
 	const summaryResult = useRefreshableAtomValue(webAnalyticsSummaryResultAtom({ data: windowInput }))
+	const retrySummary = useAtomRefresh(webAnalyticsSummaryResultAtom({ data: windowInput }))
+	const retryBreakdowns = useAtomRefresh(
+		webAnalyticsBreakdownsResultAtom({
+			data: { startTime, endTime, limitPerDimension: BREAKDOWN_LIMIT, ...filters },
+		}),
+	)
 
 	// The bot split for this window, measured over every agent regardless of the
 	// Traffic filter — which is the only way it can be reported while that filter
@@ -387,7 +388,9 @@ function AnalyticsContent({
 						<ChartLoading variant="area" height={224} />
 					</>
 				))
-				.onError((error) => <ErrorState error={error} />)
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load analytics summary" onRetry={retrySummary} />
+				))
 				.onSuccess((summary) => {
 					const source: AnalyticsMetricSource = { summary, timeseries, pageviews }
 					// An explicit pick wins while it still holds; a filter change that
@@ -433,7 +436,9 @@ function AnalyticsContent({
 						<Skeleton className="h-72 w-full" />
 					</div>
 				))
-				.onError((error) => <ErrorState error={error} />)
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load breakdowns" onRetry={retryBreakdowns} />
+				))
 				.onSuccess((breakdowns, result) => {
 					const pages = Result.builder(pagesResult)
 						.onSuccess((rows) => rows.data)

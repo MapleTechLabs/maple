@@ -55,15 +55,16 @@ writes: endpoint captures the Postgres txid on the mutating statement
 
 ### Shapes (server-pinned whitelist, `apps/electric-sync/src/shapes/registry.ts`)
 
-| shape                | table              | pinned columns / extra WHERE (besides org scope)                |
-| -------------------- | ------------------ | --------------------------------------------------------------- |
-| `dashboards`         | dashboards         | none                                                            |
-| `alert_rules`        | alert_rules        | none                                                            |
-| `alert_rule_states`  | alert_rule_states  | none                                                            |
-| `alert_incidents`    | alert_incidents    | none                                                            |
-| `alert_destinations` | alert_destinations | columns: drops the encrypted `secret_*`                         |
-| `api_keys`           | api_keys           | columns: drops `key_hash` / `metadata_json`                     |
-| `investigation_v2`   | investigations     | scoped to one `id` (client supplies the value as `$2`); columns |
+| shape                   | table              | pinned columns / extra WHERE (besides org scope)                |
+| ----------------------- | ------------------ | --------------------------------------------------------------- |
+| `dashboards`            | dashboards         | none                                                            |
+| `alert_rules`           | alert_rules        | none                                                            |
+| `alert_rule_states`     | alert_rule_states  | none                                                            |
+| `alert_incidents`       | alert_incidents    | none                                                            |
+| `alert_destinations`    | alert_destinations | columns: drops the encrypted `secret_*` (previous builds only)  |
+| `alert_destinations_v2` | alert_destinations | columns: as v1, plus `disabled_at` / `disabled_reason`          |
+| `api_keys`              | api_keys           | columns: drops `key_hash` / `metadata_json`                     |
+| `investigation_v2`      | investigations     | scoped to one `id` (client supplies the value as `$2`); columns |
 
 Shape `where`/columns are **immutable**. Changing a pinned predicate forces a
 full re-sync for every client. If you must change one, version the shape name
@@ -112,8 +113,8 @@ no upstream `ELECTRIC_URL`. Two causes:
 **Shapes 404 / `Database table public.<t> is missing from the publication`** (or
 `does not have its replica identity set to FULL`). The early publication migrations
 (`0009`, `0011`, `0014`, `0037`) wrap their DDL in `DO $$ … EXCEPTION WHEN OTHERS THEN
-RAISE NOTICE … END $$`. On real Postgres a failure inside one is swallowed, and drizzle
-or alchemy still records it as applied. The case that actually happened: on the fresh
+RAISE NOTICE … END $$`. On real Postgres a failure inside one is swallowed, and the
+migrator still records it as applied. The case that actually happened: on the fresh
 EU database the publication existed, empty, before the first migration ran. `0009`'s
 `CREATE PUBLICATION` raised `duplicate_object`, and that handler rolls back the entire
 block, `REPLICA IDENTITY FULL` included. The later migrations then `ADD`ed their own
@@ -198,8 +199,11 @@ service runs `desiredCount: 1` with `minimumHealthyPercent: 0`: stop the old
 task, then start the new one. Every deploy therefore has a ~60s window with no
 sync. `/dashboards` degrades to its HTTP snapshot (`SyncDegradedBanner`), while
 the alerts lists have no fallback and sit in their retry state. This is why the
-image tag is pinned in `apps/electric/Dockerfile` rather than tracking `:latest`
-as local docker does.
+image is pinned by digest (`ELECTRIC_IMAGE` in `apps/electric/alchemy.run.ts`)
+rather than tracking `:latest` as local docker does, and why it is mirrored as an
+image ref instead of built from a Dockerfile: alchemy hashes a build context
+together with `bun.lock`, so any dependency bump retagged the image and restarted
+Electric (two ~2 min gaps on 2026-10-14).
 
 ### Standing it up
 
@@ -207,7 +211,7 @@ as local docker does.
    `max_wal_senders>=10`, `max_slot_wal_keep_size>=4096`, `sync_replication_slots=on`,
    `hot_standby_feedback=on`. Already set for Cloud; unchanged.
 2. **The role is declared:** `Planetscale.PostgresRole("electric-db-role", { withReplication: true,
-inheritedRoles: ["postgres"] })` in `alchemy.run.ts`. The `REPLICATION` _attribute_ is never
+   inheritedRoles: ["postgres"] })` in `alchemy.run.ts`. The `REPLICATION` _attribute_ is never
    inherited through role membership. Electric's database validation rejects a role without it
    with a message that does not say so, and PlanetScale issues it only alongside `postgres`.
    Its DIRECT 5432 URL is the task's `DATABASE_URL`. Logical replication cannot run through
@@ -255,7 +259,7 @@ never reads the shared one, so a preview can never proxy shapes at another stage
 
 1. New Drizzle migration (`db:generate --custom`) that adds the table with
    `ALTER TABLE "<t>" REPLICA IDENTITY FULL` and `ALTER PUBLICATION
-electric_publication_default ADD TABLE "<t>"`, each behind a catalog check
+   electric_publication_default ADD TABLE "<t>"`, each behind a catalog check
    (`pg_class.relreplident`, `pg_publication_tables`) as in
    `electric_publication_reconcile`. **No `EXCEPTION` handler.** PGlite (0.5+) runs
    `CREATE/ALTER PUBLICATION` and `pg_publication_tables`, so the guard the early
@@ -317,7 +321,7 @@ whether or not the table is published). Move the table from `SYNCED_TABLES` to
 **Done and verified**
 
 - Infra: docker `electric` + `wal_level=logical`; `0009_electric_publication`
-  (applies via both `drizzle-kit migrate` and the PGlite test path; see
+  (applies via both `db:migrate` and the PGlite test path; see
   `packages/db/src/migrations.test.ts`), with later publication migrations for
   wave-1 control-plane tables, `api_keys` and `investigations`.
 - Shape proxy with org-scoping + client-param pinning, extracted into the

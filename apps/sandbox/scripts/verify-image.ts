@@ -9,7 +9,7 @@
  *
  *   bun run --cwd apps/sandbox verify:image
  *
- * Needs Docker and roughly a gigabyte for the image. `--cap-add SYS_ADMIN` is
+ * Needs Docker; builds `image/Dockerfile`, the image `alchemy.run.ts` deploys. `--cap-add SYS_ADMIN` is
  * passed because Cloudflare's runtime is expected to allow a network namespace;
  * run with `MAPLE_SANDBOX_NO_CAPS=1` to prove the opposite case, where the
  * wrapper must refuse to run the command at all rather than run it with egress.
@@ -23,12 +23,22 @@ import {
 	SANDBOX_SNAPSHOT_DIR,
 	SANDBOX_WORKSPACE_ROOT,
 	SandboxCheckout,
-	sandboxCredentialPath,
 	shellQuote,
 } from "@maple/domain/sandbox"
-import { checkoutDir, cloneScript, parseTrailer, snapshotScript, wrapCommand } from "../src/checkout.ts"
+import {
+	CLONE_TOKEN_ENV,
+	checkoutDir,
+	checkoutStatusScript,
+	cloneRunner,
+	cloneScript,
+	cloneStateDir,
+	commandArgv,
+	parseTrailer,
+	snapshotScript,
+	wrapCommand,
+} from "../src/checkout.ts"
 
-const IMAGE = "docker.io/cloudflare/sandbox:0.12.10"
+const IMAGE = "maple-sandbox:verify"
 const TOKEN = "ghs_a_secret_that_must_never_land_on_disk"
 const ISOLATION_EXPECTED = process.env.MAPLE_SANDBOX_NO_CAPS ? "unavailable" : "isolated"
 
@@ -68,8 +78,8 @@ const SECOND_COMMIT = [
 /** Run the real clone script for `target` inside the current container, reporting its exit. */
 const cloneFor = (target: SandboxCheckout, label: string) =>
 	[
-		`printf '%s' ${shellQuote(TOKEN)} > ${sandboxCredentialPath(target.sha)}`,
 		"(",
+		`export ${CLONE_TOKEN_ENV}=${shellQuote(TOKEN)}`,
 		cloneScript(target),
 		`) > /tmp/clone-${label}.log 2>&1`,
 		`echo "${label}_EXIT=$?"`,
@@ -106,18 +116,17 @@ const inImage = (program: string) => {
 /**
  * The real clone script, against a repository built inside the container.
  *
- * The credential is staged the way the Worker stages it — written to its own
- * file before the clone starts — so the assertions about where the token ends up
- * are about the real mechanism.
+ * The token reaches the clone the way the Durable Object passes it, in the clone's own
+ * environment, so the assertions about where it ends up are about the real mechanism.
  */
 const withCheckout = (commands: ReadonlyArray<string>) =>
 	inImage(
 		[
 			"set -e",
 			FIXTURE,
-			`printf '%s' ${shellQuote(TOKEN)} > ${sandboxCredentialPath(SHA)}`,
 			"set +e",
 			"(",
+			`export ${CLONE_TOKEN_ENV}=${shellQuote(TOKEN)}`,
 			cloneScript(checkout),
 			") > /tmp/clone.log 2>&1",
 			`echo "CLONE_EXIT=$?"`,
@@ -131,13 +140,12 @@ const withCheckout = (commands: ReadonlyArray<string>) =>
 
 console.log(`image ${IMAGE}, isolation expected: ${ISOLATION_EXPECTED}\n`)
 
-// Docker stores the pinned image under its short name, so that is what the
-// presence check has to ask for; `docker.io/…` finds nothing and re-pulls every run.
-const LOCAL_TAG = IMAGE.replace(/^docker\.io\//, "")
-if (execFileSync("docker", ["image", "ls", "-q", LOCAL_TAG], { encoding: "utf8" }).trim() === "") {
-	console.log(`pulling ${IMAGE} (about a gigabyte, once)`)
-	execFileSync("docker", ["pull", IMAGE], { stdio: "inherit" })
-}
+// Rebuilt every run; Docker's layer cache makes an unchanged Dockerfile a no-op.
+execFileSync(
+	"docker",
+	["build", "--quiet", "--platform", "linux/amd64", "--tag", IMAGE, `${import.meta.dirname}/../image`],
+	{ stdio: ["ignore", "ignore", "inherit"] },
+)
 
 // The clone script is generated here but the commit exists only in the container,
 // so one throwaway container builds the fixture and reports its hash. The build is
@@ -169,7 +177,6 @@ console.log("the clone script")
 		`echo "CHECKOUT_HEAD=$(git -C ${shellQuote(dir)} rev-parse --short HEAD 2>&1)"`,
 		`echo "IS_CLONE=$(test -d ${shellQuote(`${dir}/.git`)} && echo yes || echo no)"`,
 		`echo "HISTORY=$(git -C ${shellQuote(dir)} log --oneline 2>/dev/null | wc -l)"`,
-		`echo "CREDENTIAL_LEFT=$(test -e ${sandboxCredentialPath(SHA)} && echo yes || echo no)"`,
 		// Anywhere at all, not just where it was staged.
 		`echo "TOKEN_ON_DISK=$(grep -rlF ${shellQuote(TOKEN)} / --exclude-dir=proc --exclude-dir=sys 2>/dev/null | head -n 3)"`,
 		`echo "REMOTE=$(git -C ${shellQuote(dir)} remote get-url origin 2>&1)"`,
@@ -184,7 +191,6 @@ console.log("the clone script")
 	check("the clone script exits 0", field("CLONE_EXIT") === "0", log)
 	check("the commit is checked out as a real clone", field("IS_CLONE") === "yes", log)
 	check("history came with it, which is the point of cloning", Number(field("HISTORY")) >= 1, log)
-	check("the credential file is gone afterwards", field("CREDENTIAL_LEFT") === "no")
 	check("the token is nowhere on disk", field("TOKEN_ON_DISK") === "", field("TOKEN_ON_DISK"))
 	check("no credential helper is left in the checkout's config", field("HELPER") === "")
 	check("no scratch directory is left behind", field("SCRATCH") === "0")
@@ -300,7 +306,7 @@ console.log("\na restored backup")
 
 	check("a clone after a restore succeeds", field("RESTORED_EXIT") === "0", logs)
 	check("the mirror is built from the seed rather than from scratch", field("FROM_SEED") === "yes")
-	check("the seed is gone once copied, so the disk holds one mirror", field("SEED_LEFT") === "no")
+	check("the seed is moved into place, so the disk holds one mirror", field("SEED_LEFT") === "no")
 	check("no temporary mirror is left behind", field("TEMP_MIRRORS") === "0")
 	check(
 		"the new commit is fetched on top of it",
@@ -395,6 +401,67 @@ console.log("\nthe command wrapper")
 			grep,
 		)
 	}
+}
+
+console.log("\nthe background clone")
+{
+	// The scripts the Durable Object runs, quoted back into one program. `&` stands in for spawn.
+	const status = `$(${commandArgv(checkoutStatusScript(SHA)).map(shellQuote).join(" ")} | head -n 1)`
+	const poll = `for i in $(seq 1 100); do case "${status}" in cloning) sleep 0.1;; *) break;; esac; done`
+	const spawn = (target: SandboxCheckout) =>
+		`env ${CLONE_TOKEN_ENV}=${shellQuote(target.token)} bash -c ${shellQuote(cloneRunner(target))} &`
+	const broken = new SandboxCheckout({ ...checkout, remoteUrl: "file:///nowhere.git" })
+	const run = inImage(
+		[
+			"set -e",
+			FIXTURE,
+			"set +e",
+			`echo "FIRST=${status}"`,
+			`echo "SECOND=${status}"`,
+			spawn(checkout),
+			poll,
+			`echo "AFTER=${status}"`,
+			`echo "TOKEN_ON_DISK=$(grep -rlF ${shellQuote(TOKEN)} / --exclude-dir=proc --exclude-dir=sys 2>/dev/null | head -n 3)"`,
+			// The token lives in the clone's environment; the agent's account must not read it there.
+			`id -u ${SANDBOX_RUN_AS_USER} >/dev/null 2>&1 || useradd --system ${SANDBOX_RUN_AS_USER}`,
+			`env ${CLONE_TOKEN_ENV}=${shellQuote(TOKEN)} sleep 5 & p=$!`,
+			"sleep 0.2",
+			`echo "ENVIRON=$(runuser -u ${SANDBOX_RUN_AS_USER} -- cat /proc/$p/environ 2>&1 | tr '\\0' ' ' | head -c 200)"`,
+			`echo "CMDLINE=$(runuser -u ${SANDBOX_RUN_AS_USER} -- cat /proc/$p/cmdline 2>&1 | tr '\\0' ' ')"`,
+			"kill $p",
+			// A clone that fails is reported once, then claimed again on the next call.
+			`rm -rf ${shellQuote(checkoutDir(SHA))}`,
+			`echo "BROKEN_CLAIM=${status}"`,
+			spawn(broken),
+			// Not `poll`: its own status call would report the failure, and forget it, first.
+			`for i in $(seq 1 100); do [ -e ${shellQuote(cloneStateDir(SHA))}/exit-code ] && break; sleep 0.1; done`,
+			`echo "BROKEN=$(${commandArgv(checkoutStatusScript(SHA)).map(shellQuote).join(" ")} | tr '\\n' ' ')"`,
+			`echo "RETRY=${status}"`,
+		].join("\n"),
+	)
+	const field = (name: string) => new RegExp(`^${name}=(.*)$`, "m").exec(run.stdout)?.[1] ?? ""
+	const logs = `${run.stdout}\n${run.stderr}`
+	check("the first call claims the clone", field("FIRST") === "claimed", logs)
+	check("a second call waits on it instead of starting another", field("SECOND") === "cloning", logs)
+	check("the clone finishes into a ready checkout", field("AFTER") === "ready", logs)
+	check("the token is nowhere on disk", field("TOKEN_ON_DISK") === "", field("TOKEN_ON_DISK"))
+	check(
+		`${SANDBOX_RUN_AS_USER} cannot read the token from the clone's environment`,
+		!field("ENVIRON").includes(TOKEN) && field("ENVIRON").includes("Permission denied"),
+		field("ENVIRON"),
+	)
+	check(
+		"the token is not in its command line either",
+		!field("CMDLINE").includes(TOKEN) && field("CMDLINE").includes("sleep"),
+		field("CMDLINE"),
+	)
+	check("a pruned checkout is claimed again", field("BROKEN_CLAIM") === "claimed", logs)
+	check(
+		"a failed clone reports its exit code and stderr",
+		/^failed [1-9]/.test(field("BROKEN")) && field("BROKEN").includes("nowhere"),
+		field("BROKEN"),
+	)
+	check("and is cloned again on the next call", field("RETRY") === "claimed", logs)
 }
 
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`)

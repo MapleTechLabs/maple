@@ -15,7 +15,7 @@ import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { formatCores, shareOfLimit } from "@/components/infra/railway/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { Result } from "@/lib/effect-atom"
+import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import {
 	railwayServicesResultAtom,
 	railwayServiceTimeseriesResultAtom,
@@ -110,11 +110,11 @@ function RailwayServicePage() {
 		)
 		.orElse(() => null)
 
-	const timeseriesResult = useRefreshableAtomValue(
-		railwayServiceTimeseriesResultAtom({
-			data: { startTime, endTime, bucketSeconds, serviceId, environmentId: search.environmentId },
-		}),
-	)
+	const timeseriesAtom = railwayServiceTimeseriesResultAtom({
+		data: { startTime, endTime, bucketSeconds, serviceId, environmentId: search.environmentId },
+	})
+	const timeseriesResult = useRefreshableAtomValue(timeseriesAtom)
+	const refreshTimeseries = useAtomRefresh(timeseriesAtom)
 	const buckets = Result.builder(timeseriesResult)
 		.onSuccess((response) => response.buckets)
 		.orElse(() => NO_BUCKETS)
@@ -173,7 +173,11 @@ function RailwayServicePage() {
 				</StatRail>
 			) : null}
 			{Result.isFailure(timeseriesResult) && buckets.length === 0 ? (
-				<ErrorState error={timeseriesResult.cause} />
+				<ErrorState
+					error={timeseriesResult.cause}
+					title="Failed to load service metrics"
+					onRetry={refreshTimeseries}
+				/>
 			) : Result.isInitial(timeseriesResult) ? (
 				<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 					{CHARTS.map((chart) => (
@@ -189,7 +193,7 @@ function RailwayServicePage() {
 								unit={chart.unit}
 								xDomain={xDomain}
 								linkedChartId={LINKED_CHART_ID}
-								waiting={Boolean(timeseriesResult.waiting)}
+								waiting={timeseriesResult.waiting}
 							/>
 						</ChartCard>
 					))}

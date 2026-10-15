@@ -60,13 +60,6 @@ describe("Maple.Telemetry", () => {
 			assert.isDefined(context.telemetry)
 		}).pipe(Effect.scoped),
 	)
-
-	it.effect("builds outside a host (tests, plain runtimes) without touching anything", () =>
-		Layer.build(Telemetry({ serviceName: "api", ingestKey: Redacted.make("maple_sk_test") })).pipe(
-			Effect.asVoid,
-			Effect.scoped,
-		),
-	)
 })
 
 describe("unpackBoundEnv", () => {

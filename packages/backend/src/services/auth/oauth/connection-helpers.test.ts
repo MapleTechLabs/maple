@@ -93,7 +93,7 @@ const seedExpiredConnection = (helpers: Effect.Success<ReturnType<typeof makeHel
 			refreshTokenIv: refreshEnc.iv,
 			refreshTokenTag: refreshEnc.tag,
 			// Already expired — getValidConnectionToken must refresh.
-			expiresAt: new Date(Date.now() - 60_000),
+			expiresAt: Date.now() - 60_000,
 		})
 	})
 

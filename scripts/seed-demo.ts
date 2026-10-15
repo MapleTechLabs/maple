@@ -91,7 +91,7 @@ const checkWarehouseRouting = Effect.fn("seedDemo.checkWarehouseRouting")(functi
 		return yield* new SeedPreflightError({
 			message:
 				`org ${orgId} reads from its own ClickHouse (${chUrl}), so seeded data would be invisible and ` +
-				"screenshots would show that warehouse instead. Remove it with DELETE /api/org-clickhouse-settings/ " +
+				"screenshots would show that warehouse instead. Remove it with DELETE /internal/org-clickhouse-settings/ " +
 				"(not raw SQL: the config is edge-cached for an hour) and re-run.",
 		})
 	}

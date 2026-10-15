@@ -17,7 +17,7 @@ const toneByState: Record<AlertStatusState, { tone: Tone; strong?: boolean; labe
 	firing: { tone: "crit", strong: true, label: "Firing" },
 	ok: { tone: "ok", label: "OK" },
 	disabled: { tone: "neutral", label: "Disabled" },
-	resolved: { tone: "ok", label: "Resolved" },
+	resolved: { tone: "done", label: "Resolved" },
 	pending: { tone: "warn", label: "Pending" },
 	error: { tone: "warn", strong: true, label: "Error" },
 	stale: { tone: "warn", label: "Stale" },

@@ -112,8 +112,8 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 						props={{
 							cards: [
 								{ label: "Throughput", value: data.health.throughput, format: "number" },
-								{ label: "Error Rate", value: data.health.errorRate, format: "percent" },
-								{ label: "Error Count", value: data.health.errorCount, format: "number" },
+								{ label: "Error rate", value: data.health.errorRate, format: "percent" },
+								{ label: "Error count", value: data.health.errorCount, format: "number" },
 								{ label: "P50", value: data.health.p50Ms, format: "duration" },
 								{ label: "P95", value: data.health.p95Ms, format: "duration" },
 								{ label: "P99", value: data.health.p99Ms, format: "duration" },
@@ -368,22 +368,22 @@ export function ToolRenderer({ data: output }: { data: StructuredToolOutput }) {
 						props={{
 							cards: [
 								{
-									label: "Current Spans",
+									label: "Current spans",
 									value: output.data.overall.current.totalSpans,
 									format: "number",
 								},
 								{
-									label: "Previous Spans",
+									label: "Previous spans",
 									value: output.data.overall.previous.totalSpans,
 									format: "number",
 								},
 								{
-									label: "Current Error Rate",
+									label: "Current error rate",
 									value: output.data.overall.current.errorRate,
 									format: "percent",
 								},
 								{
-									label: "Previous Error Rate",
+									label: "Previous error rate",
 									value: output.data.overall.previous.errorRate,
 									format: "percent",
 								},

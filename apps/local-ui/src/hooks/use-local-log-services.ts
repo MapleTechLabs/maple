@@ -42,7 +42,7 @@ export function useLocalLogServices(filters: LogFilters, bounds: TimeBounds) {
 		queryFn: async ({ signal }) => {
 			const compiled = compileLocalLogServicesQuery(bounds.startTime, bounds.endTime, filters)
 			const rows = await executeLocalCompiledQuery(compiled, signal)
-			return rows.filter((row) => row.name).map((row) => ({ name: row.name, count: Number(row.count) }))
+			return rows.filter((row) => row.name).map((row) => ({ name: row.name, count: row.count }))
 		},
 	})
 }

@@ -10,25 +10,24 @@
  * It runs inside the Autumn webhook's request. A failure answers 503 and Svix
  * redelivers, which is the only retry there is.
  */
+import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import {
-	alertRules,
-	cancellationReviews,
-	chatWorkspaces,
-	dashboards,
-	oauthConnections,
-	orgSupportChannels,
-	vcsInstallations,
-} from "@maple/db"
+	AlertRules,
+	CancellationReviews,
+	ChatWorkspaces,
+	Dashboards,
+	OAuthConnections,
+	OrgSupportChannels,
+	VcsInstallations,
+} from "@maple/db/tables"
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
 import { CancellationSnapshot, type OrgId } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm"
-import type { PgTable } from "drizzle-orm/pg-core"
 import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { decodeUpstream, ensureOk, subscriptionsOf } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -169,15 +168,9 @@ export class CancellationReviewService extends Context.Service<
 				}),
 			)
 
-		const count = (table: PgTable, where: SQL | undefined) =>
-			database
-				.execute((db) =>
-					db
-						.select({ count: sql<number>`count(*)::int` })
-						.from(table)
-						.where(where),
-				)
-				.pipe(Effect.map((rows) => rows[0]?.count ?? 0))
+		const count = (
+			query: (orm: MapleDb) => Effect.Effect<ReadonlyArray<{ readonly count: number }>, MapleDbError>,
+		) => database.execute((db) => query(db)).pipe(Effect.map((rows) => rows[0]?.count ?? 0))
 
 		const readOrg = (orgId: OrgId) =>
 			Effect.all(
@@ -189,11 +182,11 @@ export class CancellationReviewService extends Context.Service<
 						Effect.orElseSucceed(() => null),
 					),
 					state: onboarding.findState(orgId).pipe(Effect.map(Option.getOrNull)),
-					supportChannels: count(
-						orgSupportChannels,
-						and(
-							eq(orgSupportChannels.orgId, orgId),
-							isNotNull(orgSupportChannels.slackChannelId),
+					supportChannels: count((orm) =>
+						orm.run(
+							PG.from(OrgSupportChannels)
+								.select(() => ({ count: PG.count() }))
+								.where(($) => [$.orgId.eq(orgId), $.slackChannelId.isNotNull()]),
 						),
 					),
 				},
@@ -203,17 +196,41 @@ export class CancellationReviewService extends Context.Service<
 		const readAdoption = (orgId: OrgId) =>
 			Effect.all(
 				{
-					dashboards: count(dashboards, eq(dashboards.orgId, orgId)),
-					alertRules: count(alertRules, eq(alertRules.orgId, orgId)),
-					oauth: count(
-						oauthConnections,
-						and(eq(oauthConnections.orgId, orgId), isNull(oauthConnections.revokedAt)),
+					dashboards: count((orm) =>
+						orm.run(
+							PG.from(Dashboards)
+								.select(() => ({ count: PG.count() }))
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
 					),
-					vcs: count(
-						vcsInstallations,
-						and(eq(vcsInstallations.orgId, orgId), eq(vcsInstallations.status, "active")),
+					alertRules: count((orm) =>
+						orm.run(
+							PG.from(AlertRules)
+								.select(() => ({ count: PG.count() }))
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
 					),
-					chat: count(chatWorkspaces, eq(chatWorkspaces.orgId, orgId)),
+					oauth: count((orm) =>
+						orm.run(
+							PG.from(OAuthConnections)
+								.select(() => ({ count: PG.count() }))
+								.where(($) => [$.orgId.eq(orgId), $.revokedAt.isNull()]),
+						),
+					),
+					vcs: count((orm) =>
+						orm.run(
+							PG.from(VcsInstallations)
+								.select(() => ({ count: PG.count() }))
+								.where(($) => [$.orgId.eq(orgId), $.status.eq("active")]),
+						),
+					),
+					chat: count((orm) =>
+						orm.run(
+							PG.from(ChatWorkspaces)
+								.select(() => ({ count: PG.count() }))
+								.where(($) => [$.orgId.eq(orgId)]),
+						),
+					),
 				},
 				// One socket per event: these run one after another on it either way.
 				{ concurrency: 1 },
@@ -293,37 +310,32 @@ export class CancellationReviewService extends Context.Service<
 				.execute((db) =>
 					Effect.gen(function* () {
 						const subscriptionStartedAt = job.startedAt ?? job.canceledAt ?? 0
-						const inserted = yield* db
-							.insert(cancellationReviews)
-							.values({
-								id: crypto.randomUUID(),
-								orgId: job.orgId,
-								planId: job.planId,
-								subscriptionStartedAt,
-								canceledAt: job.canceledAt,
-								createdAt: msToDate(nowMs),
-								updatedAt: msToDate(nowMs),
-							})
-							.onConflictDoNothing()
-							.returning({ id: cancellationReviews.id })
+						const inserted = yield* db.run(
+							PG.insertInto(CancellationReviews)
+								.values({
+									id: crypto.randomUUID(),
+									orgId: job.orgId,
+									planId: job.planId,
+									subscriptionStartedAt,
+									canceledAt: job.canceledAt,
+									createdAt: nowMs,
+									updatedAt: nowMs,
+								})
+								.onConflictDoNothing()
+								.returning("id"),
+						)
 						if (inserted[0] !== undefined)
 							return { id: inserted[0].id, state: "claimed" as const }
-						const [existing] = yield* db
-							.select({
-								id: cancellationReviews.id,
-								postedAt: cancellationReviews.postedAt,
-								canceledAt: cancellationReviews.canceledAt,
-								updatedAt: cancellationReviews.updatedAt,
-							})
-							.from(cancellationReviews)
-							.where(
-								and(
-									eq(cancellationReviews.orgId, job.orgId),
-									eq(cancellationReviews.planId, job.planId),
-									eq(cancellationReviews.subscriptionStartedAt, subscriptionStartedAt),
-								),
-							)
-							.limit(1)
+						const [existing] = yield* db.run(
+							PG.from(CancellationReviews)
+								.select("id", "postedAt", "canceledAt", "updatedAt")
+								.where(($) => [
+									$.orgId.eq(job.orgId),
+									$.planId.eq(job.planId),
+									$.subscriptionStartedAt.eq(subscriptionStartedAt),
+								])
+								.limit(1),
+						)
 						if (existing === undefined) return { id: "", state: "busy" as const }
 						// Cancelled, kept after all, then cancelled again: a new decision on
 						// the same subscription, and the one that counts.
@@ -336,23 +348,16 @@ export class CancellationReviewService extends Context.Service<
 							return { id: existing.id, state: "posted" as const }
 						}
 						// Unposted and recently touched: another delivery is on it.
-						if (
-							existing.postedAt === null &&
-							nowMs - dateToMs(existing.updatedAt) < CLAIM_LEASE_MS
-						) {
+						if (existing.postedAt === null && nowMs - existing.updatedAt < CLAIM_LEASE_MS) {
 							return { id: existing.id, state: "busy" as const }
 						}
 						// Take it over, unless another delivery took it between the read and here.
-						const taken = yield* db
-							.update(cancellationReviews)
-							.set({ postedAt: null, updatedAt: msToDate(nowMs) })
-							.where(
-								and(
-									eq(cancellationReviews.id, existing.id),
-									eq(cancellationReviews.updatedAt, existing.updatedAt),
-								),
-							)
-							.returning({ id: cancellationReviews.id })
+						const taken = yield* db.run(
+							PG.update(CancellationReviews)
+								.set({ postedAt: null, updatedAt: nowMs })
+								.where(($) => [$.id.eq(existing.id), $.updatedAt.eq(existing.updatedAt)])
+								.returning("id"),
+						)
 						return {
 							id: existing.id,
 							state: taken.length === 0 ? ("busy" as const) : ("claimed" as const),
@@ -519,16 +524,17 @@ export class CancellationReviewService extends Context.Service<
 
 				yield* database
 					.execute((db) =>
-						db
-							.update(cancellationReviews)
-							.set({
-								snapshotJson: snapshot,
-								ruleReason: reason,
-								canceledAt: job.canceledAt,
-								postedAt: msToDate(nowMs),
-								updatedAt: msToDate(nowMs),
-							})
-							.where(eq(cancellationReviews.id, claimed.id)),
+						db.run(
+							PG.update(CancellationReviews)
+								.set({
+									snapshotJson: snapshot,
+									ruleReason: reason,
+									canceledAt: job.canceledAt,
+									postedAt: nowMs,
+									updatedAt: nowMs,
+								})
+								.where(($) => [$.id.eq(claimed.id)]),
+						),
 					)
 					.pipe(
 						// The report is out. Failing here would redeliver the job and post it again.

@@ -1,8 +1,3 @@
-// oxlint-disable maple/no-effect-die -- Startup configuration validation. Every
-// check here runs once while the layer is built, before a request exists; there
-// is no caller that could answer a missing or malformed env var differently, and
-// a worker that boots with one is worse than one that refuses to boot. Each is a
-// tagged `EnvValidationError` so the crash names the variable.
 import {
 	chatConnectorConfig,
 	chatConnectorOutboundConfig,
@@ -13,9 +8,9 @@ import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infr
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 
-/** Fatal misconfiguration discovered at startup — surfaces as a tagged defect in the Cause. */
+/** Fatal misconfiguration discovered at startup: fails the layer build, so the worker refuses to boot. */
 class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(
-	"@maple/api/lib/EnvValidationError",
+	"@maple/backend/lib/EnvValidationError",
 	{ message: Schema.String },
 ) {}
 
@@ -344,26 +339,22 @@ const makeEnv = Effect.gen(function* () {
 	const env: EnvConfig = yield* envConfig
 
 	if (env.MAPLE_DEFAULT_ORG_ID.trim().length === 0) {
-		return yield* Effect.die(new EnvValidationError({ message: "MAPLE_DEFAULT_ORG_ID cannot be empty" }))
+		return yield* new EnvValidationError({ message: "MAPLE_DEFAULT_ORG_ID cannot be empty" })
 	}
 
 	if (env.CLICKHOUSE_PROVIDER !== "clickhouse" && env.CLICKHOUSE_PROVIDER !== "tinybird") {
-		return yield* Effect.die(
-			new EnvValidationError({
-				message: "CLICKHOUSE_PROVIDER must be either 'clickhouse' or 'tinybird'",
-			}),
-		)
+		return yield* new EnvValidationError({
+			message: "CLICKHOUSE_PROVIDER must be either 'clickhouse' or 'tinybird'",
+		})
 	}
 
 	const hasTinybirdSigningKey = Option.isSome(env.TINYBIRD_SIGNING_KEY)
 	const hasTinybirdWorkspaceId = Option.isSome(env.TINYBIRD_WORKSPACE_ID)
 	if (hasTinybirdSigningKey !== hasTinybirdWorkspaceId) {
-		return yield* Effect.die(
-			new EnvValidationError({
-				message:
-					"TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID must be configured together for Tinybird raw SQL",
-			}),
-		)
+		return yield* new EnvValidationError({
+			message:
+				"TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID must be configured together for Tinybird raw SQL",
+		})
 	}
 
 	if (
@@ -371,11 +362,9 @@ const makeEnv = Effect.gen(function* () {
 		(!Number.isSafeInteger(env.TINYBIRD_RAW_SQL_JWT_RPS_LIMIT.value) ||
 			env.TINYBIRD_RAW_SQL_JWT_RPS_LIMIT.value <= 0)
 	) {
-		return yield* Effect.die(
-			new EnvValidationError({
-				message: "TINYBIRD_RAW_SQL_JWT_RPS_LIMIT must be a positive integer when configured",
-			}),
-		)
+		return yield* new EnvValidationError({
+			message: "TINYBIRD_RAW_SQL_JWT_RPS_LIMIT must be a positive integer when configured",
+		})
 	}
 
 	if (
@@ -390,24 +379,22 @@ const makeEnv = Effect.gen(function* () {
 	const authMode = env.MAPLE_AUTH_MODE.toLowerCase()
 
 	if (authMode !== "clerk" && Option.isNone(env.MAPLE_ROOT_PASSWORD)) {
-		return yield* Effect.die(
-			new EnvValidationError({
-				message: "MAPLE_ROOT_PASSWORD is required when MAPLE_AUTH_MODE=self_hosted",
-			}),
-		)
+		return yield* new EnvValidationError({
+			message: "MAPLE_ROOT_PASSWORD is required when MAPLE_AUTH_MODE=self_hosted",
+		})
 	}
 
 	if (authMode === "clerk" && Option.isNone(env.CLERK_SECRET_KEY)) {
-		return yield* Effect.die(
-			new EnvValidationError({ message: "CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk" }),
-		)
+		return yield* new EnvValidationError({
+			message: "CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk",
+		})
 	}
 
 	if (
 		Option.isSome(env.MAPLE_ROOT_PASSWORD) &&
 		Redacted.value(env.MAPLE_ROOT_PASSWORD.value).trim().length === 0
 	) {
-		return yield* Effect.die(new EnvValidationError({ message: "MAPLE_ROOT_PASSWORD cannot be empty" }))
+		return yield* new EnvValidationError({ message: "MAPLE_ROOT_PASSWORD cannot be empty" })
 	}
 
 	return Env.of(env)

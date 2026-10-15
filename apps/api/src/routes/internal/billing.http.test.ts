@@ -27,8 +27,8 @@ import {
 	BillingConflictError,
 	BillingCustomer,
 	CurrentTenant,
-	V1SchemaErrors,
-	V1UnexpectedErrors,
+	ApiSchemaErrors,
+	ApiUnexpectedErrors,
 	UpdateBillingControlsRequest,
 	UpdateBillingSpendLimit,
 	UpdateBillingUsageAlert,
@@ -37,7 +37,7 @@ import { DailySpendService } from "@maple/backend/services/billing/DailySpendSer
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import { decodeInvoices, HttpBillingLive, resolveCycleWindow } from "./billing.http"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 const ORG = "org_test_123"
 
@@ -471,24 +471,24 @@ describe("summariseSubscriptions", () => {
 				],
 			}),
 			{
-				"billing.subscription_count": 3,
-				"billing.subscription_statuses": "expired,active,active",
-				"billing.subscription_plan_ids": "startup,byoc,free",
-				"billing.subscription_excluded": "-,addon,auto",
-				"billing.has_active_plan": false,
-				"billing.has_plan_history": true,
+				"maple.billing.subscription_count": 3,
+				"maple.billing.subscription_statuses": "expired,active,active",
+				"maple.billing.subscription_plan_ids": "startup,byoc,free",
+				"maple.billing.subscription_excluded": "-,addon,auto",
+				"maple.billing.has_active_plan": false,
+				"maple.billing.has_plan_history": true,
 			},
 		)
 	})
 
 	it("reports a never-subscribed customer as empty rather than throwing", () => {
 		assert.deepStrictEqual(summariseSubscriptions(noPlanResponse), {
-			"billing.subscription_count": 0,
-			"billing.subscription_statuses": "",
-			"billing.subscription_plan_ids": "",
-			"billing.subscription_excluded": "",
-			"billing.has_active_plan": false,
-			"billing.has_plan_history": false,
+			"maple.billing.subscription_count": 0,
+			"maple.billing.subscription_statuses": "",
+			"maple.billing.subscription_plan_ids": "",
+			"maple.billing.subscription_excluded": "",
+			"maple.billing.has_active_plan": false,
+			"maple.billing.has_plan_history": false,
 		})
 	})
 
@@ -496,20 +496,20 @@ describe("summariseSubscriptions", () => {
 		// `getCustomer` annotates BEFORE `ensureOk`, so it sees Autumn's error
 		// bodies too — the summary must never be the thing that fails the request.
 		const summary = summariseSubscriptions({ code: "autumn_api_error", message: "boom" })
-		assert.strictEqual(summary["billing.subscription_count"], 0)
-		assert.strictEqual(summary["billing.has_plan_history"], false)
+		assert.strictEqual(summary["maple.billing.subscription_count"], 0)
+		assert.strictEqual(summary["maple.billing.has_plan_history"], false)
 	})
 
 	it("marks a row missing planId or status without shifting the columns", () => {
 		assert.deepStrictEqual(
 			summariseSubscriptions({ subscriptions: [{ status: "expired" }, { planId: "pro" }] }),
 			{
-				"billing.subscription_count": 2,
-				"billing.subscription_statuses": "expired,-",
-				"billing.subscription_plan_ids": "-,pro",
-				"billing.subscription_excluded": "-,-",
-				"billing.has_active_plan": false,
-				"billing.has_plan_history": true,
+				"maple.billing.subscription_count": 2,
+				"maple.billing.subscription_statuses": "expired,-",
+				"maple.billing.subscription_plan_ids": "-,pro",
+				"maple.billing.subscription_excluded": "-,-",
+				"maple.billing.has_active_plan": false,
+				"maple.billing.has_plan_history": true,
 			},
 		)
 	})
@@ -579,8 +579,8 @@ describe("resolveAttachConflict", () => {
 describe("billing writes over HTTP", () => {
 	class BillingOnlyApi extends HttpApi.make("MapleInternalApi")
 		.add(BillingApiGroup)
-		.middleware(V1SchemaErrors)
-		.middleware(V1UnexpectedErrors) {}
+		.middleware(ApiSchemaErrors)
+		.middleware(ApiUnexpectedErrors) {}
 
 	const decodeTenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)
 	const tenantWithRoles = (roles: ReadonlyArray<string>) =>
@@ -594,7 +594,7 @@ describe("billing writes over HTTP", () => {
 	) => {
 		const routes = HttpApiBuilder.layer(BillingOnlyApi).pipe(
 			Layer.provide(HttpBillingLive),
-			Layer.provide(V1ErrorBoundaryLive),
+			Layer.provide(ApiErrorBoundaryLive),
 			Layer.provideMerge(
 				Layer.succeed(
 					CurrentTenant.SessionAuthorization,

@@ -2,8 +2,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Layer, Logger, References, Schema, Tracer } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { V1SchemaErrors, V1UnexpectedErrors } from "@maple/domain/http"
-import { V1ErrorBoundaryLive } from "./error-boundary"
+import { ApiSchemaErrors, ApiUnexpectedErrors } from "@maple/domain/http"
+import { ApiErrorBoundaryLive } from "./error-boundary"
 
 /** A declared failure the endpoint answers with a 502 — the shape every warehouse error takes. */
 class UpstreamError extends Schema.TaggedError<UpstreamError>()(
@@ -37,8 +37,8 @@ const BoundaryGroup = HttpApiGroup.make("boundary")
 
 class BoundaryApi extends HttpApi.make("BoundaryApi")
 	.add(BoundaryGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors) {}
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
 
 const BoundaryHandlersLive = HttpApiBuilder.group(BoundaryApi, "boundary", (handlers) =>
 	Effect.succeed(
@@ -87,7 +87,7 @@ const makeRecordingContext = () => {
 const makeHarness = () => {
 	const routes = HttpApiBuilder.layer(BoundaryApi).pipe(
 		Layer.provide(BoundaryHandlersLive),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const request = async (
@@ -112,7 +112,7 @@ const makeHarness = () => {
 	return { request, dispose }
 }
 
-describe("v1 HTTP error boundary", () => {
+describe("unversioned HTTP error boundary", () => {
 	it("returns a structured, path-anchored 400 for every request decode failure", async () => {
 		const harness = makeHarness()
 		try {

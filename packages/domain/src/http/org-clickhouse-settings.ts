@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { Authorization } from "./current-tenant"
+import { SessionAuthorization } from "./current-tenant"
 import { IsoDateTimeString } from "../primitives"
 import {
 	OrgClickHouseSettingsEncryptionError,
@@ -290,5 +290,5 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 			error: [OrgClickHouseSettingsForbiddenError, OrgClickHouseSettingsPersistenceError],
 		}),
 	)
-	.prefix("/api/org-clickhouse-settings")
-	.middleware(Authorization) {}
+	.prefix("/internal/org-clickhouse-settings")
+	.middleware(SessionAuthorization) {}

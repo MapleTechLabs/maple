@@ -29,7 +29,7 @@ const STATUS: Record<InvestigationStatus, { label: string; tone: string }> = {
 	// destructive tone belongs to `failed`, where the machinery actually broke,
 	// and using it here is what made every honest partial read as a defect.
 	inconclusive: { label: "Inconclusive", tone: TONE_SOFT.warn },
-	resolved: { label: "Resolved", tone: TONE_SOFT.neutral },
+	resolved: { label: "Resolved", tone: TONE_SOFT.done },
 	failed: { label: "Failed", tone: TONE_SOFT.crit },
 } satisfies Record<InvestigationStatus, { label: string; tone: string }>
 

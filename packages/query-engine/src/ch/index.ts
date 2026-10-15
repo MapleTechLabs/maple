@@ -19,6 +19,9 @@ export { type RawSqlReason, rawCompiledQuery } from "./raw-sql"
 // resolve a pipe name to identical SQL.
 export { compilePipeQuery, type PipeCompiledQuery } from "./pipe-dispatch"
 
+// One builder over a current and a previous window, rows tagged with `period`.
+export { compilePeriodCompare, type PeriodCompareWindows } from "./period-compare"
+
 export * as tables from "./tables"
 
 // Shared row-schema codecs (ClickHouse `FORMAT JSON` 64-bit-int-as-string coercion).
@@ -293,6 +296,9 @@ export {
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
 	servicesFacetsQuery,
+	servicePresenceQuery,
+	servicePresenceRowSchema,
+	type ServicePresenceOutput,
 	type ServiceOverviewOpts,
 	type ServiceOverviewOutput,
 	type ServiceCatalogOpts,
@@ -429,6 +435,7 @@ export {
 export {
 	serviceDependenciesSQL,
 	serviceDependenciesForServiceQuery,
+	serviceDependenciesInvolvingServiceQuery,
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
 	serviceDbQuerySummarySQL,
@@ -592,9 +599,11 @@ export {
 	hostDetailSummaryQuery,
 	hostGaugeTimeseriesQuery,
 	hostNetworkTimeseriesQuery,
+	hostFilesystemsQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
+	podRestartsQuery,
 	podGaugeTimeseriesQuery,
 	podFacetsQuery,
 	listNodesQuery,
@@ -613,6 +622,8 @@ export {
 	type HostGaugeTimeseriesOutput,
 	type HostNetworkTimeseriesOpts,
 	type HostNetworkTimeseriesOutput,
+	type HostFilesystemsOpts,
+	type HostFilesystemsOutput,
 	type ListPodsOpts,
 	type ListPodsOutput,
 	type ListPodsSummaryOutput,
@@ -620,10 +631,13 @@ export {
 	type SortDirection,
 	type PodDetailSummaryOpts,
 	type PodDetailSummaryOutput,
+	type PodRestartsOpts,
+	type PodRestartsOutput,
 	type PodGaugeTimeseriesOpts,
 	type PodFacetsOutput,
 	type ListNodesOpts,
 	type ListNodesOutput,
+	type NodeCapacityOutput,
 	type NodeDetailSummaryOpts,
 	type NodeDetailSummaryOutput,
 	type NodeGaugeTimeseriesOpts,

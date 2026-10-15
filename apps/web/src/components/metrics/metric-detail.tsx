@@ -6,7 +6,7 @@ import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import { ChartLoading } from "@maple/ui/components/charts/_shared/chart-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { ChartCard } from "@/components/common/chart-card"
 import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { MetricQueryControls, type MetricQueryPatch } from "./metric-query-controls"
@@ -146,6 +146,8 @@ export function buildMetricExplorerDraft(
 	}
 }
 
+const GROUP_BY_SERIES_LIMIT = 20
+
 interface MetricDetailProps {
 	metricName: string
 	state: MetricDetailQueryState
@@ -264,9 +266,15 @@ function MetricChart({
 	startTime: string
 	endTime: string
 }) {
+	// A group-by can fan out to thousands of series; cap the chart to the top N.
+	const grouped = draft.groupBy.length > 0
 	const result = useRefreshableAtomValue(
 		getQueryBuilderTimeseriesResultAtom({
-			data: { startTime, endTime, queries: [draft] },
+			data: {
+				startTime,
+				endTime,
+				queries: [grouped ? { ...draft, seriesLimit: String(GROUP_BY_SERIES_LIMIT) } : draft],
+			},
 		}),
 	)
 
@@ -274,18 +282,33 @@ function MetricChart({
 	if (!entry) return null
 	const ChartComponent = entry.component
 
+	// The cap runs in SQL, so the total is unknown; flag only when it was hit.
+	const capped =
+		grouped &&
+		Result.isSuccess(result) &&
+		new Set(result.value.data.flatMap((row) => Object.keys(row).filter((k) => k !== "bucket"))).size >=
+			GROUP_BY_SERIES_LIMIT
+
 	const queryLabel = `${draft.aggregation}(${draft.metricName})${
 		draft.groupBy[0] ? ` by ${draft.groupBy[0]}` : ""
 	}`
 
 	return (
-		<Panel>
-			<PanelHeader
-				title={<span className="font-mono">{queryLabel}</span>}
-				action={
-					unit ? <span className="text-xs text-muted-foreground">unit: {unit}</span> : undefined
-				}
-			/>
+		<ChartCard
+			title={
+				<span className="font-mono" title={queryLabel}>
+					{queryLabel}
+				</span>
+			}
+			legend={
+				capped || unit ? (
+					<span className="flex items-center gap-3 text-xs text-muted-foreground">
+						{capped ? <span>Top {GROUP_BY_SERIES_LIMIT} series</span> : null}
+						{unit ? <span>unit: {unit}</span> : null}
+					</span>
+				) : undefined
+			}
+		>
 			<div className="h-80 p-3">
 				{Result.builder(result)
 					.onInitial(() => <ChartSkeleton variant="area" />)
@@ -309,6 +332,6 @@ function MetricChart({
 					)
 					.render()}
 			</div>
-		</Panel>
+		</ChartCard>
 	)
 }

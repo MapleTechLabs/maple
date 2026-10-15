@@ -1,13 +1,14 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 
 import { cn } from "../../lib/utils"
 import { useCopy } from "../../hooks/use-copy"
 import { useMountEffect } from "../../hooks/use-mount-effect"
 import { Eyebrow } from "../ui/eyebrow"
+import { MinusIcon, PlusIcon } from "../icons"
 import { HoverCard, HoverCardContent } from "../ui/hover-card"
-import { tryParseJson, CopyableValue, CollapsibleJsonValue } from "../attributes"
+import { tryParseJson, CopyableValue, SelectableValue, CollapsibleJsonValue } from "../attributes"
 import type { ChipTone } from "../../lib/log-attributes"
 
 const TONE_CLASSES: Record<ChipTone, string> = {
@@ -42,6 +43,11 @@ export interface LogAttributeChipProps {
 	value: string
 	tone: ChipTone
 	className?: string
+	/**
+	 * Adds "Filter in" / "Filter out" to the card. `negated` is true for filter out.
+	 * Omit it and the card only shows and copies the pair.
+	 */
+	onFilter?: (attrKey: string, value: string, negated: boolean) => void
 }
 
 /**
@@ -68,13 +74,13 @@ export interface LogAttributeChipProps {
  * the stable button rather than by Base UI's hover machinery, which is the price
  * of not having a Base UI trigger for that machinery to attach to.
  */
-export function LogAttributeChip({ attrKey, value, tone, className }: LogAttributeChipProps) {
+export function LogAttributeChip({ attrKey, value, tone, className, onFilter }: LogAttributeChipProps) {
 	const [open, setOpen] = useState(false)
 	const triggerRef = useRef<HTMLButtonElement>(null)
 	const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const { copy } = useCopy({ successMessage: `Copied ${attrKey}` })
-	const parsed = tryParseJson(value)
+	const parsed = useMemo(() => tryParseJson(value), [value])
 	const displayValue = parsed !== null ? "{…}" : truncateValue(value)
 	const displayKey = shortKey(attrKey)
 
@@ -167,7 +173,7 @@ export function LogAttributeChip({ attrKey, value, tone, className }: LogAttribu
 					<HoverCardContent
 						align="start"
 						anchor={triggerRef}
-						className="w-80 p-0"
+						className="max-h-[60vh] w-80 overflow-auto p-0"
 						onPointerEnter={keepOpen}
 						onPointerLeave={scheduleClose}
 					>
@@ -187,13 +193,64 @@ export function LogAttributeChip({ attrKey, value, tone, className }: LogAttribu
 								{parsed !== null ? (
 									<CollapsibleJsonValue value={value} parsed={parsed} />
 								) : (
-									<CopyableValue value={value}>{value}</CopyableValue>
+									<SelectableValue value={value} label={attrKey} />
 								)}
 							</div>
 						</div>
+						{/* A JSON blob is not a filterable value, same rule as the attributes table. */}
+						{onFilter && parsed === null && (
+							<div className="flex items-center gap-1 border-t px-2 py-1.5">
+								<ChipFilterAction
+									label={`Filter in ${attrKey} = ${value}`}
+									onClick={() => {
+										closeNow()
+										onFilter(attrKey, value, false)
+									}}
+								>
+									<PlusIcon size={10} />
+									Filter in
+								</ChipFilterAction>
+								<ChipFilterAction
+									label={`Filter out ${attrKey} = ${value}`}
+									onClick={() => {
+										closeNow()
+										onFilter(attrKey, value, true)
+									}}
+								>
+									<MinusIcon size={10} />
+									Filter out
+								</ChipFilterAction>
+							</div>
+						)}
 					</HoverCardContent>
 				</HoverCard>
 			)}
 		</>
+	)
+}
+
+/** A card action. Stops the click there: the card renders inside the row, which toggles on click. */
+function ChipFilterAction({
+	label,
+	onClick,
+	children,
+}: {
+	label: string
+	onClick: () => void
+	children: React.ReactNode
+}) {
+	return (
+		<button
+			type="button"
+			aria-label={label}
+			onPointerDown={(e) => e.stopPropagation()}
+			onClick={(e) => {
+				e.stopPropagation()
+				onClick()
+			}}
+			className="inline-flex h-6 items-center gap-1 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+		>
+			{children}
+		</button>
 	)
 }

@@ -26,6 +26,7 @@ import { PANEL_TYPES, fromPanelType, toPanelType } from "@/lib/query-builder/pan
 import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import {
 	STAT_AGGREGATES,
+	parsePositiveNumber,
 	toSeriesFieldOptions,
 	type QueryBuilderWidgetState,
 	type StatAggregate,
@@ -344,7 +345,7 @@ function Unit({ label = "Unit" }: { label?: string }) {
 			</Select>
 			{isDuration && (
 				<Segments
-					value={state.unit as ValueUnit}
+					value={state.unit}
 					onSelect={(unit) => set({ unit })}
 					options={DURATION_SCALE_OPTIONS}
 				/>
@@ -425,7 +426,7 @@ function ScalarReduction() {
 					</SelectContent>
 				</Select>
 			</RailSetting>
-			<RailSetting label="Value Field">
+			<RailSetting label="Value field">
 				<Select
 					value={valueField || seriesFieldOptions[0]}
 					onValueChange={(value) => set({ statValueField: value ?? "" })}
@@ -534,7 +535,7 @@ function Thresholds() {
 							onClick={() => replace(thresholds.filter((_, i) => i !== index))}
 							className="text-muted-foreground hover:text-foreground"
 						>
-							<XmarkIcon size={14} />
+							<XmarkIcon />
 						</IconButton>
 					</div>
 				))}
@@ -550,16 +551,25 @@ function Thresholds() {
 	)
 }
 
+/** Rows a table/list widget may request; the input says so and the parse clamps old configs. */
+export const ROW_LIMIT_MAX = 1000
+
+export function parseRowLimit(raw: string): number | undefined {
+	const parsed = parsePositiveNumber(raw)
+	return parsed === undefined ? undefined : Math.min(parsed, ROW_LIMIT_MAX)
+}
+
 function RowLimit() {
 	const { state, set } = useSettings()
 	return (
-		<RailSetting label="Row Limit">
+		<RailSetting label="Row limit">
 			<Input
 				value={state.tableLimit}
 				onChange={(event) => set({ tableLimit: event.target.value })}
 				placeholder="50"
 				type="number"
 				min={1}
+				max={ROW_LIMIT_MAX}
 			/>
 		</RailSetting>
 	)

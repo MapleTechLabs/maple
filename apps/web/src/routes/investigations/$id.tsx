@@ -103,7 +103,7 @@ const INVESTIGATIONS_CRUMB = { label: "Investigations", href: "/investigations" 
 
 function LoadFailureShell({ error, onRetry }: { error: unknown; onRetry: () => void }) {
 	return (
-		<DashboardPage breadcrumbs={[INVESTIGATIONS_CRUMB, { label: "Unavailable" }]}>
+		<DashboardPage breadcrumbs={[INVESTIGATIONS_CRUMB, { label: "Error" }]}>
 			<ErrorState error={error} title="This investigation could not be loaded" onRetry={onRetry} />
 		</DashboardPage>
 	)
@@ -117,10 +117,8 @@ function LoadFailureShell({ error, onRetry }: { error: unknown; onRetry: () => v
 function LoadingShell() {
 	return (
 		<DashboardPage
-			breadcrumbs={[INVESTIGATIONS_CRUMB, { label: "…" }]}
+			breadcrumbs={[INVESTIGATIONS_CRUMB, { label: "Loading…" }]}
 			header={<DetailHeaderSkeleton />}
-			width="reading"
-			gap="md"
 		>
 			<ProvenanceCanvasLoading />
 		</DashboardPage>
@@ -129,7 +127,7 @@ function LoadingShell() {
 
 function NotFoundShell() {
 	return (
-		<DashboardPage breadcrumbs={[INVESTIGATIONS_CRUMB, { label: "Missing" }]}>
+		<DashboardPage breadcrumbs={[INVESTIGATIONS_CRUMB, { label: "Not found" }]}>
 			<ResourceNotFound
 				title="This investigation is unavailable"
 				description="It may have been removed, or it belongs to a different organization."

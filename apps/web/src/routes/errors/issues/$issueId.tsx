@@ -1,10 +1,13 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Exit, Schema } from "effect"
 import { useMemo, useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { showErrorToast } from "@/lib/error-toast"
+import { displayError } from "@/lib/error-messages"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
+import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
 
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -12,6 +15,7 @@ import { warehouseDateTimeToIso } from "@maple/query-engine"
 
 import { RelatedAnomaliesSection } from "@/components/anomalies/related-anomalies-section"
 import { ErrorState } from "@/components/common/error-state"
+import { SectionHeading } from "@/components/common/section-heading"
 import { AlertSourceCard } from "@/components/errors/alert-source-card"
 import { IssueCommentComposer } from "@/components/errors/issue-comment-composer"
 import { IssueCulpritPanel } from "@/components/errors/issue-culprit-panel"
@@ -35,7 +39,7 @@ import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useAsyncAction, useMutationAction } from "@/hooks/use-mutation-action"
 import { ResultView } from "@/components/common/result-view"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { errorIssueDetailFromV2 } from "@/lib/services/error-issues"
@@ -65,7 +69,9 @@ const decodeIssueId = Schema.decodeSync(ErrorIssueId)
  */
 const AWAITING_FIX_STATES = new Set<WorkflowState>(["in_progress", "in_review"])
 
-const ISSUE_LOADING_BREADCRUMBS = [{ label: "Errors", href: "/errors" }, { label: "…" }] as const
+const ERRORS_CRUMB = { label: "Errors", href: "/errors" } as const
+const isIssueNotFound = (error: unknown) =>
+	displayError(error)._tag === "@maple/http/errors/ErrorIssueNotFoundError"
 
 /**
  * How many buckets the detail chart gets. Denser than the list row's 32 — this
@@ -159,7 +165,7 @@ function IssueDetailContent() {
 	const detailResult = useAtomValue(detailQueryAtom)
 	const refreshDetail = useAtomRefresh(detailQueryAtom)
 
-	const eventsQueryAtom = retainedQuery("errors", "listIssueEvents", {
+	const eventsQueryAtom = retainedInternalQuery("errors", "listIssueEvents", {
 		params: { issueId },
 		query: { limit: 200 },
 		reactivityKeys: ["errorIssues", `errorIssue:${issueId}:events`],
@@ -171,12 +177,12 @@ function IssueDetailContent() {
 		reactivityKeys: ["investigations", `errorIssue:${issueId}:investigations`],
 	})
 	const investigationsResult = useAtomValue(investigationsQueryAtom)
-	const pullRequestsQueryAtom = retainedQuery("errors", "listIssuePullRequests", {
+	const pullRequestsQueryAtom = retainedInternalQuery("errors", "listIssuePullRequests", {
 		params: { issueId },
 		reactivityKeys: [`errorIssue:${issueId}:pull-requests`],
 	})
 	const pullRequestsResult = useAtomValue(pullRequestsQueryAtom)
-	const verificationsQueryAtom = retainedQuery("errors", "listIssueVerifications", {
+	const verificationsQueryAtom = retainedInternalQuery("errors", "listIssueVerifications", {
 		params: { issueId },
 		// Shares the events key: a verdict lands as a timeline event and a
 		// verification-row update in the same tick, so one invalidation refreshes both.
@@ -184,7 +190,7 @@ function IssueDetailContent() {
 	})
 	const verificationsResult = useAtomValue(verificationsQueryAtom)
 
-	const escalationQueryAtom = retainedQuery("errors", "listIssueEscalations", {
+	const escalationQueryAtom = retainedInternalQuery("errors", "listIssueEscalations", {
 		params: { issueId },
 		reactivityKeys: [`errorIssue:${issueId}:escalations`],
 	})
@@ -192,44 +198,54 @@ function IssueDetailContent() {
 	const { result: destinationsResult } = useAlertDestinationsList()
 
 	const [transitionIssue, transitioning] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "transitionIssue"),
-		{ error: "State change failed" },
+		MapleInternalAtomClient.mutation("errors", "transitionIssue"),
+		{ error: "Failed to change state" },
 	)
-	const [claimIssue, claiming] = useMutationAction(MapleApiAtomClient.mutation("errors", "claimIssue"), {
-		success: "Claimed",
-		error: "Claim failed",
-	})
+	const [claimIssue, claiming] = useMutationAction(
+		MapleInternalAtomClient.mutation("errors", "claimIssue"),
+		{
+			success: "Claimed",
+			error: "Failed to claim issue",
+		},
+	)
 	const [heartbeatIssue, heartbeating] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "heartbeatIssue"),
-		{ success: "Lease extended", error: "Heartbeat failed" },
+		MapleInternalAtomClient.mutation("errors", "heartbeatIssue"),
+		{ success: "Lease extended", error: "Failed to extend lease" },
 	)
 	const [releaseIssue, releasing] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "releaseIssue"),
+		MapleInternalAtomClient.mutation("errors", "releaseIssue"),
 		{
 			success: "Released",
-			error: "Release failed",
+			error: "Failed to release issue",
 		},
 	)
 	const [commentOnIssue, commenting] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "commentOnIssue"),
-		{ success: "Comment added", error: "Comment failed", onSuccess: () => setCommentDraft("") },
+		MapleInternalAtomClient.mutation("errors", "commentOnIssue"),
+		{ success: "Comment added", error: "Failed to add comment", onSuccess: () => setCommentDraft("") },
 	)
 	const [setIssueSeverity, settingSeverity] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "setIssueSeverity"),
-		{ error: "Severity change failed" },
+		MapleInternalAtomClient.mutation("errors", "setIssueSeverity"),
+		{
+			success: (issue) =>
+				issue.severity === null ? "Severity cleared" : `Severity set to ${issue.severity}`,
+			error: "Failed to change severity",
+		},
 	)
-	const evaluateEscalation = useAtomSet(MapleApiAtomClient.mutation("errors", "evaluateEscalationPolicy"), {
-		mode: "promiseExit",
-	})
+	const evaluateEscalation = useAtomSet(
+		MapleInternalAtomClient.mutation("errors", "evaluateEscalationPolicy"),
+		{
+			mode: "promiseExit",
+		},
+	)
 	const createInvestigation = useAtomSet(MapleApiV2AtomClient.mutation("investigations", "create"), {
 		mode: "promiseExit",
 	})
-	const linkPullRequest = useAtomSet(MapleApiAtomClient.mutation("errors", "linkIssuePullRequest"), {
+	const linkPullRequest = useAtomSet(MapleInternalAtomClient.mutation("errors", "linkIssuePullRequest"), {
 		mode: "promiseExit",
 	})
 	const [unlinkPullRequest, detachingPullRequest] = useMutationAction(
-		MapleApiAtomClient.mutation("errors", "unlinkIssuePullRequest"),
-		{ success: "Pull request detached", error: "Could not detach the pull request" },
+		MapleInternalAtomClient.mutation("errors", "unlinkIssuePullRequest"),
+		{ success: "Pull request detached", error: "Failed to detach the pull request" },
 	)
 
 	const [attachDialogOpen, setAttachDialogOpen] = useState(false)
@@ -262,7 +278,7 @@ function IssueDetailContent() {
 			reactivityKeys: invalidateKeys,
 		})
 		if (!Exit.isSuccess(result)) return
-		toastManager.add({ title: `Moved to ${next}`, type: "success" })
+		toastManager.add({ title: `Moved to ${WORKFLOW_LABEL[next]}`, type: "success" })
 		// "In review" with no pull request attached is the exact moment the link is
 		// worth asking for — it is what opens the verification window later. Offered
 		// after the transition has already committed, so dismissing it costs nothing.
@@ -313,17 +329,11 @@ function IssueDetailContent() {
 		void unlinkPullRequest({ params: { issueId, pullRequestId }, reactivityKeys: invalidateKeys })
 
 	const applySeverity = async (next: IssueSeverity | null) => {
-		const result = await setIssueSeverity({
+		await setIssueSeverity({
 			params: { issueId },
 			payload: new ErrorIssueSetSeverityRequest({ severity: next }),
 			reactivityKeys: invalidateKeys,
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: next === null ? "Severity cleared" : `Severity set to ${next}`,
-				type: "success",
-			})
-		}
 	}
 
 	const changeSeverity = async (next: IssueSeverity | null) => {
@@ -476,11 +486,21 @@ function IssueDetailContent() {
 					windowLabel={windowLabel(search)}
 				/>
 			))
-			.onError((error) => (
-				<DashboardPage breadcrumbs={[...ISSUE_LOADING_BREADCRUMBS]}>
-					<ErrorState error={error} title="Failed to load issue" onRetry={refreshDetail} />
-				</DashboardPage>
-			))
+			.onError((error) =>
+				isIssueNotFound(error) ? (
+					<DashboardPage breadcrumbs={[ERRORS_CRUMB, { label: "Not found" }]}>
+						<ResourceNotFound
+							title="Issue not found"
+							backLink={<Link to="/errors" />}
+							backLabel="Back to errors"
+						/>
+					</DashboardPage>
+				) : (
+					<DashboardPage breadcrumbs={[ERRORS_CRUMB, { label: "Error" }]}>
+						<ErrorState error={error} title="Failed to load issue" onRetry={refreshDetail} />
+					</DashboardPage>
+				),
+			)
 			.onSuccess((v2Detail) => {
 				const detail = errorIssueDetailFromV2(v2Detail)
 				const { issue, timeseries, sampleTraces, incidents, environments } = detail
@@ -731,10 +751,8 @@ function windowLabel(search: { startTime?: string; timePreset?: string }): strin
 /**
  * A titled block in the page body.
  *
- * The eyebrow `SectionHeading`'s 10px overline is the rail's typography, it is what
- * `DetailRail.Group` uses — so applying it to main-column sections made the two
- * read at the same rank and left the page with no heading hierarchy at all. This
- * is the investigation page's section heading instead.
+ * The title `SectionHeading`, not the eyebrow: the overline is the rail's
+ * typography (`DetailRail.Group`), so main-column sections would read at its rank.
  */
 function BodySection({
 	id,
@@ -749,15 +767,7 @@ function BodySection({
 }) {
 	return (
 		<section aria-labelledby={`${id}-heading`} className="flex shrink-0 flex-col gap-3.5">
-			<div className="flex items-baseline gap-2.5">
-				<h2
-					id={`${id}-heading`}
-					className="font-display text-base font-semibold tracking-[-0.01em] text-foreground"
-				>
-					{title}
-				</h2>
-				{count ? <span className="text-sm text-muted-foreground">{count}</span> : null}
-			</div>
+			<SectionHeading id={`${id}-heading`} title={title} hint={count} />
 			{children}
 		</section>
 	)

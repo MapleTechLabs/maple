@@ -2,13 +2,17 @@ import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
 import {
 	chPattern,
 	chRedactChain,
+	EFFECT_SPAN_FRAME_MARKER,
+	ERROR_MSG_REDACTIONS,
+	FINGERPRINT_HASH_SALT,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
 	JSON_VALUE_REDACTIONS,
 	MAX_FINGERPRINT_FRAMES,
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
-	MSG_TEXT_REDACTIONS,
+	NAMESPACED_TYPE_MAX_FRAMES,
+	SCHEMA_PATH_LINE_PATTERN,
 } from "./fingerprint"
 import {
 	serviceUsage,
@@ -610,9 +614,10 @@ export const serviceMapDbQuerySignaturesHourlyMv = defineMaterializedView(
 
 /**
  * Materialized view pre-aggregating service-to-external-target edges per hour.
- * Captures Client/Producer spans WITHOUT `db.system.name` set (DB calls go to
- * `service_map_db_edges_hourly_mv`) — i.e. plain HTTP outbound, messaging
- * producers, and RPC clients.
+ * Captures Client/Producer spans with no database system (DB calls go to
+ * `service_map_db_edges_hourly_mv`): plain HTTP outbound, messaging producers,
+ * and RPC clients. The exclusion uses the same `DB_SYSTEM_ATTR_SQL` coalesce as
+ * the db MV, so a span carrying only the legacy `db.system` is never both.
  *
  * `TargetType` precedence: messaging > rpc > http. A span carrying both
  * `messaging.system` and `server.address` (rare, but happens when a queue
@@ -625,8 +630,11 @@ export const serviceMapDbQuerySignaturesHourlyMv = defineMaterializedView(
  */
 export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_external_edges_hourly_mv", {
 	description:
-		"Pre-aggregates Client/Producer spans without db.system.name into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
+		"Pre-aggregates Client/Producer spans without a database system into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
 	datasource: serviceExternalEdgesHourly,
+	// Migration 0038 only narrows the WHERE and backfills nothing. Without this,
+	// Tinybird rebuilds the target by replaying `traces` through the new view.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "service_external_edges_hourly_mv_node",
@@ -665,7 +673,7 @@ export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_exte
           quantilesTDigestWeightedState(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0))) AS DurationQuantiles
         FROM traces
         WHERE SpanKind IN ('Client', 'Producer')
-          AND SpanAttributes['db.system.name'] = ''
+          AND ${DB_SYSTEM_ATTR_SQL} = ''
           AND ServiceName != ''
           AND (
                SpanAttributes['server.address'] != ''
@@ -728,8 +736,8 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
  * are absent, reads `exception.*` then `error.*` span attributes. Computes a
  * cityHash64 FingerprintHash used to group occurrences into Issues.
  *
- * Fingerprint inputs: (OrgId, ServiceName, ExceptionType, top-3 normalized frames,
- * message signature).
+ * Fingerprint inputs: (OrgId, ServiceName, ExceptionType, top-3 normalized frames
+ * (1 for a namespaced type), message signature, FINGERPRINT_HASH_SALT).
  * - Stack lines are filtered by frame SHAPE — one alternative per runtime's frame
  *   syntax — not by "contains `:NUMBER`". The old rule accepted any colon-digit
  *   line, so Drizzle's `params:` line (actual row values) and `Type: message`
@@ -787,37 +795,6 @@ const errorEventsSelectSql = `
             if(_useAttrs, SpanAttributes['exception.stacktrace'], '')
           ) AS _exStack,
           if(_useAttrs, _exMsg, StatusMessage) AS _msgText,
-          -- Frame lines are matched by SHAPE, not by "contains :NUMBER". The old
-          -- rule accepted any line with a colon-digit, which let non-frame lines
-          -- in: Drizzle's \`params: <row values>\` line, and the \`Type: message\`
-          -- header (\`Code: 62\`, \`position 1628\`, embedded timestamps). Row values
-          -- and message text then entered the hash and split one bug into
-          -- thousands of issues — 23,035 fingerprints for six real
-          -- AnomalyPersistenceError call sites, 15,051 for thirteen DatabaseError
-          -- ones.
-          --
-          -- The pattern is rendered from FRAME_LINE_PATTERN in fingerprint.ts,
-          -- as is every redaction below. They used to be hand-copied here, which
-          -- let the reference implementation the tests exercise drift away from
-          -- the SQL that actually runs, silently.
-          arraySlice(
-            arrayFilter(
-              line -> match(line, ${chPattern(FRAME_LINE_PATTERN)}),
-              splitByChar('\\n', _exStack)
-            ),
-            1, ${MAX_FINGERPRINT_FRAMES}
-          ) AS _rawFrames,
-          -- Redact every volatile token a frame line can carry: the URL origin
-          -- (so preview hosts share one fingerprint), Vite's 8-char bundle
-          -- content hash (so a deploy does not re-split every triaged browser and
-          -- Worker issue), then line numbers, hex pointers and long id runs. See
-          -- FRAME_REDACTIONS for the order and the reasoning.
-          arrayMap(
-            line -> ${chRedactChain("line", FRAME_REDACTIONS)},
-            _rawFrames
-          ) AS _topFrames,
-          if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
-          arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
           -- JSON detection for the message signature below.
           isValidJSON(_msgText) AS _isJson,
           _isJson AND JSONType(_msgText) = 'Object' AS _isJsonObj,
@@ -843,15 +820,50 @@ const errorEventsSelectSql = `
           -- restores that discrimination, and it cannot reinflate cardinality the
           -- way a raw prefix would because everything variable is redacted first:
           -- emails, URL origins, home directories, query strings, quoted values,
-          -- then ids and every digit run. See MSG_TEXT_REDACTIONS for the order,
+          -- then ids and every digit run. See ERROR_MSG_REDACTIONS for the order,
           -- what is deliberately kept, and the one residual it cannot reach.
           multiIf(
             _isJsonObj, _jsonSig,
             substringUTF8(
-              ${chRedactChain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`, MSG_TEXT_REDACTIONS)},
+              ${chRedactChain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`, ERROR_MSG_REDACTIONS)},
               1, ${MSG_SIGNATURE_CHARS}
             )
           ) AS _msgSig,
+          -- Frame lines are matched by SHAPE, not by "contains :NUMBER". The old
+          -- rule accepted any line with a colon-digit, which let non-frame lines
+          -- in: Drizzle's \`params: <row values>\` line, and the \`Type: message\`
+          -- header (\`Code: 62\`, \`position 1628\`, embedded timestamps). Row values
+          -- and message text then entered the hash and split one bug into
+          -- thousands of issues — 23,035 fingerprints for six real
+          -- AnomalyPersistenceError call sites, 15,051 for thirteen DatabaseError
+          -- ones.
+          --
+          -- The pattern is rendered from FRAME_LINE_PATTERN in fingerprint.ts,
+          -- as is every redaction below. They used to be hand-copied here, which
+          -- let the reference implementation the tests exercise drift away from
+          -- the SQL that actually runs, silently.
+          arraySlice(
+            arrayFilter(
+              line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
+                AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0
+                AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)}),
+              splitByChar('\\n', _exStack)
+            ),
+            -- A namespaced type plus its message names one failure: keep only the
+            -- throw site. With no message the frames are all that is left; keep 3.
+            1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})
+          ) AS _rawFrames,
+          -- Redact every volatile token a frame line can carry: the URL origin
+          -- (so preview hosts share one fingerprint), Vite's 8-char bundle
+          -- content hash (so a deploy does not re-split every triaged browser and
+          -- Worker issue), then line numbers, hex pointers and long id runs. See
+          -- FRAME_REDACTIONS for the order and the reasoning.
+          arrayMap(
+            line -> ${chRedactChain("line", FRAME_REDACTIONS)},
+            _rawFrames
+          ) AS _topFrames,
+          if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
+          arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
           -- Display-only, best-effort human label (decoupled from the fingerprint:
           -- many labels may map to one hash). The broad key list here is a DISPLAY
           -- heuristic only; the fingerprint above makes no key-name assumption.
@@ -902,7 +914,7 @@ const errorEventsSelectSql = `
           _exMsg AS ExceptionMessage,
           _exStack AS ExceptionStacktrace,
           _topFrame AS TopFrame,
-          cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig) AS FingerprintHash,
+          cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)}) AS FingerprintHash,
           StatusMessage,
           Duration,
           _errorLabel AS ErrorLabel,

@@ -108,7 +108,7 @@ function TaxIdRow({
 					label={`Remove ${taxIdLabel(taxId.type)} ${taxId.value}`}
 					className="ml-auto text-muted-foreground"
 				>
-					<XmarkIcon size={14} />
+					<XmarkIcon />
 				</IconButton>
 			)}
 		</li>
@@ -194,7 +194,7 @@ export function BillingDetailsSection({ canEdit }: { readonly canEdit: boolean }
 			reactivityKeys: [BILLING_PROFILE_KEY],
 		})
 		return toastExit(exit, {
-			success: `Removed ${taxIdLabel(taxId.type)} ${taxId.value}.`,
+			success: `Removed ${taxIdLabel(taxId.type)} ${taxId.value}`,
 			error: "The tax ID could not be removed.",
 		})
 	})

@@ -6,6 +6,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
@@ -71,6 +72,11 @@ const SCOPE_OPTIONS: ReadonlyArray<SegmentedOption<DashboardScope>> = [
 ]
 
 /** The glyph stands for what the dashboard reads, so the lane carries meaning. */
+/** A whitespace-only name would render a blank row and dialogs reading "Delete “ ”?". */
+function displayName(name: string | undefined): string {
+	return name?.trim() ? name : "Untitled dashboard"
+}
+
 function dashboardGlyph(dashboard: Dashboard) {
 	if (dashboard.widgets.length === 0) return GridIcon
 	const [primary] = dashboardDomains(dashboard)
@@ -140,7 +146,15 @@ function DashboardRow({
 				</span>
 
 				<span className="flex min-w-0 grow flex-col gap-0.5">
-					<span className="truncate text-sm font-medium text-foreground">{dashboard.name}</span>
+					<span
+						className={cn(
+							"truncate text-sm font-medium",
+							dashboard.name.trim() ? "text-foreground" : "text-muted-foreground",
+						)}
+						title={displayName(dashboard.name)}
+					>
+						{displayName(dashboard.name)}
+					</span>
 					{/* Below sm the scope lane collapses onto this line, so the row keeps
 					    its information when the column can't fit. */}
 					<span className="text-muted-foreground truncate font-mono text-2xs sm:hidden">
@@ -183,12 +197,16 @@ function DashboardRow({
 			<div className="flex shrink-0 items-center gap-0.5 pr-2 pl-1">
 				<IconButton
 					size="icon-xs"
-					label={isFavorite ? `Unstar ${dashboard.name}` : `Star ${dashboard.name}`}
+					label={
+						isFavorite
+							? `Unstar ${displayName(dashboard.name)}`
+							: `Star ${displayName(dashboard.name)}`
+					}
 					aria-pressed={isFavorite}
 					onClick={() => onToggleFavorite(dashboard.id)}
 					className={isFavorite ? "text-primary" : "text-muted-foreground/40"}
 				>
-					{isFavorite ? <StarFilledIcon size={14} /> : <StarIcon size={14} />}
+					{isFavorite ? <StarFilledIcon /> : <StarIcon />}
 				</IconButton>
 				<DashboardRowMenu
 					dashboard={dashboard}
@@ -219,7 +237,10 @@ function DashboardRowMenu({
 	onEditTags: (dashboard: Dashboard) => void
 }) {
 	return (
-		<RowActionsMenu label={`More actions for ${dashboard.name}`} className="text-muted-foreground">
+		<RowActionsMenu
+			label={`More actions for ${displayName(dashboard.name)}`}
+			className="text-muted-foreground"
+		>
 			<DropdownMenuGroup>
 				{/* Export reads the payload the list already holds, so it survives a
 				    persistence error. Duplicate and delete write, so they don't. */}
@@ -363,7 +384,6 @@ export function DashboardList({
 					options={SCOPE_OPTIONS}
 					value={scope}
 					onChange={onScopeChange}
-					size="sm"
 					aria-label="Filter dashboards by favorite"
 					className="shrink-0"
 				/>
@@ -391,35 +411,35 @@ export function DashboardList({
 			{nothingAtAll ? (
 				<FirstRunEmpty readOnly={readOnly} onCreate={onCreate} />
 			) : nothingMatched ? (
-				<Empty className="py-14">
-					<EmptyHeader>
-						<EmptyMedia variant="icon">
-							<MagnifierIcon size={17} />
-						</EmptyMedia>
-						<EmptyTitle>
-							{searching
-								? `No dashboard matches “${query.trim()}”`
-								: "No dashboard carries every selected tag"}
-						</EmptyTitle>
-						<EmptyDescription>
-							{searching
-								? "Search covers name, description and tags. A template might mention it."
-								: "Tags combine with AND. Drop one to widen the list."}
-						</EmptyDescription>
-					</EmptyHeader>
-					<div className="flex items-center gap-2">
-						{searching && (
-							<Button variant="outline" size="sm" onClick={() => onQueryChange(undefined)}>
-								Clear search
-							</Button>
-						)}
-						{tags.length > 0 && (
-							<Button variant="outline" size="sm" onClick={() => onTagsChange([])}>
-								Show all
-							</Button>
-						)}
-					</div>
-				</Empty>
+				<FilteredEmpty
+					noun="dashboards"
+					className="py-14"
+					icon={<MagnifierIcon size={17} />}
+					title={
+						searching
+							? `No dashboard matches “${query.trim()}”`
+							: "No dashboard carries every selected tag"
+					}
+					description={
+						searching
+							? "Search covers name, description and tags. A template might mention it."
+							: "Tags combine with AND. Drop one to widen the list."
+					}
+					detail={
+						<div className="flex items-center gap-2">
+							{searching && (
+								<Button variant="outline" size="sm" onClick={() => onQueryChange(undefined)}>
+									Clear search
+								</Button>
+							)}
+							{tags.length > 0 && (
+								<Button variant="outline" size="sm" onClick={() => onTagsChange([])}>
+									Show all
+								</Button>
+							)}
+						</div>
+					}
+				/>
 			) : scopeHidEverything ? (
 				<Empty className="py-14">
 					<EmptyHeader>
@@ -486,7 +506,7 @@ export function DashboardList({
 				onOpenChange={(open) => {
 					if (!open) setPendingTags(null)
 				}}
-				dashboardName={pendingTags?.name ?? ""}
+				dashboardName={pendingTags ? displayName(pendingTags.name) : ""}
 				tags={pendingTags?.tags ?? []}
 				suggestions={allTags}
 				onSave={(next) => {
@@ -501,7 +521,7 @@ export function DashboardList({
 					if (!open) setPendingDelete(null)
 				}}
 				icon={<CircleWarningIcon className="text-destructive" />}
-				title={<>Delete “{pendingDelete?.name}”?</>}
+				title={<>Delete “{displayName(pendingDelete?.name)}”?</>}
 				description={
 					<>
 						This dashboard belongs to the whole org: deleting it removes it for everyone, not just
@@ -527,7 +547,7 @@ function SortMenu({
 }) {
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger render={<Button variant="outline" size="sm" className="shrink-0" />}>
+			<DropdownMenuTrigger render={<Button variant="outline" className="shrink-0" />}>
 				{SORT_LABELS[sort]}
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start">
@@ -569,7 +589,7 @@ function TagFilterMenu({
 	if (allTags.length === 0) {
 		return (
 			<DisabledReason reason="No dashboard carries a tag yet">
-				<Button variant="outline" size="sm" disabled className="shrink-0">
+				<Button variant="outline" disabled className="shrink-0">
 					Tags
 				</Button>
 			</DisabledReason>
@@ -581,6 +601,7 @@ function TagFilterMenu({
 			clearLabel={() => "Clear tags"}
 			emptyMessage="No matching tags"
 			mode="trigger"
+			triggerSize="default"
 			onChange={onChange}
 			options={allTags.map((tag) => ({ value: tag }))}
 			searchPlaceholder="Filter tags…"

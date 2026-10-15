@@ -21,12 +21,13 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import { parseStoredDashboard, stampCurrentVersion } from "@maple/widgets/dashboard"
-import { dashboards, dashboardVersions, type DashboardVersionRow } from "@maple/db"
-import { and, desc, eq, lt } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { Dashboards, DashboardVersions, type DashboardVersionRow } from "@maple/db/tables"
 import { Clock, Effect, Layer, Option, Schema, Context } from "effect"
 import { randomUUID } from "node:crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { readTxid, txidColumn } from "@maple/backend/platform/electric-txid"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { summarizeDashboardChange } from "./dashboard-changes"
 import { timestampMs } from "@maple/backend/platform/time"
 
@@ -170,7 +171,7 @@ const versionRowToSummary = (row: DashboardVersionRow): DashboardVersionSummary 
 		changeKind: row.changeKind as DashboardVersionSummary["changeKind"],
 		changeSummary: row.changeSummary ?? null,
 		sourceVersionId: row.sourceVersionId ?? null,
-		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
 		createdBy: row.createdBy,
 	})
 
@@ -267,6 +268,7 @@ export class DashboardPersistenceService extends Context.Service<
 >()("@maple/api/services/DashboardPersistenceService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "DashboardPersistenceService", toPersistenceError)
 
 		const loadCurrent = Effect.fn("DashboardPersistenceService.loadCurrent")(function* (
 			orgId: OrgId,
@@ -276,17 +278,13 @@ export class DashboardPersistenceService extends Context.Service<
 			const rows: ReadonlyArray<{
 				readonly payloadJson: unknown
 				readonly version: number
-			}> = yield* database
-				.execute((db) =>
-					db
-						.select({
-							payloadJson: dashboards.payloadJson,
-							version: dashboards.version,
-						})
-						.from(dashboards)
-						.where(and(eq(dashboards.orgId, orgId), eq(dashboards.id, dashboardId))),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			}> = yield* dbExecute((db) =>
+				db.run(
+					PG.from(Dashboards)
+						.select("payloadJson", "version")
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(dashboardId)]),
+				),
+			)
 
 			const row = rows[0]
 			if (!row) return null
@@ -315,21 +313,15 @@ export class DashboardPersistenceService extends Context.Service<
 			const snapshotJson = yield* validatePayload(dashboard)
 			const now = yield* Clock.currentTimeMillis
 
-			const latest: ReadonlyArray<DashboardVersionRow> = yield* database
-				.execute((db) =>
-					db
+			const latest: ReadonlyArray<DashboardVersionRow> = yield* dbExecute((db) =>
+				db.run(
+					PG.from(DashboardVersions)
 						.select()
-						.from(dashboardVersions)
-						.where(
-							and(
-								eq(dashboardVersions.orgId, orgId),
-								eq(dashboardVersions.dashboardId, dashboard.id),
-							),
-						)
-						.orderBy(desc(dashboardVersions.versionNumber))
+						.where(($) => [$.orgId.eq(orgId), $.dashboardId.eq(dashboard.id)])
+						.orderBy(["versionNumber", "desc"])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			const latestRow = latest[0]
 			const canCoalesce =
@@ -338,34 +330,28 @@ export class DashboardPersistenceService extends Context.Service<
 				latestRow !== undefined &&
 				latestRow.createdBy === userId &&
 				latestRow.changeKind === kind &&
-				now - latestRow.createdAt.getTime() < COALESCE_WINDOW_MS
+				now - latestRow.createdAt < COALESCE_WINDOW_MS
 
 			if (canCoalesce && latestRow) {
-				yield* database
-					.execute((db) =>
-						db
-							.update(dashboardVersions)
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(DashboardVersions)
 							.set({
 								snapshotJson,
 								changeSummary: summaryText,
-								createdAt: new Date(now),
+								createdAt: now,
 							})
-							.where(
-								and(
-									eq(dashboardVersions.orgId, orgId),
-									eq(dashboardVersions.id, latestRow.id),
-								),
-							),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(latestRow.id)]),
+					),
+				)
 				return
 			}
 
 			const versionNumber = (latestRow?.versionNumber ?? 0) + 1
 
-			yield* database
-				.execute((db) =>
-					db.insert(dashboardVersions).values({
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(DashboardVersions).values({
 						orgId,
 						id: decodeDashboardVersionIdSync(randomUUID()),
 						dashboardId: dashboard.id,
@@ -374,11 +360,11 @@ export class DashboardPersistenceService extends Context.Service<
 						changeKind: kind,
 						changeSummary: summaryText,
 						sourceVersionId: options.sourceVersionId ?? null,
-						createdAt: new Date(now),
+						createdAt: now,
 						createdBy: userId,
 					}),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 		})
 
 		const list = Effect.fn("DashboardPersistenceService.list")(function* (orgId: OrgId) {
@@ -386,18 +372,14 @@ export class DashboardPersistenceService extends Context.Service<
 			const rows: ReadonlyArray<{
 				readonly id: DashboardId
 				readonly payloadJson: unknown
-			}> = yield* database
-				.execute((db) =>
-					db
-						.select({
-							id: dashboards.id,
-							payloadJson: dashboards.payloadJson,
-						})
-						.from(dashboards)
-						.where(eq(dashboards.orgId, orgId))
-						.orderBy(desc(dashboards.updatedAt)),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			}> = yield* dbExecute((db) =>
+				db.run(
+					PG.from(Dashboards)
+						.select("id", "payloadJson")
+						.where(($) => [$.orgId.eq(orgId)])
+						.orderBy(($) => [[$.updatedAt, "desc"]]),
+				),
+			)
 
 			const dashboardDocuments = yield* Effect.forEach(rows, (row) =>
 				parsePayload(row.payloadJson, { dashboardId: row.id, component: "document" }),
@@ -439,27 +421,25 @@ export class DashboardPersistenceService extends Context.Service<
 				"tenant.userId": userId,
 				"maple.dashboard.id": dashboard.id,
 			})
-			const updated: ReadonlyArray<{ readonly id: string; readonly txid: string }> = yield* database
-				.execute((db) =>
-					db
-						.update(dashboards)
-						.set({
-							name: dashboard.name,
-							payloadJson,
-							updatedAt: new Date(updatedAt),
-							updatedBy: userId,
-							version: expectedVersion + 1,
-						})
-						.where(
-							and(
-								eq(dashboards.orgId, orgId),
-								eq(dashboards.id, dashboard.id),
-								eq(dashboards.version, expectedVersion),
-							),
-						)
-						.returning({ id: dashboards.id, ...txidColumn }),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const updated: ReadonlyArray<{ readonly id: string; readonly txid: string }> = yield* dbExecute(
+				(db) =>
+					db.run(
+						PG.update(Dashboards)
+							.set({
+								name: dashboard.name,
+								payloadJson,
+								updatedAt,
+								updatedBy: userId,
+								version: expectedVersion + 1,
+							})
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.id.eq(dashboard.id),
+								$.version.eq(expectedVersion),
+							])
+							.returning(($) => ({ id: $.id, txid: currentTxid })),
+					),
+			)
 
 			return { won: updated.length > 0, txid: readTxid(updated) }
 		})
@@ -472,24 +452,23 @@ export class DashboardPersistenceService extends Context.Service<
 			updatedAt: number,
 			payloadJson: DashboardDocument,
 		) =>
-			database
-				.execute((db) =>
-					db
-						.insert(dashboards)
+			dbExecute((db) =>
+				db.run(
+					PG.insertInto(Dashboards)
 						.values({
 							orgId,
 							id: dashboard.id,
 							name: dashboard.name,
 							payloadJson,
-							createdAt: new Date(createdAt),
-							updatedAt: new Date(updatedAt),
+							createdAt,
+							updatedAt,
 							createdBy: userId,
 							updatedBy: userId,
 							version: 1,
 						})
-						.returning(txidColumn),
-				)
-				.pipe(Effect.mapError(toPersistenceError), Effect.map(readTxid))
+						.returning(() => ({ txid: currentTxid })),
+				),
+			).pipe(Effect.map(readTxid))
 
 		const upsertInternal = Effect.fn("DashboardPersistenceService.upsertInternal")(function* (
 			orgId: OrgId,
@@ -611,7 +590,14 @@ export class DashboardPersistenceService extends Context.Service<
 				"tenant.userId": userId,
 				"maple.dashboard.id": dashboardId,
 			})
-			for (let attempt = 0; attempt < MUTATE_MAX_ATTEMPTS; attempt++) {
+			// One instance per call, so the retry predicate matches only a lost CAS
+			// and never an error the caller's transform happens to raise.
+			const conflict = new DashboardConcurrencyError({
+				dashboardId,
+				message:
+					"Dashboard mutation failed after repeated concurrency conflicts. Refetch and try again.",
+			})
+			const attempt = Effect.gen(function* () {
 				const current = yield* loadCurrent(orgId, dashboardId)
 				if (current === null) {
 					return yield* Effect.fail(
@@ -634,7 +620,7 @@ export class DashboardPersistenceService extends Context.Service<
 					updatedAt,
 					payloadJson,
 				)
-				if (!result.won) continue
+				if (!result.won) return yield* Effect.fail(conflict)
 
 				yield* recordVersion(orgId, userId, next, current.document, versionOptions).pipe(
 					Effect.tapError((error) =>
@@ -648,14 +634,10 @@ export class DashboardPersistenceService extends Context.Service<
 				return result.txid === undefined
 					? next
 					: new DashboardDocument({ ...next, txid: result.txid })
-			}
+			})
 
-			return yield* Effect.fail(
-				new DashboardConcurrencyError({
-					dashboardId,
-					message:
-						"Dashboard mutation failed after repeated concurrency conflicts. Refetch and try again.",
-				}),
+			return yield* attempt.pipe(
+				Effect.retry({ times: MUTATE_MAX_ATTEMPTS - 1, while: (error) => error === conflict }),
 			)
 		})
 
@@ -664,14 +646,13 @@ export class DashboardPersistenceService extends Context.Service<
 			dashboardId: DashboardId,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.dashboard.id": dashboardId })
-			const rows = yield* database
-				.execute((db) =>
-					db
-						.delete(dashboards)
-						.where(and(eq(dashboards.orgId, orgId), eq(dashboards.id, dashboardId)))
-						.returning({ id: dashboards.id, ...txidColumn }),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.deleteFrom(Dashboards)
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(dashboardId)])
+						.returning(($) => ({ id: $.id, txid: currentTxid })),
+				),
+			)
 
 			const deleted = Option.fromNullishOr(rows[0])
 
@@ -688,18 +669,14 @@ export class DashboardPersistenceService extends Context.Service<
 
 			// Drop history rows when the dashboard is deleted — they're tied to
 			// a dashboard that no longer exists.
-			yield* database
-				.execute((db) =>
-					db
-						.delete(dashboardVersions)
-						.where(
-							and(
-								eq(dashboardVersions.orgId, orgId),
-								eq(dashboardVersions.dashboardId, dashboardId),
-							),
-						),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+			yield* dbExecute((db) =>
+				db.run(
+					PG.deleteFrom(DashboardVersions).where(($) => [
+						$.orgId.eq(orgId),
+						$.dashboardId.eq(dashboardId),
+					]),
+				),
+			)
 
 			return new DashboardDeleteResponse({
 				id: deleted.value.id,
@@ -735,24 +712,20 @@ export class DashboardPersistenceService extends Context.Service<
 			yield* ensureDashboardExists(orgId, dashboardId)
 
 			const limit = Math.min(options.limit ?? 50, 200)
-			const conditions = [
-				eq(dashboardVersions.orgId, orgId),
-				eq(dashboardVersions.dashboardId, dashboardId),
-			]
-			if (options.before !== undefined) {
-				conditions.push(lt(dashboardVersions.versionNumber, options.before))
-			}
-
-			const rows: ReadonlyArray<DashboardVersionRow> = yield* database
-				.execute((db) =>
-					db
+			const before = options.before
+			const rows: ReadonlyArray<DashboardVersionRow> = yield* dbExecute((db) =>
+				db.run(
+					PG.from(DashboardVersions)
 						.select()
-						.from(dashboardVersions)
-						.where(and(...conditions))
-						.orderBy(desc(dashboardVersions.versionNumber))
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.dashboardId.eq(dashboardId),
+							before !== undefined ? $.versionNumber.lt(before) : undefined,
+						])
+						.orderBy(["versionNumber", "desc"])
 						.limit(limit + 1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			const hasMore = rows.length > limit
 			const sliced = hasMore ? rows.slice(0, limit) : rows
@@ -775,15 +748,14 @@ export class DashboardPersistenceService extends Context.Service<
 			})
 			yield* ensureDashboardExists(orgId, dashboardId)
 
-			const rows: ReadonlyArray<DashboardVersionRow> = yield* database
-				.execute((db) =>
-					db
+			const rows: ReadonlyArray<DashboardVersionRow> = yield* dbExecute((db) =>
+				db.run(
+					PG.from(DashboardVersions)
 						.select()
-						.from(dashboardVersions)
-						.where(and(eq(dashboardVersions.orgId, orgId), eq(dashboardVersions.id, versionId)))
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(versionId)])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			const row = rows[0]
 			if (!row || row.dashboardId !== dashboardId) {
@@ -809,7 +781,7 @@ export class DashboardPersistenceService extends Context.Service<
 				changeKind: row.changeKind as DashboardVersionSummary["changeKind"],
 				changeSummary: row.changeSummary ?? null,
 				sourceVersionId: row.sourceVersionId ?? null,
-				createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
+				createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
 				createdBy: row.createdBy,
 				snapshot,
 			})
@@ -856,41 +828,4 @@ export class DashboardPersistenceService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-
-	static readonly list = (orgId: OrgId) => this.use((service) => service.list(orgId))
-
-	static readonly get = (orgId: OrgId, dashboardId: DashboardId) =>
-		this.use((service) => service.get(orgId, dashboardId))
-
-	static readonly create = (orgId: OrgId, userId: UserId, dashboard: PortableDashboardDocument) =>
-		this.use((service) => service.create(orgId, userId, dashboard))
-
-	static readonly upsert = (orgId: OrgId, userId: UserId, dashboard: DashboardDocument) =>
-		this.use((service) => service.upsert(orgId, userId, dashboard))
-
-	static readonly mutate = <E>(
-		orgId: OrgId,
-		userId: UserId,
-		dashboardId: DashboardId,
-		transform: (dashboard: DashboardDocument) => Effect.Effect<DashboardDocument, E>,
-	) => this.use((service) => service.mutate(orgId, userId, dashboardId, transform))
-
-	static readonly delete = (orgId: OrgId, dashboardId: DashboardId) =>
-		this.use((service) => service.delete(orgId, dashboardId))
-
-	static readonly listVersions = (
-		orgId: OrgId,
-		dashboardId: DashboardId,
-		options?: { readonly limit?: number; readonly before?: number },
-	) => this.use((service) => service.listVersions(orgId, dashboardId, options))
-
-	static readonly getVersion = (orgId: OrgId, dashboardId: DashboardId, versionId: DashboardVersionId) =>
-		this.use((service) => service.getVersion(orgId, dashboardId, versionId))
-
-	static readonly restoreVersion = (
-		orgId: OrgId,
-		userId: UserId,
-		dashboardId: DashboardId,
-		versionId: DashboardVersionId,
-	) => this.use((service) => service.restoreVersion(orgId, userId, dashboardId, versionId))
 }

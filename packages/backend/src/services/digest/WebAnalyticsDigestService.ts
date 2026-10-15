@@ -1,4 +1,5 @@
-import { digestSubscriptions } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { DigestSubscriptions } from "@maple/db/tables"
 import {
 	DigestNotConfiguredError,
 	DigestPersistenceError,
@@ -11,7 +12,6 @@ import {
 import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { AI_CRAWLERS, AI_PRODUCTS, aiProductById } from "@maple/domain/ai-traffic"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
 import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Redacted } from "effect"
 import {
 	aiProductIcon,
@@ -29,6 +29,7 @@ import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { CompiledQueryInput } from "@maple/query-engine/ch"
 import { EdgeCacheService } from "@maple/cache"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -100,6 +101,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "WebAnalyticsDigestService", toPersistenceError)
 			const email = yield* EmailService
 			const env = yield* Env
 			const warehouse = yield* WarehouseQueryService
@@ -263,33 +265,29 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				// Summary
 				const summaryOf = (rows: ReadonlyArray<CH.WebAnalyticsSummaryOutput>) => {
 					const row = rows[0]
-					const identified = Number(row?.identifiedSessions) || 0
+					const identified = row?.identifiedSessions || 0
 					return {
-						visitors: Number(row?.visitors) || 0,
-						sessions: Number(row?.sessions) || 0,
+						visitors: row?.visitors || 0,
+						sessions: row?.sessions || 0,
 						identified,
 						// Bounce is only measurable over sessions that report page views.
-						bounceRate:
-							identified > 0 ? ((Number(row?.bouncedSessions) || 0) / identified) * 100 : null,
-						avgDurationMs: Number(row?.avgDurationMs) || 0,
+						bounceRate: identified > 0 ? ((row?.bouncedSessions || 0) / identified) * 100 : null,
+						avgDurationMs: row?.avgDurationMs || 0,
 					}
 				}
 				const cur = summaryOf(curSummary)
 				const prev = summaryOf(prevSummary)
 
-				let curPageViews = 0
-				let prevPageViews = 0
-				for (const row of pageviewSeries) {
-					const views = Number(row.pageViews) || 0
-					if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate) curPageViews += views
-					else prevPageViews += views
-				}
+				const inCurrentWeek = (row: (typeof pageviewSeries)[number]) =>
+					DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate
+				const sumViews = (rows: ReadonlyArray<(typeof pageviewSeries)[number]>) =>
+					rows.reduce((sum, row) => sum + (row.pageViews || 0), 0)
+				const curPageViews = sumViews(pageviewSeries.filter(inCurrentWeek))
+				const prevPageViews = sumViews(pageviewSeries.filter((row) => !inCurrentWeek(row)))
 
 				// Pages
 				const prevViewsByPage = new Map(
-					prevPages.map(
-						(row) => [`${row.host}${row.pagePath}`, Number(row.pageViews) || 0] as const,
-					),
+					prevPages.map((row) => [`${row.host}${row.pagePath}`, row.pageViews || 0] as const),
 				)
 				// Last week's list is capped, so a page missing from a FULL list may
 				// just have ranked lower: its baseline is unknown, not zero.
@@ -302,7 +300,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const pageLabel = pageLabels(curPages.map((row) => ({ host: row.host, path: row.pagePath })))
 				const topPages = withShares(
 					curPages.map((row) => {
-						const views = Number(row.pageViews) || 0
+						const views = row.pageViews || 0
 						return {
 							icon: null,
 							label: pageLabel({ host: row.host, path: row.pagePath }),
@@ -321,7 +319,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 						.map((row) => ({
 							icon: sourceIcon(row.name),
 							label: row.name === WEB_ANALYTICS_UNSET ? "Direct" : row.name,
-							value: Number(row.count) || 0,
+							value: row.count || 0,
 						}))
 						.sort((a, b) => b.value - a.value)
 						.slice(0, TOP_ROWS),
@@ -334,7 +332,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					for (const row of aiReferrals) {
 						if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate !== inCurrent)
 							continue
-						totals.set(row.product, (totals.get(row.product) ?? 0) + (Number(row.sessions) || 0))
+						totals.set(row.product, (totals.get(row.product) ?? 0) + (row.sessions || 0))
 					}
 					return totals
 				}
@@ -357,18 +355,15 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 
 				let crawlerStats: WebAnalyticsDigestProps["ai"]["crawlers"] = null
 				if (crawlers !== null) {
-					const requests = sum(crawlers.cur.map((row) => Number(row.requests) || 0))
+					const requests = sum(crawlers.cur.map((row) => row.requests || 0))
 					crawlerStats = {
 						requests,
-						delta: computeDelta(
-							requests,
-							sum(crawlers.prev.map((row) => Number(row.requests) || 0)),
-						),
+						delta: computeDelta(requests, sum(crawlers.prev.map((row) => row.requests || 0))),
 						byCrawler: withShares(
 							crawlers.cur.slice(0, TOP_ROWS).map((row) => ({
 								icon: aiProductIcon(crawlerProduct.get(row.crawler) ?? ""),
 								label: row.crawler,
-								value: Number(row.requests) || 0,
+								value: row.requests || 0,
 							})),
 							requests,
 						),
@@ -464,20 +459,18 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const todayStartMs = now - (now % DAY_MS)
 				const currentDayOfWeek = new Date(now).getUTCDay()
 
-				const subs = yield* database
-					.execute((db) =>
-						db
+				const subs = yield* dbExecute((db) =>
+					db.run(
+						PG.from(DigestSubscriptions)
 							.select()
-							.from(digestSubscriptions)
-							.where(eq(digestSubscriptions.webAnalyticsEnabled, true)),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+							.where(($) => [$.webAnalyticsEnabled.eq(true)]),
+					),
+				)
 
 				const due = subs.filter(
 					(s) =>
 						s.dayOfWeek === currentDayOfWeek &&
-						(s.webAnalyticsLastSentAt == null ||
-							s.webAnalyticsLastSentAt.getTime() < sevenDaysAgo),
+						(s.webAnalyticsLastSentAt == null || s.webAnalyticsLastSentAt < sevenDaysAgo),
 				)
 				if (due.length === 0) return { sentCount: 0, errorCount: 0, skipped: false }
 
@@ -490,29 +483,23 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 							const orgId = OrgId.make(rawOrgId)
 							if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) return []
 
-							const claim = yield* database
-								.execute((db) =>
-									db
-										.update(digestSubscriptions)
-										.set({ webAnalyticsLastAttemptedAt: new Date(now) })
-										.where(
-											and(
-												inArray(
-													digestSubscriptions.id,
-													orgSubs.map((s) => s.id),
-												),
-												or(
-													isNull(digestSubscriptions.webAnalyticsLastAttemptedAt),
-													lt(
-														digestSubscriptions.webAnalyticsLastAttemptedAt,
-														new Date(todayStartMs),
-													),
-												),
+							const claim = yield* dbExecute((db) =>
+								db.run(
+									PG.update(DigestSubscriptions)
+										.set({ webAnalyticsLastAttemptedAt: now })
+										.where(($) => [
+											PG.inList(
+												$.id,
+												orgSubs.map((s) => s.id),
 											),
-										)
-										.returning({ id: digestSubscriptions.id }),
-								)
-								.pipe(Effect.mapError(toPersistenceError))
+											PG.or(
+												$.webAnalyticsLastAttemptedAt.isNull(),
+												$.webAnalyticsLastAttemptedAt.lt(todayStartMs),
+											),
+										])
+										.returning("id"),
+								),
+							)
 							const claimed = new Set(claim.map((c) => c.id))
 							const claimedSubs = orgSubs.filter((s) => claimed.has(s.id))
 							if (claimedSubs.length === 0) return []
@@ -540,10 +527,11 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 											Clock.currentTimeMillis.pipe(
 												Effect.flatMap((sentAt) =>
 													database.execute((db) =>
-														db
-															.update(digestSubscriptions)
-															.set({ webAnalyticsLastSentAt: new Date(sentAt) })
-															.where(eq(digestSubscriptions.id, sub.id)),
+														db.run(
+															PG.update(DigestSubscriptions)
+																.set({ webAnalyticsLastSentAt: sentAt })
+																.where(($) => [$.id.eq(sub.id)]),
+														),
 													),
 												),
 												// Already sent; the attempt claim still blocks a same-day resend.
@@ -599,7 +587,10 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const all = results.flat()
 				const sentCount = all.filter((r) => r.sent).length
 				const errorCount = all.length - sentCount
-				yield* Effect.annotateCurrentSpan({ sentCount, errorCount })
+				yield* Effect.annotateCurrentSpan({
+					"maple.web_analytics_digest.sent_count": sentCount,
+					"maple.web_analytics_digest.error_count": errorCount,
+				})
 				return { sentCount, errorCount, skipped: false }
 			})
 

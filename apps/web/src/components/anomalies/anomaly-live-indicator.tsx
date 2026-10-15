@@ -1,7 +1,5 @@
-import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { FilterChip } from "@maple/ui/components/ui/filter-chip"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
 
 export function AnomalyLiveIndicator({
 	live,
@@ -12,23 +10,7 @@ export function AnomalyLiveIndicator({
 }) {
 	return (
 		<Tooltip>
-			<TooltipTrigger
-				render={
-					<button
-						type="button"
-						role="switch"
-						aria-checked={live}
-						onClick={() => onToggle(!live)}
-						className={cn(
-							"inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",
-							live
-								? cn(TONE_BORDER.ok, TONE_SOFT.ok)
-								: "border-border/70 text-muted-foreground hover:text-foreground",
-						)}
-					/>
-				}
-			>
-				<StatusDot tone={live ? "ok" : "neutral"} />
+			<TooltipTrigger render={<FilterChip pressed={live} onPressedChange={onToggle} tone="ok" dot />}>
 				{live ? "Live" : "Paused"}
 			</TooltipTrigger>
 			<TooltipContent>

@@ -1,4 +1,4 @@
-import { formatErrorRate } from "../../lib/format"
+import { formatErrorRate, formatNumber } from "../../lib/format"
 import { memo, useEffect, useId } from "react"
 import { getSmoothStepPath, type EdgeProps } from "@xyflow/react"
 import { getServiceColor, getValueHue } from "../../lib/colors"
@@ -38,12 +38,6 @@ function getStrokeWidth(callCount: number): number {
 function getEdgeIntensity(callsPerSecond: number): number {
 	if (callsPerSecond <= 0) return 0.15
 	return Math.min(1, 0.3 + 0.7 * (Math.log10(1 + callsPerSecond) / Math.log10(100)))
-}
-
-function formatCallCount(count: number): string {
-	if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
-	if (count >= 1000) return `${(count / 1000).toFixed(1)}k`
-	return String(count)
 }
 
 /**
@@ -225,7 +219,7 @@ export const ServiceMapEdge = memo(function ServiceMapEdge({
 					>
 						<span className="rounded bg-card/90 backdrop-blur-sm px-1.5 py-0.5 text-3xs font-mono font-medium text-muted-foreground border border-border/50 whitespace-nowrap tabular-nums">
 							{hasSampling ? "~" : ""}
-							{formatCallCount(hasSampling ? estimatedCallCount : callCount)}
+							{formatNumber(hasSampling ? estimatedCallCount : callCount)}
 							{errorRate > 0 && (
 								<span className={errorRateClass(errorRate, { neutral: "" })}>
 									{" "}

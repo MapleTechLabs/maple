@@ -1194,5 +1194,64 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		id: "local-0028-to-0029-external-edges-legacy-db-system",
+		from: 28,
+		to: 29,
+		description:
+			"Recreate service_external_edges_hourly_mv so spans with only the legacy db.system are excluded like db.system.name spans",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("service_external_edges_hourly_mv")],
+		plan: [
+			[
+				"rebuild-external-edges-view",
+				"Rebuild service_external_edges_hourly_mv to exclude spans that set only the legacy db.system",
+			],
+		],
+		verifies: "Verify the v29 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "service_external_edges_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Existing rows are preserved untouched, including legacy db.system spans counted as external targets; the rebuilt view excludes them from hours materialized after the migration, and the old rows age out with the table's TTL.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 365,
+			},
+		],
+	},
+	{
+		// TODO(v29 -> v30): what changes, and what is NOT backfilled. Fill beforeBootstrap
+		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
+		// plan line and dispositions. The v30 physical verify fails an unfinished row.
+		id: "local-0029-to-0030-error-fingerprint-v3",
+		from: 29,
+		to: 30,
+		description: "Rebuild the error-events views with fingerprint v3 grouping and a version-salted hash",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so new occurrences are hashed with fingerprint v3",
+			],
+		],
+		verifies: "Verify the v30 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their v2 FingerprintHash untouched; occurrences materialized after the migration carry v3 hashes, and the v2 rows age out with the retention window.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

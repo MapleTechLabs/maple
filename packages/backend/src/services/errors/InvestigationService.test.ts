@@ -16,12 +16,19 @@ import {
 	OrgId,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
-import { ErrorIssueId } from "@maple/domain/primitives"
-import { aiTriageSettings, errorIssues, errorIssueEvents, investigations } from "@maple/db"
+import { AnomalyIncidentId, ErrorIssueId } from "@maple/domain/primitives"
+import * as Orm from "@maple-dev/effect-orm/database"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	AiTriageSettings,
+	AnomalyIncidents,
+	ErrorIssueEvents,
+	ErrorIssues,
+	Investigations,
+} from "@maple/db/tables"
 import type { ChatSessions } from "@maple/backend/platform/bindings"
 import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { eq } from "drizzle-orm"
 import { Env } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -252,18 +259,29 @@ describe("InvestigationService", () => {
 				freeformRequest("stored corruption"),
 			)
 
+			// Raw on purpose: the typed update would reject the corrupt jsonb this test stores.
 			yield* database.execute((db) =>
-				db.update(investigations).set({ snapshotJson: {} }).where(eq(investigations.id, created.id)),
+				db.execute(
+					Orm.sql`UPDATE investigations SET snapshot_json = '{}'::jsonb WHERE id = ${created.id}`,
+				),
 			)
 			const snapshotError = yield* Effect.flip(service.getInvestigation(ORG, created.id))
 			assert.instanceOf(snapshotError, InvestigationDataCorruptionError)
 			assert.strictEqual(snapshotError.field, "snapshot")
 
 			yield* database.execute((db) =>
-				db
-					.update(investigations)
-					.set({ snapshotJson: created.snapshot, reportJson: {} })
-					.where(eq(investigations.id, created.id)),
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.update(Investigations)
+								.set({ snapshotJson: created.snapshot })
+								.where(($) => [$.id.eq(created.id)]),
+						)
+						yield* db.execute(
+							Orm.sql`UPDATE investigations SET report_json = '{}'::jsonb WHERE id = ${created.id}`,
+						)
+					}),
+				),
 			)
 			const reportError = yield* Effect.flip(service.getInvestigation(ORG, created.id))
 			assert.instanceOf(reportError, InvestigationDataCorruptionError)
@@ -341,7 +359,11 @@ describe("InvestigationService", () => {
 			assert.include(chat.beginTurns[0]!.text, "err_incident")
 
 			const rows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.id, started.id)),
+				db.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.id.eq(started.id)]),
+				),
 			)
 			// One agent, one pass against the daily budget.
 			assert.strictEqual(rows[0]?.autonomousTurns, 1)
@@ -362,7 +384,11 @@ describe("InvestigationService", () => {
 
 			const database = yield* Database
 			const rows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.id, started.id)),
+				db.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.id.eq(started.id)]),
+				),
 			)
 			assert.strictEqual(rows[0]?.autonomousTurns, 1)
 		}).pipe(Effect.provide(harness.layer))
@@ -398,30 +424,34 @@ describe("InvestigationService", () => {
 		return Effect.gen(function* () {
 			const database = yield* Database
 			const service = yield* InvestigationService
-			const now = new Date()
+			const now = Date.now()
 
 			// Both ceilings set to one, and one investigation already started today —
 			// so runs and passes are each exhausted before the calls below.
 			yield* database.execute((db) =>
-				db.insert(aiTriageSettings).values({
-					orgId: ORG,
-					enabled: true,
-					maxRunsPerDay: 1,
-					maxPassesPerDay: 1,
-					updatedAt: now,
-				}),
+				db.run(
+					PG.insertInto(AiTriageSettings).values({
+						orgId: ORG,
+						enabled: true,
+						maxRunsPerDay: 1,
+						maxPassesPerDay: 1,
+						updatedAt: now,
+					}),
+				),
 			)
 			yield* database.execute((db) =>
-				db.insert(investigations).values({
-					id: asInvestigationId(randomUUID()),
-					orgId: ORG,
-					subjectJson: freeformRequest("already spent today's budget").subject,
-					status: "investigating",
-					startedAt: now,
-					autonomousTurns: 1,
-					createdAt: now,
-					updatedAt: now,
-				}),
+				db.run(
+					PG.insertInto(Investigations).values({
+						id: asInvestigationId(randomUUID()),
+						orgId: ORG,
+						subjectJson: freeformRequest("already spent today's budget").subject,
+						status: "investigating",
+						startedAt: now,
+						autonomousTurns: 1,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
 			)
 
 			const started = yield* service.createAndStartInvestigation(
@@ -455,15 +485,100 @@ describe("InvestigationService", () => {
 
 			// A diagnosis that landed meanwhile is never overwritten.
 			yield* database.execute((db) =>
-				db
-					.update(investigations)
-					.set({ status: "diagnosed", error: null })
-					.where(eq(investigations.id, started.id)),
+				db.run(
+					PG.update(Investigations)
+						.set({ status: "diagnosed", error: null })
+						.where(($) => [$.id.eq(started.id)]),
+				),
 			)
 			yield* service.failInvestigation(ORG, started.id, "no_diagnosis: late")
 			const diagnosed = yield* service.getInvestigation(ORG, started.id)
 			assert.strictEqual(diagnosed.status, "diagnosed")
 			assert.isNull(diagnosed.error)
+		}).pipe(Effect.provide(harness.layer))
+	})
+
+	it.effect("keeps an anomaly's triage status in step with its investigation", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		return Effect.gen(function* () {
+			const database = yield* Database
+			const service = yield* InvestigationService
+			const asAnomalyId = Schema.decodeUnknownSync(AnomalyIncidentId)
+			// Ordered so the status query below lists them in this order.
+			const FAST_ID = "1a1a1a1a-0000-4000-8000-000000000001"
+			const FAILED_ID = "2b2b2b2b-0000-4000-8000-000000000002"
+			const MANUAL_ID = "3c3c3c3c-0000-4000-8000-000000000003"
+			const now = Date.now()
+			const anomaly = (id: string, triageStatus: "none" | "pending") => ({
+				id: asAnomalyId(id),
+				orgId: ORG,
+				detectorKey: `error_rate:checkout:${id}`,
+				signalType: "error_rate" as const,
+				serviceName: "checkout",
+				status: "open" as const,
+				severity: "warning" as const,
+				openedValue: 12,
+				baselineMedian: 1,
+				baselineSigma: 0.5,
+				thresholdValue: 4,
+				lastObservedValue: 12,
+				firstTriggeredAt: now,
+				lastTriggeredAt: now,
+				triageStatus,
+				dedupeKey: id,
+				createdAt: now,
+				updatedAt: now,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(AnomalyIncidents).values([
+						// Diagnosed before the detector marked it pending.
+						anomaly(FAST_ID, "none"),
+						anomaly(FAILED_ID, "pending"),
+						anomaly(MANUAL_ID, "pending"),
+					]),
+				),
+			)
+			const triage = (incidentId: string) =>
+				service.createInvestigation(
+					ORG,
+					null,
+					new InvestigationCreateRequest({
+						subject: new InvestigationIncidentSubject({
+							type: "incident",
+							incidentKind: "anomaly",
+							incidentId,
+						}),
+					}),
+				)
+			const statuses = database
+				.execute((db) =>
+					db.run(PG.from(AnomalyIncidents).select("id", "triageStatus").orderBy(["id", "asc"])),
+				)
+				.pipe(Effect.map((rows) => rows.map((row) => row.triageStatus)))
+
+			const fast = yield* triage(FAST_ID)
+			yield* service.submitDiagnosis(
+				ORG,
+				fast.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
+			const failed = yield* triage(FAILED_ID)
+			yield* service.failInvestigation(ORG, failed.id, "no_diagnosis: the pass ended in prose")
+			const manual = yield* triage(MANUAL_ID)
+			yield* service.updateStatus(ORG, manual.id, "resolved")
+			assert.deepStrictEqual(yield* statuses, ["completed", "skipped", "completed"])
+
+			// A retry is triaging again, and its diagnosis completes it.
+			yield* service.restartInvestigation(ORG, failed.id)
+			assert.deepStrictEqual(yield* statuses, ["completed", "pending", "completed"])
+			yield* service.submitDiagnosis(
+				ORG,
+				failed.id,
+				new SubmitDiagnosisRequest({ report: sampleReport() }),
+			)
+			assert.deepStrictEqual(yield* statuses, ["completed", "completed", "completed"])
 		}).pipe(Effect.provide(harness.layer))
 	})
 
@@ -490,7 +605,11 @@ describe("InvestigationService", () => {
 
 			const database = yield* Database
 			const databaseRows = yield* database.execute((db) =>
-				db.select().from(investigations).where(eq(investigations.id, started.id)),
+				db.run(
+					PG.from(Investigations)
+						.select()
+						.where(($) => [$.id.eq(started.id)]),
+				),
 			)
 			assert.strictEqual(databaseRows[0]?.autonomousTurns, 1)
 		}).pipe(Effect.provide(harness.layer))
@@ -527,21 +646,23 @@ describe("InvestigationService", () => {
 			return Effect.gen(function* () {
 				const service = yield* InvestigationService
 				const database = yield* Database
-				const now = new Date()
+				const now = Date.now()
 				yield* database.execute((db) =>
-					db.insert(errorIssues).values({
-						id: issueId,
-						orgId: ORG,
-						fingerprintHash: "98765432109876543210",
-						serviceName: "checkout-api",
-						exceptionType: "TimeoutError",
-						exceptionMessage: "upstream timed out",
-						topFrame: "",
-						firstSeenAt: now,
-						lastSeenAt: now,
-						createdAt: now,
-						updatedAt: now,
-					}),
+					db.run(
+						PG.insertInto(ErrorIssues).values({
+							id: issueId,
+							orgId: ORG,
+							fingerprintHash: "98765432109876543210",
+							serviceName: "checkout-api",
+							exceptionType: "TimeoutError",
+							exceptionMessage: "upstream timed out",
+							topFrame: "",
+							firstSeenAt: now,
+							lastSeenAt: now,
+							createdAt: now,
+							updatedAt: now,
+						}),
+					),
 				)
 
 				const created = yield* service.createInvestigation(
@@ -571,7 +692,11 @@ describe("InvestigationService", () => {
 				)
 
 				const events = yield* database.execute((db) =>
-					db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId)),
+					db.run(
+						PG.from(ErrorIssueEvents)
+							.select()
+							.where(($) => [$.issueId.eq(issueId)]),
+					),
 				)
 				const aiTriageEvents = events.filter((e) => e.type === "ai_triage")
 				assert.strictEqual(aiTriageEvents.length, 1)

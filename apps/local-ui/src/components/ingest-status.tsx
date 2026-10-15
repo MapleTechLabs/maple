@@ -1,4 +1,4 @@
-// Header status pill: is the local server up, and is telemetry arriving? Uses
+// Sidebar status pill: is the local server up, and is telemetry arriving? Uses
 // the server's own last-ingest time (arrival, any signal), so a metrics-only
 // app reads as live and a replayed old trace does not.
 
@@ -91,13 +91,13 @@ export function IngestStatus() {
 		<span
 			title={state.title}
 			className={cn(
-				"inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium tabular-nums",
+				"inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium tabular-nums group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
 				TONE_SOFT[STATUS_TONE[state.tone]],
 				TONE_BORDER[STATUS_TONE[state.tone]],
 			)}
 		>
 			<Dot tone={state.tone} />
-			<span className="truncate">{state.label}</span>
+			<span className="truncate group-data-[collapsible=icon]:sr-only">{state.label}</span>
 			<span className="sr-only">. {state.title}</span>
 		</span>
 	)

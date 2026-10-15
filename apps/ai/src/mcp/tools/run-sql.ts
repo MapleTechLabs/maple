@@ -204,6 +204,12 @@ const runSqlDescription =
 	"service_usage is a SummingMergeTree (always sum() its counts; TraceCount counts spans); metrics_sum cumulative counters " +
 	"carry running totals (never sum Value across points); product_events properties are in Attributes. " +
 	"Select 64-bit IDs and hashes as toString(col) to keep their precision. " +
+	"traces columns include SpanName (not Name), StatusCode ('Ok'/'Error'/'Unset', no Status), Duration (ns), " +
+	"SpanAttributes and ResourceAttributes (no Attributes column on traces). " +
+	"Attribute columns are Map(String, String): read them as SpanAttributes['http.route'], never with JSON* functions. " +
+	"Compare timestamps to 'YYYY-MM-DD HH:MM:SS' or toDateTime64('...', 9), not ISO strings with T/Z; " +
+	"bucket with toStartOfInterval(Timestamp, INTERVAL 5 MINUTE) or toStartOfMinute/Hour (no toStartOfTenSeconds, no intDiv on DateTime64). " +
+	"Every non-aggregated SELECT column must be in GROUP BY. " +
 	"describe_warehouse_tables gives every table's columns and notes."
 
 /** Twelve significant digits: hides binary float noise (8282.599999999999) without losing real precision. */
@@ -263,6 +269,19 @@ export const withRollupHintOnBudget = (
 			})
 		: error
 
+/**
+ * SQL the database rejected as written (a typo, `StatusCode = 2` on a String column) is the
+ * caller's to fix: an expected 400, not a query failure that opens an error issue.
+ */
+export const callerSqlAsInvalidInput = (
+	cause: { readonly _tag: string },
+	error: McpQueryError | McpQueryBudgetError,
+): McpQueryError | McpQueryBudgetError | McpInvalidInputError =>
+	cause._tag === "@maple/http/errors/WarehouseInvalidSqlError" &&
+	error._tag === "@maple/mcp/errors/McpQueryError"
+		? new McpInvalidInputError({ message: error.message, parameter: "sql" })
+		: error
+
 export function registerRunSqlTool(server: McpToolRegistrar) {
 	server.define({
 		name: "run_sql",
@@ -292,14 +311,17 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 								parameter: "sql",
 								example: RUN_SQL_EXAMPLE,
 							})
-						: // Execution failures surface the warehouse message so the agent can fix the SQL,
-							// plus the real table (or column) names when the one it named does not exist:
-							// the warehouse message never says what they are.
-							withRollupHintOnBudget(
-								withColumnListOnUnknownColumn(params.sql)(
-									withTableListOnUnknownTable(
-										toMcpQueryError("run_sql")(error),
-										params.sql,
+						: callerSqlAsInvalidInput(
+								error,
+								// Execution failures surface the warehouse message so the agent can fix the SQL,
+								// plus the real table (or column) names when the one it named does not exist:
+								// the warehouse message never says what they are.
+								withRollupHintOnBudget(
+									withColumnListOnUnknownColumn(params.sql)(
+										withTableListOnUnknownTable(
+											toMcpQueryError("run_sql")(error),
+											params.sql,
+										),
 									),
 								),
 							),

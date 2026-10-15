@@ -18,7 +18,7 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { AGENTS, agentForSession, buildSystemPrompt } from "./agents"
+import { AGENTS, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./tools"
@@ -139,14 +139,5 @@ describe("profileForTurn", () => {
 		assert.equal(profile.surface, "chat")
 		assert.property(tools, "sandbox_exec")
 		for (const name of MUTATING_TOOL_NAMES) assert.notProperty(tools, name)
-	})
-})
-
-describe("buildSystemPrompt", () => {
-	it("is the agent's own persona, with no delegation guidance", () => {
-		for (const agent of Object.values(AGENTS)) {
-			assert.equal(buildSystemPrompt(agent), agent.prompt)
-			assert.notInclude(buildSystemPrompt(agent), "## Delegating")
-		}
 	})
 })

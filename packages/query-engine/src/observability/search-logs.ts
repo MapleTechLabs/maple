@@ -15,11 +15,9 @@ export const isKeyLogAttribute = (key: string): boolean =>
 	key.startsWith("error.") ||
 	key.startsWith("exception.")
 
-const keyLogAttributes = (raw: string | undefined): Effect.Effect<Record<string, string>> =>
+const logAttributes = (raw: string | undefined): Effect.Effect<Record<string, string>> =>
 	Schema.decodeUnknownEffect(StringRecordFromJson)(raw ?? "{}").pipe(
-		Effect.map((parsed) =>
-			Object.fromEntries(Object.entries(parsed).filter(([k, v]) => v !== "" && isKeyLogAttribute(k))),
-		),
+		Effect.map((parsed) => Object.fromEntries(Object.entries(parsed).filter(([, v]) => v !== ""))),
 		Effect.orElseSucceed(() => ({})),
 	)
 
@@ -69,9 +67,12 @@ export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input
 	)
 
 	const logs = yield* Effect.forEach(logsResult.data, (row) =>
-		Effect.map(keyLogAttributes(row.logAttributes), (keyAttributes) => ({
+		Effect.map(logAttributes(row.logAttributes), (attributes) => ({
 			...toLogEntry(row),
-			keyAttributes,
+			keyAttributes: Object.fromEntries(
+				Object.entries(attributes).filter(([k]) => isKeyLogAttribute(k)),
+			),
+			...(input.includeAttributes === true && { attributes }),
 		})),
 	)
 	const total = Number(countResult.data[0]?.total ?? 0)

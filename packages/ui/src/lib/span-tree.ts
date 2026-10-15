@@ -45,7 +45,7 @@ export function transformSpan(raw: SpanHierarchyRow): Span {
 		serviceName: raw.serviceName,
 		spanKind: raw.spanKind,
 		durationMs: Number(raw.durationMs),
-		startTime: String(raw.startTime),
+		startTime: raw.startTime,
 		statusCode: raw.statusCode,
 		statusMessage: raw.statusMessage,
 		spanAttributes: parseAttributes(raw.spanAttributes),
@@ -267,6 +267,23 @@ export interface TraceDetail {
 }
 
 /**
+ * The trace's wall-clock length: earliest start to latest end. Not the longest span,
+ * which understates any trace whose async or orphaned spans run past the root.
+ */
+export function traceWallClockMs(spans: ReadonlyArray<Pick<Span, "startTime" | "durationMs">>): number {
+	const longest = spans.reduce((max, span) => Math.max(max, span.durationMs), 0)
+	const bounds = spans.reduce(
+		(acc, span) => {
+			const start = new Date(span.startTime).getTime()
+			if (!Number.isFinite(start)) return acc
+			return { start: Math.min(acc.start, start), end: Math.max(acc.end, start + span.durationMs) }
+		},
+		{ start: Number.POSITIVE_INFINITY, end: Number.NEGATIVE_INFINITY },
+	)
+	return Number.isFinite(bounds.start) ? Math.max(longest, bounds.end - bounds.start) : longest
+}
+
+/**
  * Convenience: turn raw span-hierarchy rows into everything `TraceViewTabs`
  * needs — the flat span list, the root tree, total duration, the unique
  * service list, and the earliest start time.
@@ -274,7 +291,7 @@ export interface TraceDetail {
 export function buildTraceDetail(rows: ReadonlyArray<SpanHierarchyRow>): TraceDetail {
 	const spans = dedupeBySpanId(rows.map(transformSpan))
 	const rootSpans = buildSpanTree(spans)
-	const totalDurationMs = spans.length > 0 ? Math.max(...spans.map((span) => span.durationMs)) : 0
+	const totalDurationMs = traceWallClockMs(spans)
 	const services = Array.from(new Set(spans.map((span) => span.serviceName).filter(Boolean)))
 	let traceStartTime = spans.length > 0 ? spans[0].startTime : new Date().toISOString()
 	let earliestEpoch = new Date(traceStartTime).getTime()

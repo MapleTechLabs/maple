@@ -94,8 +94,8 @@ export function ServiceDependenciesTab({
 			// Server-side filter on `SourceService = ?` already scopes the result;
 			// only need to guard against rows missing a target name.
 			if (!edge.targetService) continue
-			const callCount = Number(edge.callCount ?? 0)
-			const estimated = Number(edge.estimatedCallCount ?? callCount)
+			const callCount = edge.callCount ?? 0
+			const estimated = edge.estimatedCallCount ?? callCount
 			const target = edge.targetService
 			out.push({
 				id: `service:${target}`,
@@ -105,11 +105,11 @@ export function ServiceDependenciesTab({
 				tracedCallsPerSec: callCount / durationSeconds,
 				totalCalls: callCount,
 				estimatedCalls: estimated,
-				errorRate: Number(edge.errorRate ?? 0),
-				avgDurationMs: Number(edge.avgDurationMs ?? 0),
-				p95DurationMs: Number(edge.p95DurationMs ?? 0),
+				errorRate: edge.errorRate ?? 0,
+				avgDurationMs: edge.avgDurationMs ?? 0,
+				p95DurationMs: edge.p95DurationMs ?? 0,
 				hasSampling: Boolean(edge.hasSampling),
-				samplingWeight: Number(edge.samplingWeight ?? 1),
+				samplingWeight: edge.samplingWeight ?? 1,
 				whereClause: dependencyDrillWhereClause("service", target, ""),
 			})
 		}
@@ -118,15 +118,15 @@ export function ServiceDependenciesTab({
 			// Server-side filter on `ServiceName = ?` already scopes the result;
 			// only need to guard against rows with no db system identified.
 			if (!edge.dbSystem) continue
-			const callCount = Number(edge.callCount ?? 0)
-			const estimated = Number(edge.estimatedCallCount ?? callCount)
+			const callCount = edge.callCount ?? 0
+			const estimated = edge.estimatedCallCount ?? callCount
 			const target = edge.dbSystem
 			// Edges are per database identity (db.namespace et al.) — surface it as
 			// the row name so two databases of the same system stay distinguishable.
 			// The drill-down stays scoped by system only: the identity can originate
 			// from any of four span attributes, so an exact-attribute predicate here
 			// could silently match nothing.
-			const namespace = String(edge.dbNamespace ?? "")
+			const namespace = edge.dbNamespace ?? ""
 			out.push({
 				id: `database:${target}:${namespace}`,
 				kind: "database",
@@ -135,22 +135,22 @@ export function ServiceDependenciesTab({
 				tracedCallsPerSec: callCount / durationSeconds,
 				totalCalls: callCount,
 				estimatedCalls: estimated,
-				errorRate: Number(edge.errorRate ?? 0),
-				avgDurationMs: Number(edge.avgDurationMs ?? 0),
-				p95DurationMs: Number(edge.p95DurationMs ?? 0),
+				errorRate: edge.errorRate ?? 0,
+				avgDurationMs: edge.avgDurationMs ?? 0,
+				p95DurationMs: edge.p95DurationMs ?? 0,
 				hasSampling: Boolean(edge.hasSampling),
-				samplingWeight: Number(edge.samplingWeight ?? 1),
+				samplingWeight: edge.samplingWeight ?? 1,
 				whereClause: dependencyDrillWhereClause("database", target, ""),
 			})
 		}
 
 		for (const edge of externalEdges) {
-			const target = String(edge.targetName ?? "")
+			const target = edge.targetName ?? ""
 			if (!target) continue
 			const kind: DependencyKind =
 				edge.targetType === "messaging" ? "messaging" : edge.targetType === "rpc" ? "rpc" : "http"
-			const callCount = Number(edge.callCount ?? 0)
-			const estimated = Number(edge.estimatedCallCount ?? callCount)
+			const callCount = edge.callCount ?? 0
+			const estimated = edge.estimatedCallCount ?? callCount
 			const system = edge.targetSystem ? edge.targetSystem : ""
 			const whereClause = dependencyDrillWhereClause(kind, target, system)
 
@@ -163,11 +163,11 @@ export function ServiceDependenciesTab({
 				tracedCallsPerSec: callCount / durationSeconds,
 				totalCalls: callCount,
 				estimatedCalls: estimated,
-				errorRate: Number(edge.errorRate ?? 0),
-				avgDurationMs: Number(edge.avgDurationMs ?? 0),
-				p95DurationMs: Number(edge.p95DurationMs ?? 0),
+				errorRate: edge.errorRate ?? 0,
+				avgDurationMs: edge.avgDurationMs ?? 0,
+				p95DurationMs: edge.p95DurationMs ?? 0,
 				hasSampling: Boolean(edge.hasSampling),
-				samplingWeight: Number(edge.samplingWeight ?? 1),
+				samplingWeight: edge.samplingWeight ?? 1,
 				whereClause,
 			})
 		}
@@ -186,7 +186,8 @@ export function ServiceDependenciesTab({
 	// Heuristic: an HTTP target whose hostname *contains* a known internal
 	// service name (>=5 chars, so generic names like `api` don't false-match)
 	// is treated as a hostname-variant of that service. The HTTP row drops out
-	// of the visible list; the SERVICE row gains a `via host1, host2` subtitle.
+	// of the visible list and its traffic folds into the SERVICE row, which
+	// gains a `via host1, host2` subtitle.
 	const dedupedRows = useMemo<DependencyRow[]>(() => {
 		const serviceNames = rows
 			.filter((r) => r.kind === "service" && r.name.length >= 5)
@@ -194,8 +195,8 @@ export function ServiceDependenciesTab({
 
 		if (serviceNames.length === 0) return rows
 
-		// Map from canonical service name → list of HTTP hostnames that resolve here.
-		const matchedHosts = new Map<string, string[]>()
+		// Map from canonical service name → HTTP rows that resolve here.
+		const matchedHosts = new Map<string, DependencyRow[]>()
 		// IDs of HTTP rows to hide (those that matched at least one service).
 		const hiddenIds = new Set<string>()
 
@@ -205,7 +206,7 @@ export function ServiceDependenciesTab({
 			for (const svc of serviceNames) {
 				if (hostLower.includes(svc.lower)) {
 					const list = matchedHosts.get(svc.canonical) ?? []
-					list.push(row.name)
+					list.push(row)
 					matchedHosts.set(svc.canonical, list)
 					hiddenIds.add(row.id)
 					break
@@ -221,8 +222,8 @@ export function ServiceDependenciesTab({
 			const hosts = matchedHosts.get(row.name)
 			if (!hosts?.length) return [row]
 			const subtitle =
-				hosts.length === 1 ? `via ${hosts[0]}` : `via ${hosts[0]} +${hosts.length - 1} more`
-			return [{ ...row, subtitle }]
+				hosts.length === 1 ? `via ${hosts[0].name}` : `via ${hosts[0].name} +${hosts.length - 1} more`
+			return [{ ...mergeDependencyRows([row, ...hosts]), subtitle }]
 		})
 	}, [rows])
 
@@ -358,4 +359,29 @@ function labelFor(kind: DependencyKind, count: number): string {
 		rpc: ["RPC target", "RPC targets"],
 	} satisfies Record<DependencyKind, [singular: string, plural: string]>
 	return count === 1 ? map[kind][0] : map[kind][1]
+}
+
+// Sums traffic; error rate is weighted by estimated calls, avg latency by stored
+// calls, and p95 takes the worst part (percentiles can't be merged exactly).
+function mergeDependencyRows([first, ...rest]: [DependencyRow, ...DependencyRow[]]): DependencyRow {
+	const all = [first, ...rest]
+	const sum = (pick: (r: DependencyRow) => number) => all.reduce((acc, r) => acc + pick(r), 0)
+	const estimatedCalls = sum((r) => r.estimatedCalls)
+	const totalCalls = sum((r) => r.totalCalls)
+	return {
+		...first,
+		callsPerSec: sum((r) => r.callsPerSec),
+		tracedCallsPerSec: sum((r) => r.tracedCallsPerSec),
+		totalCalls,
+		estimatedCalls,
+		errorRate:
+			estimatedCalls > 0
+				? sum((r) => r.errorRate * r.estimatedCalls) / estimatedCalls
+				: first.errorRate,
+		avgDurationMs:
+			totalCalls > 0 ? sum((r) => r.avgDurationMs * r.totalCalls) / totalCalls : first.avgDurationMs,
+		p95DurationMs: Math.max(...all.map((r) => r.p95DurationMs)),
+		hasSampling: all.some((r) => r.hasSampling),
+		samplingWeight: Math.max(...all.map((r) => r.samplingWeight)),
+	}
 }

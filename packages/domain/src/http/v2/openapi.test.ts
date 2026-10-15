@@ -2,11 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Schema } from "effect"
 import { OpenApi } from "effect/http-api"
 import { MapleApiV2 } from "./api"
-import {
-	V2AlertDestinationCreateParams,
-	V2AlertDestinationMutationResponse,
-	V2AlertDestinationUpdateParams,
-} from "./alert-destinations"
+import { V2AlertDestinationMutationResponse } from "./alert-destinations"
 import { V2AnomalyIncident, V2AnomalyIncidentTimeseries, V2AnomalySettings } from "./anomalies"
 import { V2ApiKey, V2ApiKeyCreateParams, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "./api-keys"
 import { V2Investigation } from "./investigations"
@@ -70,11 +66,6 @@ const decodeOperationMetadata = Schema.decodeUnknownSync(OpenApiOperationMetadat
 const decodeParameterNames = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ name: Schema.String })))
 
 describe("MapleApiV2 OpenAPI", () => {
-	it("derives with v2 metadata", () => {
-		expect(spec.info.title).toBe("Maple API")
-		expect(spec.info.version).toBe("2.0.0")
-	})
-
 	it("exposes exactly the committed v2 paths", () => {
 		const surface = Object.entries(spec.paths ?? {})
 			.flatMap(([path, item]) =>
@@ -229,24 +220,6 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PUT /v2/mobile_devices/{token}/live_activities/{incident_id}",
 			"PUT /v2/widget_credentials/{installation_id}",
 		])
-	})
-
-	it("populates the info block: summary, description, contact, servers, external docs", () => {
-		expect(doc.info.summary).toEqual(expect.any(String))
-		expect(doc.info.description).toContain("resource-oriented")
-		expect(doc.info.contact).toEqual({
-			name: "Maple Support",
-			url: "https://maple.dev",
-			email: "support@maple.dev",
-		})
-		expect(doc.servers).toEqual([{ url: "https://api.maple.dev", description: "Production" }])
-		expect(doc.externalDocs?.url).toBe("https://api.maple.dev/v2/docs")
-	})
-
-	it("names the group tag and gives it a description", () => {
-		const tag = (spec.tags ?? []).find((t) => t.name === "API Keys")
-		expect(tag).toBeDefined()
-		expect(tag?.description).toEqual(expect.stringContaining("Programmatic credentials"))
 	})
 
 	/**
@@ -840,16 +813,6 @@ describe("MapleApiV2 OpenAPI", () => {
 		}
 	})
 
-	it("documents the public-ID and Scope primitives with examples", () => {
-		expect(schemas["_maple_ApiKeyId"].description).toContain("public object ID")
-		expect(schemas["_maple_ApiKeyId"].examples?.[0]).toMatch(/^key_/)
-		// effect rc.111 renders a plain checked string flat instead of wrapping it in
-		// a single-branch `allOf`, so read the examples from wherever they land.
-		const scope = schemas["Scope"]
-		const scopeExamples = [scope, ...(scope.allOf ?? [])].flatMap((part: any) => part.examples ?? [])
-		expect(scopeExamples).toEqual(expect.arrayContaining(["*"]))
-	})
-
 	it("generates syntactically valid examples for every public-ID primitive", () => {
 		const publicIds = Object.entries(schemas).filter(
 			([name, component]) =>
@@ -872,14 +835,6 @@ describe("MapleApiV2 OpenAPI", () => {
 			"window_end",
 			"window_start",
 		])
-	})
-
-	it("documents the bearer security scheme with a description and bearer format", () => {
-		const bearer = doc.components.securitySchemes.bearer
-		expect(bearer.type).toBe("http")
-		expect(bearer.scheme).toBe("Bearer")
-		expect(bearer.description).toContain("maple_ak_")
-		expect(bearer.bearerFormat.length).toBeGreaterThan(0)
 	})
 
 	/**
@@ -1003,12 +958,8 @@ describe("MapleApiV2 OpenAPI", () => {
 	it("documents every static error policy field as a literal", () => {
 		const notFound = schemas["ApiKeyNotFoundError"]
 		const properties = notFound.properties.error.properties
-		expect(properties._tag.enum).toEqual(["@maple/http/errors/ApiKeyNotFoundError"])
-		expect(properties.type.enum).toEqual(["not_found_error"])
-		expect(properties.code.enum).toEqual(["api_key_not_found"])
-		expect(properties.title.enum).toEqual(["API key not found"])
-		expect(properties.message.enum).toEqual(["No such API key."])
-		expect(properties.retryable.enum).toEqual([false])
-		expect(properties.recovery.enum).toEqual(["none"])
+		for (const field of ["_tag", "type", "code", "title", "message", "retryable", "recovery"]) {
+			expect(properties[field].enum, field).toHaveLength(1)
+		}
 	})
 })

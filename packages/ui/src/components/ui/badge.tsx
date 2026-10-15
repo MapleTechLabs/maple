@@ -8,7 +8,7 @@ import { TONE_SOFT } from "../../lib/tone"
 import { cn } from "../../lib/utils"
 
 export const badgeVariants = cva(
-	"relative inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [button&,a&]:cursor-pointer [button&,a&]:pointer-coarse:after:absolute [button&,a&]:pointer-coarse:after:size-full [button&,a&]:pointer-coarse:after:min-h-11 [button&,a&]:pointer-coarse:after:min-w-11",
+	"relative inline-flex max-w-full shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [button&,a&]:cursor-pointer [button&,a&]:pointer-coarse:after:absolute [button&,a&]:pointer-coarse:after:size-full [button&,a&]:pointer-coarse:after:min-h-11 [button&,a&]:pointer-coarse:after:min-w-11",
 	{
 		compoundVariants: [
 			{ class: "px-1.5", pill: true, size: "xs" },
@@ -25,9 +25,9 @@ export const badgeVariants = cva(
 				default:
 					"h-5.5 min-w-5.5 px-[calc(--spacing(1)-1px)] text-sm sm:h-4.5 sm:min-w-4.5 sm:text-xs",
 				lg: "h-6.5 min-w-6.5 px-[calc(--spacing(1.5)-1px)] text-base sm:h-5.5 sm:min-w-5.5 sm:text-sm",
-				sm: "h-5 min-w-5 rounded-[.25rem] px-[calc(--spacing(1)-1px)] text-xs sm:h-4 sm:min-w-4 sm:text-[.625rem]",
+				sm: "h-5 min-w-5 rounded-sm px-[calc(--spacing(1)-1px)] text-xs sm:h-4 sm:min-w-4 sm:text-3xs",
 				// Dense tables and meta rows: fixed 10px on every breakpoint.
-				xs: "h-4 min-w-4 rounded-[.25rem] px-1 text-3xs sm:h-4 sm:min-w-4 sm:text-3xs [&_svg:not([class*='size-'])]:size-2.5 sm:[&_svg:not([class*='size-'])]:size-2.5",
+				xs: "h-4 min-w-4 rounded-sm px-1 text-3xs sm:h-4 sm:min-w-4 sm:text-3xs [&_svg:not([class*='size-'])]:size-2.5 sm:[&_svg:not([class*='size-'])]:size-2.5",
 			},
 			pill: {
 				false: "",
@@ -42,6 +42,7 @@ export const badgeVariants = cva(
 				destructive: "bg-destructive text-white [button&,a&]:hover:bg-destructive/90",
 				crit: TONE_SOFT.crit,
 				info: TONE_SOFT.info,
+				done: TONE_SOFT.done,
 				// Neutral tinted chip: counts, kinds, quiet metadata.
 				muted: "bg-muted text-muted-foreground [button&,a&]:hover:bg-muted/80",
 				// Bordered meta chip on the page surface: services, environments, reopen markers.

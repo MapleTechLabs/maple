@@ -23,7 +23,11 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 		phrases: ["Loading session traces"],
 		handler: Effect.fn("McpTool.getSessionTraces")(function* ({ session_id, limit }) {
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, sessionId: session_id, limit })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.session.id": session_id,
+				"maple.ai.limit": limit,
+			})
 
 			const { session, traces, totalTraceCount } = yield* withTenantExecutor(
 				getSessionTraces({ sessionId: session_id, limit }),
@@ -35,7 +39,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					parameter: "session_id",
 				})
 			}
-			yield* Effect.annotateCurrentSpan("traceCount", traces.length)
+			yield* Effect.annotateCurrentSpan("result.traceCount", traces.length)
 
 			// ClickHouse serializes integer aggregates as JSON strings while Tinybird returns numbers
 			// (see the facets handler in session-replay.http.ts); coerce every numeric at the edge.
@@ -44,7 +48,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					sessionId: session.sessionId,
 					startTime: DateTime.formatIso(session.startTime),
 					endTime: session.endTime === null ? null : DateTime.formatIso(session.endTime),
-					durationMs: session.durationMs != null ? Number(session.durationMs) : null,
+					durationMs: session.durationMs != null ? session.durationMs : null,
 					status: session.status,
 					userId: session.userId,
 					urlInitial: truncate(session.urlInitial, 256),
@@ -53,21 +57,21 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					deviceType: session.deviceType,
 					country: session.country,
 					serviceName: session.serviceName,
-					pageViews: Number(session.pageViews),
-					clickCount: Number(session.clickCount),
-					errorCount: Number(session.errorCount),
-					activeTimeMs: session.activeTimeMs != null ? Number(session.activeTimeMs) : null,
-					idleTimeMs: session.idleTimeMs != null ? Number(session.idleTimeMs) : null,
+					pageViews: session.pageViews,
+					clickCount: session.clickCount,
+					errorCount: session.errorCount,
+					activeTimeMs: session.activeTimeMs != null ? session.activeTimeMs : null,
+					idleTimeMs: session.idleTimeMs != null ? session.idleTimeMs : null,
 				},
-				totalTraceCount: Number(totalTraceCount),
+				totalTraceCount: totalTraceCount,
 				traces: traces.map((t) => ({
 					traceId: t.traceId,
 					startTime: DateTime.formatIso(t.startTime),
-					durationMs: Number(t.durationMs),
+					durationMs: t.durationMs,
 					rootSpanName: t.rootSpanName,
 					rootServiceName: t.rootServiceName,
-					spanCount: Number(t.spanCount),
-					hasError: Number(t.hasError) === 1,
+					spanCount: t.spanCount,
+					hasError: t.hasError === 1,
 				})),
 			}
 		}),

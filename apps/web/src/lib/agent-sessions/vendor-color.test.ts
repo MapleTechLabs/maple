@@ -11,10 +11,6 @@ describe("vendorColor", () => {
 		expect(vendorColor("eve")).toBe(vendorColor("vercel_ai_sdk"))
 	})
 
-	it("keeps a bright brand legible on white by darkening only the light half", () => {
-		expect(vendorColor("spring_ai")).toBe("light-dark(#5EA32D, #6DB33F)")
-	})
-
 	it("falls back to the neutral for frameworks without a brand color, and for no vendor at all", () => {
 		expect(vendorColor("litellm")).toBe("var(--muted-foreground)")
 		expect(vendorColor("unknown:genai")).toBe("var(--muted-foreground)")

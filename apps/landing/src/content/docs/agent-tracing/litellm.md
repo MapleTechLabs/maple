@@ -1,8 +1,8 @@
 ---
 title: "Trace LiteLLM agents and the LiteLLM Proxy with OpenTelemetry"
 description: "Send LiteLLM's model-call spans to Maple from the Python SDK or the LiteLLM Proxy, and add the agent and tool spans that group each conversation into one Agent Session."
-group: "AI Agents"
-order: 40
+group: "AI Gateways"
+order: 3
 navLabel: "LiteLLM"
 icon: "litellm"
 ---

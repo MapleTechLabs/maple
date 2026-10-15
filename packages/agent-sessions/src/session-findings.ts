@@ -21,6 +21,7 @@ import {
 	type SessionSummary,
 } from "./session-summary"
 import {
+	finalTurnIndex,
 	isLlmCall,
 	spanEndMs,
 	spanFailed,
@@ -52,6 +53,7 @@ const FAILURE_KINDS: ReadonlySet<SessionFailureKind> = new Set([
 	"invalidOutput",
 	"toolUnavailable",
 	"incomplete",
+	"agentLimit",
 ])
 
 /** Red or amber: whether the thing found ended the run or names a class that
@@ -115,7 +117,7 @@ export function buildSessionFindings(
 	turns.forEach((turn, index) => {
 		for (const span of turn.spans) turnIndexBySpan.set(span.spanId, index)
 	})
-	const lastTurnIndex = turns.length - 1
+	const lastTurnIndex = finalTurnIndex(turns)
 	const events = failureEvents(spans)
 
 	// The LAST failure event in the final turn is the one the turn died on — an

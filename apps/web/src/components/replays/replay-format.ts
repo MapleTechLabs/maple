@@ -17,10 +17,10 @@ export { gradientFor, hostFromUrl } from "@maple/ui/lib/replay"
 
 /** Marker dot colour by action kind, shared by the player and timeline tracks. */
 export const MARKER_STYLES: Record<ActionKind, string> = {
-	click: "bg-amber-400",
-	input: "bg-sky-400",
-	scroll: "bg-violet-400",
-	nav: "bg-emerald-400",
+	click: "bg-chart-3",
+	input: "bg-chart-2",
+	scroll: "bg-chart-4",
+	nav: "bg-chart-1",
 } satisfies Record<ActionKind, string>
 
 /** Human label per action kind, paired with `MARKER_STYLES` for the shared legend. */

@@ -114,7 +114,7 @@ export function IssuesBulkBar({
 				)}
 			</BulkMenu>
 			<IconButton onClick={onClear} label="Clear selection">
-				<XmarkIcon size={14} />
+				<XmarkIcon />
 			</IconButton>
 		</div>
 	)

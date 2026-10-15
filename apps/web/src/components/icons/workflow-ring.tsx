@@ -1,5 +1,6 @@
 import type { IconProps } from "./icon"
 import type { WorkflowState } from "@maple/domain/http"
+import { TONE_COLOR } from "@maple/ui/lib/tone"
 
 export const WORKFLOW_LABEL: Record<WorkflowState, string> = {
 	triage: "Triage",
@@ -15,12 +16,12 @@ export const WORKFLOW_LABEL: Record<WorkflowState, string> = {
 
 const WORKFLOW_COLOR: Record<WorkflowState, string> = {
 	triage: "oklch(0.72 0.17 55)",
-	regressed: "oklch(0.58 0.20 25)",
+	regressed: TONE_COLOR.crit,
 	todo: "oklch(0.60 0.02 286)",
 	in_progress: "oklch(0.75 0.15 85)",
 	in_review: "oklch(0.65 0.16 290)",
 	verifying: "oklch(0.68 0.13 190)",
-	done: "oklch(0.60 0.14 250)",
+	done: TONE_COLOR.done,
 	cancelled: "oklch(0.55 0.01 286)",
 	wontfix: "oklch(0.55 0.01 286)",
 } satisfies Record<WorkflowState, string>

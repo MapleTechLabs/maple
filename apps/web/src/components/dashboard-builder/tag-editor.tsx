@@ -129,7 +129,7 @@ export function TagEditorDialog({
 						disabled={normalizeTags(splitInput(pending)).length === 0}
 						onClick={() => commit(pending)}
 					>
-						<PlusIcon size={14} />
+						<PlusIcon />
 					</IconButton>
 				</div>
 			</Field>
@@ -152,7 +152,7 @@ export function TagEditorDialog({
 									className="size-4 text-muted-foreground hover:text-foreground"
 									onClick={() => remove(tag)}
 								>
-									<XmarkIcon size={11} />
+									<XmarkIcon />
 								</IconButton>
 							</Badge>
 						))}
@@ -172,7 +172,7 @@ export function TagEditorDialog({
 								className="font-mono text-2xs"
 								onClick={() => commit(tag)}
 							>
-								<PlusIcon size={10} data-icon="inline-start" />
+								<PlusIcon data-icon="inline-start" />
 								{tag}
 							</Button>
 						))}

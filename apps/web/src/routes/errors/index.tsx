@@ -14,9 +14,10 @@ import {
 	ERRORS_WINDOW,
 	HUB_SORTS,
 	HUB_VIEWS,
+	LEGACY_HUB_VIEWS,
 	SEVERITY_FILTERS,
+	hubViewOf,
 	type HubSort,
-	type HubView,
 	type SeverityFilter,
 } from "@/lib/errors/hub-params"
 import { CLEARED_ERROR_FILTERS, errorFilterChips, hasErrorFilters } from "@/lib/errors/error-filter-chips"
@@ -34,7 +35,9 @@ const errorsSearchSchema = Schema.Struct({
 	env: Schema.optional(Schema.String),
 	kind: Schema.optional(IssueKind),
 	regressed: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
-	view: Schema.optional(Schema.Literals(HUB_VIEWS)),
+	view: Schema.optional(Schema.Literals([...HUB_VIEWS, ...LEGACY_HUB_VIEWS])),
+	// Free-text search over type, message, label and service, applied server-side.
+	q: Schema.optional(Schema.String),
 	sort: Schema.optional(Schema.Literals(HUB_SORTS)),
 	severity: Schema.optional(Schema.Literals(SEVERITY_FILTERS)),
 })
@@ -73,7 +76,7 @@ function ErrorsContent() {
 		navigate({ search: (prev) => ({ ...prev, ...CLEARED_ERROR_FILTERS }) })
 	}
 
-	const view: HubView = search.view ?? "open"
+	const view = hubViewOf(search.view)
 	const sort: HubSort = search.sort ?? "last_seen"
 	const severity: SeverityFilter = search.severity ?? "all"
 
@@ -93,6 +96,7 @@ function ErrorsContent() {
 				env={search.env}
 				kind={search.kind}
 				regressed={search.regressed}
+				search={search.q}
 				onClearFilters={hasErrorFilters(search) ? clearFilters : undefined}
 			/>
 		</DashboardPage>

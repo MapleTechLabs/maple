@@ -8,7 +8,7 @@
  * stage. It is moved here unchanged so that stage is a rename, not a move.
  */
 import type { AlertComparator, AlertEventType, AlertSeverity, AlertSignalType } from "@maple/domain/http"
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
 import type { EnrichedDestinationSecretConfig } from "../AlertDestinationHydration"
 import type { SignalDisplay } from "../alert-signal-display"
 import type { NotificationTemplateConfig } from "../alert-templating/renderer"
@@ -18,9 +18,12 @@ interface DestinationPublicConfig {
 	readonly channelLabel: string | null
 }
 
+/** The destination columns transports read. */
+export type DispatchDestination = Pick<AlertDestinationRow, "id" | "orgId" | "name" | "type">
+
 export interface DispatchContext {
 	readonly deliveryKey: string
-	readonly destination: AlertDestinationRow
+	readonly destination: DispatchDestination
 	readonly publicConfig: DestinationPublicConfig
 	readonly secretConfig: EnrichedDestinationSecretConfig
 	readonly ruleId: string

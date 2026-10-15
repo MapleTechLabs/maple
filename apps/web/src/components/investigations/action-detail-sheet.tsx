@@ -134,7 +134,7 @@ export function ActionDetailSheet({
 										className="gap-1.5"
 									>
 										{action.target.label}
-										<ArrowRightIcon size={13} />
+										<ArrowRightIcon />
 									</Button>
 								) : null}
 								{/*

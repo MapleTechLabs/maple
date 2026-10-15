@@ -151,8 +151,11 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 	if (value == null || Number.isNaN(value)) return "n/a"
 
 	switch (signalType) {
-		case "error_rate":
-			return formatErrorRate(value)
+		case "error_rate": {
+			// formatErrorRate floors to "<0.01%", which makes a tiny value and its tiny threshold read the same.
+			const pct = value * 100
+			return pct > 0 && pct < 0.01 ? `${pct.toPrecision(2)}%` : formatErrorRate(value)
+		}
 		case "p95_latency":
 		case "p99_latency":
 			return formatLatency(value)
@@ -179,7 +182,8 @@ export function formThresholdToDomain(signalType: AlertSignalType, value: string
 }
 
 export function domainThresholdToForm(signalType: AlertSignalType, value: number): string {
-	return signalType === "error_rate" ? String(value * 100) : String(value)
+	// toPrecision(12) drops float noise: 0.07 * 100 is 7.000000000000001.
+	return signalType === "error_rate" ? String(Number((value * 100).toPrecision(12))) : String(value)
 }
 
 function parsePositiveNumber(value: string, fallback: number): number {
@@ -823,14 +827,7 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 				}, 0) / resolvedIncidents.length
 			: 0
 
-	const avgResolution =
-		avgResolutionMs > 0
-			? avgResolutionMs < 60_000
-				? `${Math.round(avgResolutionMs / 1000)}s`
-				: avgResolutionMs < 3_600_000
-					? `${(avgResolutionMs / 60_000).toFixed(1)}m`
-					: `${(avgResolutionMs / 3_600_000).toFixed(1)}h`
-			: EMPTY_VALUE
+	const avgResolution = avgResolutionMs > 0 ? formatResolutionDuration(avgResolutionMs) : EMPTY_VALUE
 
 	const groupCounts: Record<string, number> = {}
 	for (const i of incidents) {
@@ -951,4 +948,11 @@ export function formatAlertDuration(startStr: string | null, endStr: string | nu
 	if (hours < 24) return remainMins > 0 ? `${hours}h ${remainMins}m` : `${hours}h`
 	const days = Math.floor(hours / 24)
 	return `${days}d ${hours % 24}h`
+}
+
+/** Mean time to resolve: whole seconds under a minute, one decimal of minutes or hours above. */
+export function formatResolutionDuration(ms: number): string {
+	if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+	if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)}m`
+	return `${(ms / 3_600_000).toFixed(1)}h`
 }

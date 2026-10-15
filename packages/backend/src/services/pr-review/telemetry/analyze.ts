@@ -134,6 +134,13 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		return undefined
 	}
 
+	const countAs = (kind: PrReviewTelemetryKind, value: string): number | undefined =>
+		kind === "span"
+			? spanCounts.get(value)
+			: kind === "attribute"
+				? catalog.attributeKeys.get(value)
+				: catalog.metricNames.get(value)
+
 	const files = input.files
 		.filter((file) => isRuntimeSource(file.path) && file.patch !== null)
 		.map((file) => ({ path: file.path, lines: parsePatch(file.patch) }))
@@ -158,31 +165,33 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 	const removed: Array<PrReviewTelemetryChange> = []
 	const breaks: Array<PrReviewContractBreak> = []
 	const seenRemoved = new Set<string>()
+	// Only a name the removed line handed to the telemetry API, as the kind production knows it by:
+	// `method: "POST"` matches the span name `POST` but emits nothing.
 	for (const file of files) {
-		for (const line of file.lines) {
-			if (line.kind !== "del") continue
-			for (const literal of literalsOf(line.text)) {
-				if (literal.templated || addedValues.has(literal.value) || seenRemoved.has(literal.value))
-					continue
-				const known = kindOf(literal.value)
-				if (known === undefined) continue
-				seenRemoved.add(literal.value)
-				const daily = perDay(known.count, catalog.windowDays)
+		file.lines.forEach((line, index) => {
+			if (line.kind !== "del" || isCommentLine(line.text)) return
+			for (const emitted of emittedNames(line.text, oldNearbyText(file.lines, index))) {
+				const name = emitted.value
+				if (emitted.templated || addedValues.has(name) || seenRemoved.has(name)) continue
+				const count = countAs(emitted.kind, name)
+				if (count === undefined) continue
+				seenRemoved.add(name)
+				const daily = perDay(count, catalog.windowDays)
 				removed.push(
 					new PrReviewTelemetryChange({
-						kind: known.kind,
-						name: literal.value,
+						kind: emitted.kind,
+						name,
 						path: file.path,
 						line: line.newLine,
 						perDay: daily,
 					}),
 				)
-				const references = referencesFor(literal.value, input.sources)
+				const references = referencesFor(name, input.sources)
 				if (references.length > 0) {
 					breaks.push(
 						new PrReviewContractBreak({
-							kind: known.kind,
-							name: literal.value,
+							kind: emitted.kind,
+							name,
 							path: file.path,
 							line: line.newLine,
 							references,
@@ -191,7 +200,7 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 					)
 				}
 			}
-		}
+		})
 	}
 
 	const added: Array<PrReviewTelemetryChange> = []
@@ -328,6 +337,14 @@ const nearbyText = (lines: ReadonlyArray<DiffLine>, index: number) =>
 	lines
 		.slice(Math.max(0, index - 4), index)
 		.filter((line) => line.kind !== "del")
+		.map((line) => line.text)
+		.join("\n")
+
+/** The old side's lines above a removed one, so a removed attribute object is still recognized. */
+const oldNearbyText = (lines: ReadonlyArray<DiffLine>, index: number) =>
+	lines
+		.slice(Math.max(0, index - 4), index)
+		.filter((line) => line.kind !== "add")
 		.map((line) => line.text)
 		.join("\n")
 

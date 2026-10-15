@@ -86,7 +86,7 @@ function OnboardingChecklistPill() {
 								claimable && "border-primary bg-primary/20",
 							)}
 						>
-							<StarIcon size={14} className="text-primary" />
+							<StarIcon className="text-primary" />
 							{claimable || deadlineMs === null ? (
 								<span>Claim {credits} credits</span>
 							) : (
@@ -180,7 +180,7 @@ function RewardCallout({
 					</span>
 				</button>
 				<IconButton label="Got it" onClick={onClose} className="-mt-1 shrink-0 text-muted-foreground">
-					<XmarkIcon size={12} />
+					<XmarkIcon />
 				</IconButton>
 			</div>
 		</div>
@@ -292,9 +292,9 @@ export function OnboardingChecklistPanel({
 
 function OptionalTag() {
 	return (
-		<span className="shrink-0 rounded-full border px-1.5 py-px text-3xs font-medium text-muted-foreground">
+		<Badge variant="meta" size="xs" pill>
 			Optional
-		</span>
+		</Badge>
 	)
 }
 
@@ -329,7 +329,7 @@ function StepRow({
 				className="group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
 			>
 				<span
-					className="flex size-[18px] shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 font-mono text-3xs text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
+					className="flex size-4.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 font-mono text-3xs text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
 					aria-hidden
 				>
 					{index}

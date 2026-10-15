@@ -564,41 +564,6 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(OrgClickHouseSettingsService.layer, TinybirdOrgTokenService.layer)),
 	)
-
-	static readonly query = (
-		tenant: TenantContext,
-		payload: WarehouseQueryRequest,
-		options?: SqlQueryOptions,
-	) => this.use((service) => service.query(tenant, payload, options))
-
-	static readonly compiledQuery = <T>(
-		tenant: TenantContext,
-		compiled: CompiledQueryInput<T>,
-		options?: SqlQueryOptions,
-	) => this.use((service) => service.compiledQuery(tenant, compiled, options))
-
-	/**
-	 * `compiledQuery` with a hard ceiling on the response we'll materialize.
-	 * Fails with `WarehouseResponseLimitError` past it rather than buffering the
-	 * rest into the Worker heap — for queries whose result size follows user data
-	 * rather than the query shape (session-replay rrweb payloads).
-	 */
-	static readonly compiledQueryBounded = <T>(
-		tenant: TenantContext,
-		compiled: CompiledQueryInput<T>,
-		options: SqlQueryOptions & {
-			readonly responseLimits: { readonly maxRows: number; readonly maxBytes: number }
-		},
-	) => this.use((service) => service.compiledQueryBounded(tenant, compiled, options))
-
-	static readonly compiledQueryFirst = <T>(
-		tenant: TenantContext,
-		compiled: CompiledQueryInput<T>,
-		options?: SqlQueryOptions,
-	) => this.use((service) => service.compiledQueryFirst(tenant, compiled, options))
-
-	static readonly ingest = <T>(tenant: TenantContext, datasource: string, rows: ReadonlyArray<T>) =>
-		this.use((service) => service.ingest(tenant, datasource, rows))
 }
 
 /**

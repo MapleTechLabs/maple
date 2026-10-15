@@ -125,7 +125,7 @@ export function PlanetScaleMetricsTokenForm({
 								{organization !== null
 									? "Create a token in PlanetScale"
 									: "How to create a token"}
-								<ExternalLinkIcon size={14} />
+								<ExternalLinkIcon />
 							</a>
 						}
 					/>

@@ -1,3 +1,5 @@
+import type * as React from "react"
+
 import { Button } from "@maple/ui/components/ui/button"
 
 import { XmarkIcon } from "@/components/icons"
@@ -23,6 +25,8 @@ interface TimeRangeHeaderControlsProps {
 	onTimeChange: (range: TimeRange) => void
 	presets?: ReadonlyArray<TimePreset>
 	maxRangeSeconds?: number
+	/** Replaces the plain Reload button, e.g. with `RefreshControls` on a page that auto-refreshes. */
+	reloadControls?: React.ReactNode
 }
 
 /** The preset a URL window resolves to: its own, else the page default unless it pins an absolute range. */
@@ -39,6 +43,7 @@ export function TimeRangeHeaderControls({
 	onTimeChange,
 	presets,
 	maxRangeSeconds,
+	reloadControls,
 }: TimeRangeHeaderControlsProps) {
 	const startTime = search?.startTime ?? startTimeProp
 	const endTime = search?.endTime ?? endTimeProp
@@ -66,11 +71,11 @@ export function TimeRangeHeaderControls({
 						onClick={() => onTimeChange({ presetValue: defaultPreset })}
 						aria-label="Reset to default time range"
 					>
-						<XmarkIcon className="size-3" />
+						<XmarkIcon />
 					</Button>
 				)}
 			</div>
-			<ReloadControls />
+			{reloadControls ?? <ReloadControls />}
 		</div>
 	)
 }

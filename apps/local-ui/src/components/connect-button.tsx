@@ -1,4 +1,4 @@
-// Header "Connect" affordance: a popover with the local ingest endpoint and
+// Sidebar "Connect" affordance: a popover with the local ingest endpoint and
 // exporter env. No API keys: everything ingests under the synthetic `local` org.
 
 import { useState } from "react"
@@ -11,22 +11,34 @@ import {
 	PopoverTrigger,
 } from "@maple/ui/components/ui/popover"
 import { ConnectionIcon } from "@maple/ui/components/icons"
+import { useLocalServerStatus } from "../hooks/use-local-server-status"
 import { ConnectGuide } from "./connect-guide"
 
 export function ConnectButton() {
 	const [open, setOpen] = useState(false)
+	// The call to action until the first telemetry lands; a quiet outline after that.
+	// Latched: older binaries estimate last ingest from a short window, so it goes back
+	// to null when an app idles, and the button must not turn loud again then.
+	const status = useLocalServerStatus()
+	const [hasIngested, setHasIngested] = useState(false)
+	if (!hasIngested && (status.data?.lastIngestAtMs ?? null) !== null) setHasIngested(true)
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
 			<PopoverTrigger
 				render={
-					<Button variant="default" size="sm" className="gap-2" aria-label="Connect your app">
-						<ConnectionIcon size={14} />
-						<span className="hidden sm:inline">Connect</span>
+					<Button
+						variant={hasIngested ? "outline" : "default"}
+						size="sm"
+						className="flex-1 justify-start gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
+						aria-label="Connect your app"
+					>
+						<ConnectionIcon />
+						<span className="group-data-[collapsible=icon]:hidden">Connect</span>
 					</Button>
 				}
 			/>
-			<PopoverPopup align="end" className="w-[min(26rem,calc(100vw-2rem))]">
+			<PopoverPopup side="right" align="end" className="w-[min(26rem,calc(100vw-2rem))]">
 				{open && (
 					<div className="space-y-4">
 						<div className="space-y-1">

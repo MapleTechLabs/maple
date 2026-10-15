@@ -19,23 +19,23 @@ describe("nextWindow", () => {
 	})
 
 	it("continues from the watermark", () => {
-		const watermark = new Date(Date.UTC(2026, 9, 3, 12, 20, 0))
+		const watermark = Date.UTC(2026, 9, 3, 12, 20, 0)
 		assert.deepStrictEqual(nextWindow(watermark, now), {
-			startMs: watermark.getTime(),
+			startMs: watermark,
 			endMs: Date.UTC(2026, 9, 3, 12, 28, 0),
 		})
 	})
 
 	it("returns null when the environment is caught up", () => {
-		assert.strictEqual(nextWindow(new Date(Date.UTC(2026, 9, 3, 12, 28, 0)), now), null)
+		assert.strictEqual(nextWindow(Date.UTC(2026, 9, 3, 12, 28, 0), now), null)
 	})
 
 	it("catches up a long gap six hours at a time from the watermark, skipping nothing", () => {
-		const watermark = new Date(now - 48 * 60 * minute)
+		const watermark = now - 48 * 60 * minute
 		const window = nextWindow(watermark, now)
 		assert.deepStrictEqual(window, {
-			startMs: watermark.getTime(),
-			endMs: watermark.getTime() + 6 * 60 * minute,
+			startMs: watermark,
+			endMs: watermark + 6 * 60 * minute,
 		})
 	})
 })
@@ -350,6 +350,45 @@ describe("RailwayMetricsService", () => {
 			assert.strictEqual(held.skipped, "lease held")
 		})
 	})
+
+	for (const ingestStatus of [401, 403]) {
+		it.effect(`an ingest ${ingestStatus} holds the lease instead of re-posting every tick`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const calls: StubCalls = { railway: [], ingest: [] }
+			return Effect.gen(function* () {
+				const okStub = stubFetch(calls)
+				yield* run(
+					testDb,
+					okStub,
+					RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123")),
+				)
+				yield* resetWatermarks(testDb)
+				const refusedStub = stubFetch(calls, { ingestStatus })
+				const summary = yield* run(
+					testDb,
+					refusedStub,
+					RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+				)
+				assert.strictEqual(summary.failures, 1)
+				assert.strictEqual(calls.ingest.length, 2)
+				const connection = yield* Effect.promise(() =>
+					queryFirstRow<{ lease_until: Date | null }>(
+						testDb,
+						"SELECT lease_until FROM railway_connections WHERE org_id = $1",
+						[orgId],
+					),
+				)
+				assert.isAbove(new Date(connection!.lease_until!).getTime(), now + 30 * minute)
+				const held = yield* run(
+					testDb,
+					refusedStub,
+					RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+				)
+				assert.strictEqual(held.skipped, "lease held")
+				assert.strictEqual(calls.ingest.length, 2)
+			})
+		})
+	}
 
 	it.effect("a token rejected while polling pauses the connection", () => {
 		const testDb = createTestDb(trackedDbs)

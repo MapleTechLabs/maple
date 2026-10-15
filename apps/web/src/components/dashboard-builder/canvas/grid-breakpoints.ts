@@ -1,4 +1,4 @@
-import type { Layout, LayoutItem } from "react-grid-layout"
+import type { GridItem, Layout } from "@maple/grid-engine"
 import type { WidgetLayoutSchema } from "@maple/widgets/dashboard"
 
 /**
@@ -78,8 +78,9 @@ function clamp(value: number, min: number, max: number): number {
 /**
  * Project the authored 12-column layout onto a narrower tier.
  *
- * Deliberately not react-grid-layout's own `findOrGenerateResponsiveLayout`:
- * that clamps each `w` to the column count and re-runs vertical compaction,
+ * Deliberately not a clamp-and-recompact (what react-grid-layout's
+ * `findOrGenerateResponsiveLayout` did): that clamps each `w` to the column
+ * count and re-runs vertical compaction,
  * which leaves a `w:4` chart at 4 of 6 columns while a `w:2` stat squeezes into
  * the 2-column remainder, and then floats short tiles up into whatever holes
  * the clamping opened. The result reads as scattered rather than as a grid.
@@ -87,7 +88,7 @@ function clamp(value: number, min: number, max: number): number {
  * Instead: scale every width proportionally (with `minSpan` as a floor), pack
  * widgets into rows in reading order, and justify each row so it fills the
  * width exactly. Rows stay rows, order is preserved, and nothing overlaps —
- * which is why the canvas pairs this with `noCompactor` on derived tiers.
+ * which is why the canvas draws derived tiers without compaction.
  */
 export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTier): Layout {
 	const base = widgets.map((w) => ({
@@ -107,7 +108,7 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 	// Reading order: left-to-right within a row, then down.
 	const ordered = base.toSorted((a, b) => a.y - b.y || a.x - b.x)
 
-	const projected: LayoutItem[] = []
+	const projected: GridItem[] = []
 	let row: Array<{ i: string; w: number; h: number }> = []
 	let rowY = 0
 

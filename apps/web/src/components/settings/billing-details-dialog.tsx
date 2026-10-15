@@ -35,7 +35,7 @@ export function BillingDetailsDialog({
 	readonly onOpenChange: (open: boolean) => void
 }) {
 	const [save, saving] = useMutationAction(updateBillingProfileMutation, {
-		success: "Billing details saved.",
+		success: "Billing details saved",
 		error: "Billing details could not be saved.",
 		onSuccess: () => onOpenChange(false),
 	})

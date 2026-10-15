@@ -100,6 +100,16 @@ export function DestinationCard({
 							)}
 						</div>
 
+						{!destination.enabled && destination.disabledReason && (
+							<Alert variant="crit" size="sm" className="mt-2 rounded-md">
+								<AlertWarningIcon size={12} />
+								<AlertDescription className="break-words text-severity-error">
+									Maple stopped delivering here after repeated failures:{" "}
+									{destination.disabledReason}. Fix the destination, then turn it back on.
+								</AlertDescription>
+							</Alert>
+						)}
+
 						{destination.lastTestError && (
 							<Alert variant="crit" size="sm" className="mt-2 rounded-md">
 								<AlertWarningIcon size={12} />
@@ -124,13 +134,13 @@ export function DestinationCard({
 						disabled={!isAdmin}
 						loading={isTesting}
 					>
-						<CheckIcon size={14} />
+						<CheckIcon />
 						Send test
 					</Button>
 					{isAdmin && (
 						<RowActionsMenu label="Destination actions">
 							<DropdownMenuItem onClick={() => onEdit(destination)}>
-								<PencilIcon size={14} />
+								<PencilIcon />
 								Edit
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
@@ -139,7 +149,7 @@ export function DestinationCard({
 								onClick={() => setConfirmDelete(true)}
 								disabled={isDeleting}
 							>
-								<TrashIcon size={14} />
+								<TrashIcon />
 								Delete
 							</DropdownMenuItem>
 						</RowActionsMenu>

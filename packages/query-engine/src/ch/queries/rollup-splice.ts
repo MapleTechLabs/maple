@@ -24,8 +24,9 @@
 
 import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
+import { compile as compileFragment } from "@maple-dev/effect-orm/sql"
 import * as T from "@maple-dev/effect-orm/clickhouse"
+import { utcSecondsParam } from "../tables"
 
 /**
  * One tier boundary of a splice. `unit` names the bucket size; the rest are
@@ -45,16 +46,11 @@ export interface SpliceGrain {
 
 const makeGrain = (unit: "HOUR" | "MINUTE"): SpliceGrain => {
 	const floorFn = unit === "HOUR" ? "toStartOfHour" : "toStartOfMinute"
-	// `toDateTime` is strictly second-precision: a fractional bound fails here
-	// with `Cannot parse string '…000' as DateTime`, which is how
-	// `GET /v2/services` broke. Making this lenient was tried and reverted —
-	// it does not help. These queries also compare the same parameter directly
-	// against a `DateTime` column (`Timestamp >= <startTime placeholder>`), and that
-	// is a `TYPE_MISMATCH` for a fractional literal no matter how the floor
-	// arithmetic parses it. Precision has to be right at the caller; see
-	// `WindowPrecision` in apps/api/src/routes/v2/telemetry.http.ts.
-	const startDt = `toDateTime(${paramPlaceholder("dateTime", "startTime")})`
-	const endDt = `toDateTime(${paramPlaceholder("dateTime", "endTime")})`
+	// `toDateTime` rejects a fractional literal (`Cannot parse string '…729' as
+	// DateTime`), and a `DateTime.Utc` bound keeps its milliseconds under the
+	// `dateTime` kind. `utcSecondsParam` floors, matching the column bounds.
+	const startDt = `toDateTime(${compileFragment(utcSecondsParam("startTime").toFragment())})`
+	const endDt = `toDateTime(${compileFragment(utcSecondsParam("endTime").toFragment())})`
 	const startFloor = `${floorFn}(${startDt})`
 	const endFloor = `${floorFn}(${endDt})`
 	return {

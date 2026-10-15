@@ -26,14 +26,14 @@ export const RELEASE_HEALTH_DOT_CLASS = {
 	regressed: TONE_FILL.crit,
 	watch: TONE_FILL.warn,
 	rolling: "border-2 border-primary bg-background",
-	healthy: "bg-primary/70",
+	healthy: TONE_FILL.ok,
 } satisfies Record<ReleaseHealth, string>
 
 const PILL_CLASS = {
 	regressed: TONE_SOFT.crit,
 	watch: TONE_SOFT.warn,
 	rolling: "bg-primary/10 text-primary",
-	healthy: TONE_SOFT.neutral,
+	healthy: TONE_SOFT.ok,
 } satisfies Record<ReleaseHealth, string>
 
 interface ReleaseHealthPillProps {

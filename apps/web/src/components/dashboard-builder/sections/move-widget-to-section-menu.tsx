@@ -38,7 +38,7 @@ export function MoveWidgetToSectionMenu({ sections, current, onMove }: MoveWidge
 	return (
 		<DropdownMenuSub>
 			<DropdownMenuSubTrigger>
-				<LayersIcon size={14} />
+				<LayersIcon />
 				Move to
 			</DropdownMenuSubTrigger>
 			<DropdownMenuSubContent>

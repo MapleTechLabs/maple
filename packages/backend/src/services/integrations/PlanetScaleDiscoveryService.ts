@@ -1,13 +1,15 @@
 import {
 	IntegrationsRevokedError,
-	OrgId,
 	ScrapeTargetAuthError,
 	ScrapeTargetEncryptionError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetUpstreamError,
 } from "@maple/domain/http"
 import { globToRegExp } from "@maple/domain/glob"
-import type { scrapeTargets } from "@maple/db"
+import type { ScrapeTargetRow as StoredScrapeTargetRow } from "@maple/db/tables"
+
+/** Discovery reads a target's connection, never its labels. */
+type ScrapeTargetRow = Omit<StoredScrapeTargetRow, "labelsJson">
 import {
 	Clock,
 	Context,
@@ -33,8 +35,6 @@ import {
 	planetScaleBearerHeader,
 	type PlanetScaleAccessTokenError,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-
-type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
 
 /**
  * Resolves PlanetScale `planetscale`-type scrape targets into their concrete
@@ -100,8 +100,6 @@ type DiscoveryError =
 	| ScrapeTargetAuthError
 	| ScrapeTargetUpstreamError
 	| PlanetScaleAccessTokenError
-
-const toPersistenceError = (message: string) => new ScrapeTargetPersistenceError({ message })
 
 // Provider-side (http_sd) failures: transport, timeout, non-2xx non-auth, or an
 // undecodable payload. Kept distinct from persistence (our DB) so the class —
@@ -264,8 +262,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			if (row.authType !== "planetscale_oauth") {
 				return yield* buildScrapeAuthHeaders(row, encryptionKey)
 			}
-			const orgId = yield* Schema.decodeEffect(OrgId)(row.orgId).pipe(Effect.orDie)
-			const { accessToken } = yield* psOAuth.getValidAccessToken(orgId)
+			const { accessToken } = yield* psOAuth.getValidAccessToken(row.orgId)
 			return { Authorization: planetScaleBearerHeader(accessToken) }
 		})
 

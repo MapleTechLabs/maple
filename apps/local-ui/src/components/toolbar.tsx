@@ -55,8 +55,12 @@ export function RefreshButton({
 }
 
 const RANGE_LABELS: Record<string, string> = {
+	"5m": "Last 5 minutes",
+	"15m": "Last 15 minutes",
+	"30m": "Last 30 minutes",
 	"1h": "Last 1 hour",
 	"6h": "Last 6 hours",
+	"12h": "Last 12 hours",
 	"24h": "Last 24 hours",
 	"7d": "Last 7 days",
 	"30d": "Last 30 days",

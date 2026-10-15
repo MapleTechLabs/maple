@@ -19,7 +19,7 @@ import {
 	orgIdParam,
 	utcSecondsParam,
 } from "../tables"
-import { resolveMetricTable, metricsSelectExprs } from "./query-helpers"
+import { resolveMetricTable, metricsSelectExprs, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
@@ -36,9 +36,11 @@ function resourceFilterConditions(
 	return (filters ?? []).map((rf) => buildAttrFilterCondition(rf, "ResourceAttributes"))
 }
 
-// A key with no value means "has the label": `.eq("")` would match its absence.
-function datapointAttrCondition(column: CH.Expr<string>, value: string | undefined): CH.Condition {
-	return value === undefined ? column.neq("") : column.eq(value)
+/** WHERE conditions for `attributeFilters`: any mode or negation on the datapoint Attributes map. */
+function datapointFilterConditions(
+	filters: readonly AttributeFilter[] | undefined,
+): ReadonlyArray<CH.Condition> {
+	return (filters ?? []).map((af) => buildAttrFilterCondition(af, "Attributes"))
 }
 
 // Shared options & output types
@@ -51,14 +53,17 @@ interface MetricsQueryOpts {
 	groupByAttributeKey?: string
 	/** Group by a ResourceAttributes key instead of a datapoint Attributes key. */
 	groupByResourceAttributeKey?: string
-	attributeKey?: string
-	attributeValue?: string
+	/** Predicates on the datapoint Attributes map (metric labels). */
+	attributeFilters?: readonly AttributeFilter[]
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	groupBy?: readonly string[]
 	seriesLimit?: number
 }
 
-export interface MetricsTimeseriesOpts extends MetricsQueryOpts {}
+export interface MetricsTimeseriesOpts extends MetricsQueryOpts {
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
+}
 
 export interface MetricsTimeseriesOutput {
 	readonly bucket: DateTime.Utc
@@ -91,7 +96,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 
 	const q = from(tbl as typeof MetricsSum)
 		.select(($) => ({
-			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+			bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
 			serviceName: $.ServiceName,
 			// A query groups by at most one attribute dimension (enforced by
 			// runtime validation); resource takes the shared attributeValue slot
@@ -113,13 +118,12 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
+			wholeRangeEnd($.TimeUnix, opts.wholeRange),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey, (k: string) =>
-				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
-			),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
+			...datapointFilterConditions(opts.attributeFilters),
 			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 
@@ -145,14 +149,16 @@ export interface MetricsRateTimeseriesOpts {
 	bucketSeconds?: number
 	/** How far before startTime to read for each series' previous sample. Default: bucketSeconds. */
 	lookbackSeconds?: number
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
 	serviceName?: string
 	/** Deployment environments to scope to. Empty/undefined means all. */
 	environments?: readonly string[]
 	groupByAttributeKey?: string
 	/** Group by a ResourceAttributes key instead of a datapoint Attributes key. */
 	groupByResourceAttributeKey?: string
-	attributeKey?: string
-	attributeValue?: string
+	/** Predicates on the datapoint Attributes map (metric labels). */
+	attributeFilters?: readonly AttributeFilter[]
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	groupBy?: readonly string[]
 	seriesLimit?: number
@@ -184,8 +190,19 @@ const metricsRateTimeseriesColumns = {
 // from both sides, so the rollup held 0 rows and every read took the raw path.
 const SPAN_METRICS_CALLS_NAMES = new Set(["span.metrics.calls", "calls", "traces.span.metrics.calls"])
 
+// The value of a lone, plain `span.kind = X` filter, else undefined.
+function spanKindEqualsValue(filters: readonly AttributeFilter[] | undefined): string | undefined {
+	const [only, ...rest] = filters ?? []
+	if (only === undefined || rest.length > 0) return undefined
+	return only.key === "span.kind" && only.mode === "equals" && !only.negated && !only.or?.length
+		? only.value
+		: undefined
+}
+
 function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean {
 	return (
+		// Hour-grain rows cannot be cut to a sliding window.
+		!opts.wholeRange &&
 		// The hourly MV is keyed by a single MetricName; an `IN (...)` candidate set
 		// can't be served from it, so fall back to the raw path. The interactive UI
 		// (sub-hour buckets) never qualifies for this fast path anyway.
@@ -195,9 +212,10 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 		opts.bucketSeconds !== undefined &&
 		opts.bucketSeconds >= 3600 &&
 		opts.bucketSeconds % 3600 === 0 &&
-		(opts.attributeValue === undefined || opts.attributeKey !== undefined) &&
-		(opts.attributeKey === undefined || opts.attributeKey === "span.kind") &&
 		(opts.groupByAttributeKey === undefined || opts.groupByAttributeKey === "span.kind") &&
+		// The hourly MV keeps only SpanKind of the datapoint labels.
+		((opts.attributeFilters?.length ?? 0) === 0 ||
+			spanKindEqualsValue(opts.attributeFilters) !== undefined) &&
 		// The hourly MV folds ResourceAttributes into a fingerprint — it cannot
 		// serve resource-attribute filters or group-bys, and `deployment.environment`
 		// lives in that same map, so an environment filter also drops to the raw path.
@@ -211,21 +229,21 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	opts: MetricsRateTimeseriesOpts,
 ): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
 	const bucket = CH.toStartOfInterval(
-		CH.toDateTime(param.dateTime("startTime")),
+		CH.toDateTime(utcSecondsParam("startTime")),
 		param.int("bucketSeconds"),
 	)
 	const previousBucket = CH.intervalSub(bucket, param.int("bucketSeconds"))
 	const endBucket = CH.toStartOfInterval(
-		CH.toDateTime(param.dateTime("endTime")),
+		CH.toDateTime(utcSecondsParam("endTime")),
 		param.int("bucketSeconds"),
 	)
 	// The same bounds for the CTE columns below, which decode as `DateTime.Utc`.
 	const bucketUtc = CH.toStartOfInterval(
-		CH.toDateTime(param.dateTime("startTime")),
+		CH.toDateTime(utcSecondsParam("startTime")),
 		param.int("bucketSeconds"),
 	)
 	const endBucketUtc = CH.toStartOfInterval(
-		CH.toDateTime(param.dateTime("endTime")),
+		CH.toDateTime(utcSecondsParam("endTime")),
 		param.int("bucketSeconds"),
 	)
 
@@ -246,9 +264,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 			$.Hour.gte(previousBucket),
 			$.Hour.lte(endBucket),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey === "span.kind" ? opts.attributeValue : undefined, (v: string) =>
-				$.SpanKind.eq(v),
-			),
+			CH.when(spanKindEqualsValue(opts.attributeFilters), (v: string) => $.SpanKind.eq(v)),
 		])
 		.groupBy(
 			"Hour",
@@ -420,13 +436,12 @@ export function metricsTimeseriesRateQuery(
 				),
 			),
 			$.TimeUnix.lte(param.dateTime("endTime")),
+			wholeRangeEnd($.TimeUnix, opts.wholeRange),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey, (k: string) =>
-				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
-			),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
+			...datapointFilterConditions(opts.attributeFilters),
 			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 
@@ -447,20 +462,17 @@ export function metricsTimeseriesRateQuery(
 		.select(($) => {
 			// Seconds of the bucket inside [startTime, endTime]: the edge buckets are
 			// partial, and dividing them by the full width understates their rate.
-			const bucketStart = CH.toUnixTimestamp(
-				CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			)
-			const coveredSeconds = CH.least_(
-				bucketStart.add(param.int("bucketSeconds")),
-				CH.toUnixTimestamp(CH.toDateTime(param.dateTimeString("endTime"))),
-			).sub(
-				CH.greatest_(
-					bucketStart,
-					CH.toUnixTimestamp(CH.toDateTime(param.dateTimeString("startTime"))),
-				),
-			)
+			// A `wholeRange` bucket is the whole range, whatever width the spec stored.
+			const bucketStart = CH.toUnixTimestamp(timeseriesBucket($.TimeUnix, opts.wholeRange))
+			const rangeStart = CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("startTime")))
+			const rangeEnd = CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("endTime")))
+			const coveredSeconds = opts.wholeRange
+				? rangeEnd.sub(rangeStart)
+				: CH.least_(bucketStart.add(param.int("bucketSeconds")), rangeEnd).sub(
+						CH.greatest_(bucketStart, rangeStart),
+					)
 			return {
-				bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
 				serviceName: $.ServiceName,
 				attributeValue: opts.groupByResourceAttributeKey
 					? $.resourceAttributeValue
@@ -541,8 +553,8 @@ export interface MetricsBreakdownOpts {
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	serviceName?: string
 	environments?: readonly string[]
-	attributeKey?: string
-	attributeValue?: string
+	/** Predicates on the datapoint Attributes map (metric labels). */
+	attributeFilters?: readonly AttributeFilter[]
 	/** Aggregate that ranks groups before `limit` applies. Default: count. */
 	rankBy?: "avg" | "sum" | "min" | "max" | "count"
 	limit?: number
@@ -598,12 +610,10 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 			CH.when(groupKey, (k: string) => $.Attributes.get(k).neq("")),
 			CH.when(resourceGroupKey, (k: string) => $.ResourceAttributes.get(k).neq("")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.attributeKey, (k: string) =>
-				datapointAttrCondition($.Attributes.get(k), opts.attributeValue),
-			),
 			opts.environments?.length
 				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 				: undefined,
+			...datapointFilterConditions(opts.attributeFilters),
 			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 		.groupBy("name")
@@ -651,7 +661,7 @@ export function listMetricsQuery(opts: ListMetricsOpts) {
 			$.OrgId.eq(orgIdParam),
 			// Floor the start bound to the hour so the oldest catalog bucket
 			// (Hour is already hour-truncated) isn't dropped for mid-hour ranges.
-			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(param.dateTime("startTime")), 3600)),
+			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.metricType, (v: string) => $.MetricType.eq(v)),
@@ -685,7 +695,7 @@ export function metricsSummaryQuery(opts?: MetricsSummaryOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(param.dateTime("startTime")), 3600)),
+			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.when(opts?.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])

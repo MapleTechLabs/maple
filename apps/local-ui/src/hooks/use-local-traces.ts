@@ -109,7 +109,7 @@ async function rootScopedPage(
 }
 
 const spanCountOf = (stats: { readonly spanCount: number } | undefined): number | null =>
-	stats === undefined ? null : Number(stats.spanCount)
+	stats === undefined ? null : stats.spanCount
 
 async function spanScopedPage(
 	filters: TraceFilters,
@@ -152,13 +152,13 @@ async function spanScopedPage(
 	return summaries.map((row) => ({
 		traceId: row.traceId,
 		startTime: row.startTime,
-		durationMs: Number(row.durationMs),
+		durationMs: row.durationMs,
 		spanCount: spanCountOf(statsByTrace.get(row.traceId)),
 		services: statsByTrace.get(row.traceId)?.services ?? [row.rootServiceName],
 		rootSpanName: row.rootSpanName,
 		rootSpanKind: row.rootSpanKind,
 		rootSpanAttributes: httpAttributes(row),
-		hasError: Number(row.hasError) > 0,
+		hasError: row.hasError > 0,
 	}))
 }
 

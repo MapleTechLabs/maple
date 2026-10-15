@@ -192,7 +192,7 @@ function AnomalyDetailPage() {
 							disabled={busy}
 							loading={investigating}
 						>
-							<PulseIcon className="size-3.5" />
+							<PulseIcon />
 							Open investigation
 						</Button>
 						{isOpen ? (

@@ -177,7 +177,7 @@ export function StepTeam({
 				</div>
 				<div className="flex flex-wrap items-center justify-between gap-3">
 					<Button variant="ghost" disabled={busy} onClick={onBack}>
-						<ArrowLeftIcon size={14} />
+						<ArrowLeftIcon />
 						Back
 					</Button>
 					<Button size="lg" disabled={busy} onClick={onContinue}>

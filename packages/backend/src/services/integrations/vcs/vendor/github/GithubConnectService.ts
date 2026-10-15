@@ -6,7 +6,6 @@ import {
 	IntegrationsValidationError,
 	isInstallationProcessable,
 	type OrgId,
-	type PrReviewListItem,
 	PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
 	type UserId,
@@ -73,6 +72,7 @@ interface GithubConnectStatus {
 	readonly accountLogin: string | null
 	readonly accountType: VcsAccountType | null
 	readonly repositorySelection: VcsRepoSelection | null
+	readonly ciTracesEnabled: boolean
 	readonly repositories: ReadonlyArray<GithubRepoStatus>
 }
 
@@ -130,6 +130,14 @@ export interface GithubConnectServiceApi {
 		{ readonly trackedBranch: string; readonly backfillQueued: boolean },
 		IntegrationsPersistenceError | IntegrationsValidationError
 	>
+	/** Turn CI traces from GitHub Actions on or off for the org's active installation. */
+	readonly setCiTracesEnabled: (
+		orgId: OrgId,
+		enabled: boolean,
+	) => Effect.Effect<
+		{ readonly enabled: boolean },
+		IntegrationsPersistenceError | IntegrationsValidationError
+	>
 	/**
 	 * Turn the pull request review on or off for one repository.
 	 * Rejected for a repository the provider has removed: there is nothing to
@@ -160,13 +168,6 @@ export interface GithubConnectServiceApi {
 		settings: PrReviewOrgSettings,
 		updatedBy: UserId,
 	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError | IntegrationsValidationError>
-	readonly listPrReviews: (
-		orgId: OrgId,
-		repositoryId: VcsRepositoryId,
-	) => Effect.Effect<
-		ReadonlyArray<PrReviewListItem>,
-		IntegrationsPersistenceError | IntegrationsValidationError
-	>
 }
 
 // Repo / queue / state errors all carry a `message`; collapse them to the
@@ -255,8 +256,8 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						initiatedByUserId: userId,
 						redirectUri: options.callbackUrl,
 						returnTo: options.returnTo ?? null,
-						createdAt: new Date(now),
-						expiresAt: new Date(now + STATE_TTL_MS),
+						createdAt: now,
+						expiresAt: now + STATE_TTL_MS,
 					}),
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -299,7 +300,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						message: "Connect session provider mismatch — restart the connect flow",
 					})
 				}
-				if (stateRow.expiresAt.getTime() < now) {
+				if (stateRow.expiresAt < now) {
 					yield* Effect.annotateCurrentSpan({
 						orgId: stateRow.orgId,
 						"vcs.connect.outcome": "state_expired",
@@ -503,6 +504,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						accountLogin: active.accountLogin,
 						accountType: active.accountType,
 						repositorySelection: active.repositorySelection,
+						ciTracesEnabled: active.ciTracesEnabled,
 						repositories,
 					} satisfies GithubConnectStatus
 				}
@@ -527,6 +529,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						accountLogin: null,
 						accountType: null,
 						repositorySelection: null,
+						ciTracesEnabled: true,
 						repositories: [],
 					} satisfies GithubConnectStatus
 				}
@@ -548,6 +551,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					accountLogin: deactivated.accountLogin,
 					accountType: deactivated.accountType,
 					repositorySelection: deactivated.repositorySelection,
+					ciTracesEnabled: deactivated.ciTracesEnabled,
 					repositories,
 				} satisfies GithubConnectStatus
 			})
@@ -725,6 +729,27 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return { trackedBranch, backfillQueued: true }
 			})
 
+			const setCiTracesEnabled = Effect.fn("GithubConnectService.setCiTracesEnabled")(function* (
+				orgId: OrgId,
+				enabled: boolean,
+			) {
+				const installations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
+				const active = installations.find(
+					(i) => i.provider === GITHUB_PROVIDER && i.status === "active",
+				)
+				if (active === undefined) {
+					yield* Effect.annotateCurrentSpan({ orgId, "vcs.set_ci_traces.outcome": "not_connected" })
+					return yield* new IntegrationsValidationError({ message: "GitHub is not connected." })
+				}
+				yield* asPersistence(repo.setCiTracesEnabled(orgId, active.id, enabled))
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.set_ci_traces.outcome": "changed",
+					"vcs.ci_traces.enabled": enabled,
+				})
+				return { enabled }
+			})
+
 			const setPrReviewEnabled = Effect.fn("GithubConnectService.setPrReviewEnabled")(function* (
 				orgId: OrgId,
 				repositoryId: VcsRepositoryId,
@@ -841,14 +866,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return cleaned
 			})
 
-			const listPrReviews = Effect.fn("GithubConnectService.listPrReviews")(function* (
-				orgId: OrgId,
-				repositoryId: VcsRepositoryId,
-			) {
-				yield* requireRepository(orgId, repositoryId)
-				return yield* asPersistence(repo.listPrReviews(orgId, repositoryId, 50))
-			})
-
 			return {
 				startConnect,
 				completeConnect,
@@ -856,12 +873,12 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				disconnect,
 				deleteRepository,
 				setTrackedBranch,
+				setCiTracesEnabled,
 				setPrReviewEnabled,
 				getPrReviewConfig,
 				getPrReviewSettings,
 				setPrReviewSettings,
 				setPrReviewConfig,
-				listPrReviews,
 			} satisfies GithubConnectServiceApi
 		}),
 	},

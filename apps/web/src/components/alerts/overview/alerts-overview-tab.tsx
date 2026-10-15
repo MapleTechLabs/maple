@@ -21,6 +21,7 @@ import { MagnifierIcon } from "@/components/icons"
 import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { toastExit } from "@/lib/error-toast"
 import { needsAttention } from "@/lib/alerts/rule-status"
+import { formatResolutionDuration } from "@/lib/alerts/form-utils"
 import {
 	filterByTags,
 	groupByTag as groupItemsByTag,
@@ -35,7 +36,7 @@ import { retainedQuery } from "@/lib/services/common/atom-client"
 import { ErrorState } from "@/components/common/error-state"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 /** Sentinel value for the "Created by" filter meaning no creator restriction. */
 const ANY_CREATOR = "__anyone__"
@@ -64,13 +65,15 @@ export function AlertsOverviewTab() {
 	)
 }
 
+const OVERVIEW_SKELETON_ROWS = ["h-21 w-full", "h-10 w-full", "h-48 w-full"]
+
 function OverviewSkeleton() {
 	return (
-		<div className="space-y-6">
-			<Skeleton className="h-[84px] w-full" />
-			<Skeleton className="h-10 w-full" />
-			<Skeleton className="h-48 w-full" />
-		</div>
+		<SkeletonList
+			rows={OVERVIEW_SKELETON_ROWS.length}
+			gap="6"
+			renderRow={(index) => <Skeleton className={OVERVIEW_SKELETON_ROWS[index]} />}
+		/>
 	)
 }
 
@@ -249,9 +252,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 			resolved.reduce((sum, i) => {
 				return sum + (new Date(i.resolvedAt!).getTime() - new Date(i.firstTriggeredAt).getTime())
 			}, 0) / resolved.length
-		if (avg < 60_000) return `${Math.round(avg / 1000)}s`
-		if (avg < 3_600_000) return `${(avg / 60_000).toFixed(1)}m`
-		return `${(avg / 3_600_000).toFixed(1)}h`
+		return formatResolutionDuration(avg)
 	}, [incidents])
 
 	const enabledRules = rules.filter((r) => r.enabled).length
@@ -277,6 +278,7 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 			<div className="space-y-4">
 				<div className="flex items-center gap-3">
 					<SearchInput
+						size="default"
 						className="flex-1 max-w-xs"
 						placeholder="Search rules..."
 						value={searchQuery}

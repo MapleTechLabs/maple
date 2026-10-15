@@ -18,6 +18,19 @@ import { describeFailure, formatFailure } from "../lib/failure"
  * and cannot be imported by a test.
  */
 
+/**
+ * Exit status for a `maple start` refusal that retrying cannot fix (sysexits
+ * EX_CONFIG). A supervisor can treat it as final, e.g. systemd
+ * `RestartPreventExitStatus=78`.
+ */
+export const EXIT_START_REFUSED = 78
+
+/** Exit non-zero, keeping a more specific status a handler already chose. */
+export const markFailedExit = (): void => {
+	const current = typeof process.exitCode === "number" ? process.exitCode : 0
+	process.exitCode = current === 0 ? 1 : current
+}
+
 /** Record which expected outcome ended the run, on the root `maple` span. */
 export const annotateOutcome = (tag: string): Effect.Effect<void> =>
 	Effect.annotateCurrentSpan({ "maple.cli.outcome": tag })
@@ -35,7 +48,7 @@ export const recoverExpected = (error: unknown): Effect.Effect<void> => {
 		Effect.andThen(
 			Effect.sync(() => {
 				process.stderr.write(formatFailure(report))
-				process.exitCode = 1
+				markFailedExit()
 			}),
 		),
 	)

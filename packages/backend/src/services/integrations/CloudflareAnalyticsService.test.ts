@@ -3,19 +3,21 @@ import { IntegrationsValidationError } from "@maple/domain/http"
 import { randomUUID } from "node:crypto"
 import { Retry } from "@distilled.cloud/cloudflare"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { OrgId } from "@maple/domain/http"
+import { OrgId, UserId } from "@maple/domain/http"
 import { clickHouseSchemaVersion } from "@maple/domain/clickhouse"
+import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	cloudflareAnalyticsState,
-	cloudflareHyperdriveConfigs,
-	oauthConnections,
-	orgClickHouseSettings,
-} from "@maple/db"
-import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
+	CloudflareAnalyticsState,
+	type CloudflareAnalyticsStateInsert,
+	CloudflareHyperdriveConfigs,
+	OAuthConnections,
+	OrgClickHouseSettings,
+} from "@maple/db/tables"
+import { Array as Arr, ConfigProvider, Effect, Layer, Metric, Schema, Tracer } from "effect"
+import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { eq } from "drizzle-orm"
 import { encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -223,6 +225,8 @@ interface FetchOptions {
 	readonly otlpCalls?: Array<OtlpCall>
 	/** HTTP status the mock gateway returns for `/v1/metrics` (default 200). */
 	readonly metricsStatus?: number
+	/** Raw `/v1/metrics` response body served as HTML with a `cf-ray` header (an edge block page). */
+	readonly metricsHtml?: string
 }
 
 /** Read the outbound request body regardless of how the HttpClient encodes it (string/bytes/stream). */
@@ -235,6 +239,20 @@ const readRequestBody = async (
 		return await new Response(init.body as BodyInit).text()
 	}
 	return input instanceof Request ? await input.text() : "{}"
+}
+
+/** A tracer that keeps every span, so a test can read what the poller annotated. */
+const recordSpans = () => {
+	const spans: Array<Tracer.NativeSpan> = []
+	const tracer = Tracer.make({
+		span(options) {
+			const span = new Tracer.NativeSpan(options)
+			spans.push(span)
+			return span
+		},
+	})
+	const named = (name: string) => spans.filter((span) => span.name === name)
+	return { tracer, named }
 }
 
 /** Read an outbound request header regardless of whether it's on the Request or the init. */
@@ -263,6 +281,12 @@ const mockCloudflareFetch =
 				authorization: readHeader(input, init, "authorization"),
 				payload: JSON.parse(await readRequestBody(input, init)) as OtlpMetricsPayload,
 			})
+			if (options.metricsHtml !== undefined) {
+				return new Response(options.metricsHtml, {
+					status: options.metricsStatus ?? 200,
+					headers: { "content-type": "text/html", "cf-ray": "8d1f2e3a4b5c6d7e-FRA" },
+				})
+			}
 			return jsonResponse({}, options.metricsStatus ?? 200)
 		}
 		if (url.includes("/graphql")) {
@@ -460,25 +484,29 @@ const seedConnection = (
 			(message) => new IntegrationsValidationError({ message }),
 		)
 		yield* database.execute((db) =>
-			db.insert(oauthConnections).values({
-				id: randomUUID(),
-				orgId: ORG,
-				provider: "cloudflare",
-				externalUserId: Arr.headNonEmpty(accounts).id,
-				externalAccountName: Arr.headNonEmpty(accounts).name,
-				grantedAccountsJson:
-					accounts.length > 1
-						? JSON.stringify(accounts.map((account) => ({ id: account.id, name: account.name })))
-						: null,
-				connectedByUserId: "user_1",
-				scope,
-				accessTokenCiphertext: accessEnc.ciphertext,
-				accessTokenIv: accessEnc.iv,
-				accessTokenTag: accessEnc.tag,
-				expiresAt: null,
-				createdAt: new Date(T0 - 60 * MIN),
-				updatedAt: new Date(T0 - 60 * MIN),
-			}),
+			db.run(
+				PG.insertInto(OAuthConnections).values({
+					id: randomUUID(),
+					orgId: ORG,
+					provider: "cloudflare",
+					externalUserId: Arr.headNonEmpty(accounts).id,
+					externalAccountName: Arr.headNonEmpty(accounts).name,
+					grantedAccountsJson:
+						accounts.length > 1
+							? JSON.stringify(
+									accounts.map((account) => ({ id: account.id, name: account.name })),
+								)
+							: null,
+					connectedByUserId: Schema.decodeUnknownSync(UserId)("user_1"),
+					scope,
+					accessTokenCiphertext: accessEnc.ciphertext,
+					accessTokenIv: accessEnc.iv,
+					accessTokenTag: accessEnc.tag,
+					expiresAt: null,
+					createdAt: T0 - 60 * MIN,
+					updatedAt: T0 - 60 * MIN,
+				}),
+			),
 		)
 	})
 
@@ -492,42 +520,69 @@ const seedByoClickHouse = (overrides: { syncStatus?: string; schemaVersion?: str
 	Effect.gen(function* () {
 		const database = yield* Database
 		yield* database.execute((db) =>
-			db.insert(orgClickHouseSettings).values({
-				orgId: ORG,
-				chUrl: "https://ch.example.com",
-				chUser: "default",
-				chDatabase: "maple",
-				syncStatus: overrides.syncStatus ?? "connected",
-				schemaVersion:
-					overrides.schemaVersion === undefined ? clickHouseSchemaVersion : overrides.schemaVersion,
-				createdAt: new Date(T0 - 60 * MIN),
-				updatedAt: new Date(T0 - 60 * MIN),
-				createdBy: "user_1",
-				updatedBy: "user_1",
-			}),
+			db.run(
+				PG.insertInto(OrgClickHouseSettings).values({
+					orgId: ORG,
+					chUrl: "https://ch.example.com",
+					chUser: "default",
+					chDatabase: "maple",
+					syncStatus: overrides.syncStatus ?? "connected",
+					schemaVersion:
+						overrides.schemaVersion === undefined
+							? clickHouseSchemaVersion
+							: overrides.schemaVersion,
+					createdAt: T0 - 60 * MIN,
+					updatedAt: T0 - 60 * MIN,
+					createdBy: "user_1",
+					updatedBy: "user_1",
+				}),
+			),
 		)
 	})
 
-const seedStateRow = (values: Partial<typeof cloudflareAnalyticsState.$inferInsert> & { dataset: string }) =>
+const seedStateRow = (values: Partial<CloudflareAnalyticsStateInsert> & { dataset: string }) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		yield* database.execute((db) =>
-			db.insert(cloudflareAnalyticsState).values({
-				id: randomUUID(),
-				orgId: ORG,
-				accountId: ACCOUNT_ID,
-				zoneId: "",
-				createdAt: new Date(T0 - 60 * MIN),
-				updatedAt: new Date(T0 - 60 * MIN),
-				...values,
-			}),
+			db.run(
+				PG.insertInto(CloudflareAnalyticsState).values({
+					id: randomUUID(),
+					orgId: ORG,
+					accountId: ACCOUNT_ID,
+					zoneId: "",
+					createdAt: T0 - 60 * MIN,
+					updatedAt: T0 - 60 * MIN,
+					...values,
+				}),
+			),
 		)
 	})
 
 const loadStateRows = Effect.gen(function* () {
 	const database = yield* Database
-	return yield* database.execute((db) => db.select().from(cloudflareAnalyticsState))
+	return yield* database.execute((db) => db.run(PG.from(CloudflareAnalyticsState).select()))
 })
+
+/** Pin the org's adaptive call cap on its existing workers anchor rows. */
+const seedGrantCap = (cap: number) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		yield* database.execute((db) =>
+			db.run(
+				PG.update(CloudflareAnalyticsState)
+					.set({ grantCallCap: cap })
+					.where(($) => [$.dataset.eq("workers_invocations"), $.zoneId.eq("")]),
+			),
+		)
+	})
+
+const grantCapsOf = loadStateRows.pipe(
+	Effect.map((rows) =>
+		rows
+			.filter((row) => row.dataset === "workers_invocations" && row.zoneId === "")
+			.map((row) => row.grantCallCap),
+	),
+)
 
 interface FlatMetric {
 	readonly name: string
@@ -627,13 +682,13 @@ describe("CloudflareAnalyticsService", () => {
 			assert.isNull(httpRow!.lastError)
 			// Head caught up to the safety-lag horizon: watermark = floor(now - 10min, 5min) = 11:50.
 			const horizon = Date.parse("2026-07-02T11:50:00Z")
-			assert.strictEqual(httpRow!.watermarkAt?.getTime(), horizon)
-			assert.strictEqual(workersRow!.watermarkAt?.getTime(), horizon)
+			assert.strictEqual(httpRow!.watermarkAt, horizon)
+			assert.strictEqual(workersRow!.watermarkAt, horizon)
 			// The backfill frontier filled in behind the head and, under the plan's 2h retention,
 			// reached its floor (floor(now-2h)+1bucket = 10:05) within the same tick.
 			const retentionFloor = Date.parse("2026-07-02T10:05:00Z")
-			assert.strictEqual(httpRow!.backfillAt?.getTime(), retentionFloor)
-			assert.strictEqual(workersRow!.backfillAt?.getTime(), retentionFloor)
+			assert.strictEqual(httpRow!.backfillAt, retentionFloor)
+			assert.strictEqual(workersRow!.backfillAt, retentionFloor)
 			// Settings were interrogated and cached.
 			assert.include(httpRow!.settingsJson ?? "", "notOlderThan")
 			// Lease released after the tick.
@@ -660,6 +715,59 @@ describe("CloudflareAnalyticsService", () => {
 			// Nothing bypassed the gateway via a direct warehouse ingest.
 			assert.strictEqual(captured.length, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls })))
+	})
+
+	it.effect("each chunk span names its datasets, zones, window and outcome", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			// A small cap so the first tick ends with history still owed.
+			yield* seedStateRow({ dataset: "workers_invocations", grantCallCap: 20 })
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+
+			const chunks = named("CloudflareAnalyticsService.pollDatasetChunk")
+			const httpHead = chunks.find(
+				(span) =>
+					span.attributes.get("maple.cloudflare.scope") === "zone" &&
+					span.attributes.get("maple.cloudflare.phase") === "head",
+			)
+			assert.isDefined(httpHead)
+			const attr = (key: string) => httpHead!.attributes.get(key)
+			assert.include(String(attr("maple.cloudflare.datasets")).split(","), "http_requests")
+			assert.strictEqual(attr("maple.cloudflare.zones"), ZONE_NAME)
+			assert.strictEqual(attr("maple.cloudflare.zone_count"), 1)
+			assert.strictEqual(attr("maple.cloudflare.account_id"), ACCOUNT_ID)
+			assert.strictEqual(attr("maple.cloudflare.window.end"), "2026-07-02T11:50:00Z")
+			assert.strictEqual(attr("maple.cloudflare.window.lag_ms"), 10 * MIN)
+			assert.strictEqual(attr("maple.cloudflare.outcome"), "advanced")
+			assert.isAbove(Number(attr("maple.cloudflare.rows_ingested")), 0)
+
+			// The first tick runs out of budget with history still owed; later ticks drain it.
+			const [first] = named("CloudflareAnalyticsService.pollConnection")
+			assert.strictEqual(first!.attributes.get("maple.cloudflare.stop_reason"), "budget_exhausted")
+			assert.isAbove(Number(first!.attributes.get("maple.cloudflare.pending_items")), 0)
+			yield* service.pollOrg(ORG)
+			const next = recordSpans()
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(next.tracer))
+			const [poll] = next.named("CloudflareAnalyticsService.pollConnection")
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.stop_reason"), "caught_up")
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.pending_items"), 0)
+			// Caught up means the head sits at the safety horizon, 10 min behind now.
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.max_lag_ms"), 10 * MIN)
+
+			const lag = yield* Metric.value(
+				Metric.withAttributes(CloudflareAnalyticsMetrics.datasetLagSeconds, {
+					org_id: ORG,
+					account_id: ACCOUNT_ID,
+					dataset: "http_requests",
+				}),
+			)
+			assert.strictEqual(lag.value, 600)
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
 	it.effect("pollOrg polls every account of the grant, each with its own state rows and zones", () => {
@@ -778,7 +886,9 @@ describe("CloudflareAnalyticsService", () => {
 				assert.strictEqual(second[0]!.name, "maple-mysql-renamed")
 
 				const database = yield* Database
-				const allRows = yield* database.execute((db) => db.select().from(cloudflareHyperdriveConfigs))
+				const allRows = yield* database.execute((db) =>
+					db.run(PG.from(CloudflareHyperdriveConfigs).select()),
+				)
 				const deleted = allRows.find((row) => row.configId === hyperdriveVpcFixture.id)
 				assert.isNotNull(deleted?.deletedAt)
 
@@ -830,15 +940,15 @@ describe("CloudflareAnalyticsService", () => {
 			yield* seedStateRow({
 				dataset: "workers_invocations",
 				zoneId: "",
-				discoveredAt: new Date(T0 - 5 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				discoveredAt: T0 - 5 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			for (let i = 0; i < zoneCount; i++) {
 				yield* seedStateRow({
 					dataset: "http_requests",
 					zoneId: `zone-${i}`,
 					zoneName: `zone-${i}.example.com`,
-					settingsFetchedAt: new Date(T0 - 5 * MIN),
+					settingsFetchedAt: T0 - 5 * MIN,
 				})
 			}
 		})
@@ -866,20 +976,45 @@ describe("CloudflareAnalyticsService", () => {
 				for (const row of httpRows) {
 					// Head is live within the FIRST tick — the newest window landed immediately, so the
 					// integration card reads "just now" instead of hours ago.
-					assert.strictEqual(row.watermarkAt?.getTime(), HORIZON)
+					assert.strictEqual(row.watermarkAt, HORIZON)
 					// History is still filling in behind it: the backfill frontier started walking down
 					// from the seed but couldn't reach the 24h floor under the per-tick call budget.
 					assert.isNotNull(row.backfillAt)
-					assert.isAbove(row.backfillAt!.getTime(), BACKFILL_FLOOR)
-					assert.isBelow(row.backfillAt!.getTime(), HORIZON)
+					assert.isAbove(row.backfillAt!, BACKFILL_FLOOR)
+					assert.isBelow(row.backfillAt!, HORIZON)
 				}
 				// Budget-bound tick (that's WHY history is incomplete) — the head still won the race.
-				// Pinned to the cap rather than a magic number so lowering MAX_CALLS_PER_ORG_TICK
-				// (done to stop rate-limiting ourselves) doesn't turn this into a false failure.
-				assert.isAtLeast(summary.callsMade, 20)
+				// Pinned to the floor rather than a magic number so retuning the adaptive cap
+				// doesn't turn this into a false failure.
+				assert.isAtLeast(summary.callsMade, 5)
 			}).pipe(Effect.provide(makeLayer(testDb, captured)))
 		},
 	)
+
+	it.effect("a budget-bound tick says so on the poll span, with the work it left behind", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedManyZones(12)
+
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+
+			const [poll] = named("CloudflareAnalyticsService.pollConnection")
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.stop_reason"), "budget_exhausted")
+			assert.isAbove(Number(poll!.attributes.get("maple.cloudflare.pending_items")), 0)
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.budget_used_before"), 0)
+			// Chunk spans tell head from backfill, so the cut-short history is visible per window.
+			const phases = named("CloudflareAnalyticsService.pollDatasetChunk").map((span) =>
+				span.attributes.get("maple.cloudflare.phase"),
+			)
+			assert.include(phases, "head")
+			assert.include(phases, "backfill")
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
 
 	it.effect("the backfill frontier walks down to the 24h floor over subsequent ticks, then stops", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -896,13 +1031,146 @@ describe("CloudflareAnalyticsService", () => {
 
 			const httpRows = (yield* loadStateRows).filter((row) => row.dataset === "http_requests")
 			for (const row of httpRows) {
-				assert.strictEqual(row.watermarkAt?.getTime(), HORIZON)
-				assert.strictEqual(row.backfillAt?.getTime(), BACKFILL_FLOOR)
+				assert.strictEqual(row.watermarkAt, HORIZON)
+				assert.strictEqual(row.backfillAt, BACKFILL_FLOOR)
 			}
 			// One more tick is a no-op: caught up on both frontiers, nothing left to ingest.
 			const idle = yield* service.pollOrg(ORG)
 			assert.strictEqual(idle.rowsIngested, 0)
 			assert.strictEqual(idle.callsMade, 0)
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	// One account's state as of a steady tick: discovery and settings fresh, every row's head
+	// `behindMs` short of the horizon with history already complete, so the tick is all head work.
+	const seedBehindAccount = (accountId: string, zoneCount: number, behindMs: number) =>
+		Effect.gen(function* () {
+			const database = yield* Database
+			const stamps = {
+				orgId: ORG,
+				accountId,
+				settingsFetchedAt: T0 - 5 * MIN,
+				watermarkAt: HORIZON - behindMs,
+				backfillAt: BACKFILL_FLOOR,
+				createdAt: T0 - 60 * MIN,
+				updatedAt: T0 - 60 * MIN,
+			}
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(CloudflareAnalyticsState).values([
+						{
+							...stamps,
+							id: randomUUID(),
+							dataset: "workers_invocations",
+							zoneId: "",
+							discoveredAt: T0 - 5 * MIN,
+						},
+						...Array.from({ length: zoneCount }, (_, i) => ({
+							...stamps,
+							id: randomUUID(),
+							dataset: "http_requests",
+							zoneId: `${accountId}-zone-${i}`,
+							zoneName: `${accountId}-zone-${i}.example.com`,
+						})),
+					]),
+				),
+			)
+		})
+
+	const watermarksOf = (accountId: string) =>
+		loadStateRows.pipe(
+			Effect.map((rows) => rows.filter((row) => row.accountId === accountId)),
+			Effect.map((rows) => ({
+				http: rows.filter((row) => row.dataset === "http_requests").map((row) => row.watermarkAt),
+				workers: rows.find((row) => row.dataset === "workers_invocations")?.watermarkAt,
+			})),
+		)
+
+	it.effect("a busy account cannot starve the grant's other account of calls", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const SMALL = "acct-small"
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			// The busy account comes first in status order AND is further behind: 40 zones six
+			// hours back is ~30 head documents, more than the whole tick.
+			yield* seedConnection(ANALYTICS_SCOPE, [
+				{ id: ACCOUNT_ID, name: "Busy Account" },
+				{ id: SMALL, name: "Small Account" },
+			])
+			yield* seedBehindAccount(ACCOUNT_ID, 40, 6 * 60 * MIN)
+			yield* seedBehindAccount(SMALL, 1, 3 * 60 * MIN)
+			yield* seedGrantCap(20)
+
+			const service = yield* CloudflareAnalyticsService
+			const first = yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+			// The grant's total is unchanged; it is only split differently.
+			assert.strictEqual(first.callsMade, 20)
+			const polls = named("CloudflareAnalyticsService.pollConnection")
+			const smallPoll = polls.find(
+				(span) => span.attributes.get("maple.cloudflare.account_id") === SMALL,
+			)
+			assert.isAbove(Number(smallPoll!.attributes.get("maple.cloudflare.calls")), 0)
+
+			// Both of the small account's datasets moved in the very first tick...
+			const afterOne = yield* watermarksOf(SMALL)
+			assert.isAbove(afterOne.workers!, HORIZON - 3 * 60 * MIN)
+			assert.isAbove(afterOne.http[0]!, HORIZON - 3 * 60 * MIN)
+			// ...and the busy account still got the rest of the budget.
+			const busy = yield* watermarksOf(ACCOUNT_ID)
+			assert.isAbove(busy.workers!, HORIZON - 6 * 60 * MIN)
+			assert.isTrue(busy.http.every((watermark) => watermark! > HORIZON - 6 * 60 * MIN))
+
+			// One window per head document per tick: three ticks bring it to the horizon.
+			yield* service.pollOrg(ORG)
+			yield* service.pollOrg(ORG)
+			const caughtUp = yield* watermarksOf(SMALL)
+			assert.strictEqual(caughtUp.workers, HORIZON)
+			assert.deepStrictEqual(caughtUp.http, [HORIZON])
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	it.effect("a caught-up account leaves its share of the budget to a busy sibling", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const IDLE = "acct-idle"
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection(ANALYTICS_SCOPE, [
+				{ id: ACCOUNT_ID, name: "Busy Account" },
+				{ id: IDLE, name: "Idle Account" },
+			])
+			yield* seedBehindAccount(ACCOUNT_ID, 40, 6 * 60 * MIN)
+			// Head at the horizon, history complete, settings fresh: nothing to spend a call on.
+			yield* seedBehindAccount(IDLE, 1, 0)
+			yield* seedGrantCap(20)
+
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			assert.strictEqual(summary.callsMade, 20)
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	it.effect("an account dataset crowded out by zone documents leads the next tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			// 210 zones are 21 zone documents per window: one round of head work already
+			// outspends the tick, and the account document plans after them at equal windows.
+			yield* seedBehindAccount(ACCOUNT_ID, 210, 2 * 60 * MIN)
+			yield* seedGrantCap(20)
+
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG)
+			assert.strictEqual((yield* watermarksOf(ACCOUNT_ID)).workers, HORIZON - 2 * 60 * MIN)
+			// Its watermark is now the oldest, so it goes first instead of waiting for every zone
+			// to reach the horizon. (The spent cap grew; pin it so the tick is one round again.)
+			yield* seedGrantCap(20)
+			yield* service.pollOrg(ORG)
+			assert.strictEqual((yield* watermarksOf(ACCOUNT_ID)).workers, HORIZON - 60 * MIN)
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
@@ -916,8 +1184,8 @@ describe("CloudflareAnalyticsService", () => {
 				dataset: "http_requests",
 				zoneId: "gone-zone",
 				zoneName: "gone.example.com",
-				watermarkAt: new Date(T0 - 20 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 20 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			yield* service.pollOrg(ORG)
@@ -941,8 +1209,8 @@ describe("CloudflareAnalyticsService", () => {
 				dataset: "http_requests",
 				zoneId: "beyond-cap-zone",
 				zoneName: "beyond.example.com",
-				watermarkAt: new Date(T0 - 20 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 20 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			yield* service.pollOrg(ORG)
@@ -963,7 +1231,7 @@ describe("CloudflareAnalyticsService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(T0)
 			yield* seedConnection()
-			yield* seedStateRow({ dataset: "workers_invocations", leaseUntil: new Date(T0 + 3 * MIN) })
+			yield* seedStateRow({ dataset: "workers_invocations", leaseUntil: T0 + 3 * MIN })
 			const service = yield* CloudflareAnalyticsService
 			const summary = yield* service.pollOrg(ORG)
 			assert.strictEqual(summary.skipped, "lease held by another tick")
@@ -996,8 +1264,8 @@ describe("CloudflareAnalyticsService", () => {
 			yield* seedStateRow({
 				dataset: "workers_invocations",
 				zoneId: "",
-				discoveredAt: new Date(T0 - 5 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				discoveredAt: T0 - 5 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			yield* service.pollOrg(ORG)
@@ -1024,7 +1292,7 @@ describe("CloudflareAnalyticsService", () => {
 			// A live lease is always bounded by now+LEASE_MS (4min); anything beyond 2x that (8min)
 			// can't come from normal operation — e.g. a crashed writer left a bogus far-future value
 			// — so it must be treated as corrupt and reclaimed rather than wedging the org forever.
-			yield* seedStateRow({ dataset: "workers_invocations", leaseUntil: new Date(T0 + 60 * MIN) })
+			yield* seedStateRow({ dataset: "workers_invocations", leaseUntil: T0 + 60 * MIN })
 			const service = yield* CloudflareAnalyticsService
 			const summary = yield* service.pollOrg(ORG)
 			assert.isNull(summary.skipped)
@@ -1040,7 +1308,7 @@ describe("CloudflareAnalyticsService", () => {
 			yield* seedConnection()
 			// Reuse the lease-held skip scenario: a live 3min lease means this tick's pollOrg call
 			// skips instead of polling.
-			yield* seedStateRow({ dataset: "workers_invocations", leaseUntil: new Date(T0 + 3 * MIN) })
+			yield* seedStateRow({ dataset: "workers_invocations", leaseUntil: T0 + 3 * MIN })
 			const service = yield* CloudflareAnalyticsService
 			const result = yield* service.pollAllOrgs()
 			assert.strictEqual(result.rowsIngested, 0)
@@ -1058,10 +1326,11 @@ describe("CloudflareAnalyticsService", () => {
 			yield* seedConnection()
 			const database = yield* Database
 			yield* database.execute((db) =>
-				db
-					.update(oauthConnections)
-					.set({ revokedAt: new Date(T0 - MIN) })
-					.where(eq(oauthConnections.orgId, ORG)),
+				db.run(
+					PG.update(OAuthConnections)
+						.set({ revokedAt: T0 - MIN })
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 			const service = yield* CloudflareAnalyticsService
 			const result = yield* service.pollAllOrgs()
@@ -1070,7 +1339,11 @@ describe("CloudflareAnalyticsService", () => {
 
 			yield* service.resetOrgState(ORG)
 			const rows = yield* database.execute((db) =>
-				db.select().from(oauthConnections).where(eq(oauthConnections.orgId, ORG)),
+				db.run(
+					PG.from(OAuthConnections)
+						.select()
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
 			)
 			assert.isNull(rows[0]!.revokedAt)
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
@@ -1086,8 +1359,8 @@ describe("CloudflareAnalyticsService", () => {
 				dataset: "workers_invocations",
 				enabled: false,
 				lastError: "token revoked",
-				lastErrorAt: new Date(T0 - 10 * MIN),
-				discoveredAt: new Date(T0 - 10 * MIN),
+				lastErrorAt: T0 - 10 * MIN,
+				discoveredAt: T0 - 10 * MIN,
 			})
 			yield* seedStateRow({
 				dataset: "http_requests",
@@ -1095,7 +1368,7 @@ describe("CloudflareAnalyticsService", () => {
 				zoneName: ZONE_NAME,
 				enabled: false,
 				lastError: "token revoked",
-				lastErrorAt: new Date(T0 - 10 * MIN),
+				lastErrorAt: T0 - 10 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			yield* service.resetOrgState(ORG)
@@ -1112,6 +1385,33 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
+	it.effect("findHttpZone returns the enabled zone's account and skips disabled or orphaned rows", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* seedStateRow({
+				dataset: "http_requests",
+				zoneId: "z-off",
+				zoneName: "off.example.com",
+				enabled: false,
+			})
+			yield* seedStateRow({
+				dataset: "http_requests",
+				zoneId: "z-orphan",
+				zoneName: "orphan.example.com",
+				accountId: "",
+			})
+			yield* seedStateRow({ dataset: "http_requests", zoneId: ZONE_ID, zoneName: ZONE_NAME })
+			const service = yield* CloudflareAnalyticsService
+
+			const found = yield* service.findHttpZone(ORG, ZONE_NAME)
+			assert.deepStrictEqual(found, { zoneId: ZONE_ID, accountId: ACCOUNT_ID })
+			assert.isNull(yield* service.findHttpZone(ORG, "off.example.com"))
+			assert.isNull(yield* service.findHttpZone(ORG, "orphan.example.com"))
+			assert.isNull(yield* service.findHttpZone(asOrgId("org_other"), ZONE_NAME))
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
 	it.effect("pollOrg records GraphQL errors without advancing watermarks", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
@@ -1122,13 +1422,13 @@ describe("CloudflareAnalyticsService", () => {
 				dataset: "http_requests",
 				zoneId: ZONE_ID,
 				zoneName: ZONE_NAME,
-				watermarkAt: new Date(T0 - 30 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			yield* seedStateRow({
 				dataset: "workers_invocations",
-				watermarkAt: new Date(T0 - 30 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			const summary = yield* service.pollOrg(ORG)
@@ -1140,7 +1440,7 @@ describe("CloudflareAnalyticsService", () => {
 			const rows = yield* loadStateRows
 			const httpRow = rows.find((row) => row.dataset === "http_requests")
 			assert.include(httpRow!.lastError ?? "", "quota exceeded")
-			assert.strictEqual(httpRow!.watermarkAt?.getTime(), T0 - 30 * MIN)
+			assert.strictEqual(httpRow!.watermarkAt, T0 - 30 * MIN)
 			assert.strictEqual(captured.length, 0)
 		}).pipe(
 			Effect.provide(makeLayer(testDb, captured, { graphqlErrors: [{ message: "quota exceeded" }] })),
@@ -1157,8 +1457,8 @@ describe("CloudflareAnalyticsService", () => {
 				dataset: "http_requests",
 				zoneId: ZONE_ID,
 				zoneName: ZONE_NAME,
-				watermarkAt: new Date(T0 - 30 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			const summary = yield* service.pollOrg(ORG)
@@ -1167,10 +1467,11 @@ describe("CloudflareAnalyticsService", () => {
 			// fully-broken integration was invisible to find_errors/logs for hours. It must now be a
 			// classified, first-class failure on the summary (which the seam turns into an exception
 			// event + ERROR log through Maple's own error pipeline).
-			const authz = summary.failures.find((failure) => failure.kind === "authz")
+			const authz = summary.failures.find(
+				(failure) => failure.kind === "authz" && failure.datasetId === "http_requests",
+			)
 			assert.isDefined(authz)
 			assert.strictEqual(authz!.scope, "zone")
-			assert.strictEqual(authz!.datasetId, "http_requests")
 			assert.include(authz!.message, "not authorized")
 			assert.strictEqual(summary.rowsIngested, 0)
 			const rows = yield* loadStateRows
@@ -1188,6 +1489,7 @@ describe("CloudflareAnalyticsService", () => {
 	it.effect("a Cloudflare rate limit is a quiet org-wide backoff, not a per-dataset failure", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(T0)
 			yield* seedConnection()
@@ -1198,17 +1500,27 @@ describe("CloudflareAnalyticsService", () => {
 					dataset,
 					zoneId: ZONE_ID,
 					zoneName: ZONE_NAME,
-					watermarkAt: new Date(T0 - 30 * MIN),
-					settingsFetchedAt: new Date(T0 - 5 * MIN),
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
 				})
 			}
 			yield* seedStateRow({
 				dataset: "workers_invocations",
-				watermarkAt: new Date(T0 - 30 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
-			const summary = yield* service.pollOrg(ORG)
+			const summary = yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+			// The poll span says why it stopped and that the windows are still owed.
+			const [poll] = named("CloudflareAnalyticsService.pollConnection")
+			assert.strictEqual(poll!.attributes.get("maple.cloudflare.stop_reason"), "rate_limited")
+			assert.isAbove(Number(poll!.attributes.get("maple.cloudflare.pending_items")), 0)
+			assert.include(
+				named("CloudflareAnalyticsService.pollDatasetChunk").map((span) =>
+					span.attributes.get("maple.cloudflare.outcome"),
+				),
+				"rate-limited",
+			)
 			// Classified as `rate-limited` → no failure outcome at all, so nothing reaches the
 			// observeDatasetFailure seam that records exception events.
 			assert.strictEqual(summary.failures.length, 0)
@@ -1224,12 +1536,12 @@ describe("CloudflareAnalyticsService", () => {
 				assert.isTrue(row.enabled, `${row.dataset} must stay enabled`)
 				// Frontiers stay put — the same windows are retried after the backoff. (Rows that
 				// discovery created this tick simply have no watermark yet.)
-				if (row.watermarkAt != null) assert.strictEqual(row.watermarkAt.getTime(), T0 - 30 * MIN)
+				if (row.watermarkAt != null) assert.strictEqual(row.watermarkAt, T0 - 30 * MIN)
 			}
 			// The lease is held rather than released, so the next tick skips this org for ~5 min.
 			const anchor = rows.find((row) => row.dataset === "workers_invocations" && row.zoneId === "")
 			assert.isNotNull(anchor!.leaseUntil)
-			assert.isAbove(anchor!.leaseUntil!.getTime(), T0)
+			assert.isAbove(anchor!.leaseUntil!, T0)
 			assert.strictEqual(captured.length, 0)
 		}).pipe(
 			Effect.provide(
@@ -1240,6 +1552,85 @@ describe("CloudflareAnalyticsService", () => {
 				}),
 			),
 		)
+	})
+
+	it.effect("a rate-limited tick halves the grant's call cap, never below the floor", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedStateRow({
+				dataset: "workers_invocations",
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+			})
+			const service = yield* CloudflareAnalyticsService
+
+			// No stored cap yet: the tick runs at the starting cap and halves it.
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+			const [org] = named("CloudflareAnalyticsService.pollOrg")
+			assert.strictEqual(org!.attributes.get("maple.cloudflare.grant_cap"), 60)
+			assert.strictEqual(org!.attributes.get("maple.cloudflare.grant_cap_next"), 30)
+			assert.deepStrictEqual(yield* grantCapsOf, [30])
+
+			// Near the floor a halving clamps to it, and a further rate limit keeps it there.
+			yield* seedGrantCap(8)
+			yield* TestClock.setTime(T0 + 6 * MIN)
+			yield* service.pollOrg(ORG)
+			assert.deepStrictEqual(yield* grantCapsOf, [5])
+			yield* TestClock.setTime(T0 + 12 * MIN)
+			yield* service.pollOrg(ORG)
+			assert.deepStrictEqual(yield* grantCapsOf, [5])
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					graphqlErrors: [
+						{ message: "Rate limiter budget depleted. Please try again after 5 minutes." },
+					],
+				}),
+			),
+		)
+	})
+
+	it.effect("a tick that spends the whole cap grows it, up to the ceiling", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			// 100 zones with a full 24h backfill owed: far more work than any cap allows.
+			yield* seedManyZones(100)
+			const service = yield* CloudflareAnalyticsService
+
+			const first = yield* service.pollOrg(ORG)
+			assert.strictEqual(first.callsMade, 60)
+			assert.deepStrictEqual(yield* grantCapsOf, [65])
+
+			// Growth stops at the ceiling.
+			yield* seedGrantCap(148)
+			const second = yield* service.pollOrg(ORG)
+			assert.strictEqual(second.callsMade, 148)
+			assert.deepStrictEqual(yield* grantCapsOf, [150])
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	it.effect("a tick with calls to spare holds the cap where it is", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedBehindAccount(ACCOUNT_ID, 1, 30 * MIN)
+			yield* seedGrantCap(40)
+			const service = yield* CloudflareAnalyticsService
+
+			const summary = yield* service.pollOrg(ORG)
+			assert.isAbove(summary.callsMade, 0)
+			assert.isBelow(summary.callsMade, 40)
+			assert.deepStrictEqual(yield* grantCapsOf, [40])
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
 	it.effect("an unattributed 'disabled' error does not cascade across a batched document", () => {
@@ -1254,8 +1645,8 @@ describe("CloudflareAnalyticsService", () => {
 					dataset,
 					zoneId: ZONE_ID,
 					zoneName: ZONE_NAME,
-					watermarkAt: new Date(T0 - 30 * MIN),
-					settingsFetchedAt: new Date(T0 - 5 * MIN),
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
 				})
 			}
 			const service = yield* CloudflareAnalyticsService
@@ -1298,9 +1689,9 @@ describe("CloudflareAnalyticsService", () => {
 					dataset,
 					zoneId: ZONE_ID,
 					zoneName: ZONE_NAME,
-					watermarkAt: new Date(T0 - 30 * MIN),
-					backfillAt: new Date(BACKFILL_FLOOR),
-					settingsFetchedAt: new Date(T0 - 5 * MIN),
+					watermarkAt: T0 - 30 * MIN,
+					backfillAt: BACKFILL_FLOOR,
+					settingsFetchedAt: T0 - 5 * MIN,
 				})
 			}
 			const service = yield* CloudflareAnalyticsService
@@ -1332,8 +1723,8 @@ describe("CloudflareAnalyticsService", () => {
 					dataset,
 					zoneId: ZONE_ID,
 					zoneName: ZONE_NAME,
-					watermarkAt: new Date(T0 - 30 * MIN),
-					settingsFetchedAt: new Date(T0 - 5 * MIN),
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
 				})
 			}
 			const service = yield* CloudflareAnalyticsService
@@ -1368,8 +1759,8 @@ describe("CloudflareAnalyticsService", () => {
 					dataset,
 					zoneId: ZONE_ID,
 					zoneName: ZONE_NAME,
-					watermarkAt: new Date(T0 - 30 * MIN),
-					settingsFetchedAt: new Date(T0 - 5 * MIN),
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
 				})
 			}
 			const service = yield* CloudflareAnalyticsService
@@ -1406,8 +1797,8 @@ describe("CloudflareAnalyticsService", () => {
 						dataset,
 						zoneId: ZONE_ID,
 						zoneName: ZONE_NAME,
-						watermarkAt: new Date(T0 - 30 * MIN),
-						settingsFetchedAt: new Date(T0 - 5 * MIN),
+						watermarkAt: T0 - 30 * MIN,
+						settingsFetchedAt: T0 - 5 * MIN,
 					})
 				}
 				const service = yield* CloudflareAnalyticsService
@@ -1450,8 +1841,8 @@ describe("CloudflareAnalyticsService", () => {
 					dataset,
 					zoneId: ZONE_ID,
 					zoneName: ZONE_NAME,
-					watermarkAt: new Date(T0 - 30 * MIN),
-					settingsFetchedAt: new Date(T0 - 5 * MIN),
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
 				})
 			}
 			const service = yield* CloudflareAnalyticsService
@@ -1489,8 +1880,8 @@ describe("CloudflareAnalyticsService", () => {
 				dataset: "http_requests",
 				zoneId: ZONE_ID,
 				zoneName: ZONE_NAME,
-				watermarkAt: new Date(T0 - 30 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			const summary = yield* service.pollOrg(ORG)
@@ -1529,8 +1920,8 @@ describe("CloudflareAnalyticsService", () => {
 				dataset: "http_requests",
 				zoneId: ZONE_ID,
 				zoneName: ZONE_NAME,
-				watermarkAt: new Date(T0 - 30 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			const summary = yield* service.pollOrg(ORG)
@@ -1550,7 +1941,7 @@ describe("CloudflareAnalyticsService", () => {
 			assert.include(httpRow!.lastError ?? "", "reconnect")
 			assert.isFalse(httpRow!.enabled)
 			// …while the watermark holds, so a reconnect resumes from where polling stopped.
-			assert.strictEqual(httpRow!.watermarkAt?.getTime(), T0 - 30 * MIN)
+			assert.strictEqual(httpRow!.watermarkAt, T0 - 30 * MIN)
 			assert.strictEqual(otlpCalls.length, 0)
 			assert.strictEqual(captured.length, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, zonesStatus: 401 })))
@@ -1596,13 +1987,13 @@ describe("CloudflareAnalyticsService", () => {
 				dataset: "http_requests",
 				zoneId: ZONE_ID,
 				zoneName: ZONE_NAME,
-				watermarkAt: new Date(T0 - 30 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			yield* seedStateRow({
 				dataset: "workers_invocations",
-				watermarkAt: new Date(T0 - 30 * MIN),
-				settingsFetchedAt: new Date(T0 - 5 * MIN),
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
 			const summary = yield* service.pollOrg(ORG)
@@ -1612,9 +2003,137 @@ describe("CloudflareAnalyticsService", () => {
 			const rows = yield* loadStateRows
 			const httpRow = rows.find((row) => row.dataset === "http_requests")
 			assert.include(httpRow!.lastError ?? "", "ingest returned 500")
-			assert.strictEqual(httpRow!.watermarkAt?.getTime(), T0 - 30 * MIN)
+			assert.strictEqual(httpRow!.watermarkAt, T0 - 30 * MIN)
 			assert.strictEqual(captured.length, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 500 })))
+	})
+
+	// Production: an org with no active plan raised a poll error and an upstream error span on
+	// every tick. A 402 is billing state the tenant fixes, so it is health, not an exception.
+	it.effect("a 402 from the gateway is plan-blocked: health recorded, no failure, lease held", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const otlpCalls: OtlpCall[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			for (const dataset of ["http_requests", "firewall_events"]) {
+				yield* seedStateRow({
+					dataset,
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
+				})
+			}
+			yield* seedStateRow({
+				dataset: "workers_invocations",
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+			})
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			assert.strictEqual(summary.failures.length, 0)
+			assert.strictEqual(summary.rowsIngested, 0)
+			// The first refusal ends the tick: one gateway call, not one per document.
+			assert.strictEqual(otlpCalls.length, 1)
+			const rows = yield* loadStateRows
+			const httpRow = rows.find((row) => row.dataset === "http_requests")
+			assert.include(httpRow!.lastError ?? "", "ingest returned 402")
+			assert.strictEqual(httpRow!.watermarkAt, T0 - 30 * MIN)
+			const anchor = rows.find((row) => row.dataset === "workers_invocations" && row.zoneId === "")
+			assert.isAbove(anchor!.leaseUntil!, T0)
+		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 402 })))
+	})
+
+	// Production: an edge-blocked ingest key got a 403 HTML block page, and every dataset of every
+	// tick raised a poll error carrying the page. A refused key is health plus a backoff instead.
+	it.effect("a 403 HTML block page from ingest is a refusal: short message, no failure, lease held", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const otlpCalls: OtlpCall[] = []
+		const metricsHtml =
+			'<!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->\n' +
+			"<head><title>Attention Required! | Cloudflare</title></head><body>blocked</body></html>"
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			for (const dataset of ["http_requests", "firewall_events"]) {
+				yield* seedStateRow({
+					dataset,
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					watermarkAt: T0 - 30 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
+				})
+			}
+			yield* seedStateRow({
+				dataset: "workers_invocations",
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+			})
+			const service = yield* CloudflareAnalyticsService
+			const first = yield* service.pollOrg(ORG)
+			assert.strictEqual(first.failures.length, 0)
+			assert.strictEqual(otlpCalls.length, 1)
+			const rows = yield* loadStateRows
+			const httpRow = rows.find((row) => row.dataset === "http_requests")
+			assert.strictEqual(
+				httpRow!.lastError,
+				'Cloudflare metrics ingest returned 403: HTML response "Attention Required! | Cloudflare" (cf-ray 8d1f2e3a4b5c6d7e-FRA)',
+			)
+			assert.strictEqual(httpRow!.watermarkAt, T0 - 30 * MIN)
+			// The held lease makes the next tick skip the org instead of re-posting.
+			yield* TestClock.adjust(MIN)
+			yield* service.pollOrg(ORG)
+			assert.strictEqual(otlpCalls.length, 1)
+			yield* TestClock.adjust(10 * MIN)
+			yield* service.pollOrg(ORG)
+			assert.strictEqual(otlpCalls.length, 2)
+		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, metricsStatus: 403, metricsHtml })))
+	})
+
+	// Every account of an org posts with the same org key, so one refusal holds the siblings too.
+	it.effect("an ingest refusal on one account holds the org's other accounts without posting", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const otlpCalls: OtlpCall[] = []
+		const SECOND_ACCOUNT = "acct-2"
+		const secondZone = {
+			...zoneFixture,
+			id: "zone-2",
+			name: "beta.example",
+			account: { id: SECOND_ACCOUNT, name: "Second Account" },
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection(ANALYTICS_SCOPE, [
+				{ id: ACCOUNT_ID, name: "Test Account" },
+				{ id: SECOND_ACCOUNT, name: "Second Account" },
+			])
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG)
+			assert.strictEqual(summary.failures.length, 0)
+			assert.strictEqual(otlpCalls.length, 1)
+			const rows = yield* loadStateRows
+			const secondAnchor = rows.find(
+				(row) => row.accountId === SECOND_ACCOUNT && row.dataset === "workers_invocations",
+			)
+			assert.include(secondAnchor!.lastError ?? "", "ingest returned 403")
+			assert.isAbove(secondAnchor!.leaseUntil!, T0)
+			// Neither account posts again inside the backoff.
+			yield* TestClock.adjust(MIN)
+			yield* service.pollOrg(ORG)
+			assert.strictEqual(otlpCalls.length, 1)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					otlpCalls,
+					metricsStatus: 403,
+					zonesByAccount: { [ACCOUNT_ID]: [zoneFixture], [SECOND_ACCOUNT]: [secondZone] },
+				}),
+			),
+		)
 	})
 
 	it.effect("getStatus reflects zone and workers state rows", () => {
@@ -1625,13 +2144,13 @@ describe("CloudflareAnalyticsService", () => {
 				dataset: "http_requests",
 				zoneId: ZONE_ID,
 				zoneName: ZONE_NAME,
-				lastSuccessAt: new Date(T0 - 5 * MIN),
-				watermarkAt: new Date(T0 - 15 * MIN),
+				lastSuccessAt: T0 - 5 * MIN,
+				watermarkAt: T0 - 15 * MIN,
 			})
 			yield* seedStateRow({
 				dataset: "workers_invocations",
 				lastError: "boom",
-				lastErrorAt: new Date(T0),
+				lastErrorAt: T0,
 			})
 			const service = yield* CloudflareAnalyticsService
 			const status = yield* service.getStatus(ORG)
@@ -1684,13 +2203,13 @@ describe("CloudflareAnalyticsService", () => {
 					dataset: "http_requests",
 					zoneId: ZONE_ID,
 					zoneName: ZONE_NAME,
-					lastSuccessAt: new Date(T0 - 5 * MIN),
-					watermarkAt: new Date(T0 - 15 * MIN),
+					lastSuccessAt: T0 - 5 * MIN,
+					watermarkAt: T0 - 15 * MIN,
 				})
 				yield* seedStateRow({
 					dataset: "workers_invocations",
 					lastError: "boom",
-					lastErrorAt: new Date(T0),
+					lastErrorAt: T0,
 				})
 				const service = yield* CloudflareAnalyticsService
 				const status = yield* service.getIntegrationStatus(ORG)

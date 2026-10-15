@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import {
 	IssueEscalationPolicyRule,
@@ -54,7 +54,7 @@ const emptyDraft = (): DraftRules => ({
  * detection-time alerts keep using the alert rule's own destinations.
  */
 export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
-	const policyQueryAtom = retainedQuery("errors", "getEscalationPolicy", {
+	const policyQueryAtom = retainedInternalQuery("errors", "getEscalationPolicy", {
 		reactivityKeys: ["issueEscalationPolicy"],
 	})
 	const policyResult = useAtomValue(policyQueryAtom)
@@ -62,7 +62,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 
 	const { result: destinationsResult } = useAlertDestinationsList()
 
-	const upsertMutation = useAtomSet(MapleApiAtomClient.mutation("errors", "upsertEscalationPolicy"), {
+	const upsertMutation = useAtomSet(MapleInternalAtomClient.mutation("errors", "upsertEscalationPolicy"), {
 		mode: "promiseExit",
 	})
 

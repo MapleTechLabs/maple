@@ -2271,6 +2271,7 @@ FORMAT JSON
 -- builder:cloudflare-infra-extended:cloudflareDurableObjectCountersSQL:default
 SELECT
           metrics_sum.ServiceName AS serviceName,
+          metrics_sum.ResourceAttributes['cloudflare.account.id'] AS accountId,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.requests') AS requests,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.errors') AS errors
         FROM metrics_sum
@@ -2278,7 +2279,7 @@ SELECT
           AND metrics_sum.MetricName IN ('cloudflare.durable_object.requests', 'cloudflare.durable_object.errors')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
-        GROUP BY serviceName
+        GROUP BY serviceName, accountId
         ORDER BY requests DESC
         LIMIT 500
         FORMAT JSON
@@ -2286,6 +2287,7 @@ SELECT
 -- builder:cloudflare-infra-extended:cloudflareQueueGaugesSQL:default
 SELECT
           metrics_gauge.ServiceName AS serviceName,
+          metrics_gauge.ResourceAttributes['cloudflare.account.id'] AS accountId,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'cloudflare.queue.backlog.messages'), 0), 0) AS backlogMessages,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'cloudflare.queue.backlog.messages') AS backlogMessagesMax,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'cloudflare.queue.backlog.bytes'), 0), 0) AS backlogBytes,
@@ -2295,7 +2297,7 @@ SELECT
           AND metrics_gauge.MetricName IN ('cloudflare.queue.backlog.messages', 'cloudflare.queue.backlog.bytes', 'cloudflare.queue.consumer.concurrency')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
-        GROUP BY serviceName
+        GROUP BY serviceName, accountId
         ORDER BY backlogMessagesMax DESC
         LIMIT 500
         FORMAT JSON
@@ -2367,6 +2369,7 @@ SELECT
 -- builder:cloudflare-infra:cloudflareWorkerCountersSQL:default
 SELECT
           metrics_sum.ServiceName AS serviceName,
+          metrics_sum.ResourceAttributes['cloudflare.account.id'] AS accountId,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.worker.requests') AS requests,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.worker.errors') AS errors,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.worker.subrequests') AS subrequests
@@ -2375,14 +2378,30 @@ SELECT
           AND metrics_sum.MetricName IN ('cloudflare.worker.requests', 'cloudflare.worker.errors', 'cloudflare.worker.subrequests')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
-        GROUP BY serviceName
+        GROUP BY serviceName, accountId
         ORDER BY requests DESC
         LIMIT 500
+        FORMAT JSON
+
+-- builder:cloudflare-infra:cloudflareWorkerDurableObjectTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(metrics_sum.TimeUnix, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.requests') AS requests,
+          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.errors') AS errors
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.ServiceName = 'cloudflare-zone-example-com'
+          AND metrics_sum.MetricName IN ('cloudflare.durable_object.requests', 'cloudflare.durable_object.errors')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
         FORMAT JSON
 
 -- builder:cloudflare-infra:cloudflareWorkerLatencySQL:default
 SELECT
           metrics_gauge.ServiceName AS serviceName,
+          metrics_gauge.ResourceAttributes['cloudflare.account.id'] AS accountId,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.cpu_time' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS cpuP50Ms,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.cpu_time' AND metrics_gauge.Attributes['quantile'] = '0.99')), 0), 0) AS cpuP99Ms,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.duration' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS durationP50Ms,
@@ -2392,8 +2411,42 @@ SELECT
           AND metrics_gauge.MetricName IN ('cloudflare.worker.duration', 'cloudflare.worker.cpu_time')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
-        GROUP BY serviceName
+        GROUP BY serviceName, accountId
         LIMIT 500
+        FORMAT JSON
+
+-- builder:cloudflare-infra:cloudflareWorkerLatencyTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(metrics_gauge.TimeUnix, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.cpu_time' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS cpuP50Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.cpu_time' AND metrics_gauge.Attributes['quantile'] = '0.99')), 0), 0) AS cpuP99Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.duration' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS durationP50Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.duration' AND metrics_gauge.Attributes['quantile'] = '0.99')), 0), 0) AS durationP99Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.durable_object.wall_time' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS doWallP50Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.durable_object.wall_time' AND metrics_gauge.Attributes['quantile'] = '0.99')), 0), 0) AS doWallP99Ms
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.ServiceName = 'cloudflare-zone-example-com'
+          AND metrics_gauge.MetricName IN ('cloudflare.worker.duration', 'cloudflare.worker.cpu_time', 'cloudflare.durable_object.wall_time')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:cloudflare-infra:cloudflareWorkerOutcomeTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(metrics_sum.TimeUnix, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          metrics_sum.Attributes['worker.status'] AS status,
+          sum(metrics_sum.Value) AS requests
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.ServiceName = 'cloudflare-zone-example-com'
+          AND metrics_sum.MetricName = 'cloudflare.worker.requests'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY bucket, status
+        ORDER BY bucket ASC, status ASC
         FORMAT JSON
 
 -- builder:cloudflare-infra:cloudflareZoneCacheTimeseriesSQL:default
@@ -2418,7 +2471,11 @@ SELECT
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '5xx')) AS errors5xx,
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] IN ('hit', 'stale', 'revalidated', 'updating'))) AS cacheHits,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.bytes') AS bytes,
-          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.visits') AS visits
+          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.visits') AS visits,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '2xx')) AS requests2xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '3xx')) AS requests3xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '4xx')) AS errors4xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] NOT IN ('', 'none', 'dynamic', 'bypass', 'unknown'))) AS cacheableRequests
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('cloudflare.http.requests', 'cloudflare.http.bytes', 'cloudflare.http.visits')
@@ -2436,7 +2493,11 @@ SELECT
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '5xx')) AS errors5xx,
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] IN ('hit', 'stale', 'revalidated', 'updating'))) AS cacheHits,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.bytes') AS bytes,
-          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.visits') AS visits
+          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.visits') AS visits,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '2xx')) AS requests2xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '3xx')) AS requests3xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '4xx')) AS errors4xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] NOT IN ('', 'none', 'dynamic', 'bypass', 'unknown'))) AS cacheableRequests
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('cloudflare.http.requests', 'cloudflare.http.bytes', 'cloudflare.http.visits')

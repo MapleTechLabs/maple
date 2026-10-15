@@ -1,3 +1,4 @@
+import { SpanPositionBar } from "@maple/ui/components/traces/span-position-bar"
 import { useState } from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { XmarkIcon, ClockIcon, CircleInfoIcon, ServerIcon } from "@/components/icons"
@@ -6,6 +7,7 @@ import { ErrorSection } from "@maple/ui/components/error-section"
 
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
@@ -26,7 +28,12 @@ import { ServiceDot } from "@maple/ui/components/service-dot"
 import type { SpanNode, SpanDetailResult } from "@/api/warehouse/traces"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { getSpanDetailResultAtom, listLogsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { CopyableValue, AttributesSection, ResourceAttributesSection } from "@/components/attributes"
+import {
+	CopyableValue,
+	SelectableValue,
+	AttributesSection,
+	ResourceAttributesSection,
+} from "@/components/attributes"
 import { TraceAttributeFilterProvider } from "./trace-attribute-filter-provider"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
@@ -42,44 +49,6 @@ interface SpanDetailPanelProps {
 	traceStartTime: string
 	totalDurationMs: number
 	className?: string
-}
-
-/**
- * Where this span sits inside the whole trace: a muted track spanning the
- * trace's wall-clock time, with the span's own window in its service color.
- * Offsets are clamped so clock-skewed spans never paint outside the track.
- */
-function SpanPositionBar({
-	span,
-	traceStartTime,
-	totalDurationMs,
-	color,
-}: {
-	span: SpanNode
-	traceStartTime: string
-	totalDurationMs: number
-	color: string
-}) {
-	const offsetMs = new Date(span.startTime).getTime() - new Date(traceStartTime).getTime()
-	if (!Number.isFinite(offsetMs) || totalDurationMs <= 0) return null
-
-	const offsetPct = Math.min(Math.max((offsetMs / totalDurationMs) * 100, 0), 100)
-	const widthPct = Math.min(Math.max((span.durationMs / totalDurationMs) * 100, 0.75), 100 - offsetPct)
-
-	return (
-		<div className="py-1">
-			<div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
-				<div
-					className="absolute inset-y-0 rounded-full"
-					style={{ left: `${offsetPct}%`, width: `${widthPct}%`, backgroundColor: color }}
-				/>
-			</div>
-			<div className="mt-1 flex justify-between text-3xs text-muted-foreground tabular-nums">
-				<span>+{formatDuration(Math.max(offsetMs, 0))}</span>
-				<span>{formatDuration(totalDurationMs)} total</span>
-			</div>
-		</div>
-	)
 }
 
 const LOG_LIMIT = 100
@@ -229,29 +198,32 @@ export function SpanDetailPanel({
 					style={{ backgroundColor: serviceColor }}
 				/>
 				<div className="flex-1 min-w-0 mr-2 overflow-hidden">
-					<CopyableValue value={span.spanName} className="block min-w-0 overflow-hidden">
-						<div className="min-w-0">
-							<HttpSpanLabel
-								spanName={span.spanName}
-								spanAttributes={span.spanAttributes}
-								spanKind={span.spanKind}
-								textClassName="font-semibold text-sm"
-							/>
-						</div>
-					</CopyableValue>
-					<div className="flex items-center gap-1.5 mt-0.5">
+					<SelectableValue
+						value={span.spanName}
+						label="span name"
+						className="flex min-w-0 items-center"
+						textClassName="min-w-0 flex-1"
+					>
+						<HttpSpanLabel
+							spanName={span.spanName}
+							spanAttributes={span.spanAttributes}
+							spanKind={span.spanKind}
+							textClassName="font-semibold text-sm"
+						/>
+					</SelectableValue>
+					<div className="flex min-w-0 items-center gap-1.5 mt-0.5">
 						<ServiceDot serviceName={span.serviceName} size="sm" />
-						<CopyableValue value={span.serviceName}>
+						<CopyableValue value={span.serviceName} className="min-w-0 truncate">
 							<span className="font-mono text-3xs" style={{ color: serviceColor }}>
 								{span.serviceName}
 							</span>
 						</CopyableValue>
-						<span className="text-3xs text-muted-foreground">{kindLabel}</span>
+						<span className="shrink-0 text-3xs text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-0.5">
 					<IconButton size="icon" label="Close span details" onClick={onClose}>
-						<XmarkIcon size={16} />
+						<XmarkIcon />
 					</IconButton>
 				</div>
 			</div>
@@ -293,9 +265,9 @@ export function SpanDetailPanel({
 							</span>
 						)}
 						{cacheInfo.name && (
-							<span className="font-mono text-muted-foreground truncate" title={cacheInfo.name}>
+							<TruncatedText mono className="text-muted-foreground">
 								{cacheInfo.name}
-							</span>
+							</TruncatedText>
 						)}
 					</div>
 				)}
@@ -403,7 +375,7 @@ export function SpanDetailPanel({
 										/>
 									)}
 									<KeyValueList className="gap-1">
-										<KeyValue mono label="Start Time">
+										<KeyValue mono label="Start time">
 											<CopyableValue value={span.startTime}>
 												{formatTimestampInTimezone(span.startTime, {
 													timeZone: effectiveTimezone,
@@ -415,7 +387,7 @@ export function SpanDetailPanel({
 											<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
 										</KeyValue>
 										{span.parentSpanId && (
-											<KeyValue mono label="Parent Span ID">
+											<KeyValue mono label="Parent span ID">
 												<CopyableValue value={span.parentSpanId}>
 													{span.parentSpanId}
 												</CopyableValue>
@@ -431,7 +403,7 @@ export function SpanDetailPanel({
 								<TraceAttributeFilterProvider scope="span">
 									<AttributesSection
 										attributes={span.spanAttributes ?? {}}
-										title="Span Attributes"
+										title="Span attributes"
 									/>
 								</TraceAttributeFilterProvider>
 							) : (
@@ -453,7 +425,7 @@ export function SpanDetailPanel({
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={span.spanAttributes ?? {}}
-													title="Span Attributes"
+													title="Span attributes"
 												/>
 											</TraceAttributeFilterProvider>
 											<TraceAttributeFilterProvider scope="resource">
@@ -468,7 +440,7 @@ export function SpanDetailPanel({
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={detail.spanAttributes}
-													title="Span Attributes"
+													title="Span attributes"
 												/>
 											</TraceAttributeFilterProvider>
 											<TraceAttributeFilterProvider scope="resource">

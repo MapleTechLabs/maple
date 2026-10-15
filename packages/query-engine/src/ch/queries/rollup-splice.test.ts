@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
+import { DateTime } from "effect"
 import { compileUnsafe } from "../index"
 import { compile as compileFragment } from "@maple-dev/effect-orm/sql"
 import * as CH from "../index"
 import { edgeCondition, hourGrain, interiorBounds, minuteGrain, utcInteriorConditions } from "./rollup-splice"
-import { paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 // These pin the tiling invariant: the raw edge and the aggregate interior must
@@ -20,7 +20,13 @@ import * as T from "@maple-dev/effect-orm/clickhouse"
 const sqlOf = (cond: CH.Condition) => compileFragment(cond.toFragment())
 
 /** Compile a trivial query carrying `conds` so the WHERE text can be inspected. */
-const whereSql = (conds: ReadonlyArray<CH.Condition>) => {
+const whereSql = (
+	conds: ReadonlyArray<CH.Condition>,
+	params: { readonly startTime: string | DateTime.Utc; readonly endTime: string | DateTime.Utc } = {
+		startTime: "2026-01-01 10:30:00",
+		endTime: "2026-01-03 14:15:00",
+	},
+) => {
 	const t = CH.table("t", {
 		external: true,
 		columns: { OrgId: CH.string, Hour: CH.dateTime, Minute: CH.dateTime },
@@ -29,7 +35,7 @@ const whereSql = (conds: ReadonlyArray<CH.Condition>) => {
 		CH.from(t)
 			.select(($) => ({ c: $.OrgId }))
 			.where(($) => [$.OrgId.eq("org"), ...conds]),
-		{ startTime: "2026-01-01 10:30:00", endTime: "2026-01-03 14:15:00" },
+		params,
 	).sql
 }
 
@@ -91,9 +97,23 @@ describe("rollup splice boundaries", () => {
 	it("emits placeholders that survive to compile time", () => {
 		// The fragments embed param placeholders rather than literals, so a
 		// compiled query resolves them once at the outer compile() call.
-		expect(hourGrain.startDt).toContain(paramPlaceholder("dateTime", "startTime"))
+		expect(hourGrain.startDt).toContain("__PARAM_")
 		const sql = whereSql([edgeCondition("Hour")])
 		expect(sql).not.toContain("__PARAM_")
 		expect(sql).toContain("2026-01-01 10:30:00")
+	})
+
+	// `toDateTime('2026-10-08 17:16:03.729')` is a ClickHouse parse error, and
+	// callers pass millisecond `DateTime.Utc` bounds (or ms strings).
+	it.each([
+		["DateTime.Utc", DateTime.makeUnsafe("2026-10-08T17:16:03.729Z")],
+		["string", "2026-10-08 17:16:03.729"],
+	] as const)("floors a millisecond %s bound before toDateTime", (_, endTime) => {
+		const sql = whereSql([edgeCondition("Minute", minuteGrain)], {
+			startTime: "2026-10-08 13:20:05",
+			endTime,
+		})
+		expect(sql).toContain("toDateTime('2026-10-08 17:16:03')")
+		expect(sql).not.toContain(".729")
 	})
 })

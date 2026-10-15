@@ -34,7 +34,7 @@ import { CircleCheckIcon, CircleWarningIcon, ClockIcon, LoaderIcon } from "@/com
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 const searchSchema = Schema.Struct(CodeReviewListSearchFields)
 type Status = NonNullable<Schema.Schema.Type<typeof searchSchema>["status"]>
@@ -73,7 +73,7 @@ function CodeReviewPullRequestsPage() {
 	const window = { startTime: toEpochMs(startTime), endTime: toEpochMs(endTime) }
 	const [limit, setLimit] = useState(PAGE)
 
-	const query = retainedQuery("codeReview", "listReviews", {
+	const query = retainedInternalQuery("codeReview", "listReviews", {
 		query: {
 			...window,
 			repositoryId: search.repo,
@@ -236,7 +236,9 @@ function ReviewTable({
 									className={cn(
 										"px-4 py-2.5 leading-normal",
 										ROW_LANE,
-										selected === review.id ? "before:bg-primary" : "before:bg-transparent",
+										selected === review.id
+											? "before:bg-primary"
+											: "before:bg-transparent",
 									)}
 								>
 									<button
@@ -250,18 +252,23 @@ function ReviewTable({
 										<span className="shrink-0 text-muted-foreground">
 											#{review.number}
 										</span>
-										<span className="truncate font-medium">
+										<span
+											className="truncate font-medium"
+											title={review.title ?? "Untitled pull request"}
+										>
 											{review.title ?? "Untitled pull request"}
 										</span>
 									</button>
 									<div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-										<span className="truncate">{review.repositoryFullName}</span>
+										<span className="min-w-0 truncate" title={review.repositoryFullName}>
+											{review.repositoryFullName}
+										</span>
 										{review.authorLogin ? (
 											<>
 												<span className="shrink-0">·</span>
 												<AuthorLabel
 													login={review.authorLogin}
-													className="shrink-0"
+													className="max-w-[40%] min-w-0"
 												/>
 											</>
 										) : null}
@@ -324,7 +331,7 @@ function ReviewTable({
 										</span>
 									)}
 								</TableCell>
-								<TableCell className="hidden px-4 text-right text-muted-foreground sm:table-cell">
+								<TableCell className="hidden px-4 text-right text-muted-foreground tabular-nums sm:table-cell">
 									<RelativeTime value={review.createdAt} tooltip="title" />
 								</TableCell>
 							</TableRow>

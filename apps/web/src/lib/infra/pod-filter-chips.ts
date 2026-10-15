@@ -11,7 +11,7 @@ const FACETS = [
 	{ label: "DaemonSet", include: "daemonsets", exclude: "excludedDaemonsets" },
 	{ label: "Job", include: "jobs", exclude: "excludedJobs" },
 	{ label: "Environment", include: "environments", exclude: "excludedEnvironments" },
-	{ label: "Compute Type", include: "computeTypes", exclude: "excludedComputeTypes" },
+	{ label: "Compute type", include: "computeTypes", exclude: "excludedComputeTypes" },
 ] as const satisfies ReadonlyArray<{
 	label: string
 	include: keyof PodsSearchParams

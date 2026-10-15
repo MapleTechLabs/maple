@@ -14,6 +14,7 @@ import { OpenAiClient, OpenAiEmbeddingModel, OpenAiLanguageModel } from "@effect
 import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
+import { EU_DEFAULT_OPENROUTER_MODEL } from "@maple/domain/organization-regions"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { Config, Effect, Layer, Option, Redacted, Schema } from "effect"
 import type * as DecisionModel from "effect/ai/DecisionModel"
@@ -76,12 +77,8 @@ const openRouterRegion = (settings: LlmSettings): OpenRouterRegion =>
 export const openRouterApiUrl = (settings: LlmSettings): string =>
 	OPENROUTER_API_URLS[openRouterRegion(settings)]
 
-/**
- * The EU catalogue is a subset (66 models on 2026-09-25) and serves none of the US defaults, so
- * the EU instance runs chat, triage and reviews on one model that has an EU provider.
- */
-const EU_DEFAULT_OPENROUTER_MODEL = "openai/gpt-6-luna"
-const EU_DEFAULT_REVIEW_MODEL = "openai/gpt-6-luna"
+/** Reviews run on the EU chat default too; see {@link EU_DEFAULT_OPENROUTER_MODEL}. */
+const EU_DEFAULT_REVIEW_MODEL = EU_DEFAULT_OPENROUTER_MODEL
 
 /**
  * Default embedding model for the review's feedback filter. Changing it starts the filter from an
@@ -343,8 +340,12 @@ export const resolveLlmProvider = (settings: LlmSettings): LlmProvider =>
  * `reasoning`, `user`, `session_id` and `trace` are all first-class fields on OpenRouter's chat
  * request, so they ride as model config rather than as a hand-built body. `usage` is the one
  * exception, spliced per call by {@link withPerCallFields} together with the span ids.
+ *
+ * `cache_control` puts the cache breakpoint on the request's last block, so an agent loop reuses its
+ * whole history. Models with explicit caching otherwise cached only the system prompt and tools.
  */
 const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags | undefined) => ({
+	cache_control: { type: "ephemeral" as const },
 	...(effort === undefined || effort === "off" ? undefined : { reasoning: { effort } }),
 	...(tags === undefined
 		? undefined
@@ -410,6 +411,12 @@ const instrumentedModel = <R>(
 		Layer.effect(LanguageModel.LanguageModel, instrumentLanguageModel(make, telemetry, options)),
 	)
 
+/**
+ * Output tokens one agent model call may produce, reasoning included. Far below the models' 128k so
+ * a runaway generation ends in minutes; room for a large `submit_review` after high-effort reasoning.
+ */
+export const MODEL_CALL_OUTPUT_TOKENS = 32_000
+
 const openRouterModel = (
 	settings: LlmSettings,
 	name: string,
@@ -421,12 +428,17 @@ const openRouterModel = (
 	unattended = false,
 ): ResolvedModel => {
 	const effort = readReasoningEffort(settings, effortKey) ?? fallbackEffort
+	const limits = limitsFor(settings, name, overridableLimits)
+	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
 		provider: "openrouter",
 		name,
 		layer: instrumentedModel(
 			name,
-			OpenRouterLanguageModel.make({ model: name, config: openRouterConfig(effort, tags) }),
+			OpenRouterLanguageModel.make({
+				model: name,
+				config: { ...openRouterConfig(effort, tags), max_tokens: maxTokens },
+			}),
 			{
 				providerName: genAiProviderName("openrouter"),
 				...(effort === undefined || effort === "off" ? undefined : { reasoningLevel: effort }),
@@ -434,7 +446,7 @@ const openRouterModel = (
 			},
 			{ coalesceDeltas: unattended },
 		),
-		limits: limitsFor(settings, name, overridableLimits),
+		limits,
 		tags,
 	}
 }
@@ -578,6 +590,30 @@ const openRouterHttp = Layer.effect(HttpClient.HttpClient)(
 	),
 )
 
+/** The OpenRouter client on the settings' key and region. */
+export const layerOpenRouterClient = (
+	settings: LlmSettings,
+	http: Layer.Layer<HttpClient.HttpClient> = FetchHttpClient.layer,
+): Layer.Layer<OpenRouterClient.OpenRouterClient> =>
+	OpenRouterClient.layer({
+		apiKey: readSecret(settings, "OPENROUTER_API_KEY") ?? Redacted.make(""),
+		apiUrl: openRouterApiUrl(settings),
+		transformClient: withPerCallFields,
+	}).pipe(Layer.provide(openRouterHttp.pipe(Layer.provide(http))))
+
+/**
+ * Settings for an org that brought its own OpenRouter key: that key, and OpenRouter whatever this
+ * deploy's provider is, since the key is only good there.
+ */
+export const withOrgOpenRouterKey = (
+	settings: LlmSettings,
+	apiKey: Redacted.Redacted<string>,
+): LlmSettings => ({
+	...settings,
+	OPENROUTER_API_KEY: apiKey,
+	MAPLE_LLM_PROVIDER: "openrouter",
+})
+
 /**
  * The runnable LLM stack — both provider clients, so the switch stays a pure env flip.
  *
@@ -594,11 +630,7 @@ export const layerLlm = (
 	// reaches it, and everything else goes out over the network as usual.
 	const http = layerWorkersAi(workersAi).pipe(Layer.provide(FetchHttpClient.layer))
 	return Layer.mergeAll(
-		OpenRouterClient.layer({
-			apiKey: readSecret(settings, "OPENROUTER_API_KEY") ?? Redacted.make(""),
-			apiUrl: openRouterApiUrl(settings),
-			transformClient: withPerCallFields,
-		}).pipe(Layer.provide(openRouterHttp.pipe(Layer.provide(http)))),
+		layerOpenRouterClient(settings, http),
 		// The URL the shim already matches: `.../ai/v1/chat/completions`.
 		OpenAiClient.layer({
 			apiKey: readSecret(settings, "CLOUDFLARE_API_KEY") ?? Redacted.make(BINDING_PLACEHOLDER),
@@ -683,6 +715,6 @@ export const layerDecisionModelFromConfig = (
 	Layer.unwrap(Effect.map(loadLlmSettings, (settings) => layerDecisionModel(settings, workersAi)))
 
 /** {@link layerFindingEmbedder} on the settings the graph's ConfigProvider holds. */
-export const layerFindingEmbedderFromConfig: Layer.Layer<FindingEmbedder> | Layer.Layer<never> = Layer.unwrap(
+export const FindingEmbedderFromConfigLive: Layer.Layer<FindingEmbedder> | Layer.Layer<never> = Layer.unwrap(
 	Effect.map(loadLlmSettings, layerFindingEmbedder),
 )

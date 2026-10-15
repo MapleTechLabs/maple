@@ -1,4 +1,5 @@
 import { WorkerPlatformLive, isolateContext } from "@maple/infra/worker-http"
+import { IsolateAge } from "@maple/infra/isolate-age"
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unavailable"
@@ -28,6 +29,7 @@ const ExportedAttribute = Schema.Struct({
 })
 const ExportedSpan = Schema.Struct({
 	name: Schema.String,
+	kind: Schema.optionalKey(Schema.Finite),
 	status: Schema.Struct({ code: Schema.optionalKey(Schema.Finite) }),
 	attributes: Schema.Array(ExportedAttribute),
 	events: Schema.optionalKey(
@@ -35,6 +37,8 @@ const ExportedSpan = Schema.Struct({
 	),
 })
 type ExportedSpan = typeof ExportedSpan.Type
+/** OTLP `SPAN_KIND_SERVER`. Effect names server spans by method alone, so kind is what marks one. */
+const SERVER_KIND = 2
 const ExportedTraces = Schema.Struct({
 	resourceSpans: Schema.optionalKey(
 		Schema.Array(
@@ -78,7 +82,7 @@ const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSp
 		.filter((request) => request.url.endsWith("/v1/traces"))
 		.flatMap((request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [])
 		.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
-		.filter((span) => span.name.startsWith("http.server "))
+		.filter((span) => span.kind === SERVER_KIND)
 
 const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> =>
 	recorded
@@ -154,8 +158,8 @@ const EchoHandlersLive = HttpApiBuilder.group(EchoApi, "echo", (handlers) =>
 )
 
 /**
- * One route that logs from inside its handler, the way `V1ErrorBoundaryLive`
- * logs a defect before answering `V1UnexpectedError`.
+ * One route that logs from inside its handler, the way `ApiErrorBoundaryLive`
+ * logs a defect before answering `ApiUnexpectedError`.
  *
  * The graph is built under the isolate's context, not the first event's, and
  * the HttpApi group layers wrap every handler in the context they were built
@@ -203,6 +207,8 @@ const event = (
 	headers?: Record<string, string>,
 ) =>
 	Effect.gen(function* () {
+		// A fresh isolate per event, so every request here is its isolate's first.
+		const fetch = yield* makeFetch(app, noPorts).pipe(Effect.provide(IsolateAge.layer))
 		const recorded: Array<RecordedRequest> = []
 		const realFetch = globalThis.fetch
 		globalThis.fetch = stubFetch(recorded)
@@ -224,7 +230,7 @@ const event = (
 		// Alchemy currently erases this helper's return type to any. Restore its boundary contract.
 		const fetchEvent:
 			| Effect.Effect<Response, never, Scope.Scope | Cloudflare.WorkerEnvironment>
-			| undefined = Cloudflare.Workers.makeRequestHandler(makeFetch(app, noPorts))({
+			| undefined = Cloudflare.Workers.makeRequestHandler(fetch)({
 			kind: "Cloudflare.Workers.WorkerEvent",
 			type: "fetch",
 			input: new Request(`http://api.maple.test${path}`, { method, headers }),
@@ -250,9 +256,17 @@ describe("the api Worker through alchemy's bridge", () => {
 				"/broken",
 				Effect.fail(new GraphBuildFailure({ message: "fixture" })),
 			)
+			// Forwarded paths count too; this one answers 503 because the fixture has no binding.
+			const forwarded = yield* event(
+				"POST",
+				"/mcp",
+				Effect.succeed(Effect.succeed(HttpServerResponse.text("ok"))),
+			)
 			assert.strictEqual(success.response.status, 200)
 			assert.strictEqual(failed.response.status, 504)
-			for (const result of [success, failed]) {
+			assert.strictEqual(forwarded.response.status, 503)
+			assert.strictEqual(success.response.headers.get("timing-allow-origin"), "*")
+			for (const result of [success, failed, forwarded]) {
 				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.request_ordinal"), "1")
 				assert.strictEqual(attributeOf(result.server[0], "maple.isolate.age_ms"), "0")
 			}
@@ -320,6 +334,7 @@ describe("the api Worker through alchemy's bridge", () => {
 			)
 			assert.strictEqual(response.status, 204)
 			assert.include(response.headers.get("access-control-allow-headers") ?? "", "Authorization")
+			assert.isNull(response.headers.get("timing-allow-origin"))
 		}),
 	)
 
@@ -333,9 +348,9 @@ describe("the api Worker through alchemy's bridge", () => {
 				String(v2WorkerUnavailableDefinition.retryAfterSeconds),
 			)
 			assert.strictEqual(JSON.parse(v2.body).error.code, v2WorkerUnavailableDefinition.code)
-			const v1 = yield* event("GET", "/api/errors", broken)
-			assert.strictEqual(v1.response.status, 504)
-			assert.strictEqual(v1.body, "The API worker is temporarily unavailable.")
+			const other = yield* event("GET", "/internal/errors/escalation-policy", broken)
+			assert.strictEqual(other.response.status, 504)
+			assert.strictEqual(other.body, "The API worker is temporarily unavailable.")
 		}),
 	)
 

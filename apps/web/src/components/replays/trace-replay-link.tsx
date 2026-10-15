@@ -23,7 +23,7 @@ export function TraceReplayLink({ traceId }: { traceId: string }) {
 						size="xs"
 						render={<Link to="/replays/$sessionId" params={{ sessionId: session.sessionId }} />}
 					>
-						<EyeIcon className="size-3.5" /> View Session Replay
+						<EyeIcon /> View Session Replay
 					</Button>
 				)
 			})

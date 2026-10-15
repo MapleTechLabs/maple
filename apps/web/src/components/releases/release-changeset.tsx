@@ -9,7 +9,7 @@ import { SectionCard } from "@/components/services/section-card"
 import { CommitAvatar, firstLine, isResolvableSha } from "@/components/vcs/commit-sha-hover-card"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { shortReleaseLabel } from "./release-model"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
@@ -36,7 +36,7 @@ export const commitRangesKey = (ranges: Iterable<CommitRange>): string =>
 
 const commitRangesAtom = Atom.family((key: string) => {
 	const [rangesKey, limit] = key.split("|")
-	return retainedQuery("integrations", "vcsCommitRanges", {
+	return retainedInternalQuery("integrations", "vcsCommitRanges", {
 		query: { ranges: rangesKey ?? "", limit: Number(limit ?? 0) },
 		timeToLive: RANGE_TTL_MS,
 	})
@@ -180,6 +180,7 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 									target="_blank"
 									rel="noreferrer"
 									className="truncate text-foreground hover:underline"
+									title={subject}
 								>
 									{subject}
 								</a>

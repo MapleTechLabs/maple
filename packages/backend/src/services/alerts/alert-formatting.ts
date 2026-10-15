@@ -128,7 +128,7 @@ export const formatSignalMetric = (value: number | null, display: SignalDisplay)
 			Match.value(display.unit).pipe(
 				Match.when("ratio", () => `${round(metric * 100, 1)}%`),
 				Match.when("ms", () => `${grouped(metric)}ms`),
-				Match.when("apdex", () => `${round(metric, 3)}`),
+				Match.when("apdex", () => round(metric, 3)),
 				Match.when("rpm", () => `${grouped(metric)} rpm`),
 				Match.whenOr("count", "plain", () => grouped(metric)),
 				Match.exhaustive,

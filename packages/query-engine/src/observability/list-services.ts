@@ -7,7 +7,7 @@ import { aggregateServiceRows, weightedAvg } from "./aggregation"
 export const listServices = Effect.fn("Observability.listServices")(function* (input: ListServicesInput) {
 	const executor = yield* WarehouseExecutor
 
-	yield* Effect.annotateCurrentSpan("environment", input.environment ?? "all")
+	yield* Effect.annotateCurrentSpan("maple.query.environment", input.environment ?? "all")
 
 	const result = yield* executor.query<ServiceOverviewOutput>(
 		"service_overview",
@@ -38,7 +38,7 @@ export const listServices = Effect.fn("Observability.listServices")(function* (i
 		),
 	)
 
-	yield* Effect.annotateCurrentSpan("serviceCount", services.length)
+	yield* Effect.annotateCurrentSpan("result.serviceCount", services.length)
 
 	return services
 })

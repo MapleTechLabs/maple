@@ -312,7 +312,6 @@ describe("settling a relayed turn", () => {
 			expect(chat.calls).toEqual([])
 			expect(logs).toHaveLength(1)
 			expect(logs[0]).toContain("A relayed turn could not be settled")
-			// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
 			const everything = JSON.stringify({
 				logs,
 				spans: spans.map((span) => ({

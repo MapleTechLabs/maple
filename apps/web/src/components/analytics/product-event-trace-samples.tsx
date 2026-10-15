@@ -8,6 +8,7 @@ import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import { ListRow } from "@maple/ui/components/ui/list-row"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { ErrorState } from "@/components/common/error-state"
+import { SectionHeading } from "@/components/common/section-heading"
 
 /**
  * Recent traces behind one product event. Renders nothing when empty (browser
@@ -35,7 +36,7 @@ export function ProductEventTraceSamples({
 				<Panel>
 					<PanelHeader className="justify-start gap-2 px-3 py-2">
 						<ChartBarTrendUpIcon className="size-3.5 text-muted-foreground" />
-						<h2 className="text-xs font-medium">Traces behind “{eventName}”</h2>
+						<SectionHeading title={`Traces behind “${eventName}”`} />
 					</PanelHeader>
 					<ul className="divide-y">
 						{/* Index included: at-least-once ingest can duplicate a row, and
@@ -84,7 +85,7 @@ export function ProductEventTraceSamples({
 			<Panel>
 				<PanelHeader className="justify-start gap-2 px-3 py-2">
 					<ChartBarTrendUpIcon className="size-3.5 text-muted-foreground" />
-					<h2 className="text-xs font-medium">Traces behind “{eventName}”</h2>
+					<SectionHeading title={`Traces behind “${eventName}”`} />
 				</PanelHeader>
 				<ErrorState
 					error={error}

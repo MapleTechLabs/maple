@@ -675,6 +675,30 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnsafe(CH.cloudflareWorkerLatencySQL(), cfZone),
 	},
 	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerOutcomeTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerOutcomeTimeseriesSQL(), { ...cfZoneBucketed, accountId: "" }),
+	},
+	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerLatencyTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerLatencyTimeseriesSQL(), { ...cfZoneBucketed, accountId: "" }),
+	},
+	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerDurableObjectTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerDurableObjectTimeseriesSQL(), {
+				...cfZoneBucketed,
+				accountId: "",
+			}),
+	},
+	{
 		module: "cloudflare-infra-extended",
 		name: "cloudflareZoneFirewallTimeseriesSQL",
 		label: "default",

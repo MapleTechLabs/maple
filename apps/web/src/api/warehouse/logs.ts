@@ -8,7 +8,7 @@ import {
 	formatWarehouseDateTime,
 	type LogRow,
 } from "@maple/query-engine"
-import { TraceId } from "@maple/domain"
+import { AttributeFilter, TraceId } from "@maple/domain"
 import {
 	DeploymentEnvironment,
 	GetLogRequest,
@@ -53,6 +53,9 @@ const ListLogsInputSchema = Schema.Struct({
 	deploymentEnvMatchMode: Schema.optional(Schema.Literal("contains")),
 	namespace: Schema.optional(ServiceNamespace),
 	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	order: Schema.optional(Schema.Literals(["asc", "desc"])),
 })
 
 export type ListLogsInput = (typeof ListLogsInputSchema)["Encoded"]
@@ -110,6 +113,9 @@ const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { 
 					deploymentEnvMatchMode: input.deploymentEnvMatchMode,
 					namespace: input.namespace,
 					namespaceMatchMode: input.namespaceMatchMode,
+					attributeFilters: input.attributeFilters,
+					resourceAttributeFilters: input.resourceAttributeFilters,
+					order: input.order,
 				}),
 			})
 		}),
@@ -221,6 +227,8 @@ const getLogsCountEffect = Effect.fn("QueryEngine.getLogsCount")(function* ({
 					excludedSeverities: input.excludedSeverities,
 					excludedEnvironments: input.excludedDeploymentEnvs,
 					excludedNamespaces: input.excludedNamespaces,
+					attributeFilters: input.attributeFilters,
+					resourceAttributeFilters: input.resourceAttributeFilters,
 				},
 			},
 		}),
@@ -246,6 +254,8 @@ const GetLogsFacetsInputSchema = Schema.Struct({
 	// the org-global namespace pin.
 	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
 })
@@ -283,6 +293,8 @@ const getLogsFacetsEffect = Effect.fn("QueryEngine.getLogsFacets")(function* ({
 							? [input.namespace]
 							: undefined,
 					namespaceMatchMode: input.namespaceMatchMode,
+					attributeFilters: input.attributeFilters,
+					resourceAttributeFilters: input.resourceAttributeFilters,
 				},
 			},
 		}),

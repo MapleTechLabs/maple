@@ -143,10 +143,11 @@ export function RawSqlEditorPanel({
 									<Tooltip key={hint.token}>
 										<TooltipTrigger
 											render={
-												<button
-													type="button"
+												<Button
+													variant="ghost"
+													size="xs"
 													onClick={() => insertToken(hint.token)}
-													className="px-2 py-0.5 text-2xs rounded-sm bg-muted/40 text-muted-foreground font-mono transition-colors hover:bg-muted hover:text-foreground"
+													className="h-auto rounded-sm bg-muted/40 px-2 py-0.5 font-mono text-2xs text-muted-foreground hover:bg-muted hover:text-foreground sm:h-auto sm:text-2xs"
 												/>
 											}
 										>
@@ -161,10 +162,11 @@ export function RawSqlEditorPanel({
 									<Tooltip key={`var-${name}`}>
 										<TooltipTrigger
 											render={
-												<button
-													type="button"
+												<Button
+													variant="ghost"
+													size="xs"
 													onClick={() => insertToken(`$${name}`)}
-													className="px-2 py-0.5 text-2xs rounded-sm bg-primary/10 text-primary font-mono transition-colors hover:bg-primary/20"
+													className="h-auto rounded-sm bg-primary/10 px-2 py-0.5 font-mono text-2xs text-primary hover:bg-primary/20 sm:h-auto sm:text-2xs"
 												/>
 											}
 										>
@@ -215,7 +217,7 @@ export function RawSqlEditorPanel({
 				<div className="flex items-center gap-3">
 					{onRunPreview && (
 						<Button size="sm" onClick={onRunPreview} disabled={sqlIssue !== null}>
-							Run Preview
+							Run preview
 						</Button>
 					)}
 					<span className="text-2xs text-muted-foreground ml-auto">

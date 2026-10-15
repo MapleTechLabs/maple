@@ -1,10 +1,11 @@
-import { formatDuration } from "../../lib/format"
+import { formatDuration, formatPercent } from "../../lib/format"
 import { getServiceColor, calculateSelfTime } from "../../lib/colors"
 import { getHttpInfo, httpStatusTone } from "../../lib/http"
 import { TONE_TEXT } from "../../lib/tone"
 import { getSpanKindLabel } from "../../lib/span-kind"
 import { spanStartMs } from "../../lib/span-tree"
 import type { SpanNode } from "../../lib/types"
+import { MiddleTruncate } from "../ui/middle-truncate"
 
 interface SpanTooltipProps {
 	span: SpanNode
@@ -38,7 +39,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 					<div className="flex items-center justify-between text-3xs">
 						<span className="text-muted-foreground">Duration</span>
 						<span>
-							{formatDuration(span.durationMs)} ({durationPercent.toFixed(1)}%)
+							{formatDuration(span.durationMs)} ({formatPercent(durationPercent / 100)})
 						</span>
 					</div>
 					<div className="h-1.5 w-full bg-muted overflow-hidden">
@@ -54,7 +55,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 				<div className="flex items-center justify-between text-3xs">
 					<span className="text-muted-foreground">Self time</span>
 					<span>
-						{formatDuration(selfTime)} ({selfTimePercent.toFixed(0)}%)
+						{formatDuration(selfTime)} ({formatPercent(selfTimePercent / 100)})
 					</span>
 				</div>
 			)}
@@ -67,7 +68,14 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 				{startOffset !== null && (
 					<>
 						<span className="text-muted-foreground">Start offset</span>
-						<span>+{formatDuration(startOffset)}</span>
+						{startOffset < 0 ? (
+							<span className="text-severity-warn">
+								{"−"}
+								{formatDuration(Math.abs(startOffset))} (clock skew)
+							</span>
+						) : (
+							<span>+{formatDuration(startOffset)}</span>
+						)}
 					</>
 				)}
 				{durationPercent === null && (
@@ -111,7 +119,7 @@ export function SpanTooltipContent({ span, totalDurationMs, traceStartTime }: Sp
 					{httpInfo.route && (
 						<>
 							<span className="text-muted-foreground">Route</span>
-							<span className="truncate max-w-[180px]">{httpInfo.route}</span>
+							<MiddleTruncate text={httpInfo.route} tail={14} className="max-w-[180px]" />
 						</>
 					)}
 				</div>

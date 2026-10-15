@@ -51,6 +51,11 @@ export function encodeLogKey(log: EncodableLog): string {
 	return toBase64Url(JSON.stringify(payload))
 }
 
+/** Absolute URL of a log's standalone `/logs/$logId` page, for sharing. */
+export function logPermalink(log: EncodableLog): string {
+	return `${window.location.origin}/logs/${encodeLogKey(log)}`
+}
+
 /** Decode a `$logId` token back into a LogKey, or `null` if it is malformed. */
 export function decodeLogKey(token: string): LogKey | null {
 	try {

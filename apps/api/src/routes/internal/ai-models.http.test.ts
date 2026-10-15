@@ -3,13 +3,13 @@ import { describe, expect, it } from "@effect/vitest"
 import {
 	AiModelsInternalApiGroup,
 	CurrentTenant,
-	V1SchemaErrors,
-	V1UnexpectedErrors,
+	ApiSchemaErrors,
+	ApiUnexpectedErrors,
 } from "@maple/domain/http"
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiModelsInternalLive } from "./ai-models.http"
 
 // The wire shape is a hand-written mirror of the resolver's. Assignability at
@@ -20,8 +20,8 @@ const _everyFieldIsOnTheWire: MissingOnTheWire extends never ? true : never = tr
 
 class AiModelsOnlyApi extends HttpApi.make("MapleInternalApi")
 	.add(AiModelsInternalApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors) {}
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
 
 const TENANT = new CurrentTenant.TenantSchema({
 	orgId: "org_ai_models" as CurrentTenant.TenantSchema["orgId"],
@@ -40,7 +40,7 @@ const AuthorizationStubLayer = Layer.succeed(
 const makeHarness = () => {
 	const routes = HttpApiBuilder.layer(AiModelsOnlyApi).pipe(
 		Layer.provide(HttpAiModelsInternalLive),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })

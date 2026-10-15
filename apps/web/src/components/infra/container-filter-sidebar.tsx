@@ -99,7 +99,7 @@ export function ContainersFilterSidebarView({
 								defaultOpen={false}
 							/>
 							<FilterSection
-								title="Compose Project"
+								title="Compose project"
 								options={f.composeProjects}
 								selected={filters.composeProjects ?? []}
 								onChange={(val) => onFilterChange("composeProjects", val)}
@@ -108,7 +108,7 @@ export function ContainersFilterSidebarView({
 								defaultOpen={false}
 							/>
 							<FilterSection
-								title="Compose Service"
+								title="Compose service"
 								options={f.composeServices}
 								selected={filters.composeServices ?? []}
 								onChange={(val) => onFilterChange("composeServices", val)}

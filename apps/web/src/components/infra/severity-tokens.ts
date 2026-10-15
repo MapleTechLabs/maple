@@ -15,6 +15,7 @@ export const VALUE_TONE: Record<Tone, string> = {
 	warn: TONE_TEXT.warn,
 	crit: TONE_TEXT.crit,
 	info: TONE_TEXT.info,
+	done: TONE_TEXT.done,
 } satisfies Record<Tone, string>
 
 /** Sparkline fill — a raw CSS var string (consumed as an SVG `fill`, not a class). */
@@ -24,6 +25,7 @@ export const SPARK_COLOR: Record<Tone, string> = {
 	warn: TONE_COLOR.warn,
 	crit: TONE_COLOR.crit,
 	info: TONE_COLOR.info,
+	done: TONE_COLOR.done,
 } satisfies Record<Tone, string>
 
 /** Solid severity fill for inline meter bars. */
@@ -42,7 +44,7 @@ export const BAR_VALUE_TONE: Record<SeverityLevel, string> = {
 
 /** Status dot fill. */
 export const STATUS_DOT: Record<HostStatus, string> = {
-	active: TONE_FILL.info,
+	active: TONE_FILL.ok,
 	idle: "bg-muted-foreground/60",
 	ended: "bg-muted-foreground/40",
 } satisfies Record<HostStatus, string>

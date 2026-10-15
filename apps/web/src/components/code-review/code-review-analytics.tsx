@@ -73,10 +73,10 @@ export function CodeReviewAnalyticsView({
 export function CodeReviewAnalyticsSkeleton() {
 	return (
 		<div className="flex flex-col gap-6">
-			<Skeleton className="h-[118px] w-full rounded-xl" />
+			<Skeleton className="h-[118px] w-full rounded-md" />
 			<div className="grid gap-6 lg:grid-cols-2">
-				<Skeleton className="h-[440px] w-full rounded-xl" />
-				<Skeleton className="h-[440px] w-full rounded-xl" />
+				<Skeleton className="h-[440px] w-full rounded-md" />
+				<Skeleton className="h-[440px] w-full rounded-md" />
 			</div>
 		</div>
 	)

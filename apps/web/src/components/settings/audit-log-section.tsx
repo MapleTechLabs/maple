@@ -36,6 +36,7 @@ import { SettingsSection } from "@/components/settings/settings-section"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { ErrorState } from "@/components/common/error-state"
+import { initialsFrom } from "@maple/ui/lib/initials"
 
 type ActorFilter = AuditActorType | "all"
 type OutcomeFilter = AuditOutcome | "all"
@@ -85,19 +86,13 @@ const COL = {
 
 /**
  * Up to two initials from a display name, for the moment before the avatar
- * loads and for the members Clerk serves no picture for. An email falls back to
- * its first letter rather than parsing a local part that is rarely a name.
+ * loads and for the members Clerk serves no picture for.
  */
 function initialsOf(label: string): string {
 	// A row we could not name falls back to the raw `user_…` id; "U" would read
 	// as a name it is not.
 	if (label.startsWith("user_")) return "?"
-	const words = label.trim().split(/\s+/).filter(Boolean)
-	if (words.length === 0 || label.includes("@")) return label.slice(0, 1).toUpperCase()
-	return words
-		.slice(0, 2)
-		.map((word) => word.slice(0, 1).toUpperCase())
-		.join("")
+	return initialsFrom(label)
 }
 
 /**
@@ -390,7 +385,11 @@ function ActorCell({ entry }: { entry: V2AuditLogEntry }) {
 			)}
 			{name !== null && (
 				<TruncatedText
-					text={entry.actor_id ?? undefined}
+					text={
+						entry.actor_name !== null && entry.actor_id !== null
+							? `${name} (${entry.actor_id})`
+							: (entry.actor_id ?? name)
+					}
 					className={cn("text-xs", entry.actor_name === null && "text-muted-foreground")}
 				>
 					{name}

@@ -19,7 +19,11 @@ import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { LONG_RANGE_PRESET_OPTIONS, presetLabel, formatTimeRangeDisplay } from "@/lib/time-utils"
-import { normalizeTimestampInput, formatTimestampInTimezone } from "@/lib/timezone-format"
+import {
+	normalizeTimestampInput,
+	formatTimeInTimezone,
+	formatTimestampInTimezone,
+} from "@/lib/timezone-format"
 import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
 import { SIGNAL_SOURCE_LABEL, type SignalSource } from "@/lib/alerts/chart-series"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
@@ -52,10 +56,11 @@ import {
 	type AlertRuleDocument,
 } from "@maple/domain/http"
 import { useAlertDestinationsList, useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
-import { CheckIcon, PencilIcon, ChatBubbleSparkleIcon } from "@/components/icons"
+import { CheckIcon, PencilIcon, ChatBubbleSparkleIcon, XmarkIcon } from "@/components/icons"
 import { cn } from "@maple/ui/lib/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Meter } from "@maple/ui/components/ui/meter"
@@ -63,10 +68,10 @@ import { Card, CardContent } from "@maple/ui/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
-import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, countLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { useAlertRulePreview } from "@/hooks/use-alert-rule-preview"
@@ -85,16 +90,18 @@ const SIGNAL_SOURCE_DESCRIPTION: Record<SignalSource, string> = {
 	checks: "What the evaluator actually observed and stored, one point per check.",
 } satisfies Record<SignalSource, string>
 
+/** Incidents rendered before "Show all"; a noisy grouped rule can carry hundreds. */
+const INCIDENT_RENDER_LIMIT = 100
+
 function formatBucketRange(bucket: { start: number; end: number }, timeZone: string): string {
-	const time = (ms: number) =>
-		new Date(ms).toLocaleTimeString(undefined, { timeZone, hour: "2-digit", minute: "2-digit" })
+	const time = (ms: number) => formatTimeInTimezone(ms, { timeZone })
 	return `${time(bucket.start)}–${time(bucket.end)}`
 }
 
 function formatBucketSpan(seconds: number): string {
 	if (seconds < 60) return `${Math.round(seconds)}s`
 	const minutes = Math.round(seconds / 60)
-	if (minutes < 60) return `${minutes}min`
+	if (minutes < 60) return `${minutes}m`
 	const hours = minutes / 60
 	return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`
 }
@@ -362,6 +369,10 @@ function RuleDetailContent() {
 		if (stateFilter === "all") return ruleIncidents
 		return ruleIncidents.filter((i) => i.status === stateFilter)
 	}, [ruleIncidents, stateFilter])
+	const [showAllIncidents, setShowAllIncidents] = useState(false)
+	const visibleIncidents = showAllIncidents
+		? filteredIncidents
+		: filteredIncidents.slice(0, INCIDENT_RENDER_LIMIT)
 
 	// Incident the Overview AI-summary card binds to: the open one, else most recent.
 	const overviewIncident = useMemo(
@@ -536,7 +547,7 @@ function RuleDetailContent() {
 								size="sm"
 								render={<Link to="/alerts/create" search={{ ruleId: rule.id }} />}
 							>
-								<PencilIcon size={14} />
+								<PencilIcon />
 								Edit rule
 							</Button>
 						</>
@@ -544,17 +555,20 @@ function RuleDetailContent() {
 				/>
 			)}
 			tabs={() => (
-				<Tabs
-					value={activeTab}
-					onValueChange={(v) => {
-						if (isRuleDetailTab(v)) navigate({ search: (prev) => ({ ...prev, tab: v }) })
-					}}
-				>
-					<TabsList variant="underline">
-						<TabsTrigger value="overview">Overview</TabsTrigger>
-						<TabsTrigger value="history">History</TabsTrigger>
-					</TabsList>
-				</Tabs>
+				<UnderlineTabStrip navigation label="Rule sections">
+					{tabValues.map((tab) => (
+						<Link
+							key={tab}
+							to="/alerts/$ruleId"
+							params={{ ruleId: ruleIdParam }}
+							search={(prev) => ({ ...prev, tab })}
+							aria-current={tab === activeTab ? "page" : undefined}
+							className={underlineTabClass(tab === activeTab)}
+						>
+							{tab === "overview" ? "Overview" : "History"}
+						</Link>
+					))}
+				</UnderlineTabStrip>
 			)}
 		>
 			{(rule) => (
@@ -641,14 +655,14 @@ function RuleDetailContent() {
 										size="sm"
 										onClick={() => void openInvestigation(overviewIncident)}
 									>
-										<ChatBubbleSparkleIcon size={14} />
+										<ChatBubbleSparkleIcon />
 										Open investigation
 									</Button>
 								</Panel>
 							) : null}
 
 							<div className="space-y-3">
-								<h2 className="text-lg font-semibold">Configuration</h2>
+								<SectionHeading title="Configuration" />
 								<Card>
 									<CardContent className="p-5">
 										<KeyValueList className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
@@ -810,7 +824,7 @@ function RuleDetailContent() {
 							{Result.builder(checksResult)
 								.onError((error) => (
 									<div className="space-y-4">
-										<h2 className="text-lg font-semibold">Checks</h2>
+										<SectionHeading title="Checks" />
 										<ErrorState
 											error={error}
 											title="Failed to load checks"
@@ -855,7 +869,7 @@ function RuleDetailContent() {
 								<div className="space-y-6">
 									<div className="flex items-center justify-between">
 										<div>
-											<h2 className="text-lg font-semibold">History</h2>
+											<SectionHeading title="History" />
 											<p className="text-muted-foreground text-sm">
 												{stats.totalTriggered} total triggers
 											</p>
@@ -898,9 +912,10 @@ function RuleDetailContent() {
 														>
 															<Badge
 																variant="outline"
-																className="text-xs shrink-0 truncate max-w-[160px]"
+																className="min-w-0 max-w-[160px] shrink justify-start text-xs"
+																title={groupKey}
 															>
-																{groupKey}
+																<span className="truncate">{groupKey}</span>
 															</Badge>
 															<Meter
 																value={count}
@@ -962,7 +977,7 @@ function RuleDetailContent() {
 												</TableRow>
 											</TableHeader>
 											<TableBody>
-												{filteredIncidents.map((incident) => {
+												{visibleIncidents.map((incident) => {
 													const isOpen = incident.status === "open"
 													return (
 														<TableRow key={incident.id}>
@@ -978,7 +993,10 @@ function RuleDetailContent() {
 																/>
 															</TableCell>
 															<TableCell>
-																<span className="font-mono text-muted-foreground">
+																<span
+																	className="block max-w-[180px] truncate font-mono text-muted-foreground"
+																	title={incident.groupKey ?? "all"}
+																>
 																	{incident.groupKey ?? "all"}
 																</span>
 															</TableCell>
@@ -1054,7 +1072,6 @@ function RuleDetailContent() {
 																			}
 																		>
 																			<ChatBubbleSparkleIcon
-																				size={14}
 																			/>
 																			Open investigation
 																		</DropdownMenuItem>
@@ -1078,6 +1095,14 @@ function RuleDetailContent() {
 												})}
 											</TableBody>
 										</Table>
+									)}
+									{visibleIncidents.length < filteredIncidents.length && (
+										<div className="flex justify-center pt-3">
+											<LoadMoreButton
+												onClick={() => setShowAllIncidents(true)}
+												label={`Show all ${filteredIncidents.length.toLocaleString()}`}
+											/>
+										</div>
 									)}
 								</div>
 							)}
@@ -1302,7 +1327,7 @@ function ChecksPanel({
 
 	return (
 		<div className="space-y-4">
-			<h2 className="text-lg font-semibold">Checks</h2>
+			<SectionHeading title="Checks" />
 			<StatRail columns={totals.errored > 0 ? 5 : 4}>
 				<StatRailItem size="sm" eyebrow="Total checks" value={totals.total} />
 				<StatRailItem
@@ -1326,14 +1351,15 @@ function ChecksPanel({
 							{bucket != null && (
 								<Badge variant="secondary" className="gap-1.5 font-mono text-xs">
 									{formatBucketRange(bucket, effectiveTimezone)}
-									<button
-										type="button"
+									<IconButton
+										size="icon-2xs"
+										label="Clear bucket filter"
+										tooltip={false}
 										onClick={onClearBucket}
-										aria-label="Clear bucket filter"
 										className="text-muted-foreground hover:text-foreground"
 									>
-										×
-									</button>
+										<XmarkIcon />
+									</IconButton>
 								</Badge>
 							)}
 						</div>
@@ -1471,12 +1497,20 @@ function ChecksPanel({
 												</div>
 											)}
 										</TableCell>
-										<TableCell className="tabular-nums text-muted-foreground">
-											{check.sampleCount}
+										<TableCell
+											className="tabular-nums text-muted-foreground"
+											title={check.sampleCount.toLocaleString()}
+										>
+											{formatNumber(check.sampleCount)}
 										</TableCell>
 										{isGrouped && (
 											<TableCell className="font-mono text-muted-foreground">
-												{check.groupKey || "all"}
+												<span
+													className="block max-w-[180px] truncate"
+													title={check.groupKey || "all"}
+												>
+													{check.groupKey || "all"}
+												</span>
 											</TableCell>
 										)}
 										<TableCell>

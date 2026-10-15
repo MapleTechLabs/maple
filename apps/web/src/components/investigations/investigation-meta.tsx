@@ -21,7 +21,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { investigationOriginLabel } from "./investigation-status"
 import { SectionHeading } from "@/components/common/section-heading"
 
@@ -125,7 +125,7 @@ function Escalation({
 	issueId: NonNullable<Extract<V2Investigation["subject"], { type: "incident" }>["issue_id"]>
 }) {
 	const result = useAtomValue(
-		retainedQuery("errors", "listIssueEscalations", {
+		retainedInternalQuery("errors", "listIssueEscalations", {
 			params: { issueId },
 			reactivityKeys: [`errorIssue:${issueId}:escalations`],
 		}),

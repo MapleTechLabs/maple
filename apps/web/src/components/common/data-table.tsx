@@ -21,6 +21,18 @@ export const ROW_LINK_CLASS =
 	"group flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
 
 /**
+ * A link inside a `<TableRow>` whose `::after` covers the whole row, so the row is a real anchor
+ * (new tab, middle click, focus). Lift buttons, menus and tooltips above it with `ROW_LINK_LIFT`.
+ */
+export const ROW_STRETCHED_LINK_CLASS =
+	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"
+
+export const ROW_LINK_LIFT = "relative z-10"
+
+/** On a stretched-link `<TableRow>`: keeps every tooltip trigger in the row hoverable. */
+export const ROW_LIFT_TOOLTIPS = "[&_[data-slot=tooltip-trigger]]:relative [&_[data-slot=tooltip-trigger]]:z-10"
+
+/**
  * The three sort props a `ColumnHead` needs, as one spreadable object. Lets a
  * table declare its column list once and render it twice — interactive for the
  * table, inert for the skeleton — instead of duplicating the columns per state.

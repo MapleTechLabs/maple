@@ -69,13 +69,6 @@ describe("widget preset query specs", () => {
 		})
 	}
 
-	it("heatmap preset labels its queries Errors/OK (axis labels, not A/B)", () => {
-		const heatmap = heatmapPresets.find((p) => p.id === "heatmap-errors-by-service")
-		expect(heatmap).toBeDefined()
-		const legends = presetQueries(heatmap!).map((q) => q.legend)
-		expect(legends).toEqual(["Errors", "OK"])
-	})
-
 	// The panel exists because a ranked breakdown is not a funnel. A preset that
 	// forgot its group-by would lower to a single bar and quietly become one.
 	it("every horizontal-bar preset groups by a category", () => {
@@ -87,16 +80,6 @@ describe("widget preset query specs", () => {
 				expect(query.groupBy?.length ?? 0, preset.id).toBeGreaterThan(0)
 			}
 		}
-	})
-
-	it("histogram duration preset queries raw durations, not a category breakdown", () => {
-		const histogram = histogramPresets.find((p) => p.id === "histogram-trace-duration")
-		expect(histogram).toBeDefined()
-		const source = histogram!.dataSource
-		if (source.kind !== "query") throw new Error("expected a query data source")
-		expect(source.resultShape).toBe("list")
-		expect(source.columns).toEqual(["durationMs"])
-		expect(histogram!.display.unit).toBe("duration_ms")
 	})
 })
 

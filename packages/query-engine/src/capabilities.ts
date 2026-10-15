@@ -28,6 +28,8 @@ export interface WarehouseCapabilities {
 	readonly indexes: ReadonlyMap<string, WarehouseIndexCapability>
 	readonly fullTextSearchSetting: "enabled" | "available" | "unavailable"
 	readonly metadataAvailable: boolean
+	/** Optional tables the columns probe looked for and positively did not find. */
+	readonly absentTables: ReadonlySet<string>
 }
 
 export interface WarehouseIndexMetadataRow {
@@ -72,6 +74,7 @@ export const baselineWarehouseCapabilities = (): WarehouseCapabilities => ({
 	indexes: new Map(),
 	fullTextSearchSetting: "unavailable",
 	metadataAvailable: false,
+	absentTables: new Set(),
 })
 
 const indexKey = (table: string, name: string): string => `${table}.${name}`
@@ -94,6 +97,8 @@ export const deriveWarehouseCapabilities = (input: {
 	readonly settings?: ReadonlyArray<WarehouseSettingMetadataRow>
 	/** Managed gateways may expose settings metadata but reject inline overrides. */
 	readonly allowSettingOverrides?: boolean
+	/** Tables the columns probe also covered, which a cluster may legitimately lack. */
+	readonly optionalTables?: ReadonlyArray<string>
 }): WarehouseCapabilities => {
 	const indexes = new Map<string, WarehouseIndexCapability>()
 	for (const row of input.indexes) {
@@ -175,6 +180,17 @@ export const deriveWarehouseCapabilities = (input: {
 		features.add("traces.attributes.text")
 	}
 
+	// An empty columns probe (denied or failed) proves nothing; only a probe that
+	// saw `traces` is evidence that a missing optional table is really missing.
+	const probeSawTraces = input.columns.some((row) => row.table === "traces")
+	const absentTables = new Set(
+		probeSawTraces
+			? (input.optionalTables ?? []).filter(
+					(table) => !input.columns.some((row) => row.table === table),
+				)
+			: [],
+	)
+
 	return {
 		serverVersion: input.serverVersion,
 		features,
@@ -182,8 +198,16 @@ export const deriveWarehouseCapabilities = (input: {
 		indexes,
 		fullTextSearchSetting,
 		metadataAvailable: true,
+		absentTables,
 	}
 }
+
+/** The BYO-optional rollup tables the capability probe checks for. */
+export const OPTIONAL_ROLLUP_TABLES = ["trace_facets_hourly"] as const
+
+/** False only when the probe proved the table is absent; unknown stays optimistic. */
+export const hasWarehouseTable = (capabilities: WarehouseCapabilities, table: string): boolean =>
+	!capabilities.absentTables.has(table)
 
 export const hasWarehouseFeature = (
 	capabilities: WarehouseCapabilities,

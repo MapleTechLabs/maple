@@ -1,4 +1,5 @@
 import { feature, plan, reward } from "atmn"
+import { OPENROUTER_BYOK_ADDON_ID, OPENROUTER_BYOK_FEATURE_ID } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
 // Features
@@ -40,6 +41,17 @@ export const productEvents = feature({
 	consumable: true,
 })
 
+// AI usage in dollars: Autumn prices each model's tokens from models.dev and adds the markup.
+// Metered per model by `trackAiCredits` (packages/backend/src/services/billing/autumn-tracker.ts).
+// Every model Maple runs on is priced there, so no `modelMarkups` cost overrides are needed.
+export const aiCredits = feature({
+	id: "ai_credits",
+	name: "AI Credits",
+	type: "ai_credit_system",
+	defaultMarkup: 20,
+})
+
+// Legacy raw token counts, metered beside `ai_credits` for comparison. Delete once it is trusted.
 export const aiInputTokens = feature({
 	id: "ai_input_tokens",
 	name: "AI Input Tokens",
@@ -57,6 +69,13 @@ export const aiOutputTokens = feature({
 export const bringYourOwnCloud = feature({
 	id: "bringyourowncloud",
 	name: "Bring Your Own Cloud",
+	type: "boolean",
+})
+
+// AI turns run on the org's own OpenRouter key, and its tokens stop being metered here.
+export const openRouterByok = feature({
+	id: OPENROUTER_BYOK_FEATURE_ID,
+	name: "Bring Your Own OpenRouter Key",
 	type: "boolean",
 })
 
@@ -118,6 +137,17 @@ export const startup = plan({
 			featureId: "product_events",
 			unlimited: true,
 		},
+		{
+			// One credit is one dollar of model spend after markup.
+			featureId: "ai_credits",
+			included: 10,
+			price: {
+				amount: 1,
+				billingUnits: 1,
+				billingMethod: "usage_based",
+				interval: "month",
+			},
+		},
 	],
 	freeTrial: {
 		durationLength: 14,
@@ -137,6 +167,21 @@ export const bringYourOwnCloudAddOn = plan({
 	items: [
 		{
 			featureId: "bringyourowncloud",
+		},
+	],
+})
+
+export const openRouterByokAddOn = plan({
+	id: OPENROUTER_BYOK_ADDON_ID,
+	name: "Bring Your Own OpenRouter Key",
+	addOn: true,
+	price: {
+		amount: 15,
+		interval: "month",
+	},
+	items: [
+		{
+			featureId: OPENROUTER_BYOK_FEATURE_ID,
 		},
 	],
 })

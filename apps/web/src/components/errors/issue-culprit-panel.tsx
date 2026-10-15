@@ -5,6 +5,10 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { SEVERITY_FILL } from "./severity-badge"
 
+/** Terminal color codes some runtimes bake into messages; they render as noise. */
+const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g")
+const stripAnsi = (text: string): string => text.replace(ANSI_ESCAPE, "")
+
 /**
  * What the error says, and where it came from.
  *
@@ -22,7 +26,7 @@ import { SEVERITY_FILL } from "./severity-badge"
  * card showing past it and reads as a rendering bug.
  */
 export function IssueCulpritPanel({ issue }: { issue: ErrorIssueDocument }) {
-	const message = issue.exceptionMessage || issue.errorLabel
+	const message = stripAnsi(issue.exceptionMessage || issue.errorLabel)
 	const accent = issue.severity === null ? "bg-border" : SEVERITY_FILL[issue.severity]
 
 	return (
@@ -30,7 +34,7 @@ export function IssueCulpritPanel({ issue }: { issue: ErrorIssueDocument }) {
 			<span aria-hidden className={cn("w-[3px] shrink-0", accent)} />
 			<div className="flex min-w-0 flex-1 flex-col gap-4 px-6 py-5">
 				{message ? (
-					<p className="min-w-0 break-words whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+					<p className="max-h-48 min-w-0 overflow-y-auto break-words whitespace-pre-wrap text-sm leading-relaxed text-foreground">
 						{message}
 					</p>
 				) : (
@@ -73,7 +77,7 @@ function Mono({ value, copyLabel }: { value: string; copyLabel: string }) {
 				label={copyLabel}
 				toast={false}
 				tooltip
-				className="-my-0.5 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/mono:opacity-100"
+				className="-my-0.5 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/mono:opacity-100 pointer-coarse:opacity-100"
 			/>
 		</div>
 	)

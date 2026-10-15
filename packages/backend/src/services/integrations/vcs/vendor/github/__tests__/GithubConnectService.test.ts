@@ -10,7 +10,7 @@ import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
-import type { GithubHttp } from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import type { HttpClient } from "effect/http"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
@@ -69,10 +69,10 @@ const connectResponders = (...rest: Array<() => Response>) => [
 ]
 
 // Wire GithubConnectService over an in-memory PGlite (real repo + state repo), a
-// real GithubAppClient backed by the stubbed GithubHttp, and a recording queue.
+// real GithubAppClient backed by the stubbed HttpClient, and a recording queue.
 const connectLayer = (
 	testDb: TestDb,
-	http: Layer.Layer<GithubHttp>,
+	http: Layer.Layer<HttpClient.HttpClient>,
 	sent: Array<VcsSyncJob>,
 	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
 ) => {
@@ -606,6 +606,31 @@ describe("GithubConnectService", () => {
 			])
 			return { orgId, repository: yield* repoFor(repo, orgId, "7") }
 		})
+
+	it.effect("CI traces are on for a new connection and an admin can turn them off and back on", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId } = yield* connectedRepo(svc, repo)
+			assert.strictEqual((yield* svc.getStatus(orgId)).ciTracesEnabled, true)
+			assert.strictEqual((yield* svc.setCiTracesEnabled(orgId, false)).enabled, false)
+			assert.strictEqual((yield* svc.getStatus(orgId)).ciTracesEnabled, false)
+			yield* svc.setCiTracesEnabled(orgId, true)
+			assert.strictEqual((yield* svc.getStatus(orgId)).ciTracesEnabled, true)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("setCiTracesEnabled refuses an organization without a GitHub connection", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const exit = yield* svc.setCiTracesEnabled(asOrgId("org_none"), false).pipe(Effect.exit)
+			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
 
 	it.effect("setPrReviewEnabled turns reviews on for a flagged organization", () => {
 		const testDb = createTestDb(trackedDbs)

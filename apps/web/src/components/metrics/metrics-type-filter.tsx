@@ -55,7 +55,7 @@ export function MetricsTypeFilter({
 				onChange(picked === undefined || picked === "all" ? null : picked)
 			}}
 		>
-			<SelectTrigger size="sm" className="w-auto min-w-0 text-xs" aria-label="Metric type">
+			<SelectTrigger className="w-auto min-w-0" aria-label="Metric type">
 				<SelectValue />
 			</SelectTrigger>
 			<SelectContent>

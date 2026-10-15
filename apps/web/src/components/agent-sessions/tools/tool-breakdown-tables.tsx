@@ -9,6 +9,7 @@ import { Meter } from "@maple/ui/components/ui/meter"
 import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { PlotSparkline } from "@maple/ui/components/plot"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { ERROR_RATE_FILL, ERROR_RATE_TEXT, errorRateLevel, formatErrorRate } from "@maple/ui/lib/error-rate"
 
 import { ErrorState } from "@/components/common/error-state"
@@ -152,10 +153,6 @@ const ROW =
 /** A row's classes: the shared selection lane, with a hover tint only while unselected. */
 export function toolRowClass(selected: boolean): string {
 	return cn(ROW, rowSelectedClass(selected), !selected && "hover:bg-muted/30 focus-visible:bg-muted/30")
-}
-
-export function ToolTableEmpty({ children }: { children: ReactNode }) {
-	return <div className="px-2.5 py-12 text-center font-mono text-xs text-muted-foreground">{children}</div>
 }
 
 /** The table's closing line: what is on screen, then the totals behind it. */
@@ -386,7 +383,7 @@ export function ToolsTable({
 					) : loading ? (
 						<SkeletonList rows={3} rowClassName="h-[38px]" className="gap-1.5 px-2.5 py-3" />
 					) : sorted.length === 0 ? (
-						<ToolTableEmpty>No tool calls in the selected window.</ToolTableEmpty>
+						<EmptyMessage className="py-12 font-mono">No tool calls in the selected window.</EmptyMessage>
 					) : (
 						sorted.map((row) => {
 							const color = colorFor(row.key)

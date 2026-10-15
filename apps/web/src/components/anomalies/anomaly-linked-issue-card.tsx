@@ -12,7 +12,7 @@ import { ActorAvatar } from "@/components/errors/actor-chip"
 import { shortIssueId } from "@/components/errors/issue-id"
 import { WorkflowBadge } from "@/components/errors/workflow-badge"
 import { ArrowRightIcon, LinkIcon, XmarkIcon } from "@/components/icons"
-import { formatNumber } from "@maple/ui/lib/format"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import { ServiceDot } from "@maple/ui/components/service-dot"
@@ -47,7 +47,7 @@ export function AnomalyLinkedIssueCard({
 						) : null}
 					</div>
 					<Button size="sm" variant="outline" onClick={onOpenLinkDialog} disabled={busy}>
-						<LinkIcon size={13} />
+						<LinkIcon />
 						Link issue
 					</Button>
 				</div>
@@ -130,7 +130,8 @@ function LinkedIssueBody({
 									</p>
 									<div className="flex items-center gap-3 text-xs text-muted-foreground">
 										<span className="tabular-nums">
-											{formatNumber(issue.occurrenceCount)} events
+											{formatNumber(issue.occurrenceCount)}{" "}
+											{pluralize(issue.occurrenceCount, "event")}
 										</span>
 										<span className="flex items-center gap-1.5">
 											<ActorAvatar actor={issue.leaseHolder ?? issue.assignedActor} />
@@ -172,13 +173,13 @@ function IssueCardActions({
 				render={<Link to="/errors/issues/$issueId" params={{ issueId }} />}
 			>
 				Open issue
-				<ArrowRightIcon size={13} />
+				<ArrowRightIcon />
 			</Button>
 			<IconButton onClick={onOpenLinkDialog} disabled={busy} label="Link a different issue">
-				<LinkIcon size={13} />
+				<LinkIcon />
 			</IconButton>
 			<IconButton onClick={onUnlink} disabled={busy} label="Unlink issue">
-				<XmarkIcon size={13} />
+				<XmarkIcon />
 			</IconButton>
 		</div>
 	)

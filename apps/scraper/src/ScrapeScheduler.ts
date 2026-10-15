@@ -38,10 +38,10 @@ export interface ScrapeSchedulerApi {
 const STALE_RECONCILES = 3
 
 /** Start offset for a new loop. A reference so tests can pin cadence to t=0. */
-export const StartJitter = Context.Reference<(key: string, baseMs: number) => number>(
+export class StartJitter extends Context.Reference<(key: string, baseMs: number) => number>(
 	"@maple/scraper/StartJitter",
 	{ defaultValue: () => startJitterMs },
-)
+) {}
 
 const toReport = (
 	target: InternalScrapeTarget,

@@ -9,13 +9,13 @@ import {
 	OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { oauthAuthStates } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OAuthAuthStates } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
-import { msToDate } from "@maple/backend/platform/time"
 import {
 	collectPages,
 	decodeConsumed,
@@ -213,7 +213,6 @@ export class PlanetScaleOAuthService extends Context.Service<
 			database,
 			env,
 		})
-		const apiBase = env.MAPLE_PLANETSCALE_API_BASE_URL.replace(/\/$/, "")
 
 		const apiTarget = (accessToken: string) => ({
 			apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL,
@@ -287,7 +286,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 				collectPages(PlanetScale.listOrganizations, { per_page: PAGE_SIZE }, MAX_PAGES),
 			).pipe(
 				// The org picker keys its reconnect CTA on the revoked tag.
-				Effect.catchTag("@maple/api/integrations/PlanetScaleForbiddenError", (forbidden) =>
+				Effect.catchTag("@maple/backend/integrations/PlanetScaleForbiddenError", (forbidden) =>
 					Effect.fail(new IntegrationsRevokedError({ message: forbidden.message })),
 				),
 				Effect.flatMap(({ items }) =>
@@ -308,7 +307,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			return yield* fetchOrganizationsWith(accessToken).pipe(
 				// A dead grant is a revoked-authorization failure, not a generic upstream one:
 				// the org picker keys its reconnect CTA on the tag.
-				Effect.catchTag("@maple/api/integrations/PlanetScaleTokenRejectedError", (rejected) =>
+				Effect.catchTag("@maple/backend/integrations/PlanetScaleTokenRejectedError", (rejected) =>
 					Effect.logError("PlanetScale rejected the OAuth token on /v1/organizations").pipe(
 						Effect.andThen(
 							Effect.fail(new IntegrationsRevokedError({ message: rejected.message })),
@@ -330,16 +329,18 @@ export class PlanetScaleOAuthService extends Context.Service<
 
 			yield* oauth.purgeExpiredStates(currentTime)
 			yield* oauth.dbExecute((db) =>
-				db.insert(oauthAuthStates).values({
-					state,
-					orgId,
-					provider: PLANETSCALE_PROVIDER,
-					initiatedByUserId: userId,
-					redirectUri: options.callbackUrl,
-					returnTo: options.returnTo ?? null,
-					createdAt: new Date(currentTime),
-					expiresAt: new Date(currentTime + OAUTH_STATE_TTL_MS),
-				}),
+				db.run(
+					PG.insertInto(OAuthAuthStates).values({
+						state,
+						orgId,
+						provider: PLANETSCALE_PROVIDER,
+						initiatedByUserId: userId,
+						redirectUri: options.callbackUrl,
+						returnTo: options.returnTo ?? null,
+						createdAt: currentTime,
+						expiresAt: currentTime + OAUTH_STATE_TTL_MS,
+					}),
+				),
 			)
 
 			// PlanetScale REQUIRES the scope param — the app's configured scopes are the
@@ -375,12 +376,12 @@ export class PlanetScaleOAuthService extends Context.Service<
 			// PlanetScale actually granted — an opaque `pscale_oauth_` token vs a JWT,
 			// and the granted-scope string, disambiguate why /v1 says `invalid_token`.
 			yield* Effect.annotateCurrentSpan({
-				"planetscale.token.granted_scope": tokenResponse.scope ?? "(none)",
-				"planetscale.token.type": tokenResponse.token_type ?? "(none)",
-				"planetscale.token.prefix": tokenResponse.access_token.slice(0, 13),
-				"planetscale.token.length": tokenResponse.access_token.length,
-				"planetscale.token.looks_jwt": tokenResponse.access_token.split(".").length === 3,
-				"planetscale.token.expires_in": tokenResponse.expires_in ?? "(none)",
+				"maple.planetscale.token.granted_scope": tokenResponse.scope ?? "(none)",
+				"maple.planetscale.token.type": tokenResponse.token_type ?? "(none)",
+				"maple.planetscale.token.prefix": tokenResponse.access_token.slice(0, 13),
+				"maple.planetscale.token.length": tokenResponse.access_token.length,
+				"maple.planetscale.token.looks_jwt": tokenResponse.access_token.split(".").length === 3,
+				"maple.planetscale.token.expires_in": tokenResponse.expires_in ?? "(none)",
 			})
 
 			// The background poller and scraper must renew indefinitely; a grant with
@@ -415,7 +416,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 						yield* Effect.sleep(TOKEN_REJECTED_RETRY_DELAY)
 						const retried = yield* Effect.result(fetchOrganizations(tokenResponse.access_token))
 						yield* Effect.annotateCurrentSpan({
-							"planetscale.orgs.retry_succeeded": Result.isSuccess(retried),
+							"maple.planetscale.orgs.retry_succeeded": Result.isSuccess(retried),
 						})
 						if (Result.isSuccess(retried)) return retried.success
 						if (retried.failure._tag !== "@maple/http/errors/IntegrationsRevokedError") {
@@ -423,7 +424,9 @@ export class PlanetScaleOAuthService extends Context.Service<
 						}
 
 						const verdict = yield* introspectToken(tokenResponse.access_token)
-						yield* Effect.annotateCurrentSpan({ "planetscale.token.introspection": verdict })
+						yield* Effect.annotateCurrentSpan({
+							"maple.planetscale.token.introspection": verdict,
+						})
 						if (verdict === "valid") {
 							return yield* Effect.fail(
 								toUpstreamError(
@@ -479,7 +482,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 				refreshTokenCiphertext: refreshEnc.ciphertext,
 				refreshTokenIv: refreshEnc.iv,
 				refreshTokenTag: refreshEnc.tag,
-				expiresAt: msToDate(expiresAt),
+				expiresAt,
 			})
 
 			return { orgId, returnTo: stateRow.returnTo ?? null, organizations }
@@ -558,8 +561,8 @@ export class PlanetScaleOAuthService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const row = yield* oauth.loadConnection(orgId)
 			return {
-				revokedAt: row?.revokedAt?.getTime() ?? null,
-				expiresAt: row?.expiresAt?.getTime() ?? null,
+				revokedAt: row?.revokedAt ?? null,
+				expiresAt: row?.expiresAt ?? null,
 			}
 		})
 

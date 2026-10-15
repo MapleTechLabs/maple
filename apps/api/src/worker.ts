@@ -5,6 +5,7 @@
  */
 import { AiWorker, mapleDbEnv, MapleStack, mapleWorkerProps } from "@maple/infra/cloudflare"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
+import { IsolateAge } from "@maple/infra/isolate-age"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -12,7 +13,7 @@ import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer } from "effect"
 import { ApiObservabilityLive } from "./http/api-observability"
 import { apiConfiguredEnv } from "./resources/env"
-import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
+import { ApiBindingsLive, apiPorts, bindApiClients } from "./worker/bindings"
 import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
 import { makeAppGraphs, makeFetch } from "./worker/http"
@@ -60,13 +61,15 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		const { app, queryApp } = yield* makeAppGraphs(isolate, ports)
 		yield* registerCrons(ports)
 		yield* registerQueueConsumers(ports)
-		return { fetch: makeFetch(app, ports, queryApp) }
+		return { fetch: yield* makeFetch(app, ports, queryApp) }
 	}).pipe(
 		// The init is the entry point: cron and queue sources need the host Worker.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
-				ApiBindingLayers,
+				ApiBindingsLive,
+				// The init runs once per isolate, so this is the isolate's request counter.
+				IsolateAge.layer,
 				Cloudflare.Workers.CronEventSourceLive,
 				Cloudflare.Queues.EventSourceLive,
 				WorkerTelemetry({ serviceName: "maple-api" }),

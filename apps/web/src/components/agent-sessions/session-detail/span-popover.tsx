@@ -131,7 +131,7 @@ function TitleRow({
 					</Button>
 				)}
 				<IconButton label="Close span detail" onClick={onClose}>
-					<XmarkIcon size={14} />
+					<XmarkIcon />
 				</IconButton>
 			</div>
 		</div>

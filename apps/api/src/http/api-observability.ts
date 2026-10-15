@@ -10,7 +10,7 @@ import { Headers, HttpMiddleware } from "effect/http"
 // auto server span is suppressed for them; each callback handler carries its own
 // span with safe attributes instead (see `integrations.*OAuthCallback` and
 // `ChatOAuth.callback`). The second alternative must stay in sync with the chat
-// connector callback paths in `routes/v1/chat-integration.http.ts`.
+// connector callback paths in `routes/chat-integration.http.ts`.
 // `/oauth/authorize` is deliberately NOT here: its query carries no bearer
 // credential, and `/oauth/token` + `/oauth/revoke` are POSTs (secrets in the body).
 const OAUTH_CALLBACK_PATH =
@@ -35,10 +35,11 @@ export const ApiObservabilityLive = Layer.mergeAll(
 			EMAIL_UNSUBSCRIBE_PATH.test(request.url) ||
 			/\.(png|ico|jpg|jpeg|gif|css|js|svg|webp|woff2?)(\?.*)?$/i.test(request.url),
 	),
-	// Every request header lands on the server span as `http.request.header.<name>`.
-	// Effect's defaults cover the usual credential headers; the provider webhook
-	// signatures are ours to add (a GitHub webhook HMAC is replayable alongside its
-	// body, and there is no reason to retain it).
+	// Spans record only the allowlisted headers (`MapleHttpTracingLive`), none of
+	// these; the list still redacts them wherever a `Headers` value is rendered or
+	// logged. Effect's defaults cover the usual credential headers; the provider
+	// webhook signatures are ours to add (a GitHub webhook HMAC is replayable
+	// alongside its body, and there is no reason to retain it).
 	Layer.succeed(Headers.CurrentRedactedNames, [
 		"authorization",
 		"cookie",

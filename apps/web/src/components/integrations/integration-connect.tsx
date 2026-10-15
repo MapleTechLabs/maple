@@ -11,7 +11,7 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { trackProduct } from "@/lib/analytics"
 import { useAtomRefresh, useAtomSet } from "@/lib/effect-atom"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { showErrorToast } from "@/lib/error-toast"
 import { useMountEffect } from "@/hooks/use-mount-effect"
@@ -243,19 +243,19 @@ function useIntegrationMessage(
 
 function CloudflareConnectBoundary({ children }: { children: React.ReactNode }) {
 	const refreshStatus = useAtomRefresh(
-		retainedQuery("integrations", "cloudflareStatus", {
+		retainedInternalQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
 	const refreshUsage = useAtomRefresh(
-		retainedQuery("integrations", "cloudflareUsage", {
+		retainedInternalQuery("integrations", "cloudflareUsage", {
 			reactivityKeys: ["cloudflareIntegrationUsage"],
 		}),
 	)
-	const startConnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "cloudflareStart"), {
+	const startConnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "cloudflareStart"), {
 		mode: "promiseExit",
 	})
-	const primeConnection = useAtomSet(MapleApiAtomClient.mutation("integrations", "cloudflarePrime"), {
+	const primeConnection = useAtomSet(MapleInternalAtomClient.mutation("integrations", "cloudflarePrime"), {
 		mode: "promiseExit",
 	})
 	// Whether this attempt's prime already ran against a live grant. A prime that lands before the
@@ -322,11 +322,11 @@ function CloudflareConnectBoundary({ children }: { children: React.ReactNode }) 
 
 function HazelConnectBoundary({ children }: { children: React.ReactNode }) {
 	const refreshStatus = useAtomRefresh(
-		retainedQuery("integrations", "hazelStatus", {
+		retainedInternalQuery("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
 		}),
 	)
-	const startConnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "hazelStart"), {
+	const startConnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "hazelStart"), {
 		mode: "promiseExit",
 	})
 
@@ -357,11 +357,11 @@ function HazelConnectBoundary({ children }: { children: React.ReactNode }) {
 
 function GithubConnectBoundary({ children }: { children: React.ReactNode }) {
 	const refreshStatus = useAtomRefresh(
-		retainedQuery("integrations", "githubStatus", {
+		retainedInternalQuery("integrations", "githubStatus", {
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
-	const startConnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubStart"), {
+	const startConnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubStart"), {
 		mode: "promiseExit",
 	})
 

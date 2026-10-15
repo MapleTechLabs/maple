@@ -42,7 +42,7 @@ export function InfraSetupEmpty({
 			</EmptyHeader>
 			<EmptyActions>
 				<Button size="sm" onClick={() => setInstallOpen(true)}>
-					<PlusIcon size={14} />
+					<PlusIcon />
 					{actionLabel}
 				</Button>
 				<DocsLink page={docs} />

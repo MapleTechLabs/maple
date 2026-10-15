@@ -6,7 +6,8 @@ import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { MetricTypeBadge } from "@maple/ui/components/metrics/metric-type-badge"
-import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
+import { ServiceDot } from "@maple/ui/components/service-dot"
 import {
 	useLocalMetricBreakdown,
 	useLocalMetricEntry,
@@ -48,7 +49,7 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 		<div className="flex h-full flex-col">
 			<div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2">
 				<Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
-					<ArrowLeftIcon size={14} />
+					<ArrowLeftIcon />
 					{backLabel}
 				</Button>
 				<TruncatedText mono className="text-xs">
@@ -159,7 +160,17 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 											{(breakdown.data ?? []).map((row) => (
 												<TableRow key={row.name}>
 													<TableCell className="font-mono text-xs">
-														{row.name || "-"}
+														{row.name ? (
+															<span className="flex items-center gap-1.5">
+																<ServiceDot
+																	serviceName={row.name}
+																	size="sm"
+																/>
+																{row.name}
+															</span>
+														) : (
+															EMPTY_VALUE
+														)}
 													</TableCell>
 													<TableCell className="text-right tabular-nums">
 														{formatValueByUnit(row.avgValue, chartUnit)}

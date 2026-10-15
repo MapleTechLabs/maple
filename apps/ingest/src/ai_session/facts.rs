@@ -66,15 +66,11 @@ const WAITING_FOR_EVENT: &str = "Waiting for event";
 
 // Each fact's keys, canonical first: the first non-empty value wins.
 
-/// Response model first: an alias in the request resolves to a dated
-/// snapshot in the response.
-const MODEL_KEYS: &[&str] = &[
-    "gen_ai.response.model",
-    "gen_ai.request.model",
-    "ai.response.model",
-    "ai.model.id",
-    "llm.model_name",
-];
+/// The model a call answered with and the one it asked for. Read as one
+/// fact (`Facts::model`): the response first, since an alias or a router in
+/// the request resolves to the model that ran.
+const RESPONSE_MODEL_KEYS: &[&str] = &["gen_ai.response.model", "ai.response.model"];
+const REQUEST_MODEL_KEYS: &[&str] = &["gen_ai.request.model", "ai.model.id", "llm.model_name"];
 /// `ai.telemetry.functionId` is the name an app gave a traced Vercel AI SDK
 /// call, the only agent identity an older-SDK span has.
 const AGENT_NAME_KEYS: &[&str] = &["gen_ai.agent.name", "ai.telemetry.functionId"];
@@ -86,7 +82,7 @@ const RESPONSE_ID_KEYS: &[&str] = &["gen_ai.response.id", "ai.response.id"];
 /// Text facts, by slot.
 const OPERATION: usize = 0;
 const SPAN_KIND: usize = 1;
-const MODEL: usize = 2;
+const RESPONSE_MODEL: usize = 2;
 const AGENT_NAME: usize = 3;
 const TOOL_NAME: usize = 4;
 const TOOL_DESCRIPTION: usize = 5;
@@ -98,10 +94,11 @@ const GRAPH_NODE_ID: usize = 10;
 const ADK_TOOL_RESPONSE: usize = 11;
 const OUTPUT_VALUE: usize = 12;
 const DEFERRAL: usize = 13;
-const TEXT_KEYS: [&[&str]; 14] = [
+const REQUEST_MODEL: usize = 14;
+const TEXT_KEYS: [&[&str]; 15] = [
     &["gen_ai.operation.name"],
     &["openinference.span.kind"],
-    MODEL_KEYS,
+    RESPONSE_MODEL_KEYS,
     AGENT_NAME_KEYS,
     TOOL_NAME_KEYS,
     TOOL_DESCRIPTION_KEYS,
@@ -115,6 +112,7 @@ const TEXT_KEYS: [&[&str]; 14] = [
     &["gcp.vertex.agent.tool_response"],
     &["output.value"],
     &["pydantic_ai.tool.deferral.name"],
+    REQUEST_MODEL_KEYS,
 ];
 
 /// Number facts, by slot: the first key whose value is a finite,
@@ -239,8 +237,34 @@ impl<'a> Facts<'a> {
         self.text[slot].map(any_value_string)
     }
 
+    /// The canonical keys first, the response before the request; then the
+    /// older dialects' keys in the same order.
     pub(super) fn model(&self) -> &'a str {
-        self.str(MODEL)
+        self.model_slot().map_or("", |slot| self.str(slot))
+    }
+
+    fn model_slot(&self) -> Option<usize> {
+        let response = self.text[RESPONSE_MODEL].map(|_| self.text_rank[RESPONSE_MODEL]);
+        let request = self.text[REQUEST_MODEL].map(|_| self.text_rank[REQUEST_MODEL]);
+        match (response, request) {
+            (Some(rank), Some(other)) if rank > 0 && other == 0 => Some(REQUEST_MODEL),
+            (Some(_), _) => Some(RESPONSE_MODEL),
+            (None, Some(_)) => Some(REQUEST_MODEL),
+            (None, None) => None,
+        }
+    }
+
+    /// The model the stamp names: the requested one when the response only
+    /// resolved it to a dated snapshot or dropped its provider prefix, so one
+    /// model is one name whether a call answered `gpt-4o-mini-2024-07-18`,
+    /// `gpt-4o-mini` or failed before answering. A response that names a
+    /// different model (a router, a fallback) wins.
+    fn stamped_model(&self) -> Option<String> {
+        let (response, request) = (self.str(RESPONSE_MODEL), self.str(REQUEST_MODEL));
+        if !response.is_empty() && !request.is_empty() && same_model(request, response) {
+            return self.owned(REQUEST_MODEL);
+        }
+        self.model_slot().and_then(|slot| self.owned(slot))
     }
 
     pub(super) fn has_tool_name(&self) -> bool {
@@ -303,6 +327,35 @@ fn truncate(mut text: String, max: usize) -> String {
     text
 }
 
+/// Whether `response` is `request` itself: compared without a provider
+/// prefix (`openai/`) or the dots some providers spell as dashes
+/// (`claude-haiku-4.5`), and, when the request names no release, without the
+/// release date the response resolved it to (`-2024-07-18`, `-20251001`). A
+/// pinned request answered by another release is a different model.
+fn same_model(request: &str, response: &str) -> bool {
+    fn base(model: &str) -> String {
+        let name = model.rsplit('/').next().unwrap_or(model);
+        name.replace('.', "-").to_ascii_lowercase()
+    }
+    fn strip_date(name: &str) -> Option<&str> {
+        let digits =
+            |part: &str, len: usize| part.len() == len && part.bytes().all(|b| b.is_ascii_digit());
+        let parts: Vec<&str> = name.rsplitn(4, '-').collect();
+        if parts.len() == 4 && digits(parts[0], 2) && digits(parts[1], 2) && digits(parts[2], 4) {
+            return Some(parts[3]);
+        }
+        match name.rsplit_once('-') {
+            Some((head, tail)) if digits(tail, 8) => Some(head),
+            _ => None,
+        }
+    }
+    let (request, response) = (base(request), base(response));
+    if request == response {
+        return true;
+    }
+    strip_date(&request).is_none() && strip_date(&response) == Some(request.as_str())
+}
+
 /// Decide every fact of one stamped span, as the stamps to write on it.
 pub(super) fn stamps(span: &Span, vendor: &str) -> Vec<KeyValue> {
     let failed_status = span
@@ -325,7 +378,7 @@ pub(super) fn stamps(span: &Span, vendor: &str) -> Vec<KeyValue> {
             stamps.push(owned_string_attribute(key, value));
         }
     };
-    text(MODEL_ATTR, facts.owned(MODEL));
+    text(MODEL_ATTR, facts.stamped_model());
     text(AGENT_NAME_ATTR, agent_name(&facts, vendor, &span.name));
     text(TOOL_NAME_ATTR, facts.owned(TOOL_NAME));
     if llm_call {
@@ -540,7 +593,7 @@ mod tests {
                 ]),
                 pairs(&[
                     ("maple_ai.llm_call", "1"),
-                    (MODEL_ATTR, "openai/gpt-4o-mini-2024-07-18"),
+                    (MODEL_ATTR, "openai/gpt-4o-mini"),
                     (RESPONSE_ID_ATTR, "gen-1"),
                 ]),
                 pairs(&[
@@ -551,6 +604,73 @@ mod tests {
                 ]),
             ]
         );
+    }
+
+    /// eve on Vercel AI Gateway: one requested model answered as a dated
+    /// snapshot, as the bare alias, or not at all. All three are one model.
+    #[test]
+    fn a_resolved_alias_keeps_the_requested_model_name() {
+        let chat = |response: Option<&str>| {
+            let mut attrs = vec![
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.request.model", "openai/gpt-4o-mini"),
+            ];
+            attrs.extend(response.map(|model| ("gen_ai.response.model", model)));
+            span("chat openai/gpt-4o-mini", &attrs)
+        };
+        let got = stamps(
+            "eve.agent",
+            vec![
+                chat(Some("gpt-4o-mini-2024-07-18")),
+                chat(Some("gpt-4o-mini")),
+                chat(None),
+            ],
+        );
+        for stamped in got {
+            assert!(stamped.contains(&(MODEL_ATTR.to_owned(), "openai/gpt-4o-mini".to_owned())));
+        }
+    }
+
+    #[test]
+    fn same_model_ignores_prefix_date_and_dots_only() {
+        assert!(same_model("openai/gpt-4o-mini", "gpt-4o-mini-2024-07-18"));
+        assert!(same_model("gpt-4o", "gpt-4o-2024-08-06"));
+        assert!(same_model(
+            "anthropic/claude-haiku-4.5",
+            "claude-haiku-4-5-20251001"
+        ));
+        assert!(!same_model(
+            "openrouter/auto",
+            "anthropic/claude-sonnet-4.5"
+        ));
+        assert!(!same_model("openai/gpt-4o", "gpt-4o-mini"));
+        assert!(!same_model("gpt-5", "gpt-5-mini-2025-08-07"));
+        assert!(same_model("gpt-4o-2024-08-06", "openai/gpt-4o-2024-08-06"));
+        // A pinned release answered by another release is another model.
+        assert!(!same_model("openai/gpt-4o-2024-05-13", "gpt-4o-2024-08-06"));
+        assert!(!same_model(
+            "claude-haiku-4-5-20251001",
+            "claude-haiku-4-5-20260101"
+        ));
+    }
+
+    #[test]
+    fn a_router_keeps_the_model_that_answered() {
+        let got = stamps(
+            "gen_ai",
+            vec![span(
+                "chat openrouter/auto",
+                &[
+                    ("gen_ai.operation.name", "chat"),
+                    ("gen_ai.request.model", "openrouter/auto"),
+                    ("gen_ai.response.model", "anthropic/claude-sonnet-4.5"),
+                ],
+            )],
+        );
+        assert!(got[0].contains(&(
+            MODEL_ATTR.to_owned(),
+            "anthropic/claude-sonnet-4.5".to_owned()
+        )));
     }
 
     /// The legacy `ai` scope names no operation: its tool call is found by

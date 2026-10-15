@@ -19,6 +19,12 @@ const PROMPT = "Add Maple observability to my app: maple.dev/SKILL.md";
 const AGENTS: BrandMarkId[] = ["claude", "openai", "cursor"];
 
 const COPY_PATHS = ["M19 21L9 21", "M5 15H5.0001", "M21 11L21 19", "M7 11L7 19", "M19 9L9 9", "M17 5L17 7", "M3 5L3 13", "M15 3L5 3"];
+const LABELS = [
+	{ state: "idle", text: m.cta_agent() },
+	{ state: "copied", text: m.cta_agent_copied() },
+	{ state: "error", text: "Press ⌘C" },
+];
+
 const CHECK_PATHS = ["M9.99999 18H10.01", "M12 16H12.01", "M7.99999 16H8.00999", "M14 14H14.01", "M5.99999 14H6.00999", "M3.99999 12H4.00999", "M22 6H22.01", "M16 12H16.01", "M18 10H18.01", "M20 8H20.01"];
 ---
 
@@ -29,10 +35,10 @@ const CHECK_PATHS = ["M9.99999 18H10.01", "M12 16H12.01", "M7.99999 16H8.00999",
 	title={m.cta_agent_hint()}
 >
 	<span class="agent-prompt__marks" aria-hidden="true">
-		{AGENTS.map((id) => {
+		{AGENTS.map((id, n) => {
 			const mark = brandMark(id);
 			return (
-				<span class="agent-prompt__mark">
+				<span class="agent-prompt__mark" style={`--n:${n}`}>
 					<svg viewBox={mark.viewBox ?? "0 0 24 24"} style={`color:${markColor(mark)}`} fill="currentColor">
 						<path d={mark.path} />
 					</svg>
@@ -41,9 +47,14 @@ const CHECK_PATHS = ["M9.99999 18H10.01", "M12 16H12.01", "M7.99999 16H8.00999",
 		})}
 	</span>
 	<span class="agent-prompt__text">
-		<span class="agent-prompt__idle">{m.cta_agent()}</span>
-		<span class="agent-prompt__ghost" aria-hidden="true">{m.cta_agent_copied()}</span>
-		<span class="agent-prompt__status" aria-live="polite"></span>
+		<span class="agent-prompt__sr">{m.cta_agent()}</span>
+		<span class="agent-prompt__status agent-prompt__sr" aria-live="polite"></span>
+		{/* Every label stays in the grid so the button keeps the width of the longest one. */}
+		{LABELS.map(({ state, text }) => (
+			<span class="agent-prompt__label" data-label={state} aria-hidden="true">
+				{[...text].map((char, i) => <span style={`--i:${i}`}>{char}</span>)}
+			</span>
+		))}
 	</span>
 	<span class="agent-prompt__icon" aria-hidden="true">
 		<svg class="agent-prompt__copy" viewBox="0 0 24 24" fill="none">
@@ -62,7 +73,7 @@ const CHECK_PATHS = ["M9.99999 18H10.01", "M12 16H12.01", "M7.99999 16H8.00999",
 	bindCopyButtons({
 		hostSelector: ".agent-prompt[data-copy]",
 		buttonSelector: ".agent-prompt",
-		// Feedback goes in an overlay so the button keeps the width of its longest label.
+		// Screen-reader announcement only; the visible labels animate off `data-copy-state`.
 		labelSelector: ".agent-prompt__status",
 		idleLabel: "",
 		copiedLabel: m.cta_agent_copied(),
@@ -72,18 +83,64 @@ const CHECK_PATHS = ["M9.99999 18H10.01", "M12 16H12.01", "M7.99999 16H8.00999",
 
 <style>
 	.agent-prompt {
+		--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+		--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 		gap: 12px;
+		/* Release eases back slower than the press goes down. */
+		transition:
+			transform 200ms var(--ease-out),
+			box-shadow 150ms ease;
 	}
+	.agent-prompt:active {
+		transform: scale(0.97);
+		transition-duration: 100ms;
+	}
+
+	.agent-prompt__sr {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	/* Labels: letters blur in with a stagger, and blur out together. */
 	.agent-prompt__text {
 		display: grid;
 	}
-	.agent-prompt__text > * {
+	.agent-prompt__label {
 		grid-area: 1 / 1;
+		white-space: pre;
+		text-align: center;
 	}
-	.agent-prompt__ghost,
-	.agent-prompt__text:has(.agent-prompt__status:not(:empty)) .agent-prompt__idle {
-		visibility: hidden;
+	.agent-prompt__label > span {
+		display: inline-block;
+		opacity: 0;
+		filter: blur(6px);
+		transform: translateY(0.4em);
+		transition:
+			opacity 150ms var(--ease-out),
+			filter 150ms var(--ease-out),
+			transform 150ms var(--ease-out);
 	}
+	.agent-prompt__label[data-label="idle"] > span {
+		transform: translateY(-0.4em);
+	}
+	.agent-prompt:not([data-copy-state]) [data-label="idle"] > span,
+	.agent-prompt[data-copy-state="copied"] [data-label="copied"] > span,
+	.agent-prompt[data-copy-state="error"] [data-label="error"] > span {
+		opacity: 1;
+		filter: blur(0);
+		transform: none;
+		transition-duration: 240ms;
+		transition-delay: calc(30ms + var(--i) * 7ms);
+	}
+	.agent-prompt[data-copy-state="error"] [data-label="error"] {
+		color: var(--muted-foreground);
+	}
+
+	/* Agent marks fan out a touch on hover. */
 	.agent-prompt__marks {
 		display: inline-flex;
 	}
@@ -96,14 +153,35 @@ const CHECK_PATHS = ["M9.99999 18H10.01", "M12 16H12.01", "M7.99999 16H8.00999",
 		background: var(--bg-elevated);
 		box-shadow: 0 0 0 1.5px var(--bg);
 		border: 1px solid var(--border);
+		transition: transform 220ms var(--ease-out);
 	}
 	.agent-prompt__mark + .agent-prompt__mark {
 		margin-left: -6px;
+	}
+	@media (hover: hover) and (pointer: fine) {
+		.agent-prompt:hover .agent-prompt__mark:nth-child(2) {
+			transform: translateX(3px);
+		}
+		.agent-prompt:hover .agent-prompt__mark:nth-child(3) {
+			transform: translateX(6px);
+		}
+	}
+	/* One hop across the marks when the copy lands; the hand-off to the agents. */
+	.agent-prompt.is-done .agent-prompt__mark svg {
+		animation: agent-prompt-hop 360ms var(--ease-in-out) both;
+		animation-delay: calc(var(--n) * 50ms);
+	}
+	@keyframes agent-prompt-hop {
+		40% {
+			transform: translateY(-3px);
+		}
 	}
 	.agent-prompt__mark svg {
 		width: 13px;
 		height: 13px;
 	}
+
+	/* Copy icon morphs into the check: blur + scale crossfade. */
 	.agent-prompt__icon {
 		display: grid;
 		color: var(--muted-foreground);
@@ -113,18 +191,46 @@ const CHECK_PATHS = ["M9.99999 18H10.01", "M12 16H12.01", "M7.99999 16H8.00999",
 		grid-area: 1 / 1;
 		width: 16px;
 		height: 16px;
+		transition:
+			opacity 200ms var(--ease-out),
+			filter 200ms var(--ease-out),
+			transform 240ms var(--ease-out);
 	}
 	.agent-prompt:hover .agent-prompt__icon {
 		color: var(--foreground);
 	}
 	.agent-prompt__check,
 	.agent-prompt.is-done .agent-prompt__copy {
-		visibility: hidden;
+		opacity: 0;
+		filter: blur(4px);
+		transform: scale(0.5);
 	}
 	.agent-prompt.is-done .agent-prompt__check {
-		visibility: visible;
+		opacity: 1;
+		filter: blur(0);
+		transform: none;
+		transition-delay: 40ms;
 	}
 	.agent-prompt.is-done .agent-prompt__icon {
 		color: var(--chart-3);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.agent-prompt,
+		.agent-prompt:active {
+			transform: none;
+		}
+		.agent-prompt .agent-prompt__label > span,
+		.agent-prompt .agent-prompt__icon svg {
+			filter: none !important;
+			transform: none !important;
+			transition-delay: 0ms !important;
+		}
+		.agent-prompt__mark {
+			transition: none;
+		}
+		.agent-prompt.is-done .agent-prompt__mark svg {
+			animation: none;
+		}
 	}
 </style>

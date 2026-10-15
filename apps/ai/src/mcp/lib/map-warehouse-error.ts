@@ -10,8 +10,7 @@ export { warehouseHandlers, warehouseReadHandlers }
 
 const SCHEMA_DRIFT_HINT =
 	" — your ClickHouse cluster's schema is out of sync with what Maple expects. " +
-	"Run schema apply from the org's ClickHouse settings page (or POST " +
-	"/api/org-clickhouse-settings/apply-schema) to add the missing columns."
+	"Run schema apply from the org's ClickHouse settings page to add the missing columns."
 
 /**
  * Human-facing message for a warehouse error, with the schema-drift remediation

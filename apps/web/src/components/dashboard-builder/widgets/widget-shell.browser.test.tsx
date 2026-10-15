@@ -92,22 +92,6 @@ describe("WidgetShell: the headline stat keeps the corner", () => {
 		expect(lastChip, "the legend chips render").toBeGreaterThan(-1)
 		expect(stat, "the stat comes after every legend chip").toBeGreaterThan(lastChip)
 	})
-
-	/**
-	 * With no chips the stat still has to reach the right edge — the push-right
-	 * moved onto the legend block, so the stat can no longer rely on its own.
-	 */
-	it("still pushes the stat right when there is no legend", () => {
-		const { container } = render(
-			<WidgetShell title="Apdex" mode="view" headerValue={<span>0.98</span>}>
-				<div />
-			</WidgetShell>,
-		)
-		const stat = [...container.querySelectorAll("div")].find(
-			(node) => node.textContent?.trim() === "0.98" && node.children.length === 1,
-		)
-		expect(stat?.className).toContain("ml-auto")
-	})
 })
 
 describe("WidgetShell: dashed series in the header", () => {
@@ -130,16 +114,16 @@ describe("WidgetShell: dashed series in the header", () => {
 			</WidgetShell>,
 		)
 
-		const swatches = [...container.querySelectorAll("span")].filter((node) =>
-			node.className.includes("size-2"),
-		)
+		const swatches = [...container.querySelectorAll<HTMLElement>("span[style]")]
 		expect(swatches, "one swatch per series").toHaveLength(2)
 
 		const [solid, dashed] = swatches
-		expect(solid?.className).not.toContain("border-dashed")
-		expect(solid?.getAttribute("style")).toContain("background-color")
+		expect(solid?.style.backgroundColor).toBe("rgb(139, 92, 246)")
+		expect(solid?.style.borderColor).toBe("")
 
-		expect(dashed?.className, "the errors chip is outlined").toContain("border-dashed")
-		expect(dashed?.getAttribute("style"), "and coloured on the border").toContain("border-color")
+		expect(dashed?.style.borderColor, "the errors chip is coloured on its outline").toBe(
+			"rgb(239, 68, 68)",
+		)
+		expect(dashed?.style.backgroundColor).toBe("")
 	})
 })

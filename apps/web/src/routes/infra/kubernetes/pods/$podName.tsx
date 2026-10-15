@@ -16,6 +16,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { FolderIcon } from "@/components/icons"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { PodDetailChart } from "@/components/infra/k8s-detail-chart"
+import { PodContainerRestarts, PodRestartsStat } from "@/components/infra/kubernetes/pod-restarts-panel"
 import { bucketSecondsForRange } from "@/components/infra/constants"
 import { severityLevel } from "@/components/infra/format"
 import { PageHero, HeroChip } from "@/components/common/page-hero"
@@ -108,7 +109,7 @@ function PodDetailPage() {
 			<div className="space-y-6">
 				<PageHero
 					title={<span className="font-mono">{podName}</span>}
-					description="Pod metrics from the kubelet stats receiver."
+					description="Pod metrics from the kubelet stats receiver; restarts from the cluster receiver."
 					meta={
 						<>
 							{namespace && <HeroChip>ns {namespace}</HeroChip>}
@@ -119,7 +120,7 @@ function PodDetailPage() {
 				/>
 
 				{Result.isInitial(summaryResult) ? (
-					<StatRailLoading />
+					<StatRailLoading count={5} columns={5} />
 				) : Result.isFailure(summaryResult) ? (
 					<ErrorState
 						error={summaryResult.cause}
@@ -127,7 +128,7 @@ function PodDetailPage() {
 						onRetry={refreshSummary}
 					/>
 				) : summary ? (
-					<StatRail>
+					<StatRail columns={5}>
 						<StatRailItem
 							eyebrow="CPU vs limit"
 							value={formatPercent(summary.cpuLimitPct)}
@@ -150,6 +151,12 @@ function PodDetailPage() {
 							value={formatPercent(summary.memoryRequestPct)}
 							compact
 						/>
+						<PodRestartsStat
+							podName={podName}
+							namespace={namespace}
+							startTime={startTime}
+							endTime={endTime}
+						/>
 					</StatRail>
 				) : (
 					<NoMetricsMessage noun="pod" />
@@ -171,6 +178,13 @@ function PodDetailPage() {
 						bucketSeconds={bucketSeconds}
 					/>
 				</div>
+
+				<PodContainerRestarts
+					podName={podName}
+					namespace={namespace}
+					startTime={startTime}
+					endTime={endTime}
+				/>
 			</div>
 		</KubernetesShell>
 	)

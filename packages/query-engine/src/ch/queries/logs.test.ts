@@ -502,6 +502,22 @@ describe("logsListQuery", () => {
 		expect(sql).toContain("FORMAT JSON")
 	})
 
+	it("applies filter-in and filter-out attribute predicates with escaped user input", () => {
+		const { sql } = compileUnsafe(
+			logsListQuery({
+				attributeFilters: [
+					{ key: "http.route", value: "/a", mode: "equals" },
+					{ key: "o'k", value: "x' OR 1=1", mode: "equals", negated: true },
+				],
+				resourceAttributeFilters: [{ key: "k8s.pod.name", value: "p1", mode: "equals" }],
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("LogAttributes['http.route'] = '/a'")
+		expect(sql).toContain("NOT (LogAttributes['o\\'k'] = 'x\\' OR 1=1')")
+		expect(sql).toContain("ResourceAttributes['k8s.pod.name'] = 'p1'")
+	})
+
 	it("applies cursor pagination", () => {
 		const q = logsListQuery({ cursor: "2024-01-01 12:00:00.123456789" })
 		const { sql } = compileUnsafe(q, baseParams)
@@ -630,6 +646,47 @@ describe("logsListQuery", () => {
 		expect(sql.match(/ServiceName = 'api'/g)).toHaveLength(2)
 		expect(sql.match(/SeverityText IN \('ERROR', 'Error', 'error'\)/g)).toHaveLength(2)
 		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+	})
+
+	it("reads oldest-first with a max cutoff when order is asc", () => {
+		const { sql } = compileUnsafe(logsListQuery({ limit: 25, order: "asc" }), baseParams)
+		const cutoffMatch = sql.match(/SELECT max\(ts\) FROM \(([\s\S]*?)\)\)/)
+		expect(cutoffMatch).not.toBeNull()
+		expect(cutoffMatch?.[1]).toContain("ORDER BY ts ASC")
+		expect(cutoffMatch?.[1]).toContain("LIMIT 25")
+		expect(sql).toContain("Timestamp <= (SELECT max(ts) FROM (")
+		expect(sql).toContain(
+			"ORDER BY timestamp ASC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC",
+		)
+		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+	})
+
+	it("continues an asc page past its cursor, not behind it", () => {
+		const cursor = "2026-10-08 14:30:00.123456789"
+		const asc = compileUnsafe(logsListQuery({ limit: 25, order: "asc", cursor }), baseParams).sql
+		expect(asc).toMatch(/Timestamp > '2026-10-08 14:30:00\.123456789'/)
+		expect(asc).not.toMatch(/Timestamp < '2026-10-08 14:30:00\.123456789'/)
+		const desc = compileUnsafe(logsListQuery({ limit: 25, cursor }), baseParams).sql
+		expect(desc).toMatch(/Timestamp < '2026-10-08 14:30:00\.123456789'/)
+	})
+
+	it("keeps the desc query unchanged when order is explicit", () => {
+		const implicit = compileUnsafe(logsListQuery({ limit: 25 }), baseParams).sql
+		const explicit = compileUnsafe(logsListQuery({ limit: 25, order: "desc" }), baseParams).sql
+		expect(explicit).toBe(implicit)
+		expect(explicit).not.toContain("max(ts)")
+	})
+
+	it("scopes to one instance through a resource attribute filter", () => {
+		const { sql } = compileUnsafe(
+			logsListQuery({
+				serviceName: "api",
+				resourceAttributeFilters: [{ key: "k8s.pod.name", value: "api-7f9", mode: "equals" }],
+			}),
+			baseParams,
+		)
+		expect(sql.match(/'k8s\.pod\.name'/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+		expect(sql).toContain("'api-7f9'")
 	})
 })
 
@@ -765,6 +822,17 @@ describe("logsFacetsQuery", () => {
 		// Same outer shape as the full union: count-desc, limit 500.
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 500")
+	})
+
+	it("takes the raw-`logs` path and applies attribute filters when they are set", () => {
+		const q = logsFacetsQuery({
+			attributeFilters: [{ key: "http.route", value: "/a", mode: "equals" }],
+			resourceAttributeFilters: [{ key: "k8s.pod.name", value: "p1", mode: "equals", negated: true }],
+		})
+		const { sql } = compileUnionUnsafe(q, baseParams)
+		expect(sql).not.toContain("logs_aggregates_hourly")
+		expect(sql).toContain("LogAttributes['http.route'] = '/a'")
+		expect(sql).toContain("NOT (ResourceAttributes['k8s.pod.name'] = 'p1')")
 	})
 
 	it("facet scoping follows the raw-`logs` fallback path", () => {

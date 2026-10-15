@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit, Schema } from "effect"
 import {
@@ -23,6 +23,9 @@ import {
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -30,14 +33,16 @@ import { Switch } from "@maple/ui/components/ui/switch"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { ResultView } from "@/components/common/result-view"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { ExternalLinkIcon, GearIcon, GithubIcon } from "@/components/icons"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { errorMessage, toastExit } from "@/lib/error-toast"
 import { currentRegion } from "@/lib/region"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
+import { type RepositoryFilter, SEARCH_THRESHOLD, visibleRepositories } from "./repository-filter"
 import { ReviewRulesForm } from "./review-rules-form"
 
 const SETTINGS_KEY = "githubPrReviewSettings"
@@ -58,7 +63,7 @@ const EMPTY_CONFIG = new PrReviewRepositoryConfig({})
 
 /** Organization settings first, since every repository inherits them; then the repositories. */
 export function CodeReviewSettingsView() {
-	const query = retainedQuery("integrations", "githubGetPrReviewSettings", {
+	const query = retainedInternalQuery("integrations", "githubGetPrReviewSettings", {
 		reactivityKeys: [SETTINGS_KEY],
 	})
 	const result = useAtomValue(query)
@@ -69,63 +74,43 @@ export function CodeReviewSettingsView() {
 			result={result}
 			loading={
 				<div className="flex flex-col gap-6">
-					<Skeleton className="h-20 w-full rounded-xl" />
-					<Skeleton className="h-[520px] w-full rounded-xl" />
+					<Skeleton className="h-20 w-full rounded-md" />
+					<Skeleton className="h-[520px] w-full rounded-md" />
 				</div>
 			}
 			errorTitle="Failed to load review settings"
 			onRetry={refresh}
 		>
 			{(response) => (
-				<div className="flex flex-col gap-8">
-					<Section
+				<SettingsSections>
+					<SettingsSection
 						title="Reviewer"
 						description="The model every review and reply in this organization runs on."
+						framed={false}
 					>
 						<ModelSetting settings={response.settings} />
-					</Section>
-					<Section
+					</SettingsSection>
+					<SettingsSection
 						title="Default review rules"
 						description="Every repository starts from these. A repository can override any of them."
 					>
-						<Panel padded>
-							<ReviewRulesDefaults settings={response.settings} />
-						</Panel>
-					</Section>
-					<Section
+						<ReviewRulesDefaults settings={response.settings} />
+					</SettingsSection>
+					<SettingsSection
 						title="Repositories"
 						description="Pick which repositories get reviews, and tune any of them on its own."
+						framed={false}
 					>
 						<RepositoriesSection inherited={response.settings.defaults} />
-					</Section>
-				</div>
+					</SettingsSection>
+				</SettingsSections>
 			)}
 		</ResultView>
 	)
 }
 
-function Section({
-	title,
-	description,
-	children,
-}: {
-	title: string
-	description: string
-	children: ReactNode
-}) {
-	return (
-		<section className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-8">
-			<div className="flex flex-col gap-1">
-				<h2 className="text-sm font-medium">{title}</h2>
-				<p className="text-sm text-muted-foreground">{description}</p>
-			</div>
-			<div className="min-w-0">{children}</div>
-		</section>
-	)
-}
-
 function useSaveSettings() {
-	const save = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubSetPrReviewSettings"), {
+	const save = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetPrReviewSettings"), {
 		mode: "promiseExit",
 	})
 	return (settings: PrReviewOrgSettings) =>
@@ -237,14 +222,14 @@ function ReviewRulesDefaults({ settings }: { settings: PrReviewOrgSettings }) {
 }
 
 function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfig | undefined }) {
-	const query = retainedQuery("integrations", "githubStatus", { reactivityKeys: [STATUS_KEY] })
+	const query = retainedInternalQuery("integrations", "githubStatus", { reactivityKeys: [STATUS_KEY] })
 	const result = useAtomValue(query)
 	const refresh = useAtomRefresh(query)
 
 	return (
 		<ResultView
 			result={result}
-			loading={<Skeleton className="h-40 w-full rounded-xl" />}
+			loading={<Skeleton className="h-40 w-full rounded-md" />}
 			errorTitle="Failed to load repositories"
 			onRetry={refresh}
 		>
@@ -252,8 +237,8 @@ function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfi
 				const repositories = status.repositories.filter((repo) => repo.status === "active")
 				if (!status.connected || repositories.length === 0)
 					return (
-						<div className="flex flex-col items-start gap-3 rounded-xl border border-dashed px-5 py-6">
-							<div className="flex items-center gap-2 text-sm font-medium">
+						<EmptyMessage dashed className="flex flex-col items-start gap-3 px-5 py-6 text-left">
+							<div className="flex items-center gap-2 text-sm font-medium text-foreground">
 								<GithubIcon size={16} aria-hidden />
 								{status.connected
 									? "No repositories yet"
@@ -267,33 +252,112 @@ function RepositoriesSection({ inherited }: { inherited: PrReviewRepositoryConfi
 							<Button variant="outline" size="sm" render={<Link to="/integrations" />}>
 								{status.connected ? "Manage GitHub access" : "Connect GitHub"}
 							</Button>
-						</div>
+						</EmptyMessage>
 					)
-				const enabled = repositories.filter((repo) => repo.prReviewEnabled).length
-				return (
-					<Panel>
-						<PanelHeader
-							className="px-5 py-3 text-xs text-muted-foreground"
-							action={
-								<Link to="/integrations" className="hover:text-foreground hover:underline">
-									Manage GitHub access
-								</Link>
-							}
-						>
-							<span>
-								{enabled} of {repositories.length}{" "}
-								{pluralize(repositories.length, "repository", "repositories")} reviewed
-							</span>
-						</PanelHeader>
-						<ul className="divide-y">
-							{repositories.map((repo) => (
-								<RepositoryRow key={repo.id} repo={repo} inherited={inherited} />
-							))}
-						</ul>
-					</Panel>
-				)
+				return <RepositoryList repositories={repositories} inherited={inherited} />
 			}}
 		</ResultView>
+	)
+}
+
+const FILTER_LABELS = {
+	all: "All",
+	reviewed: "Reviewed",
+	off: "Not reviewed",
+} satisfies Record<RepositoryFilter, string>
+
+export function RepositoryList({
+	repositories,
+	inherited,
+}: {
+	repositories: ReadonlyArray<GithubRepoSummary>
+	inherited: PrReviewRepositoryConfig | undefined
+}) {
+	const [search, setSearch] = useState("")
+	const [filter, setFilter] = useState<RepositoryFilter>("all")
+	// Reviewed repositories lead, ranked once on mount so a row does not jump away when toggled.
+	const [pinned] = useState(
+		() => new Set(repositories.filter((repo) => repo.prReviewEnabled).map((repo) => repo.id)),
+	)
+	const enabled = repositories.filter((repo) => repo.prReviewEnabled).length
+	const counts = {
+		all: repositories.length,
+		reviewed: enabled,
+		off: repositories.length - enabled,
+	} satisfies Record<RepositoryFilter, number>
+	const showToolbar = repositories.length > SEARCH_THRESHOLD
+	const visible = visibleRepositories(repositories, { search, filter, pinned })
+	const searching = showToolbar && search.trim().length > 0
+
+	return (
+		<Panel>
+			<PanelHeader
+				className="px-5 py-3 text-xs text-muted-foreground"
+				action={
+					<Link to="/integrations" className="hover:text-foreground hover:underline">
+						Manage GitHub access
+					</Link>
+				}
+			>
+				<span>
+					{enabled} of {repositories.length}{" "}
+					{pluralize(repositories.length, "repository", "repositories")} reviewed
+				</span>
+			</PanelHeader>
+			{showToolbar ? (
+				<div className="flex flex-wrap items-center gap-3 border-b px-5 py-3">
+					<SearchInput
+						value={search}
+						onValueChange={setSearch}
+						placeholder="Search repositories"
+						aria-label="Search repositories"
+						className="min-w-48 flex-1"
+					/>
+					<SegmentedSelect
+						size="sm"
+						aria-label="Review status"
+						value={filter}
+						onChange={setFilter}
+						options={(["all", "reviewed", "off"] as const).map((value) => ({
+							value,
+							label: `${FILTER_LABELS[value]} · ${counts[value]}`,
+						}))}
+					/>
+				</div>
+			) : null}
+			{visible.length === 0 ? (
+				<div className="flex flex-col items-center gap-2 px-5 py-10 text-center text-sm text-muted-foreground">
+					<p>
+						{searching
+							? `No repositories match “${search.trim()}”`
+							: filter === "reviewed"
+								? "No repositories are reviewed yet"
+								: "Every repository is reviewed"}
+					</p>
+					<Button
+						size="sm"
+						variant="ghost"
+						onClick={() => {
+							setSearch("")
+							setFilter("all")
+						}}
+					>
+						Show all repositories
+					</Button>
+				</div>
+			) : (
+				<ul className="max-h-[min(36rem,65vh)] divide-y overflow-y-auto">
+					{visible.map((repo) => (
+						<RepositoryRow key={repo.id} repo={repo} inherited={inherited} />
+					))}
+				</ul>
+			)}
+			{visible.length > 0 && visible.length < repositories.length ? (
+				<div className="border-t px-5 py-2 text-xs text-muted-foreground">
+					Showing {visible.length} of {repositories.length}
+				</div>
+			) : null}
+		</Panel>
 	)
 }
 
@@ -305,7 +369,7 @@ function RepositoryRow({
 	inherited: PrReviewRepositoryConfig | undefined
 }) {
 	const isAdmin = useIsOrgAdmin()
-	const setPrReview = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubSetPrReview"), {
+	const setPrReview = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetPrReview"), {
 		mode: "promiseExit",
 	})
 	const [enabled, setEnabled] = useState(repo.prReviewEnabled)
@@ -338,7 +402,7 @@ function RepositoryRow({
 	const handleToggle = (next: boolean) => (busy ? undefined : toggle(next))
 
 	return (
-		<li className="flex items-center gap-3 px-5 py-3">
+		<li className="flex items-center gap-3 px-5 py-2.5">
 			<GithubIcon size={16} className="shrink-0 text-muted-foreground" aria-hidden />
 			<div className="flex min-w-0 flex-1 items-center gap-2">
 				<a
@@ -347,7 +411,7 @@ function RepositoryRow({
 					rel="noreferrer"
 					className="group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline"
 				>
-					<span className="truncate">{repo.fullName}</span>
+					<RepositoryName fullName={repo.fullName} />
 					<ExternalLinkIcon
 						size={12}
 						className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
@@ -368,7 +432,7 @@ function RepositoryRow({
 					disabled={!enabled}
 					title={enabled ? "Repository overrides" : "Turn reviews on to configure this repository"}
 				>
-					<GearIcon size={14} aria-hidden />
+					<GearIcon aria-hidden />
 					Configure
 				</Button>
 				<DialogContent className="sm:max-w-2xl">
@@ -396,6 +460,17 @@ function RepositoryRow({
 	)
 }
 
+/** The owner recedes so the part that differs between rows, the repository name, carries it. */
+function RepositoryName({ fullName }: { fullName: string }) {
+	const slash = fullName.indexOf("/")
+	return (
+		<span className="truncate">
+			<span className="font-normal text-muted-foreground">{fullName.slice(0, slash + 1)}</span>
+			{fullName.slice(slash + 1)}
+		</span>
+	)
+}
+
 function RepositoryConfig({
 	repo,
 	inherited,
@@ -404,12 +479,12 @@ function RepositoryConfig({
 	inherited: PrReviewRepositoryConfig | undefined
 }) {
 	const result = useAtomValue(
-		retainedQuery("integrations", "githubGetPrReviewConfig", {
+		retainedInternalQuery("integrations", "githubGetPrReviewConfig", {
 			params: { repositoryId: repo.id },
 			reactivityKeys: [configKey(repo)],
 		}),
 	)
-	const save = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubSetPrReviewConfig"), {
+	const save = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetPrReviewConfig"), {
 		mode: "promiseExit",
 	})
 

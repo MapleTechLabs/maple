@@ -1,10 +1,12 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { useState, type Dispatch, type SetStateAction } from "react"
 import { useUser } from "@clerk/clerk-react"
 
 import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationDocument } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
@@ -162,7 +164,7 @@ export function NotificationsSection({
 							label="Stop notifying this unavailable destination"
 							onClick={() => remove(id)}
 						>
-							<XmarkIcon size={12} />
+							<XmarkIcon />
 						</IconButton>
 					</div>
 				))}
@@ -211,7 +213,7 @@ function SelectedDestination({
 				bare
 				className="flex shrink-0"
 			/>
-			<span className="min-w-0 truncate text-sm font-medium">{primary}</span>
+			<MiddleTruncate text={primary} tail={16} className="text-sm font-medium" />
 			<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 				{paused ? <span className="text-severity-error">{paused} · </span> : null}
 				{secondary}
@@ -221,7 +223,7 @@ function SelectedDestination({
 				label={`Stop notifying ${primary}`}
 				onClick={onRemove}
 			>
-				<XmarkIcon size={12} />
+				<XmarkIcon />
 			</IconButton>
 		</div>
 	)
@@ -305,7 +307,7 @@ function AddDestinationMenu({
 										bare
 										className="flex shrink-0"
 									/>
-									<span className="min-w-0 flex-1 truncate">{primary}</span>
+									<MiddleTruncate text={primary} tail={16} className="flex-1" />
 									<span className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">
 										{secondary}
 									</span>
@@ -406,7 +408,7 @@ function EmailMeItem({
 				})
 			}
 		>
-			<EnvelopeIcon size={16} className="shrink-0" />
+			<EnvelopeIcon className="shrink-0" />
 			<span className="flex-1">Email me</span>
 			{email ? <span className="max-w-32 truncate text-xs text-muted-foreground">{email}</span> : null}
 		</DropdownMenuItem>
@@ -442,9 +444,9 @@ function MessageTemplate({
 					Message template
 				</span>
 				{hasTemplate && !open && (
-					<span className="rounded-full bg-primary/10 px-2 py-0.5 text-3xs text-primary">
+					<Badge pill size="xs" className="bg-primary/10 text-primary">
 						Customized
-					</span>
+					</Badge>
 				)}
 			</button>
 
@@ -484,10 +486,11 @@ function MessageTemplate({
 								<Tooltip key={variable.key}>
 									<TooltipTrigger
 										render={
-											<button
-												type="button"
+											<Button
+												variant="outline"
+												size="xs"
 												onClick={() => appendToBody(`{{ ${variable.key} }}`)}
-												className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground hover:border-border hover:text-foreground"
+												className="font-mono text-3xs text-muted-foreground hover:text-foreground sm:text-3xs"
 											/>
 										}
 									>

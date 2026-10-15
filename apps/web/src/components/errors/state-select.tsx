@@ -60,7 +60,7 @@ export function StateSelect({
 					return (
 						<SelectItem key={state} value={state} disabled={!reachable}>
 							<span className="flex items-center gap-2">
-								<WorkflowRingIcon state={state} size={12} />
+								<WorkflowRingIcon state={state} />
 								{WORKFLOW_LABEL[state]}
 								{state === current ? " (current)" : null}
 							</span>

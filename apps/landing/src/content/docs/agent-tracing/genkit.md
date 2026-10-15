@@ -1,7 +1,7 @@
 ---
 title: "Trace Genkit agents with OpenTelemetry"
 description: "Send Genkit's OpenTelemetry spans to Maple and group each chat into one Agent Session."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 16
 navLabel: "Genkit"
 icon: "googleadk"

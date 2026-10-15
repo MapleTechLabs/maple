@@ -8,6 +8,7 @@ import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import {
 	BellIcon,
+	ChatBubbleSparkleIcon,
 	CircleCheckIcon,
 	CreditCardIcon,
 	DatabaseIcon,
@@ -35,6 +36,7 @@ export const settingsTabValues = [
 	"automation",
 	"api-keys",
 	"mcp",
+	"ai-provider",
 ] as const
 export type SettingsTab = (typeof settingsTabValues)[number]
 
@@ -50,6 +52,7 @@ export const settingsTabLabels: Record<SettingsTab, string> = {
 	automation: "Automation",
 	"api-keys": "API Keys",
 	mcp: "MCP",
+	"ai-provider": "AI Provider",
 } satisfies Record<SettingsTab, string>
 
 interface NavItem {
@@ -130,6 +133,7 @@ const navSections: SettingsNavSection[] = [
 			{ id: "integrations", label: "Integrations", icon: GridIcon, to: "/integrations" },
 			{ id: "api-keys", label: "API Keys", icon: KeyIcon },
 			{ id: "mcp", label: "MCP", icon: SquareTerminalIcon },
+			{ id: "ai-provider", label: "AI Provider", icon: ChatBubbleSparkleIcon },
 		],
 	},
 	{
@@ -216,6 +220,8 @@ export function useVisibleSettingsSections() {
 				// `GET /v2/audit_log` is admin-only; hide the tab rather than let a
 				// member open it into a 403.
 				if (item.id === "audit-log") return isAdmin
+				// Only admins can attach the add-on or manage the key.
+				if (item.id === "ai-provider") return isAdmin
 				return true
 			}),
 		}))

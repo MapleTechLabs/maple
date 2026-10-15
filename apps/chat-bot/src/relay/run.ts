@@ -9,10 +9,9 @@
  */
 import type { ChatConnector, ConnectorCredentials, InboundEvent } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
@@ -22,8 +21,8 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { chatChartImageUrl } from "@maple/backend/services/chat/chat-chart"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
-import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
+import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { resolveChatIdentity } from "@maple/backend/services/integrations/chat-identity-rows"
 import {
@@ -39,6 +38,7 @@ import {
 	type RelayPorts,
 	type ResolvedWorkspace,
 } from "./turn.ts"
+import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
 
 /**
  * This Worker's own SDK instance, at module scope so its buffers are the isolate's.
@@ -47,7 +47,10 @@ import {
  * for, so the spans a turn produces are exported from here or not at all — and flushed when the
  * event is done, because nothing else closes a scope around it.
  */
-const telemetry = MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-chat-bot" }))
+const telemetry = runtimeTelemetry({
+	serviceName: "maple-chat-bot",
+	anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+})
 
 const APP_BASE_URL_FALLBACK = "https://app.maple.dev"
 
@@ -121,7 +124,7 @@ const withDatabase = <A, E>(env: Record<string, unknown>, program: Effect.Effect
 		// The connection's lifetime IS this scope — it is released with the lookup, not with the
 		// turn the lookup starts.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.provideMerge(layerPg, mapleDbConnectionLayer(env))),
+		Effect.provide(Layer.provideMerge(DatabasePgLive, layerMapleDbConnection(env))),
 	)
 
 /**

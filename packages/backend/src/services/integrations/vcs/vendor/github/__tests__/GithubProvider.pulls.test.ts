@@ -4,10 +4,7 @@ import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { GitCommitSha, type PullRequestReviewPublication, type VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
-import {
-	GithubHttp,
-	type GithubHttpApi,
-} from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { GithubProvider } from "@maple/backend/services/integrations/vcs/vendor/github/GithubProvider"
 
 const privateKey = generateKeyPairSync("rsa", {
@@ -64,13 +61,11 @@ const providerLayer = (
 	bodies: Array<string> = [],
 ) => {
 	let next = 0
-	const http = Layer.succeed(GithubHttp, {
-		fetch: async (url, init) => {
-			requests.push(url)
-			bodies.push(typeof init?.body === "string" ? init.body : "")
-			return responses[next++]!
-		},
-	} satisfies GithubHttpApi)
+	const http = fakeGithubHttp(({ url, body }) => {
+		requests.push(url)
+		bodies.push(body ?? "")
+		return responses[next++]!
+	})
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(
 		Layer.provide(
 			Layer.effect(GithubAppClient, GithubAppClient.make).pipe(Layer.provide(http), Layer.provide(env)),
@@ -503,14 +498,12 @@ describe("GithubProvider changes since an earlier review", () => {
 			Layer.provide(
 				Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
 					Layer.provide(
-						Layer.succeed(GithubHttp, {
-							fetch: async (url) => {
-								requests.push(url)
-								if (url.endsWith("/access_tokens")) return tokenResponse()
-								const range = new URL(url).pathname.split("/compare/")[1] ?? ""
-								return routes[range] ?? jsonResponse({ message: "Not Found" }, 404)
-							},
-						} satisfies GithubHttpApi),
+						fakeGithubHttp(({ url }) => {
+							requests.push(url)
+							if (url.endsWith("/access_tokens")) return tokenResponse()
+							const range = new URL(url).pathname.split("/compare/")[1] ?? ""
+							return routes[range] ?? jsonResponse({ message: "Not Found" }, 404)
+						}),
 					),
 					Layer.provide(env),
 				),
@@ -596,5 +589,67 @@ describe("GithubProvider changes since an earlier review", () => {
 			}).pipe(Effect.provide(providerLayer([tokenResponse(), comparison("ahead", full)])))
 			assert.deepStrictEqual(cutOff, { rewritten: false, paths: undefined })
 		})
+	})
+})
+
+describe("GithubProvider reading why a CI job failed", () => {
+	it.effect("reads the job's check-run annotations, keeping only those with a message", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				jsonResponse([
+					{
+						annotation_level: "failure",
+						message: "expected 2 to be 3",
+						title: "adds",
+						path: "src/math.test.ts",
+						start_line: 12,
+					},
+					{ annotation_level: "notice", message: null, path: ".github" },
+				]),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555")
+			assert.isTrue(
+				requests[1]!.endsWith("/repos/octo/shop/check-runs/555/annotations?per_page=100&page=1"),
+			)
+			assert.deepStrictEqual(annotations, [
+				{
+					level: "failure",
+					message: "expected 2 to be 3",
+					title: "adds",
+					path: "src/math.test.ts",
+					startLine: 12,
+				},
+			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("reads past a page of warnings to the failure, and no further", () => {
+		const requests: Array<string> = []
+		const warning = { annotation_level: "warning", message: "Node 16 is deprecated" }
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				jsonResponse(Array.from({ length: 100 }, () => warning)),
+				jsonResponse([
+					...Array.from({ length: 99 }, () => warning),
+					{ annotation_level: "failure", message: "expected 2 to be 3" },
+				]),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555")
+			// A full page holding the failure ends the read.
+			assert.lengthOf(requests, 3)
+			assert.lengthOf(annotations, 200)
+			assert.strictEqual(annotations.at(-1)?.message, "expected 2 to be 3")
+		}).pipe(Effect.provide(layer))
 	})
 })

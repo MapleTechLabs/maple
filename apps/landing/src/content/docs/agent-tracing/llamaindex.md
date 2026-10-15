@@ -1,7 +1,7 @@
 ---
 title: "Trace LlamaIndex agents with OpenTelemetry"
 description: "Send LlamaIndex agent and workflow runs to Maple with OpenInference, one Agent Session per conversation."
-group: "AI Agents"
+group: "AI Frameworks"
 order: 23
 navLabel: "LlamaIndex"
 icon: "llamaindex"

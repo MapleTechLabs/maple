@@ -156,7 +156,7 @@ const verifyGenerationEvidence = (
 	}
 	let bytes = 0
 	const shards: GcShardEvidence[] = []
-	for (const shard of manifest.shards as ReadonlyArray<ArchiveShardRecord>) {
+	for (const shard of manifest.shards) {
 		const shardPath = join(sourcePath, "shards", shard.name)
 		assertNoSymlinkSync(archiveDir, shardPath, `archive shard ${shard.name}`)
 		assertRealFileSync(shardPath, `archive shard ${shard.name}`)
@@ -207,7 +207,7 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 			// does, assert the catalog is provably reconstructable by attempting the
 			// exact check against current manifests (rebuild is non-mutating on
 			// failure, but assertCatalogExact only reads — it does not write).
-			const sigName = archiveSignal(signal).name as ArchiveSignalName
+			const sigName = archiveSignal(signal).name
 			if (existsSync(signalRoot(archiveDir, signal))) assertCatalogExact(archiveDir, sigName)
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error)
@@ -345,7 +345,7 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 					shards: g.shards,
 					// activeGenerationId is guaranteed non-null here: a missing
 					// pointer excludes the whole range above (blocker 4).
-					recordedActiveGenerationId: activeGenerationId as string,
+					recordedActiveGenerationId: activeGenerationId,
 					sourcePath: generationRoot(archiveDir, signal, rangeStart, g.generationId),
 				})
 				reclaimableBytes += g.bytes
@@ -507,7 +507,7 @@ export const runArchiveGc = async (args: {
 		await args.faults?.afterAllRemovals?.()
 		const affectedSignals = new Set(targets.map((t) => t.signal))
 		for (const signal of affectedSignals) {
-			const sigName = archiveSignal(signal).name as ArchiveSignalName
+			const sigName = archiveSignal(signal).name
 			await rebuildCatalog(archiveDir, sigName)
 			assertCatalogExact(archiveDir, sigName)
 		}
@@ -652,7 +652,7 @@ export const resumeFrozenTargetsAndCompleteGc = async (
 	// Rebuild ALL affected catalogs + assert exact.
 	const affectedSignals = new Set(intent.targets.map((t) => t.signal))
 	for (const signal of affectedSignals) {
-		const sigName = archiveSignal(signal).name as ArchiveSignalName
+		const sigName = archiveSignal(signal).name
 		await rebuildCatalog(archiveDir, sigName)
 		assertCatalogExact(archiveDir, sigName)
 	}
@@ -815,7 +815,7 @@ export const verifyCompletedGcInvariants = async (
 	// Every affected catalog must be exact.
 	const affectedSignals = new Set(intent.targets.map((t) => t.signal))
 	for (const signal of affectedSignals) {
-		const sigName = archiveSignal(signal).name as ArchiveSignalName
+		const sigName = archiveSignal(signal).name
 		assertCatalogExact(archiveDir, sigName)
 	}
 }

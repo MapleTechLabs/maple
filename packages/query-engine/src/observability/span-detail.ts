@@ -51,8 +51,8 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 	const executor = yield* WarehouseExecutor
 	yield* Effect.annotateCurrentSpan({
 		orgId: executor.orgId,
-		traceId: input.traceId,
-		spanId: input.spanId,
+		"maple.trace.id": input.traceId,
+		"maple.span.id": input.spanId,
 	})
 
 	const narrowByTime = input.timestampHint != null
@@ -80,7 +80,7 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 	// A wrong hint should not hide the span: retry once without the time bound.
 	const widened = Option.isNone(firstRow) && narrowByTime
 	const maybeRow = widened ? yield* lookup(false) : firstRow
-	yield* Effect.annotateCurrentSpan("widened", widened)
+	yield* Effect.annotateCurrentSpan("maple.query.widened", widened)
 
 	if (Option.isNone(maybeRow)) {
 		return {

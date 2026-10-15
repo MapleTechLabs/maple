@@ -51,7 +51,7 @@ describe("validateMetricsAttributeFilters", () => {
 					filters: { ...baseFilters, groupByAttributeKey: "region" },
 				}),
 			)
-			assert.isDefined(range)
+			assert.strictEqual(range.rangeSeconds, 3600)
 		}),
 	)
 
@@ -66,7 +66,7 @@ describe("validateMetricsAttributeFilters", () => {
 					filters: baseFilters,
 				}),
 			)
-			assert.isDefined(range)
+			assert.strictEqual(range.rangeSeconds, 3600)
 		}),
 	)
 
@@ -103,7 +103,7 @@ describe("validateMetricsAttributeFilters", () => {
 					filters: { ...baseFilters, groupByResourceAttributeKey: "host.name" },
 				}),
 			)
-			assert.isDefined(range)
+			assert.strictEqual(range.rangeSeconds, 3600)
 		}),
 	)
 

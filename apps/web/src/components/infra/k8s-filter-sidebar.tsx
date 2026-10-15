@@ -172,7 +172,7 @@ export function PodsFilterSidebarView({
 								defaultOpen={false}
 							/>
 							<FilterSection
-								title="Compute Type"
+								title="Compute type"
 								options={f.computeTypes}
 								selected={filters.computeTypes ?? []}
 								onChange={(val) => onFilterChange("computeTypes", val)}
@@ -331,7 +331,7 @@ export function WorkloadsFilterSidebarView({
 								defaultOpen={false}
 							/>
 							<FilterSection
-								title="Compute Type"
+								title="Compute type"
 								options={f.computeTypes}
 								selected={filters.computeTypes ?? []}
 								onChange={(val) => onFilterChange("computeTypes", val)}

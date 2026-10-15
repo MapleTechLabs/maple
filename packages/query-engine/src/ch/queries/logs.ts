@@ -18,7 +18,14 @@ import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import type { AttributeIndexMode, LogBodySearchMode } from "../../capabilities"
 import { edgeCondition, utcInteriorConditions } from "./rollup-splice"
-import { inclusionCondition, inclusionValues, severitySpellings, soleValue } from "./query-helpers"
+import {
+	inclusionCondition,
+	inclusionValues,
+	severitySpellings,
+	soleValue,
+	timeseriesBucket,
+	wholeRangeEnd,
+} from "./query-helpers"
 
 // Shared options
 
@@ -267,6 +274,8 @@ export interface LogsTimeseriesOpts extends LogsQueryOpts {
 	 * with the largest total count (across all buckets) are fetched.
 	 */
 	seriesLimit?: number
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
 }
 
 export interface LogsTimeseriesOutput {
@@ -299,6 +308,8 @@ export function canUseLogsAggregatesHourly(
 	if (bucketSeconds === undefined || bucketSeconds < 3600 || bucketSeconds % 3600 !== 0) {
 		return false
 	}
+	// The MV path drops partial hours, which a sliding alert window almost always has.
+	if (opts.wholeRange) return false
 	if (opts.traceId) return false
 	if (opts.spanId) return false
 	if (opts.search) return false
@@ -352,7 +363,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 				$.Hour.gte(utcSecondsParam("startTime")),
 				// `param.dateTime("endTime")` substitutes as a quoted string literal;
 				// `toStartOfHour` only accepts Date/DateTime, so wrap with `toDateTime`.
-				$.Hour.lt(CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))),
+				$.Hour.lt(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("endTime")))),
 				...mvFacetConditions($, opts),
 			])
 			.groupBy("bucket", "groupName")
@@ -366,7 +377,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 
 	const raw = from(Logs)
 		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: buildLogsGroupNameExpr($, groupByService, groupBySeverity),
 			count: CH.count(),
 		}))
@@ -378,6 +389,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 			$.TimestampTime.lte(utcSecondsParam("endTime")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
+			wholeRangeEnd($.Timestamp, opts.wholeRange),
 			...serviceSeverityConditions($, opts),
 			opts.minSeverity !== undefined ? $.SeverityNumber.gte(opts.minSeverity) : undefined,
 			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
@@ -566,10 +578,12 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 
 export interface LogsListOpts extends LogsQueryOpts {
 	minSeverity?: number
-	/** A previous row's `exactTimestamp`: only rows older than it. */
+	/** A previous row's `exactTimestamp`: only rows past it in `order` (older for desc, newer for asc). */
 	cursor?: string
 	limit?: number
 	offset?: number
+	/** `asc` reads oldest-first from `startTime` (a log's surrounding context). Cursors follow it. */
+	order?: "asc" | "desc"
 	cursorIdentity?: {
 		/** The boundary row's `exactTimestamp`. */
 		timestamp: string
@@ -612,6 +626,12 @@ export interface LogsListOutput {
 export function logsListQuery(opts: LogsListOpts) {
 	const limit = opts.limit ?? 50
 	const offset = opts.offset ?? 0
+	const order = opts.order ?? "desc"
+	// Pages continue in the read direction; the tie-breakers below sort ascending either way.
+	const pastCursor = ($: ColumnAccessor<typeof Logs.columns>, exactTimestamp: string) =>
+		order === "asc"
+			? $.Timestamp.gt(exactDateTime64(exactTimestamp))
+			: $.Timestamp.lt(exactDateTime64(exactTimestamp))
 
 	const baseWhere = ($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(orgIdParam),
@@ -623,9 +643,9 @@ export function logsListQuery(opts: LogsListOpts) {
 		opts.minSeverity !== undefined ? $.SeverityNumber.gte(opts.minSeverity) : undefined,
 		CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
 		CH.when(opts.spanId, (v: string) => $.SpanId.eq(v)),
-		CH.when(opts.cursor, (v: string) => $.Timestamp.lt(exactDateTime64(v))),
+		CH.when(opts.cursor, (v: string) => pastCursor($, v)),
 		opts.cursorIdentity
-			? $.Timestamp.lt(exactDateTime64(opts.cursorIdentity.timestamp)).or(
+			? pastCursor($, opts.cursorIdentity.timestamp).or(
 					$.Timestamp.eq(exactDateTime64(opts.cursorIdentity.timestamp)).and(
 						$.ServiceName.gt(opts.cursorIdentity.serviceName).or(
 							$.ServiceName.eq(opts.cursorIdentity.serviceName).and(
@@ -655,9 +675,11 @@ export function logsListQuery(opts: LogsListOpts) {
 	const cutoffInner = from(Logs)
 		.select(($) => ({ ts: $.Timestamp }))
 		.where(baseWhere)
-		.orderBy(["ts", "desc"])
+		.orderBy(["ts", order])
 		.limit(limit + offset)
-	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
+	// Ascending reads the Nth-oldest instead, so the cutoff is the max and the gate flips.
+	const cutoffAgg = order === "asc" ? "max" : "min"
+	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT ${cutoffAgg}(ts) FROM (${sql}))`)
 
 	// Stage 2: heavy columns read only for rows at/after the cutoff timestamp.
 	let query = from(Logs)
@@ -674,9 +696,9 @@ export function logsListQuery(opts: LogsListOpts) {
 			logAttributes: CH.toJSONString($.LogAttributes),
 			resourceAttributes: CH.toJSONString($.ResourceAttributes),
 		}))
-		.where(($) => [...baseWhere($), $.Timestamp.gte(cutoff)])
+		.where(($) => [...baseWhere($), order === "asc" ? $.Timestamp.lte(cutoff) : $.Timestamp.gte(cutoff)])
 		.orderBy(
-			["timestamp", "desc"],
+			["timestamp", order],
 			["serviceName", "asc"],
 			["traceId", "asc"],
 			["spanId", "asc"],
@@ -797,8 +819,14 @@ export function logsFacetsQuery(
 	// full raw-`logs` scans into three cheap pre-aggregated reads. The lone
 	// exception is the `contains` env match mode, which needs a substring scan on
 	// the raw map column — fall back to raw `logs` there (mirrors the
-	// `canUseLogsAggregatesHourly` guard used by the timeseries query).
-	if (opts.matchModes?.deploymentEnv === "contains" || opts.matchModes?.serviceNamespace === "contains") {
+	// `canUseLogsAggregatesHourly` guard used by the timeseries query). Attribute
+	// filters read the raw maps the MV does not carry, so they take the raw path too.
+	if (
+		opts.matchModes?.deploymentEnv === "contains" ||
+		opts.matchModes?.serviceNamespace === "contains" ||
+		opts.attributeFilters?.length ||
+		opts.resourceAttributeFilters?.length
+	) {
 		return logsFacetsQueryFromRaw(opts, facet)
 	}
 	return logsFacetsQueryFromMv(opts, facet)
@@ -894,6 +922,7 @@ function logsFacetsQueryFromRaw(
 		CH.when(opts.severity, (v: string) => inclusionCondition($.SeverityText, severitySpellings(v))),
 		environmentCondition($, opts),
 		namespaceCondition($, opts),
+		...logAttributeConditions(opts),
 	]
 
 	const severityQuery = from(Logs)

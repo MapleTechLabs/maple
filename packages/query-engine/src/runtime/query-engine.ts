@@ -49,7 +49,12 @@ import {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 } from "../limits"
-import { attributeIndexMode, logBodySearchMode, type WarehouseCapabilities } from "../capabilities"
+import {
+	attributeIndexMode,
+	hasWarehouseTable,
+	logBodySearchMode,
+	type WarehouseCapabilities,
+} from "../capabilities"
 import { makeExecuteRawSql } from "./raw-sql"
 import {
 	logsCount,
@@ -466,7 +471,7 @@ const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
 		return bucket.toISOString()
 	}
 
-	const raw = String(bucket).trim()
+	const raw = bucket.trim()
 	if (!raw) {
 		return raw
 	}
@@ -814,14 +819,14 @@ function groupAllMetricsTimeSeriesRows<
 			series = {}
 			bucketMap.set(bucket, series)
 		}
-		series[metricKey("count", row.groupName)] = Number(row.count)
-		series[metricKey("avg_duration", row.groupName)] = Number(row.avgDuration)
-		series[metricKey("p50_duration", row.groupName)] = Number(row.p50Duration)
-		series[metricKey("p95_duration", row.groupName)] = Number(row.p95Duration)
-		series[metricKey("p99_duration", row.groupName)] = Number(row.p99Duration)
-		series[metricKey("error_rate", row.groupName)] = Number(row.errorRate)
-		series[metricKey("apdex", row.groupName)] = Number(row.apdexScore)
-		series[metricKey("estimated_span_count", row.groupName)] = Number(row.estimatedSpanCount)
+		series[metricKey("count", row.groupName)] = row.count
+		series[metricKey("avg_duration", row.groupName)] = row.avgDuration
+		series[metricKey("p50_duration", row.groupName)] = row.p50Duration
+		series[metricKey("p95_duration", row.groupName)] = row.p95Duration
+		series[metricKey("p99_duration", row.groupName)] = row.p99Duration
+		series[metricKey("error_rate", row.groupName)] = row.errorRate
+		series[metricKey("apdex", row.groupName)] = row.apdexScore
+		series[metricKey("estimated_span_count", row.groupName)] = row.estimatedSpanCount
 		if (!fillOptions && !bucketOrder.includes(bucket)) {
 			bucketOrder.push(bucket)
 		}
@@ -861,16 +866,16 @@ function collapseMetricTimeseriesRows(
 		const bucket = normalizeBucket(row.bucket)
 		const current = bucketMap.get(bucket)
 		if (current) {
-			current.sumValue += Number(row.sumValue)
-			current.dataPointCount += Number(row.dataPointCount)
-			current.minValue = Math.min(current.minValue, Number(row.minValue))
-			current.maxValue = Math.max(current.maxValue, Number(row.maxValue))
+			current.sumValue += row.sumValue
+			current.dataPointCount += row.dataPointCount
+			current.minValue = Math.min(current.minValue, row.minValue)
+			current.maxValue = Math.max(current.maxValue, row.maxValue)
 		} else {
 			bucketMap.set(bucket, {
-				sumValue: Number(row.sumValue),
-				dataPointCount: Number(row.dataPointCount),
-				minValue: Number(row.minValue),
-				maxValue: Number(row.maxValue),
+				sumValue: row.sumValue,
+				dataPointCount: row.dataPointCount,
+				minValue: row.minValue,
+				maxValue: row.maxValue,
 			})
 		}
 	}
@@ -935,15 +940,15 @@ const annotateWarehouseError = <A, Error extends { readonly _tag: string; readon
 	effect.pipe(
 		Effect.tapError((error) =>
 			Effect.annotateCurrentSpan({
-				"error.context": context,
-				"error.tag": error._tag,
+				"maple.query_engine.error_context": context,
+				"maple.query_engine.error_tag": error._tag,
 				"error.message": error.message,
 			}),
 		),
 	)
 
 /** A query `compile` accepts, for helpers generic over its output. */
-type SelectQuery<Output extends Record<string, unknown>> = CH.CHQuery<any, Output> & CH.NeedsSelect<Output>
+type SelectQuery<Output extends object> = CH.CHQuery<any, Output> & CH.NeedsSelect<Output>
 
 /**
  * Compile a CHQuery, execute it via the warehouse SQL executor, and return typed rows.
@@ -952,8 +957,8 @@ type SelectQuery<Output extends Record<string, unknown>> = CH.CHQuery<any, Outpu
  * SqlQueryOptions so it lands on the same span instead of an extra wrapper.
  */
 const executeCHQuery = Effect.fnUntraced(function* <
-	Output extends Record<string, any>,
-	Params extends Record<string, any>,
+	Output extends object,
+	Params extends Record<string, unknown>,
 	T extends QueryTenant,
 >(
 	warehouse: QueryEngineWarehouse<T>,
@@ -1073,7 +1078,7 @@ const executeTraceListByPage = Effect.fnUntraced(function* <T extends QueryTenan
 					startTime: formatWarehouseDateTime(Math.min(...times) - TRACE_LIST_PAGE_BUFFER_MS),
 					endTime: formatWarehouseDateTime(seekEndMs),
 				},
-				"traceList",
+				"traceListByTraceIds",
 				"list",
 			)
 		},
@@ -1084,13 +1089,28 @@ const executeTraceListByPage = Effect.fnUntraced(function* <T extends QueryTenan
 	return page.flatMap((root) => byTraceId.get(root.traceId) ?? [])
 })
 
+// A whole-range counter needs each series' last sample before the window. Two
+// widths reach at least as far back as the epoch-aligned grid (and its hourly rollup) did.
+const wholeRangeCounterLookbackSeconds = (range: {
+	readonly startTime: string
+	readonly endTime: string
+	readonly bucketSeconds: number
+}): number =>
+	2 *
+	Math.max(range.bucketSeconds, Math.ceil((toEpochMs(range.endTime) - toEpochMs(range.startTime)) / 1000))
+
 type MetricsTimeseriesSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "timeseries" }>
 
 const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends QueryTenant>(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
 	query: MetricsTimeseriesSpec,
-	range: { readonly startTime: string; readonly endTime: string; readonly bucketSeconds: number },
+	range: {
+		readonly startTime: string
+		readonly endTime: string
+		readonly bucketSeconds: number
+		readonly wholeRange?: boolean
+	},
 	contexts: { readonly value: string; readonly rate: string },
 ) {
 	const groupByAttributeKey = query.groupBy?.includes("attribute")
@@ -1099,22 +1119,23 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 	const groupByResourceAttributeKey = query.groupBy?.includes("resource_attribute")
 		? query.filters.groupByResourceAttributeKey
 		: undefined
-	const attributeFilter = query.filters.attributeFilters?.[0]
 	const options = {
 		serviceName: query.filters.serviceName,
 		environments: query.filters.environments,
 		groupByAttributeKey,
 		groupByResourceAttributeKey,
-		attributeKey: attributeFilter?.key,
-		attributeValue: attributeFilter?.value,
+		attributeFilters: query.filters.attributeFilters,
 		resourceAttributeFilters: query.filters.resourceAttributeFilters,
 		groupBy: query.groupBy,
 		seriesLimit: query.seriesLimit,
+		wholeRange: range.wholeRange,
 	}
 	const params = {
 		orgId: tenant.orgId,
 		metricName: query.filters.metricName,
-		...range,
+		startTime: range.startTime,
+		endTime: range.endTime,
+		bucketSeconds: range.bucketSeconds,
 	}
 	const groupByKey = groupByAttributeKey ?? groupByResourceAttributeKey
 
@@ -1128,6 +1149,7 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 				metricNames: query.filters.metricNames,
 				metricType: query.filters.metricType,
 				bucketSeconds: range.bucketSeconds,
+				lookbackSeconds: range.wholeRange ? wholeRangeCounterLookbackSeconds(range) : undefined,
 			}),
 			params,
 			contexts.rate,
@@ -1161,14 +1183,12 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 	const groupByAttributeKey = query.groupBy === "attribute" ? filters.groupByAttributeKey : undefined
 	const groupByResourceAttributeKey =
 		query.groupBy === "resource_attribute" ? filters.groupByResourceAttributeKey : undefined
-	const attributeFilter = filters.attributeFilters?.[0]
 	const shared = {
 		serviceName: filters.serviceName,
 		environments: filters.environments,
 		groupByAttributeKey,
 		groupByResourceAttributeKey,
-		attributeKey: attributeFilter?.key,
-		attributeValue: attributeFilter?.value,
+		attributeFilters: filters.attributeFilters,
 		resourceAttributeFilters: filters.resourceAttributeFilters,
 	}
 	const params = {
@@ -1202,7 +1222,7 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 			const name =
 				groupByAttributeKey || groupByResourceAttributeKey ? row.attributeValue : row.serviceName
 			if (name === "") continue
-			totals.set(name, (totals.get(name) ?? 0) + Number(row.increaseValue))
+			totals.set(name, (totals.get(name) ?? 0) + row.increaseValue)
 		}
 		return [...totals]
 			.map(([name, increase]) => ({
@@ -1238,17 +1258,24 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 
 /** Same as executeCHQuery but for union queries. */
 const executeCHUnionQuery = Effect.fnUntraced(function* <
-	Output extends Record<string, any>,
-	Params extends Record<string, any>,
+	Output extends object,
+	Params extends Record<string, unknown>,
 	T extends QueryTenant,
 >(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
-	query: CH.CHUnionQuery<Output>,
+	query: CH.CHUnionQuery<Output> | ((capabilities: WarehouseCapabilities) => CH.CHUnionQuery<Output>),
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
 ) {
+	if (typeof query === "function") {
+		const compile = (capabilities: WarehouseCapabilities) => CH.compileUnion(query(capabilities), params)
+		return yield* annotateWarehouseError(
+			warehouse.compiledQueryWithCapabilities(tenant, compile, { profile, context }),
+			context,
+		)
+	}
 	const compiled = CH.compileUnion(query, params)
 	return yield* annotateWarehouseError(
 		warehouse.compiledQuery(tenant, compiled, { profile, context }),
@@ -1308,7 +1335,7 @@ const applyAlertReducer = (
 ): number | null => {
 	const values = Arr.filterMap(observations, (observation) =>
 		observation.hasData && observation.value != null
-			? Result.succeed(observation.value as number)
+			? Result.succeed(observation.value)
 			: Result.failVoid,
 	)
 
@@ -1527,7 +1554,7 @@ const isMissingTraceFacetsRollup = (error: unknown): boolean => {
 /**
  * `trace_facets_hourly` ships in a `requiredForIngest: false` migration (0034),
  * so a BYO cluster may not have it yet; the sidebar then reads `trace_list_mv`.
- * Only a read that actually included the rollup can be missing it.
+ * The capability probe skips it up front; this retry covers an unprobed cluster.
  */
 const withTraceFacetsFallback = <A, E, R>(
 	orgId: OrgId,
@@ -1709,7 +1736,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "timeseries",
 					source: "logs",
-					data: groupTimeSeriesRows(rows, (row) => Number(row.count), fillOptions),
+					data: groupTimeSeriesRows(rows, (row) => row.count, fillOptions),
 				},
 			})
 		}
@@ -1734,7 +1761,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "timeseries",
 					source: "product_events",
-					data: groupTimeSeriesRows(rows, (row) => Number(row.value), fillOptions),
+					data: groupTimeSeriesRows(rows, (row) => row.value, fillOptions),
 				},
 			})
 		}
@@ -1853,9 +1880,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				if (points.length === 0) pointsByMetric.set(row.metricName, points)
 				points.push({
 					bucket: DateTime.formatIso(row.bucket),
-					avgValue: Number(row.avgValue),
-					sumValue: Number(row.sumValue),
-					dataPointCount: Number(row.dataPointCount),
+					avgValue: row.avgValue,
+					sumValue: row.sumValue,
+					dataPointCount: row.dataPointCount,
 				})
 			}
 
@@ -1918,7 +1945,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				tenant,
 				(capabilities) =>
 					CH.logsBreakdownQuery({
-						groupBy: logsQuery.groupBy as "service" | "severity",
+						groupBy: logsQuery.groupBy,
 						...opts,
 						attributeIndexMode: attributeIndexMode(capabilities, "logs"),
 						bodySearchMode: logBodySearchMode(capabilities),
@@ -1934,7 +1961,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					source: "logs",
 					data: rows.map((row) => ({
 						name: row.name,
-						value: Number(row.count),
+						value: row.count,
 					})),
 				},
 			})
@@ -1954,7 +1981,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "breakdown",
 					source: "product_events",
-					data: rows.map((row) => ({ name: row.name, value: Number(row.value) })),
+					data: rows.map((row) => ({ name: row.name, value: row.value })),
 				},
 			})
 		}
@@ -2022,14 +2049,14 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							traceId: row.traceId,
 							startTime: DateTime.formatIso(row.startTime),
 							endTime: DateTime.formatIso(row.endTime),
-							durationMs: Number(row.durationMicros) / 1000,
-							spanCount: Number(row.spanCount),
+							durationMs: row.durationMicros / 1000,
+							spanCount: row.spanCount,
 							services: row.services.map(String),
 							rootSpanName: row.rootSpanName,
 							rootSpanKind: row.rootSpanKind,
 							rootSpanStatusCode: row.rootSpanStatusCode,
 							rootSpanAttributes: parseProjectedAttributes(row.rootSpanAttributes),
-							hasError: Number(row.hasError) === 1,
+							hasError: row.hasError === 1,
 						})),
 					},
 				})
@@ -2099,7 +2126,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 									"Trace-list service enrichment failed; using row services",
 								).pipe(
 									Effect.annotateLogs({
-										"error.tag": error._tag,
+										"maple.query_engine.error_tag": error._tag,
 										"error.message": error.message,
 									}),
 									Effect.as([] as ReadonlyArray<CH.TraceServicesByTraceIdsOutput>),
@@ -2124,10 +2151,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						parentSpanId: row.parentSpanId,
 						serviceName: row.serviceName,
 						spanName: row.spanName,
-						durationMs: Number(row.durationMs),
+						durationMs: row.durationMs,
 						statusCode: row.statusCode,
 						spanKind: row.spanKind,
-						hasError: Number(row.hasError) === 1,
+						hasError: row.hasError === 1,
 						services: servicesForTraceRow(row.serviceName, servicesByTraceId.get(row.traceId)),
 						spanAttributes: row.spanAttributes ?? {},
 						resourceAttributes: row.resourceAttributes ?? {},
@@ -2184,7 +2211,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeKeys",
 					source: "product_events",
-					data: rows.map((row) => ({ key: row.attributeKey, count: Number(row.usageCount) })),
+					data: rows.map((row) => ({ key: row.attributeKey, count: row.usageCount })),
 				},
 			})
 		}
@@ -2205,7 +2232,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeValues",
 					source: "product_events",
-					data: rows.map((row) => ({ value: row.attributeValue, count: Number(row.usageCount) })),
+					data: rows.map((row) => ({ value: row.attributeValue, count: row.usageCount })),
 				},
 			})
 		}
@@ -2247,7 +2274,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					source: request.query.source,
 					data: rows.map((row) => ({
 						key: row.attributeKey,
-						count: Number(row.usageCount),
+						count: row.usageCount,
 					})),
 				},
 			})
@@ -2268,7 +2295,13 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						executeCHUnionQuery(
 							warehouse,
 							tenant,
-							CH.tracesFacetsQuery({ ...opts, facet, rawOnly }),
+							(capabilities) =>
+								CH.tracesFacetsQuery({
+									...opts,
+									facet,
+									rawOnly:
+										rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+								}),
 							baseParams,
 							facet ? `tracesFacets:${facet}` : "tracesFacets",
 							"discovery",
@@ -2281,7 +2314,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						data: rows.map((row) => ({
 							facetType: row.facetType,
 							name: row.name,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2301,6 +2334,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							environments: options.environments,
 							namespaces: options.namespaces,
 							matchModes: options.matchModes,
+							attributeFilters: options.attributeFilters,
+							resourceAttributeFilters: options.resourceAttributeFilters,
 						},
 						facet,
 					),
@@ -2322,7 +2357,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 										: row.facetType === "namespace"
 											? row.namespace
 											: row.serviceName,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2359,7 +2394,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						data: rows.map((row) => ({
 							facetType: row.facetType,
 							name: row.name,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2381,7 +2416,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						data: rows.map((row) => ({
 							facetType: row.facetType,
 							name: row.name,
-							count: Number(row.count),
+							count: row.count,
 						})),
 					},
 				})
@@ -2399,7 +2434,11 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					executeCHQuery(
 						warehouse,
 						tenant,
-						CH.tracesDurationStatsQuery({ ...opts, rawOnly }),
+						(capabilities) =>
+							CH.tracesDurationStatsQuery({
+								...opts,
+								rawOnly: rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+							}),
 						{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 						"tracesDurationStats",
 					),
@@ -2411,10 +2450,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					source: "traces",
 					data: row
 						? {
-								minDurationMs: Number(row.minDurationMs),
-								maxDurationMs: Number(row.maxDurationMs),
-								p50DurationMs: Number(row.p50DurationMs),
-								p95DurationMs: Number(row.p95DurationMs),
+								minDurationMs: row.minDurationMs,
+								maxDurationMs: row.maxDurationMs,
+								p50DurationMs: row.p50DurationMs,
+								p95DurationMs: row.p95DurationMs,
 							}
 						: { minDurationMs: 0, maxDurationMs: 0, p50DurationMs: 0, p95DurationMs: 0 },
 				},
@@ -2456,7 +2495,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeValues",
 					source: request.query.source,
-					data: rows.map((row) => ({ value: row.attributeValue, count: Number(row.usageCount) })),
+					data: rows.map((row) => ({ value: row.attributeValue, count: row.usageCount })),
 				},
 			})
 		}
@@ -2499,7 +2538,7 @@ export const reducePerGroupObservations = (
 	const result: Array<GroupedAlertObservation> = []
 	for (const [groupKey, observations] of byGroup.entries()) {
 		const reducedValue = applyAlertReducer(observations, reducer)
-		const totalSampleCount = observations.reduce((sum, o) => sum + Number(o.sampleCount), 0)
+		const totalSampleCount = observations.reduce((sum, o) => sum + o.sampleCount, 0)
 		const hasData = observations.some((o) => o.hasData)
 		result.push({
 			groupKey,
@@ -2558,6 +2597,8 @@ export interface AlertBucketRequest {
 	readonly source: AlertBucketSource
 	readonly startTime: string
 	readonly endTime: string
+	/** One bucket per group spanning [startTime, endTime], instead of the epoch-aligned grid. */
+	readonly wholeRange?: boolean
 }
 
 /** One warehouse row's contribution to an alert evaluation. */
@@ -2612,6 +2653,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 					groupBy: query.groupBy as readonly string[] | undefined,
 					apdexThresholdMs: query.metric === "apdex" ? query.apdexThresholdMs : undefined,
 					bucketSeconds,
+					wholeRange: request.wholeRange,
 				}),
 			{
 				orgId: tenant.orgId,
@@ -2626,7 +2668,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			// confidence guard and must see rows actually observed. They differ only
 			// under sampling, and only the hourly rollup (which stores no raw count)
 			// falls back to the estimate.
-			const sampleCount = Number(row.spanCount ?? row.count ?? 0)
+			const sampleCount = row.spanCount
 			const value = sampleCount > 0 ? tracesAggregateValueForMetric(query.metric, row) : null
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
@@ -2641,12 +2683,18 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 				warehouse,
 				logsTimeseries,
 				tenant,
-				toLogsTimeseriesInput(request.startTime, request.endTime, query, bucketSeconds),
+				toLogsTimeseriesInput(
+					request.startTime,
+					request.endTime,
+					query,
+					bucketSeconds,
+					request.wholeRange,
+				),
 			),
 			logsTimeseries.id,
 		)
 		for (const row of rows) {
-			const sampleCount = Number(row.count ?? 0)
+			const sampleCount = row.count
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
 				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
@@ -2660,17 +2708,23 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 				warehouse,
 				productEventsTimeseries,
 				tenant,
-				toProductEventsTimeseriesInput(request.startTime, request.endTime, query, bucketSeconds),
+				toProductEventsTimeseriesInput(
+					request.startTime,
+					request.endTime,
+					query,
+					bucketSeconds,
+					request.wholeRange,
+				),
 			),
 			productEventsTimeseries.id,
 		)
 		for (const row of rows) {
 			// `value` may be a uniq; the sample count is the rows behind it.
-			const sampleCount = Number(row.eventCount ?? 0)
+			const sampleCount = row.eventCount
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
 				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
-				value: sampleCount > 0 ? Number(row.value ?? 0) : null,
+				value: sampleCount > 0 ? row.value : null,
 				sampleCount,
 			})
 		}
@@ -2679,11 +2733,16 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			warehouse,
 			tenant,
 			query,
-			{ startTime: request.startTime, endTime: request.endTime, bucketSeconds },
+			{
+				startTime: request.startTime,
+				endTime: request.endTime,
+				bucketSeconds,
+				wholeRange: request.wholeRange,
+			},
 			{ value: "metricsAlertEval", rate: "metricsRateIncreaseAlertEval" },
 		)
 		for (const row of execution.rows) {
-			const sampleCount = Number(row.dataPointCount ?? 0)
+			const sampleCount = row.dataPointCount
 			const value = sampleCount > 0 ? metricsAggregateValueForMetric(query.metric, row) : null
 			const groupKey = composeMetricsGroupKey(
 				query.groupBy as readonly string[] | undefined,
@@ -2701,6 +2760,69 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 
 	return obs as ReadonlyArray<BucketGroupObs>
 })
+
+/**
+ * Validate raw-SQL alert rows into bucket observations. Pure: the first invalid
+ * row (or the group cap) fails the whole set.
+ */
+const rawSqlRowsToObs = (
+	rows: ReadonlyArray<typeof RawSqlAlertRowSchema.Type>,
+	windowStart: string,
+): Result.Result<ReadonlyArray<BucketGroupObs>, QueryEngineValidationError> => {
+	const obs: BucketGroupObs[] = []
+	const seenGroups = new Set<string>()
+	for (const row of rows) {
+		const rawGroup = row.group
+		const groupKey =
+			typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : ENGINE_UNGROUPED_GROUP_KEY
+		if (groupKey.length > MAX_RAW_SQL_GROUP_KEY_LENGTH) {
+			return Result.fail(
+				new QueryEngineValidationError({
+					message: "Invalid raw SQL alert query",
+					details: [
+						`Raw SQL alert group keys may contain at most ${MAX_RAW_SQL_GROUP_KEY_LENGTH} characters.`,
+					],
+				}),
+			)
+		}
+		const numValue = row.value == null ? null : Number(row.value)
+		const value = numValue != null && Number.isFinite(numValue) ? numValue : null
+		const rawSamples = row.samples == null ? 1 : Number(row.samples)
+		if (!Number.isFinite(rawSamples) || rawSamples < 0) {
+			return Result.fail(
+				new QueryEngineValidationError({
+					message: "Invalid raw SQL alert query",
+					details: ["Raw SQL alert samples must be finite and nonnegative."],
+				}),
+			)
+		}
+		if (!seenGroups.has(groupKey)) {
+			if (seenGroups.size >= MAX_RAW_SQL_ALERT_GROUPS) {
+				return Result.fail(
+					new QueryEngineValidationError({
+						message: "Invalid raw SQL alert query",
+						details: [`Raw SQL alerts may return at most ${MAX_RAW_SQL_ALERT_GROUPS} groups.`],
+					}),
+				)
+			}
+			seenGroups.add(groupKey)
+		}
+		obs.push({
+			// A query without `$__timeGroup` has no bucket column: the whole window
+			// collapses into one synthetic bucket at its start. Normalize either way
+			// — `windowStart` is a Tinybird datetime, and consumers key buckets
+			// by `Date.parse`, which would read that space-separated form as local
+			// time rather than UTC.
+			bucket: normalizeBucket(
+				typeof row.bucket === "string" || row.bucket instanceof Date ? row.bucket : windowStart,
+			),
+			groupKey,
+			value,
+			sampleCount: value == null ? 0 : rawSamples,
+		})
+	}
+	return Result.succeed(obs)
+}
 
 /**
  * The `raw_sql` arm of {@link computeAlertBuckets}, split out only because it
@@ -2721,7 +2843,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
 	source: Extract<AlertBucketSource, { kind: "raw_sql" }>,
-	range: { readonly startTime: string; readonly endTime: string },
+	range: { readonly startTime: string; readonly endTime: string; readonly wholeRange?: boolean },
 ) {
 	const executeRawSql = makeExecuteRawSql<T, WarehouseQueryPathError | RawSqlValidationError>(warehouse)
 	// The same rule `prepareAlertEvaluation` applies to a spec source, and it has
@@ -2738,6 +2860,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		granularitySeconds,
 		workload: "alert",
 		context: "alertRawQuery",
+		wholeRange: range.wholeRange,
 	}).pipe(
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>
 			Effect.fail(
@@ -2759,54 +2882,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		),
 	)
 
-	const obs: BucketGroupObs[] = []
-	const seenGroups = new Set<string>()
-	for (const row of rows) {
-		const rawGroup = row.group
-		const groupKey =
-			typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : ENGINE_UNGROUPED_GROUP_KEY
-		if (groupKey.length > MAX_RAW_SQL_GROUP_KEY_LENGTH) {
-			return yield* new QueryEngineValidationError({
-				message: "Invalid raw SQL alert query",
-				details: [
-					`Raw SQL alert group keys may contain at most ${MAX_RAW_SQL_GROUP_KEY_LENGTH} characters.`,
-				],
-			})
-		}
-		const numValue = row.value == null ? null : Number(row.value)
-		const value = numValue != null && Number.isFinite(numValue) ? numValue : null
-		const rawSamples = row.samples == null ? 1 : Number(row.samples)
-		if (!Number.isFinite(rawSamples) || rawSamples < 0) {
-			return yield* new QueryEngineValidationError({
-				message: "Invalid raw SQL alert query",
-				details: ["Raw SQL alert samples must be finite and nonnegative."],
-			})
-		}
-		if (!seenGroups.has(groupKey)) {
-			if (seenGroups.size >= MAX_RAW_SQL_ALERT_GROUPS) {
-				return yield* new QueryEngineValidationError({
-					message: "Invalid raw SQL alert query",
-					details: [`Raw SQL alerts may return at most ${MAX_RAW_SQL_ALERT_GROUPS} groups.`],
-				})
-			}
-			seenGroups.add(groupKey)
-		}
-		obs.push({
-			// A query without `$__timeGroup` has no bucket column: the whole window
-			// collapses into one synthetic bucket at its start. Normalize either way
-			// — `range.startTime` is a Tinybird datetime, and consumers key buckets
-			// by `Date.parse`, which would read that space-separated form as local
-			// time rather than UTC.
-			bucket: normalizeBucket(
-				typeof row.bucket === "string" || row.bucket instanceof Date ? row.bucket : range.startTime,
-			),
-			groupKey,
-			value,
-			sampleCount: value == null ? 0 : rawSamples,
-		})
-	}
-
-	return obs as ReadonlyArray<BucketGroupObs>
+	return yield* Effect.fromResult(rawSqlRowsToObs(rows, range.startTime))
 })
 
 /**
@@ -2905,10 +2981,13 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		const bucketSeconds = yield* prepareAlertEvaluation(request)
 
+		// The scheduler's window slides by the minute, so it rarely starts on the
+		// epoch grid; one bucket over exactly the range is the value it observes.
 		const bucketRequest = {
 			source: request.source,
 			startTime: request.startTime,
 			endTime: request.endTime,
+			wholeRange: true,
 		}
 		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds)
 		// Raw SQL may contain volatile functions. Keep its existing whole-result

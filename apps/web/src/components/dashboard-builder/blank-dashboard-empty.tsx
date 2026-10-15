@@ -69,7 +69,7 @@ export function BlankDashboardEmpty({
 			<EmptyContent className="max-w-none">
 				<div className="flex flex-wrap items-center justify-center gap-2">
 					<Button size="sm" onClick={onAddWidget} disabled={readOnly}>
-						<PlusIcon size={14} />
+						<PlusIcon />
 						Add your first widget
 					</Button>
 					<Button

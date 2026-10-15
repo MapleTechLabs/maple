@@ -29,6 +29,7 @@ import type {
 	MetricsSummaryRequest,
 	NodeDetailSummaryRequest,
 	PodDetailSummaryRequest,
+	PodRestartsRequest,
 	PodsSummaryRequest,
 	ServiceApdexRequest,
 	ServiceDbEdgesForServiceRequest,
@@ -310,6 +311,8 @@ export const listLogs = defineQuery({
 				excludedSeverities: payload.excludedSeverities,
 				excludedEnvironments: payload.excludedDeploymentEnvs,
 				excludedNamespaces: payload.excludedNamespaces,
+				attributeFilters: payload.attributeFilters,
+				resourceAttributeFilters: payload.resourceAttributeFilters,
 				minSeverity: payload.minSeverity,
 				traceId: payload.traceId,
 				spanId: payload.spanId,
@@ -338,6 +341,7 @@ export const listLogs = defineQuery({
 					})),
 				),
 				limit: payload.limit,
+				order: payload.order,
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
@@ -442,6 +446,21 @@ export const podDetailSummary = defineQuery({
 			startTime: payload.startTime,
 			endTime: payload.endTime,
 		}),
+})
+
+export const podRestarts = defineQuery({
+	id: "podRestarts",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: PodRestartsRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.podRestartsQuery({
+				podNames: payload.podNames,
+				namespace: payload.namespace,
+				limit: payload.limit,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
 })
 
 export const listNodes = defineQuery({

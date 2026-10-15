@@ -16,7 +16,6 @@ import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 import { selectedMetric, selectedPercentile, toolDetailLinkSearch } from "@/lib/agent-sessions/tool-search"
 
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { AgentSessionsTabs } from "./agent-sessions-tabs"
 import { ToolsTable } from "./tool-breakdown-tables"
 import { ToolFilterToolbar, type ToolFilterOption } from "./tool-filter-toolbar"
 import { ToolMetricStrip } from "./tool-metric-strip"
@@ -138,17 +137,8 @@ export function AgentToolsView({
 	// tool-name search box, which on a one-tool page filters that tool's name.
 	const detailSearch = useMemo(() => toolDetailLinkSearch(search, timeRange), [search, timeRange])
 
-	// `pt-4` is the Sessions list's sticky padding, and the strip's hairline and
-	// the toolbar's `py-3` are matched there too: one height on both tabs.
 	return (
-		<div className="flex flex-col pt-4">
-			<AgentSessionsTabs
-				active="tools"
-				search={timeRange}
-				counts={tabCounts}
-				className="border-b border-border px-6"
-			/>
-
+		<div className="flex flex-col">
 			<ToolFilterToolbar
 				nameSearch={{
 					query: search.q ?? "",

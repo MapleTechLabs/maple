@@ -56,7 +56,7 @@ export function IssuePullRequestsPanel({
 						onClick={() => onOpenChange(true)}
 						disabled={busy}
 					>
-						<PlusIcon className="size-3.5" />
+						<PlusIcon />
 						Attach
 					</Button>
 				}
@@ -121,7 +121,7 @@ export function IssuePullRequestsPanel({
 									onClick={() => onUnlink(pr.id)}
 									disabled={busy}
 								>
-									<TrashIcon className="size-3.5" />
+									<TrashIcon />
 								</IconButton>
 							</Item>
 						)

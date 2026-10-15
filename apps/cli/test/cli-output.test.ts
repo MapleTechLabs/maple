@@ -14,7 +14,10 @@ import {
 	formatDuration,
 	formatPercent,
 	isEmptyResult,
+	utcIso,
+	utcTimestampReplacer,
 } from "../src/lib/output"
+import { logsLink, traceLink, uiRangeFor, withLogTraceLinks } from "../src/lib/local-links"
 import { errorsView, servicesView } from "../src/lib/views"
 import { WarehouseConfigError, WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { LocalQueryFailed } from "@maple/query-engine/local"
@@ -36,7 +39,8 @@ describe("table cells", () => {
 		assert.equal(formatByKey("p50Ms", 160.178), "160.2ms")
 		assert.equal(formatByKey("throughput", 12345), "12,345")
 		assert.equal(formatByKey("isMonotonic", true), "yes")
-		assert.equal(formatByKey("timestamp", "2026-09-25 23:36:29.481465000"), "2026-09-25 23:36:29")
+		assert.equal(formatByKey("timestamp", "2026-09-25 23:36:29.481465000"), "2026-09-25 23:36:29Z")
+		assert.equal(formatByKey("timestamp", "2026-09-26T01:36:29+02:00"), "2026-09-25 23:36:29Z")
 	})
 
 	it("keeps small and large durations readable", () => {
@@ -58,6 +62,78 @@ describe("table cells", () => {
 		assert.equal(isEmptyResult([]), true)
 		assert.equal(isEmptyResult({ timeRange: {}, spans: [] }), true)
 		assert.equal(isEmptyResult({ spans: [{}] }), false)
+	})
+})
+
+describe("timestamps", () => {
+	// Zoneless warehouse times read as local time to anyone who forgets they are UTC.
+	it("spells warehouse datetimes as ISO-8601 UTC and leaves other strings alone", () => {
+		assert.equal(utcIso("2026-09-25 23:36:29.481465000"), "2026-09-25T23:36:29.481465000Z")
+		assert.equal(utcIso("2026-09-25 23:36:29"), "2026-09-25T23:36:29Z")
+		assert.equal(utcIso("2026-09-25T23:36:29Z"), "2026-09-25T23:36:29Z")
+		assert.equal(utcIso("2026-09-25 23:36:29 request failed"), "2026-09-25 23:36:29 request failed")
+	})
+
+	it("rewrites time fields only, never log text or attributes", () => {
+		const at = "2026-09-25 23:36:29"
+		const json = JSON.parse(
+			JSON.stringify(
+				{
+					timeRange: { startTime: at },
+					logs: [{ timestamp: at, body: at, attributes: { startTime: at } }],
+				},
+				utcTimestampReplacer(),
+			),
+		)
+		assert.deepEqual(json, {
+			timeRange: { startTime: "2026-09-25T23:36:29Z" },
+			logs: [{ timestamp: "2026-09-25T23:36:29Z", body: at, attributes: { startTime: at } }],
+		})
+	})
+})
+
+describe("local UI links", () => {
+	const base = "http://127.0.0.1:4318/"
+	const now = Date.parse("2026-10-13T12:00:00Z")
+
+	it("links a trace through the UI's hash route", () => {
+		assert.equal(traceLink(base, "abc123"), "http://127.0.0.1:4318/#/traces/abc123")
+	})
+
+	it("picks the narrowest UI range that reaches the window start", () => {
+		assert.equal(uiRangeFor("2026-10-13 11:45:00", now), "1h")
+		assert.equal(uiRangeFor("2026-10-13 06:00:00", now), "6h")
+		assert.equal(uiRangeFor("2026-10-10 12:00:00", now), "7d")
+		assert.equal(uiRangeFor("2025-01-01 00:00:00", now), "30d")
+		// `--since 1h` run at a fractional second still links the 1h range.
+		assert.equal(uiRangeFor("2026-10-13 11:00:00", now + 750), "1h")
+	})
+
+	it("carries the CLI's log filters into the logs page", () => {
+		const url = logsLink(
+			base,
+			{
+				startTime: "2026-10-13 11:45:00",
+				service: "api",
+				severity: "error",
+				search: "Missing required",
+			},
+			now,
+		)
+		assert.equal(
+			url,
+			"http://127.0.0.1:4318/#/logs?range=1h&service=api&severity=error&q=Missing+required",
+		)
+		assert.equal(
+			logsLink(base, { startTime: "2026-10-13 11:45:00" }, now),
+			"http://127.0.0.1:4318/#/logs?range=1h",
+		)
+	})
+
+	it("links only the logs that belong to a trace", () => {
+		const [withTrace, without] = withLogTraceLinks(base, [{ traceId: "t1" }, { traceId: "" }])
+		assert.equal(withTrace?.traceUrl, "http://127.0.0.1:4318/#/traces/t1")
+		assert.equal(without?.traceUrl, undefined)
 	})
 })
 
