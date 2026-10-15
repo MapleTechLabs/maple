@@ -373,7 +373,9 @@ export const listTimeSeriesPage = (
 				"aggregation.groupByFields": [
 					"resource.label.project_id",
 					...query.group.resourceLabels.map((label) => `resource.label.${label}`),
-					...query.metric.labels.map((label) => `metric.label.${label}`),
+					...[...query.group.resourceMetricLabels, ...query.metric.labels].map(
+						(label) => `metric.label.${label}`,
+					),
 				],
 				view: "FULL",
 				pageSize: TIME_SERIES_PAGE_SIZE,
