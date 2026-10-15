@@ -296,7 +296,7 @@ export const gcpScriptOverdue = (
 	nowMs - (connector.setup_reported_at === null ? Date.parse(connector.created_at) : openedAtMs) >
 	SCRIPT_OVERDUE_MS
 
-/** The page header, the hub row and the row badge name a connection's state in these words. */
+/** The page header and the hub row name a connection's state in these words. */
 export const GCP_CONNECTION_LABEL = {
 	attention: "Needs attention",
 	"changes-pending": "Changes pending",

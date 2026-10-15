@@ -46,6 +46,7 @@ import {
 	type GcpConfigureTarget,
 } from "./gcp-configure"
 import {
+	GCP_CONNECTION_LABEL,
 	GCP_LOG_STATUS,
 	GCP_METRICS_STATUS,
 	GCP_SCOPE_NAMES,
@@ -59,10 +60,11 @@ import {
 	gcpRunAsked,
 	gcpScopeLabel,
 	gcpScriptNeeded,
+	gcpWorstState,
 	type GcpCapability,
 } from "./gcp-connector-state"
 import { GcpUsageBand } from "./gcp-usage-cards"
-import { GCP_ACCENT, gcpStatusQuery } from "./integration-catalog"
+import { GCP_ACCENT, HEALTH_TONE, gcpStatusQuery } from "./integration-catalog"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -533,6 +535,80 @@ function GcpConnection({
 				/>
 			) : null}
 		</Panel>
+	)
+}
+
+/** The newest of the times, null when none has arrived yet. */
+const latest = (times: ReadonlyArray<string | null>): string | null =>
+	times.reduce<string | null>(
+		(newest, at) =>
+			at !== null && (newest === null || Date.parse(at) > Date.parse(newest)) ? at : newest,
+		null,
+	)
+
+/** Every connection, and the clock their states turn on. */
+function useGcpConnectors() {
+	const status = Option.getOrNull(AsyncResult.value(useAtomValue(gcpStatusQuery())))
+	return {
+		connectors: status?.connectors ?? [],
+		metricsAvailable: status?.metrics_available === true,
+		nowMs: useLiveClock(),
+	}
+}
+
+/** The page header's state: the worst connection's, and how many of several share it. */
+export function GcpHeaderStatus() {
+	const { connectors, metricsAvailable, nowMs } = useGcpConnectors()
+	const states = connectors.map((connector) => gcpConnectionState(connector, nowMs, metricsAvailable))
+	const worst = gcpWorstState(states)
+	const inWorst = states.filter((state) => state === worst).length
+	return (
+		<div className="flex items-center gap-1.5 font-display text-ui/5 text-muted-foreground">
+			<StatusDot tone={HEALTH_TONE[worst === "attention" || worst === "healthy" ? worst : "pending"]} />
+			{GCP_CONNECTION_LABEL[worst]}
+			{inWorst < connectors.length ? ` · ${inWorst} of ${connectors.length} connections` : null}
+		</div>
+	)
+}
+
+/** The page header's facts: when each kind of data last arrived, and how many projects send it. */
+export function GcpHeaderFacts() {
+	const { connectors } = useGcpConnectors()
+	const logs = connectors.filter((connector) => connector.logs_enabled)
+	const metrics = connectors.filter((connector) => connector.metrics_enabled)
+	const projects = connectors.reduce(
+		(sum, connector) =>
+			sum + (connector.scope_type === "project" ? 1 : connector.discovered_project_count),
+		0,
+	)
+	const when = (times: ReadonlyArray<string | null>) => {
+		const at = latest(times)
+		return at === null ? "none yet" : <RelativeTime value={at} />
+	}
+	const facts = [
+		logs.length === 0
+			? null
+			: {
+					label: "Last log entry",
+					value: when(logs.map((connector) => connector.last_log_received_at)),
+				},
+		metrics.length === 0
+			? null
+			: {
+					label: "Last metrics",
+					value: when(metrics.map((connector) => connector.last_metrics_received_at)),
+				},
+		projects === 0 ? null : { label: "Projects", value: projects },
+	].filter((fact) => fact !== null)
+	return (
+		<dl className="flex flex-wrap gap-x-8 gap-y-1 font-display text-ui/5">
+			{facts.map((fact) => (
+				<div key={fact.label} className="flex items-baseline gap-2">
+					<dt className="text-muted-foreground">{fact.label}</dt>
+					<dd className="font-mono text-foreground">{fact.value}</dd>
+				</div>
+			))}
+		</dl>
 	)
 }
 
