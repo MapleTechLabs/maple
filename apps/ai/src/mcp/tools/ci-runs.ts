@@ -189,7 +189,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 				["Branch", filters.branch],
 				["Result", filters.result],
 			]
-			if (output.runs.length === 0) {
+			if (output.runsRead === 0) {
 				return {
 					title: "CI Runs",
 					scope,
@@ -275,49 +275,59 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 								),
 							]
 						: []),
-					doc.heading("Runs, newest first"),
-					...(output.failedJobsCapped === true
+					...(output.runs.length === 0
 						? [
 								doc.text(
-									"More jobs failed than were read, so some failed runs may list fewer failed jobs. Narrow `limit` or filter by workflow.",
+									`No run in this window matched \`result=${filters.result ?? "any"}\`; the workflows above count every run read.`,
 								),
 							]
-						: []),
-					doc.table(
-						[
-							"Started",
-							"Repository",
-							"Workflow",
-							"Branch",
-							"Commit",
-							"Result",
-							"Duration",
-							"Failed jobs",
-							"Trace",
-						],
-						output.runs.map((run) => [
-							run.startedAt,
-							run.repository,
-							run.pipeline,
-							run.branch,
-							run.revision,
-							run.attempt !== "" && run.attempt !== "1"
-								? `${run.result} (attempt ${run.attempt})`
-								: run.result,
-							formatRunDuration(run.durationMs),
-							run.failedJobs.length === 0
-								? "—"
-								: truncate(
-										run.failedJobs
-											.map((job) =>
-												job.reason === "" ? job.job : `${job.job}: ${job.reason}`,
-											)
-											.join("; "),
-										240,
-									),
-							run.traceId,
-						]),
-					),
+						: [
+								doc.heading("Runs, newest first"),
+								...(output.failedJobsCapped === true
+									? [
+											doc.text(
+												"More jobs failed than were read, so some failed runs may list fewer failed jobs. Narrow `limit` or filter by workflow.",
+											),
+										]
+									: []),
+								doc.table(
+									[
+										"Started",
+										"Repository",
+										"Workflow",
+										"Branch",
+										"Commit",
+										"Result",
+										"Duration",
+										"Failed jobs",
+										"Trace",
+									],
+									output.runs.map((run) => [
+										run.startedAt,
+										run.repository,
+										run.pipeline,
+										run.branch,
+										run.revision,
+										run.attempt !== "" && run.attempt !== "1"
+											? `${run.result} (attempt ${run.attempt})`
+											: run.result,
+										formatRunDuration(run.durationMs),
+										run.failedJobs.length === 0
+											? "—"
+											: truncate(
+													run.failedJobs
+														.map((job) =>
+															job.reason === ""
+																? job.job
+																: `${job.job}: ${job.reason}`,
+														)
+														.join("; "),
+													240,
+												),
+										run.traceId,
+									]),
+								),
+							]),
 				],
 				...(filters.result === undefined && output.runs.length < output.runsRead
 					? { truncation: { shown: output.runs.length, total: output.runsRead, noun: "runs" } }

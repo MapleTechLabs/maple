@@ -80,6 +80,16 @@ describe("ci_runs", () => {
 		expect(output.runs[0]?.failedJobs[0]?.job).toBe(CI_WORLD.failingJob)
 		expect(output.pipelines.find((p) => p.pipeline === "CI")?.red?.lastGreenRevision).toBe(CI_WORLD.base)
 	})
+
+	it("keeps the workflow summary when the result filter matches no run", async () => {
+		const result = await runToolDirect(member, "ci_runs", { repository: "shop", result: "cancellation" })
+		const output = decode(CiRunsOutput, result)
+		expect(output.runs).toEqual([])
+		expect(output.pipelines.map((p) => p.pipeline).sort()).toEqual(["CI", "Deploy"])
+		const text = markdown(result)
+		expect(text).toContain("No run in this window matched `result=cancellation`")
+		expect(text).not.toContain("No CI workflow runs in this window")
+	})
 })
 
 describe("compare_commits", () => {
