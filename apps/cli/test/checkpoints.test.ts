@@ -420,22 +420,22 @@ describe("checkpoint state resolution", () => {
 		})
 	})
 
-	it("reports a current checkpoint from an older build as that, not as absent or corrupt", async () => {
+	it("reports a current checkpoint from another build as that, not as absent or corrupt", async () => {
 		await withDataDir(async (dataDir) => {
 			const stale = newCheckpointId()
 			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
 			writeState(dataDir, stale)
 			const availability = await checkpointAvailability(dataDir)
 			strictEqual(availability.available, false)
-			strictEqual(availability.available === false && availability.reason, "older_build")
+			strictEqual(availability.available === false && availability.reason, "other_build")
 			strictEqual(
 				availability.available === false &&
-					availability.reason === "older_build" &&
+					availability.reason === "other_build" &&
 					availability.checkpointId,
 				stale,
 			)
 			match(
-				availability.available === false && availability.reason === "older_build"
+				availability.available === false && availability.reason === "other_build"
 					? availability.detail
 					: "",
 				/checkpoint schema mismatch/,

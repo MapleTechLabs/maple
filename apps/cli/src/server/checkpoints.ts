@@ -973,22 +973,26 @@ export type CheckpointAvailability =
 	| { readonly available: true; readonly checkpointId: CheckpointId }
 	| { readonly available: false; readonly reason: "none" }
 	| { readonly available: false; readonly reason: "unusable"; readonly detail: string }
-	/** The registry is intact, but an older build took the current checkpoint and this one cannot restore it. */
+	/**
+	 * The registry is intact, but another maple build (older or newer) took the current checkpoint
+	 * and this one cannot restore it. `mapleVersion` is the build that can.
+	 */
 	| {
 			readonly available: false
-			readonly reason: "older_build"
+			readonly reason: "other_build"
 			readonly checkpointId: CheckpointId
+			readonly mapleVersion: string
 			readonly detail: string
 	  }
 
-/** The current checkpoint's id when the registry only fails this build's schema or chDB gate. */
-const currentFromOlderBuild = async (dataDir: string): Promise<CheckpointId | undefined> => {
+/** The current checkpoint when the registry only fails this build's schema or chDB gate. */
+const currentFromOtherBuild = async (dataDir: string): Promise<ResolvedCheckpoint | undefined> => {
 	try {
 		const state = await readStateFileOptional(dataDir)
 		if (!state) return undefined
-		await resolveCheckpoint(dataDir, state.current, state, "registry")
+		const current = await resolveCheckpoint(dataDir, state.current, state, "registry")
 		if (state.previous) await resolveCheckpoint(dataDir, state.previous, state, "registry")
-		return state.current
+		return current
 	} catch {
 		return undefined
 	}
@@ -1000,9 +1004,15 @@ export const checkpointAvailability = async (dataDir: string): Promise<Checkpoin
 		return { available: true, checkpointId: state.current }
 	} catch (error) {
 		const detail = errorMessage(error)
-		const olderBuild = await currentFromOlderBuild(dataDir)
-		if (olderBuild !== undefined) {
-			return { available: false, reason: "older_build", checkpointId: olderBuild, detail }
+		const otherBuild = await currentFromOtherBuild(dataDir)
+		if (otherBuild !== undefined) {
+			return {
+				available: false,
+				reason: "other_build",
+				checkpointId: otherBuild.checkpointId,
+				mapleVersion: otherBuild.manifest.mapleVersion,
+				detail,
+			}
 		}
 		try {
 			// A present-but-unreadable state file, or stray checkpoint data beside a

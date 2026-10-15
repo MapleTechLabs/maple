@@ -240,9 +240,10 @@ export default function Grainient({
 		const container = containerRef.current
 		if (!container) return
 		// ogl's Renderer throws when the browser has no WebGL (hardware acceleration off,
-		// context limit, headless). Keep the flat tint underneath instead.
+		// context limit, headless), and the shaders are GLSL 300 es, so WebGL1 cannot run them
+		// either. Keep the flat tint underneath instead.
 		const probe = document.createElement("canvas")
-		const probeGl = probe.getContext("webgl2") ?? probe.getContext("webgl")
+		const probeGl = probe.getContext("webgl2")
 		if (!probeGl) return
 		probeGl.getExtension("WEBGL_lose_context")?.loseContext()
 
