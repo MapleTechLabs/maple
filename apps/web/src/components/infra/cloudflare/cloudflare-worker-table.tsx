@@ -1,4 +1,3 @@
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
@@ -35,27 +34,6 @@ function WorkerColumns({ showAccount }: { showAccount: boolean }) {
 			<ColumnHead label="CPU p99" align="right" width="w-[80px]" hidden="hidden md:flex" />
 			<ColumnHead label="Duration p99" align="right" width="w-[100px]" />
 		</>
-	)
-}
-
-export function CloudflareWorkerTableLoading() {
-	return (
-		<DataTable.Root ariaLabel="Workers">
-			<DataTable.Head>
-				<WorkerColumns showAccount={false} />
-			</DataTable.Head>
-			<DataTable.SkeletonRows count={4}>
-				<Skeleton className="size-2 rounded-full" />
-				<div className="w-0 min-w-[220px] flex-1 space-y-1.5">
-					<Skeleton className="h-3.5 w-40" />
-					<Skeleton className="h-2.5 w-28" />
-				</div>
-				<Skeleton className="h-3 w-[90px]" />
-				<Skeleton className="h-3 w-[80px]" />
-				<Skeleton className="hidden h-3 w-[80px] md:block" />
-				<Skeleton className="h-3 w-[100px]" />
-			</DataTable.SkeletonRows>
-		</DataTable.Root>
 	)
 }
 

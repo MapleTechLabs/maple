@@ -282,17 +282,21 @@ describe.skipIf(!clickhouseE2eEnabled)("error_events attribute fallback (ClickHo
 
 	it("preserves pre-migration hashes and details for events and status messages", async () => {
 		// Migration 0020 is the last deployed definition of these views before 0030.
-		// Evaluate its frozen SELECT against identical spans; do not reimplement hashing.
-		const previousView = migrations
-			.find((migration) => migration.version === 20)
-			?.statements.find(
-				(statement) =>
-					typeof statement === "string" &&
-					statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv "),
-			)
-		assert.isString(previousView)
-		const previousSelect = previousView.slice(previousView.indexOf(" AS\n") + 4)
-		const previousRows = await readErrorEvents(`(${previousSelect})`)
+		// Evaluate both frozen SELECTs against identical spans; do not reimplement
+		// hashing. (0039 rotates every hash on purpose, so the live view is not 0030.)
+		const frozenSelect = (version: number): string => {
+			const view = migrations
+				.find((migration) => migration.version === version)
+				?.statements.find(
+					(statement) =>
+						typeof statement === "string" &&
+						statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv "),
+				)
+			assert.isString(view)
+			return view.slice(view.indexOf(" AS\n") + 4)
+		}
+		const previousRows = await readErrorEvents(`(${frozenSelect(20)})`)
+		const fallbackRows = await readErrorEvents(`(${frozenSelect(30)})`)
 		for (const spanId of [
 			"event-wins",
 			"empty-event",
@@ -301,12 +305,12 @@ describe.skipIf(!clickhouseE2eEnabled)("error_events attribute fallback (ClickHo
 			"status-and-exception-attrs",
 			"unknown",
 		]) {
-			assert.deepStrictEqual(mustGet(rows, spanId), mustGet(previousRows, spanId), spanId)
+			assert.deepStrictEqual(mustGet(fallbackRows, spanId), mustGet(previousRows, spanId), spanId)
 		}
 	})
 
 	it("preserves stored occurrences when the migration is reapplied", async () => {
-		const migration = migrations.find((entry) => entry.version === 30)
+		const migration = migrations.find((entry) => entry.version === 39)
 		assert.isDefined(migration)
 		for (const statement of migration.statements) {
 			assert.isString(statement)

@@ -20,6 +20,7 @@ import {
 	ErrorIssueEventId,
 	ErrorIssueId,
 } from "@maple/domain/primitives"
+import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
@@ -908,6 +909,20 @@ const scanRow = (overrides: Record<string, unknown> = {}): Record<string, unknow
 	lastSeen: formatWarehouseDateTime(TICK_MS - 60_000 - 1_000),
 	...overrides,
 })
+
+const loadIssueById = (issueId: ErrorIssueId) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		const rows = yield* database.execute((db) =>
+			db.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.id.eq(issueId)]),
+			),
+		)
+		assert.lengthOf(rows, 1)
+		return rows[0]!
+	})
 
 const loadIssuesByFingerprint = (fingerprintHash: string) =>
 	Effect.gen(function* () {
@@ -2437,6 +2452,95 @@ describe("ErrorsService.runTick", () => {
 			assert.lengthOf(purgedStates, 0)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
+
+	it.effect("the retention phase archives an issue left on an older fingerprint version", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			const stale = asIssueId(randomUUID())
+			const current = asIssueId(randomUUID())
+			yield* seedIssue(stale, { fingerprintVersion: FINGERPRINT_VERSION - 1 })
+			yield* seedIssue(current, { fingerprintVersion: FINGERPRINT_VERSION })
+
+			const result = yield* errors.runTick()
+
+			assert.strictEqual(result.issuesArchived, 1)
+			assert.strictEqual((yield* loadIssueById(stale)).archivedAt, RETENTION_TICK_MS)
+			assert.isNull((yield* loadIssueById(current)).archivedAt)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("an archived open issue that occurs again comes back with its state intact", () => {
+		const rows = [scanRow()]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			// Archived by a fingerprint bump while its old hash was still live: a
+			// self-hosted warehouse that has not applied the new view, or a deploy gap.
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				workflowState: "in_progress",
+				priority: 1,
+				archivedAt: TICK_MS - DAY_MS,
+			})
+
+			yield* errors.runTick()
+
+			const issue = yield* loadIssueById(issueId)
+			assert.isNull(issue.archivedAt)
+			assert.strictEqual(issue.workflowState, "in_progress")
+			assert.strictEqual(issue.priority, 1)
+			// Restamped, so the version sweep does not archive it again.
+			assert.strictEqual(issue.fingerprintVersion, FINGERPRINT_VERSION)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a regression on an archived resolved issue reopens it where it can be seen", () => {
+		const rows = [scanRow()]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION,
+				workflowState: "done",
+				resolvedAt: TICK_MS - 20 * DAY_MS,
+				archivedAt: TICK_MS - 6 * DAY_MS,
+			})
+
+			yield* errors.runTick()
+
+			const issue = yield* loadIssueById(issueId)
+			assert.strictEqual(issue.workflowState, "regressed")
+			assert.isNull(issue.archivedAt)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("an archived resolved issue stays archived for an occurrence from a pre-fix build", () => {
+		const rows = [scanRow({ serviceVersions: ["1.4.0"] })]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION,
+				workflowState: "done",
+				resolvedAt: TICK_MS - 20 * DAY_MS,
+				resolvedVersionsJson: ["1.4.0"],
+				archivedAt: TICK_MS - 6 * DAY_MS,
+			})
+
+			yield* errors.runTick()
+
+			const issue = yield* loadIssueById(issueId)
+			assert.strictEqual(issue.workflowState, "done")
+			assert.strictEqual(issue.archivedAt, TICK_MS - 6 * DAY_MS)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
 })
 
 // Idle-cursor harness

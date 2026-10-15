@@ -9,7 +9,7 @@
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test:live": "CLICKHOUSE_HTTP_LIVE=1 vitest run src/client.live.test.ts"
 	},
 	"devDependencies": {

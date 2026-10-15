@@ -225,6 +225,58 @@ describe("ErrorIssueReadModelsService", () => {
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 
+	it.effect("pages closed issues server-side, past newer open ones and into the archive", () => {
+		const contexts: Array<string> = []
+		return Effect.gen(function* () {
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const open = asIssueId(randomUUID())
+			const verifying = asIssueId(randomUUID())
+			const wontfix = asIssueId(randomUUID())
+			const archivedDone = asIssueId(randomUUID())
+
+			// The open issue is the newest, so a recency page of one would hold only it.
+			yield* seedIssue(ORG, open, now + 5_000, { workflowState: "triage" })
+			yield* seedIssue(ORG, verifying, now, { workflowState: "verifying" })
+			yield* seedIssue(ORG, wontfix, now - 1_000, { workflowState: "wontfix" })
+			yield* seedIssue(ORG, archivedDone, now - 2_000, {
+				workflowState: "done",
+				archivedAt: now - 1_000,
+			})
+
+			const firstClosed = yield* readModels.listIssues(ORG, { stateGroup: "closed", limit: 1 })
+			expect(firstClosed.issues.map((issue) => issue.id)).toEqual([verifying])
+
+			const closed = yield* readModels.listIssues(ORG, { stateGroup: "closed", includeArchived: true })
+			expect(closed.issues.map((issue) => issue.id)).toEqual([verifying, wontfix, archivedDone])
+
+			const opened = yield* readModels.listIssues(ORG, { stateGroup: "open", includeArchived: true })
+			expect(opened.issues.map((issue) => issue.id)).toEqual([open])
+		}).pipe(Effect.provide(makeLayer(contexts)))
+	})
+
+	it.effect("searches type, message and service case-insensitively", () => {
+		const contexts: Array<string> = []
+		return Effect.gen(function* () {
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const byMessage = asIssueId(randomUUID())
+			const byService = asIssueId(randomUUID())
+			const unrelated = asIssueId(randomUUID())
+
+			yield* seedIssue(ORG, byMessage, now, { exceptionMessage: "Stripe webhook signature mismatch" })
+			yield* seedIssue(ORG, byService, now - 1_000, { serviceName: "stripe-sync" })
+			yield* seedIssue(ORG, unrelated, now - 2_000)
+
+			const found = yield* readModels.listIssues(ORG, { search: "STRIPE" })
+			expect(found.issues.map((issue) => issue.id)).toEqual([byMessage, byService])
+
+			// LIKE wildcards in the term are literal, not "match everything".
+			const literal = yield* readModels.listIssues(ORG, { search: "%" })
+			assert.lengthOf(literal.issues, 0)
+		}).pipe(Effect.provide(makeLayer(contexts)))
+	})
+
 	it.effect("preserves issue ownership and not-found semantics", () => {
 		const contexts: Array<string> = []
 		return Effect.gen(function* () {

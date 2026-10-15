@@ -34,10 +34,11 @@ import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker
 import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const DEFAULT_PRESET = "12h"
-// The list query returns the most recently seen N workloads; the toolbar says so at the cap.
+// The list query returns the N worst workloads (missing replicas, failures, restarts, saturation);
+// the toolbar says so at the cap.
 const WORKLOAD_LIST_LIMIT = 200
 
-const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset"])
+const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset", "job"])
 
 /** A one-click scope from the band. `undefined` means every workload. */
 type WorkloadScope = "saturated" | "elevated" | "stale"
@@ -68,17 +69,13 @@ const KIND_OPTIONS = [
 	{ value: "deployment", label: "Deployments" },
 	{ value: "statefulset", label: "StatefulSets" },
 	{ value: "daemonset", label: "DaemonSets" },
+	{ value: "job", label: "Jobs" },
 ] as const satisfies ReadonlyArray<{ value: WorkloadKind; label: string }>
 
-/**
- * The workload list is average-over-window, not peak: the query aggregates per
- * workload and only carries the mean. So the band says "average", and a
- * workload that spikes without moving its mean stays out of the red here — the
- * pods view is where a spike shows.
- */
+/** Saturation is the worst pod's peak, so one pod at its limit marks the whole workload. */
 function scopeOf(workload: WorkloadRow, referenceTime: string): WorkloadScope | null {
 	if (deriveHostStatus(workload.lastSeen, referenceTime) === "ended") return "stale"
-	const level = severityLevel(Math.max(workload.avgCpuLimitPct, workload.avgMemoryLimitPct))
+	const level = severityLevel(Math.max(workload.peakCpuLimitPct, workload.peakMemoryLimitPct))
 	if (level === "crit") return "saturated"
 	if (level === "warn") return "elevated"
 	return null
@@ -203,7 +200,7 @@ function WorkloadsPage() {
 							<InfraSetupEmpty
 								icon={<GridIcon size={16} />}
 								title={`No ${kindOption.label} reporting yet`}
-								description="Maple aggregates pod metrics by k8s.deployment.name, k8s.statefulset.name, and k8s.daemonset.name. If the Helm chart is not installed yet, install it so the k8sattributes processor can tag pod metrics with their workload. If it is, try another workload kind."
+								description="Maple aggregates pod metrics by k8s.deployment.name, k8s.statefulset.name, k8s.daemonset.name, and k8s.job.name. If the Helm chart is not installed yet, install it so the k8sattributes processor can tag pod metrics with their workload. If it is, try another workload kind."
 								installTab="kubernetes"
 								actionLabel="Install the Helm chart"
 								docs="kubernetes"
@@ -230,14 +227,14 @@ function WorkloadsPage() {
 						{
 							scope: "saturated",
 							label: "Saturated",
-							hint: "avg ≥90%",
+							hint: "a pod ≥90%",
 							value: saturated,
 							tone: "crit",
 						},
 						{
 							scope: "elevated",
 							label: "Elevated",
-							hint: "avg ≥60%",
+							hint: "a pod ≥60%",
 							value: elevated,
 							tone: "warn",
 						},
@@ -264,7 +261,7 @@ function WorkloadsPage() {
 							<FleetBand
 								total={workloads.length}
 								noun={kindOption.label.slice(0, -1).toLowerCase()}
-								caption="share of the fleet by average utilization"
+								caption="share of the fleet by its busiest pod's peak"
 								segments={[
 									{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 									{
@@ -290,7 +287,7 @@ function WorkloadsPage() {
 									placeholder="Search workloads…"
 									trailing={
 										workloads.length >= WORKLOAD_LIST_LIMIT
-											? `${formatNumber(filtered.length)} of the ${formatNumber(WORKLOAD_LIST_LIMIT)} most recently seen workloads`
+											? `${formatNumber(filtered.length)} of the ${formatNumber(WORKLOAD_LIST_LIMIT)} least healthy workloads`
 											: countLabel(filtered.length, filtered.length, "workload")
 									}
 								>

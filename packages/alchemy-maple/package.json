@@ -40,7 +40,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run",
 		"prepublishOnly": "bun run build"
 	},

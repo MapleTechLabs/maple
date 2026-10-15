@@ -43,6 +43,9 @@ export const CloudflareAnalyticsState = PG.table("cloudflare_analytics_state", {
 		// row alongside discoveredAt. Used to drop invocation groups for deleted scripts; null means
 		// enumeration is unavailable (e.g. token lacks workers-scripts.read) → no filtering.
 		liveScriptsJson: PG.column(PG.nullable(PG.text), { name: "live_scripts_json" }),
+		// The org's adaptive GraphQL calls-per-tick cap, written to every workers anchor row of the
+		// org: halved on a rate limit, grown after ticks that spent it. Null → the starting cap.
+		grantCallCap: PG.column(PG.nullable(PG.int4), { name: "grant_call_cap" }),
 		lastSuccessAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_success_at" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		lastErrorAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_error_at" }),
