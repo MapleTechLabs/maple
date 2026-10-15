@@ -239,6 +239,12 @@ export default function Grainient({
 	useMountEffect(() => {
 		const container = containerRef.current
 		if (!container) return
+		// ogl's Renderer throws when the browser has no WebGL (hardware acceleration off,
+		// context limit, headless). Keep the flat tint underneath instead.
+		const probe = document.createElement("canvas")
+		const probeGl = probe.getContext("webgl2") ?? probe.getContext("webgl")
+		if (!probeGl) return
+		probeGl.getExtension("WEBGL_lose_context")?.loseContext()
 
 		const renderer = new Renderer({
 			webgl: 2,
