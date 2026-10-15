@@ -60,6 +60,9 @@ tokio-postgres = "0.7"
 deadpool-postgres = "0.14"
 tokio-postgres-rustls = "0.13"
 rustls = { version = "0.23", features = ["ring"] }
+# RS256 signatures of the ID tokens Pub/Sub signs its GCP pushes with. Already
+# in the tree through rustls.
+ring = "0.17"
 webpki-roots = "0.26"
 # Opt-in profiler (https://hotpath.rs). Every macro is a no-op and no profiler
 # code is compiled unless `--features hotpath` is passed; the `tokio` and
