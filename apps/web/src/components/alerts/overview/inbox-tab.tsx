@@ -9,9 +9,11 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
 import { AlertsEmptyState } from "@/components/alerts/overview/alerts-empty-state"
+import { HeadroomList } from "@/components/alerts/overview/headroom-list"
 import { sortIncidents } from "@/components/alerts/overview/shared"
 import { ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 import { formatAlertDuration, formatResolutionDuration, formatSignalValue } from "@/lib/alerts/form-utils"
+import { quietForMs, ruleHeadroom } from "@/lib/alerts/headroom"
 import {
 	type BlindSpot,
 	type BlindSpotKind,
@@ -36,7 +38,8 @@ export function InboxTab({
 	isAdmin: boolean
 	serviceName: string | undefined
 }) {
-	const { rules, incidents, openIncidents, derivedByRuleId, timelineRange } = data
+	const { rules, incidents, openIncidents, derivedByRuleId, statesByRule, timelineRange } = data
+	const now = timelineRange.max
 
 	const sorted = useMemo(() => {
 		const all = sortIncidents(openIncidents)
@@ -44,6 +47,7 @@ export function InboxTab({
 	}, [openIncidents])
 	const spots = useMemo(() => deriveBlindSpots(rules, derivedByRuleId), [rules, derivedByRuleId])
 	const lanes = useMemo(() => fireLanes(incidents, timelineRange), [incidents, timelineRange])
+	const headroom = useMemo(() => ruleHeadroom(rules, statesByRule), [rules, statesByRule])
 
 	const held = sorted.filter((i) => i.holdReason !== null).length
 	const firing = sorted.length - held
@@ -72,6 +76,7 @@ export function InboxTab({
 			<div className="space-y-1.5">
 				<h2 className="text-2xl font-semibold tracking-tight tabular-nums">
 					{quiet ? "Nothing firing" : `${firing} firing`}
+					{quiet && <QuietStreak incidents={incidents} now={now} />}
 					{held > 0 && (
 						<span className="text-muted-foreground font-normal"> · {held} waiting on data</span>
 					)}
@@ -81,13 +86,24 @@ export function InboxTab({
 
 			{quiet ? (
 				<>
-					<BlindSpotsList spots={spots} />
-					<FireStrip
-						lanes={lanes}
-						incidents={incidents}
-						range={timelineRange}
-						quietRules={rules.length}
-					/>
+					<HeadroomList rows={headroom} now={now} />
+					{lanes.length === 0 && spots.length === 0 ? (
+						// Two empty sections read as broken tables; one line says the same.
+						<p className="font-mono text-xs text-muted-foreground">
+							No rule fired in the last 24 hours · no blind spots: every enabled rule is
+							evaluating and routed.
+						</p>
+					) : (
+						<div className="grid gap-8 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+							<FireStrip
+								lanes={lanes}
+								incidents={incidents}
+								range={timelineRange}
+								quietRules={rules.length}
+							/>
+							<BlindSpotsList spots={spots} />
+						</div>
+					)}
 				</>
 			) : (
 				<>
@@ -104,6 +120,18 @@ export function InboxTab({
 				</>
 			)}
 		</div>
+	)
+}
+
+/* ── Quiet state ────────────────────────────────────────────────────────── */
+
+function QuietStreak({ incidents, now }: { incidents: ReadonlyArray<AlertIncidentDocument>; now: number }) {
+	const quietFor = quietForMs(incidents, now)
+	return (
+		<span className="font-normal text-muted-foreground">
+			{" · "}
+			{quietFor === null ? "quiet for 24h+" : `quiet for ${formatResolutionDuration(quietFor)}`}
+		</span>
 	)
 }
 
