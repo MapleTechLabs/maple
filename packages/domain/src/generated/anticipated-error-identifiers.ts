@@ -67,6 +67,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/OrganizationForbiddenError",
 	"@maple/http/errors/OrganizationRegionLockedError",
 	"@maple/http/errors/OrganizationWrongRegionError",
+	"@maple/http/errors/PreviewSignInDisabledError",
+	"@maple/http/errors/PreviewSignInInvalidKeyError",
 	"@maple/http/errors/QueryEngineValidationError",
 	"@maple/http/errors/RawSqlValidationError",
 	"@maple/http/errors/RecommendationIssueNotFoundError",
