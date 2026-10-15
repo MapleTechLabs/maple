@@ -49,19 +49,7 @@ import {
 	SUBMIT_REVIEW,
 } from "./tools"
 
-/**
- * Low-cardinality facts collected during the run and emitted once on the turn span.
- *
- * Mutable because the run discovers its outcome after the caller has already created the span.
- */
-interface TurnObservability {
-	outcome?: "stop" | "aborted" | "error" | "max-steps" | "abandoned" | "resume_skipped" | "unknown"
-	failureReason?: string
-	/** Model-context compactions across the pass and its close-out; see `ChatRunOutcome`. */
-	compactions?: number
-}
-
-const makeTurnObservability = (): TurnObservability => ({})
+import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
 import { agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn, type ChatRunOutcome } from "./run"
@@ -116,6 +104,8 @@ export interface RunChatSessionTurnInput {
 	readonly resume?: { readonly userMessageId: string; readonly text: string; readonly attempt: number }
 	/** The turn was evicted too often to start again: record that it failed, and run nothing. */
 	readonly abandoned?: true
+	/** Aborted, with a `ChatAbortReason`, when the session aborts this turn: the run is interrupted. */
+	readonly signal?: AbortSignal
 }
 
 /**
@@ -310,16 +300,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	let recordedTerminal = false
 	// `empty_output` and `recovery_count` are gone with the machinery that produced them: they
 	// counted the old loop's own repair attempts, and the engine has no equivalent to report.
-	const annotateTurn = () =>
-		Effect.annotateCurrentSpan({
-			"maple.chat.outcome": observability.outcome ?? "unknown",
-			...(observability.compactions === undefined
-				? undefined
-				: { "maple.chat.compactions": observability.compactions }),
-			...(observability.failureReason === undefined
-				? undefined
-				: { "maple.chat.failure_reason": observability.failureReason }),
-		})
+	const annotateTurn = () => Effect.annotateCurrentSpan(turnSpanAttributes(observability, input.signal))
 
 	const investigationId = investigationForSession(input.sessionId)
 	const prReviewId = prReviewForSession(input.sessionId)
@@ -691,6 +672,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const orgKey = yield* (yield* OrgOpenRouterKeyService).resolveForRun(tenant.orgId)
 		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
 		return yield* turnBody(orgKey).pipe(
+			interruptOnAbort(input.signal, observability),
 			// `ensuring`, not a trailing statement: a turn that failed, was aborted, or ran out of steps
 			// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
 			Effect.ensuring(

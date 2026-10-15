@@ -88,6 +88,9 @@ const variables = (target: GcpScriptTarget, more: ReadonlyArray<string>): string
 # ---- This connection ----
 # PROJECT_ID ${target.scopeType === "project" ? "" : "is the host project: it "}holds Maple's Pub/Sub topic, subscription and service account.
 PROJECT_ID=${sh(target.projectId)}
+# gcloud counts a person's calls against its current project, in Cloud Shell whichever one the
+# console has open. They belong to this one, whatever the caller's settings say.
+export CLOUDSDK_CORE_PROJECT="$PROJECT_ID"
 SCOPE_ID=${sh(target.scopeId)}
 TOPIC=${sh(names.topic)}
 SUBSCRIPTION=${sh(names.subscription)}
@@ -104,12 +107,16 @@ IAM_ROLE="${SCOPES[target.scopeType].iamRole} on $SCOPE"
 
 // Google's own output is shown only for a step that fails, under what failed and above what to
 // do about it. `stop` ends the script: every step can be run again, so nothing is rolled back.
-const output = (unfinished: string) => `
+const output = (unfinished: string, interrupted: string) => `
 # ---- What this script prints ----
 # Its marks are spelled as bytes: the text you paste is plain ASCII, which every terminal and
 # locale passes on unchanged.
 section() { printf '\\n%s\\n' "$1"; }
 ok() { printf '  \\342\\234\\223 %s\\n' "$1"; }
+note() { printf '  \\342\\200\\242 %s\\n' "$1"; }
+# Ctrl-C ends the script between two steps, which a re-run picks up from.
+interrupted() { printf '\\n\\n%s\\n' ${sh(interrupted)}; exit 130; }
+trap interrupted INT
 
 # stop <what went wrong> <what to do> [Google's answer]
 stop() {
@@ -118,7 +125,7 @@ stop() {
   # line says what was refused; the machine-readable details that follow it are left out.
   if [ -n "\${3-}" ]; then
     printf '\\n'
-    printf '%s\\n' "$3" | sed -e "/^- '@type':/,\\$d" -e 's/secret=[^ )&"]*/secret=HIDDEN/g' -e 's/^/      /'
+    printf '%s\\n' "$3" | sed -e "/^- '@type':/,\\$d" -e 's/secret=[^ )&"]*/secret=HIDDEN/g' -e 's/maple_gcp_[A-Za-z0-9_-]*/maple_gcp_HIDDEN/g' -e 's/^/      /'
   fi
   printf '\\n    What to do: %s\\n' "$2"
   printf '\\n%s\\n' ${sh(unfinished)}
@@ -131,7 +138,7 @@ fix() {
     *"requires billing"* | *BILLING_DISABLED* | *"Billing must be enabled"* | *BILLING_NOT_FOUND*)
       printf '%s' "Project $PROJECT_ID has no active billing account. Link one at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID" ;;
     *allowedPolicyMember* | *"permitted customer"*)
-      printf '%s' "An organization policy (domain restricted sharing) blocks this grant. Ask an Organization Policy Administrator to lift it for project $PROJECT_ID while this script runs. See ${DOCS_URL}#domain-restricted-sharing" ;;
+      printf '%s' "An organization policy (domain restricted sharing) blocks granting Maple's service account \${MAPLE_SERVICE_ACCOUNT-} on project $PROJECT_ID. Ask an Organization Policy Administrator to allow that one service account, for this project only (iam.managed.allowedPolicyMembers). Don't turn the policy off. See ${DOCS_URL}#domain-restricted-sharing" ;;
     # Google words these two as a denial too, so they are read before the missing role.
     *"has not been used"* | *"is disabled"* | *SERVICE_DISABLED*)
       printf '%s' "Google is still switching an API on, or the API is off. Wait a minute and paste the script again." ;;
@@ -161,6 +168,10 @@ run() {
   ok "$worked"
 }
 
+# conflict <Google's answer>: an IAM change raced another change to the same policy, which gcloud
+# does not try again. Trying again is safe: each change is read afresh.
+conflict() { case "$1" in *"concurrent policy changes"* | *ABORTED*) return 0 ;; *) return 1 ;; esac; }
+
 # report <what was applied, as JSON members>: the message that tells Maple what a run did. It has
 # the form of a log entry; Maple reads it and does not store it.
 report() {
@@ -184,7 +195,7 @@ notify() {
   } >/dev/null 2>&1; then
     ok "$1"
   elif [ "$CONFIRMED" = 1 ]; then
-    printf "  \\342\\200\\242 Couldn't reach Maple to confirm. Maple shows the connection as pending until a later run reaches it.\\n"
+    note "Couldn't reach Maple to confirm. Maple shows the connection as pending until a later run reaches it."
     CONFIRMED=0
   fi
 }
@@ -205,19 +216,45 @@ remains() {
   case "$2:$output" in
     *NOT_FOUND*) return 1 ;;
     logging:*) ;;
-    *"has not been used"* | *"is disabled"*) return 1 ;;
+    *"has not been used"* | *"is disabled"*) api_off "$what"; return 1 ;;
   esac
   stop "Couldn't check whether $what still exists." "$(fix "$output" "$role")" "$output"
+}
+
+# api_off <what it is>: an API switched off after a setup run would hide what it made. The cleanup
+# says so instead of calling it gone; a setup run with the API off has made nothing there.
+UNCHECKED=0
+api_off() {
+  [ "\${ANY_API_OFF_MATTERS-0}" = 1 ] || return 0
+  note "Couldn't look for $1: its API is off in project $PROJECT_ID. If a setup run made one, switch the API on and paste this again."
+  UNCHECKED=1
+}
+
+# remove <line when it worked> <line when it failed> <role that allows it> <gcloud ... delete ...>:
+# one that is gone already, a moment after it was seen, is fine.
+remove() {
+  local worked="$1" failed="$2" role="$3" output
+  shift 3
+  if ! output="$("$@" 2>&1)"; then
+    case "$output" in *NOT_FOUND*) ;; *) stop "$failed" "$(fix "$output" "$role")" "$output" ;; esac
+  fi
+  ok "$worked"
+  REMOVED=1
 }
 
 # unbind <role that allows it> <gcloud ... remove-iam-policy-binding ...>: a binding that is
 # already gone is fine.
 unbind() {
-  local role="$1" output
+  local role="$1" output tries=0
   shift
-  if output="$("$@" 2>&1)"; then return 0; fi
-  case "$output" in *"Policy binding"*"not found"*) return 0 ;; esac
-  stop "Couldn't remove the read-only roles." "$(fix "$output" "$role")" "$output"
+  until output="$("$@" 2>&1)"; do
+    case "$output" in *"Policy binding"*"not found"*) return 0 ;; esac
+    tries=$((tries + 1))
+    if ! conflict "$output" || [ "$tries" -ge 20 ]; then
+      stop "Couldn't remove the read-only roles." "$(fix "$output" "$role")" "$output"
+    fi
+    sleep 3
+  done
 }
 `
 
@@ -232,16 +269,16 @@ const METRIC_APIS = [
 	"cloudresourcemanager.googleapis.com",
 ]
 
-// Signed in as a person in Cloud Shell, gcloud's calls are counted against Google's own project,
-// which has the Cloud Resource Manager API. With it off for a service account, every describe
+// gcloud's calls are counted against the host project (CLOUDSDK_CORE_PROJECT), or for a service
+// account against its own project. With the Cloud Resource Manager API off there, every describe
 // and role grant fails.
 const apisOff = (
 	scopeType: GcpScopeType,
 	apis: ReadonlyArray<string>,
 ) => `# Which of the APIs this script needs are off in ${hostProject(scopeType)}, asked once.
 APIS_OFF="$(off ${apis.join(" ")})"
-# gcloud needs the Cloud Resource Manager API of the project its calls are counted against. For a
-# service account that is its own project, usually this one, so it is switched on before the
+# gcloud needs the Cloud Resource Manager API of the project its calls are counted against: this
+# one, or a service account's own project, usually this one too. So it is switched on before the
 # first read. Not everyone may switch an API on: a refusal here is reported further down.
 case "$APIS_OFF" in *cloudresourcemanager*)
   if gcloud services enable cloudresourcemanager.googleapis.com --project="$PROJECT_ID" >/dev/null 2>&1; then
@@ -302,15 +339,24 @@ const PERMISSION_CHECK = `
 # is not a refusal: the steps below then report for themselves.
 CHECKED=1
 allowed() {
-  local resource="$1" where="$2" ask="$3" answer permission lacking="" held=0
+  local resource="$1" where="$2" ask="$3" answer permission lacking="" held=0 nl=$'\\n'
   shift 3
-  if ! answer="$(curl -fsS --max-time 15 -X POST -H 'Content-Type: application/json' \\
+  if ! answer="$(curl -sS --max-time 15 -w '\\n%{http_code}' -X POST -H 'Content-Type: application/json' \\
     -H @<(printf 'Authorization: Bearer %s\\n' "$TOKEN") \\
     --data "{\\"permissions\\":[$(printf '"%s",' "$@" | sed 's/,$//')]}" \\
     "https://cloudresourcemanager.googleapis.com/v3/$resource:testIamPermissions" 2>/dev/null)"; then
     CHECKED=0
     return 0
   fi
+  # Google refuses to answer for a folder or organization that this account can't see, or that
+  # does not exist: as good a sign of a wrong ID as having none of the permissions.
+  case "\${answer##*$nl}" in
+    200) answer="\${answer%$nl*}" ;;
+    403 | 404)
+      case "$answer" in *SERVICE_DISABLED* | *"has not been used"*) CHECKED=0; return 0 ;; esac
+      stop "$ACCOUNT can't see $where." "Check the ID in Maple. ${WRONG_ID} If it is right, this account has no rights there. $ask" ;;
+    *) CHECKED=0; return 0 ;;
+  esac
   for permission in "$@"; do
     case "$answer" in *"\\"$permission\\""*) held=1 ;; *) lacking="$lacking, $permission" ;; esac
   done
@@ -328,11 +374,19 @@ const access = (scopeType: GcpScopeType, checks: AccessChecks): string => `
 section "Checking access"
 command -v gcloud >/dev/null 2>&1 ||
   stop "gcloud is not installed here." "Run this script in Cloud Shell: https://shell.cloud.google.com"
+# Before 470, \`gcloud logging sinks update\` has no --include-children and every re-run fails.
+GCLOUD_VERSION="$(gcloud version --format='value("Google Cloud SDK")' 2>/dev/null || true)"
+case "$GCLOUD_VERSION" in [0-9].* | [0-9][0-9].* | [0-3][0-9][0-9].* | 4[0-6][0-9].*)
+  stop "gcloud $GCLOUD_VERSION is too old for this script." "Update it (gcloud components update, or through the package manager that installed it), or run the script in Cloud Shell: https://shell.cloud.google.com" ;;
+esac
 ACCOUNT="$(gcloud config get-value account 2>/dev/null || true)"
 TOKEN="$(gcloud auth print-access-token 2>/dev/null || true)"
 if [ -z "$ACCOUNT" ] || [ -z "$TOKEN" ]; then
   stop "You are not signed in to Google Cloud." "In Cloud Shell, click Authorize when it asks. Elsewhere, run: gcloud auth login"
 fi
+# With impersonation set, gcloud acts as that service account: it is the one that needs the roles.
+IMPERSONATED="$(gcloud config get-value auth/impersonate_service_account 2>/dev/null || true)"
+[ -z "$IMPERSONATED" ] || ACCOUNT="$IMPERSONATED"
 ok "Signed in as $ACCOUNT"
 ${checks.apis.length === 0 ? "" : apisOff(scopeType, checks.apis)}${scopeType === "project" ? "" : openScope(scopeType, checks.scopeMustOpen)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
   stop "Can't open project $PROJECT_ID as $ACCOUNT." "Check the ID in Maple (it is the project ID, not the name or number; list yours with: gcloud projects list). ${WRONG_ID} If it is right, this account has no access to the project." "$(gcloud projects describe "$PROJECT_ID" 2>&1 || true)"
@@ -343,6 +397,7 @@ ${
 		? `case "$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)" in
   True) ok "Billing is enabled" ;;
   False) stop "Project $PROJECT_ID has no billing account." "Cloud Monitoring only answers for projects with billing. Link one at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID" ;;
+  *) note "Couldn't tell whether billing is on. Cloud Monitoring only answers for projects with billing." ;;
 esac
 `
 		: ""
@@ -357,7 +412,11 @@ esac
 				.join("")}# Switching an API on takes a right of its own, asked about only when one is off.
 [ -z "$APIS_OFF" ] || allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "This script has to switch on:$APIS_OFF. Ask for Service Usage Admin there, or have an administrator switch them on." \\
   serviceusage.services.enable
-[ "$CHECKED" = 0 ] || ok "$ACCOUNT has the permissions this script needs"
+if [ "$CHECKED" = 1 ]; then
+  ok "$ACCOUNT has the permissions this script needs"
+else
+  note "Couldn't ask Google which permissions $ACCOUNT holds. A step it may not take says so."
+fi
 `
 }${checks.sink === undefined ? "" : sinkAndFilter(checks.sink)}`
 
@@ -373,19 +432,25 @@ const permissionChecks = (
 	const host = [
 		"resourcemanager.projects.getIamPolicy",
 		"resourcemanager.projects.setIamPolicy",
+		// The gets: a resource the caller may not look at is taken for missing and created again,
+		// which Google refuses as a duplicate.
 		...(logs
 			? [
+					"pubsub.topics.get",
 					"pubsub.topics.create",
 					"pubsub.topics.attachSubscription",
 					"pubsub.topics.setIamPolicy",
 					"pubsub.topics.publish",
+					"pubsub.subscriptions.get",
 					"pubsub.subscriptions.create",
 					"pubsub.subscriptions.update",
 				]
 			: []),
-		...(metrics ? ["iam.serviceAccounts.create", "iam.serviceAccounts.setIamPolicy"] : []),
+		...(metrics
+			? ["iam.serviceAccounts.get", "iam.serviceAccounts.create", "iam.serviceAccounts.setIamPolicy"]
+			: []),
 	]
-	const sink = logs ? ["logging.sinks.create", "logging.sinks.update"] : []
+	const sink = logs ? ["logging.sinks.get", "logging.sinks.create", "logging.sinks.update"] : []
 	const askHost = `Ask for Owner there, ${administrator}`
 	if (scopeType === "project") {
 		return [["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, [...host, ...sink]]]
@@ -401,6 +466,34 @@ const permissionChecks = (
 		],
 	]
 }
+
+// Setup only: granting to a service account Google may not have published yet, its own for the
+// log sink or the reader this script creates.
+const GRANT = `
+# grant <line when it failed> <role that allows it> <gcloud ... add-iam-policy-binding ...>
+# Waited out, for a minute at most: a change that raced another one, and a service account Google
+# has not published yet. Until then it answers that the account does not exist, or for the policy
+# of a reader this run created (gcloud iam service-accounts ...), that the caller may not change it.
+WAITED=0
+grant() {
+  local failed="$1" role="$2" output tries=0
+  shift 2
+  while ! output="$("$@" 2>&1)"; do
+    tries=$((tries + 1))
+    conflict "$output" || case "$output" in
+      *"does not exist"* | *NOT_FOUND*) ;;
+      *PERMISSION_DENIED*) { [ "$ACCOUNT_CREATED" = 1 ] && [ "$3" = service-accounts ]; } || tries=20 ;;
+      *) tries=20 ;;
+    esac
+    if [ "$tries" -ge 20 ]; then stop "$failed" "$(fix "$output" "$role")" "$output"; fi
+    if [ "$WAITED" = 0 ] && ! conflict "$output"; then
+      printf '  \\342\\200\\246 waiting for Google to publish the new service account\\n'
+      WAITED=1
+    fi
+    sleep 3
+  done
+}
+`
 
 const logsSetup = (scopeType: GcpScopeType): string => `
 # ---- Log forwarding: on ----
@@ -426,7 +519,19 @@ SUBSCRIPTION_FLAGS=(
   --ack-deadline=30 --message-retention-duration=1d --expiration-period=never
   --min-retry-delay=10s --max-retry-delay=600s
 )
-if exists gcloud pubsub subscriptions describe "$SUBSCRIPTION" --project="$PROJECT_ID"; then
+# A subscription outlives a deleted topic, and one that was detached stays detached: neither gets
+# a message again, and its topic can't be changed. Such a subscription is made anew.
+subscribed() {
+  gcloud pubsub subscriptions describe "$SUBSCRIPTION" --project="$PROJECT_ID" --format="value($1)" 2>/dev/null || true
+}
+SUBSCRIBED="$(subscribed topic)"
+if [ -n "$SUBSCRIBED" ] &&
+  { [ "$SUBSCRIBED" != "projects/$PROJECT_ID/topics/$TOPIC" ] || [ "$(subscribed detached)" = True ]; }; then
+  run "Push subscription cut off from the topic deleted" "Couldn't delete the push subscription." "$OWNER" \\
+    gcloud pubsub subscriptions delete "$SUBSCRIPTION" --project="$PROJECT_ID" --quiet
+  SUBSCRIBED=""
+fi
+if [ -n "$SUBSCRIBED" ]; then
   run "Push subscription up to date" "Couldn't update the push subscription." "$OWNER" \\
     gcloud pubsub subscriptions update "$SUBSCRIPTION" "\${SUBSCRIPTION_FLAGS[@]}"
 else
@@ -434,14 +539,15 @@ else
     gcloud pubsub subscriptions create "$SUBSCRIPTION" --topic="$TOPIC" "\${SUBSCRIPTION_FLAGS[@]}"
 fi
 
+# --no-disabled: a sink someone paused forwards again, as log forwarding is on in Maple.
 if [ "$SINK_EXISTS" = 1 ]; then
   if [ "$LOG_FILTER_MODE" = set ]; then
     run "Log sink up to date (filter replaced)" "Couldn't update the log sink." "$SINK_ROLE" \\
-      gcloud logging sinks update "$SINK" "$DESTINATION" --log-filter="$LOG_FILTER" ${SCOPES[scopeType].sink}${includeChildren(scopeType)}
+      gcloud logging sinks update "$SINK" "$DESTINATION" --no-disabled --log-filter="$LOG_FILTER" ${SCOPES[scopeType].sink}${includeChildren(scopeType)}
     FILTER_REPLACED=1
   else
     run "Log sink up to date (filter kept)" "Couldn't update the log sink." "$SINK_ROLE" \\
-      gcloud logging sinks update "$SINK" "$DESTINATION" ${SCOPES[scopeType].sink}${includeChildren(scopeType)}
+      gcloud logging sinks update "$SINK" "$DESTINATION" --no-disabled ${SCOPES[scopeType].sink}${includeChildren(scopeType)}
   fi
 else
   run "Log sink created" "Couldn't create the log sink." "$SINK_ROLE" \\
@@ -455,12 +561,16 @@ if ! WRITER_IDENTITY="$(gcloud logging sinks describe "$SINK" ${SCOPES[scopeType
   WRITER_IDENTITY="$(gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink} 2>&1 || true)"
   stop "Couldn't read the log sink back." "$(fix "$WRITER_IDENTITY" "$SINK_ROLE")" "$WRITER_IDENTITY"
 fi
-run "Sink allowed to write to the project" "Couldn't grant the sink Logs Writer." "$OWNER" \\
+[ -n "$WRITER_IDENTITY" ] ||
+  stop "Google named no identity for the log sink to write as." "Wait a minute and paste the script again."
+grant "Couldn't grant the sink Logs Writer." "$OWNER" \\
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
   --member="$WRITER_IDENTITY" --role=roles/logging.logWriter --condition=None
-run "Sink allowed to publish to the topic" "Couldn't grant the sink Pub/Sub Publisher." "$OWNER" \\
+ok "Sink allowed to write to the project"
+grant "Couldn't grant the sink Pub/Sub Publisher." "$OWNER" \\
   gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project="$PROJECT_ID" \\
   --member="$WRITER_IDENTITY" --role=roles/pubsub.publisher
+ok "Sink allowed to publish to the topic"
 notify "Check message sent to Maple through the topic" '"logs":true'
 `
 
@@ -473,21 +583,18 @@ const logsRemoval = (scopeType: GcpScopeType, notifies: boolean): string => `
 # an identity every other sink there shares.
 section "Log forwarding"
 if remains "the log sink" "$SINK_ROLE" gcloud logging sinks describe "$SINK" ${SCOPES[scopeType].sink}; then
-  run "Log sink deleted" "Couldn't delete the log sink." "$SINK_ROLE" \\
+  remove "Log sink deleted" "Couldn't delete the log sink." "$SINK_ROLE" \\
     gcloud logging sinks delete "$SINK" ${SCOPES[scopeType].sink} --quiet
-  REMOVED=1
   printf '  \\342\\200\\246 waiting a minute for Google to stop routing to the topic\\n'
   sleep 60
 fi
 if remains "the push subscription" "$OWNER" gcloud pubsub subscriptions describe "$SUBSCRIPTION" --project="$PROJECT_ID"; then
-  run "Push subscription deleted" "Couldn't delete the push subscription." "$OWNER" \\
+  remove "Push subscription deleted" "Couldn't delete the push subscription." "$OWNER" \\
     gcloud pubsub subscriptions delete "$SUBSCRIPTION" --project="$PROJECT_ID" --quiet
-  REMOVED=1
 fi
 if remains "the topic" "$OWNER" gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
-  run "Topic deleted" "Couldn't delete the Pub/Sub topic." "$OWNER" \\
+  remove "Topic deleted" "Couldn't delete the Pub/Sub topic." "$OWNER" \\
     gcloud pubsub topics delete "$TOPIC" --project="$PROJECT_ID" --quiet
-  REMOVED=1
 fi
 [ "$REMOVED" = 1 ] || ok "Nothing left to remove"
 ${notifies ? `notify "Maple notified" '"logs":false'\n` : ""}`
@@ -519,25 +626,6 @@ else
   ACCOUNT_CREATED=1
 fi
 
-# grant <line when it failed> <role that allows it> <gcloud ... add-iam-policy-binding ...>
-# Google can take a minute to publish a new service account, and until then answers that it does
-# not exist. Only that answer is waited out, for a minute at most.
-WAITED=0
-grant() {
-  local failed="$1" role="$2" output tries=0
-  shift 2
-  while ! output="$("$@" 2>&1)"; do
-    tries=$((tries + 1))
-    case "$output" in *"does not exist"* | *NOT_FOUND*) ;; *) tries=20 ;; esac
-    if [ "$tries" -ge 20 ]; then stop "$failed" "$(fix "$output" "$role")" "$output"; fi
-    if [ "$WAITED" = 0 ]; then
-      printf '  \\342\\200\\246 waiting for Google to publish the new service account\\n'
-      WAITED=1
-    fi
-    sleep 3
-  done
-}
-
 # Read-only roles on the ${scopeType}${scopeType === "project" ? "" : ", inherited by every project under it"}:
 #   roles/monitoring.viewer  read metrics (monitoring.timeSeries.list)
 #   roles/cloudasset.viewer  list resources (cloudasset.assets.searchAllResources)
@@ -548,7 +636,8 @@ for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
     ${SCOPES[scopeType].gcloud} add-iam-policy-binding "$SCOPE_ID" \\
     ${serviceAccountMember} --role="$ROLE" --condition=None
 done
-# Cloud Asset Inventory checks serviceusage.services.use on the project its API is called through.
+# Maple's reads name this project as the one their quota is counted against, which takes
+# serviceusage.services.use on it.
 grant "Couldn't grant the read-only roles." "$OWNER" \\
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
   ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None
@@ -576,7 +665,7 @@ account_remains() {
     return
   fi
   output="$("$@" 2>&1 || true)"
-  case "$output" in *"has not been used"* | *"is disabled"*) return 1 ;; esac
+  case "$output" in *"has not been used"* | *"is disabled"*) api_off "the read-only service account"; return 1 ;; esac
   stop "Couldn't check whether the read-only service account still exists." "$(fix "$output" "$OWNER")" "$output"
 }
 if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
@@ -584,14 +673,13 @@ if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
   # Role bindings first: once the account is deleted they can no longer be removed by name.
   for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
     unbind "$IAM_ROLE" ${SCOPES[scopeType].gcloud} remove-iam-policy-binding "$SCOPE_ID" \\
-      ${serviceAccountMember} --role="$ROLE" --condition=None
+      ${serviceAccountMember} --role="$ROLE" --all
   done
   unbind "$OWNER" gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
-    ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None
+    ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --all
   ok "Read-only roles removed"
-  run "Read-only service account deleted" "Couldn't delete the service account." "$OWNER" \\
+  remove "Read-only service account deleted" "Couldn't delete the service account." "$OWNER" \\
     gcloud iam service-accounts delete "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
-  REMOVED=1
 else
   ok "Nothing left to remove"
 fi
@@ -600,19 +688,25 @@ ${notifies ? `notify "Maple notified" '"metrics":false'\n` : ""}`
 /**
  * The text that is copied: the script as a here-document for a child bash. Pasted at a prompt,
  * nothing runs before the closing brace is read, a failing step ends the child and not the login
- * shell, and the terminal stays the script's stdin. The first line drops the paste from the
- * history of bash 5; its leading space does the same under `HISTCONTROL=ignorespace`. Nothing
+ * shell, and the terminal stays the script's stdin. The first line keeps the paste, secret and
+ * all, out of the history file of zsh 5.3+ (which writes it after the command ran) and drops it
+ * from the history of bash 5; its leading space does the same under `HISTCONTROL=ignorespace`
+ * and `HIST_IGNORE_SPACE`. bash 3.2 keeps only the first line, which has no secret. Nothing
  * outside the here-document may be a comment: an interactive zsh runs `#` as a command.
  */
+// A terminal, not the bytes, decides where a pasted line ends: a CR or a TAB (completion) in a
+// value could end the here-document early and hand the rest to the login shell.
+const PASTE_SAFE = /^[\x20-\x7e\n]*$/u
+
 const forPaste = (marker: string, body: string): Effect.Effect<string, IntegrationsPersistenceError> =>
-	body.split("\n").includes(marker)
+	!PASTE_SAFE.test(body) || body.split("\n").includes(marker)
 		? Effect.fail(
 				new IntegrationsPersistenceError({
-					message: "A Google Cloud script value would end the script's here-document",
+					message: "A Google Cloud script value would end the script's here-document early",
 				}),
 			)
 		: Effect.succeed(
-				` { [ -z "\${BASH_VERSION-}" ] || case "$(history 1)" in *${marker}*) history -d -1 ;; esac 2>/dev/null
+				` { [ -z "\${ZSH_VERSION-}" ] || case "\${HISTORY_IGNORE-}" in *"*${marker}*"*) ;; *) HISTORY_IGNORE="(\${HISTORY_IGNORE:+$HISTORY_IGNORE|}*${marker}*)" ;; esac; [ -z "\${BASH_VERSION-}" ] || case "$(history 1)" in *${marker}*) history -d -1 ;; esac 2>/dev/null
 bash /dev/fd/3 3<<'${marker}'
 ${body}${marker}
 }
@@ -657,7 +751,8 @@ export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 # Safe to run again: it sets up what is on and removes what is off.
 # Keep it private: PUSH_ENDPOINT contains this connection's secret.
 set -euo pipefail
-export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+# gcloud would log every argument, the secret too, and the access token to ~/.config/gcloud/logs.
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1 CLOUDSDK_CORE_DISABLE_FILE_LOGGING=1
 ${
 	logs
 		? `
@@ -689,7 +784,10 @@ LOG_FILTER=${sh(gcpLogFilter(input.logFilter === "include_gke_container_logs"))}
 FILTER_REPLACED=0
 ACCOUNT_CREATED=0
 REMOVED=0
-${output("Setup did not finish. Nothing needs undoing: fix this and paste the script again.")}${notify(logs)}
+${output(
+	"Setup did not finish. Nothing needs undoing: fix this and paste the script again.",
+	"Setup interrupted. Nothing needs undoing: paste the script again to finish it.",
+)}${notify(logs)}
 # exists <gcloud ... describe ...>: a look that fails for any reason falls through to the create,
 # which reports for itself.
 exists() { "$@" >/dev/null 2>&1; }
@@ -719,7 +817,7 @@ apis() {
   fi
   ok "APIs enabled ($names)"
 }
-${logs && metrics === "on" ? "" : REMOVAL_HELPERS}
+${logs || metrics === "on" ? GRANT : ""}${logs && metrics === "on" ? "" : REMOVAL_HELPERS}
 printf 'Maple setup for %s\\n' "$SCOPE"
 printf '  Log forwarding          %s\\n  Metrics and resources   %s\\n' ${sh(state(logs))} ${sh(metricsState)}
 ${access(scopeType, {
@@ -768,10 +866,13 @@ export const renderGcpCleanupScript = (input: GcpCleanupScriptInput) =>
 # Removes what the Maple setup script created. The APIs it switched on stay on.
 # Safe to run again.${input.pushEndpoint === undefined ? "" : "\n# Keep it private: PUSH_ENDPOINT contains this connection's secret."}
 set -euo pipefail
-export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+# gcloud would log every argument, the secret too, and the access token to ~/.config/gcloud/logs.
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1 CLOUDSDK_CORE_DISABLE_FILE_LOGGING=1
 ${variables(input, input.pushEndpoint === undefined ? [] : [`PUSH_ENDPOINT=${sh(input.pushEndpoint)}`])}REMOVED=0
+ANY_API_OFF_MATTERS=1
 ${output(
 	"Cleanup did not finish. Fix this and paste the script again: it continues where it stopped.",
+	"Cleanup interrupted. Paste the script again: it continues where it stopped.",
 )}${REMOVAL_HELPERS}
 printf 'Maple cleanup for %s\\n' "$SCOPE"
 ${access(input.scopeType, { apis: [], sink: undefined, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${metricsRemoval(input.scopeType, false)}${
@@ -782,7 +883,11 @@ ${access(input.scopeType, { apis: [], sink: undefined, scopeMustOpen: false, bil
 ${POST_REPORT} --data "$(report '"logs":false,"metrics":false')" "$PUSH_ENDPOINT" >/dev/null 2>&1 || true
 `
 		}
-printf '\\nDone. Everything the setup script created is gone.\\n'
+if [ "$UNCHECKED" = 1 ]; then
+  printf '\\nDone, but not all of it could be checked: see above.\\n'
+else
+  printf '\\nDone. Everything the setup script created is gone.\\n'
+fi
 printf '  Left in place: the APIs it switched on, and the Logs Writer role of Google'"'"'s logging\\n'
 printf '  service account on %s, which other sinks share.\\n' "$PROJECT_ID"
 ${input.pushEndpoint === undefined ? "" : `printf '  Now disconnect in Maple: %s\\n' "$MAPLE_URL"\n`}`,

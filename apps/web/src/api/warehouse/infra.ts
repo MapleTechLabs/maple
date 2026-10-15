@@ -50,7 +50,7 @@ import { Effect } from "effect"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { runWarehouseQuery } from "./effect-utils"
 
-export type WorkloadKind = "deployment" | "statefulset" | "daemonset"
+export type WorkloadKind = "deployment" | "statefulset" | "daemonset" | "job"
 
 /** Mirrors PodSortKeyLiteral in @maple/domain — `saturation` is peak-of-either-limit. */
 export type PodSortKey = "saturation" | "cpuUsage" | "cpuLimitPct" | "memoryLimitPct" | "podName" | "lastSeen"

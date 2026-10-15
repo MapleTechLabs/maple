@@ -8,8 +8,8 @@ import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/quer
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import type { InfraEntityRow, InfraKind, InfraKindSection, InfraSeriesStats } from "@maple/domain/mcp-outputs"
 
-export type WorkloadKind = "deployment" | "statefulset" | "daemonset"
-export const WORKLOAD_KINDS: ReadonlyArray<WorkloadKind> = ["deployment", "statefulset", "daemonset"]
+export type WorkloadKind = "deployment" | "statefulset" | "daemonset" | "job"
+export const WORKLOAD_KINDS: ReadonlyArray<WorkloadKind> = ["deployment", "statefulset", "daemonset", "job"]
 
 export interface InfraWindow {
 	readonly startTime: string
@@ -225,11 +225,11 @@ const workloadRow = (kind: WorkloadKind, row: CH.ListWorkloadsOutput): InfraEnti
 	workloadKind: kind,
 	...placement(row),
 	podCount: row.podCount,
-	cpuCores: row.avgCpuUsage,
-	cpu: row.avgCpuLimitPct,
-	memory: row.avgMemoryLimitPct,
-	saturation: Math.max(row.avgCpuLimitPct, row.avgMemoryLimitPct),
-	...(row.avgCpuLimitPct === 0 && row.avgMemoryLimitPct === 0 ? { unbounded: true } : undefined),
+	cpuCores: row.cpuUsage,
+	cpu: row.peakCpuLimitPct,
+	memory: row.peakMemoryLimitPct,
+	saturation: row.saturation,
+	...(row.peakCpuLimitPct === 0 && row.peakMemoryLimitPct === 0 ? { unbounded: true } : undefined),
 })
 
 const containerRow = (row: CH.ListContainersOutput): InfraEntityRow => ({
