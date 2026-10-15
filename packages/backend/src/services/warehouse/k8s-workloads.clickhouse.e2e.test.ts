@@ -121,16 +121,20 @@ function restarts(
 	reason: string,
 	{ org, computeType }: { org?: string; computeType?: string } = {},
 ): ReadonlyArray<Sample> {
+	const baseAttrs = {
+		"k8s.container.name": container,
+		"k8s.container.status.last_terminated_reason": reason,
+	}
+	const containerAttrs =
+		computeType === undefined
+			? baseAttrs
+			: { ...baseAttrs, "eks.amazonaws.com/compute-type": computeType }
 	return totals.map((value, index) => ({
 		org,
 		metric: "k8s.container.restarts",
 		minutesBeforeEnd: 45 - index * 20,
 		value,
-		attrs: pod(deployment, uid, {
-			"k8s.container.name": container,
-			"k8s.container.status.last_terminated_reason": reason,
-			...(computeType ? { "eks.amazonaws.com/compute-type": computeType } : {}),
-		}),
+		attrs: pod(deployment, uid, containerAttrs),
 	}))
 }
 
