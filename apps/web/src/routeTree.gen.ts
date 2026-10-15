@@ -59,6 +59,7 @@ import { Route as LabCodeReviewReposRouteImport } from './routes/lab/code-review
 import { Route as LabErrorsRouteImport } from './routes/lab/errors'
 import { Route as LabFlowRouteImport } from './routes/lab/flow'
 import { Route as LabGcpConnectRouteImport } from './routes/lab/gcp-connect'
+import { Route as LabGcpDashboardRouteImport } from './routes/lab/gcp-dashboard'
 import { Route as LabInfraRouteImport } from './routes/lab/infra'
 import { Route as LabLoadersRouteImport } from './routes/lab/loaders'
 import { Route as LabLogsRouteImport } from './routes/lab/logs'
@@ -369,6 +370,11 @@ const LabFlowRoute = LabFlowRouteImport.update({
 const LabGcpConnectRoute = LabGcpConnectRouteImport.update({
   id: '/gcp-connect',
   path: '/gcp-connect',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabGcpDashboardRoute = LabGcpDashboardRouteImport.update({
+  id: '/gcp-dashboard',
+  path: '/gcp-dashboard',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabInfraRoute = LabInfraRouteImport.update({
@@ -732,6 +738,7 @@ export interface FileRoutesByFullPath {
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
   '/lab/gcp-connect': typeof LabGcpConnectRoute
+  '/lab/gcp-dashboard': typeof LabGcpDashboardRoute
   '/lab/infra': typeof LabInfraRoute
   '/lab/loaders': typeof LabLoadersRoute
   '/lab/logs': typeof LabLogsRoute
@@ -844,6 +851,7 @@ export interface FileRoutesByTo {
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
   '/lab/gcp-connect': typeof LabGcpConnectRoute
+  '/lab/gcp-dashboard': typeof LabGcpDashboardRoute
   '/lab/infra': typeof LabInfraRoute
   '/lab/loaders': typeof LabLoadersRoute
   '/lab/logs': typeof LabLogsRoute
@@ -958,6 +966,7 @@ export interface FileRoutesById {
   '/lab/errors': typeof LabErrorsRoute
   '/lab/flow': typeof LabFlowRoute
   '/lab/gcp-connect': typeof LabGcpConnectRoute
+  '/lab/gcp-dashboard': typeof LabGcpDashboardRoute
   '/lab/infra': typeof LabInfraRoute
   '/lab/loaders': typeof LabLoadersRoute
   '/lab/logs': typeof LabLogsRoute
@@ -1073,6 +1082,7 @@ export interface FileRouteTypes {
     | '/lab/errors'
     | '/lab/flow'
     | '/lab/gcp-connect'
+    | '/lab/gcp-dashboard'
     | '/lab/infra'
     | '/lab/loaders'
     | '/lab/logs'
@@ -1185,6 +1195,7 @@ export interface FileRouteTypes {
     | '/lab/errors'
     | '/lab/flow'
     | '/lab/gcp-connect'
+    | '/lab/gcp-dashboard'
     | '/lab/infra'
     | '/lab/loaders'
     | '/lab/logs'
@@ -1298,6 +1309,7 @@ export interface FileRouteTypes {
     | '/lab/errors'
     | '/lab/flow'
     | '/lab/gcp-connect'
+    | '/lab/gcp-dashboard'
     | '/lab/infra'
     | '/lab/loaders'
     | '/lab/logs'
@@ -1805,6 +1817,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabGcpConnectRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/gcp-dashboard': {
+      id: '/lab/gcp-dashboard'
+      path: '/gcp-dashboard'
+      fullPath: '/lab/gcp-dashboard'
+      preLoaderRoute: typeof LabGcpDashboardRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/infra': {
       id: '/lab/infra'
       path: '/infra'
@@ -2246,6 +2265,7 @@ interface LabRouteRouteChildren {
   LabErrorsRoute: typeof LabErrorsRoute
   LabFlowRoute: typeof LabFlowRoute
   LabGcpConnectRoute: typeof LabGcpConnectRoute
+  LabGcpDashboardRoute: typeof LabGcpDashboardRoute
   LabInfraRoute: typeof LabInfraRoute
   LabLoadersRoute: typeof LabLoadersRoute
   LabLogsRoute: typeof LabLogsRoute
@@ -2281,6 +2301,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabErrorsRoute: LabErrorsRoute,
   LabFlowRoute: LabFlowRoute,
   LabGcpConnectRoute: LabGcpConnectRoute,
+  LabGcpDashboardRoute: LabGcpDashboardRoute,
   LabInfraRoute: LabInfraRoute,
   LabLoadersRoute: LabLoadersRoute,
   LabLogsRoute: LabLogsRoute,
