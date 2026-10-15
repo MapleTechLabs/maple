@@ -254,17 +254,21 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 	const processRuntimeName = row.processRuntimeName
 	// cluster.name alone does not prove the service runs in Kubernetes.
 	const isKubernetes = k8sPodName !== "" || k8sDeploymentName !== ""
-	// Host infrastructure takes precedence over SDK self-report.
-	const platform: "kubernetes" | "cloudflare" | "lambda" | "web" | "unknown" =
+	// Host infrastructure takes precedence over SDK self-report. Google Cloud's
+	// detector sets `faas.name` on Cloud Run and Cloud Functions, so it is checked
+	// before the Lambda rule.
+	const platform: "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown" =
 		cloudPlatform === "cloudflare.workers" || cloudProvider === "cloudflare"
 			? "cloudflare"
-			: faasName !== "" || cloudPlatform === "aws_lambda"
-				? "lambda"
-				: isKubernetes
-					? "kubernetes"
-					: mapleSdkType === "client"
-						? "web"
-						: "unknown"
+			: cloudProvider === "gcp"
+				? "gcp"
+				: faasName !== "" || cloudPlatform === "aws_lambda"
+					? "lambda"
+					: isKubernetes
+						? "kubernetes"
+						: mapleSdkType === "client"
+							? "web"
+							: "unknown"
 	return {
 		serviceName: decodeServiceName(row.serviceName),
 		platform,
