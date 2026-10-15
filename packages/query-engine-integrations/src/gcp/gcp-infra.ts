@@ -15,6 +15,7 @@ import {
 	type GcpInfraServiceId,
 	type GcpInfraSourceId,
 } from "@maple/domain/gcp-infra"
+import { gcpMetricPointAttributes } from "@maple/domain/gcp-metrics"
 import {
 	MetricCatalog,
 	MetricsGauge,
@@ -29,8 +30,8 @@ type MetricsAccessor = ColumnAccessor<typeof MetricsSum.columns> | ColumnAccesso
 /** What both metric queries read of one source: a point's label, and the window's points. */
 const reading = (source: GcpInfraSourceId) => {
 	const metrics = gcpInfraMetrics(source)
-	// A metric keeps at most one label, so joining the candidates yields the one that is set.
-	const labels = ["quantile", ...new Set(metrics.flatMap((metric) => metric.labels))]
+	// A point carries at most one of these, so joining the candidates yields the one that is set.
+	const labels = ["quantile", ...new Set(metrics.flatMap(gcpMetricPointAttributes))]
 	return {
 		label: ($: MetricsAccessor) =>
 			CH.arrayStringConcat(
@@ -41,10 +42,13 @@ const reading = (source: GcpInfraSourceId) => {
 		inWindow: ($: MetricsAccessor, sums: boolean) =>
 			[
 				$.OrgId.eq(orgIdParam),
-				CH.inList(
-					$.MetricName,
-					metrics.filter((metric) => (metric.kind === "sum") === sums).map((metric) => metric.name),
-				),
+				CH.inList($.MetricName, [
+					...new Set(
+						metrics
+							.filter((metric) => (metric.kind === "sum") === sums)
+							.map((metric) => metric.name),
+					),
+				]),
 				$.TimeUnix.gte(param.dateTime("startTime")),
 				$.TimeUnix.lte(param.dateTime("endTime")),
 			] as const,
@@ -53,8 +57,8 @@ const reading = (source: GcpInfraSourceId) => {
 
 /**
  * Every curated metric of one service: one row per workload (`keys`, the values of the service's
- * `identity`), metric and `label` (the metric's label value or quantile, empty without one; for
- * Compute Engine it repeats the instance name). `total` sums the window's points and `samples`
+ * `identity`), metric and `label` (the quantile, metric label value or direction, empty without
+ * one). `total` sums the window's points and `samples`
  * counts them: a counter reads as `total`, a gauge or percentile as the mean `total / samples`.
  *
  * Connections with overlapping scopes store a series once each, which multiplies its counters.
@@ -147,12 +151,13 @@ export function gcpInfraPresenceSQL() {
 		.select(($) => ({ metric: $.MetricName }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			CH.inList(
-				$.MetricName,
-				GCP_INFRA_SERVICE_IDS.flatMap((service) =>
-					gcpInfraMetrics(service).map((metric) => metric.name),
+			CH.inList($.MetricName, [
+				...new Set(
+					GCP_INFRA_SERVICE_IDS.flatMap((service) =>
+						gcpInfraMetrics(service).map((metric) => metric.name),
+					),
 				),
-			),
+			]),
 			// `Hour` is hour-truncated: floor the start so a mid-hour range keeps its first bucket.
 			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
 			$.Hour.lte(utcSecondsParam("endTime")),

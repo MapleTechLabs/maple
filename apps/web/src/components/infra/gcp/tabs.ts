@@ -41,15 +41,7 @@ export interface GcpMetricReader {
 	readonly mean: (metric: string, label?: string) => number | undefined
 }
 
-export type GcpColumnFormat =
-	| "count"
-	| "decimal"
-	| "cores"
-	| "percent"
-	| "errorRate"
-	| "ms"
-	| "seconds"
-	| "bytes"
+export type GcpColumnFormat = "count" | "decimal" | "cores" | "percent" | "errorRate" | "seconds" | "bytes"
 
 export interface GcpColumn {
 	/** Unique in its tab: also the column's sort key. */
@@ -77,8 +69,6 @@ export function formatGcpValue(format: GcpColumnFormat, value: number | undefine
 			return formatPercent(value)
 		case "errorRate":
 			return formatErrorRate(value)
-		case "ms":
-			return formatLatency(value)
 		case "seconds":
 			return formatLatency(value * 1000)
 		case "bytes":
@@ -92,10 +82,16 @@ const column = (label: string, format: GcpColumnFormat, value: GcpColumn["value"
 	value,
 })
 
-const total = (label: string, format: GcpColumnFormat, metric: string): GcpColumn => ({
+/** A counter's sum, of one label value when given. */
+const total = (
+	label: string,
+	format: GcpColumnFormat,
+	metric: string,
+	attributeValue?: string,
+): GcpColumn => ({
 	label,
 	format,
-	value: (read) => read.total(metric),
+	value: (read) => read.total(metric, attributeValue),
 	total: true,
 })
 
@@ -128,91 +124,82 @@ const errorRate = (label: string, metric: string, failed: Read): GcpColumn => ({
 	events: (read) => read.total(metric),
 })
 
-const RUN = "gcp.run"
-const FUNCTION = "gcp.cloudfunctions.function"
-const CONTAINER = "gcp.kubernetes.container"
-const INSTANCE = "gcp.compute.instance"
-const DATABASE = "gcp.cloudsql.database"
+const RUN = "gcp.cloud_run"
+const FUNCTION = "gcp.cloud_functions"
+const CONTAINER = "gcp.gke.container"
+const INSTANCE = "gcp.gce"
+const DATABASE = "gcp.cloud_sql"
 const SUBSCRIPTION = "gcp.pubsub.subscription"
-const HTTPS = "gcp.loadbalancing.https"
+const LB = "gcp.load_balancing"
 
 export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColumn>> = {
 	cloudRun: [
-		total("Requests", "count", `${RUN}.request_count`),
-		errorRate("5xx rate", `${RUN}.request_count`, serverErrors(`${RUN}.request_count`)),
-		column("Latency p95", "ms", (m) => m.mean(`${RUN}.request_latencies`, "0.95")),
-		column("Latency p99", "ms", (m) => m.mean(`${RUN}.request_latencies`, "0.99")),
-		column("Instances", "decimal", (m) => m.mean(`${RUN}.container.instance_count`, "active")),
-		column("CPU p95", "percent", (m) => m.mean(`${RUN}.container.cpu.utilizations`, "0.95")),
-		column("Memory p95", "percent", (m) => m.mean(`${RUN}.container.memory.utilizations`, "0.95")),
+		total("Requests", "count", `${RUN}.requests`),
+		errorRate("5xx rate", `${RUN}.requests`, serverErrors(`${RUN}.requests`)),
+		column("Latency p95", "seconds", (m) => m.mean(`${RUN}.request.duration`, "0.95")),
+		column("Latency p99", "seconds", (m) => m.mean(`${RUN}.request.duration`, "0.99")),
+		column("Instances", "decimal", (m) => m.mean(`${RUN}.container.instance.count`, "active")),
+		column("CPU p95", "percent", (m) => m.mean(`${RUN}.container.cpu.utilization`, "0.95")),
+		column("Memory p95", "percent", (m) => m.mean(`${RUN}.container.memory.utilization`, "0.95")),
 	],
 	cloudFunctions: [
-		total("Executions", "count", `${FUNCTION}.execution_count`),
-		errorRate(
-			"Error rate",
-			`${FUNCTION}.execution_count`,
-			unhealthy(`${FUNCTION}.execution_count`, "ok"),
-		),
-		column("Duration p95", "ms", (m) => m.mean(`${FUNCTION}.execution_times`, "0.95")),
-		column("Duration p99", "ms", (m) => m.mean(`${FUNCTION}.execution_times`, "0.99")),
-		column("Instances", "decimal", (m) => m.mean(`${FUNCTION}.instance_count`, "active")),
-		column("Memory p95", "bytes", (m) => m.mean(`${FUNCTION}.user_memory_bytes`, "0.95")),
+		total("Executions", "count", `${FUNCTION}.executions`),
+		errorRate("Error rate", `${FUNCTION}.executions`, unhealthy(`${FUNCTION}.executions`, "ok")),
+		column("Duration p95", "seconds", (m) => m.mean(`${FUNCTION}.execution.duration`, "0.95")),
+		column("Duration p99", "seconds", (m) => m.mean(`${FUNCTION}.execution.duration`, "0.99")),
+		column("Instances", "decimal", (m) => m.mean(`${FUNCTION}.instance.count`, "active")),
+		column("Memory p95", "bytes", (m) => m.mean(`${FUNCTION}.memory.usage`, "0.95")),
 	],
 	gke: [
 		// A point is the CPU seconds used in one minute: the mean covers the minutes it ran.
 		column("CPU cores", "cores", (m) => {
-			const seconds = m.mean(`${CONTAINER}.cpu.core_usage_time`)
+			const seconds = m.mean(`${CONTAINER}.cpu.time`)
 			return seconds === undefined ? undefined : seconds / 60
 		}),
-		column("CPU of limit", "percent", (m) => m.mean(`${CONTAINER}.cpu.limit_utilization`)),
+		column("CPU of limit", "percent", (m) => m.mean(`${CONTAINER}.cpu.limit.utilization`)),
 		// Non-evictable memory is what counts against the limit.
-		column("Memory", "bytes", (m) => m.mean(`${CONTAINER}.memory.used_bytes`, "non-evictable")),
+		column("Memory", "bytes", (m) => m.mean(`${CONTAINER}.memory.usage`, "non-evictable")),
 		column("Mem of limit", "percent", (m) =>
-			m.mean(`${CONTAINER}.memory.limit_utilization`, "non-evictable"),
+			m.mean(`${CONTAINER}.memory.limit.utilization`, "non-evictable"),
 		),
-		total("Restarts", "count", `${CONTAINER}.restart_count`),
+		total("Restarts", "count", `${CONTAINER}.restarts`),
 	],
 	computeEngine: [
 		column("CPU", "percent", (m) => m.mean(`${INSTANCE}.cpu.utilization`)),
 		// E2 machine types only.
-		column("Memory", "bytes", (m) => m.mean(`${INSTANCE}.memory.balloon.ram_used`)),
-		total("Network in", "bytes", `${INSTANCE}.network.received_bytes_count`),
-		total("Network out", "bytes", `${INSTANCE}.network.sent_bytes_count`),
-		total("Disk read", "bytes", `${INSTANCE}.disk.read_bytes_count`),
-		total("Disk write", "bytes", `${INSTANCE}.disk.write_bytes_count`),
+		column("Memory", "bytes", (m) => m.mean(`${INSTANCE}.memory.usage`)),
+		total("Network in", "bytes", `${INSTANCE}.network.io`, "receive"),
+		total("Network out", "bytes", `${INSTANCE}.network.io`, "transmit"),
+		total("Disk read", "bytes", `${INSTANCE}.disk.io`, "read"),
+		total("Disk write", "bytes", `${INSTANCE}.disk.io`, "write"),
 	],
 	cloudSql: [
 		column("CPU", "percent", (m) => m.mean(`${DATABASE}.cpu.utilization`)),
 		column("Memory", "percent", (m) => m.mean(`${DATABASE}.memory.utilization`)),
 		column("Disk", "percent", (m) => m.mean(`${DATABASE}.disk.utilization`)),
-		// MySQL and SQL Server report the first, PostgreSQL the second.
-		column(
-			"Connections",
-			"decimal",
-			(m) => m.mean(`${DATABASE}.network.connections`) ?? m.mean(`${DATABASE}.postgresql.num_backends`),
-		),
-		column("Replica lag", "seconds", (m) => m.mean(`${DATABASE}.replication.replica_lag`)),
+		column("Connections", "decimal", (m) => m.mean(`${DATABASE}.connection.count`)),
+		column("Replica lag", "seconds", (m) => m.mean(`${DATABASE}.replication.lag`)),
 	],
 	pubsub: [
-		column("Backlog", "decimal", (m) => m.mean(`${SUBSCRIPTION}.num_undelivered_messages`)),
-		column("Unacked age", "seconds", (m) => m.mean(`${SUBSCRIPTION}.oldest_unacked_message_age`)),
-		total("Delivered", "count", `${SUBSCRIPTION}.sent_message_count`),
-		total("Acked", "count", `${SUBSCRIPTION}.ack_message_count`),
-		total("Dead-lettered", "count", `${SUBSCRIPTION}.dead_letter_message_count`),
+		column("Backlog", "decimal", (m) => m.mean(`${SUBSCRIPTION}.undelivered_messages`)),
+		column("Unacked age", "seconds", (m) => m.mean(`${SUBSCRIPTION}.oldest_unacked_message.age`)),
+		total("Delivered", "count", `${SUBSCRIPTION}.sent_messages`),
+		total("Acked", "count", `${SUBSCRIPTION}.acked_messages`),
+		total("Dead-lettered", "count", `${SUBSCRIPTION}.dead_lettered_messages`),
 		// Push subscriptions only.
 		errorRate(
 			"Push errors",
-			`${SUBSCRIPTION}.push_request_count`,
-			unhealthy(`${SUBSCRIPTION}.push_request_count`, "ack"),
+			`${SUBSCRIPTION}.push_requests`,
+			unhealthy(`${SUBSCRIPTION}.push_requests`, "ack"),
 		),
 	],
 	loadBalancing: [
-		total("Requests", "count", `${HTTPS}.request_count`),
-		errorRate("5xx rate", `${HTTPS}.request_count`, serverErrors(`${HTTPS}.request_count`)),
-		column("Latency p95", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.95")),
-		column("Latency p99", "ms", (m) => m.mean(`${HTTPS}.total_latencies`, "0.99")),
-		column("Backend p95", "ms", (m) => m.mean(`${HTTPS}.backend_latencies`, "0.95")),
-		total("Bytes sent", "bytes", `${HTTPS}.response_bytes_count`),
+		total("Requests", "count", `${LB}.requests`),
+		errorRate("5xx rate", `${LB}.requests`, serverErrors(`${LB}.requests`)),
+		column("Latency p95", "seconds", (m) => m.mean(`${LB}.request.duration`, "0.95")),
+		column("Latency p99", "seconds", (m) => m.mean(`${LB}.request.duration`, "0.99")),
+		column("Backend p95", "seconds", (m) => m.mean(`${LB}.backend.request.duration`, "0.95")),
+		total("Bytes sent", "bytes", `${LB}.network.io`, "transmit"),
 	],
 } satisfies Record<GcpInfraServiceId, ReadonlyArray<GcpColumn>>
 

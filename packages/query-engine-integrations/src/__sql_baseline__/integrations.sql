@@ -2684,22 +2684,22 @@ SELECT
 SELECT
           [metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['status'], metrics_sum.Attributes['state']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.status'], metrics_sum.Attributes['gcp.metric.labels.state'], metrics_sum.Attributes['network.io.direction']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.cloudfunctions.function.execution_count', 'gcp.cloudfunctions.function.network_egress')
+          AND metrics_sum.MetricName IN ('gcp.cloud_functions.executions', 'gcp.cloud_functions.network.io')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
 UNION ALL
 SELECT
           [metrics_gauge.ResourceAttributes['service.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.region']] AS keys,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['status'], metrics_gauge.Attributes['state']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.status'], metrics_gauge.Attributes['gcp.metric.labels.state'], metrics_gauge.Attributes['network.io.direction']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.cloudfunctions.function.execution_times', 'gcp.cloudfunctions.function.instance_count', 'gcp.cloudfunctions.function.user_memory_bytes')
+          AND metrics_gauge.MetricName IN ('gcp.cloud_functions.execution.duration', 'gcp.cloud_functions.instance.count', 'gcp.cloud_functions.memory.usage')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
 ) AS points
@@ -2719,22 +2719,22 @@ SELECT
 SELECT
           [metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['response_code_class'], metrics_sum.Attributes['state']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_code_class'], metrics_sum.Attributes['gcp.metric.labels.state']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.run.request_count', 'gcp.run.container.billable_instance_time')
+          AND metrics_sum.MetricName IN ('gcp.cloud_run.requests', 'gcp.cloud_run.container.billable_time')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
 UNION ALL
 SELECT
           [metrics_gauge.ResourceAttributes['service.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.region']] AS keys,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_code_class'], metrics_gauge.Attributes['state']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_code_class'], metrics_gauge.Attributes['gcp.metric.labels.state']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.run.request_latencies', 'gcp.run.container.instance_count', 'gcp.run.container.cpu.utilizations', 'gcp.run.container.memory.utilizations', 'gcp.run.container.max_request_concurrencies')
+          AND metrics_gauge.MetricName IN ('gcp.cloud_run.request.duration', 'gcp.cloud_run.container.instance.count', 'gcp.cloud_run.container.cpu.utilization', 'gcp.cloud_run.container.memory.utilization', 'gcp.cloud_run.container.request.max_concurrency')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
 ) AS points
@@ -2754,22 +2754,22 @@ SELECT
 SELECT
           [metrics_sum.ResourceAttributes['gcp.resource.labels.database_id'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['disk.io.direction']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.cloudsql.database.disk.read_ops_count', 'gcp.cloudsql.database.disk.write_ops_count')
+          AND metrics_sum.MetricName IN ('gcp.cloud_sql.disk.operations')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
 UNION ALL
 SELECT
           [metrics_gauge.ResourceAttributes['gcp.resource.labels.database_id'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.region']] AS keys,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['disk.io.direction']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.cloudsql.database.cpu.utilization', 'gcp.cloudsql.database.memory.utilization', 'gcp.cloudsql.database.disk.utilization', 'gcp.cloudsql.database.network.connections', 'gcp.cloudsql.database.postgresql.num_backends', 'gcp.cloudsql.database.replication.replica_lag')
+          AND metrics_gauge.MetricName IN ('gcp.cloud_sql.cpu.utilization', 'gcp.cloud_sql.memory.utilization', 'gcp.cloud_sql.disk.utilization', 'gcp.cloud_sql.connection.count', 'gcp.cloud_sql.replication.lag')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
 ) AS points
@@ -2789,22 +2789,22 @@ SELECT
 SELECT
           [metrics_sum.ResourceAttributes['host.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.availability_zone']] AS keys,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['instance_name']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['network.io.direction'], metrics_sum.Attributes['disk.io.direction']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.compute.instance.network.received_bytes_count', 'gcp.compute.instance.network.sent_bytes_count', 'gcp.compute.instance.disk.read_bytes_count', 'gcp.compute.instance.disk.write_bytes_count')
+          AND metrics_sum.MetricName IN ('gcp.gce.network.io', 'gcp.gce.disk.io')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
 UNION ALL
 SELECT
           [metrics_gauge.ResourceAttributes['host.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.availability_zone']] AS keys,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['instance_name']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['network.io.direction'], metrics_gauge.Attributes['disk.io.direction']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.compute.instance.cpu.utilization', 'gcp.compute.instance.memory.balloon.ram_used')
+          AND metrics_gauge.MetricName IN ('gcp.gce.cpu.utilization', 'gcp.gce.memory.usage')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
 ) AS points
@@ -2824,22 +2824,22 @@ SELECT
 SELECT
           [metrics_sum.ResourceAttributes['k8s.container.name'], metrics_sum.ResourceAttributes['k8s.namespace.name'], metrics_sum.ResourceAttributes['k8s.cluster.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['gcp.resource.labels.location']] AS keys,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['memory_type']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.memory_type']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.kubernetes.container.cpu.core_usage_time', 'gcp.kubernetes.container.restart_count')
+          AND metrics_sum.MetricName IN ('gcp.gke.container.cpu.time', 'gcp.gke.container.restarts')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
 UNION ALL
 SELECT
           [metrics_gauge.ResourceAttributes['k8s.container.name'], metrics_gauge.ResourceAttributes['k8s.namespace.name'], metrics_gauge.ResourceAttributes['k8s.cluster.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['gcp.resource.labels.location']] AS keys,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['memory_type']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.memory_type']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.kubernetes.container.cpu.limit_utilization', 'gcp.kubernetes.container.memory.used_bytes', 'gcp.kubernetes.container.memory.limit_utilization')
+          AND metrics_gauge.MetricName IN ('gcp.gke.container.cpu.limit.utilization', 'gcp.gke.container.memory.usage', 'gcp.gke.container.memory.limit.utilization')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
 ) AS points
@@ -2859,22 +2859,22 @@ SELECT
 SELECT
           [metrics_sum.ResourceAttributes['gcp.resource.labels.url_map_name'], metrics_sum.ResourceAttributes['gcp.resource.labels.backend_target_name'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['response_code_class']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_code_class'], metrics_sum.Attributes['network.io.direction']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.loadbalancing.https.request_count', 'gcp.loadbalancing.https.backend_request_count', 'gcp.loadbalancing.https.request_bytes_count', 'gcp.loadbalancing.https.response_bytes_count')
+          AND metrics_sum.MetricName IN ('gcp.load_balancing.requests', 'gcp.load_balancing.backend.requests', 'gcp.load_balancing.network.io')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
 UNION ALL
 SELECT
           [metrics_gauge.ResourceAttributes['gcp.resource.labels.url_map_name'], metrics_gauge.ResourceAttributes['gcp.resource.labels.backend_target_name'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_code_class']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_code_class'], metrics_gauge.Attributes['network.io.direction']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.loadbalancing.https.total_latencies', 'gcp.loadbalancing.https.backend_latencies')
+          AND metrics_gauge.MetricName IN ('gcp.load_balancing.request.duration', 'gcp.load_balancing.backend.request.duration')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
 ) AS points
@@ -2894,22 +2894,22 @@ SELECT
 SELECT
           [metrics_sum.ResourceAttributes['gcp.resource.labels.subscription_id'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['response_class']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_class']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.pubsub.subscription.sent_message_count', 'gcp.pubsub.subscription.ack_message_count', 'gcp.pubsub.subscription.push_request_count', 'gcp.pubsub.subscription.dead_letter_message_count')
+          AND metrics_sum.MetricName IN ('gcp.pubsub.subscription.sent_messages', 'gcp.pubsub.subscription.acked_messages', 'gcp.pubsub.subscription.push_requests', 'gcp.pubsub.subscription.dead_lettered_messages')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
 UNION ALL
 SELECT
           [metrics_gauge.ResourceAttributes['gcp.resource.labels.subscription_id'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_class']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_class']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.pubsub.subscription.num_undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message_age')
+          AND metrics_gauge.MetricName IN ('gcp.pubsub.subscription.undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message.age')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
 ) AS points
@@ -2923,7 +2923,7 @@ SELECT
           metric_catalog.MetricName AS metric
         FROM metric_catalog
         WHERE metric_catalog.OrgId = 'org_sql_catalog'
-          AND metric_catalog.MetricName IN ('gcp.run.request_count', 'gcp.run.request_latencies', 'gcp.run.container.instance_count', 'gcp.run.container.cpu.utilizations', 'gcp.run.container.memory.utilizations', 'gcp.run.container.max_request_concurrencies', 'gcp.run.container.billable_instance_time', 'gcp.cloudfunctions.function.execution_count', 'gcp.cloudfunctions.function.execution_times', 'gcp.cloudfunctions.function.instance_count', 'gcp.cloudfunctions.function.user_memory_bytes', 'gcp.cloudfunctions.function.network_egress', 'gcp.kubernetes.container.cpu.core_usage_time', 'gcp.kubernetes.container.cpu.limit_utilization', 'gcp.kubernetes.container.memory.used_bytes', 'gcp.kubernetes.container.memory.limit_utilization', 'gcp.kubernetes.container.restart_count', 'gcp.compute.instance.cpu.utilization', 'gcp.compute.instance.memory.balloon.ram_used', 'gcp.compute.instance.network.received_bytes_count', 'gcp.compute.instance.network.sent_bytes_count', 'gcp.compute.instance.disk.read_bytes_count', 'gcp.compute.instance.disk.write_bytes_count', 'gcp.cloudsql.database.cpu.utilization', 'gcp.cloudsql.database.memory.utilization', 'gcp.cloudsql.database.disk.utilization', 'gcp.cloudsql.database.network.connections', 'gcp.cloudsql.database.postgresql.num_backends', 'gcp.cloudsql.database.disk.read_ops_count', 'gcp.cloudsql.database.disk.write_ops_count', 'gcp.cloudsql.database.replication.replica_lag', 'gcp.pubsub.subscription.num_undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message_age', 'gcp.pubsub.subscription.sent_message_count', 'gcp.pubsub.subscription.ack_message_count', 'gcp.pubsub.subscription.push_request_count', 'gcp.pubsub.subscription.dead_letter_message_count', 'gcp.loadbalancing.https.request_count', 'gcp.loadbalancing.https.total_latencies', 'gcp.loadbalancing.https.backend_latencies', 'gcp.loadbalancing.https.backend_request_count', 'gcp.loadbalancing.https.request_bytes_count', 'gcp.loadbalancing.https.response_bytes_count')
+          AND metric_catalog.MetricName IN ('gcp.cloud_run.requests', 'gcp.cloud_run.request.duration', 'gcp.cloud_run.container.instance.count', 'gcp.cloud_run.container.cpu.utilization', 'gcp.cloud_run.container.memory.utilization', 'gcp.cloud_run.container.request.max_concurrency', 'gcp.cloud_run.container.billable_time', 'gcp.cloud_functions.executions', 'gcp.cloud_functions.execution.duration', 'gcp.cloud_functions.instance.count', 'gcp.cloud_functions.memory.usage', 'gcp.cloud_functions.network.io', 'gcp.gke.container.cpu.time', 'gcp.gke.container.cpu.limit.utilization', 'gcp.gke.container.memory.usage', 'gcp.gke.container.memory.limit.utilization', 'gcp.gke.container.restarts', 'gcp.gce.cpu.utilization', 'gcp.gce.memory.usage', 'gcp.gce.network.io', 'gcp.gce.disk.io', 'gcp.cloud_sql.cpu.utilization', 'gcp.cloud_sql.memory.utilization', 'gcp.cloud_sql.disk.utilization', 'gcp.cloud_sql.connection.count', 'gcp.cloud_sql.disk.operations', 'gcp.cloud_sql.replication.lag', 'gcp.pubsub.subscription.undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message.age', 'gcp.pubsub.subscription.sent_messages', 'gcp.pubsub.subscription.acked_messages', 'gcp.pubsub.subscription.push_requests', 'gcp.pubsub.subscription.dead_lettered_messages', 'gcp.load_balancing.requests', 'gcp.load_balancing.request.duration', 'gcp.load_balancing.backend.request.duration', 'gcp.load_balancing.backend.requests', 'gcp.load_balancing.network.io')
           AND metric_catalog.Hour >= toStartOfInterval(toDateTime('2026-01-01 10:30:00'), INTERVAL 3600 SECOND)
           AND metric_catalog.Hour <= '2026-01-03 14:15:00'
         GROUP BY metric
@@ -2940,11 +2940,11 @@ SELECT
 SELECT
           metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['status'], metrics_sum.Attributes['state']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.status'], metrics_sum.Attributes['gcp.metric.labels.state'], metrics_sum.Attributes['network.io.direction']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.cloudfunctions.function.execution_count', 'gcp.cloudfunctions.function.network_egress')
+          AND metrics_sum.MetricName IN ('gcp.cloud_functions.executions', 'gcp.cloud_functions.network.io')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ServiceName = 'function'
@@ -2955,11 +2955,11 @@ UNION ALL
 SELECT
           metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['status'], metrics_gauge.Attributes['state']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.status'], metrics_gauge.Attributes['gcp.metric.labels.state'], metrics_gauge.Attributes['network.io.direction']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.cloudfunctions.function.execution_times', 'gcp.cloudfunctions.function.instance_count', 'gcp.cloudfunctions.function.user_memory_bytes')
+          AND metrics_gauge.MetricName IN ('gcp.cloud_functions.execution.duration', 'gcp.cloud_functions.instance.count', 'gcp.cloud_functions.memory.usage')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.ServiceName = 'function'
@@ -2983,11 +2983,11 @@ SELECT
 SELECT
           metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['response_code_class'], metrics_sum.Attributes['state']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_code_class'], metrics_sum.Attributes['gcp.metric.labels.state']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.run.request_count', 'gcp.run.container.billable_instance_time')
+          AND metrics_sum.MetricName IN ('gcp.cloud_run.requests', 'gcp.cloud_run.container.billable_time')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ServiceName = 'service'
@@ -2998,11 +2998,11 @@ UNION ALL
 SELECT
           metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_code_class'], metrics_gauge.Attributes['state']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_code_class'], metrics_gauge.Attributes['gcp.metric.labels.state']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.run.request_latencies', 'gcp.run.container.instance_count', 'gcp.run.container.cpu.utilizations', 'gcp.run.container.memory.utilizations', 'gcp.run.container.max_request_concurrencies')
+          AND metrics_gauge.MetricName IN ('gcp.cloud_run.request.duration', 'gcp.cloud_run.container.instance.count', 'gcp.cloud_run.container.cpu.utilization', 'gcp.cloud_run.container.memory.utilization', 'gcp.cloud_run.container.request.max_concurrency')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.ServiceName = 'service'
@@ -3026,11 +3026,11 @@ SELECT
 SELECT
           metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['disk.io.direction']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.cloudsql.database.disk.read_ops_count', 'gcp.cloudsql.database.disk.write_ops_count')
+          AND metrics_sum.MetricName IN ('gcp.cloud_sql.disk.operations')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ServiceName = 'gcp/cloudsql_database'
@@ -3041,11 +3041,11 @@ UNION ALL
 SELECT
           metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['disk.io.direction']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.cloudsql.database.cpu.utilization', 'gcp.cloudsql.database.memory.utilization', 'gcp.cloudsql.database.disk.utilization', 'gcp.cloudsql.database.network.connections', 'gcp.cloudsql.database.postgresql.num_backends', 'gcp.cloudsql.database.replication.replica_lag')
+          AND metrics_gauge.MetricName IN ('gcp.cloud_sql.cpu.utilization', 'gcp.cloud_sql.memory.utilization', 'gcp.cloud_sql.disk.utilization', 'gcp.cloud_sql.connection.count', 'gcp.cloud_sql.replication.lag')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.ServiceName = 'gcp/cloudsql_database'
@@ -3069,11 +3069,11 @@ SELECT
 SELECT
           metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['instance_name']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['network.io.direction'], metrics_sum.Attributes['disk.io.direction']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.compute.instance.network.received_bytes_count', 'gcp.compute.instance.network.sent_bytes_count', 'gcp.compute.instance.disk.read_bytes_count', 'gcp.compute.instance.disk.write_bytes_count')
+          AND metrics_sum.MetricName IN ('gcp.gce.network.io', 'gcp.gce.disk.io')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ServiceName = 'instance'
@@ -3084,11 +3084,11 @@ UNION ALL
 SELECT
           metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['instance_name']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['network.io.direction'], metrics_gauge.Attributes['disk.io.direction']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.compute.instance.cpu.utilization', 'gcp.compute.instance.memory.balloon.ram_used')
+          AND metrics_gauge.MetricName IN ('gcp.gce.cpu.utilization', 'gcp.gce.memory.usage')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.ServiceName = 'instance'
@@ -3112,11 +3112,11 @@ SELECT
 SELECT
           metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['memory_type']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.memory_type']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.kubernetes.container.cpu.core_usage_time', 'gcp.kubernetes.container.restart_count')
+          AND metrics_sum.MetricName IN ('gcp.gke.container.cpu.time', 'gcp.gke.container.restarts')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ServiceName = 'container'
@@ -3129,11 +3129,11 @@ UNION ALL
 SELECT
           metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['memory_type']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.memory_type']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.kubernetes.container.cpu.limit_utilization', 'gcp.kubernetes.container.memory.used_bytes', 'gcp.kubernetes.container.memory.limit_utilization')
+          AND metrics_gauge.MetricName IN ('gcp.gke.container.cpu.limit.utilization', 'gcp.gke.container.memory.usage', 'gcp.gke.container.memory.limit.utilization')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.ServiceName = 'container'
@@ -3159,7 +3159,7 @@ SELECT
 SELECT
           metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['memory_type']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.memory_type']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
@@ -3174,11 +3174,11 @@ UNION ALL
 SELECT
           metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['memory_type']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.memory_type']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.kubernetes.node.cpu.allocatable_utilization', 'gcp.kubernetes.node.memory.allocatable_utilization')
+          AND metrics_gauge.MetricName IN ('gcp.gke.node.cpu.allocatable.utilization', 'gcp.gke.node.memory.allocatable.utilization')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.ServiceName = 'gcp/k8s_node'
@@ -3202,11 +3202,11 @@ SELECT
 SELECT
           metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['response_code_class']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_code_class'], metrics_sum.Attributes['network.io.direction']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.loadbalancing.https.request_count', 'gcp.loadbalancing.https.backend_request_count', 'gcp.loadbalancing.https.request_bytes_count', 'gcp.loadbalancing.https.response_bytes_count')
+          AND metrics_sum.MetricName IN ('gcp.load_balancing.requests', 'gcp.load_balancing.backend.requests', 'gcp.load_balancing.network.io')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ServiceName = 'gcp/https_lb_rule'
@@ -3217,11 +3217,11 @@ UNION ALL
 SELECT
           metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_code_class']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_code_class'], metrics_gauge.Attributes['network.io.direction']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.loadbalancing.https.total_latencies', 'gcp.loadbalancing.https.backend_latencies')
+          AND metrics_gauge.MetricName IN ('gcp.load_balancing.request.duration', 'gcp.load_balancing.backend.request.duration')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.ServiceName = 'gcp/https_lb_rule'
@@ -3245,11 +3245,11 @@ SELECT
 SELECT
           metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['response_class']], '') AS label,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_class']], '') AS label,
           metrics_sum.Value AS value
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.MetricName IN ('gcp.pubsub.subscription.sent_message_count', 'gcp.pubsub.subscription.ack_message_count', 'gcp.pubsub.subscription.push_request_count', 'gcp.pubsub.subscription.dead_letter_message_count')
+          AND metrics_sum.MetricName IN ('gcp.pubsub.subscription.sent_messages', 'gcp.pubsub.subscription.acked_messages', 'gcp.pubsub.subscription.push_requests', 'gcp.pubsub.subscription.dead_lettered_messages')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ServiceName = 'gcp/pubsub_subscription'
@@ -3259,11 +3259,11 @@ UNION ALL
 SELECT
           metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['response_class']], '') AS label,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_class']], '') AS label,
           metrics_gauge.Value AS value
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('gcp.pubsub.subscription.num_undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message_age')
+          AND metrics_gauge.MetricName IN ('gcp.pubsub.subscription.undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message.age')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.ServiceName = 'gcp/pubsub_subscription'
