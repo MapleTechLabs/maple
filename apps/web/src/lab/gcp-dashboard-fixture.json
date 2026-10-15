@@ -36,7 +36,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.run.request_count",
+						"metricName": "gcp.cloud_run.requests",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -79,7 +79,7 @@
 						"id": "run-errors",
 						"name": "5xx Responses by Service",
 						"enabled": true,
-						"whereClause": "attr.response_code_class = \"5xx\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"whereClause": "attr.gcp.metric.labels.response_code_class = \"5xx\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
 						"aggregation": "sum",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -97,7 +97,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.run.request_count",
+						"metricName": "gcp.cloud_run.requests",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -158,7 +158,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.run.request_latencies",
+						"metricName": "gcp.cloud_run.request.duration",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -179,7 +179,7 @@
 				},
 				"stacked": false,
 				"curveType": "monotone",
-				"unit": "duration_ms"
+				"unit": "duration_s"
 			},
 			"layout": {
 				"x": 0,
@@ -201,7 +201,7 @@
 						"id": "run-instances",
 						"name": "Active Instances by Service",
 						"enabled": true,
-						"whereClause": "attr.state = \"active\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"whereClause": "attr.gcp.metric.labels.state = \"active\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
 						"aggregation": "avg",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -219,7 +219,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.run.container.instance_count",
+						"metricName": "gcp.cloud_run.container.instance.count",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -280,7 +280,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.run.container.cpu.utilizations",
+						"metricName": "gcp.cloud_run.container.cpu.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -341,7 +341,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.run.container.memory.utilizations",
+						"metricName": "gcp.cloud_run.container.memory.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -402,7 +402,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudfunctions.function.execution_count",
+						"metricName": "gcp.cloud_functions.executions",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -463,7 +463,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudfunctions.function.execution_times",
+						"metricName": "gcp.cloud_functions.execution.duration",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -484,7 +484,7 @@
 				},
 				"stacked": false,
 				"curveType": "monotone",
-				"unit": "duration_ms"
+				"unit": "duration_s"
 			},
 			"layout": {
 				"x": 6,
@@ -506,7 +506,7 @@
 						"id": "functions-instances",
 						"name": "Active Instances by Function",
 						"enabled": true,
-						"whereClause": "attr.state = \"active\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"whereClause": "attr.gcp.metric.labels.state = \"active\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
 						"aggregation": "avg",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -524,7 +524,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudfunctions.function.instance_count",
+						"metricName": "gcp.cloud_functions.instance.count",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -585,7 +585,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudfunctions.function.user_memory_bytes",
+						"metricName": "gcp.cloud_functions.memory.usage",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -646,7 +646,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.kubernetes.container.cpu.limit_utilization",
+						"metricName": "gcp.gke.container.cpu.limit.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -689,7 +689,7 @@
 						"id": "gke-memory",
 						"name": "Memory Limit Utilization by Container",
 						"enabled": true,
-						"whereClause": "attr.memory_type = \"non-evictable\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"whereClause": "attr.gcp.metric.labels.memory_type = \"non-evictable\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
 						"aggregation": "avg",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -707,7 +707,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.kubernetes.container.memory.limit_utilization",
+						"metricName": "gcp.gke.container.memory.limit.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -768,7 +768,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.kubernetes.container.restart_count",
+						"metricName": "gcp.gke.container.restarts",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -811,7 +811,7 @@
 						"id": "gke-memory-used",
 						"name": "Memory in Use by Container",
 						"enabled": true,
-						"whereClause": "attr.memory_type = \"non-evictable\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"whereClause": "attr.gcp.metric.labels.memory_type = \"non-evictable\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
 						"aggregation": "avg",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -829,7 +829,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.kubernetes.container.memory.used_bytes",
+						"metricName": "gcp.gke.container.memory.usage",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -890,7 +890,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.kubernetes.node.cpu.allocatable_utilization",
+						"metricName": "gcp.gke.node.cpu.allocatable.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -933,7 +933,7 @@
 						"id": "gke-node-memory",
 						"name": "Node Memory Utilization by Cluster",
 						"enabled": true,
-						"whereClause": "attr.memory_type = \"non-evictable\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
+						"whereClause": "attr.gcp.metric.labels.memory_type = \"non-evictable\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
 						"aggregation": "avg",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -951,7 +951,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.kubernetes.node.memory.allocatable_utilization",
+						"metricName": "gcp.gke.node.memory.allocatable.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1012,7 +1012,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.compute.instance.cpu.utilization",
+						"metricName": "gcp.gce.cpu.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1073,7 +1073,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.compute.instance.memory.balloon.ram_used",
+						"metricName": "gcp.gce.memory.usage",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1116,7 +1116,7 @@
 						"id": "compute-network-received",
 						"name": "Network Bytes Received by Instance",
 						"enabled": true,
-						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"whereClause": "attr.network.io.direction = \"receive\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
 						"aggregation": "sum",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -1134,7 +1134,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.compute.instance.network.received_bytes_count",
+						"metricName": "gcp.gce.network.io",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -1177,7 +1177,7 @@
 						"id": "compute-network-sent",
 						"name": "Network Bytes Sent by Instance",
 						"enabled": true,
-						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"whereClause": "attr.network.io.direction = \"transmit\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
 						"aggregation": "sum",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -1195,7 +1195,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.compute.instance.network.sent_bytes_count",
+						"metricName": "gcp.gce.network.io",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -1238,7 +1238,7 @@
 						"id": "compute-disk-read",
 						"name": "Disk Bytes Read by Instance",
 						"enabled": true,
-						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"whereClause": "attr.disk.io.direction = \"read\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
 						"aggregation": "sum",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -1256,7 +1256,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.compute.instance.disk.read_bytes_count",
+						"metricName": "gcp.gce.disk.io",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -1299,7 +1299,7 @@
 						"id": "compute-disk-write",
 						"name": "Disk Bytes Written by Instance",
 						"enabled": true,
-						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"whereClause": "attr.disk.io.direction = \"write\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
 						"aggregation": "sum",
 						"stepInterval": "",
 						"orderByDirection": "desc",
@@ -1317,7 +1317,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.compute.instance.disk.write_bytes_count",
+						"metricName": "gcp.gce.disk.io",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -1378,7 +1378,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudsql.database.cpu.utilization",
+						"metricName": "gcp.cloud_sql.cpu.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1439,7 +1439,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudsql.database.memory.utilization",
+						"metricName": "gcp.cloud_sql.memory.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1480,7 +1480,7 @@
 				"queries": [
 					{
 						"id": "sql-connections",
-						"name": "Connections (MySQL, SQL Server)",
+						"name": "Connections by Instance",
 						"enabled": true,
 						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
 						"aggregation": "avg",
@@ -1500,7 +1500,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudsql.database.network.connections",
+						"metricName": "gcp.cloud_sql.connection.count",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1512,7 +1512,7 @@
 				}
 			},
 			"display": {
-				"title": "Connections (MySQL, SQL Server)",
+				"title": "Connections by Instance",
 				"chartId": "query-builder-line",
 				"chartPresentation": {
 					"legend": "visible",
@@ -1533,18 +1533,18 @@
 			"tabId": "cloud-sql"
 		},
 		{
-			"id": "sql-connections-postgres",
+			"id": "sql-disk-operations",
 			"visualization": "chart",
 			"dataSource": {
 				"kind": "query",
 				"resultShape": "timeseries",
 				"queries": [
 					{
-						"id": "sql-connections-postgres",
-						"name": "Connections (PostgreSQL)",
+						"id": "sql-disk-operations",
+						"name": "Disk Operations by Instance",
 						"enabled": true,
 						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
-						"aggregation": "avg",
+						"aggregation": "sum",
 						"stepInterval": "",
 						"orderByDirection": "desc",
 						"addOns": {
@@ -1561,8 +1561,8 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudsql.database.postgresql.num_backends",
-						"metricType": "gauge",
+						"metricName": "gcp.cloud_sql.disk.operations",
+						"metricType": "sum",
 						"isMonotonic": false
 					}
 				],
@@ -1573,14 +1573,14 @@
 				}
 			},
 			"display": {
-				"title": "Connections (PostgreSQL)",
-				"chartId": "query-builder-line",
+				"title": "Disk Operations by Instance",
+				"chartId": "query-builder-area",
 				"chartPresentation": {
 					"legend": "visible",
-					"seriesStats": true,
+					"seriesStats": false,
 					"showPoints": false
 				},
-				"stacked": false,
+				"stacked": true,
 				"curveType": "monotone",
 				"unit": "number"
 			},
@@ -1622,7 +1622,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudsql.database.disk.utilization",
+						"metricName": "gcp.cloud_sql.disk.utilization",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1683,7 +1683,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.cloudsql.database.replication.replica_lag",
+						"metricName": "gcp.cloud_sql.replication.lag",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1744,7 +1744,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.pubsub.subscription.num_undelivered_messages",
+						"metricName": "gcp.pubsub.subscription.undelivered_messages",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1805,7 +1805,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.pubsub.subscription.oldest_unacked_message_age",
+						"metricName": "gcp.pubsub.subscription.oldest_unacked_message.age",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -1866,7 +1866,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.pubsub.subscription.sent_message_count",
+						"metricName": "gcp.pubsub.subscription.sent_messages",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -1927,7 +1927,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.pubsub.subscription.ack_message_count",
+						"metricName": "gcp.pubsub.subscription.acked_messages",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -1988,7 +1988,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.pubsub.subscription.dead_letter_message_count",
+						"metricName": "gcp.pubsub.subscription.dead_lettered_messages",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -2049,7 +2049,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.pubsub.topic.send_request_count",
+						"metricName": "gcp.pubsub.topic.publish_requests",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -2110,7 +2110,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.loadbalancing.https.request_count",
+						"metricName": "gcp.load_balancing.requests",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -2164,14 +2164,14 @@
 							"limit": false,
 							"legend": false
 						},
-						"groupBy": ["attr.response_code_class"],
+						"groupBy": ["attr.gcp.metric.labels.response_code_class"],
 						"having": "",
 						"orderBy": "",
 						"limit": "",
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.loadbalancing.https.request_count",
+						"metricName": "gcp.load_balancing.requests",
 						"metricType": "sum",
 						"isMonotonic": false
 					}
@@ -2232,7 +2232,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.loadbalancing.https.total_latencies",
+						"metricName": "gcp.load_balancing.request.duration",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -2253,7 +2253,7 @@
 				},
 				"stacked": false,
 				"curveType": "monotone",
-				"unit": "duration_ms"
+				"unit": "duration_s"
 			},
 			"layout": {
 				"x": 0,
@@ -2293,7 +2293,7 @@
 						"legend": "",
 						"dataSource": "metrics",
 						"signalSource": "default",
-						"metricName": "gcp.loadbalancing.https.backend_latencies",
+						"metricName": "gcp.load_balancing.backend.request.duration",
 						"metricType": "gauge",
 						"isMonotonic": false
 					}
@@ -2314,7 +2314,7 @@
 				},
 				"stacked": false,
 				"curveType": "monotone",
-				"unit": "duration_ms"
+				"unit": "duration_s"
 			},
 			"layout": {
 				"x": 6,
@@ -2373,14 +2373,14 @@
 				"kind": "metric",
 				"metricType": "gauge",
 				"metricNames": [
-					"gcp.run.request_latencies",
-					"gcp.cloudfunctions.function.execution_times",
-					"gcp.kubernetes.container.cpu.limit_utilization",
-					"gcp.kubernetes.node.cpu.allocatable_utilization",
-					"gcp.compute.instance.cpu.utilization",
-					"gcp.cloudsql.database.cpu.utilization",
-					"gcp.pubsub.subscription.num_undelivered_messages",
-					"gcp.loadbalancing.https.total_latencies"
+					"gcp.cloud_run.request.duration",
+					"gcp.cloud_functions.execution.duration",
+					"gcp.gke.container.cpu.limit.utilization",
+					"gcp.gke.node.cpu.allocatable.utilization",
+					"gcp.gce.cpu.utilization",
+					"gcp.cloud_sql.cpu.utilization",
+					"gcp.pubsub.subscription.undelivered_messages",
+					"gcp.load_balancing.request.duration"
 				],
 				"scope": "resource",
 				"attributeKey": "cloud.account.id"
@@ -2395,12 +2395,12 @@
 				"kind": "metric",
 				"metricType": "gauge",
 				"metricNames": [
-					"gcp.run.request_latencies",
-					"gcp.cloudfunctions.function.execution_times",
-					"gcp.kubernetes.container.cpu.limit_utilization",
-					"gcp.kubernetes.node.cpu.allocatable_utilization",
-					"gcp.compute.instance.cpu.utilization",
-					"gcp.cloudsql.database.cpu.utilization"
+					"gcp.cloud_run.request.duration",
+					"gcp.cloud_functions.execution.duration",
+					"gcp.gke.container.cpu.limit.utilization",
+					"gcp.gke.node.cpu.allocatable.utilization",
+					"gcp.gce.cpu.utilization",
+					"gcp.cloud_sql.cpu.utilization"
 				],
 				"scope": "resource",
 				"attributeKey": "cloud.region"
@@ -2415,10 +2415,10 @@
 				"kind": "metric",
 				"metricType": "gauge",
 				"metricNames": [
-					"gcp.run.request_latencies",
-					"gcp.cloudfunctions.function.execution_times",
-					"gcp.kubernetes.container.cpu.limit_utilization",
-					"gcp.compute.instance.cpu.utilization"
+					"gcp.cloud_run.request.duration",
+					"gcp.cloud_functions.execution.duration",
+					"gcp.gke.container.cpu.limit.utilization",
+					"gcp.gce.cpu.utilization"
 				],
 				"scope": "resource",
 				"attributeKey": "service.name"

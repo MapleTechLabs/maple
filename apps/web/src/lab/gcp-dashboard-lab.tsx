@@ -80,7 +80,7 @@ const GROUPS = new Map<string, ReadonlyArray<Resource>>(
 			global("storefront-lb", "acme-prod"),
 			global("api-lb", "acme-prod"),
 		],
-		"attr.response_code_class": [
+		"attr.gcp.metric.labels.response_code_class": [
 			global("2xx", "acme-prod"),
 			global("4xx", "acme-prod"),
 			global("5xx", "acme-prod"),
@@ -110,8 +110,7 @@ const ATTRIBUTE = new Map<string, (resource: Resource) => string | undefined>([
 const RANGES = new Map<string, readonly [number, number]>([
 	["percent", [0.15, 0.85]],
 	["bytes", [2e7, 6e8]],
-	["duration_ms", [40, 900]],
-	["duration_s", [2, 180]],
+	["duration_s", [0.05, 2]],
 ])
 
 const BUCKETS = Array.from({ length: 48 }, (_, i) => new Date(Date.UTC(2026, 9, 14, 0, i * 30)).toISOString())
