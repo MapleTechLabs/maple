@@ -54,6 +54,27 @@ const setupKind = (
 ): "setup-pending" | "setup-running" =>
 	applied === null && ageMs(reportedAt, nowMs) < RUNNING_MS ? "setup-running" : "setup-pending"
 
+/**
+ * The read-only service account that live queries and key metrics read as. A run that reported
+ * without it (`missing`) set log forwarding up and could not set the account up: the run says why,
+ * and log forwarding does not wait on it. Null when it is in place.
+ */
+const readerState = (
+	connector: Pick<
+		V2GcpConnector,
+		"applied_metrics_enabled" | "last_metrics_received_at" | "setup_reported_at"
+	>,
+	nowMs: number,
+): "setup-pending" | "setup-running" | "missing" | null => {
+	const applied = connector.applied_metrics_enabled
+	if (!needsSetup(applied, ageMs(connector.last_metrics_received_at, nowMs))) return null
+	return applied === null &&
+		connector.setup_reported_at !== null &&
+		ageMs(connector.setup_reported_at, nowMs) >= RUNNING_MS
+		? "missing"
+		: setupKind(applied, connector.setup_reported_at, nowMs)
+}
+
 type GcpLogState =
 	/** `stillSetUp`: the sink still forwards, because the script has not run since the switch. */
 	| { readonly kind: "off"; readonly stillSetUp: boolean }
@@ -128,10 +149,10 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 	const error = connector.last_metrics_error
 	const age = ageMs(lastMetricsReceivedAt, nowMs)
 	// Before the script has run the poller says it can't sign in. That is the expected start.
+	// After a run without the account, the poller's error says what to do.
 	const reportedAt = connector.setup_reported_at
-	if (needsSetup(connector.applied_metrics_enabled, age)) {
-		return { kind: setupKind(connector.applied_metrics_enabled, reportedAt, nowMs) }
-	}
+	const reader = readerState(connector, nowMs)
+	if (reader === "setup-pending" || reader === "setup-running") return { kind: reader }
 	const reportedAge = ageMs(reportedAt, nowMs)
 	const waiting = { kind: "waiting", reportedAt, overdue: reportedAge > OVERDUE_READ_MS } as const
 	// A run just reported: what the poller said before its grant works counts for nothing yet.
@@ -177,19 +198,18 @@ export const GCP_METRICS_STATUS = {
 type ConnectorFields = LogFields & MetricsFields
 
 /**
- * The read-only service account that live queries and key metrics read as. The script sets it up
- * for every connection while this deployment has a Google identity (`metricsAvailable`), whatever
- * the metrics switch says. Null when nothing waits on the script.
+ * The read-only service account, which the script sets up for every connection while this
+ * deployment has a Google identity (`metricsAvailable`), whatever the metrics switch says.
  */
-const gcpAccessState = (
+const gcpAccessState = (connector: ConnectorFields, nowMs: number, metricsAvailable: boolean) =>
+	metricsAvailable ? readerState(connector, nowMs) : null
+
+/** A run set log forwarding up and could not set the read-only account up: no live queries. */
+export const gcpLiveQueriesMissing = (
 	connector: ConnectorFields,
 	nowMs: number,
 	metricsAvailable: boolean,
-): "setup-pending" | "setup-running" | null =>
-	metricsAvailable &&
-	needsSetup(connector.applied_metrics_enabled, ageMs(connector.last_metrics_received_at, nowMs))
-		? setupKind(connector.applied_metrics_enabled, connector.setup_reported_at, nowMs)
-		: null
+): boolean => gcpAccessState(connector, nowMs, metricsAvailable) === "missing"
 
 /**
  * What still waits on a re-run of the setup script, for a connection whose configuration disagrees

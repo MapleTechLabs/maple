@@ -12,6 +12,7 @@ import {
 	gcpDraftEffect,
 	gcpEffectNeedsScript,
 	gcpApplicationLogsLine,
+	gcpLiveQueriesMissing,
 	gcpLogFilterChoice,
 	gcpLogState,
 	gcpMessageParts,
@@ -146,10 +147,16 @@ describe("gcpMetricsState", () => {
 		})
 	})
 
-	it("is setup running for two minutes after a run reported on logs alone", () => {
+	it("is setup running for two minutes after a run reported on logs alone, then says what the poller says", () => {
 		const midRun = { applied_metrics_enabled: null, ...NEVER, last_metrics_error: SIGN_IN }
 		expect(metrics({ ...midRun, setup_reported_at: ago(1) })).toEqual({ kind: "setup-running" })
-		expect(metrics({ ...midRun, setup_reported_at: ago(3) })).toEqual({ kind: "setup-pending" })
+		// The run could not set the read-only account up: no "setup pending" that never ends.
+		expect(metrics({ ...midRun, setup_reported_at: ago(3) })).toMatchObject({ kind: "waiting" })
+		expect(metrics({ ...midRun, setup_reported_at: ago(30) })).toEqual({
+			kind: "failing",
+			error: SIGN_IN,
+			lastMetricsReceivedAt: null,
+		})
 	})
 
 	it("trusts a read from the last 15 minutes over a missing report, not over a report of removal", () => {
@@ -284,7 +291,7 @@ describe("gcpConnectionState", () => {
 		)
 	})
 
-	it("waits between the sections of a first run, and is setup pending if the second never reports", () => {
+	it("waits between the sections of a first run, then says live queries are not set up", () => {
 		const midRun = { applied_metrics_enabled: null, setup_reported_at: ago(0), ...NEVER }
 		expect(state(midRun)).toBe("waiting")
 		expect(gcpSetupRunning(connector(midRun), NOW, true)).toBe(true)
@@ -293,9 +300,19 @@ describe("gcpConnectionState", () => {
 		// With key metrics off, the read-only account is the section still to come.
 		expect(gcpSetupRunning(connector({ ...midRun, metrics_enabled: false }), NOW, true)).toBe(true)
 
-		const stopped = { ...midRun, setup_reported_at: ago(3) }
-		expect(state(stopped)).toBe("setup-pending")
+		expect(gcpLiveQueriesMissing(connector(midRun), NOW, true)).toBe(false)
+
+		// Log forwarding is set up and the read-only account is not: calm, never "setup pending".
+		const stopped = {
+			...midRun,
+			setup_reported_at: ago(3),
+			metrics_enabled: false,
+			last_log_received_at: ago(1),
+		}
+		expect(state(stopped)).toBe("healthy")
 		expect(gcpSetupRunning(connector(stopped), NOW, true)).toBe(false)
+		expect(gcpLiveQueriesMissing(connector(stopped), NOW, true)).toBe(true)
+		expect(gcpLiveQueriesMissing(connector(stopped), NOW, false)).toBe(false)
 	})
 
 	it("waits for data once the script reported", () => {

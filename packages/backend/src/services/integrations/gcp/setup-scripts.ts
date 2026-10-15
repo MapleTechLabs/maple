@@ -149,7 +149,8 @@ stop() {
     printf '%s\\n' "$3" | sed -e "/^- '@type':/,\\$d" -e 's/secret=[^ )&"]*/secret=HIDDEN/g' -e 's/maple_gcp_[A-Za-z0-9_-]*/maple_gcp_HIDDEN/g' -e 's/^/      /'
   fi
   printf '\\n    What to do: %s\\n' "$2"
-  printf '\\n%s\\n' ${sh(unfinished)}
+  # In a section the rest of the run does without (OPTIONAL=1), the run goes on.
+  [ "\${OPTIONAL-0}" = 1 ] || printf '\\n%s\\n' ${sh(unfinished)}
   exit 1
 }
 
@@ -329,30 +330,17 @@ interface AccessChecks {
 	readonly apis: ReadonlyArray<string>
 	/** Setup with log forwarding on: the flag that places the sink. */
 	readonly sink: string | undefined
-	/** The scope's name must be readable: true when a role the run needs includes reading it. */
-	readonly scopeMustOpen: boolean
-	readonly billing: boolean
-	/** `testIamPermissions` calls: resource path, where in words, what to ask for, permissions. */
+	/** Log forwarding's `testIamPermissions` calls: resource path, where in words, what to ask for, permissions. */
 	readonly permissions: ReadonlyArray<readonly [string, string, string, ReadonlyArray<string>]>
 }
 
-const openScope = (scopeType: Exclude<GcpScopeType, "project">, mustOpen: boolean): string => {
-	const scope = SCOPES[scopeType]
-	const describe = `${scope.gcloud} describe "$SCOPE_ID"`
-	const label = scopeType === "folder" ? "Folder" : "Organization"
-	return mustOpen
-		? `if ! SCOPE_NAME="$(${describe} --format='value(displayName)' 2>/dev/null)"; then
-  stop "Can't open $SCOPE as $ACCOUNT." "Check the ID with: ${scope.list}. ${WRONG_ID} If it is right, this account needs ${scope.iamRole} there." "$(${describe} 2>&1 || true)"
-fi
-ok "${label} $SCOPE_ID found ($SCOPE_NAME)"
-`
-		: `# Not every role that can do this work may read the ${scopeType}'s name (Logs Configuration
+const openScope = (scopeType: Exclude<GcpScopeType, "project">): string =>
+	`# Not every role that can do this work may read the ${scopeType}'s name (Logs Configuration
 # Writer may not), so a look that fails is not an error.
-if SCOPE_NAME="$(${describe} --format='value(displayName)' 2>/dev/null)"; then
-  ok "${label} $SCOPE_ID found ($SCOPE_NAME)"
+if SCOPE_NAME="$(${SCOPES[scopeType].gcloud} describe "$SCOPE_ID" --format='value(displayName)' 2>/dev/null)"; then
+  ok "${scopeType === "folder" ? "Folder" : "Organization"} $SCOPE_ID found ($SCOPE_NAME)"
 fi
 `
-}
 
 const PERMISSION_CHECK = `
 # allowed <resource> <where, in words> <what to ask for> <permission...>: asks Google which of
@@ -409,32 +397,19 @@ fi
 IMPERSONATED="$(gcloud config get-value auth/impersonate_service_account 2>/dev/null || true)"
 [ -z "$IMPERSONATED" ] || ACCOUNT="$IMPERSONATED"
 ok "Signed in as $ACCOUNT"
-${checks.apis.length === 0 ? "" : apisOff(scopeType, checks.apis)}${scopeType === "project" ? "" : openScope(scopeType, checks.scopeMustOpen)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
+${checks.apis.length === 0 ? "" : apisOff(scopeType, checks.apis)}${scopeType === "project" ? "" : openScope(scopeType)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
   stop "Can't open project $PROJECT_ID as $ACCOUNT." "Check the ID in Maple (it is the project ID, not the name or number; list yours with: gcloud projects list). ${WRONG_ID} If it is right, this account has no access to the project." "$(gcloud projects describe "$PROJECT_ID" 2>&1 || true)"
 fi
 ok "${scopeType === "project" ? "Project" : "Host project"} $PROJECT_ID found ($PROJECT_NAME)"
 ${
-	checks.billing
-		? `case "$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)" in
-  True) ok "Billing is enabled" ;;
-  # Only Maple's reads need billing, and Maple explains a refused read: the rest is set up anyway.
-  False) note "Billing is off in project $PROJECT_ID: live queries and key metrics stay unavailable until a billing account is linked at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID. The rest is set up regardless." ;;
-  *) note "Couldn't tell whether billing is on. Cloud Monitoring only answers for projects with billing." ;;
-esac
-`
-		: ""
-}${
 	checks.permissions.length === 0
 		? ""
-		: `${PERMISSION_CHECK}${checks.permissions
+		: `${checks.permissions
 				.map(
 					([resource, where, ask, permissions]) =>
 						`allowed "${resource}" "${where}" "${ask}" \\\n  ${permissions.join(" ")}\n`,
 				)
-				.join("")}# Switching an API on takes a right of its own, asked about only when one is off.
-[ -z "$APIS_OFF" ] || allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "This script has to switch on:$APIS_OFF. Ask for Service Usage Admin there, or have an administrator switch them on." \\
-  serviceusage.services.enable
-if [ "$CHECKED" = 1 ]; then
+				.join("")}${switchingOn(LOG_APIS)}if [ "$CHECKED" = 1 ]; then
   ok "$ACCOUNT has the permissions this script needs"
 else
   note "Couldn't ask Google which permissions $ACCOUNT holds. A step it may not take says so."
@@ -442,52 +417,46 @@ fi
 `
 }${checks.sink === undefined ? "" : sinkAndFilter(checks.sink)}`
 
-/** What the sections that set something up need, asked of Google before the first change. */
-const permissionChecks = (
-	scopeType: GcpScopeType,
-	logs: boolean,
-	reader: boolean,
-): AccessChecks["permissions"] => {
-	if (!logs && !reader) return []
+const ADMINISTRATOR = "or have an administrator run this script."
+
+/** What log forwarding needs, asked of Google before the first change. */
+const logPermissionChecks = (scopeType: GcpScopeType): AccessChecks["permissions"] => {
 	const scope = SCOPES[scopeType]
-	const administrator = "or have an administrator run this script."
 	const host = [
 		"resourcemanager.projects.getIamPolicy",
 		"resourcemanager.projects.setIamPolicy",
 		// The gets: a resource the caller may not look at is taken for missing and created again,
 		// which Google refuses as a duplicate.
-		...(logs
-			? [
-					"pubsub.topics.get",
-					"pubsub.topics.create",
-					"pubsub.topics.attachSubscription",
-					"pubsub.topics.setIamPolicy",
-					"pubsub.topics.publish",
-					"pubsub.subscriptions.get",
-					"pubsub.subscriptions.create",
-					"pubsub.subscriptions.update",
-				]
-			: []),
-		...(reader
-			? ["iam.serviceAccounts.get", "iam.serviceAccounts.create", "iam.serviceAccounts.setIamPolicy"]
-			: []),
+		"pubsub.topics.get",
+		"pubsub.topics.create",
+		"pubsub.topics.attachSubscription",
+		"pubsub.topics.setIamPolicy",
+		"pubsub.topics.publish",
+		"pubsub.subscriptions.get",
+		"pubsub.subscriptions.create",
+		"pubsub.subscriptions.update",
 	]
-	const sink = logs ? ["logging.sinks.get", "logging.sinks.create", "logging.sinks.update"] : []
-	const askHost = `Ask for Owner there, ${administrator}`
+	const sink = ["logging.sinks.get", "logging.sinks.create", "logging.sinks.update"]
+	const askHost = `Ask for Owner there, ${ADMINISTRATOR}`
 	if (scopeType === "project") {
 		return [["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, [...host, ...sink]]]
 	}
-	const roles = [...(logs ? ["Logs Configuration Writer"] : []), ...(reader ? [scope.iamRole] : [])]
 	return [
 		["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, host],
 		[
 			`${scopeType}s/$SCOPE_ID`,
 			"$SCOPE",
-			`Ask for ${roles.join(" and ")} there, ${administrator} If the ID looks wrong, check it with: ${scope.list}`,
-			[...sink, ...(reader ? [`resourcemanager.${scopeType}s.setIamPolicy`] : [])],
+			`Ask for Logs Configuration Writer there, ${ADMINISTRATOR} If the ID looks wrong, check it with: ${scope.list}`,
+			sink,
 		],
 	]
 }
+
+// Switching an API on takes a right of its own, asked about only when one of a section's is off.
+const switchingOn = (apis: ReadonlyArray<string>) => `OFF="$(missing ${apis.join(" ")})"
+[ -z "$OFF" ] || allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "This script has to switch on:$OFF. Ask for Service Usage Admin there, or have an administrator switch them on." \\
+  serviceusage.services.enable
+`
 
 // Setup only: granting to a service account Google may not have published yet, its own for the
 // log sink or the reader this script creates.
@@ -623,13 +592,30 @@ ${notifies ? `notify "Maple notified" '"logs":false'\n` : ""}`
 
 const serviceAccountMember = '--member="serviceAccount:$SERVICE_ACCOUNT_EMAIL"'
 
-const readerSetup = (scopeType: GcpScopeType): string => `
+const readerSetup = (scopeType: GcpScopeType, logs: boolean): string => `
 # ---- Read-only access ----
 # Every connection has it. Maple queries the scope's metrics live as this account and, while key
 # metrics are on in Maple, reads them every 5 minutes and lists resources every hour. A re-run
 # never removes it: only the cleanup script does.
+# It runs in a subshell, which a failed step ends. ${logs ? "Log forwarding, set up above, does not depend on it: the run still finishes and says what is missing." : "Nothing else was set up, so the run stops there."}
+# Every step stops for itself: errexit does not hold where the caller reads the status.
+read_only_access() (
 section "Read-only access"
-
+# Only Maple's reads need billing, and Maple explains a refused read: the rest is set up anyway.
+case "$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)" in
+  True) ok "Billing is enabled" ;;
+  False) note "Billing is off in project $PROJECT_ID: live queries and key metrics stay unavailable until a billing account is linked at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID. The rest is set up regardless." ;;
+  *) note "Couldn't tell whether billing is on. Cloud Monitoring only answers for projects with billing." ;;
+esac
+allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "Ask for Owner there, ${ADMINISTRATOR}" \\
+  resourcemanager.projects.getIamPolicy resourcemanager.projects.setIamPolicy iam.serviceAccounts.get iam.serviceAccounts.create iam.serviceAccounts.setIamPolicy
+${
+	scopeType === "project"
+		? ""
+		: `allowed "${scopeType}s/$SCOPE_ID" "$SCOPE" "Ask for ${SCOPES[scopeType].iamRole} there, ${ADMINISTRATOR} If the ID looks wrong, check it with: ${SCOPES[scopeType].list}" \\
+  resourcemanager.${scopeType}s.setIamPolicy
+`
+}${switchingOn(READER_APIS)}
 # APIs in ${scopeType === "project" ? "the project" : "the host project, the project Maple's reads are made through"}:
 #   monitoring.googleapis.com      Cloud Monitoring, to read metrics
 #   cloudasset.googleapis.com      Cloud Asset Inventory, to list resources
@@ -676,6 +662,15 @@ grant "Couldn't let Maple use the service account." "$OWNER" \\
 ok "Maple allowed to read as that account"
 # "metrics" in a report is this account: in place (true) or removed (false).
 notify "Maple notified" '"metrics":true'
+# The status tells the caller whether the account is new.
+[ "$ACCOUNT_CREATED" = 0 ] || exit 3
+)
+${logs ? "OPTIONAL=1\n" : ""}read_only_access && READER=0 || READER=$?
+case "$READER" in
+  0) ;;
+  3) ACCOUNT_CREATED=1 ;;
+  *) ${logs ? "READER_FAILED=1" : 'exit "$READER"'} ;;
+esac
 `
 
 const readerRemoval = (scopeType: GcpScopeType): string => `
@@ -806,6 +801,7 @@ LOG_FILTER=${sh(gcpLogFilter(applicationLogs))}
 FILTER_REPLACED=0
 ACCOUNT_CREATED=0
 REMOVED=0
+READER_FAILED=0
 ${output(
 	"Setup did not finish. Nothing needs undoing: fix this and paste the script again.",
 	"Setup interrupted. Nothing needs undoing: paste the script again to finish it.",
@@ -825,13 +821,19 @@ off() {
   done
 }
 
+# missing <api...>: the ones of them the access check found off.
+missing() {
+  local api
+  for api in "$@"; do
+    case " $APIS_OFF " in *" $api "*) printf ' %s' "$api" ;; esac
+  done
+}
+
 # apis <their names> <api...>: switches on the ones the access check found off.
 apis() {
-  local names="$1" api missing=""
+  local names="$1" missing
   shift
-  for api in "$@"; do
-    case " $APIS_OFF " in *" $api "*) missing="$missing $api" ;; esac
-  done
+  missing="$(missing "$@")"
   if [ -n "$missing" ]; then
     # Unquoted on purpose: one argument per API.
     try "Couldn't switch on:$missing." "Service Usage Admin on project $PROJECT_ID" \\
@@ -839,17 +841,18 @@ apis() {
   fi
   ok "APIs enabled ($names)"
 }
-${logs || reader ? GRANT : ""}${logs ? "" : REMOVAL_HELPERS}
+${logs || reader ? `${GRANT}${PERMISSION_CHECK}` : ""}${logs ? "" : REMOVAL_HELPERS}
 printf 'Maple setup for %s\\n' "$SCOPE"
 printf '  Log forwarding     %s\\n  Read-only access   %s\\n' ${sh(logs ? "on" : "off, removing")} ${sh(readerState)}
 ${access(scopeType, {
 	apis: [...new Set([...(logs ? LOG_APIS : []), ...(reader ? READER_APIS : [])])],
 	sink: logs ? SCOPES[scopeType].sink : undefined,
-	scopeMustOpen: reader,
-	billing: reader,
-	permissions: permissionChecks(scopeType, logs, reader),
-})}${logs ? logsSetup(scopeType) : logsRemoval(scopeType, true)}${reader ? readerSetup(scopeType) : ""}
-if [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED$FILTER_REPLACED" = 0000 ]; then
+	permissions: logs ? logPermissionChecks(scopeType) : [],
+})}${logs ? logsSetup(scopeType) : logsRemoval(scopeType, true)}${reader ? readerSetup(scopeType, logs) : ""}
+if [ "$READER_FAILED" = 1 ]; then
+  printf '\\nDone, except read-only access: live metric queries are not available yet. Fix what it\\n'
+  printf 'names above and paste the script again.\\n'
+elif [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED$FILTER_REPLACED" = 0000 ]; then
   printf '\\nDone. Everything is in place.\\n'
 elif [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED" = 000 ]; then
   printf '\\nDone. The log sink has the filter of this script. Everything else is in place.\\n'
@@ -891,7 +894,7 @@ ${output(
 	"Cleanup interrupted. Paste the script again: it continues where it stopped.",
 )}${REMOVAL_HELPERS}
 printf 'Maple cleanup for %s\\n' "$SCOPE"
-${access(input.scopeType, { apis: [], sink: undefined, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${readerRemoval(input.scopeType)}${
+${access(input.scopeType, { apis: [], sink: undefined, permissions: [] })}${logsRemoval(input.scopeType, false)}${readerRemoval(input.scopeType)}${
 			input.pushEndpoint === undefined
 				? ""
 				: `
