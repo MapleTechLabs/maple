@@ -7,6 +7,16 @@ import type { GcpConnectorId } from "./primitives"
  * the service account id at Google's 30-character limit.
  */
 export const gcpConnectorResourceNames = (connectorId: GcpConnectorId) => {
-	const name = `maple-${connectorId.replaceAll("-", "").slice(0, 24)}`
-	return { serviceAccountId: name, topic: name, subscription: name, sink: name }
+	const hex = connectorId.replaceAll("-", "")
+	const name = `maple-${hex.slice(0, 24)}`
+	return {
+		serviceAccountId: name,
+		topic: name,
+		subscription: name,
+		sink: name,
+		// The identity the push subscription signs its requests as. It holds no role. The ingest
+		// gateway accepts a push only with this account's email for the connector's host project,
+		// and an audience naming the connector in full, so the shorter suffix is enough.
+		pushServiceAccountId: `maple-push-${hex.slice(0, 19)}`,
+	}
 }

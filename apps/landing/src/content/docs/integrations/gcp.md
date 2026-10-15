@@ -70,8 +70,10 @@ Checking access
   ✓ Log filter accepted
 
 Log forwarding
-  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
+  ✓ APIs enabled (Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager)
   ✓ Topic created
+  ✓ Push service account created
+  ✓ Pub/Sub allowed to sign pushes as that account
   ✓ Push subscription created
   ✓ Log sink created
   ✓ Sink allowed to write to the project
@@ -100,7 +102,7 @@ If a step fails, the script stops and prints what to do. Fix it and paste the sc
 | "Done. Google Cloud is set up for Maple."                                        | Created the log sink or the read-only service account.                                             |
 | "Done. Everything is in place."                                                  | Created and removed nothing. It makes every grant again, so it also restores one that was removed. |
 | "Done. The log sink has the filter of this script. Everything else is in place." | Replaced the sink's filter and created nothing.                                                    |
-| "Done. Google Cloud matches your Maple switches."                                | Removed the log sink, topic and subscription: **Log forwarding** is off.                           |
+| "Done. Google Cloud matches your Maple switches."                                | Removed the log sink, topic, subscription and push service account: **Log forwarding** is off.     |
 
 After Maple confirms the run, **Log forwarding** and **Key metrics** each wait for their first data:
 
@@ -109,9 +111,9 @@ After Maple confirms the run, **Log forwarding** and **Key metrics** each wait f
 | Log forwarding  | A new sink can take about 10 minutes to start forwarding. Entries logged before that are not forwarded.                             |
 | Key metrics     | The first read lands within about 10 minutes. Maple reads every 5 minutes, about 5 minutes behind, so that each minute is complete. |
 
-The script contains a secret that lets anyone send logs to your Maple organization. Don't share it or commit it, and run it in Cloud Shell: there neither the paste nor the secret ends up in shell history. The pasted text keeps itself out of the history files of bash 5 and zsh, but it still shows in your terminal's scrollback.
+Google Cloud never gets a secret: Pub/Sub signs each push as the connection's push service account, and Maple accepts a push only when Google signed it for that account and for this connection. The script itself contains a secret, which it uses only to report its run to Maple. Don't share it or commit it, and run it in Cloud Shell: there neither the paste nor the secret ends up in shell history. The pasted text keeps itself out of the history files of bash 5 and zsh, but it still shows in your terminal's scrollback. If it leaks, disconnect and connect again: the new connection gets a new secret.
 
-The push endpoint with the secret is also visible in the subscription's configuration and in the host project's Admin Activity audit log, to anyone who can read those. If it leaks, disconnect and connect again: the new connection gets a new secret.
+A connection set up before Maple signed its pushes has the secret in its push endpoint, visible in the subscription's configuration and the host project's Admin Activity audit log. Run the setup script again to switch it to signed pushes.
 
 The first two lines and the last two lines of the pasted text run the script in a bash process of its own, so a failed step can't close your Cloud Shell session.
 
@@ -163,6 +165,44 @@ Don't tick a runtime whose workloads already send their logs to Maple over OpenT
 On a connection that already has a sink, the choice starts on **Keep current filter**: the script leaves the sink's filter as it is. Maple can't see that filter, so **Current filter in Log Router** opens it in the console. To change it, click **Configure**, choose **Replace filter**, set the runtimes, click **Continue to the script** and run the script again.
 
 For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep current filter** leave your filter in place, while **Replace filter** replaces it.
+
+## Set up with Terraform
+
+Instead of the script, apply the same setup from your own Terraform (1.5 or later) or OpenTofu configuration. The module creates the resources the script does, under the same names, and holds no secret, so you can commit it. Its source is [`deploy/terraform-google-maple`](https://github.com/MapleTechLabs/maple/tree/main/deploy/terraform-google-maple) in Maple's repository.
+
+1. Create the connection in Maple as in steps 1 to 5 above.
+2. On the **Run setup** step, switch from **Cloud Shell** to **Terraform** and click **Copy module**. Add the block to your configuration.
+3. Run `terraform apply` as an account with the [roles for running the script](#roles-for-running-the-script).
+4. Back in Maple, **Waiting for Google Cloud** under the module confirms each part: **Log forwarding** with the first log entry Maple receives, usually within 10 minutes, and **Read-only access** when you click **Check access**.
+
+A Terraform run sends Maple no report, which is why Maple checks Google Cloud itself. The module sets the sink's log filter in full: choose the filter in Maple before you copy the block. After changing **Log forwarding** in Maple, copy the block again and apply.
+
+To take over a connection the script set up, import its resources before the first apply. For a project connection, with the module named `maple_gcp_acme_prod` and the names from the script's header:
+
+```hcl
+import {
+  to = module.maple_gcp_acme_prod.google_pubsub_topic.logs[0]
+  id = "projects/acme-prod/topics/maple-0a1b2c3d4e5f40718293a4b5"
+}
+import {
+  to = module.maple_gcp_acme_prod.google_pubsub_subscription.logs[0]
+  id = "projects/acme-prod/subscriptions/maple-0a1b2c3d4e5f40718293a4b5"
+}
+import {
+  to = module.maple_gcp_acme_prod.google_logging_project_sink.logs[0]
+  id = "projects/acme-prod/sinks/maple-0a1b2c3d4e5f40718293a4b5"
+}
+import {
+  to = module.maple_gcp_acme_prod.google_service_account.reader[0]
+  id = "projects/acme-prod/serviceAccounts/maple-0a1b2c3d4e5f40718293a4b5@acme-prod.iam.gserviceaccount.com"
+}
+import {
+  to = module.maple_gcp_acme_prod.google_service_account.push[0]
+  id = "projects/acme-prod/serviceAccounts/maple-push-0a1b2c3d4e5f4071829@acme-prod.iam.gserviceaccount.com"
+}
+```
+
+A folder or organization connection imports `google_logging_folder_sink` from `folders/FOLDER_ID/sinks/NAME` or `google_logging_organization_sink` from `organizations/ORGANIZATION_ID/sinks/NAME`. Leave out the push service account if the script ran before Maple signed pushes. Role grants need no import: applying one that exists changes nothing.
 
 ## Verify
 
@@ -224,16 +264,17 @@ Then check the data:
 
 The script enables these APIs in the host project:
 
-- `pubsub.googleapis.com` and `logging.googleapis.com`, for log forwarding: carrying the log entries and routing them through the sink.
+- `pubsub.googleapis.com`, `logging.googleapis.com` and `iam.googleapis.com`, for log forwarding: carrying the log entries, routing them through the sink, and the push service account.
 - `monitoring.googleapis.com`, `cloudasset.googleapis.com`, `iam.googleapis.com` and `iamcredentials.googleapis.com`, for the read-only service account: reading metrics, listing resources, creating the account and minting its short-lived tokens. No key is ever created.
 - `cloudresourcemanager.googleapis.com`, for both: granting the roles below.
 
-For log forwarding it creates a Pub/Sub topic and push subscription in the host project and a log sink on the project, folder or organization. For every connection it creates a read-only service account in the host project, which Maple reads metrics as: live queries, and **Key metrics** while it is on. Each is named `maple-` followed by 24 hexadecimal characters unique to the connection. Running the script again never removes the service account, whatever the switches say; only the [cleanup script](#disconnect) does.
+For log forwarding it creates a Pub/Sub topic, a push subscription and a push service account in the host project, and a log sink on the project, folder or organization. The push service account, `maple-push-` followed by 19 hexadecimal characters, holds no role anywhere: Pub/Sub signs each push to Maple as it. For every connection it creates a read-only service account in the host project, which Maple reads metrics as: live queries, and **Key metrics** while it is on. Each is named `maple-` followed by 24 hexadecimal characters unique to the connection. Running the script again never removes the service account, whatever the switches say; only the [cleanup script](#disconnect) does.
 
 It grants these roles:
 
 - **Pub/Sub Publisher** (`roles/pubsub.publisher`) to the sink's Google-managed writer identity, on Maple's topic: publishing log entries to the topic.
 - **Logs Writer** (`roles/logging.logWriter`) to the same writer identity, on the host project: Google requires it on the project that holds a sink's destination.
+- **Service Account Token Creator** (`roles/iam.serviceAccountTokenCreator`) to the host project's Pub/Sub service agent, on the push service account: signing pushes as it. Projects created after April 2021 allow this by default.
 - **Monitoring Viewer** (`roles/monitoring.viewer`) to the read-only service account, on the project, folder or organization: reading metrics (`monitoring.timeSeries.list`), live and every 5 minutes.
 - **Cloud Asset Viewer** (`roles/cloudasset.viewer`) to the read-only service account, on the project, folder or organization: listing resources and the projects under a folder or organization (`cloudasset.assets.searchAllResources`). The role can also read resource metadata and IAM policies.
 - **Service Usage Consumer** (`roles/serviceusage.serviceUsageConsumer`) to the read-only service account, on the host project: calling both read APIs through the host project.
@@ -245,14 +286,15 @@ It grants these roles:
 
 Owner on the host project is the simplest. Without it, these predefined roles together cover what the script does:
 
-| On                                  | Role                                                                                                                                                                                             | For                                             |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
-| The host project                    | Service Usage Admin (`roles/serviceusage.serviceUsageAdmin`)                                                                                                                                     | Switching on the APIs above.                    |
-| The host project                    | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`)                                                                                                                                      | The role grants on the host project.            |
-| The host project                    | Pub/Sub Admin (`roles/pubsub.admin`)                                                                                                                                                             | Log forwarding: the topic and the subscription. |
-| The host project                    | Service Account Admin (`roles/iam.serviceAccountAdmin`)                                                                                                                                          | The read-only service account.                  |
-| The project, folder or organization | Logs Configuration Writer (`roles/logging.configWriter`)                                                                                                                                         | Log forwarding: the sink.                       |
-| The project, folder or organization | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`), Folder IAM Admin (`roles/resourcemanager.folderIamAdmin`) or Organization Administrator (`roles/resourcemanager.organizationAdmin`) | The read-only roles.                            |
+| On                                  | Role                                                                                                                                                                                             | For                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| The host project                    | Service Usage Admin (`roles/serviceusage.serviceUsageAdmin`)                                                                                                                                     | Switching on the APIs above.                                |
+| The host project                    | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`)                                                                                                                                      | The role grants on the host project.                        |
+| The host project                    | Pub/Sub Admin (`roles/pubsub.admin`)                                                                                                                                                             | Log forwarding: the topic and the subscription.             |
+| The host project                    | Service Account Admin (`roles/iam.serviceAccountAdmin`)                                                                                                                                          | The read-only and push service accounts.                    |
+| The host project                    | Service Account User (`roles/iam.serviceAccountUser`)                                                                                                                                            | Log forwarding: signing pushes as the push service account. |
+| The project, folder or organization | Logs Configuration Writer (`roles/logging.configWriter`)                                                                                                                                         | Log forwarding: the sink.                                   |
+| The project, folder or organization | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`), Folder IAM Admin (`roles/resourcemanager.folderIamAdmin`) or Organization Administrator (`roles/resourcemanager.organizationAdmin`) | The read-only roles.                                        |
 
 Before it changes anything, the script asks Google which permissions the signed-in account holds and stops with the missing ones. Read-only access asks for its own just before its section: what it lacks stops only that section while log forwarding is on, and the run ends with "Done, except read-only access".
 
@@ -571,12 +613,12 @@ Google checks the policy when a grant is made, so leave the exception in place: 
 ## Disconnect
 
 1. On **Integrations → Google Cloud**, open the **⋮** menu (**More actions**) on the connection's row and choose **Disconnect**.
-2. Click **Copy cleanup script** and run it in Cloud Shell. It deletes the log sink, topic, subscription and read-only service account, and ends with "Done. Everything the setup script created is gone."
+2. Click **Copy cleanup script** and run it in Cloud Shell. It deletes the log sink, topic, subscription and both service accounts, and ends with "Done. Everything the setup script created is gone." Set up with Terraform: remove the module and apply instead.
 3. Wait for the check mark in the dialog, then click **Disconnect**. Maple stops reading the connection's metrics, and stops accepting its logs within about a minute. Data already in Maple is kept.
 
 The cleanup takes one to two minutes when the connection forwards logs: after it deletes the sink it waits a minute for Google to stop routing to the topic, so your project logs no sink error. Turning **Log forwarding** off in **Configure** and running the setup script takes as long, for the same reason.
 
-**Disconnect anyway** disconnects without the cleanup. Google Cloud then keeps publishing logs to Pub/Sub, billed by Google, until the cleanup script runs. Maple keeps a panel with **Copy cleanup script** on the page until you click **Dismiss** and confirm.
+**Disconnect anyway** disconnects without the cleanup, and is the button to use after removing the module with Terraform, which reports nothing to Maple. Google Cloud then keeps publishing logs to Pub/Sub, billed by Google, until the cleanup script runs. Maple keeps a panel with **Copy cleanup script** on the page until you click **Dismiss** and confirm.
 
 The cleanup script leaves the APIs it switched on enabled, and the Logs Writer role of Google's logging service account on the host project, which other sinks share.
 
