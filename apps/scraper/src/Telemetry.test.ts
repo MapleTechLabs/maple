@@ -99,15 +99,18 @@ describe("scraper telemetry", () => {
 				yield* otlp.send("maple_pk_test_key", sampleRequest).pipe(Effect.ignore)
 			}).pipe(
 				Effect.provideService(FetchHttpClient.Fetch, blocked),
-				Effect.provide(ingest),
 				// Closing the telemetry layer is the shutdown flush.
 				Effect.provide(
-					telemetryLayer({
-						endpoint: "https://collector.test",
-						ingestKey: "scraper-key",
-						environment: "test",
-						autoFlushInterval: false,
-					}),
+					ingest.pipe(
+						Layer.provideMerge(
+							telemetryLayer({
+								endpoint: "https://collector.test",
+								ingestKey: "scraper-key",
+								environment: "test",
+								autoFlushInterval: false,
+							}),
+						),
+					),
 				),
 			),
 		)
