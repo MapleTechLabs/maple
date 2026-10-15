@@ -313,7 +313,7 @@ function Script({
 }: {
 	script: string | null
 	label: string
-	failure: { readonly message: string; readonly retry: () => void; readonly retrying: boolean } | null
+	failure: ScriptFailure | null
 	children?: React.ReactNode
 }) {
 	const [shown, setShown] = useState(false)
@@ -460,6 +460,12 @@ function useGcpScripts(connector: V2GcpConnector, logFilter: GcpLogFilter) {
 	}
 }
 
+export interface ScriptFailure {
+	readonly message: string
+	readonly retry: () => void
+	readonly retrying: boolean
+}
+
 /** The log filter the script is asked for, and whether including GKE container logs was confirmed. */
 interface FilterState {
 	readonly chosen: GcpLogFilter | null
@@ -501,7 +507,7 @@ function Stepper({ current }: { current: StepIndex }) {
 										? "bg-severity-info/16 text-severity-info"
 										: active
 											? "bg-primary text-primary-foreground"
-											: "border border-border text-muted-foreground",
+											: "border border-input text-muted-foreground",
 								)}
 							>
 								{done ? <CheckIcon size={12} /> : index + 1}
@@ -1127,7 +1133,7 @@ function ChooseStage({
  * When a connection's run step was entered. `rerun`: nobody has said a run is under way, so
  * the step stays open until a newer run reports and its status does not time one.
  */
-interface ApplyOpened {
+export interface ApplyOpened {
 	readonly at: number
 	readonly rerun: boolean
 	/** The report on record at that moment: a different one is a newer run. */
@@ -1194,7 +1200,7 @@ function ScriptCard({
 	projectId,
 }: {
 	script: string | null
-	failure: { readonly message: string; readonly retry: () => void; readonly retrying: boolean } | null
+	failure: ScriptFailure | null
 	projectId: string
 }) {
 	const [expanded, setExpanded] = useState(false)
@@ -1304,7 +1310,8 @@ function RunStatus({
 	overdue: boolean
 	nowMs: number
 }) {
-	const reported = !opened.rerun || connector.setup_reported_at !== opened.seen
+	// A row ticks on a report made since the step opened, not on what an earlier run left in place.
+	const reported = connector.setup_reported_at !== opened.seen
 	const running = gcpSetupRunning(connector, nowMs)
 	const rows = CAPABILITY_IDS.flatMap((capability) => {
 		const { title, flag, run } = CAPABILITIES[capability]
@@ -1436,38 +1443,69 @@ function Applied({
 	)
 }
 
-/** The run step: the script that applies the configuration, and Maple's confirmation. */
+/** A run's sections report one after the other: confirmed once the last one has. */
+const runConfirmed = (connector: V2GcpConnector, opened: ApplyOpened, nowMs: number) =>
+	gcpScriptNeeded(connector, nowMs) === null &&
+	!gcpSetupRunning(connector, nowMs) &&
+	(!opened.rerun || connector.setup_reported_at !== opened.seen)
+
+/** The run step: loads the script for the chosen filter and polls until Maple confirms the run. */
 function ApplyStage({
-	title,
-	connector,
-	created,
 	filter,
-	nowMs,
-	opened,
-	onBack,
-	onClose,
-}: {
+	...view
+}: Omit<GcpApplyViewProps, "logFilter" | "script" | "failure"> & { filter: FilterState }) {
+	const { connector, opened, nowMs } = view
+	const choice = gcpLogFilterChoice(
+		filter.chosen,
+		filter.acknowledged,
+		connector.applied_logs_enabled === true,
+	)
+	const { scripts, failure } = useGcpScripts(connector, choice.scriptFilter)
+	const refresh = useAtomRefresh(gcpStatusQuery())
+	useIntervalRefresh(refresh, {
+		intervalMs: GCP_SETTLING_REFRESH_MS,
+		enabled: !runConfirmed(connector, opened, nowMs),
+	})
+	return (
+		<GcpApplyView
+			{...view}
+			logFilter={choice.scriptFilter}
+			script={scripts?.setup_script ?? null}
+			failure={failure}
+		/>
+	)
+}
+
+export interface GcpApplyViewProps {
 	title: React.ReactNode
 	connector: V2GcpConnector
+	/** Created in this surface: the confirmed run reads as the connection being made. */
 	created: boolean
-	filter: FilterState
+	logFilter: GcpLogFilter
+	script: string | null
+	failure: ScriptFailure | null
 	nowMs: number
 	opened: ApplyOpened
 	onBack: () => void
 	onClose: () => void
-}) {
-	const sinkExists = connector.applied_logs_enabled === true
-	const choice = gcpLogFilterChoice(filter.chosen, filter.acknowledged, sinkExists)
-	const { scripts, failure } = useGcpScripts(connector, choice.scriptFilter)
-	const refresh = useAtomRefresh(gcpStatusQuery())
+}
 
+/** The run step as it looks: the script and the run's status, or the confirmed run. Exported for the lab. */
+export function GcpApplyView({
+	title,
+	connector,
+	created,
+	logFilter,
+	script,
+	failure,
+	nowMs,
+	opened,
+	onBack,
+	onClose,
+}: GcpApplyViewProps) {
+	const sinkExists = connector.applied_logs_enabled === true
 	const reportedAt = connector.setup_reported_at
-	// A run's sections report one after the other: confirmed once the last one has.
-	const confirmed =
-		gcpScriptNeeded(connector, nowMs) === null &&
-		!gcpSetupRunning(connector, nowMs) &&
-		(!opened.rerun || reportedAt !== opened.seen)
-	useIntervalRefresh(refresh, { intervalMs: GCP_SETTLING_REFRESH_MS, enabled: !confirmed })
+	const confirmed = runConfirmed(connector, opened, nowMs)
 	const overdue = !opened.rerun && gcpScriptOverdue(connector, opened.at, nowMs)
 
 	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
@@ -1497,17 +1535,13 @@ function ApplyStage({
 		<>
 			<ConfigureHeader title={title} step={2} />
 			<DialogPanel className="flex flex-col gap-5">
-				<RunSummary connector={connector} logFilter={choice.scriptFilter} onEdit={onBack} />
+				<RunSummary connector={connector} logFilter={logFilter} onEdit={onBack} />
 				<section className="flex flex-col gap-3">
 					<div className="flex flex-col gap-0.5">
 						<h3 className={GCP_TITLE}>Run this script in Cloud Shell</h3>
 						<p className={SMALL}>Nothing changes in Google Cloud until it runs.</p>
 					</div>
-					<ScriptCard
-						script={scripts?.setup_script ?? null}
-						failure={failure}
-						projectId={connector.project_id}
-					/>
+					<ScriptCard script={script} failure={failure} projectId={connector.project_id} />
 					<p className={SMALL}>
 						Run it as an {role("Owner")} of{" "}
 						{connector.scope_type === "project" ? null : "the host project "}
@@ -1536,6 +1570,15 @@ function ApplyStage({
 				</Button>
 			</DialogFooter>
 		</>
+	)
+}
+
+/** The dialog every step renders in. */
+export function GcpConfigureFrame({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+	return (
+		<Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+			<DialogContent className="font-display sm:max-w-2xl">{children}</DialogContent>
+		</Dialog>
 	)
 }
 
@@ -1652,44 +1695,42 @@ export function GcpConfigure({
 		)
 
 	return (
-		<Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
-			<DialogContent className="sm:max-w-2xl">
-				{/* Each step brings its own header, panel and footer. */}
-				{target.kind !== "new" && connector === undefined ? (
-					<>
-						<ConfigureHeader title="Google Cloud" step={1} />
-						<DialogPanel>
-							<Skeleton className="h-40 w-full" />
-						</DialogPanel>
-					</>
-				) : connector === undefined ? (
-					<NewConnection
-						title={title}
-						metricsAvailable={metricsAvailable}
-						existing={connectors}
-						filter={filter}
-						onFilter={setFilter}
-						onCreated={(connector) => {
-							setCreated(connector)
-							onCreated(connector)
-						}}
-					/>
-				) : (
-					<ConnectionStages
-						key={connector.id}
-						title={title}
-						connector={connector}
-						created={createdHere}
-						initialStage={target.kind === "connection" ? target.stage : "apply"}
-						metricsAvailable={metricsAvailable}
-						filter={filter}
-						onFilter={setFilter}
-						nowMs={nowMs}
-						onClose={onClose}
-					/>
-				)}
-			</DialogContent>
-		</Dialog>
+		<GcpConfigureFrame onClose={onClose}>
+			{/* Each step brings its own header, panel and footer. */}
+			{target.kind !== "new" && connector === undefined ? (
+				<>
+					<ConfigureHeader title="Google Cloud" step={1} />
+					<DialogPanel>
+						<Skeleton className="h-40 w-full" />
+					</DialogPanel>
+				</>
+			) : connector === undefined ? (
+				<NewConnection
+					title={title}
+					metricsAvailable={metricsAvailable}
+					existing={connectors}
+					filter={filter}
+					onFilter={setFilter}
+					onCreated={(connector) => {
+						setCreated(connector)
+						onCreated(connector)
+					}}
+				/>
+			) : (
+				<ConnectionStages
+					key={connector.id}
+					title={title}
+					connector={connector}
+					created={createdHere}
+					initialStage={target.kind === "connection" ? target.stage : "apply"}
+					metricsAvailable={metricsAvailable}
+					filter={filter}
+					onFilter={setFilter}
+					nowMs={nowMs}
+					onClose={onClose}
+				/>
+			)}
+		</GcpConfigureFrame>
 	)
 }
 
