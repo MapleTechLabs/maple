@@ -22,7 +22,8 @@ export interface GcpMetric {
 	/**
 	 * What Maple stores: `sum` is a delta counter per minute, `gauge` a sampled value, and
 	 * `quantiles` are p50/p95/p99 gauges (attribute `quantile`) of a distribution summed over the
-	 * group. A gauge is aligned by mean, the other two as deltas.
+	 * group. A gauge is aligned by mean, the other two as deltas. A `sum` of a distribution counts
+	 * its values.
 	 */
 	readonly kind: "sum" | "gauge" | "quantiles"
 	readonly unit: string
@@ -44,14 +45,29 @@ export interface GcpMetricGroup {
 	readonly resourceLabels: ReadonlyArray<string>
 	/** Metric labels each series keeps that name the resource: resource attributes, not point ones. */
 	readonly resourceMetricLabels: ReadonlyArray<string>
+	/**
+	 * The resource type whose workloads the series are stored under, when it is not their own: a
+	 * Cloud SQL instance's Query Insights are stored as the instance.
+	 */
+	readonly workloadOf?: string
+	/**
+	 * Series too many to keep, one per item (`label`, a metric label every metric of the group
+	 * keeps): each poll keeps the `limit` items of each resource with the largest total of the
+	 * metric named `by`, and reads the group aligned over the whole poll window, one point per poll.
+	 */
+	readonly top?: { readonly by: string; readonly label: string; readonly limit: number }
 	readonly metrics: ReadonlyArray<GcpMetric>
 }
 
 export const gcpMetricAligner = (metric: GcpMetric) =>
 	metric.kind === "gauge" ? "ALIGN_MEAN" : "ALIGN_DELTA"
 
+/** Labels stored under an OpenTelemetry attribute rather than `gcp.metric.labels.<label>`. */
+const LABEL_ATTRIBUTES = new Map([["querystring", "db.query.text"]])
+
 /** The attribute a kept Cloud Monitoring metric label is stored as. */
-export const gcpMetricLabelAttribute = (label: string) => `gcp.metric.labels.${label}`
+export const gcpMetricLabelAttribute = (label: string) =>
+	LABEL_ATTRIBUTES.get(label) ?? `gcp.metric.labels.${label}`
 
 /** The attributes, besides `quantile`, that tell a metric's points apart. */
 export const gcpMetricPointAttributes = (metric: GcpMetric): ReadonlyArray<string> => [
@@ -84,8 +100,9 @@ const RECEIVE = { attributes: { "network.io.direction": "receive" } } as const
 const TRANSMIT = { attributes: { "network.io.direction": "transmit" } } as const
 const READ = { attributes: { "disk.io.direction": "read" } } as const
 const WRITE = { attributes: { "disk.io.direction": "write" } } as const
-// Cloud Monitoring reports these latencies in milliseconds.
+// Cloud Monitoring reports these latencies in milliseconds, Query Insights in microseconds.
 const FROM_MS = { scale: 1e-3 } as const
+const FROM_US = { scale: 1e-6 } as const
 
 /**
  * Cloud Asset Inventory types kept in the resource inventory: the projects in a connector's
@@ -115,6 +132,8 @@ const FUNCTIONS = "cloudfunctions.googleapis.com/function"
 const GKE = "kubernetes.io"
 const GCE = "compute.googleapis.com/instance"
 const SQL = "cloudsql.googleapis.com/database"
+const INSIGHTS = `${SQL}/postgresql/insights/aggregate`
+const PER_QUERY = `${SQL}/postgresql/insights/perquery`
 const PUBSUB = "pubsub.googleapis.com"
 const LB = "loadbalancing.googleapis.com/https"
 
@@ -402,6 +421,160 @@ export const GCP_METRIC_GROUPS: ReadonlyArray<GcpMetricGroup> = [
 				"s",
 				"How far a read replica is behind its primary",
 				MEAN,
+			),
+			metric("gauge", `${SQL}/memory/total_usage`, "gcp.cloud_sql.memory.usage", "By", "Memory in use"),
+			metric("gauge", `${SQL}/disk/bytes_used`, "gcp.cloud_sql.disk.usage", "By", "Disk space in use"),
+			metric("gauge", `${SQL}/disk/quota`, "gcp.cloud_sql.disk.limit", "By", "Disk quota"),
+			// PostgreSQL, per database: the instance's database names.
+			metric(
+				"gauge",
+				`${SQL}/postgresql/num_backends_by_state`,
+				"gcp.cloud_sql.postgresql.connection.count",
+				"{connection}",
+				"PostgreSQL connections by state and database",
+				{ labels: ["state", "database"] },
+			),
+			metric(
+				"sum",
+				`${SQL}/postgresql/deadlock_count`,
+				"gcp.cloud_sql.postgresql.deadlocks",
+				"{deadlock}",
+				"Deadlocks",
+			),
+			metric(
+				"gauge",
+				`${SQL}/postgresql/transaction_id_utilization`,
+				"gcp.cloud_sql.postgresql.transaction_id.utilization",
+				"1",
+				"Fraction of transaction IDs in use before wraparound",
+				MEAN,
+			),
+			// `source` is `disk` or `buffer_cache`: the cache hit ratio.
+			metric(
+				"sum",
+				`${SQL}/postgresql/blocks_read_count`,
+				"gcp.cloud_sql.postgresql.block_reads",
+				"{block}",
+				"Data blocks read",
+				{ labels: ["source"] },
+			),
+			metric(
+				"sum",
+				`${SQL}/postgresql/temp_bytes_written_count`,
+				"gcp.cloud_sql.postgresql.temp_file.io",
+				"By",
+				"Bytes written to temporary files",
+				WRITE,
+			),
+			metric(
+				"sum",
+				`${SQL}/mysql/slow_queries_count`,
+				"gcp.cloud_sql.mysql.slow_queries",
+				"{query}",
+				"Queries slower than long_query_time",
+			),
+		],
+	},
+	{
+		// PostgreSQL Query Insights, summed over the instance's databases, users and clients. Empty
+		// while Query Insights is off.
+		resourceType: "cloudsql_instance_database",
+		resourceLabels: ["resource_id", "location"],
+		resourceMetricLabels: [],
+		workloadOf: "cloudsql_database",
+		metrics: [
+			metric(
+				"quantiles",
+				`${INSIGHTS}/latencies`,
+				"gcp.cloud_sql.query.duration",
+				"s",
+				"Query latency",
+				FROM_US,
+			),
+			metric("sum", `${INSIGHTS}/latencies`, "gcp.cloud_sql.queries", "{query}", "Queries run"),
+			metric(
+				"sum",
+				`${INSIGHTS}/execution_time`,
+				"gcp.cloud_sql.query.execution.time",
+				"s",
+				"Query execution time: CPU, I/O wait, lock wait and scheduling",
+				FROM_US,
+			),
+			metric(
+				"sum",
+				`${INSIGHTS}/io_time`,
+				"gcp.cloud_sql.query.io.time",
+				"s",
+				"Time queries spent waiting on I/O",
+				FROM_US,
+			),
+			metric(
+				"sum",
+				`${INSIGHTS}/lock_time`,
+				"gcp.cloud_sql.query.lock.time",
+				"s",
+				"Time queries spent waiting on locks",
+				FROM_US,
+			),
+		],
+	},
+	{
+		// The same per normalized statement, summed over databases, users and clients: the 25
+		// statements of each instance that ran longest in the poll window. A statement outside them
+		// in a window is not stored for it.
+		resourceType: "cloudsql_instance_database",
+		resourceLabels: ["resource_id", "location"],
+		resourceMetricLabels: [],
+		top: { by: "gcp.cloud_sql.query.statement.execution.time", label: "query_hash", limit: 25 },
+		metrics: [
+			// The statement's text once, on the metric that ranks it.
+			metric(
+				"sum",
+				`${PER_QUERY}/execution_time`,
+				"gcp.cloud_sql.query.statement.execution.time",
+				"s",
+				"Execution time of one statement: CPU, I/O wait, lock wait and scheduling",
+				{ ...FROM_US, labels: ["query_hash", "querystring"] },
+			),
+			metric(
+				"quantiles",
+				`${PER_QUERY}/latencies`,
+				"gcp.cloud_sql.query.statement.duration",
+				"s",
+				"Latency of one statement",
+				{ ...FROM_US, labels: ["query_hash"] },
+			),
+			metric(
+				"sum",
+				`${PER_QUERY}/latencies`,
+				"gcp.cloud_sql.query.statement.calls",
+				"{call}",
+				"Calls of one statement",
+				{ labels: ["query_hash"] },
+			),
+			metric(
+				"sum",
+				`${PER_QUERY}/lock_time`,
+				"gcp.cloud_sql.query.statement.lock.time",
+				"s",
+				"Time one statement spent waiting on locks",
+				{ ...FROM_US, labels: ["query_hash"] },
+			),
+			metric(
+				"sum",
+				`${PER_QUERY}/io_time`,
+				"gcp.cloud_sql.query.statement.io.time",
+				"s",
+				"Time one statement spent waiting on I/O",
+				{ ...FROM_US, labels: ["query_hash"] },
+			),
+			metric(
+				"sum",
+				`${PER_QUERY}/row_count`,
+				"gcp.cloud_sql.query.statement.rows",
+				"{row}",
+				"Rows one statement retrieved or affected",
+				{ labels: ["query_hash"] },
 			),
 		],
 	},

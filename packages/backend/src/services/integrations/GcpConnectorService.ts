@@ -312,6 +312,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 								displayName: $.displayName,
 								state: $.state,
 								labels: $.labels,
+								details: $.details,
 							}))
 							.distinctOn("assetType", "name")
 							.where(($) => [
