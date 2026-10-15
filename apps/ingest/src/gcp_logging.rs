@@ -3,7 +3,9 @@
 
 use chrono::DateTime;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
-use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, InstrumentationScope, KeyValue};
+use opentelemetry_proto::tonic::common::v1::{
+    any_value, AnyValue, ArrayValue, InstrumentationScope, KeyValue,
+};
 use opentelemetry_proto::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use serde_json::{Map as JsonMap, Value as JsonValue};
@@ -46,22 +48,52 @@ pub struct Connector<'a> {
     pub org_id: &'a str,
 }
 
-const HTTP_REQUEST_ATTRIBUTES: &[(&str, &str)] = &[
-    ("requestMethod", "http.request.method"),
-    ("requestUrl", "url.full"),
-    ("status", "http.response.status_code"),
-    ("requestSize", "http.request.size"),
-    ("responseSize", "http.response.size"),
-    ("userAgent", "user_agent.original"),
-    ("remoteIp", "client.address"),
-    ("serverIp", "server.address"),
-    ("referer", "http.request.header.referer"),
+/// A `LogEntry` field, the semantic-convention attribute it becomes, and that
+/// attribute's value. `None` when the field does not fit the attribute's type.
+type Rename = (
+    &'static str,
+    &'static str,
+    fn(&JsonValue) -> Option<any_value::Value>,
+);
+
+const HTTP_REQUEST_ATTRIBUTES: &[Rename] = &[
+    ("requestMethod", "http.request.method", string_value),
+    ("requestUrl", "url.full", string_value),
+    ("status", "http.response.status_code", int_value),
+    ("requestSize", "http.request.size", int_value),
+    ("responseSize", "http.response.size", int_value),
+    ("userAgent", "user_agent.original", string_value),
+    ("remoteIp", "client.address", string_value),
+    ("serverIp", "server.address", string_value),
+    // Header attributes are arrays of the header's values.
+    ("referer", "http.request.header.referer", string_array_value),
 ];
 
-const SOURCE_LOCATION_ATTRIBUTES: &[(&str, &str)] = &[
-    ("file", "code.file.path"),
-    ("line", "code.line.number"),
-    ("function", "code.function.name"),
+const SOURCE_LOCATION_ATTRIBUTES: &[Rename] = &[
+    ("file", "code.file.path", string_value),
+    ("line", "code.line.number", int_value),
+    ("function", "code.function.name", string_value),
+];
+
+/// `google.rpc.Code` names, indexed by code.
+const RPC_CODES: [&str; 17] = [
+    "OK",
+    "CANCELLED",
+    "UNKNOWN",
+    "INVALID_ARGUMENT",
+    "DEADLINE_EXCEEDED",
+    "NOT_FOUND",
+    "ALREADY_EXISTS",
+    "PERMISSION_DENIED",
+    "RESOURCE_EXHAUSTED",
+    "FAILED_PRECONDITION",
+    "ABORTED",
+    "OUT_OF_RANGE",
+    "UNIMPLEMENTED",
+    "INTERNAL",
+    "UNAVAILABLE",
+    "DATA_LOSS",
+    "UNAUTHENTICATED",
 ];
 
 /// Every `LogEntry` carries `logName`. Anything without it (not JSON, or the
@@ -132,6 +164,8 @@ fn resource_attributes(entry: &JsonObject, connector: &Connector<'_>) -> Vec<Key
         .unwrap_or("unknown");
     let labels = resource.and_then(|resource| object(resource, "labels"));
     let label = |key: &str| labels.and_then(|labels| text(labels, key));
+    let entry_labels = object(entry, "labels");
+    let entry_label = |key: &str| entry_labels.and_then(|labels| text(labels, key));
 
     let mut attributes = vec![
         attribute("maple_org_id", connector.org_id),
@@ -178,9 +212,27 @@ fn resource_attributes(entry: &JsonObject, connector: &Connector<'_>) -> Vec<Key
             let service = label("service_name").or_else(|| label("configuration_name"));
             push(&mut attributes, "faas.name", service);
             push(&mut attributes, "faas.version", label("revision_name"));
+            push(&mut attributes, "faas.instance", entry_label("instanceId"));
             service
         }
-        "cloud_run_job" => label("job_name"),
+        "cloud_run_job" => {
+            push(
+                &mut attributes,
+                "gcp.cloud_run.job.execution",
+                entry_label("run.googleapis.com/execution_name"),
+            );
+            attributes.extend(
+                entry_label("run.googleapis.com/task_index")
+                    .and_then(|index| index.parse().ok())
+                    .map(|index| {
+                        key_value(
+                            "gcp.cloud_run.job.task_index",
+                            any_value::Value::IntValue(index),
+                        )
+                    }),
+            );
+            label("job_name")
+        }
         "cloud_function" => {
             push(&mut attributes, "faas.name", label("function_name"));
             label("function_name")
@@ -201,10 +253,10 @@ fn resource_attributes(entry: &JsonObject, connector: &Connector<'_>) -> Vec<Key
             label("container_name")
         }
         "gce_instance" => {
-            let name = object(entry, "labels")
-                .and_then(|labels| text(labels, "compute.googleapis.com/resource_name"));
+            let name = entry_label("compute.googleapis.com/resource_name");
             push(&mut attributes, "host.id", label("instance_id"));
             push(&mut attributes, "host.name", name);
+            push(&mut attributes, "gcp.gce.instance.name", name);
             name
         }
         "gae_app" => label("module_id"),
@@ -321,11 +373,19 @@ fn body(entry: &JsonObject, attributes: &mut Vec<KeyValue>) -> String {
             "user.email",
             object(payload, "authenticationInfo").and_then(|info| text(info, "principalEmail")),
         );
-        attributes.extend(
-            status
-                .and_then(|status| status.get("code"))
-                .and_then(|code| json_attribute("rpc.response.status_code", code)),
-        );
+        if let Some(code) = status
+            .and_then(|status| status.get("code"))
+            .and_then(JsonValue::as_i64)
+        {
+            let key = "rpc.response.status_code";
+            let name = usize::try_from(code)
+                .ok()
+                .and_then(|index| RPC_CODES.get(index));
+            attributes.push(match name {
+                Some(name) => attribute(key, name),
+                None => attribute(key, &code.to_string()),
+            });
+        }
         return match (method, status.and_then(|status| text(status, "message"))) {
             (Some(method), Some(message)) => format!("{method}: {message}"),
             (Some(method), None) => method.to_owned(),
@@ -393,23 +453,42 @@ fn compact_json(object: &JsonObject) -> String {
     serde_json::to_string(object).unwrap_or_default()
 }
 
-fn attribute(key: &str, value: &str) -> KeyValue {
+fn key_value(key: &str, value: any_value::Value) -> KeyValue {
     KeyValue {
         key: key.to_owned(),
         key_strindex: 0,
-        value: Some(AnyValue {
-            value: Some(any_value::Value::StringValue(value.to_owned())),
-        }),
+        value: Some(AnyValue { value: Some(value) }),
     }
 }
 
-/// Scalars as strings, nested values as compact JSON; null is dropped.
+fn attribute(key: &str, value: &str) -> KeyValue {
+    key_value(key, any_value::Value::StringValue(value.to_owned()))
+}
+
 fn json_attribute(key: &str, value: &JsonValue) -> Option<KeyValue> {
+    Some(key_value(key, string_value(value)?))
+}
+
+/// Scalars as strings, nested values as compact JSON; null is dropped.
+fn string_value(value: &JsonValue) -> Option<any_value::Value> {
     match value {
         JsonValue::Null => None,
-        JsonValue::String(value) => Some(attribute(key, value)),
-        other => Some(attribute(key, &other.to_string())),
+        JsonValue::String(value) => Some(any_value::Value::StringValue(value.clone())),
+        other => Some(any_value::Value::StringValue(other.to_string())),
     }
+}
+
+/// Proto3 JSON sends 64-bit integers as strings, smaller ones as numbers.
+fn int_value(value: &JsonValue) -> Option<any_value::Value> {
+    let int = value.as_i64().or_else(|| value.as_str()?.parse().ok())?;
+    Some(any_value::Value::IntValue(int))
+}
+
+fn string_array_value(value: &JsonValue) -> Option<any_value::Value> {
+    let value = any_value::Value::StringValue(value.as_str()?.to_owned());
+    Some(any_value::Value::ArrayValue(ArrayValue {
+        values: vec![AnyValue { value: Some(value) }],
+    }))
 }
 
 fn push(attributes: &mut Vec<KeyValue>, key: &str, value: Option<&str>) {
@@ -419,19 +498,20 @@ fn push(attributes: &mut Vec<KeyValue>, key: &str, value: Option<&str>) {
 }
 
 /// Every field of `fields` as an attribute: under its `renames` key when it
-/// has one, under `prefix` + its own name otherwise.
+/// has one and its value fits that attribute, under `prefix` + its own name
+/// otherwise.
 fn push_fields(
     attributes: &mut Vec<KeyValue>,
     fields: &JsonObject,
-    renames: &[(&str, &str)],
+    renames: &[Rename],
     prefix: &str,
 ) {
     for (field, value) in fields {
-        let key = renames
+        let renamed = renames
             .iter()
-            .find(|(name, _)| *name == field.as_str())
-            .map_or_else(|| format!("{prefix}{field}"), |(_, key)| (*key).to_owned());
-        attributes.extend(json_attribute(&key, value));
+            .find(|(name, ..)| *name == field.as_str())
+            .and_then(|(_, key, convert)| Some(key_value(key, convert(value)?)));
+        attributes.extend(renamed.or_else(|| json_attribute(&format!("{prefix}{field}"), value)));
     }
 }
 
@@ -447,12 +527,28 @@ mod tests {
         org_id: "org_1",
     };
 
-    fn convert(entry: JsonValue) -> (HashMap<String, String>, LogRecord) {
+    /// The resource's attributes and the record.
+    fn convert_typed(entry: JsonValue) -> (Vec<KeyValue>, LogRecord) {
         let entry = parse_log_entry(entry.to_string().as_bytes()).expect("a LogEntry");
         let mut request = build_logs_request(&entry, &CONNECTOR, NOW);
         let mut resource_logs = request.resource_logs.remove(0);
         let record = resource_logs.scope_logs.remove(0).log_records.remove(0);
-        (strings(&resource_logs.resource.unwrap().attributes), record)
+        (resource_logs.resource.unwrap().attributes, record)
+    }
+
+    fn convert(entry: JsonValue) -> (HashMap<String, String>, LogRecord) {
+        let (resource, record) = convert_typed(entry);
+        (strings(&resource), record)
+    }
+
+    fn value_of<'a>(attributes: &'a [KeyValue], key: &str) -> Option<&'a any_value::Value> {
+        attributes
+            .iter()
+            .find(|attribute| attribute.key == key)?
+            .value
+            .as_ref()?
+            .value
+            .as_ref()
     }
 
     fn strings(attributes: &[KeyValue]) -> HashMap<String, String> {
@@ -525,6 +621,7 @@ mod tests {
         assert_eq!(resource["service.name"], "checkout");
         assert_eq!(resource["faas.name"], "checkout");
         assert_eq!(resource["faas.version"], "checkout-00042-abc");
+        assert_eq!(resource["faas.instance"], "abc");
         assert_eq!(resource["cloud.provider"], "gcp");
         assert_eq!(resource["cloud.platform"], "gcp_cloud_run");
         assert_eq!(resource["cloud.account.id"], "my-project");
@@ -568,8 +665,46 @@ mod tests {
         );
         assert_eq!(attributes["gcp.labels.instanceId"], "abc");
         assert_eq!(attributes["code.file.path"], "main.go");
-        assert_eq!(attributes["code.line.number"], "42");
+        assert_eq!(
+            value_of(&record.attributes, "code.line.number"),
+            Some(&any_value::Value::IntValue(42))
+        );
         assert_eq!(attributes["code.function.name"], "main.handle");
+    }
+
+    #[test]
+    fn cloud_run_job_entry_maps_execution_and_task_index() {
+        let (resource, _) = convert_typed(json!({
+            "logName": "projects/my-project/logs/run.googleapis.com%2Fstdout",
+            "textPayload": "processing batch",
+            "labels": {
+                "instanceId": "abc",
+                "run.googleapis.com/execution_name": "nightly-export-x7k2p",
+                "run.googleapis.com/task_attempt": "0",
+                "run.googleapis.com/task_index": "3"
+            },
+            "resource": {
+                "type": "cloud_run_job",
+                "labels": {
+                    "project_id": "my-project",
+                    "job_name": "nightly-export",
+                    "location": "europe-west4"
+                }
+            }
+        }));
+
+        let strings = strings(&resource);
+        assert_eq!(strings["service.name"], "nightly-export");
+        assert_eq!(strings["cloud.platform"], "gcp_cloud_run");
+        assert_eq!(
+            strings["gcp.cloud_run.job.execution"],
+            "nightly-export-x7k2p"
+        );
+        assert_eq!(
+            value_of(&resource, "gcp.cloud_run.job.task_index"),
+            Some(&any_value::Value::IntValue(3))
+        );
+        assert!(!strings.contains_key("faas.instance"));
     }
 
     #[test]
@@ -653,6 +788,7 @@ mod tests {
         ));
         assert_eq!(named["service.name"], "web-1");
         assert_eq!(named["host.name"], "web-1");
+        assert_eq!(named["gcp.gce.instance.name"], "web-1");
         assert_eq!(named["host.id"], "8123456789");
         assert_eq!(named["cloud.platform"], "gcp_compute_engine");
         assert_eq!(named["cloud.region"], "europe-west1");
@@ -662,6 +798,7 @@ mod tests {
         assert_eq!(unnamed["service.name"], "gcp/gce_instance");
         assert_eq!(unnamed["host.id"], "8123456789");
         assert!(!unnamed.contains_key("host.name"));
+        assert!(!unnamed.contains_key("gcp.gce.instance.name"));
     }
 
     #[test]
@@ -704,7 +841,26 @@ mod tests {
             "namespaces/my-project/services/checkout"
         );
         assert_eq!(attributes["user.email"], "deployer@example.com");
-        assert_eq!(attributes["rpc.response.status_code"], "7");
+        assert_eq!(attributes["rpc.response.status_code"], "PERMISSION_DENIED");
+    }
+
+    #[test]
+    fn audit_status_code_is_the_google_rpc_code_name() {
+        let status_code = |code: JsonValue| {
+            let (_, record) = convert(json!({
+                "logName": "projects/my-project/logs/cloudaudit.googleapis.com%2Factivity",
+                "protoPayload": { "methodName": "Get", "status": { "code": code } }
+            }));
+            strings(&record.attributes)
+                .get("rpc.response.status_code")
+                .cloned()
+        };
+
+        assert_eq!(status_code(json!(0)).as_deref(), Some("OK"));
+        assert_eq!(status_code(json!(4)).as_deref(), Some("DEADLINE_EXCEEDED"));
+        assert_eq!(status_code(json!(16)).as_deref(), Some("UNAUTHENTICATED"));
+        assert_eq!(status_code(json!(17)).as_deref(), Some("17"));
+        assert_eq!(status_code(json!(-1)).as_deref(), Some("-1"));
     }
 
     #[test]
@@ -716,7 +872,9 @@ mod tests {
                 "requestMethod": "GET",
                 "requestUrl": "https://example.com/health",
                 "status": 502,
+                "requestSize": "a lot",
                 "responseSize": "512",
+                "referer": "https://example.com/",
                 "userAgent": "curl/8.0",
                 "remoteIp": "203.0.113.7",
                 "latency": "0.250s"
@@ -739,8 +897,28 @@ mod tests {
         let attributes = strings(&record.attributes);
         assert_eq!(attributes["http.request.method"], "GET");
         assert_eq!(attributes["url.full"], "https://example.com/health");
-        assert_eq!(attributes["http.response.status_code"], "502");
-        assert_eq!(attributes["http.response.size"], "512");
+        let typed = |key: &str| value_of(&record.attributes, key);
+        assert_eq!(
+            typed("http.response.status_code"),
+            Some(&any_value::Value::IntValue(502))
+        );
+        assert_eq!(
+            typed("http.response.size"),
+            Some(&any_value::Value::IntValue(512))
+        );
+        assert_eq!(
+            typed("http.request.header.referer"),
+            Some(&any_value::Value::ArrayValue(ArrayValue {
+                values: vec![AnyValue {
+                    value: Some(any_value::Value::StringValue(
+                        "https://example.com/".to_owned()
+                    )),
+                }],
+            }))
+        );
+        // Not an integer, so it keeps Cloud Logging's field name.
+        assert!(typed("http.request.size").is_none());
+        assert_eq!(attributes["gcp.http_request.requestSize"], "a lot");
         assert_eq!(attributes["user_agent.original"], "curl/8.0");
         assert_eq!(attributes["client.address"], "203.0.113.7");
         assert_eq!(attributes["gcp.http_request.latency"], "0.250s");
