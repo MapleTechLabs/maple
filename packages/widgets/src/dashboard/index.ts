@@ -52,7 +52,6 @@ export {
 	PRODUCT_EVENTS_PATHS_ENDPOINT,
 	type ProductEventsFunnelDefinition,
 	type ProductEventsPathsDefinition,
-	type PromQlDataSourceInput,
 	type QueryDataSourceInput,
 	type RawSqlDataSourceInput,
 } from "./construct"

@@ -319,8 +319,8 @@ describe("DashboardWidgetDataService", () => {
 		})
 		expect(outcome.data).toEqual({
 			data: [{ bucket: "2026-01-01T00:00:00.000Z", "service=checkout": 4 }],
-			// The share names the scope that failed, not the setup advice.
-			notice: "Partial result: projects/shop-staging could not be read.",
+			// The share counts what failed: no project ids, no setup advice.
+			notice: "Partial result: 1 Google Cloud scope could not be read.",
 		})
 		await runtime.dispose()
 	})

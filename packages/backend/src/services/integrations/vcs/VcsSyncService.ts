@@ -20,8 +20,11 @@ import {
 	type VcsRepositoryBlockedError,
 	type VcsRepoUnavailableError,
 	VcsSyncJob,
+	type WorkflowJobAnnotation,
+	type WorkflowJobJob,
+	type WorkflowRunJob,
 } from "@maple/domain/http"
-import { Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
+import { Clock, Duration, Effect, Context, Layer, Option, Schema, Match } from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
 import {
 	PullRequestChecklistSink,
@@ -31,6 +34,7 @@ import {
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
+import { WorkflowEventSink } from "./WorkflowEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 // Vendor-agnostic sync orchestrator. Decodes a queue message, resolves the
@@ -48,6 +52,11 @@ export const BACKFILL_WINDOW_MS = 90 * 86_400_000 // 90 days
 export const MAX_BACKFILL_STALL_RETRIES = 10
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
+
+/** CI job conclusions worth asking the provider why about. */
+const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "timed_out", "startup_failure"])
+/** How long a CI job waits on its annotations before going out without them. */
+const WORKFLOW_ANNOTATIONS_BUDGET = Duration.seconds(10)
 
 // VcsInstallationGoneError is handled internally (→ disconnect) and never
 // surfaces here. VcsProviderError / VcsRepoUnavailableError that aren't caught
@@ -80,6 +89,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const sink = yield* PullRequestEventSink
 			const commentSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestCommentSink))
 			const checklistSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestChecklistSink))
+			const workflowSink = Option.getOrUndefined(yield* Effect.serviceOption(WorkflowEventSink))
 
 			// The repo's single tracked branch, with the default-branch fallback for a
 			// row whose `trackedBranch` was never set (legacy) — the one place the
@@ -864,6 +874,77 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				},
 			)
 
+			// CI runs and jobs touch no VCS table: they resolve the org and go to the sink, which turns
+			// them into spans. Not behind `ensureProcessable`, since CI traces need no synced commits.
+			// An org that turned CI traces off drops them here, before any span is built.
+			const forwardsWorkflows = (installation: VcsInstallation) =>
+				workflowSink !== undefined && installation.ciTracesEnabled
+			const handleWorkflowRun = Effect.fn("VcsSyncService.handleWorkflowRun")(function* (
+				installation: VcsInstallation,
+				job: WorkflowRunJob,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.repository.external_id": job.externalRepoId,
+					"cicd.pipeline.run.id": job.runId,
+					"vcs.workflow.forwarded": forwardsWorkflows(installation),
+				})
+				if (workflowSink !== undefined && installation.ciTracesEnabled)
+					yield* workflowSink.onWorkflowRun(installation.orgId, job)
+			})
+
+			// A failed job's annotations say why it failed. Best effort: a job whose annotations
+			// cannot be read still becomes spans, just without the reason.
+			const workflowJobAnnotations = (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: WorkflowJobJob,
+			) => {
+				const slash = job.repoFullName.indexOf("/")
+				if (!WORKFLOW_FAILED_CONCLUSIONS.has(job.conclusion ?? "") || slash === -1)
+					return Effect.succeed<ReadonlyArray<WorkflowJobAnnotation>>([])
+				const ref = {
+					externalRepoId: job.externalRepoId,
+					owner: job.repoFullName.slice(0, slash),
+					name: job.repoFullName.slice(slash + 1),
+				}
+				return provider.fetchWorkflowJobAnnotations(installation, ref, job.jobId).pipe(
+					// Rate-limit backoff can wait inline; the reason is not worth holding the job's spans.
+					Effect.timeoutOrElse({
+						duration: WORKFLOW_ANNOTATIONS_BUDGET,
+						orElse: () =>
+							Effect.annotateCurrentSpan({
+								"vcs.workflow.annotations_error": "timed out",
+							}).pipe(Effect.as<ReadonlyArray<WorkflowJobAnnotation>>([])),
+					}),
+					Effect.tap((annotations) =>
+						Effect.annotateCurrentSpan({
+							"vcs.workflow.annotation_count": annotations.length,
+						}),
+					),
+					Effect.catchCause((cause) =>
+						Effect.annotateCurrentSpan({
+							"vcs.workflow.annotations_error": summarizeCause(cause),
+						}).pipe(Effect.as<ReadonlyArray<WorkflowJobAnnotation>>([])),
+					),
+				)
+			}
+
+			const handleWorkflowJob = Effect.fn("VcsSyncService.handleWorkflowJob")(function* (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: WorkflowJobJob,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.repository.external_id": job.externalRepoId,
+					"cicd.pipeline.run.id": job.runId,
+					"cicd.pipeline.task.run.id": job.jobId,
+					"vcs.workflow.forwarded": forwardsWorkflows(installation),
+				})
+				if (workflowSink === undefined || !installation.ciTracesEnabled) return
+				const annotations = yield* workflowJobAnnotations(provider, installation, job)
+				yield* workflowSink.onWorkflowJob(installation.orgId, job, annotations)
+			})
+
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
 					Effect.map(Option.some),
@@ -949,6 +1030,12 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					),
 					Match.discriminator("kind")("pull-request-checklist", (job) =>
 						handlePullRequestChecklist(installation, job),
+					),
+					Match.discriminator("kind")("workflow-run", (job) =>
+						handleWorkflowRun(installation, job),
+					),
+					Match.discriminator("kind")("workflow-job", (job) =>
+						handleWorkflowJob(provider, installation, job),
 					),
 					Match.exhaustive,
 				)

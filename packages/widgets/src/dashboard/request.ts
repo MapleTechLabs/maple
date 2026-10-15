@@ -57,8 +57,12 @@ export function toWidgetRequest(dataSource: unknown): WidgetRequest | null {
 		}
 	}
 
+	// `promql`, not `query`: the key tells variable interpolation to format for PromQL.
 	const promQl = dataSourcePromQl(dataSource)
-	if (promQl !== null) return { endpoint: GCP_PROMQL_ENDPOINT, params: { ...promQl } }
+	if (promQl !== null) {
+		const { query, ...rest } = promQl
+		return { endpoint: GCP_PROMQL_ENDPOINT, params: { promql: query, ...rest } }
+	}
 
 	const querySet = dataSourceQuerySet(dataSource)
 	if (querySet !== null) {

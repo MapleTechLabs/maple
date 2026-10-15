@@ -119,19 +119,29 @@ describe("planWidgetRequest", () => {
 		expect(plan).toEqual({ kind: "disabled", reason: "metric_not_selected" })
 	})
 
-	it("holds a PromQL tile with no query, and substitutes variables into one that has it", () => {
+	it("holds a PromQL tile with no query", () => {
 		const blank = planWidgetRequest({
-			request: { endpoint: "gcp_promql", params: { query: "  " } },
+			request: { endpoint: "gcp_promql", params: { promql: "  " } },
 			dashboardWindow: DASHBOARD,
 		})
 		expect(blank).toEqual({ kind: "disabled", reason: "promql_query_empty" })
+	})
 
-		const plan = planWidgetRequest({
-			request: { endpoint: "gcp_promql", params: { query: 'sum({"m", service="$service"})' } },
-			dashboardWindow: DASHBOARD,
-			variableValues: { service: single("checkout") },
-		})
-		expect(plan.kind === "request" && plan.params.query).toBe('sum({"m", service="checkout"})')
+	it("substitutes a PromQL variable, and All as a regex alternation for `=~`", () => {
+		const promql = 'sum({"m", service=~"$service"})'
+		const plan = (service: VariableValues[string]) => {
+			const planned = planWidgetRequest({
+				request: { endpoint: "gcp_promql", params: { promql } },
+				dashboardWindow: DASHBOARD,
+				variableValues: { service },
+			})
+			return planned.kind === "request" ? planned.params.promql : undefined
+		}
+
+		expect(plan(single("checkout"))).toBe('sum({"m", service=~"checkout"})')
+		expect(plan({ value: "$__all", isAll: true, options: ["checkout", "cart"] })).toBe(
+			'sum({"m", service=~"checkout|cart"})',
+		)
 	})
 
 	it("ignores a disabled metrics draft with no metric", () => {

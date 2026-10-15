@@ -1595,7 +1595,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						Effect.gen(function* () {
 							if (row.sessionId !== null && chatSessions !== undefined) {
 								const stub = chatSessions.session(row.sessionId)
-								yield* stub.abort().pipe(
+								yield* stub.abort("superseded").pipe(
 									Effect.catchCause((cause) =>
 										Effect.logWarning("Could not abort a superseded review turn").pipe(
 											Effect.annotateLogs({

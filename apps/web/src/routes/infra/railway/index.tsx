@@ -18,26 +18,25 @@ import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
 import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import {
+	RailwayFleetBand,
+	RailwayFleetBandLoading,
 	RailwayServiceTable,
 	RailwayServiceTableLoading,
-	RailwaySummaryBand,
-	RailwaySummaryBandLoading,
-	railwayInScope,
-	type RailwayScope,
 } from "@/components/infra/railway/railway-service-table"
+import { hasConfiguredLimits } from "@/components/infra/railway/list-model"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { railwayServicesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
+import type { RailwayIntegrationStatus } from "@maple/domain/http"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 
 const railwaySearchSchema = Schema.Struct({
 	q: Schema.optional(Schema.String),
-	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "unbounded"])),
 	...TimeRangeSearchFields,
 })
 
@@ -84,18 +83,16 @@ function RailwayPage() {
 			/>
 			<ResultView
 				result={statusResult}
-				loading={<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />}
+				loading={<RailwayFleetBandLoading className={FLEET_BAND_BOXED} />}
 			>
 				{(status) =>
 					status.connected ? (
 						<RailwayServices
 							startTime={startTime}
 							endTime={endTime}
-							syncing={!status.authFailed && unsyncedEnvironments(status) > 0}
+							status={status}
 							query={search.q ?? ""}
-							scope={search.scope}
 							onQueryChange={(q) => patchSearch({ q: q || undefined })}
-							onScopeChange={(scope) => patchSearch({ scope })}
 						/>
 					) : (
 						<RailwayIntegrationCard />
@@ -112,20 +109,17 @@ const EMPTY_REFRESH_MS = 15_000
 function RailwayServices({
 	startTime,
 	endTime,
-	syncing,
+	status,
 	query,
-	scope,
 	onQueryChange,
-	onScopeChange,
 }: {
 	startTime: string
 	endTime: string
-	syncing: boolean
+	status: RailwayIntegrationStatus
 	query: string
-	scope: RailwayScope | undefined
 	onQueryChange: (query: string) => void
-	onScopeChange: (scope: RailwayScope | undefined) => void
 }) {
+	const syncing = !status.authFailed && unsyncedEnvironments(status) > 0
 	const servicesAtom = railwayServicesResultAtom({ data: { startTime, endTime } })
 	const servicesResult = useRefreshableAtomValue(servicesAtom)
 	const refreshServices = useAtomRefresh(servicesAtom)
@@ -140,7 +134,7 @@ function RailwayServices({
 	if (Result.isInitial(servicesResult)) {
 		return (
 			<div className="space-y-4">
-				<RailwaySummaryBandLoading className={FLEET_BAND_BOXED} />
+				<RailwayFleetBandLoading className={FLEET_BAND_BOXED} />
 				<RailwayServiceTableLoading />
 			</div>
 		)
@@ -174,8 +168,7 @@ function RailwayServices({
 	const q = query.trim().toLowerCase()
 	const filtered = services.filter(
 		(row) =>
-			(!scope || railwayInScope(row, scope)) &&
-			(!q || `${row.serviceName} ${row.projectName} ${row.environmentName}`.toLowerCase().includes(q)),
+			!q || `${row.serviceName} ${row.projectName} ${row.environmentName}`.toLowerCase().includes(q),
 	)
 
 	return (
@@ -183,10 +176,10 @@ function RailwayServices({
 			className={cn("space-y-4", refreshingClass(servicesResult.waiting))}
 			aria-busy={servicesResult.waiting || undefined}
 		>
-			<RailwaySummaryBand
+			<RailwayFleetBand
 				services={services}
-				activeScope={scope}
-				onScopeChange={onScopeChange}
+				environments={status.environments}
+				authFailed={status.authFailed}
 				className={FLEET_BAND_BOXED}
 			/>
 			<SearchToolbar
@@ -200,9 +193,14 @@ function RailwayServices({
 				}
 			/>
 			{filtered.length === 0 ? (
-				<FilteredEmpty noun="services" description="Clear the search or scope to see them all." />
+				<FilteredEmpty noun="services" description="Clear the search to see them all." />
 			) : (
-				<RailwayServiceTable services={filtered} />
+				<RailwayServiceTable
+					services={filtered}
+					environments={status.environments}
+					authFailed={status.authFailed}
+					showLimits={hasConfiguredLimits(services)}
+				/>
 			)}
 		</div>
 	)

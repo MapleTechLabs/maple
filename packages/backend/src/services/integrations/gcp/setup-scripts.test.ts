@@ -316,14 +316,19 @@ const logsSetupCommands = (scope: Scope) => [
 	publish('"logs":true'),
 ]
 
+const ACCOUNT_DESCRIBE = `iam service-accounts describe ${ACCOUNT} --project=acme-host`
+
+// The account is looked for before the permission check and, missing, again once its APIs are on.
+// Maple's grant comes before the roles on the scope.
 const readerSetupCommands = (scope: Scope) => [
+	ACCOUNT_DESCRIBE,
 	"services enable monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com --project=acme-host",
-	`iam service-accounts describe ${ACCOUNT} --project=acme-host`,
+	ACCOUNT_DESCRIBE,
 	`iam service-accounts create ${NAME} --project=acme-host --display-name=Maple metrics and resource reader`,
+	`iam service-accounts add-iam-policy-binding ${ACCOUNT} --project=acme-host --member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator --condition=None`,
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --condition=None`,
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --condition=None`,
 	`projects add-iam-policy-binding acme-host --member=serviceAccount:${ACCOUNT} --role=roles/serviceusage.serviceUsageConsumer --condition=None`,
-	`iam service-accounts add-iam-policy-binding ${ACCOUNT} --project=acme-host --member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator --condition=None`,
 ]
 
 const logsRemovalCommands = (scope: Scope) => [
@@ -372,8 +377,8 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 			RESOURCE_MANAGER_ON,
 			...scope.open,
 			"projects describe acme-host --format=value(name)",
-			"billing projects describe acme-host --format=value(billingEnabled)",
 			`logging read ${DEFAULT_LOG_FILTER} --limit=1 --freshness=1h ${scope.sink}`,
+			"billing projects describe acme-host --format=value(billingEnabled)",
 		])
 		expect(stdout).toBe(`Maple setup for ${scopeType} ${scope.id}
   Log forwarding     on
@@ -382,7 +387,6 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 Checking access
   ✓ Signed in as jane@acme.com
 ${[...scope.found, `  ✓ ${host} acme-host found (Acme Production)`].join("\n")}
-  ✓ Billing is enabled
   ✓ jane@acme.com has the permissions this script needs
   ✓ Log filter accepted
 
@@ -396,10 +400,11 @@ Log forwarding
   ✓ Check message sent to Maple through the topic
 
 Read-only access
+  ✓ Billing is enabled
   ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account created
-  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple notified
 
 Done. Google Cloud is set up for Maple.
@@ -586,10 +591,11 @@ Log forwarding
   ✓ Check message sent to Maple through the topic
 
 Read-only access
+  ✓ Billing is enabled
   ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account already exists
-  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple notified
 
 Done. Everything is in place.
@@ -747,24 +753,59 @@ Checking access
 ${UNFINISHED}`)
 	})
 
-	it("needs the organization to open for the read-only roles, and leaves that to the permissions for logs alone", () => {
-		const options = { fail: "organizations describe" }
-		const both = run(setup(setupInput("organization", true)), options)
-		expect(both.status).toBe(1)
-		expect(both.commands).toEqual([])
-		expect(both.stdout).toContain("  ✗ Can't open organization 123456789012 as jane@acme.com.")
-		expect(both.stdout).toContain(
-			"What to do: Check the ID with: gcloud organizations list. If it is wrong, remove the connection in Maple and connect the right ID: a connection's ID can't be changed. If it is right, this account needs Organization Administrator there.",
-		)
+	it("never lets read-only access block log forwarding for an admin with logging rights alone", () => {
+		const options = { lacking: "resourcemanager.organizations.setIamPolicy" }
+		// The organization's name is not theirs to read either, which is no error.
+		const on = run(setup(setupInput("organization", true)), {
+			...options,
+			fail: "organizations describe",
+		})
+		expect(on.status).toBe(0)
+		expect(on.commands).toEqual(expect.arrayContaining(logsSetupCommands(SCOPES.organization)))
+		expect(on.commands).not.toContainEqual(expect.stringContaining("service-accounts create"))
+		expect(on.stdout).toContain(
+			`  ✗ jane@acme.com is missing permissions on organization 123456789012: resourcemanager.organizations.setIamPolicy.
 
-		// Logs Configuration Writer does not include reading the organization. Without a Google
-		// identity the script sets up log forwarding alone.
-		const logsOnly = run(
-			setup({ ...setupInput("organization", true), mapleServiceAccountEmail: undefined }),
-			options,
+    What to do: Ask for Organization Administrator there, or have an administrator run this script. If the ID looks wrong, check it with: gcloud organizations list
+`,
 		)
-		expect(logsOnly.status).toBe(0)
-		expect(logsOnly.stdout).not.toContain("Organization 123456789012 found")
+		expect(on.stdout).not.toContain(UNFINISHED)
+		expect(on.stdout).toContain(
+			"\nDone, except read-only access: live metric queries are not available yet. Fix what it\nnames above and paste the script again.\n",
+		)
+		expect(on.stdout).not.toContain("Metrics: ")
+
+		// Turning log forwarding off still removes the sink first; with nothing else to set up,
+		// the read-only access that fails then fails the run.
+		const off = run(setup(setupInput("organization", false)), { ...options, describe: "found" })
+		expect(off.commands.slice(0, logsRemovalCommands(SCOPES.organization).length)).toEqual(
+			logsRemovalCommands(SCOPES.organization),
+		)
+		expect(off.status).toBe(1)
+		expect(off.stdout).toContain(UNFINISHED)
+		expect(off.curl).not.toContainEqual(expect.stringContaining('"metrics"'))
+	})
+
+	it("reads an organization policy that refuses Maple's account as a note when logs are forwarded", () => {
+		const refusal =
+			"ERROR: (gcloud.iam.service-accounts.add-iam-policy-binding) FAILED_PRECONDITION: One or more users named in the policy do not belong to a permitted customer."
+		const options = { fail: "roles/iam.serviceAccountTokenCreator", answer: refusal }
+		const on = run(setup(setupInput("project", true)), options)
+		expect(on.status).toBe(0)
+		expect(on.stdout).toContain("  ✗ Couldn't let Maple use the service account.")
+		expect(on.stdout).toContain(
+			"What to do: An organization policy (domain restricted sharing) blocks granting Maple's service account",
+		)
+		expect(on.stdout).toContain("https://maple.dev/docs/integrations/gcp#domain-restricted-sharing")
+		expect(on.stdout).toContain("\nDone, except read-only access")
+		// No report on the account: what an earlier run said stands.
+		expect(on.commands).toContainEqual(publish('"logs":true'))
+		expect(on.commands).not.toContainEqual(expect.stringContaining('"metrics"'))
+
+		const off = run(setup(setupInput("project", false)), options)
+		expect(off.status).toBe(1)
+		expect(off.stdout).toContain(UNFINISHED)
+		expect(off.curl).not.toContainEqual(expect.stringContaining('"metrics"'))
 	})
 
 	it("switches on only the APIs that are off, so a caller who may not switch any on can still run it", () => {
@@ -855,18 +896,50 @@ ${UNFINISHED}`)
 		expect(kept.access).not.toContainEqual(expect.stringContaining("logging read"))
 	})
 
-	it("stops in the access check when an API is off and the account may not switch it on", () => {
+	it("ends read-only access at a failed step, with no report on the account", () => {
+		const created = run(setup(setupInput("folder", true)), { fail: "service-accounts create" })
+		expect(created.status).toBe(0)
+		expect(created.commands).not.toContainEqual(expect.stringContaining(`serviceAccount:${ACCOUNT}`))
+		expect(created.commands).not.toContainEqual(expect.stringContaining('"metrics"'))
+		expect(created.stdout).toContain("  ✗ Couldn't create the service account.")
+		expect(created.stdout).toContain("\nDone, except read-only access")
+
+		// Maple's grant comes first, so a refused role on the scope is the last step issued.
+		const scope = run(setup(setupInput("folder", true)), { fail: "roles/monitoring.viewer" })
+		expect(scope.status).toBe(0)
+		expect(scope.commands).not.toContainEqual(expect.stringContaining("roles/cloudasset.viewer"))
+		expect(scope.commands).not.toContainEqual(expect.stringContaining('"metrics"'))
+	})
+
+	it("doesn't claim a confirmation when the report on the account doesn't reach Maple", () => {
+		const { status, stdout } = run(setup(setupInput("project", true)), { fail: '"metrics":true' })
+		expect(status).toBe(0)
+		expect(stdout).toContain("Couldn't reach Maple to confirm.")
+		expect(stdout).not.toContain("Maple confirms it")
+	})
+
+	it("ignores an OPTIONAL in the caller's environment", () => {
+		const { stdout } = run(setup(setupInput("project", true)), {
+			fail: "projects describe",
+			env: { OPTIONAL: "1" },
+		})
+		expect(stdout).toContain(UNFINISHED)
+	})
+
+	it("sets log forwarding up when an API read-only access needs is off and may not be switched on", () => {
 		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
 			apis: ["pubsub.googleapis.com", "logging.googleapis.com", "cloudresourcemanager.googleapis.com"],
 			lacking: "serviceusage.services.enable",
 		})
-		expect(status).toBe(1)
-		expect(commands).toEqual([])
+		expect(status).toBe(0)
+		expect(commands).toContainEqual(publish('"logs":true'))
+		expect(commands).not.toContainEqual(expect.stringContaining("service-accounts create"))
 		expect(stdout)
 			.toContain(`  ✗ jane@acme.com is missing permissions on project acme-host: serviceusage.services.enable.
 
     What to do: This script has to switch on: monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com. Ask for Service Usage Admin there, or have an administrator switch them on.
 `)
+		expect(stdout).toContain("\nDone, except read-only access")
 	})
 
 	it("reads an account without any of the permissions as a wrong ID first", () => {
@@ -902,7 +975,7 @@ ${UNFINISHED}`)
 		expect(onScope.stdout)
 			.toContain(`  ✗ jane@acme.com is missing permissions on organization 123456789012: logging.sinks.create.
 
-    What to do: Ask for Logs Configuration Writer and Organization Administrator there, or have an administrator run this script. If the ID looks wrong, check it with: gcloud organizations list
+    What to do: Ask for Logs Configuration Writer there, or have an administrator run this script. If the ID looks wrong, check it with: gcloud organizations list
 `)
 		expect(onScope.curl.at(-1)).toContain("/v3/organizations/123456789012:testIamPermissions")
 
@@ -1019,7 +1092,9 @@ esac
 		const { status, stdout, commands } = run(setup(setupInput("project", false)), { gcloud: slow })
 		expect(status).toBe(0)
 		expect(stdout.match(/ {2}… waiting for Google to publish the new service account\n/g)).toHaveLength(1)
-		expect(commands.filter((command) => command.includes("roles/monitoring.viewer"))).toHaveLength(3)
+		expect(
+			commands.filter((command) => command.includes("roles/iam.serviceAccountTokenCreator")),
+		).toHaveLength(3)
 	})
 
 	it("leaves the read-only access alone when the deployment has lost its Google identity", () => {
@@ -1286,7 +1361,7 @@ esac
 			}),
 		)
 		expect(status).toBe(0)
-		expect(commands.at(-1)).toContain(`--member=serviceAccount:${hostile} `)
+		expect(commands).toContainEqual(expect.stringContaining(`--member=serviceAccount:${hostile} `))
 		expect(existsSync(join(dir, "pwned"))).toBe(false)
 	})
 })

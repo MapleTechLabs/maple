@@ -248,7 +248,7 @@ function GcpInfra({
 			<IntegrationNotConnected
 				icon={<GoogleCloudIcon size={16} />}
 				title="Turn on metrics for Google Cloud"
-				description="Your Google Cloud connections don't collect key metrics. Turn on Key metrics under Configure in the Google Cloud integration."
+				description="Your Google Cloud connections don't collect key metrics. Turn on Key metrics under Configure in the Google Cloud integration. A connection without read-only access asks for its setup script there."
 				integration="gcp"
 				actionLabel="Open the integration"
 				docsPage="gcp"
@@ -382,7 +382,8 @@ function GcpNotice({ notice }: { notice: GcpInfraNotice }) {
 					<AlertTitle>Google Cloud metrics are off</AlertTitle>
 					<AlertDescription>
 						These tables show what Maple collected before they were turned off. To collect again,
-						turn on Key metrics under Configure in the Google Cloud integration.
+						turn on Key metrics under Configure in the Google Cloud integration. A connection
+						without read-only access asks for its setup script there.
 					</AlertDescription>
 					{integration("Open the integration")}
 				</Alert>

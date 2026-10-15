@@ -302,6 +302,16 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						})
 					})
 
+					const promQlQueries = document.widgets.flatMap((widget) => {
+						const source = widget.dataSource as {
+							readonly kind?: unknown
+							readonly query?: unknown
+						}
+						return source.kind === "promql" && typeof source.query === "string"
+							? [source.query]
+							: []
+					})
+
 					// Query-variable options are listed server-side over the same window,
 					// so the board's ladder (selection → default → All → first option)
 					// and its "All" expansion resolve to the same values here.
@@ -312,6 +322,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						payload.variableValues ?? {},
 						queryOptions,
 						whereClauses,
+						promQlQueries,
 					)
 
 					const results: Array<ShareWidgetDataOutcome> = []

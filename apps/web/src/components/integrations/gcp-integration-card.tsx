@@ -51,6 +51,7 @@ import {
 	GCP_SCOPE_NAMES,
 	GCP_STATE_ORDER,
 	gcpConnectionState,
+	gcpLiveQueriesMissing,
 	gcpLogState,
 	gcpMessageParts,
 	gcpMetricsState,
@@ -428,6 +429,23 @@ function GcpConnection({
 					onRunScript={onRunScript}
 				/>
 			)}
+			{/* With key metrics on, the poller's own error says this. */}
+			{!connector.metrics_enabled && gcpLiveQueriesMissing(connector, nowMs, metricsAvailable) ? (
+				<Band
+					run={
+						needed === null && repairs === undefined
+							? { label: "Run the script again", onRun: onRunScript }
+							: undefined
+					}
+				>
+					<Headline>Live queries not set up</Headline>
+					<p className="text-pretty">
+						The last setup run couldn&apos;t create the read-only service account, so Maple
+						can&apos;t query this connection&apos;s metrics. Run the script again and fix what it
+						names under Read-only access.
+					</p>
+				</Band>
+			) : null}
 			{log.kind === "failing" ? (
 				<Band tone="crit" run={rerun("logs")}>
 					<GcpMessage text={log.error} />

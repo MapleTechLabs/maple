@@ -27,9 +27,8 @@ export function ErrorsStatStrip({ filters }: { filters: GetErrorsSummaryInput })
 		Result.builder(summaryResult)
 			.onInitial(() => (
 				<div className="flex items-center gap-4 px-3 py-2">
-					<Skeleton className="h-4 w-24" />
 					<Skeleton className="h-4 w-28" />
-					<Skeleton className="h-4 w-24" />
+					<Skeleton className="h-4 w-28" />
 				</div>
 			))
 			// A failed summary must not take the list down with it — the rows carry
@@ -48,10 +47,10 @@ export function ErrorsStatStrip({ filters }: { filters: GetErrorsSummaryInput })
 						aria-busy={result.waiting || undefined}
 					>
 						<ToolbarStats className="flex-wrap gap-y-1">
-							<ToolbarStat value={summary.totalErrors} label="errors" />
+							{/* Events, not issues: the toolbar right below counts issues. Services
+							    are counted in the sidebar already. */}
+							<ToolbarStat value={summary.totalErrors} label="error events" />
 							<ToolbarStat value={formatErrorRate(summary.errorRate)} label="of all spans" />
-							<ToolbarStat value={summary.affectedServicesCount} label="services" />
-							<ToolbarStat value={summary.affectedTracesCount} label="traces" />
 						</ToolbarStats>
 						<span className="text-xs text-muted-foreground/60">in the last 24 hours</span>
 					</div>

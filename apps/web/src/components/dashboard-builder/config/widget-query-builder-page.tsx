@@ -59,7 +59,10 @@ import {
 	buildWidgetDisplay,
 	inferDefaultUnitForQueries,
 } from "@/lib/query-builder/widget-builder-utils"
-import { isProductEventsFunnel } from "@/lib/query-builder/widget-builder-shared"
+import {
+	isProductEventsFunnel,
+	type QueryBuilderWidgetState,
+} from "@/lib/query-builder/widget-builder-shared"
 import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "@/lib/raw-sql/templates"
 
@@ -157,16 +160,16 @@ function readPromQlDraftFromWidget(widget: DashboardWidget): PromQlDraft {
 	}
 }
 
-/** The `promql` data source; a stat or gauge gets the same default reduction as raw SQL. */
+/** The `promql` data source. A stat or gauge reduces the series by the rail's Aggregate. */
 function buildPromQlDataSource(
 	widget: DashboardWidget,
 	draft: PromQlDraft,
-	visualization: VisualizationType,
+	state: Pick<QueryBuilderWidgetState, "visualization" | "statAggregate">,
 ): WidgetDataSource {
 	const existingTransform = dataSourceTransform(widget.dataSource)
 	const transform =
-		widgetTypeByVisualization(visualization)?.isScalar === true && !existingTransform?.reduceToValue
-			? { ...existingTransform, reduceToValue: { field: "value", aggregate: "avg" as const } }
+		widgetTypeByVisualization(state.visualization)?.isScalar === true
+			? { ...existingTransform, reduceToValue: { field: "value", aggregate: state.statAggregate } }
 			: existingTransform
 	const projects = parsePromQlProjects(draft.projects)
 	return makePromQlDataSource({
@@ -268,7 +271,7 @@ export function WidgetQueryBuilderPage({
 				...widget,
 				timeRange,
 				visualization: state.visualization,
-				dataSource: buildPromQlDataSource(widget, promQlPreviewDraft, state.visualization),
+				dataSource: buildPromQlDataSource(widget, promQlPreviewDraft, state),
 				display: buildWidgetDisplay(widget, state),
 			}
 		}
@@ -319,8 +322,11 @@ export function WidgetQueryBuilderPage({
 	const { dataState: previewDataState } = useWidgetData(previewWidget, true, {
 		maxDataPoints: previewMaxDataPoints,
 	})
+	// Setup states (no query yet, not connected) show muted on the preview, not as an editor error.
 	const promQlError =
-		previewDataState.status === "error" && previewDataState.kind !== "empty"
+		previewDataState.status === "error" &&
+		previewDataState.kind !== "empty" &&
+		previewDataState.kind !== "config"
 			? { title: previewDataState.title ?? "Unable to load", message: previewDataState.message }
 			: undefined
 
@@ -336,7 +342,7 @@ export function WidgetQueryBuilderPage({
 		if (mode === "promql") {
 			onApply({
 				visualization: state.visualization,
-				dataSource: buildPromQlDataSource(widget, promQlDraft, state.visualization),
+				dataSource: buildPromQlDataSource(widget, promQlDraft, state),
 				display: buildWidgetDisplay(widget, state),
 				timeRange: state.timeRange ?? undefined,
 			})
@@ -557,6 +563,7 @@ export function WidgetQueryBuilderPage({
 							draft={promQlDraft}
 							onDraftChange={setPromQlDraft}
 							onRunPreview={() => setPromQlPreviewDraft(promQlDraft)}
+							stale={JSON.stringify(promQlDraft) !== JSON.stringify(promQlPreviewDraft)}
 							error={promQlError}
 						/>
 					) : mode === "rawSql" && showSourceToggle ? (

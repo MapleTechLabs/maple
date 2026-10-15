@@ -88,7 +88,6 @@ import {
 } from "@/api/warehouse/planetscale-infra"
 import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
 import { getGcpInfraFleet, getGcpInfraTimeseries } from "@/api/warehouse/gcp-infra"
-import { getGcpMetricSearch } from "@/api/warehouse/gcp-promql"
 import {
 	getServiceHealthBaseline,
 	getServiceHealthSnapshot,
@@ -713,9 +712,15 @@ export const cloudflareTopTrafficResultAtom = makeQueryAtomFamily(getCloudflareT
 })
 
 // Google Cloud metric names for the PromQL editor; the API caches each project's list for an hour.
-export const gcpMetricSearchResultAtom = makeQueryAtomFamily(getGcpMetricSearch, {
-	staleTime: 300_000,
-})
+// The module loads with the editor, not at startup.
+export const gcpMetricSearchResultAtom = makeQueryAtomFamily(
+	(input: { readonly data: { readonly search: string } }) =>
+		Effect.flatMap(
+			Effect.promise(() => import("@/api/warehouse/gcp-promql")),
+			(module) => module.getGcpMetricSearch(input),
+		),
+	{ staleTime: 300_000 },
+)
 
 // Service-detail Overview tab bundle: primary chart + releases timeline +
 // environments in one fetch. The chart grid and the environment switcher read

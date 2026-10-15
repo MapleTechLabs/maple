@@ -10,9 +10,23 @@ import {
 } from "@maple/domain/http"
 import { computeBucketSecondsForRange } from "./datetime"
 
-/** A widget's step: the chart's own bucket for the window, never under Google's one minute. */
-export const promQlStepSeconds = (startTime: string, endTime: string): number =>
-	Math.max(GCP_PROMQL_MIN_STEP_SECONDS, computeBucketSecondsForRange(startTime, endTime))
+/**
+ * The range request a widget's planned params make, for `GcpPromQlRangeRequest` to decode. The step
+ * is the chart's own bucket for the window, never under Google's one minute.
+ */
+export const promQlRangeInput = (
+	params: { readonly promql: string; readonly projects?: ReadonlyArray<string> | undefined },
+	window: { readonly startTime: string; readonly endTime: string },
+) => ({
+	query: params.promql.trim(),
+	startTime: window.startTime,
+	endTime: window.endTime,
+	stepSeconds: Math.max(
+		GCP_PROMQL_MIN_STEP_SECONDS,
+		computeBucketSecondsForRange(window.startTime, window.endTime),
+	),
+	...(params.projects === undefined ? undefined : { projects: params.projects }),
+})
 
 const LEGEND_LABEL = /\{\{\s*([^{}\s]+)\s*\}\}/g
 
@@ -28,6 +42,7 @@ const seriesKey = (
 	if (legend !== undefined && legend.trim() !== "") {
 		return legend.replace(LEGEND_LABEL, (_, name: string) => labels[name] ?? "")
 	}
+	// `metrics_scope` stays: within one scoping project it is what tells the monitored projects apart.
 	const pairs = Object.entries(labels)
 		.filter(([key]) => key !== "__name__" && !(oneProject && key === "project_id"))
 		.sort(([a], [b]) => a.localeCompare(b))
@@ -59,29 +74,43 @@ export const promQlChartRows = (
 	return [...rows.entries()].sort(([a], [b]) => a - b).map(([, row]) => row)
 }
 
-/** One line for a partial answer. A share link names only the scopes, not the setup advice. */
-export const promQlFailureNotice = (
-	failures: ReadonlyArray<GcpPromQlFailure>,
+/**
+ * An answer as widget data: the chart rows, and a one-line notice when some scopes could not be read.
+ * Members get each scope and its cause; a share link gets only the count, no project ids or setup.
+ */
+export const promQlWidgetData = (
+	result: {
+		readonly series: ReadonlyArray<GcpPromQlSeries>
+		readonly projects: ReadonlyArray<string>
+		readonly failures: ReadonlyArray<GcpPromQlFailure>
+	},
+	legend: string | undefined,
 	withCauses: boolean,
-): string | undefined => {
-	if (failures.length === 0) return undefined
-	return withCauses
-		? `Partial result. ${failures.map((failure) => `${failure.scope}: ${failure.message}`).join(" ")}`
-		: `Partial result: ${failures.map((failure) => failure.scope).join(", ")} could not be read.`
+): { data: Array<Record<string, string | number>>; notice?: string } => {
+	const data = promQlChartRows(result.series, result.projects.length, legend)
+	const { failures } = result
+	if (failures.length === 0) return { data }
+	return {
+		data,
+		notice: withCauses
+			? `Partial result. ${failures.map((failure) => `${failure.scope}: ${failure.message}`).join(" ")}`
+			: `Partial result: ${failures.length === 1 ? "1 Google Cloud scope" : `${failures.length} Google Cloud scopes`} could not be read.`,
+	}
 }
 
 /**
  * A query that runs as written for a metric picked from the metric search: a rate for DELTA and
- * CUMULATIVE metrics, an average for a GAUGE, the 95th percentile for a distribution's buckets.
+ * CUMULATIVE metrics, an average for a GAUGE, the 95th percentile for a distribution's buckets,
+ * each kept per project.
  * Google refuses a selector without `monitored_resource` when the metric has several resource types.
  */
 export const promQlStarterQuery = (metric: string, descriptor: GcpMetricDescriptor): string => {
 	const [resource] = descriptor.monitoredResourceTypes
 	const matcher = descriptor.monitoredResourceTypes.length > 1 ? `, monitored_resource="${resource}"` : ""
 	const selector = (name: string) => `{"${name}"${matcher}}`
-	const by = descriptor.labels[0] === undefined ? "" : ` by (${descriptor.labels[0].key})`
+	const by = ` by (${["project_id", ...descriptor.labels.slice(0, 1).map((label) => label.key)].join(", ")})`
 	if (descriptor.valueType === "DISTRIBUTION" && !/_(count|sum)$/u.test(metric)) {
-		return `histogram_quantile(0.95, sum by (le) (rate(${selector(`${descriptor.type}_bucket`)}[5m])))`
+		return `histogram_quantile(0.95, sum by (project_id, le) (rate(${selector(`${descriptor.type}_bucket`)}[5m])))`
 	}
 	if (descriptor.metricKind === "GAUGE") return `avg${by} (${selector(metric)})`
 	return `sum${by} (rate(${selector(metric)}[5m]))`
