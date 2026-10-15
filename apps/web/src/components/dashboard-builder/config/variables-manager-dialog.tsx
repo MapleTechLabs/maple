@@ -68,7 +68,7 @@ function sourceSummary(variable: DashboardVariable): string {
 		case "attribute":
 			return `${source.scope} attribute: ${source.attributeKey || "…"}`
 		case "metric":
-			return `${source.scope} attribute of ${source.metricNames.join(", ")}: ${source.attributeKey || "…"}`
+			return `metric ${source.scope} attribute: ${source.attributeKey || "…"} (${source.metricNames.length === 1 ? source.metricNames[0] : `${source.metricNames.length} metrics`})`
 	}
 }
 
@@ -109,7 +109,11 @@ function draftError(draft: DashboardVariable, index: number, drafts: DashboardVa
 	if (draft.type === "query" && draft.source.kind !== "facet" && !draft.source.attributeKey.trim()) {
 		return "Pick the attribute key to list values for."
 	}
-	if (draft.type === "query" && draft.source.kind === "metric" && draft.source.metricNames.some((name) => name === "")) {
+	if (
+		draft.type === "query" &&
+		draft.source.kind === "metric" &&
+		draft.source.metricNames.some((name) => name === "")
+	) {
 		return "Name at least one metric to list values from."
 	}
 	return null
@@ -469,7 +473,9 @@ function QuerySourceFields({
 						"metric:metric": "Metric attribute…",
 						"metric:resource": "Metric resource attribute…",
 					}}
-					value={source.kind === "facet" ? `facet:${source.facet}` : `${source.kind}:${source.scope}`}
+					value={
+						source.kind === "facet" ? `facet:${source.facet}` : `${source.kind}:${source.scope}`
+					}
 					onValueChange={(value) => {
 						if (typeof value !== "string") return
 						const [kind, detail] = value.split(":")

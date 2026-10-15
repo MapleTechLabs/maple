@@ -69,6 +69,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/gcp-dashboard",
+		title: "Google Cloud dashboard",
+		description:
+			"The Google Cloud template as a board: tabs, Project / Region / Workload filters over fixture series, and the variables dialog.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/widgets",
 		title: "Widgets",
 		description:

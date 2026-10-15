@@ -42,7 +42,7 @@ export interface DashboardVariablesContextValue {
 	setValue: (name: string, value: string) => void
 }
 
-const DashboardVariablesContext = createContext<DashboardVariablesContextValue | null>(null)
+export const DashboardVariablesContext = createContext<DashboardVariablesContextValue | null>(null)
 
 const EMPTY_CONTEXT: DashboardVariablesContextValue = {
 	variables: [],
@@ -95,10 +95,12 @@ function readVariableOptions(
 						},
 					})
 				: query.scope === "resource"
-				? getResourceAttributeValuesResultAtom({
-						data: { ...window, attributeKey: query.attributeKey },
-					})
-				: getSpanAttributeValuesResultAtom({ data: { ...window, attributeKey: query.attributeKey } })
+					? getResourceAttributeValuesResultAtom({
+							data: { ...window, attributeKey: query.attributeKey },
+						})
+					: getSpanAttributeValuesResultAtom({
+							data: { ...window, attributeKey: query.attributeKey },
+						})
 		const result = get(atom)
 		if (!Result.isSuccess(result)) {
 			return Result.isFailure(result) ? NO_OPTIONS : LOADING_OPTIONS

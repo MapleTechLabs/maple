@@ -92,9 +92,10 @@ describe("Google Cloud dashboard template", () => {
 			for (const name of metricNames) {
 				const stored = STORED.get(name)
 				expect(stored?.metricType, `${variable.name}: ${name}`).toBe(metricType)
-				expect(Object.keys(stored?.rows[0]?.resource_attributes ?? {}), `${variable.name}: ${name}`).toContain(
-					attributeKey,
-				)
+				expect(
+					Object.keys(stored?.rows[0]?.resource_attributes ?? {}),
+					`${variable.name}: ${name}`,
+				).toContain(attributeKey)
 			}
 		}
 
