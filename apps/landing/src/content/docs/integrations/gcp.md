@@ -290,25 +290,63 @@ The log body is `textPayload`, or the `message` or `msg` field of `jsonPayload`,
 
 ### Metrics
 
-Maple stores these Cloud Monitoring metrics at one-minute resolution. The name is the Cloud Monitoring type under a `gcp.` prefix: `run.googleapis.com/request_count` becomes `gcp.run.request_count`.
+Maple stores these Cloud Monitoring metrics at one-minute resolution, under the `gcp.` namespace and named the way OpenTelemetry semantic conventions name metrics. Two Cloud Monitoring types that measure the same thing share a name: the byte and operation counters are split by a direction attribute, shown in brackets, and Cloud SQL reports connections from whichever of the two types its engine has.
 
-| Service                                    | Prefix                         | Metrics                                                                                                                                                                                                                                                          |
-| ------------------------------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cloud Run, Cloud Functions (2nd gen)       | `gcp.run.`                     | `request_count`, `request_latencies`, `container.instance_count`, `container.cpu.utilizations`, `container.memory.utilizations`, `container.max_request_concurrencies`, `container.billable_instance_time`                                                       |
-| Cloud Functions (1st gen)                  | `gcp.cloudfunctions.function.` | `execution_count`, `execution_times`, `instance_count`, `user_memory_bytes`, `network_egress`                                                                                                                                                                    |
-| GKE containers                             | `gcp.kubernetes.container.`    | `cpu.core_usage_time`, `cpu.limit_utilization`, `memory.used_bytes`, `memory.limit_utilization`, `restart_count`                                                                                                                                                 |
-| GKE nodes                                  | `gcp.kubernetes.node.`         | `cpu.allocatable_utilization`, `memory.allocatable_utilization`                                                                                                                                                                                                  |
-| Compute Engine                             | `gcp.compute.instance.`        | `cpu.utilization`, `memory.balloon.ram_used` (E2 machine types only), `network.received_bytes_count`, `network.sent_bytes_count`, `disk.read_bytes_count`, `disk.write_bytes_count`                                                                              |
-| Cloud SQL                                  | `gcp.cloudsql.database.`       | `cpu.utilization`, `memory.utilization`, `disk.utilization`, `network.connections` (MySQL and SQL Server), `postgresql.num_backends`, `disk.read_ops_count`, `disk.write_ops_count`, `replication.replica_lag`                                                   |
-| Pub/Sub                                    | `gcp.pubsub.`                  | `subscription.num_undelivered_messages`, `subscription.oldest_unacked_message_age`, `subscription.sent_message_count`, `subscription.ack_message_count`, `subscription.push_request_count`, `subscription.dead_letter_message_count`, `topic.send_request_count` |
-| Global external Application Load Balancers | `gcp.loadbalancing.https.`     | `request_count`, `total_latencies`, `backend_latencies`, `backend_request_count`, `request_bytes_count`, `response_bytes_count`                                                                                                                                  |
+| Service                              | Metric                                               | Cloud Monitoring type                                                             | Kind         | Unit           |
+| ------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------- | ------------ | -------------- |
+| Cloud Run, Cloud Functions (2nd gen) | `gcp.cloud_run.requests`                             | `run.googleapis.com/request_count`                                                | Counter      | `{request}`    |
+| Cloud Run, Cloud Functions (2nd gen) | `gcp.cloud_run.request.duration`                     | `run.googleapis.com/request_latencies`                                            | Distribution | `s`            |
+| Cloud Run, Cloud Functions (2nd gen) | `gcp.cloud_run.container.instance.count`             | `run.googleapis.com/container/instance_count`                                     | Gauge        | `{instance}`   |
+| Cloud Run, Cloud Functions (2nd gen) | `gcp.cloud_run.container.cpu.utilization`            | `run.googleapis.com/container/cpu/utilizations`                                   | Distribution | `1`            |
+| Cloud Run, Cloud Functions (2nd gen) | `gcp.cloud_run.container.memory.utilization`         | `run.googleapis.com/container/memory/utilizations`                                | Distribution | `1`            |
+| Cloud Run, Cloud Functions (2nd gen) | `gcp.cloud_run.container.request.max_concurrency`    | `run.googleapis.com/container/max_request_concurrencies`                          | Distribution | `{request}`    |
+| Cloud Run, Cloud Functions (2nd gen) | `gcp.cloud_run.container.billable_time`              | `run.googleapis.com/container/billable_instance_time`                             | Counter      | `s`            |
+| Cloud Functions (1st gen)            | `gcp.cloud_functions.executions`                     | `cloudfunctions.googleapis.com/function/execution_count`                          | Counter      | `{execution}`  |
+| Cloud Functions (1st gen)            | `gcp.cloud_functions.execution.duration`             | `cloudfunctions.googleapis.com/function/execution_times`                          | Distribution | `s`            |
+| Cloud Functions (1st gen)            | `gcp.cloud_functions.instance.count`                 | `cloudfunctions.googleapis.com/function/instance_count`                           | Gauge        | `{instance}`   |
+| Cloud Functions (1st gen)            | `gcp.cloud_functions.memory.usage`                   | `cloudfunctions.googleapis.com/function/user_memory_bytes`                        | Distribution | `By`           |
+| Cloud Functions (1st gen)            | `gcp.cloud_functions.network.io` (`transmit`)        | `cloudfunctions.googleapis.com/function/network_egress`                           | Counter      | `By`           |
+| GKE containers                       | `gcp.gke.container.cpu.time`                         | `kubernetes.io/container/cpu/core_usage_time`                                     | Counter      | `s`            |
+| GKE containers                       | `gcp.gke.container.cpu.limit.utilization`            | `kubernetes.io/container/cpu/limit_utilization`                                   | Gauge        | `1`            |
+| GKE containers                       | `gcp.gke.container.memory.usage`                     | `kubernetes.io/container/memory/used_bytes`                                       | Gauge        | `By`           |
+| GKE containers                       | `gcp.gke.container.memory.limit.utilization`         | `kubernetes.io/container/memory/limit_utilization`                                | Gauge        | `1`            |
+| GKE containers                       | `gcp.gke.container.restarts`                         | `kubernetes.io/container/restart_count`                                           | Counter      | `{restart}`    |
+| GKE nodes                            | `gcp.gke.node.cpu.allocatable.utilization`           | `kubernetes.io/node/cpu/allocatable_utilization`                                  | Gauge        | `1`            |
+| GKE nodes                            | `gcp.gke.node.memory.allocatable.utilization`        | `kubernetes.io/node/memory/allocatable_utilization`                               | Gauge        | `1`            |
+| Compute Engine                       | `gcp.gce.cpu.utilization`                            | `compute.googleapis.com/instance/cpu/utilization`                                 | Gauge        | `1`            |
+| Compute Engine                       | `gcp.gce.memory.usage`                               | `compute.googleapis.com/instance/memory/balloon/ram_used` (E2 machine types only) | Gauge        | `By`           |
+| Compute Engine                       | `gcp.gce.network.io` (`receive`)                     | `compute.googleapis.com/instance/network/received_bytes_count`                    | Counter      | `By`           |
+| Compute Engine                       | `gcp.gce.network.io` (`transmit`)                    | `compute.googleapis.com/instance/network/sent_bytes_count`                        | Counter      | `By`           |
+| Compute Engine                       | `gcp.gce.disk.io` (`read`)                           | `compute.googleapis.com/instance/disk/read_bytes_count`                           | Counter      | `By`           |
+| Compute Engine                       | `gcp.gce.disk.io` (`write`)                          | `compute.googleapis.com/instance/disk/write_bytes_count`                          | Counter      | `By`           |
+| Cloud SQL                            | `gcp.cloud_sql.cpu.utilization`                      | `cloudsql.googleapis.com/database/cpu/utilization`                                | Gauge        | `1`            |
+| Cloud SQL                            | `gcp.cloud_sql.memory.utilization`                   | `cloudsql.googleapis.com/database/memory/utilization`                             | Gauge        | `1`            |
+| Cloud SQL                            | `gcp.cloud_sql.disk.utilization`                     | `cloudsql.googleapis.com/database/disk/utilization`                               | Gauge        | `1`            |
+| Cloud SQL                            | `gcp.cloud_sql.connection.count`                     | `cloudsql.googleapis.com/database/network/connections` (MySQL, SQL Server)        | Gauge        | `{connection}` |
+| Cloud SQL                            | `gcp.cloud_sql.connection.count`                     | `cloudsql.googleapis.com/database/postgresql/num_backends` (PostgreSQL)           | Gauge        | `{connection}` |
+| Cloud SQL                            | `gcp.cloud_sql.disk.operations` (`read`)             | `cloudsql.googleapis.com/database/disk/read_ops_count`                            | Counter      | `{operation}`  |
+| Cloud SQL                            | `gcp.cloud_sql.disk.operations` (`write`)            | `cloudsql.googleapis.com/database/disk/write_ops_count`                           | Counter      | `{operation}`  |
+| Cloud SQL                            | `gcp.cloud_sql.replication.lag`                      | `cloudsql.googleapis.com/database/replication/replica_lag`                        | Gauge        | `s`            |
+| Pub/Sub subscriptions                | `gcp.pubsub.subscription.undelivered_messages`       | `pubsub.googleapis.com/subscription/num_undelivered_messages`                     | Gauge        | `{message}`    |
+| Pub/Sub subscriptions                | `gcp.pubsub.subscription.oldest_unacked_message.age` | `pubsub.googleapis.com/subscription/oldest_unacked_message_age`                   | Gauge        | `s`            |
+| Pub/Sub subscriptions                | `gcp.pubsub.subscription.sent_messages`              | `pubsub.googleapis.com/subscription/sent_message_count`                           | Counter      | `{message}`    |
+| Pub/Sub subscriptions                | `gcp.pubsub.subscription.acked_messages`             | `pubsub.googleapis.com/subscription/ack_message_count`                            | Counter      | `{message}`    |
+| Pub/Sub subscriptions                | `gcp.pubsub.subscription.push_requests`              | `pubsub.googleapis.com/subscription/push_request_count`                           | Counter      | `{request}`    |
+| Pub/Sub subscriptions                | `gcp.pubsub.subscription.dead_lettered_messages`     | `pubsub.googleapis.com/subscription/dead_letter_message_count`                    | Counter      | `{message}`    |
+| Pub/Sub topics                       | `gcp.pubsub.topic.publish_requests`                  | `pubsub.googleapis.com/topic/send_request_count`                                  | Counter      | `{request}`    |
+| Load balancers                       | `gcp.load_balancing.requests`                        | `loadbalancing.googleapis.com/https/request_count`                                | Counter      | `{request}`    |
+| Load balancers                       | `gcp.load_balancing.request.duration`                | `loadbalancing.googleapis.com/https/total_latencies`                              | Distribution | `s`            |
+| Load balancers                       | `gcp.load_balancing.backend.request.duration`        | `loadbalancing.googleapis.com/https/backend_latencies`                            | Distribution | `s`            |
+| Load balancers                       | `gcp.load_balancing.backend.requests`                | `loadbalancing.googleapis.com/https/backend_request_count`                        | Counter      | `{request}`    |
+| Load balancers                       | `gcp.load_balancing.network.io` (`receive`)          | `loadbalancing.googleapis.com/https/request_bytes_count`                          | Counter      | `By`           |
+| Load balancers                       | `gcp.load_balancing.network.io` (`transmit`)         | `loadbalancing.googleapis.com/https/response_bytes_count`                         | Counter      | `By`           |
 
 Value conventions:
 
 - Counters are delta sums per minute. Chart them with `sum`, not `rate`.
-- Latency and other distributions are gauges with a `quantile` attribute (`0.5`, `0.95`, `0.99`).
+- Distributions are gauges with a `quantile` attribute (`0.5`, `0.95`, `0.99`).
 - Utilization is a fraction from 0 to 1.
-- Latencies and execution times are in milliseconds.
+- Durations, such as latency, execution time, message age and replica lag, are in seconds.
 
 Service names follow the same rule as logs: Cloud Run services, functions, GKE containers and Compute Engine instances use the workload name, and everything else is `gcp/<resource type>`. Narrow further by resource attribute:
 
@@ -316,20 +354,22 @@ Service names follow the same rule as logs: Cloud Run services, functions, GKE c
 | -------------- | ----------------------------------------------------------------------------- |
 | GKE containers | `k8s.cluster.name`, `k8s.namespace.name`, `k8s.container.name`                |
 | GKE nodes      | `k8s.cluster.name`                                                            |
+| Compute Engine | `gcp.gce.instance.name`, `host.name`, `host.id`                               |
 | Cloud SQL      | `gcp.resource.labels.database_id`                                             |
 | Pub/Sub        | `gcp.resource.labels.subscription_id`, `gcp.resource.labels.topic_id`         |
 | Load balancers | `gcp.resource.labels.url_map_name`, `gcp.resource.labels.backend_target_name` |
 
-Every series also carries `cloud.account.id` (the project ID) and, for resources with a location, `cloud.region`. Google aggregates away every other label, such as revision, pod, response code and device, before the data reaches Maple. These metric labels are kept as attributes:
+Every series also carries `cloud.account.id` (the project ID) and, for resources with a location, `cloud.region`. Google aggregates away every other label, such as revision, pod, response code and device, before the data reaches Maple. These attributes are kept, Cloud Monitoring metric labels under `gcp.metric.labels.`:
 
-| Attribute             | On                                                                                  |
-| --------------------- | ----------------------------------------------------------------------------------- |
-| `response_code_class` | `gcp.run.request_count`, the load balancer request counts                           |
-| `state`               | The Cloud Run and Cloud Functions instance counts                                   |
-| `status`              | `gcp.cloudfunctions.function.execution_count`                                       |
-| `memory_type`         | The GKE memory metrics                                                              |
-| `instance_name`       | The Compute Engine metrics                                                          |
-| `response_class`      | `gcp.pubsub.subscription.push_request_count`, `gcp.pubsub.topic.send_request_count` |
+| Attribute                               | On                                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `gcp.metric.labels.response_code_class` | `gcp.cloud_run.requests`, `gcp.load_balancing.requests`, `gcp.load_balancing.backend.requests` |
+| `gcp.metric.labels.state`               | `gcp.cloud_run.container.instance.count`, `gcp.cloud_functions.instance.count`                 |
+| `gcp.metric.labels.status`              | `gcp.cloud_functions.executions`                                                               |
+| `gcp.metric.labels.memory_type`         | The GKE memory metrics                                                                         |
+| `gcp.metric.labels.response_class`      | `gcp.pubsub.subscription.push_requests`, `gcp.pubsub.topic.publish_requests`                   |
+| `network.io.direction`                  | The `network.io` metrics: `receive` or `transmit`                                              |
+| `disk.io.direction`                     | `gcp.gce.disk.io`, `gcp.cloud_sql.disk.operations`: `read` or `write`                          |
 
 ### Resources
 
