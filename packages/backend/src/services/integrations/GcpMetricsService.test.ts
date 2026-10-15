@@ -12,6 +12,7 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import type { OtlpMetricsPayload } from "./cloudflare-analytics/otlp"
 import { GcpMetricsService, MAX_PAGES_PER_METRIC, MAX_RESOURCE_PAGES, nextWindow } from "./GcpMetricsService"
 
 const minute = 60_000
@@ -19,6 +20,13 @@ const now = Date.UTC(2026, 9, 8, 12, 30, 30)
 /** Five minutes behind `now`, on a minute boundary. */
 const horizon = Date.UTC(2026, 9, 8, 12, 25, 0)
 const METRIC_COUNT = GCP_METRIC_GROUPS.reduce((sum, group) => sum + group.metrics.length, 0)
+/** Queries of a poll in which no statement ranks: Query Insights reads only its ranking metric. */
+const QUERY_COUNT =
+	METRIC_COUNT -
+	GCP_METRIC_GROUPS.reduce(
+		(sum, group) => sum + (group.top === undefined ? 0 : group.metrics.length - 1),
+		0,
+	)
 
 describe("nextWindow", () => {
 	it("starts an hour back on a fresh connector and ends five minutes behind now", () => {
@@ -101,7 +109,10 @@ interface Calls {
 		readonly body: unknown
 	}>
 	readonly monitoring: Array<MonitoringCall>
+	/** `searchAllResources`. */
 	readonly assets: Array<ScopedCall>
+	/** `assets.list` of the Cloud SQL instances. */
+	readonly instances: Array<ScopedCall>
 	readonly ingest: Array<{ readonly authorization: string | null; readonly body: string }>
 }
 
@@ -113,6 +124,8 @@ interface StubOptions {
 	readonly monitoring?: (call: MonitoringCall) => Response | Promise<Response> | undefined
 	/** Answer for one `searchAllResources` call; undefined answers "no resources". */
 	readonly assets?: (call: ScopedCall) => Response | undefined
+	/** Answer for one `assets.list` call; undefined answers "no instances". */
+	readonly instances?: (call: ScopedCall) => Response | undefined
 	readonly ingestStatus?: number
 }
 
@@ -186,6 +199,68 @@ const requestCountSeries = (projectId = "acme-prod") => ({
 	],
 })
 
+const PER_QUERY = "cloudsql.googleapis.com/database/postgresql/insights/perquery"
+
+/**
+ * Query Insights' per-statement series of one type, one point over the first poll's window:
+ * `[instance, query hash, value]`. Latencies are a distribution of that many calls under 1 ms.
+ */
+const statementSeries = (
+	metricType: string,
+	statements: ReadonlyArray<readonly [instance: string, hash: string, value: number]>,
+) => ({
+	timeSeries: statements.map(([instance, hash, value]) => ({
+		metric: {
+			type: metricType,
+			labels: {
+				query_hash: hash,
+				...(metricType.endsWith("/execution_time") && { querystring: `select ${hash}` }),
+			},
+		},
+		resource: {
+			type: "cloudsql_instance_database",
+			labels: {
+				project_id: "acme-prod",
+				resource_id: `acme-prod:${instance}`,
+				location: "us-central1",
+			},
+		},
+		points: [
+			{
+				interval: { startTime: "2026-10-08T11:25:00Z", endTime: "2026-10-08T12:25:00Z" },
+				value: metricType.endsWith("/latencies")
+					? {
+							distributionValue: {
+								count: String(value),
+								bucketOptions: { linearBuckets: { numFiniteBuckets: 1, width: 1_000 } },
+								bucketCounts: ["0", String(value), "0"],
+							},
+						}
+					: { int64Value: String(value) },
+			},
+		],
+	})),
+})
+
+/** Every data point a tick shipped: its metric, point attributes and value. */
+const shippedPoints = (calls: Calls) =>
+	calls.ingest.flatMap((request) => {
+		const payload: OtlpMetricsPayload = JSON.parse(request.body)
+		return payload.resourceMetrics.flatMap((resource) =>
+			resource.scopeMetrics.flatMap((scope) =>
+				scope.metrics.flatMap((metric) =>
+					[...(metric.sum?.dataPoints ?? []), ...(metric.gauge?.dataPoints ?? [])].map((point) => ({
+						metric: metric.name,
+						attributes: Object.fromEntries(
+							point.attributes.map((attribute) => [attribute.key, attribute.value.stringValue]),
+						),
+						value: point.asDouble,
+					})),
+				),
+			),
+		)
+	})
+
 const onlyRequestCount = (call: MonitoringCall) =>
 	call.metricType === REQUEST_COUNT ? json(requestCountSeries()) : undefined
 
@@ -243,10 +318,14 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 		}
 		if (url.host === "cloudasset.googleapis.com") {
 			const call = {
-				scope: url.pathname.replace("/v1/", "").replace(":searchAllResources", ""),
+				scope: url.pathname.replace("/v1/", "").replace(/(:searchAllResources|\/assets)$/, ""),
 				params: url.searchParams,
 				authorization,
 				quotaProject,
+			}
+			if (url.pathname.endsWith("/assets")) {
+				calls.instances.push(call)
+				return options.instances?.(call) ?? json({})
 			}
 			calls.assets.push(call)
 			return options.assets?.(call) ?? json({})
@@ -258,7 +337,14 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 		throw new Error(`unexpected request to ${url.host}`)
 	}) as typeof fetch
 
-const makeCalls = (): Calls => ({ oauth: [], impersonate: [], monitoring: [], assets: [], ingest: [] })
+const makeCalls = (): Calls => ({
+	oauth: [],
+	impersonate: [],
+	monitoring: [],
+	assets: [],
+	instances: [],
+	ingest: [],
+})
 
 /** Everything a tick logs or traces, as one string to search for secrets. */
 const makeRecorder = () => {
@@ -446,7 +532,7 @@ describe("GcpMetricsService", () => {
 					},
 				])
 
-				assert.lengthOf(calls.monitoring, METRIC_COUNT)
+				assert.lengthOf(calls.monitoring, QUERY_COUNT)
 				assert.isTrue(
 					calls.monitoring.every(
 						(call) =>
@@ -553,7 +639,7 @@ describe("GcpMetricsService", () => {
 					calls.impersonate.map((call) => call.account),
 					[READER_A],
 				)
-				assert.lengthOf(calls.monitoring, METRIC_COUNT)
+				assert.lengthOf(calls.monitoring, QUERY_COUNT)
 				assert.isTrue(calls.monitoring.every((call) => call.scope === "organizations/123456789012"))
 				assert.deepStrictEqual(
 					calls.assets.map((call) => call.scope),
@@ -834,7 +920,7 @@ describe("GcpMetricsService", () => {
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0, rowsIngested: 2 })
-				assert.lengthOf(calls.monitoring, METRIC_COUNT)
+				assert.lengthOf(calls.monitoring, QUERY_COUNT)
 				assert.isNull((yield* pollState(testDb, CONNECTOR_A)).last_metrics_error)
 
 				// A scope with nothing in it is an empty poll that still moves on.
@@ -844,6 +930,86 @@ describe("GcpMetricsService", () => {
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.isNull(state.last_metrics_error)
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon + 5 * minute)
+			}),
+		)
+	})
+
+	it.effect("keeps each instance's 25 statements that ran longest, and only those", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		// orders-db ran 26 statements, q1 the shortest; billing-db one.
+		const statements = [
+			...Array.from(
+				{ length: 26 },
+				(_, index) => ["orders-db", `q${index + 1}`, (index + 1) * 1_000] as const,
+			),
+			["billing-db", "b1", 500] as const,
+		]
+		const stub = stubFetch(calls, {
+			monitoring: (call) =>
+				call.metricType.startsWith(PER_QUERY)
+					? json(statementSeries(call.metricType, statements))
+					: undefined,
+		})
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0 })
+				// Something ranked, so every metric was read.
+				assert.lengthOf(calls.monitoring, METRIC_COUNT)
+				const ranking = calls.monitoring.find(
+					(call) => call.metricType === `${PER_QUERY}/execution_time`,
+				)!
+				// One point over the whole window, per instance and statement.
+				assert.strictEqual(ranking.params.get("aggregation.alignmentPeriod"), "3600s")
+				assert.includeMembers(ranking.params.getAll("aggregation.groupByFields"), [
+					"resource.label.resource_id",
+					"metric.label.query_hash",
+					"metric.label.querystring",
+				])
+
+				const points = shippedPoints(calls)
+				const kept = (metric: string) =>
+					points
+						.filter((point) => point.metric === metric)
+						.map((point) => point.attributes["gcp.metric.labels.query_hash"])
+				const top = [...Array.from({ length: 25 }, (_, index) => `q${index + 2}`), "b1"]
+				assert.sameMembers(kept("gcp.cloud_sql.query.statement.execution.time"), top)
+				assert.sameMembers(kept("gcp.cloud_sql.query.statement.calls"), top)
+				assert.sameMembers(kept("gcp.cloud_sql.query.statement.rows"), top)
+				// p50, p95 and p99 of each.
+				assert.lengthOf(kept("gcp.cloud_sql.query.statement.duration"), 3 * top.length)
+
+				const execution = points.find(
+					(point) =>
+						point.metric === "gcp.cloud_sql.query.statement.execution.time" &&
+						point.attributes["gcp.metric.labels.query_hash"] === "q26",
+				)!
+				// Microseconds, stored as seconds; the text under the semantic convention's name.
+				assert.deepInclude(execution, { value: 0.026 })
+				assert.strictEqual(execution.attributes["db.query.text"], "select q26")
+			}),
+		)
+	})
+
+	it.effect("reads nothing more of Query Insights when no statement ran", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			stubFetch(calls, { monitoring: onlyRequestCount }),
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				yield* pollAll
+				assert.deepStrictEqual(
+					calls.monitoring
+						.filter((call) => call.metricType.startsWith(PER_QUERY))
+						.map((call) => call.metricType),
+					[`${PER_QUERY}/execution_time`],
+				)
+				assert.isNull((yield* pollState(testDb, CONNECTOR_A)).last_metrics_error)
 			}),
 		)
 	})
@@ -862,7 +1028,7 @@ describe("GcpMetricsService", () => {
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0, rowsIngested: 2 })
-				assert.lengthOf(calls.monitoring, METRIC_COUNT)
+				assert.lengthOf(calls.monitoring, QUERY_COUNT)
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_metrics_error,
@@ -986,7 +1152,7 @@ describe("GcpMetricsService", () => {
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0, rowsIngested: 2 })
-				assert.lengthOf(calls.monitoring, METRIC_COUNT + 2)
+				assert.lengthOf(calls.monitoring, QUERY_COUNT + 2)
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(state.last_metrics_error, queriesFailed(1, broken, "503 UNAVAILABLE"))
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
@@ -1044,7 +1210,7 @@ describe("GcpMetricsService", () => {
 				yield* TestClock.adjust("2 minutes")
 				assert.deepInclude(yield* Fiber.join(fiber), { polled: 1, failures: 1 })
 				// A few queries time out and pass the poll's minute; the rest are never sent.
-				assert.isBelow(calls.monitoring.length, METRIC_COUNT)
+				assert.isBelow(calls.monitoring.length, QUERY_COUNT)
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_metrics_error,
@@ -1223,6 +1389,82 @@ describe("GcpMetricsService resource inventory", () => {
 					["acme-prod", "cloudresourcemanager.googleapis.com/Project", "acme-prod"],
 					["acme-prod", "run.googleapis.com/Service", "Checkout"],
 				])
+			}),
+		)
+	})
+
+	it.effect("stores each Cloud SQL instance's settings on its inventory row", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		const instanceName = (name: string) =>
+			`//cloudsql.googleapis.com/projects/acme-prod/instances/${name}`
+		const asset = (name: string, data: Record<string, unknown>) => ({
+			name: instanceName(name),
+			resource: { data: { name, project: "acme-prod", databaseVersion: "POSTGRES_15", ...data } },
+		})
+		const stub = stubFetch(calls, {
+			assets: () =>
+				json({
+					results: ["orders-db", "orders-replica"].map((name) => ({
+						name: instanceName(name),
+						assetType: "sqladmin.googleapis.com/Instance",
+						displayName: name,
+					})),
+				}),
+			// The replica on a page of its own: it takes its primary's limit across pages.
+			instances: (call) =>
+				call.params.get("pageToken") === null
+					? json({
+							assets: [
+								asset("orders-db", {
+									settings: {
+										tier: "db-custom-4-16384",
+										insightsConfig: { queryInsightsEnabled: true },
+									},
+								}),
+							],
+							nextPageToken: "next",
+						})
+					: json({
+							assets: [
+								asset("orders-replica", {
+									masterInstanceName: "acme-prod:orders-db",
+									settings: { tier: "db-custom-1-3840" },
+								}),
+							],
+						}),
+		})
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				yield* pollAll
+				assert.lengthOf(calls.instances, 2)
+				assert.deepInclude(calls.instances[0], {
+					scope: "projects/acme-prod",
+					authorization: `Bearer ${READER_TOKEN}`,
+					quotaProject: "acme-prod",
+				})
+				assert.strictEqual(calls.instances[0]!.params.get("contentType"), "RESOURCE")
+				assert.strictEqual(
+					calls.instances[0]!.params.get("assetTypes"),
+					"sqladmin.googleapis.com/Instance",
+				)
+				const stored = yield* Effect.promise(() =>
+					queryFirstRow<{ readonly settings: ReadonlyArray<ReadonlyArray<unknown>> }>(
+						testDb,
+						`SELECT json_agg(json_build_array(display_name, details->'maxConnections', details->'primary')
+						        ORDER BY name) AS settings
+						 FROM gcp_resources WHERE connector_id = $1`,
+						[CONNECTOR_A],
+					),
+				)
+				assert.deepStrictEqual(stored?.settings, [
+					["orders-db", 500, null],
+					["orders-replica", 500, "acme-prod:orders-db"],
+				])
+				assert.isNull((yield* pollState(testDb, CONNECTOR_A)).last_resources_error)
 			}),
 		)
 	})
