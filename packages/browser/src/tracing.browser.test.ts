@@ -285,9 +285,9 @@ describe("setupTracing unload flush", () => {
 
 	// A fetch whose rejection the test controls, installed before the instrumentation wraps it.
 	const stubPendingFetch = () => {
-		const pending: { reject: (cause: unknown) => void } = { reject: () => {} }
-		vi.stubGlobal("fetch", () => new Promise<Response>((_, reject) => (pending.reject = reject)))
-		return pending
+		const rejections: Array<(cause: unknown) => void> = []
+		vi.stubGlobal("fetch", () => new Promise<Response>((_, reject) => void rejections.push(reject)))
+		return { reject: (cause: unknown) => rejections.forEach((reject) => reject(cause)) }
 	}
 
 	it("leaves a fetch the page unloaded under Unset, with the reason", async () => {
