@@ -318,7 +318,10 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 				assert.strictEqual(span!.status.code, 2 /* Error */)
 				const types = span!.events
 					.filter((event) => event.name === "exception")
-					.map((event) => event.attributes.find((attribute) => attribute.key === "exception.type")?.value)
+					.map(
+						(event) =>
+							event.attributes.find((attribute) => attribute.key === "exception.type")?.value,
+					)
 				assert.deepStrictEqual(types, [{ stringValue: "HttpServerError" }])
 			}),
 		)
@@ -397,7 +400,8 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 		)
 	const clientSpan = (spans: ReadonlyArray<OtlpSpan>) => spans.find((span) => span.kind === 3 /* client */)
 	const callerSpan = (spans: ReadonlyArray<OtlpSpan>) => spans.find((span) => span.name === "caller")
-	const hasException = (span: OtlpSpan | undefined) => span?.events.some((event) => event.name === "exception")
+	const hasException = (span: OtlpSpan | undefined) =>
+		span?.events.some((event) => event.name === "exception")
 	const respond = (status: number) => () => Promise.resolve(new Response("{}", { status }))
 	const failToFetch = () => Promise.reject(new TypeError("Failed to fetch"))
 

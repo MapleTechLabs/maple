@@ -295,7 +295,8 @@ const httpClientFailureReason = (exit: Exit.Exit<unknown, unknown>, reasonTag: s
 	const [reason, ...rest] = exit.cause.reasons
 	if (rest.length > 0 || reason === undefined || !Cause.isFailReason(reason)) return undefined
 	const error = reason.error
-	if (!Predicate.isTagged(error, "HttpClientError") || !Predicate.hasProperty(error, "reason")) return undefined
+	if (!Predicate.isTagged(error, "HttpClientError") || !Predicate.hasProperty(error, "reason"))
+		return undefined
 	return Predicate.isTagged(error.reason, reasonTag) ? error.reason : undefined
 }
 
@@ -364,7 +365,10 @@ const makeOtlpSpan = (
 	} else if (isClientStatus4xx(self, status.exit)) {
 		// Semconv keeps a 4xx client span `Error`, but without an `exception` event: error
 		// tracking skips a 4xx span that carries none, so the issue is the caller's to open.
-		otelStatus = { code: StatusCode.Error, message: Cause.prettyErrors(status.exit.cause)[0]?.message ?? "" }
+		otelStatus = {
+			code: StatusCode.Error,
+			message: Cause.prettyErrors(status.exit.cause)[0]?.message ?? "",
+		}
 	} else if (lostReason !== undefined) {
 		otelStatus = { code: StatusCode.Unset }
 		attributes.push({ key: "maple.connection_lost", value: { stringValue: lostReason } })

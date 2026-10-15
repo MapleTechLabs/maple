@@ -945,8 +945,11 @@ describe("MapleFlush.make (client)", () => {
 			traceCalls(calls)
 				.flatMap(
 					(c) =>
-						(c.body as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<ExportedSpan> }> }> })
-							.resourceSpans[0].scopeSpans[0].spans,
+						(
+							c.body as {
+								resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<ExportedSpan> }> }>
+							}
+						).resourceSpans[0].scopeSpans[0].spans,
 				)
 				.find((span) => span.kind === 3 /* client */)
 
