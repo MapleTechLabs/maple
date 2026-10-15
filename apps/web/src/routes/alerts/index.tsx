@@ -69,7 +69,7 @@ function AlertsPage() {
 	const activeTab = resolveTab(search.tab)
 	const navigate = Route.useNavigate()
 
-	// Session + destinations back the header action only; the tabs own the rest
+	// Session gates the header actions; destinations feed the hub. The tabs own the rest
 	// of their data (the atoms are shared, so this costs no extra requests).
 	const sessionResult = useAtomValue(retainedQuery("auth", "session", {}))
 	const { result: destinationsResult } = useAlertDestinationsList()
@@ -79,7 +79,6 @@ function AlertsPage() {
 	const destinations = Result.builder(destinationsResult)
 		.onSuccess((response) => response.destinations)
 		.orElse(() => [])
-	const hasDestinations = destinations.length > 0
 
 	const destinationManager = useDestinationManager()
 
@@ -123,17 +122,15 @@ function AlertsPage() {
 		</AlertsTabCountsBoundary>
 	)
 
-	const headerActions =
-		activeTab === "routing" ? (
-			// The header owns the add action only once destinations exist.
-			// While empty, the empty-state CTA is the single add affordance (avoids a duplicate).
-			isAdmin && hasDestinations ? (
-				<Button size="sm" onClick={() => destinationManager.openDialog()}>
+	// Both actions on every tab: creating a destination is admin-only server side.
+	const headerActions = (
+		<div className="flex items-center gap-2">
+			{isAdmin && (
+				<Button size="sm" variant="outline" onClick={() => destinationManager.openDialog()}>
 					<PlusIcon />
-					Add destination
+					New destination
 				</Button>
-			) : undefined
-		) : (
+			)}
 			<Button
 				size="sm"
 				render={<Link to="/alerts/create" search={{ serviceName: search.serviceName }} />}
@@ -141,7 +138,8 @@ function AlertsPage() {
 				<PlusIcon />
 				New rule
 			</Button>
-		)
+		</div>
+	)
 
 	return (
 		<OpenDestinationDialogProvider value={isAdmin ? () => destinationManager.openDialog() : null}>
