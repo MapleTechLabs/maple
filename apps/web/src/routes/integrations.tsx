@@ -9,7 +9,11 @@ import {
 	CloudflareAccountCard,
 	CloudflareHeaderActions,
 } from "@/components/integrations/cloudflare-account-card"
-import { GcpIntegrationCard } from "@/components/integrations/gcp-integration-card"
+import {
+	GcpHeaderFacts,
+	GcpHeaderStatus,
+	GcpIntegrationCard,
+} from "@/components/integrations/gcp-integration-card"
 import { GithubIntegrationCard } from "@/components/integrations/github-integration-card"
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscale-integration-card"
@@ -279,11 +283,13 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 			/>
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 				<div className="flex items-center gap-2">
-					<h1 className="text-lg/6 font-semibold">{entry.name}</h1>
+					<h1 className="font-display text-lg/6 font-semibold">{entry.name}</h1>
 					{/* The badge covers the non-connected states; connected reads as the status line. */}
 					{!connected && status ? <Badge variant={status.variant}>{status.label}</Badge> : null}
 				</div>
-				{connected && statusLine ? (
+				{connected && integration === "gcp" ? (
+					<GcpHeaderStatus />
+				) : connected && statusLine ? (
 					<div className="flex items-center gap-1.5">
 						<StatusDot tone={HEALTH_TONE[connected.health]} />
 						<span className="truncate text-xs text-muted-foreground" title={statusLine}>
@@ -313,6 +319,12 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 					</Button>
 				) : null}
 			</div>
+			{/* Under the logo, the facts behind the state line. */}
+			{connected && integration === "gcp" ? (
+				<div className="mt-1 basis-full pl-11 sm:pl-10">
+					<GcpHeaderFacts />
+				</div>
+			) : null}
 		</div>
 	)
 }
