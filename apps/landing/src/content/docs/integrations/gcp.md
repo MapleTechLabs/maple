@@ -66,7 +66,6 @@ Maple setup for project acme-prod
 Checking access
   ✓ Signed in as jane@acme.com
   ✓ Project acme-prod found (Acme Production)
-  ✓ Billing is enabled
   ✓ jane@acme.com has the permissions this script needs
   ✓ Log filter accepted
 
@@ -80,10 +79,11 @@ Log forwarding
   ✓ Check message sent to Maple through the topic
 
 Read-only access
+  ✓ Billing is enabled
   ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account created
-  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple notified
 
 Done. Google Cloud is set up for Maple.
@@ -93,7 +93,7 @@ Done. Google Cloud is set up for Maple.
   Metrics: Maple can query them within a few minutes.
 ```
 
-If a step fails, the script stops and prints what to do. Fix it and paste the script again: it continues where it stopped. Running the script again is safe, and its last line says what the run did:
+If a step fails, the script stops and prints what to do. Fix it and paste the script again: it continues where it stopped. A failed step under **Read-only access** stops only that section while log forwarding is on: the run ends with "Done, except read-only access". Running the script again is safe, and its last line says what the run did:
 
 | The script ends with                                                             | The run                                                                                            |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |

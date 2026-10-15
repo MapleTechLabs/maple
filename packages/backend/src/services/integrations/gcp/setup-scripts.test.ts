@@ -316,14 +316,19 @@ const logsSetupCommands = (scope: Scope) => [
 	publish('"logs":true'),
 ]
 
+const ACCOUNT_DESCRIBE = `iam service-accounts describe ${ACCOUNT} --project=acme-host`
+
+// The account is looked for before the permission check and, missing, again once its APIs are on.
+// Maple's grant comes before the roles on the scope.
 const readerSetupCommands = (scope: Scope) => [
+	ACCOUNT_DESCRIBE,
 	"services enable monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com --project=acme-host",
-	`iam service-accounts describe ${ACCOUNT} --project=acme-host`,
+	ACCOUNT_DESCRIBE,
 	`iam service-accounts create ${NAME} --project=acme-host --display-name=Maple metrics and resource reader`,
+	`iam service-accounts add-iam-policy-binding ${ACCOUNT} --project=acme-host --member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator --condition=None`,
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --condition=None`,
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --condition=None`,
 	`projects add-iam-policy-binding acme-host --member=serviceAccount:${ACCOUNT} --role=roles/serviceusage.serviceUsageConsumer --condition=None`,
-	`iam service-accounts add-iam-policy-binding ${ACCOUNT} --project=acme-host --member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator --condition=None`,
 ]
 
 const logsRemovalCommands = (scope: Scope) => [
@@ -398,8 +403,8 @@ Read-only access
   ✓ Billing is enabled
   ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account created
-  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple notified
 
 Done. Google Cloud is set up for Maple.
@@ -589,8 +594,8 @@ Read-only access
   ✓ Billing is enabled
   ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account already exists
-  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple notified
 
 Done. Everything is in place.
@@ -757,7 +762,7 @@ ${UNFINISHED}`)
 		})
 		expect(on.status).toBe(0)
 		expect(on.commands).toEqual(expect.arrayContaining(logsSetupCommands(SCOPES.organization)))
-		expect(on.commands).not.toContainEqual(expect.stringContaining("service-accounts"))
+		expect(on.commands).not.toContainEqual(expect.stringContaining("service-accounts create"))
 		expect(on.stdout).toContain(
 			`  ✗ jane@acme.com is missing permissions on organization 123456789012: resourcemanager.organizations.setIamPolicy.
 
@@ -778,6 +783,7 @@ ${UNFINISHED}`)
 		)
 		expect(off.status).toBe(1)
 		expect(off.stdout).toContain(UNFINISHED)
+		expect(off.curl).not.toContainEqual(expect.stringContaining('"metrics"'))
 	})
 
 	it("reads an organization policy that refuses Maple's account as a note when logs are forwarded", () => {
@@ -890,6 +896,36 @@ ${UNFINISHED}`)
 		expect(kept.access).not.toContainEqual(expect.stringContaining("logging read"))
 	})
 
+	it("ends read-only access at a failed step, with no report on the account", () => {
+		const created = run(setup(setupInput("folder", true)), { fail: "service-accounts create" })
+		expect(created.status).toBe(0)
+		expect(created.commands).not.toContainEqual(expect.stringContaining(`serviceAccount:${ACCOUNT}`))
+		expect(created.commands).not.toContainEqual(expect.stringContaining('"metrics"'))
+		expect(created.stdout).toContain("  ✗ Couldn't create the service account.")
+		expect(created.stdout).toContain("\nDone, except read-only access")
+
+		// Maple's grant comes first, so a refused role on the scope is the last step issued.
+		const scope = run(setup(setupInput("folder", true)), { fail: "roles/monitoring.viewer" })
+		expect(scope.status).toBe(0)
+		expect(scope.commands).not.toContainEqual(expect.stringContaining("roles/cloudasset.viewer"))
+		expect(scope.commands).not.toContainEqual(expect.stringContaining('"metrics"'))
+	})
+
+	it("doesn't claim a confirmation when the report on the account doesn't reach Maple", () => {
+		const { status, stdout } = run(setup(setupInput("project", true)), { fail: '"metrics":true' })
+		expect(status).toBe(0)
+		expect(stdout).toContain("Couldn't reach Maple to confirm.")
+		expect(stdout).not.toContain("Maple confirms it")
+	})
+
+	it("ignores an OPTIONAL in the caller's environment", () => {
+		const { stdout } = run(setup(setupInput("project", true)), {
+			fail: "projects describe",
+			env: { OPTIONAL: "1" },
+		})
+		expect(stdout).toContain(UNFINISHED)
+	})
+
 	it("sets log forwarding up when an API read-only access needs is off and may not be switched on", () => {
 		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
 			apis: ["pubsub.googleapis.com", "logging.googleapis.com", "cloudresourcemanager.googleapis.com"],
@@ -897,7 +933,7 @@ ${UNFINISHED}`)
 		})
 		expect(status).toBe(0)
 		expect(commands).toContainEqual(publish('"logs":true'))
-		expect(commands).not.toContainEqual(expect.stringContaining("service-accounts"))
+		expect(commands).not.toContainEqual(expect.stringContaining("service-accounts create"))
 		expect(stdout)
 			.toContain(`  ✗ jane@acme.com is missing permissions on project acme-host: serviceusage.services.enable.
 
@@ -1056,7 +1092,9 @@ esac
 		const { status, stdout, commands } = run(setup(setupInput("project", false)), { gcloud: slow })
 		expect(status).toBe(0)
 		expect(stdout.match(/ {2}… waiting for Google to publish the new service account\n/g)).toHaveLength(1)
-		expect(commands.filter((command) => command.includes("roles/monitoring.viewer"))).toHaveLength(3)
+		expect(
+			commands.filter((command) => command.includes("roles/iam.serviceAccountTokenCreator")),
+		).toHaveLength(3)
 	})
 
 	it("leaves the read-only access alone when the deployment has lost its Google identity", () => {
@@ -1323,7 +1361,7 @@ esac
 			}),
 		)
 		expect(status).toBe(0)
-		expect(commands.at(-1)).toContain(`--member=serviceAccount:${hostile} `)
+		expect(commands).toContainEqual(expect.stringContaining(`--member=serviceAccount:${hostile} `))
 		expect(existsSync(join(dir, "pwned"))).toBe(false)
 	})
 })

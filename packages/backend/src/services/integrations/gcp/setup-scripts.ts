@@ -140,6 +140,7 @@ interrupted() { printf '\\n\\n%s\\n' ${sh(interrupted)}; exit 130; }
 trap interrupted INT
 
 # stop <what went wrong> <what to do> [Google's answer]
+OPTIONAL=0
 stop() {
   printf '  \\342\\234\\227 %s\\n' "$1"
   # Google can quote the push endpoint back, and this output may be sent to support. The error
@@ -150,7 +151,7 @@ stop() {
   fi
   printf '\\n    What to do: %s\\n' "$2"
   # In a section the rest of the run does without (OPTIONAL=1), the run goes on.
-  [ "\${OPTIONAL-0}" = 1 ] || printf '\\n%s\\n' ${sh(unfinished)}
+  [ "$OPTIONAL" = 1 ] || printf '\\n%s\\n' ${sh(unfinished)}
   exit 1
 }
 
@@ -597,9 +598,8 @@ const readerSetup = (scopeType: GcpScopeType, logs: boolean): string => `
 # Every connection has it. Maple queries the scope's metrics live as this account and, while key
 # metrics are on in Maple, reads them every 5 minutes and lists resources every hour. A re-run
 # never removes it: only the cleanup script does.
-# It runs in a subshell, which a failed step ends. ${logs ? "Log forwarding, set up above, does not depend on it: the run still finishes and says what is missing." : "Nothing else was set up, so the run stops there."}
-# Every step stops for itself: errexit does not hold where the caller reads the status.
-read_only_access() (
+# It runs in a subshell with errexit on, which a failed step ends. ${logs ? "Log forwarding, set up above, does not depend on it: the run still finishes and says what is missing." : "Nothing else was set up, so the run stops there."}
+read_only_access() {
 section "Read-only access"
 # Only Maple's reads need billing, and Maple explains a refused read: the rest is set up anyway.
 case "$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)" in
@@ -607,8 +607,12 @@ case "$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEn
   False) note "Billing is off in project $PROJECT_ID: live queries and key metrics stay unavailable until a billing account is linked at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID. The rest is set up regardless." ;;
   *) note "Couldn't tell whether billing is on. Cloud Monitoring only answers for projects with billing." ;;
 esac
+# A look before the APIs are on can miss the account: it is looked for again before it is created.
+ACCOUNT_EXISTS=0
+if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then ACCOUNT_EXISTS=1; fi
+# Unquoted on purpose: creating is asked about only while the account is missing.
 allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "Ask for Owner there, ${ADMINISTRATOR}" \\
-  resourcemanager.projects.getIamPolicy resourcemanager.projects.setIamPolicy iam.serviceAccounts.get iam.serviceAccounts.create iam.serviceAccounts.setIamPolicy
+  resourcemanager.projects.getIamPolicy resourcemanager.projects.setIamPolicy iam.serviceAccounts.get iam.serviceAccounts.setIamPolicy $([ "$ACCOUNT_EXISTS" = 1 ] || echo iam.serviceAccounts.create)
 ${
 	scopeType === "project"
 		? ""
@@ -628,7 +632,7 @@ apis "Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manage
 # A service account that was deleted (by a cleanup run, or by a setup run from when key metrics
 # were off) fails this describe as well and is created again. Google makes that a new account
 # under the same name, with none of the old one's roles, so every grant below is made for it.
-if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
+if [ "$ACCOUNT_EXISTS" = 1 ] || exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
   ok "Read-only service account already exists"
 else
   run "Read-only service account created" "Couldn't create the service account." "$OWNER" \\
@@ -636,6 +640,14 @@ else
     --display-name="Maple metrics and resource reader"
   ACCOUNT_CREATED=1
 fi
+
+# Maple's own account may mint short-lived tokens for this one service account, nothing else.
+# First: an organization policy that refuses Maple's account leaves no roles behind on the scope.
+grant "Couldn't let Maple use the service account." "$OWNER" \\
+  gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
+  --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator \\
+  --condition=None
+ok "Maple allowed to read as that account"
 
 # Read-only roles on the ${scopeType}${scopeType === "project" ? "" : ", inherited by every project under it"}:
 #   roles/monitoring.viewer  read metrics (monitoring.timeSeries.list), live or every 5 minutes
@@ -653,22 +665,18 @@ grant "Couldn't grant the read-only roles." "$OWNER" \\
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
   ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None
 ok "Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)"
-
-# Maple's own account may mint short-lived tokens for this one service account, nothing else.
-grant "Couldn't let Maple use the service account." "$OWNER" \\
-  gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
-  --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator \\
-  --condition=None
-ok "Maple allowed to read as that account"
-# "metrics" in a report is this account: in place (true) or removed (false).
-notify "Maple notified" '"metrics":true'
 # The status tells the caller whether the account is new.
 [ "$ACCOUNT_CREATED" = 0 ] || exit 3
-)
-${logs ? "OPTIONAL=1\n" : ""}read_only_access && READER=0 || READER=$?
-case "$READER" in
-  0) ;;
-  3) ACCOUNT_CREATED=1 ;;
+}
+${logs ? "OPTIONAL=1\n" : ""}set +e
+( set -e; read_only_access )
+READER=$?
+set -e
+${logs ? "OPTIONAL=0\n" : ""}case "$READER" in
+  0 | 3)
+    [ "$READER" = 0 ] || ACCOUNT_CREATED=1
+    # "metrics" in a report is this account: in place (true) or removed (false).
+    notify "Maple notified" '"metrics":true' ;;
   *) ${logs ? "READER_FAILED=1" : 'exit "$READER"'} ;;
 esac
 `
