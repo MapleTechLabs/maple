@@ -408,14 +408,20 @@ export function SpanDetailPanel({
 										{span.parentSpanId && (
 											<KeyValue mono label="Parent span ID">
 												{onSelectSpanId ? (
-													<button
-														type="button"
-														className="font-mono underline decoration-dotted underline-offset-2 hover:text-primary"
-														title="Select the parent span"
-														onClick={() => onSelectSpanId(span.parentSpanId)}
+													// The copy button sits beside the link, not around it.
+													<SelectableValue
+														value={span.parentSpanId}
+														label="parent span ID"
 													>
-														{span.parentSpanId}
-													</button>
+														<button
+															type="button"
+															className="font-mono underline decoration-dotted underline-offset-2 hover:text-primary"
+															title="Select the parent span"
+															onClick={() => onSelectSpanId(span.parentSpanId)}
+														>
+															{span.parentSpanId}
+														</button>
+													</SelectableValue>
 												) : (
 													<CopyableValue value={span.parentSpanId}>
 														{span.parentSpanId}
