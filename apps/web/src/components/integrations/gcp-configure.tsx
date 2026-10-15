@@ -1252,7 +1252,7 @@ function ApplyStage({
 							<ToggleGroupItem value="terraform">Terraform</ToggleGroupItem>
 						</ToggleGroup>
 						{method === "terraform" ? (
-							<TerraformSteps
+							<GcpTerraformSteps
 								connector={connector}
 								metricsAvailable={metricsAvailable}
 								terraform={scripts?.terraform ?? null}
@@ -1370,7 +1370,7 @@ function ApplyStage({
  * each part from Google Cloud itself: log forwarding by its first signed push, read-only access by
  * reading the scope as the account when asked.
  */
-function TerraformSteps({
+export function GcpTerraformSteps({
 	connector,
 	metricsAvailable,
 	terraform,

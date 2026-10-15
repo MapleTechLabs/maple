@@ -1,0 +1,37 @@
+name: Terraform module (Google Cloud)
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "deploy/terraform-google-maple/**"
+            - ".github/workflows/terraform-google-maple.yml"
+    pull_request:
+        paths:
+            - "deploy/terraform-google-maple/**"
+            - ".github/workflows/terraform-google-maple.yml"
+    workflow_dispatch:
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+jobs:
+    test:
+        name: Format, validate and plan against mocked providers
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: deploy/terraform-google-maple
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+            - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+              with:
+                  tofu_version: 1.13.1
+            - run: tofu fmt -recursive -check -diff
+            - run: tofu init -backend=false
+            - run: tofu validate
+            - run: tofu test

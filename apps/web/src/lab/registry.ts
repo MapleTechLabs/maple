@@ -54,9 +54,9 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	},
 	{
 		path: "/lab/gcp",
-		title: "Google Cloud log filter",
+		title: "Google Cloud configuration",
 		description:
-			"The Google Cloud configuration's Log filter for a new connection and an existing sink, with what each choice asks the setup script for.",
+			"The Google Cloud configuration's Log filter for a new connection and an existing sink, with what each choice asks the setup script for, and the Terraform apply steps.",
 		kind: "lab",
 		session: "none",
 	},
