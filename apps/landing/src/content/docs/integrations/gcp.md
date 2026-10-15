@@ -213,7 +213,7 @@ Then check the data:
 
 1. Open [Logs](/docs/explore/logs) and look for a service named after one of your Cloud Run services, functions or instances.
 2. In the [metrics explorer](/docs/explore/metrics), search for the prefix `gcp`.
-3. Under **Dashboards → Browse templates**, select **Google Cloud** and click **Create dashboard**. To chart one project only, first fill in **Project ID** under **Parameters**, below the preview.
+3. Under **Dashboards → Browse templates**, select **Google Cloud** and click **Create dashboard**. It has one tab per service. Use the **Project**, **Region** and **Workload** filters in the toolbar to narrow every chart. To open it on one project, first fill in **Project ID** under **Parameters**, below the preview.
 4. Open **Infrastructure → Google Cloud** for a table of your workloads per service.
 
 ## Permissions
