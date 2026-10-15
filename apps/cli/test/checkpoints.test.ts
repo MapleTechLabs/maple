@@ -440,6 +440,13 @@ describe("checkpoint state resolution", () => {
 					: "",
 				/checkpoint schema mismatch/,
 			)
+			// Same release, different schema: no version to send the user to.
+			strictEqual(
+				availability.available === false &&
+					availability.reason === "other_build" &&
+					availability.restoreWith,
+				null,
+			)
 		})
 	})
 

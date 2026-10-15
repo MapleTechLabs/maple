@@ -975,15 +975,20 @@ export type CheckpointAvailability =
 	| { readonly available: false; readonly reason: "unusable"; readonly detail: string }
 	/**
 	 * The registry is intact, but another maple build (older or newer) took the current checkpoint
-	 * and this one cannot restore it. `mapleVersion` is the build that can.
+	 * and this one cannot restore it. `restoreWith` is the release that took it, or null when that
+	 * is this same version or a dev build, so no release is known to restore it.
 	 */
 	| {
 			readonly available: false
 			readonly reason: "other_build"
 			readonly checkpointId: CheckpointId
-			readonly mapleVersion: string
+			readonly restoreWith: string | null
 			readonly detail: string
 	  }
+
+/** A release that differs from this build, so installing it can change the outcome. */
+const releaseThatTook = (mapleVersion: string): string | null =>
+	mapleVersion === MAPLE_VERSION || mapleVersion === "dev" ? null : mapleVersion
 
 /** The current checkpoint when the registry only fails this build's schema or chDB gate. */
 const currentFromOtherBuild = async (dataDir: string): Promise<ResolvedCheckpoint | undefined> => {
@@ -1010,7 +1015,7 @@ export const checkpointAvailability = async (dataDir: string): Promise<Checkpoin
 				available: false,
 				reason: "other_build",
 				checkpointId: otherBuild.checkpointId,
-				mapleVersion: otherBuild.manifest.mapleVersion,
+				restoreWith: releaseThatTook(otherBuild.manifest.mapleVersion),
 				detail,
 			}
 		}
