@@ -34,7 +34,7 @@ import type {
 	V2AlertRuleTestParams,
 } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import {
 	buildTimeseriesQuerySpec,
 	createQueryDraft,
@@ -765,6 +765,13 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 		windowMinutes: result.window_minutes,
 		threshold: result.threshold,
 		thresholdUpper: result.threshold_upper,
+		thresholds: Arr.map(result.thresholds, (tier) => ({
+			severity: tier.severity,
+			value: tier.value,
+			upper: tier.upper,
+			recoveryValue: tier.recovery_value,
+			destinationIds: tier.destination_ids,
+		})),
 		comparator: result.comparator,
 		truncatedToStart: asIsoOrNull(result.truncated_to_start),
 		series: result.series.map(
@@ -784,6 +791,7 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 								...(point.provisional !== undefined
 									? { provisional: point.provisional }
 									: undefined),
+								...(point.level !== undefined ? { level: point.level } : undefined),
 							}),
 					),
 				}),
@@ -794,6 +802,7 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 					groupKey: span.group_key,
 					start: asIso(span.start),
 					end: asIso(span.end),
+					severity: span.severity,
 				}),
 		),
 	})
@@ -818,6 +827,7 @@ export function v2CheckToDocument(check: V2AlertCheck): AlertCheckDocument {
 		consecutiveHealthy: check.consecutive_healthy,
 		incidentId: check.incident_id,
 		incidentTransition: check.incident_transition,
+		level: check.level,
 		evaluationDurationMs: check.evaluation_duration_ms,
 		errorMessage: check.error_message,
 		errorCategory: check.error_category,

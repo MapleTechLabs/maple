@@ -34,6 +34,7 @@ function check(offsetMinutes: number, status: AlertCheckDocument["status"], obse
 		consecutiveHealthy: 0,
 		incidentId: null,
 		incidentTransition: "none",
+		level: null,
 		evaluationDurationMs: 12,
 		errorMessage: null,
 		errorCategory: null,

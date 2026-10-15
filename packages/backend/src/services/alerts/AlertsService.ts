@@ -2,8 +2,10 @@ import {
 	alertDeliveryRetryDelayMs,
 	canRetryAlertDelivery,
 	evaluateAlertObservation,
+	highestBreachedLevel,
 	interleaveAlertRulesByTenant,
 	makeAlertDeliveryKey,
+	maxSeverity,
 	planAlertLifecycle,
 	type AlertLifecycleInput,
 } from "@maple/alerting-core"
@@ -111,6 +113,7 @@ import { simulateFiringSpans } from "./alert-firing-spans"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator } from "./alert-formatting"
+import { coreTiers, ruleAtSeverity } from "./alert-thresholds"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -814,6 +817,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						comparator: rule.comparator,
 						threshold: rule.threshold,
 						thresholdUpper: rule.thresholdUpper,
+						tiers: coreTiers(rule.thresholds),
 						minimumSampleCount: rule.minimumSampleCount,
 						noDataBehavior: rule.compiledPlan.noDataBehavior,
 					},
@@ -1549,9 +1553,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									: applyEvaluationLogic(normalized, obs)
 							return {
 								bucketMs,
-								status: evaluation.status,
-								skipReason: evaluation.skipReason,
-								value: evaluation.value,
+								evaluation,
 								sampleCount: obs.sampleCount,
 								provisional: hasPartialBucket && bucketMs === endMs,
 							}
@@ -1559,17 +1561,20 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 						const groupSeries = new AlertRulePreviewSeries({
 							groupKey,
-							points: evaluations.map(
-								({ bucketMs, status, skipReason, value, sampleCount, provisional }) =>
-									new AlertRulePreviewPoint({
-										bucket: iso(bucketMs),
-										value,
-										sampleCount,
-										status,
-										...(skipReason === undefined ? undefined : { skipReason }),
-										...(provisional ? { provisional } : undefined),
-									}),
-							),
+							points: evaluations.map(({ bucketMs, evaluation, sampleCount, provisional }) => {
+								const level = highestBreachedLevel(evaluation.levels)
+								return new AlertRulePreviewPoint({
+									bucket: iso(bucketMs),
+									value: evaluation.value,
+									sampleCount,
+									status: evaluation.status,
+									...(level === null ? undefined : { level }),
+									...(evaluation.skipReason === undefined
+										? undefined
+										: { skipReason: evaluation.skipReason }),
+									...(provisional ? { provisional } : undefined),
+								})
+							}),
 						})
 
 						// The would-fire shading is the scheduler's own state machine replayed
@@ -1583,6 +1588,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										groupKey,
 										start: iso(span.startMs),
 										end: iso(span.endMs),
+										severity: span.severity,
 									}),
 							),
 						}
@@ -1601,6 +1607,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					windowMinutes: normalized.windowMinutes,
 					threshold: normalized.threshold,
 					thresholdUpper: normalized.thresholdUpper,
+					thresholds: normalized.thresholds,
 					comparator: normalized.comparator,
 					truncatedToStart,
 					series,
@@ -2389,6 +2396,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const upsertState = (fields: {
 						consecutiveBreaches: number
 						consecutiveHealthy: number
+						historyJson: ReadonlyArray<number>
 						lastStatus: string
 						lastValue: number | null
 						lastSampleCount: number
@@ -2397,6 +2405,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							state != null &&
 							state.consecutiveBreaches === fields.consecutiveBreaches &&
 							state.consecutiveHealthy === fields.consecutiveHealthy &&
+							state.historyJson !== null &&
+							state.historyJson.length === fields.historyJson.length &&
+							state.historyJson.every((code, index) => code === fields.historyJson[index]) &&
 							state.lastStatus === fields.lastStatus &&
 							state.lastError == null &&
 							state.lastEvaluatedAt != null &&
@@ -2427,11 +2438,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 					}
 
+					const openSeverity =
+						openIncident == null ? null : decodeAlertSeveritySync(openIncident.severity)
 					const lifecycleInput: AlertLifecycleInput = {
 						policy: {
 							consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
+							breachWindow: normalized.breachesOutOf ?? normalized.consecutiveBreachesRequired,
 							consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
 							renotifyIntervalMinutes: normalized.renotifyIntervalMinutes,
+							severities: normalized.thresholds.map((tier) => tier.severity),
 						},
 						evaluation,
 						state:
@@ -2440,11 +2455,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								: {
 										consecutiveBreaches: state.consecutiveBreaches,
 										consecutiveHealthy: state.consecutiveHealthy,
+										history: state.historyJson,
 									},
 						openIncident:
-							openIncident == null
+							openIncident == null || openSeverity == null
 								? null
 								: {
+										severity: openSeverity,
 										firstTriggeredAtMs: openIncident.firstTriggeredAt,
 										lastNotifiedAtMs: openIncident.lastNotifiedAt,
 										lastDeliveredEventType:
@@ -2464,6 +2481,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					yield* upsertState({
 						consecutiveBreaches: lifecycle.state.consecutiveBreaches,
 						consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+						historyJson: lifecycle.state.history,
 						lastStatus: evaluation.status,
 						lastValue: evaluation.value,
 						lastSampleCount: evaluation.sampleCount,
@@ -2540,6 +2558,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (lifecycle.transition === "opened") {
 						const incidentId = decodeAlertIncidentIdSync(makeUuid())
 						const inheritedNotificationAt = lifecycle.inheritedNotificationAtMs ?? null
+						const openedRule = ruleAtSeverity(
+							normalized,
+							lifecycle.severity ?? normalized.severity,
+						)
 						const incident: AlertIncidentRow = {
 							id: incidentId,
 							orgId: row.orgId,
@@ -2548,11 +2570,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							ruleName: row.name,
 							groupKey,
 							signalType: normalized.signalType,
-							severity: normalized.severity,
+							severity: openedRule.severity,
+							peakSeverity: openedRule.severity,
 							status: "open",
 							comparator: normalized.comparator,
-							threshold: normalized.threshold,
-							thresholdUpper: normalized.thresholdUpper,
+							threshold: openedRule.threshold,
+							thresholdUpper: openedRule.thresholdUpper,
 							firstTriggeredAt: timestamp,
 							lastTriggeredAt: timestamp,
 							resolvedAt: null,
@@ -2579,7 +2602,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							lifecycle.eventType === "trigger"
 								? yield* prepareIncidentDeliveries(
 										row.orgId,
-										normalized,
+										openedRule,
 										incident,
 										evaluation,
 										"trigger",
@@ -2618,6 +2641,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								openedIncidentId: null,
 								consecutiveBreaches: lifecycle.state.consecutiveBreaches,
 								consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+								severity: lifecycle.severity,
 							}
 						}
 						if (lifecycle.notificationSuppression === "flapping") {
@@ -2635,7 +2659,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						} else if (lifecycle.eventType === "trigger") {
 							yield* pushIncidentNotification(
 								row.orgId,
-								normalized,
+								openedRule,
 								incident,
 								evaluation,
 								lifecycle.eventType,
@@ -2650,12 +2674,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							openedIncidentId: incidentId,
 							consecutiveBreaches: lifecycle.state.consecutiveBreaches,
 							consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+							severity: lifecycle.severity,
 						}
 					}
 
-					if (lifecycle.transition === "continued" && openIncident != null) {
+					const severityChanged =
+						lifecycle.transition === "escalated" || lifecycle.transition === "deescalated"
+					if ((lifecycle.transition === "continued" || severityChanged) && openIncident != null) {
+						const severity = lifecycle.severity ?? decodeAlertSeveritySync(openIncident.severity)
+						const peakSeverity = maxSeverity(
+							severity,
+							openIncident.peakSeverity == null
+								? decodeAlertSeveritySync(openIncident.severity)
+								: decodeAlertSeveritySync(openIncident.peakSeverity),
+						)
+						const tierRule = ruleAtSeverity(normalized, severity, peakSeverity)
 						const refreshedIncident = {
 							...openIncident,
+							severity,
+							peakSeverity,
+							threshold: tierRule.threshold,
+							thresholdUpper: tierRule.thresholdUpper,
 							lastTriggeredAt: timestamp,
 							lastObservedValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
@@ -2671,6 +2710,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							db.run(
 								PG.update(AlertIncidents)
 									.set({
+										...(severityChanged
+											? {
+													severity,
+													peakSeverity,
+													threshold: tierRule.threshold,
+													thresholdUpper: tierRule.thresholdUpper,
+												}
+											: undefined),
 										lastTriggeredAt: timestamp,
 										lastObservedValue: evaluation.value,
 										lastSampleCount: evaluation.sampleCount,
@@ -2693,12 +2740,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								openedIncidentId: null,
 								consecutiveBreaches: lifecycle.state.consecutiveBreaches,
 								consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+								severity: lifecycle.severity,
 							}
 						}
-						if (lifecycle.eventType === "renotify") {
+						if (lifecycle.eventType === "renotify" || lifecycle.eventType === "trigger") {
 							yield* queueIncidentNotifications(
 								row.orgId,
-								normalized,
+								tierRule,
 								refreshedIncident,
 								evaluation,
 								lifecycle.eventType,
@@ -2712,6 +2760,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							openedIncidentId: null,
 							consecutiveBreaches: lifecycle.state.consecutiveBreaches,
 							consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+							severity: lifecycle.severity,
 						}
 					}
 
@@ -2753,6 +2802,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								openedIncidentId: null,
 								consecutiveBreaches: lifecycle.state.consecutiveBreaches,
 								consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+								severity: lifecycle.severity,
 							}
 						}
 						if (openIncident.holdReason !== null) {
@@ -2767,9 +2817,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								}),
 							)
 						} else if (lifecycle.eventType === "resolve") {
+							const openSeverityForResolve = decodeAlertSeveritySync(openIncident.severity)
 							yield* queueIncidentNotifications(
 								row.orgId,
-								normalized,
+								ruleAtSeverity(
+									normalized,
+									openSeverityForResolve,
+									openIncident.peakSeverity == null
+										? null
+										: decodeAlertSeveritySync(openIncident.peakSeverity),
+								),
 								resolvedIncident,
 								resolveEvaluation,
 								lifecycle.eventType,
@@ -2784,6 +2841,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							openedIncidentId: null,
 							consecutiveBreaches: lifecycle.state.consecutiveBreaches,
 							consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+							severity: lifecycle.severity,
 						}
 					}
 
@@ -2793,6 +2851,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						openedIncidentId: null,
 						consecutiveBreaches: lifecycle.state.consecutiveBreaches,
 						consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+						severity: lifecycle.severity,
 					}
 				})
 				const outcome = yield* evaluateTransition()
@@ -2820,7 +2879,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							ruleName: row.name,
 							groupKey,
 							signalType: normalized.signalType,
-							severity: normalized.severity,
+							severity: outcome.severity ?? normalized.severity,
 							comparator: normalized.comparator,
 							threshold: normalized.threshold,
 							thresholdUpper: normalized.thresholdUpper,
@@ -2862,7 +2921,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					ConsecutiveBreaches: outcome.consecutiveBreaches,
 					ConsecutiveHealthy: outcome.consecutiveHealthy,
 					IncidentId: outcome.incidentId,
-					IncidentTransition: outcome.transition,
+					// The checks API (and the iOS client) decode a closed set; a severity
+					// change is a continuing incident there, and `Level` says which tier.
+					IncidentTransition:
+						outcome.transition === "escalated" || outcome.transition === "deescalated"
+							? "continued"
+							: outcome.transition,
+					Level: highestBreachedLevel(evaluation.levels) ?? "",
 					EvaluationDurationMs: Math.max(0, evaluationEndMs - timestamp),
 					ErrorMessage: null,
 					ErrorCategory: "",
@@ -2945,6 +3010,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				threshold: normalized.threshold,
 				thresholdUpper: normalized.thresholdUpper,
 				comparator: normalized.comparator,
+				levels: normalized.thresholds.map((tier) => ({ severity: tier.severity, status: "clear" })),
 				reason,
 				// This "healthy" is fabricated for config-driven resolves (rule changed,
 				// group vanished), not derived from an empty query window. Callers that
@@ -3760,6 +3826,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							EvaluationDurationMs: 0,
 							ErrorMessage: message,
 							ErrorCategory: failureCategory,
+							Level: "",
 						}),
 					)
 

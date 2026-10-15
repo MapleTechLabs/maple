@@ -34,6 +34,10 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		windowMinutes: 5,
 		minimumSampleCount: 0,
 		consecutiveBreachesRequired: 2,
+		breachesOutOf: null,
+		thresholds: [
+			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
+		],
 		consecutiveHealthyRequired: 2,
 		renotifyIntervalMinutes: 30,
 		apdexThresholdMs: null,
@@ -65,6 +69,7 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		comparator: "gt",
 		threshold: 0.05,
 		thresholdUpper: null,
+		peakSeverity: null,
 		firstTriggeredAt: iso(10 * 60_000),
 		lastTriggeredAt: iso(60_000),
 		resolvedAt: null,
@@ -161,6 +166,7 @@ describe("deriveOverview", () => {
 				makeIncident({
 					id: "00000000-0000-4000-8000-0000000000f2",
 					lastTriggeredAt: iso(45 * DAY_MS),
+					peakSeverity: null,
 					firstTriggeredAt: iso(46 * DAY_MS),
 				}),
 				// Ancient and resolved — dropped before any sorting/grouping.
@@ -168,6 +174,7 @@ describe("deriveOverview", () => {
 					id: "00000000-0000-4000-8000-0000000000f3",
 					status: "resolved",
 					lastTriggeredAt: iso(31 * DAY_MS),
+					peakSeverity: null,
 					firstTriggeredAt: iso(32 * DAY_MS),
 					resolvedAt: iso(31 * DAY_MS),
 				}),

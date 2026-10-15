@@ -1706,6 +1706,8 @@ export const alertChecks = defineDatasource("alert_checks", {
 		// Why a skipped check skipped (no_data, below_min_samples, no_value); '' otherwise.
 		// Last, where migration 0036's ADD COLUMN puts it.
 		SkipReason: t.string().lowCardinality().default(""),
+		// Highest severity tier the check breached (warning, critical); '' otherwise.
+		Level: t.string().lowCardinality().default(""),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",

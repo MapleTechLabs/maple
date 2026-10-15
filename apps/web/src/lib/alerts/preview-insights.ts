@@ -243,7 +243,12 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			after: `${b.apdex_threshold_ms ?? "none"}`,
 			same: a.apdex_threshold_ms === b.apdex_threshold_ms,
 		},
-		{ field: "Severity", before: a.severity, after: b.severity, same: a.severity === b.severity },
+		{
+			field: "Severity",
+			before: a.severity ?? "",
+			after: b.severity ?? "",
+			same: a.severity === b.severity,
+		},
 		{
 			field: "Renotify",
 			before: `${a.renotify_interval_minutes}m`,
@@ -252,9 +257,10 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 		},
 		{
 			field: "Destinations",
-			before: String(a.destination_ids.length),
-			after: String(b.destination_ids.length),
-			same: [...a.destination_ids].sort().join() === [...b.destination_ids].sort().join(),
+			before: String(a.destination_ids?.length ?? 0),
+			after: String(b.destination_ids?.length ?? 0),
+			same:
+				[...(a.destination_ids ?? [])].sort().join() === [...(b.destination_ids ?? [])].sort().join(),
 		},
 		{ field: "Name", before: a.name, after: b.name, same: a.name === b.name },
 		{

@@ -13,15 +13,19 @@ import {
 	AlertRuleId,
 	AlertSeverity,
 	AlertSignalType,
+	AlertThresholds,
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
 	IsoDateTimeString,
 	QueryBuilderQueryDraftSchema,
 	UserId,
+	alertThresholdLegacyFields,
+	legacyAlertThreshold,
+	sortAlertThresholds,
 } from "@maple/domain/http"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "@maple/domain/query-engine"
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import { createSyncedCollection, timestamptzParser } from "./shape-fetch"
 
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -45,6 +49,7 @@ const decodeNoDataBehavior = Schema.decodeUnknownOption(QueryEngineNoDataBehavio
 
 const decodeNotificationTemplate = Schema.decodeUnknownOption(AlertNotificationTemplate)
 const decodeQueryBuilderDraft = Schema.decodeUnknownOption(QueryBuilderQueryDraftSchema)
+const decodeThresholds = Schema.decodeUnknownOption(AlertThresholds)
 const decodeStringArray = Schema.decodeUnknownOption(Schema.Array(Schema.String))
 // The stored `group_by` column is a JSON-encoded string array (mirrors the
 // server's `Schema.fromJsonString(AlertGroupBy)`).
@@ -82,9 +87,12 @@ export const AlertRuleRowSchema = Schema.Struct({
 	comparator: Schema.String,
 	threshold: Schema.Number,
 	threshold_upper: Schema.NullOr(Schema.Number),
+	// Optional: rows synced before the column existed omit it.
+	thresholds_json: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
 	window_minutes: Schema.Number,
 	minimum_sample_count: Schema.Number,
 	consecutive_breaches_required: Schema.Number,
+	breaches_out_of: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	consecutive_healthy_required: Schema.Number,
 	renotify_interval_minutes: Schema.Number,
 	apdex_threshold_ms: Schema.NullOr(Schema.Number),
@@ -112,6 +120,7 @@ export const AlertRuleStateRowSchema = Schema.Struct({
 	group_key: Schema.String,
 	consecutive_breaches: Schema.Number,
 	consecutive_healthy: Schema.Number,
+	history_json: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
 	last_status: Schema.NullOr(Schema.String),
 	last_value: Schema.NullOr(Schema.Number),
 	last_sample_count: Schema.NullOr(Schema.Number),
@@ -132,6 +141,7 @@ export const AlertIncidentRowSchema = Schema.Struct({
 	group_key: Schema.NullOr(Schema.String),
 	signal_type: Schema.String,
 	severity: Schema.String,
+	peak_severity: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	status: Schema.String,
 	comparator: Schema.String,
 	threshold: Schema.Number,
@@ -185,6 +195,18 @@ export const rowToAlertRuleDocument = (
 	statesByRuleId: Map<string, AlertRuleStateRow>,
 ): AlertRuleDocument => {
 	const state = statesByRuleId.get(row.id)
+	const destinationIds = safeParseStringArray(row.destination_ids_json).map((id) => decodeDestinationId(id))
+	// Rows written before tiers carry none: they are one tier from the legacy columns.
+	const legacyTier = legacyAlertThreshold({
+		severity: asSeverity(row.severity),
+		threshold: row.threshold,
+		thresholdUpper: row.threshold_upper,
+		destinationIds,
+	})
+	const thresholds = sortAlertThresholds(
+		Option.getOrElse(decodeThresholds(row.thresholds_json), () => Arr.of(legacyTier)),
+	)
+	const legacy = alertThresholdLegacyFields(thresholds)
 	return new AlertRuleDocument({
 		id: asAlertRuleId(row.id),
 		name: row.name,
@@ -194,7 +216,8 @@ export const rowToAlertRuleDocument = (
 				? null
 				: Option.getOrElse(decodeNotificationTemplate(row.notification_template_json), () => null),
 		enabled: row.enabled,
-		severity: asSeverity(row.severity),
+		severity: legacy.severity,
+		thresholds,
 		serviceNames: [...safeParseStringArray(row.service_names_json)],
 		excludeServiceNames: [...safeParseStringArray(row.exclude_service_names_json)],
 		environments: [...safeParseStringArray(row.environments_json)],
@@ -202,11 +225,12 @@ export const rowToAlertRuleDocument = (
 		groupBy: row.group_by == null ? null : decodeGroupByFromJson(row.group_by),
 		signalType: asSignalType(row.signal_type),
 		comparator: asComparator(row.comparator),
-		threshold: row.threshold,
-		thresholdUpper: row.threshold_upper,
+		threshold: legacy.threshold,
+		thresholdUpper: legacy.thresholdUpper,
 		windowMinutes: row.window_minutes,
 		minimumSampleCount: row.minimum_sample_count,
 		consecutiveBreachesRequired: row.consecutive_breaches_required,
+		breachesOutOf: row.breaches_out_of ?? null,
 		consecutiveHealthyRequired: row.consecutive_healthy_required,
 		renotifyIntervalMinutes: row.renotify_interval_minutes,
 		apdexThresholdMs: row.apdex_threshold_ms,
@@ -216,7 +240,7 @@ export const rowToAlertRuleDocument = (
 				: Option.getOrElse(decodeQueryBuilderDraft(row.query_builder_draft_json), () => null),
 		rawQuerySql: row.raw_query_sql ?? null,
 		rawQueryReducer: row.signal_type === "raw_query" ? asReducer(row.reducer) : null,
-		destinationIds: safeParseStringArray(row.destination_ids_json).map((id) => decodeDestinationId(id)),
+		destinationIds: legacy.destinationIds,
 		noDataBehavior: Option.getOrElse(decodeNoDataBehavior(row.no_data_behavior), () => "skip" as const),
 		lastEvaluationError: state?.last_error ?? null,
 		lastEvaluatedAt: state?.last_evaluated_at != null ? decodeIso(state.last_evaluated_at) : null,
@@ -240,6 +264,7 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 		groupKey: row.group_key,
 		signalType: asSignalType(row.signal_type),
 		severity: asSeverity(row.severity),
+		peakSeverity: row.peak_severity == null ? null : asSeverity(row.peak_severity),
 		status: asIncidentStatus(row.status),
 		comparator: asComparator(row.comparator),
 		threshold: row.threshold,

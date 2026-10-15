@@ -264,6 +264,7 @@ function RuleDetailContent() {
 				consecutiveHealthy: 0,
 				incidentId: null,
 				incidentTransition: point.transitionCount > 0 ? "continued" : "none",
+				level: null,
 				evaluationDurationMs: 0,
 				errorMessage: null,
 				errorCategory: null,
@@ -1071,8 +1072,7 @@ function RuleDetailContent() {
 																				)
 																			}
 																		>
-																			<ChatBubbleSparkleIcon
-																			/>
+																			<ChatBubbleSparkleIcon />
 																			Open investigation
 																		</DropdownMenuItem>
 																		<DropdownMenuItem
