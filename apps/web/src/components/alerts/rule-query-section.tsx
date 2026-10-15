@@ -23,6 +23,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@maple/ui/lib/utils"
 
 import { EnvironmentCombobox, ServiceCombobox } from "@/components/alerts/service-combobox"
+import {
+	ArrowTrendUpIcon,
+	CircleCheckIcon,
+	CircleXmarkIcon,
+	ClockIcon,
+	PulseIcon,
+	type IconComponent,
+} from "@/components/icons"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { QueryPanel } from "@/components/dashboard-builder/config/query-panel"
 import { RawSqlEditorPanel } from "@/components/dashboard-builder/config/raw-sql-editor-panel"
@@ -60,12 +68,17 @@ const KIND_HINT = {
 	raw_query: "ClickHouse SQL, replayed per evaluation window.",
 } satisfies Record<SignalKind, string>
 
-const BUILTIN_SIGNALS: ReadonlyArray<{ value: AlertSignalType; label: string; hint: string }> = [
-	{ value: "error_rate", label: "Error rate", hint: "failed / all" },
-	{ value: "p95_latency", label: "P95", hint: "latency" },
-	{ value: "p99_latency", label: "P99", hint: "tail latency" },
-	{ value: "apdex", label: "Apdex", hint: "satisfaction" },
-	{ value: "throughput", label: "Throughput", hint: "requests / window" },
+const BUILTIN_SIGNALS: ReadonlyArray<{
+	value: AlertSignalType
+	label: string
+	hint: string
+	icon: IconComponent
+}> = [
+	{ value: "error_rate", label: "Error rate", hint: "failed / all", icon: CircleXmarkIcon },
+	{ value: "p95_latency", label: "P95", hint: "latency", icon: ClockIcon },
+	{ value: "p99_latency", label: "P99", hint: "tail latency", icon: ArrowTrendUpIcon },
+	{ value: "apdex", label: "Apdex", hint: "satisfaction", icon: CircleCheckIcon },
+	{ value: "throughput", label: "Throughput", hint: "requests / window", icon: PulseIcon },
 ]
 
 /**
@@ -133,14 +146,17 @@ function BuiltinQueryForm({
 						key={signal.value}
 						value={signal.value}
 						className={cn(
-							"flex cursor-pointer flex-col items-start gap-0.5 border-b-2 border-transparent px-3 py-2.5 text-left",
+							"group flex cursor-pointer flex-col items-start gap-0.5 border-b-2 border-transparent px-3 py-2.5 text-left",
 							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
 							"data-[checked]:border-primary data-[checked]:bg-muted/40",
 							"[&:not([data-checked])]:hover:bg-muted/20",
 						)}
 					>
-						<span className="text-sm font-medium">{signal.label}</span>
-						<span className="text-2xs text-muted-foreground">{signal.hint}</span>
+						<span className="flex items-center gap-1.5 text-sm font-medium">
+							<signal.icon size={14} className="shrink-0 text-muted-foreground group-data-[checked]:text-primary" />
+							{signal.label}
+						</span>
+						<span className="pl-5 text-2xs text-muted-foreground">{signal.hint}</span>
 					</RadioPrimitive.Root>
 				))}
 			</RadioGroupPrimitive>

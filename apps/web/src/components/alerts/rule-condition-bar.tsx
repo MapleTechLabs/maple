@@ -61,6 +61,16 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 	},
 ]
 
+/** What the threshold is compared against, in words: the aggregation for a query, the signal otherwise. */
+function conditionSubject(form: RuleFormState): string {
+	if (form.signalType === "raw_query") return "the SQL value"
+	if (form.signalType === "builder_query") {
+		const aggregation = form.queryBuilderDraft.aggregation.replaceAll("_", " ").trim()
+		return aggregation.length > 0 ? aggregation : "the query value"
+	}
+	return signalLabels[form.signalType].toLowerCase()
+}
+
 /** The rule in one plain sentence, shown in the action bar so the whole rule reads at a glance. */
 export function describeRuleCondition(form: RuleFormState): string {
 	const unit = thresholdUnitLabel(form) ?? ""
@@ -71,7 +81,7 @@ export function describeRuleCondition(form: RuleFormState): string {
 	const checks = form.consecutiveBreachesRequired.trim() || "?"
 	const windowText = `${form.windowMinutes.trim() || "?"} min`
 	const when = checks === "1" ? `over ${windowText}` : `in ${checks} checks in a row (${windowText} each)`
-	return `${form.severity === "critical" ? "Critical" : "Warning"} when ${signalLabels[form.signalType].toLowerCase()} ${COMPARATOR_WORDS[form.comparator]} ${threshold} ${when}`
+	return `${form.severity === "critical" ? "Critical" : "Warning"} when ${conditionSubject(form)} ${COMPARATOR_WORDS[form.comparator]} ${threshold} ${when}`
 }
 
 interface RuleConditionFieldsProps {

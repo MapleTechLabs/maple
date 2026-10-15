@@ -42,6 +42,7 @@ import {
 import { diffRuleForms, incidentsClearedByDraft } from "@/lib/alerts/preview-insights"
 import { toastExit } from "@/lib/error-toast"
 import { applyTemplate } from "@/lib/alerts/templates"
+import { switchSignalKind } from "@/lib/alerts/rule-modes"
 import type { WidgetAlertPrefillNotice } from "@/lib/alerts/widget-prefill"
 import { Result, useAtomSet } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
@@ -340,7 +341,13 @@ export function AlertCreateFormSurface({
 					open={templatesOpen}
 					onOpenChange={setTemplatesOpen}
 					onPick={(template) => {
-						setRuleForm((current) => applyTemplate(template, current))
+						setRuleForm((current) => {
+							const applied = applyTemplate(template, current)
+							// Templates fill the query builder; Apdex has no builder aggregation, so it stays Built-in.
+							return applied.signalType === "apdex"
+								? applied
+								: switchSignalKind(applied, "builder_query").form
+						})
 						setTemplatesOpen(false)
 					}}
 					onStartBlank={() => setTemplatesOpen(false)}
