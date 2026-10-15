@@ -257,7 +257,7 @@ export function SpanDetailPanel({
 					)}
 					{traceShare !== null && !span.isMissing && (
 						<span className="font-mono text-muted-foreground">
-							{formatPercent(traceShare)} of trace
+							{formatPercent(traceShare, { floor: 0.001 })} of trace
 						</span>
 					)}
 					<Badge variant="outline" size="xs" className={statusStyle}>
