@@ -15,6 +15,7 @@ import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuth
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
+import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
 
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -87,6 +88,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	ApiKeysService.layer,
 	CliDeviceAuthService.layer,
 	McpOAuthService.layer,
+	PreviewSignInService.layer,
 	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
