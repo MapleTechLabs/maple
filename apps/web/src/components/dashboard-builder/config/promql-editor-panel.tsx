@@ -1,4 +1,4 @@
-import { useDeferredValue, useState } from "react"
+import { type Dispatch, type SetStateAction, useDeferredValue, useState } from "react"
 import { Effect, Exit } from "effect"
 import { promQlStarterQuery } from "@maple/query-engine"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -35,13 +35,21 @@ export const parsePromQlProjects = (text: string): ReadonlyArray<string> =>
 
 interface PromQlEditorPanelProps {
 	draft: PromQlDraft
-	onDraftChange: (next: PromQlDraft) => void
+	onDraftChange: Dispatch<SetStateAction<PromQlDraft>>
 	onRunPreview: () => void
+	/** The draft differs from what the preview last ran. */
+	stale: boolean
 	/** The preview's failure, e.g. Google's message for a query it refused. */
 	error?: { title: string; message?: string }
 }
 
-export function PromQlEditorPanel({ draft, onDraftChange, onRunPreview, error }: PromQlEditorPanelProps) {
+export function PromQlEditorPanel({
+	draft,
+	onDraftChange,
+	onRunPreview,
+	stale,
+	error,
+}: PromQlEditorPanelProps) {
 	const [search, setSearch] = useState("")
 	const deferredSearch = useDeferredValue(search.trim())
 	const searchResult = useAtomValue(
@@ -52,6 +60,13 @@ export function PromQlEditorPanel({ draft, onDraftChange, onRunPreview, error }:
 	const metrics = Result.builder(searchResult)
 		.onSuccess((response) => (response as { metrics: ReadonlyArray<string> }).metrics)
 		.orElse((): ReadonlyArray<string> => [])
+	const searchHint =
+		deferredSearch === ""
+			? "Type part of a metric name."
+			: Result.builder(searchResult)
+					.onError((searchError) => displayError(searchError).message)
+					.onSuccess(() => `No metric name contains "${deferredSearch}".`)
+					.orElse(() => "Searching...")
 
 	const [starterError, setStarterError] = useState<string | null>(null)
 	const [insertStarter, inserting] = useAsyncAction(async (metric: string) => {
@@ -61,7 +76,8 @@ export function PromQlEditorPanel({ draft, onDraftChange, onRunPreview, error }:
 			setStarterError(displayError(exit.cause).message)
 			return
 		}
-		onDraftChange({ ...draft, query: promQlStarterQuery(metric, exit.value) })
+		const query = promQlStarterQuery(metric, exit.value)
+		onDraftChange((current) => ({ ...current, query }))
 	})
 
 	return (
@@ -111,11 +127,7 @@ export function PromQlEditorPanel({ draft, onDraftChange, onRunPreview, error }:
 							/>
 							<ComboboxContent>
 								{metrics.length === 0 ? (
-									<EmptyMessage className="px-3 py-4">
-										{deferredSearch === ""
-											? "Type part of a metric name."
-											: `No metric name contains "${deferredSearch}".`}
-									</EmptyMessage>
+									<EmptyMessage className="px-3 py-4">{searchHint}</EmptyMessage>
 								) : (
 									<ComboboxList>
 										{metrics.map((metric) => (
@@ -145,12 +157,7 @@ export function PromQlEditorPanel({ draft, onDraftChange, onRunPreview, error }:
 						className="w-full bg-transparent font-mono text-xs leading-5 border border-border rounded-sm px-2 py-1.5 min-h-[120px] resize-y outline-none focus:ring-1 focus:ring-foreground/20"
 					/>
 					{error?.message && (
-						<p
-							className={cn(
-								"font-mono text-2xs whitespace-pre-wrap break-words",
-								TONE_TEXT.crit,
-							)}
-						>
+						<p className="font-mono text-2xs text-muted-foreground whitespace-pre-wrap break-words">
 							{error.message}
 						</p>
 					)}
@@ -186,6 +193,11 @@ export function PromQlEditorPanel({ draft, onDraftChange, onRunPreview, error }:
 				<Button size="sm" onClick={onRunPreview} disabled={draft.query.trim() === ""}>
 					Run preview
 				</Button>
+				{stale && (
+					<span className={cn("text-2xs", TONE_TEXT.warn)}>
+						Edited since the last run: the preview applies on Run preview
+					</span>
+				)}
 				<span className="text-2xs text-muted-foreground ml-auto">
 					Google bills the series a read returns to your project.
 				</span>

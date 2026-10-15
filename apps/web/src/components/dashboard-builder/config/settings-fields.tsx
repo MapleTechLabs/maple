@@ -401,7 +401,7 @@ function Legend({ seriesStats = true }: { seriesStats?: boolean }) {
 
 /** How the timeseries a stat or gauge reads is reduced to one number. */
 function ScalarReduction() {
-	const { state, seriesFieldOptions, set } = useSettings()
+	const { state, seriesFieldOptions, sourceMode, set } = useSettings()
 	// A widget whose queries changed can hold a value field that no longer
 	// exists; fall back to the first series so the select is never blank.
 	const valueField =
@@ -430,23 +430,25 @@ function ScalarReduction() {
 					</SelectContent>
 				</Select>
 			</RailSetting>
-			<RailSetting label="Value field">
-				<Select
-					value={valueField || seriesFieldOptions[0]}
-					onValueChange={(value) => set({ statValueField: value ?? "" })}
-				>
-					<SelectTrigger className="w-full">
-						<SelectValue placeholder="Select series" />
-					</SelectTrigger>
-					<SelectContent>
-						{seriesFieldOptions.map((field) => (
-							<SelectItem key={field} value={field}>
-								{field}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
-			</RailSetting>
+			{sourceMode === "builder" && (
+				<RailSetting label="Value field">
+					<Select
+						value={valueField || seriesFieldOptions[0]}
+						onValueChange={(value) => set({ statValueField: value ?? "" })}
+					>
+						<SelectTrigger className="w-full">
+							<SelectValue placeholder="Select series" />
+						</SelectTrigger>
+						<SelectContent>
+							{seriesFieldOptions.map((field) => (
+								<SelectItem key={field} value={field}>
+									{field}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</RailSetting>
+			)}
 		</>
 	)
 }

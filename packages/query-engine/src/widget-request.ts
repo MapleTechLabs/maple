@@ -165,7 +165,7 @@ export function planWidgetRequest(input: PlanWidgetRequestInput): WidgetRequestP
 	if (isMetricNotSelected(endpoint, interpolated)) {
 		return { kind: "disabled", reason: "metric_not_selected" }
 	}
-	if (endpoint === GCP_PROMQL_ENDPOINT && isBlank(interpolated.query)) {
+	if (endpoint === GCP_PROMQL_ENDPOINT && isBlank(interpolated.promql)) {
 		return { kind: "disabled", reason: "promql_query_empty" }
 	}
 

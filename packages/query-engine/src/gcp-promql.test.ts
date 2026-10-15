@@ -1,6 +1,6 @@
 import { GcpMetricDescriptor } from "@maple/domain/http"
 import { describe, expect, it } from "vitest"
-import { promQlChartRows, promQlFailureNotice, promQlStarterQuery, promQlStepSeconds } from "./gcp-promql"
+import { promQlChartRows, promQlRangeInput, promQlStarterQuery, promQlWidgetData } from "./gcp-promql"
 
 const T0 = 1_760_000_000
 const iso = (seconds: number) => new Date(seconds * 1000).toISOString()
@@ -77,26 +77,48 @@ describe("promQlChartRows", () => {
 	})
 })
 
-describe("promQlStepSeconds", () => {
-	it("never asks Google for less than a minute", () => {
-		expect(promQlStepSeconds("2026-02-01 00:00:00", "2026-02-01 00:30:00")).toBe(60)
-		expect(promQlStepSeconds("2026-02-01 00:00:00", "2026-02-08 00:00:00")).toBe(3600)
+describe("promQlRangeInput", () => {
+	it("trims the query and never asks Google for a step under a minute", () => {
+		expect(
+			promQlRangeInput(
+				{ promql: "  up\n", projects: ["shop-prod"] },
+				{ startTime: "2026-02-01 00:00:00", endTime: "2026-02-01 00:30:00" },
+			),
+		).toEqual({
+			query: "up",
+			startTime: "2026-02-01 00:00:00",
+			endTime: "2026-02-01 00:30:00",
+			stepSeconds: 60,
+			projects: ["shop-prod"],
+		})
+		expect(
+			promQlRangeInput(
+				{ promql: "up" },
+				{ startTime: "2026-02-01 00:00:00", endTime: "2026-02-08 00:00:00" },
+			).stepSeconds,
+		).toBe(3600)
 	})
 })
 
-describe("promQlFailureNotice", () => {
-	const failures = [{ scope: "projects/shop-staging", message: "Run the setup script again." }]
+describe("promQlWidgetData", () => {
+	const answer = {
+		series: [{ labels: { project_id: "shop-prod" }, points: [[T0, 1]] as const }],
+		projects: ["shop-prod"],
+		failures: [{ scope: "projects/shop-staging", message: "Run the setup script again." }],
+	}
 
-	it("says nothing about a complete answer", () => {
-		expect(promQlFailureNotice([], true)).toBeUndefined()
+	it("adds no notice to a complete answer", () => {
+		expect(promQlWidgetData({ ...answer, failures: [] }, undefined, true)).toEqual({
+			data: [{ bucket: iso(T0), value: 1 }],
+		})
 	})
 
-	it("names the cause for members and only the scope on a share link", () => {
-		expect(promQlFailureNotice(failures, true)).toBe(
+	it("names each scope and its cause for members, and only a count on a share link", () => {
+		expect(promQlWidgetData(answer, undefined, true).notice).toBe(
 			"Partial result. projects/shop-staging: Run the setup script again.",
 		)
-		expect(promQlFailureNotice(failures, false)).toBe(
-			"Partial result: projects/shop-staging could not be read.",
+		expect(promQlWidgetData(answer, undefined, false).notice).toBe(
+			"Partial result: 1 Google Cloud scope could not be read.",
 		)
 	})
 })

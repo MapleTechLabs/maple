@@ -14,6 +14,8 @@
 //     crafted variable value cannot break out of its literal position.
 //   - `whereClause`-like values are handled clause-by-clause: a clause that
 //     references an "All" selection is dropped entirely (All = don't filter).
+//   - `promql` values substitute plainly, with "All" as a regex alternation
+//     (`a|b`) for a `=~` matcher.
 //   - everything else gets plain text substitution.
 
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
@@ -96,6 +98,13 @@ function interpolateString(input: string, key: string | undefined, values: Varia
 	}
 	if (key !== undefined && WHERE_CLAUSE_KEY.test(key)) {
 		return interpolateWhereClause(input, values)
+	}
+	if (key === "promql") {
+		return replaceRefs(input, (name) => {
+			const variable = values[name]
+			if (variable === undefined) return null
+			return variable.isAll ? variable.options.join("|") : variable.value
+		})
 	}
 	return replaceRefs(input, (name) => {
 		const variable = values[name]

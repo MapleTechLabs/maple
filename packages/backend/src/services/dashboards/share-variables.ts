@@ -41,6 +41,7 @@
 import { splitWhereClause } from "@maple/domain/where-clause"
 import {
 	ALL_VALUE,
+	collectVariableRefs,
 	resolveDashboardVariableValue,
 	type ResolvedVariable,
 	type VariableValues,
@@ -115,7 +116,14 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 	 * not own. If the charset is ever loosened, this is what still catches it.
 	 */
 	whereClauseTemplates: ReadonlyArray<string> = [],
+	/**
+	 * Every PromQL query on the board. A `query` variable's options are telemetry values with any
+	 * characters, and PromQL takes them unescaped, so a variable these reference keeps to the
+	 * free-text charset, every option of an "All" included.
+	 */
+	promQlTemplates: ReadonlyArray<string> = [],
 ) {
+	const promQlNames = new Set(promQlTemplates.flatMap(collectVariableRefs))
 	const resolveOne = (
 		definition: ShareVariableDefinition,
 	): Effect.Effect<Option.Option<readonly [string, ResolvedVariable]>, ShareVariableInvalidError> => {
@@ -139,12 +147,18 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 
 		const accept = (isAll: boolean) =>
 			Effect.succeedSome([definition.name, { value, isAll, options }] as const)
+		const promQlUnsafe = (candidates: ReadonlyArray<string>) =>
+			definition.type === "query" &&
+			promQlNames.has(definition.name) &&
+			!candidates.every((candidate) => TEXTBOX_ALLOWED.test(candidate))
 
 		if (value === ALL_VALUE) {
 			// "All" is only selectable when the board offers it. Otherwise it is a
 			// hand-crafted way to drop the filter entirely, which is exactly the
 			// widening this module exists to prevent.
-			return definition.includeAll !== true ? invalid(definition.name) : accept(true)
+			return definition.includeAll !== true || promQlUnsafe(options)
+				? invalid(definition.name)
+				: accept(true)
 		}
 
 		/** The free-text defence: conservative charset, then the direct clause check. */
@@ -167,7 +181,7 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 				// "unknown", not "nothing is allowed", and treating the two the same
 				// rejected the board's own stored `defaultValue` and blanked the share.
 				if (options.length > 0) {
-					if (!options.includes(value)) return invalid(definition.name)
+					if (!options.includes(value) || promQlUnsafe([value])) return invalid(definition.name)
 					break
 				}
 				if (!passesFreeTextChecks()) return invalid(definition.name)

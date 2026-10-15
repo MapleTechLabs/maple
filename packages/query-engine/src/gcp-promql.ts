@@ -10,9 +10,23 @@ import {
 } from "@maple/domain/http"
 import { computeBucketSecondsForRange } from "./datetime"
 
-/** A widget's step: the chart's own bucket for the window, never under Google's one minute. */
-export const promQlStepSeconds = (startTime: string, endTime: string): number =>
-	Math.max(GCP_PROMQL_MIN_STEP_SECONDS, computeBucketSecondsForRange(startTime, endTime))
+/**
+ * The range request a widget's planned params make, for `GcpPromQlRangeRequest` to decode. The step
+ * is the chart's own bucket for the window, never under Google's one minute.
+ */
+export const promQlRangeInput = (
+	params: { readonly promql: string; readonly projects?: ReadonlyArray<string> | undefined },
+	window: { readonly startTime: string; readonly endTime: string },
+) => ({
+	query: params.promql.trim(),
+	startTime: window.startTime,
+	endTime: window.endTime,
+	stepSeconds: Math.max(
+		GCP_PROMQL_MIN_STEP_SECONDS,
+		computeBucketSecondsForRange(window.startTime, window.endTime),
+	),
+	...(params.projects === undefined ? undefined : { projects: params.projects }),
+})
 
 const LEGEND_LABEL = /\{\{\s*([^{}\s]+)\s*\}\}/g
 
@@ -59,15 +73,28 @@ export const promQlChartRows = (
 	return [...rows.entries()].sort(([a], [b]) => a - b).map(([, row]) => row)
 }
 
-/** One line for a partial answer. A share link names only the scopes, not the setup advice. */
-export const promQlFailureNotice = (
-	failures: ReadonlyArray<GcpPromQlFailure>,
+/**
+ * An answer as widget data: the chart rows, and a one-line notice when some scopes could not be read.
+ * Members get each scope and its cause; a share link gets only the count, no project ids or setup.
+ */
+export const promQlWidgetData = (
+	result: {
+		readonly series: ReadonlyArray<GcpPromQlSeries>
+		readonly projects: ReadonlyArray<string>
+		readonly failures: ReadonlyArray<GcpPromQlFailure>
+	},
+	legend: string | undefined,
 	withCauses: boolean,
-): string | undefined => {
-	if (failures.length === 0) return undefined
-	return withCauses
-		? `Partial result. ${failures.map((failure) => `${failure.scope}: ${failure.message}`).join(" ")}`
-		: `Partial result: ${failures.map((failure) => failure.scope).join(", ")} could not be read.`
+): { data: Array<Record<string, string | number>>; notice?: string } => {
+	const data = promQlChartRows(result.series, result.projects.length, legend)
+	const { failures } = result
+	if (failures.length === 0) return { data }
+	return {
+		data,
+		notice: withCauses
+			? `Partial result. ${failures.map((failure) => `${failure.scope}: ${failure.message}`).join(" ")}`
+			: `Partial result: ${failures.length === 1 ? "1 Google Cloud scope" : `${failures.length} Google Cloud scopes`} could not be read.`,
+	}
 }
 
 /**

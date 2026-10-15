@@ -24,7 +24,7 @@ describe("a Google Cloud PromQL data source", () => {
 	it("lowers to the live PromQL endpoint with only the fields it has", () => {
 		expect(toWidgetRequest(makePromQlDataSource({ query: QUERY }))).toEqual({
 			endpoint: "gcp_promql",
-			params: { query: QUERY },
+			params: { promql: QUERY },
 		})
 		expect(
 			toWidgetRequest(
@@ -32,7 +32,7 @@ describe("a Google Cloud PromQL data source", () => {
 			),
 		).toEqual({
 			endpoint: "gcp_promql",
-			params: { query: QUERY, projects: ["shop-prod"], legend: "{{service}}" },
+			params: { promql: QUERY, projects: ["shop-prod"], legend: "{{service}}" },
 		})
 	})
 
