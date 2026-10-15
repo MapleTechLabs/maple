@@ -21,7 +21,7 @@ import {
 } from "@/components/common/data-table"
 import { MeterRows } from "../primitives/meter-rows"
 import { AvgPeak } from "../primitives/avg-peak"
-import { fleetSync, groupRailwayServices, hasConfiguredLimits, type RailwaySync } from "./list-model"
+import { fleetSync, groupRailwayServices, type RailwaySync } from "./list-model"
 
 export type RailwayScope = "saturated" | "elevated" | "unbounded"
 
@@ -279,15 +279,17 @@ export function RailwayServiceTable({
 	services,
 	environments,
 	authFailed,
+	showLimits,
 	waiting,
 }: {
 	services: ReadonlyArray<RailwayServiceRow>
 	environments: ReadonlyArray<RailwayEnvironmentStatus>
 	authFailed: boolean
+	/** `hasConfiguredLimits` over the whole fleet, never the searched rows: one row can't tell a ceiling. */
+	showLimits: boolean
 	waiting?: boolean
 }) {
 	const rows = useMemo(() => services.map(toView), [services])
-	const showLimits = useMemo(() => hasConfiguredLimits(services), [services])
 	const { sorted, sortKey, sortDir, handleSort } = useTableSort<RailwayRowView, SortKey>(rows, {
 		initialKey: "memoryMax",
 		stringKeys: ["displayName"],

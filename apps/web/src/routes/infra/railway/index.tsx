@@ -23,6 +23,7 @@ import {
 	RailwayServiceTable,
 	RailwayServiceTableLoading,
 } from "@/components/infra/railway/railway-service-table"
+import { hasConfiguredLimits } from "@/components/infra/railway/list-model"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -198,6 +199,7 @@ function RailwayServices({
 					services={filtered}
 					environments={status.environments}
 					authFailed={status.authFailed}
+					showLimits={hasConfiguredLimits(services)}
 				/>
 			)}
 		</div>

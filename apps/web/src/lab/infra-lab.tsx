@@ -28,6 +28,7 @@ import { SearchToolbar } from "@/components/common/search-toolbar"
 import { PageHero } from "@/components/common/page-hero"
 import { RailwayEnvironmentStatus } from "@maple/domain/http"
 import { RailwayFleetBand, RailwayServiceTable } from "@/components/infra/railway/railway-service-table"
+import { hasConfiguredLimits } from "@/components/infra/railway/list-model"
 
 const NOW = Date.now()
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
@@ -290,6 +291,7 @@ export function InfraLab() {
 						services={RAILWAY}
 						environments={RAILWAY_ENVIRONMENTS}
 						authFailed={false}
+						showLimits={hasConfiguredLimits(RAILWAY)}
 					/>
 				</div>
 			</Frame>
