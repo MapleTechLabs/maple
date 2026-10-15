@@ -42,6 +42,8 @@ export {
 	FolderOpenIcon,
 	GlobeIcon,
 	GlobePointerIcon,
+	GoogleCloudIcon,
+	GoogleCloudMonoIcon,
 	KubernetesIcon,
 	LineHeightIcon,
 	LinkIcon,
@@ -137,7 +139,6 @@ export { GearIcon } from "./gear"
 export { GeminiIcon } from "./gemini"
 export { GithubIcon } from "./github"
 export { GoogleIcon } from "./google"
-export { GoogleCloudIcon, GoogleCloudMonoIcon } from "./google-cloud"
 export { GrokIcon } from "./grok"
 export { HaystackIcon } from "./haystack"
 export { HuggingFaceIcon } from "./huggingface"
