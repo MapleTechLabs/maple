@@ -15,8 +15,8 @@
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit",
-		"typecheck:test": "tsc --noEmit -p tsconfig.test.json"
+		"typecheck": "tsrs --noEmit",
+		"typecheck:test": "tsrs --noEmit -p tsconfig.test.json"
 	},
 	"dependencies": {
 		"@clerk/backend": "^3.23.0",

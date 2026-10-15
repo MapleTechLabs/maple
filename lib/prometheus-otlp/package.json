@@ -7,7 +7,7 @@
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:tooling",

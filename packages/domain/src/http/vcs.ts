@@ -114,6 +114,8 @@ export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallat
 	repositorySelection: VcsRepoSelection,
 	status: VcsInstallStatus,
 	suspendedAt: Schema.NullOr(Schema.Number),
+	/** Whether finished CI workflow runs become traces. On unless the org turned it off. */
+	ciTracesEnabled: Schema.Boolean,
 	installedByUserId: UserId,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
@@ -611,6 +613,87 @@ export const PullRequestChecklistJob = Schema.Struct({
 })
 export type PullRequestChecklistJob = Schema.Schema.Type<typeof PullRequestChecklistJob>
 
+/**
+ * A finished CI workflow run (GitHub `workflow_run`, action `completed`). Becomes the root span of
+ * the run's trace; its jobs arrive separately as `WorkflowJobJob`s keyed by the same run and attempt.
+ */
+export const WorkflowRunJob = Schema.Struct({
+	kind: Schema.Literal("workflow-run"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	repoFullName: Schema.String,
+	runId: Schema.String,
+	runAttempt: Schema.Number,
+	runNumber: Schema.Number,
+	workflowName: Schema.String,
+	/** The workflow file, e.g. `.github/workflows/ci.yml`. */
+	workflowPath: Schema.NullOr(Schema.String),
+	/** What triggered the run: `push`, `pull_request`, `schedule`, ... */
+	triggerEvent: Schema.String,
+	/** GitHub's conclusion: `success`, `failure`, `cancelled`, `timed_out`, `skipped`, ... */
+	conclusion: Schema.NullOr(Schema.String),
+	headBranch: Schema.NullOr(Schema.String),
+	headSha: Schema.NullOr(Schema.String),
+	actorLogin: Schema.NullOr(Schema.String),
+	pullRequestNumbers: Schema.Array(Schema.Number),
+	url: Schema.String,
+	startedAtMs: Schema.Number,
+	completedAtMs: Schema.Number,
+	deliveryId: Schema.optionalKey(Schema.String),
+})
+export type WorkflowRunJob = Schema.Schema.Type<typeof WorkflowRunJob>
+
+export const WorkflowStep = Schema.Struct({
+	number: Schema.Number,
+	name: Schema.String,
+	conclusion: Schema.NullOr(Schema.String),
+	startedAtMs: Schema.Number,
+	completedAtMs: Schema.Number,
+})
+export type WorkflowStep = Schema.Schema.Type<typeof WorkflowStep>
+
+/** A finished CI job (GitHub `workflow_job`, action `completed`), with its steps. */
+export const WorkflowJobJob = Schema.Struct({
+	kind: Schema.Literal("workflow-job"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	repoFullName: Schema.String,
+	runId: Schema.String,
+	runAttempt: Schema.Number,
+	jobId: Schema.String,
+	name: Schema.String,
+	workflowName: Schema.NullOr(Schema.String),
+	conclusion: Schema.NullOr(Schema.String),
+	headBranch: Schema.NullOr(Schema.String),
+	headSha: Schema.NullOr(Schema.String),
+	runnerName: Schema.NullOr(Schema.String),
+	labels: Schema.Array(Schema.String),
+	url: Schema.String,
+	/** When the job was queued; `startedAtMs - queuedAtMs` is the wait for a runner. */
+	queuedAtMs: Schema.Number,
+	startedAtMs: Schema.Number,
+	completedAtMs: Schema.Number,
+	steps: Schema.Array(WorkflowStep),
+	deliveryId: Schema.optionalKey(Schema.String),
+})
+export type WorkflowJobJob = Schema.Schema.Type<typeof WorkflowJobJob>
+
+/**
+ * What a CI job reported about itself: test failures, compiler errors and the runner's own
+ * `Process completed with exit code 1.`, as GitHub records them on the job's check run.
+ */
+export const WorkflowJobAnnotation = Schema.Struct({
+	/** `failure`, `warning` or `notice`. */
+	level: Schema.String,
+	message: Schema.String,
+	title: Schema.NullOr(Schema.String),
+	path: Schema.NullOr(Schema.String),
+	startLine: Schema.NullOr(Schema.Number),
+})
+export type WorkflowJobAnnotation = Schema.Schema.Type<typeof WorkflowJobAnnotation>
+
 /** A pull request's head as the reviewer needs it to answer, and to commit a fix. */
 export const PullRequestHead = Schema.Struct({
 	number: Schema.Number,
@@ -638,6 +721,8 @@ export const VcsSyncJob = Schema.Union([
 	PullRequestEventJob,
 	PullRequestCommentJob,
 	PullRequestChecklistJob,
+	WorkflowRunJob,
+	WorkflowJobJob,
 ])
 export type VcsSyncJob = Schema.Schema.Type<typeof VcsSyncJob>
 
