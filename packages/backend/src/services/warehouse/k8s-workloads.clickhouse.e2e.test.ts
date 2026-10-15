@@ -67,7 +67,10 @@ const samples: ReadonlyArray<Sample> = [
 	...restarts("checkout-api", "b", "app", [10, 12], ""),
 	...restarts("checkout-api", "b", "sidecar", [5, 5], "Completed"),
 
-	// api: fully available, one Fargate pod near its CPU limit, no restarts.
+	// api: fully available. A Fargate pod near its CPU limit restarts twice; a node pod with
+	// no usage series restarts 7 times, which a Fargate filter must not count.
+	...restarts("api", "c", "app", [0, 2], "Error", { computeType: "fargate" }),
+	...restarts("api", "d", "app", [0, 7], "OOMKilled"),
 	{ metric: "k8s.deployment.desired", minutesBeforeEnd: 1, value: 3, attrs: deploy("api") },
 	{ metric: "k8s.deployment.available", minutesBeforeEnd: 1, value: 3, attrs: deploy("api") },
 	{
@@ -96,7 +99,7 @@ const samples: ReadonlyArray<Sample> = [
 		value: 99,
 		attrs: deploy("checkout-api"),
 	},
-	...restarts("checkout-api", "z", "app", [0, 500], "Error", "org_other"),
+	...restarts("checkout-api", "z", "app", [0, 500], "Error", { org: "org_other" }),
 
 	// Jobs: one finished cleanly, one keeps failing.
 	{ metric: "k8s.job.desired_successful_pods", minutesBeforeEnd: 1, value: 1, attrs: job("nightly") },
@@ -113,7 +116,7 @@ function restarts(
 	container: string,
 	totals: ReadonlyArray<number>,
 	reason: string,
-	org?: string,
+	{ org, computeType }: { org?: string; computeType?: string } = {},
 ): ReadonlyArray<Sample> {
 	return totals.map((value, index) => ({
 		org,
@@ -123,6 +126,7 @@ function restarts(
 		attrs: pod(deployment, uid, {
 			"k8s.container.name": container,
 			"k8s.container.status.last_terminated_reason": reason,
+			...(computeType ? { "eks.amazonaws.com/compute-type": computeType } : {}),
 		}),
 	}))
 }
@@ -200,7 +204,7 @@ describe.skipIf(!clickhouseE2eEnabled)("listWorkloadsQuery against ClickHouse", 
 		assert.closeTo(api!.peakCpuLimitPct, 0.93, 1e-9)
 		assert.closeTo(api!.saturation, 0.93, 1e-9)
 		assert.strictEqual(api!.shortfall, 0)
-		assert.strictEqual(api!.restarts, 0)
+		assert.strictEqual(api!.restarts, 9)
 	})
 
 	it("lists jobs by failures, without calling a running job short of replicas", async () => {
@@ -217,9 +221,16 @@ describe.skipIf(!clickhouseE2eEnabled)("listWorkloadsQuery against ClickHouse", 
 	it("lists only workloads with a matching pod when filtering by compute type, keeping their replica gauges", async () => {
 		const rows = await run({ kind: "deployment", computeTypes: ["fargate"] })
 		// orphan has no pods and checkout-api's pods carry no compute type: neither may leak in.
+		// api's restarts count only its Fargate pod, not the node pod's OOM kills.
 		assert.deepEqual(
-			rows.map((row) => [row.workloadName, row.desiredReplicas, row.podCount]),
-			[["api", 3, 1]],
+			rows.map((row) => [
+				row.workloadName,
+				row.desiredReplicas,
+				row.podCount,
+				row.restarts,
+				row.lastTerminatedReason,
+			]),
+			[["api", 3, 1, 2, "Error"]],
 		)
 	})
 })

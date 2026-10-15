@@ -1112,10 +1112,11 @@ const workloadFilterConditions = (
 	opts.environments?.length
 		? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 		: undefined,
-	// Only pod series carry the compute-type label, so the replica gauges stay in the scan;
-	// listWorkloadsQuery then drops workloads with no matching pod series.
+	// Pod and restart series carry the compute-type label (k8sattributes copies it from the node);
+	// the replica gauges don't, so they stay in the scan and listWorkloadsQuery drops workloads
+	// with no matching pod series.
 	opts.computeTypes?.length
-		? CH.notInList($.MetricName, POD_METRIC_NAMES).or(
+		? CH.notInList($.MetricName, [...POD_METRIC_NAMES, CONTAINER_RESTARTS_METRIC]).or(
 				CH.inList($.ResourceAttributes.get("eks.amazonaws.com/compute-type"), opts.computeTypes),
 			)
 		: undefined,
