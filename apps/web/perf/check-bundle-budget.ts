@@ -99,7 +99,10 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // 697.5 KB from the Google Cloud connectors (#1321, 2026-10-15): ~2.5 KB of
 // startup measured in CI against main's 694.6 — the connector group's endpoints
 // and schemas on the v2 contract every page's client carries.
-const maxGzipBytes = 697.5 * 1024
+// 698.5 KB from the Google Cloud integration card (#1334, 2026-10-15): ~0.9 KB
+// of startup measured in CI against #1333's 697.3 — the card's tile in the
+// integrations registry with its mark and status atoms.
+const maxGzipBytes = 698.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
