@@ -1,23 +1,17 @@
 import { useMemo } from "react"
-import type React from "react"
-import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-router"
+import { Navigate, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import type { GcpResource } from "@maple/domain/http"
+import { GCP_INFRA_SERVICE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import type { GcpCloudSqlTopQueriesResponse } from "@maple/domain/http"
+import { windowDurationSeconds } from "@maple/query-engine"
 import { ChartLoading } from "@maple/ui/components/charts"
-import { Button } from "@maple/ui/components/ui/button"
-import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 
 import { CHART_HEIGHT } from "@/components/common/chart-card"
 import { ErrorState } from "@/components/common/error-state"
-import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { SectionHeading } from "@/components/common/section-heading"
-import { ExternalLinkIcon } from "@/components/icons"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import {
 	GCP_GKE_NODE_CHARTS,
@@ -28,24 +22,44 @@ import {
 } from "@/components/infra/gcp/charts"
 import { GcpWorkloadCharts } from "@/components/infra/gcp/gcp-workload-charts"
 import {
+	gcpCloudSqlView,
+	gcpQueryInsightsUnavailable,
+	gcpStatements,
+	type GcpStatement,
+	type GcpTracedQuery,
+} from "@/components/infra/gcp/cloud-sql-signals"
+import { GcpCloudSqlTopQueries } from "@/components/infra/gcp/gcp-cloudsql-top-queries"
+import {
+	GcpAppWaitCallout,
+	GcpCloudSqlChips,
+	GcpTraceGapCallout,
+	GcpWorkloadActions,
+	GcpWorkloadHeader,
+	GcpWorkloadSignals,
+} from "@/components/infra/gcp/gcp-workload-page"
+import { NO_GCP_SPARKS, gcpDatabaseRows, type GcpReplica } from "@/components/infra/gcp/list-model"
+import { GcpWorkloadRail } from "@/components/infra/gcp/gcp-workload-rail"
+import {
+	GCP_CLOUD_SQL_INVENTORY_QUERY,
+	gcpCloudSqlInstances,
 	gcpConsolePage,
 	gcpExplorerWhere,
 	gcpMatchResource,
 	gcpResourceQuery,
 	gcpWorkloadTelemetry,
+	type GcpCloudSqlInstance,
 } from "@/components/infra/gcp/inventory"
 import {
-	GCP_INFRA_COLUMNS,
-	formatGcpValue,
-	gcpStateLabel,
 	gcpWorkload,
 	gcpWorkloadKeys,
+	gcpWorkloadLocation,
 	gcpWorkloadName,
 	gcpWorkloadNoun,
-	type GcpColumn,
+	gcpWorkloadProject,
+	gcpWorkloadTone,
 } from "@/components/infra/gcp/tabs"
+import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "@/components/infra/gcp/workload-signals"
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
-import type { Tone } from "@/components/infra/severity-tokens"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import {
 	TimeRangeSearchFields,
@@ -59,6 +73,9 @@ import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import {
+	gcpCloudSqlTopQueriesResultAtom,
+	gcpCloudSqlTraceSideResultAtom,
+	gcpInfraFleetResultAtom,
 	gcpInfraTimeseriesResultAtom,
 	getServiceOverviewResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -93,12 +110,94 @@ function GcpWorkloadRoute() {
 	// A mistyped service has no page: the list falls back to its first tab.
 	return id === undefined ? (
 		<Navigate to="/infra/gcp" replace />
+	) : id === "cloudSql" ? (
+		<GcpCloudSqlPage name={name} />
 	) : (
 		<GcpWorkloadPage service={id} name={name} />
 	)
 }
 
-function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: string }) {
+/** What a Cloud SQL instance's page reads besides its metrics. */
+interface CloudSqlReads {
+	/** Undefined until the inventory answers, or for an instance it does not list. */
+	readonly instance: GcpCloudSqlInstance | undefined
+	readonly topQueries: Result.Result<
+		{ readonly statements: GcpCloudSqlTopQueriesResponse["data"] },
+		unknown
+	>
+	/** Undefined while it loads, or when the databases could not be listed. */
+	readonly traceSide:
+		| {
+				readonly databases: ReadonlyArray<string>
+				readonly tracedQueries: ReadonlyArray<GcpTracedQuery>
+				readonly services: number
+		  }
+		| undefined
+	readonly replicas: ReadonlyArray<GcpReplica>
+}
+
+/** A Cloud SQL instance's page: its settings, statements, the traces' view of them, its replicas. */
+function GcpCloudSqlPage({ name }: { name: string }) {
+	const search = Route.useSearch()
+	const { startTime, endTime } = useEffectiveTimeRange(
+		search.startTime,
+		search.endTime,
+		search.timePreset ?? DEFAULT_PRESET,
+	)
+	const window = { startTime, endTime, keys: gcpWorkloadKeys("cloudSql", name, search) }
+	const inventoryResult = useAtomValue(
+		retainedInternalQuery("integrations", "gcpResources", {
+			query: GCP_CLOUD_SQL_INVENTORY_QUERY,
+			reactivityKeys: ["gcpIntegration"],
+		}),
+	)
+	const topQueries = useRefreshableAtomValue(gcpCloudSqlTopQueriesResultAtom({ data: window }))
+	const traceSideResult = useRefreshableAtomValue(gcpCloudSqlTraceSideResultAtom({ data: window }))
+	// The fleet holds the replicas' lag; the list reads the same window.
+	const fleetResult = useAtomValue(gcpInfraFleetResultAtom({ data: { startTime, endTime } }))
+	const instances = useMemo(
+		() =>
+			Result.builder(inventoryResult)
+				.onSuccess((inventory) => gcpCloudSqlInstances(inventory.resources))
+				.orElse(() => undefined),
+		[inventoryResult],
+	)
+	const replicas = useMemo(
+		() =>
+			Result.builder(fleetResult)
+				.onSuccess(
+					(response) =>
+						gcpDatabaseRows(response.services, NO_GCP_SPARKS, instances).find(
+							(row) => row.keys[0] === name,
+						)?.replicas ?? NO_REPLICAS,
+				)
+				.orElse(() => NO_REPLICAS),
+		[fleetResult, instances, name],
+	)
+	const cloudSql: CloudSqlReads = {
+		instance: instances?.find((instance) => instance.id === name),
+		topQueries,
+		traceSide: Result.builder(traceSideResult)
+			.onSuccess((response) => response)
+			.orElse(() => undefined),
+		replicas,
+	}
+	return <GcpWorkloadPage service="cloudSql" name={name} cloudSql={cloudSql} />
+}
+
+const NO_REPLICAS: ReadonlyArray<GcpReplica> = []
+const NO_STATEMENTS: ReadonlyArray<GcpStatement> = []
+const NO_TRACED_QUERIES: ReadonlyArray<GcpTracedQuery> = []
+
+function GcpWorkloadPage({
+	service,
+	name,
+	cloudSql,
+}: {
+	service: GcpInfraServiceId
+	name: string
+	cloudSql?: CloudSqlReads
+}) {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 	const { startTime, endTime } = useEffectiveTimeRange(
@@ -106,9 +205,9 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 		search.endTime,
 		search.timePreset ?? DEFAULT_PRESET,
 	)
-	const range = { startTime, endTime, bucketSeconds: chartBucketSeconds(startTime, endTime) }
+	const bucketSeconds = chartBucketSeconds(startTime, endTime)
+	const range = { startTime, endTime, bucketSeconds }
 	const timeSearch = pickTimeRangeSearch(search)
-	const { title, identity } = GCP_INFRA_SERVICES[service]
 	const keys = gcpWorkloadKeys(service, name, search)
 
 	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
@@ -125,7 +224,6 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 		.onSuccess((response) => response.points)
 		.orElse(() => NO_POINTS)
 	const windowPoints = useMemo(() => gcpWindowPoints(points), [points])
-	const workload = gcpWorkload(service, keys, windowPoints)
 
 	// The one inventory resource this workload is, by its identity; none leaves its facts out.
 	const inventoryResult = useAtomValue(
@@ -140,7 +238,48 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 
 	const consolePage = resource === undefined ? undefined : gcpConsolePage(resource)
 	const telemetry = gcpWorkloadTelemetry(service, keys)
-	const columns = GCP_INFRA_COLUMNS[service].slice(0, 4)
+	const logs = { service: telemetry.logsService, attrs: telemetry.logAttrs }
+
+	// The traced service of the workload's name, and the errors its entry spans recorded.
+	const overviewResult = useAtomValue(getServiceOverviewResultAtom({ data: { startTime, endTime } }))
+	const tracedErrors = telemetry.traced
+		? Result.builder(overviewResult)
+				.onSuccess((response) =>
+					gcpTracedErrors(
+						response.data,
+						telemetry.serviceName,
+						windowDurationSeconds(startTime, endTime),
+					),
+				)
+				.orElse(() => null)
+		: null
+	const tracedService = tracedErrors === null ? null : telemetry.serviceName
+	const gap = gcpTraceGap(service, points, bucketSeconds, tracedErrors)
+	const isCloudSql = cloudSql !== undefined
+	const instance = cloudSql?.instance
+	const traceSide = cloudSql?.traceSide
+	const replicas = cloudSql?.replicas ?? NO_REPLICAS
+	const topQueries =
+		cloudSql === undefined
+			? undefined
+			: Result.map(cloudSql.topQueries, (response) => ({
+					rows: gcpStatements(response.statements, points),
+					unavailableReason: gcpQueryInsightsUnavailable(instance),
+				}))
+	const statements =
+		topQueries !== undefined && Result.isSuccess(topQueries) ? topQueries.value.rows : NO_STATEMENTS
+	const sql = isCloudSql
+		? gcpCloudSqlView({
+				instance,
+				statements,
+				tracedQueries: traceSide?.tracedQueries ?? NO_TRACED_QUERIES,
+				databases: traceSide?.databases,
+				replicas,
+				points,
+				bucketSeconds,
+			})
+		: undefined
+	const facts = sql?.facts ?? gcpRailFacts(service, points, bucketSeconds)
 
 	return (
 		<DashboardPage
@@ -151,84 +290,55 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 				{ label: gcpWorkloadName(service, keys) },
 			]}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
+			rightPanel={
+				<GcpWorkloadRail
+					service={service}
+					project={gcpWorkloadProject(service, keys) || undefined}
+					location={gcpWorkloadLocation(service, keys) || undefined}
+					resource={resource}
+					facts={facts}
+					health={sql?.health}
+					serviceMap={sql === undefined ? undefined : { focusService: sql.focusService }}
+					tracedService={tracedService}
+					logs={logs}
+					consolePage={consolePage}
+					timeSearch={timeSearch}
+				/>
+			}
 			gap="lg"
 		>
-			<PageHero
-				title={<span className="font-mono">{gcpWorkloadName(service, keys)}</span>}
-				trailing={<HeroChip>{title}</HeroChip>}
+			<GcpWorkloadHeader
+				service={service}
+				keys={keys}
+				health={
+					points.length === 0 ? null : gcpWorkloadTone(gcpWorkload(service, keys, windowPoints))
+				}
+				traceable={telemetry.traced}
+				tracedService={tracedService}
 				meta={
-					<dl className="flex flex-wrap items-center gap-x-7 gap-y-1.5 text-xs/5">
-						{identity
-							.slice(1)
-							.map(([label], index) =>
-								keys[index + 1] ? (
-									<Fact key={label} label={label} value={keys[index + 1]} />
-								) : null,
-							)}
-						{/* A container's inventory resource is its cluster: that state and those labels are not the container's. */}
-						{resource === undefined || service === "gke" ? null : (
-							<ResourceFacts resource={resource} />
-						)}
-					</dl>
+					cloudSql === undefined ? undefined : (
+						<GcpCloudSqlChips
+							keys={keys}
+							instance={cloudSql.instance}
+							services={cloudSql.traceSide?.services}
+						/>
+					)
 				}
 				actions={
-					<>
-						<Button
-							size="sm"
-							variant="outline"
-							render={
-								<Link
-									to="/logs"
-									search={{
-										...timeSearch,
-										services: [telemetry.logsService],
-										attrs:
-											telemetry.logAttrs.length > 0
-												? [...telemetry.logAttrs]
-												: undefined,
-									}}
-								/>
-							}
-						>
-							Logs
-						</Button>
-						{telemetry.traced ? (
-							<TracesLink
-								serviceName={telemetry.serviceName}
-								startTime={startTime}
-								endTime={endTime}
-								timeSearch={timeSearch}
-							/>
-						) : null}
-						{consolePage === undefined ? null : (
-							<Button
-								size="sm"
-								variant="outline"
-								render={
-									<a
-										href={consolePage.href}
-										target="_blank"
-										rel="noreferrer"
-										title={`${consolePage.label} in Google Cloud`}
-									>
-										Google Cloud
-										<ExternalLinkIcon />
-									</a>
-								}
-							/>
-						)}
-					</>
+					<GcpWorkloadActions
+						logs={logs}
+						tracedService={tracedService}
+						consolePage={consolePage}
+						timeSearch={timeSearch}
+					/>
 				}
 			/>
 			{Result.isInitial(result) ? (
-				<>
-					<StatRailLoading />
-					<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-						{GCP_INFRA_CHARTS[service].map((chart) => (
-							<ChartLoading key={chart.title} variant="line" height={CHART_HEIGHT} />
-						))}
-					</div>
-				</>
+				<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+					{GCP_INFRA_CHARTS[service].map((chart) => (
+						<ChartLoading key={chart.title} variant="line" height={CHART_HEIGHT} />
+					))}
+				</div>
 			) : Result.isFailure(result) && points.length === 0 ? (
 				<ErrorState
 					error={result.cause}
@@ -242,31 +352,36 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 					className={cn("space-y-6", refreshingClass(Boolean(result.waiting)))}
 					aria-busy={result.waiting || undefined}
 				>
-					<StatRail>
-						{columns.map((spec, index) => (
-							<StatRailItem
-								key={spec.label}
-								compact
-								eyebrow={spec.label}
-								value={formatGcpValue(spec.format, workload.values[index])}
-								tone={columnTone(spec, workload.values[index])}
-								subline={
-									spec.total
-										? "total in range"
-										: spec.format === "errorRate"
-											? "share in range"
-											: "average in range"
-								}
-							/>
-						))}
-					</StatRail>
-					<GcpWorkloadCharts
-						charts={GCP_INFRA_CHARTS[service]}
+					{gap === null ||
+					tracedService === null ||
+					(service !== "cloudRun" && service !== "cloudFunctions") ? null : (
+						<GcpTraceGapCallout
+							service={service}
+							gap={gap}
+							tracedService={tracedService}
+							logsService={telemetry.logsService}
+						/>
+					)}
+					{sql === undefined || sql.wait === null ? null : (
+						<GcpAppWaitCallout
+							wait={sql.wait}
+							peak={sql.peak}
+							instanceName={gcpWorkloadName(service, keys)}
+							timeSearch={timeSearch}
+						/>
+					)}
+					<GcpWorkloadSignals
+						service={service}
 						points={points}
 						range={range}
 						where={gcpExplorerWhere(service, keys)}
 						timeSearch={timeSearch}
-					/>
+						maxConnections={cloudSql?.instance?.maxConnections ?? null}
+					>
+						{topQueries === undefined || sql === undefined ? null : (
+							<GcpCloudSqlTopQueries insights={topQueries} traced={sql.traced} />
+						)}
+					</GcpWorkloadSignals>
 				</div>
 			)}
 			{service === "gke" ? (
@@ -278,90 +393,6 @@ function GcpWorkloadPage({ service, name }: { service: GcpInfraServiceId; name: 
 				/>
 			) : null}
 		</DashboardPage>
-	)
-}
-
-function Fact({ label, value }: { label: string; value: React.ReactNode }) {
-	return (
-		<div className="flex items-center gap-2">
-			<dt className="text-muted-foreground">{label}</dt>
-			<dd className="flex min-w-0 items-center gap-2 text-foreground">{value}</dd>
-		</div>
-	)
-}
-
-/** Shown in full; the rest is a count that lists them on hover. */
-const LABELS_SHOWN = 3
-
-/** What the inventory adds to a workload's identity: its state and its labels. */
-function ResourceFacts({ resource }: { resource: GcpResource }) {
-	const labels = Object.entries(resource.labels).map(([key, value]) => `${key}=${value}`)
-	return (
-		<>
-			{resource.state === null ? null : <Fact label="State" value={gcpStateLabel(resource.state)} />}
-			{labels.length === 0 ? null : (
-				<Fact
-					label="Labels"
-					value={
-						<>
-							{labels.slice(0, LABELS_SHOWN).map((label) => (
-								<span
-									key={label}
-									title={label}
-									className="max-w-64 truncate rounded-sm bg-muted px-1.5 font-mono text-2xs/[18px]"
-								>
-									{label}
-								</span>
-							))}
-							{labels.length > LABELS_SHOWN ? (
-								<span
-									title={labels.slice(LABELS_SHOWN).join("\n")}
-									className="text-2xs text-muted-foreground"
-								>
-									+{labels.length - LABELS_SHOWN}
-								</span>
-							) : null}
-						</>
-					}
-				/>
-			)}
-		</>
-	)
-}
-
-/** A percent of a limit and an error rate carry a tone; every other number is plain. */
-function columnTone(spec: GcpColumn, value: number | undefined): Tone {
-	if (value === undefined) return "neutral"
-	if (spec.format === "errorRate") return errorRateLevel(value)
-	if (spec.format === "percent") return utilizationLevel(value)
-	return "neutral"
-}
-
-/** Shown when a traced service of the workload's name sent spans in the window. */
-function TracesLink({
-	serviceName,
-	startTime,
-	endTime,
-	timeSearch,
-}: {
-	serviceName: string
-	startTime: string
-	endTime: string
-	timeSearch: TimeRangeSearch
-}) {
-	const result = useAtomValue(getServiceOverviewResultAtom({ data: { startTime, endTime } }))
-	const traced = Result.builder(result)
-		.onSuccess((response) => response.data.some((row) => row.serviceName === serviceName))
-		.orElse(() => false)
-	if (!traced) return null
-	return (
-		<Button
-			size="sm"
-			variant="outline"
-			render={<Link to="/traces" search={{ ...timeSearch, services: [serviceName] }} />}
-		>
-			Traces
-		</Button>
 	)
 }
 

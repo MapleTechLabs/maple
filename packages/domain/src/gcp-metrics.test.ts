@@ -1,11 +1,35 @@
 import { describe, expect, it } from "vitest"
-import { GCP_METRIC_GROUPS } from "./gcp-metrics"
+import { GCP_METRIC_GROUPS, gcpMetricLabelAttribute } from "./gcp-metrics"
 
 describe("GCP_METRIC_GROUPS", () => {
 	const metrics = GCP_METRIC_GROUPS.flatMap((group) => group.metrics)
 
-	it("reads every Cloud Monitoring type once", () => {
-		expect(new Set(metrics.map((metric) => metric.type)).size).toBe(metrics.length)
+	it("reads every Cloud Monitoring type once, or a distribution once more for its count", () => {
+		const readings = metrics.map((metric) => `${metric.type} ${metric.kind}`)
+		expect(new Set(readings).size).toBe(metrics.length)
+		const twice = metrics.filter(
+			(metric) => metrics.filter((other) => other.type === metric.type).length > 1,
+		)
+		expect(twice.map((metric) => [metric.kind, metric.name])).toEqual([
+			["quantiles", "gcp.cloud_sql.query.duration"],
+			["sum", "gcp.cloud_sql.queries"],
+			["quantiles", "gcp.cloud_sql.query.statement.duration"],
+			["sum", "gcp.cloud_sql.query.statement.calls"],
+		])
+	})
+
+	it("ranks a top group by one of its own metrics, and keeps its item on every metric", () => {
+		const groups = GCP_METRIC_GROUPS.filter((group) => group.top !== undefined)
+		expect(groups.map((group) => group.resourceType)).toEqual(["cloudsql_instance_database"])
+		for (const { top, metrics: own } of groups) {
+			expect(own.map((metric) => metric.name)).toContain(top!.by)
+			for (const metric of own) expect(metric.labels, metric.name).toContain(top!.label)
+		}
+	})
+
+	it("stores a statement's text under the semantic convention's attribute", () => {
+		expect(gcpMetricLabelAttribute("querystring")).toBe("db.query.text")
+		expect(gcpMetricLabelAttribute("query_hash")).toBe("gcp.metric.labels.query_hash")
 	})
 
 	it("tells types sharing a name apart by a constant attribute, except the per-engine connection gauges", () => {

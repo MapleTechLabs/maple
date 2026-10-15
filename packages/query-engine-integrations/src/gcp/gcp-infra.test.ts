@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
-import { gcpInfraMetricsSQL, gcpInfraPresenceSQL, gcpInfraTimeseriesSQL } from "./gcp-infra"
+import {
+	gcpCloudSqlDatabasesSQL,
+	gcpCloudSqlTopQueriesSQL,
+	gcpInfraMetricsSQL,
+	gcpInfraPresenceSQL,
+	gcpInfraSparklinesSQL,
+	gcpInfraTimeseriesSQL,
+} from "./gcp-infra"
 
 const params = {
 	orgId: OrgId.make("org_1"),
@@ -59,6 +66,16 @@ describe("gcpInfraMetricsSQL", () => {
 				),
 			])
 		}
+	})
+
+	it("adds PostgreSQL's connections up over an instance's databases, a reading per minute", () => {
+		const { sql } = compileUnsafe(gcpInfraMetricsSQL("cloudSql"), params)
+		expect(sql).toContain("metrics_gauge.Attributes['gcp.metric.labels.state']")
+		// The database is no label of its own: a row's mean is the instance's.
+		expect(sql).not.toMatch(/arrayStringConcat\([^)]*gcp\.metric\.labels\.database/)
+		expect(sql).toContain(
+			"countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples",
+		)
 	})
 
 	it("escapes single quotes in orgId", () => {
@@ -160,6 +177,54 @@ describe("gcpInfraTimeseriesSQL", () => {
 	})
 })
 
+describe("gcpInfraSparklinesSQL", () => {
+	const bucketed = { ...params, bucketSeconds: 3600 }
+
+	it("buckets the volume of every workload of a service, every label value added up", () => {
+		const { sql, tenantScope } = compileUnsafe(gcpInfraSparklinesSQL("cloudRun"), bucketed)
+		expect(tenantScope).toBe("single-tenant")
+		expect(sql).toContain("metrics_sum.OrgId = 'org_1'")
+		expect(sql).toContain("metrics_sum.MetricName IN ('gcp.cloud_run.requests')")
+		// No gauge is drawn for Cloud Run: that branch reads nothing.
+		expect(sql).toContain("metrics_gauge.OrgId = 'org_1'")
+		expect(sql).toContain("1 = 0")
+		expect(sql).toContain(
+			"[metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys",
+		)
+		expect(sql).toContain("toStartOfInterval(points.t, INTERVAL 3600 SECOND) AS bucket")
+		expect(sql).toContain("GROUP BY keys, bucket, metric")
+		expect(sql).not.toContain("label")
+		expect(sql).toContain("LIMIT 10000")
+	})
+
+	it("reads a Pub/Sub subscription's deliveries and its backlog gauge", () => {
+		const { sql } = compileUnsafe(gcpInfraSparklinesSQL("pubsub"), bucketed)
+		expect(sql).toContain("metrics_sum.MetricName IN ('gcp.pubsub.subscription.sent_messages')")
+		expect(sql).toContain("metrics_gauge.MetricName IN ('gcp.pubsub.subscription.undelivered_messages')")
+		expect(sql).not.toContain("1 = 0")
+	})
+
+	it("reads a Cloud SQL instance's Query Insights count, stored under the instance", () => {
+		const { sql } = compileUnsafe(gcpInfraSparklinesSQL("cloudSql"), bucketed)
+		expect(sql).toContain("metrics_sum.MetricName IN ('gcp.cloud_sql.queries')")
+		expect(sql).toContain("metrics_sum.ResourceAttributes['gcp.resource.labels.database_id']")
+	})
+
+	it("decodes a quoted point count to a number", () => {
+		const point = {
+			keys: ["orders-fulfil", "acme-prod"],
+			bucket: "2026-07-02 01:00:00",
+			metric: "gcp.pubsub.subscription.undelivered_messages",
+		}
+		const rows = Effect.runSync(
+			compileUnsafe(gcpInfraSparklinesSQL("pubsub"), bucketed).decodeRows([
+				{ ...point, total: 1200, samples: "60" },
+			]),
+		)
+		expect(rows[0]).toMatchObject({ keys: point.keys, metric: point.metric, total: 1200, samples: 60 })
+	})
+})
+
 describe("gcpInfraPresenceSQL", () => {
 	it("probes the hourly catalog for the page's metrics, flooring the start to the hour", () => {
 		const { sql, tenantScope } = compileUnsafe(gcpInfraPresenceSQL(), params)
@@ -174,5 +239,73 @@ describe("gcpInfraPresenceSQL", () => {
 		)
 		expect(sql).toContain("Hour <= '2026-07-03 00:00:00'")
 		expect(sql).toContain("GROUP BY metric")
+	})
+})
+
+const INSTANCE = ["acme-prod:orders-db", "acme-prod", "us-central1"]
+
+describe("gcpCloudSqlTopQueriesSQL", () => {
+	it("reads one instance's statements, a row per poll first, then per statement", () => {
+		const { sql, tenantScope } = compileUnsafe(gcpCloudSqlTopQueriesSQL(INSTANCE), params)
+		expect(tenantScope).toBe("single-tenant")
+		for (const table of ["metrics_sum", "metrics_gauge"]) {
+			expect(sql).toContain(`${table}.OrgId = 'org_1'`)
+			expect(sql).toContain(`${table}.ServiceName = 'gcp/cloudsql_database'`)
+			expect(sql).toContain(
+				`${table}.ResourceAttributes['gcp.resource.labels.database_id'] = 'acme-prod:orders-db'`,
+			)
+		}
+		expect(sql).toContain("metrics_gauge.MetricName IN ('gcp.cloud_sql.query.statement.duration')")
+		expect(sql).toContain("metrics_sum.Attributes['db.query.text'] AS statement")
+		expect(sql).toContain("GROUP BY hash, t) AS polls")
+		expect(sql).toContain("GROUP BY queryHash")
+		expect(sql).toContain("ORDER BY executionSeconds DESC, queryHash ASC")
+		expect(sql).toContain("LIMIT 25")
+	})
+
+	it("weights each poll's p95 by its calls", () => {
+		const { sql } = compileUnsafe(gcpCloudSqlTopQueriesSQL(INSTANCE), params)
+		expect(sql).toContain(
+			"ifNull(ifNotFinite(sum(polls.p95 * polls.callCount) / sum(polls.callCount), 0), 0) AS p95Seconds",
+		)
+	})
+
+	it("escapes single quotes in an instance", () => {
+		const { sql } = compileUnsafe(gcpCloudSqlTopQueriesSQL(["x' OR 1"]), params)
+		expect(sql).toContain("= 'x\\' OR 1'")
+		expect(sql).not.toContain("= 'x' OR 1'")
+	})
+
+	it("decodes quoted sums to numbers", () => {
+		const rows = Effect.runSync(
+			compileUnsafe(gcpCloudSqlTopQueriesSQL(INSTANCE), params).decodeRows([
+				{
+					queryHash: "123",
+					statement: "select $1",
+					calls: "40",
+					executionSeconds: 1.5,
+					lockSeconds: 0,
+					ioSeconds: 0.25,
+					rowCount: "800",
+					p50Seconds: 0.01,
+					p95Seconds: 0.05,
+				},
+			]),
+		)
+		expect(rows[0]).toMatchObject({ queryHash: "123", calls: 40, rowCount: 800, p95Seconds: 0.05 })
+	})
+})
+
+describe("gcpCloudSqlDatabasesSQL", () => {
+	it("lists the databases of one instance's PostgreSQL connections", () => {
+		const { sql, tenantScope } = compileUnsafe(gcpCloudSqlDatabasesSQL(INSTANCE), params)
+		expect(tenantScope).toBe("single-tenant")
+		expect(sql).toContain("metrics_gauge.OrgId = 'org_1'")
+		expect(sql).toContain("metrics_gauge.MetricName = 'gcp.cloud_sql.postgresql.connection.count'")
+		expect(sql).toContain(
+			"metrics_gauge.ResourceAttributes['gcp.resource.labels.database_id'] = 'acme-prod:orders-db'",
+		)
+		expect(sql).toContain("metrics_gauge.Attributes['gcp.metric.labels.database'] != ''")
+		expect(sql).toContain("GROUP BY database")
 	})
 })

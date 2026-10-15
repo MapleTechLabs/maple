@@ -808,6 +808,34 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 				bucketed,
 			),
 	})),
+	...GCP_INFRA_SERVICE_IDS.filter((service) => CH.GCP_INFRA_SPARKLINE_METRICS[service] !== undefined).map(
+		(service): IntegrationFixture => ({
+			module: "gcp-infra",
+			name: "gcpInfraSparklinesSQL",
+			label: service,
+			compile: () => compileUnsafe(CH.gcpInfraSparklinesSQL(service), bucketed),
+		}),
+	),
+	{
+		module: "gcp-infra",
+		name: "gcpCloudSqlTopQueriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.gcpCloudSqlTopQueriesSQL(["acme-prod:orders-db", "acme-prod", "us-central1"]),
+				window,
+			),
+	},
+	{
+		module: "gcp-infra",
+		name: "gcpCloudSqlDatabasesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.gcpCloudSqlDatabasesSQL(["acme-prod:orders-db", "acme-prod", "us-central1"]),
+				window,
+			),
+	},
 	{
 		module: "planetscale-map",
 		name: "planetscaleBranchGaugesSQL",
