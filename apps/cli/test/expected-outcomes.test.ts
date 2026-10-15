@@ -116,6 +116,17 @@ describe("dirty-store recovery advice", () => {
 		ok(!unusable.includes("maple restore"))
 		ok(unusable.includes("checkpoint backup size mismatch"))
 		ok(unusable.includes("maple start --reset"))
+
+		const olderBuild = dirtyStoreRecoveryAdvice({
+			available: false,
+			reason: "older_build",
+			checkpointId: parseCheckpointId("00000000-0000-4000-8000-000000000000"),
+			detail: "checkpoint schema mismatch (checkpoint: a; build: b)",
+		})
+		ok(!olderBuild.includes("maple restore"))
+		ok(!olderBuild.includes("unusable"))
+		ok(olderBuild.includes("older maple build"))
+		ok(olderBuild.includes("maple start --reset"))
 	})
 
 	it("offers restore, naming the checkpoint, once one exists", () => {

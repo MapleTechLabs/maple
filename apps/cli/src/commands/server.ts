@@ -670,7 +670,10 @@ export const dirtyStoreRecoveryAdvice = (
 	const why =
 		availability.reason === "none"
 			? "No checkpoint has ever been taken for this store, so there is nothing to restore from"
-			: `The checkpoint registry is unusable (${availability.detail}), so restoring from it is not safe`
+			: availability.reason === "older_build"
+				? `The last checkpoint (${dim(availability.checkpointId)}) was taken by an older maple build, ` +
+					`which this one cannot restore (${availability.detail})`
+				: `The checkpoint registry is unusable (${availability.detail}), so restoring from it is not safe`
 	return (
 		`${why}; the unreadable live data cannot be recovered. ` +
 		`Start fresh with \`${resetCommand}\`; ` +
@@ -1841,8 +1844,12 @@ export const restore = Command.make("restore", {
 									? `no checkpoint exists under ${prettyPath(dataDir)}; nothing to restore. ` +
 										`Checkpoints are created by \`${bold(mapleCommand("checkpoint", scope))}\` while the server is running. ` +
 										`To start over from an unreadable store, use \`${bold(mapleCommand("start --reset", scope))}\`.`
-									: `the checkpoint registry under ${prettyPath(dataDir)} is unusable: ${availability.detail}. ` +
-										`Preserve it for inspection, or start over with \`${bold(mapleCommand("start --reset", scope))}\`.`,
+									: availability.reason === "older_build"
+										? `the last checkpoint under ${prettyPath(dataDir)} (${availability.checkpointId}) was taken by an older maple build: ${availability.detail}. ` +
+											`Restore it with the version that took it (\`${bold(mapleCommand("update --tag <version>", scope))}\`), ` +
+											`or start over with \`${bold(mapleCommand("start --reset", scope))}\`.`
+										: `the checkpoint registry under ${prettyPath(dataDir)} is unusable: ${availability.detail}. ` +
+											`Preserve it for inspection, or start over with \`${bold(mapleCommand("start --reset", scope))}\`.`,
 						})
 					}
 

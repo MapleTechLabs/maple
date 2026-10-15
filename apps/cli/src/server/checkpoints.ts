@@ -973,6 +973,26 @@ export type CheckpointAvailability =
 	| { readonly available: true; readonly checkpointId: CheckpointId }
 	| { readonly available: false; readonly reason: "none" }
 	| { readonly available: false; readonly reason: "unusable"; readonly detail: string }
+	/** The registry is intact, but an older build took the current checkpoint and this one cannot restore it. */
+	| {
+			readonly available: false
+			readonly reason: "older_build"
+			readonly checkpointId: CheckpointId
+			readonly detail: string
+	  }
+
+/** The current checkpoint's id when the registry only fails this build's schema or chDB gate. */
+const currentFromOlderBuild = async (dataDir: string): Promise<CheckpointId | undefined> => {
+	try {
+		const state = await readStateFileOptional(dataDir)
+		if (!state) return undefined
+		await resolveCheckpoint(dataDir, state.current, state, "registry")
+		if (state.previous) await resolveCheckpoint(dataDir, state.previous, state, "registry")
+		return state.current
+	} catch {
+		return undefined
+	}
+}
 
 export const checkpointAvailability = async (dataDir: string): Promise<CheckpointAvailability> => {
 	try {
@@ -980,6 +1000,10 @@ export const checkpointAvailability = async (dataDir: string): Promise<Checkpoin
 		return { available: true, checkpointId: state.current }
 	} catch (error) {
 		const detail = errorMessage(error)
+		const olderBuild = await currentFromOlderBuild(dataDir)
+		if (olderBuild !== undefined) {
+			return { available: false, reason: "older_build", checkpointId: olderBuild, detail }
+		}
 		try {
 			// A present-but-unreadable state file, or stray checkpoint data beside a
 			// missing one, is a fault to surface rather than an empty registry.
@@ -1259,7 +1283,9 @@ type LockHolder = Schema.Schema.Type<typeof LockHolderSchema>
 const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "absent" | "uncertain"> => {
 	const ownerPath = join(lockPath, "owner.json")
 	return assertRealFile(ownerPath, "maintenance lock owner")
-		.then(async () => Schema.decodeUnknownSync(LockHolderSchema)(JSON.parse(await readFile(ownerPath, "utf8"))))
+		.then(async () =>
+			Schema.decodeUnknownSync(LockHolderSchema)(JSON.parse(await readFile(ownerPath, "utf8"))),
+		)
 		.catch((error: NodeJS.ErrnoException): "absent" | "uncertain" =>
 			error?.code === "ENOENT" ? "absent" : "uncertain",
 		)
@@ -1278,7 +1304,8 @@ const maintenanceOwnerIsLive = async (owner: LockHolder, lockPath: string): Prom
 	// only PID liveness can judge them (our PID is alive, so they are refused).
 	owner.pid !== process.pid || owner.instanceId === undefined
 		? processIsAlive(owner.pid)
-		: owner.instanceId === PROCESS_INSTANCE_ID || !(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))
+		: owner.instanceId === PROCESS_INSTANCE_ID ||
+			!(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))
 
 const LOCK_HEARTBEAT_MS = 10_000
 const LOCK_HEARTBEAT_SOURCE = `const { workerData } = require("node:worker_threads")
@@ -1289,7 +1316,10 @@ setInterval(beat, workerData.intervalMs)`
 /** Keeps the lock dir's mtime fresh while held. It runs on a worker so a
  *  synchronous chDB BACKUP on the main thread cannot stall it. */
 const startLockHeartbeat = (lockPath: string, intervalMs: number): (() => Promise<void>) => {
-	const worker = new Worker(LOCK_HEARTBEAT_SOURCE, { eval: true, workerData: { path: lockPath, intervalMs } })
+	const worker = new Worker(LOCK_HEARTBEAT_SOURCE, {
+		eval: true,
+		workerData: { path: lockPath, intervalMs },
+	})
 	worker.unref()
 	return () => worker.terminate().then(() => undefined)
 }
