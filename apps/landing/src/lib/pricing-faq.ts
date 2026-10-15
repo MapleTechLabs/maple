@@ -11,7 +11,7 @@
  * resolves the locale per render (see `pricing-offer.ts`).
  */
 import * as m from "../paraglide/messages.js"
-import { getOffer, rateLabel } from "./pricing-offer"
+import { getOffer, money, rateLabel, volume } from "./pricing-offer"
 
 export interface FaqItem {
 	question: string
@@ -27,6 +27,9 @@ export async function pricingFaq(): Promise<FaqItem[]> {
 	const gbRate = rateLabel(gb?.rate ?? 0)
 	const includedSessions = (sessions?.included ?? 0).toLocaleString("en-US")
 	const sessionRate = rateLabel(sessions?.rate ?? 0)
+	const events = offer.allotments.find((a) => a.unit === "events")
+	const eventsIncluded = events ? volume(events, events.included) : "0"
+	const eventsRate = money(events?.rate ?? 0)
 
 	return [
 		{ question: m.faq_measure_q(), answer: m.faq_measure_a({ included: includedGB }) },
@@ -35,7 +38,12 @@ export async function pricingFaq(): Promise<FaqItem[]> {
 		{ question: m.faq_metrics_q(), answer: m.faq_metrics_a({ included: includedGB, rate: gbRate }) },
 		{
 			question: m.faq_sessions_q(),
-			answer: m.faq_sessions_a({ included: includedSessions, rate: sessionRate }),
+			answer: m.faq_sessions_a({
+				included: includedSessions,
+				rate: sessionRate,
+				events_included: eventsIncluded,
+				events_rate: eventsRate,
+			}),
 		},
 		{ question: m.faq_retention_q(), answer: m.faq_retention_a() },
 		{ question: m.faq_trial_q(), answer: m.faq_trial_a() },
