@@ -111,7 +111,8 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // 702.5 KB from the PromQL query contract (#1475, 2026-10-15), measured in CI at 701.3.
 // 703.5 KB from the connection access settings (#1477, 2026-10-15), measured in CI at 702.1.
 // 706 KB from the PromQL dashboard widget (#1480, 2026-10-15), measured in CI at 704.4.
-const maxGzipBytes = 706 * 1024
+// 710 KB with the Google Cloud page redesign (#1336) merged up.
+const maxGzipBytes = 710 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
