@@ -179,6 +179,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/alerts",
+		title: "Alerts",
+		description:
+			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/worst-case",
 		title: "Worst case",
 		description:

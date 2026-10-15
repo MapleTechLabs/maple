@@ -9,6 +9,8 @@ import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
 
 interface RuleActionBarProps {
 	editing: boolean
+	/** Unsaved field changes while editing; null on a new rule. */
+	changeCount?: number | null
 	saving: boolean
 	validationIssues: string[]
 	onCancel: () => void
@@ -29,6 +31,7 @@ const MAX_VISIBLE_ISSUES = 3
  */
 export function RuleActionBar({
 	editing,
+	changeCount = null,
 	saving,
 	validationIssues,
 	onCancel,
@@ -74,12 +77,24 @@ export function RuleActionBar({
 					/>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
+					{changeCount !== null && (
+						<span className="hidden text-xs text-muted-foreground sm:inline">
+							{changeCount === 0
+								? "No changes"
+								: `${changeCount} unsaved ${changeCount === 1 ? "change" : "changes"}`}
+						</span>
+					)}
 					{cancelSlot ?? (
 						<Button type="button" variant="outline" onClick={onCancel}>
 							Cancel
 						</Button>
 					)}
-					<Button type="button" onClick={onSave} disabled={!ready} loading={saving}>
+					<Button
+						type="button"
+						onClick={onSave}
+						disabled={!ready || changeCount === 0}
+						loading={saving}
+					>
 						<FloppyDiskIcon />
 						{editing ? "Save changes" : "Create rule"}
 					</Button>
