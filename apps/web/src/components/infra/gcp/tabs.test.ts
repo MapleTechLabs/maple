@@ -4,13 +4,13 @@ import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SERVICES, gcpInfraMetrics } from "@map
 import { GCP_ASSET_TYPES } from "@maple/domain/gcp-metrics"
 import {
 	GCP_INFRA_COLUMNS,
-	GCP_NAME_SORT,
+	GCP_VIEW_SERVICES,
 	formatGcpValue,
 	gcpAssetTypeLabel,
 	gcpHasRegion,
 	gcpInfraNotice,
 	gcpInfraSetupPending,
-	gcpInfraTabs,
+	gcpServiceView,
 	gcpResourceName,
 	gcpResourcesError,
 	gcpStateLabel,
@@ -22,7 +22,6 @@ import {
 	gcpWorkloadSearch,
 	gcpWorkloadTone,
 	gcpWorkloads,
-	sortGcpWorkloads,
 	type GcpMetricPoint,
 	type GcpMetricReader,
 } from "./tabs"
@@ -69,10 +68,10 @@ describe("GCP_INFRA_COLUMNS", () => {
 		}
 	})
 
-	it("labels every column uniquely in its tab, apart from the name sort key", () => {
+	it("labels every column uniquely in its service", () => {
 		for (const service of GCP_INFRA_SERVICE_IDS) {
 			const labels = GCP_INFRA_COLUMNS[service].map((spec) => spec.label)
-			expect(new Set([...labels, GCP_NAME_SORT]).size, service).toBe(labels.length + 1)
+			expect(new Set(labels).size, service).toBe(labels.length)
 		}
 	})
 })
@@ -241,33 +240,6 @@ describe("workload identity", () => {
 	})
 })
 
-describe("sortGcpWorkloads", () => {
-	const rows = gcpWorkloads("cloudRun", [
-		point(["b"], "gcp.cloud_run.requests", "2xx", 10),
-		point(["b"], "gcp.cloud_run.request.duration", "0.95", 0.05),
-		point(["a"], "gcp.cloud_run.requests", "2xx", 30),
-		point(["c"], "gcp.cloud_run.requests", "2xx", 20),
-		point(["c"], "gcp.cloud_run.request.duration", "0.95", 0.09),
-	])
-	const names = (key: string, dir: "asc" | "desc") =>
-		sortGcpWorkloads("cloudRun", rows, { key, dir }).map((row) => row.keys[0])
-
-	it("sorts by a column in either direction", () => {
-		expect(names("Requests", "desc")).toEqual(["a", "c", "b"])
-		expect(names("Requests", "asc")).toEqual(["b", "c", "a"])
-	})
-
-	it("sorts by name", () => {
-		expect(names(GCP_NAME_SORT, "asc")).toEqual(["a", "b", "c"])
-		expect(names(GCP_NAME_SORT, "desc")).toEqual(["c", "b", "a"])
-	})
-
-	it("keeps a workload that never reported the column last in both directions", () => {
-		expect(names("Latency p95", "desc")).toEqual(["c", "b", "a"])
-		expect(names("Latency p95", "asc")).toEqual(["b", "c", "a"])
-	})
-})
-
 describe("formatGcpValue", () => {
 	it("formats by unit and marks an absent value", () => {
 		expect(formatGcpValue("count", 12_345)).toBe("12.3K")
@@ -287,23 +259,17 @@ describe("formatGcpValue", () => {
 	})
 })
 
-describe("gcpInfraTabs", () => {
-	it("shows the reporting services in tab order, then the inventory", () => {
-		expect(gcpInfraTabs(["cloudSql", "cloudRun"], undefined, true)).toEqual([
-			"cloudRun",
-			"cloudSql",
-			"resources",
-		])
-		expect(gcpInfraTabs([], undefined, true)).toEqual(["resources"])
-	})
-
-	it("keeps the requested tab when its service is quiet in the window", () => {
-		expect(gcpInfraTabs(["cloudRun"], "gke", true)).toEqual(["cloudRun", "gke", "resources"])
-		expect(gcpInfraTabs(["cloudRun"], "resources", true)).toEqual(["cloudRun", "resources"])
-	})
-
-	it("leaves the inventory out while no connection collects, also when it is requested", () => {
-		expect(gcpInfraTabs(["cloudRun"], "resources", false)).toEqual(["cloudRun"])
+describe("gcpServiceView", () => {
+	it("lists every service in exactly the view it names", () => {
+		for (const service of GCP_INFRA_SERVICE_IDS) {
+			const views = Object.entries(GCP_VIEW_SERVICES).filter(([, services]) =>
+				services.some((listed) => listed === service),
+			)
+			expect(
+				views.map(([view]) => view),
+				service,
+			).toEqual([gcpServiceView(service)])
+		}
 	})
 })
 

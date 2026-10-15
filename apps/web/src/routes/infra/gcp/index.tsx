@@ -1,8 +1,8 @@
-import { useMemo } from "react"
+import { useMemo, type ComponentProps } from "react"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { GCP_INFRA_SERVICES } from "@maple/domain/gcp-infra"
+import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
@@ -11,23 +11,25 @@ import { Spinner } from "@maple/ui/components/ui/spinner"
 
 import { PageHero } from "@/components/common/page-hero"
 import { ResultView } from "@/components/common/result-view"
-import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { CircleInfoIcon, CircleWarningIcon, GoogleCloudIcon } from "@/components/icons"
+import { GcpListPage, type GcpListState } from "@/components/infra/gcp/gcp-list-page"
 import { GcpResources } from "@/components/infra/gcp/gcp-resources"
-import { GcpServiceTable, GcpServiceTableLoading } from "@/components/infra/gcp/gcp-service-table"
+import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpCloudSqlInstances } from "@/components/infra/gcp/inventory"
 import {
-	GCP_INFRA_TABS,
-	GCP_RESOURCES_TAB,
-	NO_GCP_FLEET,
-	gcpFleet,
+	NO_GCP_SPARKS,
+	gcpListRows,
+	gcpListScope,
+	gcpProjectHealth,
+	gcpRequestedView,
+	gcpSparklineBucketSeconds,
+	gcpSparklineServices,
+	gcpSparks,
+} from "@/components/infra/gcp/list-model"
+import {
 	gcpInfraNotice,
 	gcpInfraSetupPending,
-	gcpInfraTabs,
 	gcpResourcesError,
-	gcpWorkloadProject,
-	gcpWorkloadRegion,
 	type GcpInfraNotice,
-	type GcpInfraTab,
 } from "@/components/infra/gcp/tabs"
 import { IntegrationNotConnected } from "@/components/infra/primitives/integration-not-connected"
 import { gcpMetricsState } from "@/components/integrations/gcp-connector-state"
@@ -46,16 +48,25 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { gcpInfraFleetResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import {
+	gcpInfraFleetResultAtom,
+	gcpInfraSparklinesResultAtom,
+} from "@/lib/services/atoms/warehouse-query-atoms"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
+// Plain strings: a stale or mistyped link falls back to the first view instead of the error page.
 const gcpSearchSchema = Schema.Struct({
-	// A plain string: a stale or mistyped link falls back to the first tab instead of the error page.
+	/** The list: see `GCP_VIEWS`. */
+	view: Schema.optional(Schema.String),
+	/** A link from before the views, which named a service: read as its view. */
 	tab: Schema.optional(Schema.String),
-	/** Every tab: the project. Service tabs: the region and a name search. */
+	/** One of the view's band cells. */
+	scope: Schema.optional(Schema.String),
+	/** Every view: the project. Lists: the region and a name search. */
 	project: Schema.optional(Schema.String),
 	region: Schema.optional(Schema.String),
 	q: Schema.optional(Schema.String),
-	/** Resources tab: the asset type. */
+	/** Resources view: the asset type. */
 	type: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
@@ -114,10 +125,8 @@ function GcpPage() {
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
 			gap="lg"
 		>
-			<PageHero
-				title="Google Cloud"
-				description="Workloads and resources of your connected Google Cloud projects, from Cloud Monitoring metrics and Cloud Asset Inventory."
-			/>
+			{/* The list draws its own header. */}
+			{Result.isSuccess(statusResult) ? null : <GcpHero />}
 			<ResultView
 				result={statusResult}
 				loading={<Skeleton className="h-64 w-full" />}
@@ -127,28 +136,34 @@ function GcpPage() {
 				{(status) => {
 					if (status.connectors.length === 0) {
 						return (
-							<IntegrationNotConnected
-								icon={<GoogleCloudIcon size={16} />}
-								title="Connect Google Cloud to see your infrastructure"
-								description="Connect an organization, folder or project with key metrics on. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install."
-								integration="gcp"
-								actionLabel="Connect Google Cloud"
-								docsPage="gcp"
-							/>
+							<>
+								<GcpHero />
+								<IntegrationNotConnected
+									icon={<GoogleCloudIcon size={16} />}
+									title="Connect Google Cloud to see your infrastructure"
+									description="Connect an organization, folder or project with key metrics on. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install."
+									integration="gcp"
+									actionLabel="Connect Google Cloud"
+									docsPage="gcp"
+								/>
+							</>
 						)
 					}
 					// None when metrics are switched off everywhere: what was collected before still shows.
 					const connectors = status.connectors.filter((connector) => connector.metrics_enabled)
 					if (connectors.length > 0 && gcpInfraSetupPending(connectors, nowMs)) {
 						return (
-							<IntegrationNotConnected
-								icon={<GoogleCloudIcon size={16} />}
-								title="Finish setting up Google Cloud"
-								description="Key metrics are on, but the setup script hasn't run yet."
-								integration="gcp"
-								actionLabel="Open the integration"
-								docsPage="gcp"
-							/>
+							<>
+								<GcpHero />
+								<IntegrationNotConnected
+									icon={<GoogleCloudIcon size={16} />}
+									title="Finish setting up Google Cloud"
+									description="Key metrics are on, but the setup script hasn't run yet."
+									integration="gcp"
+									actionLabel="Open the integration"
+									docsPage="gcp"
+								/>
+							</>
 						)
 					}
 					return (
@@ -192,130 +207,167 @@ function GcpInfra({
 	endTime: string
 	onSearchChange: (patch: Partial<GcpSearchParams>) => void
 }) {
-	// Every reporting service at once: a tab switch reads nothing.
+	// Every reporting service at once: a view switch reads nothing but its sparklines.
 	const fleetAtom = gcpInfraFleetResultAtom({ data: { startTime, endTime } })
 	const fleetResult = useRefreshableAtomValue(fleetAtom)
 	const refreshFleet = useAtomRefresh(fleetAtom)
 
-	const fleet = useMemo(
-		() =>
-			Result.builder(fleetResult)
-				.onSuccess((response) => gcpFleet(response.services))
-				.orElse(() => NO_GCP_FLEET),
-		[fleetResult],
-	)
-	const reporting = fleet.map((entry) => entry.service)
-	const notice = Result.isSuccess(fleetResult)
-		? gcpInfraNotice(connectors, reporting.length > 0, nowMs)
-		: null
+	const fleet = Result.builder(fleetResult)
+		.onSuccess((response) => response.services)
+		.orElse(() => null)
+	const reporting = fleet !== null && fleet.length > 0
+	const notice = fleet === null ? null : gcpInfraNotice(connectors, reporting, nowMs)
 	const waiting = notice?.kind === "waiting"
 	// The first read flips the status before its metrics are queryable, so a quiet page keeps
 	// looking. A fixed range is left alone: it cannot gain new metrics.
 	const quiet = notice?.kind === "quiet" && search.startTime === undefined
 	useIntervalRefresh(refreshFleet, { intervalMs: WAITING_REFRESH_MS, enabled: waiting || quiet })
 
-	const requested: GcpInfraTab | undefined = GCP_INFRA_TABS.find((candidate) => candidate === search.tab)
-	const tabs = gcpInfraTabs(reporting, requested, connectors.length > 0)
-	const tab = tabs.find((candidate) => candidate === requested) ?? tabs[0]
-
-	// An empty param in a hand-edited address is no filter.
-	const place = { project: search.project || undefined, region: search.region || undefined }
-	const assetType = search.type || undefined
-	// The project and region filters cover every service tab, and so does the band above them.
-	const places = fleet.flatMap(({ service, workloads }) =>
-		workloads.map((workload) => ({
-			project: gcpWorkloadProject(service, workload.keys),
-			region: gcpWorkloadRegion(service, workload.keys),
-		})),
+	const collecting = connectors.length > 0
+	const requested = gcpRequestedView(search.view, search.tab)
+	// The page resolves the same view; its sparklines are read here, for that view only.
+	const { view } = useMemo(
+		() =>
+			gcpListScope(
+				fleet === null ? null : gcpListRows(fleet, NO_GCP_SPARKS),
+				{ view: requested, project: search.project, region: search.region },
+				collecting,
+			),
+		[fleet, requested, search.project, search.region, collecting],
 	)
-	const options = (values: ReadonlyArray<string | undefined>) =>
-		[...new Set(values.flatMap((value) => (value ? [value] : [])))].sort()
-	const inPlace = fleet.map((entry) => ({
-		...entry,
-		workloads: entry.workloads.filter(
-			(workload) =>
-				(place.project === undefined ||
-					gcpWorkloadProject(entry.service, workload.keys) === place.project) &&
-				(place.region === undefined ||
-					gcpWorkloadRegion(entry.service, workload.keys) === place.region),
-		),
-	}))
 	const timeSearch = pickTimeRangeSearch(search)
 
 	// Metrics switched off, and nothing collected before in this range.
-	if (connectors.length === 0 && Result.isSuccess(fleetResult) && reporting.length === 0) {
+	if (connectors.length === 0 && fleet !== null && !reporting) {
 		return (
-			<IntegrationNotConnected
-				icon={<GoogleCloudIcon size={16} />}
-				title="Turn on metrics for Google Cloud"
-				description="Your Google Cloud connections don't collect key metrics. Turn on Key metrics under Configure in the Google Cloud integration. A connection without read-only access asks for its setup script there."
-				integration="gcp"
-				actionLabel="Open the integration"
-				docsPage="gcp"
-			/>
+			<>
+				<GcpHero />
+				<IntegrationNotConnected
+					icon={<GoogleCloudIcon size={16} />}
+					title="Turn on metrics for Google Cloud"
+					description="Your Google Cloud connections don't collect key metrics. Turn on Key metrics under Configure in the Google Cloud integration. A connection without read-only access asks for its setup script there."
+					integration="gcp"
+					actionLabel="Open the integration"
+					docsPage="gcp"
+				/>
+			</>
 		)
 	}
+	if (Result.isFailure(fleetResult)) {
+		return (
+			<>
+				<GcpHero />
+				<ResultView
+					result={fleetResult}
+					loading={null}
+					errorTitle="Failed to load Google Cloud workloads"
+					onRetry={refreshFleet}
+				>
+					{() => null}
+				</ResultView>
+			</>
+		)
+	}
+	const page = {
+		fleet,
+		projectHealth: gcpProjectHealth(connectors, nowMs),
+		collecting,
+		notice: notice === null ? null : <GcpNotice notice={notice} />,
+		resources: (
+			<GcpResources
+				filter={{ type: search.type || undefined, project: search.project || undefined }}
+				onFilterChange={onSearchChange}
+				timeSearch={timeSearch}
+				syncError={gcpResourcesError(connectors)}
+			/>
+		),
+		state: {
+			view: requested,
+			q: search.q,
+			scope: search.scope,
+			project: search.project,
+			region: search.region,
+		},
+		// A view of its own replaces a link's old `?tab=`.
+		onStateChange: (patch: Partial<GcpListState>) =>
+			onSearchChange(patch.view === undefined ? patch : { ...patch, tab: undefined }),
+		timeSearch,
+		waiting: fleetResult.waiting,
+	}
+	const services = gcpSparklineServices(view)
+	return services.length === 0 ? (
+		<GcpListPage {...page} sparks={NO_GCP_SPARKS} />
+	) : (
+		<GcpListWithSparks
+			{...page}
+			services={services}
+			cloudSql={view === "cloudSql"}
+			startTime={startTime}
+			endTime={endTime}
+		/>
+	)
+}
+
+/** The list with the sparklines of its view's services, drawn once they arrive. */
+function GcpListWithSparks({
+	services,
+	cloudSql,
+	startTime,
+	endTime,
+	...page
+}: Omit<ComponentProps<typeof GcpListPage>, "sparks"> & {
+	services: ReadonlyArray<GcpInfraServiceId>
+	/** The Cloud SQL view: its rows join the inventory's instances. */
+	cloudSql: boolean
+	startTime: string
+	endTime: string
+}) {
+	const bucketSeconds = gcpSparklineBucketSeconds(startTime, endTime)
+	const sparksResult = useRefreshableAtomValue(
+		gcpInfraSparklinesResultAtom({ data: { startTime, endTime, bucketSeconds, services } }),
+	)
+	const sparks = useMemo(
+		() =>
+			Result.builder(sparksResult)
+				.onSuccess((response) => gcpSparks(response.services, { startTime, endTime, bucketSeconds }))
+				.orElse(() => NO_GCP_SPARKS),
+		[sparksResult, startTime, endTime, bucketSeconds],
+	)
+	return cloudSql ? (
+		<GcpListWithInstances {...page} sparks={sparks} />
+	) : (
+		<GcpListPage {...page} sparks={sparks} />
+	)
+}
+
+/**
+ * The Cloud SQL list with each instance's settings from the inventory: engine, size,
+ * `max_connections`, its primary. The rows show from the metrics alone until it answers, or when
+ * it fails.
+ */
+function GcpListWithInstances(page: ComponentProps<typeof GcpListPage>) {
+	const result = useAtomValue(
+		retainedInternalQuery("integrations", "gcpResources", {
+			query: GCP_CLOUD_SQL_INVENTORY_QUERY,
+			reactivityKeys: ["gcpIntegration"],
+		}),
+	)
+	const instances = useMemo(
+		() =>
+			Result.builder(result)
+				.onSuccess((inventory) => gcpCloudSqlInstances(inventory.resources))
+				.orElse(() => undefined),
+		[result],
+	)
+	return <GcpListPage {...page} cloudSqlInstances={instances} />
+}
+
+function GcpHero() {
 	return (
-		<ResultView
-			result={fleetResult}
-			errorTitle="Failed to load Google Cloud workloads"
-			onRetry={refreshFleet}
-			loading={
-				<GcpServiceTableLoading
-					service={
-						requested === undefined || requested === GCP_RESOURCES_TAB ? "cloudRun" : requested
-					}
-				/>
-			}
-		>
-			{(_, { waiting: refreshing }) => (
-				<div className="space-y-6">
-					{notice === null ? null : <GcpNotice notice={notice} />}
-					{/* The strip scrolls sideways on a phone. */}
-					<UnderlineTabStrip navigation label="Google Cloud services" bleed={false}>
-						{tabs.map((candidate) => (
-							<Link
-								key={candidate}
-								to="/infra/gcp"
-								// The place carries over; a name search and the asset type do not.
-								search={{ ...timeSearch, ...place, tab: candidate }}
-								aria-current={candidate === tab ? "page" : undefined}
-								className={underlineTabClass(candidate === tab)}
-							>
-								{candidate === GCP_RESOURCES_TAB
-									? "Resources"
-									: GCP_INFRA_SERVICES[candidate].title}
-							</Link>
-						))}
-					</UnderlineTabStrip>
-					{tab === GCP_RESOURCES_TAB ? (
-						<GcpResources
-							filter={{ type: assetType, project: place.project }}
-							onFilterChange={onSearchChange}
-							timeSearch={timeSearch}
-							syncError={gcpResourcesError(connectors)}
-						/>
-					) : (
-						<GcpServiceTable
-							// A tab keeps its own sort.
-							key={tab}
-							service={tab}
-							workloads={inPlace.find((entry) => entry.service === tab)?.workloads ?? []}
-							truncated={fleet.some((entry) => entry.service === tab && entry.truncated)}
-							failed={fleet.some((entry) => entry.service === tab && entry.failed)}
-							query={search.q ?? ""}
-							place={place}
-							projects={options(places.map((place) => place.project))}
-							regions={options(places.map((place) => place.region))}
-							onQueryChange={(q) => onSearchChange({ q: q || undefined })}
-							onPlaceChange={onSearchChange}
-							timeSearch={timeSearch}
-							waiting={refreshing}
-						/>
-					)}
-				</div>
-			)}
-		</ResultView>
+		<PageHero
+			title="Google Cloud"
+			description="Workloads and resources of your connected Google Cloud projects, from Cloud Monitoring metrics and Cloud Asset Inventory."
+		/>
 	)
 }
 

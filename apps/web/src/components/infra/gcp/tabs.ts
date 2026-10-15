@@ -1,12 +1,7 @@
-// Infrastructure -> Google Cloud: which tabs show, what each tab's columns read, and how the
-// metric points of a tab fold into one table row per workload. Pure (no React, no atoms).
+// Infrastructure -> Google Cloud: the page's views, what each service's columns read, and how the
+// metric points of a service fold into one table row per workload. Pure (no React, no atoms).
 
-import {
-	GCP_INFRA_ROW_LIMIT,
-	GCP_INFRA_SERVICE_IDS,
-	GCP_INFRA_SERVICES,
-	type GcpInfraServiceId,
-} from "@maple/domain/gcp-infra"
+import { GCP_INFRA_ROW_LIMIT, GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { errorRateLevel, type ErrorRateLevel } from "@maple/ui/lib/error-rate"
 import { utilizationLevel, type UtilizationLevel } from "@maple/ui/lib/utilization"
@@ -219,7 +214,7 @@ export const gcpMetricReader = (points: ReadonlyArray<GcpMetricValue>): GcpMetri
 }
 
 /** An error rate over fewer events than this is no finding: one failure of two is not an outage. */
-const GCP_MIN_EVENTS = 100
+export const GCP_MIN_EVENTS = 100
 
 export interface GcpWorkload {
 	/** Identity values, in the order of the service's `identity`. The first names the row. */
@@ -253,20 +248,29 @@ export function gcpWorkload(
 	}
 }
 
-/** One table row per workload, from the tab query's points. */
-export function gcpWorkloads(
-	service: GcpInfraServiceId,
-	points: ReadonlyArray<GcpMetricPoint>,
-): ReadonlyArray<GcpWorkload> {
-	const byWorkload = new Map<string, { keys: ReadonlyArray<string>; points: Array<GcpMetricPoint> }>()
+/** A workload's identity values as one string: a map key, a React key. */
+export const gcpWorkloadId = (keys: ReadonlyArray<string>): string => keys.join("\u0000")
+
+/** Points that carry their workload's `keys`, grouped by workload in the order they first appear. */
+export function gcpWorkloadPoints<P extends { readonly keys: ReadonlyArray<string> }>(
+	points: ReadonlyArray<P>,
+): ReadonlyArray<{ readonly keys: ReadonlyArray<string>; readonly points: ReadonlyArray<P> }> {
+	const byWorkload = new Map<string, { keys: ReadonlyArray<string>; points: Array<P> }>()
 	for (const point of points) {
-		const id = point.keys.join("\u0000")
+		const id = gcpWorkloadId(point.keys)
 		const workload = byWorkload.get(id)
 		if (workload === undefined) byWorkload.set(id, { keys: point.keys, points: [point] })
 		else workload.points.push(point)
 	}
-	return [...byWorkload.values()].map((workload) => gcpWorkload(service, workload.keys, workload.points))
+	return [...byWorkload.values()]
 }
+
+/** One table row per workload, from the service query's points. */
+export const gcpWorkloads = (
+	service: GcpInfraServiceId,
+	points: ReadonlyArray<GcpMetricPoint>,
+): ReadonlyArray<GcpWorkload> =>
+	gcpWorkloadPoints(points).map((workload) => gcpWorkload(service, workload.keys, workload.points))
 
 /** One reporting service of the fleet read: see `getGcpInfraFleet`. */
 export interface GcpFleetService {
@@ -369,45 +373,37 @@ export const gcpHasRegion = (service: GcpInfraServiceId): boolean =>
 export const gcpWorkloadNoun = (service: GcpInfraServiceId): string =>
 	GCP_INFRA_SERVICES[service].identity[0][0].replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())
 
-/** Sort key of the name column; every other key is a column label. */
-export const GCP_NAME_SORT = "name"
-
-/** Sorted by the name or by one column. A value that never reported sorts last either way. */
-export function sortGcpWorkloads(
-	service: GcpInfraServiceId,
-	workloads: ReadonlyArray<GcpWorkload>,
-	sort: { readonly key: string; readonly dir: "asc" | "desc" },
-): ReadonlyArray<GcpWorkload> {
-	const sign = sort.dir === "asc" ? 1 : -1
-	const index = GCP_INFRA_COLUMNS[service].findIndex((spec) => spec.label === sort.key)
-	return [...workloads].sort((a, b) => {
-		if (sort.key === GCP_NAME_SORT) return sign * a.keys[0].localeCompare(b.keys[0])
-		const left = a.values[index]
-		const right = b.values[index]
-		if (left === undefined || right === undefined) {
-			return left === right ? 0 : left === undefined ? 1 : -1
-		}
-		return sign * (left - right)
-	})
-}
-
 export const GCP_RESOURCES_TAB = "resources"
-export const GCP_INFRA_TABS = [...GCP_INFRA_SERVICE_IDS, GCP_RESOURCES_TAB] as const
-export type GcpInfraTab = (typeof GCP_INFRA_TABS)[number]
 
 /**
- * The tabs on the page: the services reporting in the window, then the inventory. A requested
- * service tab stays, so a link or a narrower time range lands on its empty state. The inventory
- * only while a connection collects: the resources of one that stopped are not listed.
+ * The lists of the page, in the order the view switch shows them: one per kind of resource, Cloud
+ * Run and Cloud Functions in one, then the inventory.
  */
-export const gcpInfraTabs = (
-	reporting: ReadonlyArray<GcpInfraServiceId>,
-	requested: GcpInfraTab | undefined,
-	collecting: boolean,
-): ReadonlyArray<GcpInfraTab> =>
-	GCP_INFRA_TABS.filter((tab) =>
-		tab === GCP_RESOURCES_TAB ? collecting : tab === requested || reporting.includes(tab),
-	)
+export const GCP_VIEWS = [
+	"services",
+	"pubsub",
+	"cloudSql",
+	"gke",
+	"computeEngine",
+	"loadBalancing",
+	GCP_RESOURCES_TAB,
+] as const
+export type GcpView = (typeof GCP_VIEWS)[number]
+export type GcpServiceView = Exclude<GcpView, typeof GCP_RESOURCES_TAB>
+
+/** The services each list reads. */
+export const GCP_VIEW_SERVICES = {
+	services: ["cloudRun", "cloudFunctions"],
+	pubsub: ["pubsub"],
+	cloudSql: ["cloudSql"],
+	gke: ["gke"],
+	computeEngine: ["computeEngine"],
+	loadBalancing: ["loadBalancing"],
+} as const satisfies Record<GcpServiceView, ReadonlyArray<GcpInfraServiceId>>
+
+/** The list a service's workloads are in: `?view=` of the way back from a workload's page. */
+export const gcpServiceView = (service: GcpInfraServiceId): GcpServiceView =>
+	service === "cloudRun" || service === "cloudFunctions" ? "services" : service
 
 export type GcpInfraNotice =
 	/** A connector's reads fail, or arrive with part of the metrics missing. */
@@ -428,7 +424,7 @@ export const gcpInfraSetupPending = (connectors: ReadonlyArray<MetricsFields>, n
 	connectors.every((connector) => gcpMetricsState(connector, nowMs).kind === "setup-pending")
 
 /**
- * What to say above the tabs, given the connectors that collect metrics: none when metrics are
+ * What to say above the lists, given the connectors that collect metrics: none when metrics are
  * switched off on every connection. Worst first.
  */
 export function gcpInfraNotice(
