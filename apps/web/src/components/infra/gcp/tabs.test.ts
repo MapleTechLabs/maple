@@ -80,18 +80,18 @@ describe("GCP_INFRA_COLUMNS", () => {
 describe("gcpWorkloads", () => {
 	it("folds a service's points into one row per workload", () => {
 		const rows = gcpWorkloads("cloudRun", [
-			point(API, "gcp.run.request_count", "2xx", 900),
-			point(API, "gcp.run.request_count", "5xx", 100),
-			// 60 points whose mean is 120 ms.
-			point(API, "gcp.run.request_latencies", "0.95", 7200, 60),
-			point(API, "gcp.run.request_latencies", "0.99", 30_000, 60),
-			point(API, "gcp.run.container.instance_count", "active", 180, 60),
-			point(API, "gcp.run.container.instance_count", "idle", 60, 60),
-			point(API, "gcp.run.container.cpu.utilizations", "0.95", 30, 60),
-			point(WORKER, "gcp.run.container.instance_count", "active", 60, 60),
+			point(API, "gcp.cloud_run.requests", "2xx", 900),
+			point(API, "gcp.cloud_run.requests", "5xx", 100),
+			// 60 points whose mean is 125 ms.
+			point(API, "gcp.cloud_run.request.duration", "0.95", 7.5, 60),
+			point(API, "gcp.cloud_run.request.duration", "0.99", 30, 60),
+			point(API, "gcp.cloud_run.container.instance.count", "active", 180, 60),
+			point(API, "gcp.cloud_run.container.instance.count", "idle", 60, 60),
+			point(API, "gcp.cloud_run.container.cpu.utilization", "0.95", 30, 60),
+			point(WORKER, "gcp.cloud_run.container.instance.count", "active", 60, 60),
 		])
 		expect(rows.map((row) => row.keys)).toEqual([API, WORKER])
-		expect(rows[0]?.values).toEqual([1000, 0.1, 120, 500, 3, 0.5, undefined])
+		expect(rows[0]?.values).toEqual([1000, 0.1, 0.125, 0.5, 3, 0.5, undefined])
 		// A workload with no requests still has a row: counters read zero, the rest are absent.
 		expect(rows[1]?.values).toEqual([0, undefined, undefined, undefined, 1, undefined, undefined])
 	})
@@ -100,8 +100,8 @@ describe("gcpWorkloads", () => {
 		const lb = ["web-map", "web-backend", "acme-prod"]
 		expect(
 			valuesOf("loadBalancing", [
-				point(lb, "gcp.loadbalancing.https.request_count", "200", 75),
-				point(lb, "gcp.loadbalancing.https.request_count", "500", 25),
+				point(lb, "gcp.load_balancing.requests", "200", 75),
+				point(lb, "gcp.load_balancing.requests", "500", 25),
 			])[0],
 		).toMatchObject({ Requests: 100, "5xx rate": 0.25 })
 	})
@@ -109,15 +109,15 @@ describe("gcpWorkloads", () => {
 	it("reads failures as everything outside the healthy label value", () => {
 		expect(
 			valuesOf("cloudFunctions", [
-				point(API, "gcp.cloudfunctions.function.execution_count", "ok", 90),
-				point(API, "gcp.cloudfunctions.function.execution_count", "timeout", 6),
-				point(API, "gcp.cloudfunctions.function.execution_count", "crash", 4),
+				point(API, "gcp.cloud_functions.executions", "ok", 90),
+				point(API, "gcp.cloud_functions.executions", "timeout", 6),
+				point(API, "gcp.cloud_functions.executions", "crash", 4),
 			])[0],
 		).toMatchObject({ Executions: 100, "Error rate": 0.1 })
 		// A pull subscription makes no push requests: there is no rate to show.
 		expect(
 			valuesOf("pubsub", [
-				point(["orders", "acme-prod"], "gcp.pubsub.subscription.num_undelivered_messages", "", 0, 60),
+				point(["orders", "acme-prod"], "gcp.pubsub.subscription.undelivered_messages", "", 0, 60),
 			])[0],
 		).toMatchObject({ Backlog: 0, Delivered: 0, "Push errors": undefined })
 	})
@@ -127,19 +127,22 @@ describe("gcpWorkloads", () => {
 		expect(
 			valuesOf("gke", [
 				// 30 CPU seconds in each of 10 minutes.
-				point(container, "gcp.kubernetes.container.cpu.core_usage_time", "", 300, 10),
-				point(container, "gcp.kubernetes.container.memory.used_bytes", "non-evictable", 5120, 10),
-				point(container, "gcp.kubernetes.container.memory.used_bytes", "evictable", 99_999, 10),
+				point(container, "gcp.gke.container.cpu.time", "", 300, 10),
+				point(container, "gcp.gke.container.memory.usage", "non-evictable", 5120, 10),
+				point(container, "gcp.gke.container.memory.usage", "evictable", 99_999, 10),
 			])[0],
 		).toMatchObject({ "CPU cores": 0.5, Memory: 512, Restarts: 0, "CPU of limit": undefined })
 	})
 
-	it("reads Cloud SQL connections from whichever engine metric reported", () => {
-		const db = ["acme-prod:main", "acme-prod", "europe-west1"]
-		const connections = (metric: string) =>
-			valuesOf("cloudSql", [point(db, `gcp.cloudsql.database.${metric}`, "", 240, 60)])[0]?.Connections
-		expect(connections("network.connections")).toBe(4)
-		expect(connections("postgresql.num_backends")).toBe(4)
+	it("splits a Compute Engine byte counter by its direction", () => {
+		const vm = ["web-1", "acme-prod", "europe-west4-b"]
+		expect(
+			valuesOf("computeEngine", [
+				point(vm, "gcp.gce.network.io", "receive", 2048),
+				point(vm, "gcp.gce.network.io", "transmit", 512),
+				point(vm, "gcp.gce.disk.io", "write", 4096),
+			])[0],
+		).toMatchObject({ "Network in": 2048, "Network out": 512, "Disk read": 0, "Disk write": 4096 })
 	})
 })
 
@@ -147,13 +150,13 @@ describe("workload health", () => {
 	const DB = ["acme-prod:main", "acme-prod", "europe-west1"]
 	const database = (cpu: number, disk: number) =>
 		gcpWorkloads("cloudSql", [
-			point(DB, "gcp.cloudsql.database.cpu.utilization", "", cpu),
-			point(DB, "gcp.cloudsql.database.disk.utilization", "", disk),
+			point(DB, "gcp.cloud_sql.cpu.utilization", "", cpu),
+			point(DB, "gcp.cloud_sql.disk.utilization", "", disk),
 		])[0]
 	const service = (ok: number, failed: number) =>
 		gcpWorkloads("cloudRun", [
-			point(API, "gcp.run.request_count", "2xx", ok),
-			point(API, "gcp.run.request_count", "5xx", failed),
+			point(API, "gcp.cloud_run.requests", "2xx", ok),
+			point(API, "gcp.cloud_run.requests", "5xx", failed),
 		])[0]
 
 	it("rates saturation by the busiest share of a limit", () => {
@@ -162,7 +165,7 @@ describe("workload health", () => {
 		expect(database(0.95, 0.65).saturation).toBe("crit")
 		// A latency or a count is no share of anything.
 		expect(
-			gcpWorkloads("cloudRun", [point(API, "gcp.run.request_latencies", "0.95", 5000)])[0],
+			gcpWorkloads("cloudRun", [point(API, "gcp.cloud_run.request.duration", "0.95", 5)])[0],
 		).toMatchObject({
 			saturation: "ok",
 			errors: "neutral",
@@ -240,11 +243,11 @@ describe("workload identity", () => {
 
 describe("sortGcpWorkloads", () => {
 	const rows = gcpWorkloads("cloudRun", [
-		point(["b"], "gcp.run.request_count", "2xx", 10),
-		point(["b"], "gcp.run.request_latencies", "0.95", 50),
-		point(["a"], "gcp.run.request_count", "2xx", 30),
-		point(["c"], "gcp.run.request_count", "2xx", 20),
-		point(["c"], "gcp.run.request_latencies", "0.95", 90),
+		point(["b"], "gcp.cloud_run.requests", "2xx", 10),
+		point(["b"], "gcp.cloud_run.request.duration", "0.95", 0.05),
+		point(["a"], "gcp.cloud_run.requests", "2xx", 30),
+		point(["c"], "gcp.cloud_run.requests", "2xx", 20),
+		point(["c"], "gcp.cloud_run.request.duration", "0.95", 0.09),
 	])
 	const names = (key: string, dir: "asc" | "desc") =>
 		sortGcpWorkloads("cloudRun", rows, { key, dir }).map((row) => row.keys[0])
@@ -270,7 +273,7 @@ describe("formatGcpValue", () => {
 		expect(formatGcpValue("count", 12_345)).toBe("12.3K")
 		expect(formatGcpValue("percent", 0.42)).toBe("42%")
 		expect(formatGcpValue("errorRate", 0.001)).toBe("0.10%")
-		expect(formatGcpValue("ms", 1500)).toBe("1.50s")
+		expect(formatGcpValue("seconds", 1.5)).toBe("1.50s")
 		expect(formatGcpValue("seconds", 90)).toBe("1.5min")
 		expect(formatGcpValue("bytes", 1536)).toBe("1.5 KB")
 		expect(formatGcpValue("bytes", undefined)).toBe("—")

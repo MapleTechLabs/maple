@@ -85,43 +85,39 @@ describe("GCP_INFRA_CHARTS", () => {
 	it("opens a counter as a sum and a gauge or percentile as a gauge", () => {
 		// The explorer keeps apart what the chart draws apart: the classes, the percentiles.
 		expect(gcpChartMetric(GCP_INFRA_CHARTS.cloudRun[0], [])).toEqual({
-			name: "gcp.run.request_count",
+			name: "gcp.cloud_run.requests",
 			type: "sum",
-			groupBy: "attr.response_code_class",
+			groupBy: "attr.gcp.metric.labels.response_code_class",
 		})
 		expect(gcpChartMetric(lineChart("cloudRun", "Request latency"), [])).toEqual({
-			name: "gcp.run.request_latencies",
+			name: "gcp.cloud_run.request.duration",
 			type: "gauge",
 			groupBy: "attr.quantile",
 		})
+		expect(gcpChartMetric(lineChart("computeEngine", "Network bytes per second"), [])).toEqual({
+			name: "gcp.gce.network.io",
+			type: "sum",
+			groupBy: "attr.network.io.direction",
+		})
 		expect(gcpChartMetric(lineChart("cloudSql", "CPU utilization"), []).groupBy).toBeUndefined()
-	})
-
-	it("opens the metric that reported when two engines name a reading apart", () => {
-		const connections = lineChart("cloudSql", "Connections")
-		expect(gcpChartMetric(connections, []).name).toBe("gcp.cloudsql.database.network.connections")
-		expect(
-			gcpChartMetric(connections, [point(T1, "gcp.cloudsql.database.postgresql.num_backends", "", 12)])
-				.name,
-		).toBe("gcp.cloudsql.database.postgresql.num_backends")
 	})
 })
 
 describe("gcpLineRows", () => {
-	it("draws a percentile per series and leaves a gap where it did not report", () => {
+	it("draws a percentile per series in milliseconds and leaves a gap where it did not report", () => {
 		const rows = gcpLineRows(
 			lineChart("cloudRun", "Request latency").series,
 			[
-				point(T1, "gcp.run.request_latencies", "0.5", 60, 5),
-				point(T1, "gcp.run.request_latencies", "0.99", 900, 5),
-				point(T2, "gcp.run.request_latencies", "0.5", 20, 2),
+				point(T1, "gcp.cloud_run.request.duration", "0.5", 0.5, 4),
+				point(T1, "gcp.cloud_run.request.duration", "0.99", 1.5, 2),
+				point(T2, "gcp.cloud_run.request.duration", "0.5", 0.25, 2),
 			],
 			WINDOW,
 		)
 		expect(rows).toEqual([
-			{ bucket: T1, attributeValue: "p50", value: 12 },
-			{ bucket: T1, attributeValue: "p99", value: 180 },
-			{ bucket: T2, attributeValue: "p50", value: 10 },
+			{ bucket: T1, attributeValue: "p50", value: 125 },
+			{ bucket: T1, attributeValue: "p99", value: 750 },
+			{ bucket: T2, attributeValue: "p50", value: 125 },
 		])
 	})
 
@@ -129,8 +125,8 @@ describe("gcpLineRows", () => {
 		const rows = gcpLineRows(
 			lineChart("computeEngine", "Network bytes per second").series,
 			[
-				point(T1, "gcp.compute.instance.network.received_bytes_count", "vm-1", 600_000, 5),
-				point(T2, "gcp.compute.instance.cpu.utilization", "vm-1", 0.5, 5),
+				point(T1, "gcp.gce.network.io", "receive", 600_000, 5),
+				point(T2, "gcp.gce.cpu.utilization", "", 0.5, 5),
 			],
 			WINDOW,
 		)
@@ -143,7 +139,7 @@ describe("gcpLineRows", () => {
 	})
 
 	it("divides a counter by the part of an edge bucket the window covers", () => {
-		const received = [point(T1, "gcp.compute.instance.network.received_bytes_count", "vm-1", 120_000, 2)]
+		const received = [point(T1, "gcp.gce.network.io", "receive", 120_000, 2)]
 		const rows = gcpLineRows(lineChart("computeEngine", "Network bytes per second").series, received, {
 			...WINDOW,
 			// The window opens three minutes into the bucket.
@@ -159,32 +155,18 @@ describe("gcpLineRows", () => {
 		).toBe(2000)
 	})
 
-	it("draws one connections line whichever engine reports", () => {
-		const series = lineChart("cloudSql", "Connections").series
-		expect(
-			gcpLineRows(
-				series,
-				[point(T1, "gcp.cloudsql.database.postgresql.num_backends", "", 60, 5)],
-				WINDOW,
-			),
-		).toEqual([{ bucket: T1, attributeValue: "Connections", value: 12 }])
-		expect(
-			gcpLineRows(series, [point(T1, "gcp.cloudsql.database.network.connections", "", 40, 5)], WINDOW),
-		).toEqual([{ bucket: T1, attributeValue: "Connections", value: 8 }])
-	})
-
 	it("turns CPU seconds per minute into cores and a lag in seconds into milliseconds", () => {
 		expect(
 			gcpLineRows(
 				lineChart("gke", "CPU cores").series,
-				[point(T1, "gcp.kubernetes.container.cpu.core_usage_time", "", 150, 5)],
+				[point(T1, "gcp.gke.container.cpu.time", "", 150, 5)],
 				WINDOW,
 			),
 		).toEqual([{ bucket: T1, attributeValue: "Usage", value: 0.5 }])
 		expect(
 			gcpLineRows(
 				lineChart("cloudSql", "Replica lag").series,
-				[point(T1, "gcp.cloudsql.database.replication.replica_lag", "", 2.5, 5)],
+				[point(T1, "gcp.cloud_sql.replication.lag", "", 2.5, 5)],
 				WINDOW,
 			),
 		).toEqual([{ bucket: T1, attributeValue: "Lag", value: 500 }])
@@ -194,9 +176,9 @@ describe("gcpLineRows", () => {
 		const rows = gcpLineRows(
 			lineChart("loadBalancing", "5xx rate").series,
 			[
-				point(T1, "gcp.loadbalancing.https.request_count", "200", 90),
-				point(T1, "gcp.loadbalancing.https.request_count", "500", 10),
-				point(T2, "gcp.loadbalancing.https.total_latencies", "0.5", 10),
+				point(T1, "gcp.load_balancing.requests", "200", 90),
+				point(T1, "gcp.load_balancing.requests", "500", 10),
+				point(T2, "gcp.load_balancing.request.duration", "0.5", 10),
 			],
 			WINDOW,
 		)
@@ -207,12 +189,12 @@ describe("gcpLineRows", () => {
 describe("gcpClassRows", () => {
 	it("draws a counter per second by class, zero where a class counted nothing", () => {
 		const rows = gcpClassRows(
-			"gcp.loadbalancing.https.request_count",
+			"gcp.load_balancing.requests",
 			[
-				point(T1, "gcp.loadbalancing.https.request_count", "200", 900),
-				point(T1, "gcp.loadbalancing.https.request_count", "500", 30),
-				point(T1, "gcp.loadbalancing.https.request_count", "0", 3),
-				point(T2, "gcp.loadbalancing.https.total_latencies", "0.5", 10),
+				point(T1, "gcp.load_balancing.requests", "200", 900),
+				point(T1, "gcp.load_balancing.requests", "500", 30),
+				point(T1, "gcp.load_balancing.requests", "0", 3),
+				point(T2, "gcp.load_balancing.request.duration", "0.5", 10),
 			],
 			WINDOW,
 		)
@@ -229,8 +211,8 @@ describe("gcpClassRows", () => {
 	it("is empty for a counter that never counted", () => {
 		expect(
 			gcpClassRows(
-				"gcp.pubsub.subscription.push_request_count",
-				[point(T1, "gcp.pubsub.subscription.num_undelivered_messages", "", 4)],
+				"gcp.pubsub.subscription.push_requests",
+				[point(T1, "gcp.pubsub.subscription.undelivered_messages", "", 4)],
 				WINDOW,
 			),
 		).toEqual([])
@@ -240,11 +222,11 @@ describe("gcpClassRows", () => {
 describe("gcpBuckets", () => {
 	const T4 = "2026-10-08T12:15:00.000Z"
 	const idle = [
-		point(T1, "gcp.run.request_count", "2xx", 300),
-		point(T1, "gcp.run.request_latencies", "0.5", 50, 5),
+		point(T1, "gcp.cloud_run.requests", "2xx", 300),
+		point(T1, "gcp.cloud_run.request.duration", "0.5", 0.5, 4),
 		// The service scaled to zero and reported nothing for two buckets.
-		point(T4, "gcp.run.request_count", "2xx", 600),
-		point(T4, "gcp.run.request_latencies", "0.5", 100, 5),
+		point(T4, "gcp.cloud_run.requests", "2xx", 600),
+		point(T4, "gcp.cloud_run.request.duration", "0.5", 1, 4),
 	]
 	const window = { ...WINDOW, endTime: "2026-10-08 12:20:00" }
 
@@ -259,23 +241,23 @@ describe("gcpBuckets", () => {
 	})
 
 	it("reads a counter as zero through the silence and leaves a gauge out of it", () => {
-		const requests = gcpClassRows("gcp.run.request_count", idle, window)
+		const requests = gcpClassRows("gcp.cloud_run.requests", idle, window)
 		expect(requests.map((row) => row.value)).toEqual([1, 0, 0, 2])
 		const latency = gcpLineRows(lineChart("cloudRun", "Request latency").series, idle, window)
 		expect(latency.map((row) => [row.bucket, row.value])).toEqual([
-			[T1, 10],
-			[T4, 20],
+			[T1, 125],
+			[T4, 250],
 		])
 	})
 })
 
 describe("gcpWindowPoints", () => {
 	const points = [
-		point(T2, "gcp.run.request_count", "2xx", 40),
-		point(T1, "gcp.run.request_count", "2xx", 50),
-		point(T1, "gcp.run.request_count", "5xx", 10),
-		point(T1, "gcp.run.request_latencies", "0.95", 500, 5),
-		point(T2, "gcp.run.request_latencies", "0.95", 100, 5),
+		point(T2, "gcp.cloud_run.requests", "2xx", 40),
+		point(T1, "gcp.cloud_run.requests", "2xx", 50),
+		point(T1, "gcp.cloud_run.requests", "5xx", 10),
+		point(T1, "gcp.cloud_run.request.duration", "0.95", 0.5, 2),
+		point(T2, "gcp.cloud_run.request.duration", "0.95", 0.25, 2),
 	]
 
 	it("orders buckets oldest first", () => {
@@ -285,7 +267,7 @@ describe("gcpWindowPoints", () => {
 	it("folds the buckets into the numbers of the workload's table row", () => {
 		const workload = gcpWorkload("cloudRun", ["api"], gcpWindowPoints(points))
 		// Requests, 5xx rate, latency p95: a total, a share of the total, a mean over every point.
-		expect(workload.values.slice(0, 3)).toEqual([100, 0.1, 60])
+		expect(workload.values.slice(0, 3)).toEqual([100, 0.1, 0.1875])
 		expect(workload.errors).toBe("crit")
 	})
 })
