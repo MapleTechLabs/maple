@@ -62,6 +62,8 @@ export const VcsInstallations = PG.table("vcs_installations", {
 		}),
 		status: PG.column(PG.brand(PG.text, VcsInstallStatus), { default: "active" }),
 		suspendedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "suspended_at" }),
+		/** Opt-out: finished CI workflow runs become traces unless the org turns this off. */
+		ciTracesEnabled: PG.column(PG.bool, { name: "ci_traces_enabled", default: true }),
 		installedByUserId: PG.column(PG.brand(PG.text, UserId), { name: "installed_by_user_id" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),

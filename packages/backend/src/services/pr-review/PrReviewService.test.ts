@@ -91,8 +91,8 @@ const chatSessionsFake = (begun: Array<Begun>, aborted: Array<string>, options: 
 			begun.push({ sessionId: input.sessionId, text: input.text })
 			return { cursor: 0, messageId: "m", turnMessageId: "t" }
 		},
-		abort: async () => {
-			aborted.push(sessionId)
+		abort: async (reason) => {
+			aborted.push(`${sessionId} (${reason ?? "none"})`)
 		},
 	}))
 
@@ -618,7 +618,7 @@ describe("PrReviewService.onPullRequestEvent", () => {
 				job({ action: "synchronize", headSha: HEAD_2 }),
 			)
 			assert.equal(second.outcome, "started")
-			assert.deepEqual(aborted, [`${orgId}:pr-${first.reviewId}`])
+			assert.deepEqual(aborted, [`${orgId}:pr-${first.reviewId} (superseded)`])
 			const superseded = yield* reviews.getReview(orgId, first.reviewId!)
 			assert.equal(Option.getOrThrow(superseded).status, "skipped")
 			assert.equal(Option.getOrThrow(superseded).skipReason, "superseded")

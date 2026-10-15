@@ -545,6 +545,17 @@ const workloadRows = (sql: string) => {
 			avgCpuLimitPct: mean((s) => s.cpuLimitPct),
 			avgMemoryLimitPct: mean((s) => s.memoryLimitPct),
 			avgCpuUsage: mean((s) => s.cpuUsage),
+			peakCpuLimitPct: Math.max(...stats.map((s) => s.cpuLimitPctPeak)),
+			peakMemoryLimitPct: Math.max(...stats.map((s) => s.memoryLimitPctPeak)),
+			saturation: Math.max(...stats.map((s) => Math.max(s.cpuLimitPctPeak, s.memoryLimitPctPeak))),
+			cpuUsage: stats.reduce((sum, s) => sum + s.cpuUsage, 0),
+			desiredReplicas: pods.length,
+			readyReplicas: pods.length,
+			replicaSamples: 1,
+			shortfall: 0,
+			failedPods: 0,
+			restarts: 0,
+			lastTerminatedReason: "",
 		}
 	})
 }
