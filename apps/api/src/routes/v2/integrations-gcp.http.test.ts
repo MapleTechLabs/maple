@@ -216,7 +216,12 @@ describe("v2 gcp integration over HTTP", () => {
 			application_logs: ["cloud_run", "cloud_functions", "app_engine", "gke"],
 		})
 		expect(both.status).toBe(200)
-		expect(Object.keys(both.body).sort()).toEqual(["cleanup_script", "object", "setup_script", "terraform"])
+		expect(Object.keys(both.body).sort()).toEqual([
+			"cleanup_script",
+			"object",
+			"setup_script",
+			"terraform",
+		])
 		expect(both.body.object).toBe("gcp_connector.setup_scripts")
 		// The subscription is given no secret; only the script's own reports carry it.
 		expect(both.body.setup_script).toMatch(
@@ -227,7 +232,9 @@ describe("v2 gcp integration over HTTP", () => {
 		)
 		expect(both.body.terraform).toMatch(/^ {2}scope_type += "folder"$/m)
 		expect(both.body.terraform).toMatch(/^ {2}project_id += "acme-host"$/m)
-		expect(both.body.terraform).toContain('NOT protoPayload.methodName=\\"io.k8s.coordination.v1.leases.update\\"')
+		expect(both.body.terraform).toContain(
+			'NOT protoPayload.methodName=\\"io.k8s.coordination.v1.leases.update\\"',
+		)
 		expect(both.body.terraform).not.toMatch(/maple_gcp_[A-Za-z0-9_-]{32}|secret=/)
 		expect(both.body.setup_script).toContain("PROJECT_ID='acme-host'")
 		expect(both.body.setup_script).toContain("SCOPE_ID='123456789012'")

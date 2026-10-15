@@ -403,7 +403,12 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 		HttpApiEndpoint.post("checkAccess", "/connectors/:id/check_access", {
 			params: { id: GcpConnectorPublicId },
 			success: V2GcpAccessCheck,
-			error: [V2InsufficientPermissions.schema, connectorNotFound, metricsUnavailable, integrationPersistence],
+			error: [
+				V2InsufficientPermissions.schema,
+				connectorNotFound,
+				metricsUnavailable,
+				integrationPersistence,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "checkGcpConnectorAccess",

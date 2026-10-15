@@ -33,7 +33,9 @@ describe("renderGcpTerraform", () => {
 		expect(attribute(rendered, "scope_id")).toBe("123456789012")
 		expect(attribute(rendered, "project_id")).toBe("acme-host")
 		expect(attribute(rendered, "push_endpoint")).toBe(PUSH_ENDPOINT)
-		expect(attribute(rendered, "maple_service_account")).toBe("collector@maple-prod.iam.gserviceaccount.com")
+		expect(attribute(rendered, "maple_service_account")).toBe(
+			"collector@maple-prod.iam.gserviceaccount.com",
+		)
 		expect(attribute(rendered, "logs_enabled")).toBe(true)
 	})
 
@@ -52,7 +54,11 @@ describe("renderGcpTerraform", () => {
 	})
 
 	it("leaves read-only access out without Maple's account, and says nothing secret", () => {
-		const rendered = renderGcpTerraform({ ...input, mapleServiceAccountEmail: undefined, logsEnabled: false })
+		const rendered = renderGcpTerraform({
+			...input,
+			mapleServiceAccountEmail: undefined,
+			logsEnabled: false,
+		})
 		expect(rendered).not.toContain("maple_service_account")
 		expect(attribute(rendered, "logs_enabled")).toBe(false)
 		expect(rendered).not.toContain("secret=")

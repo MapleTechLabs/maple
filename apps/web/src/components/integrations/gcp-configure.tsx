@@ -24,6 +24,7 @@ import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Spinner } from "@maple/ui/components/ui/spinner"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -340,6 +341,53 @@ function Script({
 					</pre>
 				</div>
 			)}
+		</div>
+	)
+}
+
+/**
+ * The Terraform module block: short enough to show whole, and free of secrets, so it reads as
+ * what it is before anyone copies it.
+ */
+function TerraformBlock({
+	terraform,
+	failure,
+}: {
+	terraform: string | null
+	failure: { readonly message: string; readonly retry: () => void; readonly retrying: boolean } | null
+}) {
+	const text = terraform?.trimEnd() ?? null
+	if (failure !== null) {
+		return (
+			<div className="flex flex-wrap items-center gap-2">
+				<p className="text-xs text-severity-error" role="alert">
+					{failure.message}
+				</p>
+				<Button size="sm" variant="outline" onClick={failure.retry} loading={failure.retrying}>
+					Try again
+				</Button>
+			</div>
+		)
+	}
+	return text === null ? (
+		<Skeleton className="h-56 w-full" />
+	) : (
+		<div className="overflow-clip rounded-md border border-border bg-muted">
+			<div className="flex items-center justify-between gap-2 px-3 py-1">
+				<Eyebrow>Terraform</Eyebrow>
+				<CopyButton value={text} label="module" toast={false} iconSize={12} className="size-6" />
+			</div>
+			<pre
+				tabIndex={0}
+				role="region"
+				aria-label="The Terraform module block"
+				className={cn(
+					"max-h-80 overflow-auto bg-background/50 p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+					REPLAY_BLOCK_CLASS,
+				)}
+			>
+				{text}
+			</pre>
 		</div>
 	)
 }
@@ -1133,6 +1181,20 @@ function ApplyStage({
 	const scopeRoles = gcpScopeRoles(connector.scope_type, connector.logs_enabled, metricsAvailable)
 	const scopeName = GCP_SCOPE_NAMES[connector.scope_type].toLowerCase()
 	const role = (name: string) => <span className="text-foreground">{name}</span>
+	const [method, setMethod] = useState<"script" | "terraform">("script")
+	const whoRuns = (
+		<>
+			{role("Owner")} of {connector.scope_type === "project" ? null : "the host project "}
+			<Mono>{connector.project_id}</Mono>
+			{scopeRoles.map((name, index) => (
+				<Fragment key={name}>
+					{index === 0 ? " who also has " : " and "}
+					{role(name)}
+				</Fragment>
+			))}
+			{scopeRoles.length > 0 ? ` on the ${scopeName}` : null}
+		</>
+	)
 
 	return (
 		<>
@@ -1175,88 +1237,114 @@ function ApplyStage({
 						</AlertDescription>
 					</Alert>
 				) : (
-					<ol>
-						<Step
-							number={1}
-							state="current"
-							title="Open Cloud Shell"
-							detail={
-								<>
-									Sign in as an {role("Owner")} of{" "}
-									{connector.scope_type === "project" ? null : "the host project "}
-									<Mono>{connector.project_id}</Mono>
-									{scopeRoles.map((name, index) => (
-										<Fragment key={name}>
-											{index === 0 ? " who also has " : " and "}
-											{role(name)}
-										</Fragment>
-									))}
-									{scopeRoles.length > 0 ? ` on the ${scopeName}` : null}.{" "}
-									<GcpExternalLink href={`${DOCS}#roles-for-running-the-script`}>
-										Roles if you aren&apos;t an Owner
-									</GcpExternalLink>
-								</>
-							}
+					<>
+						<ToggleGroup
+							aria-label="How to apply"
+							variant="outline"
+							size="sm"
+							value={[method]}
+							onValueChange={(next) => {
+								// Pressing the selected segment again empties the group: the view stays.
+								if (next[0] === "script" || next[0] === "terraform") setMethod(next[0])
+							}}
 						>
-							<div>
-								<GcpOpenCloudShellButton projectId={connector.project_id} />
-							</div>
-						</Step>
-						<Step
-							number={2}
-							state="current"
-							title="Paste the script and press Enter"
-							detail={
-								!connector.logs_enabled && sinkExists
-									? "Takes one to two minutes: after deleting the sink it waits for Google to stop routing."
-									: "Takes about a minute. Safe to run again."
-							}
-						>
-							<Script script={scripts?.setup_script ?? null} label="script" failure={failure} />
-						</Step>
-						<Step
-							number={3}
-							state={overdue ? "current" : "waiting"}
-							title={overdue ? "Maple has no confirmation yet" : "Maple is waiting for the run"}
-							detail={
-								overdue ? undefined : opened.rerun && reportedAt !== null ? (
-									<>
-										This updates on its own.{" "}
-										<RelativeTime
-											value={reportedAt}
-											prefix="The last run was confirmed"
-										/>
-										.
-									</>
-								) : (
-									"This updates on its own, within a minute of the script ending."
-								)
-							}
-						>
-							{overdue ? (
-								<ul className="list-disc pl-4 text-xs/5 text-pretty text-muted-foreground">
-									<li>
-										<span className="text-foreground">
-											If the script stopped with an error,
-										</span>{" "}
-										fix what it names and paste it again. It continues where it stopped.
-									</li>
-									<li>
-										<span className="text-foreground">If the ID is wrong,</span>{" "}
-										disconnect this connection and connect the right one. An ID can&apos;t
-										be changed.
-									</li>
-								</ul>
-							) : null}
-							{overdue ? (
-								<p className="text-xs/5">
-									<GcpExternalLink href={`${DOCS}#troubleshooting`}>
-										Troubleshooting
-									</GcpExternalLink>
-								</p>
-							) : null}
-						</Step>
-					</ol>
+							<ToggleGroupItem value="script">Cloud Shell script</ToggleGroupItem>
+							<ToggleGroupItem value="terraform">Terraform</ToggleGroupItem>
+						</ToggleGroup>
+						{method === "terraform" ? (
+							<TerraformSteps
+								connector={connector}
+								metricsAvailable={metricsAvailable}
+								terraform={scripts?.terraform ?? null}
+								failure={failure}
+								replacesFilter={sinkExists && choice.keep}
+								whoRuns={whoRuns}
+							/>
+						) : (
+							<ol>
+								<Step
+									number={1}
+									state="current"
+									title="Open Cloud Shell"
+									detail={
+										<>
+											Sign in as an {whoRuns}.{" "}
+											<GcpExternalLink href={`${DOCS}#roles-for-running-the-script`}>
+												Roles if you aren&apos;t an Owner
+											</GcpExternalLink>
+										</>
+									}
+								>
+									<div>
+										<GcpOpenCloudShellButton projectId={connector.project_id} />
+									</div>
+								</Step>
+								<Step
+									number={2}
+									state="current"
+									title="Paste the script and press Enter"
+									detail={
+										!connector.logs_enabled && sinkExists
+											? "Takes one to two minutes: after deleting the sink it waits for Google to stop routing."
+											: "Takes about a minute. Safe to run again."
+									}
+								>
+									<Script
+										script={scripts?.setup_script ?? null}
+										label="script"
+										failure={failure}
+									/>
+								</Step>
+								<Step
+									number={3}
+									state={overdue ? "current" : "waiting"}
+									title={
+										overdue
+											? "Maple has no confirmation yet"
+											: "Maple is waiting for the run"
+									}
+									detail={
+										overdue ? undefined : opened.rerun && reportedAt !== null ? (
+											<>
+												This updates on its own.{" "}
+												<RelativeTime
+													value={reportedAt}
+													prefix="The last run was confirmed"
+												/>
+												.
+											</>
+										) : (
+											"This updates on its own, within a minute of the script ending."
+										)
+									}
+								>
+									{overdue ? (
+										<ul className="list-disc pl-4 text-xs/5 text-pretty text-muted-foreground">
+											<li>
+												<span className="text-foreground">
+													If the script stopped with an error,
+												</span>{" "}
+												fix what it names and paste it again. It continues where it
+												stopped.
+											</li>
+											<li>
+												<span className="text-foreground">If the ID is wrong,</span>{" "}
+												disconnect this connection and connect the right one. An ID
+												can&apos;t be changed.
+											</li>
+										</ul>
+									) : null}
+									{overdue ? (
+										<p className="text-xs/5">
+											<GcpExternalLink href={`${DOCS}#troubleshooting`}>
+												Troubleshooting
+											</GcpExternalLink>
+										</p>
+									) : null}
+								</Step>
+							</ol>
+						)}
+					</>
 				)}
 			</DialogPanel>
 			{confirmed ? (
@@ -1274,6 +1362,134 @@ function ApplyStage({
 				</DialogFooter>
 			)}
 		</>
+	)
+}
+
+/**
+ * Applying the configuration with Terraform. Nothing reports a Terraform run, so Maple confirms
+ * each part from Google Cloud itself: log forwarding by its first signed push, read-only access by
+ * reading the scope as the account when asked.
+ */
+function TerraformSteps({
+	connector,
+	metricsAvailable,
+	terraform,
+	failure,
+	replacesFilter,
+	whoRuns,
+}: {
+	connector: V2GcpConnector
+	metricsAvailable: boolean
+	terraform: string | null
+	failure: { readonly message: string; readonly retry: () => void; readonly retrying: boolean } | null
+	/** The sink exists and the filter was left as it is: Terraform sets it anyway. */
+	replacesFilter: boolean
+	whoRuns: React.ReactNode
+}) {
+	const check = useAtomSet(MapleApiV2AtomClient.mutation("gcpIntegration", "checkAccess"), {
+		mode: "promiseExit",
+	})
+	const [outcome, setOutcome] = useState<{ readonly ok: boolean; readonly message: string | null } | null>(
+		null,
+	)
+	const [runCheck, checking] = useAsyncAction(async () => {
+		const result = await check({
+			params: { id: connector.id },
+			reactivityKeys: GCP_REACTIVITY_KEYS,
+		})
+		if (Exit.isFailure(result)) {
+			showErrorToast(result, { title: "Couldn't check the read-only access" })
+			return
+		}
+		setOutcome(result.value)
+	})
+	const accessInPlace = connector.applied_metrics_enabled === true
+	const logsInPlace = connector.applied_logs_enabled === true
+
+	return (
+		<ol>
+			<Step
+				number={1}
+				state="current"
+				title="Add the module to your configuration"
+				detail="It creates what the script does, under the same names, and holds no secret: commit it with the rest."
+			>
+				<TerraformBlock terraform={terraform} failure={failure} />
+				{replacesFilter ? (
+					<p className={SMALL}>
+						Terraform sets the log filter in full: it replaces the filter the sink has now.
+					</p>
+				) : null}
+			</Step>
+			<Step
+				number={2}
+				state="current"
+				title="Run terraform apply"
+				detail={
+					<>
+						As an {whoRuns}. A connection the script set up is taken over by importing its
+						resources first.{" "}
+						<GcpExternalLink href={`${DOCS}#set-up-with-terraform`}>
+							Terraform setup
+						</GcpExternalLink>
+					</>
+				}
+			/>
+			<Step
+				number={3}
+				state={
+					(!connector.logs_enabled || logsInPlace) && (!metricsAvailable || accessInPlace)
+						? "done"
+						: "current"
+				}
+				title="Maple confirms it"
+				detail="Terraform tells Maple nothing, so Maple checks Google Cloud itself."
+			>
+				<dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-xs/5 sm:grid-cols-[auto_1fr] [&>dd]:text-pretty [&>dd]:text-muted-foreground [&>dd]:max-sm:mb-1.5">
+					{connector.logs_enabled ? (
+						<>
+							<dt>Log forwarding</dt>
+							<dd>
+								{logsInPlace
+									? "In place: Maple has received a signed push."
+									: "Confirmed by the first log entry, usually within 10 minutes of the apply. This updates on its own."}
+							</dd>
+						</>
+					) : null}
+					{metricsAvailable ? (
+						<>
+							<dt>Read-only access</dt>
+							<dd className="flex flex-col items-start gap-2">
+								{accessInPlace ? (
+									"In place: Maple read the scope as the account."
+								) : (
+									<>
+										<span>
+											Maple reads the{" "}
+											{GCP_SCOPE_NAMES[connector.scope_type].toLowerCase()} as the
+											account once you ask.
+										</span>
+										<Button
+											size="sm"
+											variant="outline"
+											onClick={() => void runCheck()}
+											loading={checking}
+										>
+											Check access
+										</Button>
+										{outcome !== null && !outcome.ok ? (
+											<span className="text-severity-error" role="alert">
+												{outcome.message}
+											</span>
+										) : null}
+									</>
+								)}
+							</dd>
+						</>
+					) : null}
+				</dl>
+			</Step>
+		</ol>
 	)
 }
 
@@ -1498,7 +1714,7 @@ export function GcpDisconnectDialog({
 									<dl className="grid grid-cols-[auto_1fr] gap-x-3 text-xs/5">
 										<dt className="text-foreground">Deletes</dt>
 										<dd className="text-pretty text-muted-foreground">
-											The log sink, topic, subscription and read-only service account.
+											The log sink, topic, subscription and both service accounts.
 										</dd>
 										<dt className="text-foreground">Keeps</dt>
 										<dd className="text-muted-foreground">The APIs it switched on.</dd>
@@ -1512,6 +1728,10 @@ export function GcpDisconnectDialog({
 									</Script>
 									<p className={cn(SMALL, "text-foreground/80")}>
 										Waiting for the cleanup script. This updates on its own.
+									</p>
+									<p className={SMALL}>
+										Set up with Terraform? Remove the module and apply instead, then
+										disconnect anyway: Terraform tells Maple nothing.
 									</p>
 								</>
 							)}

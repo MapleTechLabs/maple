@@ -975,34 +975,37 @@ describe("GcpPromQlService.checkAccess", () => {
 	const checkAccess = (connectorId: string) =>
 		GcpPromQlService.use((gcp) => gcp.checkAccess(ORG, connectorId as never))
 
-	it.effect("records the read-only account as in place once the scope reads, so live queries use it", () => {
-		const testDb = createTestDb(trackedDbs)
-		const calls = makeCalls()
-		return run(
-			testDb,
-			stubFetch(calls, {
-				folderProjects: FOLDER_PROJECTS,
-				promql: (call) => matrix({ metric: { project_id: call.project }, values: [[T0, "1"]] }),
-			}),
-			Effect.gen(function* () {
-				yield* insertConnector(testDb, FOLDER_CONNECTOR, {
-					projectId: "acme-host",
-					folder: "123",
-					accountInPlace: null,
-				})
-				const before = yield* Effect.flip(queryRange(range("up")))
-				assert.strictEqual(before._tag, "@maple/http/errors/GcpPromQlFailedError")
+	it.effect(
+		"records the read-only account as in place once the scope reads, so live queries use it",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const calls = makeCalls()
+			return run(
+				testDb,
+				stubFetch(calls, {
+					folderProjects: FOLDER_PROJECTS,
+					promql: (call) => matrix({ metric: { project_id: call.project }, values: [[T0, "1"]] }),
+				}),
+				Effect.gen(function* () {
+					yield* insertConnector(testDb, FOLDER_CONNECTOR, {
+						projectId: "acme-host",
+						folder: "123",
+						accountInPlace: null,
+					})
+					const before = yield* Effect.flip(queryRange(range("up")))
+					assert.strictEqual(before._tag, "@maple/http/errors/GcpPromQlFailedError")
 
-				assert.deepStrictEqual(yield* checkAccess(FOLDER_CONNECTOR), { ok: true, message: null })
-				assert.deepStrictEqual(calls.impersonate, [FOLDER_READER])
-				assert.strictEqual(calls.assets.length, 1)
-				assert.include(calls.assets[0]!, "/v1/folders/123:searchAllResources")
+					assert.deepStrictEqual(yield* checkAccess(FOLDER_CONNECTOR), { ok: true, message: null })
+					assert.deepStrictEqual(calls.impersonate, [FOLDER_READER])
+					assert.strictEqual(calls.assets.length, 1)
+					assert.include(calls.assets[0]!, "/v1/folders/123:searchAllResources")
 
-				const after = yield* queryRange(range("up"))
-				assert.deepStrictEqual<ReadonlyArray<string>>(after.projects, ["acme-data", "acme-shop"])
-			}),
-		)
-	})
+					const after = yield* queryRange(range("up"))
+					assert.deepStrictEqual<ReadonlyArray<string>>(after.projects, ["acme-data", "acme-shop"])
+				}),
+			)
+		},
+	)
 
 	it.effect("says what is missing when the account can't read, and records nothing", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -1030,7 +1033,10 @@ describe("GcpPromQlService.checkAccess", () => {
 				testDb,
 				stubFetch(calls),
 				Effect.gen(function* () {
-					yield* insertConnector(testDb, OTHER_CONNECTOR, { orgId: OTHER_ORG, projectId: "rival-prod" })
+					yield* insertConnector(testDb, OTHER_CONNECTOR, {
+						orgId: OTHER_ORG,
+						projectId: "rival-prod",
+					})
 					return yield* Effect.flip(checkAccess(OTHER_CONNECTOR))
 				}),
 			)

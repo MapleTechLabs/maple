@@ -446,7 +446,9 @@ Done. Google Cloud is set up for Maple.
 			const { status, commands } = run(setup(setupInput(scopeType, logs)), { describe: "found" })
 			expect(status).toBe(0)
 			expect(commands).not.toContainEqual(expect.stringContaining("remove-iam-policy-binding"))
-			expect(commands).not.toContainEqual(`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`)
+			expect(commands).not.toContainEqual(
+				`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+			)
 			// Every grant is made again, so a run also restores one that was removed.
 			expect(commands).toEqual(
 				expect.arrayContaining(
@@ -851,7 +853,9 @@ ${UNFINISHED}`)
 		expect(allOn.status).toBe(0)
 		expect(allOn.commands).not.toContainEqual(expect.stringContaining("services enable"))
 		expect(allOn.access).not.toContain(RESOURCE_MANAGER_ON)
-		expect(allOn.stdout).toContain("  ✓ APIs enabled (Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager)\n")
+		expect(allOn.stdout).toContain(
+			"  ✓ APIs enabled (Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager)\n",
+		)
 
 		// One is off: only that one is switched on, and a refusal names it and the role.
 		const oneOff = run(script, { apis: all.filter((api) => api !== "iam.googleapis.com") })
@@ -1162,7 +1166,9 @@ esac
 
 		// A binding that could not be removed keeps the account, so a later run can still name it.
 		const denied = run(script, { describe: "found", unbind: "denied" })
-		expect(denied.commands).not.toContainEqual(`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`)
+		expect(denied.commands).not.toContainEqual(
+			`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+		)
 		expect(denied.status).toBe(1)
 		expect(denied.stdout).toContain(`  ✗ Couldn't remove the read-only roles.`)
 		expect(denied.stdout).toContain(
@@ -1181,7 +1187,9 @@ esac
 			fail: "remove-iam-policy-binding",
 			answer: "ERROR: (gcloud) NOT_FOUND: Requested entity was not found.",
 		})
-		expect(unknown.commands).not.toContainEqual(`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`)
+		expect(unknown.commands).not.toContainEqual(
+			`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+		)
 		expect(unknown.status).toBe(1)
 	})
 

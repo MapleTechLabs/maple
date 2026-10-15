@@ -633,7 +633,9 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 					),
 				)
 				if (connector === undefined) {
-					return yield* new IntegrationsNotFoundError({ message: "No such Google Cloud connector." })
+					return yield* new IntegrationsNotFoundError({
+						message: "No such Google Cloud connector.",
+					})
 				}
 				const key = yield* signingKey
 				// A cached reader would answer for an account that was removed since.
@@ -650,9 +652,15 @@ export class GcpPromQlService extends Context.Service<GcpPromQlService, GcpPromQ
 					Effect.as({ ok: true, message: null }),
 					Effect.catchTags({
 						"@maple/api/integrations/GcpApiError": (error) =>
-							Effect.succeed({ ok: false, message: describeGcpApiError(error, connector, true) }),
+							Effect.succeed({
+								ok: false,
+								message: describeGcpApiError(error, connector, true),
+							}),
 						"@maple/http/errors/IntegrationsUpstreamError": (error) =>
-							Effect.succeed({ ok: false, message: `${error.message}. Try again in a minute.` }),
+							Effect.succeed({
+								ok: false,
+								message: `${error.message}. Try again in a minute.`,
+							}),
 					}),
 				)
 				if (checked.ok) {
