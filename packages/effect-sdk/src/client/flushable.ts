@@ -425,11 +425,13 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		globalThis.addEventListener("unhandledrejection", onUnhandledRejection)
 	}
 
+	// Connection-loss tracking needs these events even when unload flushing is off.
+	const flushOnUnload = config.flushOnUnload ?? true
 	const onPageHide = (): void => {
 		unloading = true
 		pageHides += 1
 		noteLost("page_unload")
-		void pageHideFlush()
+		if (flushOnUnload) void pageHideFlush()
 	}
 	const onPageShow = (): void => {
 		unloading = false
@@ -437,10 +439,10 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	const onVisibilityChange = (): void => {
 		if (browserDocument()?.visibilityState !== "hidden") return
 		noteLost("page_hidden")
-		void hiddenFlush()
+		if (flushOnUnload) void hiddenFlush()
 	}
 	const onOffline = (): void => noteLost("offline")
-	const canListen = (config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
+	const canListen = typeof globalThis.addEventListener === "function"
 	if (canListen) {
 		globalThis.addEventListener("pagehide", onPageHide)
 		globalThis.addEventListener("pageshow", onPageShow)

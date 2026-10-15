@@ -39,10 +39,11 @@ const makeDirectory = Effect.fnUntraced(function* (initial: Option.Option<Direct
 							new ClerkRequestError({
 								operation: "Clerk.organizations.getOrganization",
 								message: "Clerk is down",
+								status: 503,
 								cause: undefined,
 							}),
 						),
-					onSome: Effect.succeed,
+					onSome: (organization) => Effect.succeed(Option.some(organization)),
 				}),
 			),
 		)
@@ -132,13 +133,21 @@ describe("OrganizationRegionService", () => {
 		}),
 	)
 
+	it.effect("an organization Clerk no longer has is deleted, not unknown, and still served", () =>
+		Effect.gen(function* () {
+			const regions = yield* isolate(makeMemoryBackend(), { read: () => Effect.succeedNone })
+			assert.strictEqual(yield* regions.servedHere(orgId), "deleted")
+			yield* regions.ensureServedHere(orgId)
+		}),
+	)
+
 	it.effect("a Clerk failure serves the request and is not cached as a region", () =>
 		Effect.gen(function* () {
 			const backend = makeMemoryBackend()
 			const directory = yield* makeDirectory(Option.none())
 			const regions = yield* isolate(backend, directory)
 			yield* regions.ensureServedHere(orgId)
-			assert.deepStrictEqual(yield* regions.servedHere(orgId), Option.none())
+			assert.strictEqual(yield* regions.servedHere(orgId), "unknown")
 			yield* Ref.set(directory.answer, Option.some(chosen("eu")))
 			assert.isTrue(isWrongRegion(yield* Effect.exit(regions.ensureServedHere(orgId))))
 			assert.isTrue(

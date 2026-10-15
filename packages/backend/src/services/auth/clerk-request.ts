@@ -5,9 +5,16 @@ export class ClerkRequestError extends Schema.TaggedError<ClerkRequestError>()(
 	{
 		operation: Schema.String,
 		message: Schema.String,
+		/** Clerk's HTTP status when it answered with an error, e.g. 404 for a deleted organization. */
+		status: Schema.NullOr(Schema.Number),
 		cause: Schema.Defect(),
 	},
 ) {}
+
+const responseStatus = (cause: unknown): number | null =>
+	typeof cause === "object" && cause !== null && "status" in cause && typeof cause.status === "number"
+		? cause.status
+		: null
 
 type ClerkSpanAttributes = Readonly<Record<string, string | number | boolean>>
 
@@ -27,6 +34,7 @@ export const clerkRequest = <A>(
 			new ClerkRequestError({
 				operation: spanName,
 				message: cause instanceof Error ? cause.message : "Clerk request failed",
+				status: responseStatus(cause),
 				cause,
 			}),
 	}).pipe(
