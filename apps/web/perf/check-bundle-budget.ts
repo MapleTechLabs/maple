@@ -108,7 +108,8 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // integrations hub read, and the Infrastructure nav entry with its icon. The
 // /infra/gcp pages stay in their route chunks.
 // 701.5 KB from the PromQL query contract (#1475, 2026-10-15), measured in CI at 701.3.
-const maxGzipBytes = 701.5 * 1024
+// 702.5 KB from the connection access settings (#1477, 2026-10-15), measured in CI at 702.1.
+const maxGzipBytes = 702.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
