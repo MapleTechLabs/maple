@@ -3,6 +3,7 @@ import {
 	type CreateCustomIngestKeyRequest,
 	CustomIngestKey,
 	CustomIngestKeyId,
+	type CustomIngestKeyStatus,
 	CustomIngestKeyNotFoundError,
 	CustomIngestKeyValidationError,
 	CustomIngestKeyWithSecret,
@@ -45,17 +46,30 @@ const toIso = (epochMs: number) => decodeIsoSync(new Date(epochMs).toISOString()
 const generateSecret = () => `${CUSTOM_INGEST_KEY_PREFIX}${randomBytes(24).toString("base64url")}`
 const displayPrefix = (secret: string) => secret.slice(0, CUSTOM_INGEST_KEY_PREFIX.length + 5)
 
-const rowToKey = (row: OrgIngestCustomKeyRow): CustomIngestKey =>
+// Mirrors the gateway: an expired key is rejected even while paused.
+const statusOf = (row: OrgIngestCustomKeyRow, now: number): CustomIngestKeyStatus => {
+	if (row.expiresAt !== null && row.expiresAt <= now) return "expired"
+	if (row.pausedAt !== null && (row.pausedUntil === null || row.pausedUntil > now)) return "paused"
+	return "active"
+}
+
+const isoOrNull = (epochMs: number | null) => (epochMs === null ? null : toIso(epochMs))
+
+const rowToKey = (row: OrgIngestCustomKeyRow, now: number): CustomIngestKey =>
 	new CustomIngestKey({
 		id: row.id,
 		name: row.name,
 		description: row.description,
 		keyPrefix: row.keyPrefix,
-		enabled: row.enabled,
+		status: statusOf(row, now),
 		allowedSignals: row.allowedSignals,
 		rateLimitRps: row.rateLimitRps,
 		resourceAttributes: row.resourceAttributes,
-		expiresAt: row.expiresAt === null ? null : toIso(row.expiresAt),
+		expiresAt: isoOrNull(row.expiresAt),
+		// A pause that already ended reads as not paused.
+		pausedAt: statusOf(row, now) === "paused" ? isoOrNull(row.pausedAt) : null,
+		pausedUntil: statusOf(row, now) === "paused" ? isoOrNull(row.pausedUntil) : null,
+		lastUsedAt: isoOrNull(row.lastUsedAt),
 		rolledAt: toIso(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
@@ -183,7 +197,8 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 							]),
 					),
 				)
-				return Arr.map(rows, rowToKey)
+				const now = yield* Clock.currentTimeMillis
+				return Arr.map(rows, (row) => rowToKey(row, now))
 			})
 
 			const get = Effect.fn("OrgCustomIngestKeysService.get")(function* (
@@ -191,7 +206,8 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 				keyId: CustomIngestKeyId,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_key.id": keyId })
-				return rowToKey(yield* requireRow(orgId, keyId))
+				const row = yield* requireRow(orgId, keyId)
+				return rowToKey(row, yield* Clock.currentTimeMillis)
 			})
 
 			const create = Effect.fn("OrgCustomIngestKeysService.create")(function* (
@@ -234,7 +250,6 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 										description,
 										keyHash: hashIngestKey(secret, lookupHmacKey),
 										keyPrefix: displayPrefix(secret),
-										enabled: request.enabled ?? true,
 										allowedSignals,
 										rateLimitRps,
 										resourceAttributes,
@@ -259,7 +274,7 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 				if (row === undefined) {
 					return yield* new IngestKeyPersistenceError({ message: "Failed to create ingest key" })
 				}
-				return new CustomIngestKeyWithSecret({ key: rowToKey(row), secret })
+				return new CustomIngestKeyWithSecret({ key: rowToKey(row, now), secret })
 			})
 
 			const update = Effect.fn("OrgCustomIngestKeysService.update")(function* (
@@ -279,7 +294,6 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 						request.description === undefined
 							? undefined
 							: yield* normalizeDescription(request.description),
-					enabled: request.enabled,
 					allowedSignals:
 						request.allowedSignals === undefined
 							? undefined
@@ -309,7 +323,58 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 				if (row === undefined) {
 					return yield* new CustomIngestKeyNotFoundError({ keyId, message: "Ingest key not found" })
 				}
-				return rowToKey(row)
+				return rowToKey(row, now)
+			})
+
+			const setPause = Effect.fnUntraced(function* (
+				orgId: OrgId,
+				userId: UserId,
+				keyId: CustomIngestKeyId,
+				now: number,
+				pause: { readonly pausedAt: number | null; readonly pausedUntil: number | null },
+			) {
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.update(OrgIngestCustomKeys)
+							.set({ ...pause, updatedAt: now, updatedBy: userId })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(keyId)])
+							.returning(),
+					),
+				)
+				const row = rows[0]
+				if (row === undefined) {
+					return yield* new CustomIngestKeyNotFoundError({ keyId, message: "Ingest key not found" })
+				}
+				return row
+			})
+
+			// `untilMs` null pauses until resumed.
+			const pause = Effect.fn("OrgCustomIngestKeysService.pause")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				keyId: CustomIngestKeyId,
+				untilMs: number | null,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_key.id": keyId })
+				const now = yield* Clock.currentTimeMillis
+				if (untilMs !== null && untilMs <= now)
+					return yield* invalid("A pause must end in the future")
+				const row = yield* setPause(orgId, userId, keyId, now, {
+					pausedAt: now,
+					pausedUntil: untilMs,
+				})
+				return rowToKey(row, now)
+			})
+
+			const resume = Effect.fn("OrgCustomIngestKeysService.resume")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				keyId: CustomIngestKeyId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_key.id": keyId })
+				const now = yield* Clock.currentTimeMillis
+				const row = yield* setPause(orgId, userId, keyId, now, { pausedAt: null, pausedUntil: null })
+				return rowToKey(row, now)
 			})
 
 			const roll = Effect.fn("OrgCustomIngestKeysService.roll")(function* (
@@ -338,7 +403,7 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 				if (row === undefined) {
 					return yield* new CustomIngestKeyNotFoundError({ keyId, message: "Ingest key not found" })
 				}
-				return new CustomIngestKeyWithSecret({ key: rowToKey(row), secret })
+				return new CustomIngestKeyWithSecret({ key: rowToKey(row, now), secret })
 			})
 
 			const remove = Effect.fn("OrgCustomIngestKeysService.delete")(function* (
@@ -357,10 +422,10 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 				if (row === undefined) {
 					return yield* new CustomIngestKeyNotFoundError({ keyId, message: "Ingest key not found" })
 				}
-				return rowToKey(row)
+				return rowToKey(row, yield* Clock.currentTimeMillis)
 			})
 
-			return { list, get, create, update, roll, delete: remove }
+			return { list, get, create, update, pause, resume, roll, delete: remove }
 		}),
 	},
 ) {

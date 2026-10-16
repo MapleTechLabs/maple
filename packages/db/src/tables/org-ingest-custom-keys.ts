@@ -18,7 +18,6 @@ export const OrgIngestCustomKeys = PG.table("org_ingest_custom_keys", {
 		description: PG.nullable(PG.text),
 		keyHash: PG.column(PG.text, { name: "key_hash" }),
 		keyPrefix: PG.column(PG.text, { name: "key_prefix" }),
-		enabled: PG.column(PG.bool, { default: true }),
 		// null = every signal.
 		allowedSignals: PG.column(PG.nullable(PG.jsonb(Schema.Array(IngestKeySignal))), {
 			name: "allowed_signals",
@@ -30,6 +29,11 @@ export const OrgIngestCustomKeys = PG.table("org_ingest_custom_keys", {
 			defaultExpr: "'[]'::jsonb",
 		}),
 		expiresAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "expires_at" }),
+		// Paused keys are accepted but their data is dropped. paused_until null = until resumed.
+		pausedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "paused_at" }),
+		pausedUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "paused_until" }),
+		// Written by the gateway at most once a minute per key and instance.
+		lastUsedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_used_at" }),
 		rolledAt: PG.column(PG.timestamptzMillis, { name: "rolled_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),

@@ -66,7 +66,7 @@ export const AuditResources = {
 	/** Named ingest keys beside the default pair; the secret is never in `changes`. */
 	custom_ingest_key: {
 		prefix: PublicIdPrefixes.ingestKey,
-		verbs: ["created", "updated", "rolled", "deleted"],
+		verbs: ["created", "updated", "paused", "resumed", "rolled", "deleted"],
 	},
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
 	gcp_connector: { prefix: PublicIdPrefixes.gcpConnector, verbs: ["created", "updated", "deleted"] },
