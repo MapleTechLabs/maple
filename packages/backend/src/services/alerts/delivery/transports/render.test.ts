@@ -272,3 +272,46 @@ describe("transport render: sparkline", () => {
 		}
 	})
 })
+
+describe("pagerduty dedup keys across severity tiers", () => {
+	const pd = (overrides: Partial<DispatchContext>) => {
+		const input = inputFor(
+			{ type: "pagerduty" as const, integrationKey: "k" },
+			{ context: { ...context, ...overrides } },
+		)
+		const sent = [pagerDutyTransport.render(input), ...(pagerDutyTransport.followUps?.(input) ?? [])]
+		return sent.map((spec) => {
+			const body = JSON.parse(spec.body)
+			return `${body.event_action} ${body.dedup_key}`
+		})
+	}
+	const tiered = { ruleSeverities: ["warning", "critical"] as const }
+
+	it("keeps a single-tier rule on the incident's one key, with no extra requests", () => {
+		assert.deepStrictEqual(pd({ ruleSeverities: ["critical"] }), ["trigger org_1:rule_1:checkout"])
+		assert.deepStrictEqual(pd({ ruleSeverities: ["critical"], eventType: "resolve" }), [
+			"resolve org_1:rule_1:checkout",
+		])
+	})
+
+	it("pages a tiered rule's critical on its own key, so an acknowledged warning cannot swallow it", () => {
+		assert.deepStrictEqual(pd({ ...tiered, severity: "warning" }), [
+			"trigger org_1:rule_1:checkout",
+			"resolve org_1:rule_1:checkout:critical",
+		])
+		assert.deepStrictEqual(pd({ ...tiered, severity: "critical" }), [
+			"trigger org_1:rule_1:checkout:critical",
+		])
+	})
+
+	it("closes the critical alert on de-escalation and both alerts on resolve", () => {
+		assert.deepStrictEqual(pd({ ...tiered, severity: "warning", eventType: "renotify" }), [
+			"trigger org_1:rule_1:checkout",
+			"resolve org_1:rule_1:checkout:critical",
+		])
+		assert.deepStrictEqual(pd({ ...tiered, severity: "critical", eventType: "resolve" }), [
+			"resolve org_1:rule_1:checkout",
+			"resolve org_1:rule_1:checkout:critical",
+		])
+	})
+})

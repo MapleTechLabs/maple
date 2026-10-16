@@ -138,6 +138,7 @@ import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertR
 import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
 import {
 	decodeStoredAlertRuleMetadata,
+	storedRuleCondition,
 	isGroupedPlan,
 	toStorageGroupKey,
 	makeAlertValidationError as makeValidationError,
@@ -1957,6 +1958,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							}),
 							severity: decodeAlertSeveritySync(
 								incidentRow?.severity ?? payloadRule?.severity ?? "warning",
+							),
+							// A rule that no longer decodes dispatches like one without tiers.
+							...Option.match(
+								ruleRow === null ? Option.none() : yield* storedRuleCondition(ruleRow),
+								{
+									onNone: () => undefined,
+									onSome: (condition) => ({
+										ruleSeverities: condition.thresholds.map((tier) => tier.severity),
+									}),
+								},
 							),
 							comparator: decodeAlertComparatorSync(
 								incidentRow?.comparator ?? payloadRule?.comparator ?? "gt",
