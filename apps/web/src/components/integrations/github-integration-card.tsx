@@ -664,7 +664,8 @@ function CiLogsSetting({ enabled, tracesEnabled }: { enabled: boolean; tracesEna
 	return (
 		<CiSwitchSetting
 			enabled={enabled}
-			unavailable={!tracesEnabled}
+			// Turning logs on needs traces; a saved "on" can still be turned off.
+			unavailable={!tracesEnabled && !enabled}
 			label="CI logs"
 			description={
 				tracesEnabled
@@ -696,7 +697,7 @@ function CiSwitchSetting({
 	toasts,
 }: {
 	enabled: boolean
-	/** Shown off and locked, whatever is saved. */
+	/** Locked off: the switch cannot be turned on. */
 	unavailable?: boolean
 	label: string
 	description: ReactNode
@@ -729,7 +730,7 @@ function CiSwitchSetting({
 			description={description}
 			control={
 				<Switch
-					checked={enabled && !unavailable}
+					checked={enabled}
 					aria-busy={busy}
 					disabled={!isAdmin || unavailable}
 					// Ignored while a change is in flight, so keyboard focus stays on the switch.
