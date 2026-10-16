@@ -10,7 +10,6 @@ import {
 	CloudflareHeaderActions,
 } from "@/components/integrations/cloudflare-account-card"
 import {
-	GcpHeaderFacts,
 	GcpHeaderStatus,
 	GcpIntegrationCard,
 } from "@/components/integrations/gcp-integration-card"
@@ -319,12 +318,6 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 					</Button>
 				) : null}
 			</div>
-			{/* Under the logo, the facts behind the state line. */}
-			{connected && integration === "gcp" ? (
-				<div className="mt-1 basis-full pl-11 sm:pl-10">
-					<GcpHeaderFacts />
-				</div>
-			) : null}
 		</div>
 	)
 }
