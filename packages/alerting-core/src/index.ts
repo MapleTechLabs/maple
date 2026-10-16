@@ -5,6 +5,7 @@ import {
 	countersFromHistory,
 	encodeTick,
 	maxSeverity,
+	nearestSeverity,
 	resolveActiveSeverity,
 	seedHistory,
 	type AlertThresholdTier,
@@ -282,10 +283,7 @@ export const projectAlertLifecycleEvent = (
 export interface AlertLifecycleInput {
 	readonly policy: AlertLifecyclePolicy
 	readonly evaluation: AlertEvaluation
-	/**
-	 * Null for a group never evaluated. A null `history` is a row written before
-	 * histories existed: its counters are replayed as the rule's tier.
-	 */
+	/** Null for a group never evaluated; a null `history` (pre-tier row) is replayed from its counters. */
 	readonly state:
 		| (Omit<AlertLifecycleState, "history"> & { readonly history?: ReadonlyArray<number> | null })
 		| null
@@ -391,7 +389,8 @@ const resolutionPlan = (
 export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<AlertLifecyclePlan> =>
 	Effect.sync(() => {
 		const { evaluation, policy, openIncident, nowMs } = input
-		const current = openIncident?.severity ?? null
+		const current =
+			openIncident === null ? null : nearestSeverity(openIncident.severity, policy.severities)
 		const hysteresis: TieredHysteresisPolicy = {
 			breachesToOpen: policy.consecutiveBreachesRequired,
 			breachWindow: policy.breachWindow,

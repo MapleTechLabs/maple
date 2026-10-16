@@ -1326,6 +1326,17 @@ describe("AlertsService", () => {
 				assert.strictEqual(escalated?.severity, "critical")
 				assert.strictEqual(escalated?.peakSeverity, "critical")
 				assert.strictEqual(escalated?.threshold, 20)
+				// The linked issue follows the escalation while the detector owns its severity.
+				const issues = yield* Effect.promise(() =>
+					testDb.pglite.query<{ severity: string }>(
+						"select severity from error_issues where org_id = $1 and kind = 'alert'",
+						[orgId],
+					),
+				)
+				assert.deepStrictEqual(
+					issues.rows.map((issue) => issue.severity),
+					["critical"],
+				)
 				assert.sameMembers(
 					requests.slice(1).map((request) => `${request.eventType} ${request.url}`),
 					["trigger https://example.com/warn", "trigger https://example.com/page"],
@@ -1435,6 +1446,56 @@ describe("AlertsService", () => {
 					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
 				),
 			)
+		})
+
+		it.effect("does not count ticks judged against an edited threshold", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_edit_history")
+				const userId = asUserId("user_tiers_edit_history")
+				const destination = yield* createWebhookDestination(alerts, orgId, userId)
+				const request = (value: number) =>
+					new AlertRuleUpsertRequest({
+						name: "Two of five",
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						thresholds: [
+							{
+								severity: "warning",
+								value,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [destination.id],
+							},
+						],
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						breachesOutOf: 5,
+					})
+				const rule = yield* alerts.createRule(orgId, userId, adminRoles, request(5))
+				const tick = Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+				})
+
+				// One breach, then a healthy tick, both against the old threshold of 5.
+				yield* alerts.runSchedulerTick()
+				state.tracesAggregateRows = errorRateRows(1)
+				yield* tick
+				yield* alerts.updateRule(orgId, userId, adminRoles, rule.id, request(15))
+
+				// A single breach of the new threshold is one of five, not two.
+				state.tracesAggregateRows = errorRateRows(30)
+				yield* tick
+				assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
+				yield* tick
+				assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 1)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 		})
 
 		it.effect("rejects a critical threshold that is not worse than the warning one", () => {

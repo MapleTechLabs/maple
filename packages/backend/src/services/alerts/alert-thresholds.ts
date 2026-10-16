@@ -13,7 +13,7 @@ import {
 import { Array as Arr } from "effect"
 
 /** Destinations an incident at `severity` notifies: its tier and every tier under it. */
-export const destinationsUpTo = (
+const destinationsUpTo = (
 	thresholds: ReadonlyArray<AlertThreshold>,
 	severity: AlertSeverity,
 ): ReadonlyArray<AlertDestinationId> =>
@@ -32,10 +32,8 @@ interface TieredRuleFields {
 }
 
 /**
- * The rule as one notification sees it: the severity the incident is at, that
- * tier's threshold, and the destinations everyone notified so far. `reachedSeverity`
- * is the incident's peak, so a de-escalation or resolve still reaches the pager
- * that heard the critical. A one-tier rule comes back unchanged.
+ * The rule as one notification sees it: that tier's threshold and destinations. `reachedSeverity`
+ * (the peak) widens them so a de-escalation or resolve reaches the pager that heard the critical.
  */
 export const ruleAtSeverity = <R extends TieredRuleFields>(
 	rule: R,
@@ -50,6 +48,19 @@ export const ruleAtSeverity = <R extends TieredRuleFields>(
 		thresholdUpper: tier.upper,
 		destinationIds: destinationsUpTo(rule.thresholds, maxSeverity(severity, reachedSeverity) ?? severity),
 	}
+}
+
+/** Whether an edit changes what a tick is classified against; destinations aside. */
+export const tierConditionChanged = (
+	a: { readonly comparator: AlertComparator; readonly thresholds: AlertThresholds },
+	b: { readonly comparator: AlertComparator; readonly thresholds: AlertThresholds },
+): boolean => {
+	const key = (rule: typeof a) =>
+		JSON.stringify([
+			rule.comparator,
+			rule.thresholds.map((t) => [t.severity, t.value, t.upper, t.recoveryValue]),
+		])
+	return key(a) !== key(b)
 }
 
 /**
@@ -67,10 +78,11 @@ export const validateThresholds = (
 	const details: string[] = []
 	const { label } = options
 	const range = isRangeComparator(comparator)
+	const singleTierOnly = range || comparator === "eq" || comparator === "neq"
 	if (new Set(thresholds.map((tier) => tier.severity)).size !== thresholds.length) {
 		details.push("thresholds must have at most one tier per severity")
 	}
-	if (thresholds.length > 1 && (range || comparator === "eq" || comparator === "neq")) {
+	if (thresholds.length > 1 && singleTierOnly) {
 		details.push(`only one threshold tier is supported with the ${comparator} comparator`)
 	}
 	thresholds.forEach((tier, index) => {
@@ -87,7 +99,7 @@ export const validateThresholds = (
 			details.push(`${label(index, "upper")} is only supported for between / not_between comparators`)
 		}
 		if (tier.recoveryValue != null) {
-			if (range || comparator === "eq" || comparator === "neq") {
+			if (singleTierOnly) {
 				details.push(
 					`${label(index, "recoveryValue")} is not supported with the ${comparator} comparator`,
 				)
@@ -107,17 +119,24 @@ export const validateThresholds = (
 			)
 		}
 	})
-	const sorted = sortAlertThresholds(thresholds)
-	const [warning, critical] = sorted
+	// Tier ordering is strict even for inclusive comparators: equal tiers would always fire together.
+	const strict = comparator === "gte" ? "gt" : comparator === "lte" ? "lt" : comparator
+	const [warning, critical] = sortAlertThresholds(thresholds)
 	if (
-		sorted.length === 2 &&
 		warning !== undefined &&
 		critical !== undefined &&
 		Number.isFinite(warning.value) &&
-		Number.isFinite(critical.value) &&
-		!compareAlertThreshold(critical.value, comparator, warning.value)
+		Number.isFinite(critical.value)
 	) {
-		details.push("the critical threshold must be worse than the warning threshold")
+		if (!compareAlertThreshold(critical.value, strict, warning.value)) {
+			details.push("the critical threshold must be worse than the warning threshold")
+		}
+		if (
+			critical.recoveryValue != null &&
+			compareAlertThreshold(warning.value, strict, critical.recoveryValue)
+		) {
+			details.push("the critical recovery value must not be past the warning threshold")
+		}
 	}
 	return details
 }

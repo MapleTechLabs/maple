@@ -141,7 +141,6 @@ describe("fireLanes", () => {
 				makeIncident(),
 				makeIncident({
 					id: "00000000-0000-4000-8000-0000000000bb",
-					peakSeverity: null,
 					firstTriggeredAt: iso(48 * HOUR),
 					resolvedAt: iso(47 * HOUR),
 				}),

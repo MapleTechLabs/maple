@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../../query-engine"
 import { PostgresTransactionId, UserId } from "../../primitives"
 import {
@@ -24,7 +24,8 @@ import {
 	AlertSignalType,
 	AlertValidationError,
 	AlertWindowMinutes,
-	MAX_ALERT_BREACH_WINDOW,
+	AlertBreachWindow,
+	type AlertThreshold,
 } from "../alerts"
 import { AlertDestinationPublicId } from "./alert-destinations"
 import { AuthorizationV2 } from "./auth"
@@ -42,8 +43,6 @@ const NonNegativeInt = Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.is
 const PositiveFloat = Schema.Number.pipe(Schema.check(Schema.isFinite(), Schema.isGreaterThan(0)))
 
 const GroupBy = Schema.Array(NonEmptyString).pipe(Schema.check(Schema.isMinLength(1)))
-
-const BreachWindow = PositiveInt.pipe(Schema.check(Schema.isLessThanOrEqualTo(MAX_ALERT_BREACH_WINDOW)))
 
 export const V2AlertThreshold = Schema.Struct({
 	severity: AlertSeverity.annotate({ description: "The severity this tier opens or escalates to." }),
@@ -70,9 +69,28 @@ export const V2AlertThreshold = Schema.Struct({
 })
 export type V2AlertThreshold = Schema.Schema.Type<typeof V2AlertThreshold>
 
-// A plain bounded array on the wire, not a tuple: generated clients (the iOS app's)
-// do not all read `prefixItems`. Servers narrow it to non-empty after decode.
-const V2AlertThresholds = Schema.Array(V2AlertThreshold).check(Schema.isMinLength(1), Schema.isMaxLength(2))
+// A bounded array on the wire, not a tuple: generated clients (the iOS app's) do not
+// all read `prefixItems`. The refine narrows the decoded type to non-empty.
+// The refine goes first: annotations land on the last check, and a guard has no JSON Schema.
+const V2AlertThresholds = Schema.Array(V2AlertThreshold)
+	.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty))
+	.check(Schema.isMinLength(1), Schema.isMaxLength(2))
+
+export const fromV2Threshold = (tier: V2AlertThreshold): AlertThreshold => ({
+	severity: tier.severity,
+	value: tier.value,
+	upper: tier.upper,
+	recoveryValue: tier.recovery_value,
+	destinationIds: tier.destination_ids,
+})
+
+export const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({
+	severity: tier.severity,
+	value: tier.value,
+	upper: tier.upper,
+	recovery_value: tier.recoveryValue,
+	destination_ids: tier.destinationIds,
+})
 
 /** Mirrors the v1 caps (alerts.ts): 32-char tags, at most 20 per rule. */
 const RuleTags = Schema.Array(Schema.String.check(Schema.isMaxLength(32))).check(Schema.isMaxLength(20))
@@ -221,7 +239,7 @@ export const V2AlertRule = Schema.Struct({
 			"Breached checks required before an incident opens or escalates (N). In a row unless `breaches_out_of` is set.",
 		examples: [2],
 	}),
-	breaches_out_of: Schema.NullOr(BreachWindow).annotate({
+	breaches_out_of: Schema.NullOr(AlertBreachWindow).annotate({
 		description:
 			'Count the required breaches over the last M checks instead of in a row ("N of M"), or `null`.',
 		examples: [null],
@@ -377,7 +395,7 @@ const createParamsFields = {
 	}),
 	minimum_sample_count: Schema.optionalKey(NonNegativeInt),
 	consecutive_breaches_required: Schema.optionalKey(PositiveInt),
-	breaches_out_of: Schema.optionalKey(Schema.NullOr(BreachWindow)),
+	breaches_out_of: Schema.optionalKey(Schema.NullOr(AlertBreachWindow)),
 	consecutive_healthy_required: Schema.optionalKey(PositiveInt),
 	renotify_interval_minutes: Schema.optionalKey(PositiveInt),
 	apdex_threshold_ms: Schema.optionalKey(Schema.NullOr(PositiveFloat)),

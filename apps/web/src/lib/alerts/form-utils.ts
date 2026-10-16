@@ -13,7 +13,6 @@ import {
 	HazelChannelId,
 	HazelOrganizationId,
 	IsoDateTimeString,
-	legacyAlertThreshold,
 	UserId,
 	type AlertComparator,
 	type AlertDeliveryStatus,
@@ -34,6 +33,7 @@ import type {
 	V2AlertRulePreviewResult,
 	V2AlertRuleTestParams,
 } from "@maple/domain/http/v2"
+import { fromV2Threshold } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
 import { Array as Arr, Schema } from "effect"
 import {
@@ -766,23 +766,7 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 		windowMinutes: result.window_minutes,
 		threshold: result.threshold,
 		thresholdUpper: result.threshold_upper,
-		// The wire bounds it to 1-2 tiers; a preview without any reads as its single threshold.
-		thresholds: Arr.isReadonlyArrayNonEmpty(result.thresholds)
-			? Arr.map(result.thresholds, (tier) => ({
-					severity: tier.severity,
-					value: tier.value,
-					upper: tier.upper,
-					recoveryValue: tier.recovery_value,
-					destinationIds: tier.destination_ids,
-				}))
-			: Arr.of(
-					legacyAlertThreshold({
-						severity: "warning",
-						threshold: result.threshold,
-						thresholdUpper: result.threshold_upper,
-						destinationIds: [],
-					}),
-				),
+		thresholds: Arr.map(result.thresholds, fromV2Threshold),
 		comparator: result.comparator,
 		truncatedToStart: asIsoOrNull(result.truncated_to_start),
 		series: result.series.map(

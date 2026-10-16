@@ -60,7 +60,9 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	minimumSampleCount: 0,
 	consecutiveBreachesRequired: 1,
 	breachesOutOf: null,
-	thresholds: [{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] }],
+	thresholds: [
+		{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [DEST_ID] },
+	],
 	consecutiveHealthyRequired: 1,
 	renotifyIntervalMinutes: 60,
 	apdexThresholdMs: null,
@@ -220,7 +222,14 @@ const layer = (seen: Seen) =>
 				return Effect.succeed(
 					id === RULE_ID
 						? rule
-						: { ...rule, id, name: "Latency", destinationIds: request.destinationIds },
+						: {
+								...rule,
+								id,
+								name: "Latency",
+								destinationIds: (request.thresholds ?? []).flatMap(
+									(tier) => tier.destinationIds,
+								),
+							},
 				)
 			},
 			listDestinations: () =>
@@ -578,7 +587,7 @@ describe("alert tools", () => {
 		await ok("preview_alert_rule", { rule_id: RULE_ID, threshold: 0.2 }, seen)
 		expect(seen.previewed?.rule).toMatchObject({
 			name: "Checkout errors",
-			threshold: 0.2,
+			thresholds: [{ value: 0.2 }],
 			signalType: "error_rate",
 		})
 
@@ -594,7 +603,7 @@ describe("alert tools", () => {
 			seen,
 		)
 		expect(seen.updated).toMatchObject({
-			threshold: 0.1,
+			thresholds: [{ severity: "critical", value: 0.1 }],
 			name: "Checkout errors",
 			serviceNames: ["checkout"],
 			groupBy: ["service.name", "attr.http.route"],
@@ -620,9 +629,54 @@ describe("alert tools", () => {
 			...rule,
 			comparator: "between",
 			thresholdUpper: 10,
+			thresholds: [
+				{ severity: "critical", value: 0.05, upper: 10, recoveryValue: null, destinationIds: [] },
+			],
 		})
-		expect(buildUpdatedRequest(range, { comparator: "gt" }).thresholdUpper).toBeNull()
-		expect(buildUpdatedRequest(range, { threshold: 2 }).thresholdUpper).toBe(10)
+		const upperAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(range, params)).thresholds[0].upper
+		expect(upperAfter({ comparator: "gt" })).toBeNull()
+		expect(upperAfter({ threshold: 2 })).toBe(10)
+	})
+
+	it("update_alert_rule keeps a two-tier rule's tiers and refuses to merge them", () => {
+		const tiered = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			breachesOutOf: 5,
+			thresholds: [
+				{
+					severity: "warning",
+					value: 0.02,
+					upper: null,
+					recoveryValue: 0.01,
+					destinationIds: ["00000000-0000-4000-8000-00000000d001"],
+				},
+				{
+					severity: "critical",
+					value: 0.05,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: ["00000000-0000-4000-8000-00000000d002"],
+				},
+			],
+		})
+		const renamed = Effect.runSync(buildUpdatedRequest(tiered, { name: "Renamed" }))
+		expect(renamed.thresholds).toEqual(tiered.thresholds)
+		expect(renamed.breachesOutOf).toBe(5)
+
+		const added = Effect.runSync(
+			buildUpdatedRequest(tiered, {
+				add_destination_ids: ["00000000-0000-4000-8000-00000000d003"],
+				remove_destination_ids: ["00000000-0000-4000-8000-00000000d002"],
+			}),
+		)
+		expect(added.thresholds.map((tier) => tier.destinationIds)).toEqual([
+			["00000000-0000-4000-8000-00000000d001", "00000000-0000-4000-8000-00000000d003"],
+			[],
+		])
+
+		const collapsing = Effect.runSync(Effect.flip(buildUpdatedRequest(tiered, { threshold: 0.1 })))
+		expect(collapsing.parameter).toBe("threshold")
 	})
 
 	it("delete_alert_rule requires confirm and maps not-found to rule_id", async () => {
@@ -707,7 +761,7 @@ describe("alert tools", () => {
 			seen,
 		)
 		expect(seen.updatedIds).toEqual([RULE_ID, ALL_ID, RAW_ID, OTHER_RAW_ID])
-		expect(seen.updated?.destinationIds).toEqual([NEW_DEST])
+		expect(seen.updated?.thresholds?.[0]?.destinationIds).toEqual([NEW_DEST])
 		const output = Schema.decodeUnknownSync(UpdateAlertRuleOutput)(result.structuredContent)
 		expect(output.rules).toHaveLength(4)
 		expect(text(result)).toContain("Updated 4 Alert Rules")

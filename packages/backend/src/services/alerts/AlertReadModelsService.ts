@@ -161,7 +161,7 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		groupKey: row.groupKey,
 		signalType: decodeAlertSignalTypeSync(row.signalType),
 		severity: decodeAlertSeveritySync(row.severity),
-		peakSeverity: row.peakSeverity == null ? null : decodeAlertSeveritySync(row.peakSeverity),
+		peakSeverity: row.peakSeverity === null ? null : decodeAlertSeveritySync(row.peakSeverity),
 		status: decodeAlertIncidentStatusSync(row.status),
 		comparator: decodeAlertComparatorSync(row.comparator),
 		threshold: row.threshold,

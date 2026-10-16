@@ -81,7 +81,7 @@ const CODE_STATUS: ReadonlyArray<AlertTierStatus> = ["clear", "hold", "breach"]
 export const encodeTick = (levels: ReadonlyArray<AlertTierLevel>): number =>
 	levels.reduce((code, level) => code | (STATUS_CODE[level.status] << shiftOf(level.severity)), 0)
 
-export const tierStatusAt = (code: number, severity: AlertSeverity): AlertTierStatus =>
+const tierStatusAt = (code: number, severity: AlertSeverity): AlertTierStatus =>
 	CODE_STATUS[(code >> shiftOf(severity)) & 0b11] ?? "clear"
 
 const shiftOf = (severity: AlertSeverity) => (ALERT_SEVERITY_RANK[severity] - 1) * 2
@@ -110,12 +110,8 @@ const anyBreach = (code: number) =>
 	tierStatusAt(code, "warning") === "breach" || tierStatusAt(code, "critical") === "breach"
 
 /**
- * The severity the group should be at after the newest tick.
- *
- * A tier activates when the newest tick breaches it and at least N of the last
- * M ticks did. An active tier (the current severity or anything under it) stays
- * active until its last R ticks are all clear: `hold` neither recovers nor
- * re-breaches.
+ * The group's severity after the newest tick. A tier activates when that tick and N of the last M
+ * breach it; an active tier stays until its last R ticks are clear (`hold` counts as neither).
  */
 export const resolveActiveSeverity = (
 	history: ReadonlyArray<number>,
@@ -177,6 +173,15 @@ export const tierFor = (
 	severity: AlertSeverity,
 ): AlertThresholdTier =>
 	tiers.find((tier) => tier.severity === severity) ?? Arr.headNonEmpty(Arr.sort(tiers, alertSeverityOrder))
+
+/**
+ * The rule tier an incident at `severity` reads as: its own, else the one the rule kept
+ * (with two severities there is only one other). A rule edit then moves it silently.
+ */
+export const nearestSeverity = (
+	severity: AlertSeverity,
+	severities: ReadonlyArray<AlertSeverity>,
+): AlertSeverity => (severities.includes(severity) ? severity : (severities[0] ?? severity))
 
 export const maxSeverity = (a: AlertSeverity | null, b: AlertSeverity | null): AlertSeverity | null =>
 	a === null ? b : b === null ? a : ALERT_SEVERITY_RANK[a] >= ALERT_SEVERITY_RANK[b] ? a : b

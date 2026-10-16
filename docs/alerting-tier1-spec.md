@@ -477,6 +477,12 @@ PRs 3, 4 and 5 are independent of each other once PR 1 lands.
 - **Notification routing.** Trigger and escalation reach every tier at or below the new severity.
   De-escalation and resolve also reach every tier up to the incident's peak; reminders only reach the
   current tier's.
+- **Rule edits.** An edit that changes the comparator or a tier value clears the tick history, so
+  ticks judged against the old condition never count toward the new one (the counters replay it).
+  An incident whose severity the rule no longer has reads as the tier the rule kept, silently.
+- **Linked issue.** Escalation raises the alert issue's severity while it is still detector-set.
+- **Validation.** Tiers are strictly ordered even for `gte`/`lte`, and a critical recovery value may
+  not sit past the warning threshold.
 - **Preview spans start at the first breach** inside the last M checks, not `(N-1)` windows before the
   tripping one. The two only differ when a skipped window sits inside the run.
 - **Template variables** (`severity.previous`, `threshold.warning`, ...) are not added yet; they land

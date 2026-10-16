@@ -135,7 +135,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					.pipe(Effect.mapError(toMcpHttpError("preview_alert_rule")))
 				const current = list.rules.find((r) => r.id === params.rule_id)
 				if (!current) return yield* ruleNotFound(params.rule_id)
-				rule = buildUpdatedRequest(current, { ...params, rule_id: current.id })
+				rule = yield* buildUpdatedRequest(current, { ...params, rule_id: current.id })
 			} else {
 				rule = yield* buildAlertRuleRequest({ ...params, name: "Preview", destination_ids: [] })
 			}

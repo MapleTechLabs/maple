@@ -78,7 +78,6 @@ const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeQuerySpecSync = Schema.decodeUnknownSync(QuerySpec)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)
-const decodeAlertSeveritySync = Schema.decodeUnknownSync(AlertSeveritySchema)
 const decodeAlertSignalTypeSync = Schema.decodeUnknownSync(AlertSignalTypeSchema)
 const decodeAlertComparatorSync = Schema.decodeUnknownSync(AlertComparatorSchema)
 const decodeQueryEngineAlertReducerSync = Schema.decodeUnknownSync(QueryEngineAlertReducer)
@@ -580,34 +579,24 @@ export const decodeStoredAlertRuleDestinationIds = (
 		),
 	)
 
-/**
- * The rule's tiers. A row written before tiers (`thresholds_json` null) is one
- * tier from its severity, threshold and destinations, the same shape the
- * migration backfills.
- */
-export const decodeStoredAlertRuleThresholds = (
+/** The rule's tiers; a pre-tier row (`thresholds_json` null) is one tier from its legacy columns. */
+const decodeStoredAlertRuleThresholds = (
 	row: StoredAlertRuleRow,
 	destinationIds: ReadonlyArray<AlertDestinationId>,
 ): Effect.Effect<AlertThresholds, AlertRuleStoredConfigInvalidError> =>
-	row.thresholdsJson == null
-		? Effect.try({
-				try: () =>
+	row.thresholdsJson === null
+		? decodeStoredRuleComponent(row.id, "thresholds", AlertSeveritySchema, row.severity).pipe(
+				Effect.map((severity) =>
 					Arr.of(
 						legacyAlertThreshold({
-							severity: decodeAlertSeveritySync(row.severity),
+							severity,
 							threshold: row.threshold,
 							thresholdUpper: row.thresholdUpper,
 							destinationIds,
 						}),
 					),
-				catch: (cause) =>
-					new AlertRuleStoredConfigInvalidError({
-						message: "Stored alert rule severity is invalid",
-						ruleId: row.id,
-						component: "thresholds",
-						cause,
-					}),
-			})
+				),
+			)
 		: decodeStoredRuleComponent(row.id, "thresholds", AlertThresholdsSchema, row.thresholdsJson).pipe(
 				Effect.map(sortAlertThresholds),
 			)

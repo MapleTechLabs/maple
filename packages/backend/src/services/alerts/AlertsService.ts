@@ -102,7 +102,7 @@ import {
 } from "effect"
 import { HttpClient } from "effect/http"
 import * as AlertingMetrics from "@maple/backend/observability/AlertingMetrics"
-import { upsertAlertIssue } from "@maple/backend/services/errors/issue-hub"
+import { escalateAlertIssue, upsertAlertIssue } from "@maple/backend/services/errors/issue-hub"
 import {
 	holdCeilingMs,
 	type LivenessReason,
@@ -113,7 +113,7 @@ import { simulateFiringSpans } from "./alert-firing-spans"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator } from "./alert-formatting"
-import { ruleAtSeverity } from "./alert-thresholds"
+import { ruleAtSeverity, tierConditionChanged } from "./alert-thresholds"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -229,7 +229,7 @@ const ruleForResolve = (
 	ruleAtSeverity(
 		rule,
 		decodeAlertSeveritySync(incident.severity),
-		incident.peakSeverity == null ? null : decodeAlertSeveritySync(incident.peakSeverity),
+		incident.peakSeverity === null ? null : decodeAlertSeveritySync(incident.peakSeverity),
 	)
 
 const describeHold = (reason: Exclude<LivenessReason, "ok" | "no_baseline">): string => {
@@ -1230,6 +1230,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const oldNormalized = yield* normalizeRuleRow(oldRow)
 				const newNormalized = yield* normalizeRule(orgId, request)
 				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
+				if (tierConditionChanged(oldNormalized, newNormalized)) {
+					// Ticks judged against the old condition must not count toward the new one;
+					// the next tick replays from the counters, as before histories existed.
+					const timestamp = yield* now
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(AlertRuleStates)
+								.set({ historyJson: null, updatedAt: timestamp })
+								.where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
+						),
+					)
+				}
 
 				// Resolve stale incidents caused by the configuration change
 
@@ -2693,9 +2705,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const severity = lifecycle.severity ?? decodeAlertSeveritySync(openIncident.severity)
 						const peakSeverity = maxSeverity(
 							severity,
-							openIncident.peakSeverity == null
-								? decodeAlertSeveritySync(openIncident.severity)
-								: decodeAlertSeveritySync(openIncident.peakSeverity),
+							decodeAlertSeveritySync(openIncident.peakSeverity ?? openIncident.severity),
 						)
 						// A severity change reaches everyone notified so far; a reminder only the current tier.
 						const tierRule = ruleAtSeverity(
@@ -2724,7 +2734,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							db.run(
 								PG.update(AlertIncidents)
 									.set({
-										...(severityChanged
+										// A rule edit can remap the severity without a transition.
+										...(severity !== openIncident.severity
 											? {
 													severity,
 													peakSeverity,
@@ -2868,6 +2879,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 				if (outcome.transition === "resolved") {
 					yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
+				}
+				if (outcome.transition === "escalated" && outcome.severity !== null) {
+					yield* escalateAlertIssue({
+						orgId: row.orgId,
+						ruleId: row.id,
+						groupKey,
+						severity: outcome.severity,
+					}).pipe(Effect.provideService(Database, database))
 				}
 
 				// Issue-hub: a freshly opened incident creates/refreshes its issue

@@ -192,10 +192,8 @@ export const AlertBreachWindow = PositiveInt.pipe(
 )
 
 /**
- * One severity tier of a rule: the value that opens (or escalates to) this
- * severity, an optional recovery value that must be crossed back before the
- * tier clears, and the destinations this severity notifies. A critical
- * incident also notifies every lower tier's destinations.
+ * One severity tier: the value that opens or escalates to it, an optional recovery value to cross
+ * back before it clears, and its destinations. A critical incident also notifies lower tiers'.
  */
 export const AlertThreshold = Schema.Struct({
 	severity: AlertSeverity,

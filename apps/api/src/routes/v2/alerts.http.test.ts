@@ -489,6 +489,12 @@ describe("v2 alerts over HTTP", () => {
 		expect(patched.status, JSON.stringify(patched.body)).toBe(200)
 		expect(patched.body.comparator).toBe("gt")
 		expect(patched.body.threshold_upper).toBeNull()
+
+		// A bound sent explicitly is validated, not silently dropped.
+		const explicit = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			threshold_upper: 5,
+		})
+		expect(explicit.status, JSON.stringify(explicit.body)).toBe(400)
 		await harness.dispose()
 	})
 

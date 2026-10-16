@@ -105,6 +105,18 @@ describe("simulateFiringSpans", () => {
 		expect(spans).toEqual([])
 	})
 
+	it("starts a re-opened span after the previous one, even with breaches left in the window", () => {
+		const spans = spansOf(
+			evaluations(["breached", "breached", "healthy", "breached", "healthy"]),
+			{ ...thresholds(2, 1), breachesOutOf: 5 },
+			MINUTE,
+		)
+		expect(spans).toEqual([
+			{ startMs: 0, endMs: 3 * MINUTE, severity: "warning" },
+			{ startMs: 3 * MINUTE, endMs: 5 * MINUTE, severity: "warning" },
+		])
+	})
+
 	it("splits a span where the incident changes severity", () => {
 		const tiered: AlertReplayPolicy = {
 			...thresholds(2, 2),

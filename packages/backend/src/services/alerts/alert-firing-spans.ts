@@ -45,18 +45,9 @@ interface ReplayState {
 }
 
 /**
- * Replay a series through the scheduler's own lifecycle planner and return the
- * spans during which the rule would have held an incident open.
- *
- * The preview promises to show what the scheduler will do, so it must not be a
- * second implementation of it: both run `planAlertLifecycle`. The preview cannot
- * probe telemetry liveness, so an empty window that the scheduler would hold on
- * is treated as evidence of nothing, and a value synthesized from no data may
- * resolve.
- *
- * A span opens at the run's first breached window inside the last M checks,
- * not the window that tripped the count, and splits at each severity change.
- * A run still open at the end of the series closes at the last complete window's boundary.
+ * Replay a series through the scheduler's `planAlertLifecycle` (no liveness probe, so empty windows
+ * are evidence of nothing). Spans start at the first breach inside the last M checks, split at each
+ * severity change, and an open run closes at the last complete window.
  */
 export const simulateFiringSpans = (
 	evaluations: ReadonlyArray<SimulatedEvaluation>,
@@ -125,6 +116,8 @@ export const simulateFiringSpans = (
 							return {
 								...base,
 								open: null,
+								// A re-open within M must not date back past this resolve.
+								recentBreaches: [],
 								spans: [
 									...acc.spans,
 									{

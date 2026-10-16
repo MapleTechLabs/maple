@@ -368,6 +368,42 @@ export const upsertAlertIssue: (
 		),
 )
 
+/**
+ * Raise an alert issue's severity when its incident escalates, while the severity is still the
+ * detector's (manual > ai > detector). Never fails, like `upsertAlertIssue`.
+ */
+export const escalateAlertIssue = Effect.fn("IssueHub.escalateAlertIssue")(
+	function* (input: {
+		readonly orgId: OrgId
+		readonly ruleId: string
+		readonly groupKey: string
+		readonly severity: AlertSeverity
+	}) {
+		const database = yield* Database
+		yield* database.execute((db) =>
+			db.run(
+				PG.update(ErrorIssues)
+					.set({ severity: detectorSeverityFor(input.severity) })
+					.where(($) => [
+						$.orgId.eq(input.orgId),
+						$.fingerprintHash.eq(alertIssueFingerprint(input.ruleId, input.groupKey)),
+						$.severitySource.eq("detector"),
+					]),
+			),
+		)
+	},
+	(effect, input) =>
+		Effect.catchCause(effect, (cause) =>
+			Effect.logError("Alert issue escalation failed").pipe(
+				Effect.annotateLogs({
+					orgId: input.orgId,
+					ruleId: input.ruleId,
+					error: summarizeCause(cause),
+				}),
+			),
+		),
+)
+
 const recordIssueEvent = Effect.fn("IssueHub.recordIssueEvent")(function* (
 	orgId: OrgId,
 	issueId: ErrorIssueId,

@@ -160,6 +160,29 @@ describe("severity tiers", () => {
 		expect(plans.map((p) => p.transition)).toEqual(["none", "none", "opened"])
 	})
 
+	it("keeps an incident open when its rule's only tier changes severity", () => {
+		// A warning incident whose rule is now critical-only; the state row predates the edit.
+		const kept = plan({
+			policy: {
+				consecutiveBreachesRequired: 2,
+				breachWindow: 2,
+				consecutiveHealthyRequired: 2,
+				renotifyIntervalMinutes: 60,
+				severities: ["critical"],
+			},
+			evaluation: evaluate([critAt(10)], 15),
+			state: { consecutiveBreaches: 2, consecutiveHealthy: 0, history: null },
+			openIncident: {
+				severity: "warning",
+				firstTriggeredAtMs: 0,
+				lastNotifiedAtMs: 60_000,
+				lastDeliveredEventType: "trigger",
+			},
+			nowMs: 120_000,
+		})
+		expect(kept).toMatchObject({ transition: "continued", severity: "critical", eventType: null })
+	})
+
 	it("leaves a steady group's history byte-identical, so the state upsert can be skipped", () => {
 		const healthy = replay([warnAt(10), critAt(20)], [1, 1, 1, 1, 1, 1], { n: 2, m: 4, r: 3 })
 		const histories = healthy.plans.map((p) => JSON.stringify(p.state.history))

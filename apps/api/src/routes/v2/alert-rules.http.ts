@@ -22,9 +22,16 @@ import type {
 	V2AlertRuleMutationResponse,
 	V2AlertRulePreviewResult,
 	V2AlertRuleUpdateParams,
-	V2AlertThreshold,
 } from "@maple/domain/http/v2"
-import { MapleApiV2, paginateArray, scopeAllows, timestamp, V2ParameterInvalid } from "@maple/domain/http/v2"
+import {
+	fromV2Threshold,
+	MapleApiV2,
+	paginateArray,
+	scopeAllows,
+	timestamp,
+	toV2Threshold,
+	V2ParameterInvalid,
+} from "@maple/domain/http/v2"
 import { AlertForbiddenError } from "@maple/domain/http"
 import { Array as Arr, DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
@@ -63,22 +70,6 @@ const decodeChecksCursor = (value: string | undefined) => {
 		},
 	)
 }
-
-const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({
-	severity: tier.severity,
-	value: tier.value,
-	upper: tier.upper,
-	recovery_value: tier.recoveryValue,
-	destination_ids: tier.destinationIds,
-})
-
-const fromV2Threshold = (tier: V2AlertThreshold): AlertThreshold => ({
-	severity: tier.severity,
-	value: tier.value,
-	upper: tier.upper,
-	recoveryValue: tier.recovery_value,
-	destinationIds: tier.destination_ids,
-})
 
 const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	id: doc.id,
@@ -213,7 +204,7 @@ const toUpsertRequest = (
 			signalType: params.signal_type,
 			comparator: params.comparator,
 			windowMinutes: params.window_minutes,
-			...(params.thresholds !== undefined && Arr.isReadonlyArrayNonEmpty(params.thresholds)
+			...(params.thresholds !== undefined
 				? { thresholds: Arr.map(params.thresholds, fromV2Threshold) }
 				: undefined),
 			...(params.severity !== undefined ? { severity: params.severity } : undefined),
@@ -276,11 +267,8 @@ const toUpsertRequest = (
 	})
 
 /**
- * The tiers a PATCH leaves the rule with. `thresholds` replaces them outright.
- * The single-threshold fields edit a single-tier rule's one tier in place
- * (keeping its recovery value); on a rule with two tiers they are ambiguous and
- * rejected rather than silently collapsing it to one. A range bound is dropped,
- * not carried over, when the comparator stops being a range.
+ * `thresholds` replaces the tiers; single-threshold fields edit a one-tier rule in place and
+ * are rejected on two tiers. A stored range bound is dropped when the comparator stops being a range.
  */
 const mergeThresholds = (
 	doc: AlertRuleDocument,
@@ -289,7 +277,7 @@ const mergeThresholds = (
 ): Effect.Effect<AlertThresholds, ReturnType<typeof V2ParameterInvalid.make>> => {
 	const fitBound = (tier: AlertThreshold): AlertThreshold =>
 		isRangeComparator(comparator) ? tier : { ...tier, upper: null }
-	if (patch.thresholds !== undefined && Arr.isReadonlyArrayNonEmpty(patch.thresholds)) {
+	if (patch.thresholds !== undefined) {
 		return Effect.succeed(Arr.map(patch.thresholds, fromV2Threshold))
 	}
 	const legacyKeys = (["severity", "threshold", "threshold_upper", "destination_ids"] as const).filter(
@@ -306,15 +294,13 @@ const mergeThresholds = (
 		)
 	}
 	return Effect.succeed(
-		Arr.of(
-			fitBound({
-				...only,
-				severity: patch.severity ?? only.severity,
-				value: patch.threshold ?? only.value,
-				upper: patch.threshold_upper !== undefined ? patch.threshold_upper : only.upper,
-				destinationIds: patch.destination_ids ?? only.destinationIds,
-			}),
-		),
+		Arr.of({
+			...fitBound(only),
+			severity: patch.severity ?? only.severity,
+			value: patch.threshold ?? only.value,
+			...(patch.threshold_upper !== undefined ? { upper: patch.threshold_upper } : undefined),
+			destinationIds: patch.destination_ids ?? only.destinationIds,
+		}),
 	)
 }
 
