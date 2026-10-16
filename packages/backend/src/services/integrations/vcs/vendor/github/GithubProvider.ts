@@ -25,7 +25,7 @@ import {
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
 } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Match, Option, Redacted, Schema, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import type {
 	PullRequestDelta,
@@ -1700,6 +1700,15 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
 					.pipe(Effect.mapError(toVcsCommitError))
 
+			const streamWorkflowJobLog: VcsProviderClient["streamWorkflowJobLog"] = (
+				installation,
+				repo,
+				jobId,
+			) =>
+				client
+					.streamJobLog(installation.externalInstallationId, repo.owner, repo.name, jobId)
+					.pipe(Stream.mapError(toVcsCommitError))
+
 			const fetchWorkflowJobAnnotations: VcsProviderClient["fetchWorkflowJobAnnotations"] = (
 				installation,
 				repo,
@@ -1766,6 +1775,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				resolveRef,
 				fetchCloneCredentials,
 				fetchWorkflowJobAnnotations,
+				streamWorkflowJobLog,
 			} satisfies VcsProviderClient
 		}),
 	},

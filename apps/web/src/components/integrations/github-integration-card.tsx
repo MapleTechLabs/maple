@@ -45,7 +45,6 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
-import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useRequiredIntegrationConnect, type IntegrationConnect } from "./integration-connect"
@@ -408,7 +407,6 @@ function ConnectedView({
 	onSetTrackedBranch: (repo: GithubRepoSummary, branch: string) => Promise<boolean>
 }) {
 	const actionBusy = connectFlow.busy || disconnectBusy
-	const prReviewRolledOut = useOrganizationFeatureFlags().flags.prReview
 	const activeRepos = status.repositories.filter((r) => r.status === "active")
 	const removedRepos = status.repositories.filter((r) => r.status === "removed")
 	const counts = {
@@ -479,25 +477,22 @@ function ConnectedView({
 
 			<CiTracesSetting enabled={status.ciTracesEnabled} />
 
-			{prReviewRolledOut ? (
-				<SettingRow
-					framed
-					className="bg-card px-4 py-3"
-					label="Pull request reviews"
-					description={
-						<>
-							{activeRepos.filter((repo) => repo.prReviewEnabled).length} of{" "}
-							{activeRepos.length} repositories reviewed. Rules, models and analytics live in
-							Code Review.
-						</>
-					}
-					control={
-						<Button size="sm" variant="outline" render={<Link to="/code-review/settings" />}>
-							Open Code Review
-						</Button>
-					}
-				/>
-			) : null}
+			<SettingRow
+				framed
+				className="bg-card px-4 py-3"
+				label="Pull request reviews"
+				description={
+					<>
+						{activeRepos.filter((repo) => repo.prReviewEnabled).length} of {activeRepos.length}{" "}
+						repositories reviewed. Rules, models and analytics live in Code Review.
+					</>
+				}
+				control={
+					<Button size="sm" variant="outline" render={<Link to="/code-review/settings" />}>
+						Open Code Review
+					</Button>
+				}
+			/>
 
 			<Panel>
 				<PanelHeader
@@ -623,7 +618,7 @@ function ConnectedView({
 	)
 }
 
-/** The org-wide opt-out for GitHub Actions runs as traces. On by default; admins can turn it off. */
+/** The org-wide opt-out for GitHub Actions runs as traces and job logs. On by default; admins can turn it off. */
 function CiTracesSetting({ enabled: serverEnabled }: { enabled: boolean }) {
 	const isAdmin = useIsOrgAdmin()
 	const setCiTraces = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetCiTraces"), {
@@ -644,8 +639,8 @@ function CiTracesSetting({ enabled: serverEnabled }: { enabled: boolean }) {
 			reactivityKeys: ["githubIntegrationStatus"],
 		})
 		const ok = toastExit(result, {
-			success: next ? "GitHub Actions runs will show up as traces" : "CI traces turned off",
-			error: "Failed to change CI traces.",
+			success: next ? "GitHub Actions runs will show up as traces and logs" : "CI traces and logs turned off",
+			error: "Failed to change CI traces and logs.",
 		})
 		if (!ok) setEnabled(!next)
 	})
@@ -654,12 +649,13 @@ function CiTracesSetting({ enabled: serverEnabled }: { enabled: boolean }) {
 		<SettingRow
 			framed
 			className="bg-card px-4 py-3"
-			label="CI traces"
+			label="CI traces and logs"
 			description={
 				<>
 					Each finished GitHub Actions run becomes a trace under the{" "}
 					<span className="font-mono text-foreground">github-actions</span> service, with a span per
-					job and step. Counts toward your usage.
+					job and step. Each job's log lines become logs on the step that wrote them, up to 5 MB per
+					job. Counts toward your usage.
 				</>
 			}
 			control={

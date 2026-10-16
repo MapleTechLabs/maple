@@ -85,7 +85,6 @@ import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
@@ -1021,7 +1020,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const dbExecute = makeDbExecute(database, "PrReviewService", toPersistence)
 			const repositories = yield* VcsRepository
 			const providers = yield* VcsProviderRegistry
-			const featureFlags = yield* OrganizationFeatureFlagsService
 			// Present inside a Worker, absent in tests; without it a trigger records `agent_unavailable`.
 			const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 			// Present where webhooks are consumed; without it a push's review starts at once.
@@ -1959,13 +1957,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return skip("disabled")
 				}
 				const repo: VcsRepo = repository.value
-				// Staged rollout, checked on the server so a repository enabled before the flag was
-				// withdrawn still stops. After the repository check: that one is a database read,
-				// this one a call to the identity provider.
-				if (!(yield* featureFlags.flags(orgId)).prReview) {
-					yield* annotate("skipped", { "maple.pr_review.skip_reason": "not_rolled_out" })
-					return skip("not_rolled_out")
-				}
 				const config = yield* repositories
 					.getEffectivePrReviewConfig(orgId, repo.id)
 					.pipe(Effect.mapError(toPersistence))
@@ -2970,7 +2961,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			Layer.mergeAll(
 				VcsRepository.layer,
 				VcsProviderRegistry.layer,
-				OrganizationFeatureFlagsService.layer,
 				PrReviewTelemetryService.layer,
 			),
 		),

@@ -23,8 +23,6 @@ import {
 	type VcsProviderRegistryApi,
 } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { PrReviewService } from "./PrReviewService"
 import { applyEdits, editablePath, PrReviewConversationService } from "./PrReviewConversationService"
 
@@ -151,7 +149,6 @@ const layerFor = (
 		registry,
 		testDb.layer,
 		workerEnv,
-		OrganizationFeatureFlagsService.fixed(ENABLED_ORGANIZATION_FEATURE_FLAGS),
 	)
 	return Layer.effect(PrReviewConversationService, PrReviewConversationService.make).pipe(
 		Layer.provideMerge(Layer.effect(PrReviewService, PrReviewService.make)),
