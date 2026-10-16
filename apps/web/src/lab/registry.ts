@@ -61,6 +61,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/gcp-connections",
+		title: "Google Cloud connections",
+		description:
+			"A Google Cloud connection in each state, healthy to failing, over fixture connectors, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/onboarding",
 		title: "Onboarding",
 		description:
