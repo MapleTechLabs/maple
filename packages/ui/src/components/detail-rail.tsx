@@ -132,6 +132,7 @@ function MetaRow({
 	copyable,
 	copyValue,
 	tooltip,
+	valueClassName,
 }: {
 	/** Optional glyph before the label; like `Row`, give every row in a rail one or none. */
 	icon?: IconComponent
@@ -141,10 +142,17 @@ function MetaRow({
 	/** What the copy button copies, when it differs from the displayed value. */
 	copyValue?: string
 	tooltip?: string
+	/** Replaces the value's text colour, e.g. a severity tone. */
+	valueClassName?: string
 }) {
 	if (!value) return null
 	const valueNode = (
-		<span className="break-all text-right font-mono text-2xs tabular-nums text-foreground/85">
+		<span
+			className={cn(
+				"break-all text-right font-mono text-2xs tabular-nums text-foreground/85",
+				valueClassName,
+			)}
+		>
 			{value}
 		</span>
 	)

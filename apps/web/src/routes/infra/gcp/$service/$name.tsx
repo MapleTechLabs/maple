@@ -36,7 +36,12 @@ import {
 	GcpWorkloadHeader,
 	GcpWorkloadSignals,
 } from "@/components/infra/gcp/gcp-workload-page"
-import { NO_GCP_SPARKS, gcpDatabaseRows, type GcpReplica } from "@/components/infra/gcp/list-model"
+import {
+	NO_GCP_SPARKS,
+	gcpDatabaseRows,
+	gcpSqlEngineOf,
+	type GcpReplica,
+} from "@/components/infra/gcp/list-model"
 import { GcpWorkloadRail } from "@/components/infra/gcp/gcp-workload-rail"
 import {
 	GCP_CLOUD_SQL_INVENTORY_QUERY,
@@ -278,6 +283,7 @@ function GcpWorkloadPage({
 			})
 		: undefined
 	const facts = sql?.facts ?? gcpRailFacts(service, points, bucketSeconds)
+	const databaseVersion = isCloudSql ? (instance?.databaseVersion ?? gcpSqlEngineOf(points)) : undefined
 
 	return (
 		<DashboardPage
@@ -305,25 +311,28 @@ function GcpWorkloadPage({
 					timeSearch={timeSearch}
 				/>
 			}
+			titleContent={
+				<GcpWorkloadHeader
+					service={service}
+					keys={keys}
+					health={
+						points.length === 0 ? null : gcpWorkloadTone(gcpWorkload(service, keys, windowPoints))
+					}
+					databaseVersion={databaseVersion}
+					meta={
+						cloudSql === undefined ? undefined : (
+							<GcpCloudSqlChips
+								keys={keys}
+								instance={cloudSql.instance}
+								databaseVersion={databaseVersion}
+								services={cloudSql.traceSide?.services}
+							/>
+						)
+					}
+				/>
+			}
 			gap="lg"
 		>
-			<GcpWorkloadHeader
-				service={service}
-				keys={keys}
-				health={
-					points.length === 0 ? null : gcpWorkloadTone(gcpWorkload(service, keys, windowPoints))
-				}
-				databaseVersion={instance?.databaseVersion}
-				meta={
-					cloudSql === undefined ? undefined : (
-						<GcpCloudSqlChips
-							keys={keys}
-							instance={cloudSql.instance}
-							services={cloudSql.traceSide?.services}
-						/>
-					)
-				}
-			/>
 			{Result.isInitial(result) ? (
 				<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 					{GCP_INFRA_CHARTS[service].map((chart) => (

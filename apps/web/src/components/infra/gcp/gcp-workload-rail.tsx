@@ -5,6 +5,7 @@ import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 import { DetailRail } from "@maple/ui/components/detail-rail"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import type { UtilizationLevel } from "@maple/ui/lib/utilization"
 
 import {
 	ChevronRightIcon,
@@ -30,6 +31,13 @@ const RAIL_TITLE = {
 	pubsub: "Pub/Sub subscription",
 	loadBalancing: "Load balancer",
 } satisfies Record<GcpInfraServiceId, string>
+
+/** A share's tone, in the colours the service health uses: green, amber, red. */
+const FACT_TONE = {
+	ok: "text-severity-info",
+	warn: "text-severity-warn",
+	crit: "text-severity-error",
+} satisfies Record<UtilizationLevel, string>
 
 /** The logs of a workload in Maple: see `gcpWorkloadTelemetry`. */
 interface GcpLogsTarget {
@@ -94,7 +102,12 @@ export function GcpWorkloadRail({
 					}
 				/>
 				{facts.map((fact) => (
-					<DetailRail.MetaRow key={fact.label} label={fact.label} value={fact.value} />
+					<DetailRail.MetaRow
+						key={fact.label}
+						label={fact.label}
+						value={fact.value}
+						valueClassName={fact.tone === undefined ? undefined : FACT_TONE[fact.tone]}
+					/>
 				))}
 				{labels.length === 0 ? null : (
 					<DetailRail.Field label="labels">
@@ -115,7 +128,12 @@ export function GcpWorkloadRail({
 			{health.length === 0 ? null : (
 				<DetailRail.Group label="Health">
 					{health.map((fact) => (
-						<DetailRail.MetaRow key={fact.label} label={fact.label} value={fact.value} />
+						<DetailRail.MetaRow
+							key={fact.label}
+							label={fact.label}
+							value={fact.value}
+							valueClassName={fact.tone === undefined ? undefined : FACT_TONE[fact.tone]}
+						/>
 					))}
 				</DetailRail.Group>
 			)}

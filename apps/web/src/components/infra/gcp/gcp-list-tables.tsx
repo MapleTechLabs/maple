@@ -101,7 +101,7 @@ function WorkloadRow<R extends GcpServiceRow | GcpSubscriptionRow | GcpDatabaseR
 			<div className={cn(NAME, "flex items-center gap-3")}>
 				<GcpServiceIcon
 					service={row.service}
-					databaseVersion={"instance" in row ? row.instance?.databaseVersion : undefined}
+					databaseVersion={"engine" in row ? row.engine : undefined}
 				/>
 				<div className="min-w-0 flex-1 space-y-0.5">
 					<div
@@ -461,7 +461,7 @@ function replicasItem(row: GcpDatabaseRow): MetaItem {
 
 function databaseMeta(row: GcpDatabaseRow, showProject: boolean): ReadonlyArray<MetaItem> {
 	return [
-		row.instance === undefined ? undefined : gcpSqlEngine(row.instance.databaseVersion),
+		gcpSqlEngine(row.engine ?? null),
 		row.instance === undefined ? undefined : gcpSqlSize(row.instance),
 		replicasItem(row),
 		...placeItems(row, showProject),
