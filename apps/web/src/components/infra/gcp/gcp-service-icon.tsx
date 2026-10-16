@@ -13,7 +13,7 @@ import {
 	type IconProps,
 } from "@/components/icons"
 // Not in the icons barrel, whose chunk loads at startup: only these pages draw them.
-import { DoubleChevronRightIcon } from "@/components/icons/double-chevron-right"
+import { CloudRunIcon } from "@/components/icons/cloud-run"
 import { GooglePubSubIcon } from "@/components/icons/google-pubsub"
 import { MysqlDolphinIcon } from "@/components/icons/mysql-dolphin"
 import { ParenthesesDotsIcon } from "@/components/icons/parentheses-dots"
@@ -24,7 +24,7 @@ import { SitemapIcon } from "@maple/ui/components/icons"
 const GkeIcon = (props: IconProps) => <KubernetesIcon fill="currentColor" {...props} />
 
 const GCP_SERVICE_ICON = {
-	cloudRun: DoubleChevronRightIcon,
+	cloudRun: CloudRunIcon,
 	cloudFunctions: ParenthesesDotsIcon,
 	gke: GkeIcon,
 	computeEngine: MicrochipIcon,

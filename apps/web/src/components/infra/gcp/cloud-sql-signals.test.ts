@@ -176,8 +176,8 @@ describe("gcpCloudSqlHealth", () => {
 		]
 		expect(gcpCloudSqlHealth(points)).toEqual([
 			{ label: "deadlocks", value: "0" },
-			{ label: "transaction IDs", value: "18% used" },
-			{ label: "cache hit", value: "99.2%" },
+			{ label: "transaction IDs", value: "18% used", tone: "ok" },
+			{ label: "cache hit", value: "99.2%", tone: "ok" },
 			{ label: "temp spill", value: "1.5 GB" },
 		])
 	})
@@ -220,7 +220,7 @@ describe("gcpCloudSqlView", () => {
 			{ label: "databases", value: "orders · orders_audit" },
 			{ label: "read replica", value: "orders-db-replica-1" },
 			{ label: "replica lag", value: "4.00s" },
-			{ label: "disk", value: "355 of 500 GB" },
+			{ label: "disk", value: "355 of 500 GB", tone: "warn" },
 		])
 	})
 

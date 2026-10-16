@@ -12,6 +12,7 @@ import {
 	formatPercent,
 } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { utilizationLevel, type UtilizationLevel } from "@maple/ui/lib/utilization"
 
 import { formatValueWithUnit, type ChartUnit } from "../chart-utils"
 import {
@@ -207,7 +208,7 @@ const CONNECTION_COLORS = { [IDLE_IN_TRANSACTION]: "var(--severity-warn)" }
 
 /**
  * A Cloud SQL instance from the database's side: Query Insights latency, connections by state
- * against `max_connections`, the share of query time spent waiting on locks, and CPU with memory.
+ * against `max_connections`, the share of query time spent waiting on locks, CPU and memory.
  */
 function cloudSqlStrips(
 	points: ReadonlyArray<GcpBucketPoint>,
@@ -248,16 +249,6 @@ function cloudSqlStrips(
 	}
 	const lockRows = gcpLineRows([lockShare], points, window)
 	const executed = read.total(execution)
-	const cpu = gaugeStrip(
-		"cpu",
-		"CPU",
-		"memory as the second line",
-		"percent",
-		[mean("CPU", `${DATABASE}.cpu.utilization`), mean("Memory", `${DATABASE}.memory.utilization`)],
-		points,
-		window,
-	)
-	const memory = valuesOf(cpu.rows, "Memory").at(-1)
 	const strips: ReadonlyArray<GcpStrip> = [
 		{
 			...latencyStrip("Query latency", `${DATABASE}.query.duration`, points, window),
@@ -290,14 +281,24 @@ function cloudSqlStrips(
 						: "peak",
 			},
 		},
-		{
-			...cpu,
-			summary: {
-				...cpu.summary,
-				caption:
-					memory === undefined ? cpu.summary.caption : `latest · memory ${formatPercent(memory)}`,
-			},
-		},
+		gaugeStrip(
+			"cpu",
+			"CPU",
+			"share of the reserved cores",
+			"percent",
+			[mean("CPU", `${DATABASE}.cpu.utilization`)],
+			points,
+			window,
+		),
+		gaugeStrip(
+			"memory",
+			"Memory",
+			"share of the instance's memory",
+			"percent",
+			[mean("Memory", `${DATABASE}.memory.utilization`)],
+			points,
+			window,
+		),
 		gaugeStrip(
 			"replica-lag",
 			"Replica lag",
@@ -513,7 +514,13 @@ export function gcpTraceGap(
 export interface GcpRailFact {
 	readonly label: string
 	readonly value: string
+	/** How a share reads: good, nearing a limit, at it. Absent for a value that is no share. */
+	readonly tone?: UtilizationLevel
 }
+
+/** A share of a limit: fine below 60%, a warning from 60%, critical from 90%. */
+export const gcpShareTone = (fraction: number | undefined): UtilizationLevel | undefined =>
+	fraction === undefined ? undefined : utilizationLevel(fraction)
 
 /** The latest reading of a gauge in the window, by bucket. */
 function latest(points: ReadonlyArray<GcpBucketPoint>, bucketSeconds: number, metric: string) {
@@ -524,12 +531,17 @@ function latest(points: ReadonlyArray<GcpBucketPoint>, bucketSeconds: number, me
 	return undefined
 }
 
-const facts = (entries: ReadonlyArray<readonly [label: string, value: string | undefined]>) =>
-	entries.flatMap(([label, value]): ReadonlyArray<GcpRailFact> =>
-		value === undefined ? [] : [{ label, value }],
+const facts = (
+	entries: ReadonlyArray<readonly [label: string, value: string | undefined, tone?: UtilizationLevel]>,
+) =>
+	entries.flatMap(([label, value, tone]): ReadonlyArray<GcpRailFact> =>
+		value === undefined ? [] : [{ label, value, tone }],
 	)
 
 const percentOf = (value: number | undefined) => (value === undefined ? undefined : formatPercent(value))
+/** A share as its percentage and its tone, for `facts`. */
+const share = (label: string, value: number | undefined) =>
+	[label, percentOf(value), gcpShareTone(value)] as const
 
 /** Bytes as whole GB, as the Cloud SQL console sizes a disk. */
 const gibibytes = (bytes: number) => Math.round(bytes / 1024 ** 3).toLocaleString()
@@ -549,8 +561,8 @@ export function gcpRailFacts(
 			const billed = read.total(`${RUN}.container.billable_time`)
 			const concurrency = read.mean(`${RUN}.container.request.max_concurrency`, "0.95")
 			return facts([
-				["cpu p95", percentOf(read.mean(`${RUN}.container.cpu.utilization`, "0.95"))],
-				["memory p95", percentOf(read.mean(`${RUN}.container.memory.utilization`, "0.95"))],
+				share("cpu p95", read.mean(`${RUN}.container.cpu.utilization`, "0.95")),
+				share("memory p95", read.mean(`${RUN}.container.memory.utilization`, "0.95")),
 				[
 					"concurrency",
 					concurrency === undefined ? undefined : `${decimal(concurrency)} per instance, p95`,
@@ -567,12 +579,17 @@ export function gcpRailFacts(
 			const lag = latest(points, bucketSeconds, `${DATABASE}.replication.lag`)
 			const used = latest(points, bucketSeconds, `${DATABASE}.disk.usage`)
 			const quota = latest(points, bucketSeconds, `${DATABASE}.disk.limit`)
+			const disk =
+				used !== undefined && quota !== undefined && quota > 0
+					? used / quota
+					: latest(points, bucketSeconds, `${DATABASE}.disk.utilization`)
 			return facts([
 				[
 					"disk",
 					used !== undefined && quota !== undefined
 						? `${gibibytes(used)} of ${gibibytes(quota)} GB`
-						: percentOf(latest(points, bucketSeconds, `${DATABASE}.disk.utilization`)),
+						: percentOf(disk),
+					gcpShareTone(disk),
 				],
 				["replica lag", lag === undefined ? undefined : formatLatency(lag * MS)],
 			])

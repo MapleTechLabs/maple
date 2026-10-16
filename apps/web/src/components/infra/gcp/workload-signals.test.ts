@@ -176,11 +176,11 @@ describe("gcpRailFacts", () => {
 			point(1, "gcp.cloud_sql.disk.limit", "", 500 * 1024 ** 3),
 		]
 		expect(gcpRailFacts("cloudSql", sized, BUCKET_SECONDS)).toEqual([
-			{ label: "disk", value: "355 of 500 GB" },
+			{ label: "disk", value: "355 of 500 GB", tone: "warn" },
 		])
 		expect(
 			gcpRailFacts("cloudSql", [point(0, "gcp.cloud_sql.disk.utilization", "", 0.71)], BUCKET_SECONDS),
-		).toEqual([{ label: "disk", value: "71%" }])
+		).toEqual([{ label: "disk", value: "71%", tone: "warn" }])
 	})
 
 	it("totals Cloud Run's billable instance time over the window", () => {
