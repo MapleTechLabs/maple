@@ -13,7 +13,6 @@ import { PageHero } from "@/components/common/page-hero"
 import { ResultView } from "@/components/common/result-view"
 import { CircleInfoIcon, CircleWarningIcon, GoogleCloudIcon } from "@/components/icons"
 import { GcpListPage, type GcpListState } from "@/components/infra/gcp/gcp-list-page"
-import { GcpListRail } from "@/components/infra/gcp/gcp-list-rail"
 import { GcpResources } from "@/components/infra/gcp/gcp-resources"
 import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpCloudSqlInstances } from "@/components/infra/gcp/inventory"
 import {
@@ -124,13 +123,6 @@ function GcpPage() {
 		<DashboardPage
 			breadcrumbs={[{ label: "Infrastructure", href: "/infra" }, { label: "Google Cloud" }]}
 			time={{ search, startTime, endTime, defaultPreset: DEFAULT_PRESET, onChange: handleTimeChange }}
-			rightPanel={Result.builder(statusResult)
-				.onSuccess((status) =>
-					status.connectors.length === 0 ? undefined : (
-						<GcpListRail connectors={status.connectors} project={search.project} />
-					),
-				)
-				.orElse(() => undefined)}
 			gap="lg"
 		>
 			{/* The list draws its own header. */}

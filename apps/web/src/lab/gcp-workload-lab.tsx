@@ -392,8 +392,6 @@ function WorkloadPage({ workload }: { workload: LabWorkload }) {
 					health={sql?.health}
 					serviceMap={sql === undefined ? undefined : { focusService: sql.focusService }}
 					tracedService={tracedService}
-					logs={logs}
-					consolePage={consolePage}
 					timeSearch={{}}
 				/>
 			}
