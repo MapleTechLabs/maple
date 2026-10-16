@@ -4,19 +4,22 @@
  * here may leak a credential: tokens stay `Redacted`, and a failure carries the HTTP status and
  * Google's error code and reason only, never a response body, transport error or schema issue.
  * The one sentence of Google's that is read, to tell a missing billing account from a missing
- * role, chooses a reason and is dropped.
+ * role, chooses a reason and is dropped. The exception is PromQL: Google's explanation of why
+ * the caller's own query was refused or did not finish is passed on.
  * Untraced on purpose: the HTTP client records a span per request, and "not set up yet" is not an
  * exception.
  */
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import {
 	GCP_ASSET_TYPES,
+	GCP_PROJECT_ASSET_TYPE,
 	gcpMetricAligner,
 	type GcpMetric,
 	type GcpMetricGroup,
 } from "@maple/domain/gcp-metrics"
+import { GcpPromQlInvalidQueryError, GcpPromQlTooManySeriesError } from "@maple/domain/http"
 import type { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
-import { Duration, Effect, Option, Redacted, Schema } from "effect"
+import { Duration, Effect, Option, Redacted, Schema, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -116,36 +119,82 @@ const errorReason = (body: unknown, kind: GcpApiError["kind"]): string | undefin
 		.flatMap((detail) => Option.toArray(decodeErrorInfo(detail)))[0]?.reason ??
 	(kind === "denied" ? reasonFromMessage(body) : undefined)
 
+/**
+ * The largest answer a live query reads: four in flight stay far below the Worker's 128 MB.
+ * The poller's calls are not capped.
+ */
+export const MAX_BODY_BYTES = 8 * 1024 * 1024
+const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+
+interface CallOptions<E, E2> {
+	/** Turns a failed answer into the caller's own error. */
+	readonly refuse?: (status: number, body: unknown) => E | undefined
+	/** Reads at most `MAX_BODY_BYTES`; `tooLarge` is the caller's error past it. */
+	readonly capped?: { readonly tooLarge?: () => E2 }
+}
+
 /** One JSON call. `api` names the Google service in the error. */
-const call = <A>(
+const call = <A, E = never, E2 = never>(
 	httpClient: HttpClient.HttpClient,
 	api: GcpApiError["api"],
 	request: HttpClientRequest.HttpClientRequest,
 	decode: (body: unknown) => Effect.Effect<A, Schema.SchemaError>,
-): Effect.Effect<A, GcpApiError> => {
-	const failed = (what: string) => () =>
-		Effect.fail(new GcpApiError({ message: `${api} ${what}`, api, kind: "upstream" }))
+	options: CallOptions<E, E2> = {},
+): Effect.Effect<A, GcpApiError | E | E2> => {
+	const failed = (what: string) => new GcpApiError({ message: `${api} ${what}`, api, kind: "upstream" })
 	return Effect.gen(function* () {
 		const response = yield* httpClient.execute(request)
-		const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
-		if (response.status >= 300) {
-			const kind = errorKind(response.status)
-			const reason = errorReason(body, kind)
-			return yield* new GcpApiError({
-				message: `${api} returned ${response.status}${errorCode(body)}${reason === undefined ? "" : `, ${reason}`}`,
-				api,
-				kind,
-				...(reason === undefined ? undefined : { reason }),
-			})
+		if (options.capped === undefined) {
+			return {
+				status: response.status,
+				body: yield* response.json.pipe(Effect.orElseSucceed(() => null)),
+			}
 		}
-		return yield* decode(body)
+		// Read as it arrives, never trusting Content-Length: past the cap the rest is left unread.
+		const chunks: Array<Uint8Array> = []
+		let size = 0
+		yield* Stream.runForEachWhile(response.stream, (chunk) =>
+			Effect.sync(() => {
+				size += chunk.byteLength
+				if (size <= MAX_BODY_BYTES) chunks.push(chunk)
+				return size <= MAX_BODY_BYTES
+			}),
+		)
+		const body =
+			size > MAX_BODY_BYTES
+				? undefined
+				: Option.getOrNull(parseJson(Buffer.concat(chunks).toString("utf8")))
+		return { status: response.status, body }
 	}).pipe(
 		Effect.timeout(REQUEST_TIMEOUT),
 		Effect.catchTags({
-			HttpClientError: failed("request failed"),
-			TimeoutError: failed("request timed out"),
-			SchemaError: failed("answered with an unexpected body"),
+			HttpClientError: () => Effect.fail(failed("request failed")),
+			TimeoutError: () => Effect.fail(failed("request timed out")),
 		}),
+		Effect.flatMap(({ status, body }) =>
+			Effect.gen(function* () {
+				if (body === undefined) {
+					const tooLarge = options.capped?.tooLarge
+					if (tooLarge !== undefined) return yield* Effect.fail(tooLarge())
+					return yield* failed("answered with more than 8 MB")
+				}
+				if (status >= 300) {
+					const refused = options.refuse?.(status, body)
+					if (refused !== undefined) return yield* Effect.fail(refused)
+					const kind = errorKind(status)
+					const reason = errorReason(body, kind)
+					return yield* new GcpApiError({
+						message: `${api} returned ${status}${errorCode(body)}${reason === undefined ? "" : `, ${reason}`}`,
+						api,
+						kind,
+						...(reason === undefined ? undefined : { reason }),
+					})
+				}
+				return yield* decode(body).pipe(
+					Effect.mapError(() => failed("answered with an unexpected body")),
+				)
+			}),
+		),
 		Effect.annotateSpans("peer.service", "google-cloud"),
 	)
 }
@@ -278,9 +327,6 @@ export const impersonateReader = Effect.fnUntraced(function* (
 			}),
 		),
 		decodeImpersonatedToken,
-	).pipe(
-		// Not made through the host project, so its reason says nothing about that project.
-		Effect.mapError(({ message, api, kind }) => new GcpApiError({ message, api, kind })),
 	)
 	return { accessToken: response.accessToken, quotaProject: connector.projectId } satisfies GcpReader
 })
@@ -390,6 +436,241 @@ export const listTimeSeriesPage = (
 		decodeTimeSeriesPage,
 	)
 
+// Cloud Monitoring PromQL
+
+/** Google's own limit is 120 s; this one answers before `REQUEST_TIMEOUT` gives up. */
+const PROMQL_TIMEOUT = "18s"
+
+const promQlUrl = (projectId: GcpProjectId, path: string) =>
+	`https://monitoring.googleapis.com/v1/projects/${projectId}/location/global/prometheus/api/v1/${path}`
+
+const Labels = Schema.Record(Schema.String, Schema.String)
+/** Prometheus sends values as strings: `"1.5"`, `"NaN"`, `"+Inf"`. */
+const Sample = Schema.Tuple([Schema.Number, Schema.String])
+
+const decodePromQlResult = Schema.decodeUnknownEffect(
+	Schema.Struct({
+		data: Schema.Union([
+			Schema.Struct({
+				resultType: Schema.Literal("matrix"),
+				result: Schema.Array(Schema.Struct({ metric: Labels, values: Schema.Array(Sample) })),
+			}),
+			Schema.Struct({
+				resultType: Schema.Literal("vector"),
+				result: Schema.Array(Schema.Struct({ metric: Labels, value: Sample })),
+			}),
+			// `1 + 1`, `time()`: answered as one series without labels.
+			Schema.Struct({ resultType: Schema.Literal("scalar"), result: Sample }),
+			Schema.Struct({ resultType: Schema.Literal("string"), result: Schema.Unknown }),
+		]),
+	}),
+)
+
+const toPoints = (samples: ReadonlyArray<typeof Sample.Type>): Array<readonly [number, number]> =>
+	samples.flatMap(([time, raw]) => {
+		const value = Number(raw)
+		return Number.isFinite(value) ? [[time, value] as const] : []
+	})
+
+const decodePromQlError = Schema.decodeUnknownOption(
+	Schema.Struct({ status: Schema.Literal("error"), errorType: Schema.String, error: Schema.String }),
+)
+
+/**
+ * Google's own error for a query: 400 `bad_data` refuses the query itself. 422 `execution` and
+ * 503 `timeout` (too many samples, out of time) are the project's alone and stay a
+ * `GcpApiError`, carrying Google's text.
+ */
+const refuseQuery = (projectId: GcpProjectId) => (status: number, body: unknown) =>
+	Option.match(decodePromQlError(body), {
+		onNone: () => undefined,
+		onSome: ({ errorType, error }) =>
+			status === 400
+				? new GcpPromQlInvalidQueryError({ message: error.slice(0, 1_000), projectId })
+				: status === 422 || status === 503
+					? new GcpApiError({
+							message: `Cloud Monitoring returned ${status} ${errorType}: ${error.slice(0, 500)}`,
+							api: "Cloud Monitoring",
+							kind: status === 422 ? "invalid" : "upstream",
+							reason: "QUERY_EXECUTION",
+						})
+					: undefined,
+	})
+
+export type GcpPromQlParams =
+	| { readonly query: string; readonly time: number }
+	| { readonly query: string; readonly start: number; readonly end: number; readonly step: number }
+
+/**
+ * One instant or range query against one project, times in epoch seconds. An instant query of a
+ * range selector answers a matrix; a scalar is a vector of one series without labels.
+ */
+export const promQlQuery = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	projectId: GcpProjectId,
+	params: GcpPromQlParams,
+) =>
+	call(
+		httpClient,
+		"Cloud Monitoring",
+		// A form body: a 4,000-character query would make a long URL.
+		HttpClientRequest.post(promQlUrl(projectId, "time" in params ? "query" : "query_range")).pipe(
+			asReader(reader),
+			HttpClientRequest.bodyUrlParams({ ...params, timeout: PROMQL_TIMEOUT }),
+		),
+		decodePromQlResult,
+		{
+			refuse: refuseQuery(projectId),
+			capped: {
+				tooLarge: () =>
+					new GcpPromQlTooManySeriesError({
+						message: `Google's answer for project ${projectId} is larger than 8 MB: too many series or points. Aggregate with sum by (…) or avg by (…), narrow the selector, or widen the step.`,
+					}),
+			},
+		},
+	).pipe(
+		Effect.flatMap(({ data }) =>
+			Effect.gen(function* () {
+				switch (data.resultType) {
+					case "matrix":
+						return {
+							resultType: "matrix" as const,
+							series: data.result.map((series) => ({
+								labels: series.metric,
+								points: toPoints(series.values),
+							})),
+						}
+					case "vector":
+						return {
+							resultType: "vector" as const,
+							series: data.result.map((series) => ({
+								labels: series.metric,
+								points: toPoints([series.value]),
+							})),
+						}
+					case "scalar":
+						return {
+							resultType: "vector" as const,
+							series: [{ labels: {}, points: toPoints([data.result]) }],
+						}
+					case "string":
+						return yield* new GcpPromQlInvalidQueryError({
+							message:
+								"String results are not supported: query a vector, a range vector or a scalar.",
+							projectId,
+						})
+				}
+			}),
+		),
+	)
+
+const decodeMetricsScope = Schema.decodeUnknownEffect(
+	Schema.Struct({
+		name: Schema.String,
+		monitoredProjects: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
+	}),
+)
+
+const lastSegment = (name: string) => name.slice(name.lastIndexOf("/") + 1)
+
+/**
+ * The metrics scope a query on the project reads: its own project number, and the numbers of
+ * the projects it monitors, itself included. Needs `resourcemanager.projects.get`, which
+ * Monitoring Viewer holds.
+ */
+export const getMetricsScope = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	projectId: GcpProjectId,
+) =>
+	call(
+		httpClient,
+		"Cloud Monitoring",
+		HttpClientRequest.get(
+			`https://monitoring.googleapis.com/v1/locations/global/metricsScopes/${projectId}`,
+		).pipe(asReader(reader)),
+		decodeMetricsScope,
+		{ capped: {} },
+	).pipe(
+		Effect.map((scope) => ({
+			number: lastSegment(scope.name),
+			monitored: (scope.monitoredProjects ?? []).map((project) => lastSegment(project.name)),
+		})),
+	)
+
+const decodeNames = Schema.decodeUnknownEffect(Schema.Struct({ data: Schema.Array(Schema.String) }))
+
+/**
+ * Every metric type the project has a descriptor for, data or not. Each comes twice, in PromQL's
+ * UTF-8 form and the legacy `run_googleapis_com:request_count` form (the first `/` a `:`, every
+ * other character outside `[A-Za-z0-9_]` a `_`); only the first is kept.
+ */
+export const listPromQlMetricNames = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	projectId: GcpProjectId,
+) =>
+	call(
+		httpClient,
+		"Cloud Monitoring",
+		HttpClientRequest.get(promQlUrl(projectId, "label/__name__/values")).pipe(asReader(reader)),
+		decodeNames,
+		{ capped: {} },
+	).pipe(
+		Effect.map(({ data }) => {
+			const legacy = new Set(
+				data
+					.filter((name) => name.includes("/"))
+					.map((name) => name.replace("/", ":").replace(/[^\w:]/gu, "_")),
+			)
+			return data.filter((name) => !legacy.has(name))
+		}),
+	)
+
+const decodeMetricDescriptors = Schema.decodeUnknownEffect(
+	Schema.Struct({
+		metricDescriptors: Schema.optionalKey(
+			Schema.Array(
+				Schema.Struct({
+					type: Schema.String,
+					metricKind: Schema.optionalKey(Schema.String),
+					valueType: Schema.optionalKey(Schema.String),
+					unit: Schema.optionalKey(Schema.String),
+					description: Schema.optionalKey(Schema.String),
+					monitoredResourceTypes: Schema.optionalKey(Schema.Array(Schema.String)),
+					labels: Schema.optionalKey(
+						Schema.Array(
+							Schema.Struct({
+								key: Schema.String,
+								description: Schema.optionalKey(Schema.String),
+							}),
+						),
+					),
+				}),
+			),
+		),
+	}),
+)
+
+/** The descriptor of one metric type, or undefined when the project has none. */
+export const getMetricDescriptor = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	projectId: GcpProjectId,
+	/** Validated against `GcpMetricType`, which leaves no quote to break out of the filter. */
+	metricType: string,
+) =>
+	call(
+		httpClient,
+		"Cloud Monitoring",
+		HttpClientRequest.get(
+			`https://monitoring.googleapis.com/v3/projects/${projectId}/metricDescriptors`,
+		).pipe(asReader(reader), HttpClientRequest.setUrlParams({ filter: `metric.type = "${metricType}"` })),
+		decodeMetricDescriptors,
+		{ capped: {} },
+	).pipe(Effect.map((body) => body.metricDescriptors?.find((descriptor) => descriptor.type === metricType)))
+
 // Cloud Asset Inventory
 
 const ResourceSearchResult = Schema.Struct({
@@ -414,11 +695,13 @@ const decodeResourcePage = Schema.decodeUnknownEffect(
 	}),
 )
 
-export const searchResourcesPage = (
+const resourcePage = (
 	httpClient: HttpClient.HttpClient,
 	reader: GcpReader,
 	scope: string,
 	pageToken: string | undefined,
+	assetTypes: ReadonlyArray<string>,
+	options: CallOptions<never, never> = {},
 ) =>
 	call(
 		httpClient,
@@ -426,14 +709,31 @@ export const searchResourcesPage = (
 		HttpClientRequest.get(`https://cloudasset.googleapis.com/v1/${scope}:searchAllResources`).pipe(
 			asReader(reader),
 			HttpClientRequest.setUrlParams({
-				assetTypes: GCP_ASSET_TYPES,
+				assetTypes,
 				readMask: Object.keys(ResourceSearchResult.fields).join(","),
 				pageSize: RESOURCE_PAGE_SIZE,
 				pageToken,
 			}),
 		),
 		decodeResourcePage,
+		options,
 	)
+
+/** One page of the resource inventory sync. */
+export const searchResourcesPage = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	scope: string,
+	pageToken: string | undefined,
+) => resourcePage(httpClient, reader, scope, pageToken, GCP_ASSET_TYPES)
+
+/** One page of the projects in a folder or organization, for a live query. */
+export const searchProjectsPage = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	scope: string,
+	pageToken: string | undefined,
+) => resourcePage(httpClient, reader, scope, pageToken, [GCP_PROJECT_ASSET_TYPE], { capped: {} })
 
 /** What Maple reads of a Cloud SQL instance: the Cloud SQL Admin API's `DatabaseInstance`. */
 const SqlInstanceData = Schema.Struct({

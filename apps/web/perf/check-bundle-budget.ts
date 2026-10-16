@@ -113,13 +113,10 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // schemas on the contract, the connector status rules the sidebar and the
 // integrations hub read, and the Infrastructure nav entry with its icon. The
 // /infra/gcp pages stay in their route chunks.
-// 705.5 KB from the Google Cloud page redesign and Cloud SQL data (#1336, 2026-10-16):
-// ~3.8 KB of startup measured in CI on the stack's top at 708.2 against #1480's 704.4 — the
-// sparkline, top-statement and database endpoints on the query-engine contract, the Cloud SQL
-// settings on the inventory schema, and two lab registry entries. The pages stay in their
-// route chunks.
-// 706.5 KB with main's 1 KB from #1494, #1500, #1502 merged up the stack.
-const maxGzipBytes = 706.5 * 1024
+// 702.5 KB from the PromQL query contract (#1475, 2026-10-15), measured in CI at 701.3.
+// 706.5 KB with the Google Cloud page redesign (#1336) merged up.
+// 707.5 KB with main's 1 KB from #1494, #1500, #1502 merged up the stack.
+const maxGzipBytes = 707.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

@@ -82,4 +82,6 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
 		optionalPlain("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
+		// Sign-in for live Google Cloud PromQL queries; unset answers them as unavailable.
+		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 	)

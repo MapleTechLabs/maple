@@ -38,6 +38,7 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
+import { GcpPromQlService } from "@maple/backend/services/integrations/GcpPromQlService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
@@ -117,6 +118,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	CloudflareAnalyticsService.layer,
 	RailwayMetricsService.layer,
 	GcpConnectorService.layer,
+	GcpPromQlService.layer,
 	OrgOpenRouterKeyService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
