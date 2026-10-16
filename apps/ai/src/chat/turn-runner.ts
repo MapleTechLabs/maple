@@ -392,7 +392,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// Rebuilt from the turn's settings so the org's key, when there is one, replaces the runtime's.
 			const openRouterClient = layerOpenRouterClient(settings)
 			const model = yield* Match.value(agent.model).pipe(
-				Match.when("triage", () => Effect.succeed(resolveTriageModel(settings, tags))),
+				Match.when("triage", () =>
+					Effect.succeed(
+						resolveTriageModel(settings, tags, isAutonomousTurn(input.sessionId, origin)),
+					),
+				),
 				Match.when("review", () =>
 					reviews
 						.reviewModel(tenant.orgId)

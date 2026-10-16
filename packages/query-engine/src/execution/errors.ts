@@ -250,8 +250,10 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			"NOT_AN_AGGREGATE",
 			"UNKNOWN_AGGREGATE_FUNCTION",
 		]),
+		// `modifiers FINAL`: `FROM t FINAL` on Tinybird, whose tenant filter makes every table a
+		// subquery. Matched by message: its UNSUPPORTED_METHOD type also covers server-side limits.
 		pattern:
-			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function/i,
+			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function|modifiers FINAL are not supported/i,
 		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{

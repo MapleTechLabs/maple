@@ -34,6 +34,7 @@ import { PageShell } from "../components/page-shell"
 import { SignalEmptyState } from "../components/signal-empty-state"
 import { RefreshButton, TimeRangeSelect, Toolbar, ToolbarStat, ToolbarStats } from "../components/toolbar"
 import { EmptyState, ErrorState, ListSkeleton } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 export function ErrorsView() {
 	const [query, setParams] = useQueryParams()
@@ -103,7 +104,7 @@ export function ErrorsView() {
 		<PageShell sidebar={sidebar} toolbar={toolbar} activeFilterCount={activeFilterCount}>
 			{byType.isPending ? (
 				<ListSkeleton variant="card" rows={6} />
-			) : byType.isError ? (
+			) : failedWithoutData(byType) ? (
 				<ErrorState label="errors" error={byType.error} onRetry={() => byType.refetch()} />
 			) : rows.length === 0 ? (
 				activeFilterCount === 0 && traces.status === "present" ? (
@@ -237,7 +238,7 @@ function ErrorTypeCard({
 						<div className="flex h-16 items-center justify-center">
 							<Spinner className="size-4" />
 						</div>
-					) : traces.isError ? (
+					) : failedWithoutData(traces) ? (
 						<ErrorState label="traces" error={traces.error} onRetry={() => traces.refetch()} />
 					) : (traces.data ?? []).length === 0 ? (
 						<p className="py-2 text-xs text-muted-foreground">

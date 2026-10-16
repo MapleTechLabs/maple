@@ -11,9 +11,17 @@
  */
 import { appendFileSync, writeFileSync } from "node:fs"
 import { afterAll, beforeAll, it } from "vitest"
+import { Schema } from "effect"
+import { RoleName } from "@maple/domain/primitives"
 import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
+import {
+	integrationFixtureRules,
+	seedCommitWorld,
+	seedIntegrationWorld,
+} from "@/mcp/__evals__/integration-world"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "@/mcp/__evals__/eval-runtime"
 import { infraFixtureRules } from "@/mcp/__evals__/infra-world"
+import { providerFixtureRules } from "@/mcp/__evals__/provider-world"
 import { inputSchemaOf, mapleToolCatalog } from "@/mcp/tools/registry"
 
 const env = process.env
@@ -21,10 +29,18 @@ const out = env.PLAYGROUND_OUT ?? "/tmp/maple-tool-playground.txt"
 const publicTools = mapleToolCatalog.filter((entry) => entry.audience === "public")
 
 let rt: EvalRuntime | undefined
-beforeAll(() => {
+beforeAll(async () => {
 	if (env.PLAYGROUND_CMD !== "call") return
-	installFakeWarehouse(infraFixtureRules(), undefined, "empty")
-	rt = makeEvalRuntime()
+	installFakeWarehouse(
+		[...integrationFixtureRules(), ...providerFixtureRules(), ...infraFixtureRules()],
+		undefined,
+		"empty",
+	)
+	const base = makeEvalRuntime()
+	// The playground plays an org admin, so the admin-only integration tools can be exercised.
+	rt = { ...base, tenant: { ...base.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] } }
+	await seedIntegrationWorld(rt)
+	await seedCommitWorld(rt)
 })
 afterAll(async () => {
 	restoreWarehouse()
