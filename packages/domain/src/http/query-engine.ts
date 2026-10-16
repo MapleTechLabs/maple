@@ -111,6 +111,41 @@ export class SpanDetailRequest extends Schema.Class<SpanDetailRequest>("SpanDeta
 	endTime: Schema.optional(TinybirdDateTime),
 }) {}
 
+/** One OTel span event; `exception` events carry `exception.*` attributes. */
+export const SpanEventSchema = Schema.Struct({
+	name: Schema.String,
+	/** ISO-8601 UTC, millisecond precision. */
+	timestamp: Schema.String,
+	/** Event time minus span start, in ms (sub-millisecond precision). */
+	offsetMs: Schema.Number,
+	attributes: Schema.Record(Schema.String, Schema.String),
+})
+
+export class TraceSpanEventsRequest extends Schema.Class<TraceSpanEventsRequest>("TraceSpanEventsRequest")({
+	traceId: TraceId,
+	/** The trace's own span window, so `traces` is read by its time range. */
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+/** Event markers for one span of the trace timeline. */
+export const TimelineSpanEventSchema = Schema.Struct({
+	name: Schema.String,
+	/** Event time minus span start, in ms. */
+	offsetMs: Schema.Number,
+})
+
+export class TraceSpanEventsResponse extends Schema.Class<TraceSpanEventsResponse>("TraceSpanEventsResponse")(
+	{
+		data: Schema.Array(
+			Schema.Struct({
+				spanId: SpanId,
+				events: Schema.Array(TimelineSpanEventSchema),
+			}),
+		),
+	},
+) {}
+
 export class SpanDetailResponse extends Schema.Class<SpanDetailResponse>("SpanDetailResponse")({
 	data: Schema.NullOr(
 		Schema.Struct({
@@ -118,6 +153,7 @@ export class SpanDetailResponse extends Schema.Class<SpanDetailResponse>("SpanDe
 			spanId: SpanId,
 			spanAttributes: Schema.String,
 			resourceAttributes: Schema.String,
+			events: Schema.optionalKey(Schema.Array(SpanEventSchema)),
 		}),
 	),
 }) {}
@@ -2599,6 +2635,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("spanDetail", "/span-detail", {
 			payload: SpanDetailRequest,
 			success: SpanDetailResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("traceSpanEvents", "/trace-span-events", {
+			payload: TraceSpanEventsRequest,
+			success: TraceSpanEventsResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

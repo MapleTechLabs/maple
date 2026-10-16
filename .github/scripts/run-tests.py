@@ -7,12 +7,24 @@ import time
 from pathlib import Path
 
 lane = json.loads(os.environ["TEST_LANE"])
-command = ["bun", "turbo", "test", "--concurrency=1"]
-command.extend(f"--filter={name}" for name in lane["filters"])
-if lane["args"]:
-    command.extend(["--", *lane["args"]])
+bun = lane.get("bun-filters", [])
+vitest = [name for name in lane["filters"] if name not in bun]
+base = ["bun", "turbo", "test", "--concurrency=1"]
+commands = []
+if vitest:
+    command = base + [f"--filter={name}" for name in vitest]
+    if lane["args"]:
+        command.extend(["--", *lane["args"]])
+    commands.append(command)
+# Bun suites share the lane but not its Vitest flags, which `bun test` rejects.
+if bun:
+    commands.append(base + [f"--filter={name}" for name in bun])
 start = time.monotonic()
-result = subprocess.run(command, check=False)
+# Both invocations run even after one fails, so a red lane reports every failure.
+returncode = 0
+for command in commands:
+    result = subprocess.run(command, check=False)
+    returncode = returncode or result.returncode
 elapsed = time.monotonic() - start
 # Includes cold dependency builds. The planner targets 100s, leaving ample room
 # for setup and runner variance. A single slow file must be fixed/split, not
@@ -29,4 +41,4 @@ if elapsed > budget:
     print(
         "::error::Test lane exceeded 240s. Inspect slow files and update the CI sizing estimates; see docs/ci-performance.md."
     )
-raise SystemExit(result.returncode or int(elapsed > budget))
+raise SystemExit(returncode or int(elapsed > budget))

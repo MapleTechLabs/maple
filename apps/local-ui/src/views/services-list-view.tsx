@@ -28,6 +28,7 @@ import {
 	ToolbarStats,
 } from "../components/toolbar"
 import { ErrorState } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 export function ServicesListView() {
 	const [query, setParams] = useQueryParams()
@@ -100,7 +101,7 @@ export function ServicesListView() {
 						]}
 					/>
 				</div>
-			) : catalog.query.isError ? (
+			) : failedWithoutData(catalog.query) ? (
 				<ErrorState
 					label="services"
 					error={catalog.query.error}

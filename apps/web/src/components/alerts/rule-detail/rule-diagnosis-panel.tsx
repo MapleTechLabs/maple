@@ -274,7 +274,7 @@ function DiagnosisAction({
 	}
 	if (action.kind === "destinations") {
 		return (
-			<Button variant="outline" size="xs" render={<Link to="/alerts" search={{ tab: "settings" }} />}>
+			<Button variant="outline" size="xs" render={<Link to="/alerts" search={{ tab: "routing" }} />}>
 				{action.label}
 			</Button>
 		)

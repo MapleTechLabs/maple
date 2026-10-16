@@ -11,7 +11,8 @@ import { ServiceSpectrumBar, computeServiceShares, type SpectrumSpan } from "./s
 import { TraceIdBadge } from "./trace-id-badge"
 
 export interface TraceAnatomyStripProps {
-	spans: ReadonlyArray<SpectrumSpan>
+	rootSpans: ReadonlyArray<SpectrumSpan>
+	spanCount: number
 	totalDurationMs: number
 	traceId: string
 	hasError: boolean
@@ -19,6 +20,8 @@ export interface TraceAnatomyStripProps {
 	deploymentEnv?: string
 	/** The root's commit, rendered by the app (web links it to the VCS provider). */
 	commit?: React.ReactNode
+	/** When the trace started, rendered by the app in the viewer's timezone. */
+	startedAt?: React.ReactNode
 }
 
 // 4xx/5xx follow the shared status tone; 3xx keeps its own blue so redirects stand apart from 2xx.
@@ -34,26 +37,30 @@ function httpStatusColor(code: number): string {
  * remaining trace metadata as one quiet utility row.
  */
 export function TraceAnatomyStrip({
-	spans,
+	rootSpans,
+	spanCount,
 	totalDurationMs,
 	traceId,
 	hasError,
 	httpStatusCode,
 	deploymentEnv,
 	commit,
+	startedAt,
 }: TraceAnatomyStripProps) {
-	const shares = React.useMemo(() => computeServiceShares(spans), [spans])
+	const shares = React.useMemo(() => computeServiceShares(rootSpans), [rootSpans])
 
 	return (
 		<div className="shrink-0 space-y-2">
 			<div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
 				<StatFigure
 					value={formatDuration(totalDurationMs)}
-					unit={`${countLabel(spans.length, "span")} · ${countLabel(shares.length, "service")}`}
+					unit={`${countLabel(spanCount, "span")} · ${countLabel(shares.length, "service")}`}
 					className="min-w-0"
 				/>
 
 				<div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+					{startedAt}
+
 					<span
 						className={cn(
 							"flex items-center gap-1.5 font-medium",

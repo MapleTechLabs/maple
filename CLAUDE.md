@@ -144,6 +144,25 @@ git clone in Cloudflare's Sandbox container (`apps/sandbox`, prd only). Invarian
 
 Test with `bun run --cwd apps/sandbox verify:image` (needs Docker); it catches what unit tests can't.
 
+## PR previews
+
+A PR labelled `preview` deploys the full stack to `app-pr-<n>.maple.dev` / `api-pr-<n>.maple.dev`
+on the Clerk development instance (`docs/pr-previews.md`). To sign in to one:
+
+```bash
+infisical run --env dev -- bun run preview:signin <n>   # one-shot signed-in link, valid 2 minutes
+```
+
+It signs in as the shared reviewer `preview-reviewer+clerk_test@maple.dev` in the `Preview` org,
+which the deploy's smoke test seeds with demo telemetry. Humans can instead use the "PR preview"
+form on the sign-in page with `PREVIEW_SIGNIN_KEY` (Infisical `dev`).
+
+- Never type the key into a form or print it: mint the link with the command above and open it.
+- `{"enabled":false}` from `GET /api/auth/preview/sign-in` means the deploy ran without the key;
+  re-run the preview deploy.
+- A preview hostname that will not resolve locally right after deploy is a cached NXDOMAIN; it
+  clears on its own (or use `curl --resolve` with `dig @1.1.1.1`).
+
 ## Docs
 
 Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in

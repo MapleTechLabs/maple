@@ -5,6 +5,13 @@
 import { SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import {
+	DeleteScrapeTargetOutput,
+	ListIntegrationsOutput,
+	ScrapeTargetMutationOutput,
+	SyncRailwayOutput,
+} from "./integrations"
+import { CiRunsOutput, CompareCommitsOutput } from "./ci"
+import {
 	CreateAlertRuleOutput,
 	DeleteAlertRuleOutput,
 	GetAlertRuleOutput,
@@ -102,12 +109,16 @@ import {
 export const McpToolOutputs = {
 	add_dashboard_widget: AddDashboardWidgetOutput,
 	audit_setup: AuditSetupOutput,
+	ci_runs: CiRunsOutput,
 	claim_error_issue: ClaimErrorIssueOutput,
 	comment_on_error_issue: CommentOnErrorIssueOutput,
+	compare_commits: CompareCommitsOutput,
 	compare_periods: ComparePeriodsOutput,
 	create_alert_rule: CreateAlertRuleOutput,
+	create_scrape_target: ScrapeTargetMutationOutput,
 	create_dashboard: CreateDashboardOutput,
 	db_query_volume: DbQueryVolumeOutput,
+	delete_scrape_target: DeleteScrapeTargetOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
 	describe_dashboard_schema: DescribeDashboardSchemaOutput,
 	describe_warehouse_tables: DescribeWarehouseTablesOutput,
@@ -145,6 +156,7 @@ export const McpToolOutputs = {
 	list_error_issue_events: ListErrorIssueEventsOutput,
 	list_error_issues: ListErrorIssuesOutput,
 	list_infra: ListInfraOutput,
+	list_integrations: ListIntegrationsOutput,
 	list_metrics: ListMetricsOutput,
 	list_product_events: ListProductEventsOutput,
 	list_services: ListServicesOutput,
@@ -175,12 +187,14 @@ export const McpToolOutputs = {
 	send_maple_feedback: SendMapleFeedbackOutput,
 	service_deployments: ServiceDeploymentsOutput,
 	service_map: ServiceMapOutput,
+	sync_railway: SyncRailwayOutput,
 	set_issue_severity: SetIssueSeverityOutput,
 	transition_error_issue: TransitionErrorIssueOutput,
 	transition_error_issues: TransitionErrorIssuesOutput,
 	update_alert_rule: UpdateAlertRuleOutput,
 	update_dashboard: UpdateDashboardOutput,
 	update_dashboard_widget: UpdateDashboardWidgetOutput,
+	update_scrape_target: ScrapeTargetMutationOutput,
 	update_error_notification_policy: UpdateErrorNotificationPolicyOutput,
 } as const
 

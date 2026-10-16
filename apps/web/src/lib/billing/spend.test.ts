@@ -24,8 +24,8 @@ const startupPlan = {
 		{ featureId: "traces", included: 100, price: { amount: 0.3 } },
 		{ featureId: "metrics", included: 100, price: { amount: 0.3 } },
 		{ featureId: "browser_sessions", included: 5_000, price: { amount: 0.002 } },
-		// Quoted per 1,000 events: `amount` is the price of one billing block.
-		{ featureId: "product_events", included: 1_000_000, price: { amount: 0.05, billingUnits: 1_000 } },
+		// Billed per 1,000 events: `amount` is the price of one billing block.
+		{ featureId: "product_events", included: 1_000_000, price: { amount: 0.005, billingUnits: 1_000 } },
 	],
 } as CatalogPlan
 
@@ -203,7 +203,7 @@ describe("buildSpendModel", () => {
 		expect(result?.partial).toBe(true)
 	})
 
-	it("prices product events per event from a rate quoted per 1,000", () => {
+	it("prices product events per event from a rate billed per 1,000", () => {
 		const result = buildSpendModel({
 			customer: buildCustomer(),
 			plans: [startupPlan],
@@ -214,10 +214,10 @@ describe("buildSpendModel", () => {
 
 		const events = result.features.find((feature) => feature.featureId === "product_events")
 		if (events === undefined) throw new Error("expected product_events")
-		// 400,000 events over × $0.05 / 1,000 = $20 — NOT 400,000 × $0.05.
+		// 400,000 events over × $0.005 / 1,000 = $2, NOT 400,000 × $0.005.
 		expect(events.overageUnits).toBe(400_000)
-		expect(events.overageCents).toBe(2_000)
-		expect(events.ratePerUnit).toBeCloseTo(0.00005, 10)
+		expect(events.overageCents).toBe(200)
+		expect(events.ratePerUnit).toBeCloseTo(0.000005, 12)
 		expect(events.billingUnits).toBe(1_000)
 		expect(result.topDriver?.featureId).toBe("product_events")
 	})
@@ -233,7 +233,7 @@ describe("buildSpendModel", () => {
 			traces: "$0.30/GB",
 			metrics: "$0.30/GB",
 			browser_sessions: "$0.002/session",
-			product_events: "$0.05/1,000 events",
+			product_events: "$5/1M events",
 		})
 		expect(featureUnit("product_events")).toBe("events")
 		expect(featureUnit("browser_sessions")).toBe("sessions")

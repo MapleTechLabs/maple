@@ -70,6 +70,9 @@ export interface ConnectedSourceRepository {
 	readonly htmlUrl: string
 	readonly isPrivate: boolean
 	readonly isArchived: boolean
+	/** `error` when Maple's last sync of it failed: the App may have lost access to it. */
+	readonly syncStatus: string
+	readonly lastSyncError: string | null
 }
 
 export interface VcsSourceServiceApi {
@@ -209,6 +212,8 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 						htmlUrl: repository.htmlUrl,
 						isPrivate: repository.isPrivate,
 						isArchived: repository.isArchived,
+						syncStatus: repository.syncStatus,
+						lastSyncError: repository.lastSyncError,
 					}))
 					.sort((a, b) => a.fullName.localeCompare(b.fullName))
 			})

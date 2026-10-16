@@ -387,6 +387,8 @@ describe("McpToolExecutor repository preparation", () => {
 		htmlUrl: `https://github.com/${fullName}`,
 		isPrivate: false,
 		isArchived,
+		syncStatus: "ready",
+		lastSyncError: null,
 	})
 
 	it.effect("prepares every unarchived connected repository through the sandbox it acquired", () => {

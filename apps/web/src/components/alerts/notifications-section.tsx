@@ -30,7 +30,6 @@ import {
 	ProviderLogo,
 } from "@/components/alerts/destination-provider"
 import { useChatConnectors, useChatWorkspaceConnect } from "@/components/alerts/use-chat-workspaces"
-import { SectionHeading } from "@/components/common/section-heading"
 import {
 	chatDestinationForm,
 	defaultDestinationForm,
@@ -116,14 +115,9 @@ export function NotificationsSection({
 
 	return (
 		<Card className="p-4">
-			<div className="flex items-center justify-between gap-3">
-				<SectionHeading
-					variant="eyebrow"
-					id="rule-notifications-heading"
-					title="Who gets notified"
-					className="mb-0"
-				/>
-				{selected.length > 0 && (
+			{selected.length > 0 && (
+			<div className="-mt-1 flex justify-end">
+				{(
 					<Tooltip>
 						<TooltipTrigger
 							render={
@@ -145,6 +139,7 @@ export function NotificationsSection({
 					</Tooltip>
 				)}
 			</div>
+			)}
 
 			<Panel className="mt-3 divide-y divide-border/60 border-border/60">
 				{selected.map((destination) => (
