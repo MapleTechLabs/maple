@@ -64,6 +64,7 @@ import {
 	gcpScriptNeeded,
 	gcpSetupRunning,
 	gcpWorstState,
+	type GcpCapability,
 } from "./gcp-connector-state"
 import { GCP_ACCENT, HEALTH_TONE, gcpStatusQuery } from "./integration-catalog"
 import {
