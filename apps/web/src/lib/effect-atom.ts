@@ -198,6 +198,7 @@ export namespace Result {
 	export const initial = AsyncResult.initial
 	export const success = AsyncResult.success
 	export const fail = AsyncResult.fail
+	export const map = AsyncResult.map
 
 	export const builder = <A, E>(result: Result<A, E>) =>
 		new ResultBuilder<A, E, never>(result, Option.none())

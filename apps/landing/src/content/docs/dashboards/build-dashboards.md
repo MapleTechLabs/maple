@@ -37,7 +37,7 @@ Templates are ready-made dashboards for common setups:
 | Application    | Service Health, HTTP Endpoints, gRPC Service, Error Tracking, Top Errors, Platform Overview, Metric Overview, Node.js Runtime, JVM Runtime, Blank Dashboard |
 | Database       | Postgres Overview, MySQL Overview, MongoDB Overview, Redis Overview                                                                                         |
 | Messaging      | Kafka Overview, NATS Overview, RabbitMQ Overview                                                                                                            |
-| Infrastructure | Host Metrics, Docker Containers, Kubernetes Cluster, Kubernetes Pods, Cloudflare Edge, PlanetScale Databases                                                |
+| Infrastructure | Host Metrics, Docker Containers, Kubernetes Cluster, Kubernetes Pods, Cloudflare Edge, PlanetScale Databases, Google Cloud                                  |
 
 Pick a template to see a live preview on your own data and what it needs. Some templates take **Parameters**, such as a service name. Click **Create dashboard** to create your own copy, which you can edit or delete freely.
 

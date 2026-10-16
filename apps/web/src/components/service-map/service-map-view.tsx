@@ -93,6 +93,7 @@ import {
 	resolveDbNodePresentation,
 	resolvePlanetScaleDbPresentation,
 } from "@maple/ui/components/service-map/service-map-db"
+import { GcpCloudSqlSection, GcpServiceWorkloads } from "./service-map-gcp"
 import { PlanetScaleTopQueries } from "@/components/infra/planetscale/planetscale-top-queries"
 import {
 	formatLag,
@@ -264,6 +265,8 @@ interface ServiceDetailPanelProps {
 	colorMode: ServiceMapColorMode
 	/** Cloudflare direct-integration analytics overlaid onto this instrumented Worker, if matched. */
 	cloudflare?: CloudflareNodeMetrics
+	startTime: string
+	endTime: string
 	/** Focus the map on this service's neighborhood. */
 	onFocus: () => void
 	onClose: () => void
@@ -278,6 +281,8 @@ function ServiceDetailPanel({
 	platforms,
 	colorMode,
 	cloudflare,
+	startTime,
+	endTime,
 	onFocus,
 	onClose,
 }: ServiceDetailPanelProps) {
@@ -503,9 +508,13 @@ function ServiceDetailPanel({
 				<TabsContent value="infrastructure" className="flex-1 min-h-0 mt-0">
 					<ScrollArea className="h-full">
 						<div className="p-4 space-y-4">
-							{serviceWorkloads.length === 0 ? (
-								<ServiceInfraEmptyState />
-							) : (
+							<GcpServiceWorkloads
+								serviceName={serviceId}
+								startTime={startTime}
+								endTime={endTime}
+								empty={serviceWorkloads.length === 0 ? <ServiceInfraEmptyState /> : null}
+							/>
+							{serviceWorkloads.length === 0 ? null : (
 								<div className="space-y-2">
 									<Eyebrow as="h4">Kubernetes workloads</Eyebrow>
 									<div className="space-y-2">
@@ -1218,6 +1227,13 @@ function DatabaseDetailPanel({
 
 					{hyperdrive && hyperdrive.length > 0 ? <HyperdriveSection configs={hyperdrive} /> : null}
 
+					<GcpCloudSqlSection
+						dbSystem={dbSystem}
+						dbNamespace={dbNamespace}
+						startTime={startTime}
+						endTime={endTime}
+					/>
+
 					{planetscale ? (
 						<PlanetScaleSection
 							planetscale={planetscale}
@@ -1490,6 +1506,8 @@ export function ServiceMapCanvas({
 				colorMode={colorMode}
 				cloudflare={cloudflareOverlayByService.get(selectedId)}
 				durationSeconds={durationSeconds}
+				startTime={startTime}
+				endTime={endTime}
 				onFocus={onFocus}
 				onClose={onClose}
 			/>

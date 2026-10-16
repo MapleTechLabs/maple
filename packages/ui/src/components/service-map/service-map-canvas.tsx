@@ -974,7 +974,14 @@ export function ServiceMapFlowCanvas({
 	)
 }
 
-const LEGEND_PLATFORMS = ["kubernetes", "cloudflare", "lambda", "web", "unknown"] as const
+const LEGEND_PLATFORMS = [
+	["kubernetes", "Kubernetes"],
+	["cloudflare", "Cloudflare"],
+	["gcp", "Google Cloud"],
+	["lambda", "Lambda"],
+	["web", "Web"],
+	["unknown", "Unknown"],
+] as const
 
 const serviceSwatchColor = (service: string) =>
 	getServiceMapNodeColor({ label: service, kind: "service", errorRate: 0 }, "service")
@@ -1025,13 +1032,13 @@ function ServiceMapLegend({ colorMode, services }: { colorMode: ServiceMapColorM
 			{colorMode === "platform" && (
 				<>
 					<span className="text-foreground/30">|</span>
-					{LEGEND_PLATFORMS.map((p) => (
+					{LEGEND_PLATFORMS.map(([p, label]) => (
 						<div key={p} className="flex items-center gap-1.5">
 							<div
 								className="size-2.5 rounded-sm shrink-0"
 								style={{ backgroundColor: getPlatformColor(p === "unknown" ? undefined : p) }}
 							/>
-							<span className="font-medium capitalize">{p}</span>
+							<span className="font-medium">{label}</span>
 						</div>
 					))}
 				</>

@@ -1,5 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
@@ -491,6 +492,132 @@ export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsRespo
 	data: Schema.Array(WireRow),
 }) {}
 
+// Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
+const GcpInfraService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
+
+export class GcpInfraPresenceRequest extends Schema.Class<GcpInfraPresenceRequest>("GcpInfraPresenceRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+	},
+) {}
+
+export class GcpInfraPresenceResponse extends Schema.Class<GcpInfraPresenceResponse>(
+	"GcpInfraPresenceResponse",
+)({
+	/** The services with a metric in the window, in tab order. */
+	services: Schema.Array(GcpInfraService),
+}) {}
+
+export class GcpInfraMetricsRequest extends Schema.Class<GcpInfraMetricsRequest>("GcpInfraMetricsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	service: GcpInfraService,
+}) {}
+
+export class GcpInfraMetricsResponse extends Schema.Class<GcpInfraMetricsResponse>("GcpInfraMetricsResponse")(
+	{
+		/** One row per workload, metric and label value: see `gcpInfraMetricsSQL`. */
+		data: Schema.Array(
+			Schema.Struct({
+				keys: Schema.Array(Schema.String),
+				metric: Schema.String,
+				label: Schema.String,
+				total: Schema.Number,
+				samples: Schema.Number,
+			}),
+		),
+	},
+) {}
+
+export class GcpInfraTimeseriesRequest extends Schema.Class<GcpInfraTimeseriesRequest>(
+	"GcpInfraTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	source: Schema.Literals(GCP_INFRA_SOURCE_IDS),
+	/** The workload's identity values, in the order of the source's `identity`. */
+	keys: Schema.Array(Schema.String.check(Schema.isMaxLength(512))).check(Schema.isMaxLength(8)),
+}) {}
+
+export class GcpInfraTimeseriesResponse extends Schema.Class<GcpInfraTimeseriesResponse>(
+	"GcpInfraTimeseriesResponse",
+)({
+	/** One row per bucket, metric and label value: see `gcpInfraTimeseriesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			metric: Schema.String,
+			label: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
+}) {}
+
+export class GcpInfraSparklinesRequest extends Schema.Class<GcpInfraSparklinesRequest>(
+	"GcpInfraSparklinesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	service: GcpInfraService,
+}) {}
+
+export class GcpInfraSparklinesResponse extends Schema.Class<GcpInfraSparklinesResponse>(
+	"GcpInfraSparklinesResponse",
+)({
+	/** One row per workload, bucket and metric: see `gcpInfraSparklinesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			keys: Schema.Array(Schema.String),
+			bucket: Schema.String,
+			metric: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
+}) {}
+
+/** A Cloud SQL instance's page: its statements and databases over the window. */
+export class GcpCloudSqlInstanceRequest extends Schema.Class<GcpCloudSqlInstanceRequest>(
+	"GcpCloudSqlInstanceRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** The instance's identity values, in the order of Cloud SQL's `identity`. */
+	keys: Schema.Array(Schema.String.check(Schema.isMaxLength(512))).check(Schema.isMaxLength(8)),
+}) {}
+
+export class GcpCloudSqlTopQueriesResponse extends Schema.Class<GcpCloudSqlTopQueriesResponse>(
+	"GcpCloudSqlTopQueriesResponse",
+)({
+	/** By total execution time, highest first: see `gcpCloudSqlTopQueriesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			queryHash: Schema.String,
+			/** Normalized by Query Insights: literals are `$1`, `$2`, ... */
+			statement: Schema.String,
+			calls: Schema.Number,
+			executionSeconds: Schema.Number,
+			lockSeconds: Schema.Number,
+			ioSeconds: Schema.Number,
+			rowCount: Schema.Number,
+			/** Calls-weighted means of each poll's quantile; zero without calls. */
+			p50Seconds: Schema.Number,
+			p95Seconds: Schema.Number,
+		}),
+	),
+}) {}
+
+export class GcpCloudSqlDatabasesResponse extends Schema.Class<GcpCloudSqlDatabasesResponse>(
+	"GcpCloudSqlDatabasesResponse",
+)({
+	/** In name order: see `gcpCloudSqlDatabasesSQL`. */
+	databases: Schema.Array(Schema.String),
+}) {}
+
 // Cloudflare infrastructure page (/infra/cloudflare): per-zone HTTP edge
 // analytics and per-Worker invocation analytics from the direct-integration
 // poller's metrics. Same conventions as ServiceCloudflareStats — no
@@ -968,7 +1095,14 @@ export class ServiceDbQuerySummaryResponse extends Schema.Class<ServiceDbQuerySu
 	topQueries: Schema.Array(ServiceDbTopQuery),
 }) {}
 
-const ServicePlatformLiteral = Schema.Literals(["kubernetes", "cloudflare", "lambda", "web", "unknown"])
+const ServicePlatformLiteral = Schema.Literals([
+	"kubernetes",
+	"cloudflare",
+	"gcp",
+	"lambda",
+	"web",
+	"unknown",
+])
 
 export class ServicePlatformsRequest extends Schema.Class<ServicePlatformsRequest>("ServicePlatformsRequest")(
 	{
@@ -2740,6 +2874,48 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("railwayInfraServiceTimeseries", "/railway-infra-service-timeseries", {
 			payload: RailwayInfraServiceTimeseriesRequest,
 			success: RailwayInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpInfraPresence", "/gcp-infra-presence", {
+			payload: GcpInfraPresenceRequest,
+			success: GcpInfraPresenceResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpInfraMetrics", "/gcp-infra-metrics", {
+			payload: GcpInfraMetricsRequest,
+			success: GcpInfraMetricsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpInfraTimeseries", "/gcp-infra-timeseries", {
+			payload: GcpInfraTimeseriesRequest,
+			success: GcpInfraTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpInfraSparklines", "/gcp-infra-sparklines", {
+			payload: GcpInfraSparklinesRequest,
+			success: GcpInfraSparklinesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpCloudSqlTopQueries", "/gcp-cloudsql-top-queries", {
+			payload: GcpCloudSqlInstanceRequest,
+			success: GcpCloudSqlTopQueriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpCloudSqlDatabases", "/gcp-cloudsql-databases", {
+			payload: GcpCloudSqlInstanceRequest,
+			success: GcpCloudSqlDatabasesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

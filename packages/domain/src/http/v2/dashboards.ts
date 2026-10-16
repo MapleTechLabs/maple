@@ -43,6 +43,7 @@ import {
 	PathsAnchor,
 	PathsDirection,
 	PathsInclude,
+	QUERY_BUILDER_METRIC_TYPES,
 	QUERY_RESULT_KINDS,
 	QueryBuilderFormulaSchema,
 	QueryBuilderQueryDraftSchema,
@@ -538,6 +539,19 @@ const V2DashboardVariableSource = Schema.Union([
 		scope: Schema.Literals(["span", "resource"]),
 		attributeKey: Schema.String,
 	}).pipe(Schema.encodeKeys({ attributeKey: "attribute_key" })),
+	Schema.Struct({
+		kind: Schema.Literal("metric"),
+		metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
+		metricNames: Schema.Array(Schema.String).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+		scope: Schema.Literals(["metric", "resource"]),
+		attributeKey: Schema.String,
+	}).pipe(
+		Schema.encodeKeys({
+			metricType: "metric_type",
+			metricNames: "metric_names",
+			attributeKey: "attribute_key",
+		}),
+	),
 ])
 
 const variableBase = {
@@ -748,7 +762,7 @@ export const V2DashboardTemplateRequirement = Schema.Struct({
 	missing: optional(
 		Schema.String.annotate({
 			description:
-				'Short statement of what is missing, e.g. "not connected". Absent for `metrics`, where clients derive `no <prefix>*` from `required_metric_prefixes`.',
+				'Short statement of what is missing, e.g. "no metrics". Usually absent; clients derive `no <prefix>*` from `required_metric_prefixes`.',
 		}),
 	),
 	collector: Schema.String.annotate({

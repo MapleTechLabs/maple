@@ -14,6 +14,7 @@ import { createContext, useCallback, useContext, useMemo, type ReactNode } from 
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getLogsFacetValuesResultAtom,
+	getMetricAttributeValuesResultAtom,
 	getResourceAttributeValuesResultAtom,
 	getSpanAttributeValuesResultAtom,
 	getTracesFacetValuesResultAtom,
@@ -41,7 +42,7 @@ export interface DashboardVariablesContextValue {
 	setValue: (name: string, value: string) => void
 }
 
-const DashboardVariablesContext = createContext<DashboardVariablesContextValue | null>(null)
+export const DashboardVariablesContext = createContext<DashboardVariablesContextValue | null>(null)
 
 const EMPTY_CONTEXT: DashboardVariablesContextValue = {
 	variables: [],
@@ -83,11 +84,23 @@ function readVariableOptions(
 
 	if (query.kind === "attributeValues") {
 		const atom =
-			query.scope === "resource"
-				? getResourceAttributeValuesResultAtom({
-						data: { ...window, attributeKey: query.attributeKey },
+			query.source === "metrics"
+				? getMetricAttributeValuesResultAtom({
+						data: {
+							...window,
+							attributeKey: query.attributeKey,
+							metricNames: query.metricNames,
+							metricType: query.metricType,
+							scope: query.scope === "resource" ? "resource" : "metric",
+						},
 					})
-				: getSpanAttributeValuesResultAtom({ data: { ...window, attributeKey: query.attributeKey } })
+				: query.scope === "resource"
+					? getResourceAttributeValuesResultAtom({
+							data: { ...window, attributeKey: query.attributeKey },
+						})
+					: getSpanAttributeValuesResultAtom({
+							data: { ...window, attributeKey: query.attributeKey },
+						})
 		const result = get(atom)
 		if (!Result.isSuccess(result)) {
 			return Result.isFailure(result) ? NO_OPTIONS : LOADING_OPTIONS
