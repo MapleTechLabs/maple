@@ -10,7 +10,7 @@ The Maple GitHub App syncs your repositories and their commit history into Maple
 Once connected, the integration does three things:
 
 - **Commit context in telemetry.** When your services report the `vcs.ref.head.revision` resource attribute, Maple resolves the SHA against synced commits. The trace view and service pages show a commit hover card with the author, message, and a link to GitHub.
-- **CI traces.** Every finished GitHub Actions run becomes a trace under the `github-actions` service: the run is the root span, each job a child span, and each step a span inside its job. No workflow changes are needed.
+- **CI traces.** Every finished GitHub Actions run becomes a trace under the `github-actions` service: the run is the root span, each job a child span, and each step a span inside its job. No workflow changes are needed. Job logs can come along as logs on those spans.
 - **Source code tools for the MCP server.** The [MCP server](/docs/reference/mcp) gains three read-only tools that reach your repositories through the app installation: `list_source_repositories`, `search_source_code` (GitHub code search on the default branch), and `read_source_file` (a line range at a branch, tag, or commit SHA). An assistant can go from an exception in a trace to the code that raised it.
 
 ## Prerequisites
@@ -49,6 +49,19 @@ Maple receives GitHub's `workflow_run` and `workflow_job` webhooks for the repos
 
 CI traces are on by default. CI spans are ingested like any other telemetry and count toward your usage. To stop them, an organization admin turns off **CI traces** on **Integrations → GitHub**; runs that finish while it is off are not recorded.
 
+## CI logs
+
+With **CI logs** on, Maple downloads each finished job's log from GitHub and writes every line as a log record under the `github-actions` service. Nothing runs inside your workflows: the app's existing **Actions: Read** permission covers the download.
+
+- **Linked to steps:** each record carries the job's trace id and the span id of the step that was running when the line was written, so a step's output shows up with that step in the trace view. Lines from before the first step belong to the job span.
+- **Timestamps** come from the runner's own per-line stamps. A line without one, such as the rest of a multi-line message, takes the stamp of the line before it.
+- **Severity:** `##[error]` lines (including `::error::` workflow commands) are `ERROR`, `##[warning]` lines are `WARN`, `##[debug]` lines are `DEBUG`, and everything else is `INFO`. The runner's markers and color codes are removed from the text, and blank lines are dropped.
+- **Attributes:** `cicd.pipeline.name`, `cicd.pipeline.run.id`, `cicd.pipeline.task.run.id` (the job id), `cicd.pipeline.task.name` (the step), `maple.cicd.step.number`, `maple.cicd.job.name`, `vcs.ref.head.name`, and `vcs.ref.head.revision`.
+- **Size:** Maple keeps the first 5 MB of a job's log and cuts lines longer than 8,000 characters. A cut log ends with a `WARN` record that links to the full log on GitHub.
+- **Secrets:** GitHub masks registered secrets as `***` before Maple reads the log. Values a job prints that were never registered as secrets are kept as written.
+
+CI logs are off by default, need CI traces on, and count toward your usage. An organization admin turns them on with **CI logs** on **Integrations → GitHub**. Logs arrive a few seconds after their job's spans, since GitHub publishes a log shortly after the job finishes.
+
 ## Verify
 
 1. On **Integrations → GitHub**, every repository row reads **Synced** with a recent sync time. The card polls while backfills run, so you do not need to reload.
@@ -69,6 +82,7 @@ CI traces are on by default. CI spans are ingested like any other telemetry and 
 - **Commits don't show up for a repository.** Confirm the tracked branch is the one your commits land on. Only the tracked branch is synced.
 - **Traces show a SHA without a hover card.** The SHA must be a full 40-character commit on a synced tracked branch within the synced history.
 - **No CI traces appear.** Traces are written when a run or job finishes, so a run in progress has none yet. Check that **CI traces** is on under **Integrations → GitHub**. If finished runs are still missing, open the [GitHub App settings](https://github.com/settings/installations) and accept any pending permission request from the Maple app.
+- **CI traces appear but no CI logs.** Check that both **CI traces** and **CI logs** are on. Jobs that finished before CI logs was turned on have no logs in Maple, and a job whose steps never ran has no log to send.
 - **`search_source_code` finds nothing.** GitHub code search indexes only the default branch and matches whole tokens. Search for exact identifiers or exception text.
 
 ## Next steps

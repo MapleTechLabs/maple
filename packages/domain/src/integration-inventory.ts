@@ -57,6 +57,7 @@ export interface IntegrationInventoryInputs {
 		readonly accountLogin: string
 		readonly status: string
 		readonly ciTracesEnabled: boolean
+		readonly ciLogsEnabled: boolean
 		readonly createdAt: number
 	}>
 	readonly vcsRepositories: ReadonlyArray<{
@@ -165,6 +166,7 @@ export const INTEGRATION_FEEDS = {
 		"source code for investigations (list_source_repositories, search_source_code, read_source_file)",
 		"commit metadata for deploys (service_deployments)",
 		"GitHub Actions runs as traces under service.name=github-actions",
+		"GitHub Actions job logs as logs under service.name=github-actions, linked to their step spans",
 	],
 	cloudflare: [
 		"zone HTTP traffic and Worker invocations as metrics",
@@ -287,6 +289,8 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 			}
 		})
 	const ciTraces = active.some((i) => i.ciTracesEnabled)
+	// Job logs ride on the job's spans, so they flow only where traces do.
+	const ciLogs = active.some((i) => i.ciTracesEnabled && i.ciLogsEnabled)
 	return entry("github", now, {
 		account: installations.map((i) => i.accountLogin).join(", "),
 		connectedAt: Math.min(...installations.map((i) => i.createdAt)),
@@ -298,7 +302,11 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 					}
 				: undefined,
 		resources,
-		feeds: INTEGRATION_FEEDS.github.filter((feed) => ciTraces || !feed.startsWith("GitHub Actions")),
+		feeds: INTEGRATION_FEEDS.github.filter((feed) =>
+			feed.startsWith("GitHub Actions job logs")
+				? ciLogs
+				: ciTraces || !feed.startsWith("GitHub Actions"),
+		),
 	})
 }
 
