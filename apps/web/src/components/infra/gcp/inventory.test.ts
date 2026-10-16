@@ -4,7 +4,7 @@ import { GCP_INFRA_SERVICE_IDS } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 import {
 	gcpCloudSqlInstances,
-	gcpConsolePage,
+	gcpConsoleLinks,
 	gcpConsoleProjectPages,
 	gcpConsoleScopePage,
 	gcpExplorerWhere,
@@ -132,26 +132,32 @@ describe("gcpResourceWorkload", () => {
 	})
 })
 
-describe("gcpConsolePage", () => {
-	it("opens the documented list page of the resource's type on its project", () => {
-		expect(gcpConsolePage(api)).toEqual({
-			label: "Cloud Run services",
-			href: "https://console.cloud.google.com/run/services?project=acme-prod",
+describe("gcpConsoleLinks", () => {
+	it("opens a workload's own console page and its log entries on its project", () => {
+		expect(gcpConsoleLinks("cloudRun", API)).toEqual({
+			page: {
+				label: "Cloud Run service",
+				href: "https://console.cloud.google.com/run/detail/europe-west1/api/metrics?project=acme-prod",
+			},
+			logs:
+				"https://console.cloud.google.com/logs/query;query=" +
+				encodeURIComponent(
+					'resource.type="cloud_run_revision"\nresource.labels.service_name="api"\nresource.labels.location="europe-west1"',
+				) +
+				"?project=acme-prod",
 		})
 		expect(
-			gcpConsolePage({
-				...resource("compute.googleapis.com/UrlMap", "//compute.googleapis.com/x/y"),
-				projectId: "acme prod",
-			})?.href,
-		).toBe("https://console.cloud.google.com/net-services/loadbalancing/list?project=acme%20prod")
+			gcpConsoleLinks("cloudSql", ["acme-prod:orders-db", "acme-prod", "us-central1"]).page.href,
+		).toBe("https://console.cloud.google.com/sql/instances/orders-db/overview?project=acme-prod")
 	})
 
-	it("has a page for the resource of every service's workloads, and none for other types", () => {
-		for (const service of GCP_INFRA_SERVICE_IDS) {
-			const { assetType } = gcpResourceQuery(service, ["a", "b", "c", "d", "e"])
-			expect(gcpConsolePage(resource(assetType, "//x/y")), service).toBeDefined()
-		}
-		expect(gcpConsolePage(resource("pubsub.googleapis.com/Topic", "//x/y"))).toBeUndefined()
+	it("opens a GKE container's cluster, since a container has no page of its own", () => {
+		const links = gcpConsoleLinks("gke", ["api", "payments", "prod", "acme-prod", "us-central1"])
+		expect(links.page).toEqual({
+			label: "Cluster prod",
+			href: "https://console.cloud.google.com/kubernetes/clusters/details/us-central1/prod/details?project=acme-prod",
+		})
+		expect(decodeURIComponent(links.logs)).toContain('resource.labels.container_name="api"')
 	})
 })
 

@@ -17,14 +17,13 @@ import {
 	GcpAppWaitCallout,
 	GcpCloudSqlChips,
 	GcpTraceGapCallout,
-	GcpWorkloadActions,
 	GcpWorkloadHeader,
 	GcpWorkloadSignals,
 } from "@/components/infra/gcp/gcp-workload-page"
 import { GCP_IDLE_IN_TRANSACTION, type GcpReplica } from "@/components/infra/gcp/list-model"
 import { GcpWorkloadRail } from "@/components/infra/gcp/gcp-workload-rail"
 import {
-	gcpConsolePage,
+	gcpConsoleLinks,
 	gcpExplorerWhere,
 	gcpWorkloadTelemetry,
 	type GcpCloudSqlInstance,
@@ -361,7 +360,6 @@ function WorkloadPage({ workload }: { workload: LabWorkload }) {
 	const { service, keys, points, resource, tracedErrors, cloudSql } = workload
 	const telemetry = gcpWorkloadTelemetry(service, keys)
 	const logs = { service: telemetry.logsService, attrs: telemetry.logAttrs }
-	const consolePage = gcpConsolePage(resource)
 	const tracedService = tracedErrors === null ? null : telemetry.serviceName
 	const gap = useMemo(
 		() => gcpTraceGap(service, points, BUCKET_SECONDS, tracedErrors),
@@ -390,8 +388,12 @@ function WorkloadPage({ workload }: { workload: LabWorkload }) {
 					resource={resource}
 					facts={sql?.facts ?? gcpRailFacts(service, points, BUCKET_SECONDS)}
 					health={sql?.health}
+					traced={
+						telemetry.traced ? { name: telemetry.serviceName, service: tracedService } : undefined
+					}
+					logs={logs}
 					serviceMap={sql === undefined ? undefined : { focusService: sql.focusService }}
-					tracedService={tracedService}
+					consoleLinks={gcpConsoleLinks(service, keys)}
 					timeSearch={{}}
 				/>
 			}
@@ -401,8 +403,7 @@ function WorkloadPage({ workload }: { workload: LabWorkload }) {
 				service={service}
 				keys={keys}
 				health={health}
-				traceable={telemetry.traced}
-				tracedService={tracedService}
+				databaseVersion={cloudSql?.instance.databaseVersion}
 				meta={
 					cloudSql === undefined ? undefined : (
 						<GcpCloudSqlChips
@@ -411,14 +412,6 @@ function WorkloadPage({ workload }: { workload: LabWorkload }) {
 							services={cloudSql.services}
 						/>
 					)
-				}
-				actions={
-					<GcpWorkloadActions
-						logs={logs}
-						tracedService={tracedService}
-						consolePage={consolePage}
-						timeSearch={{}}
-					/>
 				}
 			/>
 			<div className="space-y-6">
