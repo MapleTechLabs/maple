@@ -1498,6 +1498,38 @@ describe("AlertsService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 		})
 
+		it.effect(
+			"records the critical tier's threshold on the issue of an incident that opens at critical",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const state = {
+					tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>>,
+				}
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+					const alerts = yield* AlertsService
+					const orgId = asOrgId("org_tiers_issue")
+					yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_issue"))
+
+					yield* alerts.runSchedulerTick()
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+
+					const incident = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(incident?.severity, "critical")
+					assert.strictEqual(incident?.threshold, 20)
+					const issue = yield* Effect.promise(() =>
+						queryFirstRow<{ exception_message: string }>(
+							testDb,
+							"select exception_message from error_issues where org_id = $1 and kind = 'alert'",
+							[orgId],
+						),
+					)
+					assert.include(issue?.exception_message ?? "", "gt 20")
+				}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+			},
+		)
+
 		it.effect("rejects a critical threshold that is not worse than the warning one", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {

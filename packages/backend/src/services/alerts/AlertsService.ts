@@ -2899,16 +2899,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						remaining > 0 ? [true, remaining - 1] : [false, remaining],
 					)
 					if (allowed) {
+						// The tier the incident opened at, so severity and threshold agree.
+						const openedRule = ruleAtSeverity(normalized, outcome.severity ?? normalized.severity)
 						yield* upsertAlertIssue({
 							orgId: row.orgId,
 							ruleId: row.id,
 							ruleName: row.name,
 							groupKey,
 							signalType: normalized.signalType,
-							severity: outcome.severity ?? normalized.severity,
+							severity: openedRule.severity,
 							comparator: normalized.comparator,
-							threshold: normalized.threshold,
-							thresholdUpper: normalized.thresholdUpper,
+							threshold: openedRule.threshold,
+							thresholdUpper: openedRule.thresholdUpper,
 							windowMinutes: normalized.windowMinutes,
 							observedValue: evaluation.value,
 							sampleCount: evaluation.sampleCount,
