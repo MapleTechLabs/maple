@@ -140,7 +140,7 @@ const resourceFilter = (resourceType: string, labels: ReadonlyArray<readonly [st
  * balancer the list, whose detail address depends on the load balancer's kind.
  */
 export function gcpConsoleLinks(service: GcpInfraServiceId, keys: ReadonlyArray<string>): GcpConsoleLinks {
-	const project = gcpWorkloadProject(service, keys)
+	const project = gcpWorkloadProject(service, keys) ?? ""
 	const at = (path: string) => consoleUrl(path, "project", project)
 	const segment = encodeURIComponent
 	const [name = ""] = keys
