@@ -2932,7 +2932,7 @@ async fn admit_grpc_export(
 ) -> Result<ResolvedIngestKey, tonic::Status> {
     let resolved = resolve_grpc_ingest_key(state, headers).await?;
     record_grpc_identity(&resolved);
-    authorize_custom_key(state, &resolved, signal.key_signal())
+    authorize_custom_key(state, &resolved, &[signal.key_signal()])
         .await
         .map_err(|error| grpc_status_for_key_rejection(&error))?;
     if resolved.org_id != SENTINEL_ORG_ID {
@@ -3453,10 +3453,11 @@ fn derive_country(headers: &HeaderMap, trust_proxy_geo: bool) -> String {
 
 /// Per-request checks for a custom ingest key: expiry, signal allow-list and
 /// rate limit, in that order. A no-op for default keys.
+/// `signals` is any-of: the key must allow at least one of them.
 async fn authorize_custom_key(
     state: &AppState,
     resolved_key: &ResolvedIngestKey,
-    signal: KeySignal,
+    signals: &[KeySignal],
 ) -> Result<(), ApiError> {
     let Some(custom) = &resolved_key.custom else {
         return Ok(());
@@ -3469,16 +3470,21 @@ async fn authorize_custom_key(
             "Ingest key expired",
         ));
     }
-    if !custom.allows(signal) {
+    if !signals.iter().any(|signal| custom.allows(*signal)) {
+        let names = signals
+            .iter()
+            .map(|signal| signal.as_str())
+            .collect::<Vec<_>>()
+            .join(" or ");
         warn!(
             key_id = %custom.public_id,
-            signal = signal.as_str(),
+            signal = names.as_str(),
             "Custom ingest key denied for signal"
         );
         return Err(ApiError::tagged(
             StatusCode::FORBIDDEN,
             &INGEST_SIGNAL_NOT_ALLOWED,
-            format!("This ingest key is not allowed to send {}", signal.as_str()),
+            format!("This ingest key is not allowed to send {names}"),
         ));
     }
     if let Some(rps) = custom.rate_limit_rps {
@@ -3504,7 +3510,7 @@ async fn authorize_custom_key(
 async fn resolve_replay_key(
     state: &AppState,
     headers: &HeaderMap,
-    signal: KeySignal,
+    signals: &[KeySignal],
 ) -> Result<Option<ResolvedIngestKey>, ApiError> {
     let ingest_key =
         extract_ingest_key(headers).ok_or_else(|| ApiError::unauthorized("Missing ingest key"))?;
@@ -3517,7 +3523,7 @@ async fn resolve_replay_key(
         .await
         .map_err(|_| ApiError::service_unavailable("Ingest authentication unavailable"))?
         .ok_or_else(|| ApiError::unauthorized(state.config.invalid_key_message))?;
-    authorize_custom_key(state, &resolved, signal).await?;
+    authorize_custom_key(state, &resolved, signals).await?;
     Ok(Some(resolved))
 }
 
@@ -3583,7 +3589,7 @@ async fn handle_replay_meta_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers, KeySignal::Sessions).await? else {
+    let Some(resolved_key) = resolve_replay_key(state, headers, &[KeySignal::Sessions]).await? else {
         return Ok(0);
     };
     let org_id = resolved_key.org_id.clone();
@@ -3731,6 +3737,7 @@ async fn handle_session_events(
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
         "maple.session_events.dropped" = tracing::field::Empty,
+        "maple.session_events.denied" = tracing::field::Empty,
         "maple.product_events.metered" = tracing::field::Empty,
         "maple.sdk" = tracing::field::Empty,
         "user_agent.original" = tracing::field::Empty,
@@ -3766,9 +3773,20 @@ async fn handle_session_events_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers, KeySignal::Sessions).await? else {
+    // `custom` rows are browser `track()` product events, so a custom key needs
+    // `events` for those and `sessions` for the rest; disallowed rows are dropped.
+    let Some(resolved_key) =
+        resolve_replay_key(state, headers, &[KeySignal::Sessions, KeySignal::Events]).await?
+    else {
         return Ok(0);
     };
+    let allows = |signal| {
+        resolved_key
+            .custom
+            .as_ref()
+            .is_none_or(|custom| custom.allows(signal))
+    };
+    let (allow_sessions, allow_events) = (allows(KeySignal::Sessions), allows(KeySignal::Events));
     let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
     Span::current().record(
@@ -3816,6 +3834,7 @@ async fn handle_session_events_inner(
     let mut rows: Vec<Vec<u8>> = Vec::new();
     let mut dropped: u64 = 0;
     let mut custom_events: u64 = 0;
+    let mut denied: u64 = 0;
     for line in body.split(|&b| b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
@@ -3833,7 +3852,12 @@ async fn handle_session_events_inner(
             dropped += 1;
             continue;
         }
-        if obj.get("type").and_then(|v| v.as_str()) == Some("custom") {
+        let is_custom = obj.get("type").and_then(|v| v.as_str()) == Some("custom");
+        if !(if is_custom { allow_events } else { allow_sessions }) {
+            denied += 1;
+            continue;
+        }
+        if is_custom {
             custom_events += 1;
         }
         obj.insert(
@@ -3846,6 +3870,9 @@ async fn handle_session_events_inner(
         );
     }
 
+    if denied > 0 {
+        Span::current().record("maple.session_events.denied", denied);
+    }
     if dropped > 0 {
         Span::current().record("maple.session_events.dropped", dropped);
         warn!(
@@ -3951,7 +3978,7 @@ async fn handle_product_events_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let resolved_key = match resolve_replay_key(state, headers, KeySignal::Events).await? {
+    let resolved_key = match resolve_replay_key(state, headers, &[KeySignal::Events]).await? {
         Some(resolved_key) => resolved_key,
         None => return Ok(0),
     };
@@ -4149,7 +4176,7 @@ async fn handle_replay_blob_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<(), ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers, KeySignal::Sessions).await? else {
+    let Some(resolved_key) = resolve_replay_key(state, headers, &[KeySignal::Sessions]).await? else {
         return Ok(());
     };
     let org_id = resolved_key.org_id.clone();
@@ -4648,7 +4675,7 @@ async fn handle_signal_inner(
         "Authenticated"
     );
 
-    authorize_custom_key(state, &resolved_key, signal.key_signal())
+    authorize_custom_key(state, &resolved_key, &[signal.key_signal()])
         .await
         .map_err(|error| {
             let error_kind = error.error_kind();
@@ -11789,6 +11816,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_event_rows_follow_the_custom_key_signals() {
+        let queue_dir = unique_main_test_dir("session-events-custom-key-signals");
+        let store = Arc::new(FakeKeyStore::default());
+        // Routed to ClickHouse: the forward-mode fixture has no Tinybird pipeline.
+        let routed = |allowed: &str| CustomKeyRow {
+            key: KeyRow {
+                org_id: "org_se_custom".to_owned(),
+                self_managed: true,
+                clickhouse_ready: true,
+            },
+            config: Some(custom_key_config(Some(allowed), None, "[]")),
+        };
+        let sessions_only = "maple_ik_session_events_sessions_only_000000";
+        let events_only = "maple_ik_session_events_events_only_0000000";
+        let traces_only = "maple_ik_session_events_traces_only_0000000";
+        store.insert_custom(sessions_only, routed(r#"["sessions"]"#), true);
+        store.insert_custom(events_only, routed(r#"["events"]"#), true);
+        store.insert_custom(traces_only, routed(r#"["traces"]"#), true);
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+
+        let body = concat!(
+            r#"{"type":"custom","message":"signup_completed"}"#,
+            "\n",
+            r#"{"type":"click","message":"button#buy"}"#,
+            "\n",
+            r#"{"type":"custom","message":"plan_selected"}"#,
+            "\n",
+        );
+        let send = |key: &'static str| {
+            let state = &state;
+            async move {
+                handle_session_events_inner(
+                    state,
+                    &bearer_headers(key),
+                    Bytes::from_static(body.as_bytes()),
+                )
+                .await
+            }
+        };
+
+        assert_eq!(send(sessions_only).await.expect("sessions key is admitted"), 1);
+        assert_eq!(send(events_only).await.expect("events key is admitted"), 2);
+        let denied = send(traces_only).await.expect_err("traces-only key is refused");
+        assert_eq!(denied.status, StatusCode::FORBIDDEN);
+
+        let _ = std::fs::remove_dir_all(&queue_dir);
+    }
+
+    #[tokio::test]
     async fn custom_key_resolves_from_its_own_table_with_policy() {
         let store = Arc::new(FakeKeyStore::default());
         let raw_key = "maple_ik_resolves_from_custom_table_0000000";
@@ -11870,7 +11952,7 @@ mod tests {
         assert_eq!(error_kind, "auth");
 
         let replay = rejected(
-            resolve_replay_key(&state, &bearer_headers(expired), KeySignal::Events).await,
+            resolve_replay_key(&state, &bearer_headers(expired), &[KeySignal::Events]).await,
             "the replay paths check expiry too",
         );
         assert_eq!(replay.status, StatusCode::UNAUTHORIZED);
@@ -11989,7 +12071,7 @@ mod tests {
         );
         assert_eq!(error_kind, "forbidden");
         let error = rejected(
-            resolve_replay_key(&state, &bearer_headers(raw_key), KeySignal::Events).await,
+            resolve_replay_key(&state, &bearer_headers(raw_key), &[KeySignal::Events]).await,
             "product events are not allowed",
         );
         assert_eq!(error.status, StatusCode::FORBIDDEN);
