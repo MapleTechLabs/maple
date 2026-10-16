@@ -19,6 +19,8 @@ import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
+import { ErrorState } from "@/components/common/error-state"
+import { readDigestSubscription } from "@/components/settings/digest-subscription-load"
 
 /** Two arrays are the same scope regardless of the order they were picked in. */
 const sameScope = (a: readonly string[], b: readonly string[]) =>
@@ -47,8 +49,8 @@ export function NotificationsSection() {
 	// edits made since it loaded. Derived rather than copied in an effect, so a
 	// refresh after a save is reflected instead of being locked out by an
 	// "initialized" flag.
-	const saved = Result.isSuccess(subscriptionResult) ? subscriptionResult.value : null
-	const settled = !Result.isInitial(subscriptionResult)
+	const load = readDigestSubscription(subscriptionResult)
+	const saved = load.status === "ready" ? load.saved : null
 
 	const [enabledEdit, setEnabledEdit] = useState<boolean | null>(null)
 	const [webAnalyticsEdit, setWebAnalyticsEdit] = useState<boolean | null>(null)
@@ -192,7 +194,22 @@ export function NotificationsSection() {
 			openPreview(result.value.html)
 	})
 
-	if (!settled || !user) return <AccountSectionSkeleton />
+	if (load.status === "loading" || !user) return <AccountSectionSkeleton />
+	// Switches built on defaults would upsert over preferences we could not read.
+	if (load.status === "failed") {
+		return (
+			<SettingsSections>
+				<SettingsSection title="Weekly digests" framed={false}>
+					<ErrorState
+						variant="row"
+						error={load.cause}
+						title="Couldn't load your notification preferences"
+						onRetry={refreshSubscription}
+					/>
+				</SettingsSection>
+			</SettingsSections>
+		)
+	}
 
 	return (
 		<SettingsSections>
