@@ -6,6 +6,7 @@
 // skips granules without the key id and the map equality confirms the key.
 
 import { Schema } from "effect"
+import { INGEST_KEY_ID_ATTRIBUTE } from "@maple/domain/http"
 import * as CH from "@maple-dev/effect-orm/expr"
 import {
 	from,
@@ -17,7 +18,7 @@ import {
 import { CHNumber } from "../schema"
 import { Logs, Traces, orgIdParam, utcSecondsParam } from "../tables"
 
-export const INGEST_KEY_ID_ATTRIBUTE = "maple_ingest_key_id"
+export { INGEST_KEY_ID_ATTRIBUTE }
 
 export interface IngestKeyUsageOutput {
 	readonly signal: string

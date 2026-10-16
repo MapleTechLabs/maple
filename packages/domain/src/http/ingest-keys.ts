@@ -46,6 +46,9 @@ export class IngestKeyEncryptionError extends HttpTaggedError<IngestKeyEncryptio
 	},
 ) {}
 
+/** Resource attribute the ingest gateway stamps with a custom key's `ingk_` id. */
+export const INGEST_KEY_ID_ATTRIBUTE = "maple_ingest_key_id"
+
 /** Shared by the API's validation and the settings form. */
 export const CUSTOM_INGEST_KEY_LIMITS = {
 	maxKeysPerOrg: 50,
