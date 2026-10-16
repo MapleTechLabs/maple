@@ -40,38 +40,68 @@ const SEVERITY: Record<Severity, { label: string; icon: IconComponent; className
 const SEVERITY_ORDER: ReadonlyArray<Severity> = ["critical", "warn", "info"]
 
 /**
- * Each category's owning surface, so a finding is one click from where it gets fixed. `tab` targets a
- * sibling settings tab; `to` targets a standalone route. Kept as separate fields because TanStack
+ * Where a finding gets fixed, so it is one click away. Kept as separate shapes because TanStack
  * Router types `search` per route; a widened `object` does not typecheck.
  */
-type CategoryTarget =
-	| { label: string; fixLabel: string; tab: SettingsTab }
-	| { label: string; fixLabel: string; to: "/alerts" | "/traces" | "/integrations" }
+type FixTarget =
+	| { tab: SettingsTab }
+	| { alertsTab: "rules" | "routing" }
+	| { to: "/alerts" | "/traces" | "/integrations" | "/dashboards" }
 
-const CATEGORY: Record<Category, CategoryTarget> = {
-	alerting: { label: "Alerting", fixLabel: "Open alerts", to: "/alerts" },
-	notifications: { label: "Notifications", fixLabel: "Open notifications", tab: "notifications" },
-	ingestion: { label: "Ingestion", fixLabel: "Open ingestion", tab: "ingestion" },
-	attributes: { label: "Attributes", fixLabel: "Open ingestion", tab: "ingestion" },
-	traces: { label: "Traces", fixLabel: "Open traces", to: "/traces" },
-	integrations: { label: "Integrations", fixLabel: "Open integrations", to: "/integrations" },
-	data_platform: { label: "Data platform", fixLabel: "Open data platform", tab: "data-platform" },
-} satisfies Record<Category, CategoryTarget>
+type CategoryOpen = { label: string; target: FixTarget }
 
-function CategoryLink({
-	target,
-	label,
-	className,
-}: {
-	target: CategoryTarget
-	label: string
-	className: string
-}) {
-	return "tab" in target ? (
-		<Link to="/settings" search={{ tab: target.tab }} className={className}>
-			{label}
-		</Link>
-	) : (
+/** `open: null` means the category has no single screen that fixes its findings. */
+const CATEGORY = {
+	alerting: { label: "Alerting", open: { label: "Open alerts", target: { to: "/alerts" } } },
+	notifications: { label: "Notifications", open: null },
+	ingestion: { label: "Ingestion", open: { label: "Open ingestion", target: { tab: "ingestion" } } },
+	attributes: { label: "Attributes", open: { label: "Open ingestion", target: { tab: "ingestion" } } },
+	traces: { label: "Traces", open: { label: "Open traces", target: { to: "/traces" } } },
+	integrations: {
+		label: "Integrations",
+		open: { label: "Open integrations", target: { to: "/integrations" } },
+	},
+	data_platform: {
+		label: "Data platform",
+		open: { label: "Open data platform", target: { tab: "data-platform" } },
+	},
+} satisfies Record<Category, { label: string; open: CategoryOpen | null }>
+
+/**
+ * Per-check overrides of the category target. `null` hides the Fix link: the fix has no UI yet and
+ * the hint names where it lives (MCP tool or API).
+ */
+const CHECK_TARGET = new Map<string, FixTarget | null>([
+	["CFG-ALERT-01", { alertsTab: "routing" }],
+	["CFG-ALERT-02", { alertsTab: "rules" }],
+	["CFG-ALERT-03", { alertsTab: "rules" }],
+	["CFG-ALERT-04", { alertsTab: "routing" }],
+	["CFG-NOTIF-01", null],
+	["CFG-ANOM-01", null],
+	["CFG-DASH-01", { to: "/dashboards" }],
+])
+
+const fixTargetFor = (check: V2SetupAuditCheck): FixTarget | null =>
+	CHECK_TARGET.has(check.id)
+		? (CHECK_TARGET.get(check.id) ?? null)
+		: (CATEGORY[check.category].open?.target ?? null)
+
+function FixLink({ target, label, className }: { target: FixTarget; label: string; className: string }) {
+	if ("tab" in target) {
+		return (
+			<Link to="/settings" search={{ tab: target.tab }} className={className}>
+				{label}
+			</Link>
+		)
+	}
+	if ("alertsTab" in target) {
+		return (
+			<Link to="/alerts" search={{ tab: target.alertsTab }} className={className}>
+				{label}
+			</Link>
+		)
+	}
+	return (
 		<Link to={target.to} className={className}>
 			{label}
 		</Link>
@@ -98,7 +128,7 @@ function SummaryPill({ count, label, className }: { count: number; label: string
 
 function CheckRow({ check }: { check: V2SetupAuditCheck }) {
 	const severity = SEVERITY[check.severity]
-	const category = CATEGORY[check.category]
+	const fixTarget = fixTargetFor(check)
 	const isFinding = check.status === "fail"
 	const Icon = isFinding ? severity.icon : check.status === "pass" ? CircleCheckIcon : CircleInfoIcon
 
@@ -148,9 +178,9 @@ function CheckRow({ check }: { check: V2SetupAuditCheck }) {
 				)}
 			</div>
 			<div className="grow" />
-			{isFinding && (
-				<CategoryLink
-					target={category}
+			{isFinding && fixTarget !== null && (
+				<FixLink
+					target={fixTarget}
 					label="Fix"
 					className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "shrink-0")}
 				/>
@@ -177,11 +207,13 @@ function CategoryCard({
 						{findings > 0 ? countLabel(findings, "finding") : "clear"}
 					</span>
 				</h3>
-				<CategoryLink
-					target={meta}
-					label={meta.fixLabel}
-					className={buttonVariants({ variant: "ghost", size: "sm" })}
-				/>
+				{meta.open !== null && (
+					<FixLink
+						target={meta.open.target}
+						label={meta.open.label}
+						className={buttonVariants({ variant: "ghost", size: "sm" })}
+					/>
+				)}
 			</div>
 			{checks.map((check) => (
 				<CheckRow key={check.id} check={check} />
@@ -300,11 +332,12 @@ function Report({ audit, refreshing }: { audit: V2SetupAudit; refreshing: boolea
 
 export function SetupAuditSection() {
 	const result = useAtomValue(setupAuditAtom)
+	const refresh = useAtomRefresh(setupAuditAtom)
 
 	return (
 		<SettingsSection title="Setup audit" framed={false}>
 			{Result.isFailure(result) ? (
-				<ErrorState error={result.cause} title="Could not run the audit" />
+				<ErrorState error={result.cause} title="Could not run the audit" onRetry={refresh} />
 			) : !Result.isSuccess(result) ? (
 				<div className="flex flex-col gap-4">
 					<Skeleton className="h-12 w-full rounded-md" />
