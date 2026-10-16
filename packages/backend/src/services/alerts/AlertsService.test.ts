@@ -1497,7 +1497,69 @@ describe("AlertsService", () => {
 				yield* tick
 				yield* tick
 				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
-				assert.deepStrictEqual(requests.slice(1), ["resolve https://example.com/page"])
+				// The remaining tier's pager, and the webhook that heard the trigger.
+				assert.sameMembers(requests.slice(1), [
+					"resolve https://example.com/page",
+					"resolve https://example.com/warn",
+				])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("resolves to a destination an edit removed after it was paged", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_removed_dest")
+				const userId = asUserId("user_tiers_removed_dest")
+				const { rule, warnHook } = yield* createTieredSetup(alerts, orgId, userId)
+
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.sameMembers(requests, [
+					"trigger https://example.com/warn",
+					"trigger https://example.com/page",
+				])
+
+				// Same condition, but the critical tier no longer pages the pager.
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						enabled: true,
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: [
+							rule.thresholds[0],
+							{ ...rule.thresholds[1]!, destinationIds: [warnHook.id] },
+						],
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+
+				state.tracesAggregateRows = errorRateRows(0.5)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+				assert.include(requests, "resolve https://example.com/page")
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),

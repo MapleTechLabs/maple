@@ -46,6 +46,7 @@ import {
 	AlertRulePreviewSeries,
 	type AlertRulePreviewRequest,
 	AlertSeverity as AlertSeveritySchema,
+	type AlertSeverity,
 	AlertSignalType as AlertSignalTypeSchema,
 	AlertValidationError,
 	AlertNotificationTemplate,
@@ -223,6 +224,42 @@ const afterHold = (
 		? null
 		: { reason: decodeAlertIncidentHoldReasonSync(incident.holdReason), heldForMs }
 
+const decodeAlertSeverityOption = Schema.decodeUnknownOption(AlertSeveritySchema)
+
+/**
+ * The tier fields a delivery dispatches with. The rule's tiers come from the
+ * queued event when it carries them, so the key an event pages under cannot
+ * change between queueing and a retry; older payloads fall back to the rule as
+ * it is now. The peak is the higher of the event's and the incident's, so an
+ * alert opened later still closes.
+ */
+const dispatchTierFields = (
+	queuedSeverities: ReadonlyArray<string> | undefined,
+	queuedPeak: string | null,
+	incidentPeak: string | null,
+	currentRule: Option.Option<{ readonly thresholds: ReadonlyArray<{ readonly severity: AlertSeverity }> }>,
+) => {
+	const ruleSeverities =
+		queuedSeverities === undefined
+			? Option.map(currentRule, (condition) => condition.thresholds.map((tier) => tier.severity))
+			: Option.some(
+					queuedSeverities.flatMap((severity) =>
+						Option.toArray(decodeAlertSeverityOption(severity)),
+					),
+				)
+	const peak = maxSeverity(
+		Option.getOrNull(decodeAlertSeverityOption(queuedPeak)),
+		Option.getOrNull(decodeAlertSeverityOption(incidentPeak)),
+	)
+	return {
+		...Option.match(ruleSeverities, {
+			onNone: () => undefined,
+			onSome: (value) => ({ ruleSeverities: value }),
+		}),
+		...(peak === null ? undefined : { incidentPeakSeverity: peak }),
+	}
+}
+
 /** The rule as an incident's resolve sees it: its tier (or the one the rule kept), up to its peak. */
 const ruleForResolve = (
 	rule: NormalizedRule,
@@ -310,8 +347,10 @@ const StoredDeliveryPayloadSchema = Schema.StructWithRest(
 				threshold: Schema.optionalKey(Schema.Number),
 				thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 				windowMinutes: Schema.optionalKey(Schema.Number),
+				severities: Schema.optionalKey(Schema.Array(Schema.String)),
 			}),
 		),
+		peakSeverity: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		observed: Schema.optionalKey(
 			Schema.Struct({
 				value: Schema.optionalKey(Schema.NullOr(Schema.Number)),
@@ -1047,13 +1086,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				eventType: AlertEventTypeValue,
 				scheduledAt: number,
 			) {
-				if (rule.destinationIds.length === 0) return []
+				// A resolve also reaches every destination this incident already
+				// notified, so a rule edit that drops one cannot orphan its alert.
+				const priorDestinationIds =
+					eventType === "resolve"
+						? (yield* dbExecute((db) =>
+								db.run(
+									PG.from(AlertDeliveryEvents)
+										.select("destinationId")
+										.where(($) => [$.orgId.eq(orgId), $.incidentId.eq(incident.id)]),
+								),
+							)).map((row) => row.destinationId)
+						: []
+				const destinationIds = Arr.dedupe([...rule.destinationIds, ...priorDestinationIds])
+				if (destinationIds.length === 0) return []
 
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(AlertDestinations)
 							.select("id", "enabled")
-							.where(($) => [$.orgId.eq(orgId), $.id.in_(...rule.destinationIds)]),
+							.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),
 					),
 				)
 
@@ -1113,6 +1165,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						groupKey: incident.groupKey,
 						signalType: rule.signalType,
 						severity: rule.severity,
+						// Snapshotted with the event: a retry or a late delivery
+						// must page the key this event was raised under.
+						ruleSeverities: rule.thresholds.map((tier) => tier.severity),
+						...(incident.peakSeverity === null
+							? undefined
+							: { incidentPeakSeverity: decodeAlertSeveritySync(incident.peakSeverity) }),
 						comparator: rule.comparator,
 						threshold: rule.threshold,
 						thresholdUpper: rule.thresholdUpper,
@@ -1128,23 +1186,21 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					orgId,
 				).pipe(Effect.mapError((error) => makeValidationError(error.message, [], error)))
 
-				return rule.destinationIds.flatMap(
-					(destinationId): ReadonlyArray<PreparedIncidentDelivery> => {
-						const destination = destinations.get(destinationId)
-						if (!destination || !destination.enabled) return []
-						return [
-							{
-								orgId,
-								incidentId: incident.id,
-								ruleId: rule.id,
-								destinationId,
-								eventType,
-								payload,
-								scheduledAt,
-							},
-						]
-					},
-				)
+				return destinationIds.flatMap((destinationId): ReadonlyArray<PreparedIncidentDelivery> => {
+					const destination = destinations.get(destinationId)
+					if (!destination || !destination.enabled) return []
+					return [
+						{
+							orgId,
+							incidentId: incident.id,
+							ruleId: rule.id,
+							destinationId,
+							eventType,
+							payload,
+							scheduledAt,
+						},
+					]
+				})
 			})
 
 			const insertIncidentDeliveries = (
@@ -1956,25 +2012,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								queryBuilderDraft: storedRule?.queryBuilderDraft ?? null,
 								rawQueryReducer: ruleRow?.reducer ?? null,
 							}),
+							// The severity the event was raised at, not where the incident
+							// has moved since it was queued.
 							severity: decodeAlertSeveritySync(
-								incidentRow?.severity ?? payloadRule?.severity ?? "warning",
+								payloadRule?.severity ?? incidentRow?.severity ?? "warning",
 							),
-							...(incidentRow === null
-								? undefined
-								: {
-										incidentPeakSeverity: decodeAlertSeveritySync(
-											incidentRow.peakSeverity ?? incidentRow.severity,
-										),
-									}),
-							// A rule that no longer decodes dispatches like one without tiers.
-							...Option.match(
+							...dispatchTierFields(
+								payloadRule?.severities,
+								payload.peakSeverity ?? null,
+								incidentRow?.peakSeverity ?? incidentRow?.severity ?? null,
 								ruleRow === null ? Option.none() : yield* storedRuleCondition(ruleRow),
-								{
-									onNone: () => undefined,
-									onSome: (condition) => ({
-										ruleSeverities: condition.thresholds.map((tier) => tier.severity),
-									}),
-								},
 							),
 							comparator: decodeAlertComparatorSync(
 								incidentRow?.comparator ?? payloadRule?.comparator ?? "gt",
