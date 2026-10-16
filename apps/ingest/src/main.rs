@@ -4871,7 +4871,9 @@ async fn handle_signal_inner(
     .await;
 
     let response = response_result.map_err(|error| (error, "forward"))?;
-    state.resolver.note_custom_key_use(&resolved_key);
+    if response.status().is_success() {
+        state.resolver.note_custom_key_use(&resolved_key);
+    }
 
     Ok((
         response,
@@ -6355,9 +6357,16 @@ impl IngestKeyResolver {
         let Some(custom) = &resolved.custom else {
             return;
         };
+        // Most requests land inside the window; skip them without spawning.
+        if self.recent_key_uses.contains_key(&custom.id) {
+            return;
+        }
         let store = Arc::clone(&self.store);
         let recent = self.recent_key_uses.clone();
         let key_id = custom.id.clone();
+        // Its own root span, so the request span does not wait on this write.
+        let span = tracing::info_span!(parent: None, "record_custom_key_use");
+        span.follows_from(Span::current().id());
         tokio::spawn(
             async move {
                 if !recent.entry(key_id.clone()).or_insert(()).await.is_fresh() {
@@ -6370,7 +6379,7 @@ impl IngestKeyResolver {
                     debug!(key_id, error, "Failed to record custom ingest key use");
                 }
             }
-            .in_current_span(),
+            .instrument(span),
         );
     }
 
