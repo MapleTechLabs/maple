@@ -46,3 +46,4 @@ const DOCS_ORIGIN = "https://maple.dev"
 export function docsUrl(page: DocsPage): string {
 	return `${DOCS_ORIGIN}${DOCS[page]}`
 }
+// CI affected-lanes probe (throwaway PR, not for merge)
