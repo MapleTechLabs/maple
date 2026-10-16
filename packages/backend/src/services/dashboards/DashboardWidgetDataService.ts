@@ -29,6 +29,7 @@
 import {
 	type DashboardDocument,
 	type DashboardVariable,
+	GcpPromQlRangeRequest,
 	OrgId,
 	ShareUnsupportedWidgetError,
 	ShareWidgetExecutionError,
@@ -45,6 +46,8 @@ import {
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
 	planWidgetRequest,
+	promQlRangeInput,
+	promQlWidgetData,
 	rawSqlRowsForDisplay,
 	type PlannedWidgetRequest,
 	type VariableValues,
@@ -55,12 +58,14 @@ import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { RawSqlValidationError } from "@maple/domain/http"
 import {
 	dataSourceQuerySet,
+	GCP_PROMQL_ENDPOINT,
 	MARKDOWN_STATIC_ENDPOINT,
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
 	toWidgetRequest,
 } from "@maple/widgets/dashboard"
 import { Context, Effect, Layer, Schema } from "effect"
+import { GcpPromQlService } from "@maple/backend/services/integrations/GcpPromQlService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -186,6 +191,13 @@ const PlannedRawSqlParams = Schema.Struct({
 })
 const decodePlannedRawSql = Schema.decodeUnknownEffect(PlannedRawSqlParams)
 
+const PlannedPromQlParams = Schema.Struct({
+	promql: Schema.String,
+	projects: Schema.optionalKey(Schema.Array(Schema.String)),
+	legend: Schema.optionalKey(Schema.String),
+})
+const decodePlannedPromQl = Schema.decodeUnknownEffect(PlannedPromQlParams)
+
 /** The list cap applied to a window that exceeds it: last `MAX_LIST_RANGE_SECONDS` up to its end. */
 const narrowToListCap = (window: ResolvedWindow): ResolvedWindow => ({
 	startTime: formatWarehouseDateTime(
@@ -225,6 +237,7 @@ export class DashboardWidgetDataService extends Context.Service<
 	make: Effect.gen(function* () {
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService
+		const gcpPromQl = yield* GcpPromQlService
 
 		const resolve = Effect.fn("DashboardWidgetDataService.resolve")(function* (
 			orgId: OrgId,
@@ -293,7 +306,9 @@ export class DashboardWidgetDataService extends Context.Service<
 						message:
 							plan.reason === "metric_not_selected"
 								? "This widget has no metric selected."
-								: "This widget's own time range couldn't be resolved.",
+								: plan.reason === "promql_query_empty"
+									? "This widget has no query yet."
+									: "This widget's own time range couldn't be resolved.",
 						widgetId: request.widgetId,
 					}),
 				)
@@ -415,6 +430,22 @@ export class DashboardWidgetDataService extends Context.Service<
 				return outcome({ data: rows })
 			}
 
+			if (executed.endpoint === GCP_PROMQL_ENDPOINT) {
+				// The query and projects are the author's, off the stored document; the viewer moves
+				// only the window and the variable values (bounded by `share-variables.ts`). The
+				// request decode refuses a project id that is not one, and the service refuses a
+				// project outside this org's connections. Google's own error text stays off the share.
+				const data = yield* Effect.gen(function* () {
+					const params = yield* decodePlannedPromQl(executed.params)
+					const rangeRequest = yield* Schema.decodeUnknownEffect(GcpPromQlRangeRequest)(
+						promQlRangeInput(params, executed.window),
+					)
+					const result = yield* gcpPromQl.queryRange(orgId, rangeRequest)
+					return promQlWidgetData(result, params.legend, false)
+				}).pipe(asWidgetOutcomeFailure(request.widgetId, "promql"))
+				return outcome(data)
+			}
+
 			const routePlan = ROUTE_ENDPOINT_PLANS[executed.endpoint]
 			if (routePlan === undefined) {
 				return yield* Effect.fail(
@@ -498,7 +529,9 @@ export class DashboardWidgetDataService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, QueryEngineService.layer)),
+		Layer.provide(
+			Layer.mergeAll(WarehouseQueryService.layer, QueryEngineService.layer, GcpPromQlService.layer),
+		),
 	)
 }
 

@@ -42,6 +42,13 @@ type ServerFunction = (opts: { data: any }) => Effect.Effect<any, ServerFunction
 
 const markdownStaticServerFn: ServerFunction = () => Effect.succeed({ data: null })
 
+// Loaded on first use: only Google Cloud tiles need it, and this registry ships in the startup bundle.
+const gcpPromQlServerFn: ServerFunction = (opts) =>
+	Effect.flatMap(
+		Effect.promise(() => import("@/api/warehouse/gcp-promql")),
+		(module) => module.getGcpPromQlChart(opts),
+	)
+
 export const serverFunctionMap: Record<DataSourceEndpoint, ServerFunction> = {
 	service_usage: getServiceUsage,
 	service_overview: getServiceOverview,
@@ -67,6 +74,7 @@ export const serverFunctionMap: Record<DataSourceEndpoint, ServerFunction> = {
 	custom_query_builder_breakdown: getQueryBuilderBreakdown,
 	custom_query_builder_list: getQueryBuilderList,
 	raw_sql_chart: getRawSqlChart,
+	gcp_promql: gcpPromQlServerFn,
 	product_events_funnel: getProductEventsFunnelWidget,
 	product_events_paths: getProductEventsPathsWidget,
 	markdown_static: markdownStaticServerFn,

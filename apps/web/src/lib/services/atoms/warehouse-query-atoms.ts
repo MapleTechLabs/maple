@@ -723,6 +723,17 @@ export const cloudflareTopTrafficResultAtom = makeQueryAtomFamily(getCloudflareT
 	staleTime: 60_000,
 })
 
+// Google Cloud metric names for the PromQL editor; the API caches each project's list for an hour.
+// The module loads with the editor, not at startup.
+export const gcpMetricSearchResultAtom = makeQueryAtomFamily(
+	(input: { readonly data: { readonly search: string } }) =>
+		Effect.flatMap(
+			Effect.promise(() => import("@/api/warehouse/gcp-promql")),
+			(module) => module.getGcpMetricSearch(input),
+		),
+	{ staleTime: 300_000 },
+)
+
 // Service-detail Overview tab bundle: primary chart + releases timeline +
 // environments in one fetch. The chart grid and the environment switcher read
 // this atom with the same input key, so they share a single round-trip.

@@ -30,7 +30,7 @@ const SUPPORTED_ROUTE_ENDPOINTS = new Set([
 
 /** Prose for the dialog, so the copy and the list cannot disagree. */
 export const SHAREABLE_WIDGET_KINDS =
-	"query-builder charts, raw SQL, markdown, funnels, paths, and the errors, service and logs tiles"
+	"query-builder charts, raw SQL, Google Cloud PromQL, markdown, funnels, paths, and the errors, service and logs tiles"
 
 interface WidgetLike {
 	readonly id: string
@@ -43,7 +43,14 @@ const isSupported = (dataSource: unknown): boolean => {
 	const source = dataSource as { kind?: string; endpoint?: string }
 
 	// v3 kinds the server builds queries for directly.
-	if (source.kind === "query" || source.kind === "raw_sql" || source.kind === "static") return true
+	if (
+		source.kind === "query" ||
+		source.kind === "raw_sql" ||
+		source.kind === "static" ||
+		source.kind === "promql"
+	) {
+		return true
+	}
 
 	// A route source — v3 `kind: "route"` or a legacy v2 `{ endpoint }` with no
 	// kind at all — is supported only if its endpoint is on the allowlist.

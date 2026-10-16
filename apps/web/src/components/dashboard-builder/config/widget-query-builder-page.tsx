@@ -1,6 +1,12 @@
 import * as React from "react"
 import { widgetTypeByVisualization } from "@maple/domain/http"
-import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
+import {
+	dataSourcePromQl,
+	dataSourceRawSql,
+	dataSourceTransform,
+	makePromQlDataSource,
+	makeRawSqlDataSource,
+} from "@maple/widgets/dashboard"
 
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { FieldError } from "@maple/ui/components/ui/field"
@@ -18,11 +24,17 @@ import {
 	RawSqlEditorPanel,
 	type RawSqlDraft,
 } from "@/components/dashboard-builder/config/raw-sql-editor-panel"
+import {
+	PromQlEditorPanel,
+	parsePromQlProjects,
+	type PromQlDraft,
+} from "@/components/dashboard-builder/config/promql-editor-panel"
 import type {
 	DashboardWidget,
 	TimeRange,
 	VisualizationType,
 	WidgetDataSource,
+	WidgetDataState,
 	WidgetDisplayConfig,
 } from "@/components/dashboard-builder/types"
 import { WidgetTimeRangeProvider } from "@/components/dashboard-builder/widgets/widget-time-range-context"
@@ -31,7 +43,7 @@ import { useDashboardTimeRange } from "@/components/dashboard-builder/dashboard-
 import { useWidgetData } from "@/hooks/use-widget-data"
 import { useWidgetMaxDataPoints } from "@/hooks/use-widget-max-data-points"
 import { resolveTimeRange } from "@/atoms/dashboard-time-range-atoms"
-import { toPanelType } from "@/lib/query-builder/panel-types"
+import { PROMQL_PANEL_TYPES, toPanelType } from "@/lib/query-builder/panel-types"
 import { computeBucketSecondsForWidthRange, formatBucketSecondsShort } from "@maple/query-engine"
 import { useWidgetBuilder } from "@/hooks/use-widget-builder"
 import { useWidgetBuilderData } from "@/hooks/use-widget-builder-data"
@@ -47,7 +59,10 @@ import {
 	buildWidgetDisplay,
 	inferDefaultUnitForQueries,
 } from "@/lib/query-builder/widget-builder-utils"
-import { isProductEventsFunnel } from "@/lib/query-builder/widget-builder-shared"
+import {
+	isProductEventsFunnel,
+	type QueryBuilderWidgetState,
+} from "@/lib/query-builder/widget-builder-shared"
 import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "@/lib/raw-sql/templates"
 
@@ -72,13 +87,11 @@ interface WidgetQueryBuilderPageProps {
 // as charts in the editor while rendering correctly once saved.
 const WidgetPreview = React.memo(function WidgetPreview({
 	widget,
-	maxDataPoints,
+	dataState,
 }: {
 	widget: DashboardWidget
-	/** From the measured preview pane — see `useWidgetMaxDataPoints`. */
-	maxDataPoints: number
+	dataState: WidgetDataState
 }) {
-	const { dataState } = useWidgetData(widget, true, { maxDataPoints })
 	const Visualization = visualizationFor(widget.visualization)
 
 	// Same provider the canvas wraps a tile in, so the preview's secondary
@@ -91,7 +104,7 @@ const WidgetPreview = React.memo(function WidgetPreview({
 	)
 })
 
-type SourceMode = "builder" | "rawSql"
+type SourceMode = "builder" | "rawSql" | "promql"
 
 function readRawSqlDraftFromWidget(widget: DashboardWidget): RawSqlDraft {
 	const rawSql = dataSourceRawSql(widget.dataSource)
@@ -138,6 +151,35 @@ function buildRawSqlDataSource(
 	})
 }
 
+function readPromQlDraftFromWidget(widget: DashboardWidget): PromQlDraft {
+	const promQl = dataSourcePromQl(widget.dataSource)
+	return {
+		query: promQl?.query ?? "",
+		projects: promQl?.projects?.join(", ") ?? "",
+		legend: promQl?.legend ?? "",
+	}
+}
+
+/** The `promql` data source. A stat or gauge reduces the series by the rail's Aggregate. */
+function buildPromQlDataSource(
+	widget: DashboardWidget,
+	draft: PromQlDraft,
+	state: Pick<QueryBuilderWidgetState, "visualization" | "statAggregate">,
+): WidgetDataSource {
+	const existingTransform = dataSourceTransform(widget.dataSource)
+	const transform =
+		widgetTypeByVisualization(state.visualization)?.isScalar === true
+			? { ...existingTransform, reduceToValue: { field: "value", aggregate: state.statAggregate } }
+			: existingTransform
+	const projects = parsePromQlProjects(draft.projects)
+	return makePromQlDataSource({
+		query: draft.query,
+		...(projects.length > 0 ? { projects } : undefined),
+		...(draft.legend.trim() !== "" ? { legend: draft.legend } : undefined),
+		...(transform === undefined ? undefined : { transform }),
+	})
+}
+
 export function WidgetQueryBuilderPage({
 	widget,
 	onApply,
@@ -175,7 +217,12 @@ export function WidgetQueryBuilderPage({
 		actions: { setTimeRange },
 	} = useDashboardTimeRange()
 
-	const initialMode: SourceMode = dataSourceRawSql(widget.dataSource) !== null ? "rawSql" : "builder"
+	const initialMode: SourceMode =
+		dataSourceRawSql(widget.dataSource) !== null
+			? "rawSql"
+			: dataSourcePromQl(widget.dataSource) !== null
+				? "promql"
+				: "builder"
 	const [chosenMode, setMode] = React.useState<SourceMode>(initialMode)
 	// A paths widget has no SQL rendering and hides the source toggle, so a
 	// raw-SQL widget switched to Paths would otherwise be stuck building SQL.
@@ -209,10 +256,25 @@ export function WidgetQueryBuilderPage({
 	// shouldn't refire the SQL on every keystroke.
 	const [rawSqlPreviewDraft, setRawSqlPreviewDraft] = React.useState<RawSqlDraft>(initialRawSqlDraft)
 
+	// PromQL previews on Run preview too: every read is a billed Google call.
+	const initialPromQlDraft = React.useMemo(() => readPromQlDraftFromWidget(widget), [widget])
+	const [promQlDraft, setPromQlDraft] = React.useState<PromQlDraft>(initialPromQlDraft)
+	const initialPromQlSnapshotRef = React.useRef<PromQlDraft>(initialPromQlDraft)
+	const [promQlPreviewDraft, setPromQlPreviewDraft] = React.useState<PromQlDraft>(initialPromQlDraft)
+
 	const previewWidget = React.useMemo(() => {
 		// The override applies live from the editing state — it costs nothing to
 		// re-resolve and a pinned window you can't see until you save is a trap.
 		const timeRange = state.timeRange ?? undefined
+		if (mode === "promql") {
+			return {
+				...widget,
+				timeRange,
+				visualization: state.visualization,
+				dataSource: buildPromQlDataSource(widget, promQlPreviewDraft, state),
+				display: buildWidgetDisplay(widget, state),
+			}
+		}
 		if (mode === "rawSql") {
 			return {
 				...widget,
@@ -255,7 +317,18 @@ export function WidgetQueryBuilderPage({
 			dataSource: buildWidgetDataSource(widget, previewState, previewSeriesOptions),
 			display: buildWidgetDisplay(widget, previewState),
 		}
-	}, [mode, rawSqlPreviewDraft, stagedState, state, widget])
+	}, [mode, rawSqlPreviewDraft, promQlPreviewDraft, stagedState, state, widget])
+
+	const { dataState: previewDataState } = useWidgetData(previewWidget, true, {
+		maxDataPoints: previewMaxDataPoints,
+	})
+	// Setup states (no query yet, not connected) show muted on the preview, not as an editor error.
+	const promQlError =
+		previewDataState.status === "error" &&
+		previewDataState.kind !== "empty" &&
+		previewDataState.kind !== "config"
+			? { title: previewDataState.title ?? "Unable to load", message: previewDataState.message }
+			: undefined
 
 	// Raw SQL must reference $__orgFilter — every query is tenant-scoped through
 	// that macro. Surfaced as a normal validation message; it used to make Apply a
@@ -266,6 +339,15 @@ export function WidgetQueryBuilderPage({
 			: null
 
 	const applyChanges = () => {
+		if (mode === "promql") {
+			onApply({
+				visualization: state.visualization,
+				dataSource: buildPromQlDataSource(widget, promQlDraft, state),
+				display: buildWidgetDisplay(widget, state),
+				timeRange: state.timeRange ?? undefined,
+			})
+			return
+		}
 		if (mode === "rawSql") {
 			if (rawSqlError) return
 			onApply({
@@ -295,6 +377,9 @@ export function WidgetQueryBuilderPage({
 			if (JSON.stringify(state) !== JSON.stringify(initialSnapshot)) return true
 			if (mode === "rawSql") {
 				return JSON.stringify(rawSqlDraft) !== JSON.stringify(initialRawSqlSnapshotRef.current)
+			}
+			if (mode === "promql") {
+				return JSON.stringify(promQlDraft) !== JSON.stringify(initialPromQlSnapshotRef.current)
 			}
 			return false
 		},
@@ -417,6 +502,8 @@ export function WidgetQueryBuilderPage({
 	// Paths read product events only; neither a query set nor raw SQL applies.
 	const isPaths = state.visualization === "paths"
 	const showSourceToggle = !isList && !isMarkdown && !isPaths
+	// PromQL answers are time series: offered for the panels that draw one.
+	const promQlAvailable = PROMQL_PANEL_TYPES.has(toPanelType(state.visualization, state.chartId))
 
 	return (
 		<div className="animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-1 min-h-0 -m-4">
@@ -450,11 +537,7 @@ export function WidgetQueryBuilderPage({
 					    the previous slices on top of the new ones. */}
 					{/* Matches a default chart tile on the canvas (h:6 → 6*60 + 5*12). */}
 					<div ref={previewRef} className="h-[420px]">
-						<WidgetPreview
-							key={mode}
-							widget={previewWidget}
-							maxDataPoints={previewMaxDataPoints}
-						/>
+						<WidgetPreview key={mode} widget={previewWidget} dataState={previewDataState} />
 					</div>
 				</div>
 
@@ -467,12 +550,23 @@ export function WidgetQueryBuilderPage({
 								<TabsList>
 									<TabsTrigger value="builder">Query Builder</TabsTrigger>
 									<TabsTrigger value="rawSql">Raw SQL</TabsTrigger>
+									{(promQlAvailable || mode === "promql") && (
+										<TabsTrigger value="promql">Google Cloud</TabsTrigger>
+									)}
 								</TabsList>
 							</Tabs>
 						</div>
 					)}
 
-					{mode === "rawSql" && showSourceToggle ? (
+					{mode === "promql" && showSourceToggle ? (
+						<PromQlEditorPanel
+							draft={promQlDraft}
+							onDraftChange={setPromQlDraft}
+							onRunPreview={() => setPromQlPreviewDraft(promQlDraft)}
+							stale={JSON.stringify(promQlDraft) !== JSON.stringify(promQlPreviewDraft)}
+							error={promQlError}
+						/>
+					) : mode === "rawSql" && showSourceToggle ? (
 						<>
 							{rawSqlError && (
 								<FieldError match className="font-medium">

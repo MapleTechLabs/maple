@@ -5,7 +5,12 @@
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import type { DashboardSortOption } from "@/atoms/dashboard-preferences-atoms"
 import type { Dashboard } from "@/components/dashboard-builder/types"
-import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql } from "@maple/widgets/dashboard"
+import {
+	dataSourceEndpoint,
+	dataSourcePromQl,
+	dataSourceQuerySet,
+	dataSourceRawSql,
+} from "@maple/widgets/dashboard"
 
 export const widgetCountLabel = (dashboard: Dashboard): string =>
 	countLabel(dashboard.widgets.length, "widget")
@@ -67,10 +72,17 @@ const DRAFT_SOURCE_DOMAIN: Record<string, DashboardDomain> = {
  */
 const DEFAULT_QUERY_DOMAIN: DashboardDomain = "Traces"
 
-export type DashboardDomain = "Traces" | "Logs" | "Errors" | "Metrics" | "Raw SQL"
+export type DashboardDomain = "Traces" | "Logs" | "Errors" | "Metrics" | "Raw SQL" | "Google Cloud"
 
 /** Display order, so two dashboards reading the same signals label identically. */
-const DOMAIN_ORDER: ReadonlyArray<DashboardDomain> = ["Traces", "Logs", "Errors", "Metrics", "Raw SQL"]
+const DOMAIN_ORDER: ReadonlyArray<DashboardDomain> = [
+	"Traces",
+	"Logs",
+	"Errors",
+	"Metrics",
+	"Raw SQL",
+	"Google Cloud",
+]
 
 /** How many domains the lane shows before folding the rest into "+N". */
 const MAX_DOMAIN_TERMS = 2
@@ -78,6 +90,7 @@ const MAX_DOMAIN_TERMS = 2
 /** Every domain one widget reads. A multi-query chart can read more than one. */
 const widgetDomains = (dataSource: unknown): ReadonlyArray<DashboardDomain> => {
 	if (dataSourceRawSql(dataSource) !== null) return ["Raw SQL"]
+	if (dataSourcePromQl(dataSource) !== null) return ["Google Cloud"]
 
 	const querySet = dataSourceQuerySet(dataSource)
 	if (querySet !== null && querySet.queries.length > 0) {

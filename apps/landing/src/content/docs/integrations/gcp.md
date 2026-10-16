@@ -514,6 +514,30 @@ Until a connection's setup script has run, the page reads **Finish setting up Go
 
 With **Key metrics** off on every connection, the page leaves the sidebar and the overview. Its address still opens it: for a time range with data it shows the service tabs with what Maple collected before, under the notice **Google Cloud metrics are switched off**, and otherwise it reads **Turn on metrics for Google Cloud**. The **Resources** tab is back once a connection collects again.
 
+## Live queries
+
+A dashboard widget can chart any Cloud Monitoring metric with a PromQL query, read from Google each time the widget loads. Nothing is stored in Maple. Live queries work on every connection, with **Key metrics** on or off, once its setup script has run.
+
+To add one, edit a widget, choose a line, area, bar, stat or gauge panel, and pick **Google Cloud** as the source. **Start from a metric** searches the metric names of your projects and writes a starter query for the one you pick: a rate for counters, an average for gauges, the 95th percentile for distributions. Click **Run preview** to read it.
+
+Write metric names in PromQL's UTF-8 form, in quotes inside the braces:
+
+```promql
+sum by (project_id, service_name) (rate({"run.googleapis.com/request_count", monitored_resource="cloud_run_revision"}[5m]))
+```
+
+- A metric written by more than one resource type needs a `monitored_resource` matcher, as above. Without it Google refuses the query and the widget shows Google's message.
+- A distribution metric is three series: `_bucket`, `_count` and `_sum`. For a percentile, use `histogram_quantile(0.95, sum by (project_id, le) (rate({"run.googleapis.com/request_latencies_bucket"}[5m])))`.
+- **Legend** names each series from its labels, for example `{{service_name}}`. Without one, a series is named after all its labels.
+- Dashboard variables go inside a quoted regex matcher: `service_name=~"$service"`. **All** becomes `checkout|cart|…`, which `=~` matches.
+- A stat or gauge reduces the series to one number by its **Aggregate**: write a query that returns one series, such as `sum(…)` without `by`.
+
+Maple runs the query once per project and every series carries a `project_id` label, so an aggregation such as `sum` adds up within a project, never across projects. A query reads up to 20 projects: with more, list the projects to read in **Projects**. An answer holds up to 500 series across its projects; past that the widget asks you to aggregate with `sum by` or `avg by`, or to narrow the selector. When some projects could not be read, the widget shows the rest and names the ones missing under the chart.
+
+Data arrives in Cloud Monitoring within about 2 minutes. How far back a query reaches is Google's retention: 24 months for Compute Engine, GKE, Cloud SQL and a few other services, six weeks for most other Google Cloud metrics. See **Data retention** in [Cloud Monitoring quotas and limits](https://cloud.google.com/monitoring/quotas). A widget shared through a link runs its saved query; viewers can change the time range and dashboard variables, not the query.
+
+Google bills the time series each read returns to your Google Cloud project, separately from your Maple plan. Maple caches each answer for a minute, and older time ranges for 10 minutes. Aggregating with `sum by` or `avg by` returns fewer series and costs less. See [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
+
 ## Google Cloud costs
 
 Google bills Pub/Sub and Cloud Monitoring usage to your account, separately from your Maple plan.

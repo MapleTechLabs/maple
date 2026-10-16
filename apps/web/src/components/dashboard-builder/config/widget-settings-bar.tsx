@@ -1,5 +1,9 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-import { SettingsSourceMode, WidgetSettings } from "@/components/dashboard-builder/config/settings-fields"
+import {
+	SettingsSourceMode,
+	type SourceMode,
+	WidgetSettings,
+} from "@/components/dashboard-builder/config/settings-fields"
 import { widgetTypes } from "@/components/dashboard-builder/widgets/types"
 import { useWidgetBuilder } from "@/hooks/use-widget-builder"
 import { toPanelType } from "@/lib/query-builder/panel-types"
@@ -13,7 +17,7 @@ import { toPanelType } from "@/lib/query-builder/panel-types"
  * — nine booleans that a tenth widget type would have had to thread through by
  * hand.
  */
-export function WidgetSettingsBar({ sourceMode = "builder" }: { sourceMode?: "builder" | "rawSql" }) {
+export function WidgetSettingsBar({ sourceMode = "builder" }: { sourceMode?: SourceMode }) {
 	const { state } = useWidgetBuilder()
 	const { ConfigPanel } = widgetTypes[toPanelType(state.visualization, state.chartId)]
 

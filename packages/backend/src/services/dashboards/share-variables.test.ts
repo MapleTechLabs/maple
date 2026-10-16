@@ -166,6 +166,23 @@ describe("resolveShareVariables", () => {
 		if (text._tag === "Success") expect(text.success.search?.value).toBe("")
 	})
 
+	it("holds a query variable a PromQL tile reads to the free-text charset", async () => {
+		// Telemetry values reach PromQL unescaped: one that closes the matcher would rewrite the query.
+		const env = { name: "env", type: "query" as const, includeAll: true }
+		const planted = { env: ["prod", 'x"} or {__name__=~".+'] }
+		const promql = ['sum({"m", env=~"$env"})']
+
+		const safe = await run(resolveShareVariables([env], { env: "prod" }, planted, [], promql))
+		expect(safe._tag).toBe("Success")
+		const picked = await run(resolveShareVariables([env], { env: planted.env[1]! }, planted, [], promql))
+		expect(picked._tag).toBe("Failure")
+		const all = await run(resolveShareVariables([env], { env: "$__all" }, planted, [], promql))
+		expect(all._tag).toBe("Failure")
+		// A board without PromQL keeps accepting whatever the warehouse listed.
+		const elsewhere = await run(resolveShareVariables([env], { env: planted.env[1]! }, planted))
+		expect(elsewhere._tag).toBe("Success")
+	})
+
 	it("still refuses a query variable value that rewrites a clause", async () => {
 		// The fallback is a weaker check, not an absent one.
 		const definition = { name: "env", type: "query" as const }

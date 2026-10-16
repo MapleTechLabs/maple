@@ -73,8 +73,9 @@ export interface DisabledWidgetRequest {
 	 * - `metric_not_selected`: a metrics-source query with no metric name. The
 	 *   server would reject it (`"Metric source requires a metric name"`), so the
 	 *   request is never sent — a half-configured tile is a state, not an error.
+	 * - `promql_query_empty`: a Google Cloud PromQL tile with no query written yet.
 	 */
-	readonly reason: "invalid_widget_time_range" | "metric_not_selected"
+	readonly reason: "invalid_widget_time_range" | "metric_not_selected" | "promql_query_empty"
 }
 
 export type WidgetRequestPlan = PlannedWidgetRequest | DisabledWidgetRequest
@@ -84,6 +85,9 @@ export const WIDGET_FETCH_STRATEGY = { enableEmptyRangeFallback: false } as cons
 
 /** Endpoint whose params carry `maxDataPoints`. Mirrors `QUERY_RESULT_ENDPOINTS.timeseries`. */
 const TIMESERIES_ENDPOINT = "custom_query_builder_timeseries"
+
+/** Mirrors `GCP_PROMQL_ENDPOINT` in `@maple/widgets`. */
+const GCP_PROMQL_ENDPOINT = "gcp_promql"
 
 /** Query-set endpoints: `params.queries` is an array of query-builder drafts. */
 const QUERY_SET_ENDPOINTS = new Set([
@@ -160,6 +164,9 @@ export function planWidgetRequest(input: PlanWidgetRequestInput): WidgetRequestP
 
 	if (isMetricNotSelected(endpoint, interpolated)) {
 		return { kind: "disabled", reason: "metric_not_selected" }
+	}
+	if (endpoint === GCP_PROMQL_ENDPOINT && isBlank(interpolated.promql)) {
+		return { kind: "disabled", reason: "promql_query_empty" }
 	}
 
 	return {

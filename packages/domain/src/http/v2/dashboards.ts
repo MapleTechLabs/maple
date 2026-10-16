@@ -1,5 +1,6 @@
 import { RAW_SQL_ENDPOINT } from "@maple/widgets/dashboard"
 import { RawSqlText } from "../../raw-sql"
+import { GCP_PROMQL_MAX_QUERY_LENGTH } from "../gcp-promql"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema, SchemaGetter } from "effect"
 import {
@@ -267,11 +268,21 @@ const V2StaticDataSource = Schema.Struct({
 	transform: optional(V2WidgetTransform),
 })
 
+// Google validates the query itself on every read; an empty one is a draft.
+const V2PromQlDataSource = Schema.Struct({
+	kind: Schema.Literal("promql"),
+	query: Schema.String.check(Schema.isMaxLength(GCP_PROMQL_MAX_QUERY_LENGTH)),
+	projects: optional(Schema.Array(Schema.String)),
+	legend: optional(Schema.String),
+	transform: optional(V2WidgetTransform),
+})
+
 export const V2WidgetDataSource = Schema.Union([
 	V2QueryDataSource,
 	V2RawSqlDataSource,
 	V2RouteDataSource,
 	V2StaticDataSource,
+	V2PromQlDataSource,
 ]).annotate({ identifier: "DashboardWidgetDataSource", title: "Dashboard widget data source" })
 
 const V2WidgetDisplayColumn = Schema.Struct({

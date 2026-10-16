@@ -264,6 +264,7 @@ describe("the v2 data source covers every stored kind", () => {
 			raw_sql: { kind: "raw_sql", sql: "SELECT count() FROM logs WHERE $__orgFilter" },
 			route: { kind: "route", endpoint: "list_traces" },
 			static: { kind: "static" },
+			promql: { kind: "promql", query: "up" },
 		}[kind]!
 
 		expect(() => decode(fixture)).not.toThrow()
@@ -300,5 +301,15 @@ describe("the v2 data source covers every stored kind", () => {
 
 		expect(wire).toHaveProperty("result_shape", "breakdown")
 		expect(wire).toHaveProperty("default_limit", 20)
+	})
+
+	it("round-trips a PromQL source with its projects and legend", () => {
+		const source = {
+			kind: "promql",
+			query: 'sum by (service) (rate({"run.googleapis.com/request_count"}[5m]))',
+			projects: ["shop-prod"],
+			legend: "{{service}}",
+		}
+		expect(decode(Schema.encodeUnknownSync(V2WidgetDataSource)(source))).toEqual(source)
 	})
 })
