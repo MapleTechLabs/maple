@@ -13,8 +13,21 @@ import {
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
 	type WorkflowJobAnnotation,
+	type WorkflowJobJob,
 } from "@maple/domain/http"
-import { Array as Arr, Clock, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Deferred,
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Option,
+	Schema,
+	Stream,
+} from "effect"
 import { TestClock } from "effect/testing"
 import {
 	cleanupTestDbs,
@@ -1654,6 +1667,12 @@ describe("VcsSyncService orchestrator", () => {
 		readonly forwardedPullRequests?: Array<{ orgId: string; job: PullRequestEventJob }>
 		/** CI runs and jobs the sync service forwarded; absent means no workflow sink is bound. */
 		readonly forwardedWorkflows?: Array<{ orgId: string; kind: string; runId: string }>
+		/** CI job logs the sync service forwarded, read to the end. */
+		readonly forwardedLogs?: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }>
+		/** The lines the stubbed provider serves as any job's log. */
+		readonly workflowLog?: ReadonlyArray<string>
+		/** Completed when the stubbed provider is asked for a log it then never finishes sending. */
+		readonly workflowLogHang?: Deferred.Deferred<void>
 		readonly repos?: ReadonlyArray<{
 			externalRepoId: string
 			owner: string
@@ -1724,6 +1743,14 @@ describe("VcsSyncService orchestrator", () => {
 					: opts.workflowAnnotationsError
 						? Effect.fail(opts.workflowAnnotationsError)
 						: Effect.succeed(opts.workflowAnnotations ?? []),
+			streamWorkflowJobLog: () =>
+				opts.workflowLogHang
+					? Stream.fromEffect(
+							Deferred.succeed(opts.workflowLogHang, undefined).pipe(
+								Effect.andThen(Effect.never),
+							),
+						)
+					: Stream.fromIterable(opts.workflowLog ?? []),
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
 			ids: ["github"],
@@ -1752,6 +1779,19 @@ describe("VcsSyncService orchestrator", () => {
 								workflows.push({ orgId, kind: job.kind, runId: job.runId })
 								opts.forwardedAnnotations?.push(annotations)
 							}),
+						onWorkflowJobLog: (orgId, job, lines) =>
+							Stream.runCollect(lines).pipe(
+								Effect.tap((collected) =>
+									Effect.sync(() => {
+										opts.forwardedLogs?.push({
+											orgId,
+											jobId: job.jobId,
+											lines: collected,
+										})
+									}),
+								),
+								Effect.ignore,
+							),
 					})
 		return Layer.effect(VcsSyncService, VcsSyncService.make).pipe(
 			Layer.provideMerge(Layer.mergeAll(repoLive, registry, queue, sink, workflowSink)),
@@ -1872,7 +1912,19 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, forwardedPullRequests })))
 	})
 
-	const workflowJob = (externalInstallationId: string, conclusion = "success"): VcsSyncJob => ({
+	const workflowJob = (
+		externalInstallationId: string,
+		conclusion = "success",
+		steps: WorkflowJobJob["steps"] = [
+			{
+				number: 1,
+				name: "Run tests",
+				conclusion: "success",
+				startedAtMs: 1_700_000_001_000,
+				completedAtMs: 1_700_000_059_000,
+			},
+		],
+	): VcsSyncJob => ({
 		kind: "workflow-job",
 		provider: "github",
 		externalInstallationId,
@@ -1892,15 +1944,7 @@ describe("VcsSyncService orchestrator", () => {
 		queuedAtMs: 1_700_000_000_000,
 		startedAtMs: 1_700_000_001_000,
 		completedAtMs: 1_700_000_060_000,
-		steps: [
-			{
-				number: 1,
-				name: "Run tests",
-				conclusion: "success",
-				startedAtMs: 1_700_000_001_000,
-				completedAtMs: 1_700_000_059_000,
-			},
-		],
+		steps,
 	})
 
 	it.effect("forwards CI runs and jobs to the workflow sink under the installation's org", () => {
@@ -1976,6 +2020,68 @@ describe("VcsSyncService orchestrator", () => {
 					forwardedWorkflows,
 					forwardedAnnotations,
 					workflowAnnotations: [annotation],
+				}),
+			),
+		)
+	})
+
+	it.effect("forwards a job's log alongside its traces, and neither once CI traces is off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_ci")
+			yield* seedInstallation(repo, orgId)
+			const installation = yield* repo.resolveInstallation("github", "42")
+			if (Option.isNone(installation)) return assert.fail("installation not seeded")
+			const job = Schema.encodeSync(VcsSyncJob)(workflowJob("42"))
+
+			yield* svc.processMessage(job)
+			assert.deepStrictEqual(forwardedLogs, [{ orgId, jobId: "555", lines: ["first", "second"] }])
+
+			// A job none of whose steps ran has no log worth asking for.
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42", "skipped", [])))
+			// One switch covers both: CI traces off means no logs either.
+			yield* repo.setCiTracesEnabled(orgId, installation.value.id, false)
+			yield* svc.processMessage(job)
+			assert.lengthOf(forwardedLogs, 1)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows: [],
+					forwardedLogs,
+					workflowLog: ["first", "second"],
+				}),
+			),
+		)
+	})
+
+	it.effect("lets go of a job's log that outlasts its budget, so the rest of the batch moves on", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+		const asked = Deferred.makeUnsafe<void>()
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_ci")
+			yield* seedInstallation(repo, orgId)
+			const processing = yield* Effect.forkChild(
+				svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42"))),
+			)
+			yield* Deferred.await(asked)
+			yield* TestClock.adjust(Duration.seconds(31))
+			const exit = yield* Fiber.await(processing)
+			assert.isTrue(Exit.isSuccess(exit))
+			assert.lengthOf(forwardedLogs, 0)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows: [],
+					forwardedLogs,
+					workflowLogHang: asked,
 				}),
 			),
 		)

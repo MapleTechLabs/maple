@@ -9,20 +9,24 @@ describe("organizationFeatureFlagsFrom", () => {
 				aiautotriage: true,
 				unrelated_metadata: "preserved by Clerk, ignored here",
 			}),
-		).toEqual({ aiAutoTriage: true, releases: false, prReview: false })
+		).toEqual({ aiAutoTriage: true, releases: false })
 	})
 
-	// `webanalytics` and `agent_tracing` were rollout flags until their pages
+	// `webanalytics`, `agent_tracing` and `prreview` were rollout flags until their pages
 	// shipped to everyone. Orgs still carry the key in Clerk metadata, and a retired flag must decode
 	// as an ignored extra rather than failing the whole struct — which would take
 	// the live flags down with it and fail closed for the orgs that have them on.
 	it("ignores a retired flag still present in metadata", () => {
 		expect(
-			organizationFeatureFlagsFrom({ aiautotriage: true, webanalytics: true, agent_tracing: true }),
+			organizationFeatureFlagsFrom({
+				aiautotriage: true,
+				webanalytics: true,
+				agent_tracing: true,
+				prreview: true,
+			}),
 		).toEqual({
 			aiAutoTriage: true,
 			releases: false,
-			prReview: false,
 		})
 	})
 
@@ -30,27 +34,19 @@ describe("organizationFeatureFlagsFrom", () => {
 		expect(organizationFeatureFlagsFrom({})).toEqual({
 			aiAutoTriage: false,
 			releases: false,
-			prReview: false,
 		})
 		// The string "true" is the shape a hand-edited Clerk dashboard field
 		// produces, and it must not read as enabled.
 		expect(organizationFeatureFlagsFrom({ aiautotriage: "true", releases: "true" })).toEqual({
 			aiAutoTriage: false,
 			releases: false,
-			prReview: false,
 		})
-	})
-
-	it("reads the pull request review rollout from its own key", () => {
-		expect(organizationFeatureFlagsFrom({ prreview: true }).prReview).toBe(true)
-		expect(organizationFeatureFlagsFrom({ prreview: "true" }).prReview).toBe(false)
 	})
 
 	it("fails closed when public metadata is unavailable", () => {
 		expect(organizationFeatureFlagsFrom(undefined)).toEqual({
 			aiAutoTriage: false,
 			releases: false,
-			prReview: false,
 		})
 	})
 })

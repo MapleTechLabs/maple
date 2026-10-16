@@ -41,8 +41,11 @@ jobs:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - name: Setup mise (toolchain)
-              uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+            - name: Toolchain and dependencies
+              uses: ./.github/actions/setup
+              with:
+                  install-filters: "@maple/db"
+                  turbo-cache: "false"
 
             - name: Load secrets from Infisical
               uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
@@ -53,11 +56,6 @@ jobs:
                   env-slug: ${{ env.INFISICAL_ENV_SLUG }}
                   export-type: "env"
                   secret-path: "/"
-
-            - name: Install dependencies
-              uses: ./.github/actions/bun-install
-              with:
-                  filters: "@maple/db"
 
             - name: Install PlanetScale CLI
               uses: planetscale/setup-pscale-action@b6a50ee45b4b24944e1d8de6e57b3a5f6476a1af # v1

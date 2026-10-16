@@ -1,6 +1,6 @@
 import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
-import { Context, type Effect } from "effect"
+import { Context, type Effect, type Stream } from "effect"
 
 /**
  * Where a finished CI workflow run or job goes once the VCS layer has resolved its org. Optional in
@@ -16,6 +16,15 @@ export interface WorkflowEventSinkApi {
 		orgId: OrgId,
 		job: WorkflowJobJob,
 		annotations: ReadonlyArray<WorkflowJobAnnotation>,
+	) => Effect.Effect<void>
+	/**
+	 * The job's log, one line per element. The sink reads as much as it keeps and owns the stream's
+	 * failure: a log that cannot be read is logged, never a failed job.
+	 */
+	readonly onWorkflowJobLog: <E>(
+		orgId: OrgId,
+		job: WorkflowJobJob,
+		lines: Stream.Stream<string, E>,
 	) => Effect.Effect<void>
 }
 
