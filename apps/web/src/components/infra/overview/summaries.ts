@@ -323,17 +323,19 @@ export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSumma
 		.filter((entry) => entry.tone !== "neutral")
 		// Critical before elevated, then the larger share first.
 		.sort((a, b) => (a.tone === b.tone ? b.worst.value - a.worst.value : a.tone === "crit" ? -1 : 1))
+	const workloadFindings = flagged.map(({ service, workload, tone, worst }): Finding => ({
+		key: `gcp:${service}:${workload.keys.join("/")}`,
+		source: "gcp",
+		tone: tone === "crit" ? "crit" : "warn",
+		// "orders-db at 93% disk", "api at 8.0% 5xx rate": an acronym keeps its capitals.
+		title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${worst.label.replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())}`,
+		detail: [GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" / "),
+		target: { kind: "gcp", service, keys: workload.keys },
+	}))
+	// Capped like every source: critical workloads, then the unread services (their workloads are
+	// unknown, not healthy: the tab says the same and offers the reload), then elevated ones.
 	const findings = [
-		...flagged.slice(0, MAX_FINDINGS_PER_SOURCE).map(({ service, workload, tone, worst }): Finding => ({
-			key: `gcp:${service}:${workload.keys.join("/")}`,
-			source: "gcp",
-			tone: tone === "crit" ? "crit" : "warn",
-			// "orders-db at 93% disk", "api at 8.0% 5xx rate": an acronym keeps its capitals.
-			title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${worst.label.replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())}`,
-			detail: [GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" / "),
-			target: { kind: "gcp", service, keys: workload.keys },
-		})),
-		// Its workloads are unknown, not healthy: the tab says the same and offers the reload.
+		...workloadFindings.filter((finding) => finding.tone === "crit"),
 		...unread.map(({ service }): Finding => ({
 			key: `gcp:${service}:unread`,
 			source: "gcp",
@@ -343,7 +345,8 @@ export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSumma
 			detail: "Reload to try again",
 			target: { kind: "gcpService", service },
 		})),
-	]
+		...workloadFindings.filter((finding) => finding.tone !== "crit"),
+	].slice(0, MAX_FINDINGS_PER_SOURCE)
 	const total = fleet.reduce((sum, { workloads }) => sum + workloads.length, 0)
 	const crit = flagged.filter((entry) => entry.tone === "crit").length
 	return {

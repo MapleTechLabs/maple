@@ -230,7 +230,8 @@ export const getGcpCloudSqlTraceSide = Effect.fn("QueryEngine.getGcpCloudSqlTrac
 		}),
 	)
 	const databases = result.databases.filter((database) => !SYSTEM_DATABASES.has(database))
-	const summaries = yield* Effect.forEach(
+	// A database whose read fails is left out; the others still show.
+	const summaries = (yield* Effect.forEach(
 		databases,
 		(database) =>
 			getServiceDbQuerySummary({
@@ -241,9 +242,9 @@ export const getGcpCloudSqlTraceSide = Effect.fn("QueryEngine.getGcpCloudSqlTrac
 					endTime: input.endTime,
 					topN: 50,
 				},
-			}),
+			}).pipe(Effect.orElseSucceed(() => null)),
 		{ concurrency: 4 },
-	)
+	)).filter((summary) => summary !== null)
 	return {
 		databases,
 		tracedQueries: summaries.flatMap((summary) => summary.topQueries),
