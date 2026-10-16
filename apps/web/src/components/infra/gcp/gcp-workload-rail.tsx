@@ -146,7 +146,7 @@ export function GcpWorkloadRail({
 	)
 }
 
-function RailLink({ children }: { children: ReactNode }) {
+export function RailLink({ children }: { children: ReactNode }) {
 	return (
 		<div className="font-mono text-xs text-primary transition-colors hover:text-primary/80">
 			{children}
