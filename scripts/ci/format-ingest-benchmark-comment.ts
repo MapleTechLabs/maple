@@ -122,8 +122,9 @@ const out = process.env.COMMENT_OUTPUT
 if (!out) throw new Error("COMMENT_OUTPUT is required")
 const headRuns = await loadRuns(process.env.HEAD_LOAD_JSON)
 const baseRuns = await loadRuns(process.env.BASE_LOAD_JSON)
-const headMode = String(headRuns[0]?.ingest_mode ?? "tinybird")
-const baseMode = baseRuns[0]?.ingest_mode
+const modeOf = (runs: ReadonlyArray<Run>): string => String(runs[0]?.ingest_mode ?? "tinybird")
+const headMode = modeOf(headRuns)
+const baseMode = modeOf(baseRuns)
 const sameMode = baseRuns.length > 0 && baseMode === headMode
 
 const body = [
@@ -146,7 +147,7 @@ if (sameMode) {
 } else {
 	const note =
 		baseRuns.length > 0
-			? `Baseline ran in \`${String(baseMode)}\` mode while PR ran in \`${headMode}\` mode — cross-mode comparison is misleading, so only absolute PR numbers are shown.`
+			? `Baseline ran in \`${baseMode}\` mode while PR ran in \`${headMode}\` mode — cross-mode comparison is misleading, so only absolute PR numbers are shown.`
 			: `No baseline benchmark on main yet (this PR introduces \`${headMode}\` mode). Once it lands, future PRs will get a real PR-vs-main delta automatically.`
 	body.push(
 		`### Load Benchmark — \`${headMode}\` mode, ${headRuns.length} run(s)`,

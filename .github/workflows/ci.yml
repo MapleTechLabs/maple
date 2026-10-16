@@ -61,6 +61,7 @@ jobs:
                         - 'packages/**'
                         - 'lib/**'
                         - 'scripts/**'
+                        - 'skills/**'
                         - '!apps/ingest/**'
                         # Read by @maple/domain's tests (turbo.json test inputs).
                         - 'apps/ingest/src/ai_session/**'
