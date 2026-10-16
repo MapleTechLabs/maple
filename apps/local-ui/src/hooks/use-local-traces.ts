@@ -1,9 +1,10 @@
-import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query"
+import { useInfiniteQuery } from "@tanstack/react-query"
 import type { DateTime } from "effect"
 import { CH } from "@maple/query-engine"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { boundsKey, executeLocalCompiledQuery, localParams, noCursor } from "@/lib/query"
 import type { TimeBounds } from "../lib/time"
+import { windowed } from "../lib/query-cache"
 
 const PAGE_SIZE = 25
 
@@ -165,9 +166,8 @@ async function spanScopedPage(
 /** Infinite list of traces, newest first, keyset-paged on (root timestamp, TraceId). */
 export function useLocalTraces(filters: TraceFilters, bounds: TimeBounds) {
 	return useInfiniteQuery({
-		queryKey: ["local", "traces", filters, boundsKey(bounds)],
+		...windowed(["local", "traces", filters, boundsKey(bounds)]),
 		initialPageParam: noCursor<TraceCursor>(),
-		placeholderData: keepPreviousData,
 		queryFn: ({ pageParam, signal }) =>
 			filters.scope === "spans"
 				? spanScopedPage(filters, bounds, pageParam, signal)

@@ -10,15 +10,21 @@ import { cn } from "@maple/ui/lib/utils"
 import { DetailsSection } from "@/components/alerts/details-section"
 import { NotificationsSection } from "@/components/alerts/notifications-section"
 import { DestinationDialog } from "@/components/alerts/destination-dialog"
-import { useDestinationManager } from "@/components/alerts/overview/settings-tab"
+import { useDestinationManager } from "@/components/alerts/overview/routing-tab"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { RuleActionBar } from "@/components/alerts/rule-action-bar"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
+import {
+	RuleConditionFields,
+	conditionSubject,
+	describeRuleCondition,
+} from "@/components/alerts/rule-condition-bar"
+import { RuleStep } from "@/components/alerts/rule-step"
 import { RuleLiveChartHero } from "@/components/alerts/rule-live-chart-hero"
+import { RuleNoiseSection } from "@/components/alerts/rule-noise-section"
+import { RuleQuerySection } from "@/components/alerts/rule-query-section"
 import { RuleTemplatesOverlay } from "@/components/alerts/rule-templates-overlay"
-import { ScopeSection } from "@/components/alerts/scope-section"
-import { SignalAndThresholdSection } from "@/components/alerts/signal-and-threshold-section"
 import { WidgetPrefillNoticeBanner } from "@/components/alerts/widget-prefill-notice-banner"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import type { TimeRange } from "@/components/time-range-picker/types"
@@ -33,18 +39,20 @@ import {
 	isRangeComparator,
 	isRulePreviewReady,
 	pickDefaultDestination,
-	signalLabels,
+	ruleToFormState,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
+import { diffRuleForms, incidentsClearedByDraft } from "@/lib/alerts/preview-insights"
 import { toastExit } from "@/lib/error-toast"
 import { applyTemplate } from "@/lib/alerts/templates"
+import { switchSignalKind } from "@/lib/alerts/rule-modes"
 import type { WidgetAlertPrefillNotice } from "@/lib/alerts/widget-prefill"
 import { Result, useAtomSet } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { useAlertRulesList } from "@/hooks/use-alerts-list"
+import { useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
 
-/** Preview lookback the form opens on — the rule detail page's default too. */
-const DEFAULT_PREVIEW_PRESET = "24h"
+/** Preview lookback the form opens on: a week shows how often the rule would really fire. */
+const DEFAULT_PREVIEW_PRESET = "7d"
 
 export function AlertCreateFormSurface({
 	initialForm,
@@ -117,6 +125,29 @@ export function AlertCreateFormSurface({
 	)
 
 	const { preview, previewLoading, previewError } = useAlertRulePreview(ruleForm, previewRange)
+
+	// Edit mode replays the saved rule over the same window, but only once the
+	// draft evaluates differently; until then the two charts would be identical.
+	const savedForm = useMemo(() => (editingRule ? ruleToFormState(editingRule) : null), [editingRule])
+	const changes = useMemo(
+		() => (savedForm === null ? [] : diffRuleForms(savedForm, ruleForm)),
+		[savedForm, ruleForm],
+	)
+	const evaluationChanged =
+		savedForm !== null && previewIdentityKey(savedForm) !== previewIdentityKey(ruleForm)
+	const savedReplay = useAlertRulePreview(evaluationChanged ? savedForm : null, previewRange)
+	const { result: incidentsResult } = useAlertIncidentsList()
+	const clearedIncidents = useMemo(() => {
+		if (editingRule === null || !evaluationChanged) return []
+		const open = Result.builder(incidentsResult)
+			.onSuccess((response) =>
+				response.incidents.filter(
+					(incident) => incident.ruleId === editingRule.id && incident.status === "open",
+				),
+			)
+			.orElse(() => [])
+		return incidentsClearedByDraft(open, preview)
+	}, [editingRule, evaluationChanged, incidentsResult, preview])
 
 	const validationIssues = useMemo(() => deriveValidationIssues(ruleForm), [ruleForm])
 
@@ -192,10 +223,10 @@ export function AlertCreateFormSurface({
 	const [previewRule, previewingRule] = useAsyncAction(() => runTest(false))
 	const [sendTestNotification, sendingTestNotification] = useAsyncAction(() => runTest(true))
 
-	const showScope = ruleForm.signalType !== "builder_query" && ruleForm.signalType !== "raw_query"
 	// Drop the verdict as soon as the user edits anything it depended on.
 	const currentPreviewKey = previewIdentityKey(ruleForm)
 	const freshPreviewResult = previewResult?.key === currentPreviewKey ? previewResult : null
+	const thresholdMissing = !Number.isFinite(Number(ruleForm.threshold)) || ruleForm.threshold.trim() === ""
 
 	return (
 		<>
@@ -205,40 +236,63 @@ export function AlertCreateFormSurface({
 					{ label: editingRule ? "Edit rule" : "New rule" },
 				]}
 			>
-				<div className={cn("mx-auto w-full space-y-4", RULE_FORM_MAX_WIDTH)}>
+				<div className={cn("mx-auto w-full space-y-10", RULE_FORM_MAX_WIDTH)}>
 					<WidgetPrefillNoticeBanner notices={prefillNotices} />
-					{/* The preview rides beside the form, pinned, so every edit to the signal,
-							    scope or threshold redraws where you can see it. Stacked above below lg. */}
-					<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
-						<div className="lg:sticky lg:top-0 lg:order-2">
-							<RuleLiveChartHero
-								form={ruleForm}
-								preview={preview}
-								previewLoading={previewLoading}
-								previewError={previewError}
-								onTestRule={() => void previewRule()}
-								testing={previewingRule}
-								previewResult={freshPreviewResult}
-								range={previewRange}
-								timeRange={previewTimeRange}
-								onTimeRangeChange={setPreviewTimeRange}
-							/>
+					<RuleStep
+						number={1}
+						divider={false}
+						title="What to watch"
+						hint="Pick a built-in signal, or build the query like a dashboard widget."
+						status="done"
+					>
+						<RuleQuerySection
+							form={ruleForm}
+							onChange={setRuleForm}
+							autocompleteValues={autocompleteValues}
+							serviceNameOptions={serviceNameOptions}
+							environmentOptions={environmentOptions}
+						/>
+					</RuleStep>
+					<RuleStep
+						number={2}
+						title="When to alert"
+						hint="The dashed line is your threshold. Shaded bands show when the rule would have fired."
+						status={thresholdMissing ? "missing" : "done"}
+					>
+						<div className="space-y-4">
+						<RuleLiveChartHero
+							form={ruleForm}
+							preview={preview}
+							previewLoading={previewLoading}
+							previewError={previewError}
+							onTestRule={() => void previewRule()}
+							testing={previewingRule}
+							previewResult={freshPreviewResult}
+							range={previewRange}
+							timeRange={previewTimeRange}
+							onTimeRangeChange={setPreviewTimeRange}
+							comparison={
+								savedForm !== null && changes.length > 0
+									? {
+											savedPreview: evaluationChanged ? savedReplay.preview : preview,
+											savedLoading: evaluationChanged && savedReplay.previewLoading,
+											changes,
+											clearedIncidents,
+										}
+									: null
+							}
+						/>
+							<RuleConditionFields form={ruleForm} onChange={setRuleForm} saved={savedForm} />
+							<RuleNoiseSection form={ruleForm} onChange={setRuleForm} />
 						</div>
-						<div className="min-w-0 space-y-4 lg:order-1">
-							<SignalAndThresholdSection
-								form={ruleForm}
-								onChange={setRuleForm}
-								autocompleteValues={autocompleteValues}
-							/>
-							{showScope && (
-								<ScopeSection
-									form={ruleForm}
-									onChange={setRuleForm}
-									serviceNameOptions={serviceNameOptions}
-									environmentOptions={environmentOptions}
-									autocompleteValues={autocompleteValues}
-								/>
-							)}
+					</RuleStep>
+					<div className="grid gap-6 border-t pt-8 lg:grid-cols-2 lg:items-start">
+						<RuleStep
+							number={3}
+							divider={false}
+							title="Who gets notified"
+							status={ruleForm.destinationIds.length === 0 ? "missing" : "done"}
+						>
 							<NotificationsSection
 								form={ruleForm}
 								onChange={setRuleForm}
@@ -252,20 +306,29 @@ export function AlertCreateFormSurface({
 								}
 								onQuickCreate={isAdmin ? destinationManager.quickCreate : undefined}
 							/>
+						</RuleStep>
+						<RuleStep
+							number={4}
+							divider={false}
+							title="Name it"
+							status={ruleForm.name.trim().length === 0 ? "missing" : "done"}
+						>
 							<DetailsSection
 								form={ruleForm}
 								onChange={setRuleForm}
 								suggestedName={suggestedName}
 								tagSuggestions={tagSuggestions}
 							/>
-						</div>
+						</RuleStep>
 					</div>
 				</div>
 
 				<RuleActionBar
 					editing={!!editingRule}
+					changeCount={editingRule ? changes.length : null}
 					saving={savingRule}
 					validationIssues={validationIssues}
+					summary={describeRuleCondition(ruleForm)}
 					onCancel={() => navigate({ to: "/alerts" })}
 					onSave={() => void handleSave()}
 					onShowTemplates={editingRule ? undefined : () => setTemplatesOpen(true)}
@@ -280,7 +343,13 @@ export function AlertCreateFormSurface({
 					open={templatesOpen}
 					onOpenChange={setTemplatesOpen}
 					onPick={(template) => {
-						setRuleForm((current) => applyTemplate(template, current))
+						setRuleForm((current) => {
+							const applied = applyTemplate(template, current)
+							// Templates fill the query builder; Apdex has no builder aggregation, so it stays Built-in.
+							return applied.signalType === "apdex"
+								? applied
+								: switchSignalKind(applied, "builder_query").form
+						})
 						setTemplatesOpen(false)
 					}}
 					onStartBlank={() => setTemplatesOpen(false)}
@@ -308,14 +377,14 @@ function deriveValidationIssues(form: RuleFormState): string[] {
 	if (isRangeComparator(form.comparator) && !Number.isFinite(Number(form.thresholdUpper))) {
 		issues.push("Upper threshold")
 	}
-	// The four timing fields silently fall back to a default when they don't parse
+	// The timing fields silently fall back to a default when they don't parse
 	// (see `parsePositiveNumber` in form-utils), so name them here rather than
 	// letting a typo save as a different rule than the one on screen.
 	for (const [label, value] of [
-		["Window (min)", form.windowMinutes],
-		["Breaches to fire", form.consecutiveBreachesRequired],
-		["Healthy to resolve", form.consecutiveHealthyRequired],
-		["Renotify (min)", form.renotifyIntervalMinutes],
+		["Window", form.windowMinutes],
+		["Checks to fire", form.consecutiveBreachesRequired],
+		["Checks to resolve", form.consecutiveHealthyRequired],
+		["Remind interval", form.renotifyIntervalMinutes],
 	] as const) {
 		const parsed = Number(value)
 		if (!Number.isFinite(parsed) || parsed <= 0) issues.push(label)
@@ -356,7 +425,8 @@ function previewIdentityKey(form: RuleFormState): string {
 
 function makeSuggestedName(form: RuleFormState): string | null {
 	if (form.name.trim().length > 0) return null
-	const base = signalLabels[form.signalType]
+	const subject = conditionSubject(form)
+	const base = subject.charAt(0).toUpperCase() + subject.slice(1)
 	const queryGroupBy =
 		form.signalType === "builder_query" && form.queryBuilderDraft.addOns?.groupBy
 			? (form.queryBuilderDraft.groupBy ?? [])
@@ -375,5 +445,5 @@ function makeSuggestedName(form: RuleFormState): string | null {
 					: null
 	const env = !queryOwnsScope && form.environments.length > 0 ? form.environments.join(" · ") : null
 	const suffix = [scope, env].filter((part) => part !== null).join(" · ")
-	return suffix.length > 0 ? `${base} — ${suffix}` : base
+	return suffix.length > 0 ? `${base} · ${suffix}` : base
 }

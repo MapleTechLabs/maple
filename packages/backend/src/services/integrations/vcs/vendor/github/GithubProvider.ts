@@ -41,6 +41,9 @@ import {
 	type GithubApiPullRequest,
 	GithubAppClient,
 	GithubAppError,
+	isBlockedRepository,
+	isGoneStatus,
+	type RepositoryListingError,
 } from "./GithubAppClient"
 import { timestampMs } from "@maple/backend/platform/time"
 
@@ -296,42 +299,34 @@ const parsePayload = <A, E>(event: string, decoded: Effect.Effect<A, E>) =>
 	)
 
 // Classify a GitHub HTTP failure into a semantic VCS error. HTTP-status
-// knowledge lives here, in the provider — the orchestrator only ever sees the
-// semantic outcome. A rate limit (carrying `retryAfterSeconds`) becomes a
+// knowledge lives here and in the client, never in the orchestrator, which only
+// sees the semantic outcome. A rate limit (carrying `retryAfterSeconds`) becomes a
 // VcsRateLimitedError; a gone/410 on the installation-auth call is the
 // authoritative disconnect signal; on a repo call it means the repo is gone;
-// everything else (incl. 401/403/5xx) is transient and retryable.
-const isGone = (status?: number) => status === 404 || status === 410
-
-// GitHub answers 451 for a repository taken down for legal reasons, and carries
-// the same `{"block":{"reason":"dmca"}}` body on the 403 variant. Neither clears
-// on retry, so both are terminal — matched on the body rather than on 403 alone,
-// which is otherwise an ordinary (retryable) permission failure.
-const BLOCK_BODY = /"block"\s*:|Repository access blocked/
-const isBlocked = (error: GithubAppError) =>
-	error.status === 451 || (error.status === 403 && BLOCK_BODY.test(error.message))
-
+// everything else (incl. 401/403/5xx) is transient and retryable. The repository
+// listings classify gone and blocked repos themselves and pass them through.
 const toVcsError = (
-	error: GithubAppError,
+	error: RepositoryListingError,
 ):
 	| VcsProviderError
 	| VcsInstallationGoneError
 	| VcsRepoUnavailableError
 	| VcsRepositoryBlockedError
 	| VcsRateLimitedError => {
+	if (!(error instanceof GithubAppError)) return error
 	if (error.retryAfterSeconds !== undefined) {
 		return new VcsRateLimitedError({
 			message: error.message,
 			retryAfterSeconds: error.retryAfterSeconds,
 		})
 	}
-	if (isBlocked(error)) {
+	if (isBlockedRepository(error)) {
 		return new VcsRepositoryBlockedError({
 			message: error.message,
 			...(!(error.status === undefined) ? { status: error.status } : undefined),
 		})
 	}
-	if (isGone(error.status)) {
+	if (isGoneStatus(error.status)) {
 		if (error.scope === "installation") return new VcsInstallationGoneError({ message: error.message })
 		if (error.scope === "repository") return new VcsRepoUnavailableError({ message: error.message })
 	}
@@ -346,7 +341,7 @@ const toVcsError = (
 // so a rate-limit error never reaches this path. Narrow the mapper accordingly so
 // `fetchCommits` keeps the port's 3-way error channel (no VcsRateLimitedError).
 const toVcsCommitError = (
-	error: GithubAppError,
+	error: RepositoryListingError,
 ): VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError => {
 	const mapped = toVcsError(error)
 	return mapped._tag === "@maple/http/errors/VcsRateLimitedError"

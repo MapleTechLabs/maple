@@ -17,13 +17,13 @@ import { type Log, type LogsResponse } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "@/components/logs/log-detail-sheet"
 import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
-import { formatDuration } from "@maple/ui/lib/format"
+import { formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
 import { getCacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
 import { getCloudPlatform, outcomeBadgeStyle } from "@maple/ui/lib/cloud-platforms"
 import { GlobeIcon } from "@maple/ui/components/icons"
-import { getServiceColor } from "@maple/ui/lib/colors"
+import { calculateSelfTime, getServiceColor } from "@maple/ui/lib/colors"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import type { SpanNode, SpanDetailResult } from "@/api/warehouse/traces"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
@@ -35,6 +35,7 @@ import {
 	ResourceAttributesSection,
 } from "@/components/attributes"
 import { TraceAttributeFilterProvider } from "./trace-attribute-filter-provider"
+import { SpanEventsSection } from "./span-events-section"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
@@ -48,6 +49,8 @@ interface SpanDetailPanelProps {
 	/** Start of the whole trace (earliest span start) — anchors the position-in-trace bar. */
 	traceStartTime: string
 	totalDurationMs: number
+	/** Selects another span of the trace; makes the parent span ID a link to it. */
+	onSelectSpanId?: (spanId: string) => void
 	className?: string
 }
 
@@ -149,6 +152,7 @@ export function SpanDetailPanel({
 	onClose,
 	traceStartTime,
 	totalDurationMs,
+	onSelectSpanId,
 	className,
 }: SpanDetailPanelProps) {
 	const { effectiveTimezone } = useTimezonePreference()
@@ -187,6 +191,9 @@ export function SpanDetailPanel({
 	const platform = getCloudPlatform(detailAttrs?.spanAttributes ?? span.spanAttributes)
 
 	const serviceColor = getServiceColor(span.serviceName)
+	// Self time only differs from the duration once there are children to wait on.
+	const selfTimeMs = span.children.length > 0 ? calculateSelfTime(span, span.children) : null
+	const traceShare = totalDurationMs > 0 ? span.durationMs / totalDurationMs : null
 
 	return (
 		<div className={cn("flex flex-col h-full bg-background overflow-hidden", className)}>
@@ -241,6 +248,19 @@ export function SpanDetailPanel({
 							</CopyableValue>
 						</span>
 					</div>
+					{selfTimeMs !== null && (
+						<span
+							className="font-mono text-muted-foreground"
+							title="Time not spent in child spans"
+						>
+							self <span className="text-foreground">{formatDuration(selfTimeMs)}</span>
+						</span>
+					)}
+					{traceShare !== null && !span.isMissing && (
+						<span className="font-mono text-muted-foreground">
+							{formatPercent(traceShare, { floor: 0.001 })} of trace
+						</span>
+					)}
 					<Badge variant="outline" size="xs" className={statusStyle}>
 						{span.statusCode || "Unset"}
 					</Badge>
@@ -388,9 +408,26 @@ export function SpanDetailPanel({
 										</KeyValue>
 										{span.parentSpanId && (
 											<KeyValue mono label="Parent span ID">
-												<CopyableValue value={span.parentSpanId}>
-													{span.parentSpanId}
-												</CopyableValue>
+												{onSelectSpanId ? (
+													// The copy button sits beside the link, not around it.
+													<SelectableValue
+														value={span.parentSpanId}
+														label="parent span ID"
+													>
+														<button
+															type="button"
+															className="font-mono underline decoration-dotted underline-offset-2 hover:text-primary"
+															title="Select the parent span"
+															onClick={() => onSelectSpanId(span.parentSpanId)}
+														>
+															{span.parentSpanId}
+														</button>
+													</SelectableValue>
+												) : (
+													<CopyableValue value={span.parentSpanId}>
+														{span.parentSpanId}
+													</CopyableValue>
+												)}
 											</KeyValue>
 										)}
 									</KeyValueList>
@@ -437,6 +474,7 @@ export function SpanDetailPanel({
 									))
 									.onSuccess((detail) => (
 										<>
+											<SpanEventsSection events={detail.events} />
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={detail.spanAttributes}

@@ -143,6 +143,29 @@ describe("consent", () => {
 		expect(mayPersistIdentifier()).toBe(false)
 	})
 
+	it("memory-only mode keeps the identifier off and the revoke out of storage", () => {
+		const store = new Map<string, string>()
+		vi.stubGlobal("localStorage", {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => store.set(key, value),
+		})
+		vi.useFakeTimers({ now: 5_000 })
+		configurePrivacy({ requireConsent: true, persistence: "memory" })
+		setConsent(true)
+		expect(hasConsent()).toBe(true)
+		expect(mayPersistIdentifier()).toBe(false)
+
+		setConsent(false)
+		// Still known to this page, so data captured before the revoke is dropped.
+		expect(consentRevokedAt()).toBe(5_000)
+		expect(store.size).toBe(0)
+
+		// A second SDK initialized without the option must not re-enable storage.
+		configurePrivacy(undefined)
+		setConsent(true)
+		expect(mayPersistIdentifier()).toBe(false)
+	})
+
 	it("does not assume a navigator exists", () => {
 		configurePrivacy(undefined)
 		expect(mayPersistIdentifier()).toBe(true)

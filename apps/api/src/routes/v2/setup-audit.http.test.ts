@@ -22,6 +22,7 @@ import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScal
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
@@ -136,7 +137,9 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 			Layer.provide(FetchHttpClient.layer),
 			Layer.provide(planetScaleStubs),
 		),
-		Layer.effect(SetupAuditService, SetupAuditService.make).pipe(Layer.provide(warehouseLive)),
+		Layer.effect(SetupAuditService, SetupAuditService.make).pipe(
+			Layer.provide(Layer.mergeAll(warehouseLive, IntegrationInventoryService.layer)),
+		),
 		// Sibling group in `AllV2GroupLayersLive`; the stub bundle is deliberately
 		// unused here, so it needs its own (warehouse-only) layer.
 		Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(Layer.provide(warehouseLive)),

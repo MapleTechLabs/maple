@@ -1,5 +1,13 @@
 # @maple/cli
 
+## 0.0.27
+
+### Patch Changes
+
+- b2e0da6: `maple service-map` now lists the databases services call (from `db.system.name` and `db.namespace`), and with `-s <service>` that service's external HTTP, messaging and RPC calls, so dependencies that run no OpenTelemetry SDK show up in the terminal too. The JSON output is now an object: `edges`, `databases`, and `external` when `-s` is set. `-s` now keeps only the edges touching that service, inbound and outbound, filtered in the query rather than from the top 200 edges, and an unknown service name lists the known ones. Remote mode prints service edges only, and its `-s` keeps outbound edges.
+- Updated dependencies [ed8a412]
+    - @maple-dev/effect-sdk@0.10.1
+
 ## 0.0.26
 
 ### Patch Changes
