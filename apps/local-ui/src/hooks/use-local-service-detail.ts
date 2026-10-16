@@ -1,5 +1,5 @@
 import { useCallback } from "react"
-import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
+import { skipToken, useQuery } from "@tanstack/react-query"
 import { DateTime } from "effect"
 import { CH } from "@maple/query-engine"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
@@ -7,6 +7,7 @@ import type { SeriesPoint } from "../lib/chart-series"
 import { fillGoldenSignals, type GoldenSignalRow } from "../lib/golden-signals"
 import { parseClickHouseDateTime, type ChartWindow, type TimeBounds } from "../lib/time"
 import { toCatalogEntry, type ServiceCatalogEntry } from "./use-local-service-catalog"
+import { windowed } from "../lib/query-cache"
 
 export interface ServiceOverview {
 	readonly stats: ServiceCatalogEntry
@@ -21,8 +22,7 @@ export interface ServiceOverview {
  */
 export function useLocalServiceOverview(serviceName: string, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "services", "overview", serviceName, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "services", "overview", serviceName, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<ServiceOverview | null> => {
 			const params = localParams(bounds)
 			const [catalogRows, overviewRows] = await Promise.all([
@@ -51,8 +51,7 @@ export type ServiceOperationRow = CH.ServiceOperationsSummaryOutput
 /** Top operations table for the service detail page. */
 export function useLocalServiceOperations(serviceName: string, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "services", "operations", serviceName, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "services", "operations", serviceName, boundsKey(bounds)]),
 		queryFn: ({ signal }): Promise<ReadonlyArray<ServiceOperationRow>> =>
 			executeLocalCompiledQuery(
 				CH.compile(CH.serviceOperationsSummaryQuery({ serviceName, limit: 25 }), localParams(bounds)),
@@ -70,7 +69,7 @@ export function useLocalServiceOperationsTimeseries(
 ) {
 	const { bucketSeconds } = window
 	return useQuery({
-		queryKey: [
+		...windowed([
 			"local",
 			"services",
 			"operations-ts",
@@ -78,8 +77,7 @@ export function useLocalServiceOperationsTimeseries(
 			spanNames,
 			bucketSeconds,
 			boundsKey(bounds),
-		],
-		placeholderData: keepPreviousData,
+		]),
 		queryFn:
 			spanNames.length === 0
 				? skipToken
@@ -121,8 +119,7 @@ export function useLocalServiceGoldenSignals(serviceName: string, bounds: TimeBo
 		[window],
 	)
 	return useQuery({
-		queryKey: ["local", "services", "golden-signals", serviceName, bucketSeconds, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "services", "golden-signals", serviceName, bucketSeconds, boundsKey(bounds)]),
 		select,
 		queryFn: async ({ signal }): Promise<ReadonlyArray<GoldenSignalRow>> => {
 			const rows = await executeLocalCompiledQuery(

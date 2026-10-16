@@ -40,6 +40,7 @@ import {
 	RefreshButton,
 } from "../components/toolbar"
 import { ErrorState } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 /** Parse a URL param as a non-negative integer; anything else means "unset". */
 function parseNonNegativeInt(raw: string | null): number | undefined {
@@ -217,7 +218,7 @@ export function TraceListView() {
 						{ header: "Started", headClassName: "text-right", skeleton: "ml-auto w-16" },
 					]}
 				/>
-			) : traces.isError ? (
+			) : failedWithoutData(traces) ? (
 				<ErrorState label="traces" error={traces.error} onRetry={() => traces.refetch()} />
 			) : rows.length === 0 ? (
 				<SignalEmptyState

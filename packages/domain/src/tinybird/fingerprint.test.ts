@@ -13,6 +13,7 @@ import {
 	MSG_SIGNATURE_CHARS,
 	NAMESPACED_TYPE_MAX_FRAMES,
 	SCHEMA_PATH_LINE_PATTERN,
+	SPAN_NAME_FRAME_PATTERN,
 } from "./fingerprint"
 import { ERROR_EVENTS_MV_SQL } from "./materializations"
 
@@ -588,6 +589,7 @@ describe("SQL parity", () => {
 		expect(sql).toContain(`match(line, ${chPattern(FRAME_LINE_PATTERN)})`)
 		expect(sql).toContain(`position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0`)
 		expect(sql).toContain(`NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})`)
+		expect(sql).toContain(`NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})`)
 		// The frame limit reads _msgSig, so the signature must be defined first.
 		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _rawFrames"))
 		for (const [pattern, replacement] of [
@@ -848,6 +850,38 @@ describe("fingerprint v3", () => {
 					statusMessage: "",
 				}).topFrame,
 			).toContain("effect@#/")
+		})
+
+		it("drops location-less span frames, so an Effect span rename keeps the issue", () => {
+			const httpClientError = (spanFrame: string) =>
+				[
+					"HttpClientError: Transport error (POST https://app.maple.dev/_api/internal/query-engine/infra-presence)",
+					"    at catch (https://app.maple.dev/assets/atom-client-C8D2PDUe.js:1:16420)",
+					"    at https://app.maple.dev/assets/Effect-lYjf0hDm.js:13:6044",
+					spanFrame,
+					"    at infraPresence (https://app.maple.dev/assets/warehouse-query-atoms-C2u8hHOl.js:1:6826)",
+				].join("\n")
+			const message =
+				"Transport error (POST https://app.maple.dev/_api/internal/query-engine/infra-presence)"
+			const before = httpClientError("    at http.client POST")
+
+			expect(key("HttpClientError", before, message)).toBe(
+				key("HttpClientError", httpClientError("    at POST"), message),
+			)
+			expect(
+				computeFingerprintInputs({
+					exceptionType: "HttpClientError",
+					exceptionStacktrace: before,
+					statusMessage: message,
+				}).fpFrames,
+			).toContain("at infraPresence")
+		})
+
+		it("still counts a Node frame with a location but no parens", () => {
+			const a = stack("    at file:///app/a.js:1:2")
+			const b = stack("    at file:///app/b.js:1:2")
+
+			expect(key("Error", a, "")).not.toBe(key("Error", b, ""))
 		})
 
 		it("redacts the index in `(index N)`", () => {

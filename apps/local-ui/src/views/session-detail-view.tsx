@@ -42,6 +42,7 @@ import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import { ErrorState } from "../components/view-states"
 import { isLocalSessionLive, localSessionDurationMs } from "../lib/session-liveness"
 import { RefreshButton } from "../components/toolbar"
+import { failedWithoutData } from "../lib/query"
 
 interface SessionDetailViewProps {
 	sessionId: string
@@ -51,7 +52,7 @@ interface SessionDetailViewProps {
 
 export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetailViewProps) {
 	const detail = useLocalSessionDetail(sessionId)
-	const { data: session, isPending, isError, error } = detail
+	const { data: session, isPending, error } = detail
 	const traceIds = session?.traceIds ?? []
 	const traces = useLocalSessionTraces(traceIds)
 	const transcript = useLocalSessionTranscript(sessionId)
@@ -79,7 +80,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 					<div className="flex h-full items-center justify-center">
 						<Spinner />
 					</div>
-				) : isError ? (
+				) : failedWithoutData(detail) ? (
 					<ErrorState label="session" error={error} onRetry={() => detail.refetch()} />
 				) : !session ? (
 					<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -253,7 +254,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 							<Card title="Event transcript">
 								{transcript.isPending ? (
 									<Spinner className="size-4" />
-								) : transcript.isError ? (
+								) : failedWithoutData(transcript) ? (
 									<ErrorState label="transcript" error={transcript.error} />
 								) : (transcript.data?.length ?? 0) === 0 ? (
 									<p className="text-sm text-muted-foreground">

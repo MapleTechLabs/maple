@@ -1,5 +1,5 @@
 import { DateTime } from "effect"
-import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
+import { skipToken, useQuery } from "@tanstack/react-query"
 import { HARD_SERIES_LIMIT } from "@maple/ui/components/plot"
 import { CH } from "@maple/query-engine"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
@@ -7,12 +7,12 @@ import type { SeriesPoint } from "../lib/chart-series"
 import type { ChartWindow, TimeBounds } from "../lib/time"
 import { isCounter, isMetricType, type MetricType } from "../lib/units"
 import { foldCatalogRows, type MetricEntry } from "./use-local-metrics"
+import { windowed } from "../lib/query-cache"
 
 /** Catalog row(s) for one metric, aggregated across services. */
 export function useLocalMetricEntry(metricName: string, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "metrics", "entry", metricName, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "metrics", "entry", metricName, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<MetricEntry | null> => {
 			const compiled = CH.compile(
 				CH.listMetricsQuery({ search: metricName, limit: 50 }),
@@ -53,7 +53,7 @@ export function useLocalMetricTimeseries(
 	window: ChartWindow,
 ) {
 	return useQuery({
-		queryKey: [
+		...windowed([
 			"local",
 			"metrics",
 			"timeseries",
@@ -62,8 +62,7 @@ export function useLocalMetricTimeseries(
 			entry?.isMonotonic,
 			window.bucketSeconds,
 			boundsKey(bounds),
-		],
-		placeholderData: keepPreviousData,
+		]),
 		queryFn: entry
 			? async ({ signal }): Promise<ReadonlyArray<SeriesPoint>> => {
 					const { bucketSeconds } = window
@@ -109,8 +108,7 @@ export interface MetricBreakdownRow {
 export function useLocalMetricBreakdown(entry: MetricEntry | null | undefined, bounds: TimeBounds) {
 	const metricType = entry?.metricType
 	return useQuery({
-		queryKey: ["local", "metrics", "breakdown", entry?.metricName, metricType, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "metrics", "breakdown", entry?.metricName, metricType, boundsKey(bounds)]),
 		queryFn:
 			entry && metricType && isMetricType(metricType)
 				? async ({ signal }): Promise<ReadonlyArray<MetricBreakdownRow>> => {

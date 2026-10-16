@@ -178,6 +178,39 @@ export class SelfHostedInvalidPasswordError extends Schema.TaggedError<SelfHoste
 	{ httpApiStatus: 401 },
 ) {}
 
+export class PreviewSignInStatusResponse extends Schema.Class<PreviewSignInStatusResponse>(
+	"PreviewSignInStatusResponse",
+)({
+	enabled: Schema.Boolean,
+}) {}
+
+export class PreviewSignInRequest extends Schema.Class<PreviewSignInRequest>("PreviewSignInRequest")({
+	key: Schema.String,
+}) {}
+
+/** A single-use Clerk sign-in ticket; `<SignIn>` redeems it from `?__clerk_ticket=`. */
+export class PreviewSignInResponse extends Schema.Class<PreviewSignInResponse>("PreviewSignInResponse")({
+	ticket: Schema.String,
+}) {}
+
+export class PreviewSignInDisabledError extends Schema.TaggedError<PreviewSignInDisabledError>()(
+	"@maple/http/errors/PreviewSignInDisabledError",
+	{ message: Schema.String },
+	{ httpApiStatus: 404 },
+) {}
+
+export class PreviewSignInInvalidKeyError extends Schema.TaggedError<PreviewSignInInvalidKeyError>()(
+	"@maple/http/errors/PreviewSignInInvalidKeyError",
+	{ message: Schema.String },
+	{ httpApiStatus: 401 },
+) {}
+
+export class PreviewSignInUnavailableError extends Schema.TaggedError<PreviewSignInUnavailableError>()(
+	"@maple/http/errors/PreviewSignInUnavailableError",
+	{ message: Schema.String, cause: Schema.Defect() },
+	{ httpApiStatus: 503 },
+) {}
+
 export class AuthPublicApiGroup extends HttpApiGroup.make("authPublic")
 	.add(
 		HttpApiEndpoint.post("login", "/login", {
@@ -198,6 +231,19 @@ export class AuthPublicApiGroup extends HttpApiGroup.make("authPublic")
 			payload: CliDevicePollRequest,
 			success: CliDevicePollResponse,
 			error: [CliDevicePersistenceError, CliDeviceRateLimitError],
+		}),
+	)
+	// PR previews only: a shared access key buys a sign-in ticket for the preview reviewer.
+	.add(
+		HttpApiEndpoint.get("previewSignInStatus", "/preview/sign-in", {
+			success: PreviewSignInStatusResponse,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("previewSignIn", "/preview/sign-in", {
+			payload: PreviewSignInRequest,
+			success: PreviewSignInResponse,
+			error: [PreviewSignInDisabledError, PreviewSignInInvalidKeyError, PreviewSignInUnavailableError],
 		}),
 	)
 	.prefix("/api/auth") {}

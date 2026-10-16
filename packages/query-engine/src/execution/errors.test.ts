@@ -134,6 +134,7 @@ describe("mapWarehouseError", () => {
 				"[Error] Illegal type DateTime64(9) of argument of function intDiv. (ILLEGAL_TYPE_OF_ARGUMENT)",
 				"[Error] Column `SpanName` is not under aggregate function and not in GROUP BY keys. (NOT_AN_AGGREGATE)",
 				"[Error] Cannot parse string '2026-10-04T00:00:00Z' as DateTime64(9). (CANNOT_PARSE_DATETIME)",
+				"[Error] Table expression modifiers FINAL are not supported for subquery SELECT * FROM (SELECT * FROM session_replays) AS session_replays. (UNSUPPORTED_METHOD)",
 			])("reports agent SQL the warehouse refused as invalid SQL: %s", (message) => {
 				expect(classify("rawSqlQuery", { message }, "caller")).toBeInstanceOf(
 					WarehouseInvalidSqlError,

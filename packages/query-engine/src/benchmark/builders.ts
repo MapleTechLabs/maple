@@ -817,6 +817,29 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		// query-engine.http.ts spanDetail, after the detail row resolves the span's keys
+		module: "errors",
+		name: "spanEventsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.spanEventsQuery({
+					traceId: TRACE_ID,
+					spanId: SPAN_ID,
+					serviceName: "api",
+					spanName: "GET",
+				}),
+				window,
+			),
+	},
+	{
+		// query-engine.http.ts traceSpanEvents, the trace timeline's event markers
+		module: "errors",
+		name: "spanEventsByTraceQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.spanEventsByTraceQuery({ traceId: TRACE_ID }), window),
+	},
+	{
 		// ErrorsService errorIssuesScan (the scheduled sweep)
 		module: "errors",
 		name: "errorIssuesQuery",
@@ -1118,6 +1141,34 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				CH.serviceDeploymentsQuery({ environments: ["production"], minutePrecision: false }),
 				window,
 			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "allRuns",
+		compile: () => CH.compileUnsafe(CH.ciRunsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciRunsQuery({
+					pipeline: "CI",
+					repository: "api",
+					branch: "main",
+					result: "failure",
+					limit: 50,
+				}),
+				window,
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciFailedJobsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.ciFailedJobsQuery({ traceIds: ["abc123"] }), window),
 	},
 	{
 		module: "pr-review",
