@@ -1022,6 +1022,16 @@ function ChooseStage({
 		return acts === "stops-now" || acts === "resumes-now" ? [{ capability, acts }] : []
 	})
 	const stopping = immediate.filter(({ acts }) => acts === "stops-now")
+	const resuming = immediate.filter(({ acts }) => acts === "resumes-now")
+	const named = (list: typeof immediate) =>
+		list.map(({ capability }) => CAPABILITIES[capability].title.toLowerCase()).join(" and ")
+	// One save can turn one capability off and the other back on: the question names both.
+	const turned = [
+		stopping.length > 0 ? `${named(stopping)} off` : null,
+		resuming.length > 0 ? `${named(resuming)} back on` : null,
+	]
+		.filter((part) => part !== null)
+		.join(" and ")
 	// Whether the script has anything to do once this is saved. Turning back on what still exists leaves nothing.
 	const scripted = CAPABILITY_IDS.some((capability) => {
 		const acts = effect(capability)
@@ -1096,15 +1106,19 @@ function ChooseStage({
 				icon={stopping.length > 0 ? undefined : null}
 				title={
 					<>
-						{`Turn ${(stopping.length > 0 ? stopping : immediate)
-							.map(({ capability }) => CAPABILITIES[capability].title.toLowerCase())
-							.join(" and ")} ${stopping.length > 0 ? "off" : "back on"}`}{" "}
+						{`Turn ${turned}`}{" "}
 						for {GCP_SCOPE_NAMES[connector.scope_type]}{" "}
 						<span className="whitespace-nowrap">{connector.scope_id}</span>?
 					</>
 				}
 				// Turning off leaves something for the script to remove; turning back on leaves nothing to run.
-				confirmLabel={stopping.length > 0 ? "Turn off and continue" : "Turn on"}
+				confirmLabel={
+					stopping.length === 0
+						? "Turn on"
+						: resuming.length === 0
+							? "Turn off and continue"
+							: "Save and continue"
+				}
 				onConfirm={save}
 			>
 				<dl className="flex flex-col gap-3 pb-3 text-sm">
