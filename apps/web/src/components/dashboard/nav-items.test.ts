@@ -108,6 +108,13 @@ describe("navGroups", () => {
 		}
 	})
 
+	it("shows Code Review to every org", () => {
+		for (const flags of [undefined, DISABLED_ORGANIZATION_FEATURE_FLAGS]) {
+			expect(findItem("Code Review", flags).href).toBe("/code-review")
+			expect(paletteNavItems(flags).map((entry) => entry.href)).toContain("/code-review")
+		}
+	})
+
 	it("keeps Infrastructure at six children with six unique glyphs", () => {
 		// Six is exactly NavRow's all-or-nothing preview cap, so a seventh unique
 		// glyph here would drop the closed row's miniatures entirely rather than
