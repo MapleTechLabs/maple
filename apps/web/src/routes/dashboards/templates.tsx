@@ -135,7 +135,8 @@ function TemplatesPage() {
 			// Remount per template so parameter inputs don't carry over.
 			key={selected.id}
 			template={selected}
-			readiness={readiness.get(selected.id)}
+			// Readiness fails open while it loads: its sentinel would read as "0 metrics".
+			readiness={readinessResolved ? readiness.get(selected.id) : undefined}
 			creating={creating}
 			onCreate={(parameters) => createFromTemplate(selected.id, parameters)}
 		/>
