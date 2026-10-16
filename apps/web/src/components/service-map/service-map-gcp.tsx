@@ -14,7 +14,11 @@ import { errorRateClass } from "@maple/ui/lib/error-rate"
 
 import { ArrowRightIcon, GoogleCloudIcon } from "@/components/icons"
 import { GcpServiceIcon } from "@/components/infra/gcp/gcp-service-icon"
-import { gcpWorkloadTelemetry } from "@/components/infra/gcp/inventory"
+import {
+	GCP_CLOUD_SQL_INVENTORY_QUERY,
+	gcpCloudSqlInstances,
+	gcpWorkloadTelemetry,
+} from "@/components/infra/gcp/inventory"
 import {
 	GCP_INFRA_COLUMNS,
 	NO_GCP_FLEET,
@@ -30,6 +34,7 @@ import {
 	gcpCloudSqlInstancesOfDatabaseResultAtom,
 	gcpInfraFleetResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 
 interface TimeWindow {
@@ -205,10 +210,29 @@ function GcpCloudSqlMatches({
 			data: { startTime, endTime, database, instances: workloads.map((workload) => workload.keys) },
 		}),
 	)
-	const owners = Result.builder(result)
-		.onSuccess((response) => response.instances.map((keys) => keys.join("/")))
+	const inventoryResult = useAtomValue(
+		retainedInternalQuery("integrations", "gcpResources", {
+			query: GCP_CLOUD_SQL_INVENTORY_QUERY,
+			reactivityKeys: ["gcpIntegration"],
+		}),
+	)
+	if (!Result.isSuccess(result)) return null
+	const owners = result.value.instances.map((keys) => keys.join("/"))
+	const matched = workloads.filter((workload) => owners.includes(workload.keys.join("/")))
+	// An instance that reports no connections per database can't be matched by name: offer the
+	// PostgreSQL instances (or those of an engine the inventory doesn't know) instead, as such.
+	const instances = Result.builder(inventoryResult)
+		.onSuccess((inventory) => gcpCloudSqlInstances(inventory.resources))
 		.orElse(() => [])
-	const matches = workloads.filter((workload) => owners.includes(workload.keys.join("/")))
+	const matches =
+		matched.length > 0
+			? matched
+			: workloads.filter((workload) => {
+					const version = instances.find(
+						(instance) => instance.id === workload.keys[0],
+					)?.databaseVersion
+					return version == null || version.startsWith("POSTGRES")
+				})
 	if (matches.length === 0) return null
 	return (
 		<div className="space-y-3">
@@ -217,6 +241,12 @@ function GcpCloudSqlMatches({
 				<GoogleCloudIcon size={11} />
 				Cloud SQL
 			</Eyebrow>
+			{matched.length > 0 ? null : (
+				<p className="text-2xs text-pretty text-muted-foreground">
+					Your PostgreSQL instances in Google Cloud. Which one holds {database} isn't known: they
+					report no connections per database.
+				</p>
+			)}
 			<div className="space-y-2">
 				{matches.map((workload) => (
 					<GcpWorkloadRow key={workload.keys.join("/")} service="cloudSql" workload={workload} />
