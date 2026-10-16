@@ -3,13 +3,16 @@
  * Seed GitHub Actions CI traces into a Tinybird `traces` datasource, for the Code Review CI tab.
  *
  *   bun scripts/seed-ci-runs.ts --org <orgId> [--repo acme/web] [--days 7] [--dry-run]
+ *   bun scripts/seed-ci-runs.ts --ingest https://ingest-pr-<n>.maple.dev --key <ingest-key>
  *
  * Runs and jobs go through the real encoder (`ci-traces/otlp.ts`), so the spans carry exactly the
  * attributes the GitHub integration writes; only the OTLP to row step is done here, the way the
  * ingest gateway does it. The history has a green baseline, slow and flaky test shards, a retried
  * run, cancelled runs and a red streak on `CI` at the end.
  *
- * Env: TINYBIRD_HOST, TINYBIRD_TOKEN (the `.env.local` pair points at the local container).
+ * With `--org` the rows go straight into a Tinybird `traces` datasource (env TINYBIRD_HOST,
+ * TINYBIRD_TOKEN; the `.env.local` pair points at the local container). With `--ingest` the OTLP
+ * goes through an ingest gateway, which stamps the key's org: the way to seed a PR preview.
  */
 import { parseArgs } from "node:util"
 import {
@@ -22,14 +25,16 @@ import {
 const { values } = parseArgs({
 	options: {
 		org: { type: "string" },
+		ingest: { type: "string" },
+		key: { type: "string" },
 		repo: { type: "string", default: "acme/web" },
 		days: { type: "string", default: "7" },
 		"dry-run": { type: "boolean", default: false },
 	},
 })
-const org = values.org
-if (org === undefined) {
-	console.error("--org <orgId> is required")
+const org = values.org ?? "ingest-stamped"
+if (values.org === undefined && (values.ingest === undefined || values.key === undefined)) {
+	console.error("Pass --org <orgId>, or --ingest <gateway url> --key <ingest key>")
 	process.exit(2)
 }
 const repo = values.repo ?? "acme/web"
@@ -290,6 +295,22 @@ const runs = rows.filter((row) => row.parent_span_id === "").length
 console.log(`${runs} runs, ${rows.length} spans for ${org} (${repo}, last ${days} days)`)
 if (values["dry-run"]) {
 	console.log(JSON.stringify(rows.slice(0, 2), null, 2))
+	process.exit(0)
+}
+
+if (values.ingest !== undefined && values.key !== undefined) {
+	for (const payload of payloads) {
+		const response = await fetch(`${values.ingest.replace(/\/+$/, "")}/v1/traces`, {
+			method: "POST",
+			headers: { "content-type": "application/json", authorization: `Bearer ${values.key}` },
+			body: JSON.stringify(payload),
+		})
+		if (!response.ok) {
+			console.error(`The gateway answered ${response.status}: ${await response.text()}`)
+			process.exit(1)
+		}
+	}
+	console.log(`Sent ${payloads.length} OTLP payloads.`)
 	process.exit(0)
 }
 
