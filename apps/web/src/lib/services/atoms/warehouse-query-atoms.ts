@@ -100,6 +100,7 @@ import {
 	getSpanAttributeValues,
 	getSpanDetail,
 	getSpanHierarchy,
+	getTraceSpanEvents,
 	getTracesFacetValues,
 	getTracesFacets,
 	listTraces,
@@ -498,6 +499,10 @@ export const getSessionTranscriptResultAtom = makeQueryAtomFamily(getSessionTran
 })
 
 export const getReplaysForTraceResultAtom = makeQueryAtomFamily(getReplaysForTrace, {
+	staleTime: 60_000,
+})
+
+export const getTraceSpanEventsResultAtom = makeQueryAtomFamily(getTraceSpanEvents, {
 	staleTime: 60_000,
 })
 

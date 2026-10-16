@@ -6,7 +6,7 @@
  */
 
 /** Stable key for the bucket holding items with no tags. */
-const UNTAGGED_KEY = "__untagged__"
+export const UNTAGGED_KEY = "__untagged__"
 const UNTAGGED_LABEL = "Untagged"
 
 export interface TagFacet {

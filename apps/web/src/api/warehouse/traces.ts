@@ -15,7 +15,10 @@ import {
 	SpanDetailRequest,
 	SpanHierarchyRequest,
 	SpanName,
+	TraceSpanEventsRequest,
 } from "@maple/domain/http"
+import type { SpanEvent } from "@maple/query-engine"
+import type { SpanEventsBySpanId } from "@maple/ui/lib/span-event-markers"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { computeTraceTimeWindow } from "@/lib/trace-time-window"
 import {
@@ -578,6 +581,7 @@ export type GetSpanDetailInput = Schema.Schema.Type<typeof GetSpanDetailInputSch
 export interface SpanDetailResult {
 	spanAttributes: Record<string, string>
 	resourceAttributes: Record<string, string>
+	events: ReadonlyArray<SpanEvent>
 }
 
 export function getSpanDetail({ data }: { data: GetSpanDetailInput }) {
@@ -612,6 +616,7 @@ const getSpanDetailEffect = Effect.fn("QueryEngine.getSpanDetail")(function* ({
 	return {
 		spanAttributes: parseAttributes(result.data?.spanAttributes),
 		resourceAttributes: parseAttributes(result.data?.resourceAttributes),
+		events: result.data?.events ?? [],
 	} satisfies SpanDetailResult
 })
 
@@ -755,6 +760,52 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 			durationStats: statsData,
 		} satisfies TracesFacets,
 	}
+})
+
+// Trace span events — event times and names for every span, drawn as markers on
+// the timeline bars. A separate request so the hierarchy never waits on `traces`.
+
+/** Slack around the trace's own span window for sub-second rounding and late events. */
+const TRACE_EVENTS_SLACK_MS = 1_000
+
+const GetTraceSpanEventsInputSchema = Schema.Struct({
+	traceId: TraceId,
+	/** Earliest span start (`SpanHierarchyResponse.traceStartTime`). */
+	traceStartTime: Schema.String,
+	totalDurationMs: Schema.Number,
+})
+
+export type GetTraceSpanEventsInput = Schema.Schema.Type<typeof GetTraceSpanEventsInputSchema>
+
+export function getTraceSpanEvents({ data }: { data: GetTraceSpanEventsInput }) {
+	return getTraceSpanEventsEffect({ data })
+}
+
+const getTraceSpanEventsEffect = Effect.fn("QueryEngine.getTraceSpanEvents")(function* ({
+	data,
+}: {
+	data: GetTraceSpanEventsInput
+}) {
+	const input = yield* decodeInput(GetTraceSpanEventsInputSchema, data, "getTraceSpanEvents")
+	yield* Effect.annotateCurrentSpan("traceId", input.traceId)
+
+	const startMs = Date.parse(input.traceStartTime)
+	if (Number.isNaN(startMs)) return new Map() satisfies SpanEventsBySpanId
+
+	const result = yield* runWarehouseQuery("traceSpanEvents", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			return yield* client.queryEngine.traceSpanEvents({
+				payload: new TraceSpanEventsRequest({
+					traceId: input.traceId,
+					startTime: formatWarehouseDateTime(startMs - TRACE_EVENTS_SLACK_MS),
+					endTime: formatWarehouseDateTime(startMs + input.totalDurationMs + TRACE_EVENTS_SLACK_MS),
+				}),
+			})
+		}),
+	)
+
+	return new Map(result.data.map((row) => [row.spanId, row.events])) satisfies SpanEventsBySpanId
 })
 
 // Single facet list for dashboard variables: compiles only the requested UNION

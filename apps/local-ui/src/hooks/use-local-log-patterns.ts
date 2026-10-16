@@ -1,9 +1,10 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import { clusterLogPatterns, type LogPattern } from "@maple/query-engine/observability"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import type { TimeBounds } from "../lib/time"
 import type { LogFilters } from "./use-local-logs"
+import { windowed } from "../lib/query-cache"
 
 /** Newest logs clustered per refresh. Smaller than the CLI's 10k: chDB serves one query at a time. */
 export const PATTERN_SAMPLE_SIZE = 5_000
@@ -22,9 +23,8 @@ export interface LocalLogPatterns {
  */
 export function useLocalLogPatterns(filters: LogFilters, bounds: TimeBounds) {
 	return useQuery<LocalLogPatterns>({
-		queryKey: ["local", "log-patterns", filters, boundsKey(bounds)],
+		...windowed(["local", "log-patterns", filters, boundsKey(bounds)]),
 		staleTime: 30_000,
-		placeholderData: keepPreviousData,
 		queryFn: async ({ signal }) => {
 			const compiled = CH.compile(
 				CH.logsListQuery({

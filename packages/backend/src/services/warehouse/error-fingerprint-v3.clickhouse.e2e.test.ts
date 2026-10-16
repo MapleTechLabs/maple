@@ -149,6 +149,23 @@ const SEEDS: ReadonlyArray<Seed> = [
 			"copy /data.quarantine-x1/store /var/b, ~/.maple/x, read /datasets/x, retry in ~5 min, key top_operations",
 		stacktrace: "",
 	},
+	// Location-less span frames: `at http.client POST` became `at POST` in effect 4.0.4.
+	...["    at http.client POST", "    at POST"].map((spanFrame, index) => ({
+		spanId: `span-name-frame-${index}`,
+		type: "HttpClientError",
+		message: "Transport error (POST /api/query)",
+		stacktrace: frames(
+			"    at catch (https://x.dev/assets/client.js:1:2)",
+			spanFrame,
+			"    at load (/app/src/load.ts:7:2)",
+		),
+	})),
+	{
+		spanId: "paren-less-location",
+		type: "Error",
+		message: "failed",
+		stacktrace: frames("    at file:///app/a.js:1:2"),
+	},
 	...[401, 404, 500, 502, 520, 524].map((status) => ({
 		spanId: `http-${status}`,
 		type: "",

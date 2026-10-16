@@ -96,15 +96,16 @@ clearIdentity()
 
 The `privacy` option controls consent, the persistent visitor id and what identity data is sent:
 
-| Option                         | Default | Description                                                                                                                                                                         |
-| ------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `privacy.requireConsent`       | `false` | Capture nothing until `setConsent(true)` is called                                                                                                                                  |
-| `privacy.persistVisitorId`     | `true`  | Store a persistent visitor id                                                                                                                                                       |
-| `privacy.crossSubdomainCookie` | `true`  | Scope the visitor-id cookie to the registered domain, so sibling subdomains share one visitor                                                                                       |
-| `privacy.cookieDomain`         |         | Explicit cookie `Domain` (without the leading dot). `""` forces a host-only cookie                                                                                                  |
-| `privacy.captureUserEmail`     | `true`  | Send the email passed to `identify()`                                                                                                                                               |
-| `privacy.respectDoNotTrack`    | `false` | Treat `navigator.doNotTrack` like Global Privacy Control                                                                                                                            |
-| `privacy.sanitizeUrl`          |         | Function that rewrites every URL before it leaves the page. Runs after the built-in redaction of credential-shaped query and fragment parameters such as `token` and `access_token` |
+| Option                         | Default     | Description                                                                                                                                                                         |
+| ------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `privacy.requireConsent`       | `false`     | Capture nothing until `setConsent(true)` is called                                                                                                                                  |
+| `privacy.persistVisitorId`     | `true`      | Store a persistent visitor id                                                                                                                                                       |
+| `privacy.persistence`          | `"browser"` | `"memory"` stores nothing on the device (no cookies, Web Storage or IndexedDB, no visitor id). Each page load is a new session                                                      |
+| `privacy.crossSubdomainCookie` | `true`      | Scope the visitor-id cookie to the registered domain, so sibling subdomains share one visitor                                                                                       |
+| `privacy.cookieDomain`         |             | Explicit cookie `Domain` (without the leading dot). `""` forces a host-only cookie                                                                                                  |
+| `privacy.captureUserEmail`     | `true`      | Send the email passed to `identify()`                                                                                                                                               |
+| `privacy.respectDoNotTrack`    | `false`     | Treat `navigator.doNotTrack` like Global Privacy Control                                                                                                                            |
+| `privacy.sanitizeUrl`          |             | Function that rewrites every URL before it leaves the page. Runs after the built-in redaction of credential-shaped query and fragment parameters such as `token` and `access_token` |
 
 Global Privacy Control is honored by default: when the browser sends it, the SDK does not store the persistent visitor id. Capture itself continues without it.
 

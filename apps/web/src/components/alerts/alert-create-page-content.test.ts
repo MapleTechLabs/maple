@@ -215,7 +215,9 @@ describe("deriveRuleInitialization — template deep link", () => {
 			}),
 		)
 
-		expect(draft.form.signalType).toBe("error_rate")
+		// A blank rule opens in the query builder with the error-rate aggregation.
+		expect(draft.form.signalType).toBe("builder_query")
+		expect(draft.form.queryBuilderDraft.aggregation).toBe("error_rate")
 		expect(draft.form.name).toBe("")
 		// No serviceName + unknown template → the overlay still leads the flow.
 		expect(draft.showTemplatesInitially).toBe(true)

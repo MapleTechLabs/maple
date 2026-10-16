@@ -7,6 +7,7 @@ import {
 	SETUP_AUDIT_CHECKS,
 	runSetupAudit,
 } from "./setup-audit"
+import { buildIntegrationInventory, type IntegrationInventoryInputs } from "./integration-inventory"
 
 const NOW = Date.UTC(2026, 6, 27, 12, 0, 0)
 const HOUR = 60 * 60_000
@@ -741,6 +742,135 @@ describe("integration checks", () => {
 		const result = check(report, "CFG-INTEG-01")
 		expect(result.status).toBe("fail")
 		expect(result.affected[0]).toMatchObject({ kind: "integration", name: "cloudflare" })
+	})
+
+	describe("inventory-backed integration checks", () => {
+		const inventoryOf = (partial: Partial<IntegrationInventoryInputs>) =>
+			buildIntegrationInventory(
+				{
+					oauthConnections: [],
+					vcsInstallations: [],
+					vcsRepositories: [],
+					cloudflareStates: [],
+					cloudflareLogpush: [],
+					cloudflareHyperdrives: [],
+					railwayConnection: null,
+					railwayEnvironments: [],
+					planetscaleConnection: null,
+					planetscaleDatabases: [],
+					planetscalePollStates: [],
+					scrapeTargets: [],
+					chatWorkspaces: [],
+					...partial,
+				},
+				NOW,
+			)
+		const railwayConnection = {
+			workspaceNames: "acme",
+			authFailedAt: null,
+			lastSuccessAt: NOW - 60_000,
+			lastErrorAt: null,
+			lastError: null,
+			createdAt: NOW - 30 * 24 * HOUR,
+		}
+
+		it("CFG-INTEG-04 names a stale Railway environment and how old its data is", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						railwayConnection,
+						railwayEnvironments: [
+							{
+								projectName: "shop",
+								environmentName: "preview",
+								serviceCount: 2,
+								lastSuccessAt: NOW - 4 * HOUR,
+								lastErrorAt: null,
+								lastError: null,
+							},
+						],
+					}),
+				}),
+			)
+			const result = check(report, "CFG-INTEG-04")
+			expect(result.status).toBe("fail")
+			expect(result.affected[0]?.name).toBe("environment shop / preview")
+			expect(result.affected[0]?.note).toContain("no successful update for 4 h")
+		})
+
+		it("CFG-INTEG-04 reports a rejected Railway token even with no environments", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						railwayConnection: { ...railwayConnection, authFailedAt: NOW - HOUR },
+					}),
+				}),
+			)
+			const result = check(report, "CFG-INTEG-04")
+			expect(result.status).toBe("fail")
+			expect(result.affected[0]?.note).toContain("Railway rejected the API token")
+		})
+
+		it("CFG-INTEG-05 flags a PlanetScale grant waiting for an organization, but not a revoked one", () => {
+			const grant = {
+				provider: "planetscale",
+				externalAccountName: "acme",
+				externalUserEmail: null,
+				revokedAt: null,
+				createdAt: NOW - HOUR,
+			}
+			const pending = runSetupAudit(
+				inputs({ integrationInventory: inventoryOf({ oauthConnections: [grant] }) }),
+			)
+			expect(check(pending, "CFG-INTEG-05").affected[0]?.note).toContain(
+				"no PlanetScale organization is selected",
+			)
+
+			// A revoked grant is CFG-INTEG-01's finding; reporting it twice would double-count one problem.
+			const revoked = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						oauthConnections: [{ ...grant, revokedAt: NOW - HOUR }],
+					}),
+				}),
+			)
+			expect(check(revoked, "CFG-INTEG-05").status).toBe("pass")
+		})
+
+		it("CFG-INTEG-06 fails only on a Logpush job that errored, not one still waiting for traffic", () => {
+			const logpush = {
+				name: "edge-logs",
+				zoneName: "example.com",
+				serviceName: "edge",
+				lastReceivedAt: null,
+			}
+			const waiting = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						cloudflareLogpush: [{ ...logpush, lastError: null }],
+					}),
+				}),
+			)
+			expect(check(waiting, "CFG-INTEG-06").status).toBe("pass")
+
+			const broken = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						cloudflareLogpush: [{ ...logpush, lastError: "HMAC signature mismatch" }],
+					}),
+				}),
+			)
+			const result = check(broken, "CFG-INTEG-06")
+			expect(result.status).toBe("fail")
+			expect(result.affected[0]?.note).toContain("HMAC signature mismatch")
+		})
+
+		it("passes the inventory checks when the inventory could not be read", () => {
+			const report = runSetupAudit(inputs())
+			for (const id of ["CFG-INTEG-04", "CFG-INTEG-05", "CFG-INTEG-06"]) {
+				expect(check(report, id).status).toBe("pass")
+			}
+		})
 	})
 
 	it("CFG-INTEG-02 fires only when the last error is newer than the last success", () => {
