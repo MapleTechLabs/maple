@@ -39,10 +39,12 @@ const parseCap = (raw: string): number | null => {
 function CapSummary({
 	feature,
 	featureId,
+	currency,
 	cap,
 }: {
 	readonly feature: FeatureSpend
 	readonly featureId: SpendFeatureId
+	readonly currency: string
 	readonly cap: number | null
 }) {
 	if (feature.unlimited || feature.overageAllowed === false || feature.ratePerUnit === null) return null
@@ -63,7 +65,7 @@ function CapSummary({
 			<KeyValue label="Adds at most" mono>
 				{cap === null
 					? "Unlimited"
-					: formatCurrency(Math.round(cap * feature.ratePerUnit * 100) / 100, "usd")}
+					: formatCurrency(Math.round(cap * feature.ratePerUnit * 100) / 100, currency)}
 			</KeyValue>
 			{cap !== null && feature.included !== null && (
 				<KeyValue label="Usage stops at" mono>
@@ -76,12 +78,15 @@ function CapSummary({
 
 export function BillingControlsDialog({
 	feature,
+	currency,
 	featureId,
 	existingLimit,
 	open,
 	onOpenChange,
 }: {
 	readonly feature: FeatureSpend | null
+	/** The spend model's currency, so the cap reads like the rest of the tab. */
+	readonly currency: string | null
 	readonly featureId: SpendFeatureId
 	readonly existingLimit: number | undefined
 	readonly open: boolean
@@ -150,7 +155,14 @@ export function BillingControlsDialog({
 				)}
 			</Field>
 
-			{feature !== null && <CapSummary feature={feature} featureId={featureId} cap={parseCap(limit)} />}
+			{feature !== null && currency !== null && (
+				<CapSummary
+					feature={feature}
+					featureId={featureId}
+					currency={currency}
+					cap={parseCap(limit)}
+				/>
+			)}
 		</FormDialog>
 	)
 }

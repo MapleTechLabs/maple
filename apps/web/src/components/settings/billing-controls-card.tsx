@@ -56,7 +56,9 @@ export function BillingControlsCard({
 					</p>
 					<p className="font-mono text-xs tabular-nums">
 						Maximum invoice:{" "}
-						{maximum === null ? "Uncapped" : formatCurrency(maximum / 100, "usd")}
+						{maximum === null || model === null
+							? "Uncapped"
+							: formatCurrency(maximum / 100, model.currency)}
 					</p>
 				</div>
 
@@ -123,6 +125,7 @@ export function BillingControlsCard({
 				<BillingControlsDialog
 					key={editing}
 					feature={model?.features.find((entry) => entry.featureId === editing) ?? null}
+					currency={model?.currency ?? null}
 					featureId={editing}
 					existingLimit={spendLimitFor(customer, editing)?.overageLimit}
 					open
