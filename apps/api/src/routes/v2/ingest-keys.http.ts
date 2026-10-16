@@ -8,7 +8,7 @@ import {
 	timestampOrNull,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
-import type { V2CustomIngestKey, V2IngestKeys } from "@maple/domain/http/v2"
+import type { V2CustomIngestKey, V2CustomIngestKeyUpdateParams, V2IngestKeys } from "@maple/domain/http/v2"
 import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OrgCustomIngestKeysService } from "@maple/backend/services/org/OrgCustomIngestKeysService"
@@ -42,6 +42,20 @@ const toV2CustomIngestKey = (key: CustomIngestKey): V2CustomIngestKey => ({
 	rolled_at: timestamp(key.rolledAt),
 	created_at: timestamp(key.createdAt),
 	updated_at: timestamp(key.updatedAt),
+})
+
+/** Optional wire fields shared by create and update, mapped to the service request. */
+const toServiceFields = (payload: V2CustomIngestKeyUpdateParams) => ({
+	...(payload.description !== undefined ? { description: payload.description } : undefined),
+	...(payload.enabled !== undefined ? { enabled: payload.enabled } : undefined),
+	...(payload.allowed_signals !== undefined ? { allowedSignals: payload.allowed_signals } : undefined),
+	...(payload.rate_limit_rps !== undefined ? { rateLimitRps: payload.rate_limit_rps } : undefined),
+	...(payload.resource_attributes !== undefined
+		? { resourceAttributes: payload.resource_attributes }
+		: undefined),
+	...(payload.expires_at !== undefined
+		? { expiresAtMs: payload.expires_at === null ? null : timestampMs(payload.expires_at) }
+		: undefined),
 })
 
 /** Update-payload fields that are diffable through the wire shape. */
@@ -126,30 +140,7 @@ export const HttpV2IngestKeysLive = HttpApiBuilder.group(MapleApiV2, "ingestKeys
 					const created = yield* customKeys.create(
 						tenant.orgId,
 						tenant.userId,
-						new CreateCustomIngestKeyRequest({
-							name: payload.name,
-							...(payload.description !== undefined
-								? { description: payload.description }
-								: undefined),
-							...(payload.enabled !== undefined ? { enabled: payload.enabled } : undefined),
-							...(payload.allowed_signals !== undefined
-								? { allowedSignals: payload.allowed_signals }
-								: undefined),
-							...(payload.rate_limit_rps !== undefined
-								? { rateLimitRps: payload.rate_limit_rps }
-								: undefined),
-							...(payload.resource_attributes !== undefined
-								? { resourceAttributes: payload.resource_attributes }
-								: undefined),
-							...(payload.expires_at !== undefined
-								? {
-										expiresAtMs:
-											payload.expires_at === null
-												? null
-												: timestampMs(payload.expires_at),
-									}
-								: undefined),
-						}),
+						new CreateCustomIngestKeyRequest({ name: payload.name, ...toServiceFields(payload) }),
 					)
 					yield* recordHttpAudit("custom_ingest_key.created", {
 						resourceId: created.key.id,
@@ -169,27 +160,7 @@ export const HttpV2IngestKeysLive = HttpApiBuilder.group(MapleApiV2, "ingestKeys
 						params.id,
 						new UpdateCustomIngestKeyRequest({
 							...(payload.name !== undefined ? { name: payload.name } : undefined),
-							...(payload.description !== undefined
-								? { description: payload.description }
-								: undefined),
-							...(payload.enabled !== undefined ? { enabled: payload.enabled } : undefined),
-							...(payload.allowed_signals !== undefined
-								? { allowedSignals: payload.allowed_signals }
-								: undefined),
-							...(payload.rate_limit_rps !== undefined
-								? { rateLimitRps: payload.rate_limit_rps }
-								: undefined),
-							...(payload.resource_attributes !== undefined
-								? { resourceAttributes: payload.resource_attributes }
-								: undefined),
-							...(payload.expires_at !== undefined
-								? {
-										expiresAtMs:
-											payload.expires_at === null
-												? null
-												: timestampMs(payload.expires_at),
-									}
-								: undefined),
+							...toServiceFields(payload),
 						}),
 					)
 					yield* recordHttpAudit("custom_ingest_key.updated", {

@@ -86,16 +86,20 @@ const allowedSignalsField = Schema.NullOr(Schema.Array(IngestKeySignal)).annotat
 
 const rateLimitField = Schema.NullOr(Schema.Int).annotate({
 	description:
-		"Maximum requests per second across the ingest fleet, between 1 and 100000. `null` means no per-key limit. Requests over the limit are rejected with 429 and a `Retry-After` header.",
+		"Maximum requests per second, between 1 and 100000, split evenly across the ingest servers at their minimum fleet size (so the total can run higher while the fleet is scaled out). `null` means no per-key limit. Requests over the limit are rejected with 429 and a `Retry-After` header.",
 	examples: [200],
 })
 
 const V2IngestKeyResourceAttribute = Schema.Struct({
 	key: Schema.String.annotate({
-		description: "Resource attribute key, e.g. `service.name`. Keys starting with `maple_` are reserved.",
+		description:
+			"Resource attribute key, e.g. `service.name`. `org_id` and keys starting with `maple_` (any case) are reserved.",
 		examples: ["service.name"],
 	}),
-	value: Schema.String.annotate({ description: "String value to write.", examples: ["checkout"] }),
+	value: Schema.String.annotate({
+		description: "Non-empty string value to write, at most 1024 characters.",
+		examples: ["checkout"],
+	}),
 	mode: IngestKeyAttributeMode.annotate({
 		description:
 			"`set` always overwrites the attribute; `default` only fills it when the sender did not set it.",
@@ -122,7 +126,9 @@ export const V2CustomIngestKey = Schema.Struct({
 		examples: ["custom_ingest_key"],
 	}),
 	name: Schema.String.annotate({ description: "Human-readable label.", examples: ["Checkout staging"] }),
-	description: Schema.NullOr(Schema.String).annotate({ description: "Optional longer description." }),
+	description: Schema.NullOr(Schema.String).annotate({
+		description: "Optional longer description, at most 500 characters.",
+	}),
 	key_prefix: Schema.String.annotate({
 		description:
 			"The non-secret leading portion of the key, safe to display. The full key is returned only when it is created or rolled.",
