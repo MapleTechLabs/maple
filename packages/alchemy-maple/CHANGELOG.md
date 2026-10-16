@@ -1,5 +1,12 @@
 # @maple-dev/alchemy
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [737e082]
+    - @maple-dev/effect-sdk@0.10.2
+
 ## 0.2.1
 
 ### Patch Changes
