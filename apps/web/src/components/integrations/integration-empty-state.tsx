@@ -93,7 +93,8 @@ export interface IntegrationFeatureCopy {
  */
 export function IntegrationEmptyFeatures({ children }: { children: React.ReactNode }) {
 	return (
-		<ul className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3">
+		// On the page's width, not the viewport's: beside two sidebars a tablet-wide page is phone-narrow.
+		<ul className="grid grid-cols-1 gap-3 text-left @2xl/page:grid-cols-3">
 			{Children.toArray(children).map((child, index) => (
 				<li
 					// Children.toArray prefixes existing keys; tiles are a static list, so this is stable.

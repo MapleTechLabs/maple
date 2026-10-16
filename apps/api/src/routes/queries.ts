@@ -16,6 +16,11 @@ import type {
 	CloudflareInfraZoneTimeseriesRequest,
 	CloudflareInfraZonesRequest,
 	ContainerInfraTimeseriesRequest,
+	GcpInfraMetricsRequest,
+	GcpInfraPresenceRequest,
+	GcpCloudSqlInstanceRequest,
+	GcpInfraSparklinesRequest,
+	GcpInfraTimeseriesRequest,
 	GetLogRequest,
 	NodeInfraTimeseriesRequest,
 	PlanetScaleInfraTimeseriesRequest,
@@ -286,6 +291,83 @@ const railwayInfraServiceTimeseries = defineQuery({
 			bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
 			environmentId: payload.environmentId,
 			serviceId: payload.serviceId,
+		}),
+})
+
+// A small read of the hourly catalog that decides which tabs /infra/gcp shows.
+const gcpInfraPresence = defineQuery({
+	id: "gcpInfraPresence",
+	profile: "discovery",
+	cache: 60,
+	compile: (payload: GcpInfraPresenceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraPresenceSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpInfraMetrics = defineQuery({
+	id: "gcpInfraMetrics",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraMetricsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraMetricsSQL(payload.service), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpInfraTimeseries = defineQuery({
+	id: "gcpInfraTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraTimeseriesSQL(payload.source, payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			// The poller stores one point per minute.
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
+const gcpInfraSparklines = defineQuery({
+	id: "gcpInfraSparklines",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraSparklinesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraSparklinesSQL(payload.service), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			// The poller stores one point per minute.
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
+const gcpCloudSqlTopQueries = defineQuery({
+	id: "gcpCloudSqlTopQueries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpCloudSqlTopQueriesSQL(payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpCloudSqlDatabases = defineQuery({
+	id: "gcpCloudSqlDatabases",
+	profile: "list",
+	cache: 15,
+	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpCloudSqlDatabasesSQL(payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
 		}),
 })
 
@@ -808,6 +890,12 @@ export const Queries = {
 	planetscaleInfraTimeseries,
 	railwayInfraServices,
 	railwayInfraServiceTimeseries,
+	gcpInfraPresence,
+	gcpInfraMetrics,
+	gcpInfraTimeseries,
+	gcpInfraSparklines,
+	gcpCloudSqlTopQueries,
+	gcpCloudSqlDatabases,
 
 	// ZoneDetail / PlanetScaleStats sub-queries, declared above.
 	cloudflareInfraZoneDetailStatus,

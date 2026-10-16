@@ -74,7 +74,7 @@ function makeRng(seed: number): () => number {
 	}
 }
 
-const PLATFORMS: ServicePlatform[] = ["kubernetes", "cloudflare", "lambda", "web", "unknown"]
+const PLATFORMS: ServicePlatform[] = ["kubernetes", "cloudflare", "gcp", "lambda", "web", "unknown"]
 const RUNTIMES = ["nodejs", "bun", "deno", "edge-light", "workerd"]
 const DB_SYSTEMS = ["postgresql", "mysql", "clickhouse", "redis", "mongodb"]
 

@@ -10,6 +10,7 @@
 
 import { Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple/query-engine/ch"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, GCP_INFRA_SOURCES } from "@maple/domain/gcp-infra"
 import { MAPLE_AI_TRACE_SESSION_PREFIX } from "@maple/domain/gen-ai"
 import * as CH from "../index"
 import { BenchmarkError, type CatalogEntry } from "@maple/query-engine/benchmark"
@@ -781,6 +782,59 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "railwayServiceTimeseriesSQL",
 		label: "default",
 		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
+	},
+	{
+		module: "gcp-infra",
+		name: "gcpInfraPresenceSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.gcpInfraPresenceSQL(), window),
+	},
+	...GCP_INFRA_SERVICE_IDS.map((service): IntegrationFixture => ({
+		module: "gcp-infra",
+		name: "gcpInfraMetricsSQL",
+		label: service,
+		compile: () => compileUnsafe(CH.gcpInfraMetricsSQL(service), window),
+	})),
+	...GCP_INFRA_SOURCE_IDS.map((source): IntegrationFixture => ({
+		module: "gcp-infra",
+		name: "gcpInfraTimeseriesSQL",
+		label: source,
+		compile: () =>
+			compileUnsafe(
+				CH.gcpInfraTimeseriesSQL(
+					source,
+					GCP_INFRA_SOURCES[source].identity.map(([label]) => label.toLowerCase()),
+				),
+				bucketed,
+			),
+	})),
+	...GCP_INFRA_SERVICE_IDS.filter((service) => CH.GCP_INFRA_SPARKLINE_METRICS[service] !== undefined).map(
+		(service): IntegrationFixture => ({
+			module: "gcp-infra",
+			name: "gcpInfraSparklinesSQL",
+			label: service,
+			compile: () => compileUnsafe(CH.gcpInfraSparklinesSQL(service), bucketed),
+		}),
+	),
+	{
+		module: "gcp-infra",
+		name: "gcpCloudSqlTopQueriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.gcpCloudSqlTopQueriesSQL(["acme-prod:orders-db", "acme-prod", "us-central1"]),
+				window,
+			),
+	},
+	{
+		module: "gcp-infra",
+		name: "gcpCloudSqlDatabasesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.gcpCloudSqlDatabasesSQL(["acme-prod:orders-db", "acme-prod", "us-central1"]),
+				window,
+			),
 	},
 	{
 		module: "planetscale-map",

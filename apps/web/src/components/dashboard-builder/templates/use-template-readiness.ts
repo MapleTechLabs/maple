@@ -18,7 +18,7 @@ const METRIC_LIMIT = 1000
 export interface TemplateReadiness {
 	/** False only when we positively know the org is missing the data. */
 	readonly ready: boolean
-	/** Row-sized status, e.g. `no kafka.*` or `not connected`. Null when ready. */
+	/** Row-sized status, e.g. `no kafka.*`. Null when ready. */
 	readonly missingLabel: string | null
 	/** The prefix the check ran against, for the detail panel's mono label. */
 	readonly prefixLabel: string | null

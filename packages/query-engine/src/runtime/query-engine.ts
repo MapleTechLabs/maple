@@ -2320,9 +2320,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		if (request.query.kind === "attributeValues") {
 			// Per-metric scoping reads the raw metric table (see attributeKeys above).
+			const { metricName, metricNames, metricType } = request.query
 			const metricScoped =
-				request.query.source === "metrics" && request.query.metricName && request.query.metricType
-					? { metricName: request.query.metricName, metricType: request.query.metricType }
+				request.query.source === "metrics" && (metricName || metricNames) && metricType
+					? { metricName, metricNames, metricType }
 					: undefined
 			const queryFn = Match.value(request.query.scope).pipe(
 				Match.when("resource", () => CH.resourceAttributeValuesQuery),
@@ -2336,6 +2337,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				metricScoped
 					? CH.metricScopedAttributeValuesQuery({
 							metricType: metricScoped.metricType,
+							metricNames: metricScoped.metricNames,
+							scope: request.query.scope === "resource" ? "resource" : "metric",
 							attributeKey: request.query.attributeKey,
 							limit: request.query.limit,
 						})
@@ -2344,7 +2347,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					orgId: tenant.orgId,
 					startTime: request.startTime,
 					endTime: request.endTime,
-					...(metricScoped ? { metricName: metricScoped.metricName } : undefined),
+					...(metricScoped?.metricName && !metricScoped.metricNames
+						? { metricName: metricScoped.metricName }
+						: undefined),
 				},
 				metricScoped ? "attributeValues:metric-scoped" : `attributeValues:${request.query.scope}`,
 				"discovery",
