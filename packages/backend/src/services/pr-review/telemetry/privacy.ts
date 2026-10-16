@@ -508,28 +508,38 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 		return derived[at] === true || (valueFollows && derived[at + 1] === true)
 	}
 
-	const named: Array<{ readonly kind: PrivacyKind; readonly subject: string }> = []
+	const named: Array<{ readonly kind: PrivacyKind; readonly subject: string; readonly offset: number }> = []
 	for (const literal of literals) {
 		if (literal.key === undefined || !KEY_LITERAL.test(literal.value)) continue
 		const kind = classifyName(literal.value)
 		if (kind !== undefined && !isDerived(literal.offset, literal.key === "argument"))
-			named.push({ kind, subject: `\`${literal.value}\`` })
+			named.push({ kind, subject: `\`${literal.value}\``, offset: literal.offset })
 	}
 	for (const match of line.text.matchAll(BRACKET_ACCESS)) {
 		const kind = classifyName(`${match[1]}.${match[2]}`, { chain: true })
 		if (kind !== undefined && !isDerived(match.index ?? 0))
-			named.push({ kind, subject: `\`${match[0]}\`` })
+			named.push({ kind, subject: `\`${match[0]}\``, offset: match.index ?? 0 })
 	}
 	for (const { chain, offset } of chainsOf(code)) {
 		const kind = classifyName(chain, { chain: true })
-		if (kind !== undefined && !isDerived(offset)) named.push({ kind, subject: `\`${chain}\`` })
+		if (kind !== undefined && !isDerived(offset)) named.push({ kind, subject: `\`${chain}\``, offset })
 	}
-	// A key that names a non-person owner (`vcs.repository.full_name`) speaks for the value beside it.
-	const notAPerson = literals
-		.filter((literal) => literal.key !== undefined)
-		.some((literal) => wordsOf(literal.value).some((word) => NOT_A_PERSON.has(word)))
+	// A key naming a non-person owner (`vcs.repository.full_name`) speaks for its own entry, and for
+	// the value entry after it in `set("k", v)`; never for other entries on the line.
+	const ownerSegments = new Set(
+		literals
+			.filter(
+				(literal) =>
+					literal.key !== undefined &&
+					wordsOf(literal.value).some((word) => NOT_A_PERSON.has(word)),
+			)
+			.flatMap((literal) => {
+				const at = segmentAt(literal.offset)
+				return literal.key === "argument" ? [at, at + 1] : [at]
+			}),
+	)
 	const [worst] = named
-		.filter((hit) => hit.kind !== "contact" || !notAPerson)
+		.filter((hit) => hit.kind !== "contact" || !ownerSegments.has(segmentAt(hit.offset)))
 		.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind])
 	return worst === undefined ? undefined : { ...worst, sink }
 }

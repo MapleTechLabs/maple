@@ -97,6 +97,12 @@ describe("privacyHitAt", () => {
 		],
 		["Go key-value logging", ['slog.Info("login", "password", pw, "ok", true)'], "secret", "password"],
 		["a key alone on its line", ["span.setAttribute(", '\t"user.email",'], "contact", "user.email"],
+		[
+			"a leak beside a non-person key",
+			['span.setAttributes({ "user.email": user.email, "service.name": svc })'],
+			"contact",
+			"user.email",
+		],
 		["worst kind wins", ["logger.info({ email: user.email, token: session.token })"], "secret", "token"],
 	]
 	for (const [name, snippet, kind, subject] of exposes) {
