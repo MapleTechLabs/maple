@@ -21,12 +21,14 @@ const criticalHasOwnKey = (context: Pick<DispatchContext, "ruleSeverities">): bo
 	context.ruleSeverities.includes("warning") &&
 	context.ruleSeverities.includes("critical")
 
+const criticalDedupKey = (dedupeKey: string): string => `${dedupeKey}:critical`
+
 export const pagerDutyDedupKey = (
 	context: Pick<DispatchContext, "dedupeKey" | "ruleSeverities">,
 	severity: AlertSeverity,
 ): string =>
 	severity === "critical" && criticalHasOwnKey(context)
-		? `${context.dedupeKey}:critical`
+		? criticalDedupKey(context.dedupeKey)
 		: context.dedupeKey
 
 const resolveRequest = (integrationKey: string, dedupKey: string): HttpRequestSpec => ({
@@ -91,15 +93,17 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 		}
 	},
 	// The critical alert closes when the incident resolves or falls back to
-	// warning. Resolving a key PagerDuty has never seen is a no-op.
+	// warning. The rule may have dropped its critical tier since the key was
+	// minted, so an incident that peaked at critical closes it too. Resolving a
+	// key PagerDuty has never seen is a no-op.
 	followUps: (input) => {
 		const { context } = input
-		if (!criticalHasOwnKey(context)) return []
+		const mayHoldCriticalKey = criticalHasOwnKey(context) || context.incidentPeakSeverity === "critical"
 		const closesCritical =
 			context.eventType === "resolve" ||
 			(context.eventType !== "test" && context.severity === "warning")
-		return closesCritical
-			? [resolveRequest(input.config.integrationKey, pagerDutyDedupKey(context, "critical"))]
+		return mayHoldCriticalKey && closesCritical
+			? [resolveRequest(input.config.integrationKey, criticalDedupKey(context.dedupeKey))]
 			: []
 	},
 	ack: (input) => ({

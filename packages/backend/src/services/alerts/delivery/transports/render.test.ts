@@ -304,6 +304,22 @@ describe("pagerduty dedup keys across severity tiers", () => {
 		])
 	})
 
+	it("closes the critical alert of an incident that peaked at critical after the rule dropped that tier", () => {
+		assert.deepStrictEqual(
+			pd({
+				ruleSeverities: ["warning"],
+				incidentPeakSeverity: "critical",
+				severity: "warning",
+				eventType: "renotify",
+			}),
+			["trigger org_1:rule_1:checkout", "resolve org_1:rule_1:checkout:critical"],
+		)
+		assert.deepStrictEqual(
+			pd({ ruleSeverities: ["warning"], incidentPeakSeverity: "critical", eventType: "resolve" }),
+			["resolve org_1:rule_1:checkout", "resolve org_1:rule_1:checkout:critical"],
+		)
+	})
+
 	it("closes the critical alert on de-escalation and both alerts on resolve", () => {
 		assert.deepStrictEqual(pd({ ...tiered, severity: "warning", eventType: "renotify" }), [
 			"trigger org_1:rule_1:checkout",

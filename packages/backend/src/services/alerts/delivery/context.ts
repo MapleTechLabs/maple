@@ -44,6 +44,8 @@ export interface DispatchContext {
 	 * escalation/error paths, which dispatch without an alert rule.
 	 */
 	readonly ruleSeverities?: ReadonlyArray<AlertSeverity>
+	/** Highest severity the incident reached; absent when the delivery has no incident. */
+	readonly incidentPeakSeverity?: AlertSeverity
 	readonly comparator: AlertComparator
 	readonly threshold: number
 	readonly thresholdUpper: number | null

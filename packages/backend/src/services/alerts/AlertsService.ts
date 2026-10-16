@@ -1959,6 +1959,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							severity: decodeAlertSeveritySync(
 								incidentRow?.severity ?? payloadRule?.severity ?? "warning",
 							),
+							...(incidentRow === null
+								? undefined
+								: {
+										incidentPeakSeverity: decodeAlertSeveritySync(
+											incidentRow.peakSeverity ?? incidentRow.severity,
+										),
+									}),
 							// A rule that no longer decodes dispatches like one without tiers.
 							...Option.match(
 								ruleRow === null ? Option.none() : yield* storedRuleCondition(ruleRow),
