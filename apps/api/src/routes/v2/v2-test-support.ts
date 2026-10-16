@@ -16,6 +16,7 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
+import { CustomIngestKeyUsageService } from "@maple/backend/services/org/CustomIngestKeyUsageService"
 import { OrgCustomIngestKeysService } from "@maple/backend/services/org/OrgCustomIngestKeysService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
@@ -337,6 +338,9 @@ export const SignalPresenceServiceStubLayer = Layer.succeed(SignalPresenceServic
 	read: die,
 })
 
+/** Inert usage reads for harnesses that wire the real custom key service. */
+export const CustomIngestKeyUsageServiceStubLayer = Layer.succeed(CustomIngestKeyUsageService, { read: die })
+
 /** Inert config-resource services for harnesses that never touch those groups. */
 export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 	Layer.succeed(IngestAttributeMappingService, {
@@ -357,9 +361,12 @@ export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 		get: die,
 		create: die,
 		update: die,
+		pause: die,
+		resume: die,
 		roll: die,
 		delete: die,
 	}),
+	CustomIngestKeyUsageServiceStubLayer,
 	Layer.succeed(RecommendationIssueService, {
 		listReconciled: die,
 		dismiss: die,

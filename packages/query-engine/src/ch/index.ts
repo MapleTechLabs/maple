@@ -686,6 +686,14 @@ export {
 	type OperationTrafficOutput,
 } from "./queries/pr-review"
 
+// Queries — Custom ingest key usage (hourly spans and logs per key)
+export {
+	INGEST_KEY_ID_ATTRIBUTE,
+	ingestKeyUsageQuery,
+	ingestKeyUsageRowSchema,
+	type IngestKeyUsageOutput,
+} from "./queries/ingest-key-usage"
+
 // Queries — CI pipeline runs (GitHub Actions traces)
 export {
 	CI_TRACES_SERVICE_NAME,

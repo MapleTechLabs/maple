@@ -46,16 +46,23 @@ export class IngestKeyEncryptionError extends HttpTaggedError<IngestKeyEncryptio
 	},
 ) {}
 
+/** `paused` keys are accepted but their data is dropped; `expired` keys are rejected. */
+export const CustomIngestKeyStatus = Schema.Literals(["active", "paused", "expired"])
+export type CustomIngestKeyStatus = Schema.Schema.Type<typeof CustomIngestKeyStatus>
+
 export class CustomIngestKey extends Schema.Class<CustomIngestKey>("CustomIngestKey")({
 	id: CustomIngestKeyId,
 	name: Schema.String,
 	description: Schema.NullOr(Schema.String),
 	keyPrefix: Schema.String,
-	enabled: Schema.Boolean,
+	status: CustomIngestKeyStatus,
 	allowedSignals: Schema.NullOr(Schema.Array(IngestKeySignal)),
 	rateLimitRps: Schema.NullOr(Schema.Int),
 	resourceAttributes: Schema.Array(IngestKeyResourceAttribute),
 	expiresAt: Schema.NullOr(IsoDateTimeString),
+	pausedAt: Schema.NullOr(IsoDateTimeString),
+	pausedUntil: Schema.NullOr(IsoDateTimeString),
+	lastUsedAt: Schema.NullOr(IsoDateTimeString),
 	rolledAt: IsoDateTimeString,
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,
@@ -74,7 +81,6 @@ export class CreateCustomIngestKeyRequest extends Schema.Class<CreateCustomInges
 )({
 	name: Schema.String,
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	enabled: Schema.optionalKey(Schema.Boolean),
 	allowedSignals: Schema.optionalKey(Schema.NullOr(Schema.Array(IngestKeySignal))),
 	rateLimitRps: Schema.optionalKey(Schema.NullOr(Schema.Int)),
 	resourceAttributes: Schema.optionalKey(Schema.Array(IngestKeyResourceAttribute)),
@@ -87,11 +93,25 @@ export class UpdateCustomIngestKeyRequest extends Schema.Class<UpdateCustomInges
 )({
 	name: Schema.optionalKey(Schema.String),
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	enabled: Schema.optionalKey(Schema.Boolean),
 	allowedSignals: Schema.optionalKey(Schema.NullOr(Schema.Array(IngestKeySignal))),
 	rateLimitRps: Schema.optionalKey(Schema.NullOr(Schema.Int)),
 	resourceAttributes: Schema.optionalKey(Schema.Array(IngestKeyResourceAttribute)),
 	expiresAtMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+}) {}
+
+/** Hourly span and log counts for one key; `hour` is the bucket start in epoch ms. */
+export class CustomIngestKeyUsageBucket extends Schema.Class<CustomIngestKeyUsageBucket>(
+	"CustomIngestKeyUsageBucket",
+)({
+	hour: Schema.Number,
+	spans: Schema.Number,
+	logs: Schema.Number,
+}) {}
+
+export class CustomIngestKeyUsage extends Schema.Class<CustomIngestKeyUsage>("CustomIngestKeyUsage")({
+	windowStart: Schema.Number,
+	windowEnd: Schema.Number,
+	buckets: Schema.Array(CustomIngestKeyUsageBucket),
 }) {}
 
 export class CustomIngestKeyNotFoundError extends HttpTaggedError<CustomIngestKeyNotFoundError>()(

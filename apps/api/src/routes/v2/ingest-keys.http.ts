@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import type { CustomIngestKey, IngestKeysResponse } from "@maple/domain/http"
 import { CreateCustomIngestKeyRequest, CurrentTenant, UpdateCustomIngestKeyRequest } from "@maple/domain/http"
 import {
+	CustomIngestKeyPublicId,
 	MapleApiV2,
 	paginateArray,
 	timestamp,
@@ -9,13 +10,17 @@ import {
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
 import type { V2CustomIngestKey, V2CustomIngestKeyUpdateParams, V2IngestKeys } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { CustomIngestKeyUsageService } from "@maple/backend/services/org/CustomIngestKeyUsageService"
 import { OrgCustomIngestKeysService } from "@maple/backend/services/org/OrgCustomIngestKeysService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { timestampMs } from "@maple/backend/platform/time"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
+
+const encodePublicKeyId = Schema.encodeSync(CustomIngestKeyPublicId)
+const toIsoTimestamp = (epochMs: number) => timestamp(new Date(epochMs).toISOString())
 
 const adminOnly = (action: string) => () =>
 	V2InsufficientPermissions.make(`Only org admins can ${action} ingest keys`)
@@ -34,11 +39,14 @@ const toV2CustomIngestKey = (key: CustomIngestKey): V2CustomIngestKey => ({
 	name: key.name,
 	description: key.description,
 	key_prefix: key.keyPrefix,
-	enabled: key.enabled,
+	status: key.status,
 	allowed_signals: key.allowedSignals,
 	rate_limit_rps: key.rateLimitRps,
 	resource_attributes: key.resourceAttributes,
 	expires_at: timestampOrNull(key.expiresAt),
+	paused_at: timestampOrNull(key.pausedAt),
+	paused_until: timestampOrNull(key.pausedUntil),
+	last_used_at: timestampOrNull(key.lastUsedAt),
 	rolled_at: timestamp(key.rolledAt),
 	created_at: timestamp(key.createdAt),
 	updated_at: timestamp(key.updatedAt),
@@ -47,7 +55,6 @@ const toV2CustomIngestKey = (key: CustomIngestKey): V2CustomIngestKey => ({
 /** Optional wire fields shared by create and update, mapped to the service request. */
 const toServiceFields = (payload: V2CustomIngestKeyUpdateParams) => ({
 	...(payload.description !== undefined ? { description: payload.description } : undefined),
-	...(payload.enabled !== undefined ? { enabled: payload.enabled } : undefined),
 	...(payload.allowed_signals !== undefined ? { allowedSignals: payload.allowed_signals } : undefined),
 	...(payload.rate_limit_rps !== undefined ? { rateLimitRps: payload.rate_limit_rps } : undefined),
 	...(payload.resource_attributes !== undefined
@@ -60,27 +67,14 @@ const toServiceFields = (payload: V2CustomIngestKeyUpdateParams) => ({
 
 /** Update-payload fields that are diffable through the wire shape. */
 const customKeyAuditKeys: ReadonlyArray<
-	| "name"
-	| "description"
-	| "enabled"
-	| "allowed_signals"
-	| "rate_limit_rps"
-	| "resource_attributes"
-	| "expires_at"
-> = [
-	"name",
-	"description",
-	"enabled",
-	"allowed_signals",
-	"rate_limit_rps",
-	"resource_attributes",
-	"expires_at",
-]
+	"name" | "description" | "allowed_signals" | "rate_limit_rps" | "resource_attributes" | "expires_at"
+> = ["name", "description", "allowed_signals", "rate_limit_rps", "resource_attributes", "expires_at"]
 
 export const HttpV2IngestKeysLive = HttpApiBuilder.group(MapleApiV2, "ingestKeys", (handlers) =>
 	Effect.gen(function* () {
 		const ingestKeys = yield* OrgIngestKeysService
 		const customKeys = yield* OrgCustomIngestKeysService
+		const customKeyUsage = yield* CustomIngestKeyUsageService
 
 		const adminTenant = (action: string) =>
 			Effect.gen(function* () {
@@ -173,6 +167,53 @@ export const HttpV2IngestKeysLive = HttpApiBuilder.group(MapleApiV2, "ingestKeys
 					})
 
 					return toV2CustomIngestKey(updated)
+				}),
+			)
+			.handle("pauseCustom", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* adminTenant("pause")
+					const until = payload.until ?? null
+					const paused = yield* customKeys.pause(
+						tenant.orgId,
+						tenant.userId,
+						params.id,
+						until === null ? null : timestampMs(until),
+					)
+					yield* recordHttpAudit("custom_ingest_key.paused", {
+						resourceId: paused.id,
+						metadata: { name: paused.name, until },
+					})
+
+					return toV2CustomIngestKey(paused)
+				}),
+			)
+			.handle("resumeCustom", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* adminTenant("resume")
+					const resumed = yield* customKeys.resume(tenant.orgId, tenant.userId, params.id)
+					yield* recordHttpAudit("custom_ingest_key.resumed", {
+						resourceId: resumed.id,
+						metadata: { name: resumed.name },
+					})
+
+					return toV2CustomIngestKey(resumed)
+				}),
+			)
+			.handle("usageCustom", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* adminTenant("view")
+					yield* customKeys.get(tenant.orgId, params.id)
+					const usage = yield* customKeyUsage.read(tenant, encodePublicKeyId(params.id))
+					return {
+						object: "custom_ingest_key_usage" as const,
+						window_start: toIsoTimestamp(usage.windowStart),
+						window_end: toIsoTimestamp(usage.windowEnd),
+						buckets: usage.buckets.map((bucket) => ({
+							hour: toIsoTimestamp(bucket.hour),
+							spans: bucket.spans,
+							logs: bucket.logs,
+						})),
+					}
 				}),
 			)
 			.handle("rollCustom", ({ params }) =>

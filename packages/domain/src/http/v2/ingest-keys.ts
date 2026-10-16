@@ -11,6 +11,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
+import { V2WarehouseReadErrors } from "./query-errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 
 const ingestKeysExample = {
@@ -65,7 +66,7 @@ const customIngestKeyExample = {
 	name: "Checkout staging",
 	description: "Staging deploys of the checkout service",
 	key_prefix: "maple_ik_Q7xZa",
-	enabled: true,
+	status: "active",
 	allowed_signals: ["traces", "logs"],
 	rate_limit_rps: 200,
 	resource_attributes: [
@@ -73,6 +74,9 @@ const customIngestKeyExample = {
 		{ key: "deployment.environment", value: "staging", mode: "set" },
 	],
 	expires_at: null,
+	paused_at: null,
+	paused_until: null,
+	last_used_at: "2026-07-15T09:14:00.000Z",
 	rolled_at: "2026-07-01T12:00:00.000Z",
 	created_at: "2026-07-01T12:00:00.000Z",
 	updated_at: "2026-07-15T09:12:00.000Z",
@@ -134,14 +138,25 @@ export const V2CustomIngestKey = Schema.Struct({
 			"The non-secret leading portion of the key, safe to display. The full key is returned only when it is created or rolled.",
 		examples: ["maple_ik_Q7xZa"],
 	}),
-	enabled: Schema.Boolean.annotate({
-		description: "Whether the key is accepted. Disabled keys are rejected with 401.",
-		examples: [true],
+	status: Schema.Literals(["active", "paused", "expired"]).annotate({
+		description:
+			"`active` keys are accepted. `paused` keys are accepted with a success response but their data is dropped, not stored or billed. `expired` keys are rejected with 401.",
+		examples: ["active"],
 	}),
 	allowed_signals: allowedSignalsField,
 	rate_limit_rps: rateLimitField,
 	resource_attributes: resourceAttributesField,
 	expires_at: expiresAtField,
+	paused_at: Schema.NullOr(Timestamp).annotate({
+		description: "When the key was paused, or `null` if it is not paused.",
+	}),
+	paused_until: Schema.NullOr(Timestamp).annotate({
+		description: "When a pause ends on its own. `null` while paused means paused until resumed.",
+	}),
+	last_used_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When the gateway last accepted data sent with this key, updated at most once a minute. `null` if never used.",
+	}),
 	rolled_at: Timestamp.annotate({ description: "When the secret was last rolled (or first created)." }),
 	created_at: Timestamp.annotate({ description: "When the key was created." }),
 	updated_at: Timestamp.annotate({ description: "When the key was last updated." }),
@@ -175,7 +190,6 @@ export type V2CustomIngestKeyWithSecret = Schema.Schema.Type<typeof V2CustomInge
 export const V2CustomIngestKeyCreateParams = Schema.Struct({
 	name: Schema.String.annotate({ description: "Human-readable label. Required, at most 100 characters." }),
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	enabled: Schema.optionalKey(Schema.Boolean.annotate({ description: "Defaults to `true`." })),
 	allowed_signals: Schema.optionalKey(allowedSignalsField),
 	rate_limit_rps: Schema.optionalKey(rateLimitField),
 	resource_attributes: Schema.optionalKey(resourceAttributesField),
@@ -198,7 +212,6 @@ export type V2CustomIngestKeyCreateParams = Schema.Schema.Type<typeof V2CustomIn
 export const V2CustomIngestKeyUpdateParams = Schema.Struct({
 	name: Schema.optionalKey(Schema.String),
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	enabled: Schema.optionalKey(Schema.Boolean),
 	allowed_signals: Schema.optionalKey(allowedSignalsField),
 	rate_limit_rps: Schema.optionalKey(rateLimitField),
 	resource_attributes: Schema.optionalKey(resourceAttributesField),
@@ -208,9 +221,49 @@ export const V2CustomIngestKeyUpdateParams = Schema.Struct({
 	title: "Custom ingest key update parameters",
 	description:
 		"Request body for updating a custom ingest key. Omitted fields are unchanged; `null` clears a field.",
-	examples: [wireExample({ enabled: false })],
+	examples: [wireExample({ rate_limit_rps: 500 })],
 })
 export type V2CustomIngestKeyUpdateParams = Schema.Schema.Type<typeof V2CustomIngestKeyUpdateParams>
+
+export const V2CustomIngestKeyPauseParams = Schema.Struct({
+	until: Schema.optionalKey(
+		Schema.NullOr(Timestamp).annotate({
+			description: "When the pause ends on its own. Omit or `null` to pause until resumed.",
+		}),
+	),
+}).annotate({
+	identifier: "CustomIngestKeyPauseParams",
+	title: "Custom ingest key pause parameters",
+	description: "Request body for pausing a custom ingest key.",
+	examples: [wireExample({ until: "2026-07-15T10:00:00.000Z" })],
+})
+export type V2CustomIngestKeyPauseParams = Schema.Schema.Type<typeof V2CustomIngestKeyPauseParams>
+
+export const V2CustomIngestKeyUsage = Schema.Struct({
+	object: Schema.Literal("custom_ingest_key_usage"),
+	window_start: Timestamp,
+	window_end: Timestamp,
+	buckets: Schema.Array(
+		Schema.Struct({
+			hour: Timestamp.annotate({ description: "Start of the hour." }),
+			spans: Schema.Number.annotate({ description: "Spans stored with this key in the hour." }),
+			logs: Schema.Number.annotate({ description: "Log records stored with this key in the hour." }),
+		}),
+	).annotate({ description: "Hours with data, oldest first. Hours without data are omitted." }),
+}).annotate({
+	identifier: "CustomIngestKeyUsage",
+	title: "Custom ingest key usage",
+	description: "Hourly span and log counts stored with a custom ingest key over the last 24 hours.",
+	examples: [
+		wireExample({
+			object: "custom_ingest_key_usage",
+			window_start: "2026-07-14T10:00:00.000Z",
+			window_end: "2026-07-15T10:00:00.000Z",
+			buckets: [{ hour: "2026-07-15T09:00:00.000Z", spans: 51234, logs: 12873 }],
+		}),
+	],
+})
+export type V2CustomIngestKeyUsage = Schema.Schema.Type<typeof V2CustomIngestKeyUsage>
 
 export const V2CustomIngestKeyDeleteResponse = Schema.Struct({
 	id: CustomIngestKeyPublicId,
@@ -351,6 +404,59 @@ export class V2IngestKeysApiGroup extends HttpApiGroup.make("ingestKeys")
 				summary: "Roll a custom ingest key",
 				description:
 					"Replaces the key's secret, keeping its ID and settings, and returns the new one-time `secret`. The previous secret stops working within a minute. Requires an org-admin role and the `ingest_keys:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("pauseCustom", "/custom/:id/pause", {
+			params: { id: CustomIngestKeyPublicId },
+			payload: V2CustomIngestKeyPauseParams,
+			success: V2CustomIngestKey,
+			error: [
+				V2InsufficientPermissions.schema,
+				customKeyNotFound,
+				customKeyInvalid,
+				...ingestKeyErrors,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "pauseCustomIngestKey",
+				summary: "Pause a custom ingest key",
+				description:
+					"Pauses ingestion for a key until `until`, or until resumed. Senders keep getting success responses, so nothing retries or backs up, but their data is dropped and not billed. Takes effect within a minute. Requires an org-admin role and the `ingest_keys:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("resumeCustom", "/custom/:id/resume", {
+			params: { id: CustomIngestKeyPublicId },
+			success: V2CustomIngestKey,
+			error: [V2InsufficientPermissions.schema, customKeyNotFound, ...ingestKeyErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "resumeCustomIngestKey",
+				summary: "Resume a custom ingest key",
+				description:
+					"Ends a pause so data sent with the key is stored again, within a minute. Requires an org-admin role and the `ingest_keys:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("usageCustom", "/custom/:id/usage", {
+			params: { id: CustomIngestKeyPublicId },
+			success: V2CustomIngestKeyUsage,
+			error: [
+				V2InsufficientPermissions.schema,
+				customKeyNotFound,
+				...ingestKeyErrors,
+				...V2WarehouseReadErrors,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getCustomIngestKeyUsage",
+				summary: "Retrieve custom ingest key usage",
+				description:
+					"Returns hourly span and log counts stored with the key over the last 24 hours. Requires an org-admin role and the `ingest_keys:read` scope.",
 			}),
 		),
 	)
