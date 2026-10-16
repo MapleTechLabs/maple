@@ -355,8 +355,9 @@ the same options for dropping spans and classifying expected failures:
 | `isAnticipatedError`          | `(error) => boolean`, for expected failures a tag can't single out (e.g. a driver error that is only expected for a duplicate key)                                                    |
 
 A server span that answered 5xx stays `Error` even when its failure is
-anticipated. Spans whose failure carries Effect's `ErrorReporter.ignore` flag
-(unmatched-route 404s) are dropped.
+anticipated. A span is dropped when every failure in it carries Effect's
+`ErrorReporter.ignore` flag (unmatched-route 404s), it has no defect, and no
+failure matches your anticipated errors (those export as `Ok` instead).
 
 ```typescript
 const TracerLive = Maple.layer({
