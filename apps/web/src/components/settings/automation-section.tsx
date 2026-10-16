@@ -35,6 +35,8 @@ export function AutomationSection({
 	isAdmin: boolean
 	hasEntitlement: boolean
 }) {
+	// The evaluate endpoint only reads the stored policy, so unsaved edits are invisible to it.
+	const [policyDirty, setPolicyDirty] = useState(false)
 	return (
 		<SettingsSections>
 			<SettingsSection title="Automatic investigations" framed={false}>
@@ -45,15 +47,15 @@ export function AutomationSection({
 				description="Confidence gates apply only to AI decisions. A manual severity change is explicit human intent and bypasses the confidence threshold."
 				framed={false}
 			>
-				<EscalationPolicySection isAdmin={isAdmin} />
+				<EscalationPolicySection isAdmin={isAdmin} onDirtyChange={setPolicyDirty} />
 			</SettingsSection>
-			<PolicySimulator />
+			<PolicySimulator policyDirty={policyDirty} />
 			<RecentDeliveries />
 		</SettingsSections>
 	)
 }
 
-function PolicySimulator() {
+function PolicySimulator({ policyDirty }: { policyDirty: boolean }) {
 	const [severity, setSeverity] = useState<IssueSeverity>("high")
 	const [source, setSource] = useState<"ai" | "manual">("ai")
 	const [confidence, setConfidence] = useState<EscalationConfidence>("high")
@@ -125,10 +127,14 @@ function PolicySimulator() {
 				</Field>
 			</div>
 			<div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
-				<Button size="sm" onClick={() => void run()} loading={busy}>
+				<Button size="sm" onClick={() => void run()} loading={busy} disabled={policyDirty}>
 					Evaluate policy
 				</Button>
-				{decision ? (
+				{policyDirty ? (
+					<span className="text-sm text-muted-foreground">
+						Save the policy above to simulate it. The simulator evaluates the saved policy.
+					</span>
+				) : decision ? (
 					<>
 						<Badge variant="outline" className="capitalize">
 							{decision.outcome}
@@ -147,7 +153,7 @@ function PolicySimulator() {
 					</>
 				) : (
 					<span className="text-sm text-muted-foreground">
-						Preview the exact worker decision without sending a notification.
+						Preview the worker's decision under the saved policy without sending a notification.
 					</span>
 				)}
 			</div>

@@ -53,7 +53,14 @@ const emptyDraft = (): DraftRules => ({
  * human) sets an issue's severity, matching destinations get notified —
  * detection-time alerts keep using the alert rule's own destinations.
  */
-export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
+export function EscalationPolicySection({
+	isAdmin,
+	onDirtyChange,
+}: {
+	isAdmin: boolean
+	/** Fires when the draft diverges from, or is saved back to, the stored policy. */
+	onDirtyChange?: (dirty: boolean) => void
+}) {
 	const policyQueryAtom = retainedInternalQuery("errors", "getEscalationPolicy", {
 		reactivityKeys: ["issueEscalationPolicy"],
 	})
@@ -102,8 +109,24 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 			payload: new IssueEscalationPolicyUpsertRequest({ enabled, rules: ruleList }),
 			reactivityKeys: ["issueEscalationPolicy"],
 		})
-		toastExit(result, { success: "Escalation policy saved", error: "Failed to save escalation policy" })
+		if (
+			toastExit(result, {
+				success: "Escalation policy saved",
+				error: "Failed to save escalation policy",
+			})
+		) {
+			onDirtyChange?.(false)
+		}
 	})
+
+	const editEnabled = (next: boolean) => {
+		setEnabled(next)
+		onDirtyChange?.(true)
+	}
+	const editRule = (severity: IssueSeverity, patch: Partial<SeverityRuleDraft>) => {
+		setRules((current) => ({ ...current, [severity]: { ...current[severity], ...patch } }))
+		onDirtyChange?.(true)
+	}
 
 	// Never render the editable form off a failed (or pending) policy load —
 	// saving a default draft would silently overwrite the real policy.
@@ -132,7 +155,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 				<SettingRow
 					label="Severity escalation"
 					description="Route issues to destinations when AI triage or a teammate sets their severity. Fires once per issue and severity level, upward only."
-					control={<Switch checked={enabled} onCheckedChange={setEnabled} disabled={!isAdmin} />}
+					control={<Switch checked={enabled} onCheckedChange={editEnabled} disabled={!isAdmin} />}
 				/>
 
 				{Result.builder(destinationsResult)
@@ -193,13 +216,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 															(c) => c === value,
 														)
 														if (!minConfidence) return
-														setRules((current) => ({
-															...current,
-															[severity]: {
-																...current[severity],
-																minConfidence,
-															},
-														}))
+														editRule(severity, { minConfidence })
 													}}
 												>
 													<SelectTrigger size="sm" className="w-[100px]">
@@ -217,15 +234,10 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 										<MultiSegmentedSelect<string>
 											options={destinationOptions}
 											value={rules[severity].destinationIds}
-											onChange={(values) =>
-												setRules((current) => ({
-													...current,
-													[severity]: {
-														...current[severity],
-														destinationIds: values,
-													},
-												}))
+											onChange={(destinationIds) =>
+												editRule(severity, { destinationIds })
 											}
+											disabled={!isAdmin}
 											aria-label={`Destinations for ${severity} severity`}
 											size="sm"
 										/>
