@@ -396,10 +396,7 @@ function NavRow({
 			</SidebarMenuButton>
 			{item.badge ? (
 				<SidebarMenuBadge>
-					<Badge
-						className="gap-0.5 bg-primary font-semibold text-primary-foreground"
-						variant="tag"
-					>
+					<Badge className="gap-0.5 bg-primary font-semibold text-primary-foreground" variant="tag">
 						<PixelSparkleIcon className="size-2.5" />
 						{item.badge}
 					</Badge>
