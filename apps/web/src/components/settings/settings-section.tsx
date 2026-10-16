@@ -18,6 +18,7 @@ export function SettingsSection({
 	framed = true,
 	padded = true,
 	className,
+	footer,
 	children,
 }: {
 	title: string
@@ -28,6 +29,8 @@ export function SettingsSection({
 	/** Panel padding when framed; off for a panel of `SettingRow`s that pad themselves. */
 	padded?: boolean
 	className?: string
+	/** Below the content, e.g. an `AdminOnlyNote` explaining controls a member cannot use. */
+	footer?: React.ReactNode
 	children: React.ReactNode
 }) {
 	const id = React.useId()
@@ -38,6 +41,7 @@ export function SettingsSection({
 				{description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
 			</div>
 			{framed ? <Panel padded={padded}>{children}</Panel> : children}
+			{footer}
 		</section>
 	)
 }
@@ -45,4 +49,9 @@ export function SettingsSection({
 /** Stacks a settings tab's sections at the shared rhythm. */
 export function SettingsSections({ children }: { children: React.ReactNode }) {
 	return <div className="flex w-full max-w-3xl flex-col gap-10">{children}</div>
+}
+
+/** The one-line reason beside a control a member sees but cannot use. */
+export function AdminOnlyNote({ children, className }: { children: React.ReactNode; className?: string }) {
+	return <p className={cn("text-xs text-muted-foreground", className)}>{children}</p>
 }

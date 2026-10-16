@@ -48,7 +48,8 @@ import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
-import { SettingsSection } from "./settings-section"
+import { AdminOnlyNote, SettingsSection } from "./settings-section"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 
 const SOURCE_CONTEXT_LABELS: Record<IngestMappingSourceContext, string> = {
 	span: "Span attribute",
@@ -79,6 +80,7 @@ const toSourceContext = (value: string | null): IngestMappingSourceContext =>
 const toOperation = (value: string | null): IngestMappingOperation => (value === "move" ? "move" : "copy")
 
 export function AttributeMappingsSection() {
+	const isAdmin = useIsOrgAdmin()
 	const [dialogOpen, setDialogOpen] = useState(false)
 	const [deleteConfirm, setDeleteConfirm] = useState<V2AttributeMapping | null>(null)
 
@@ -192,10 +194,19 @@ export function AttributeMappingsSection() {
 				description="Rename or promote span attribute keys at ingest. Applied only to spans received after a rule is saved."
 				padded={false}
 				actions={
-					<Button size="sm" onClick={openAddDialog}>
-						<PlusIcon data-icon="inline-start" />
-						Add mapping
-					</Button>
+					isAdmin ? (
+						<Button size="sm" onClick={openAddDialog}>
+							<PlusIcon data-icon="inline-start" />
+							Add mapping
+						</Button>
+					) : null
+				}
+				footer={
+					isAdmin ? null : (
+						<AdminOnlyNote>
+							Only org admins can add, edit, delete or turn off attribute mappings.
+						</AdminOnlyNote>
+					)
 				}
 			>
 				<div>
@@ -233,10 +244,12 @@ export function AttributeMappingsSection() {
 								</EmptyDescription>
 							</EmptyHeader>
 							<EmptyActions>
-								<Button size="sm" onClick={openAddDialog}>
-									<PlusIcon data-icon="inline-start" />
-									Add mapping
-								</Button>
+								{isAdmin && (
+									<Button size="sm" onClick={openAddDialog}>
+										<PlusIcon data-icon="inline-start" />
+										Add mapping
+									</Button>
+								)}
 								<DocsLink page="otelConventions" />
 							</EmptyActions>
 						</Empty>
@@ -301,22 +314,24 @@ export function AttributeMappingsSection() {
 										</span>
 
 										<div className="flex w-28 shrink-0 items-center justify-end gap-1.5">
-											<div className="flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-												<IconButton
-													className="text-muted-foreground hover:text-foreground"
-													onClick={() => openEditDialog(mapping)}
-													label="Edit mapping"
-												>
-													<PencilIcon />
-												</IconButton>
-												<IconButton
-													className="text-muted-foreground hover:text-destructive"
-													onClick={() => setDeleteConfirm(mapping)}
-													label="Delete mapping"
-												>
-													<TrashIcon />
-												</IconButton>
-											</div>
+											{isAdmin && (
+												<div className="flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+													<IconButton
+														className="text-muted-foreground hover:text-foreground"
+														onClick={() => openEditDialog(mapping)}
+														label="Edit mapping"
+													>
+														<PencilIcon />
+													</IconButton>
+													<IconButton
+														className="text-muted-foreground hover:text-destructive"
+														onClick={() => setDeleteConfirm(mapping)}
+														label="Delete mapping"
+													>
+														<TrashIcon />
+													</IconButton>
+												</div>
+											)}
 											<Tooltip>
 												<TooltipTrigger render={<span className="inline-flex" />}>
 													<Switch
@@ -325,7 +340,7 @@ export function AttributeMappingsSection() {
 														onCheckedChange={() =>
 															void toggle.run(mapping.id, mapping)
 														}
-														disabled={toggle.isPending(mapping.id)}
+														disabled={!isAdmin || toggle.isPending(mapping.id)}
 													/>
 												</TooltipTrigger>
 												<TooltipContent>

@@ -28,6 +28,7 @@ import { destinationProvider, ProviderLogo } from "@/components/alerts/destinati
 import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badge"
 import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
+import { AdminOnlyNote } from "@/components/settings/settings-section"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 
@@ -255,9 +256,7 @@ export function EscalationPolicySection({
 				</div>
 			</Panel>
 			{!isAdmin ? (
-				<p className="text-muted-foreground text-xs">
-					Only org admins can change the escalation policy.
-				</p>
+				<AdminOnlyNote>Only org admins can change the escalation policy.</AdminOnlyNote>
 			) : null}
 		</div>
 	)

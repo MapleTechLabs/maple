@@ -19,7 +19,8 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { DocsLink } from "@/components/common/docs-link"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import { SettingsSection } from "@/components/settings/settings-section"
+import { AdminOnlyNote, SettingsSection } from "@/components/settings/settings-section"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 import { SegmentedSelect } from "@/components/common/segmented-select"
@@ -94,6 +95,7 @@ function recPlainText(issue: V2Recommendation): string {
 }
 
 export function RecommendedMappingsSection() {
+	const isAdmin = useIsOrgAdmin()
 	const [tab, setTab] = useState<"open" | "closed">("open")
 
 	const listResult = useAtomValue(recommendationIssuesListAtom)
@@ -171,6 +173,13 @@ export function RecommendedMappingsSection() {
 			title="Recommendations"
 			description="Deprecated or non-conforming OpenTelemetry attribute keys detected on your spans."
 			padded={false}
+			footer={
+				isAdmin || openIssues.every((issue) => issue.kind !== "rename") ? null : (
+					<AdminOnlyNote>
+						Only org admins can apply fixes, since a fix adds an attribute mapping.
+					</AdminOnlyNote>
+				)
+			}
 			actions={
 				<SegmentedSelect
 					size="sm"
@@ -241,6 +250,7 @@ export function RecommendedMappingsSection() {
 													size="sm"
 													onClick={() => void apply.run(issue.id, issue)}
 													loading={isApplying}
+													disabled={!isAdmin}
 												>
 													<CheckIcon />
 													Apply fix

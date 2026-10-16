@@ -16,7 +16,7 @@ import {
 import { useBillingActions } from "@/hooks/use-billing-actions"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatDateInTimezone } from "@/lib/timezone-format"
-import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
+import { AdminOnlyNote, SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { getLegacyPlanInfo, getTrialStatus, type TrialStatus } from "@/lib/billing/plan-gating"
 import { buildSpendModel } from "@/lib/billing/spend"
 import { estimateCycleCost } from "@/lib/billing/cost-estimate"
@@ -46,12 +46,14 @@ function SubscriptionStrip({
 	isLegacy,
 	billingPeriodLabel,
 	isLoading,
+	isAdmin,
 	onManageBilling,
 }: {
 	trial: TrialStatus
 	isLegacy: boolean
 	billingPeriodLabel: string
 	isLoading: boolean
+	isAdmin: boolean
 	onManageBilling: () => void
 }) {
 	const { effectiveTimezone } = useTimezonePreference()
@@ -104,10 +106,15 @@ function SubscriptionStrip({
 						{billingPeriodLabel}
 					</KeyValue>
 				</KeyValueList>
-				<Button variant="outline" size="sm" onClick={onManageBilling}>
+				<Button variant="outline" size="sm" onClick={onManageBilling} disabled={!isAdmin}>
 					Manage billing
 				</Button>
 			</div>
+			{!isAdmin && (
+				<AdminOnlyNote className="mt-3">
+					Only org admins can manage billing, change the plan or edit billing controls.
+				</AdminOnlyNote>
+			)}
 			{isLegacy && (
 				<p className="mt-3 text-xs text-muted-foreground">
 					You're on a legacy plan that's no longer offered. Switch to a current plan below for the
@@ -125,7 +132,7 @@ function SubscriptionStrip({
 	)
 }
 
-export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
+export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 	const customerResult = useAtomValue(billingCustomerAtom)
 	const refreshCustomer = useAtomRefresh(billingCustomerAtom)
 	const plansResult = useAtomValue(billingPlansAtom)
@@ -186,6 +193,7 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 	const invoices = (
 		<SettingsSection title="Invoices" framed={false}>
 			<InvoicesSection
+				canManageBilling={isAdmin}
 				onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
 			/>
 		</SettingsSection>
@@ -215,6 +223,7 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 				isLegacy={isLegacy}
 				billingPeriodLabel={billingPeriodLabel}
 				isLoading={Result.isInitial(customerResult)}
+				isAdmin={isAdmin}
 				onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
 			/>
 
@@ -271,6 +280,7 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 			>
 				<PlanOffer
 					model={model}
+					canManage={isAdmin}
 					onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
 				/>
 			</SettingsSection>

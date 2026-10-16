@@ -36,14 +36,15 @@ import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
 import { SyncUnavailable } from "@/components/common/sync-unavailable"
 import { retryOrgCollections } from "@/lib/collections/org-collections"
 import { useLiveClock } from "@/hooks/use-live-clock"
-import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
+import { useIsOrgAdmin, useSessionUserId } from "@/hooks/use-is-org-admin"
 import { toastExit } from "@/lib/error-toast"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatDateInTimezone } from "@/lib/timezone-format"
-import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
+import { AdminOnlyNote, SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { CreateApiKeyDialog } from "./create-api-key-dialog"
 import { RollApiKeyDialog } from "./roll-api-key-dialog"
+import { apiKeyRowPermissions } from "./api-key-permissions"
 
 type ApiKey = V2ApiKey
 
@@ -92,6 +93,7 @@ const VIEW_LABELS = {
 
 export function ApiKeysSection() {
 	const isAdmin = useIsOrgAdmin()
+	const userId = useSessionUserId()
 	const [view, setView] = useState<ApiKeyView>("active")
 	const [search, setSearch] = useState("")
 	const [createOpen, setCreateOpen] = useState(false)
@@ -166,6 +168,21 @@ export function ApiKeysSection() {
 			<SettingsSection
 				title="API keys"
 				framed={false}
+				footer={
+					isAdmin ? null : (
+						<AdminOnlyNote>
+							Only org admins can create, roll or revoke API keys; you can revoke MCP keys you
+							created. For a key that connects your editor to Maple, use the{" "}
+							<Link
+								to="/mcp"
+								className="text-foreground underline underline-offset-2 hover:no-underline"
+							>
+								MCP
+							</Link>{" "}
+							page; you can create one of those yourself.
+						</AdminOnlyNote>
+					)
+				}
 				actions={
 					<Button onClick={() => setCreateOpen(true)} size="sm" disabled={!isAdmin}>
 						<PlusIcon data-icon="inline-start" />
@@ -293,33 +310,23 @@ export function ApiKeysSection() {
 								<ColumnHead label="Expires" width={COL.expires} />
 								<span className={COL.menu} />
 							</DataTable.Head>
-							{visibleKeys.map((key) => (
-								<ApiKeyRow
-									key={key.id}
-									apiKey={key}
-									status={statusOf(key)}
-									now={now}
-									onRoll={key.revoked ? undefined : () => openRollDialog(key)}
-									onRevoke={key.revoked ? undefined : () => openRevokeDialog(key)}
-								/>
-							))}
+							{visibleKeys.map((key) => {
+								const can = apiKeyRowPermissions(key, { isAdmin, userId })
+								return (
+									<ApiKeyRow
+										key={key.id}
+										apiKey={key}
+										status={statusOf(key)}
+										now={now}
+										onRoll={can.canRoll ? () => openRollDialog(key) : undefined}
+										onRevoke={can.canRevoke ? () => openRevokeDialog(key) : undefined}
+									/>
+								)
+							})}
 						</DataTable.Root>
 					)}
 				</Panel>
 			</SettingsSection>
-
-			{!isAdmin ? (
-				<p className="text-muted-foreground text-xs">
-					Only org admins can create API keys. For a key that connects your editor to Maple, use the{" "}
-					<Link
-						to="/mcp"
-						className="text-foreground underline underline-offset-2 hover:no-underline"
-					>
-						MCP
-					</Link>{" "}
-					page; you can create one of those yourself.
-				</p>
-			) : null}
 
 			<ApiReference />
 

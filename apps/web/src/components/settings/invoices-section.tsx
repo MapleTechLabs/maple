@@ -95,7 +95,14 @@ function InvoicesSkeleton() {
  * the Stripe-hosted invoice (view/PDF). Newest first. On upstream failure the
  * Stripe billing portal (via the provided handler) remains the escape hatch.
  */
-export function InvoicesSection({ onManageBilling }: { onManageBilling: () => void }) {
+export function InvoicesSection({
+	canManageBilling,
+	onManageBilling,
+}: {
+	/** The billing portal is admin-only server side. */
+	canManageBilling: boolean
+	onManageBilling: () => void
+}) {
 	const invoicesResult = useAtomValue(billingInvoicesAtom)
 	const { effectiveTimezone } = useTimezonePreference()
 
@@ -110,11 +117,15 @@ export function InvoicesSection({ onManageBilling }: { onManageBilling: () => vo
 		return (
 			<div className="flex items-center justify-between gap-4">
 				<p className="text-muted-foreground text-sm">
-					Couldn't load invoices. You can still view them in the billing portal.
+					{canManageBilling
+						? "Couldn't load invoices. You can still view them in the billing portal."
+						: "Couldn't load invoices. An org admin can view them in the billing portal."}
 				</p>
-				<Button variant="outline" size="sm" onClick={onManageBilling}>
-					Open billing portal
-				</Button>
+				{canManageBilling && (
+					<Button variant="outline" size="sm" onClick={onManageBilling}>
+						Open billing portal
+					</Button>
+				)}
 			</div>
 		)
 	}

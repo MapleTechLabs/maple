@@ -63,7 +63,17 @@ export function PlanOfferSkeleton() {
  * plan. Their plan is not for sale, so it can never come from the catalog; the
  * numbers here are their own, from the expanded subscription plus balances.
  */
-function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onManageBilling: () => void }) {
+const ADMIN_ONLY_CAPTION = "Only org admins can change the plan"
+
+function CustomPlanPlate({
+	model,
+	canManage,
+	onManageBilling,
+}: {
+	model: SpendModel
+	canManage: boolean
+	onManageBilling: () => void
+}) {
 	const price = model.basePlan?.price?.amount
 	const interval = model.basePlan?.price?.interval ?? "month"
 	// A hard-capped plan bills nothing past its allotments, so "+ usage" would be
@@ -122,10 +132,12 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 			</div>
 
 			<div className="flex w-full shrink-0 flex-col gap-2 lg:w-44">
-				<Button variant="outline" size="sm" onClick={onManageBilling}>
+				<Button variant="outline" size="sm" onClick={onManageBilling} disabled={!canManage}>
 					Manage plan
 				</Button>
-				<p className="text-center text-2xs text-muted-foreground">Invoices and payment method</p>
+				<p className="text-center text-2xs text-muted-foreground">
+					{canManage ? "Invoices and payment method" : ADMIN_ONLY_CAPTION}
+				</p>
 			</div>
 		</Panel>
 	)
@@ -133,10 +145,13 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 
 export function PlanOffer({
 	model,
+	canManage,
 	onManageBilling,
 }: {
 	/** Needed to render a custom plan, whose terms exist only on the customer. */
 	model: SpendModel | null
+	/** Attach and the billing portal are admin-only server side. */
+	canManage: boolean
 	onManageBilling: () => void
 }) {
 	const plansResult = useAtomValue(billingPlansAtom)
@@ -191,7 +206,9 @@ export function PlanOffer({
 	return (
 		<div className="space-y-3">
 			{checkoutReturn === "timed_out" && <CheckoutTimedOutNotice />}
-			{showCustomPlate && model && <CustomPlanPlate model={model} onManageBilling={onManageBilling} />}
+			{showCustomPlate && model && (
+				<CustomPlanPlate model={model} canManage={canManage} onManageBilling={onManageBilling} />
+			)}
 			{offers.map((plan) => {
 				const isActive = !showCustomPlate && plan.customerEligibility?.status === "active"
 				const trialAvailable = plan.customerEligibility?.trialAvailable === true
@@ -262,12 +279,18 @@ export function PlanOffer({
 
 						<div className="flex w-full shrink-0 flex-col gap-2 lg:w-44">
 							{isActive ? (
-								<Button variant="outline" size="sm" onClick={onManageBilling}>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={onManageBilling}
+									disabled={!canManage}
+								>
 									Manage plan
 								</Button>
 							) : (
 								<Button
 									size="sm"
+									disabled={!canManage}
 									loading={attaching === plan.id}
 									onClick={() => handleSubscribe(plan.id)}
 								>
@@ -277,7 +300,11 @@ export function PlanOffer({
 								</Button>
 							)}
 							<p className="text-center text-2xs text-muted-foreground">
-								{isActive ? "Invoices and payment method" : "$0 due today · cancel anytime"}
+								{!canManage
+									? ADMIN_ONLY_CAPTION
+									: isActive
+										? "Invoices and payment method"
+										: "$0 due today · cancel anytime"}
 							</p>
 						</div>
 					</Panel>
