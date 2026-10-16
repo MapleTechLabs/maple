@@ -300,8 +300,6 @@ function GcpWorkloadPage({
 					health={sql?.health}
 					serviceMap={sql === undefined ? undefined : { focusService: sql.focusService }}
 					tracedService={tracedService}
-					logs={logs}
-					consolePage={consolePage}
 					timeSearch={timeSearch}
 				/>
 			}
