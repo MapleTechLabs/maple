@@ -213,6 +213,8 @@ export function buildPortableDashboard(opts: {
 	tags?: readonly string[]
 	timeRange?: string
 	widgets: WidgetDef[]
+	sections?: PortableDashboardDocument["sections"]
+	variables?: PortableDashboardDocument["variables"]
 }): PortableDashboardDocument {
 	return decodePortableDashboard({
 		name: opts.name,
@@ -220,6 +222,8 @@ export function buildPortableDashboard(opts: {
 		...(opts.tags && opts.tags.length > 0 && { tags: opts.tags }),
 		timeRange: { type: "relative", value: opts.timeRange ?? "1h" },
 		widgets: opts.widgets,
+		...(opts.sections && { sections: opts.sections }),
+		...(opts.variables && { variables: opts.variables }),
 	})
 }
 

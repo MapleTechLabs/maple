@@ -482,15 +482,15 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 					try: () => {
 						const built = template.build(templateParams)
 						const description = params.description ?? built.description
+						// The whole build, so a template's sections and variables come along.
 						return new PortableDashboardDocument({
+							...built,
 							name: params.name || built.name,
 							...(description ? { description } : undefined),
-							...(built.tags ? { tags: built.tags } : undefined),
 							// An explicit time_range wins over the template's default.
 							timeRange: params.time_range
 								? { type: "relative" as const, value: params.time_range }
 								: built.timeRange,
-							widgets: built.widgets,
 						})
 					},
 					catch: (error) =>

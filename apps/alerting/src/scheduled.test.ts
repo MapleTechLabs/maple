@@ -6,7 +6,17 @@ import { scheduleFor } from "./schedule"
 import { layerTick, catchTickFailure, selectLaneProgram, type ScheduledTickPrograms } from "./scheduled"
 
 const cronCases = [
-	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale", "railwayMetrics", "prReviewPostMerge"]],
+	[
+		"*/5 * * * *",
+		[
+			"anomaly",
+			"cloudflareAnalytics",
+			"gcpMetrics",
+			"planetScale",
+			"railwayMetrics",
+			"prReviewPostMerge",
+		],
+	],
 	["*/15 * * * *", ["digest"]],
 	["0 * * * *", ["serviceMapRollup"]],
 	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
@@ -26,6 +36,7 @@ const recordingTicks = (
 		error: tick("error"),
 		escalation: tick("escalation"),
 		fixVerification: tick("fixVerification"),
+		gcpMetrics: tick("gcpMetrics"),
 		planetScale: tick("planetScale"),
 		prReviewPostMerge: tick("prReviewPostMerge"),
 		railwayMetrics: tick("railwayMetrics"),

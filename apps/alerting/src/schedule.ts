@@ -23,7 +23,14 @@ export const ALERTING_SCHEDULE = {
 	// evaluates, so a one-minute bound would starve the drain on a slow minute.
 	"* * * * *": { lanes: ["alert", "error", "escalation"], deadline: "110 seconds" },
 	"*/5 * * * *": {
-		lanes: ["anomaly", "cloudflare_analytics", "planetscale", "railway_metrics", "pr_review_post_merge"],
+		lanes: [
+			"anomaly",
+			"cloudflare_analytics",
+			"gcp_metrics",
+			"planetscale",
+			"railway_metrics",
+			"pr_review_post_merge",
+		],
 		deadline: "270 seconds",
 	},
 	"*/15 * * * *": { lanes: ["digest"], deadline: "10 minutes" },

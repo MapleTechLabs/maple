@@ -108,6 +108,8 @@ function toDbEdge(row: CH.ServiceDbEdgesOutput, durationSeconds: number): Servic
 /** Same precedence as the cloud API's platform classifier: host infrastructure beats SDK self-report. */
 export function classifyPlatform(row: CH.ServicePlatformsOutput): ServicePlatform {
 	if (row.cloudPlatform === "cloudflare.workers" || row.cloudProvider === "cloudflare") return "cloudflare"
+	// Before the Lambda rule: Google Cloud's detector sets `faas.name` on Cloud Run and Cloud Functions.
+	if (row.cloudProvider === "gcp") return "gcp"
 	if (row.faasName !== "" || row.cloudPlatform === "aws_lambda") return "lambda"
 	// `k8s.cluster.name` alone does not prove the service runs in Kubernetes.
 	if (row.k8sPodName !== "" || row.k8sDeploymentName !== "") return "kubernetes"

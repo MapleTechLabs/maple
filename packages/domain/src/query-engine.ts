@@ -478,8 +478,13 @@ export const AttributeValuesQuery = Schema.Struct({
 	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 	scope: Schema.Literals(["span", "resource", "log", "metric", "event"]),
 	attributeKey: Schema.String,
-	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery).
+	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery),
+	// or to several metrics of one `metricType` with `metricNames`. Scoped metric
+	// discovery reads `ResourceAttributes` for the `resource` scope.
 	metricName: Schema.optional(Schema.String),
+	metricNames: Schema.optional(
+		Schema.Array(Schema.String).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+	),
 	metricType: Schema.optional(MetricType),
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(500)),

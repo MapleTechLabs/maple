@@ -13,6 +13,11 @@ import { Textarea } from "@maple/ui/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Schema } from "effect"
 import { DashboardVariableName } from "@maple/domain/http"
+import {
+	QUERY_BUILDER_METRIC_TYPES,
+	toQueryBuilderMetricType,
+	type QueryBuilderMetricType,
+} from "@maple/query-model"
 import { ArrowDownIcon, ArrowUpIcon, PencilIcon, PlusIcon, TrashIcon } from "@/components/icons"
 import type { DashboardVariable } from "@/components/dashboard-builder/types"
 
@@ -29,6 +34,13 @@ const FACET_LABELS: Record<QueryFacet, string> = {
 	http_status_code: "HTTP status code",
 	log_severity: "Log severity",
 } satisfies Record<QueryFacet, string>
+
+const METRIC_TYPE_LABELS = {
+	sum: "Sum",
+	gauge: "Gauge",
+	histogram: "Histogram",
+	exponential_histogram: "Exponential histogram",
+} satisfies Record<QueryBuilderMetricType, string>
 
 const TYPE_LABELS: Record<DashboardVariable["type"], string> = {
 	query: "Query",
@@ -49,9 +61,15 @@ function sourceSummary(variable: DashboardVariable): string {
 	if (variable.type === "textbox") {
 		return "Free text"
 	}
-	return variable.source.kind === "facet"
-		? FACET_LABELS[variable.source.facet]
-		: `${variable.source.scope} attribute: ${variable.source.attributeKey || "…"}`
+	const source = variable.source
+	switch (source.kind) {
+		case "facet":
+			return FACET_LABELS[source.facet]
+		case "attribute":
+			return `${source.scope} attribute: ${source.attributeKey || "…"}`
+		case "metric":
+			return `metric ${source.scope} attribute: ${source.attributeKey || "…"} (${source.metricNames.length === 1 ? source.metricNames[0] : `${source.metricNames.length} metrics`})`
+	}
 }
 
 function newVariable(): DashboardVariable {
@@ -88,8 +106,17 @@ function draftError(draft: DashboardVariable, index: number, drafts: DashboardVa
 	if (drafts.some((other, i) => i !== index && other.name === draft.name)) {
 		return `Another variable is already named "${draft.name}".`
 	}
-	if (draft.type === "query" && draft.source.kind === "attribute" && !draft.source.attributeKey.trim()) {
+	if (draft.type === "query" && draft.source.kind !== "facet" && !draft.source.attributeKey.trim()) {
 		return "Pick the attribute key to list values for."
+	}
+	if (draft.type === "query" && draft.source.kind === "metric") {
+		if (draft.source.metricNames.some((name) => name === "")) {
+			return "Name at least one metric to list values from."
+		}
+		// The variable's schema caps the list: a longer one would not decode once saved.
+		if (draft.source.metricNames.length > 20) {
+			return "List at most 20 metrics."
+		}
 	}
 	return null
 }
@@ -445,23 +472,35 @@ function QuerySourceFields({
 						),
 						"attribute:span": "Span attribute…",
 						"attribute:resource": "Resource attribute…",
+						"metric:metric": "Metric attribute…",
+						"metric:resource": "Metric resource attribute…",
 					}}
-					value={source.kind === "facet" ? `facet:${source.facet}` : `attribute:${source.scope}`}
+					value={
+						source.kind === "facet" ? `facet:${source.facet}` : `${source.kind}:${source.scope}`
+					}
 					onValueChange={(value) => {
 						if (typeof value !== "string") return
 						const [kind, detail] = value.split(":")
+						const attributeKey = source.kind === "facet" ? "" : source.attributeKey
 						if (kind === "facet") {
 							onChange({
 								...variable,
 								source: { kind: "facet", facet: detail as QueryFacet },
 							})
-						} else if (detail === "span" || detail === "resource") {
+						} else if (kind === "attribute" && (detail === "span" || detail === "resource")) {
+							onChange({
+								...variable,
+								source: { kind: "attribute", scope: detail, attributeKey },
+							})
+						} else if (kind === "metric" && (detail === "metric" || detail === "resource")) {
 							onChange({
 								...variable,
 								source: {
-									kind: "attribute",
+									kind: "metric",
 									scope: detail,
-									attributeKey: source.kind === "attribute" ? source.attributeKey : "",
+									attributeKey,
+									metricNames: source.kind === "metric" ? source.metricNames : [""],
+									metricType: source.kind === "metric" ? source.metricType : "gauge",
 								},
 							})
 						}
@@ -478,10 +517,12 @@ function QuerySourceFields({
 						))}
 						<SelectItem value="attribute:span">Span attribute…</SelectItem>
 						<SelectItem value="attribute:resource">Resource attribute…</SelectItem>
+						<SelectItem value="metric:metric">Metric attribute…</SelectItem>
+						<SelectItem value="metric:resource">Metric resource attribute…</SelectItem>
 					</SelectContent>
 				</Select>
 			</Field>
-			{source.kind === "attribute" && (
+			{source.kind !== "facet" && (
 				<Field className="items-stretch gap-1.5">
 					<FieldLabel className="text-xs">Attribute key</FieldLabel>
 					<Input
@@ -496,6 +537,50 @@ function QuerySourceFields({
 						}
 					/>
 				</Field>
+			)}
+			{source.kind === "metric" && (
+				<>
+					<Field className="items-stretch gap-1.5">
+						<FieldLabel className="text-xs">Metrics</FieldLabel>
+						<Input
+							size="sm"
+							value={source.metricNames.join(", ")}
+							placeholder="http.server.duration"
+							onChange={(event) =>
+								onChange({
+									...variable,
+									source: {
+										...source,
+										// Empty entries stay while typing ("a, "); validation flags them.
+										metricNames: event.target.value.split(",").map((name) => name.trim()),
+									},
+								})
+							}
+						/>
+					</Field>
+					<Field className="items-stretch gap-1.5">
+						<FieldLabel className="text-xs">Metric type</FieldLabel>
+						<Select
+							items={METRIC_TYPE_LABELS}
+							value={source.metricType}
+							onValueChange={(value) => {
+								const metricType = toQueryBuilderMetricType(value)
+								if (metricType) onChange({ ...variable, source: { ...source, metricType } })
+							}}
+						>
+							<SelectTrigger size="sm">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								{QUERY_BUILDER_METRIC_TYPES.map((metricType) => (
+									<SelectItem key={metricType} value={metricType}>
+										{METRIC_TYPE_LABELS[metricType]}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</Field>
+				</>
 			)}
 		</div>
 	)

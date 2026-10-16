@@ -359,7 +359,8 @@ describe("v2 dashboards over HTTP", () => {
 		expect(postgres.requirements).toEqual([postgres.requirement.label])
 
 		const cloudflare = listed.body.data.find((t: { name: string }) => t.name === "Cloudflare Edge")
-		expect(cloudflare.requirement).toMatchObject({ kind: "integration", missing: "not connected" })
+		expect(cloudflare.requirement).toMatchObject({ kind: "integration" })
+		expect(cloudflare.requirement.missing).toBeUndefined()
 
 		const blank = listed.body.data.find((t: { name: string }) => t.name === "Blank Dashboard")
 		expect(blank.requirement).toBeNull()
@@ -415,6 +416,35 @@ describe("v2 dashboards over HTTP", () => {
 		)
 		expect(missing.status).toBe(404)
 		expect(missing.body.error.code).toBe("dashboard_template_not_found")
+
+		await harness.dispose()
+	})
+
+	it("keeps a template's tabs and variables on the dashboard it creates", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:read", "dashboards:write"])
+
+		const listed = await harness.request("GET", "/v2/dashboards/templates?limit=100", key.secret)
+		const gcp = listed.body.data.find((t: { name: string }) => t.name === "Google Cloud")
+		const created = await harness.request(
+			"POST",
+			`/v2/dashboards/templates/${gcp.id}/instantiate`,
+			key.secret,
+			{ parameters: { project_id: "acme-prod" } },
+		)
+		expect(created.status).toBe(200)
+
+		const read = await harness.request("GET", `/v2/dashboards/${created.body.id}`, key.secret)
+		const [section] = read.body.sections
+		expect(section.tabs.map((tab: { title: string }) => tab.title)).toContain("Cloud SQL")
+		const tabIds = new Set(section.tabs.map((tab: { id: string }) => tab.id))
+		for (const widget of read.body.widgets) expect(tabIds).toContain(widget.tab_id)
+		expect(read.body.variables.map((v: { name: string }) => v.name)).toEqual([
+			"project",
+			"region",
+			"workload",
+		])
+		expect(read.body.variables[0].default_value).toBe("acme-prod")
 
 		await harness.dispose()
 	})
