@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import {
 	CreateCustomIngestKeyRequest,
 	CustomIngestKeyId,
@@ -114,10 +115,25 @@ describe("OrgCustomIngestKeysService", () => {
 			)
 			const name = yield* attempt(new CreateCustomIngestKeyRequest({ name: "   " }))
 			const expiry = yield* attempt(new CreateCustomIngestKeyRequest({ name: "a", expiresAtMs: 0 }))
+			const reservedCase = yield* attempt(
+				new CreateCustomIngestKeyRequest({
+					name: "a",
+					resourceAttributes: [{ key: "Maple_Org_Id", value: "other", mode: "set" }],
+				}),
+			)
+			const emptyValue = yield* attempt(
+				new CreateCustomIngestKeyRequest({
+					name: "a",
+					resourceAttributes: [{ key: "service.name", value: "", mode: "default" }],
+				}),
+			)
+			const description = yield* attempt(
+				new CreateCustomIngestKeyRequest({ name: "a", description: "x".repeat(501) }),
+			)
 
 			assert.deepStrictEqual(
-				[reserved, duplicate, rate, signals, name, expiry],
-				Array(6).fill("@maple/http/errors/CustomIngestKeyValidationError"),
+				[reserved, duplicate, rate, signals, name, expiry, reservedCase, emptyValue, description],
+				Array(9).fill("@maple/http/errors/CustomIngestKeyValidationError"),
 			)
 			assert.deepStrictEqual(yield* keys.list(orgA), [])
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -210,6 +226,54 @@ describe("OrgCustomIngestKeysService", () => {
 			assert.deepStrictEqual(yield* keys.list(orgA), [])
 			const missing = yield* keys.delete(orgA, missingId).pipe(Effect.flip)
 			assert.strictEqual(missing._tag, "@maple/http/errors/CustomIngestKeyNotFoundError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("caps an organization at 50 keys", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* OrgCustomIngestKeysService
+			yield* Effect.forEach(
+				Array.from({ length: 50 }, (_, index) => index),
+				(index) => keys.create(orgA, user, new CreateCustomIngestKeyRequest({ name: `k${index}` })),
+			)
+			const overCap = yield* keys
+				.create(orgA, user, new CreateCustomIngestKeyRequest({ name: "k50" }))
+				.pipe(Effect.flip)
+
+			assert.strictEqual(overCap._tag, "@maple/http/errors/CustomIngestKeyValidationError")
+			assert.strictEqual((yield* keys.list(orgA)).length, 50)
+			assert.isTrue(
+				(yield* keys.create(orgB, user, new CreateCustomIngestKeyRequest({ name: "b" }))).secret
+					.length > 0,
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("accepts an unchanged past expiry on update", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* OrgCustomIngestKeysService
+			const created = yield* keys.create(
+				orgA,
+				user,
+				new CreateCustomIngestKeyRequest({ name: "k", expiresAtMs: 5_000 }),
+			)
+			yield* TestClock.adjust("10 seconds")
+			const updated = yield* keys.update(
+				orgA,
+				user,
+				created.key.id,
+				new UpdateCustomIngestKeyRequest({ name: "renamed", expiresAtMs: 5_000 }),
+			)
+			const moved = yield* keys
+				.update(orgA, user, created.key.id, new UpdateCustomIngestKeyRequest({ expiresAtMs: 6_000 }))
+				.pipe(Effect.flip)
+
+			assert.strictEqual(updated.name, "renamed")
+			assert.strictEqual(moved._tag, "@maple/http/errors/CustomIngestKeyValidationError")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })
