@@ -58,6 +58,7 @@ import { IngestAttributeMappingService } from "@maple/backend/services/org/Inges
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import { CustomIngestKeyUsageService } from "@maple/backend/services/org/CustomIngestKeyUsageService"
 import { OrgCustomIngestKeysService } from "@maple/backend/services/org/OrgCustomIngestKeysService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -100,6 +101,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SupportChannelService.layer,
 	OrgIngestKeysService.layer,
 	OrgCustomIngestKeysService.layer,
+	CustomIngestKeyUsageService.layer,
 	OrgClickHouseSettingsService.layer,
 	TinybirdOrgTokenService.layer,
 	OrganizationService.layer,

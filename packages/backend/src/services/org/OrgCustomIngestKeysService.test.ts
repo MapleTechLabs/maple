@@ -153,10 +153,10 @@ describe("OrgCustomIngestKeysService", () => {
 				orgA,
 				user,
 				created.key.id,
-				new UpdateCustomIngestKeyRequest({ enabled: false, rateLimitRps: null }),
+				new UpdateCustomIngestKeyRequest({ name: "renamed", rateLimitRps: null }),
 			)
 
-			assert.isFalse(updated.enabled)
+			assert.strictEqual(updated.name, "renamed")
 			assert.isNull(updated.rateLimitRps)
 			assert.deepStrictEqual(updated.allowedSignals, ["logs"])
 			assert.strictEqual(updated.keyPrefix, created.key.keyPrefix)
@@ -200,18 +200,20 @@ describe("OrgCustomIngestKeysService", () => {
 			const errors = yield* Effect.all([
 				keys.get(orgB, created.key.id).pipe(Effect.flip),
 				keys
-					.update(orgB, user, created.key.id, new UpdateCustomIngestKeyRequest({ enabled: false }))
+					.update(orgB, user, created.key.id, new UpdateCustomIngestKeyRequest({ name: "x" }))
 					.pipe(Effect.flip),
+				keys.pause(orgB, user, created.key.id, null).pipe(Effect.flip),
+				keys.resume(orgB, user, created.key.id).pipe(Effect.flip),
 				keys.roll(orgB, user, created.key.id).pipe(Effect.flip),
 				keys.delete(orgB, created.key.id).pipe(Effect.flip),
 			])
 
 			assert.deepStrictEqual(
 				errors.map((error) => error._tag),
-				Array(4).fill("@maple/http/errors/CustomIngestKeyNotFoundError"),
+				Array(6).fill("@maple/http/errors/CustomIngestKeyNotFoundError"),
 			)
 			assert.deepStrictEqual(yield* keys.list(orgB), [])
-			assert.isTrue((yield* keys.get(orgA, created.key.id)).enabled)
+			assert.strictEqual((yield* keys.get(orgA, created.key.id)).status, "active")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -274,6 +276,50 @@ describe("OrgCustomIngestKeysService", () => {
 
 			assert.strictEqual(updated.name, "renamed")
 			assert.strictEqual(moved._tag, "@maple/http/errors/CustomIngestKeyValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a timed pause ends on its own and resume clears an open-ended one", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* OrgCustomIngestKeysService
+			yield* TestClock.adjust("1 minute")
+			const created = yield* keys.create(orgA, user, new CreateCustomIngestKeyRequest({ name: "k" }))
+
+			const timed = yield* keys.pause(orgA, user, created.key.id, 60_000 + 3_600_000)
+			assert.strictEqual(timed.status, "paused")
+			assert.strictEqual(timed.pausedUntil, "1970-01-01T01:01:00.000Z")
+			yield* TestClock.adjust("1 hour")
+			const ended = yield* keys.get(orgA, created.key.id)
+			assert.strictEqual(ended.status, "active")
+			assert.isNull(ended.pausedAt)
+
+			const open = yield* keys.pause(orgA, user, created.key.id, null)
+			assert.strictEqual(open.status, "paused")
+			assert.isNull(open.pausedUntil)
+			yield* TestClock.adjust("30 days")
+			assert.strictEqual((yield* keys.get(orgA, created.key.id)).status, "paused")
+			assert.strictEqual((yield* keys.resume(orgA, user, created.key.id)).status, "active")
+
+			const past = yield* keys.pause(orgA, user, created.key.id, 1_000).pipe(Effect.flip)
+			assert.strictEqual(past._tag, "@maple/http/errors/CustomIngestKeyValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("reports an expired key as expired even while paused", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* OrgCustomIngestKeysService
+			const created = yield* keys.create(
+				orgA,
+				user,
+				new CreateCustomIngestKeyRequest({ name: "k", expiresAtMs: 5_000 }),
+			)
+			yield* keys.pause(orgA, user, created.key.id, null)
+			yield* TestClock.adjust("10 seconds")
+			assert.strictEqual((yield* keys.get(orgA, created.key.id)).status, "expired")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

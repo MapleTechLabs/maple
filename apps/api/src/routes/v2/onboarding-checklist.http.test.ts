@@ -32,6 +32,7 @@ import {
 	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
 	V2GroupLayersExceptOnboardingChecklist,
+	CustomIngestKeyUsageServiceStubLayer,
 } from "./v2-test-support"
 
 /**
@@ -109,6 +110,7 @@ const makeHarness = (status: OnboardingChecklistEvaluation["status"]) => {
 		IngestAttributeMappingService.layer,
 		OrgIngestKeysService.layer,
 		OrgCustomIngestKeysService.layer,
+		CustomIngestKeyUsageServiceStubLayer,
 		ConfigResourceServiceStubsLayer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 

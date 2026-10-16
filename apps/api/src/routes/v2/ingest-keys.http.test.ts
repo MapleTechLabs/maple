@@ -10,7 +10,10 @@ import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthoriz
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { CustomIngestKeyUsageService } from "@maple/backend/services/org/CustomIngestKeyUsageService"
 import { OrgCustomIngestKeysService } from "@maple/backend/services/org/OrgCustomIngestKeysService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
@@ -22,6 +25,7 @@ import {
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
 	Phase1ResourceStubsLayer,
+	makeWarehouseServiceStub,
 	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
@@ -50,6 +54,14 @@ const testConfig = () =>
 		}),
 	)
 
+// 64-bit counts arrive as strings, as ClickHouse returns them.
+const usageRows = [
+	{ signal: "spans", hour: "2026-07-15 09:00:00", count: "51234" },
+	{ signal: "logs", hour: "2026-07-15 09:00:00", count: "12873" },
+	{ signal: "spans", hour: "2026-07-15 08:00:00", count: "7" },
+]
+const recordedUsageSql: string[] = []
+
 const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -62,8 +74,21 @@ const makeHarness = () => {
 		LiveActivitiesService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 	// Provided first so it shadows the inert stub in ConfigResourceServiceStubsLayer.
-	const customKeysLive = OrgCustomIngestKeysService.layer.pipe(
-		Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
+	const customKeysLive = Layer.mergeAll(
+		OrgCustomIngestKeysService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer))),
+		Layer.effect(CustomIngestKeyUsageService, CustomIngestKeyUsageService.make).pipe(
+			Layer.provide(
+				Layer.succeed(
+					WarehouseQueryService,
+					makeWarehouseServiceStub({
+						compiledQuery: (_tenant, compiled) => {
+							recordedUsageSql.push(compiledQueryOf(compiled).sql)
+							return compiledQueryOf(compiled).decodeRows(usageRows).pipe(Effect.orDie)
+						},
+					}),
+				),
+			),
+		),
 	)
 
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
@@ -142,14 +167,39 @@ describe("v2 custom ingest keys", () => {
 			expect(listed.body.data[0].id).toBe(id)
 			expect(listed.body.data[0]).not.toHaveProperty("secret")
 
+			expect(created.body.status).toBe("active")
+			expect(created.body.paused_at).toBeNull()
+			expect(created.body.last_used_at).toBeNull()
+
 			const updated = await harness.request("PATCH", `/v2/ingest_keys/custom/${id}`, token, {
-				enabled: false,
 				rate_limit_rps: null,
 			})
 			expect(updated.status).toBe(200)
-			expect(updated.body.enabled).toBe(false)
 			expect(updated.body.rate_limit_rps).toBeNull()
 			expect(updated.body.allowed_signals).toEqual(["traces", "logs"])
+
+			const until = new Date(Date.now() + 3_600_000).toISOString()
+			const paused = await harness.request("POST", `/v2/ingest_keys/custom/${id}/pause`, token, {
+				until,
+			})
+			expect(paused.status).toBe(200)
+			expect(paused.body.status).toBe("paused")
+			expect(paused.body.paused_until).toBe(until)
+			const pastPause = await harness.request("POST", `/v2/ingest_keys/custom/${id}/pause`, token, {
+				until: "2020-01-01T00:00:00.000Z",
+			})
+			expect(pastPause.status).toBe(400)
+			const resumed = await harness.request("POST", `/v2/ingest_keys/custom/${id}/resume`, token)
+			expect(resumed.body.status).toBe("active")
+			expect(resumed.body.paused_at).toBeNull()
+
+			const usage = await harness.request("GET", `/v2/ingest_keys/custom/${id}/usage`, token)
+			expect(usage.status).toBe(200)
+			expect(usage.body.buckets).toEqual([
+				{ hour: "2026-07-15T08:00:00.000Z", spans: 7, logs: 0 },
+				{ hour: "2026-07-15T09:00:00.000Z", spans: 51234, logs: 12873 },
+			])
+			expect(recordedUsageSql.at(-1)).toContain(`'${id}'`)
 
 			const rolled = await harness.request("POST", `/v2/ingest_keys/custom/${id}/roll`, token)
 			expect(rolled.status).toBe(200)
@@ -162,6 +212,8 @@ describe("v2 custom ingest keys", () => {
 			const auditText = JSON.stringify(audit.body)
 			expect(auditText).toContain("custom_ingest_key.created")
 			expect(auditText).toContain("custom_ingest_key.rolled")
+			expect(auditText).toContain("custom_ingest_key.paused")
+			expect(auditText).toContain("custom_ingest_key.resumed")
 			expect(auditText).not.toContain(created.body.secret)
 			expect(auditText).not.toContain(rolled.body.secret)
 
