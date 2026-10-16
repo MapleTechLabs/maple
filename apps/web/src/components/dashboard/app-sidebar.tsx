@@ -395,8 +395,8 @@ function NavRow({
 			</SidebarMenuButton>
 			{item.badge ? (
 				<SidebarMenuBadge>
-					<Badge className="h-4 px-1.5 py-0 font-medium text-3xs" variant="secondary">
-						{item.badge}
+					<Badge className="gap-0.5 bg-primary font-semibold text-primary-foreground" variant="tag">
+						<span className="badge-shiny">{item.badge}</span>
 					</Badge>
 				</SidebarMenuBadge>
 			) : null}

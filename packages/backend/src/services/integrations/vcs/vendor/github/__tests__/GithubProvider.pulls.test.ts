@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { GitCommitSha, type PullRequestReviewPublication, type VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
@@ -59,11 +60,13 @@ const providerLayer = (
 	responses: ReadonlyArray<Response>,
 	requests: Array<string> = [],
 	bodies: Array<string> = [],
+	authorizations: Array<string | undefined> = [],
 ) => {
 	let next = 0
-	const http = fakeGithubHttp(({ url, body }) => {
+	const http = fakeGithubHttp(({ url, body, headers }) => {
 		requests.push(url)
 		bodies.push(body ?? "")
+		authorizations.push(headers["authorization"])
 		return responses[next++]!
 	})
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(
@@ -650,6 +653,68 @@ describe("GithubProvider reading why a CI job failed", () => {
 			assert.lengthOf(requests, 3)
 			assert.lengthOf(annotations, 200)
 			assert.strictEqual(annotations.at(-1)?.message, "expected 2 to be 3")
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("GithubProvider reading a CI job's log", () => {
+	const SIGNED_URL = "https://results.blob.example/job-555.txt?sig=abc"
+	const redirect = () => new Response(null, { status: 302, headers: { location: SIGNED_URL } })
+
+	it.effect("follows GitHub's redirect to the signed URL without the installation token", () => {
+		const requests: Array<string> = []
+		const authorizations: Array<string | undefined> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				redirect(),
+				new Response("2026-08-20T10:00:00.1000000Z first\n2026-08-20T10:00:01.2000000Z second\n"),
+			],
+			requests,
+			[],
+			authorizations,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const lines = yield* provider
+				.streamWorkflowJobLog(INSTALLATION, REPO, "555")
+				.pipe(Stream.runCollect)
+			assert.isTrue(requests[1]!.endsWith("/repos/octo/shop/actions/jobs/555/logs"))
+			assert.strictEqual(authorizations[1], "token installation-token")
+			assert.strictEqual(requests[2], SIGNED_URL)
+			assert.isUndefined(authorizations[2])
+			assert.deepStrictEqual(lines, [
+				"2026-08-20T10:00:00.1000000Z first",
+				"2026-08-20T10:00:01.2000000Z second",
+			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("waits out a log that is not uploaded yet", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				jsonResponse({ message: "Not Found" }, 404),
+				redirect(),
+				new Response("2026-08-20T10:00:00.1000000Z ready\n"),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const fiber = yield* Effect.forkChild(
+				provider.streamWorkflowJobLog(INSTALLATION, REPO, "555").pipe(Stream.runCollect),
+				{ startImmediately: true },
+			)
+			// The fake responses resolve on later ticks, so the clock moves only once the retry sleeps.
+			for (let tick = 0; tick < 10; tick++) {
+				yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 0)))
+				yield* TestClock.adjust("2 seconds")
+			}
+			const lines = yield* Fiber.join(fiber)
+			assert.lengthOf(requests, 4)
+			assert.deepStrictEqual(lines, ["2026-08-20T10:00:00.1000000Z ready"])
 		}).pipe(Effect.provide(layer))
 	})
 })

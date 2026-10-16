@@ -10,7 +10,7 @@ import { createHash } from "node:crypto"
 import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob, WorkflowStep } from "@maple/domain/http"
 
 export const CI_SERVICE_NAME = "github-actions"
-const SCOPE_NAME = "@maple/ci-traces"
+export const SCOPE_NAME = "@maple/ci-traces"
 
 const SPAN_KIND_INTERNAL = 1
 const SPAN_KIND_SERVER = 2
@@ -22,7 +22,7 @@ const STATUS_ERROR = 2
 
 type OtlpValue = { readonly stringValue: string } | { readonly intValue: string }
 
-interface OtlpKeyValue {
+export interface OtlpKeyValue {
 	readonly key: string
 	readonly value: OtlpValue
 }
@@ -70,8 +70,8 @@ const runKey = (run: RunKey) => `${run.provider}:${run.externalRepoId}:${run.run
 
 export const ciTraceId = (run: RunKey) => hashHex(`trace:${runKey(run)}`, 32)
 export const ciRunSpanId = (run: RunKey) => hashHex(`run:${runKey(run)}`, 16)
-const jobSpanId = (job: WorkflowJobJob) => hashHex(`job:${runKey(job)}:${job.jobId}`, 16)
-const stepSpanId = (job: WorkflowJobJob, step: WorkflowStep) =>
+export const jobSpanId = (job: WorkflowJobJob) => hashHex(`job:${runKey(job)}:${job.jobId}`, 16)
+export const stepSpanId = (job: WorkflowJobJob, step: WorkflowStep) =>
 	hashHex(`step:${runKey(job)}:${job.jobId}:${step.number}`, 16)
 const queueSpanId = (job: WorkflowJobJob) => hashHex(`queue:${runKey(job)}:${job.jobId}`, 16)
 
@@ -90,7 +90,7 @@ const truncate = (value: string, length: number) =>
  * A step name without the commit an action is pinned to: `Run jdx/mise-action@2d8d4caf...` is
  * `Run jdx/mise-action`, so a dependency bump does not split the step's history in two.
  */
-const ciStepName = (name: string) => name.replace(/@[0-9a-f]{7,40}\b/g, "")
+export const ciStepName = (name: string) => name.replace(/@[0-9a-f]{7,40}\b/g, "")
 
 /**
  * The annotation that best says why a job failed: a failure that names where it happened, then any
@@ -161,7 +161,7 @@ const statusOf = (conclusion: string | null) => {
 const errorTypeOf = (conclusion: string | null) =>
 	statusOf(conclusion).code === STATUS_ERROR ? resultOf(conclusion) : undefined
 
-const attrs = (entries: Record<string, string | number | null | undefined>): OtlpKeyValue[] =>
+export const attrs = (entries: Record<string, string | number | null | undefined>): OtlpKeyValue[] =>
 	Object.entries(entries).flatMap(([key, value]) => {
 		if (value === null || value === undefined || value === "") return []
 		return [
@@ -182,7 +182,7 @@ const repositoryUrlOf = (url: string) => {
 	return actions === -1 ? undefined : url.slice(0, actions)
 }
 
-const resourceOf = (repoFullName: string, url: string) => {
+export const resourceOf = (repoFullName: string, url: string) => {
 	const slash = repoFullName.indexOf("/")
 	return attrs({
 		"service.name": CI_SERVICE_NAME,

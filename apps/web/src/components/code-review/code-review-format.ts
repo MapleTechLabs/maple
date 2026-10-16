@@ -47,7 +47,6 @@ export const SKIP_LABELS = {
 	duplicate: "already reviewed",
 	superseded: "a newer push was reviewed",
 	agent_unavailable: "reviewer unavailable",
-	not_rolled_out: "not enabled for this organization",
 	automatic_limit: "pull request limit reached",
 } satisfies Record<PrReviewSkipReason, string>
 
