@@ -1,60 +1,154 @@
-import { health, HEALTH_COLOR } from "./spatial-layout"
+import { Color } from "three"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 
-/** WebGL material inputs in sRGB. The scene shares Maple's warm neutral surface
- * family; health is a small signal on the object, never the lighting itself. */
-export const GROUND_Y = -0.36
-export const MAP_MATERIALS = {
-	dark: {
-		air: "#d9ada5",
-		ground: "#749451",
-		grass: "#65924c",
-		platform: "#b49468",
-		turf: "#83a35d",
-		body: "#b68c5c",
-		cap: "#d1c4a5",
-		base: "#7b7158",
-		seam: "#403a2e",
-		dimmed: "#686751",
-	},
-	light: {
-		air: "#e7bba5",
-		ground: "#85a660",
-		grass: "#74a357",
-		platform: "#c5a373",
-		turf: "#92b36d",
-		body: "#c39965",
-		cap: "#e3d7b8",
-		base: "#a89978",
-		seam: "#514939",
-		dimmed: "#a3a186",
-	},
-} as const
+/** WebGL colors in sRGB. The map is isometric line art: unlit paper faces in
+ * three fixed tones, outlined in ink. Health is a small signal on each machine. */
+export type MachineKind = "processor" | "tank" | "loader" | "gateway" | "shed"
 
-export const FACTORY_FINISH = {
-	amber: "#e86f00",
-	steel: "#a3a18a",
-	pipe: "#82927a",
-	collar: "#c6b897",
-	paint: {
-		processor: "#cb8a3a",
-		tank: "#779572",
-		loader: "#dea13f",
-		gateway: "#d98b33",
-		pump: "#a2967f",
-	},
-} as const
-
-export function connectionStyle(errorRate: number, dark: boolean, active: boolean, dimmed: boolean) {
-	let color = dark ? "#6c8073" : "#42614e"
-	if (active) color = dark ? "#b9d6c6" : "#42614e"
-	if (errorRate >= 0.01)
-		color = dark ? HEALTH_COLOR[health(errorRate)] : errorRate >= 0.02 ? "#a95a4a" : "#9d762b"
-	return { color, opacity: dimmed ? 0.08 : active ? 0.95 : dark ? 0.48 : 0.72 }
+export interface InkPalette {
+	/** Dark theme: windows and lamps read as lit against a night scene. */
+	night: boolean
+	paper: string
+	dots: string
+	face: string
+	plinth: string
+	/** The slab each machine stands on. */
+	pad: string
+	ink: string
+	belt: string
+	kraft: string
+	tape: string
+	selected: string
+	/** Body paint per machine kind. */
+	tint: Record<MachineKind, string>
+	/** Autumn accent colours: maple red, gold, rust and amber. */
+	gifts: readonly string[]
+	foliage: readonly string[]
+	/** Evergreens that stay green through the Maple autumn. */
+	evergreen: string
+	/** Material accents shared by props and scenery. */
+	stone: string
+	iron: string
+	soil: string
+	birch: string
+	water: string
+	/** Warm light: lantern panes, lit windows at night. */
+	glow: string
+	trunk: string
+	cloud: string
+	/** HTML sign plate and its lettering, picked for contrast in each theme. */
+	sign: string
+	signInk: string
 }
 
-/** The reference's dusk sky is scene art, independent of the app chrome theme. */
-export const MAP_SKY = {
-	backgroundColor: "#d9ada5",
-	backgroundImage:
-		"radial-gradient(ellipse at 16% 30%, #ffe5b880 0%, transparent 46%), linear-gradient(180deg, #a99bb6 0%, #d3a7b0 30%, #efbd99 65%, #f2c990 78%, #bc8eaa 100%)",
-} as const
+/** Resolved colours for one machine, already faded when the machine is dimmed. */
+export interface MachineFinish {
+	face: string
+	ink: string
+	signal: string
+	kraft: string
+	tape: string
+	glass: string
+	hazard: string
+	gifts: readonly string[]
+	/** Decorative motion (smoke, pinwheels) follows the traffic toggle. */
+	running: boolean
+}
+
+/** An autumn sugar-bush: timber cabins on moss, maple reds and Maple's own amber,
+ * bark ink. Night swaps parchment for a blue-green forest lit by warm windows. */
+const MAPLE = {
+	light: {
+		night: false,
+		paper: "#f4eddc",
+		dots: "#4a35251c",
+		face: "#fbf5e8",
+		plinth: "#c4d095",
+		pad: "#e6d6b4",
+		ink: "#4a3525",
+		belt: "#e2c899",
+		kraft: "#c99a62",
+		tape: "#f6ead0",
+		selected: "#e86f00",
+		tint: {
+			processor: "#f0d4a8",
+			tank: "#d9a774",
+			loader: "#e8cfa0",
+			gateway: "#ddd2bd",
+			shed: "#c99466",
+		},
+		gifts: ["#c8442f", "#e86f00", "#e9a23b", "#a8532a", "#d97a2b"],
+		foliage: ["#c8442f", "#e86f00", "#e9a23b", "#b5532d", "#d97a2b"],
+		trunk: "#6e4a32",
+		evergreen: "#5b7f4f",
+		cloud: "#fbf5e8",
+		stone: "#cbc4b6",
+		iron: "#5a5048",
+		soil: "#b08560",
+		birch: "#f3efe6",
+		water: "#9cc6cc",
+		glow: "#ffc56b",
+		sign: "#f6ead0",
+		signInk: "#4a3525",
+	},
+	dark: {
+		night: true,
+		paper: "#111a1a",
+		dots: "#cfe3d816",
+		face: "#3e4a44",
+		plinth: "#2c4433",
+		pad: "#3a3a2e",
+		ink: "#120d09",
+		belt: "#5a4733",
+		kraft: "#8f6a42",
+		tape: "#e6d3ad",
+		selected: "#ff8a1f",
+		tint: {
+			processor: "#7a6044",
+			tank: "#87603f",
+			loader: "#786446",
+			gateway: "#666a60",
+			shed: "#76543b",
+		},
+		gifts: ["#b8432f", "#d9680a", "#c98f35", "#94502c", "#c06d2a"],
+		foliage: ["#a63d2c", "#c9620e", "#b98632", "#8a4a2a", "#b0662a"],
+		trunk: "#4f3726",
+		evergreen: "#2f4a3a",
+		cloud: "#34403c",
+		stone: "#626a63",
+		iron: "#1c201e",
+		soil: "#3d2f25",
+		birch: "#c6c9bf",
+		water: "#21424a",
+		glow: "#ffb347",
+		sign: "#3a2a1e",
+		signInk: "#f2e2c2",
+	},
+} satisfies Record<"light" | "dark", InkPalette>
+
+export function mapPalette(dark: boolean): InkPalette {
+	return MAPLE[dark ? "dark" : "light"]
+}
+
+/** Face tones for a camera on the (+x, +y, +z) diagonal: roofs stay lit, the
+ * two visible walls step down. Matches hand-drawn isometric shading. */
+export const FACE_TONE = { top: 1, front: 0.93, side: 0.85, hidden: 0.8 } as const
+
+/** Mix toward the paper so dimmed parts recede without transparency sorting. */
+export function fade(color: string, paper: string, amount: number) {
+	return `#${new Color(color).lerp(new Color(paper), amount).getHexString()}`
+}
+
+export function beltInk(errorRate: number, palette: InkPalette) {
+	const level = errorRateLevel(errorRate)
+	return level === "crit" ? "#c8553d" : level === "warn" ? "#d9a21b" : palette.ink
+}
+
+/** Paper with a faint dot grid, theme-aware like the rest of the chrome. */
+export function paperBackground(palette: InkPalette) {
+	return {
+		backgroundColor: palette.paper,
+		backgroundImage: `radial-gradient(${palette.dots} 1px, transparent 1.2px)`,
+		backgroundSize: "18px 18px",
+	} as const
+}

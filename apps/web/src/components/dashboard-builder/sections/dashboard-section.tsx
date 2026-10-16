@@ -1,15 +1,11 @@
 import { useState } from "react"
-import { ChevronDownIcon } from "@maple/ui/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@maple/ui/components/ui/dropdown-menu"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { DropdownMenuItem, DropdownMenuSeparator } from "@maple/ui/components/ui/dropdown-menu"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
 import { cn } from "@maple/ui/lib/utils"
-import { ArrowUpIcon, DotsVerticalIcon, PlusIcon, TrashIcon } from "@/components/icons"
+import { ArrowUpIcon, ChevronDownIcon, PlusIcon, TrashIcon } from "@/components/icons"
 
 import {
 	DashboardGrid,
@@ -94,18 +90,16 @@ export function DashboardSectionView<W extends CanvasWidget>({
 				    a control that can't do anything reads as broken. The spacer keeps
 				    its title aligned with every collapsible sibling's. */}
 				{collapsible ? (
-					<Button
-						variant="ghost"
+					<IconButton
 						size="icon-xs"
 						aria-expanded={!collapsed}
-						aria-label={collapsed ? `Expand ${section.title}` : `Collapse ${section.title}`}
+						label={collapsed ? `Expand ${section.title}` : `Collapse ${section.title}`}
 						onClick={() => onToggleCollapsed(!collapsed)}
 					>
 						<ChevronDownIcon
 							className={cn("transition-transform duration-150", collapsed && "-rotate-90")}
-							size={14}
 						/>
-					</Button>
+					</IconButton>
 				) : (
 					<div className="size-6 shrink-0" aria-hidden />
 				)}
@@ -115,7 +109,7 @@ export function DashboardSectionView<W extends CanvasWidget>({
 					ariaLabel={`Rename group ${section.title}`}
 					readOnly={!editable}
 					onChange={(title) => actions?.renameSection(section.id, title)}
-					className="truncate text-sm font-semibold"
+					className="min-w-0 truncate text-sm font-semibold"
 				/>
 
 				{hasTabs && !collapsed && (
@@ -134,79 +128,65 @@ export function DashboardSectionView<W extends CanvasWidget>({
 
 				<div className={cn("flex items-center gap-1", !hasTabs && "ml-auto")}>
 					{editable && !collapsed && (
-						<Button
-							variant="ghost"
+						<IconButton
 							size="icon-xs"
-							aria-label={`Add widget to ${section.title}`}
+							label={`Add widget to ${section.title}`}
 							onClick={() => onAddWidget(activeTabId)}
 						>
-							<PlusIcon size={14} />
-						</Button>
+							<PlusIcon />
+						</IconButton>
 					)}
 					{editable && (
-						<DropdownMenu>
-							<DropdownMenuTrigger
-								render={
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										aria-label={`${section.title} options`}
-									>
-										<DotsVerticalIcon size={14} />
-									</Button>
-								}
-							/>
-							<DropdownMenuContent align="end">
-								<DropdownMenuItem onClick={() => actions?.addTab(section.id)}>
-									<PlusIcon size={14} />
-									Add tab
-								</DropdownMenuItem>
+						<RowActionsMenu label={`${section.title} options`}>
+							<DropdownMenuItem onClick={() => actions?.addTab(section.id)}>
+								<PlusIcon />
+								Add tab
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={index === 0}
+								onClick={() => actions?.reorderSections(index, index - 1)}
+							>
+								<ArrowUpIcon />
+								Move up
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={index === sectionCount - 1}
+								onClick={() => actions?.reorderSections(index, index + 1)}
+							>
+								<ArrowUpIcon className="rotate-180" />
+								Move down
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							{/* The stored default, distinct from this viewer's own
+							    collapse — which lives in their URL and changes nothing
+							    for anyone else. Meaningless on a pinned-open group, so
+							    it is hidden rather than left there doing nothing. */}
+							{collapsible && (
 								<DropdownMenuItem
-									disabled={index === 0}
-									onClick={() => actions?.reorderSections(index, index - 1)}
+									onClick={() =>
+										actions?.setSectionCollapsedDefault(
+											section.id,
+											!(section.collapsed ?? false),
+										)
+									}
 								>
-									<ArrowUpIcon size={14} />
-									Move up
+									{section.collapsed ? "Expanded by default" : "Collapsed by default"}
 								</DropdownMenuItem>
-								<DropdownMenuItem
-									disabled={index === sectionCount - 1}
-									onClick={() => actions?.reorderSections(index, index + 1)}
-								>
-									<ArrowUpIcon size={14} className="rotate-180" />
-									Move down
-								</DropdownMenuItem>
-								<DropdownMenuSeparator />
-								{/* The stored default, distinct from this viewer's own
-								    collapse — which lives in their URL and changes nothing
-								    for anyone else. Meaningless on a pinned-open group, so
-								    it is hidden rather than left there doing nothing. */}
-								{collapsible && (
-									<DropdownMenuItem
-										onClick={() =>
-											actions?.setSectionCollapsedDefault(
-												section.id,
-												!(section.collapsed ?? false),
-											)
-										}
-									>
-										{section.collapsed ? "Expanded by default" : "Collapsed by default"}
-									</DropdownMenuItem>
-								)}
-								<DropdownMenuItem
-									onClick={() => actions?.setSectionCollapsible(section.id, !collapsible)}
-								>
-									{collapsible ? "Always expanded" : "Allow collapsing"}
-								</DropdownMenuItem>
-								<DropdownMenuSeparator />
-								<DropdownMenuItem
-									variant="destructive"
-									onClick={() => setDeleteSectionOpen(true)}
-								>
-									<TrashIcon size={14} />
-									Delete group…
-								</DropdownMenuItem>
-							</DropdownMenuContent>
-						</DropdownMenu>
+							)}
+							<DropdownMenuItem
+								onClick={() => actions?.setSectionCollapsible(section.id, !collapsible)}
+							>
+								{collapsible ? "Always expanded" : "Allow collapsing"}
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem
+								variant="destructive"
+								onClick={() => setDeleteSectionOpen(true)}
+							>
+								<TrashIcon />
+								Delete group…
+							</DropdownMenuItem>
+						</RowActionsMenu>
 					)}
 				</div>
 			</div>
@@ -215,15 +195,15 @@ export function DashboardSectionView<W extends CanvasWidget>({
 			{!collapsed &&
 				(widgets.length === 0 ? (
 					editable ? (
-						<div className="flex items-center gap-2 px-1 py-6 text-xs text-muted-foreground">
+						<EmptyMessage className="flex items-center gap-2 px-1 py-6 text-left">
 							<span>No widgets in this group yet.</span>
 							<Button variant="ghost" size="sm" onClick={() => onAddWidget(activeTabId)}>
-								<PlusIcon size={14} />
+								<PlusIcon />
 								Add widget
 							</Button>
-						</div>
+						</EmptyMessage>
 					) : (
-						<p className="px-1 py-6 text-xs text-muted-foreground">This group is empty.</p>
+						<EmptyMessage className="px-1 py-6 text-left">This group is empty.</EmptyMessage>
 					)
 				) : (
 					<div className="pt-2">

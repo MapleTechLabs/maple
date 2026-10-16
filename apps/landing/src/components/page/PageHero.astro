@@ -23,7 +23,8 @@ import Breadcrumb from "../Breadcrumb.astro";
 import { HeroCta } from "../HeroCta";
 
 interface Props {
-	eyebrow: string;
+	/** Omitted on feature pages, where the breadcrumb already names the page. */
+	eyebrow?: string;
 	title: string;
 	lede: string;
 	illustration?: string;
@@ -61,10 +62,10 @@ const hasAside = Astro.slots.has("aside");
 			]}
 		>
 		<div class:list={["min-w-0", illustration && "page-hero__copy"]}>
-			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
+			{eyebrow && <p class="mb-5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>}
 
 			<h1
-				class="mt-5 max-w-[20ch] font-display text-[2.375rem] font-semibold leading-[1.03] tracking-[-0.025em] text-fg sm:text-5xl lg:text-6xl"
+				class="max-w-[20ch] font-display text-[2.375rem] font-semibold leading-[1.03] tracking-[-0.025em] text-fg sm:text-5xl lg:text-6xl"
 			>
 				{title}
 			</h1>

@@ -48,7 +48,11 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 			const limit = params.limit
 
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, kind: params.kind ?? "any", limit })
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.kind": params.kind ?? "any",
+				"maple.ai.limit": limit,
+			})
 
 			// The query ranks every name; kind and name filters apply here so the limit still means
 			// "names shown". Fetch the full cap when narrowing.
@@ -78,9 +82,9 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 				.map((row) => ({
 					eventName: row.eventName,
 					kind: row.kind,
-					count: Number(row.count) || 0,
-					sessions: Number(row.sessions) || 0,
-					persons: Number(row.persons) || 0,
+					count: row.count || 0,
+					sessions: row.sessions || 0,
+					persons: row.persons || 0,
 				}))
 			yield* Effect.annotateCurrentSpan("result.rowCount", events.length)
 
@@ -98,7 +102,17 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 				.slice(0, 2)
 				.map((event) => ({ kind: "event", eventName: event.eventName }))
 			const expectsCustom = output.kind === undefined || output.kind === "custom"
+			// Every event on one "person" across many sessions means the identity keys are empty.
+			const maxSessions = Math.max(0, ...events.map((event) => event.sessions))
+			const collapsed = maxSessions > 1 && events.every((event) => event.persons <= 1)
 			return {
+				...(collapsed
+					? {
+							notices: [
+								'Persons is at most 1 while events span many sessions: the events carry no VisitorId or UserId, so they all count as one person. Person, visitor and user funnels cannot stitch them; use query_funnel key_by="session", or send a visitor/user id with the events.',
+							],
+						}
+					: undefined),
 				title: output.narrowed ? "Product events (matching)" : "Product events",
 				scope: [
 					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],

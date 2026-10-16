@@ -158,8 +158,12 @@ export function getHttpInfo({ spanName, spanAttributes, spanKind }: HttpSpanInpu
 		Option.getOrNull,
 	)
 
-	const rawStatus = attrs["http.status_code"] ?? attrs["http.response.status_code"]
-	const statusCode = rawStatus ? parseInt(rawStatus, 10) || null : null
+	// `attr` skips blanks: projected attribute maps carry every key, absent ones as "".
+	const statusCode = pipe(
+		attr(attrs, "http.status_code", "http.response.status_code"),
+		Option.map((raw) => parseInt(raw, 10) || null),
+		Option.getOrNull,
+	)
 
 	return {
 		method: method.value.toUpperCase(),
@@ -196,3 +200,11 @@ export const HTTP_METHOD_COLORS: Record<string, string> = {
 	HEAD: "bg-[#8A7F72]",
 	OPTIONS: "bg-[#5A5248]",
 } satisfies Record<string, string>
+
+/** HTTP status → tone: 5xx is critical, 4xx a warning, everything else quiet. */
+export function httpStatusTone(code: number | null | undefined): "crit" | "warn" | "neutral" {
+	if (code == null || !Number.isFinite(code)) return "neutral"
+	if (code >= 500) return "crit"
+	if (code >= 400) return "warn"
+	return "neutral"
+}

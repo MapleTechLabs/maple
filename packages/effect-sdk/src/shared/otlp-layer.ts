@@ -5,16 +5,10 @@
 // through the same Maple tracer the flushable presets use, pushed into Effect's
 // own `OtlpExporter` (same batching, interval, retry back-off, shutdown flush).
 import { Duration, Effect, Layer, Tracer } from "effect"
-import { type Headers, HttpClientRequest } from "effect/unstable/http"
-import type { HttpClient } from "effect/unstable/http"
-import {
-	OtlpExporter,
-	OtlpLogger,
-	OtlpMetrics,
-	OtlpResource,
-	OtlpSerialization,
-} from "effect/unstable/observability"
-import type { OtlpTracer } from "effect/unstable/observability"
+import { type Headers, HttpClientRequest } from "effect/http"
+import type { HttpClient } from "effect/http"
+import { OtlpExporter, OtlpLogger, OtlpMetrics, OtlpResource, OtlpSerialization } from "effect/observability"
+import type { OtlpTracer } from "effect/observability"
 import { makeMapleTracer, makeSpanEncoder } from "./flushable-tracer.js"
 import { resolveSpanFilter, type SpanFilterInput } from "./span-options.js"
 

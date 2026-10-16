@@ -1,10 +1,12 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import type { MouseEvent } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
-import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
+import { RelativeTime } from "@/components/common/relative-time"
 import { SeverityBadge } from "@/components/errors/severity-badge"
 import { ConfidenceMeter } from "./confidence-meter"
 import {
@@ -14,6 +16,8 @@ import {
 	investigationSeverity,
 } from "./investigation-display"
 import { InvestigationKindMarker, InvestigationStatusBadge } from "./investigation-status"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { ListRow } from "@maple/ui/components/ui/list-row"
 
 /**
  * Not a table any more.
@@ -51,48 +55,55 @@ function InvestigationRow({ investigation }: { investigation: V2Investigation })
 	}
 
 	return (
-		<li
-			className="flex cursor-pointer items-center gap-3.5 border-b px-4 py-3.5 transition-colors last:border-b-0 hover:bg-accent/40"
-			onClick={openRow}
-		>
-			<span className="flex w-5 shrink-0 items-center justify-center">
-				<InvestigationKindMarker subject={investigation.subject} seededBy={investigation.seeded_by} />
-			</span>
-			<div className="flex min-w-0 flex-1 flex-col gap-1">
-				<div className="flex min-w-0 items-baseline gap-2">
+		<ListRow
+			divided
+			render={<li onClick={openRow} />}
+			className="cursor-pointer gap-3.5 py-3.5"
+			leading={
+				<span className="flex w-5 items-center justify-center">
+					<InvestigationKindMarker
+						subject={investigation.subject}
+						seededBy={investigation.seeded_by}
+					/>
+				</span>
+			}
+			title={
+				<span className="flex min-w-0 items-baseline gap-2">
 					<Link
 						to="/investigations/$id"
 						params={{ id: investigation.id }}
-						className="truncate font-medium text-sm text-foreground hover:underline"
+						className="min-w-0 truncate font-medium text-sm text-foreground hover:underline"
 						title={headline}
 					>
 						{headline}
 					</Link>
 					{scope ? (
-						<span className="shrink-0 truncate text-xs text-muted-foreground" title={scope}>
+						<TruncatedText className="max-w-[40%] shrink font-normal text-xs text-muted-foreground">
 							{scope}
-						</span>
+						</TruncatedText>
 					) : null}
-				</div>
-				<RowFinding finding={finding} />
-			</div>
-			<span className="w-20 shrink-0 max-md:hidden">
-				<ConfidenceMeter confidence={investigation.confidence} />
-			</span>
-			<span className="w-18 shrink-0 max-sm:hidden">
-				<SeverityBadge severity={investigationSeverity(investigation)} />
-			</span>
-			<span className="w-24 shrink-0 max-lg:hidden">
-				<InvestigationStatusBadge status={investigation.status} />
-			</span>
-			<time
-				dateTime={investigation.updated_at}
-				title={new Date(toEpochMs(investigation.updated_at)).toLocaleString()}
-				className="w-13 shrink-0 text-right text-xs text-muted-foreground"
-			>
-				{formatRelativeTime(investigation.updated_at)}
-			</time>
-		</li>
+				</span>
+			}
+			meta={<RowFinding finding={finding} />}
+			trailing={
+				<span className="flex items-center gap-3.5">
+					<span className="w-20 shrink-0 max-md:hidden">
+						<ConfidenceMeter confidence={investigation.confidence} />
+					</span>
+					<span className="w-18 shrink-0 max-sm:hidden">
+						<SeverityBadge severity={investigationSeverity(investigation)} />
+					</span>
+					<span className="w-24 shrink-0 max-lg:hidden">
+						<InvestigationStatusBadge status={investigation.status} />
+					</span>
+					<RelativeTime
+						value={investigation.updated_at}
+						tooltip="title"
+						className="w-13 shrink-0 text-right text-xs text-muted-foreground"
+					/>
+				</span>
+			}
+		/>
 	)
 }
 
@@ -101,32 +112,29 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 	if (finding.kind === "pending") {
 		return (
 			<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-				<span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+				<StatusDot tone="live" />
 				{/* The finding carries the running pass's last step when it has one, so
 				    the row is not free to print a fixed string over the top of it. */}
-				<span className="truncate" title={finding.text}>
-					{finding.text}
-				</span>
+				<TruncatedText>{finding.text}</TruncatedText>
 			</span>
 		)
 	}
 	if (finding.kind === "none") {
-		return <span className="text-xs text-muted-foreground/60">—</span>
+		return <span className="text-xs text-muted-foreground/60">{EMPTY_VALUE}</span>
 	}
 	return (
 		<span
 			className={cn(
 				"flex min-w-0 items-center gap-1.5 text-xs",
-				finding.kind === "failure" && "text-destructive",
+				finding.kind === "failure" && "text-severity-error",
 				// Three tones, not two. Scanning the hub, a lead nothing confirmed
 				// must not look like a confirmed cause, and "we could not tell" must
 				// not look like "it broke".
 				finding.kind === "partial" && "text-severity-warn",
 				finding.kind !== "failure" && finding.kind !== "partial" && "text-muted-foreground",
 			)}
-			title={finding.text}
 		>
-			<span className="truncate">{finding.text}</span>
+			<TruncatedText>{finding.text}</TruncatedText>
 		</span>
 	)
 }
@@ -134,9 +142,12 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 /** Ghosts the real row rhythm, so the list doesn't reflow when rows land. */
 export function InvestigationTableSkeleton() {
 	return (
-		<ul aria-label="Loading investigations" className="flex flex-col">
-			{Array.from({ length: 5 }, (_, index) => (
-				<li key={index} className="flex items-center gap-3.5 border-b px-4 py-3.5 last:border-b-0">
+		<SkeletonList
+			rows={5}
+			gap="0"
+			label="Loading investigations"
+			renderRow={() => (
+				<div className="flex items-center gap-3.5 border-b px-4 py-3.5 last:border-b-0">
 					<Skeleton className="size-3.5 shrink-0 rounded-full" />
 					<div className="flex min-w-0 flex-1 flex-col gap-2">
 						<Skeleton className="h-3.5 w-[45%]" />
@@ -146,8 +157,8 @@ export function InvestigationTableSkeleton() {
 					<Skeleton className="h-4 w-14 shrink-0 max-sm:hidden" />
 					<Skeleton className="h-4 w-20 shrink-0 max-lg:hidden" />
 					<Skeleton className="h-3 w-10 shrink-0" />
-				</li>
-			))}
-		</ul>
+				</div>
+			)}
+		/>
 	)
 }

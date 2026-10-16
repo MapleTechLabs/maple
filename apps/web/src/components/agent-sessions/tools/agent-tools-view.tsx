@@ -16,7 +16,6 @@ import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 import { selectedMetric, selectedPercentile, toolDetailLinkSearch } from "@/lib/agent-sessions/tool-search"
 
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { AgentSessionsTabs } from "./agent-sessions-tabs"
 import { ToolsTable } from "./tool-breakdown-tables"
 import { ToolFilterToolbar, type ToolFilterOption } from "./tool-filter-toolbar"
 import { ToolMetricStrip } from "./tool-metric-strip"
@@ -127,8 +126,8 @@ export function AgentToolsView({
 			// Volume, whatever the chart is drawing: the spark is the row's shape
 			// over the window, and a row's shape is how much of it there was.
 			for (const [key, points] of byTool) sparkByTool.set(key, metricSpark(points, "calls", percentile))
-			for (const [key, token] of toolSeriesColors(rankSeriesKeys(data.series))) {
-				colorByTool.set(key, `var(${token})`)
+			for (const [key, color] of toolSeriesColors(rankSeriesKeys(data.series))) {
+				colorByTool.set(key, color)
 			}
 		}
 		return { sparkByTool, colorByTool }
@@ -138,17 +137,8 @@ export function AgentToolsView({
 	// tool-name search box, which on a one-tool page filters that tool's name.
 	const detailSearch = useMemo(() => toolDetailLinkSearch(search, timeRange), [search, timeRange])
 
-	// `pt-4` is the Sessions list's sticky padding, and the strip's hairline and
-	// the toolbar's `py-3` are matched there too: one height on both tabs.
 	return (
-		<div className="flex flex-col pt-4">
-			<AgentSessionsTabs
-				active="tools"
-				search={timeRange}
-				counts={tabCounts}
-				className="border-b border-border px-6"
-			/>
-
+		<div className="flex flex-col">
 			<ToolFilterToolbar
 				nameSearch={{
 					query: search.q ?? "",
@@ -176,7 +166,7 @@ export function AgentToolsView({
 				<SignalEmptyState
 					signal="traces"
 					noun="agent tool calls"
-					purpose="Agent tools shows every tool your AI agents call, with volume, latency and failures per tool."
+					purpose="See every tool your AI agents call, with volume, latency and failures."
 					guideDocs="agentSessions"
 					className="px-6 py-16"
 				/>

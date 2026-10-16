@@ -1,8 +1,9 @@
 import { useMemo } from "react"
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import type { TimeBounds } from "../lib/time"
+import { windowed } from "../lib/query-cache"
 
 export interface ServiceCatalogFilters {
 	/** Exact `deployment.environment` resource attribute. */
@@ -28,8 +29,8 @@ export interface ServiceCatalogEntry {
 }
 
 export function toCatalogEntry(row: CH.ServiceCatalogOutput, logCount: number): ServiceCatalogEntry {
-	const spanCount = Number(row.estimatedSpanCount) || Number(row.spanCount)
-	const errorCount = Number(row.estimatedErrorCount) || Number(row.errorCount)
+	const spanCount = row.estimatedSpanCount || row.spanCount
+	const errorCount = row.estimatedErrorCount || row.errorCount
 	return {
 		serviceName: row.serviceName,
 		serviceNamespaces: row.serviceNamespaces,
@@ -37,17 +38,16 @@ export function toCatalogEntry(row: CH.ServiceCatalogOutput, logCount: number): 
 		spanCount,
 		errorCount,
 		errorRate: spanCount > 0 ? errorCount / spanCount : 0,
-		p50LatencyMs: Number(row.p50LatencyMs),
-		p95LatencyMs: Number(row.p95LatencyMs),
-		p99LatencyMs: Number(row.p99LatencyMs),
+		p50LatencyMs: row.p50LatencyMs,
+		p95LatencyMs: row.p95LatencyMs,
+		p99LatencyMs: row.p99LatencyMs,
 		logCount,
 	}
 }
 
 function useCatalog(env: string | undefined, ns: string | undefined, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "services", "catalog", env ?? null, ns ?? null, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "services", "catalog", env ?? null, ns ?? null, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<ReadonlyArray<ServiceCatalogEntry>> => {
 			const params = localParams(bounds)
 			const [catalogRows, usageRows] = await Promise.all([
@@ -64,9 +64,7 @@ function useCatalog(env: string | undefined, ns: string | undefined, bounds: Tim
 				),
 				executeLocalCompiledQuery(CH.compile(CH.serviceUsageQuery({}), params), signal),
 			])
-			const logsByService = new Map(
-				usageRows.map((row) => [row.serviceName, Number(row.totalLogCount)]),
-			)
+			const logsByService = new Map(usageRows.map((row) => [row.serviceName, row.totalLogCount]))
 			return catalogRows.map((row) => toCatalogEntry(row, logsByService.get(row.serviceName) ?? 0))
 		},
 	})

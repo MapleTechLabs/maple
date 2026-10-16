@@ -17,7 +17,7 @@ import { Effect } from "effect"
  * they are real failures and keep their Error spans.
  */
 const MCP_EXPECTED_FAILURE_STATUS = {
-	"@maple/mcp/decode-error": 400,
+	"@maple/mcp/errors/McpDecodeError": 400,
 	"@maple/mcp/errors/McpAuthMissingError": 401,
 	"@maple/mcp/errors/McpAuthInvalidError": 401,
 	// The call was well-formed JSON but the tool will not do what it asks.

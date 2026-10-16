@@ -1,3 +1,9 @@
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import {
+	EMPTY_VALUE,
+	formatLatency as formatSharedLatency,
+	formatRate as formatSharedRate,
+} from "@maple/ui/lib/format"
 import type { Edge3D, Node3D } from "./types"
 import { computeTiers } from "./graph"
 import type { Vec3 } from "./types"
@@ -131,15 +137,16 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 	return { positions, districts }
 }
 
-export const nodeHeight = (node: Node3D) => 0.5 + Math.log10(Math.max(1, node.throughput)) * 0.48
-export const health = (rate: number) => (rate > 0.05 ? "degraded" : rate > 0.01 ? "elevated" : "healthy")
-export const HEALTH_COLOR = { healthy: "#79ad9b", elevated: "#d3a65c", degraded: "#dc7b6d" } as const
-const rateFormatter = new Intl.NumberFormat("en", { maximumFractionDigits: 1, notation: "compact" })
+// Shared thresholds (lib/error-rate); the 3D scene keeps its own hex palette below.
+const HEALTH_BY_LEVEL = { crit: "degraded", warn: "elevated", neutral: "healthy" } as const
+export const health = (rate: number) => HEALTH_BY_LEVEL[errorRateLevel(rate)]
+export const HEALTH_COLOR = { healthy: "#2f8f83", elevated: "#d9a21b", degraded: "#c8553d" } as const
+/** The shared rate format, plus the 3D labels' "/s" suffix, "~" estimate mark and "<0.1" floor. */
 export const formatRate = (rate: number, estimated = false) =>
-	`${estimated ? "~" : ""}${rate > 0 && rate < 0.1 ? "<0.1" : rateFormatter.format(rate)}/s`
+	`${estimated ? "~" : ""}${rate > 0 && rate < 0.1 ? "<0.1" : formatSharedRate(rate)}/s`
+/** The shared latency format, tolerating the optional latencies of 3D edges. */
 export const formatLatency = (ms: number | undefined) =>
-	ms === undefined ? "—" : `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`
-export const formatError = (rate: number) => `${(rate * 100).toFixed(rate < 0.01 ? 2 : 1)}%`
+	ms === undefined ? EMPTY_VALUE : formatSharedLatency(ms)
 
 export function connectedIds(
 	topology: SpatialTopology,

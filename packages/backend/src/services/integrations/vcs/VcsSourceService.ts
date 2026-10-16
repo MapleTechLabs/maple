@@ -19,12 +19,12 @@ import { VcsRepository } from "./VcsRepository"
 import type { VcsCodeSearchMatch, VcsSourceFile } from "./VcsProviderClient"
 
 export class VcsSourceRepositoryNotFoundError extends Schema.TaggedError<VcsSourceRepositoryNotFoundError>()(
-	"@maple/api/vcs/VcsSourceRepositoryNotFoundError",
+	"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
 	{ repository: Schema.String, message: Schema.String },
 ) {}
 
 export class VcsSourceFileNotFoundError extends Schema.TaggedError<VcsSourceFileNotFoundError>()(
-	"@maple/api/vcs/VcsSourceFileNotFoundError",
+	"@maple/backend/vcs/VcsSourceFileNotFoundError",
 	{ repository: Schema.String, path: Schema.String, ref: Schema.String, message: Schema.String },
 ) {}
 
@@ -44,7 +44,7 @@ type VcsRepositoryScopedError =
 type VcsSourceError = VcsRepositoryScopedError | VcsSourceFileNotFoundError
 
 export class VcsSourceRefNotFoundError extends Schema.TaggedError<VcsSourceRefNotFoundError>()(
-	"@maple/api/vcs/VcsSourceRefNotFoundError",
+	"@maple/backend/vcs/VcsSourceRefNotFoundError",
 	{ repository: Schema.String, ref: Schema.String, message: Schema.String },
 ) {}
 
@@ -70,6 +70,9 @@ export interface ConnectedSourceRepository {
 	readonly htmlUrl: string
 	readonly isPrivate: boolean
 	readonly isArchived: boolean
+	/** `error` when Maple's last sync of it failed: the App may have lost access to it. */
+	readonly syncStatus: string
+	readonly lastSyncError: string | null
 }
 
 export interface VcsSourceServiceApi {
@@ -209,6 +212,8 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 						htmlUrl: repository.htmlUrl,
 						isPrivate: repository.isPrivate,
 						isArchived: repository.isArchived,
+						syncStatus: repository.syncStatus,
+						lastSyncError: repository.lastSyncError,
 					}))
 					.sort((a, b) => a.fullName.localeCompare(b.fullName))
 			})

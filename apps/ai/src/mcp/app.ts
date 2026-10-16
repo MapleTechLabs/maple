@@ -1,11 +1,11 @@
 import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
 import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
-import { McpProtocol } from "effect/unstable/ai"
-import { RpcSerialization } from "effect/unstable/rpc"
+import { McpProtocol, McpServer } from "effect/ai"
+import { RpcSerialization } from "effect/rpc"
 import { Cause, Effect, Layer } from "effect"
-import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { McpToolsLive } from "./server"
-import { layerStatelessMcpHttp, statelessMcpServerLayer } from "./transport/stateless-http"
+import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { McpToolRegistration } from "./server"
+import { layerStatelessMcpHttp, layerStatelessMcpServer } from "./transport/stateless-http"
 import { DebugErrorsPrompt } from "./prompts/debug-errors"
 import { LatencyAnalysisPrompt } from "./prompts/latency-analysis"
 import { IncidentTriagePrompt } from "./prompts/incident-triage"
@@ -27,7 +27,7 @@ const MCP_PROTOCOL_VERSION_HEADER = "mcp-protocol-version"
 
 /**
  * The MCP protocol revisions this server implements. Effect currently ships a
- * single adapter (`effect/unstable/ai/McpProtocol`), so this is a one-element
+ * single adapter (`effect/ai/McpProtocol`), so this is a one-element
  * list; it stays an array so adding a revision is a one-line change here and
  * `SUPPORTED_PROTOCOL_VERSIONS` cannot drift from what `layerHttp` registers.
  */
@@ -71,7 +71,7 @@ const negotiateProtocolVersion = (request: HttpServerRequest.HttpServerRequest) 
 	})
 }
 
-const mcpChallenge = (invalid: boolean) =>
+const mcpChallenge = (invalid: boolean, message = "Authenticate with Maple to access this MCP server.") =>
 	Effect.gen(function* () {
 		const request = yield* HttpServerRequest.HttpServerRequest
 		const proto = request.headers["x-forwarded-proto"]?.split(",")[0]?.trim() ?? "https"
@@ -85,7 +85,7 @@ const mcpChallenge = (invalid: boolean) =>
 			...(invalid ? ['error="invalid_token"'] : []),
 		].join(", ")}`
 		return HttpServerResponse.jsonUnsafe(
-			{ error: "unauthorized", message: "Authenticate with Maple to access this MCP server." },
+			{ error: "unauthorized", message },
 			{
 				status: 401,
 				headers: { "www-authenticate": challenge, "cache-control": "no-store" },
@@ -175,7 +175,11 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 					),
 					Effect.catchTags({
 						"@maple/mcp/errors/McpAuthMissingError": () => mcpChallenge(false),
-						"@maple/mcp/errors/McpAuthInvalidError": () => mcpChallenge(true),
+						// A malformed bearer gets its specific fix; other reasons keep the generic text.
+						"@maple/mcp/errors/McpAuthInvalidError": (error) =>
+							error.reason === "malformed_token"
+								? mcpChallenge(true, error.message)
+								: mcpChallenge(true),
 						"@maple/mcp/errors/McpAuthUnavailableError": mcpUnavailable,
 						"@maple/mcp/errors/McpInvalidTenantError": () => mcpChallenge(true),
 					}),
@@ -192,12 +196,19 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 // keeps sessions in an isolate-local map and 404s anything it did not issue,
 // which on Workers is every request after `initialize`. See
 // `transport/stateless-http.ts`.
-const McpTransportLive = layerStatelessMcpHttp({
-	path: "/mcp",
-	protocol: NEGOTIATED_PROTOCOL,
-}).pipe(Layer.provide(RpcSerialization.layerJsonRpc()), Layer.provide(McpAuthorizationMiddleware.layer))
+// Behind the authorization middleware, so only an authorized `tools/*` request registers tools.
+const McpTransportLive = Layer.unwrap(
+	Effect.gen(function* () {
+		const tools = yield* McpToolRegistration
+		return layerStatelessMcpHttp({
+			path: "/mcp",
+			protocol: NEGOTIATED_PROTOCOL,
+			registerTools: tools.ensureRegistered,
+		})
+	}),
+).pipe(Layer.provide(RpcSerialization.layerJsonRpc()), Layer.provide(McpAuthorizationMiddleware.layer))
 
-const McpHttpLive = statelessMcpServerLayer({
+const McpHttpLive = layerStatelessMcpServer({
 	name: "maple-observability",
 	// Kept equal to the public `server.json` manifest (`@maple/domain/mcp-manifest`).
 	version: MAPLE_MCP_SERVER_VERSION,
@@ -210,9 +221,9 @@ export const McpLive: Layer.Layer<
 	Cause.IllegalArgumentError,
 	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutor | McpToolRateLimiter
 > = Layer.mergeAll(
-	McpToolsLive,
+	McpHttpLive,
 	DebugErrorsPrompt,
 	LatencyAnalysisPrompt,
 	IncidentTriagePrompt,
 	InstructionsResource,
-).pipe(Layer.provide(McpHttpLive))
+).pipe(Layer.provide(McpToolRegistration.layer), Layer.provide(McpServer.McpServer.layer))

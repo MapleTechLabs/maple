@@ -1,7 +1,7 @@
 import { createContext, memo, type ReactNode, use, useMemo } from "react"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
-import { formatValueByUnit } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { WidgetFrame } from "@/components/dashboard-builder/widgets/widget-shell"
 import { useWidgetDataSource, type WidgetDataSourceLike } from "@/hooks/use-widget-data"
 import type { WidgetDataState, WidgetDisplayConfig, WidgetMode } from "@/components/dashboard-builder/types"
@@ -13,8 +13,8 @@ interface StatWidgetProps {
 }
 
 export function formatValue(value: unknown, unit?: string, prefix?: string, suffix?: string): string {
-	if (value === null || value === undefined) return "-"
-	if (typeof value === "object") return "—"
+	if (value === null || value === undefined) return EMPTY_VALUE
+	if (typeof value === "object") return EMPTY_VALUE
 
 	const num = typeof value === "number" ? value : Number(value)
 	if (Number.isNaN(num)) return String(value)
@@ -129,8 +129,9 @@ export const StatWidget = memo(function StatWidget({ dataState, display, mode }:
 	// formatted value that reads fine one breakpoint up.
 	const valueText = (
 		<span
-			className="text-base font-bold tabular-nums @min-[150px]/widget:text-2xl @min-[280px]/widget:text-3xl"
+			className="min-w-0 max-w-full truncate text-base font-semibold tabular-nums @min-[150px]/widget:text-2xl @min-[280px]/widget:text-3xl"
 			style={thresholdColor ? { color: thresholdColor } : undefined}
+			title={formattedValue}
 		>
 			{formattedValue}
 		</span>

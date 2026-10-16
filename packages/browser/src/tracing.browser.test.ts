@@ -14,8 +14,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 // Capture what the batch processor actually hands to the exporter, so the
 // unload flush can be asserted on exported spans rather than on a spy.
 const exported: ReadableSpan[] = []
-vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
-	OTLPTraceExporter: class {
+vi.mock("./otlp", async (original) => ({
+	...(await original<typeof import("./otlp")>()),
+	OtlpExporter: class {
 		export(spans: ReadableSpan[], callback: (result: { code: number }) => void): void {
 			exported.push(...spans)
 			callback({ code: 0 })
@@ -53,6 +54,7 @@ const CONFIG = {
 	maskAllInputs: true,
 	maskAllText: false,
 	persistVisitorId: true,
+	persistence: "browser" as const,
 	crossSubdomainCookie: true,
 	cookieDomain: undefined,
 	requireConsent: false,
@@ -127,6 +129,7 @@ describe("setupTracing unload flush", () => {
 		shutdown = undefined
 		exported.length = 0
 		trace.disable()
+		vi.unstubAllGlobals()
 	})
 
 	const endOneSpan = (): void => {
@@ -278,6 +281,51 @@ describe("setupTracing unload flush", () => {
 		expect(exported[0]?.attributes["error.type"]).toBe("TypeError")
 		// error.message is deprecated in the conventions; error.type carries the class of failure.
 		expect(exported[0]?.attributes["error.message"]).toBeUndefined()
+	})
+
+	// A fetch whose rejection the test controls, installed before the instrumentation wraps it.
+	const stubPendingFetch = () => {
+		const rejections: Array<(cause: unknown) => void> = []
+		vi.stubGlobal("fetch", () => new Promise<Response>((_, reject) => void rejections.push(reject)))
+		return { reject: (cause: unknown) => rejections.forEach((reject) => reject(cause)) }
+	}
+
+	it("leaves a fetch the page unloaded under Unset, with the reason", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		const pending = stubPendingFetch()
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+
+		const request = fetch("https://api.test/things")
+		window.dispatchEvent(new Event("pagehide"))
+		pending.reject(new TypeError("Failed to fetch"))
+		await expect(request).rejects.toThrow(TypeError)
+		// Past the instrumentation's deferred end, then flush.
+		await vi.advanceTimersByTimeAsync(400)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(0)
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBe("page_unload")
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
+	})
+
+	it("still marks a fetch an error when the connection dropped only before it started", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		const pending = stubPendingFetch()
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+		window.dispatchEvent(new Event("offline"))
+
+		const request = fetch("https://api.test/things")
+		pending.reject(new TypeError("Failed to fetch"))
+		await expect(request).rejects.toThrow(TypeError)
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBeUndefined()
 	})
 
 	it("counts a fetch that timed out through AbortSignal.timeout() as an error", async () => {

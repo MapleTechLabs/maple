@@ -1,9 +1,15 @@
-import { formatLatency } from "../../lib/format"
+import { EMPTY_VALUE, formatErrorRate, formatLatency, formatRate } from "../../lib/format"
 import { memo } from "react"
 import { Handle, Position } from "@xyflow/react"
 import { cn } from "../../lib/utils"
+import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
+import { TONE_FILL, TONE_TEXT, type Tone } from "../../lib/tone"
+import { type UtilizationLevel, utilizationLevel } from "../../lib/utilization"
 import { latencyToneClass } from "../../lib/latency-tone"
+import { Eyebrow } from "../ui/eyebrow"
+import { StatusDot } from "../ui/status-dot"
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
+import { MiddleTruncate } from "../ui/middle-truncate"
 import {
 	AwsLambdaIcon,
 	CloudflareBrandIcon,
@@ -37,22 +43,31 @@ function getPlatformIcon(platform: ServicePlatform | undefined): {
 	}
 }
 
-function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
-}
+// "ok" keeps the cell's default colour, as before.
+const UTILIZATION_TEXT = {
+	crit: TONE_TEXT.crit,
+	warn: TONE_TEXT.warn,
+	ok: undefined,
+} satisfies Record<UtilizationLevel, string | undefined>
 
-function getHealthDotClass(errorRate: number): string {
-	if (errorRate > 0.05) return "bg-severity-error"
-	if (errorRate > 0.01) return "bg-severity-warn"
-	return "bg-severity-info"
+const HEALTH_TONE = {
+	crit: "crit",
+	warn: "warn",
+	neutral: "ok",
+} satisfies Record<ErrorRateLevel, Tone>
+
+const SELECTED_BORDER_CLASS = {
+	crit: "border-severity-error ring-[3px] ring-severity-error/15",
+	warn: "border-severity-warn ring-[3px] ring-severity-warn/15",
+	neutral: "border-border-active ring-[3px] ring-foreground/15",
+} satisfies Record<ErrorRateLevel, string>
+
+export function getHealthDotClass(errorRate: number): string {
+	return TONE_FILL[HEALTH_TONE[errorRateLevel(errorRate)]]
 }
 
 function getSelectedBorderClass(errorRate: number): string {
-	if (errorRate > 0.05) return "border-severity-error ring-[3px] ring-severity-error/15"
-	if (errorRate > 0.01) return "border-severity-warn ring-[3px] ring-severity-warn/15"
-	return "border-border-active ring-[3px] ring-foreground/15"
+	return SELECTED_BORDER_CLASS[errorRateLevel(errorRate)]
 }
 
 function MetricCell({
@@ -66,12 +81,10 @@ function MetricCell({
 }) {
 	return (
 		<div className="flex flex-col gap-px">
-			<span className="text-[9px] font-medium tracking-wide text-muted-foreground/60 uppercase">
-				{label}
-			</span>
+			<Eyebrow className="text-4xs text-muted-foreground/60">{label}</Eyebrow>
 			<span
 				className={cn(
-					"text-[11px] font-medium font-mono tabular-nums text-secondary-foreground",
+					"text-2xs font-medium font-mono tabular-nums text-secondary-foreground",
 					valueClassName,
 				)}
 			>
@@ -82,9 +95,8 @@ function MetricCell({
 }
 
 function errorRateClass(errorRate: number): string {
-	if (errorRate > 0.05) return "text-severity-error"
-	if (errorRate > 0.01) return "text-severity-warn"
-	return "text-secondary-foreground"
+	const level = errorRateLevel(errorRate)
+	return level === "neutral" ? "text-secondary-foreground" : ERROR_RATE_TEXT[level]
 }
 
 const Handles = () => (
@@ -148,9 +160,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 				<div className="flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5">
 					{/* Header — health dot + branded icon + name + category */}
 					<div className="flex items-center gap-1.5">
-						<div
-							className={cn("h-1.5 w-1.5 shrink-0 rounded-full", getHealthDotClass(errorRate))}
-						/>
+						<StatusDot tone={HEALTH_TONE[errorRateLevel(errorRate)]} />
 						<Tooltip>
 							<TooltipTrigger>
 								<Icon
@@ -163,9 +173,11 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 								<p>{systemLabel}</p>
 							</TooltipContent>
 						</Tooltip>
-						<span className="truncate text-xs font-medium text-foreground">{title}</span>
+						<span className="truncate text-xs font-medium text-foreground" title={title}>
+							{title}
+						</span>
 						<span
-							className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide"
+							className="ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"
 							style={{ color }}
 						>
 							{badge}
@@ -180,7 +192,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 						/>
 						<MetricCell
 							label="err%"
-							value={`${(errorRate * 100).toFixed(1)}%`}
+							value={formatErrorRate(errorRate)}
 							valueClassName={errorRateClass(errorRate)}
 						/>
 						<MetricCell
@@ -206,11 +218,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 								label="cpu"
 								value={`${planetscale.stats.cpuMaxPercent.toFixed(0)}%`}
 								valueClassName={
-									planetscale.stats.cpuMaxPercent > 80
-										? "text-severity-error"
-										: planetscale.stats.cpuMaxPercent > 60
-											? "text-severity-warn"
-											: undefined
+									UTILIZATION_TEXT[utilizationLevel(planetscale.stats.cpuMaxPercent / 100)]
 								}
 							/>
 							<MetricCell
@@ -275,9 +283,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 				<div className="flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5">
 					{/* Service name + health dot + platform icon */}
 					<div className="flex items-center gap-1.5">
-						<div
-							className={cn("h-1.5 w-1.5 shrink-0 rounded-full", getHealthDotClass(errorRate))}
-						/>
+						<StatusDot tone={HEALTH_TONE[errorRateLevel(errorRate)]} />
 						<Tooltip>
 							<TooltipTrigger>
 								<Icon
@@ -294,7 +300,11 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 								</p>
 							</TooltipContent>
 						</Tooltip>
-						<span className="truncate text-xs font-medium text-foreground">{label}</span>
+						<MiddleTruncate
+							text={label}
+							tail={12}
+							className="text-xs font-medium text-foreground"
+						/>
 						{runtimeInfo &&
 							(RuntimeIcon ? (
 								<Tooltip>
@@ -309,9 +319,9 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 									</TooltipContent>
 								</Tooltip>
 							) : (
-								<span className="shrink-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground/60">
+								<Eyebrow className="shrink-0 text-4xs text-muted-foreground/60">
 									{runtimeInfo.short}
-								</span>
+								</Eyebrow>
 							))}
 					</div>
 
@@ -327,7 +337,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 							{hasSampling && (
 								<TooltipContent side="bottom">
 									<p>
-										Estimated x{samplingWeight.toFixed(0)} from{" "}
+										Estimated ×{samplingWeight.toFixed(0)} from{" "}
 										{formatRate(tracedThroughput)} traced req/s
 									</p>
 								</TooltipContent>
@@ -336,7 +346,7 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 
 						<MetricCell
 							label="err%"
-							value={`${(errorRate * 100).toFixed(1)}%`}
+							value={formatErrorRate(errorRate)}
 							valueClassName={errorRateClass(errorRate)}
 						/>
 
@@ -348,13 +358,11 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 
 						{/* Pods badge — empty placeholder when no infra so widths stay stable */}
 						<div className="ml-auto flex flex-col items-end gap-px">
-							<span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/60">
-								pods
-							</span>
+							<Eyebrow className="text-4xs text-muted-foreground/60">pods</Eyebrow>
 							{infra ? (
 								<Tooltip>
 									<TooltipTrigger>
-										<span className="flex items-center gap-1 font-mono text-[11px] font-medium tabular-nums text-secondary-foreground">
+										<span className="flex items-center gap-1 font-mono text-2xs font-medium tabular-nums text-secondary-foreground">
 											<CubeIcon size={10} className="text-muted-foreground/70" />
 											{infra.podCount}
 										</span>
@@ -370,8 +378,8 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 									</TooltipContent>
 								</Tooltip>
 							) : (
-								<span className="font-mono text-[11px] tabular-nums text-muted-foreground/30">
-									–
+								<span className="font-mono text-2xs tabular-nums text-muted-foreground/30">
+									{EMPTY_VALUE}
 								</span>
 							)}
 						</div>
@@ -407,14 +415,12 @@ function NamespaceAggregateNode({ data }: { data: ServiceNodeData }) {
 
 				<div className="flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5">
 					<div className="flex items-center gap-1.5">
-						<div
-							className={cn("h-1.5 w-1.5 shrink-0 rounded-full", getHealthDotClass(errorRate))}
-						/>
+						<StatusDot tone={HEALTH_TONE[errorRateLevel(errorRate)]} />
 						<span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
 							{label}
 						</span>
 						<span
-							className="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide"
+							className="ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"
 							style={{ color }}
 						>
 							{nsMemberCount ?? 0} services
@@ -425,7 +431,7 @@ function NamespaceAggregateNode({ data }: { data: ServiceNodeData }) {
 						<MetricCell label="req/s" value={formatRate(throughput)} />
 						<MetricCell
 							label="err%"
-							value={`${(errorRate * 100).toFixed(1)}%`}
+							value={formatErrorRate(errorRate)}
 							valueClassName={errorRateClass(errorRate)}
 						/>
 						<MetricCell

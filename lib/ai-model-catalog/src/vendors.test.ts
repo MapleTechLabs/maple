@@ -22,8 +22,4 @@ describe("VENDOR_BRAND_COLORS", () => {
 			expect(contrast(color.dark, "#1E1B17"), `${vendor} on near-black`).toBeGreaterThanOrEqual(3)
 		}
 	})
-
-	it("gives both of a vendor's slugs one brand", () => {
-		expect(VENDOR_BRAND_COLORS["meta-llama"]).toEqual(VENDOR_BRAND_COLORS.meta)
-	})
 })

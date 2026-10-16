@@ -1,16 +1,13 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useState } from "react"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogPanel,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
 import { Button } from "@maple/ui/components/ui/button"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@maple/ui/components/ui/item"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -108,32 +105,37 @@ export function VariablesManagerDialog({
 	variables: DashboardVariable[]
 	onSave: (variables: DashboardVariable[]) => void
 }) {
+	// Remounted on every opening so each session starts from the saved state.
+	const [session, setSession] = useState(0)
+	const [wasOpen, setWasOpen] = useState(open)
+	if (open !== wasOpen) {
+		setWasOpen(open)
+		if (open) setSession((n) => n + 1)
+	}
+
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-xl">
-				{/* Mounted only while open so each session starts from the saved state. */}
-				{open && (
-					<VariablesEditor
-						initial={variables}
-						onCancel={() => onOpenChange(false)}
-						onSave={(next) => {
-							onSave(next)
-							onOpenChange(false)
-						}}
-					/>
-				)}
-			</DialogContent>
-		</Dialog>
+		<VariablesEditor
+			key={session}
+			open={open}
+			onOpenChange={onOpenChange}
+			initial={variables}
+			onSave={(next) => {
+				onSave(next)
+				onOpenChange(false)
+			}}
+		/>
 	)
 }
 
 function VariablesEditor({
+	open,
+	onOpenChange,
 	initial,
-	onCancel,
 	onSave,
 }: {
+	open: boolean
+	onOpenChange: (open: boolean) => void
 	initial: DashboardVariable[]
-	onCancel: () => void
 	onSave: (variables: DashboardVariable[]) => void
 }) {
 	// With no variables yet, land the user directly in "create" — one blank
@@ -183,114 +185,106 @@ function VariablesEditor({
 	}
 
 	return (
-		<>
-			<DialogHeader>
-				<DialogTitle>Dashboard variables</DialogTitle>
-				<DialogDescription>
-					Reference variables as <code className="text-[11px]">$name</code> in widget filters and
-					raw SQL. Selectors appear in the dashboard toolbar.
-				</DialogDescription>
-			</DialogHeader>
-			<DialogPanel className="flex flex-col gap-3">
-				{startedEmpty && (
-					<div className="rounded-md border border-dashed border-border px-3 py-3 text-[11px] leading-relaxed text-muted-foreground">
-						<p>
-							A variable adds a selector to the toolbar; widgets that reference it re-query when
-							the selection changes.
-						</p>
-						<ul className="mt-1.5 flex flex-col gap-0.5">
-							<li>
-								<span className="text-foreground">Query</span> — values from your telemetry
-								(services, environments, attribute values).
-							</li>
-							<li>
-								<span className="text-foreground">Custom</span> — a fixed list you define.
-							</li>
-							<li>
-								<span className="text-foreground">Textbox</span> — free text, e.g. a search
-								needle.
-							</li>
-						</ul>
-					</div>
-				)}
-				{drafts.map((draft, index) => (
-					<div key={index} className="rounded-md border border-border">
-						<div className="flex items-center gap-2 px-3 py-2">
-							<div className="flex min-w-0 flex-1 flex-col">
-								<span className="truncate font-mono text-xs font-medium text-foreground">
-									${draft.name || "…"}
-									<span className="ml-2 font-sans font-normal text-muted-foreground">
-										{TYPE_LABELS[draft.type]}
-									</span>
+		<FormDialog
+			open={open}
+			onOpenChange={onOpenChange}
+			className="sm:max-w-xl"
+			panelClassName="flex flex-col gap-3 space-y-0"
+			title="Dashboard variables"
+			description={
+				<>
+					Reference variables as <InlineCode>$name</InlineCode> in widget filters and raw SQL.
+					Selectors appear in the dashboard toolbar.
+				</>
+			}
+			submitLabel="Save variables"
+			submitDisabled={hasErrors}
+			onSubmit={handleSave}
+		>
+			{startedEmpty && (
+				<div className="rounded-md border border-dashed border-border px-3 py-3 text-2xs leading-relaxed text-muted-foreground">
+					<p>
+						A variable adds a selector to the toolbar; widgets that reference it re-query when the
+						selection changes.
+					</p>
+					<ul className="mt-1.5 flex flex-col gap-0.5">
+						<li>
+							<span className="text-foreground">Query</span> — values from your telemetry
+							(services, environments, attribute values).
+						</li>
+						<li>
+							<span className="text-foreground">Custom</span> — a fixed list you define.
+						</li>
+						<li>
+							<span className="text-foreground">Textbox</span> — free text, e.g. a search
+							needle.
+						</li>
+					</ul>
+				</div>
+			)}
+			{drafts.map((draft, index) => (
+				<div key={index} className="rounded-md border border-border">
+					<Item size="xs" variant="flush" className="px-3">
+						<ItemContent>
+							<ItemTitle className="block truncate font-mono text-foreground">
+								${draft.name || "…"}
+								<span className="ml-2 font-sans font-normal text-muted-foreground">
+									{TYPE_LABELS[draft.type]}
 								</span>
-								<span className="truncate text-[11px] text-muted-foreground">
-									{errors[index] !== null && editingIndex !== index ? (
-										<span className="text-destructive">{errors[index]}</span>
-									) : (
-										sourceSummary(draft)
-									)}
-								</span>
-							</div>
-							<Button
-								variant="ghost"
+							</ItemTitle>
+							<ItemDescription className="block truncate text-2xs">
+								{errors[index] !== null && editingIndex !== index ? (
+									<span className={TONE_TEXT.crit}>{errors[index]}</span>
+								) : (
+									sourceSummary(draft)
+								)}
+							</ItemDescription>
+						</ItemContent>
+						<ItemActions>
+							<IconButton
 								size="icon-xs"
-								aria-label="Move up"
+								label="Move up"
 								disabled={index === 0}
 								onClick={() => move(index, -1)}
 							>
-								<ArrowUpIcon size={13} />
-							</Button>
-							<Button
-								variant="ghost"
+								<ArrowUpIcon />
+							</IconButton>
+							<IconButton
 								size="icon-xs"
-								aria-label="Move down"
+								label="Move down"
 								disabled={index === drafts.length - 1}
 								onClick={() => move(index, 1)}
 							>
-								<ArrowDownIcon size={13} />
-							</Button>
-							<Button
-								variant="ghost"
+								<ArrowDownIcon />
+							</IconButton>
+							<IconButton
 								size="icon-xs"
-								aria-label="Edit variable"
+								label="Edit variable"
 								onClick={() => setEditingIndex(editingIndex === index ? null : index)}
 							>
-								<PencilIcon size={13} />
-							</Button>
-							<Button
-								variant="ghost"
-								size="icon-xs"
-								aria-label="Delete variable"
-								onClick={() => remove(index)}
-							>
-								<TrashIcon size={13} />
-							</Button>
+								<PencilIcon />
+							</IconButton>
+							<IconButton size="icon-xs" label="Delete variable" onClick={() => remove(index)}>
+								<TrashIcon />
+							</IconButton>
+						</ItemActions>
+					</Item>
+					{editingIndex === index && (
+						<div className="border-t border-border px-3 py-3">
+							<VariableForm
+								variable={draft}
+								error={errors[index] ?? null}
+								onChange={(next) => updateDraft(index, next)}
+							/>
 						</div>
-						{editingIndex === index && (
-							<div className="border-t border-border px-3 py-3">
-								<VariableForm
-									variable={draft}
-									error={errors[index] ?? null}
-									onChange={(next) => updateDraft(index, next)}
-								/>
-							</div>
-						)}
-					</div>
-				))}
-				<Button variant="outline" size="sm" className="self-start" onClick={add}>
-					<PlusIcon size={14} data-icon="inline-start" />
-					Add variable
-				</Button>
-			</DialogPanel>
-			<DialogFooter>
-				<Button type="button" variant="outline" size="sm" onClick={onCancel}>
-					Cancel
-				</Button>
-				<Button type="button" size="sm" onClick={handleSave} disabled={hasErrors}>
-					Save variables
-				</Button>
-			</DialogFooter>
-		</>
+					)}
+				</div>
+			))}
+			<Button variant="outline" size="sm" className="self-start" onClick={add}>
+				<PlusIcon data-icon="inline-start" />
+				Add variable
+			</Button>
+		</FormDialog>
 	)
 }
 
@@ -306,8 +300,8 @@ function VariableForm({
 	return (
 		<div className="flex flex-col gap-3">
 			<div className="grid grid-cols-2 gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Name</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Name</FieldLabel>
 					<Input
 						size="sm"
 						autoFocus={variable.name === ""}
@@ -317,18 +311,20 @@ function VariableForm({
 						onChange={(event) => onChange({ ...variable, name: event.target.value })}
 					/>
 					{error !== null ? (
-						<span className="text-[11px] text-destructive">{error}</span>
+						<FieldError match className="text-2xs">
+							{error}
+						</FieldError>
 					) : (
 						variable.name !== "" && (
-							<span className="text-[11px] text-muted-foreground">
-								Reference it as <code className="text-foreground">${variable.name}</code> in
-								widget filters and SQL.
-							</span>
+							<FieldDescription className="text-2xs">
+								Reference it as <InlineCode>${variable.name}</InlineCode> in widget filters
+								and SQL.
+							</FieldDescription>
 						)
 					)}
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Label</Label>
+				</Field>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Label</FieldLabel>
 					<Input
 						size="sm"
 						value={variable.label ?? ""}
@@ -340,12 +336,12 @@ function VariableForm({
 							)
 						}}
 					/>
-				</div>
+				</Field>
 			</div>
 
 			<div className="grid grid-cols-2 gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Type</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Type</FieldLabel>
 					<Select
 						items={TYPE_OPTIONS}
 						value={variable.type}
@@ -355,7 +351,7 @@ function VariableForm({
 							}
 						}}
 					>
-						<SelectTrigger className="h-8 text-xs">
+						<SelectTrigger size="sm">
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -366,9 +362,9 @@ function VariableForm({
 							))}
 						</SelectContent>
 					</Select>
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Default value</Label>
+				</Field>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Default value</FieldLabel>
 					<Input
 						size="sm"
 						value={variable.defaultValue ?? ""}
@@ -382,14 +378,14 @@ function VariableForm({
 							)
 						}}
 					/>
-				</div>
+				</Field>
 			</div>
 
 			{variable.type === "query" && <QuerySourceFields variable={variable} onChange={onChange} />}
 
 			{variable.type === "custom" && (
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Options (comma-separated)</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Options (comma-separated)</FieldLabel>
 					<Textarea
 						className="min-h-16 text-xs"
 						value={variable.options.map((option) => option.value).join(", ")}
@@ -405,25 +401,23 @@ function VariableForm({
 							})
 						}
 					/>
-				</div>
+				</Field>
 			)}
 
 			{variable.type !== "textbox" && (
-				<div className="flex items-center justify-between">
-					<div className="flex flex-col">
-						<span className="text-xs font-medium">Include "All" option</span>
-						<span className="text-[11px] text-muted-foreground">
-							All drops the filter in query builders and expands to every value in SQL.
-						</span>
-					</div>
-					<Switch
-						checked={variable.includeAll === true}
-						onCheckedChange={(checked) => {
-							const { includeAll: _includeAll, ...rest } = variable
-							onChange(checked ? { ...rest, includeAll: true } : rest)
-						}}
-					/>
-				</div>
+				<SettingRow
+					label={<span className="text-xs">Include "All" option</span>}
+					description="All drops the filter in query builders and expands to every value in SQL."
+					control={
+						<Switch
+							checked={variable.includeAll === true}
+							onCheckedChange={(checked) => {
+								const { includeAll: _includeAll, ...rest } = variable
+								onChange(checked ? { ...rest, includeAll: true } : rest)
+							}}
+						/>
+					}
+				/>
 			)}
 		</div>
 	)
@@ -439,8 +433,8 @@ function QuerySourceFields({
 	const source = variable.source
 	return (
 		<div className="grid grid-cols-2 gap-3">
-			<div className="flex flex-col gap-1.5">
-				<Label className="text-xs">Values from</Label>
+			<Field className="items-stretch gap-1.5">
+				<FieldLabel className="text-xs">Values from</FieldLabel>
 				<Select
 					items={{
 						...Object.fromEntries(
@@ -473,7 +467,7 @@ function QuerySourceFields({
 						}
 					}}
 				>
-					<SelectTrigger className="h-8 text-xs">
+					<SelectTrigger size="sm">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -486,10 +480,10 @@ function QuerySourceFields({
 						<SelectItem value="attribute:resource">Resource attribute…</SelectItem>
 					</SelectContent>
 				</Select>
-			</div>
+			</Field>
 			{source.kind === "attribute" && (
-				<div className="flex flex-col gap-1.5">
-					<Label className="text-xs">Attribute key</Label>
+				<Field className="items-stretch gap-1.5">
+					<FieldLabel className="text-xs">Attribute key</FieldLabel>
 					<Input
 						size="sm"
 						value={source.attributeKey}
@@ -501,7 +495,7 @@ function QuerySourceFields({
 							})
 						}
 					/>
-				</div>
+				</Field>
 			)}
 		</div>
 	)

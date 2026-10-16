@@ -6,7 +6,6 @@
  * clear, so raising the model's window or swapping the model cannot quietly disable one again.
  */
 import { describe, expect, it } from "vitest"
-import { AgentPolicy } from "effect-agent/agent-policy"
 import * as Duration from "effect/Duration"
 import { AGENTS, agentPolicyFor } from "./agents"
 import {
@@ -94,12 +93,6 @@ describe("agent budgets", () => {
 })
 
 describe("agentPolicyFor", () => {
-	it("builds a valid policy for every agent", () => {
-		for (const agent of Object.values(AGENTS)) {
-			expect(agentPolicyFor(agent, GLM_CONTEXT)).toBeInstanceOf(AgentPolicy)
-		}
-	})
-
 	/** It ignored its agent argument until 2026-09-20, so every surface got the same rail. */
 	it("reads the agent's own budget rather than one shared number", () => {
 		const investigate = agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT)
@@ -114,14 +107,20 @@ describe("agentPolicyFor", () => {
 		)
 	})
 
-	/** The review sees its clock and a warning at 80%; a chat turn keeps its cached prompt untouched. */
-	it("shows the review its run status, and no other agent", () => {
-		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT).runStatus).toBe("appended")
-		expect(agentPolicyFor(AGENTS.default!, GLM_CONTEXT).runStatus).toBe("off")
+	/**
+	 * Unattended passes see their clock and a warning at 80%, so they submit before the deadline;
+	 * a chat turn keeps its cached prompt untouched.
+	 */
+	it("shows the unattended passes their run status, and not the chat turn", () => {
+		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT, true).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT, true).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.default!, GLM_CONTEXT, true).runStatus).toBe("off")
 	})
 
-	/** Crossing a budget must hand the run its closing call, never fail it outright. */
-	it("resolves an exhausted budget into a final answer", () => {
-		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT).onExhaustion).toBe("final-answer")
+	// An attended follow-up in an `inv-` or `pr-` session runs on the same agent, and must answer
+	// rather than be told to file a partial at the warning.
+	it("keeps the run status off an attended follow-up on an investigation or review", () => {
+		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT, false).runStatus).toBe("off")
+		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT, false).runStatus).toBe("off")
 	})
 })

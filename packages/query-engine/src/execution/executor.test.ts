@@ -60,7 +60,7 @@ const chdbConfig: ResolvedWarehouseConfig = {
 // listRuleChecksQuery declares .route("ingest") at its definition —
 // alert_checks only exists in the managed ingest pipeline.
 const compiled = compileUnsafe(listRuleChecksQuery({ limit: 1 }), {
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	ruleId: "rule_test",
 })
 const _ingestRouteIsPartOfTheCompiledType: "ingest" = compiled.route
@@ -1448,6 +1448,67 @@ describe("makeWarehouseExecutor credential-rotation self-heal", () => {
 			assert.isTrue(Exit.isFailure(exit))
 			assert.strictEqual(invalidations.count, 1)
 			assert.strictEqual(attempts.count, 2)
+		}),
+	)
+})
+
+// Pipes are a wire contract: rows are decoded (validated) and then encoded back,
+// so a `DateTime.Utc` column reaches pipe readers as the warehouse string. The
+// observability layer (error_detail, search_traces) reads pipe rows as strings.
+describe("makeWarehouseExecutor pipe rows", () => {
+	const pipeDeps = (row: Record<string, unknown>): WarehouseExecutorDeps => ({
+		createClient: () =>
+			Effect.succeed({ sql: () => Effect.succeed({ data: [row] }), insert: () => Effect.void }),
+		resolveRoute: () =>
+			Effect.succeed({
+				source: "managed" as const,
+				config: clickhouseConfig,
+				clientCacheKey: "read:org_test",
+			}),
+	})
+	const window = { start_time: "2026-10-08 00:00:00", end_time: "2026-10-08 23:59:59" }
+
+	it.effect("returns list_logs timestamps as strings", () =>
+		Effect.gen(function* () {
+			const executor = makeWarehouseExecutor(
+				pipeDeps({
+					timestamp: "2026-10-08 10:00:00.123456789",
+					exactTimestamp: "2026-10-08 10:00:00.123456789",
+					severityText: "INFO",
+					severityNumber: 9,
+					serviceName: "api",
+					body: "hello",
+					traceId: "",
+					spanId: "",
+					recordIdentity: "00112233445566778899AABBCCDDEEFF",
+					logAttributes: "{}",
+					resourceAttributes: "{}",
+				}),
+			).asExecutor(tenant)
+			const { data } = yield* executor.query<Record<string, unknown>>("list_logs", window)
+			assert.strictEqual(typeof data[0]?.timestamp, "string")
+			assert.strictEqual(data[0]?.timestamp, "2026-10-08 10:00:00.123")
+		}),
+	)
+
+	it.effect("returns span_search timestamps as strings", () =>
+		Effect.gen(function* () {
+			const executor = makeWarehouseExecutor(
+				pipeDeps({
+					traceId: "t",
+					spanId: "s",
+					spanName: "GET /",
+					serviceName: "api",
+					durationMs: 1,
+					statusCode: "Ok",
+					statusMessage: "",
+					spanAttributes: {},
+					resourceAttributes: {},
+					timestamp: "2026-10-08 10:00:00.123456789",
+				}),
+			).asExecutor(tenant)
+			const { data } = yield* executor.query<Record<string, unknown>>("span_search", window)
+			assert.strictEqual(typeof data[0]?.timestamp, "string")
 		}),
 	)
 })

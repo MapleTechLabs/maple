@@ -18,18 +18,18 @@
 // sums are UInt64 and arrive as JSON strings on BYO-ClickHouse, so both row
 // schemas are built from `CHNumber`.
 
-import { Schema } from "effect"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
-import { ProductEvents, ServiceUsage, SessionReplays } from "@maple/query-engine/ch/tables"
+import { type DateTime, Schema } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { dateTime64, from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
-import { hourFloor } from "@maple/query-engine/ch/query-helpers"
+import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
 
 const DAY_SECONDS = 86_400
 
 export interface DailySignalVolumeOutput {
-	/** ClickHouse datetime literal at the UTC day boundary, e.g. `2026-07-29 00:00:00`. */
-	readonly day: string
+	/** The UTC day boundary. */
+	readonly day: DateTime.Utc
 	readonly logBytes: number
 	readonly traceBytes: number
 	readonly metricBytes: number
@@ -58,9 +58,9 @@ export function dailySignalVolumeQuery() {
 				.add(CH.sum($.ExpHistogramMetricSizeBytes)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 		])
 		.groupBy("day")
 		.orderBy(["day", "asc"])
@@ -68,7 +68,7 @@ export function dailySignalVolumeQuery() {
 }
 
 export interface DailySessionCountOutput {
-	readonly day: string
+	readonly day: DateTime.Utc
 	readonly sessions: number
 }
 
@@ -90,9 +90,9 @@ export function dailySessionCountQuery() {
 			sessions: CH.uniqExact($.SessionId),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.StartTime.gte(CH.toDateTime(param.dateTimeString("startTime"))),
-			$.StartTime.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+			$.OrgId.eq(orgIdParam),
+			$.StartTime.gte(CH.toDateTime(utcSecondsParam("startTime"))),
+			$.StartTime.lte(CH.toDateTime(utcSecondsParam("endTime"))),
 		])
 		.groupBy("day")
 		.orderBy(["day", "asc"])
@@ -100,13 +100,13 @@ export function dailySessionCountQuery() {
 }
 
 export interface DailyProductEventCountOutput {
-	readonly day: string
+	readonly day: DateTime.Utc
 	readonly events: number
 }
 
 export const dailyProductEventCountRowSchema: CompiledQueryRowSchema<DailyProductEventCountOutput> =
 	Schema.Struct({
-		day: Schema.String,
+		day: dateTime64.schema,
 		events: CHNumber,
 	})
 
@@ -127,9 +127,9 @@ export function dailyProductEventCountQuery() {
 			events: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(CH.toDateTime(param.dateTimeString("startTime"))),
-			$.Timestamp.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(CH.toDateTime(utcSecondsParam("startTime"))),
+			$.Timestamp.lte(CH.toDateTime(utcSecondsParam("endTime"))),
 			$.Kind.neq("navigation"),
 		])
 		.groupBy("day")

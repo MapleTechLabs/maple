@@ -1,13 +1,19 @@
-import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	webAnalyticsAiCrawledPagesQuery,
 	webAnalyticsAiCrawlerFormatsQuery,
 	webAnalyticsAiCrawlersQuery,
 	webAnalyticsAiReferralsQuery,
 } from "./web-analytics-ai"
+import { OrgId } from "@maple/domain"
 
-const params = { orgId: "org_1", startTime: "2026-09-19 00:00:00", endTime: "2026-09-26 00:00:00" }
+const params = {
+	orgId: OrgId.make("org_1"),
+	startTime: "2026-09-19 00:00:00",
+	endTime: "2026-09-26 00:00:00",
+}
 
 const oneLine = (sql: string): string => sql.replace(/\s+/g, " ")
 
@@ -22,10 +28,12 @@ describe("webAnalyticsAiReferralsQuery", () => {
 		expect(flat).toContain("FROM session_replays")
 		// `www.` is dropped before the exact host match.
 		expect(flat).toContain(
-			"transform(replaceRegexpOne(lower(ReferrerHost), '^www\\\\.', ''), ['chatgpt.com'",
+			"transform(replaceRegexpOne(lower(session_replays.ReferrerHost), '^www\\\\.', ''), ['chatgpt.com'",
 		)
-		expect(flat).toContain("transform(lower(UtmSource), ['chatgpt.com'")
-		expect(flat).toMatch(/if\(transform\(replaceRegexpOne\(lower\(ReferrerHost\).* != '', transform/)
+		expect(flat).toContain("transform(lower(session_replays.UtmSource), ['chatgpt.com'")
+		expect(flat).toMatch(
+			/if\(transform\(replaceRegexpOne\(lower\(session_replays\.ReferrerHost\).* != '', transform/,
+		)
 		expect(flat).toContain("GROUP BY bucket, product")
 	})
 
@@ -36,11 +44,11 @@ describe("webAnalyticsAiReferralsQuery", () => {
 		)
 		const flat = oneLine(sql)
 		expect(flat).toMatch(
-			/replaceRegexpOne\(lower\(ReferrerHost\), '\^www\\\\\.', ''\) IN \('chatgpt\.com'/,
+			/replaceRegexpOne\(lower\(session_replays\.ReferrerHost\), '\^www\\\\\.', ''\) IN \('chatgpt\.com'/,
 		)
-		expect(flat).toContain("OR lower(UtmSource) IN ('chatgpt.com'")
+		expect(flat).toContain("OR lower(session_replays.UtmSource) IN ('chatgpt.com'")
 		expect(flat).toContain("Country = 'DE'")
-		expect(flat).toContain("NOT (multiSearchAnyCaseInsensitive(UserAgent")
+		expect(flat).toContain("NOT (multiSearchAnyCaseInsensitive(session_replays.UserAgent")
 	})
 })
 
@@ -48,9 +56,13 @@ describe("AI crawler queries", () => {
 	it("counts requests by trace and pages only when the site served them", () => {
 		const flat = oneLine(compileUnsafe(webAnalyticsAiCrawlersQuery({}), params).sql)
 		expect(flat).toContain("FROM ai_crawler_requests")
-		expect(flat).toContain("uniq(TraceId) AS requests")
-		expect(flat).toContain("uniqIf(TraceId, NOT (HttpStatus < 400)) AS failedRequests")
-		expect(flat).toContain("uniqIf(concat(Host, Path), HttpStatus < 400) AS pages")
+		expect(flat).toContain("uniq(ai_crawler_requests.TraceId) AS requests")
+		expect(flat).toContain(
+			"uniqIf(ai_crawler_requests.TraceId, NOT (ai_crawler_requests.HttpStatus < 400)) AS failedRequests",
+		)
+		expect(flat).toContain(
+			"uniqIf(concat(ai_crawler_requests.Host, ai_crawler_requests.Path), ai_crawler_requests.HttpStatus < 400) AS pages",
+		)
 		expect(flat).toContain("GROUP BY crawler")
 	})
 
@@ -79,7 +91,39 @@ describe("AI crawler queries", () => {
 
 	it("lists only served pages, most read first", () => {
 		const flat = oneLine(compileUnsafe(webAnalyticsAiCrawledPagesQuery({ limit: 10 }), params).sql)
-		expect(flat).toContain("AND HttpStatus < 400")
+		expect(flat).toContain("AND ai_crawler_requests.HttpStatus < 400")
 		expect(flat).toContain("ORDER BY requests DESC LIMIT 10")
 	})
+})
+
+// Rows reach callers through `decodeRows`; an underived row schema would leave
+// timestamps strings behind a `DateTime.Utc` type.
+describe("AI traffic rows decode timestamps to DateTime.Utc", () => {
+	it.effect("webAnalyticsAiReferralsQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(webAnalyticsAiReferralsQuery({ bucketSeconds: 86_400 }), params)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{ bucket: "2026-09-19 00:00:00.000000000", product: "chatgpt", sessions: "3" },
+			])
+			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2026, 8, 19))
+		}),
+	)
+
+	it.effect("webAnalyticsAiCrawlersQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(webAnalyticsAiCrawlersQuery(), params)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{
+					crawler: "GPTBot",
+					requests: "2",
+					failedRequests: "0",
+					pages: "2",
+					lastSeen: "2026-09-20 08:00:00.500000000",
+				},
+			])
+			expect(DateTime.formatIso(row!.lastSeen)).toBe("2026-09-20T08:00:00.500Z")
+		}),
+	)
 })

@@ -4,14 +4,17 @@
 	"type": "module",
 	"scripts": {
 		"eval": "vitest run --config vitest.eval.config.ts",
+		"eval:tools": "vitest run --config vitest.eval.config.ts src/evals/tools",
+		"eval:compare": "bun run scripts/eval-compare.ts",
 		"eval:check": "bun run scripts/eval-runtime-check.ts",
 		"eval:widgets": "bun run scripts/grade-widget-eval.ts",
 		"review:local": "bun --env-file=../../.env.local scripts/pr-review-local.ts",
 		"review:eval": "bun --env-file=../../.env.local scripts/pr-review-eval.ts",
+		"review:checklist": "bun scripts/pr-review-checklist.ts",
 		"mcp:docs": "bun run scripts/generate-dashboard-skill.ts",
 		"measure-tokens": "bun run scripts/measure-token-cost.ts",
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"@effect/ai-openai-compat": "catalog:effect",
@@ -25,19 +28,16 @@
 		"@maple/query-engine-integrations": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"effect": "catalog:effect",
-		"effect-agent": "0.1.0-beta.164"
+		"@yielded/agent": "0.1.0-beta.166",
+		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@ai-sdk/openai-compatible": "^3.0.57",
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",
-		"ai": "^7.0.118",
-		"gpt-tokenizer": "^3.4.0",
+		"gpt-tokenizer": "^4.0.0",
 		"typescript": "catalog:tooling",
-		"vitest": "catalog:",
-		"vitest-evals": "^0.4.1"
+		"vitest": "catalog:"
 	}
 }

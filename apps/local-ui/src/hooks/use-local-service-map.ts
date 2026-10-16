@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { CH, coerceServiceOverviewRows, summarizeSampling, type ServiceOverview } from "@maple/query-engine"
 import type {
 	ServiceMapDbEdgeRow,
@@ -8,6 +8,7 @@ import type {
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import type { TimeBounds } from "../lib/time"
+import { windowed } from "../lib/query-cache"
 
 export interface LocalServiceMapData {
 	readonly edges: ReadonlyArray<ServiceMapEdgeRow>
@@ -57,12 +58,12 @@ export function aggregateEdges(
 			target: row.TargetService,
 			t: { callCount: 0, errorCount: 0, durationSumMs: 0, maxDurationMs: 0, estimatedSpanCount: 0 },
 		}
-		const callCount = Number(row.CallCount)
-		const sampleRateSum = Number(row.SampleRateSum)
+		const callCount = row.CallCount
+		const sampleRateSum = row.SampleRateSum
 		entry.t.callCount += callCount
-		entry.t.errorCount += Number(row.ErrorCount)
-		entry.t.durationSumMs += Number(row.DurationSumMs)
-		entry.t.maxDurationMs = Math.max(entry.t.maxDurationMs, Number(row.MaxDurationMs))
+		entry.t.errorCount += row.ErrorCount
+		entry.t.durationSumMs += row.DurationSumMs
+		entry.t.maxDurationMs = Math.max(entry.t.maxDurationMs, row.MaxDurationMs)
 		entry.t.estimatedSpanCount += sampleRateSum > 0 ? sampleRateSum : callCount
 		totals.set(key, entry)
 	}
@@ -84,9 +85,9 @@ export function aggregateEdges(
 }
 
 function toDbEdge(row: CH.ServiceDbEdgesOutput, durationSeconds: number): ServiceMapDbEdgeRow {
-	const callCount = Number(row.callCount)
-	const errorCount = Number(row.errorCount)
-	const estimatedSpanCount = Number(row.estimatedSpanCount)
+	const callCount = row.callCount
+	const errorCount = row.errorCount
+	const estimatedSpanCount = row.estimatedSpanCount
 	const sampling = summarizeSampling(estimatedSpanCount, callCount, durationSeconds)
 	return {
 		sourceService: row.sourceService,
@@ -96,9 +97,9 @@ function toDbEdge(row: CH.ServiceDbEdgesOutput, durationSeconds: number): Servic
 		estimatedCallCount: sampling.hasSampling ? Math.round(estimatedSpanCount) : callCount,
 		errorCount,
 		errorRate: callCount > 0 ? errorCount / callCount : 0,
-		avgDurationMs: Number(row.avgDurationMs),
-		maxDurationMs: Number(row.maxDurationMs),
-		p95DurationMs: Number(row.p95DurationMs),
+		avgDurationMs: row.avgDurationMs,
+		maxDurationMs: row.maxDurationMs,
+		p95DurationMs: row.p95DurationMs,
 		hasSampling: sampling.hasSampling,
 		samplingWeight: sampling.weight,
 	}
@@ -120,8 +121,7 @@ export function classifyPlatform(row: CH.ServicePlatformsOutput): ServicePlatfor
  */
 export function useLocalServiceMap(bounds: TimeBounds, durationSeconds: number) {
 	return useQuery({
-		queryKey: ["local", "service-map", boundsKey(bounds), durationSeconds],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "service-map", durationSeconds, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<LocalServiceMapData> => {
 			const params = localParams(bounds)
 			const [edgeRows, dbEdgeRows, overviewRows, platformRows] = await Promise.all([

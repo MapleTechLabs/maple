@@ -1,5 +1,6 @@
 import { useOrganization, useUser } from "@clerk/clerk-react"
 import * as React from "react"
+import { shortId as truncateId } from "@maple/ui/lib/ids"
 
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
@@ -95,7 +96,7 @@ function useSelfHostedActorDirectory(): ActorDirectory {
 /** Trailing chunk of a Clerk id — still opaque, but not 32 characters of it. */
 export function shortId(id: string): string {
 	const withoutPrefix = id.includes("_") ? (id.split("_").at(-1) ?? id) : id
-	return withoutPrefix.slice(0, 6)
+	return truncateId(withoutPrefix, "generic", { length: 6 })
 }
 
 export const useActorDirectory: () => ActorDirectory = isClerkAuthEnabled

@@ -250,6 +250,7 @@ const SharedFiltersSchema = Schema.Struct({
 					key: Schema.String,
 					value: Schema.optional(Schema.String),
 					mode: Schema.Literals(["equals", "exists"]),
+					negated: Schema.optional(Schema.Boolean),
 				}),
 			),
 		),
@@ -261,6 +262,7 @@ const SharedFiltersSchema = Schema.Struct({
 					key: Schema.String,
 					value: Schema.optional(Schema.String),
 					mode: Schema.Literals(["equals", "exists"]),
+					negated: Schema.optional(Schema.Boolean),
 				}),
 			),
 		),
@@ -376,6 +378,8 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 				environments: data.filters?.environments,
 				namespaces: data.filters?.namespaces,
 				traceId: data.filters?.traceId,
+				attributeFilters: data.filters?.attributeFilters,
+				resourceAttributeFilters: data.filters?.resourceAttributeFilters,
 			},
 			bucketSeconds: data.bucketSeconds,
 		}
@@ -758,7 +762,7 @@ function extractGroupedAllMetricsSeries(
 				point = emptyAllMetricsPoint()
 				buckets.set(bucket, point)
 			}
-			assignAllMetric(point, metric, Number(rawValue))
+			assignAllMetric(point, metric, rawValue)
 		}
 	}
 
@@ -902,9 +906,9 @@ const getServiceDetailOverviewEffect = Effect.fn("QueryEngine.getServiceDetailOv
 		releases: result.releases.map((r) => ({
 			bucket: toIsoBucket(r.bucket),
 			commitSha: r.commitSha,
-			count: Number(r.count),
+			count: r.count,
 			// Optional in the response schema (API/web version-skew tolerance).
-			errorCount: Number(r.errorCount ?? 0),
+			errorCount: r.errorCount ?? 0,
 		})),
 		environments: [...result.environments],
 	} satisfies ServiceDetailOverviewResult

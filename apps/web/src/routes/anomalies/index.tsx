@@ -3,7 +3,8 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -29,12 +30,14 @@ import { runMapleApiV2 } from "@/lib/collections/api-runner"
 import { anomalyIncidentFromV2 } from "@/lib/services/anomalies"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { ConnectionIcon } from "@/components/icons"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import type { AnomalyIncidentDocument, AnomalyIncidentId } from "@maple/domain/http"
 
 const LIVE_REFRESH_INTERVAL_MS = 15_000
@@ -81,9 +84,6 @@ export const Route = createFileRoute("/anomalies/")({
 	validateSearch: Schema.toStandardSchemaV1(searchSchema),
 })
 
-const PAGE_DESCRIPTION =
-	"Baseline deviations detected automatically across your services — no rules required."
-
 function AnomaliesPage() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
@@ -114,7 +114,6 @@ function AnomaliesPage() {
 	// tab switch discards them without an effect; a refresh clears them outright,
 	// otherwise the live tick would leave stale rows below fresh ones.
 	const [loadedPages, setLoadedPages] = useState<LoadedPages | null>(null)
-	const [loadingMore, setLoadingMore] = useState(false)
 	const pages = loadedPages?.key === status ? loadedPages : null
 
 	const refreshIncidents = useCallback(() => {
@@ -177,25 +176,25 @@ function AnomaliesPage() {
 
 	const nextCursor = pages === null ? (firstPage?.next_cursor ?? null) : pages.nextCursor
 
-	const loadMore = useCallback(async () => {
+	const [runLoadMore, loadingMore] = useAsyncAction((cursor: string) =>
+		runMapleApiV2((client) => client.anomalies.listIncidents({ query: { ...listQuery, cursor } })).then(
+			(page) => {
+				const rows = page.data.map(anomalyIncidentFromV2)
+				setLoadedPages((current) => ({
+					key: status,
+					rows: [...(current?.key === status ? current.rows : []), ...rows],
+					nextCursor: page.next_cursor,
+				}))
+			},
+			() => {
+				toastManager.add({ title: "More anomalies could not be loaded", type: "error" })
+			},
+		),
+	)
+	const loadMore = () => {
 		if (nextCursor === null || loadingMore) return
-		setLoadingMore(true)
-		try {
-			const page = await runMapleApiV2((client) =>
-				client.anomalies.listIncidents({ query: { ...listQuery, cursor: nextCursor } }),
-			)
-			const rows = page.data.map(anomalyIncidentFromV2)
-			setLoadedPages((current) => ({
-				key: status,
-				rows: [...(current?.key === status ? current.rows : []), ...rows],
-				nextCursor: page.next_cursor,
-			}))
-		} catch {
-			toastManager.add({ title: "More anomalies could not be loaded", type: "error" })
-		} finally {
-			setLoadingMore(false)
-		}
-	}, [listQuery, loadingMore, nextCursor, status])
+		void runLoadMore(nextCursor)
+	}
 
 	const filtered = useMemo(
 		() => allIncidents.filter((incident) => matchesAnomalyFilters(incident, filters)),
@@ -249,85 +248,62 @@ function AnomaliesPage() {
 		</>
 	)
 
-	// The three Result branches share one shell. With the compound layout that's a
-	// local component taking `children`, rather than a props object spread three ways.
-	const AnomaliesShell = ({ children }: { children: React.ReactNode }) => (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Anomalies" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Filters>
-					<AnomaliesFilterSidebar
-						incidents={allIncidents}
-						filters={filters}
-						onChange={updateFilter}
-						onClear={clearFilters}
-					/>
-				</DashboardLayout.Filters>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Anomalies" description={PAGE_DESCRIPTION}>
-							<AnomalyLiveIndicator
-								live={live}
-								onToggle={(next) =>
-									navigate({
-										search: (prev) => ({
-											...prev,
-											live: next === (status === "open") ? undefined : next,
-										}),
-									})
-								}
+	return (
+		<DashboardPage
+			breadcrumbs={[{ label: "Anomalies" }]}
+			filters={
+				<AnomaliesFilterSidebar
+					incidents={allIncidents}
+					loading={Result.isInitial(incidentsResult)}
+					filters={filters}
+					onChange={updateFilter}
+					onClear={clearFilters}
+				/>
+			}
+			headerActions={
+				<AnomalyLiveIndicator
+					live={live}
+					onToggle={(next) =>
+						navigate({
+							search: (prev) => ({
+								...prev,
+								live: next === (status === "open") ? undefined : next,
+							}),
+						})
+					}
+				/>
+			}
+		>
+			<div>
+				{toolbar}
+				{Result.builder(incidentsResult)
+					.onInitial(() => <SkeletonList rows={5} rowClassName="h-9" className="p-2" />)
+					.onError((error) => (
+						<div className="p-4">
+							<ErrorState
+								error={error}
+								title="Failed to load anomalies"
+								onRetry={refreshIncidents}
 							/>
-						</DashboardLayout.Header>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
-	)
-
-	return Result.builder(incidentsResult)
-		.onInitial(() => (
-			<AnomaliesShell>
-				<div>
-					{toolbar}
-					<div className="space-y-px p-2">
-						{Array.from({ length: 5 }).map((_, i) => (
-							<Skeleton key={i} className="h-9 w-full" />
-						))}
-					</div>
-				</div>
-			</AnomaliesShell>
-		))
-		.onError((error) => (
-			<AnomaliesShell>
-				<div>
-					{toolbar}
-					<div className="p-4">
-						<ErrorState
-							error={error}
-							title="Failed to load anomalies"
-							onRetry={refreshIncidents}
+						</div>
+					))
+					.onSuccess(() => (
+						<AnomaliesPageBody
+							incidents={filtered}
+							status={status}
+							hasActiveFilters={hasActiveFilters}
+							onClearFilters={clearFilters}
+							excludedValues={excludedValues}
+							onClearExclusions={clearExclusions}
+							hasMore={nextCursor !== null}
+							loadingMore={loadingMore}
+							onLoadMore={loadMore}
 						/>
-					</div>
-				</div>
-			</AnomaliesShell>
-		))
-		.onSuccess(() => (
-			<AnomaliesPageBody
-				incidents={filtered}
-				status={status}
-				hasActiveFilters={hasActiveFilters}
-				onClearFilters={clearFilters}
-				excludedValues={excludedValues}
-				onClearExclusions={clearExclusions}
-				toolbar={toolbar}
-				Shell={AnomaliesShell}
-				hasMore={nextCursor !== null}
-				loadingMore={loadingMore}
-				onLoadMore={loadMore}
-			/>
-		))
-		.render()
+					))
+					.render()}
+			</div>
+		</DashboardPage>
+	)
 }
 
 function AnomaliesPageBody({
@@ -337,8 +313,6 @@ function AnomaliesPageBody({
 	onClearFilters,
 	excludedValues,
 	onClearExclusions,
-	toolbar,
-	Shell,
 	hasMore,
 	loadingMore,
 	onLoadMore,
@@ -347,11 +321,9 @@ function AnomaliesPageBody({
 	status: StatusTab
 	hasActiveFilters: boolean
 	onClearFilters: () => void
-	toolbar: React.ReactNode
 	/** Flattened active exclusions, for the empty state's hint. */
 	excludedValues: ReadonlyArray<string>
 	onClearExclusions: () => void
-	Shell: (props: { children: React.ReactNode }) => React.ReactElement
 	hasMore: boolean
 	loadingMore: boolean
 	onLoadMore: () => void
@@ -416,98 +388,81 @@ function AnomaliesPageBody({
 		scrollTo: (id) => scrollIntoView(id),
 	})
 
-	return (
-		<Shell>
-			<div>
-				{toolbar}
-				{incidents.length === 0 ? (
-					<div className="p-4">
-						<Empty>
-							<EmptyHeader>
-								<EmptyTitle>
-									{hasActiveFilters
-										? "No anomalies match the current filters"
-										: status === "open"
-											? "No open anomalies"
-											: "No anomalies"}
-								</EmptyTitle>
-								<EmptyDescription>
-									{hasActiveFilters
-										? "Try widening or clearing the filters."
-										: "The detector compares every service's error rate, latency, throughput, error fingerprints, and log volume against its own 7-day baseline. Incidents appear here when something deviates."}
-									{!hasActiveFilters && tracePresence.status === "absent"
-										? " Anomaly detection learns a baseline from your traces and logs. Send telemetry to start."
-										: null}
-								</EmptyDescription>
-							</EmptyHeader>
-							{hasActiveFilters ? (
-								<Button variant="outline" size="sm" onClick={onClearFilters}>
-									Clear filters
-								</Button>
-							) : tracePresence.status === "absent" ? (
-								<EmptyContent>
-									<EmptyActions>
-										<Button
-											size="sm"
-											className="gap-2"
-											render={<Link to="/settings" search={{ tab: "ingestion" }} />}
-										>
-											<ConnectionIcon size={14} />
-											Set up tracing
-										</Button>
-										<DocsLink page="instrumentation">Setup guide</DocsLink>
-									</EmptyActions>
-								</EmptyContent>
-							) : tracePresence.status === "present" ? (
-								<EmptyContent>
-									<EmptyActions>
-										<Button
-											variant="outline"
-											size="sm"
-											render={<Link to="/alerts/create" />}
-										>
-											Create an alert rule
-										</Button>
-										<DocsLink page="alertRules">Alert rules</DocsLink>
-									</EmptyActions>
-								</EmptyContent>
-							) : null}
-							{/* Named separately from "Clear filters": an inclusion is visible in what
-							    came back, an exclusion only in what did not. */}
-							<ExcludedEmptyHint
-								excluded={excludedValues}
-								onClear={onClearExclusions}
-								className="max-w-lg"
-							/>
-						</Empty>
-					</div>
-				) : (
-					<div>
-						{visibleGroups.map((key) => (
-							<AnomalyGroup
-								key={key}
-								group={key}
-								incidents={grouped.get(key) ?? []}
-								focusedId={focusedId}
-								onFocus={setFocusedId}
-							/>
-						))}
-						{hasMore ? (
-							<div className="flex justify-center p-4">
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={onLoadMore}
-									disabled={loadingMore}
-								>
-									{loadingMore ? "Loading…" : "Load more"}
-								</Button>
-							</div>
-						) : null}
-					</div>
-				)}
+	// Named separately from "Clear filters": an inclusion is visible in what
+	// came back, an exclusion only in what did not.
+	const excludedHint = (
+		<ExcludedEmptyHint excluded={excludedValues} onClear={onClearExclusions} className="max-w-lg" />
+	)
+
+	if (incidents.length === 0 && hasActiveFilters) {
+		return (
+			<div className="p-4">
+				<FilteredEmpty
+					noun="anomalies"
+					description="Try widening or clearing the filters."
+					onClear={onClearFilters}
+					detail={excludedHint}
+				/>
 			</div>
-		</Shell>
+		)
+	}
+
+	return incidents.length === 0 ? (
+		<div className="p-4">
+			<Empty>
+				<EmptyHeader>
+					<EmptyTitle>{status === "open" ? "No open anomalies" : "No anomalies"}</EmptyTitle>
+					<EmptyDescription>
+						{
+							"The detector compares every service's error rate, latency, throughput, error fingerprints, and log volume against its own 7-day baseline. Incidents appear here when something deviates."
+						}
+						{tracePresence.status === "absent"
+							? " Anomaly detection learns a baseline from your traces and logs. Send telemetry to start."
+							: null}
+					</EmptyDescription>
+				</EmptyHeader>
+				{tracePresence.status === "absent" ? (
+					<EmptyContent>
+						<EmptyActions>
+							<Button
+								size="sm"
+								className="gap-2"
+								render={<Link to="/settings" search={{ tab: "ingestion" }} />}
+							>
+								<ConnectionIcon />
+								Set up tracing
+							</Button>
+							<DocsLink page="instrumentation">Setup guide</DocsLink>
+						</EmptyActions>
+					</EmptyContent>
+				) : tracePresence.status === "present" ? (
+					<EmptyContent>
+						<EmptyActions>
+							<Button variant="outline" size="sm" render={<Link to="/alerts/create" />}>
+								Create an alert rule
+							</Button>
+							<DocsLink page="alertRules">Alert rules</DocsLink>
+						</EmptyActions>
+					</EmptyContent>
+				) : null}
+				{excludedHint}
+			</Empty>
+		</div>
+	) : (
+		<div>
+			{visibleGroups.map((key) => (
+				<AnomalyGroup
+					key={key}
+					group={key}
+					incidents={grouped.get(key) ?? []}
+					focusedId={focusedId}
+					onFocus={setFocusedId}
+				/>
+			))}
+			{hasMore ? (
+				<ListFooter hasMore loading={loadingMore} onLoadMore={onLoadMore} className="p-4" />
+			) : null}
+		</div>
 	)
 }
 

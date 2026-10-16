@@ -5,7 +5,7 @@ import * as Exit from "effect/Exit"
 import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import * as TestClock from "effect/testing/TestClock"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { InstanceScope, Registry, Store } from "../src/core/index.js"
 import * as Db from "../src/db/index.js"
 

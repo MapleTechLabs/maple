@@ -184,7 +184,7 @@ export function resetNavigationForTests(): void {
  * name="traceparent">` tag.
  */
 function serverContext(): Context | undefined {
-	const [page] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
+	const [page] = performance.getEntriesByType("navigation")
 	const spanContext =
 		parseTraceparent(page?.serverTiming?.find((entry) => entry.name === "traceparent")?.description) ??
 		parseTraceparent(document.querySelector<HTMLMetaElement>('meta[name="traceparent"]')?.content)

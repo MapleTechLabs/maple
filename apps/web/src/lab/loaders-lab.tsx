@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { StatusMarker } from "@/components/ai-elements/status-marker"
 import { DotLoader } from "@/components/ai-elements/dot-loader"
 
@@ -21,9 +22,9 @@ export function LoadersLab() {
 			</header>
 
 			<section className="flex flex-col gap-1">
-				<h2 className="mb-2 text-muted-foreground text-xs uppercase tracking-[0.14em]">
+				<Eyebrow variant="label" as="h2" className="mb-2">
 					The tool row — running, then settled
-				</h2>
+				</Eyebrow>
 				{["Searching Traces", "Reading spans", "Grouping by service"].map((line) => (
 					<div key={line} className="flex items-center gap-2 py-0.5 text-xs">
 						<span className="flex size-5 shrink-0 items-center justify-center">
@@ -35,9 +36,9 @@ export function LoadersLab() {
 			</section>
 
 			<section className="flex flex-col gap-1">
-				<h2 className="mb-2 text-muted-foreground text-xs uppercase tracking-[0.14em]">
+				<Eyebrow variant="label" as="h2" className="mb-2">
 					The sidebar tab
-				</h2>
+				</Eyebrow>
 				<div className="flex items-center gap-2 py-0.5 text-sm">
 					<DotLoader color="var(--primary)" label="Working" />
 					<span className="min-w-0 flex-1 truncate">Investigating checkout latency</span>
@@ -45,16 +46,16 @@ export function LoadersLab() {
 			</section>
 
 			<section className="flex flex-col gap-1">
-				<h2 className="mb-2 text-muted-foreground text-xs uppercase tracking-[0.14em]">
+				<Eyebrow variant="label" as="h2" className="mb-2">
 					The thinking row
-				</h2>
+				</Eyebrow>
 				<StatusMarker />
 			</section>
 
 			<section className="flex flex-col gap-2">
-				<h2 className="mb-2 text-muted-foreground text-xs uppercase tracking-[0.14em]">
+				<Eyebrow variant="label" as="h2" className="mb-2">
 					In running prose
-				</h2>
+				</Eyebrow>
 				<p className="text-sm leading-relaxed">
 					The checkout path is still degraded <DotLoader /> and the paywall worker is the one
 					dragging it down <DotLoader /> so I am pulling the last hour of spans <DotLoader />

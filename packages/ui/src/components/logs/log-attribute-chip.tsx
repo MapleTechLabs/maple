@@ -1,18 +1,20 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 
 import { cn } from "../../lib/utils"
 import { useCopy } from "../../hooks/use-copy"
 import { useMountEffect } from "../../hooks/use-mount-effect"
+import { Eyebrow } from "../ui/eyebrow"
+import { MinusIcon, PlusIcon } from "../icons"
 import { HoverCard, HoverCardContent } from "../ui/hover-card"
-import { tryParseJson, CopyableValue, CollapsibleJsonValue } from "../attributes"
+import { tryParseJson, CopyableValue, SelectableValue, CollapsibleJsonValue } from "../attributes"
 import type { ChipTone } from "../../lib/log-attributes"
 
 const TONE_CLASSES: Record<ChipTone, string> = {
-	error: "bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/15",
-	warn: "bg-warning/10 text-warning-foreground border-warning/20 hover:bg-warning/15",
-	info: "bg-muted text-foreground/80 border-border hover:bg-muted/80",
+	crit: "bg-severity-error/10 text-severity-error border-severity-error/20 hover:bg-severity-error/15",
+	warn: "bg-severity-warn/10 text-severity-warn border-severity-warn/20 hover:bg-severity-warn/15",
+	emphasis: "bg-muted text-foreground/80 border-border hover:bg-muted/80",
 	muted: "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70",
 } satisfies Record<ChipTone, string>
 
@@ -40,6 +42,12 @@ export interface LogAttributeChipProps {
 	attrKey: string
 	value: string
 	tone: ChipTone
+	className?: string
+	/**
+	 * Adds "Filter in" / "Filter out" to the card. `negated` is true for filter out.
+	 * Omit it and the card only shows and copies the pair.
+	 */
+	onFilter?: (attrKey: string, value: string, negated: boolean) => void
 }
 
 /**
@@ -66,13 +74,13 @@ export interface LogAttributeChipProps {
  * the stable button rather than by Base UI's hover machinery, which is the price
  * of not having a Base UI trigger for that machinery to attach to.
  */
-export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps) {
+export function LogAttributeChip({ attrKey, value, tone, className, onFilter }: LogAttributeChipProps) {
 	const [open, setOpen] = useState(false)
 	const triggerRef = useRef<HTMLButtonElement>(null)
 	const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const { copy } = useCopy({ successMessage: `Copied ${attrKey}` })
-	const parsed = tryParseJson(value)
+	const parsed = useMemo(() => tryParseJson(value), [value])
 	const displayValue = parsed !== null ? "{…}" : truncateValue(value)
 	const displayKey = shortKey(attrKey)
 
@@ -150,46 +158,99 @@ export function LogAttributeChip({ attrKey, value, tone }: LogAttributeChipProps
 					}
 				}}
 				className={cn(
-					"inline-flex items-center gap-1 h-[18px] px-1.5 rounded border text-[10px] font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+					"inline-flex items-center gap-1 h-[18px] min-w-0 px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 					TONE_CLASSES[tone],
+					className,
 				)}
 			>
-				<span className="opacity-70">{displayKey}</span>
-				<span className="opacity-40">:</span>
-				<span>{displayValue}</span>
+				<span className="shrink-0 opacity-70">{displayKey}</span>
+				<span className="shrink-0 opacity-40">:</span>
+				{/* Ellipsizes only when a caller caps the chip's width. */}
+				<span className="min-w-0 truncate">{displayValue}</span>
 			</button>
 			{open && (
 				<HoverCard open onOpenChange={(next) => !next && closeNow()}>
 					<HoverCardContent
 						align="start"
 						anchor={triggerRef}
-						className="w-80 p-0"
+						className="max-h-[60vh] w-80 overflow-auto p-0"
 						onPointerEnter={keepOpen}
 						onPointerLeave={scheduleClose}
 					>
 						<div className="px-3 py-2 border-b">
-							<div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+							<Eyebrow as="div" className="mb-0.5">
 								Attribute
-							</div>
+							</Eyebrow>
 							<div className="font-mono text-xs break-all">
 								<CopyableValue value={attrKey}>{attrKey}</CopyableValue>
 							</div>
 						</div>
 						<div className="px-3 py-2">
-							<div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+							<Eyebrow as="div" className="mb-0.5">
 								Value
-							</div>
+							</Eyebrow>
 							<div className="font-mono text-xs break-all">
 								{parsed !== null ? (
 									<CollapsibleJsonValue value={value} parsed={parsed} />
 								) : (
-									<CopyableValue value={value}>{value}</CopyableValue>
+									<SelectableValue value={value} label={attrKey} />
 								)}
 							</div>
 						</div>
+						{/* A JSON blob is not a filterable value, same rule as the attributes table. */}
+						{onFilter && parsed === null && (
+							<div className="flex items-center gap-1 border-t px-2 py-1.5">
+								<ChipFilterAction
+									label={`Filter in ${attrKey} = ${value}`}
+									onClick={() => {
+										closeNow()
+										onFilter(attrKey, value, false)
+									}}
+								>
+									<PlusIcon size={10} />
+									Filter in
+								</ChipFilterAction>
+								<ChipFilterAction
+									label={`Filter out ${attrKey} = ${value}`}
+									onClick={() => {
+										closeNow()
+										onFilter(attrKey, value, true)
+									}}
+								>
+									<MinusIcon size={10} />
+									Filter out
+								</ChipFilterAction>
+							</div>
+						)}
 					</HoverCardContent>
 				</HoverCard>
 			)}
 		</>
+	)
+}
+
+/** A card action. Stops the click there: the card renders inside the row, which toggles on click. */
+function ChipFilterAction({
+	label,
+	onClick,
+	children,
+}: {
+	label: string
+	onClick: () => void
+	children: React.ReactNode
+}) {
+	return (
+		<button
+			type="button"
+			aria-label={label}
+			onPointerDown={(e) => e.stopPropagation()}
+			onClick={(e) => {
+				e.stopPropagation()
+				onClick()
+			}}
+			className="inline-flex h-6 items-center gap-1 rounded px-1.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+		>
+			{children}
+		</button>
 	)
 }

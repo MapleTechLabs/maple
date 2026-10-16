@@ -1,11 +1,11 @@
-import type { ReactNode } from "react"
-
 import { Badge } from "@maple/ui/components/ui/badge"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { shortId } from "@maple/ui/lib/ids"
 
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
 
 import { CopyableValue } from "@/components/attributes"
+import { RelativeTime } from "@/components/common/relative-time"
 import { CopyIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { type SessionSummary } from "@maple/agent-sessions"
@@ -43,29 +43,37 @@ export function SessionHeader({ sessionId, summary }: { sessionId: string; summa
 					aria-hidden
 				/>
 				<DashboardLayout.Title title={heading}>{heading}</DashboardLayout.Title>
-				{summary.failed && <Badge variant="error">Failed</Badge>}
+				{summary.failed && <Badge variant="crit">Failed</Badge>}
 			</div>
 
-			<dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
-				<Fact label="Started" title={new Date(summary.startMs).toLocaleString()}>
-					{formatRelativeTimeOrDate(summary.startMs)}
-				</Fact>
+			<KeyValueList layout="inline">
+				<KeyValue label="Started">
+					<RelativeTime value={summary.startMs} variant="orDate" tooltip="title" />
+				</KeyValue>
 				{summary.serviceNames.length > 0 && (
-					<Fact label="Service" title={summary.serviceNames.join(", ")} mono>
+					<KeyValue label="Service" title={summary.serviceNames.join(", ")} mono>
 						{firstPlusRest(summary.serviceNames)}
-					</Fact>
+					</KeyValue>
 				)}
-				<Fact label={traceId === undefined ? "Session ID" : "Trace ID"} title={traceId ?? sessionId}>
+				<KeyValue
+					label={traceId === undefined ? "Session ID" : "Trace ID"}
+					title={traceId ?? sessionId}
+				>
 					<CopyableValue
 						value={traceId ?? sessionId}
 						label={traceId === undefined ? "Session ID" : "Trace ID"}
 						className="inline-flex min-w-0 max-w-full items-center gap-1 font-mono"
 					>
-						<span className="min-w-0 truncate">{shortId(traceId ?? sessionId)}</span>
+						<span className="min-w-0 truncate">
+							{shortId(traceId ?? sessionId, "generic", {
+								length: ID_PREFIX_LENGTH,
+								ellipsis: true,
+							})}
+						</span>
 						<CopyIcon size={11} className="shrink-0 text-muted-foreground" aria-hidden />
 					</CopyableValue>
-				</Fact>
-			</dl>
+				</KeyValue>
+			</KeyValueList>
 		</div>
 	)
 }
@@ -93,31 +101,6 @@ export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "ve
  *  prefix identifies it as well as the whole, and the whole is in the `title`
  *  and the clipboard. */
 const ID_PREFIX_LENGTH = 32
-
-function shortId(id: string): string {
-	return id.length > ID_PREFIX_LENGTH ? `${id.slice(0, ID_PREFIX_LENGTH)}…` : id
-}
-
-function Fact({
-	label,
-	title,
-	mono,
-	children,
-}: {
-	label: string
-	title?: string
-	mono?: boolean
-	children: ReactNode
-}) {
-	return (
-		<div className="flex min-w-0 max-w-full items-baseline gap-1.5" title={title}>
-			<dt className="shrink-0 font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
-				{label}
-			</dt>
-			<dd className={mono ? "min-w-0 truncate font-mono" : "min-w-0 truncate"}>{children}</dd>
-		</div>
-	)
-}
 
 /** "claude-sonnet-5 +1": the first name, the rest as a count — the full list
  *  goes in the `title`. */

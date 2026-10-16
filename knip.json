@@ -6,7 +6,7 @@
 	"workspaces": {
 		".": {
 			"entry": ["alchemy.run.ts", "scripts/**/*.ts", "scripts/oxlint-plugins/*.mjs"],
-			"ignoreBinaries": ["tb", "pscale"],
+			"ignoreBinaries": ["tb", "pscale", "infisical"],
 			// alchemy's optional peer, dynamic-imported when the deploy applies migrations.
 			"ignoreDependencies": ["pg"]
 		},
@@ -43,8 +43,9 @@
 		},
 		// Single-module Workers: the root alchemy.run.ts imports src/worker.ts, and
 		// alchemy bundles it, so it is the app's one entry.
+		// The tool playground config is run by path from scripts/tool-playground.sh.
 		"apps/ai": {
-			"entry": ["src/worker.ts"]
+			"entry": ["src/worker.ts", "vitest.playground.config.ts", "src/evals/playground/*.playground.ts"]
 		},
 		"apps/alerting": {
 			"entry": ["src/worker.ts"]
@@ -59,7 +60,8 @@
 		// generated entry would drop the container-backed class export), and the
 		// alchemy declaration beside it is what the root stack yields.
 		"apps/sandbox": {
-			"entry": ["src/worker.ts", "alchemy.run.ts"]
+			"entry": ["src/worker.ts", "alchemy.run.ts"],
+			"ignoreDependencies": ["cloudflare"]
 		},
 		"apps/local-ui": {
 			"entry": ["src/worker.ts"]
@@ -75,8 +77,7 @@
 			"ignoreBinaries": ["duckdb"]
 		},
 		"packages/db": {
-			"entry": ["scripts/**/*.ts"],
-			"ignoreBinaries": ["pscale"]
+			"entry": ["scripts/**/*.ts", "effect-orm.config.ts"]
 		},
 		"packages/email": {
 			"entry": ["scripts/**/*.ts"],
@@ -85,10 +86,6 @@
 		},
 		// fumapress reads press.config.tsx and src/app.css by convention, and Base UI
 		// arrives through fumadocs-ui's preset; knip sees no import edge to either.
-		"apps/clickhouse-builder-docs": {
-			"entry": ["press.config.tsx", "src/app.css"],
-			"ignoreDependencies": ["@base-ui/react"]
-		},
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]
 		},

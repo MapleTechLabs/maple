@@ -32,7 +32,6 @@ import {
 	listMetrics,
 } from "@/api/warehouse/metrics"
 import {
-	fleetUtilizationTimeseries,
 	getNodeFacets,
 	getPodFacets,
 	getContainerFacets,
@@ -48,6 +47,7 @@ import {
 	listPods,
 	podsSummary,
 	podDetailSummary,
+	podRestarts,
 	podInfraTimeseries,
 	listNodes,
 	nodeDetailSummary,
@@ -72,6 +72,7 @@ import {
 	getCloudflarePlatformResources,
 	getCloudflareTopTraffic,
 	getCloudflareWorkers,
+	getCloudflareWorkerDetail,
 	getCloudflareZoneBreakdown,
 	getCloudflareZoneDetail,
 	getCloudflareZoneDns,
@@ -85,6 +86,7 @@ import {
 	getPlanetScaleInfraTimeseries,
 	getPlanetScaleQueryInsights,
 } from "@/api/warehouse/planetscale-infra"
+import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
 import {
 	getServiceHealthBaseline,
 	getServiceHealthSnapshot,
@@ -98,6 +100,7 @@ import {
 	getSpanAttributeValues,
 	getSpanDetail,
 	getSpanHierarchy,
+	getTraceSpanEvents,
 	getTracesFacetValues,
 	getTracesFacets,
 	listTraces,
@@ -499,6 +502,10 @@ export const getReplaysForTraceResultAtom = makeQueryAtomFamily(getReplaysForTra
 	staleTime: 60_000,
 })
 
+export const getTraceSpanEventsResultAtom = makeQueryAtomFamily(getTraceSpanEvents, {
+	staleTime: 60_000,
+})
+
 export const getSpanDetailResultAtom = makeQueryAtomFamily(getSpanDetail, {
 	staleTime: 60_000,
 })
@@ -585,10 +592,6 @@ export const hostInfraTimeseriesResultAtom = makeQueryAtomFamily(hostInfraTimese
 	staleTime: 30_000,
 })
 
-export const fleetUtilizationTimeseriesResultAtom = makeQueryAtomFamily(fleetUtilizationTimeseries, {
-	staleTime: 30_000,
-})
-
 export const listPodsResultAtom = makeQueryAtomFamily(listPods, {
 	staleTime: 30_000,
 })
@@ -598,6 +601,10 @@ export const podsSummaryResultAtom = makeQueryAtomFamily(podsSummary, {
 })
 
 export const podDetailSummaryResultAtom = makeQueryAtomFamily(podDetailSummary, {
+	staleTime: 30_000,
+})
+
+export const podRestartsResultAtom = makeQueryAtomFamily(podRestarts, {
 	staleTime: 30_000,
 })
 
@@ -676,6 +683,10 @@ export const cloudflareZoneDetailResultAtom = makeQueryAtomFamily(getCloudflareZ
 })
 
 export const cloudflareWorkersResultAtom = makeQueryAtomFamily(getCloudflareWorkers, {
+	staleTime: 30_000,
+})
+
+export const cloudflareWorkerDetailResultAtom = makeQueryAtomFamily(getCloudflareWorkerDetail, {
 	staleTime: 30_000,
 })
 
@@ -781,6 +792,14 @@ export const getServiceMapPlanetScaleResultAtom = makeQueryAtomFamily(getService
 })
 
 export const planetscaleInfraTimeseriesResultAtom = makeQueryAtomFamily(getPlanetScaleInfraTimeseries, {
+	staleTime: 15_000,
+})
+
+export const railwayServicesResultAtom = makeQueryAtomFamily(getRailwayServices, {
+	staleTime: 15_000,
+})
+
+export const railwayServiceTimeseriesResultAtom = makeQueryAtomFamily(getRailwayServiceTimeseries, {
 	staleTime: 15_000,
 })
 

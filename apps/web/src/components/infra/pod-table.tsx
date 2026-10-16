@@ -1,24 +1,28 @@
 import type { MouseEvent } from "react"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { Link } from "@tanstack/react-router"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import type { ListPodsResponse } from "@maple/domain/http"
 import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, DataTable, ROW_LINK_CLASS } from "./primitives/data-table"
+import { ColumnHead, DataTable, type SortControls, ROW_LINK_CLASS } from "@/components/common/data-table"
+import { AvgPeak } from "./primitives/avg-peak"
 import { MeterRows } from "./primitives/meter-rows"
+import { formatWholePercent } from "./format"
 import { MetaLine } from "./primitives/meta-line"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { formatRestarts, podKey, restartTone, type PodRestartSummary } from "./pod-restarts"
 
 export type PodRow = ListPodsResponse["data"][number]
 
-/** Row identity. A pod name repeats across namespaces; the pair doesn't. */
-export const podKey = (pod: Pick<PodRow, "namespace" | "podName">) => `${pod.namespace}/${pod.podName}`
+export { podKey }
 
 interface PodTableProps {
 	pods: ReadonlyArray<PodRow>
@@ -45,6 +49,8 @@ interface PodTableProps {
 	timeSearch?: TimeRangeSearch
 	waiting?: boolean
 	referenceTime?: string
+	/** Per-pod restarts by `podKey`, fetched for the page beside the list. Omitted, no marker. */
+	restarts?: ReadonlyMap<string, PodRestartSummary>
 }
 
 const isPlainClick = (event: MouseEvent) =>
@@ -57,8 +63,6 @@ function workloadOf(pod: PodRow): { kind: string; name: string } | null {
 	if (pod.jobName) return { kind: "job", name: pod.jobName }
 	return null
 }
-
-const formatPct = (fraction: number) => (Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : "—")
 
 /** The meta line truncates to one line; this is what a hover recovers. */
 function metaTitle(pod: PodRow, workload: { kind: string; name: string } | null): string {
@@ -73,6 +77,23 @@ function metaTitle(pod: PodRow, workload: { kind: string; name: string } | null)
 		.join(" · ")
 }
 
+/** Inline beside the name, like the quiet status badge: absent unless the pod restarted in the window. */
+function RestartMarker({ summary }: { summary: PodRestartSummary | undefined }) {
+	if (!summary || summary.restarts <= 0) return null
+	const label = [formatRestarts(summary.restarts), summary.lastTerminatedReason].filter(Boolean).join(" · ")
+	return (
+		<span
+			className={cn(
+				"shrink-0 text-2xs font-medium",
+				TONE_TEXT[restartTone(summary.restarts, summary.lastTerminatedReason)],
+			)}
+			title={`${label} in this window, ${summary.totalRestarts} in total`}
+		>
+			{label}
+		</span>
+	)
+}
+
 /** Cores read at very different magnitudes across a fleet; keep them comparable. */
 const formatCores = (cores: number) => {
 	if (!Number.isFinite(cores) || cores === 0) return "0"
@@ -81,14 +102,47 @@ const formatCores = (cores: number) => {
 	return cores.toFixed(3)
 }
 
-/** avg → peak. One number can't distinguish a steady 60% from a spike to 100%. */
-function AvgPeak({ avg, peak, format }: { avg: number; peak: number; format: (n: number) => string }) {
+/** Declared once and rendered by both the table and its skeleton so widths cannot drift. */
+function PodColumns({ sort }: { sort?: Partial<SortControls<PodSortKey>> }) {
 	return (
-		<span className="font-mono text-[11px] tabular-nums text-foreground">
-			<span className="text-muted-foreground">{format(avg)}</span>
-			<span className="mx-1 text-foreground/30">→</span>
-			{format(peak)}
-		</span>
+		<>
+			<ColumnHead<PodSortKey>
+				label="Pod"
+				sortKey="podName"
+				{...sort}
+				width="w-0 flex-1 min-w-[260px]"
+			/>
+			<ColumnHead<PodSortKey>
+				label="Peak saturation"
+				sortKey="saturation"
+				{...sort}
+				width="w-[176px]"
+				hidden="hidden md:flex"
+			/>
+			<ColumnHead<PodSortKey>
+				label="CPU cores"
+				sortKey="cpuUsage"
+				{...sort}
+				align="right"
+				width="w-[132px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<PodSortKey>
+				label="Mem of limit"
+				sortKey="memoryLimitPct"
+				{...sort}
+				align="right"
+				width="w-[120px]"
+				hidden="hidden lg:flex"
+			/>
+			<ColumnHead<PodSortKey>
+				label="Last seen"
+				sortKey="lastSeen"
+				{...sort}
+				align="right"
+				width="w-[100px]"
+			/>
+		</>
 	)
 }
 
@@ -96,11 +150,7 @@ export function PodTableLoading() {
 	return (
 		<DataTable.Root ariaLabel="Pods">
 			<DataTable.Head>
-				<ColumnHead label="Pod" width="w-0 flex-1 min-w-[260px]" />
-				<ColumnHead label="Peak saturation" width="w-[176px]" hidden="hidden md:flex" />
-				<ColumnHead label="CPU cores" align="right" width="w-[132px]" hidden="hidden lg:flex" />
-				<ColumnHead label="Mem of limit" align="right" width="w-[120px]" hidden="hidden lg:flex" />
-				<ColumnHead label="Last seen" align="right" width="w-[100px]" />
+				<PodColumns />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={6}>
 				<div className="w-0 min-w-[260px] flex-1">
@@ -129,56 +179,12 @@ export function PodTable({
 	timeSearch,
 	waiting,
 	referenceTime,
+	restarts,
 }: PodTableProps) {
 	return (
 		<DataTable.Root ariaLabel="Pods" waiting={waiting}>
 			<DataTable.Head>
-				<ColumnHead<PodSortKey>
-					label="Pod"
-					sortKey="podName"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					width="w-0 flex-1 min-w-[260px]"
-				/>
-				<ColumnHead<PodSortKey>
-					label="Peak saturation"
-					sortKey="saturation"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					width="w-[176px]"
-					hidden="hidden md:flex"
-				/>
-				<ColumnHead<PodSortKey>
-					label="CPU cores"
-					sortKey="cpuUsage"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					align="right"
-					width="w-[132px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<PodSortKey>
-					label="Mem of limit"
-					sortKey="memoryLimitPct"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					align="right"
-					width="w-[120px]"
-					hidden="hidden lg:flex"
-				/>
-				<ColumnHead<PodSortKey>
-					label="Last seen"
-					sortKey="lastSeen"
-					currentKey={sortBy}
-					dir={sortDir}
-					onSort={onSortChange}
-					align="right"
-					width="w-[100px]"
-				/>
+				<PodColumns sort={{ currentKey: sortBy, dir: sortDir, onSort: onSortChange }} />
 			</DataTable.Head>
 			{pods.length === 0 && <DataTable.Empty>No pods match your filter.</DataTable.Empty>}
 
@@ -191,7 +197,7 @@ export function PodTable({
 						to="/infra/kubernetes/pods/$podName"
 						params={{ podName: pod.podName }}
 						search={{ ...timeSearch, namespace: pod.namespace || undefined }}
-						className={cn(ROW_LINK_CLASS, "data-active:bg-muted/50")}
+						className={cn(ROW_LINK_CLASS, rowSelectedClass(activeKey === key))}
 						data-active={activeKey === key || undefined}
 						onClick={
 							onPeek
@@ -205,14 +211,18 @@ export function PodTable({
 					>
 						<div className="w-0 min-w-[260px] flex-1">
 							<div className="flex items-center gap-2">
-								<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
-									{pod.podName}
-								</span>
+								<MiddleTruncate
+									text={pod.podName}
+									tail={12}
+									mono
+									className="text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+								/>
 								<HostStatusBadge
 									quiet
 									lastSeen={pod.lastSeen}
 									referenceTime={referenceTime}
 								/>
+								<RestartMarker summary={restarts?.get(key)} />
 							</div>
 							<MetaLine
 								title={metaTitle(pod, workload)}
@@ -224,7 +234,7 @@ export function PodTable({
 									pod.computeType === "fargate" && (
 										// Keyed because it sits in an array literal, even though
 										// `MetaLine` wraps each item in a keyed span of its own.
-										<span key="fargate" className="text-[var(--severity-warn)]">
+										<span key="fargate" className={TONE_TEXT.warn}>
 											fargate
 										</span>
 									),
@@ -246,19 +256,15 @@ export function PodTable({
 							<AvgPeak
 								avg={pod.memoryLimitPct}
 								peak={pod.memoryLimitPctPeak}
-								format={formatPct}
+								format={formatWholePercent}
 							/>
 						</div>
 						<div className="w-[100px] text-right">
-							<Tooltip>
-								<TooltipTrigger
-									render={<span />}
-									className="cursor-default font-mono text-[11px] text-muted-foreground"
-								>
-									{formatRelativeTime(pod.lastSeen)}
-								</TooltipTrigger>
-								<TooltipContent>{pod.lastSeen}</TooltipContent>
-							</Tooltip>
+							<RelativeTime
+								value={pod.lastSeen}
+								mono
+								className="cursor-default text-2xs text-muted-foreground"
+							/>
 						</div>
 					</Link>
 				)

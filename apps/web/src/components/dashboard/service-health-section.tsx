@@ -8,19 +8,20 @@ import { openAnomalyServiceCountsAtom } from "@/lib/services/atoms/anomaly-atoms
 import { anomalyServiceCountFromV2, type AnomalyServiceCount } from "@/lib/services/anomalies"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { AlertFiringHero } from "@/components/alerts/alert-stat-card"
+import { AlertFiringHero } from "@/components/alerts/alert-firing-hero"
 import { anomalyAffectsServiceHealth } from "@/components/anomalies/anomaly-format"
-import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
+import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { ArrowRightIcon, ArrowTrendDownIcon, ArrowTrendUpIcon } from "@/components/icons"
 import type { ServiceHealthSnapshot } from "@/api/warehouse/services"
 import type { AlertIncidentDocument, AnomalySignalType } from "@maple/domain/http"
 
 import { Card } from "@maple/ui/components/ui/card"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -29,10 +30,15 @@ import {
 	anomalyDirection,
 	healthRank,
 	primaryServiceHealthCause,
+	HEALTH_TONE,
 	type ServiceHealthCause,
 	type ServiceHealth,
 } from "./service-health"
 import { ServiceDot } from "@maple/ui/components/service-dot"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { ListRow } from "@maple/ui/components/ui/list-row"
 
 const MAX_ROWS = 7
 
@@ -90,12 +96,6 @@ const ANOMALY_METRIC: Partial<Record<AnomalySignalType, ServiceHealthCause["metr
 	throughput: "traffic",
 	log_volume: "error",
 } satisfies Partial<Record<AnomalySignalType, ServiceHealthCause["metric"]>>
-
-const HEALTH_DOT_COLOR: Record<ServiceHealth, string> = {
-	healthy: "var(--severity-info)",
-	degraded: "var(--severity-warn)",
-	unhealthy: "var(--severity-error)",
-} satisfies Record<ServiceHealth, string>
 
 function metricTone(cause: ServiceHealthCause | undefined): "ok" | "warn" | "crit" {
 	return cause === undefined ? "ok" : cause.severity === "critical" ? "crit" : "warn"
@@ -240,7 +240,10 @@ export function ServiceHealthOverview(props: ServiceHealthProps) {
 				),
 			)
 			return (
-				<section className={cn("mb-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}>
+				<section
+					className={cn("mb-4 space-y-3", refreshingClass(result.waiting))}
+					aria-busy={result.waiting || undefined}
+				>
 					{banner}
 					<StatRail>
 						<StatRailItem
@@ -288,10 +291,10 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 	const header = (
 		<div className="flex items-center justify-between">
 			<div>
-				<h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+				<Eyebrow variant="label" as="h2">
 					Services
-				</h2>
-				<p className="mt-0.5 text-[11px] text-muted-foreground/70">
+				</Eyebrow>
+				<p className="mt-0.5 text-2xs text-muted-foreground/70">
 					Status reflects active alerts and baseline anomalies.
 				</p>
 			</div>
@@ -310,18 +313,14 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 			<section className="mt-4 space-y-3">
 				{header}
 				<Card className="overflow-hidden p-0">
-					<div className="space-y-2 p-4">
-						{Array.from({ length: 4 }).map((_, i) => (
-							<Skeleton key={i} className="h-6 w-full" />
-						))}
-					</div>
+					<SkeletonList rows={4} rowClassName="h-6" gap="2" className="p-4" />
 				</Card>
 			</section>
 		))
 		.onError((error) => (
 			<section className="mt-4 space-y-3">
 				{header}
-				<QueryErrorState error={error} />
+				<ErrorState error={error} />
 			</section>
 		))
 		.onSuccess(([snapshotResponse, anomaliesResponse, alertsResponse], result) => {
@@ -332,7 +331,10 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 				anomaliesResponse.data.map(anomalyServiceCountFromV2),
 			).slice(0, MAX_ROWS)
 			return (
-				<section className={cn("mt-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}>
+				<section
+					className={cn("mt-4 space-y-3", refreshingClass(result.waiting))}
+					aria-busy={result.waiting || undefined}
+				>
 					{header}
 					<Card className="overflow-hidden p-0">
 						{rows.length === 0 ? (
@@ -387,64 +389,66 @@ function ServiceHealthRow({
 
 	return (
 		<li>
-			<Link
-				to="/services/$serviceName"
-				params={{ serviceName: service.serviceName }}
-				search={{ ...detailSearch, environments: [service.environment] }}
-				className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-			>
-				<span
-					aria-hidden
-					className="size-2 shrink-0 rounded-full"
-					style={{ backgroundColor: HEALTH_DOT_COLOR[health] }}
-				/>
-				<div className="flex min-w-0 flex-1 items-center gap-2">
-					<ServiceDot serviceName={service.serviceName} className="size-1.5" />
-					<span className="truncate text-sm font-medium text-foreground">
-						{service.serviceName}
-					</span>
-					<span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
-						{service.environment}
-					</span>
-					{primaryCause && (
-						<Badge
-							variant={primaryCause.severity === "critical" ? "error" : "warning"}
-							size="sm"
-							className={cn("shrink-0", DirectionIcon && "pr-1 pl-0.5")}
-							title={primaryCauseDescription}
-							aria-label={primaryCauseDescription}
-						>
-							{DirectionIcon && <DirectionIcon size={12} aria-hidden />}
-							{primaryCause.label}
+			<ListRow
+				render={
+					<Link
+						to="/services/$serviceName"
+						params={{ serviceName: service.serviceName }}
+						search={{ ...detailSearch, environments: [service.environment] }}
+					/>
+				}
+				leading={<StatusDot tone={HEALTH_TONE[health]} size="lg" />}
+				title={
+					<span className="flex min-w-0 items-center gap-2">
+						<ServiceDot serviceName={service.serviceName} size="sm" />
+						<span className="truncate text-sm font-medium text-foreground">
+							{service.serviceName}
+						</span>
+						<Badge variant="muted" size="xs" className="shrink-0">
+							{service.environment}
 						</Badge>
-					)}
-				</div>
-				<div className="flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums">
-					<Metric
-						label="err"
-						value={formatErrorRate(service.errorRate)}
-						tone={metricTone(errorCause)}
-					/>
-					<Metric
-						label="p95"
-						value={formatLatency(service.p95LatencyMs)}
-						tone={metricTone(latencyCause)}
-						// An open incident/anomaly is a stronger signal than raw
-						// magnitude, so it keeps the tone. Without one, fall back to
-						// the shared magnitude ramp.
-						valueClassName={
-							latencyCause === undefined
-								? latencyToneClass(service.p95LatencyMs, "p95")
-								: undefined
-						}
-					/>
-					<Metric
-						label="rps"
-						value={formatThroughput(service.throughput)}
-						tone={metricTone(trafficCause)}
-					/>
-				</div>
-			</Link>
+						{primaryCause && (
+							<Badge
+								variant={primaryCause.severity === "critical" ? "crit" : "warn"}
+								size="sm"
+								className={cn("shrink-0", DirectionIcon && "pr-1 pl-0.5")}
+								title={primaryCauseDescription}
+								aria-label={primaryCauseDescription}
+							>
+								{DirectionIcon && <DirectionIcon size={12} aria-hidden />}
+								{primaryCause.label}
+							</Badge>
+						)}
+					</span>
+				}
+				trailing={
+					<div className="flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums">
+						<Metric
+							label="err"
+							value={formatErrorRate(service.errorRate)}
+							tone={metricTone(errorCause)}
+						/>
+						<Metric
+							label="p95"
+							value={formatLatency(service.p95LatencyMs)}
+							tone={metricTone(latencyCause)}
+							// An open incident/anomaly is a stronger signal than raw
+							// magnitude, so it keeps the tone. Without one, fall back to
+							// the shared magnitude ramp.
+							valueClassName={
+								latencyCause === undefined
+									? latencyToneClass(service.p95LatencyMs, "p95")
+									: undefined
+							}
+						/>
+						<Metric
+							label="rps"
+							value={formatThroughput(service.throughput, "/s")}
+							tone={metricTone(trafficCause)}
+						/>
+					</div>
+				}
+			/>
 		</li>
 	)
 }
@@ -457,27 +461,14 @@ function Metric({
 }: {
 	label: string
 	value: string
-	tone?: "ok" | "warn" | "crit"
+	tone?: Extract<Tone, "ok" | "warn" | "crit">
 	/** Applied after `tone`, so it wins — used to fall back to a magnitude ramp. */
 	valueClassName?: string
 }) {
-	const toneClass =
-		tone === "crit"
-			? "text-[var(--severity-error)]"
-			: tone === "warn"
-				? "text-[var(--severity-warn)]"
-				: "text-foreground"
 	return (
 		<div className="flex w-16 flex-col items-end gap-0.5">
-			<span className={cn("leading-none", toneClass, valueClassName)}>{value}</span>
-			<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+			<span className={cn("leading-none", TONE_TEXT[tone ?? "ok"], valueClassName)}>{value}</span>
+			<Eyebrow>{label}</Eyebrow>
 		</div>
 	)
-}
-
-function formatThroughput(rps: number): string {
-	if (!Number.isFinite(rps)) return "—"
-	if (rps >= 100) return `${Math.round(rps)}/s`
-	if (rps >= 1) return `${rps.toFixed(1)}/s`
-	return `${rps.toFixed(2)}/s`
 }

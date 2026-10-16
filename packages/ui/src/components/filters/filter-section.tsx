@@ -1,16 +1,19 @@
 import * as React from "react"
 
 import { ChevronDownIcon, CircleInfoIcon, type IconComponent, MagnifierIcon, XmarkIcon } from "../icons"
+import { Badge } from "../ui/badge"
+import { Button } from "../ui/button"
 import { Checkbox } from "../ui/checkbox"
+import { EmptyMessage } from "../ui/empty"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "../ui/input-group"
 import { Label } from "../ui/label"
 import { useSectionCollapse } from "../../hooks/use-section-collapse"
 import { getServiceColor } from "../../lib/colors"
-import { formatNumber } from "../../lib/format"
+import { countLabel, formatNumber } from "../../lib/format"
 import { cn } from "../../lib/utils"
-import { FILTER_SECTION_LABEL } from "./filter-styles"
+import { eyebrowVariants } from "../ui/eyebrow"
 
 export interface FilterOption {
 	name: string
@@ -250,7 +253,7 @@ function FilterSectionBase({
 			<CollapsibleTrigger
 				className={cn(
 					"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground text-muted-foreground transition-colors",
-					FILTER_SECTION_LABEL,
+					eyebrowVariants({ variant: "label" }),
 				)}
 			>
 				<span className="flex min-w-0 items-center gap-1.5">
@@ -261,16 +264,16 @@ function FilterSectionBase({
 				</span>
 				<span className="flex items-center gap-1.5">
 					{!isOpen && selected.length > 0 && (
-						<span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] tabular-nums tracking-normal text-foreground">
+						<Badge variant="muted" size="xs" mono className="tracking-normal">
 							{selected.length}
-						</span>
+						</Badge>
 					)}
 					{/* Its own badge, not folded into the count above: a collapsed section hiding an
 					    exclusion is exactly the state that reads as "my data is missing". */}
 					{!isOpen && excluded.length > 0 && (
-						<span className="rounded-sm bg-destructive/10 px-1.5 py-0.5 text-[10px] tabular-nums tracking-normal text-destructive">
+						<Badge variant="crit" size="xs" mono className="tracking-normal">
 							−{excluded.length}
-						</span>
+						</Badge>
 					)}
 					<ChevronDownIcon
 						className={cn(
@@ -315,7 +318,7 @@ function FilterSectionBase({
 				)}
 				<div className="space-y-2">
 					{visibleOptions.length === 0 ? (
-						<p className="text-xs text-muted-foreground py-1">No matches found</p>
+						<EmptyMessage className="py-2">No matches found</EmptyMessage>
 					) : (
 						visibleOptions.map((option) => {
 							const OptionIcon = getOptionIcon?.(option.name)
@@ -408,7 +411,7 @@ function FilterSectionBase({
 												className={cn(
 													"text-xs text-muted-foreground tabular-nums transition-opacity",
 													onExcludedChange &&
-														"group-hover/option:opacity-0 group-focus-within/option:opacity-0",
+														"group-hover/option:opacity-0 group-focus-within/option:opacity-0 pointer-coarse:opacity-0",
 												)}
 												title={option.count.toLocaleString()}
 											>
@@ -422,7 +425,7 @@ function FilterSectionBase({
 											// path, a versioned service name) they landed as text on
 											// text. Occluding is the honest read: the label is
 											// truncated anyway, and `title` still carries it in full.
-											<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 bg-background opacity-0 transition-opacity before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-6 before:bg-gradient-to-r before:from-transparent before:to-background group-hover/option:pointer-events-auto group-hover/option:opacity-100 group-focus-within/option:pointer-events-auto group-focus-within/option:opacity-100">
+											<span className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 bg-background opacity-0 transition-opacity before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-6 before:bg-gradient-to-r before:from-transparent before:to-background group-hover/option:pointer-events-auto group-hover/option:opacity-100 group-focus-within/option:pointer-events-auto group-focus-within/option:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100">
 												<FilterRowAction
 													onClick={() => selectOnly(option.name)}
 													label={`Show only ${label}`}
@@ -451,18 +454,19 @@ function FilterSectionBase({
 					)}
 					{overflowingMatches > 0 && (
 						<p className="text-xs text-muted-foreground py-1">
-							{overflowingMatches.toLocaleString()} more match
-							{overflowingMatches === 1 ? "" : "es"} — keep typing to narrow
+							{countLabel(overflowingMatches, "more match", "more matches")}, keep typing to
+							narrow
 						</p>
 					)}
 					{hasMore > 0 && (
-						<button
-							type="button"
+						<Button
+							variant="link"
+							size="xs"
 							onClick={() => setShowAll(!showAll)}
-							className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+							className="px-0 text-muted-foreground hover:text-foreground"
 						>
 							{showAll ? "Show less" : `Show ${hasMore} more`}
-						</button>
+						</Button>
 					)}
 				</div>
 			</CollapsibleContent>
@@ -517,21 +521,22 @@ interface FilterRowActionProps {
  */
 function FilterRowAction({ onClick, label, pressed, children }: FilterRowActionProps) {
 	return (
-		<button
-			type="button"
+		<Badge
+			variant="tag"
+			render={<button type="button" />}
 			aria-label={label}
 			title={label}
 			aria-pressed={pressed}
 			onClick={onClick}
 			className={cn(
-				"rounded-sm px-1 py-0.5 text-[10px] uppercase tracking-[0.06em] transition-colors",
+				"transition-colors",
 				pressed
-					? "bg-destructive/12 text-destructive hover:bg-destructive/20"
-					: "text-muted-foreground hover:bg-muted hover:text-foreground",
+					? "bg-destructive/12 text-destructive [button&]:hover:bg-destructive/20 [button&]:hover:text-destructive"
+					: "bg-transparent",
 			)}
 		>
 			{children}
-		</button>
+		</Badge>
 	)
 }
 
@@ -582,7 +587,7 @@ export function SingleCheckboxFilter({
 				)}
 			</Label>
 			{count !== undefined && (
-				<span className="text-xs text-muted-foreground tabular-nums">{count.toLocaleString()}</span>
+				<span className="text-xs text-muted-foreground tabular-nums">{formatNumber(count)}</span>
 			)}
 		</div>
 	)

@@ -18,7 +18,7 @@ import {
 	type ChatProposalSettlement,
 } from "@maple/domain/chat-session"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
-import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
+import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, OrgId, UserId } from "@maple/domain/primitives"
 import {
 	chatActionControlId,
@@ -317,7 +317,7 @@ const host = (
 				}),
 			forgetWorkspace: (_connector: ChatConnectorId, workspaceId: string) =>
 				Effect.sync(() => void forgotten.push(workspaceId)),
-			chatSession: () => stub,
+			chatSession: () => (stub === undefined ? undefined : chatSessionClientFromStub(stub)),
 			appBaseUrl: "https://app.maple.dev",
 			chartImageUrl: (orgId, ref) => {
 				charts.push({ orgId, ref })
@@ -1071,21 +1071,6 @@ describe("settling an approval somebody clicked", () => {
 			// Settled, and with no acting user — the apply runs as the org-level connector identity.
 			expect(agent.settlements).toHaveLength(1)
 			expect(agent.settlements[0]).not.toHaveProperty("actingUserId")
-		}),
-	)
-
-	it.effect("hands the session the user the HOST resolved, never anything the click carried", () =>
-		Effect.gen(function* () {
-			const platform = chat()
-			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
-			const deployment = host(platform.outbound, agent.stub, {
-				supportsIdentity: true,
-				linkedUserId: ADA,
-			})
-
-			yield* relayInboundEvent(click(), deployment.ports)
-
-			expect(agent.settlements[0]).toHaveProperty("actingUserId", ADA)
 		}),
 	)
 

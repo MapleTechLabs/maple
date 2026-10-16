@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Duration, Effect, Option } from "effect"
 import { FileSystem } from "effect/FileSystem"
-import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { autoBackend, discoverLocalUrl, discoverServers, probeLocal } from "./mode"
 
 type Route = { readonly status: number; readonly body: string } | "refuse" | "hang"

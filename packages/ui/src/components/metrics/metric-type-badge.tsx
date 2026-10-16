@@ -27,6 +27,11 @@ export const METRIC_TYPE_COLORS: Record<string, string> = {
 	exponential_histogram: "var(--primary)",
 } satisfies Record<string, string>
 
+/** Display name per metric type, for filters and anything that is not a badge. */
+export function metricTypeLabel(type: string): string {
+	return type === "exponential_histogram" ? "Exp histogram" : (metricTypeConfig[type]?.label ?? type)
+}
+
 interface MetricTypeBadgeProps {
 	type: string
 }

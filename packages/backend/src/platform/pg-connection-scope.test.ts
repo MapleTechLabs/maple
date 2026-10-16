@@ -5,10 +5,10 @@ import {
 	type MaplePgClientOptions,
 	makeMaplePgClient,
 } from "@maple/db/client"
-import { sql } from "drizzle-orm"
+import * as Orm from "@maple-dev/effect-orm/database"
 import { Effect, Exit, Fiber, Option, References, Schema, Scope, Tracer } from "effect"
-import type * as Reactivity from "effect/unstable/reactivity/Reactivity"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import type * as Reactivity from "effect/reactivity/Reactivity"
+import type { SqlError } from "effect/sql/SqlError"
 import { createServer, type Socket } from "node:net"
 import { MapleDbConnection } from "./bindings"
 import {
@@ -27,7 +27,7 @@ type OpenClient = Effect.Effect<MaplePgClient, SqlError, Scope.Scope | Reactivit
 /**
  * A client that never touches the network.
  *
- * A real `@effect/sql-pg` client, because the drizzle database is built over it
+ * A real `@effect/sql-pg` client, because the database is built over it
  * — opening one connects to nothing (the pool dials on the first statement),
  * and these tests never issue one, so the port below is never reached. The
  * finalizer counts the close the owning scope performs.
@@ -291,7 +291,7 @@ describe("PgConnectionScope", () => {
 
 			// `run` stays typed as DatabaseError — ~200 call sites depend on that —
 			// but the reason travels as a tagged cause instead of flattened prose.
-			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			assert.strictEqual(error._tag, "@maple/backend/lib/DatabaseError")
 			assert.instanceOf(error.cause, PgConnectionScopeClosedError)
 		}),
 	)
@@ -417,7 +417,7 @@ const failedDbSpan = (behaviour: "stall" | "hangup") =>
 		const exit = yield* Effect.exit(
 			withPgConnectionScopeOf(
 				scope,
-				scope.run((db) => db.execute(sql`select 1`)).pipe(Effect.withTracer(tracer)),
+				scope.run((db) => db.execute(Orm.sql`select 1`)).pipe(Effect.withTracer(tracer)),
 			),
 		)
 		assert.isTrue(Exit.isFailure(exit))
@@ -571,15 +571,16 @@ describe("withPgConnectionScope", () => {
 		},
 	})
 
-	it.effect("installs a scope when the MAPLE_DB binding is present", () =>
+	it.effect("installs a scope when the MAPLE_DB binding is present and releases it after", () =>
 		Effect.gen(function* () {
 			const scope = yield* withPgConnectionScope(PgConnectionScope).pipe(
 				Effect.provideService(MapleDbConnection, hyperdrive),
 			)
 
-			// Lazy: resolving the binding must not connect. Nothing here reaches the
-			// network, and the host above does not resolve.
-			assert.isDefined(scope)
+			// Lazy: never dialed, and closed at the boundary, so a late call is refused
+			// without reaching the network (the host above does not resolve).
+			const error = yield* Effect.flip(scope!.run(noop))
+			assert.instanceOf(error.cause, PgConnectionScopeClosedError)
 		}),
 	)
 

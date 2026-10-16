@@ -1,9 +1,11 @@
 import { useMemo } from "react"
-import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
+import { skipToken, useQuery } from "@tanstack/react-query"
+import { DateTime } from "effect"
 import { CH } from "@maple/query-engine"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import { chartWindow, parseClickHouseDateTime, type ChartWindow, type TimeBounds } from "../lib/time"
 import { isCounter, isMetricType } from "../lib/units"
+import { windowed } from "../lib/query-cache"
 
 export interface MetricsFilters {
 	/** Exact service name match (applied client-side, so it never re-runs SQL). */
@@ -43,9 +45,12 @@ export function foldCatalogRows(rows: ReadonlyArray<CH.ListMetricsOutput>): Metr
 		const existing = byMetric.get(key)
 		if (existing) {
 			if (!existing.serviceNames.includes(row.serviceName)) existing.serviceNames.push(row.serviceName)
-			existing.dataPointCount += Number(row.dataPointCount)
-			if (row.lastSeen > existing.lastSeen) existing.lastSeen = row.lastSeen
-			if (row.firstSeen < existing.firstSeen) existing.firstSeen = row.firstSeen
+			existing.dataPointCount += row.dataPointCount
+			// ISO strings of one format compare chronologically.
+			const lastSeen = DateTime.formatIso(row.lastSeen)
+			const firstSeen = DateTime.formatIso(row.firstSeen)
+			if (lastSeen > existing.lastSeen) existing.lastSeen = lastSeen
+			if (firstSeen < existing.firstSeen) existing.firstSeen = firstSeen
 		} else {
 			byMetric.set(key, {
 				metricName: row.metricName,
@@ -53,9 +58,9 @@ export function foldCatalogRows(rows: ReadonlyArray<CH.ListMetricsOutput>): Metr
 				metricUnit: row.metricUnit,
 				metricDescription: row.metricDescription,
 				serviceNames: [row.serviceName],
-				dataPointCount: Number(row.dataPointCount),
-				firstSeen: row.firstSeen,
-				lastSeen: row.lastSeen,
+				dataPointCount: row.dataPointCount,
+				firstSeen: DateTime.formatIso(row.firstSeen),
+				lastSeen: DateTime.formatIso(row.lastSeen),
 				isMonotonic: Number(row.isMonotonic) === 1,
 			})
 		}
@@ -76,15 +81,14 @@ export function foldCatalogRows(rows: ReadonlyArray<CH.ListMetricsOutput>): Metr
  */
 export function useLocalMetricsList(filters: MetricsFilters, bounds: TimeBounds) {
 	const query = useQuery({
-		queryKey: [
+		...windowed([
 			"local",
 			"metrics",
 			"list",
 			filters.type ?? null,
 			filters.search ?? null,
 			boundsKey(bounds),
-		],
-		placeholderData: keepPreviousData,
+		]),
 		queryFn: async ({ signal }): Promise<MetricsListData> => {
 			const compiled = CH.compile(
 				CH.listMetricsQuery({ metricType: filters.type, search: filters.search, limit: 500 }),
@@ -111,8 +115,7 @@ export interface MetricsSummaryRow {
 /** Per-type metric/datapoint counts for the summary stats + type facet. */
 export function useLocalMetricsSummary(service: string | undefined, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "metrics", "summary", service ?? null, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "metrics", "summary", service ?? null, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<ReadonlyArray<MetricsSummaryRow>> => {
 			const rows = await executeLocalCompiledQuery(
 				CH.compile(CH.metricsSummaryQuery({ serviceName: service }), localParams(bounds)),
@@ -120,8 +123,8 @@ export function useLocalMetricsSummary(service: string | undefined, bounds: Time
 			)
 			return rows.map((r) => ({
 				metricType: r.metricType,
-				metricCount: Number(r.metricCount),
-				dataPointCount: Number(r.dataPointCount),
+				metricCount: r.metricCount,
+				dataPointCount: r.dataPointCount,
 			}))
 		},
 	})
@@ -179,8 +182,7 @@ export function useLocalMetricsSparklines(
 	}, [entries])
 
 	return useQuery({
-		queryKey: ["local", "metrics", "sparklines", groups, window.bucketSeconds, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "metrics", "sparklines", groups, window.bucketSeconds, boundsKey(bounds)]),
 		queryFn:
 			groups.length === 0
 				? skipToken
@@ -204,10 +206,10 @@ export function useLocalMetricsSparklines(
 						const points = new Map<string, SparklinePoint[]>()
 						for (const row of results.flat()) {
 							const point = {
-								bucket: row.bucket,
-								avgValue: Number(row.avgValue),
-								sumValue: Number(row.sumValue),
-								dataPointCount: Number(row.dataPointCount),
+								bucket: DateTime.formatIso(row.bucket),
+								avgValue: row.avgValue,
+								sumValue: row.sumValue,
+								dataPointCount: row.dataPointCount,
 							}
 							const list = points.get(row.metricName)
 							if (list) list.push(point)

@@ -1,4 +1,5 @@
 import type { CloudflareIntegrationStatus, CloudflareUsageResponse } from "@maple/domain/http"
+import type { Tone } from "@maple/ui/lib/tone"
 
 /**
  * How far a connected Cloudflare integration is from showing real numbers. Every Cloudflare
@@ -114,7 +115,7 @@ function backfillProgress(status: CloudflareIntegrationStatus, now: number): num
 export function describeCloudflareIngestPhase(phase: CloudflareIngestPhase): {
 	readonly title: string
 	readonly description: string
-	readonly tone: "info" | "warning"
+	readonly tone: Extract<Tone, "info" | "warn">
 } {
 	switch (phase.kind) {
 		case "discovering":
@@ -149,7 +150,7 @@ export function describeCloudflareIngestPhase(phase: CloudflareIngestPhase): {
 				title: "No Cloudflare data has arrived",
 				description:
 					"Collection has been connected for a while with nothing ingested. Check that the zones have traffic, and that the connection still has the analytics permissions. Reconnecting re-grants them.",
-				tone: "warning",
+				tone: "warn",
 			}
 		case "live":
 			return { title: "Receiving Cloudflare data", description: "", tone: "info" }

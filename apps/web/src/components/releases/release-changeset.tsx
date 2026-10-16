@@ -3,13 +3,15 @@ import { useMemo } from "react"
 import type { VcsCommitRangeResponse } from "@maple/domain/http"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { pluralize } from "@maple/ui/lib/format"
 
 import { SectionCard } from "@/components/services/section-card"
 import { CommitAvatar, firstLine, isResolvableSha } from "@/components/vcs/commit-sha-hover-card"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { shortReleaseLabel } from "./release-model"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 const RANGE_TTL_MS = 5 * 60_000
 /** The list only needs counts; the detail card lists this many commits. */
@@ -34,7 +36,7 @@ export const commitRangesKey = (ranges: Iterable<CommitRange>): string =>
 
 const commitRangesAtom = Atom.family((key: string) => {
 	const [rangesKey, limit] = key.split("|")
-	return retainedQuery("integrations", "vcsCommitRanges", {
+	return retainedInternalQuery("integrations", "vcsCommitRanges", {
 		query: { ranges: rangesKey ?? "", limit: Number(limit ?? 0) },
 		timeToLive: RANGE_TTL_MS,
 	})
@@ -104,9 +106,7 @@ export function ReleaseChangeset({ base, head }: { base: string | undefined; hea
 	if (base === undefined) {
 		return (
 			<SectionCard title="What shipped">
-				<div className="px-4 py-6 text-center text-xs text-muted-foreground">
-					No earlier version in this window to compare against.
-				</div>
+				<EmptyMessage>No earlier version in this window to compare against.</EmptyMessage>
 			</SectionCard>
 		)
 	}
@@ -114,9 +114,9 @@ export function ReleaseChangeset({ base, head }: { base: string | undefined; hea
 	if (key === "") {
 		return (
 			<SectionCard title="What shipped">
-				<div className="px-4 py-6 text-center text-xs text-muted-foreground">
+				<EmptyMessage>
 					These versions are not commit shas, so the commits between them are unknown.
-				</div>
+				</EmptyMessage>
 			</SectionCard>
 		)
 	}
@@ -129,7 +129,7 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 	const range = Result.isSuccess(result) ? result.value.ranges[0] : undefined
 
 	const action = (
-		<span className="text-[11px] text-muted-foreground/70">
+		<span className="text-2xs text-muted-foreground/70">
 			since <span className="font-mono">{shortReleaseLabel(base)}</span>
 		</span>
 	)
@@ -147,10 +147,10 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 	if (range === undefined || range.status === "unavailable") {
 		return (
 			<SectionCard title="What shipped" action={action}>
-				<div className="px-4 py-6 text-center text-xs text-muted-foreground">
+				<EmptyMessage>
 					Both versions need to be commits of a connected repository's tracked branch to list what
 					changed between them.
-				</div>
+				</EmptyMessage>
 			</SectionCard>
 		)
 	}
@@ -158,7 +158,7 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 	const hidden = range.totalCount - range.commits.length
 	return (
 		<SectionCard
-			title={`What shipped · ${range.totalCount}${range.truncated ? "+" : ""} ${range.totalCount === 1 ? "commit" : "commits"}`}
+			title={`What shipped · ${range.totalCount}${range.truncated ? "+" : ""} ${pluralize(range.totalCount, "commit")}`}
 			action={action}
 		>
 			<div className="max-h-80 overflow-y-auto">
@@ -180,15 +180,16 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 									target="_blank"
 									rel="noreferrer"
 									className="truncate text-foreground hover:underline"
+									title={subject}
 								>
 									{subject}
 								</a>
-								<span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+								<span className="flex items-center gap-1.5 text-2xs text-muted-foreground">
 									<span className="font-mono">{shortReleaseLabel(commit.sha)}</span>
 									<span className="truncate">{author}</span>
 								</span>
 							</div>
-							<span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/70">
+							<span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/70">
 								{formatRelativeTimeOrDate(
 									new Date(commit.committedAt).toISOString(),
 									undefined,
@@ -199,8 +200,8 @@ function ReleaseChangesetLoaded({ rangesKey, base }: { rangesKey: string; base: 
 					)
 				})}
 				{hidden > 0 ? (
-					<div className="border-t border-border/60 px-4 py-2 text-[11px] text-muted-foreground/70">
-						{hidden} older {hidden === 1 ? "commit" : "commits"} not shown
+					<div className="border-t border-border/60 px-4 py-2 text-2xs text-muted-foreground/70">
+						{hidden} older {pluralize(hidden, "commit")} not shown
 					</div>
 				) : null}
 			</div>

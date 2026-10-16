@@ -1,4 +1,4 @@
-import type { AlertDestinationRow } from "@maple/db"
+import type { AlertDestinationRow } from "@maple/db/tables"
 import { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { decryptAes256Gcm } from "@maple/backend/platform/Crypto"
@@ -81,13 +81,19 @@ export type EnrichedDestinationSecretConfig = DestinationSecretConfig
 
 export const SecretConfigFromJson = Schema.fromJsonString(DestinationSecretConfigSchema)
 
+/** The stored columns hydration reads, so callers holding a narrower row still fit. */
+export type StoredDestinationConfig = Pick<
+	AlertDestinationRow,
+	"configJson" | "secretCiphertext" | "secretIv" | "secretTag"
+>
+
 export interface HydratedDestination {
 	readonly publicConfig: DestinationPublicConfig
 	readonly secretConfig: DestinationSecretConfig
 }
 
 const parsePublicConfig = <E>(
-	row: AlertDestinationRow,
+	row: StoredDestinationConfig,
 	onError: (cause: unknown) => E,
 ): Effect.Effect<DestinationPublicConfig, E> =>
 	Schema.decodeUnknownEffect(DestinationPublicConfigSchema)(row.configJson).pipe(Effect.mapError(onError))
@@ -99,7 +105,7 @@ const parseSecretConfig = <E>(
 	Schema.decodeEffect(SecretConfigFromJson)(json).pipe(Effect.mapError(onError))
 
 export const hydrateDestinationRow = <PublicConfigError, DecryptionError, SecretConfigError>(
-	row: AlertDestinationRow,
+	row: StoredDestinationConfig,
 	encryptionKey: Buffer,
 	errors: {
 		onPublicConfigInvalid: (cause: unknown) => PublicConfigError

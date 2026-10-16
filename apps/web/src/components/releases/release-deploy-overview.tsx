@@ -3,17 +3,23 @@ import { Link } from "@tanstack/react-router"
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import {
+	countLabel,
+	EMPTY_VALUE,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+	pluralize,
+} from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { RelativeTime } from "@/components/common/relative-time"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { SectionCard } from "@/components/services/section-card"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
 import { getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -31,6 +37,10 @@ import {
 	type ReleaseGroup,
 	type ReleaseServiceImpact,
 } from "./release-model"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 const ISSUE_LIMIT = 100
 const NO_COUNTS: ReadonlyMap<string, number> = new Map()
@@ -63,9 +73,7 @@ export function ReleaseDeployOverview({
 	}, [result, commitSha])
 
 	if (Result.isFailure(result)) {
-		return (
-			<QueryErrorState error={result.cause} titleOverride="Failed to load release" onRetry={refresh} />
-		)
+		return <ErrorState error={result.cause} title="Failed to load release" onRetry={refresh} />
 	}
 	if (derived === undefined) {
 		return (
@@ -79,10 +87,12 @@ export function ReleaseDeployOverview({
 	const { impacts, group } = derived
 	if (group === undefined) {
 		return (
-			<div className="rounded-md border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-				<span className="font-mono">{shortReleaseLabel(commitSha)}</span> served no traffic in this
-				window. Widen the time range to include its deploy.
-			</div>
+			<Panel>
+				<EmptyMessage className="text-sm">
+					<span className="font-mono">{shortReleaseLabel(commitSha)}</span> served no traffic in
+					this window. Widen the time range to include its deploy.
+				</EmptyMessage>
+			</Panel>
 		)
 	}
 
@@ -97,26 +107,22 @@ export function ReleaseDeployOverview({
 }
 
 function DeploySummary({ group }: { group: ReleaseGroup }) {
-	const { effectiveTimezone } = useTimezonePreference()
 	const services = new Set(group.services.map((impact) => impact.serviceName)).size
 	const flagged = group.services.filter((impact) => impact.health !== "healthy").length
 	return (
 		<div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-xs text-muted-foreground">
 			<span>
 				first seen{" "}
-				<span
+				<RelativeTime
+					value={group.firstSeen}
+					variant="orDate"
+					tooltip="title"
 					className="text-foreground"
-					title={formatTimestampInTimezone(group.firstSeen, {
-						timeZone: effectiveTimezone,
-						withYear: true,
-					})}
-				>
-					{formatRelativeTimeOrDate(group.firstSeen, undefined, effectiveTimezone)}
-				</span>
+				/>
 			</span>
 			<span>
 				<span className="font-medium tabular-nums text-foreground">{services}</span>{" "}
-				{services === 1 ? "service" : "services"}
+				{pluralize(services, "service")}
 			</span>
 			<span>
 				<span className="font-medium tabular-nums text-foreground">
@@ -125,9 +131,7 @@ function DeploySummary({ group }: { group: ReleaseGroup }) {
 				requests
 			</span>
 			{flagged > 0 ? (
-				<span className="text-severity-warn">
-					{flagged} {flagged === 1 ? "service" : "services"} flagged
-				</span>
+				<span className="text-severity-warn">{countLabel(flagged, "service")} flagged</span>
 			) : null}
 		</div>
 	)
@@ -147,7 +151,7 @@ function BeforeAfter({
 	return (
 		<span className="inline-flex items-baseline gap-1 font-mono text-xs tabular-nums">
 			{before !== undefined ? (
-				<span className="text-[10px] text-muted-foreground/70">{format(before)} →</span>
+				<span className="text-3xs text-muted-foreground/70">{format(before)} →</span>
 			) : null}
 			<span
 				className={cn(
@@ -178,23 +182,21 @@ function DeployServices({
 		<SectionCard
 			title="Services"
 			action={
-				<span className="text-[11px] text-muted-foreground/70">
-					against the version each replaced
-				</span>
+				<span className="text-2xs text-muted-foreground/70">against the version each replaced</span>
 			}
 		>
-			<table className="w-full text-xs">
-				<thead>
-					<tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
-						<th className="px-4 py-1.5 text-left font-medium">Service</th>
-						<th className="px-2 py-1.5 text-left font-medium">Replaced</th>
-						<th className="px-2 py-1.5 text-right font-medium">Requests</th>
-						<th className="px-2 py-1.5 text-left font-medium">Error rate</th>
-						<th className="px-2 py-1.5 text-left font-medium">p95</th>
-						<th className="px-4 py-1.5 text-right font-medium">Live share</th>
-					</tr>
-				</thead>
-				<tbody>
+			<Table size="sm">
+				<TableHeader>
+					<TableRow className={eyebrowVariants()}>
+						<TableHead className="pl-4">Service</TableHead>
+						<TableHead>Replaced</TableHead>
+						<TableHead className="text-right">Requests</TableHead>
+						<TableHead>Error rate</TableHead>
+						<TableHead>p95</TableHead>
+						<TableHead className="pr-4 text-right">Live share</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
 					{rows.map((impact) => (
 						<DeployServiceRow
 							key={`${impact.serviceName}:${impact.environment}`}
@@ -203,8 +205,8 @@ function DeployServices({
 							timeSearch={timeSearch}
 						/>
 					))}
-				</tbody>
-			</table>
+				</TableBody>
+			</Table>
 		</SectionCard>
 	)
 }
@@ -219,8 +221,8 @@ function DeployServiceRow({
 	timeSearch: TimeRangeSearch
 }) {
 	return (
-		<tr className="border-t border-border/60 hover:bg-muted/30">
-			<td className="px-4 py-1.5">
+		<TableRow className="border-border/60">
+			<TableCell className="pl-4">
 				<Link
 					to="/releases/$commitSha"
 					params={{ commitSha: impact.commitSha }}
@@ -240,40 +242,40 @@ function DeployServiceRow({
 						<ReleaseHealthPill health={impact.health} label={releaseHealthFigure(impact)} />
 					)}
 				</Link>
-			</td>
-			<td className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
-				{impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : "-"}
-			</td>
-			<td className="px-2 py-1.5 text-right font-mono tabular-nums">
+			</TableCell>
+			<TableCell className="font-mono text-2xs text-muted-foreground">
+				{impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : EMPTY_VALUE}
+			</TableCell>
+			<TableCell className="text-right font-mono tabular-nums">
 				{formatNumber(impact.spanCount)}
-			</td>
-			<td className="px-2 py-1.5">
+			</TableCell>
+			<TableCell>
 				<BeforeAfter
 					before={impact.baseline?.errorRate}
 					after={impact.errorRate}
 					format={formatErrorRate}
 					tone={impact.health === "regressed" ? "error" : undefined}
 				/>
-			</td>
-			<td className="px-2 py-1.5">
+			</TableCell>
+			<TableCell>
 				<BeforeAfter
 					before={impact.baseline?.p95LatencyMs}
 					after={impact.p95LatencyMs}
 					format={formatLatency}
 					tone={impact.health === "watch" ? "warn" : undefined}
 				/>
-			</td>
-			<td
+			</TableCell>
+			<TableCell
 				className={cn(
-					"px-4 py-1.5 text-right font-mono tabular-nums",
+					"pr-4 text-right font-mono tabular-nums",
 					impact.share !== undefined && impact.share > 0 && impact.share < ROLLOUT_COMPLETE_SHARE
 						? "text-primary"
 						: "text-muted-foreground",
 				)}
 			>
-				{impact.share === undefined ? "-" : `${Math.round(impact.share * 100)}%`}
-			</td>
-		</tr>
+				{impact.share === undefined ? EMPTY_VALUE : formatPercent(impact.share)}
+			</TableCell>
+		</TableRow>
 	)
 }
 
@@ -299,9 +301,7 @@ function DeployIssues({
 
 	if (issues === undefined) {
 		return Result.isFailure(result) ? (
-			<div className="rounded-md border bg-card px-4 py-6 text-center text-xs text-muted-foreground">
-				Issues could not be loaded.
-			</div>
+			<ErrorState error={result.cause} title="Issues could not be loaded" variant="row" />
 		) : (
 			<Skeleton className="h-32 w-full rounded-md" />
 		)

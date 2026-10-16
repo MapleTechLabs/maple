@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { McpSection } from "@/components/settings/mcp-section"
 
 export const Route = createFileRoute("/mcp")({
@@ -12,21 +12,8 @@ export const Route = createFileRoute("/mcp")({
 // key-creation flow can't drift apart.
 function McpPage() {
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "MCP" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="MCP Server"
-							description="Connect your AI coding assistant to Maple's observability data via the Model Context Protocol."
-						/>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						<McpSection />
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage breadcrumbs={[{ label: "MCP" }]}>
+			<McpSection />
+		</DashboardPage>
 	)
 }

@@ -36,9 +36,9 @@ export const TRACE_LIST_MV_RESOURCE_MAP: Record<string, string> = {
 
 // Attribute filter → typed Condition
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
 import { normalizedSpanNameExpr } from "@maple/domain/tinybird/span-display-name"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 // Semconv rename coalescing
 //
@@ -131,7 +131,7 @@ export function buildAttrFilterCondition(
 			.map((member) => buildAttrFilterCondition(member, mapName, "none"))
 			.reduce((acc, cond) => acc.or(cond))
 	}
-	// `product_events.Attributes` carries no skip index, so the exact predicate stands alone.
+	// `Attributes` (product events, metric datapoints) carries no skip index, so the exact predicate stands alone.
 	const indexMode: AttributeIndexMode = mapName === "Attributes" ? "none" : requestedIndexMode
 	const mapExpr = CH.dynamicColumn<Record<string, string>>(mapName)
 	// Attributes renamed across OTel semconv versions match either spelling,
@@ -186,18 +186,14 @@ export function buildAttrFilterCondition(
 			if (values.length === 0) return CH.rawCond("0")
 			return CH.inList(colExpr, values)
 		}
-		if (af.mode === "gt") {
-			return CH.toFloat64OrZero(colExpr).gt(Number(value))
-		}
-		if (af.mode === "gte") {
-			return CH.toFloat64OrZero(colExpr).gte(Number(value))
-		}
-		if (af.mode === "lt") {
-			return CH.toFloat64OrZero(colExpr).lt(Number(value))
-		}
-		if (af.mode === "lte") {
-			return CH.toFloat64OrZero(colExpr).lte(Number(value))
-		}
+		// A missing key reads as "" and would coerce to 0, so `attr.x < 5` must not
+		// match rows that lack `x`.
+		const numeric = CH.toFloat64OrZero(colExpr)
+		const present = colExpr.neq("")
+		if (af.mode === "gt") return present.and(numeric.gt(Number(value)))
+		if (af.mode === "gte") return present.and(numeric.gte(Number(value)))
+		if (af.mode === "lt") return present.and(numeric.lt(Number(value)))
+		if (af.mode === "lte") return present.and(numeric.lte(Number(value)))
 		// equals (default)
 		const exact = colExpr.eq(value)
 		// Empty values intentionally share ClickHouse Map's "missing key returns

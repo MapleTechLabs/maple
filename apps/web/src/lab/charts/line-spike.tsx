@@ -13,7 +13,7 @@ import {
 	usePlotChromeColors,
 	usePlotColors,
 	usePlotLegendHighlight,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotLegendSeries,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
@@ -31,10 +31,10 @@ import {
 } from "@/lab/charts/timeseries-data"
 
 const LATENCY_TOKENS = {
-	p99: ["--chart-p99", "#f97316"],
-	p95: ["--chart-p95", "#eab308"],
-	p50: ["--chart-p50", "#22c55e"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	p99: "--chart-p99",
+	p95: "--chart-p95",
+	p50: "--chart-p50",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * Recharts and TanStack both nominally draw at 2px

@@ -1,9 +1,12 @@
 import { warmAtoms } from "@effect-router/core"
+import { shortId } from "@maple/ui/lib/ids"
 import { useMemo } from "react"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { ResultPage } from "@/components/layout/result-page"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { ReplayStudio } from "@/components/replays/replay-studio"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
@@ -11,7 +14,6 @@ import {
 	getReplayResultAtom,
 	getSessionTranscriptResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
 import { ReplayDetailSkeleton } from "@/components/replays/session-detail-parts"
 import { replayPartitionWindow } from "@/components/replays/replay-format"
 
@@ -52,85 +54,43 @@ function ReplayDetailPage() {
 	const window = useMemo(() => replayPartitionWindow(t), [t])
 	const detailResult = useAtomValue(getReplayResultAtom({ data: { sessionId, ...window } }))
 
-	const breadcrumbs = [{ label: "Session Replays", href: "/replays" }, { label: sessionId.slice(0, 8) }]
+	// The studio owns its scrolling once loaded; the other states scroll like any page.
+	const loaded = Result.isSuccess(detailResult) && Boolean(detailResult.value.data)
 
-	return Result.builder(detailResult)
-		.onInitial(() => (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={breadcrumbs} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Loading session…" />
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<ReplayDetailSkeleton />
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		))
-		.onError((error) => (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs items={breadcrumbs} />
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Error" />
-						</DashboardLayout.Sticky>
-						<DashboardLayout.Scroll>
-							<QueryErrorState error={error} titleOverride="Failed to load session replay" />
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
-		))
-		.onSuccess((detail) => {
-			const session = detail.data
-			if (!session) {
-				return (
-					<DashboardLayout.Root>
-						<DashboardLayout.Breadcrumbs items={breadcrumbs} />
-						<DashboardLayout.Body>
-							<DashboardLayout.Content>
-								<DashboardLayout.Sticky>
-									<DashboardLayout.Header
-										title="Session not found"
-										description="It may have expired or not been ingested yet."
-									/>
-								</DashboardLayout.Sticky>
-								<DashboardLayout.Scroll>
-									<div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
-										No metadata for session <span className="font-mono">{sessionId}</span>
-										.
-									</div>
-								</DashboardLayout.Scroll>
-							</DashboardLayout.Content>
-						</DashboardLayout.Body>
-					</DashboardLayout.Root>
-				)
+	return (
+		<ResultPage
+			breadcrumbs={[{ label: "Session Replays", href: "/replays" }]}
+			result={detailResult}
+			select={(detail) => detail.data}
+			crumb={() => shortId(sessionId, "session", { length: 8 })}
+			fill={loaded}
+			errorTitle="Failed to load session replay"
+			loading={<ReplayDetailSkeleton />}
+			notFound={
+				<ResourceNotFound
+					title="Session not found"
+					description={
+						<>
+							No metadata for session <InlineCode>{sessionId}</InlineCode>. It may have expired or
+							not been ingested yet.
+						</>
+					}
+					backLink={<Link to="/replays" />}
+					backLabel="Back to replays"
+				/>
 			}
-
-			return (
-				<DashboardLayout.Root>
-					<DashboardLayout.Breadcrumbs items={breadcrumbs} />
-					<DashboardLayout.Body>
-						<DashboardLayout.Content>
-							{/* No sticky page header: the studio's identity bar is the header,
-							    and `Fill` hands the studio the full height so the player, the
-							    timeline and the rail manage their own scrolling. */}
-							<DashboardLayout.Fill>
-								<ReplayStudio
-									sessionId={sessionId}
-									session={session}
-									traceIds={session.traceIds}
-									window={window}
-								/>
-							</DashboardLayout.Fill>
-						</DashboardLayout.Content>
-					</DashboardLayout.Body>
-				</DashboardLayout.Root>
-			)
-		})
-		.render()
+		>
+			{/* No sticky page header: the studio's identity bar is the header, and `Fill`
+			    hands the studio the full height so the player, the timeline and the rail
+			    manage their own scrolling. */}
+			{(session) => (
+				<ReplayStudio
+					sessionId={sessionId}
+					session={session}
+					traceIds={session.traceIds}
+					window={window}
+				/>
+			)}
+		</ResultPage>
+	)
 }

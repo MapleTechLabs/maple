@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -21,7 +23,6 @@ import { DocsLink } from "@/components/common/docs-link"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useMetricScopedAutocomplete } from "@/hooks/use-metric-scoped-autocomplete"
-import { CircleWarningIcon } from "@/components/icons"
 import type { WhereClauseAutocompleteValues } from "@/lib/query-builder/where-clause-autocomplete"
 import {
 	AGGREGATIONS_BY_SOURCE,
@@ -33,6 +34,7 @@ import {
 	type QueryBuilderMetricType,
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
+import { WarningList } from "./warning-list"
 
 // Types
 
@@ -88,9 +90,9 @@ function parseMetricSelection(raw: string): {
 }
 
 const ADD_ON_KEYS: { key: QueryBuilderAddOnKey; label: string }[] = [
-	{ key: "groupBy", label: "Group By" },
+	{ key: "groupBy", label: "Group by" },
 	{ key: "having", label: "Having" },
-	{ key: "orderBy", label: "Order By" },
+	{ key: "orderBy", label: "Order by" },
 	{ key: "limit", label: "Limit" },
 	{ key: "legend", label: "Legend" },
 ]
@@ -188,16 +190,7 @@ export function QueryPanel({
 
 			{query.dataSource === "product_events" && <ProductEventsAbsentHint />}
 
-			{warnings.length > 0 && (
-				<div className="flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
-					<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
-					<ul className="space-y-1">
-						{warnings.map((warning) => (
-							<li key={warning}>{warning}</li>
-						))}
-					</ul>
-				</div>
-			)}
+			<WarningList warnings={warnings} />
 
 			{/* Add-on toggle bar */}
 			<AddOnToggleBar
@@ -232,7 +225,7 @@ function MetricOptionsEmpty({ searchTerm }: { readonly searchTerm: string }) {
 	const presence = useSignalPresence("metrics")
 	const term = searchTerm.trim()
 	return (
-		<div className="flex flex-col items-center gap-2 px-3 py-4 text-center text-xs text-muted-foreground">
+		<EmptyMessage className="flex flex-col items-center gap-2 px-3 py-4">
 			{term !== "" ? (
 				<span>No metric name contains "{term}".</span>
 			) : presence.status === "absent" ? (
@@ -245,7 +238,7 @@ function MetricOptionsEmpty({ searchTerm }: { readonly searchTerm: string }) {
 			) : (
 				<span>No metrics found.</span>
 			)}
-		</div>
+		</EmptyMessage>
 	)
 }
 
@@ -314,7 +307,7 @@ function TracesLogsBody({
 							})
 						}
 					>
-						<SelectTrigger className="h-8 w-[120px] text-xs shrink-0">
+						<SelectTrigger size="sm" className="w-[120px] shrink-0">
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -332,7 +325,7 @@ function TracesLogsBody({
 					value={query.aggregation}
 					onValueChange={(value) => onAggregationChange(value ?? query.aggregation)}
 				>
-					<SelectTrigger className="h-8 w-[160px] text-xs">
+					<SelectTrigger size="sm" className="w-[160px]">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -486,15 +479,13 @@ function MetricsBody({
 
 			{/* Row 3: AGGREGATE WITHIN TIME SERIES */}
 			<div className="flex items-center gap-2 flex-wrap">
-				<span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium shrink-0">
-					Aggregate within time series
-				</span>
+				<Eyebrow className="shrink-0">Aggregate within time series</Eyebrow>
 				<Select
 					items={aggregateOptions}
 					value={query.aggregation}
 					onValueChange={(value) => onAggregationChange(value ?? query.aggregation)}
 				>
-					<SelectTrigger className="h-8 w-24 text-xs">
+					<SelectTrigger size="sm" className="w-24">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -526,16 +517,14 @@ function MetricsBody({
 
 			{/* Row 4: AGGREGATE ACROSS TIME SERIES */}
 			<div className="flex items-center gap-2 flex-wrap">
-				<span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium shrink-0">
-					Aggregate across time series
-				</span>
+				<Eyebrow className="shrink-0">Aggregate across time series</Eyebrow>
 
 				<Select
 					items={aggregateOptions}
 					value={query.aggregation}
 					onValueChange={(value) => onAggregationChange(value ?? query.aggregation)}
 				>
-					<SelectTrigger className="h-8 w-24 text-xs">
+					<SelectTrigger size="sm" className="w-24">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -602,7 +591,7 @@ function AddOnSections({
 		<div className="space-y-2 pt-1">
 			{query.addOns.groupBy && query.dataSource !== "metrics" && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Group By</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Group By</span>
 					<GroupByMultiSelect
 						value={query.groupBy}
 						onChange={(value) => onUpdate((current) => ({ ...current, groupBy: value }))}
@@ -614,7 +603,7 @@ function AddOnSections({
 
 			{query.addOns.having && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Having</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Having</span>
 					<Input
 						value={query.having}
 						onChange={(event) =>
@@ -631,7 +620,7 @@ function AddOnSections({
 
 			{query.addOns.orderBy && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Order By</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Order By</span>
 					<Input
 						value={query.orderBy}
 						onChange={(event) =>
@@ -653,7 +642,7 @@ function AddOnSections({
 							}))
 						}
 					>
-						<SelectTrigger className="h-8 w-20 text-xs">
+						<SelectTrigger size="sm" className="w-20">
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -666,7 +655,7 @@ function AddOnSections({
 
 			{query.addOns.limit && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Limit</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Limit</span>
 					<Input
 						value={query.limit}
 						onChange={(event) =>
@@ -685,7 +674,7 @@ function AddOnSections({
 
 			{query.addOns.legend && (
 				<div className="flex items-center gap-2">
-					<span className="text-[11px] text-muted-foreground w-16 shrink-0">Legend</span>
+					<span className="text-2xs text-muted-foreground w-16 shrink-0">Legend</span>
 					<Input
 						value={query.legend}
 						onChange={(event) =>

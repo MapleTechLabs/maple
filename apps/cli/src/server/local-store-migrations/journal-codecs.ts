@@ -21,7 +21,7 @@ const RAW_TABLES_INTERNAL = RAW_TELEMETRY_TTL_COLUMNS.map(([table]) => table)
  * exactly. The pattern is not cosmetic: these values are interpolated into SQL
  * comparisons, so anything that could change their meaning has to fail here.
  */
-export const UnsignedDecimal = Schema.String.check(Schema.isPattern(/^\d+$/))
+export const UnsignedDecimal = Schema.String.check(Schema.isPattern(/^\d+$/u))
 
 /**
  * Rejecting unknown fields is not tidiness. A journal carrying a field this

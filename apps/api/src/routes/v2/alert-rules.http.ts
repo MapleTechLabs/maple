@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { AlertCheckDocument, AlertRuleDocument, AlertRulePreviewResponse } from "@maple/domain/http"
 import {
 	AlertRulePreviewRequest,
@@ -6,6 +6,7 @@ import {
 	AlertRuleNotFoundError,
 	CurrentTenant,
 	IsoDateTimeString,
+	isRangeComparator,
 	QueryBuilderQueryDraftSchema,
 } from "@maple/domain/http"
 import type {
@@ -18,46 +19,43 @@ import type {
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray, scopeAllows, timestamp, V2ParameterInvalid } from "@maple/domain/http/v2"
 import { AlertForbiddenError } from "@maple/domain/http"
-import { Effect, Encoding, Result, Schema } from "effect"
+import { DateTime, Effect, Option, Result, Schema } from "effect"
+import { Base64Url } from "effect/encoding"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { timestampMs } from "@maple/backend/platform/time"
 
 const decodeIsoDateTime = Schema.decodeUnknownSync(IsoDateTimeString)
+const decodeChecksCursorParts = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])),
+)
 
 const encodeChecksCursor = (check: AlertCheckDocument): string =>
-	`chk_${Encoding.encodeBase64Url(JSON.stringify([check.timestamp, check.groupKey]))}`
+	`chk_${Base64Url.encode(JSON.stringify([check.timestamp, check.groupKey]))}`
 
 const decodeChecksCursor = (value: string | undefined) => {
 	if (value === undefined) return Effect.succeed<readonly [string, string] | undefined>(undefined)
 	if (!value.startsWith("chk_")) {
 		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
 	}
-	const decoded = Encoding.decodeBase64UrlString(value.slice(4))
+	const decoded = Base64Url.decodeString(value.slice(4))
 	if (Result.isFailure(decoded)) {
 		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
 	}
-	try {
-		const parts = JSON.parse(decoded.success) as unknown
-		if (
-			!Array.isArray(parts) ||
-			parts.length !== 2 ||
-			typeof parts[0] !== "string" ||
-			typeof parts[1] !== "string" ||
-			!Number.isFinite(Date.parse(parts[0]))
-		) {
-			throw new Error("invalid")
-		}
-		return Effect.succeed([parts[0], parts[1]] as const)
-	} catch {
-		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
-	}
+	return Option.match(
+		decodeChecksCursorParts(decoded.success).pipe(
+			Option.filter(([ts]) => Number.isFinite(timestampMs(ts))),
+		),
+		{
+			onNone: () =>
+				Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" })),
+			onSome: (parts) => Effect.succeed(parts),
+		},
+	)
 }
-
-const summaryTimestamp = (value: string) =>
-	timestamp(new Date(value.includes("T") ? value : `${value.replace(" ", "T")}Z`).toISOString())
 
 const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	id: doc.id,
@@ -87,6 +85,7 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	raw_query_reducer: doc.rawQueryReducer,
 	destination_ids: doc.destinationIds,
 	no_data_behavior: doc.noDataBehavior,
+	alert_on_no_data: doc.noDataBehavior === "alert",
 	last_evaluation_error: doc.lastEvaluationError,
 	last_evaluated_at: doc.lastEvaluatedAt,
 	last_scheduled_at: doc.lastScheduledAt,
@@ -122,6 +121,7 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"query_builder_draft",
 		"raw_query_sql",
 		"raw_query_reducer",
+		"alert_on_no_data",
 		"destination_ids",
 	],
 	// Query drafts and raw SQL are config blobs — audit that they changed, not their bodies.
@@ -138,6 +138,7 @@ const toV2Check = (check: AlertCheckDocument): V2AlertCheck => ({
 	timestamp: check.timestamp,
 	group_key: check.groupKey,
 	status: check.status,
+	skip_reason: check.skipReason,
 	signal_type: check.signalType,
 	comparator: check.comparator,
 	threshold: check.threshold,
@@ -211,6 +212,9 @@ const toUpsertRequest = (
 						minimumSampleCount: params.minimum_sample_count,
 					}
 				: undefined),
+			...(params.alert_on_no_data !== undefined
+				? { alertOnNoData: params.alert_on_no_data }
+				: undefined),
 			...(params.consecutive_breaches_required !== undefined
 				? {
 						consecutiveBreachesRequired: params.consecutive_breaches_required,
@@ -248,6 +252,7 @@ const mergeUpsertRequest = (
 ): Effect.Effect<AlertRuleUpsertRequest, ReturnType<typeof V2ParameterInvalid.make>> =>
 	Effect.gen(function* () {
 		const signalType = patch.signal_type ?? doc.signalType
+		const comparator = patch.comparator ?? doc.comparator
 		const queryBuilderDraft =
 			signalType !== "builder_query"
 				? null
@@ -289,9 +294,15 @@ const mergeUpsertRequest = (
 			tags: patch.tags ?? doc.tags,
 			groupBy: patch.group_by !== undefined ? patch.group_by : doc.groupBy,
 			signalType,
-			comparator: patch.comparator ?? doc.comparator,
+			comparator,
 			threshold: patch.threshold ?? doc.threshold,
-			thresholdUpper: patch.threshold_upper !== undefined ? patch.threshold_upper : doc.thresholdUpper,
+			// Dropped, not carried over, when the comparator stops being a range.
+			thresholdUpper:
+				patch.threshold_upper !== undefined
+					? patch.threshold_upper
+					: isRangeComparator(comparator)
+						? doc.thresholdUpper
+						: null,
 			windowMinutes: patch.window_minutes ?? doc.windowMinutes,
 			minimumSampleCount: patch.minimum_sample_count ?? doc.minimumSampleCount,
 			consecutiveBreachesRequired:
@@ -303,6 +314,7 @@ const mergeUpsertRequest = (
 			queryBuilderDraft,
 			rawQuerySql,
 			rawQueryReducer,
+			alertOnNoData: patch.alert_on_no_data ?? doc.noDataBehavior === "alert",
 			destinationIds: patch.destination_ids ?? doc.destinationIds,
 		})
 	})
@@ -322,6 +334,7 @@ const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePrevie
 			value: point.value,
 			sample_count: point.sampleCount,
 			status: point.status,
+			...(point.skipReason !== undefined ? { skip_reason: point.skipReason } : undefined),
 			...(point.provisional !== undefined ? { provisional: point.provisional } : undefined),
 		})),
 	})),
@@ -522,7 +535,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 						top_group_keys: summary.topGroupKeys,
 						totals: summary.totals,
 						points: summary.points.map((point) => ({
-							bucket: summaryTimestamp(point.bucket),
+							bucket: timestamp(DateTime.formatIso(point.bucket)),
 							group_key: point.groupKey,
 							total_count: point.totalCount,
 							breached_count: point.breachedCount,

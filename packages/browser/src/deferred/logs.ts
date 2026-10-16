@@ -1,6 +1,6 @@
 import { consentAllowedSince, hasConsent, ingestHeaders, sdkHint } from "@maple/browser-session"
 import { ROOT_CONTEXT, trace } from "@opentelemetry/api"
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
+import { JsonLogsSerializer } from "@opentelemetry/otlp-transformer"
 import { resourceFromAttributes } from "@opentelemetry/resources"
 import {
 	BatchLogRecordProcessor,
@@ -10,6 +10,7 @@ import {
 } from "@opentelemetry/sdk-logs"
 import type { ResolvedConfig } from "../config"
 import { attachLogSink, detachLogSink } from "../logs"
+import { newestFirstOnExit, OtlpExporter } from "../otlp"
 import { resourceAttributes } from "../tracing"
 import { SDK_NAME, SDK_VERSION } from "../version"
 
@@ -67,11 +68,17 @@ export function startLogs(
 	config: ResolvedConfig,
 	stashOffline?: (logs: ReadableLogRecord[]) => void,
 ): () => Promise<void> {
-	const otlp = new OTLPLogExporter({
-		url: `${config.endpoint}/v1/logs`,
-		headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
-	})
-	const exporter = new ConsentLogExporter(stashOffline ? new OfflineLogExporter(otlp, stashOffline) : otlp)
+	const otlp = new OtlpExporter(
+		`${config.endpoint}/v1/logs`,
+		ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
+		JsonLogsSerializer,
+	)
+	const exporter = new ConsentLogExporter(
+		newestFirstOnExit(
+			stashOffline ? new OfflineLogExporter(otlp, stashOffline) : otlp,
+			JsonLogsSerializer,
+		),
+	)
 	// The browser processor flushes on `visibilitychange → hidden` and `pagehide` itself.
 	const provider = new LoggerProvider({
 		resource: resourceFromAttributes(resourceAttributes(config)),

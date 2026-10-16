@@ -1,3 +1,6 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { useAuth } from "@clerk/clerk-react"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
@@ -20,6 +23,8 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { useQuickStart } from "@/hooks/use-quick-start"
 import type { OnboardingRole } from "@/lib/onboarding-role"
 import { CopyableField } from "@maple/ui/components/ui/copyable-field"
+import { CopyableFieldSkeleton, IngestKeysUnavailableNote } from "@/components/ingest/connect-credentials"
+import type { IngestKeyStatus } from "@/components/ingest/use-ingest-connection"
 
 const frameworkIconMap: Record<FrameworkId, React.ComponentType<{ size?: number; className?: string }>> = {
 	nextjs: NextjsIcon,
@@ -42,6 +47,7 @@ const ROLE_DEFAULT_FRAMEWORK = {
 interface GuidedSetupProps {
 	/** Public ingest key, interpolated into the instrument snippet. */
 	apiKey: string
+	apiKeyStatus?: IngestKeyStatus
 	/** Render the endpoint + key credentials column beside the snippet tabs. */
 	showCredentials?: boolean
 }
@@ -88,13 +94,18 @@ export const useGuidedFramework: () => GuidedFramework = isClerkAuthEnabled
  * the guided ingestion flow, used by the dashboard setup checklist and the
  * ingestion settings page. Selection persists via the per-org quick-start atom.
  */
-export function GuidedSetup({ apiKey, showCredentials = false }: GuidedSetupProps) {
+export function GuidedSetup({ apiKey, apiKeyStatus, showCredentials = false }: GuidedSetupProps) {
 	const { framework, setFramework } = useGuidedFramework()
 
 	return (
 		<div className="space-y-4">
 			<FrameworkPicker selected={framework} onSelect={setFramework} />
-			<ConnectInstructions framework={framework} apiKey={apiKey} showCredentials={showCredentials} />
+			<ConnectInstructions
+				framework={framework}
+				apiKey={apiKey}
+				apiKeyStatus={apiKeyStatus}
+				showCredentials={showCredentials}
+			/>
 		</div>
 	)
 }
@@ -122,7 +133,7 @@ export function FrameworkPicker({
 						className={cn(
 							"flex items-center gap-1.5 border font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
 							compact
-								? "rounded-full px-2.5 py-1 font-mono text-[11px] leading-3.5"
+								? "rounded-full px-2.5 py-1 font-mono text-2xs leading-3.5"
 								: "rounded-lg px-3 py-2 text-xs gap-2",
 							active
 								? compact
@@ -145,9 +156,7 @@ export function FrameworkPicker({
 
 	return (
 		<div className="space-y-2">
-			<span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-				Pick your stack
-			</span>
+			<Eyebrow variant="label">Pick your stack</Eyebrow>
 			{chips}
 		</div>
 	)
@@ -156,11 +165,13 @@ export function FrameworkPicker({
 export function ConnectInstructions({
 	framework,
 	apiKey,
+	apiKeyStatus = apiKey ? "ready" : "loading",
 	showCredentials = false,
 	variant = "boxed",
 }: {
 	framework: FrameworkId
 	apiKey: string
+	apiKeyStatus?: IngestKeyStatus
 	showCredentials?: boolean
 	/** `flush` drops the outer border/background so the tabs sit directly in a parent card. */
 	variant?: "boxed" | "flush"
@@ -177,66 +188,68 @@ export function ConnectInstructions({
 			.replace(/\{\{API_KEY\}\}/g, apiKey || "<your-api-key>")
 	}
 
-	const tabs = (
-		<div className={variant === "boxed" ? "rounded-lg border bg-card overflow-hidden" : undefined}>
-			<Tabs defaultValue="install" className="flex flex-col">
-				<div className={cn("border-b", variant === "boxed" ? "px-3" : "px-4")}>
-					<TabsList variant="underline" className="h-9">
-						<TabsTrigger value="install">Install</TabsTrigger>
-						<TabsTrigger value="instrument">Instrument</TabsTrigger>
-						<TabsTrigger value="claude-code">Claude Code</TabsTrigger>
-					</TabsList>
-				</div>
+	const tabsBody = (
+		<Tabs defaultValue="install" className="flex flex-col">
+			<div className={cn("border-b", variant === "boxed" ? "px-3" : "px-4")}>
+				<TabsList variant="underline" className="h-9">
+					<TabsTrigger value="install">Install</TabsTrigger>
+					<TabsTrigger value="instrument">Instrument</TabsTrigger>
+					<TabsTrigger value="claude-code">Claude Code</TabsTrigger>
+				</TabsList>
+			</div>
 
-				<TabsContent value="install" className={cn("overflow-auto mt-0", contentPadding)}>
-					{typeof snippet.install === "string" ? (
-						<CodeBlock code={snippet.install} language="shell" />
-					) : (
-						<PackageManagerCodeBlock packages={snippet.install.packages} />
-					)}
-				</TabsContent>
+			<TabsContent value="install" className={cn("overflow-auto mt-0", contentPadding)}>
+				{typeof snippet.install === "string" ? (
+					<CodeBlock code={snippet.install} language="shell" />
+				) : (
+					<PackageManagerCodeBlock packages={snippet.install.packages} />
+				)}
+			</TabsContent>
 
-				<TabsContent value="instrument" className={cn("overflow-auto mt-0", contentPadding)}>
-					{/* The snippet carries the org's ingest key in plain text and the dashboard
-					    records itself with rrweb — block the block, not just the key. */}
-					<CodeBlock
-						code={interpolate(snippet.instrument)}
-						language={snippet.label.toLowerCase()}
-						className={REPLAY_BLOCK_CLASS}
-					/>
-				</TabsContent>
+			<TabsContent value="instrument" className={cn("overflow-auto mt-0", contentPadding)}>
+				{/* The snippet carries the org's ingest key in plain text and the dashboard
+				    records itself with rrweb — block the block, not just the key. */}
+				<CodeBlock
+					code={interpolate(snippet.instrument)}
+					language={snippet.label.toLowerCase()}
+					className={REPLAY_BLOCK_CLASS}
+				/>
+			</TabsContent>
 
-				<TabsContent
-					value="claude-code"
-					className={cn("overflow-auto mt-0 space-y-2", contentPadding)}
-				>
-					<p className="text-xs text-muted-foreground">
-						Install the Maple skills, then run the prompt in Claude Code, Codex, or Cursor. The{" "}
-						<code className="rounded bg-muted px-1">maple-onboard</code> skill walks every service
-						in the repo, installs OpenTelemetry, wires traces / logs / metrics, and verifies the
-						bootstrap end-to-end.
-					</p>
-					<CodeBlock code={ONBOARD_SKILL_COMMAND} language="shell" />
-					<CodeBlock
-						code={onboardSkillPrompt(ingestUrl, apiKey)}
-						language="shell"
-						className={REPLAY_BLOCK_CLASS}
-					/>
-				</TabsContent>
-			</Tabs>
-		</div>
+			<TabsContent
+				value="claude-code"
+				className={cn("overflow-auto mt-0 space-y-2", contentPadding)}
+			>
+				<p className="text-xs text-muted-foreground">
+					Install the Maple skills, then run the prompt in Claude Code, Codex, or Cursor. The{" "}
+					<InlineCode>maple-onboard</InlineCode> skill walks every service in the repo, installs
+					OpenTelemetry, wires traces / logs / metrics, and verifies the bootstrap end-to-end.
+				</p>
+				<CodeBlock code={ONBOARD_SKILL_COMMAND} language="shell" />
+				<CodeBlock
+					code={onboardSkillPrompt(ingestUrl, apiKey)}
+					language="shell"
+					className={REPLAY_BLOCK_CLASS}
+				/>
+			</TabsContent>
+		</Tabs>
 	)
+	const tabs = variant === "boxed" ? <Panel>{tabsBody}</Panel> : <div>{tabsBody}</div>
 
 	if (!showCredentials) return tabs
 
 	return (
 		<div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
 			<div className="space-y-3">
-				<span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-					Credentials
-				</span>
+				<Eyebrow variant="label">Credentials</Eyebrow>
 				<CopyableField value={ingestUrl} label="Ingest endpoint" />
-				<CopyableField value={apiKey || "Loading…"} label="API key" masked />
+				{apiKeyStatus === "failed" ? (
+					<IngestKeysUnavailableNote />
+				) : apiKeyStatus === "loading" || !apiKey ? (
+					<CopyableFieldSkeleton label="API key" />
+				) : (
+					<CopyableField value={apiKey} label="API key" masked />
+				)}
 			</div>
 			{tabs}
 		</div>

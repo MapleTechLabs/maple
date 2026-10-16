@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { WarehouseQuotaExceededError } from "@maple/domain/http"
-import { HttpClientError, HttpClientRequest } from "effect/unstable/http"
+import { HttpClientError, HttpClientRequest } from "effect/http"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import {
 	noteReachable,

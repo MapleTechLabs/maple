@@ -7,7 +7,7 @@ import {
 	type PlanLike,
 } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
-import { formatCount, formatUsage } from "./usage"
+import { formatCount, formatQuoteUnits, formatUsage, quoteUnits } from "./usage"
 
 // Metered features surfaced on the billing page. AI token features stay hidden,
 // matching HIDDEN_FEATURE_IDS in pricing-cards.tsx.
@@ -50,7 +50,7 @@ const featureUnit = (featureId: string): string => COUNT_UNITS[featureId] ?? "GB
 
 // Sub-cent rates (e.g. $0.003/session) would round to "$0.00" through the
 // 2-decimal currency formatter, so render those raw.
-const formatRate = (rate: number): string =>
+const formatUnitPrice = (rate: number): string =>
 	rate > 0 && rate < 0.01 ? `$${rate}` : formatCurrency(rate, "usd")
 
 const formatQuantity = (featureId: string, value: number): string => {
@@ -144,10 +144,12 @@ export function estimateCycleCost({
 		const billingUnits = item?.price?.billingUnits ?? 1
 		const units = Math.ceil(over / (billingUnits > 0 ? billingUnits : 1))
 		const unit = featureUnit(featureId)
+		const block = quoteUnits(featureId, billingUnits > 0 ? billingUnits : 1)
+		const blockRate = (rate / (billingUnits > 0 ? billingUnits : 1)) * block
 		const rateLabel =
-			billingUnits > 1
-				? `${formatRate(rate)} / ${billingUnits.toLocaleString("en-US")} ${unit}s`
-				: `${formatRate(rate)} / ${unit}`
+			block > 1
+				? `${formatUnitPrice(blockRate)} / ${formatQuoteUnits(block)} ${unit}s`
+				: `${formatUnitPrice(rate)} / ${unit}`
 		lines.push({
 			key: `overage:${featureId}`,
 			label: `${FEATURE_LABELS[featureId] ?? featureId} overage`,

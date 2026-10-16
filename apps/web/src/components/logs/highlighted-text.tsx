@@ -44,7 +44,7 @@ export const HighlightedText = React.memo(function HighlightedText({ text, query
 		segment.match ? (
 			<mark
 				key={index}
-				className="rounded-[2px] bg-primary/30 px-px text-foreground [text-decoration:inherit]"
+				className="rounded-xs bg-primary/30 px-px text-foreground [text-decoration:inherit]"
 			>
 				{segment.text}
 			</mark>

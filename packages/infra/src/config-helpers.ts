@@ -1,8 +1,5 @@
-// Small effect `Config` helpers shared by worker env schemas (apps/api's `Env`,
-// apps/electric-sync's `SyncConfig`). Kept in a standalone module — NOT the
-// package index, whose deploy-side graph (alchemy, portless) has no business in
-// a Worker bundle or a test. This module imports only `effect`, so it's safe
-// everywhere.
+// `Config` helpers for runtime Worker env schemas. Imports only `effect`; keep it out of the
+// package index, which pulls in deploy-side deps.
 import { Config, Option, Redacted } from "effect"
 
 /** `Config.String(key)` with a fallback when the env var is unset. */

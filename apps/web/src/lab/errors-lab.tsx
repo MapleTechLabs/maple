@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -47,6 +48,7 @@ export function ErrorsLab() {
 	const [view, setView] = useState<HubView>("open")
 	const [sort, setSort] = useState<HubSort>("last_seen")
 	const [severity, setSeverity] = useState<SeverityFilter>("all")
+	const [search, setSearch] = useState("")
 	const [state, setState] = useState<LabState>("ready")
 	const [width, setWidth] = useState<number | null>(null)
 
@@ -59,7 +61,16 @@ export function ErrorsLab() {
 				if (severity === "unset") return signal.severity === null
 				return signal.severity === severity
 			})
-	}, [fixture.signals, state, view, severity])
+			.filter((signal) => {
+				// Mirrors the server's ILIKE over type, message, label and service.
+				const term = search.toLowerCase()
+				if (term === "") return true
+				const { issue } = signal
+				return [issue.exceptionType, issue.exceptionMessage, issue.errorLabel, issue.serviceName].some(
+					(field) => field.toLowerCase().includes(term),
+				)
+			})
+	}, [fixture.signals, state, view, severity, search])
 
 	return (
 		<DashboardLayout.Root>
@@ -67,10 +78,7 @@ export function ErrorsLab() {
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Errors"
-							description="Every error fingerprint, with what it is doing and who is on it."
-						>
+						<DashboardLayout.Header>
 							<LabControls
 								state={state}
 								onStateChange={setState}
@@ -94,6 +102,8 @@ export function ErrorsLab() {
 								onViewChange={setView}
 								onSortChange={setSort}
 								onSeverityChange={setSeverity}
+								search={search}
+								onSearchChange={(value) => setSearch(value ?? "")}
 								stats={<LabStatStrip summary={fixture.summary} />}
 								onRetry={() => setState("ready")}
 							/>
@@ -147,7 +157,7 @@ function LabToggleGroup<T extends string | number | null>({
 }) {
 	return (
 		<div className="flex items-center gap-1.5">
-			<span className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</span>
+			<Eyebrow>{label}</Eyebrow>
 			<div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5">
 				{options.map((option) => (
 					<button
@@ -183,10 +193,8 @@ function LabStatStrip({
 	}
 }) {
 	const stats = [
-		{ value: formatNumber(summary.totalErrors), label: "errors" },
+		{ value: formatNumber(summary.totalErrors), label: "error events" },
 		{ value: formatErrorRate(summary.errorRate), label: "of all spans" },
-		{ value: formatNumber(summary.affectedServicesCount), label: "services" },
-		{ value: formatNumber(summary.affectedTracesCount), label: "traces" },
 	]
 	return (
 		<div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-xs">
@@ -196,7 +204,7 @@ function LabStatStrip({
 					<span className="text-muted-foreground">{stat.label}</span>
 				</span>
 			))}
-			<span className="text-muted-foreground/60">in the selected window</span>
+			<span className="text-muted-foreground/60">in the last 24 hours</span>
 		</div>
 	)
 }

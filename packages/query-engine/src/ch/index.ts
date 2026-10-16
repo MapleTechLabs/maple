@@ -1,13 +1,13 @@
 // ClickHouse Query DSL — Maple facade
 //
 // The generic, reusable query builder now lives in the standalone
-// @maple-dev/effect-clickhouse package. This module re-exports that public API
+// @maple-dev/effect-orm package. This module re-exports that public API
 // and layers Maple's OpenTelemetry-specific table definitions, the named-query
 // ("pipe") registry, and the pre-built query templates on top of it.
 
 // Generic DSL — types, table, expressions, functions, params, query builder,
 // compilation, and unions — re-exported from the standalone library.
-export * from "@maple-dev/effect-clickhouse"
+export * from "@maple-dev/effect-orm/clickhouse"
 
 // Handwritten SQL. Shadows the builder's `rawCompiledQuery`, whose `reason`
 // is any string, with one that pins Maple's closed `RawSqlReason` union — the
@@ -18,6 +18,9 @@ export { type RawSqlReason, rawCompiledQuery } from "./raw-sql"
 // Shared by the cloud WarehouseQueryService and the local CLI executor so both
 // resolve a pipe name to identical SQL.
 export { compilePipeQuery, type PipeCompiledQuery } from "./pipe-dispatch"
+
+// One builder over a current and a previous window, rows tagged with `period`.
+export { compilePeriodCompare, type PeriodCompareWindows } from "./period-compare"
 
 export * as tables from "./tables"
 
@@ -68,6 +71,8 @@ export {
 	metricAttributeValuesQuery,
 	metricScopedAttributeKeysQuery,
 	metricScopedAttributeValuesQuery,
+	serviceScopedAttributeKeysQuery,
+	serviceScopedAttributeValuesQuery,
 	type MetricScopedAttributeKeysOpts,
 	type MetricScopedAttributeValuesOpts,
 	type AttributeKeysQueryOpts,
@@ -286,6 +291,9 @@ export {
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
 	servicesFacetsQuery,
+	servicePresenceQuery,
+	servicePresenceRowSchema,
+	type ServicePresenceOutput,
 	type ServiceOverviewOpts,
 	type ServiceOverviewOutput,
 	type ServiceCatalogOpts,
@@ -312,7 +320,6 @@ export {
 	releasesListRowSchema,
 	releasesTimelineQuery,
 	releaseErrorFingerprintsQuery,
-	releaseErrorFingerprintsRowSchema,
 	RELEASES_LIST_CAP,
 	PLACEHOLDER_COMMIT_SHAS,
 	type ReleasesListOpts,
@@ -321,6 +328,11 @@ export {
 	type ReleasesTimelineOutput,
 	type ReleaseErrorFingerprintsOpts,
 	type ReleaseErrorFingerprintsOutput,
+	serviceDeploymentsQuery,
+	serviceDeploymentsRowSchema,
+	DEPLOYMENTS_PER_SERVICE_CAP,
+	type ServiceDeploymentsOpts,
+	type ServiceDeploymentsOutput,
 } from "./queries/releases"
 
 // Queries — Errors
@@ -332,15 +344,24 @@ export {
 	spanHierarchyQuery,
 	SPAN_HIERARCHY_MAX_SPANS,
 	spanDetailQuery,
+	spanEventsQuery,
+	spanEventsByTraceQuery,
 	traceTimeProbeQuery,
+	recentTraceTimeProbeQuery,
 	tracesDurationStatsQuery,
 	canUseTraceFacetsRollup,
 	tracesFacetsQuery,
 	errorsFacetsQuery,
 	errorsSummaryQuery,
 	errorDetailTracesQuery,
+	errorFingerprintSummaryQuery,
+	errorCooccurringFingerprintsQuery,
+	errorFingerprintOccurrencesQuery,
+	errorOccurrenceSpansQuery,
+	errorsWindowTotalsQuery,
 	errorIssuesQuery,
 	errorTickBootstrapIssuesQuery,
+	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
 	errorFingerprintsQuery,
 	errorIssueTimeseriesQuery,
@@ -359,6 +380,9 @@ export {
 	type SpanHierarchyOutput,
 	type SpanDetailOpts,
 	type SpanDetailOutput,
+	type SpanEventsOpts,
+	type SpanEventsOutput,
+	type SpanEventsByTraceOutput,
 	type TraceTimeProbeOutput,
 	type TracesDurationStatsOpts,
 	type TracesDurationStatsOutput,
@@ -411,11 +435,16 @@ export {
 export {
 	serviceDependenciesSQL,
 	serviceDependenciesForServiceQuery,
+	serviceDependenciesInvolvingServiceQuery,
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
 	serviceDbQuerySummarySQL,
 	serviceDbQueryTimeseriesSQL,
 	serviceDbTopQueriesSQL,
+	dbQueryVolumeQuery,
+	dbQueryVolumeRowSchema,
+	type DbQueryVolumeOpts,
+	type DbQueryVolumeOutput,
 	servicePlatformsSQL,
 	serviceMapEdgeJoinQuery,
 	type ServiceDependenciesOpts,
@@ -479,6 +508,11 @@ export {
 	type ServiceOperationsSummaryOutput,
 	type ServiceOperationsTimeseriesOpts,
 	type ServiceOperationsTimeseriesOutput,
+	routeUsageQuery,
+	routeUsageRowSchema,
+	type RouteUsageOpts,
+	type RouteUsageOrder,
+	type RouteUsageOutput,
 } from "./queries/service-operations"
 
 // Queries — Service API Endpoints (the HTTP slice of the operations rollup)
@@ -534,6 +568,9 @@ export {
 
 // Queries — Telemetry liveness (auto-resolve gating + local-mode header heartbeat)
 export {
+	ingestFreshnessQuery,
+	ingestFreshnessRowSchema,
+	logsFreshnessQuery,
 	orgTelemetryPulseQuery,
 	serviceLivenessQuery,
 	type ServiceLivenessOpts,
@@ -562,10 +599,11 @@ export {
 	hostDetailSummaryQuery,
 	hostGaugeTimeseriesQuery,
 	hostNetworkTimeseriesQuery,
-	fleetUtilizationTimeseriesQuery,
+	hostFilesystemsQuery,
 	listPodsQuery,
 	listPodsSummaryQuery,
 	podDetailSummaryQuery,
+	podRestartsQuery,
 	podGaugeTimeseriesQuery,
 	podFacetsQuery,
 	listNodesQuery,
@@ -584,7 +622,8 @@ export {
 	type HostGaugeTimeseriesOutput,
 	type HostNetworkTimeseriesOpts,
 	type HostNetworkTimeseriesOutput,
-	type FleetUtilizationTimeseriesOutput,
+	type HostFilesystemsOpts,
+	type HostFilesystemsOutput,
 	type ListPodsOpts,
 	type ListPodsOutput,
 	type ListPodsSummaryOutput,
@@ -592,10 +631,13 @@ export {
 	type SortDirection,
 	type PodDetailSummaryOpts,
 	type PodDetailSummaryOutput,
+	type PodRestartsOpts,
+	type PodRestartsOutput,
 	type PodGaugeTimeseriesOpts,
 	type PodFacetsOutput,
 	type ListNodesOpts,
 	type ListNodesOutput,
+	type NodeCapacityOutput,
 	type NodeDetailSummaryOpts,
 	type NodeDetailSummaryOutput,
 	type NodeGaugeTimeseriesOpts,
@@ -635,3 +677,22 @@ export {
 	type ContainerTimeseriesOutput,
 	type ContainerFacetsOutput,
 } from "./queries/containers"
+
+// Queries — Pull request review (per-operation traffic across services)
+export {
+	operationTrafficHourlyQuery,
+	operationTrafficMinutelyQuery,
+	type OperationTrafficOpts,
+	type OperationTrafficOutput,
+} from "./queries/pr-review"
+
+// Queries — CI pipeline runs (GitHub Actions traces)
+export {
+	CI_TRACES_SERVICE_NAME,
+	ciFailedJobsQuery,
+	ciRunsQuery,
+	type CiFailedJobsOpts,
+	type CiFailedJobsOutput,
+	type CiRunsOpts,
+	type CiRunsOutput,
+} from "./queries/ci-runs"

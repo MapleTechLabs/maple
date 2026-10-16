@@ -9,11 +9,11 @@
 //
 // Auth is the token `maple auth login` already stores: a `maple_ak_…` API key
 // minted with `kind: "standard"` and no scope restriction, which
-// `ApiAuthorizationV2Layer` accepts across every `/v2` family.
+// `ApiAuthorizationV2Live` accepts across every `/v2` family.
 
 import { Effect } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
-import { HttpApiClient } from "effect/unstable/httpapi"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { HttpApiClient } from "effect/http-api"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { WarehouseClientError, WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { CliNotFoundError, CliUsageError } from "../lib/errors"

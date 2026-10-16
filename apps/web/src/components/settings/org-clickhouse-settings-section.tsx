@@ -1,27 +1,24 @@
+import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Exit, Option } from "effect"
+import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
-import { displayError } from "@/lib/error-messages"
+import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
 import {
 	AlertWarningIcon,
 	ChevronDownIcon,
@@ -29,40 +26,15 @@ import {
 	CircleCheckIcon,
 	CircleWarningIcon,
 	CircleXmarkIcon,
-	LoaderIcon,
 } from "@/components/icons"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { OrgClickHouseSettingsUpsertRequest } from "@maple/domain/http"
 import { DataPlatformUsageSection } from "@/components/settings/data-platform-usage-section"
-
-function getExitErrorMessage(exit: Exit.Exit<unknown, unknown>, fallback: string): string {
-	if (Exit.isSuccess(exit)) return fallback
-	const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
-	const formatted = displayError(failure ?? exit)
-	return formatted.message || formatted.title || fallback
-}
-
-const syncDateFormatter = new Intl.DateTimeFormat("en-US", {
-	month: "short",
-	day: "numeric",
-	year: "numeric",
-	hour: "numeric",
-	minute: "2-digit",
-})
-
-function formatSyncDate(value: string | null): string {
-	if (!value) return "Never"
-	try {
-		return syncDateFormatter.format(new Date(value))
-	} catch {
-		return value
-	}
-}
-
-function shortRevision(rev: string | null): string {
-	if (!rev) return "—"
-	return rev.length > 10 ? rev.slice(0, 10) : rev
-}
+import { toastExit } from "@/lib/error-toast"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { ErrorState } from "@/components/common/error-state"
 
 interface OrgClickHouseSettingsSectionProps {
 	isAdmin: boolean
@@ -74,33 +46,75 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 	const [chUser, setChUser] = useState("default")
 	const [chPassword, setChPassword] = useState("")
 	const [chDatabase, setChDatabase] = useState("default")
-	const [isSaving, setIsSaving] = useState(false)
 	const [isStarting, setIsStarting] = useState(false)
-	const [isRefreshingDiff, setIsRefreshingDiff] = useState(false)
 	const [disableOpen, setDisableOpen] = useState(false)
-	const [isDisabling, setIsDisabling] = useState(false)
+	const { effectiveTimezone } = useTimezonePreference()
 	const [expandedDrifts, setExpandedDrifts] = useState<ReadonlySet<string>>(new Set())
 
-	const settingsQueryAtom = retainedQuery("orgClickHouseSettings", "get", {})
+	const settingsQueryAtom = retainedInternalQuery("orgClickHouseSettings", "get", {})
 	const settingsResult = useAtomValue(settingsQueryAtom)
 	const refreshSettings = useAtomRefresh(settingsQueryAtom)
 
-	const diffQueryAtom = retainedQuery("orgClickHouseSettings", "schemaDiff", {})
+	const diffQueryAtom = retainedInternalQuery("orgClickHouseSettings", "schemaDiff", {})
 	const diffResult = useAtomValue(diffQueryAtom)
 	const refreshDiff = useAtomRefresh(diffQueryAtom)
 
-	const statusQueryAtom = retainedQuery("orgClickHouseSettings", "applySchemaStatus", {})
+	const statusQueryAtom = retainedInternalQuery("orgClickHouseSettings", "applySchemaStatus", {})
 	const statusResult = useAtomValue(statusQueryAtom)
 	const refreshStatus = useAtomRefresh(statusQueryAtom)
 
-	const upsertMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "upsert"), {
+	const upsertMutation = useAtomSet(MapleInternalAtomClient.mutation("orgClickHouseSettings", "upsert"), {
 		mode: "promiseExit",
 	})
-	const applyMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "applySchema"), {
+	const applyMutation = useAtomSet(
+		MapleInternalAtomClient.mutation("orgClickHouseSettings", "applySchema"),
+		{
+			mode: "promiseExit",
+		},
+	)
+	const deleteMutation = useAtomSet(MapleInternalAtomClient.mutation("orgClickHouseSettings", "delete"), {
 		mode: "promiseExit",
 	})
-	const deleteMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "delete"), {
-		mode: "promiseExit",
+
+	const [handleSave, isSaving] = useAsyncAction(async () => {
+		const result = await upsertMutation({
+			payload: new OrgClickHouseSettingsUpsertRequest({
+				url: chUrl,
+				user: chUser,
+				password: chPassword,
+				database: chDatabase,
+			}),
+		})
+
+		if (!toastExit(result, { success: "ClickHouse connection saved", error: "Failed to save settings" }))
+			return
+		setChPassword("")
+		refreshSettings()
+		refreshDiff()
+	})
+
+	const [handleRefreshDiff, isRefreshingDiff] = useAsyncAction(async () => {
+		refreshDiff()
+		// Atom refresh is fire-and-forget; tiny delay so the spinner is visible on
+		// fast re-runs and we don't end the busy state before the new request lands.
+		await new Promise((resolve) => setTimeout(resolve, 300))
+	})
+
+	const [handleDisable, isDisabling] = useAsyncAction(async () => {
+		const result = await deleteMutation({})
+		setDisableOpen(false)
+
+		if (
+			!toastExit(result, {
+				success: "BYO ClickHouse disabled",
+				error: "Failed to disable BYO ClickHouse",
+			})
+		)
+			return
+		setChUrl("")
+		setChPassword("")
+		refreshSettings()
+		refreshDiff()
 	})
 
 	const settings = Result.builder(settingsResult)
@@ -137,7 +151,11 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 			refreshDiff()
 			toastManager.add({ title: "Schema applied", type: "success" })
 		} else if (status === "failed") {
-			toastManager.add({ title: applyStatus?.errorMessage ?? "Schema apply failed", type: "error" })
+			toastManager.add({
+				title: "Schema apply failed",
+				description: applyStatus?.errorMessage ?? undefined,
+				type: "error",
+			})
 		}
 	}, [applyStatus?.status, applyStatus?.errorMessage, refreshSettings, refreshDiff])
 
@@ -160,7 +178,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 
 	const statusBadge = useMemo(() => {
 		if (!configured) return <Badge variant="secondary">Default Maple Tinybird</Badge>
-		if (settings?.syncStatus === "error") return <Badge variant="destructive">Needs attention</Badge>
+		if (settings?.syncStatus === "error") return <Badge variant="crit">Needs attention</Badge>
 		return <Badge variant="outline">Connected</Badge>
 	}, [configured, settings?.syncStatus])
 
@@ -170,28 +188,6 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 		for (const entry of diff.entries) counts[entry.status]++
 		return counts
 	}, [diff])
-
-	async function handleSave() {
-		setIsSaving(true)
-		const result = await upsertMutation({
-			payload: new OrgClickHouseSettingsUpsertRequest({
-				url: chUrl,
-				user: chUser,
-				password: chPassword,
-				database: chDatabase,
-			}),
-		})
-		setIsSaving(false)
-
-		if (Exit.isSuccess(result)) {
-			setChPassword("")
-			refreshSettings()
-			refreshDiff()
-			toastManager.add({ title: "ClickHouse connection saved", type: "success" })
-			return
-		}
-		toastManager.add({ title: getExitErrorMessage(result, "Failed to save settings"), type: "error" })
-	}
 
 	async function handleApply() {
 		// Apply now runs in a background workflow (heavy backfill migrations can't
@@ -211,39 +207,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 			return
 		}
 		setIsStarting(false)
-		toastManager.add({
-			title: getExitErrorMessage(result, "Failed to start schema apply"),
-			type: "error",
-		})
-	}
-
-	async function handleRefreshDiff() {
-		setIsRefreshingDiff(true)
-		refreshDiff()
-		// Atom refresh is fire-and-forget; tiny delay so the spinner is visible on
-		// fast re-runs and we don't end the busy state before the new request lands.
-		await new Promise((resolve) => setTimeout(resolve, 300))
-		setIsRefreshingDiff(false)
-	}
-
-	async function handleDisable() {
-		setIsDisabling(true)
-		const result = await deleteMutation({})
-		setIsDisabling(false)
-		setDisableOpen(false)
-
-		if (Exit.isSuccess(result)) {
-			setChUrl("")
-			setChPassword("")
-			refreshSettings()
-			refreshDiff()
-			toastManager.add({ title: "BYO ClickHouse disabled", type: "success" })
-			return
-		}
-		toastManager.add({
-			title: getExitErrorMessage(result, "Failed to disable BYO ClickHouse"),
-			type: "error",
-		})
+		toastExit(result, { error: "Failed to start schema apply" })
 	}
 
 	function toggleDriftRow(name: string) {
@@ -259,33 +223,26 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 
 	return (
 		<>
-			<div className="max-w-2xl space-y-6">
+			<SettingsSections>
 				<DataPlatformUsageSection />
-				<Card>
-					<CardHeader>
-						<div className="flex items-center justify-between gap-3">
-							<div className="space-y-1">
-								<CardTitle>Bring your own ClickHouse</CardTitle>
-								<CardDescription>
-									Route this organization&apos;s read queries through your own ClickHouse
-									server. Save the connection first, then review the schema diff and apply
-									the bundled snapshot to your cluster.
-								</CardDescription>
-							</div>
-							{Result.isInitial(settingsResult) ? (
-								<Skeleton className="h-6 w-36" />
-							) : (
-								statusBadge
-							)}
-						</div>
-					</CardHeader>
-					<CardContent className="space-y-5">
-						{!Result.isSuccess(settingsResult) && !Result.isInitial(settingsResult) ? (
-							<p className="text-sm text-muted-foreground">Failed to load settings.</p>
+				<SettingsSection
+					title="Bring your own ClickHouse"
+					description="Route this organization's read queries through your own ClickHouse server. Save the connection first, then review the schema diff and apply the bundled snapshot to your cluster."
+					actions={
+						Result.isInitial(settingsResult) ? <Skeleton className="h-6 w-36" /> : statusBadge
+					}
+				>
+					<div className="space-y-5">
+						{Result.isFailure(settingsResult) ? (
+							<ErrorState
+								error={settingsResult.cause}
+								title="Failed to load settings"
+								variant="inline"
+							/>
 						) : (
 							<>
-								<div className="grid gap-2">
-									<Label htmlFor="ch-url">ClickHouse URL</Label>
+								<Field>
+									<FieldLabel htmlFor="ch-url">ClickHouse URL</FieldLabel>
 									<Input
 										id="ch-url"
 										placeholder="https://your-clickhouse.example.com:8123"
@@ -293,34 +250,34 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 										onChange={(event) => setChUrl(event.target.value)}
 										disabled={isBusy}
 									/>
-									<p className="text-muted-foreground text-xs">
+									<FieldDescription>
 										HTTP interface URL (port 8123 by default).
-									</p>
-								</div>
+									</FieldDescription>
+								</Field>
 
 								<div className="grid gap-2 sm:grid-cols-2">
-									<div className="grid gap-2">
-										<Label htmlFor="ch-user">User</Label>
+									<Field>
+										<FieldLabel htmlFor="ch-user">User</FieldLabel>
 										<Input
 											id="ch-user"
 											value={chUser}
 											onChange={(event) => setChUser(event.target.value)}
 											disabled={isBusy}
 										/>
-									</div>
-									<div className="grid gap-2">
-										<Label htmlFor="ch-database">Database</Label>
+									</Field>
+									<Field>
+										<FieldLabel htmlFor="ch-database">Database</FieldLabel>
 										<Input
 											id="ch-database"
 											value={chDatabase}
 											onChange={(event) => setChDatabase(event.target.value)}
 											disabled={isBusy}
 										/>
-									</div>
+									</Field>
 								</div>
 
-								<div className="grid gap-2">
-									<Label htmlFor="ch-password">Password</Label>
+								<Field>
+									<FieldLabel htmlFor="ch-password">Password</FieldLabel>
 									<Input
 										id="ch-password"
 										type="password"
@@ -333,15 +290,16 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 										onChange={(event) => setChPassword(event.target.value)}
 										disabled={isBusy}
 									/>
-									<p className="text-muted-foreground text-xs">
+									<FieldDescription>
 										Leave blank for unauthenticated CH instances or to keep the existing
 										password.
-									</p>
-								</div>
+									</FieldDescription>
+								</Field>
 
 								<div className="flex flex-wrap gap-2">
 									<Button
 										onClick={() => void handleSave()}
+										loading={isSaving}
 										disabled={
 											isBusy ||
 											!isValidUrl ||
@@ -349,11 +307,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 											chDatabase.trim().length === 0
 										}
 									>
-										{isSaving
-											? "Saving..."
-											: configured
-												? "Update connection"
-												: "Save connection"}
+										{configured ? "Update connection" : "Save connection"}
 									</Button>
 									<Button
 										variant="destructive"
@@ -365,68 +319,65 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 								</div>
 							</>
 						)}
-					</CardContent>
-				</Card>
+					</div>
+				</SettingsSection>
 
 				{configured ? (
-					<Card>
-						<CardHeader>
-							<div className="flex items-center justify-between gap-3">
-								<div className="space-y-1">
-									<CardTitle>Schema</CardTitle>
-									<CardDescription>
-										Compare your cluster against Maple&apos;s bundled schema snapshot.
-										Apply creates missing tables and views, and adds missing columns to
-										existing tables. Type mismatches are skipped: resolve those manually.
-									</CardDescription>
-								</div>
-							</div>
-						</CardHeader>
-						<CardContent className="space-y-4">
-							<div className="grid grid-cols-2 gap-3 rounded-lg border px-4 py-3 text-sm sm:grid-cols-4">
-								<div>
-									<p className="text-muted-foreground text-xs">Last applied</p>
-									<p>{formatSyncDate(settings?.lastSyncAt ?? null)}</p>
-								</div>
-								<div>
-									<p className="text-muted-foreground text-xs">Applied version</p>
-									<p className="font-mono text-xs">
-										{shortRevision(settings?.schemaVersion ?? null)}
-									</p>
-								</div>
-								<div>
-									<p className="text-muted-foreground text-xs">Expected version</p>
-									<p className="font-mono text-xs">
-										{shortRevision(diff?.expectedSchemaVersion ?? null)}
-									</p>
-								</div>
-								<div>
-									<p className="text-muted-foreground text-xs">Drift</p>
-									<p>
+					<SettingsSection
+						title="Schema"
+						description="Compare your cluster against Maple's bundled schema snapshot. Apply creates missing tables and views, and adds missing columns to existing tables. Type mismatches are skipped: resolve those manually."
+					>
+						<div className="space-y-4">
+							<Panel padded="sm" tone="muted">
+								<KeyValueList layout="stacked" className="grid-cols-2 sm:grid-cols-4">
+									<KeyValue label="Last applied">
+										{settings?.lastSyncAt
+											? formatTimestampInTimezone(settings.lastSyncAt, {
+													timeZone: effectiveTimezone,
+													withYear: true,
+												})
+											: "Never"}
+									</KeyValue>
+									<KeyValue label="Applied version" mono>
+										{settings?.schemaVersion ? (
+											<TruncatedId
+												value={settings.schemaVersion}
+												kind="sha"
+												length={10}
+											/>
+										) : (
+											EMPTY_VALUE
+										)}
+									</KeyValue>
+									<KeyValue label="Expected version" mono>
+										{diff?.expectedSchemaVersion ? (
+											<TruncatedId
+												value={diff.expectedSchemaVersion}
+												kind="sha"
+												length={10}
+											/>
+										) : (
+											EMPTY_VALUE
+										)}
+									</KeyValue>
+									<KeyValue label="Drift">
 										{diffSummary
 											? `${diffSummary.up_to_date} ok · ${diffSummary.missing} missing · ${diffSummary.drifted} drift`
-											: "—"}
-									</p>
-								</div>
-							</div>
+											: EMPTY_VALUE}
+									</KeyValue>
+								</KeyValueList>
+							</Panel>
 
 							{Result.isInitial(diffResult) ? (
-								<div className="space-y-2">
-									<Skeleton className="h-9 w-full" />
-									<Skeleton className="h-9 w-full" />
-									<Skeleton className="h-9 w-full" />
-								</div>
-							) : !Result.isSuccess(diffResult) ? (
-								<div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-									Failed to introspect ClickHouse:{" "}
-									{getExitErrorMessage(
-										// SAFETY: this branch has already excluded loading and success, leaving the failure Exit variant.
-										diffResult as unknown as Exit.Exit<unknown, unknown>,
-										"check that credentials are valid",
-									)}
-								</div>
+								<SkeletonList rows={3} rowClassName="h-9" gap="2" />
+							) : Result.isFailure(diffResult) ? (
+								<ErrorState
+									error={diffResult.cause}
+									title="Failed to introspect ClickHouse. Check that the credentials are valid."
+									variant="inline"
+								/>
 							) : diff && diff.entries.length > 0 ? (
-								<div className="divide-y rounded-md border">
+								<Panel className="divide-y">
 									{diff.entries.map((entry) => {
 										const isExpanded = expandedDrifts.has(entry.name)
 										const isDrifted = entry.status === "drifted"
@@ -443,12 +394,12 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 													{entry.status === "up_to_date" ? (
 														<CircleCheckIcon
 															size={14}
-															className="text-success shrink-0"
+															className="text-severity-info shrink-0"
 														/>
 													) : entry.status === "missing" ? (
 														<CircleXmarkIcon
 															size={14}
-															className="text-destructive shrink-0"
+															className="text-severity-error shrink-0"
 														/>
 													) : (
 														<CircleWarningIcon
@@ -464,10 +415,10 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 														{entry.status === "up_to_date"
 															? "Up to date"
 															: entry.status === "missing"
-																? "Missing — will be created"
+																? "Missing, will be created"
 																: entry.status === "wrong_kind"
-																	? `Wrong kind: expected ${entry.kind === "materialized_view" ? "MV" : "table"}, found ${entry.actualKind === "materialized_view" ? "MV" : "table"} — resolve manually`
-																	: `Drift: ${entry.columnDrifts.length} mismatch${entry.columnDrifts.length === 1 ? "" : "es"}`}
+																	? `Wrong kind: expected ${entry.kind === "materialized_view" ? "MV" : "table"}, found ${entry.actualKind === "materialized_view" ? "MV" : "table"}; resolve manually`
+																	: `Drift: ${countLabel(entry.columnDrifts.length, "mismatch", "mismatches")}`}
 													</span>
 													{isDrifted ? (
 														isExpanded ? (
@@ -496,94 +447,69 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 											</div>
 										)
 									})}
-								</div>
+								</Panel>
 							) : (
-								<p className="text-sm text-muted-foreground">No tables in the schema.</p>
+								<EmptyMessage dashed>No tables in the schema.</EmptyMessage>
 							)}
 
 							<div className="flex flex-wrap gap-2">
-								<Button
-									variant="outline"
-									onClick={() => void handleRefreshDiff()}
+								<RefreshButton
+									size="default"
+									label="Refresh diff"
+									onRefresh={() => void handleRefreshDiff()}
+									pending={isRefreshingDiff}
 									disabled={isBusy}
-								>
-									{isRefreshingDiff ? (
-										<>
-											<LoaderIcon size={12} className="mr-1 animate-spin" />
-											Refreshing…
-										</>
-									) : (
-										"Refresh diff"
-									)}
-								</Button>
+								/>
 								<Button
 									onClick={() => void handleApply()}
+									loading={isApplying}
 									disabled={
 										isBusy ||
 										!diff ||
 										(diffSummary?.missing === 0 && diffSummary?.drifted === 0)
 									}
 								>
-									{isApplying ? (
-										<>
-											<LoaderIcon size={12} className="mr-1 animate-spin" />
-											{runActive &&
-											applyStatus?.stepsTotal != null &&
-											applyStatus?.stepsDone != null
-												? `Applying… (${applyStatus.stepsDone}/${applyStatus.stepsTotal})`
-												: "Applying…"}
-										</>
-									) : diffSummary && diffSummary.missing > 0 ? (
-										`Apply schema (${diffSummary.missing} missing${diffSummary.drifted > 0 ? `, ${diffSummary.drifted} skipped` : ""})`
-									) : (
-										"Apply schema"
-									)}
+									{diffSummary && diffSummary.missing > 0
+										? `Apply schema (${diffSummary.missing} missing${diffSummary.drifted > 0 ? `, ${diffSummary.drifted} skipped` : ""})`
+										: "Apply schema"}
 								</Button>
 							</div>
 							{runActive && (
 								<p className="text-sm text-muted-foreground">
 									{applyStatus?.phase ?? "Applying schema…"}
+									{applyStatus?.stepsTotal != null && applyStatus?.stepsDone != null
+										? ` (${applyStatus.stepsDone}/${applyStatus.stepsTotal})`
+										: ""}
 									{applyStatus?.currentMigration != null
 										? ` · migration ${applyStatus.currentMigration}`
 										: ""}
-									{" — runs in the background; safe to leave this page."}
+									{". Runs in the background, safe to leave this page."}
 								</p>
 							)}
 							{applyStatus?.status === "failed" && applyStatus.errorMessage && (
-								<p className="text-sm text-destructive">{applyStatus.errorMessage}</p>
+								<p className={cn("text-sm", TONE_TEXT.crit)}>{applyStatus.errorMessage}</p>
 							)}
-						</CardContent>
-					</Card>
+						</div>
+					</SettingsSection>
 				) : null}
-			</div>
+			</SettingsSections>
 
-			<AlertDialog open={disableOpen} onOpenChange={setDisableOpen}>
-				<AlertDialogContent>
-					<AlertDialogMedia>
-						<AlertWarningIcon className="text-severity-warn" size={20} />
-					</AlertDialogMedia>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Disable BYO ClickHouse?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This org will fall back to the default Maple-managed Tinybird Cloud. Tables in
-							your ClickHouse cluster are NOT touched: disable just removes Maple&apos;s pointer
-							to it.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isDisabling}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							onClick={(event) => {
-								event.preventDefault()
-								void handleDisable()
-							}}
-							disabled={isDisabling}
-						>
-							{isDisabling ? "Disabling..." : "Disable"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={disableOpen}
+				onOpenChange={setDisableOpen}
+				tone="default"
+				icon={<AlertWarningIcon className="text-severity-warn" size={20} />}
+				title="Disable BYO ClickHouse?"
+				description={
+					<>
+						This org will fall back to the default Maple-managed Tinybird Cloud. Tables in your
+						ClickHouse cluster are NOT touched: disable just removes Maple&apos;s pointer to it.
+					</>
+				}
+				confirmLabel="Disable"
+				onConfirm={() => void handleDisable()}
+				pending={isDisabling}
+			/>
 		</>
 	)
 }

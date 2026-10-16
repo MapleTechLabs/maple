@@ -14,10 +14,16 @@ import {
 	IntegrationsValidationError,
 	type OrgId,
 } from "@maple/domain/http"
-import { oauthAuthStates, oauthConnections, type OAuthAuthStateRow, type OAuthConnectionRow } from "@maple/db"
-import { and, eq, isNull, lt } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	OAuthAuthStates,
+	OAuthConnections,
+	type OAuthAuthStateRow,
+	type OAuthConnectionInsert,
+	type OAuthConnectionRow,
+} from "@maple/db/tables"
 import { Clock, Effect, Option, Redacted, Schedule, Schema, Semaphore } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
@@ -27,7 +33,6 @@ import {
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import type { EnvConfig } from "@maple/backend/platform/Env"
-import { msToDate } from "@maple/backend/platform/time"
 
 export const OAUTH_STATE_TTL_MS = 10 * 60_000 // 10 minutes
 export const OAUTH_REFRESH_LEEWAY_MS = 60_000 // refresh when the access token is within 1 minute of expiry
@@ -62,6 +67,7 @@ export const OAuthTokenResponseSchema = Schema.Struct({
 export type OAuthTokenResponse = typeof OAuthTokenResponseSchema.Type
 
 const decodeTokenResponse = Schema.decodeUnknownEffect(OAuthTokenResponseSchema)
+const decodeJsonUnknown = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * RFC 6749 §5.2 error body. Token endpoints answer 400/401 for many reasons —
@@ -152,17 +158,22 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		const purgeExpiredStates = (currentTime: number) =>
 			dbExecute((db) =>
-				db.delete(oauthAuthStates).where(lt(oauthAuthStates.expiresAt, new Date(currentTime))),
+				db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(currentTime)])),
 			)
 
 		const deleteAuthState = (state: string) =>
-			dbExecute((db) => db.delete(oauthAuthStates).where(eq(oauthAuthStates.state, state)))
+			dbExecute((db) => db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.state.eq(state)])))
 
 		const requireStateRow = Effect.fn("OAuthConnectionHelpers.requireStateRow")(function* (
 			state: string,
 		) {
 			const rows = yield* dbExecute((db) =>
-				db.select().from(oauthAuthStates).where(eq(oauthAuthStates.state, state)).limit(1),
+				db.run(
+					PG.from(OAuthAuthStates)
+						.select()
+						.where(($) => [$.state.eq(state)])
+						.limit(1),
+				),
 			)
 			const row = rows[0]
 			if (!row) {
@@ -172,7 +183,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					}),
 				)
 			}
-			if (row.expiresAt.getTime() < (yield* Clock.currentTimeMillis)) {
+			if (row.expiresAt < (yield* Clock.currentTimeMillis)) {
 				yield* deleteAuthState(state)
 				return yield* Effect.fail(
 					new IntegrationsValidationError({
@@ -207,11 +218,12 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		const loadConnection = (orgId: OrgId) =>
 			dbExecute((db) =>
-				db
-					.select()
-					.from(oauthConnections)
-					.where(and(eq(oauthConnections.orgId, orgId), eq(oauthConnections.provider, provider)))
-					.limit(1),
+				db.run(
+					PG.from(OAuthConnections)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider)])
+						.limit(1),
+				),
 			).pipe(Effect.map((rows) => rows[0] ?? null))
 
 		const requireConnection = Effect.fn("OAuthConnectionHelpers.requireConnection")(function* (
@@ -235,28 +247,26 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		const upsertConnection = (
 			orgId: OrgId,
 			currentTime: number,
-			values: Omit<
-				typeof oauthConnections.$inferInsert,
-				"id" | "orgId" | "provider" | "createdAt" | "updatedAt"
-			>,
+			values: Omit<OAuthConnectionInsert, "id" | "orgId" | "provider" | "createdAt" | "updatedAt">,
 		) =>
 			dbExecute((db) =>
-				db
-					.insert(oauthConnections)
-					.values({
-						id: randomUUID(),
-						orgId,
-						provider,
-						createdAt: new Date(currentTime),
-						updatedAt: new Date(currentTime),
-						...values,
-					})
-					.onConflictDoUpdate({
-						target: [oauthConnections.orgId, oauthConnections.provider],
-						// Reconnecting with fresh tokens clears any prior revocation so
-						// pollers resume automatically.
-						set: { ...values, revokedAt: null, updatedAt: new Date(currentTime) },
-					}),
+				db.run(
+					PG.insertInto(OAuthConnections)
+						.values({
+							id: randomUUID(),
+							orgId,
+							provider,
+							createdAt: currentTime,
+							updatedAt: currentTime,
+							...values,
+						})
+						.onConflictDoUpdate({
+							target: ["orgId", "provider"],
+							// Reconnecting with fresh tokens clears any prior revocation so
+							// pollers resume automatically.
+							set: { ...values, revokedAt: null, updatedAt: currentTime },
+						}),
+				),
 			).pipe(Effect.ensuring(invalidateConnectionMemo(orgId)))
 
 		/**
@@ -273,26 +283,22 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			// revoke even if the stamp itself fails (it is best-effort/ignored below).
 			yield* invalidateConnectionMemo(orgId)
 			yield* dbExecute((db) =>
-				db
-					.update(oauthConnections)
-					.set({ revokedAt: new Date(currentTime) })
-					.where(
-						and(
-							eq(oauthConnections.orgId, orgId),
-							eq(oauthConnections.provider, provider),
-							isNull(oauthConnections.revokedAt),
-						),
-					),
+				db.run(
+					PG.update(OAuthConnections)
+						.set({ revokedAt: currentTime })
+						.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider), $.revokedAt.isNull()]),
+				),
 			).pipe(Effect.ignore)
 		})
 
 		/** Drop the org's connection row; reports whether anything was removed. */
 		const deleteConnection = (orgId: OrgId) =>
 			dbExecute((db) =>
-				db
-					.delete(oauthConnections)
-					.where(and(eq(oauthConnections.orgId, orgId), eq(oauthConnections.provider, provider)))
-					.returning({ id: oauthConnections.id }),
+				db.run(
+					PG.deleteFrom(OAuthConnections)
+						.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider)])
+						.returning("id"),
+				),
 			).pipe(
 				Effect.map((result) => ({ disconnected: result.length > 0 })),
 				Effect.ensuring(invalidateConnectionMemo(orgId)),
@@ -320,10 +326,10 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		)
 
 		const parseTokenPayload = (text: string) =>
-			Effect.try({
-				try: () => JSON.parse(text) as unknown,
-				catch: () => toUpstreamError(`${providerLabel} token endpoint returned a non-JSON response`),
-			}).pipe(
+			decodeJsonUnknown(text).pipe(
+				Effect.mapError(() =>
+					toUpstreamError(`${providerLabel} token endpoint returned a non-JSON response`),
+				),
 				Effect.flatMap((json) =>
 					decodeTokenResponse(json).pipe(
 						Effect.mapError(() =>
@@ -415,19 +421,20 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			const expiresAt =
 				tokenResponse.expires_in != null ? currentTime + tokenResponse.expires_in * 1000 : null
 			yield* dbExecute((db) =>
-				db
-					.update(oauthConnections)
-					.set({
-						accessTokenCiphertext: accessEnc.ciphertext,
-						accessTokenIv: accessEnc.iv,
-						accessTokenTag: accessEnc.tag,
-						refreshTokenCiphertext: refreshEnc?.ciphertext ?? row.refreshTokenCiphertext,
-						refreshTokenIv: refreshEnc?.iv ?? row.refreshTokenIv,
-						refreshTokenTag: refreshEnc?.tag ?? row.refreshTokenTag,
-						expiresAt: msToDate(expiresAt),
-						updatedAt: new Date(currentTime),
-					})
-					.where(eq(oauthConnections.id, row.id)),
+				db.run(
+					PG.update(OAuthConnections)
+						.set({
+							accessTokenCiphertext: accessEnc.ciphertext,
+							accessTokenIv: accessEnc.iv,
+							accessTokenTag: accessEnc.tag,
+							refreshTokenCiphertext: refreshEnc?.ciphertext ?? row.refreshTokenCiphertext,
+							refreshTokenIv: refreshEnc?.iv ?? row.refreshTokenIv,
+							refreshTokenTag: refreshEnc?.tag ?? row.refreshTokenTag,
+							expiresAt,
+							updatedAt: currentTime,
+						})
+						.where(($) => [$.id.eq(row.id)]),
+				),
 			).pipe(
 				// The provider already rotated the refresh token, so this write holds the
 				// only usable copy — losing it to a transient Postgres blip turns into a
@@ -438,7 +445,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		})
 
 		const rowIsValid = (row: OAuthConnectionRow, currentTime: number) =>
-			row.expiresAt == null || row.expiresAt.getTime() - currentTime > OAUTH_REFRESH_LEEWAY_MS
+			row.expiresAt === null || row.expiresAt - currentTime > OAUTH_REFRESH_LEEWAY_MS
 
 		const accessTokenFromRow = (row: OAuthConnectionRow) =>
 			decryptValue({
@@ -453,6 +460,46 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		// row after acquiring: a fiber that waited usually finds the winner's fresh tokens.
 		const refreshSemaphore = Semaphore.makeUnsafe(1)
 
+		const refreshRow = (config: OAuthTokenEndpointConfig, orgId: OrgId, row: OAuthConnectionRow) =>
+			Effect.gen(function* () {
+				if (!row.refreshTokenCiphertext || !row.refreshTokenIv || !row.refreshTokenTag) {
+					yield* markConnectionRevoked(orgId)
+					return yield* Effect.fail(
+						new IntegrationsRevokedError({
+							message: `${providerLabel} access token expired and no refresh token is stored — reconnect required`,
+						}),
+					)
+				}
+
+				const refreshToken = yield* decryptValue({
+					ciphertext: row.refreshTokenCiphertext,
+					iv: row.refreshTokenIv,
+					tag: row.refreshTokenTag,
+				})
+				return yield* refreshAccessToken(config, refreshToken).pipe(
+					Effect.flatMap((refreshed) =>
+						persistRefreshedTokens(row, refreshed).pipe(
+							Effect.map((accessToken) => ({ accessToken, row })),
+						),
+					),
+					// Cross-isolate race: a concurrent worker isolate may have consumed the rotated
+					// refresh token and persisted new tokens between our read and our refresh. Before
+					// declaring the connection revoked, re-read the row — if a newer, valid token
+					// landed, use it.
+					Effect.catchTag("@maple/http/errors/IntegrationsRevokedError", (error) =>
+						Effect.gen(function* () {
+							const latest = yield* requireConnection(orgId)
+							const advanced = latest.updatedAt > row.updatedAt
+							if (advanced && rowIsValid(latest, yield* Clock.currentTimeMillis)) {
+								return yield* accessTokenFromRow(latest)
+							}
+							yield* markConnectionRevoked(orgId)
+							return yield* Effect.fail(error)
+						}),
+					),
+				)
+			})
+
 		const refreshWithSingleFlight = (config: OAuthTokenEndpointConfig, orgId: OrgId) =>
 			refreshSemaphore.withPermits(1)(
 				Effect.gen(function* () {
@@ -461,45 +508,58 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					if (rowIsValid(row, yield* Clock.currentTimeMillis)) {
 						return yield* accessTokenFromRow(row)
 					}
-
-					if (!row.refreshTokenCiphertext || !row.refreshTokenIv || !row.refreshTokenTag) {
-						yield* markConnectionRevoked(orgId)
-						return yield* Effect.fail(
-							new IntegrationsRevokedError({
-								message: `${providerLabel} access token expired and no refresh token is stored — reconnect required`,
-							}),
-						)
-					}
-
-					const refreshToken = yield* decryptValue({
-						ciphertext: row.refreshTokenCiphertext,
-						iv: row.refreshTokenIv,
-						tag: row.refreshTokenTag,
-					})
-					return yield* refreshAccessToken(config, refreshToken).pipe(
-						Effect.flatMap((refreshed) =>
-							persistRefreshedTokens(row, refreshed).pipe(
-								Effect.map((accessToken) => ({ accessToken, row })),
-							),
-						),
-						// Cross-isolate race: a concurrent worker isolate may have consumed the rotated
-						// refresh token and persisted new tokens between our read and our refresh. Before
-						// declaring the connection revoked, re-read the row — if a newer, valid token
-						// landed, use it.
-						Effect.catchTag("@maple/http/errors/IntegrationsRevokedError", (error) =>
-							Effect.gen(function* () {
-								const latest = yield* requireConnection(orgId)
-								const advanced = latest.updatedAt.getTime() > row.updatedAt.getTime()
-								if (advanced && rowIsValid(latest, yield* Clock.currentTimeMillis)) {
-									return yield* accessTokenFromRow(latest)
-								}
-								yield* markConnectionRevoked(orgId)
-								return yield* Effect.fail(error)
-							}),
-						),
-					)
+					return yield* refreshRow(config, orgId, row)
 				}),
 			)
+
+		/**
+		 * The provider rejected an access token whose `expiresAt` still says it is good (revoked
+		 * or superseded upstream). Refresh once regardless of expiry, unless another fiber or
+		 * isolate already replaced the rejected token.
+		 */
+		const refreshRejectedToken = (
+			config: OAuthTokenEndpointConfig,
+			orgId: OrgId,
+			rejectedAccessToken: string,
+		) =>
+			refreshSemaphore.withPermits(1)(
+				Effect.gen(function* () {
+					yield* invalidateConnectionMemo(orgId)
+					const row = yield* requireConnection(orgId)
+					const current = yield* accessTokenFromRow(row)
+					if (current.accessToken !== rejectedAccessToken) return current
+					return yield* refreshRow(config, orgId, row)
+				}),
+			)
+
+		/**
+		 * Stamp the grant revoked because the provider rejected `rejectedAccessToken`, but only
+		 * while the row still holds that token and has not changed since it was read. A reconnect
+		 * or a refresh elsewhere in the meantime wins, so a late 401 never revokes a newer grant.
+		 * Reports whether the stamp landed.
+		 */
+		const markRejectedTokenRevoked = Effect.fn("OAuthConnectionHelpers.markRejectedTokenRevoked")(
+			function* (orgId: OrgId, rejectedAccessToken: string) {
+				yield* invalidateConnectionMemo(orgId)
+				const row = yield* requireConnection(orgId)
+				const { accessToken } = yield* accessTokenFromRow(row)
+				if (accessToken !== rejectedAccessToken) return false
+				const currentTime = yield* Clock.currentTimeMillis
+				const stamped = yield* dbExecute((db) =>
+					db.run(
+						PG.update(OAuthConnections)
+							.set({ revokedAt: currentTime })
+							.where(($) => [
+								$.id.eq(row.id),
+								$.updatedAt.eq(row.updatedAt),
+								$.revokedAt.isNull(),
+							])
+							.returning("id"),
+					),
+				)
+				return stamped.length > 0
+			},
+		)
 
 		/**
 		 * Decrypted access token for the org's connection, refreshing (single-flight)
@@ -507,16 +567,33 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		 * can project provider-specific fields (account id, scope, ...).
 		 */
 		const getValidConnectionToken = Effect.fn("OAuthConnectionHelpers.getValidConnectionToken")(
-			function* (config: OAuthTokenEndpointConfig, orgId: OrgId) {
+			function* (
+				config: OAuthTokenEndpointConfig,
+				orgId: OrgId,
+				options: {
+					/** Fail a revoked grant before refreshing it: its fresh token would be unusable too. */
+					readonly failIfRevoked?: boolean
+				} = {},
+			) {
+				const usable = (row: OAuthConnectionRow) =>
+					options.failIfRevoked === true && row.revokedAt !== null
+						? Effect.fail(
+								new IntegrationsRevokedError({
+									message: `${providerLabel} no longer accepts this authorization — reconnect the integration`,
+								}),
+							)
+						: Effect.void
 				const nowMs = yield* Clock.currentTimeMillis
 				const memoized = connectionMemo.get(orgId)
 				if (memoized !== undefined && memoized.expiresAt > nowMs && rowIsValid(memoized.row, nowMs)) {
-					yield* Effect.annotateCurrentSpan("oauth.connection.memoHit", true)
+					yield* Effect.annotateCurrentSpan("maple.oauth.connection_memo_hit", true)
+					yield* usable(memoized.row)
 					return yield* accessTokenFromRow(memoized.row)
 				}
-				yield* Effect.annotateCurrentSpan("oauth.connection.memoHit", false)
+				yield* Effect.annotateCurrentSpan("maple.oauth.connection_memo_hit", false)
 
 				const row = yield* requireConnection(orgId)
+				yield* usable(row)
 				if (rowIsValid(row, nowMs)) {
 					connectionMemo.set(orgId, { row, expiresAt: nowMs + CONNECTION_MEMO_TTL_MS })
 					return yield* accessTokenFromRow(row)
@@ -543,9 +620,11 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			upsertConnection,
 			deleteConnection,
 			markConnectionRevoked,
+			markRejectedTokenRevoked,
 			postForm,
 			exchangeAuthorizationCode,
 			refreshAccessToken,
+			refreshRejectedToken,
 			persistRefreshedTokens,
 			rowIsValid,
 			getValidConnectionToken,

@@ -34,10 +34,9 @@ export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): 
 				prompt: agent.prompt,
 			}
 		case "connector":
-			// Mutations are proposed exactly as in the app; the connector renders the approval. What
-			// it does not get is `bot`'s audience: not an internal surface, so the agents-only tools
-			// — `sandbox_exec` above all — are absent rather than gated. Nothing proposes code
-			// execution for approval first.
+			// Mutations are proposed exactly as in the app; the connector renders the approval. `bot`
+			// sees the agent-audience tools (the repository sandbox) but not the internal ones (the
+			// pull request reviewer's), which are absent rather than gated.
 			return { surface: "bot", ruleset: agent.permission, prompt: CONNECTOR_SYSTEM_PROMPT }
 	}
 }

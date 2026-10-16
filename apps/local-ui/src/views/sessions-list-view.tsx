@@ -1,5 +1,8 @@
 import type { ReactNode } from "react"
-import { Spinner } from "@maple/ui/components/ui/spinner"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { shortId } from "@maple/ui/lib/ids"
 import {
 	ClockIcon,
 	CircleWarningIcon,
@@ -9,7 +12,6 @@ import {
 	MobileIcon,
 	PulseIcon,
 } from "@maple/ui/components/icons"
-import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
 import type { SessionReplaysListOutput } from "@maple/query-engine/ch"
 import { useLocalSessions, useLocalSessionFacets } from "../hooks/use-local-sessions"
@@ -17,10 +19,14 @@ import { useRange } from "../hooks/use-range"
 import { useTimeWindow } from "../hooks/use-time-window"
 import { hrefFor, useQueryParams } from "../lib/router"
 import { formatLocalDateTime, formatRelativeTime, formatUtcTitle, WIDEST_RANGE } from "../lib/time"
-import { formatSessionDuration, gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay-format"
+import { formatSessionDuration } from "@maple/ui/lib/replay-format"
+import { initialsFrom } from "@maple/ui/lib/initials"
+import { isLocalSessionLive, localSessionDurationMs } from "../lib/session-liveness"
+import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import {
 	FilterSection,
 	SearchableFilterSection,
+	serviceColorMap,
 	SingleCheckboxFilter,
 	type FilterOption,
 } from "@maple/ui/components/filters/filter-section"
@@ -40,6 +46,7 @@ import {
 } from "../components/toolbar"
 import { SignalEmptyState } from "../components/signal-empty-state"
 import { ErrorState, ListSkeleton } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 /** Re-inject a selected value that the server-side facet branch excluded. */
 function withSelected(options: ReadonlyArray<FilterOption>, selected?: string): FilterOption[] {
@@ -61,7 +68,7 @@ export function SessionsListView() {
 	const filters = { service, browser, device, errorsOnly, search }
 	const facets = useLocalSessionFacets(filters, timeWindow.bounds)
 	const list = useLocalSessions(filters, timeWindow.bounds)
-	const { isPending, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = list
+	const { isPending, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = list
 	const sessions = list.data?.pages.flat() ?? []
 
 	const setSingle = (key: string, vals: string[]) => setParams({ [key]: vals.at(-1) ?? null })
@@ -87,6 +94,7 @@ export function SessionsListView() {
 					options={facetData ? withSelected(facetData.service, service) : []}
 					selected={service ? [service] : []}
 					onChange={(vals) => setSingle("service", vals)}
+					colorMap={serviceColorMap(facetData?.service ?? [])}
 				/>
 				<SearchableFilterSection
 					title="Browser"
@@ -117,7 +125,7 @@ export function SessionsListView() {
 			<ToolbarStats className="shrink-0">
 				<ToolbarStat value={sessions.length} label={hasNextPage ? "sessions+" : "sessions"} />
 				<ToolbarStat
-					value={sessions.filter((s) => s.status === "active").length}
+					value={sessions.filter((s) => isLocalSessionLive(s)).length}
 					label="active"
 					dot
 				/>
@@ -131,7 +139,7 @@ export function SessionsListView() {
 		<PageShell sidebar={sidebar} toolbar={toolbar} activeFilterCount={activeFilterCount}>
 			{isPending ? (
 				<ListSkeleton variant="card" rows={6} />
-			) : isError ? (
+			) : failedWithoutData(list) ? (
 				<ErrorState label="sessions" error={error} onRetry={() => refetch()} />
 			) : sessions.length === 0 ? (
 				<SignalEmptyState
@@ -154,18 +162,12 @@ export function SessionsListView() {
 							/>
 						))}
 					</div>
-					{hasNextPage ? (
-						<div className="flex justify-center pt-4">
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => fetchNextPage()}
-								disabled={isFetchingNextPage}
-							>
-								{isFetchingNextPage ? <Spinner className="size-4" /> : "Load more"}
-							</Button>
-						</div>
-					) : null}
+					<ListFooter
+						hasMore={hasNextPage}
+						loading={isFetchingNextPage}
+						onLoadMore={() => fetchNextPage()}
+						className="pb-0"
+					/>
 				</div>
 			)}
 		</PageShell>
@@ -173,9 +175,9 @@ export function SessionsListView() {
 }
 
 function SessionCard({ session, href }: { session: SessionReplaysListOutput; href: string }) {
-	const label = session.userId || "Anonymous"
-	const initial = (label[0] ?? "?").toUpperCase()
-	const isActive = session.status === "active"
+	const label = session.userName || session.userEmail || session.userId || "Anonymous"
+	const initial = initialsFrom(label)
+	const isActive = isLocalSessionLive(session)
 	const DeviceIcon = isMobileDevice(session.deviceType) ? MobileIcon : ComputerIcon
 
 	return (
@@ -192,9 +194,10 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 			<div className="min-w-0 flex-1">
 				<div className="flex items-center gap-2">
 					<span className="max-w-[16rem] truncate text-sm font-medium">{label}</span>
-					<StatusDot active={isActive} />
+					<StatusDot tone={isActive ? "ok" : "neutral"} title={isActive ? "active" : "ended"} />
 					<span className="font-mono text-xs text-muted-foreground">
-						{session.sessionId.slice(0, 8)} · {formatSessionDuration(session.durationMs)}
+						{shortId(session.sessionId, "session", { length: 8 })} ·{" "}
+						{formatSessionDuration(localSessionDurationMs(session))}
 					</span>
 				</div>
 				<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
@@ -220,15 +223,15 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 					title="page views"
 				/>
 				{session.traceCount > 0 && (
-					<span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 font-medium tabular-nums text-primary">
+					<Badge pill className="bg-primary/10 tabular-nums text-primary">
 						{session.traceCount} trace{session.traceCount === 1 ? "" : "s"}
-					</span>
+					</Badge>
 				)}
 				{session.errorCount > 0 && (
-					<span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 font-medium tabular-nums text-destructive">
+					<Badge pill className="bg-severity-error/10 tabular-nums text-severity-error">
 						<CircleWarningIcon className="size-3" />
 						{session.errorCount}
-					</span>
+					</Badge>
 				)}
 			</div>
 
@@ -245,16 +248,6 @@ function SessionCard({ session, href }: { session: SessionReplaysListOutput; hre
 				</span>
 			</div>
 		</a>
-	)
-}
-
-function StatusDot({ active }: { active: boolean }) {
-	if (!active) return <span className="size-1.5 rounded-full bg-muted-foreground/40" title="ended" />
-	return (
-		<span className="relative flex size-1.5" title="active">
-			<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-			<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-		</span>
 	)
 }
 

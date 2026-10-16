@@ -2,10 +2,12 @@ import { useMemo } from "react"
 import { ArrowLeftIcon } from "@maple/ui/components/icons"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { MetricTypeBadge } from "@maple/ui/components/metrics/metric-type-badge"
-import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
+import { ServiceDot } from "@maple/ui/components/service-dot"
 import {
 	useLocalMetricBreakdown,
 	useLocalMetricEntry,
@@ -18,6 +20,7 @@ import { chartUnitFromOtel, humanizeUnit, isCounter } from "../lib/units"
 import { SeriesChart } from "../components/series-chart"
 import { RefreshButton, TimeRangeSelect } from "../components/toolbar"
 import { EmptyState, ErrorState } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 interface MetricDetailViewProps {
 	metricName: string
@@ -47,19 +50,15 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 		<div className="flex h-full flex-col">
 			<div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2">
 				<Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
-					<ArrowLeftIcon size={14} />
+					<ArrowLeftIcon />
 					{backLabel}
 				</Button>
-				<span className="min-w-0 truncate font-mono text-xs" title={metricName}>
+				<TruncatedText mono className="text-xs">
 					{metricName}
-				</span>
+				</TruncatedText>
 				{entry ? <MetricTypeBadge type={entry.metricType} /> : null}
 				{unitLabel ? (
-					<Badge
-						variant="outline"
-						className="px-1 py-0 font-mono text-[10px]"
-						title={entry?.metricUnit}
-					>
+					<Badge variant="outline" size="xs" mono title={entry?.metricUnit}>
 						{unitLabel}
 					</Badge>
 				) : null}
@@ -74,7 +73,7 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 					<div className="flex h-full items-center justify-center">
 						<Spinner />
 					</div>
-				) : entryQuery.isError ? (
+				) : failedWithoutData(entryQuery) ? (
 					<ErrorState
 						label="metric"
 						error={entryQuery.error}
@@ -112,7 +111,7 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 									{formatRelativeTime(entry.lastSeen)}
 								</span>
 							</div>
-							{timeseries.isError ? (
+							{failedWithoutData(timeseries) ? (
 								<ErrorState
 									label="timeseries"
 									error={timeseries.error}
@@ -137,7 +136,7 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 								<div className="flex h-24 items-center justify-center rounded-md border">
 									<Spinner />
 								</div>
-							) : breakdown.isError ? (
+							) : failedWithoutData(breakdown) ? (
 								<ErrorState
 									label="breakdown"
 									error={breakdown.error}
@@ -162,7 +161,17 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 											{(breakdown.data ?? []).map((row) => (
 												<TableRow key={row.name}>
 													<TableCell className="font-mono text-xs">
-														{row.name || "-"}
+														{row.name ? (
+															<span className="flex items-center gap-1.5">
+																<ServiceDot
+																	serviceName={row.name}
+																	size="sm"
+																/>
+																{row.name}
+															</span>
+														) : (
+															EMPTY_VALUE
+														)}
 													</TableCell>
 													<TableCell className="text-right tabular-nums">
 														{formatValueByUnit(row.avgValue, chartUnit)}

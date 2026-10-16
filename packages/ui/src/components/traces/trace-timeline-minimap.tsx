@@ -393,7 +393,7 @@ export function TraceTimelineMinimap({ rootSpans, colorBy, controller }: TraceTi
 				className="pointer-events-none absolute inset-y-0 left-0 w-px bg-foreground/40"
 				style={{ display: "none" }}
 			>
-				<span className="absolute top-0 whitespace-nowrap bg-background/90 px-1 font-mono text-[9px] leading-3 text-muted-foreground" />
+				<span className="absolute top-0 whitespace-nowrap bg-background/90 px-1 font-mono text-4xs leading-3 text-muted-foreground" />
 			</div>
 
 			{/* Viewport rect. Pointer-transparent: hit-testing happens against the container so the

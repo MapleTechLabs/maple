@@ -1,34 +1,47 @@
-import { useState, type ReactNode } from "react"
+import { SpanPositionBar } from "@maple/ui/components/traces/span-position-bar"
+import { useState } from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { XmarkIcon, ClockIcon, CircleInfoIcon, SquareTerminalIcon, ServerIcon } from "@/components/icons"
+import { XmarkIcon, ClockIcon, CircleInfoIcon, ServerIcon } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import { ErrorSection } from "@maple/ui/components/error-section"
 
-import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { type Log, type LogsResponse } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "@/components/logs/log-detail-sheet"
 import { DocsLink } from "@/components/common/docs-link"
-import { formatDuration } from "@maple/ui/lib/format"
+import { ErrorState } from "@/components/common/error-state"
+import { formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
 import { getCacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
 import { getCloudPlatform, outcomeBadgeStyle } from "@maple/ui/lib/cloud-platforms"
 import { GlobeIcon } from "@maple/ui/components/icons"
-import { getServiceColor } from "@maple/ui/lib/colors"
+import { calculateSelfTime, getServiceColor } from "@maple/ui/lib/colors"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import type { SpanNode, SpanDetailResult } from "@/api/warehouse/traces"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { getSpanDetailResultAtom, listLogsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { CopyableValue, AttributesSection, ResourceAttributesSection } from "@/components/attributes"
+import {
+	CopyableValue,
+	SelectableValue,
+	AttributesSection,
+	ResourceAttributesSection,
+} from "@/components/attributes"
 import { TraceAttributeFilterProvider } from "./trace-attribute-filter-provider"
+import { SpanEventsSection } from "./span-events-section"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { getActiveInfraCorrelations } from "@/components/infra/infra-correlations"
 import { InfraCorrelationPanel, infraCorrelationWindow } from "@/components/infra/infra-correlation-panel"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 interface SpanDetailPanelProps {
 	span: SpanNode
@@ -36,93 +49,23 @@ interface SpanDetailPanelProps {
 	/** Start of the whole trace (earliest span start) — anchors the position-in-trace bar. */
 	traceStartTime: string
 	totalDurationMs: number
+	/** Selects another span of the trace; makes the parent span ID a link to it. */
+	onSelectSpanId?: (spanId: string) => void
 	className?: string
-}
-
-/**
- * Label/value row that survives a narrow panel: the label holds its width, the value takes the rest
- * and ellipsises. Values are click-to-copy, so a truncated display still yields the full string.
- */
-function PlatformRow({
-	label,
-	children,
-	className,
-}: {
-	label: string
-	children: ReactNode
-	className?: string
-}) {
-	return (
-		<div className={cn("flex items-center justify-between gap-2 min-w-0", className)}>
-			<span className="text-muted-foreground shrink-0">{label}</span>
-			<span className="font-mono truncate text-right">{children}</span>
-		</div>
-	)
-}
-
-/**
- * Where this span sits inside the whole trace: a muted track spanning the
- * trace's wall-clock time, with the span's own window in its service color.
- * Offsets are clamped so clock-skewed spans never paint outside the track.
- */
-function SpanPositionBar({
-	span,
-	traceStartTime,
-	totalDurationMs,
-	color,
-}: {
-	span: SpanNode
-	traceStartTime: string
-	totalDurationMs: number
-	color: string
-}) {
-	const offsetMs = new Date(span.startTime).getTime() - new Date(traceStartTime).getTime()
-	if (!Number.isFinite(offsetMs) || totalDurationMs <= 0) return null
-
-	const offsetPct = Math.min(Math.max((offsetMs / totalDurationMs) * 100, 0), 100)
-	const widthPct = Math.min(Math.max((span.durationMs / totalDurationMs) * 100, 0.75), 100 - offsetPct)
-
-	return (
-		<div className="py-1">
-			<div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
-				<div
-					className="absolute inset-y-0 rounded-full"
-					style={{ left: `${offsetPct}%`, width: `${widthPct}%`, backgroundColor: color }}
-				/>
-			</div>
-			<div className="mt-1 flex justify-between text-[10px] text-muted-foreground tabular-nums">
-				<span>+{formatDuration(Math.max(offsetMs, 0))}</span>
-				<span>{formatDuration(totalDurationMs)} total</span>
-			</div>
-		</div>
-	)
 }
 
 const LOG_LIMIT = 100
 
-const severityStyles: Record<string, string> = {
-	TRACE: "text-severity-trace",
-	DEBUG: "text-severity-debug",
-	INFO: "text-severity-info",
-	WARN: "text-severity-warn",
-	ERROR: "text-severity-error",
-	FATAL: "text-severity-fatal",
-} satisfies Record<string, string>
-
 function LogEntry({ log, timeZone, onClick }: { log: Log; timeZone: string; onClick?: (log: Log) => void }) {
-	const severityStyle = severityStyles[log.severityText] ?? "text-severity-trace"
-
 	return (
 		<button
 			type="button"
 			className="block w-full p-2 text-left hover:bg-muted/30 cursor-pointer"
 			onClick={() => onClick?.(log)}
 		>
-			<div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1">
+			<div className="flex items-center gap-2 text-3xs text-muted-foreground mb-1">
 				<span>{formatTimestampInTimezone(log.timestamp, { timeZone })}</span>
-				<Badge variant="outline" className={cn("text-[10px] px-1 py-0", severityStyle)}>
-					{log.severityText}
-				</Badge>
+				<SeverityBadge severity={log.severityText} className="h-4 px-1" />
 			</div>
 			<p className="font-mono text-xs whitespace-pre-wrap break-all line-clamp-3">{log.body}</p>
 		</button>
@@ -157,28 +100,31 @@ export function SpanLogs({
 		<>
 			{Result.builder(logsResult)
 				.onInitial(() => (
-					<div className="space-y-2 p-2">
-						{Array.from({ length: 3 }).map((_, i) => (
-							<div key={i} className="space-y-1">
+					<SkeletonList
+						rows={3}
+						gap="2"
+						className="p-2"
+						renderRow={() => (
+							<div className="space-y-1">
 								<Skeleton className="h-3 w-24" />
 								<Skeleton className="h-4 w-full" />
 							</div>
-						))}
-					</div>
+						)}
+					/>
 				))
-				.onError(() => (
-					<div className="p-4 text-center text-sm text-destructive">Failed to load logs</div>
+				.onError((error) => (
+					<ErrorState error={error} title="Failed to load logs" variant="inline" className="px-4" />
 				))
 				.onSuccess((data) => {
 					const logs = data.data
 
 					if (logs.length === 0) {
 						return (
-							<div className="flex flex-col items-center gap-2 p-4 text-center text-sm text-muted-foreground">
+							<EmptyMessage className="flex flex-col items-center gap-2">
 								No logs carry this span&apos;s trace context. Logs link here when your log
 								bridge runs inside the active span.
 								<DocsLink page="logs" />
-							</div>
+							</EmptyMessage>
 						)
 					}
 
@@ -206,6 +152,7 @@ export function SpanDetailPanel({
 	onClose,
 	traceStartTime,
 	totalDurationMs,
+	onSelectSpanId,
 	className,
 }: SpanDetailPanelProps) {
 	const { effectiveTimezone } = useTimezonePreference()
@@ -244,6 +191,9 @@ export function SpanDetailPanel({
 	const platform = getCloudPlatform(detailAttrs?.spanAttributes ?? span.spanAttributes)
 
 	const serviceColor = getServiceColor(span.serviceName)
+	// Self time only differs from the duration once there are children to wait on.
+	const selfTimeMs = span.children.length > 0 ? calculateSelfTime(span, span.children) : null
+	const traceShare = totalDurationMs > 0 ? span.durationMs / totalDurationMs : null
 
 	return (
 		<div className={cn("flex flex-col h-full bg-background overflow-hidden", className)}>
@@ -255,30 +205,33 @@ export function SpanDetailPanel({
 					style={{ backgroundColor: serviceColor }}
 				/>
 				<div className="flex-1 min-w-0 mr-2 overflow-hidden">
-					<CopyableValue value={span.spanName} className="block min-w-0 overflow-hidden">
-						<div className="min-w-0">
-							<HttpSpanLabel
-								spanName={span.spanName}
-								spanAttributes={span.spanAttributes}
-								spanKind={span.spanKind}
-								textClassName="font-semibold text-sm"
-							/>
-						</div>
-					</CopyableValue>
-					<div className="flex items-center gap-1.5 mt-0.5">
-						<ServiceDot serviceName={span.serviceName} className="size-1.5" />
-						<CopyableValue value={span.serviceName}>
-							<span className="font-mono text-[10px]" style={{ color: serviceColor }}>
+					<SelectableValue
+						value={span.spanName}
+						label="span name"
+						className="flex min-w-0 items-center"
+						textClassName="min-w-0 flex-1"
+					>
+						<HttpSpanLabel
+							spanName={span.spanName}
+							spanAttributes={span.spanAttributes}
+							spanKind={span.spanKind}
+							textClassName="font-semibold text-sm"
+						/>
+					</SelectableValue>
+					<div className="flex min-w-0 items-center gap-1.5 mt-0.5">
+						<ServiceDot serviceName={span.serviceName} size="sm" />
+						<CopyableValue value={span.serviceName} className="min-w-0 truncate">
+							<span className="font-mono text-3xs" style={{ color: serviceColor }}>
 								{span.serviceName}
 							</span>
 						</CopyableValue>
-						<span className="text-[10px] text-muted-foreground">{kindLabel}</span>
+						<span className="shrink-0 text-3xs text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-0.5">
-					<Button variant="ghost" size="icon" aria-label="Close span details" onClick={onClose}>
-						<XmarkIcon size={16} />
-					</Button>
+					<IconButton size="icon" label="Close span details" onClick={onClose}>
+						<XmarkIcon />
+					</IconButton>
 				</div>
 			</div>
 
@@ -295,14 +248,24 @@ export function SpanDetailPanel({
 							</CopyableValue>
 						</span>
 					</div>
-					<Badge variant="outline" className={cn("text-[10px] font-medium", statusStyle)}>
+					{selfTimeMs !== null && (
+						<span
+							className="font-mono text-muted-foreground"
+							title="Time not spent in child spans"
+						>
+							self <span className="text-foreground">{formatDuration(selfTimeMs)}</span>
+						</span>
+					)}
+					{traceShare !== null && !span.isMissing && (
+						<span className="font-mono text-muted-foreground">
+							{formatPercent(traceShare, { floor: 0.001 })} of trace
+						</span>
+					)}
+					<Badge variant="outline" size="xs" className={statusStyle}>
 						{span.statusCode || "Unset"}
 					</Badge>
 					{cacheInfo?.result && (
-						<Badge
-							variant="outline"
-							className={cn("text-[10px] font-medium", cacheResultStyles[cacheInfo.result])}
-						>
+						<Badge variant="outline" size="xs" className={cacheResultStyles[cacheInfo.result]}>
 							{cacheInfo.result === "hit" ? "HIT" : "MISS"}
 						</Badge>
 					)}
@@ -312,7 +275,7 @@ export function SpanDetailPanel({
 				{cacheInfo && (
 					<div className="flex items-center gap-3 border-b px-3 py-1.5 text-xs shrink-0">
 						{cacheInfo.system && (
-							<Badge variant="outline" className="text-[10px] font-mono">
+							<Badge variant="outline" size="xs" mono>
 								{cacheInfo.system}
 							</Badge>
 						)}
@@ -322,9 +285,9 @@ export function SpanDetailPanel({
 							</span>
 						)}
 						{cacheInfo.name && (
-							<span className="font-mono text-muted-foreground truncate" title={cacheInfo.name}>
+							<TruncatedText mono className="text-muted-foreground">
 								{cacheInfo.name}
-							</span>
+							</TruncatedText>
 						)}
 					</div>
 				)}
@@ -338,30 +301,31 @@ export function SpanDetailPanel({
 							{platform.outcome && (
 								<Badge
 									variant="outline"
-									className={cn(
-										"text-[10px] font-medium ml-auto",
-										outcomeBadgeStyle(platform.outcome.bad),
-									)}
+									size="xs"
+									className={cn("ml-auto", outcomeBadgeStyle(platform.outcome.bad))}
 								>
 									{platform.outcome.value}
 								</Badge>
 							)}
 						</div>
 						{/* Two columns only once the panel is wide enough for them to hold real values. */}
-						<div className="grid grid-cols-1 gap-x-4 gap-y-1 text-[11px] @min-[22rem]/platform:grid-cols-2">
+						<KeyValueList className="grid grid-cols-1 gap-x-4 gap-y-1 text-2xs @min-[22rem]/platform:grid-cols-2">
 							{platform.edge && (
-								<PlatformRow label="Edge">
+								<KeyValue mono label="Edge">
 									<span className="inline-flex items-center gap-1">
 										<GlobeIcon size={10} className="shrink-0" />
 										{platform.edge}
 									</span>
-								</PlatformRow>
+								</KeyValue>
 							)}
 							{platform.location && (
-								<PlatformRow label="Location">{platform.location}</PlatformRow>
+								<KeyValue mono label="Location">
+									{platform.location}
+								</KeyValue>
 							)}
 							{platform.fields.map((field) => (
-								<PlatformRow
+								<KeyValue
+									mono
 									key={field.label}
 									label={field.label}
 									className={field.wide ? "@min-[22rem]/platform:col-span-2" : undefined}
@@ -373,9 +337,9 @@ export function SpanDetailPanel({
 									) : (
 										(field.display ?? field.value)
 									)}
-								</PlatformRow>
+								</KeyValue>
 							))}
-						</div>
+						</KeyValueList>
 					</div>
 				)}
 
@@ -402,9 +366,9 @@ export function SpanDetailPanel({
 							<CircleInfoIcon size={14} /> Details
 						</TabsTrigger>
 						<TabsTrigger value="logs">
-							<SquareTerminalIcon size={14} /> Logs
+							<CONCEPT_ICON.log size={14} /> Logs
 							{logCount !== null && logCount > 0 && (
-								<Badge variant="secondary" className="text-[10px] ml-1 px-1.5 py-0">
+								<Badge variant="secondary" size="xs" className="ml-1 px-1.5">
 									{logCountLabel}
 								</Badge>
 							)}
@@ -430,24 +394,43 @@ export function SpanDetailPanel({
 											color={serviceColor}
 										/>
 									)}
-									<PlatformRow label="Start Time">
-										<CopyableValue value={span.startTime}>
-											{formatTimestampInTimezone(span.startTime, {
-												timeZone: effectiveTimezone,
-												withMilliseconds: true,
-											})}
-										</CopyableValue>
-									</PlatformRow>
-									<PlatformRow label="Span ID">
-										<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
-									</PlatformRow>
-									{span.parentSpanId && (
-										<PlatformRow label="Parent Span ID">
-											<CopyableValue value={span.parentSpanId}>
-												{span.parentSpanId}
+									<KeyValueList className="gap-1">
+										<KeyValue mono label="Start time">
+											<CopyableValue value={span.startTime}>
+												{formatTimestampInTimezone(span.startTime, {
+													timeZone: effectiveTimezone,
+													withMilliseconds: true,
+												})}
 											</CopyableValue>
-										</PlatformRow>
-									)}
+										</KeyValue>
+										<KeyValue mono label="Span ID">
+											<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
+										</KeyValue>
+										{span.parentSpanId && (
+											<KeyValue mono label="Parent span ID">
+												{onSelectSpanId ? (
+													// The copy button sits beside the link, not around it.
+													<SelectableValue
+														value={span.parentSpanId}
+														label="parent span ID"
+													>
+														<button
+															type="button"
+															className="font-mono underline decoration-dotted underline-offset-2 hover:text-primary"
+															title="Select the parent span"
+															onClick={() => onSelectSpanId(span.parentSpanId)}
+														>
+															{span.parentSpanId}
+														</button>
+													</SelectableValue>
+												) : (
+													<CopyableValue value={span.parentSpanId}>
+														{span.parentSpanId}
+													</CopyableValue>
+												)}
+											</KeyValue>
+										)}
+									</KeyValueList>
 								</div>
 							</div>
 
@@ -457,7 +440,7 @@ export function SpanDetailPanel({
 								<TraceAttributeFilterProvider scope="span">
 									<AttributesSection
 										attributes={span.spanAttributes ?? {}}
-										title="Span Attributes"
+										title="Span attributes"
 									/>
 								</TraceAttributeFilterProvider>
 							) : (
@@ -472,14 +455,14 @@ export function SpanDetailPanel({
 									))
 									.onError(() => (
 										<>
-											<p className="rounded-md border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
+											<p className="rounded-md border border-dashed px-2 py-1.5 text-2xs text-muted-foreground">
 												Couldn't load all attributes. Showing the ones loaded with the
 												trace.
 											</p>
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={span.spanAttributes ?? {}}
-													title="Span Attributes"
+													title="Span attributes"
 												/>
 											</TraceAttributeFilterProvider>
 											<TraceAttributeFilterProvider scope="resource">
@@ -491,10 +474,11 @@ export function SpanDetailPanel({
 									))
 									.onSuccess((detail) => (
 										<>
+											<SpanEventsSection events={detail.events} />
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={detail.spanAttributes}
-													title="Span Attributes"
+													title="Span attributes"
 												/>
 											</TraceAttributeFilterProvider>
 											<TraceAttributeFilterProvider scope="resource">

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react"
 
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	Dialog,
@@ -8,13 +9,13 @@ import {
 	DialogPopup,
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
-import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { AiContentFormat, AiCrawlPurpose, AiProduct } from "@maple/domain/ai-traffic"
 
-import { ColumnHead, DataTable } from "../../infra/primitives/data-table"
+import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { shareBar } from "../../infra/primitives/share-bar"
-import { BarSpark } from "../../infra/primitives/stat-rail"
+import { MiniBars } from "@maple/ui/components/ui/mini-bars"
 import { SPARK_COLOR } from "../../infra/severity-tokens"
 import {
 	FileCodeIcon,
@@ -26,6 +27,9 @@ import {
 } from "@/components/icons"
 import type { WebAnalyticsAiCrawler, WebAnalyticsAiCrawlerFormat } from "@/api/warehouse/web-analytics"
 import { AiProductIcon } from "./ai-product-icon"
+import { StatFigure } from "@maple/ui/components/ui/stat-figure"
+import { RelativeTime } from "@/components/common/relative-time"
+import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
 import {
 	productForCrawler,
 	purposeForCrawler,
@@ -34,8 +38,9 @@ import {
 	type AiReferralSummary,
 } from "./ai-traffic-model"
 
+/** Compact count plus noun ("1.2K pages"); `countLabel` would print the full number. */
 const plural = (count: number, one: string, many: string) =>
-	`${formatNumber(count)} ${count === 1 ? one : many}`
+	`${formatNumber(count)} ${pluralize(count, one, many)}`
 
 /** Where a panel's table is drawn: capped inside the card, taller in the expand dialog. */
 interface AiTableSurface {
@@ -67,14 +72,19 @@ export function AiPanel({
 }) {
 	const [expanded, setExpanded] = useState(false)
 	return (
-		<div className={cn("@container/panel rounded-md border bg-card", className)}>
-			<div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 px-4 pt-3 pb-2.5">
+		<Panel className={cn("@container/panel", className)}>
+			<PanelHeader
+				divided={false}
+				className="items-start pt-3 pb-2.5"
+				action={
+					aside ? <div className="shrink-0 text-2xs text-muted-foreground">{aside}</div> : undefined
+				}
+			>
 				<div className="min-w-0">
-					<div className="text-[11px] font-medium text-muted-foreground">{title}</div>
-					{hint ? <div className="mt-0.5 text-[11px] text-muted-foreground/70">{hint}</div> : null}
+					<PanelTitle>{title}</PanelTitle>
+					{hint ? <div className="mt-0.5 text-2xs text-muted-foreground/70">{hint}</div> : null}
 				</div>
-				{aside ? <div className="shrink-0 text-[11px] text-muted-foreground">{aside}</div> : null}
-			</div>
+			</PanelHeader>
 			{children}
 			{expand ? (
 				<>
@@ -82,7 +92,7 @@ export function AiPanel({
 					<button
 						type="button"
 						onClick={() => setExpanded(true)}
-						className="flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border/40 px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none"
+						className="flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border/40 px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none"
 					>
 						<span className="flex items-center gap-1.5">
 							<MaximizeIcon size={12} />
@@ -104,16 +114,12 @@ export function AiPanel({
 					</Dialog>
 				</>
 			) : null}
-		</div>
+		</Panel>
 	)
 }
 
 export function AiEmpty({ children }: { children: ReactNode }) {
-	return (
-		<div className="px-6 pt-4 pb-8 text-center text-[12px] leading-relaxed text-muted-foreground">
-			{children}
-		</div>
-	)
+	return <EmptyMessage className="px-6 leading-relaxed">{children}</EmptyMessage>
 }
 
 // Product cards
@@ -160,41 +166,40 @@ export function AiProductCard({
 	const line = crawlLine(product, crawl)
 
 	return (
-		<div
-			className="rounded-md border bg-card px-4 py-3.5 animate-in fade-in slide-in-from-bottom-1 duration-500"
+		<Panel
+			className="px-4 py-3.5 animate-in fade-in slide-in-from-bottom-1 duration-500"
 			style={{ animationDelay: `${delay}ms`, animationFillMode: "backwards" }}
 		>
 			<div className="flex items-center justify-between gap-3">
 				<div className="flex min-w-0 items-center gap-2">
 					<AiProductIcon product={product.id} />
-					<span className="truncate text-[13px] font-medium">{product.label}</span>
+					<span className="truncate text-sm font-medium">{product.label}</span>
 				</div>
 				{visits > 0 && served > 0 ? (
 					<span
-						className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80"
+						className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/80"
 						title="Crawler fetches the site served, per visit this product sent"
 					>
 						{formatRatio(served / visits)} fetches / visit
 					</span>
 				) : null}
 			</div>
-			<div className="mt-3 flex items-baseline gap-1.5">
-				<span className="font-mono text-[22px] font-semibold tabular-nums leading-none">
-					{formatNumber(visits)}
-				</span>
-				<span className="text-[11px] text-muted-foreground">
-					{visits === 1 ? "visit sent" : "visits sent"}
-				</span>
-			</div>
-			<BarSpark
+			<StatFigure
+				value={formatNumber(visits)}
+				unit={visits === 1 ? "visit sent" : "visits sent"}
+				size="sm"
+				className="mt-3"
+			/>
+			<MiniBars
 				values={referrals?.spark ?? []}
 				color={SPARK_COLOR.neutral}
+				opacityRamp
 				className={cn("mt-3 h-8 w-full", visits === 0 && "opacity-40")}
 			/>
-			<div className="mt-3 truncate text-[11px] text-muted-foreground" title={line.title}>
+			<div className="mt-3 truncate text-2xs text-muted-foreground" title={line.title}>
 				{line.text}
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -245,22 +250,22 @@ export function AiReferralRanking({ ranks }: { ranks: ReadonlyArray<AiReferralRa
 								style={shareBar(rank.share)}
 								className="flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"
 							>
-								<span className="w-5 text-right font-mono text-[11px] tabular-nums text-muted-foreground/60">
+								<span className="w-5 text-right font-mono text-2xs tabular-nums text-muted-foreground/60">
 									{index + 1}
 								</span>
 								<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
 									<AiProductIcon product={rank.product.id} />
-									<span className="truncate text-[12px] text-foreground/90">
+									<span className="truncate text-xs text-foreground/90">
 										{rank.product.label}
 									</span>
 								</span>
-								<span className="w-14 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+								<span className="w-14 text-right font-mono text-2xs tabular-nums text-muted-foreground">
 									{formatNumber(rank.visits)}
 								</span>
-								<span className="w-14 text-right font-mono text-[11px] tabular-nums">
+								<span className="w-14 text-right font-mono text-2xs tabular-nums">
 									{formatPercent(rank.share)}
 								</span>
-								<span className="hidden w-20 justify-end font-mono text-[10px] tabular-nums @min-[360px]/panel:flex">
+								<span className="hidden w-20 justify-end font-mono text-3xs tabular-nums @min-[360px]/panel:flex">
 									<ShareChange share={rank.share} points={rank.shareDeltaPoints} />
 								</span>
 							</div>
@@ -289,7 +294,7 @@ function ShareChange({ share, points }: { share: number; points: number | null }
 	return (
 		<span
 			title={`${formatPercent(before)} of AI visits in the previous period, ${formatPercent(share)} now`}
-			className={points > 0 ? "text-[var(--severity-info)]" : "text-[var(--severity-error)]"}
+			className={points > 0 ? "text-severity-info" : "text-severity-error"}
 		>
 			<span aria-hidden>{points > 0 ? "↑" : "↓"}</span> from {formatPercent(before)}
 		</span>
@@ -363,7 +368,7 @@ export function AiCrawlerTable({
 								>
 									<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
 										<AiProductIcon product={product?.id ?? ""} />
-										<span className="truncate text-[12px] text-foreground/90">
+										<span className="truncate text-xs text-foreground/90">
 											{row.crawler}
 										</span>
 									</span>
@@ -372,14 +377,14 @@ export function AiCrawlerTable({
 									</span>
 									<span
 										className={cn(
-											"w-12 text-right font-mono text-[11px] tabular-nums",
+											"w-12 text-right font-mono text-2xs tabular-nums",
 											row.pages === 0 && "text-muted-foreground/60",
 										)}
 									>
 										{formatNumber(row.pages)}
 									</span>
 									<span
-										className="hidden w-14 text-right font-mono text-[11px] tabular-nums text-muted-foreground @min-[380px]/panel:inline-block"
+										className="hidden w-14 text-right font-mono text-2xs tabular-nums text-muted-foreground @min-[380px]/panel:inline-block"
 										title={
 											row.failedRequests > 0
 												? `${plural(row.failedRequests, "fetch", "fetches")} got an error response`
@@ -388,9 +393,11 @@ export function AiCrawlerTable({
 									>
 										{formatNumber(row.requests)}
 									</span>
-									<span className="hidden w-20 text-right text-[11px] text-muted-foreground @min-[460px]/panel:inline-block">
-										{formatRelativeTime(row.lastSeen)}
-									</span>
+									<RelativeTime
+										value={row.lastSeen}
+										tooltip="title"
+										className="hidden w-20 text-right text-2xs text-muted-foreground @min-[460px]/panel:inline-block"
+									/>
 								</div>
 							)
 						})}
@@ -414,7 +421,7 @@ function PurposeBadge({ purpose }: { purpose: AiCrawlPurpose }) {
 		<span
 			title={description}
 			style={{ color, backgroundColor: `color-mix(in oklab, ${color} 12%, transparent)` }}
-			className="rounded-sm px-1.5 py-px text-[10px] font-medium"
+			className="rounded-sm px-1.5 py-px text-3xs font-medium"
 		>
 			{purpose}
 		</span>
@@ -446,7 +453,7 @@ export function AiContentFormats({ formats }: { formats: ReadonlyArray<WebAnalyt
 				))}
 			</div>
 			{other && other.requests > 0 ? (
-				<div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground/70">
+				<div className="flex items-center gap-1.5 px-1 text-2xs text-muted-foreground/70">
 					<FileIcon size={12} />
 					{plural(other.requests, "other fetch", "other fetches")} (images, scripts, feeds and other
 					files)
@@ -471,25 +478,23 @@ function FormatCard({
 	const pages = row?.pages ?? 0
 
 	return (
-		<div className="rounded-md border bg-card px-4 py-3.5">
+		<Panel className="px-4 py-3.5">
 			<div className="flex items-center gap-2.5">
 				<span className="flex size-7 shrink-0 items-center justify-center rounded-sm border bg-muted/40 text-muted-foreground">
 					<Icon size={14} />
 				</span>
 				<div className="min-w-0">
-					<div className="text-[13px] font-medium leading-tight">{label}</div>
-					<div className="truncate text-[11px] text-muted-foreground">{description}</div>
+					<div className="text-sm font-medium leading-tight">{label}</div>
+					<div className="truncate text-2xs text-muted-foreground">{description}</div>
 				</div>
 			</div>
-			<div className="mt-3 flex items-baseline gap-1.5">
-				<span className="font-mono text-[22px] font-semibold tabular-nums leading-none">
-					{formatNumber(requests)}
-				</span>
-				<span className="text-[11px] text-muted-foreground">
-					{requests === 1 ? "fetch" : "fetches"}
-				</span>
-			</div>
-			<div className="mt-3 flex min-h-4 items-center gap-1.5 text-[11px] text-muted-foreground">
+			<StatFigure
+				value={formatNumber(requests)}
+				unit={requests === 1 ? "fetch" : "fetches"}
+				size="sm"
+				className="mt-3"
+			/>
+			<div className="mt-3 flex min-h-4 items-center gap-1.5 text-2xs text-muted-foreground">
 				{requests === 0 ? (
 					"Not fetched yet"
 				) : pages === 0 ? (
@@ -503,7 +508,7 @@ function FormatCard({
 					</>
 				)}
 			</div>
-		</div>
+		</Panel>
 	)
 }
 

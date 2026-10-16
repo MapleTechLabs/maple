@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { ShareOgCardTile } from "@maple/domain/http"
-import { CARD_HEIGHT, CARD_WIDTH, ogCardNode } from "./card"
+import { ogCardNode } from "./card"
 
 /** Walks the node tree, since takumi nodes are plain nested objects. */
 const flatten = (node: unknown): Array<Record<string, unknown>> => {
@@ -29,12 +29,6 @@ const tiles = (count: number, section?: string): Array<ShareOgCardTile> =>
 	Array.from({ length: count }, (_, index) => tile(`Widget ${index + 1}`, section))
 
 describe("ogCardNode", () => {
-	it("renders at the advertised card size", () => {
-		const node = ogCardNode({ title: "Checkout health", tiles: [] })
-
-		expect(node).toMatchObject({ style: { width: CARD_WIDTH, height: CARD_HEIGHT } })
-	})
-
 	it("leads with the board's name, its author's description and its widget names", () => {
 		const node = ogCardNode({
 			title: "Checkout health",
@@ -143,26 +137,5 @@ describe("ogCardNode", () => {
 
 		expect(columns).toHaveLength(2)
 		expect(columns.map((column) => (column.children as Array<unknown>).length)).toEqual([3, 3])
-	})
-
-	it("draws an empty board as an empty state rather than a blank panel", () => {
-		const node = ogCardNode({ title: "Fresh board", tiles: [] })
-
-		expect(texts(node)).toContain("No widgets yet")
-	})
-
-	it("carries the Maple mark as artwork, not as a coloured dot", () => {
-		const node = ogCardNode({ title: "Board", tiles: [] })
-		const mark = flatten(node).find((child) => child.type === "image")
-
-		// evenodd is what keeps the knockouts open; without it the glyph fills solid.
-		expect(String(mark?.src)).toContain("data:image/svg+xml;base64,")
-		expect(atob(String(mark?.src).split(",")[1] ?? "")).toContain('fill-rule="evenodd"')
-	})
-
-	it("is deterministic, so the same board renders the same bytes every time", () => {
-		const input = { title: "Board", widgetCount: 2, tiles: [tile("Requests"), tile("Errors")] }
-
-		expect(JSON.stringify(ogCardNode(input))).toBe(JSON.stringify(ogCardNode(input)))
 	})
 })

@@ -10,11 +10,11 @@ import {
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { QueryEngineExecuteResponse } from "@maple/query-engine"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -178,6 +178,7 @@ const makeHarness = (options: {
 				options.listIssues ??
 				(() => Effect.succeed(new ErrorIssuesListResponse({ issues: [issueDocument()] }))),
 			countOpenIssuesByService: () => Effect.die(new Error("not used")),
+			countIssues: () => Effect.die(new Error("not used")),
 			getIssue: () => Effect.die(new Error("not used")),
 			listIssueIncidents: () => Effect.die(new Error("not used")),
 			listOpenIncidents: () => Effect.die(new Error("not used")),
@@ -191,7 +192,7 @@ const makeHarness = (options: {
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),

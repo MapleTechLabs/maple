@@ -132,7 +132,13 @@ describe("startBaselineCapture", () => {
 		const button = document.createElement("button")
 		document.body.appendChild(button)
 
-		expect(() => button.click()).not.toThrow()
+		// A listener's throw never reaches click()'s caller; it surfaces as a window error.
+		const reported: Array<string> = []
+		const onError = (event: ErrorEvent) => reported.push(event.message)
+		window.addEventListener("error", onError)
+		button.click()
+		window.removeEventListener("error", onError)
+		expect(reported).toEqual([])
 	})
 
 	// The no-DOM guard is covered by every other suite in this package: they run

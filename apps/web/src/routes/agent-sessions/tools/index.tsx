@@ -8,9 +8,12 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
 import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
 import { ToolMetricStripLoading } from "@/components/agent-sessions/tools/tool-metric-strip"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
+import { ErrorState } from "@/components/common/error-state"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import {
+	PageRefreshProvider,
+	usePageRefreshContext,
+} from "@/components/time-range-picker/page-refresh-context"
 import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,
@@ -49,6 +52,7 @@ function AgentToolsPage() {
 	// One object for the whole render tree below: it is a dependency of every
 	// selection memo down there, and a fresh literal defeats all of them.
 	const window = useMemo(() => ({ startTime, endTime }), [startTime, endTime])
+	const tabCounts = useAgentSessionsTabCounts(window)
 
 	const onSearchChange = (patch: Partial<ToolAnalyticsSearch>) => {
 		navigate({ search: (prev) => ({ ...prev, ...patch }) })
@@ -66,34 +70,36 @@ function AgentToolsPage() {
 
 	return (
 		<PageRefreshProvider timePreset={preset}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Agent Sessions", href: "/agent-sessions" }, { label: "Tools" }]}
+			<DashboardPage
+				breadcrumbs={[{ label: "Agent Sessions", href: "/agent-sessions" }, { label: "Tools" }]}
+				tabs={
+					<AgentSessionsTabs
+						active="tools"
+						search={search}
+						counts={tabCounts}
+						className="border-b border-border"
+					/>
+				}
+				// The view lays out its own toolbar and gutters edge to edge.
+				scrollClassName="p-0"
+			>
+				<AgentToolsBody
+					search={search}
+					window={window}
+					preset={preset}
+					onSearchChange={onSearchChange}
+					tabCounts={tabCounts}
+					actions={
+						<TimeRangeHeaderControls
+							search={search}
+							startTime={startTime}
+							endTime={endTime}
+							defaultPreset={TOOL_ANALYTICS_DEFAULT_PRESET}
+							onTimeChange={handleTimeChange}
+						/>
+					}
 				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll className="p-0">
-							<AgentToolsBody
-								search={search}
-								window={window}
-								preset={preset}
-								onSearchChange={onSearchChange}
-								actions={
-									<TimeRangeHeaderControls
-										startTime={search.startTime ?? startTime}
-										endTime={search.endTime ?? endTime}
-										presetValue={
-											search.timePreset ??
-											(search.startTime ? undefined : TOOL_ANALYTICS_DEFAULT_PRESET)
-										}
-										onTimeChange={handleTimeChange}
-									/>
-								}
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			</DashboardPage>
 		</PageRefreshProvider>
 	)
 }
@@ -113,16 +119,18 @@ function AgentToolsBody({
 	window,
 	preset,
 	onSearchChange,
+	tabCounts,
 	actions,
 }: {
 	search: ToolAnalyticsSearch & TimeRangeSearch
 	window: { startTime: string; endTime: string }
 	preset: string
 	onSearchChange: (patch: Partial<ToolAnalyticsSearch>) => void
+	tabCounts: { sessions?: number; tools?: number }
 	actions: ReactNode
 }) {
 	const results = useToolAnalytics(search, window)
-	const tabCounts = useAgentSessionsTabCounts(window)
+	const { reload } = usePageRefreshContext()
 	// Memoized: it is memo input for the detail links the table builds.
 	const timeRange = useMemo(
 		() => ({
@@ -171,24 +179,14 @@ function AgentToolsBody({
 
 	return Result.builder(results.totals)
 		.onInitial(() => (
-			<div className="flex flex-col gap-5 pt-4">
-				{/* The real strip while the page waits: it is what must not move when
-				    a reader switches tabs. */}
-				<AgentSessionsTabs
-					active="tools"
-					search={timeRange}
-					counts={tabCounts}
-					className="border-b border-border px-6"
-				/>
+			<div className="flex flex-col gap-5 pt-3">
 				<Skeleton className="mx-6 h-8 max-w-2xl" />
 				<ToolMetricStripLoading />
 				<Skeleton className="mx-6 h-56" />
 				<Skeleton className="mx-6 h-80" />
 			</div>
 		))
-		.onError((error) => (
-			<QueryErrorState error={error} titleOverride="Failed to load agent tool analytics" />
-		))
+		.onError((error) => <ErrorState error={error} title="Failed to load agent tool analytics" onRetry={reload} />)
 		.onSuccess((totals, result) => (
 			<AgentToolsView
 				search={search}

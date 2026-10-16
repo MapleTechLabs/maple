@@ -1,4 +1,4 @@
-import { PlotFrame, cursorTooltip, usePlotColors, type PlotColorToken } from "@maple/ui/components/plot"
+import { PlotFrame, cursorTooltip, usePlotColors, type PlotColorSource } from "@maple/ui/components/plot"
 import { formatLatency, formatNumber } from "@maple/ui/lib/format"
 import { boxY, defineChart } from "@tanstack/charts"
 import { scaleBand } from "@tanstack/charts-scales/band"
@@ -27,8 +27,8 @@ export interface BoxPlotSpikeRow {
 }
 
 const BOX_TOKENS = {
-	box: ["--chart-1", "#6366f1"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	box: "--chart-1",
+} as const satisfies Record<string, PlotColorSource>
 
 /** Median latency and lognormal sigma per operation — a realistic APM spread. */
 const OPERATIONS: readonly { name: string; medianMs: number; sigma: number }[] = [
@@ -233,7 +233,7 @@ export const BoxPlotSpike = memo(function BoxPlotSpike({
 
 				const heading = (
 					<div className="border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight">
-						{String(datum.category)}
+						{datum.category}
 					</div>
 				)
 

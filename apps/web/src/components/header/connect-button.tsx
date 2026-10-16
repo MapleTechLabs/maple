@@ -2,6 +2,9 @@ import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import {
 	Popover,
 	PopoverDescription,
@@ -29,7 +32,7 @@ export function ConnectButton() {
 			<PopoverTrigger
 				render={
 					<Button variant="default" size="sm" className="gap-2">
-						<ConnectionIcon size={14} />
+						<ConnectionIcon />
 						Connect
 					</Button>
 				}
@@ -61,13 +64,11 @@ function ConnectPanel() {
 			<Separator />
 
 			<div className="space-y-2">
-				<span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-					Fastest path · Claude Code
-				</span>
+				<Eyebrow variant="label">Fastest path · Claude Code</Eyebrow>
 				<CopyableField value={ONBOARD_SKILL_COMMAND} copyLabel="Command" />
 				<p className="text-xs text-muted-foreground">
-					The <code className="rounded bg-muted px-1">maple-onboard</code> skill installs
-					OpenTelemetry and wires traces, logs, and metrics end-to-end.
+					The <InlineCode>maple-onboard</InlineCode> skill installs OpenTelemetry and wires traces,
+					logs, and metrics end-to-end.
 				</p>
 			</div>
 
@@ -97,7 +98,7 @@ function ConnectPanel() {
 
 function McpCard() {
 	return (
-		<div className="group overflow-hidden rounded-lg border bg-muted/30 transition-colors hover:border-foreground/20">
+		<Panel tone="muted" className="group transition-colors hover:border-foreground/20">
 			<Link
 				to="/settings"
 				search={{ tab: "mcp" }}
@@ -120,9 +121,7 @@ function McpCard() {
 				/>
 			</Link>
 			<div className="flex items-center gap-2 border-t bg-background/60 py-1.5 pl-3 pr-1.5">
-				<span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-					MCP
-				</span>
+				<Eyebrow>MCP</Eyebrow>
 				<code className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
 					{MCP_ENDPOINT}
 				</code>
@@ -133,6 +132,6 @@ function McpCard() {
 					className="size-6 shrink-0"
 				/>
 			</div>
-		</div>
+		</Panel>
 	)
 }

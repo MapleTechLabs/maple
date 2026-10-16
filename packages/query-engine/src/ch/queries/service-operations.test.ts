@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { NORMALIZED_SPAN_NAME_SQL } from "@maple/domain/tinybird/span-display-name"
 import {
 	serviceOperationsSummaryQuery,
@@ -10,9 +10,10 @@ import {
 	serviceOperationsTimeseriesRawQuery,
 	serviceOperationsTimeseriesRowSchema,
 } from "./service-operations"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
@@ -56,20 +57,25 @@ describe("serviceOperationsSummaryQuery", () => {
 		expect(sql).toContain("http.route")
 		expect(sql).toContain("url.path")
 		expect(sql).toContain("AS spanName")
-		expect(sql).toContain(`${NORMALIZED_SPAN_NAME_SQL} AS bSpanName`)
+		// The builder qualifies source columns; the shared write-side fragment does not.
+		const onTraces = NORMALIZED_SPAN_NAME_SQL.replace(
+			/(?<![\w.])(SpanName|SpanAttributes)\b/g,
+			"traces.$1",
+		)
+		expect(sql).toContain(`${onTraces} AS bSpanName`)
 	})
 
 	it("merges exact, sampling-weighted, error, duration, and t-digest state", () => {
 		const q = serviceOperationsSummaryQuery({ serviceName: "api" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("sum(SampleRate) AS bEstimatedSpanCount")
-		expect(sql).toContain("sumIf(SampleRate, StatusCode = 'Error') AS bEstimatedErrorCount")
-		expect(sql).toContain("countIf(StatusCode = 'Error') AS bErrorCount")
+		expect(sql).toContain("sum(traces.SampleRate) AS bEstimatedSpanCount")
+		expect(sql).toContain("sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount")
+		expect(sql).toContain("countIf(traces.StatusCode = 'Error') AS bErrorCount")
 		// Three levels merged out of two-level stored state — see RAW_DURATION_STATE.
 		expect(sql).toContain("quantilesTDigestState(0.5, 0.95, 0.99)(Duration)")
 		expect(sql).toContain("quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)")
 		expect(sql).toContain(
-			"if(sum(bEstimatedSpanCount) > 0, sum(bEstimatedErrorCount) / sum(bEstimatedSpanCount), 0) AS errorRate",
+			"if(sum(operation_windows.bEstimatedSpanCount) > 0, sum(operation_windows.bEstimatedErrorCount) / sum(operation_windows.bEstimatedSpanCount), 0) AS errorRate",
 		)
 		expect(sql).toContain("quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1")
 		expect(sql).toContain("quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2")
@@ -80,7 +86,7 @@ describe("serviceOperationsSummaryQuery", () => {
 		const q = serviceOperationsSummaryQuery({ serviceName: "api", environments: ["production"] })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')",
+			"coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production')",
 		)
 		expect(sql).toContain("DeploymentEnv IN ('production')")
 	})
@@ -100,7 +106,7 @@ describe("serviceOperationsSummaryQuery", () => {
 	it("uses disjoint raw and rollup boundaries for partial edge minutes", () => {
 		const q = serviceOperationsSummaryQuery({ serviceName: "api" })
 		const { sql } = compileUnsafe(q, {
-			orgId: "org_1",
+			orgId: OrgId.make("org_1"),
 			startTime: "2024-01-01 00:00:30",
 			endTime: "2024-01-01 00:02:15",
 		})
@@ -116,7 +122,7 @@ describe("serviceOperationsSummaryQuery", () => {
 			["2024-01-01 00:00:10", "2024-01-01 00:00:10"],
 		] as const) {
 			const { sql } = compileUnsafe(serviceOperationsSummaryQuery({ serviceName: "api" }), {
-				orgId: "org_1",
+				orgId: OrgId.make("org_1"),
 				startTime,
 				endTime,
 			})
@@ -134,10 +140,10 @@ describe("serviceOperationsTimeseriesQuery", () => {
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("FROM service_operations_minutely")
 		expect(sql).toContain("UNION ALL")
-		expect(sql).toContain("toStartOfInterval(Timestamp, INTERVAL 300 SECOND)")
-		expect(sql).toContain("toStartOfInterval(Minute, INTERVAL 300 SECOND)")
-		expect(sql).toContain("sum(SampleRate) AS count")
-		expect(sql).toContain("sum(EstimatedSpanCount) AS count")
+		expect(sql).toContain("toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND)")
+		expect(sql).toContain("toStartOfInterval(service_operations_minutely.Minute, INTERVAL 300 SECOND)")
+		expect(sql).toContain("sum(traces.SampleRate) AS count")
+		expect(sql).toContain("sum(service_operations_minutely.EstimatedSpanCount) AS count")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("GROUP BY bucket, spanName")
 		expect(sql).toContain("ORDER BY bucket ASC")

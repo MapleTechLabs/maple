@@ -1,8 +1,18 @@
-import { Effect, Option } from "effect"
-import * as Command from "effect/unstable/cli/Command"
-import * as Flag from "effect/unstable/cli/Flag"
+import { Effect, Option, Ref } from "effect"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
+import { MapleConfig } from "../core/config"
 import { releaseSignatureNotice } from "../core/release-signature"
-import { fetchLatestTag, isNewer, performUpdate, stripV, UpdateError } from "../core/update"
+import {
+	fetchLatestTag,
+	isNewer,
+	performUpdate,
+	stripV,
+	UpdateError,
+	type UpdateProgress,
+	type UpdateStage,
+} from "../core/update"
+import { step, type StepHandle, type StepLabels } from "../lib/progress"
 import { amber, bold, cyan, dim, green } from "../lib/style"
 import { MAPLE_VERSION } from "../version"
 
@@ -26,6 +36,34 @@ const insecureSkipSignatureFlag = Flag.Boolean("insecure-skip-signature").pipe(
 	),
 	Flag.withDefault(false),
 )
+
+const STAGE_LABELS = {
+	verify: { running: "Checking release manifest", done: "Release manifest checked" },
+	download: { running: "Downloading bundle", done: "Downloaded bundle" },
+	checksum: { running: "Verifying checksum", done: "Checksum verified" },
+	extract: { running: "Unpacking", done: "Unpacked" },
+	install: { running: "Installing", done: "Installed" },
+} satisfies Record<UpdateStage, StepLabels>
+
+/** Renders each `performUpdate` stage as a live step; download bytes go to
+ *  whichever step is currently running. */
+const stepProgress = Effect.gen(function* () {
+	const current = yield* Ref.make(Option.none<StepHandle>())
+	const progress: UpdateProgress = {
+		stage: (stage, effect) =>
+			step(STAGE_LABELS[stage], (handle) =>
+				Ref.set(current, Option.some(handle)).pipe(Effect.andThen(effect)),
+			),
+		downloaded: (received, total) =>
+			Effect.flatMap(Ref.get(current), (handle) =>
+				Option.match(handle, {
+					onNone: () => Effect.void,
+					onSome: (h) => h.transfer(received, total),
+				}),
+			),
+	}
+	return progress
+})
 
 export const update = Command.make("update", {
 	tag: tagFlag,
@@ -79,19 +117,29 @@ export const update = Command.make("update", {
 				return
 			}
 
-			yield* Effect.sync(() => process.stderr.write(dim(`◌ updating ${current} → ${latest}…\n`)))
+			yield* Effect.sync(() =>
+				process.stderr.write(`\n  ${bold("maple")} ${dim(current)} ${dim("→")} ${green(latest)}\n\n`),
+			)
 			const result = yield* performUpdate({
 				tag: latestTag,
 				skipSignature: a.insecureSkipSignature,
+				progress: yield* stepProgress,
 			})
 			const notice = releaseSignatureNotice(result.signature)
 			yield* Effect.sync(() =>
 				process.stderr.write(
-					`${green("✓")} updated to ${bold(stripV(result.tag))} ${dim(`(${result.installDir})`)}\n` +
+					`\n${green("✓")} updated to ${bold(stripV(result.tag))} ${dim(`(${result.installDir})`)}\n` +
 						(notice ? `  ${amber("!")} ${dim(notice)}\n` : "") +
-						`  ${dim("restart any running")} ${bold("maple start")}\n`,
+						`  ${dim("restart any running")} ${bold("maple start")}\n` +
+						// A pinned --tag can downgrade; there is nothing new to read then.
+						(isNewer(current, result.tag)
+							? `  ${dim("see what's new:")} ${bold(`maple changelog --since ${current}`)}\n`
+							: ""),
 				),
 			)
+			// The hint above already pointed at the notes; skip the next run's notice.
+			const config = yield* MapleConfig
+			yield* config.write({ lastSeenVersion: stripV(result.tag) }).pipe(Effect.ignore)
 		}),
 	),
 )

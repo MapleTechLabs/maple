@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { PlotLegendSlotContext, type PlotLegendItem } from "@maple/ui/components/plot"
 import {
 	GripDotsIcon,
@@ -17,7 +18,11 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@maple/ui/components/ui/card"
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
+import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import {
 	DropdownMenu,
 	DropdownMenuTrigger,
@@ -30,6 +35,7 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useWidgetActions } from "@/components/dashboard-builder/widgets/widget-actions-context"
 import { MoveWidgetToSectionMenu } from "@/components/dashboard-builder/sections/move-widget-to-section-menu"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
+import { useGridHandleDescription } from "@/components/dashboard-builder/canvas/grid-handle-context"
 import {
 	useWidgetTimeRangeOverride,
 	widgetTimeRangeLabel,
@@ -89,6 +95,7 @@ export function WidgetShell({
 	// the resolved value. Outside a dashboard (widget lab) this is a no-op.
 	const variablesContext = useDashboardVariablesOptional()
 	const displayTitle = variablesContext ? interpolateDisplayText(title, variablesContext.values) : title
+	const gridInstructionsId = useGridHandleDescription()
 
 	// A tile pinned to its own window says so in the header. Without the label a
 	// reader has no way to tell that one card on a 7-day board is showing the
@@ -109,16 +116,29 @@ export function WidgetShell({
 				<div className="flex min-w-0 items-center gap-2">
 					{isEditable && (
 						// Hidden when the canvas is showing a generated (non-authored)
-						// layout — see `is-layout-locked` in dashboard-canvas. Outside a
+						// layout (`is-layout-locked` in dashboard-sections). Outside a
 						// canvas (widget lab, previews) the group never matches, so the
-						// grip renders as before.
-						<div className="widget-drag-handle cursor-grab text-muted-foreground group-[.is-layout-locked]/canvas:hidden hover:text-foreground active:cursor-grabbing">
+						// grip renders as before. A button so the grid's keyboard
+						// rearranging can reach it; `touch-none` so a touch drag moves
+						// the tile instead of scrolling the page.
+						<button
+							type="button"
+							aria-label={`Move ${displayTitle}`}
+							aria-describedby={gridInstructionsId}
+							data-grid-label={displayTitle}
+							className="widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+						>
 							<GripDotsIcon size={14} />
-						</div>
+						</button>
 					)}
-					<CardTitle className="min-w-0 truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+					<Eyebrow
+						variant="label"
+						render={<CardTitle />}
+						className="min-w-0 truncate"
+						title={displayTitle}
+					>
 						{displayTitle}
-					</CardTitle>
+					</Eyebrow>
 					{titleHint && (
 						<Tooltip>
 							<TooltipTrigger
@@ -160,7 +180,7 @@ export function WidgetShell({
 					)}
 					{timeRangeLabel && (
 						<span
-							className="flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+							className="flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-3xs font-medium text-muted-foreground"
 							title={`This widget uses its own time range (${timeRangeLabel}) instead of the dashboard's`}
 						>
 							<ClockIcon size={10} />
@@ -183,7 +203,7 @@ export function WidgetShell({
 									{visible.map((item) => (
 										<span
 											key={item.key}
-											className="flex min-w-0 shrink items-center gap-1.5 text-[10px] text-muted-foreground"
+											className="flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground"
 										>
 											{/* A dashed outline, not a filled square, when the series is
 											    painted as a dashed stroke — an errors overlay drawn dashed
@@ -191,7 +211,7 @@ export function WidgetShell({
 											    the chart does not. Mirrors `FixedMetricLegend`. */}
 											<span
 												className={cn(
-													"size-2 shrink-0 rounded-[2px]",
+													"size-2 shrink-0 rounded-xs",
 													item.dashed && "border border-dashed",
 												)}
 												style={
@@ -205,7 +225,7 @@ export function WidgetShell({
 									))}
 									{overflow > 0 && (
 										<span
-											className="shrink-0 text-[10px] text-muted-foreground"
+											className="shrink-0 text-3xs text-muted-foreground"
 											title={legendItems.map((i) => i.label).join(", ")}
 										>
 											+{overflow}
@@ -233,28 +253,28 @@ export function WidgetShell({
 					<CardAction
 						className={cn(
 							!isEditable &&
-								"opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100",
+								"opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100 pointer-coarse:opacity-100",
 							!isEditable && menuOpen && "opacity-100",
 						)}
 					>
 						<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
 							<DropdownMenuTrigger
 								render={
-									<Button variant="ghost" size="icon-xs">
-										<DotsVerticalIcon size={14} />
+									<Button variant="ghost" size="icon-xs" aria-label="Widget actions">
+										<DotsVerticalIcon />
 									</Button>
 								}
 							/>
 							<DropdownMenuContent align="end" className="w-max">
 								{isEditable && configure && (
 									<DropdownMenuItem onClick={configure}>
-										<PencilIcon size={14} />
+										<PencilIcon />
 										Edit
 									</DropdownMenuItem>
 								)}
 								{isEditable && clone && (
 									<DropdownMenuItem onClick={clone}>
-										<CopyIcon size={14} />
+										<CopyIcon />
 										Clone
 									</DropdownMenuItem>
 								)}
@@ -267,7 +287,7 @@ export function WidgetShell({
 								)}
 								{createAlert && (
 									<DropdownMenuItem onClick={createAlert}>
-										<BellIcon size={14} />
+										<BellIcon />
 										Create alert
 									</DropdownMenuItem>
 								)}
@@ -278,7 +298,7 @@ export function WidgetShell({
 										<Tooltip>
 											<TooltipTrigger render={<div />}>
 												<DropdownMenuItem disabled>
-													<CodeIcon size={14} />
+													<CodeIcon />
 													Embed chart
 												</DropdownMenuItem>
 											</TooltipTrigger>
@@ -288,7 +308,7 @@ export function WidgetShell({
 										</Tooltip>
 									) : (
 										<DropdownMenuItem onClick={embed.open}>
-											<CodeIcon size={14} />
+											<CodeIcon />
 											Embed chart
 										</DropdownMenuItem>
 									))}
@@ -296,7 +316,7 @@ export function WidgetShell({
 									<>
 										<DropdownMenuSeparator />
 										<DropdownMenuItem variant="destructive" onClick={remove}>
-											<TrashIcon size={14} />
+											<TrashIcon />
 											Delete
 										</DropdownMenuItem>
 									</>
@@ -314,7 +334,7 @@ export function WidgetShell({
 				<PlotLegendSlotContext.Provider value={legendSlot}>{children}</PlotLegendSlotContext.Provider>
 			</CardContent>
 			{footer != null && (
-				<div className="shrink-0 px-3 pb-2.5 text-[11px] text-muted-foreground">{footer}</div>
+				<div className="shrink-0 px-3 pb-2.5 text-2xs text-muted-foreground">{footer}</div>
 			)}
 		</Card>
 	)
@@ -342,14 +362,12 @@ interface WidgetFrameProps {
  */
 export function WidgetEmptyState() {
 	return (
-		<div className="flex items-center justify-center h-full flex-col gap-1.5 px-3">
-			<span className="text-xs font-medium text-muted-foreground">
-				No data in the selected time range
-			</span>
-			<span className="text-[10px] text-muted-foreground/70 max-w-full text-center line-clamp-3">
+		<EmptyMessage className="flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0">
+			<span className="font-medium">No data in the selected time range</span>
+			<span className="text-3xs text-muted-foreground/70 max-w-full line-clamp-3">
 				Widen the time range or check the query's filters.
 			</span>
-		</div>
+		</EmptyMessage>
 	)
 }
 
@@ -392,7 +410,7 @@ export function WidgetFrame({
 								(dataState.kind === "range" ? "Range too wide" : "Not configured")}
 						</span>
 						{dataState.message && (
-							<span className="text-[10px] text-muted-foreground/70 max-w-full text-center line-clamp-3">
+							<span className="text-3xs text-muted-foreground/70 max-w-full text-center line-clamp-3">
 								{dataState.message}
 							</span>
 						)}
@@ -401,9 +419,9 @@ export function WidgetFrame({
 								variant="outline"
 								size="xs"
 								onClick={narrowRange}
-								className="mt-1 h-6 gap-1 text-[10px]"
+								className="mt-1 h-6 gap-1 text-3xs"
 							>
-								<ClockIcon size={12} />
+								<ClockIcon />
 								{actions?.narrowRangeLabel ?? "Narrow range"}
 							</Button>
 						)}
@@ -412,31 +430,38 @@ export function WidgetFrame({
 								variant="outline"
 								size="xs"
 								onClick={configure}
-								className="mt-1 h-6 gap-1 text-[10px]"
+								className="mt-1 h-6 gap-1 text-3xs"
 							>
-								<PencilIcon size={12} />
+								<PencilIcon />
 								Edit
 							</Button>
 						)}
 					</div>
 				) : (
 					<div className="flex items-center justify-center h-full flex-col gap-1.5 px-3">
-						<span className="text-xs font-medium text-destructive">
+						<span className={cn("text-xs font-medium", TONE_TEXT.crit)}>
 							{dataState.title ?? "Unable to load"}
 						</span>
 						{dataState.message && (
-							<span className="text-[10px] text-destructive/70 max-w-full text-center line-clamp-2">
+							<span
+								className={cn(
+									"text-3xs opacity-70 max-w-full text-center line-clamp-2 break-words",
+									TONE_TEXT.crit,
+								)}
+								title={dataState.message}
+							>
 								{dataState.message}
 							</span>
 						)}
+						{dataState.message && <ErrorDetailsPopover message={dataState.message} />}
 						{fix && dataState.kind === "decode" && (
 							<Button
 								variant="outline"
 								size="xs"
 								onClick={fix}
-								className="mt-1 h-6 gap-1 text-[10px]"
+								className="mt-1 h-6 gap-1 text-3xs"
 							>
-								<ChatBubbleSparkleIcon size={12} />
+								<ChatBubbleSparkleIcon />
 								Fix with AI
 							</Button>
 						)}
@@ -446,5 +471,24 @@ export function WidgetFrame({
 				children
 			)}
 		</WidgetShell>
+	)
+}
+
+/** The card clamps the error to two lines; the full SQL/ClickHouse message lives here. */
+function ErrorDetailsPopover({ message }: { message: string }) {
+	return (
+		<Popover>
+			<PopoverTrigger render={<Button variant="ghost" size="xs" className="h-5 text-3xs" />}>
+				Details
+			</PopoverTrigger>
+			<PopoverContent className="w-96 max-w-[calc(100vw-2rem)]">
+				<div className="flex items-start gap-2">
+					<pre className="max-h-60 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">
+						{message}
+					</pre>
+					<CopyButton value={message} label="Error message" className="shrink-0" />
+				</div>
+			</PopoverContent>
+		</Popover>
 	)
 }

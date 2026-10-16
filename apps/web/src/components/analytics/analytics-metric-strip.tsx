@@ -1,8 +1,7 @@
-import { cn } from "@maple/ui/lib/utils"
-import { formatPercent } from "@maple/ui/lib/format"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Delta } from "@maple/ui/components/ui/delta"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
-import { StatRailItem } from "../infra/primitives/stat-rail"
+import { StatRailItem, StatRailItemSkeleton } from "@/components/common/stat-rail"
 import {
 	ANALYTICS_METRICS,
 	isMetricAvailable,
@@ -96,9 +95,9 @@ function MetricTile({
 	return (
 		<StatRailItem
 			eyebrow={metric.label}
-			value={available && value !== null ? metric.format(value) : "—"}
+			value={available && value !== null ? metric.format(value) : EMPTY_VALUE}
 			spark={available ? metric.series(source).map((point) => point.value) : undefined}
-			delta={delta === null ? undefined : <Delta delta={delta} invert={metric.invertDelta} />}
+			delta={delta === null ? undefined : <Delta ratio={delta} invert={metric.invertDelta} />}
 			subline={
 				available
 					? metric.subline(source)
@@ -115,52 +114,11 @@ function MetricTile({
 	)
 }
 
-/**
- * Change against the previous window.
- *
- * Colour follows *improvement*, not direction: a falling bounce rate is green.
- * The arrow keeps pointing the way the number actually moved, so colour is never
- * the only thing carrying the meaning.
- *
- * Plain tinted text rather than a filled chip — the rails elsewhere set their
- * deltas in muted mono and colour a word inline when it matters, and a pill here
- * would be the loudest thing on a page whose accent is already doing the
- * selection rail, the sparklines and the row tints.
- */
-export function Delta({ delta, invert }: { delta: number; invert?: boolean }) {
-	const rose = delta > 0
-	const flat = Math.abs(delta) < 0.001
-	const good = invert ? !rose : rose
-
-	return (
-		<span
-			className={cn(
-				flat
-					? "text-muted-foreground/70"
-					: good
-						? "text-[var(--severity-info)]"
-						: "text-[var(--severity-error)]",
-			)}
-			title={`${flat ? "Flat" : rose ? "Up" : "Down"} ${formatPercent(Math.abs(delta))} vs the previous period`}
-		>
-			<span aria-hidden>{flat ? "→" : rose ? "↑" : "↓"}</span>
-			{formatPercent(Math.abs(delta))}
-		</span>
-	)
-}
-
 export function AnalyticsMetricStripLoading() {
 	return (
-		<div className={GRID}>
+		<div className={GRID} aria-busy>
 			{ANALYTICS_METRICS.map((metric) => (
-				<div key={metric.key} className={cn("px-5 py-4", TILE_NARROW)}>
-					<Skeleton className="h-3 w-20" />
-					<div className="mt-3 flex items-end justify-between gap-3">
-						<Skeleton className="h-7 w-20" />
-						<Skeleton className="h-7 w-24" />
-					</div>
-					<Skeleton className="mt-3 h-3 w-28" />
-				</div>
+				<StatRailItemSkeleton key={metric.key} className={TILE_NARROW} />
 			))}
 		</div>
 	)

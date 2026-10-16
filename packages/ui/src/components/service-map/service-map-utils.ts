@@ -1,6 +1,7 @@
 import type { Node, Edge } from "@xyflow/react"
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
 import { getServiceColor, getValueHue } from "../../lib/colors"
+import { type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
 import type {
 	PlanetScaleDatabaseStat,
 	ServiceMapCloudflareRow,
@@ -10,7 +11,12 @@ import type {
 	ServiceMapWorkloadRow,
 	ServicePlatform,
 } from "./service-map-types"
-import { getDbNodeColor, PLANETSCALE_COLOR, resolveDbNodePresentation } from "./service-map-db"
+import {
+	CLOUDFLARE_COLOR,
+	getDbNodeColor,
+	PLANETSCALE_COLOR,
+	resolveDbNodePresentation,
+} from "./service-map-db"
 import {
 	matchHyperdriveConfigs,
 	type HyperdriveConfigInput,
@@ -26,8 +32,8 @@ type ServiceNodeKind = "service" | "database" | "namespaceAggregate"
 
 export type ServiceMapColorMode = "service" | "health" | "platform"
 
-/** Cloudflare brand orange — accent for the detail-panel overlay section. */
-export const CLOUDFLARE_COLOR = "oklch(0.7 0.16 50)"
+/** Cloudflare brand orange, accent for the detail-panel overlay section. */
+export { CLOUDFLARE_COLOR }
 
 /**
  * Cloudflare direct-integration analytics overlaid onto an instrumented Worker
@@ -117,10 +123,14 @@ export function getPlatformColor(platform: ServicePlatform | undefined): string 
 	return PLATFORM_COLORS[platform ?? "unknown"]
 }
 
+const HEALTH_COLOR = {
+	crit: "var(--severity-error)",
+	warn: "var(--severity-warn)",
+	neutral: "var(--severity-info)",
+} satisfies Record<ErrorRateLevel, string>
+
 export function getHealthColor(errorRate: number): string {
-	if (errorRate > 0.05) return "var(--severity-error)"
-	if (errorRate > 0.01) return "var(--severity-warn)"
-	return "var(--severity-info)"
+	return HEALTH_COLOR[errorRateLevel(errorRate)]
 }
 
 /**
@@ -245,6 +255,47 @@ function deriveServiceList(
 	return Array.from(services).sort()
 }
 
+/**
+ * One row per service across its environment rows ("All environments" yields several).
+ * Rates sum; error rate and p50 are throughput-weighted; p95 takes the worst row.
+ */
+export function aggregateServiceOverviews<T extends ServiceMapOverviewRow & { p95LatencyMs?: number }>(
+	rows: ReadonlyArray<T>,
+): Map<string, T> {
+	const groups = new Map<string, T[]>()
+	for (const row of rows) {
+		const group = groups.get(row.serviceName)
+		if (group) group.push(row)
+		else groups.set(row.serviceName, [row])
+	}
+	const out = new Map<string, T>()
+	for (const [name, group] of groups) {
+		const top = group.reduce((a, b) => (b.throughput > a.throughput ? b : a))
+		if (group.length === 1) {
+			out.set(name, top)
+			continue
+		}
+		const throughput = group.reduce((sum, r) => sum + r.throughput, 0)
+		const weighted = (pick: (r: T) => number) =>
+			throughput > 0
+				? group.reduce((sum, r) => sum + pick(r) * r.throughput, 0) / throughput
+				: pick(top)
+		const p95s = group.flatMap((r) => (r.p95LatencyMs === undefined ? [] : [r.p95LatencyMs]))
+		const merged: T = {
+			...top,
+			throughput,
+			tracedThroughput: group.reduce((sum, r) => sum + r.tracedThroughput, 0),
+			hasSampling: group.some((r) => r.hasSampling),
+			samplingWeight: Math.max(...group.map((r) => r.samplingWeight)),
+			errorRate: weighted((r) => r.errorRate),
+			p50LatencyMs: weighted((r) => r.p50LatencyMs),
+		}
+		if (p95s.length > 0) merged.p95LatencyMs = Math.max(...p95s)
+		out.set(name, merged)
+	}
+	return out
+}
+
 export interface BuildFlowElementsInput {
 	edges: ReadonlyArray<ServiceMapEdgeRow>
 	dbEdges?: ReadonlyArray<ServiceMapDbEdgeRow>
@@ -296,14 +347,7 @@ export function buildFlowElements({
 }: BuildFlowElementsInput): { nodes: Node<ServiceNodeData>[]; edges: Edge<ServiceEdgeData>[] } {
 	const services = deriveServiceList(edges, serviceOverviews)
 
-	const overviewMap = new Map<string, ServiceMapOverviewRow>()
-	for (const svc of serviceOverviews) {
-		// Duplicate names resolve to their highest-throughput row.
-		const existing = overviewMap.get(svc.serviceName)
-		if (!existing || svc.throughput > existing.throughput) {
-			overviewMap.set(svc.serviceName, svc)
-		}
-	}
+	const overviewMap = aggregateServiceOverviews(serviceOverviews)
 
 	// Aggregate per-service infra rollup. Pod / workload counts are summed
 	// across all (workloadKind, workloadName, namespace, cluster) rows that map

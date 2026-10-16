@@ -1,10 +1,17 @@
 import type { ReactNode } from "react"
+import { shortId } from "@maple/ui/lib/ids"
+import { initialsFrom } from "@maple/ui/lib/initials"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { GlobeIcon, ClockIcon } from "@/components/icons"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { formatSessionDuration, gradientFor, hostFromUrl } from "./replay-format"
 import { parseChTimestampMs } from "./replay-timeline"
+import { ErrorCountPill, LivePill } from "./session-pills"
 
 // Presentational building blocks for the session-replay detail page.
 
@@ -23,21 +30,13 @@ export function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: n
 function StatusPill({ active }: { active: boolean }) {
 	if (!active) {
 		return (
-			<span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-				<span className="size-1.5 rounded-full bg-muted-foreground/50" />
+			<Badge variant="muted" pill className="gap-1.5">
+				<StatusDot />
 				Ended
-			</span>
+			</Badge>
 		)
 	}
-	return (
-		<span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
-			<span className="relative flex size-1.5">
-				<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-				<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-			</span>
-			Live
-		</span>
-	)
+	return <LivePill />
 }
 
 /**
@@ -70,31 +69,36 @@ export function SessionIdentityBar({
 				<div
 					className={`grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(sessionId)} text-xs font-semibold text-white shadow-sm`}
 				>
-					{(label[0] ?? "?").toUpperCase()}
+					{initialsFrom(label)}
 				</div>
-				<h2 className="min-w-0 truncate text-sm font-medium leading-tight">{label}</h2>
+				<h2 className="min-w-0 truncate text-sm font-medium leading-tight" title={label}>
+					{label}
+				</h2>
 				<StatusPill active={isActive} />
-				<a
-					href={urlInitial}
-					target="_blank"
-					rel="noreferrer"
-					title={urlInitial}
-					className="hidden min-w-0 max-w-64 items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground sm:inline-flex"
-				>
-					<GlobeIcon className="size-3 shrink-0 opacity-70" />
-					<span className="truncate">{hostFromUrl(urlInitial)}</span>
-				</a>
-				{startedValid && (
-					<span
-						className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex"
-						title={new Date(startedEpoch).toLocaleString()}
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<a
+								href={urlInitial}
+								target="_blank"
+								rel="noreferrer"
+								className="hidden min-w-0 max-w-64 items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground sm:inline-flex"
+							/>
+						}
 					>
+						<GlobeIcon className="size-3 shrink-0 opacity-70" />
+						<span className="truncate">{hostFromUrl(urlInitial)}</span>
+					</TooltipTrigger>
+					<TooltipContent className="max-w-sm break-all">{urlInitial}</TooltipContent>
+				</Tooltip>
+				{startedValid && (
+					<span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:inline-flex">
 						<ClockIcon className="size-3 shrink-0 opacity-70" />
-						started {formatRelativeFrom(startedEpoch)}
+						<RelativeTime value={startedEpoch} prefix="started" tooltip="title" />
 					</span>
 				)}
-				<span className="hidden shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground xl:inline-flex">
-					{sessionId.slice(0, 8)}
+				<span className="hidden shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground xl:inline-flex">
+					{shortId(sessionId, "session", { length: 8 })}
 					<CopyButton
 						value={sessionId}
 						label="Session ID"
@@ -106,19 +110,12 @@ export function SessionIdentityBar({
 			</div>
 			<div className="flex shrink-0 items-center gap-3">
 				<span className="flex items-baseline gap-1.5">
-					<span className="font-mono text-[15px] font-semibold tabular-nums">
+					<span className="font-mono text-sm font-semibold tabular-nums">
 						{formatSessionDuration(durationMs)}
 					</span>
-					<span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-						duration
-					</span>
+					<Eyebrow>duration</Eyebrow>
 				</span>
-				{errorCount > 0 && (
-					<span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums text-destructive">
-						<span className="size-1 rounded-full bg-destructive" aria-hidden />
-						{errorCount} error{errorCount === 1 ? "" : "s"}
-					</span>
-				)}
+				{errorCount > 0 && <ErrorCountPill count={errorCount} />}
 			</div>
 		</div>
 	)
@@ -136,11 +133,11 @@ export function ReplayDetailSkeleton() {
 					<Skeleton className="h-4 w-64" />
 					<Skeleton className="ml-auto h-4 w-24" />
 				</div>
-				<Skeleton className="aspect-video w-full rounded-t-xl" />
-				<Skeleton className="-mt-3.5 h-14 w-full rounded-b-xl" />
-				<Skeleton className="h-48 w-full rounded-xl" />
+				<Skeleton className="aspect-video w-full rounded-t-md" />
+				<Skeleton className="-mt-3.5 h-14 w-full rounded-b-md" />
+				<Skeleton className="h-48 w-full rounded-md" />
 			</div>
-			<Skeleton className="h-72 w-full rounded-xl lg:h-auto lg:w-84 lg:shrink-0" />
+			<Skeleton className="h-72 w-full rounded-md lg:h-auto lg:w-84 lg:shrink-0" />
 		</div>
 	)
 }

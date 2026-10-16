@@ -1,4 +1,4 @@
-import { Effect, Schema, SchemaTransformation } from "effect"
+import { DateTime, Effect, Schema, SchemaTransformation } from "effect"
 import { GetSessionTranscriptOutput, SessionTranscriptEventType } from "@maple/domain/mcp-outputs"
 import { getSessionTranscript } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
@@ -46,7 +46,8 @@ const describeFilters = (filters: TranscriptFilters): string => {
 
 /** One transcript row as `time  TYPE detail (trace)`. */
 const formatLine = (ev: TranscriptEvent): string => {
-	const time = ev.timestamp.split(" ")[1] ?? ev.timestamp
+	// `HH:mm:ss.SSS` out of the ISO timestamp.
+	const time = ev.timestamp.slice(11, 23) || ev.timestamp
 	const trace = ev.traceId ? ` ⟶ ${ev.traceId.slice(0, 12)}…` : ""
 	const detail = (() => {
 		switch (ev.type) {
@@ -101,10 +102,10 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				sessionId: params.session_id,
-				limit: lim,
-				offset: off,
-				errorsOnly,
+				"maple.ai.session.id": params.session_id,
+				"maple.ai.limit": lim,
+				"maple.ai.offset": off,
+				"maple.ai.errors_only": errorsOnly,
 			})
 
 			// Fetch one extra row to detect whether more events remain past this page.
@@ -121,12 +122,12 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 
 			const hasMore = rows.length > lim
 			const events = hasMore ? rows.slice(0, lim) : rows
-			yield* Effect.annotateCurrentSpan("eventCount", events.length)
+			yield* Effect.annotateCurrentSpan("result.eventCount", events.length)
 
 			return {
 				sessionId: params.session_id,
 				events: events.map((e) => ({
-					timestamp: e.timestamp,
+					timestamp: DateTime.formatIso(e.timestamp),
 					type: e.type,
 					url: truncate(e.url, 256),
 					traceId: e.traceId,
@@ -136,8 +137,8 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 					targetText: truncate(e.targetText, 256),
 					netMethod: e.netMethod,
 					netUrl: truncate(e.netUrl, 256),
-					netStatus: Number(e.netStatus),
-					netDurationMs: Number(e.netDurationMs),
+					netStatus: e.netStatus,
+					netDurationMs: e.netDurationMs,
 				})),
 				pagination: {
 					offset: off,

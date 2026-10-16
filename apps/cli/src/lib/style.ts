@@ -1,7 +1,7 @@
 // Tiny ANSI styling helpers. Colors are emitted only when stdout is a TTY and
 // NO_COLOR is unset, so piped/redirected output stays plain and parseable.
 
-const useColor = (Boolean(process.stdout.isTTY) || Boolean(process.env.FORCE_COLOR)) && !process.env.NO_COLOR
+const useColor = (process.stdout.isTTY || Boolean(process.env.FORCE_COLOR)) && !process.env.NO_COLOR
 
 const wrap =
 	(open: number, close: number) =>

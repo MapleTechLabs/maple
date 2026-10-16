@@ -1,15 +1,19 @@
-import { useMemo } from "react"
+import { useMemo, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceDependenciesBundleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { toSingleDeploymentEnv } from "@/lib/services/environments"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { formatLatency } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
+import { SampledValue } from "./sampled-value"
 import type { DependencyKind } from "./dependency-type-badge"
 import { dependencyDrillWhereClause } from "./dependency-drill"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
 interface ServiceDependenciesTabProps {
 	serviceName: string
@@ -37,18 +41,6 @@ interface RawEdge {
 	p95DurationMs?: number
 	hasSampling?: boolean
 	samplingWeight?: number
-}
-
-function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
-}
-
-function formatErrorRate(rate: number): string {
-	if (rate >= 0.01) return `${(rate * 100).toFixed(1)}%`
-	if (rate > 0) return "<1%"
-	return "0%"
 }
 
 export function ServiceDependenciesTab({
@@ -102,9 +94,9 @@ export function ServiceDependenciesTab({
 			// Server-side filter on `SourceService = ?` already scopes the result;
 			// only need to guard against rows missing a target name.
 			if (!edge.targetService) continue
-			const callCount = Number(edge.callCount ?? 0)
-			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const target = String(edge.targetService)
+			const callCount = edge.callCount ?? 0
+			const estimated = edge.estimatedCallCount ?? callCount
+			const target = edge.targetService
 			out.push({
 				id: `service:${target}`,
 				kind: "service",
@@ -113,11 +105,11 @@ export function ServiceDependenciesTab({
 				tracedCallsPerSec: callCount / durationSeconds,
 				totalCalls: callCount,
 				estimatedCalls: estimated,
-				errorRate: Number(edge.errorRate ?? 0),
-				avgDurationMs: Number(edge.avgDurationMs ?? 0),
-				p95DurationMs: Number(edge.p95DurationMs ?? 0),
+				errorRate: edge.errorRate ?? 0,
+				avgDurationMs: edge.avgDurationMs ?? 0,
+				p95DurationMs: edge.p95DurationMs ?? 0,
 				hasSampling: Boolean(edge.hasSampling),
-				samplingWeight: Number(edge.samplingWeight ?? 1),
+				samplingWeight: edge.samplingWeight ?? 1,
 				whereClause: dependencyDrillWhereClause("service", target, ""),
 			})
 		}
@@ -126,15 +118,15 @@ export function ServiceDependenciesTab({
 			// Server-side filter on `ServiceName = ?` already scopes the result;
 			// only need to guard against rows with no db system identified.
 			if (!edge.dbSystem) continue
-			const callCount = Number(edge.callCount ?? 0)
-			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const target = String(edge.dbSystem)
+			const callCount = edge.callCount ?? 0
+			const estimated = edge.estimatedCallCount ?? callCount
+			const target = edge.dbSystem
 			// Edges are per database identity (db.namespace et al.) — surface it as
 			// the row name so two databases of the same system stay distinguishable.
 			// The drill-down stays scoped by system only: the identity can originate
 			// from any of four span attributes, so an exact-attribute predicate here
 			// could silently match nothing.
-			const namespace = String(edge.dbNamespace ?? "")
+			const namespace = edge.dbNamespace ?? ""
 			out.push({
 				id: `database:${target}:${namespace}`,
 				kind: "database",
@@ -143,23 +135,23 @@ export function ServiceDependenciesTab({
 				tracedCallsPerSec: callCount / durationSeconds,
 				totalCalls: callCount,
 				estimatedCalls: estimated,
-				errorRate: Number(edge.errorRate ?? 0),
-				avgDurationMs: Number(edge.avgDurationMs ?? 0),
-				p95DurationMs: Number(edge.p95DurationMs ?? 0),
+				errorRate: edge.errorRate ?? 0,
+				avgDurationMs: edge.avgDurationMs ?? 0,
+				p95DurationMs: edge.p95DurationMs ?? 0,
 				hasSampling: Boolean(edge.hasSampling),
-				samplingWeight: Number(edge.samplingWeight ?? 1),
+				samplingWeight: edge.samplingWeight ?? 1,
 				whereClause: dependencyDrillWhereClause("database", target, ""),
 			})
 		}
 
 		for (const edge of externalEdges) {
-			const target = String(edge.targetName ?? "")
+			const target = edge.targetName ?? ""
 			if (!target) continue
 			const kind: DependencyKind =
 				edge.targetType === "messaging" ? "messaging" : edge.targetType === "rpc" ? "rpc" : "http"
-			const callCount = Number(edge.callCount ?? 0)
-			const estimated = Number(edge.estimatedCallCount ?? callCount)
-			const system = edge.targetSystem ? String(edge.targetSystem) : ""
+			const callCount = edge.callCount ?? 0
+			const estimated = edge.estimatedCallCount ?? callCount
+			const system = edge.targetSystem ? edge.targetSystem : ""
 			const whereClause = dependencyDrillWhereClause(kind, target, system)
 
 			out.push({
@@ -171,11 +163,11 @@ export function ServiceDependenciesTab({
 				tracedCallsPerSec: callCount / durationSeconds,
 				totalCalls: callCount,
 				estimatedCalls: estimated,
-				errorRate: Number(edge.errorRate ?? 0),
-				avgDurationMs: Number(edge.avgDurationMs ?? 0),
-				p95DurationMs: Number(edge.p95DurationMs ?? 0),
+				errorRate: edge.errorRate ?? 0,
+				avgDurationMs: edge.avgDurationMs ?? 0,
+				p95DurationMs: edge.p95DurationMs ?? 0,
 				hasSampling: Boolean(edge.hasSampling),
-				samplingWeight: Number(edge.samplingWeight ?? 1),
+				samplingWeight: edge.samplingWeight ?? 1,
 				whereClause,
 			})
 		}
@@ -194,7 +186,8 @@ export function ServiceDependenciesTab({
 	// Heuristic: an HTTP target whose hostname *contains* a known internal
 	// service name (>=5 chars, so generic names like `api` don't false-match)
 	// is treated as a hostname-variant of that service. The HTTP row drops out
-	// of the visible list; the SERVICE row gains a `via host1, host2` subtitle.
+	// of the visible list and its traffic folds into the SERVICE row, which
+	// gains a `via host1, host2` subtitle.
 	const dedupedRows = useMemo<DependencyRow[]>(() => {
 		const serviceNames = rows
 			.filter((r) => r.kind === "service" && r.name.length >= 5)
@@ -202,8 +195,8 @@ export function ServiceDependenciesTab({
 
 		if (serviceNames.length === 0) return rows
 
-		// Map from canonical service name → list of HTTP hostnames that resolve here.
-		const matchedHosts = new Map<string, string[]>()
+		// Map from canonical service name → HTTP rows that resolve here.
+		const matchedHosts = new Map<string, DependencyRow[]>()
 		// IDs of HTTP rows to hide (those that matched at least one service).
 		const hiddenIds = new Set<string>()
 
@@ -213,7 +206,7 @@ export function ServiceDependenciesTab({
 			for (const svc of serviceNames) {
 				if (hostLower.includes(svc.lower)) {
 					const list = matchedHosts.get(svc.canonical) ?? []
-					list.push(row.name)
+					list.push(row)
 					matchedHosts.set(svc.canonical, list)
 					hiddenIds.add(row.id)
 					break
@@ -229,8 +222,8 @@ export function ServiceDependenciesTab({
 			const hosts = matchedHosts.get(row.name)
 			if (!hosts?.length) return [row]
 			const subtitle =
-				hosts.length === 1 ? `via ${hosts[0]}` : `via ${hosts[0]} +${hosts.length - 1} more`
-			return [{ ...row, subtitle }]
+				hosts.length === 1 ? `via ${hosts[0].name}` : `via ${hosts[0].name} +${hosts.length - 1} more`
+			return [{ ...mergeDependencyRows([row, ...hosts]), subtitle }]
 		})
 	}, [rows])
 
@@ -264,9 +257,12 @@ export function ServiceDependenciesTab({
 	}, [dedupedRows])
 
 	return (
-		<div className={cn("flex flex-col gap-3 transition-opacity", isWaiting && "opacity-60")}>
+		<div
+			className={cn("flex flex-col gap-3", refreshingClass(isWaiting))}
+			aria-busy={isWaiting || undefined}
+		>
 			{summary ? (
-				<div className="flex flex-col gap-2 text-[11px] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
+				<div className="flex flex-col gap-2 text-2xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
 					<div className="flex items-baseline gap-x-3">
 						<span className="text-foreground">
 							<span className="tabular-nums font-mono font-medium">{dedupedRows.length}</span>{" "}
@@ -281,14 +277,19 @@ export function ServiceDependenciesTab({
 						<HeadlineFact
 							label="Busiest"
 							name={summary.topByCalls.name}
-							value={`${summary.topByCalls.hasSampling ? "~" : ""}${formatRate(summary.topByCalls.callsPerSec)}/s`}
+							value={
+								<SampledValue
+									estimated={summary.topByCalls.hasSampling}
+									value={formatThroughput(summary.topByCalls.callsPerSec, "/s")}
+								/>
+							}
 						/>
 						{summary.topByErrors ? (
 							<HeadlineFact
 								label="Most errors"
 								name={summary.topByErrors.name}
 								value={formatErrorRate(summary.topByErrors.errorRate)}
-								tone="error"
+								tone="crit"
 							/>
 						) : (
 							<HeadlineFact label="Errors" name="none" value="0%" />
@@ -323,8 +324,8 @@ export function ServiceDependenciesTab({
 interface HeadlineFactProps {
 	label: string
 	name: string
-	value: string
-	tone?: "error"
+	value: ReactNode
+	tone?: Tone
 	/** Overrides the default value color — e.g. a magnitude tone for latency. */
 	valueClassName?: string
 }
@@ -333,13 +334,13 @@ function HeadlineFact({ label, name, value, tone, valueClassName }: HeadlineFact
 	return (
 		<span className="flex w-full items-baseline justify-between gap-1.5 sm:inline-flex sm:w-auto sm:justify-start">
 			<span className="flex min-w-0 items-baseline gap-1.5">
-				<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+				<Eyebrow>{label}</Eyebrow>
 				<span className="max-w-[60vw] truncate text-foreground sm:max-w-[140px]">{name}</span>
 			</span>
 			<span
 				className={cn(
 					"shrink-0 tabular-nums font-mono",
-					tone === "error" ? "text-severity-error" : "text-foreground",
+					tone ? TONE_TEXT[tone] : "text-foreground",
 					valueClassName,
 				)}
 			>
@@ -358,4 +359,29 @@ function labelFor(kind: DependencyKind, count: number): string {
 		rpc: ["RPC target", "RPC targets"],
 	} satisfies Record<DependencyKind, [singular: string, plural: string]>
 	return count === 1 ? map[kind][0] : map[kind][1]
+}
+
+// Sums traffic; error rate is weighted by estimated calls, avg latency by stored
+// calls, and p95 takes the worst part (percentiles can't be merged exactly).
+function mergeDependencyRows([first, ...rest]: [DependencyRow, ...DependencyRow[]]): DependencyRow {
+	const all = [first, ...rest]
+	const sum = (pick: (r: DependencyRow) => number) => all.reduce((acc, r) => acc + pick(r), 0)
+	const estimatedCalls = sum((r) => r.estimatedCalls)
+	const totalCalls = sum((r) => r.totalCalls)
+	return {
+		...first,
+		callsPerSec: sum((r) => r.callsPerSec),
+		tracedCallsPerSec: sum((r) => r.tracedCallsPerSec),
+		totalCalls,
+		estimatedCalls,
+		errorRate:
+			estimatedCalls > 0
+				? sum((r) => r.errorRate * r.estimatedCalls) / estimatedCalls
+				: first.errorRate,
+		avgDurationMs:
+			totalCalls > 0 ? sum((r) => r.avgDurationMs * r.totalCalls) / totalCalls : first.avgDurationMs,
+		p95DurationMs: Math.max(...all.map((r) => r.p95DurationMs)),
+		hasSampling: all.some((r) => r.hasSampling),
+		samplingWeight: Math.max(...all.map((r) => r.samplingWeight)),
+	}
 }

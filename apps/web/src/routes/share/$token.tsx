@@ -50,6 +50,8 @@ import {
 } from "@/hooks/use-share-dashboard"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { Button } from "@maple/ui/components/ui/button"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 
 const ShareSearch = Schema.StructWithRest(
 	Schema.Struct({
@@ -254,15 +256,21 @@ function ShareShell({
 
 	return (
 		<div className="flex min-h-screen flex-col bg-background">
-			<header className="flex items-center justify-between border-b px-6 py-3">
-				{title ? <h1 className="font-medium text-sm">{title}</h1> : <span />}
+			<header className="flex items-center justify-between gap-4 border-b px-6 py-3">
+				{title ? (
+					<h1 className="min-w-0 truncate font-medium text-sm" title={title}>
+						{title}
+					</h1>
+				) : (
+					<span />
+				)}
 				<a
 					href="https://maple.dev"
 					target="_blank"
 					rel="noopener noreferrer"
-					className="flex items-center gap-1.5 text-muted-foreground text-xs transition-colors hover:text-foreground"
+					className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground text-xs transition-colors hover:text-foreground"
 				>
-					<span>Shared via</span>
+					<span className="hidden sm:inline">Shared via</span>
 					<MapleMark size={14} className="shrink-0" aria-hidden="true" />
 					<span className="font-medium">Maple</span>
 				</a>
@@ -278,7 +286,7 @@ function ShareSkeleton() {
 			{[0, 1, 2, 3].map((index) => (
 				// The skeleton draws its own card because there is no visualization
 				// mounted yet to draw one — unlike the real tiles, which do.
-				<div key={index} className="h-64 animate-pulse rounded-lg border bg-muted/30" />
+				<Skeleton key={index} className="h-64 rounded-md border" />
 			))}
 		</div>
 	)
@@ -347,13 +355,13 @@ function CenteredCard({
 	children?: React.ReactNode
 }) {
 	return (
-		<div className="flex min-h-[60vh] items-center justify-center">
-			<div className="max-w-md space-y-3 rounded-lg border p-8 text-center">
-				<h2 className="font-medium text-lg">{title}</h2>
-				<p className="text-muted-foreground text-sm">{body}</p>
-				{children ? <div className="pt-2">{children}</div> : null}
-			</div>
-		</div>
+		<Empty className="min-h-[60vh]">
+			<EmptyHeader>
+				<EmptyTitle>{title}</EmptyTitle>
+				<EmptyDescription>{body}</EmptyDescription>
+			</EmptyHeader>
+			{children ? <EmptyContent>{children}</EmptyContent> : null}
+		</Empty>
 	)
 }
 

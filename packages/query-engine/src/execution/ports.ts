@@ -1,5 +1,5 @@
 import type { Effect, Option } from "effect"
-import type { ClickHouseStatement } from "@maple-dev/effect-clickhouse/sql"
+import type { ClickHouseStatement } from "@maple-dev/effect-orm/sql"
 import type { OrgId, UserId } from "@maple/domain"
 import type {
 	RawSqlValidationError,

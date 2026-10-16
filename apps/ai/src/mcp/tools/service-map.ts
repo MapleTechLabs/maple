@@ -36,8 +36,8 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				environment: params.environment ?? "all",
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.environment": params.environment ?? "all",
 			})
 
 			const allEdges = yield* serviceMap({
@@ -94,6 +94,7 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 								message: `No service dependencies found${output.service === undefined ? "" : ` involving "${output.service}"`} in this window.`,
 								hints: [
 									"Widen start_time/end_time, or drop the service and environment filters.",
+									"An edge needs the callee's server span in the caller's trace. Calls to a service that does not continue the trace (no context propagation, or it reports elsewhere) only show as client spans whose server.address or url.full names its host: look for those with run_sql on traces.",
 								],
 							},
 						}

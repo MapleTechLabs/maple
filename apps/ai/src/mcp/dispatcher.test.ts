@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Schema, Tracer } from "effect"
+import { Context, Effect, Layer, Schema, Tracer } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor, listMcpTools } from "./dispatcher"
@@ -8,6 +8,16 @@ import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } 
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
+import {
+	WarehouseQueryService,
+	type WarehouseQueryServiceApi,
+} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { WarehouseQueryError } from "@maple/domain"
+import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
+import {
+	type ConnectedSourceRepository,
+	VcsSourceService,
+} from "@maple/backend/services/integrations/vcs/VcsSourceService"
 
 const TENANT: TenantContext = {
 	orgId: "org_test" as TenantContext["orgId"],
@@ -30,12 +40,19 @@ const CONNECTOR_TENANT: TenantContext = {
 	},
 }
 
+// The executor acquires these at construction; no case here prepares a repository.
+const unusedRepositoryServices = Layer.mergeAll(
+	Layer.mock(RepoSandboxService, {}),
+	Layer.mock(VcsSourceService, {}),
+)
+
 // These cases stop at registry lookup/schema decoding, before a tool service is read.
 const makeValidationExecutor = McpToolExecutor.make.pipe(
 	// Every tool call is audited, so the executor needs the audit service even here.
 	Effect.provide(
 		Context.make(AuditLogService, makeMemoryAuditLog()) as Context.Context<McpToolRuntimeRequirements>,
 	),
+	Effect.provide(unusedRepositoryServices),
 )
 
 const makeRecordingTracer = () => {
@@ -99,21 +116,24 @@ describe("MCP dispatcher", () => {
 	)
 
 	describe("tool audience", () => {
-		// The sandbox tools execute code inside a container holding the org's source.
-		// They are for Maple's own agents; a third-party MCP client never sees them.
-		const INTERNAL_TOOLS = [
-			"pr_changed_files",
-			"pr_context",
-			"pr_file_diff",
-			"sandbox_grep",
-			"sandbox_list_files",
-			"sandbox_read_file",
-			"sandbox_exec",
-		]
+		// The sandbox tools execute code inside a container holding the org's source, and the
+		// pull request tools act on the org's behalf. A third-party MCP client sees neither.
+		const AGENT_TOOLS = ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]
+		const INTERNAL_TOOLS = ["pr_changed_files", "pr_context", "pr_file_diff", ...AGENT_TOOLS]
 
-		it("keeps the sandbox and pull request tools internal", () => {
+		it("keeps the sandbox tools agent-only and the pull request tools internal", () => {
+			const agent = mapleToolCatalog.filter((d) => d.audience === "agent").map((d) => d.name)
 			const internal = mapleToolCatalog.filter((d) => d.audience === "internal").map((d) => d.name)
-			expect(internal.sort()).toEqual([...INTERNAL_TOOLS].sort())
+			expect(agent.sort()).toEqual([...AGENT_TOOLS].sort())
+			expect(internal.sort()).toEqual(["pr_changed_files", "pr_context", "pr_file_diff"])
+		})
+
+		it("offers the bot the sandbox but not the pull request tools", () => {
+			const bot = new Set(mapleToolCatalogFor("bot").map((d) => d.name))
+			expect(AGENT_TOOLS.filter((name) => !bot.has(name))).toEqual([])
+			expect(
+				["pr_changed_files", "pr_context", "pr_file_diff"].filter((name) => bot.has(name)),
+			).toEqual([])
 		})
 
 		it.effect("does not list an internal tool on the public transport", () =>
@@ -249,7 +269,7 @@ describe("MCP dispatcher", () => {
 
 				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
 				assert.isDefined(dispatchSpan)
-				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/decode-error")
+				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/errors/McpDecodeError")
 				expect(dispatchSpan.attributes.get("http.response.status_code")).toBe(400)
 
 				// The inner registry span still FAILS with the decode error (the typed
@@ -257,7 +277,7 @@ describe("MCP dispatcher", () => {
 				// into an Ok span, keyed off the identifier list below.
 				const registrySpan = spans.find((s) => s.name === "McpToolRegistry.execute")
 				assert.isDefined(registrySpan)
-				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain("@maple/mcp/decode-error")
+				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain(dispatchSpan.attributes.get("error.type"))
 			}),
 		)
 
@@ -287,6 +307,7 @@ describe("MCP dispatcher", () => {
 					Effect.provide(
 						Context.make(AuditLogService, audit) as Context.Context<McpToolRuntimeRequirements>,
 					),
+					Effect.provide(unusedRepositoryServices),
 				)
 
 				yield* executor.execute(CONNECTOR_TENANT, "inspect_trace", {}, "bot")
@@ -302,6 +323,39 @@ describe("MCP dispatcher", () => {
 					connector: "testchat",
 					external_user_id: "u-1",
 				})
+			}),
+		)
+
+		// A warehouse failure is a real failure: the dispatcher span must export as Error,
+		// while the caller still receives an in-band isError result.
+		it.effect("fails the dispatcher span on a real query failure", () =>
+			Effect.gen(function* () {
+				// SAFETY: run_sql reaches only rawSqlQuery on the warehouse; no other method is called.
+				const warehouse = {
+					rawSqlQuery: () =>
+						Effect.fail(new WarehouseQueryError({ message: "boom", pipeName: "run_sql" })),
+				} as WarehouseQueryServiceApi
+				const executor = yield* McpToolExecutor.make.pipe(
+					Effect.provide(
+						Context.make(AuditLogService, makeMemoryAuditLog()).pipe(
+							Context.add(WarehouseQueryService, warehouse),
+						) as Context.Context<McpToolRuntimeRequirements>,
+					),
+					Effect.provide(unusedRepositoryServices),
+				)
+				const { spans, tracer } = makeRecordingTracer()
+
+				const result = yield* executor
+					.execute(TENANT, "run_sql", { sql: "SELECT 1 FROM traces WHERE $__orgFilter" }, "mcp")
+					.pipe(Effect.withTracer(tracer))
+				expect(result.isError).toBe(true)
+
+				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				assert.isDefined(dispatchSpan)
+				expect(dispatchSpan.status._tag).toBe("Ended")
+				if (dispatchSpan.status._tag === "Ended")
+					expect(dispatchSpan.status.exit._tag).toBe("Failure")
+				expect(dispatchSpan.attributes.get("maple.mcp.error.category")).toBe("query")
 			}),
 		)
 
@@ -321,5 +375,49 @@ describe("MCP dispatcher", () => {
 				expect(dispatchSpan.attributes.get("result.isError")).toBe(false)
 			}),
 		)
+	})
+})
+
+describe("McpToolExecutor repository preparation", () => {
+	const connected = (fullName: string, isArchived: boolean): ConnectedSourceRepository => ({
+		provider: "github",
+		fullName,
+		defaultBranch: "main",
+		trackedBranch: "main",
+		htmlUrl: `https://github.com/${fullName}`,
+		isPrivate: false,
+		isArchived,
+		syncStatus: "ready",
+		lastSyncError: null,
+	})
+
+	it.effect("prepares every unarchived connected repository through the sandbox it acquired", () => {
+		const prepared: Array<{ orgId: string; repository: string }> = []
+		const repositoryServices = Layer.mergeAll(
+			Layer.mock(RepoSandboxService, {
+				prepare: (orgId, target) =>
+					Effect.sync(() => {
+						prepared.push({ orgId, repository: target.repository })
+					}),
+			}),
+			Layer.mock(VcsSourceService, {
+				listRepositories: () =>
+					Effect.succeed([connected("octo/shop", false), connected("octo/legacy", true)]),
+			}),
+		)
+
+		return Effect.gen(function* () {
+			const executor = yield* McpToolExecutor.make.pipe(
+				Effect.provide(
+					Context.make(
+						AuditLogService,
+						makeMemoryAuditLog(),
+					) as Context.Context<McpToolRuntimeRequirements>,
+				),
+				Effect.provide(repositoryServices),
+			)
+			yield* executor.prepareConnectedRepositories(TENANT)
+			assert.deepStrictEqual(prepared, [{ orgId: "org_test", repository: "octo/shop" }])
+		})
 	})
 })

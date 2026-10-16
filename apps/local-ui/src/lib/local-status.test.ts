@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { HttpClient, HttpClientError, HttpClientResponse, type HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientError, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { probeLocalStatus, type StatusProbe } from "./local-status"
 
 type Responder = (

@@ -23,6 +23,7 @@ import {
 import { builderFixtures } from "./builders"
 import * as activityQueries from "../ch/queries/activity"
 import * as alertCheckQueries from "../ch/queries/alert-checks"
+import * as ciRunsQueries from "../ch/queries/ci-runs"
 import * as auditLogQueries from "../ch/queries/audit-log"
 import * as anomalyQueries from "../ch/queries/anomaly"
 import * as attributeKeyQueries from "../ch/queries/attribute-keys"
@@ -38,6 +39,7 @@ import * as serviceMapRollupQueries from "../ch/queries/service-map-rollup"
 import * as serviceMapQueries from "../ch/queries/service-map"
 import * as serviceEndpointQueries from "../ch/queries/service-endpoints"
 import * as serviceOperationQueries from "../ch/queries/service-operations"
+import * as prReviewQueries from "../ch/queries/pr-review"
 import * as serviceQueries from "../ch/queries/services"
 import * as releaseQueries from "../ch/queries/releases"
 import * as sessionEventQueries from "../ch/queries/session-events"
@@ -260,6 +262,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	activity: activityQueries,
 	"alert-checks": alertCheckQueries,
 	"audit-log": auditLogQueries,
+	"ci-runs": ciRunsQueries,
 	anomaly: anomalyQueries,
 	"attribute-keys": attributeKeyQueries,
 	containers: containerQueries,
@@ -272,6 +275,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"service-map-rollup": serviceMapRollupQueries,
 	"service-map": serviceMapQueries,
 	"service-endpoints": serviceEndpointQueries,
+	"pr-review": prReviewQueries,
 	"service-operations": serviceOperationQueries,
 	services: serviceQueries,
 	"signal-presence": signalPresenceQueries,
@@ -340,6 +344,7 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 
 	// todo (dead export — removal tracked separately; zero consumers)
 	"errors/traceTimeProbeQuery",
+	"errors/recentTraceTimeProbeQuery",
 
 	// todo batch ② — alerting correctness (anomaly, alert-checks, setup-audit, activity, liveness, internal)
 	"alert-checks/listRuleChecksQuery",
@@ -359,13 +364,10 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	// todo batch ③ — infra + integrations (infra, cloudflare-*, planetscale-*, service-map, rollups)
 	"infra/listHostsQuery",
 	"infra/hostDetailSummaryQuery",
-	"infra/fleetUtilizationTimeseriesQuery",
 	"infra/hostNetworkTimeseriesQuery",
 	"infra/listPodsQuery",
 	"infra/listPodsSummaryQuery",
 	"infra/podDetailSummaryQuery",
-	"infra/listNodesQuery",
-	"infra/nodeDetailSummaryQuery",
 	"infra/listWorkloadsQuery",
 	"infra/workloadDetailSummaryQuery",
 	"service-infra/serviceWorkloadsSQL",
@@ -397,13 +399,10 @@ describe("builder coverage", () => {
 	})
 
 	it("declares fixtures whose module/name actually exists", () => {
-		for (const fixture of builderFixtures) {
-			const module = QUERY_MODULES[fixture.module]
-			expect(module, `unknown module ${fixture.module}`).toBeDefined()
-			expect(typeof module?.[fixture.name], `${fixture.module} does not export ${fixture.name}`).toBe(
-				"function",
-			)
-		}
+		const unresolved = builderFixtures
+			.filter((fixture) => !(QUERY_MODULES[fixture.module]?.[fixture.name] instanceof Function))
+			.map((fixture) => `${fixture.module}.${fixture.name}`)
+		expect(unresolved).toEqual([])
 	})
 
 	it("covers or exempts every exported builder", () => {

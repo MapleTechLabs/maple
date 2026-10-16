@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { ok, strictEqual } from "node:assert"
+import { deepStrictEqual, ok, strictEqual } from "node:assert"
 import { execFileSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
@@ -8,7 +8,7 @@ import { join } from "node:path"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { Duration, Effect, Exit } from "effect"
 import { FileSystem } from "effect/FileSystem"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import {
 	__testables,
 	CHECK_TTL_MS,
@@ -106,9 +106,37 @@ describe("shouldCheck", () => {
 describe("update HTTP", () => {
 	it.effect("decodes the latest release tag without mutating global fetch", () =>
 		Effect.gen(function* () {
-			const fetchStub = (async () => Response.json({ tag_name: "v1.2.3" })) as typeof fetch
+			const fetchStub = (async () => Response.json([{ tag_name: "v1.2.3" }])) as typeof fetch
 			const tag = yield* withFetch(fetchLatestTag(), fetchStub)
 			strictEqual(tag, "v1.2.3")
+		}),
+	)
+
+	// The npm packages publish GitHub releases too; one of them was "latest" and broke updates.
+	it.effect("skips npm package releases, drafts and prereleases for the newest CLI tag", () =>
+		Effect.gen(function* () {
+			const fetchStub = (async () =>
+				Response.json([
+					{ tag_name: "@maple-dev/alchemy@0.2.0" },
+					{ tag_name: "v0.0.25", draft: true },
+					{ tag_name: "v0.0.25-rc.1", prerelease: true },
+					{ tag_name: "v0.0.24" },
+					{ tag_name: "v0.0.23" },
+				])) as typeof fetch
+			strictEqual(yield* withFetch(fetchLatestTag(), fetchStub), "v0.0.24")
+		}),
+	)
+
+	it.effect("pages past a full page of package releases", () =>
+		Effect.gen(function* () {
+			const packages = Array.from({ length: 100 }, (_, i) => ({ tag_name: `@maple-dev/sdk@0.${i}.0` }))
+			const fetchStub = (async (input: string | URL | Request) => {
+				const url = new URL(input instanceof Request ? input.url : input.toString())
+				return Response.json(
+					url.searchParams.get("page") === "1" ? packages : [{ tag_name: "v0.0.24" }],
+				)
+			}) as typeof fetch
+			strictEqual(yield* withFetch(fetchLatestTag(), fetchStub), "v0.0.24")
 		}),
 	)
 
@@ -181,6 +209,44 @@ describe("update HTTP", () => {
 				),
 				"abc123  release.tar.gz\n",
 			)
+		} finally {
+			await rm(dir, { recursive: true, force: true })
+		}
+	})
+
+	it("reports cumulative download progress against Content-Length", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "maple-update-progress-"))
+		const destination = join(dir, "release.tar.gz")
+		const fetchStub = (async () =>
+			new Response(
+				new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode("release-"))
+						controller.enqueue(new TextEncoder().encode("bytes"))
+						controller.close()
+					},
+				}),
+				{ headers: { "content-length": "13" } },
+			)) as typeof fetch
+		const reports: Array<readonly [number, number | undefined]> = []
+
+		try {
+			await Effect.runPromise(
+				withFetch(
+					__testables.downloadTo(
+						"https://release.test/release.tar.gz",
+						destination,
+						Duration.seconds(1),
+						(received, total) => Effect.sync(() => reports.push([received, total])),
+					),
+					fetchStub,
+				),
+			)
+			deepStrictEqual(reports, [
+				[8, 13],
+				[13, 13],
+			])
+			strictEqual(await readFile(destination, "utf8"), "release-bytes")
 		} finally {
 			await rm(dir, { recursive: true, force: true })
 		}

@@ -25,7 +25,7 @@ The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare
 
 ```typescript
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 import { Layer } from "effect"
 import { Routes } from "./routes"
 

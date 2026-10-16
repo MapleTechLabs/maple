@@ -1,17 +1,5 @@
-import { Link } from "@tanstack/react-router"
-
-import { Button } from "@maple/ui/components/ui/button"
-import {
-	Empty,
-	EmptyContent,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyMedia,
-	EmptyTitle,
-} from "@maple/ui/components/ui/empty"
-
-import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { CloudflareIcon } from "@/components/icons"
+import { IntegrationNotConnected } from "../primitives/integration-not-connected"
 
 interface CloudflareNotConnectedProps {
 	/**
@@ -23,34 +11,19 @@ interface CloudflareNotConnectedProps {
 }
 
 export function CloudflareNotConnected({ variant }: CloudflareNotConnectedProps) {
+	const fresh = variant === "not-connected"
 	return (
-		<Empty className="py-16">
-			<EmptyHeader>
-				<EmptyMedia variant="icon">
-					<CloudflareIcon size={16} />
-				</EmptyMedia>
-				<EmptyTitle>
-					{variant === "not-connected"
-						? "Connect Cloudflare to see edge analytics"
-						: "Update Cloudflare permissions"}
-				</EmptyTitle>
-				<EmptyDescription>
-					{variant === "not-connected"
-						? "Connect your Cloudflare account and Maple will continuously ingest zone HTTP analytics and Workers invocation metrics. No agents or Logpush setup required."
-						: "Your Cloudflare connection is missing the analytics read scopes. Reconnect to grant them and analytics polling will start automatically."}
-				</EmptyDescription>
-			</EmptyHeader>
-			<EmptyContent>
-				<EmptyActions>
-					<Button
-						size="sm"
-						render={<Link to="/integrations" search={{ integration: "cloudflare" }} />}
-					>
-						{variant === "not-connected" ? "Connect Cloudflare" : "Reconnect Cloudflare"}
-					</Button>
-					<DocsLink page="cloudflare" />
-				</EmptyActions>
-			</EmptyContent>
-		</Empty>
+		<IntegrationNotConnected
+			icon={<CloudflareIcon size={16} />}
+			title={fresh ? "Connect Cloudflare to see edge analytics" : "Update Cloudflare permissions"}
+			description={
+				fresh
+					? "Connect your Cloudflare account and Maple will continuously ingest zone HTTP analytics and Workers invocation metrics. No agents or Logpush setup required."
+					: "Your Cloudflare connection is missing the analytics read scopes. Reconnect to grant them and analytics polling will start automatically."
+			}
+			integration="cloudflare"
+			actionLabel={fresh ? "Connect Cloudflare" : "Reconnect Cloudflare"}
+			docsPage="cloudflare"
+		/>
 	)
 }

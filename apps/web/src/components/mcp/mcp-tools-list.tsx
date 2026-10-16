@@ -1,3 +1,4 @@
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 
@@ -92,12 +93,17 @@ const MCP_TOOLS = [
 	{
 		name: "list_agent_sessions",
 		description:
-			"List AI agent sessions with their agent, vendor, models, LLM and tool calls, failures, tokens, and cost. Filter by vendor, service, model, tool, errors, or duration/cost ranges.",
+			"List AI agent sessions with their agent, vendor, models, LLM and tool calls, failures, tokens, and cost. Filter by vendor, service, agent, model, tool or errors, and sort by cost, tokens, duration or failures.",
 	},
 	{
 		name: "get_agent_session",
 		description:
-			"Read one AI agent session: verdict and findings, active/idle time, token and cost breakdown, models and tools used, failure groups, and turns.",
+			"Read one AI agent session: verdict and findings, active/idle time, token and cost breakdown, models and tools used, and turn counts. The transcript tool reads it turn by turn.",
+	},
+	{
+		name: "get_agent_session_transcript",
+		description:
+			"Read what an AI agent session did, step by step: prompts, replies, tool calls with their arguments and results, sub-agent runs, and what failed.",
 	},
 	{
 		name: "get_agent_tools_overview",
@@ -116,26 +122,32 @@ export function McpToolsList() {
 		<Card>
 			<CardHeader>
 				<div className="flex items-center gap-2">
-					<CardTitle>Available Tools</CardTitle>
+					<CardTitle>Available tools</CardTitle>
 					<Badge variant="secondary">{MCP_TOOLS.length}</Badge>
 				</div>
 			</CardHeader>
 			<CardContent>
-				<dl className="grid grid-cols-1 sm:grid-cols-[max-content_1fr] sm:gap-x-6 divide-y divide-border/60">
+				<KeyValueList
+					layout="grid"
+					divided
+					className="gap-x-6 max-sm:grid-cols-1 [&>div]:gap-y-1 [&>div]:py-2.5 [&>div:first-child]:pt-0 [&>div:last-child]:pb-0"
+				>
 					{MCP_TOOLS.map((tool) => (
-						<div
+						<KeyValue
 							key={tool.name}
-							className="grid grid-cols-subgrid sm:col-span-2 gap-y-1 py-2.5 first:pt-0 last:pb-0"
+							label={
+								<code className="font-mono text-xs font-medium text-foreground">
+									{tool.name}
+								</code>
+							}
+							wrap
+							className="max-sm:col-span-1!"
+							valueClassName="text-muted-foreground leading-relaxed"
 						>
-							<dt>
-								<code className="font-mono text-xs font-medium">{tool.name}</code>
-							</dt>
-							<dd className="text-muted-foreground text-xs leading-relaxed">
-								{tool.description}
-							</dd>
-						</div>
+							{tool.description}
+						</KeyValue>
 					))}
-				</dl>
+				</KeyValueList>
 			</CardContent>
 		</Card>
 	)

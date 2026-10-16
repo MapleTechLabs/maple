@@ -8,18 +8,18 @@ import { countryName } from "./countries"
 
 export type VerificationBadge = {
 	readonly label: string
-	readonly variant: "success" | "warning" | "secondary"
+	readonly variant: "ok" | "warn" | "secondary"
 }
 
 /** Badge copy for a Stripe tax-id verification status, or null when there is nothing worth saying. */
 export const verificationBadge = (status: string | null | undefined): VerificationBadge | null => {
 	switch (status) {
 		case "verified":
-			return { label: "Verified", variant: "success" }
+			return { label: "Verified", variant: "ok" }
 		case "pending":
 			return { label: "Verifying…", variant: "secondary" }
 		case "unverified":
-			return { label: "Not verified", variant: "warning" }
+			return { label: "Not verified", variant: "warn" }
 		default:
 			// `unavailable` (no registry to check against) and anything Stripe adds
 			// later: the id still prints on the invoice, so no badge.

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react"
 
+import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
 
 import { MessageResponse } from "@/components/ai-elements/message-response"
@@ -169,18 +170,19 @@ export function ClampedText({
 						: { dangerouslySetInnerHTML: { __html: html } })}
 			/>
 			{(clamped || expanded) && (
-				<button
-					type="button"
+				<Button
+					variant="link"
+					size="xs"
 					onClick={() =>
 						onToggleExpanded === undefined
 							? setLocalExpanded((previous) => !previous)
 							: onToggleExpanded()
 					}
 					aria-expanded={expanded}
-					className="mt-1 cursor-pointer text-muted-foreground text-xs underline-offset-2 hover:text-foreground hover:underline"
+					className="mt-1 h-auto p-0 text-muted-foreground text-xs hover:text-foreground"
 				>
 					{expanded ? "Show less" : "Show full"}
-				</button>
+				</Button>
 			)}
 		</div>
 	)

@@ -328,6 +328,72 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "a3f69dea62db6610d63a6b2442f86d9071c91c286b5935e764700efc01fa7d7a",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// v27 appends SkipReason to alert_checks. No row is rewritten: checks
+		// recorded before the edge keep an empty reason.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 27,
+		fingerprint: "64a7d92899d7bdb7",
+		digest: "64a7d92899d7bdb7380c150b0c15301396572d8d573bf4db7b890426e729c43c",
+		manifestDigest: "2f52ca5a525a85621729e885a028bc9bfe73fa94ef62be7790efec0283d792d5",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v28 appends SpanKind and IsRoot to service_overview_spans and recreates
+		// its view to fill them. Nothing is backfilled: older rows read '' / 0.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 28,
+		fingerprint: "8a24f256937e00e5",
+		digest: "8a24f256937e00e51147034fef1567a9662b982799e85af4030c4f7e9739097d",
+		manifestDigest: "c4958036747018eb07b2657c05b18e37c4f29d5eb4c1d433e5f055ebb234ed18",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v29 recreates service_external_edges_hourly_mv to exclude spans that set
+		// only the legacy db.system. No part is rewritten; sealed hours keep their
+		// rows until the TTL ages them out.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 29,
+		fingerprint: "c0c78cf931a7f897",
+		digest: "c0c78cf931a7f897f41f8102841bf33dc320b6a2c852eaf78ffd58a375f8f3b5",
+		manifestDigest: "560a5a62db3961c68d815eeab700525cb3a59df3a2aadcf84033417c76a87f0b",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// TODO(v30): what changed, whether any part is rewritten or any row
+		// moves, and what this edge does NOT backfill.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 30,
+		fingerprint: "5e8afdb803653665",
+		digest: "5e8afdb80365366551f730f44b42482c16d8f8923ba27060600ce4df1beec44a",
+		manifestDigest: "7fe927d0537e697ee7e9ad0c565c3294efee9e958d9894292afed234fbe560ab",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// TODO(v31): what changed, whether any part is rewritten or any row
+		// moves, and what this edge does NOT backfill.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 31,
+		fingerprint: "ea8d1656ca6f4b4f",
+		digest: "ea8d1656ca6f4b4f7cfda050291fb26fca73cc7d4ce21d50fff04cff5276b079",
+		manifestDigest: "020f17fa907a00c3c44ab7a05cc4306933a4d8f4542ea99d441728b47b7eaca6",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */

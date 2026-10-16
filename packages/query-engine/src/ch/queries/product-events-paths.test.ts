@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
-import { ProductEventsFunnelError } from "./product-events"
+import { Result } from "effect"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { productEventsPathsQuery, type ProductEventsPathsOpts } from "./product-events-paths"
+import { OrgId } from "@maple/domain"
 
-const params = { orgId: "org_1", startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
+const params = {
+	orgId: OrgId.make("org_1"),
+	startTime: "2026-06-24 04:00:00",
+	endTime: "2026-06-25 06:00:00",
+}
 
 const base: ProductEventsPathsOpts = {
 	anchor: { kind: "event", eventName: "signup_completed" },
@@ -22,7 +27,7 @@ const base: ProductEventsPathsOpts = {
 
 describe("productEventsPathsQuery", () => {
 	it("scopes every table it reads to the org and derives an org-scoped result", () => {
-		const compiled = compileUnsafe(productEventsPathsQuery(base), params)
+		const compiled = compileUnsafe(Result.getOrThrow(productEventsPathsQuery(base)), params)
 		expect(compiled.tenantScope).toBe("single-tenant")
 		expect(compiled.sql).toContain("FROM product_events AS e")
 		expect(compiled.sql).toContain("FROM identity_links")
@@ -30,7 +35,7 @@ describe("productEventsPathsQuery", () => {
 	})
 
 	it("walks forward from the first anchor, over the rows inside its window, `depth + 1` names per person", () => {
-		const { sql } = compileUnsafe(productEventsPathsQuery(base), params)
+		const { sql } = compileUnsafe(Result.getOrThrow(productEventsPathsQuery(base)), params)
 		expect(sql).toContain("toUInt8(e.EventName = 'signup_completed') AS isAnchor")
 		// The anchor instant per person, then only the rows inside its window.
 		expect(sql).toContain("min(toUInt64(toUnixTimestamp64Milli(e.Timestamp))) AS anchorTs")
@@ -51,7 +56,9 @@ describe("productEventsPathsQuery", () => {
 
 	it("reads the array backwards for `before`, bounding the window behind the anchor", () => {
 		const { sql } = compileUnsafe(
-			productEventsPathsQuery({ ...base, direction: "before", windowSeconds: 3_600 }),
+			Result.getOrThrow(
+				productEventsPathsQuery({ ...base, direction: "before", windowSeconds: 3_600 }),
+			),
 			params,
 		)
 		expect(sql).toContain("max(toUInt64(toUnixTimestamp64Milli(e.Timestamp))) AS anchorTs")
@@ -61,7 +68,7 @@ describe("productEventsPathsQuery", () => {
 	})
 
 	it("only reads persons who have the anchor, and computes the hop rows once as a CTE", () => {
-		const { sql } = compileUnsafe(productEventsPathsQuery(base), params)
+		const { sql } = compileUnsafe(Result.getOrThrow(productEventsPathsQuery(base)), params)
 		expect(sql).toContain("WITH path_hops AS")
 		expect(sql).toContain("FROM path_hops AS h")
 		expect(sql.match(/FROM product_events AS e/g)?.length).toBe(2)
@@ -69,29 +76,31 @@ describe("productEventsPathsQuery", () => {
 
 	it("names page views by path and applies include / exclude before sequencing", () => {
 		const { sql } = compileUnsafe(
-			productEventsPathsQuery({
-				...base,
-				anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
-				include: "pages",
-				exclude: ["heartbeat", "/"],
-				keyBy: "session",
-			}),
+			Result.getOrThrow(
+				productEventsPathsQuery({
+					...base,
+					anchor: { kind: "page", pagePath: "/pricing", host: "maple.dev" },
+					include: "pages",
+					exclude: ["heartbeat", "/"],
+					keyBy: "session",
+				}),
+			),
 			params,
 		)
 		// No identity join on a session key, so the columns go unprefixed.
-		expect(sql).toContain("if(Kind = 'navigation', PagePath, EventName) AS name")
+		expect(sql).toContain("if(e.Kind = 'navigation', e.PagePath, e.EventName) AS name")
 		// The anchor row is exempt from its own kind and name filters.
 		expect(sql).toContain(
 			"(r.isAnchor = 1 OR (r.kind = 'navigation' AND r.name NOT IN ('heartbeat', '/')))",
 		)
-		expect(sql).toContain("(Kind = 'navigation' AND PagePath = '/pricing') AND Host = 'maple.dev'")
+		expect(sql).toContain("(e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev'")
 		expect(sql).toContain("SessionId AS key")
 		expect(sql).not.toContain("identity_links")
 	})
 
 	it("narrows the population by person when a filter is set", () => {
 		const { sql } = compileUnsafe(
-			productEventsPathsQuery({ ...base, filters: { country: "DE" } }),
+			Result.getOrThrow(productEventsPathsQuery({ ...base, filters: { country: "DE" } })),
 			params,
 		)
 		expect(sql).toContain("FROM session_replays AS s")
@@ -100,12 +109,8 @@ describe("productEventsPathsQuery", () => {
 
 	it("rejects a definition the reader could not draw", () => {
 		const reasons = (opts: ProductEventsPathsOpts) => {
-			try {
-				productEventsPathsQuery(opts)
-				return null
-			} catch (error) {
-				return error instanceof ProductEventsFunnelError ? error.reason : "other"
-			}
+			const built = productEventsPathsQuery(opts)
+			return Result.isFailure(built) ? built.failure.reason : null
 		}
 		expect(reasons({ ...base, depth: 0 })).toBe("InvalidLimit")
 		expect(reasons({ ...base, depth: 6 })).toBe("InvalidLimit")

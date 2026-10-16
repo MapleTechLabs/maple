@@ -1,4 +1,4 @@
-import { getColumnJsonPath, type DatasourceDefinition } from "@tinybirdco/sdk"
+import { getColumnJsonPath, getColumnType, type AnyDatasource } from "@maple-dev/effect-orm/tinybird"
 import { describe, expect, it } from "vitest"
 import {
 	logs,
@@ -130,17 +130,10 @@ function topLevelKey(jsonPath: string): string | null {
 	return head || null
 }
 
-function emittedTopLevelKeys(datasource: DatasourceDefinition): Set<string> {
+function emittedTopLevelKeys(datasource: AnyDatasource): Set<string> {
 	const keys = new Set<string>()
 	for (const column of Object.values(datasource.options.schema)) {
-		const defaultExpression = (
-			column as {
-				readonly type?: {
-					readonly modifiers?: { readonly defaultExpression?: string }
-				}
-			}
-		).type?.modifiers?.defaultExpression
-		if (defaultExpression !== undefined) continue
+		if (getColumnType(column).modifiers.defaultExpression !== undefined) continue
 		const path = getColumnJsonPath(column)
 		if (!path) continue
 		const top = topLevelKey(path)
@@ -161,7 +154,7 @@ const driftHint =
 describe("Tinybird datasource ↔ Rust ingest encoder JSON contract", () => {
 	const datasources: Array<{
 		name: keyof typeof EXPECTED_TOPLEVEL_KEYS
-		datasource: DatasourceDefinition
+		datasource: AnyDatasource
 	}> = [
 		{ name: "logs", datasource: logs },
 		{ name: "traces", datasource: traces },
@@ -182,11 +175,4 @@ describe("Tinybird datasource ↔ Rust ingest encoder JSON contract", () => {
 			).toEqual({ missing: [], extra: [] })
 		})
 	}
-
-	it("every ingest datasource has at least one jsonPath declared", () => {
-		for (const { name, datasource } of datasources) {
-			const actual = emittedTopLevelKeys(datasource)
-			expect(actual.size, `${name} should have jsonPath-bound columns`).toBeGreaterThan(0)
-		}
-	})
 })

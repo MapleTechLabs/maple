@@ -1,10 +1,11 @@
-import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
+import { skipToken, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import type { FilterOption } from "@maple/ui/components/filters/filter-section"
 import type { DurationStats } from "@maple/ui/components/filters/duration-range-filter"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import type { TimeBounds } from "../lib/time"
 import type { TraceFilters } from "./use-local-traces"
+import { windowed } from "../lib/query-cache"
 
 export type { DurationStats }
 
@@ -94,9 +95,8 @@ function facetOpts(filters: TraceFilters): CH.TracesFacetsOpts {
  */
 export function useLocalTraceFacets(filters: TraceFilters, bounds: TimeBounds, enabled = true) {
 	return useQuery<TraceFacets>({
-		queryKey: ["local", "trace-facets", filters, boundsKey(bounds)],
+		...windowed(["local", "trace-facets", filters, boundsKey(bounds)]),
 		staleTime: 15_000,
-		placeholderData: keepPreviousData,
 		queryFn: !enabled
 			? skipToken
 			: async ({ signal }) => {
@@ -135,7 +135,7 @@ export function useLocalTraceFacets(filters: TraceFilters, bounds: TimeBounds, e
 						const rows = index === -1 ? mainRows : (ownRows[index] ?? [])
 						return rows
 							.filter((row) => row.facetType === facetType && row.name)
-							.map((row) => ({ name: row.name, count: Number(row.count) }))
+							.map((row) => ({ name: row.name, count: row.count }))
 					}
 
 					return {
@@ -145,9 +145,7 @@ export function useLocalTraceFacets(filters: TraceFilters, bounds: TimeBounds, e
 						httpStatusCodes: rowsFor("httpStatus"),
 						deploymentEnvs: rowsFor("deploymentEnv"),
 						namespaces: rowsFor("serviceNamespace"),
-						errorCount: Number(
-							mainRows.find((row) => row.facetType === "errorCount")?.count ?? 0,
-						),
+						errorCount: mainRows.find((row) => row.facetType === "errorCount")?.count ?? 0,
 						durationStats: toDurationStats(statsRows[0]),
 					}
 				},
@@ -161,10 +159,10 @@ export function useLocalTraceFacets(filters: TraceFilters, bounds: TimeBounds, e
 function toDurationStats(row: CH.TracesDurationStatsOutput | undefined): DurationStats | undefined {
 	if (!row) return undefined
 	const stats = {
-		minDurationMs: Number(row.minDurationMs),
-		maxDurationMs: Number(row.maxDurationMs),
-		p50DurationMs: Number(row.p50DurationMs),
-		p95DurationMs: Number(row.p95DurationMs),
+		minDurationMs: row.minDurationMs,
+		maxDurationMs: row.maxDurationMs,
+		p50DurationMs: row.p50DurationMs,
+		p95DurationMs: row.p95DurationMs,
 	}
 	const values = Object.values(stats)
 	if (values.some((v) => !Number.isFinite(v)) || stats.maxDurationMs <= 0) return undefined

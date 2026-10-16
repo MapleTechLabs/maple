@@ -18,7 +18,7 @@ stability guarantees from the concepts defined here.
 > collector → ClickHouse/Tinybird → web dashboard). It is also a
 > **self-instrumented emitter** of its own telemetry via `@maple-dev/effect-sdk`
 > (`packages/effect-sdk`, built on Effect's native OTLP exporter in
-> `effect/unstable/observability`). Three of the four stability domains below
+> `effect/observability`). Three of the four stability domains below
 > (API, SDK, telemetry/semconv) matter to us mostly as _producers_ (our own
 > services). The fourth (OTLP wire format) matters to us as a _server
 > implementor_ (`apps/ingest` accepting arbitrary upstream OTLP). We do not ship

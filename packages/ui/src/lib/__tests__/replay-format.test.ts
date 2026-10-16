@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { formatSessionDuration, isSessionLive, sessionDurationMs } from "../replay-format"
+import { formatClock, formatSessionDuration, isSessionLive, sessionDurationMs } from "../replay-format"
 
 describe("formatSessionDuration", () => {
 	it("renders missing, zero, and negative durations as an em dash", () => {
@@ -91,5 +91,13 @@ describe("sessionDurationMs", () => {
 		expect(
 			sessionDurationMs({ status: "active", lastActivityAt: null, startTime: at(5), durationMs: null }),
 		).toBeNull()
+	})
+})
+
+describe("formatClock", () => {
+	it("rolls into hours for long sessions", () => {
+		expect(formatClock(65_000)).toBe("1:05")
+		expect(formatClock(9 * 3_600_000)).toBe("9:00:00")
+		expect(formatClock(3_600_000 + 61_000)).toBe("1:01:01")
 	})
 })

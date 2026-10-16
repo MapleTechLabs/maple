@@ -1,6 +1,10 @@
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { formatNumber } from "@maple/ui/lib/format"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Button } from "@maple/ui/components/ui/button"
@@ -9,15 +13,16 @@ import { useDebouncedValue } from "@maple/ui/hooks/use-debounced-value"
 
 import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { FolderIcon, MagnifierIcon } from "@/components/icons"
 import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { PodPeekSheet } from "@/components/infra/kubernetes/pod-peek-sheet"
 import { PodsFilterSidebarView, type PodFilters } from "@/components/infra/k8s-filter-sidebar"
-import { PodTable, PodTableLoading, podKey, type PodRow } from "@/components/infra/pod-table"
+import { PodTableLoading, podKey, type PodRow } from "@/components/infra/pod-table"
+import { PodTableWithRestarts } from "@/components/infra/kubernetes/pod-restarts-panel"
 import { FleetBand, FleetBandLoading, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { podFilterChips } from "@/lib/infra/pod-filter-chips"
 import {
 	listPodsResultAtom,
@@ -31,6 +36,8 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
+import { TONE_FILL } from "@maple/ui/lib/tone"
+import { OffsetPager, pageRangeLabel, useResettingPage } from "@/components/infra/primitives/offset-pager"
 
 const PAGE_SIZE = 50
 const DEFAULT_PRESET = "12h"
@@ -134,24 +141,29 @@ function PodsPage() {
 	// The server filters by name, so typing must not fire a query per keystroke.
 	const searchText = search.q ?? ""
 	const debouncedSearch = useDebouncedValue(searchText, 300)
+	const [pageIndex, setPageIndex] = useResettingPage(
+		JSON.stringify({ filters, q: debouncedSearch.trim(), scope, sortBy, sortDir }),
+	)
+	const offset = pageIndex * PAGE_SIZE
 
 	// "Ended" is the lifecycle dial, not a saturation bucket: the other three
 	// scopes narrow the live fleet, this one swaps which fleet is on screen.
-	const podsResult = useAtomValue(
-		listPodsResultAtom({
-			data: {
-				startTime,
-				endTime,
-				...filters,
-				search: debouncedSearch.trim() || undefined,
-				scope: scope === "ended" ? undefined : scope,
-				lifecycle: scope === "ended" ? "ended" : "live",
-				sortBy,
-				sortDir,
-				limit: PAGE_SIZE,
-			},
-		}),
-	)
+	const podsAtom = listPodsResultAtom({
+		data: {
+			startTime,
+			endTime,
+			...filters,
+			search: debouncedSearch.trim() || undefined,
+			scope: scope === "ended" ? undefined : scope,
+			lifecycle: scope === "ended" ? "ended" : "live",
+			sortBy,
+			sortDir,
+			limit: PAGE_SIZE,
+			offset,
+		},
+	})
+	const podsResult = useAtomValue(podsAtom)
+	const refreshPods = useAtomRefresh(podsAtom)
 
 	// Scope-only: the band is what tells you how much of the fleet the filters
 	// hid, so narrowing it by those same filters would defeat the point.
@@ -201,7 +213,8 @@ function PodsPage() {
 		.orElse(() => 0)
 
 	const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)
-	const hasAnyNarrowing = hasStructuredFilter || Boolean(searchText.trim()) || Boolean(scope)
+	const hasAnyNarrowing =
+		hasStructuredFilter || Boolean(searchText.trim()) || Boolean(scope) || pageIndex > 0
 
 	// The peek resolves against the page that's on screen. A key that no longer
 	// matches a row (the filter changed under it) just means the sheet is closed.
@@ -288,16 +301,16 @@ function PodsPage() {
 								noun="live pod"
 								caption="share of the live fleet by peak utilization"
 								segments={[
-									{ key: "healthy", count: healthy, className: "bg-muted-foreground/35" },
+									{ key: "healthy", count: healthy, className: TONE_FILL.ok },
 									{
 										key: "elevated",
 										count: counts.elevatedPods,
-										className: "bg-[var(--severity-warn)]",
+										className: TONE_FILL.warn,
 									},
 									{
 										key: "saturated",
 										count: counts.saturatedPods,
-										className: "bg-[var(--severity-error)]",
+										className: TONE_FILL.crit,
 									},
 								]}
 								cells={cells}
@@ -311,7 +324,9 @@ function PodsPage() {
 
 				{Result.builder(podsResult)
 					.onInitial(() => <PodTableLoading />)
-					.onError((err) => <QueryErrorState error={err} />)
+					.onError((err) => (
+						<ErrorState error={err} title="Failed to load pods" onRetry={refreshPods} />
+					))
 					.onSuccess((response, result) => {
 						const page = response.data
 						const total = response.totalCount
@@ -338,7 +353,7 @@ function PodsPage() {
 										</EmptyMedia>
 										<EmptyTitle>Nothing running right now</EmptyTitle>
 										<EmptyDescription>
-											{`Every pod that reported in this window has since ended. Open the Ended scope to see the ${endedPods.toLocaleString()} that ran.`}
+											{`Every pod that reported in this window has since ended. Open the Ended scope to see the ${formatNumber(endedPods)} that ran.`}
 										</EmptyDescription>
 									</EmptyHeader>
 									<Button
@@ -354,13 +369,18 @@ function PodsPage() {
 
 						return (
 							<div
-								className={`space-y-3 transition-opacity ${result.waiting ? "opacity-60" : ""}`}
+								className={cn("space-y-3", refreshingClass(result.waiting))}
+								aria-busy={result.waiting || undefined}
 							>
-								<ListToolbar
+								<SearchToolbar
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search all pods…"
-									trailing={countLabel(page.length, total, "pod")}
+									trailing={
+										offset > 0
+											? pageRangeLabel(offset, page.length, total, "pods")
+											: countLabel(page.length, total, "pod")
+									}
 								/>
 
 								<ActiveFilterChips
@@ -375,25 +395,23 @@ function PodsPage() {
 								/>
 
 								{page.length === 0 ? (
-									<Empty className="py-12">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<MagnifierIcon size={16} />
-											</EmptyMedia>
-											<EmptyTitle>No pods match these filters</EmptyTitle>
-											<EmptyDescription>
-												{scope
-													? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
-													: "Try a different name, or clear the filters to see the whole fleet."}
-											</EmptyDescription>
-										</EmptyHeader>
-										<Button variant="outline" size="sm" onClick={onClearFilters}>
-											Clear all filters
-										</Button>
-									</Empty>
+									<FilteredEmpty
+										noun="pods"
+										className="py-12"
+										icon={<MagnifierIcon size={16} />}
+										description={
+											scope
+												? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
+												: "Try a different name, or clear the filters to see the whole fleet."
+										}
+										onClear={onClearFilters}
+										clearLabel="Clear all filters"
+									/>
 								) : (
-									<PodTable
+									<PodTableWithRestarts
 										pods={page}
+										startTime={startTime}
+										endTime={endTime}
 										sortBy={sortBy}
 										sortDir={sortDir}
 										onSortChange={onSortChange}
@@ -404,6 +422,14 @@ function PodsPage() {
 										referenceTime={endTime}
 									/>
 								)}
+								<OffsetPager
+									offset={offset}
+									shown={page.length}
+									total={total}
+									pageSize={PAGE_SIZE}
+									noun="pods"
+									onPageChange={(direction) => setPageIndex(pageIndex + direction)}
+								/>
 							</div>
 						)
 					})

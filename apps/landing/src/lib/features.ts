@@ -58,6 +58,32 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-traces-list",
+				route: "/traces",
+				title: "One row per trace",
+				alt: "The trace list with one row per request, its services, span count, duration and status",
+			},
+			{
+				id: "surface-traces-peek",
+				route: "/traces",
+				title: "Peek without leaving the list",
+				alt: "A failed checkout opened in the peek sheet beside the trace list",
+			},
+			{
+				id: "gallery-trace-waterfall",
+				route: "/traces/:id",
+				title: "Where the 5 seconds went",
+				alt: "A failed checkout's waterfall, with the payment insert waiting five seconds for a pool connection",
+			},
+			{
+				id: "gallery-trace-flow",
+				route: "/traces/:id",
+				title: "Services the request touched",
+				alt: "The same trace reduced to the services it passed through",
+			},
+		],
 		capTitle: m.feat_tracing_cap_title,
 		capabilities: [
 			{ op: "/traces", title: m.feat_tracing_cap_1_title, body: m.feat_tracing_cap_1_body },
@@ -106,6 +132,7 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [],
 		capTitle: m.feat_sessions_cap_title,
 		capabilities: [
 			{ op: "event stream", title: m.feat_sessions_cap_1_title, body: m.feat_sessions_cap_1_body },
@@ -114,7 +141,41 @@ export const features: Feature[] = [
 			{ op: "http.status_code", title: m.feat_sessions_cap_4_title, body: m.feat_sessions_cap_4_body },
 			{ op: "mask rules", title: m.feat_sessions_cap_5_title, body: m.feat_sessions_cap_5_body },
 		],
-		related: ["distributed-tracing", "error-tracking", "log-management"],
+		related: ["distributed-tracing", "error-tracking", "product-events"],
+		relatedUseCases: ["ecommerce-observability"],
+		locales: ["en", "ja", "ko"],
+	},
+
+	{
+		slug: "product-events",
+		// No engraving yet: the prompt is in public/art/features/product-events-prompt.md.
+		navLabel: m.nav_product_events,
+		navDesc: m.nav_desc_product_events,
+		seoTitle: m.feat_pe_seo_title,
+		seoDescription: m.feat_pe_seo_desc,
+		heroTitle: m.feat_pe_hero_title,
+		heroLede: m.feat_pe_hero_lede,
+		// No panel: there is no funnel capture in the library yet. The live funnel
+		// carries the surface, and the sources section shows how events get in.
+		panel: null,
+		artifact: {
+			id: "funnel",
+			title: m.feat_pe_artifact_title,
+			lede: m.feat_pe_artifact_lede,
+			wide: true,
+		},
+		extraSections: ["product-events-sources"],
+		gallery: [],
+		capTitle: m.feat_pe_cap_title,
+		capabilities: [
+			{ op: "$pageview", title: m.feat_pe_cap_1_title, body: m.feat_pe_cap_1_body },
+			{ op: "maple.product_event.name", title: m.feat_pe_cap_2_title, body: m.feat_pe_cap_2_body },
+			{ op: "identify()", title: m.feat_pe_cap_3_title, body: m.feat_pe_cap_3_body },
+			{ op: "drop-off · paths", title: m.feat_pe_cap_4_title, body: m.feat_pe_cap_4_body },
+			{ op: "source: product_events", title: m.feat_pe_cap_5_title, body: m.feat_pe_cap_5_body },
+			{ op: "query_funnel()", title: m.feat_pe_cap_6_title, body: m.feat_pe_cap_6_body },
+		],
+		related: ["browser-sessions", "metrics-dashboards", "distributed-tracing"],
 		relatedUseCases: ["ecommerce-observability"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -154,6 +215,20 @@ export const features: Feature[] = [
 			lede: m.feat_logs_artifact_lede,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-logs-errors",
+				route: "/logs",
+				title: "ERROR across every service",
+				alt: "Log search filtered to ERROR, with the volume chart and the lines that explain each failure",
+			},
+			{
+				id: "gallery-logs-service",
+				route: "/logs",
+				title: "Warnings before the failures",
+				alt: "WARN lines: payment-svc reporting 20 of 20 pool connections in use, and slow requests upstream",
+			},
+		],
 		capTitle: m.feat_logs_cap_title,
 		capabilities: [
 			{ op: "/logs?q=", title: m.feat_logs_cap_1_title, body: m.feat_logs_cap_1_body },
@@ -201,6 +276,32 @@ export const features: Feature[] = [
 			lede: m.feat_metrics_artifact_lede,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-metrics-list",
+				route: "/metrics",
+				title: "Every metric, typed",
+				alt: "The metric explorer listing each metric with its type, service and last seen time",
+			},
+			{
+				id: "gallery-metric-latency",
+				route: "/metrics/:name",
+				title: "Request duration",
+				alt: "http.server.request.duration charted over six hours, with the jump after the bad deploy",
+			},
+			{
+				id: "gallery-metric-pool",
+				route: "/metrics/:name",
+				title: "Requests waiting on the pool",
+				alt: "db.client.connection.pending_requests for payment-svc: zero until the deploy, then 30 to 40 requests waiting for a connection",
+			},
+			{
+				id: "gallery-dashboard-templates",
+				route: "/dashboards/templates",
+				title: "Templates your data supports",
+				alt: "Dashboard templates sorted by which ones the incoming telemetry can fill",
+			},
+		],
 		capTitle: m.feat_metrics_cap_title,
 		capabilities: [
 			{ op: "time series", title: m.feat_metrics_cap_1_title, body: m.feat_metrics_cap_1_body },
@@ -252,6 +353,32 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-service-operations",
+				route: "/services/:name",
+				title: "Operations, slowest first",
+				alt: "payment-svc operations: the payments queries and POST /charges at 10 to 12% errors and a 5 second p95",
+			},
+			{
+				id: "surface-service-map",
+				route: "/service-map",
+				title: "Built from real calls",
+				alt: "The service map grouped by namespace, with databases, caches and the failing edge in red",
+			},
+			{
+				id: "surface-service-detail",
+				route: "/services/:name",
+				title: "Deploy on the chart",
+				alt: "payment-svc latency, Apdex and error rate with the 3.5.0 deploy marked",
+			},
+			{
+				id: "gallery-service-dependencies",
+				route: "/services/:name",
+				title: "What it calls",
+				alt: "payment-svc dependencies: Postgres at 7.8% errors and a 5 second p95, and api.stripe.com",
+			},
+		],
 		capTitle: m.feat_catalog_cap_title,
 		capabilities: [
 			{ op: "edges", title: m.feat_catalog_cap_1_title, body: m.feat_catalog_cap_1_body },
@@ -279,8 +406,8 @@ export const features: Feature[] = [
 			constant: "ConnectionTimeout · payment-svc",
 			plate: {
 				src: "/screenshots/surface-errors.webp",
-				width: 2560,
-				height: 1320,
+				width: 2880,
+				height: 1620,
 				alt: "Errors grouped by type with counts, affected services and last-seen times",
 			},
 			facts: [
@@ -298,6 +425,20 @@ export const features: Feature[] = [
 		// live artifact would be animation for its own sake.
 		artifact: null,
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-issue-detail",
+				route: "/errors/issues/:id",
+				title: "One issue, every occurrence",
+				alt: "The ConnectionTimeout issue open with its stack trace, trend and affected traces",
+			},
+			{
+				id: "surface-traces-peek",
+				route: "/traces",
+				title: "The trace behind it",
+				alt: "A failing checkout opened from the issue, showing the span that threw",
+			},
+		],
 		capTitle: m.feat_errors_cap_title,
 		capabilities: [
 			{ op: "fingerprint", title: m.feat_errors_cap_1_title, body: m.feat_errors_cap_1_body },
@@ -347,6 +488,20 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [
+			{
+				id: "gallery-alert-create",
+				route: "/alerts/create",
+				title: "Preview before you save",
+				alt: "A high error rate rule on payment-svc, previewed against the last day of data",
+			},
+			{
+				id: "surface-service-detail",
+				route: "/services/:name",
+				title: "What it would have caught",
+				alt: "payment-svc error rate climbing after the 3.5.0 deploy",
+			},
+		],
 		capTitle: m.feat_alerts_cap_title,
 		capabilities: [
 			{ op: "query builder", title: m.feat_alerts_cap_1_title, body: m.feat_alerts_cap_1_body },
@@ -355,7 +510,7 @@ export const features: Feature[] = [
 			{ op: "check log", title: m.feat_alerts_cap_4_title, body: m.feat_alerts_cap_4_body },
 			{ op: "renotify 30m", title: m.feat_alerts_cap_5_title, body: m.feat_alerts_cap_5_body },
 		],
-		related: ["error-tracking", "metrics-dashboards", "distributed-tracing"],
+		related: ["error-tracking", "metrics-dashboards", "product-events"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -396,6 +551,7 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: [],
+		gallery: [],
 		capTitle: m.feat_mcp_cap_title,
 		capabilities: [
 			{ op: "diagnose_service()", title: m.feat_mcp_cap_1_title, body: m.feat_mcp_cap_1_body },
@@ -429,6 +585,7 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: ["k8s-console", "k8s-views", "k8s-correlation", "k8s-install"],
+		gallery: [],
 		capTitle: m.feat_k8s_cap_title,
 		capabilities: [
 			{ op: "helm install", title: m.page_k8s_helm, body: m.page_k8s_helm_desc },

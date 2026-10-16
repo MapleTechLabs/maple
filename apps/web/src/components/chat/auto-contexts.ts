@@ -1,3 +1,4 @@
+import { shortId } from "@maple/ui/lib/ids"
 export type AutoContext =
 	| { kind: "service"; id: string; serviceName: string }
 	| { kind: "trace"; id: string; traceId: string }
@@ -32,20 +33,20 @@ export function autoContextDisplay(ctx: AutoContext): AutoContextDisplay {
 		case "service":
 			return { kind: "Service", subject: ctx.serviceName }
 		case "trace":
-			return { kind: "Trace", subject: `${ctx.traceId.slice(0, 8)}…` }
+			return { kind: "Trace", subject: shortId(ctx.traceId, "trace", { ellipsis: true }) }
 		case "dashboard":
 			return ctx.widgetId
 				? {
 						kind: "Dashboard widget",
-						subject: `${ctx.dashboardId.slice(0, 8)}…/${ctx.widgetId.slice(0, 6)}…`,
+						subject: `${shortId(ctx.dashboardId, "generic", { length: 8, ellipsis: true })}/${shortId(ctx.widgetId, "generic", { length: 6, ellipsis: true })}`,
 					}
-				: { kind: "Dashboard", subject: `${ctx.dashboardId.slice(0, 8)}…` }
+				: { kind: "Dashboard", subject: shortId(ctx.dashboardId, "generic", { length: 8, ellipsis: true }) }
 		case "error_type":
 			return { kind: "Error type", subject: ctx.errorType }
 		case "error_issue":
-			return { kind: "Error issue", subject: `${ctx.issueId.slice(0, 8)}…` }
+			return { kind: "Error issue", subject: shortId(ctx.issueId, "generic", { length: 8, ellipsis: true }) }
 		case "alert_rule":
-			return { kind: "Alert rule", subject: `${ctx.ruleId.slice(0, 8)}…` }
+			return { kind: "Alert rule", subject: shortId(ctx.ruleId, "generic", { length: 8, ellipsis: true }) }
 		case "host":
 			return { kind: "Host", subject: ctx.hostName }
 		case "container":

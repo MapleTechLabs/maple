@@ -9,13 +9,16 @@
  * than reaching resources directly. What is here is what the MCP transport and
  * the tool registry touch on their own.
  */
-import { MapleDb } from "@maple/infra/cloudflare"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { MapleDb, parseMapleDeployment } from "@maple/infra/cloudflare"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
-import { Effect, Layer } from "effect"
+import { Stage } from "alchemy/Stage"
+import { Effect, Layer, Option } from "effect"
+import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
-import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { type ChatSessionNamespace, layerChatSessions } from "@maple/backend/platform/chat-sessions"
+import { envPorts } from "@maple/backend/platform/env-ports"
+import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
 	MCP_TOOLS_RATE_LIMIT_REQUESTS,
@@ -42,15 +45,49 @@ export const bindAiClients = Effect.gen(function* () {
 
 type AiBindingClients = Effect.Success<typeof bindAiClients>
 
-/** The binding layers the init needs. */
-export const AiBindingLayers = Layer.mergeAll(
-	Cloudflare.Hyperdrive.ConnectBinding,
-	Cloudflare.Workers.RateLimitBinding,
-)
-
 /** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
 const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	effect as Effect.Effect<A, E>
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide
+	Effect.provide(effect, RuntimeContext.phantom)
+
+/**
+ * The AI Gateway Workers AI calls route through. The logical id is the api's, unchanged: the
+ * gateway's Cloudflare id derives from it, so renaming it mints a new gateway and abandons its logs.
+ */
+const AiGateway = Cloudflare.AI.Gateway("maple-api-ai")
+
+/**
+ * Bind the gateway and resolve it to a Workers AI binding whose calls carry the gateway id.
+ *
+ * prd only: dev has no local emulation of it, and the account caps gateways at 20, so a gateway
+ * per preview would exhaust it. The stage is known only at plan time; in the isolate the binding
+ * is either on the env or not, and the others read none and call Workers AI directly.
+ */
+const bindWorkersAiGateway = Effect.gen(function* () {
+	if (!globalThis.__ALCHEMY_RUNTIME__ && parseMapleDeployment(yield* Stage).stage.kind !== "prd") {
+		return Option.none()
+	}
+	const client = yield* Cloudflare.AI.QueryGateway(AiGateway)
+	if (!globalThis.__ALCHEMY_RUNTIME__) return Option.none()
+	const raw = yield* runtime(client.raw)
+	if (!isWorkersAiBinding(raw)) return Option.none()
+	return Option.some(viaGateway(raw, yield* runtime(client.id)))
+})
+
+/**
+ * The gateway binding as a service, for the fetch graph's ports and the chat Durable Object's
+ * activation alike. One layer value, so the init builds it once.
+ */
+export const WorkersAiGatewayLive = Layer.effect(WorkersAiGateway, bindWorkersAiGateway).pipe(
+	Layer.provide(Cloudflare.AI.QueryGatewayBinding),
+)
+
+/** The binding layers the init needs. */
+export const AiBindingsLive = Layer.mergeAll(
+	Cloudflare.Hyperdrive.ConnectBinding,
+	Cloudflare.Workers.RateLimitBinding,
+	WorkersAiGatewayLive,
+)
 
 const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 	limit: (key) =>
@@ -66,15 +103,23 @@ const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 })
 
 /**
- * The ports the service graph depends on, plus the env itself as
- * `WorkerEnvironment` and the `ConfigProvider` — the one place a graph in this
- * Worker gets its env from.
+ * The ports the service graph depends on, plus the env-backed ports
+ * (`envPorts`: the env itself, the `ConfigProvider`, the sandbox service binding) and the
+ * `ChatSessions` port over the namespace this Worker hosts: the one place a graph in this Worker
+ * gets its env from.
  */
-export const aiPorts = (clients: AiBindingClients, env: Record<string, unknown>) =>
+export const aiPorts = (
+	clients: AiBindingClients,
+	env: Record<string, unknown>,
+	workersAi: typeof WorkersAiGateway.Service,
+	chatSessions: ChatSessionNamespace,
+) =>
 	Layer.mergeAll(
+		Layer.succeed(WorkersAiGateway, workersAi),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
-		mapleDbConnectionLayer(env),
-		workerEnvLayer(env),
+		layerMapleDbConnection(env),
+		envPorts(env),
+		layerChatSessions(chatSessions, env),
 	)
 
 export type AiPortsLayer = ReturnType<typeof aiPorts>

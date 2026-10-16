@@ -1,15 +1,21 @@
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import type {
 	ActorDocument,
 	ErrorIssueEventDocument,
 	IssueEscalationAttemptDocument,
 } from "@maple/domain/http"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import type { ReactNode } from "react"
+import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
+import { useState, type ReactNode } from "react"
+import { Button } from "@maple/ui/components/ui/button"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
+import { RelativeTime } from "@/components/common/relative-time"
 import { MessageResponse } from "@/components/ai-elements/message-response"
 import { useActorDirectory } from "@/hooks/use-actor-directory"
 import { IdentityAvatar, resolveActorIdentity, type ActorIdentity } from "./actor-chip"
+import { IN_FLIGHT_FILL } from "./workflow-badge"
 
 const EVENT_LABEL: Record<ErrorIssueEventDocument["type"], string> = {
 	created: "Created",
@@ -36,27 +42,27 @@ const EVENT_LABEL: Record<ErrorIssueEventDocument["type"], string> = {
 
 const DOT_CLASS: Record<ErrorIssueEventDocument["type"], string> = {
 	created: "bg-primary",
-	state_change: "bg-blue-500",
+	state_change: IN_FLIGHT_FILL,
 	assignment: "bg-muted-foreground",
-	claim: "bg-violet-500",
-	release: "bg-violet-500/60",
-	lease_expired: "bg-amber-500",
+	claim: AGENT_ACCENT.fill,
+	release: "bg-chart-ai-agent/60",
+	lease_expired: TONE_FILL.warn,
 	comment: "bg-muted-foreground",
-	agent_note: "bg-violet-500",
-	fix_proposed: "bg-success",
-	regression: "bg-destructive",
+	agent_note: AGENT_ACCENT.fill,
+	fix_proposed: TONE_FILL.ok,
+	regression: TONE_FILL.crit,
 	snooze: "bg-muted-foreground/70",
 	unsnooze: "bg-muted-foreground/70",
-	ai_triage: "bg-violet-500",
-	anomaly_linked: "bg-amber-500",
-	severity_change: "bg-orange-500",
+	ai_triage: AGENT_ACCENT.fill,
+	anomaly_linked: TONE_FILL.warn,
+	severity_change: TONE_FILL.warn,
 	pr_linked: "bg-muted-foreground",
 	pr_unlinked: "bg-muted-foreground/60",
-	pr_merged: "bg-purple-500",
-	// Teal matches the `verifying` workflow badge, so the timeline row and the
+	pr_merged: TONE_FILL.ok,
+	// Matches the `verifying` workflow badge, so the timeline row and the
 	// state chip read as the same thing happening.
-	verification_started: "bg-teal-500",
-	verification_verdict: "bg-teal-500",
+	verification_started: IN_FLIGHT_FILL,
+	verification_verdict: IN_FLIGHT_FILL,
 } satisfies Record<ErrorIssueEventDocument["type"], string>
 
 /**
@@ -186,11 +192,11 @@ function renderPayload(event: ErrorIssueEventDocument): string | null {
 			// is the row that has to answer "why are we waiting six hours?".
 			const windowMs = Number(payloadString(p.windowMs) ?? Number.NaN)
 			const rate = Number(payloadString(p.ratePerHour) ?? Number.NaN)
-			const window = Number.isFinite(windowMs) ? formatDuration(windowMs) : null
+			const window = Number.isFinite(windowMs) ? formatSpokenDuration(windowMs) : null
 			if (window === null) return "Watching for this error to come back."
 			const because =
 				Number.isFinite(rate) && rate > 0
-					? ` — it fired about ${formatRate(rate)} before the merge`
+					? ` — it fired about ${formatRatePerHour(rate)} before the merge`
 					: " — this error fires too rarely to judge quickly"
 			return `Watching for ${window}${because}.`
 		}
@@ -214,34 +220,17 @@ function renderPayload(event: ErrorIssueEventDocument): string | null {
 }
 
 /** "6 hours", "3 days" — a duration a person would say out loud. */
-function formatDuration(ms: number): string {
+function formatSpokenDuration(ms: number): string {
 	const minutes = Math.round(ms / 60_000)
-	if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`
+	if (minutes < 60) return countLabel(minutes, "minute")
 	const hours = Math.round(minutes / 60)
-	if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"}`
+	if (hours < 48) return countLabel(hours, "hour")
 	const days = Math.round(hours / 24)
-	return `${days} day${days === 1 ? "" : "s"}`
+	return countLabel(days, "day")
 }
 
-/**
- * A per-hour rate in whatever unit reads naturally. "0.02 times per hour" is
- * technically right and useless; "3 times a week" is the same number said in a
- * way a reader can picture.
- */
-function formatRate(perHour: number): string {
-	if (perHour >= 1) {
-		const rounded = perHour >= 10 ? Math.round(perHour) : Math.round(perHour * 10) / 10
-		return `${rounded}× an hour`
-	}
-	const perDay = perHour * 24
-	if (perDay >= 1) {
-		const rounded = perDay >= 10 ? Math.round(perDay) : Math.round(perDay * 10) / 10
-		return `${rounded}× a day`
-	}
-	const perWeek = perHour * 24 * 7
-	const rounded = perWeek >= 10 ? Math.round(perWeek) : Math.round(perWeek * 10) / 10
-	return `${rounded}× a week`
-}
+/** Rows mounted before "Show earlier". */
+const RECENT_ITEMS = 50
 
 type TimelineItem =
 	| { kind: "event"; key: string; createdAt: string; event: ErrorIssueEventDocument }
@@ -274,14 +263,21 @@ export function IssueTimeline({
 		})),
 	].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
 
+	// A busy agent thread can carry hundreds of rows; mount the recent ones and
+	// render earlier markdown in lightweight mode once revealed.
+	const [showEarlier, setShowEarlier] = useState(false)
+	const recentStart = Math.max(0, items.length - RECENT_ITEMS)
+	const hiddenCount = showEarlier ? 0 : recentStart
+	const visible = items.slice(hiddenCount)
+
 	if (items.length === 0) {
 		return (
-			<div className="rounded-xl border border-dashed py-10 text-center">
+			<EmptyMessage dashed className="py-10">
 				<p className="text-sm font-medium text-foreground">No activity yet</p>
-				<p className="mt-1 text-xs text-muted-foreground">
+				<p className="mt-1 text-xs">
 					Comments from your team and notes from agents working this issue land here.
 				</p>
-			</div>
+			</EmptyMessage>
 		)
 	}
 
@@ -291,7 +287,15 @@ export function IssueTimeline({
 		// width the page happened to be: in the narrower tab column the times ran off
 		// the left edge of the scroll area. Here the gutter IS a column.
 		<ol className="flex flex-col">
-			{items.map((item, index) => {
+			{hiddenCount > 0 ? (
+				<li className="flex justify-center pb-2">
+					<Button variant="ghost" size="sm" onClick={() => setShowEarlier(true)}>
+						Show {countLabel(hiddenCount, "earlier event")}
+					</Button>
+				</li>
+			) : null}
+			{visible.map((item, visibleIndex) => {
+				const index = hiddenCount + visibleIndex
 				if (item.kind === "escalation") {
 					const escalation = item.escalation
 					const destinations = escalation.deliveries
@@ -303,21 +307,21 @@ export function IssueTimeline({
 					const body =
 						destinations ||
 						escalation.skipReason?.replaceAll("_", " ") ||
-						`${escalation.attempts} delivery attempt${escalation.attempts === 1 ? "" : "s"}`
+						countLabel(escalation.attempts, "delivery attempt")
 					return (
 						<li className={ITEM} key={item.key}>
-							<span className={STAMP}>{formatRelativeTime(escalation.createdAt)}</span>
+							<RelativeTime value={escalation.createdAt} tooltip="title" className={STAMP} />
 							<Rail>
-								<Dot className="bg-orange-500" />
+								<Dot className={TONE_FILL.warn} />
 							</Rail>
 							<div className="min-w-0 py-2.5">
 								<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
 									<span className="font-medium text-foreground">Escalation</span>
-									<span className="font-mono text-[11px] capitalize text-muted-foreground">
+									<span className="font-mono text-2xs capitalize text-muted-foreground">
 										{escalation.severity} · {escalation.status}
 									</span>
 								</div>
-								<div className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+								<div className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground [overflow-wrap:anywhere]">
 									{body}
 								</div>
 							</div>
@@ -335,6 +339,7 @@ export function IssueTimeline({
 							body={body}
 							continued={isSameAuthorWithin(previous, event)}
 							event={event}
+							lightweight={index < recentStart}
 							identity={event.actor ? resolveActorIdentity(event.actor, directory) : null}
 							key={item.key}
 						/>
@@ -343,27 +348,22 @@ export function IssueTimeline({
 
 				return (
 					<li className={ITEM} key={item.key}>
-						<span className={STAMP}>{formatRelativeTime(event.createdAt)}</span>
+						<RelativeTime value={event.createdAt} tooltip="title" className={STAMP} />
 						<Rail>
-							<Dot
-								className={cn(
-									DOT_CLASS[event.type],
-									event.type === "regression" && "animate-pulse",
-								)}
-							/>
+							<Dot className={DOT_CLASS[event.type]} />
 						</Rail>
 						<div className="min-w-0 py-2.5">
 							<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
 								<span className="font-medium text-foreground">{EVENT_LABEL[event.type]}</span>
 								{event.fromState && event.toState ? (
-									<span className="font-mono text-[11px] text-muted-foreground">
+									<span className="font-mono text-2xs text-muted-foreground">
 										{event.fromState} → {event.toState}
 									</span>
 								) : null}
 								<AuthorLabel actor={event.actor} directory={directory} />
 							</div>
 							{body ? (
-								<div className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+								<div className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground [overflow-wrap:anywhere]">
 									{body}
 								</div>
 							) : null}
@@ -388,8 +388,8 @@ function AuthorLabel({
 	return (
 		<span
 			className={cn(
-				"inline-flex items-center gap-1 text-[11px]",
-				identity.kind === "agent" ? "text-violet-600 dark:text-violet-300" : "text-muted-foreground",
+				"inline-flex items-center gap-1 text-2xs",
+				identity.kind === "agent" ? AGENT_ACCENT.text : "text-muted-foreground",
 			)}
 			title={identity.detail ?? undefined}
 		>
@@ -401,7 +401,7 @@ function AuthorLabel({
 
 /**
  * A written message: avatar in the rail, author and time in the header, body in
- * a bubble. Agent messages are tinted violet so a room half-full of automation
+ * a bubble. Agent messages carry the agent accent so a room half-full of automation
  * still reads at a glance as "these two paragraphs weren't written by a person".
  */
 function MessageRow({
@@ -409,20 +409,27 @@ function MessageRow({
 	identity,
 	body,
 	continued,
+	lightweight,
 }: {
 	event: ErrorIssueEventDocument
 	identity: ActorIdentity | null
 	body: string
 	continued: boolean
+	lightweight: boolean
 }) {
 	const isAgent = identity?.kind === "agent"
 	const verb = MESSAGE_VERB[event.type]
 
 	return (
 		<li className={MESSAGE_ITEM}>
-			<span className={cn(STAMP, continued && "opacity-0 group-hover/row:opacity-100")}>
-				{formatRelativeTime(event.createdAt)}
-			</span>
+			<RelativeTime
+				value={event.createdAt}
+				tooltip="title"
+				className={cn(
+					STAMP,
+					continued && "opacity-0 group-hover/row:opacity-100 pointer-coarse:opacity-100",
+				)}
+			/>
 			<Rail>
 				{continued ? (
 					<span aria-hidden />
@@ -443,12 +450,15 @@ function MessageRow({
 							{identity?.name ?? "Unknown"}
 						</span>
 						{isAgent ? (
-							<span
-								className="rounded-full bg-violet-500/10 px-1.5 py-px font-mono text-[10px] text-violet-600 dark:text-violet-300"
+							<Badge
+								pill
+								size="xs"
+								mono
+								className={cn("font-normal", AGENT_ACCENT.soft)}
 								title={identity?.detail ?? undefined}
 							>
 								{identity?.detail ?? "agent"}
-							</span>
+							</Badge>
 						) : null}
 						{verb ? <span className="text-xs text-muted-foreground">{verb}</span> : null}
 					</div>
@@ -456,12 +466,12 @@ function MessageRow({
 				<div
 					className={cn(
 						"mt-1.5 max-w-prose overflow-x-auto rounded-xl border px-3 py-2 text-sm",
-						isAgent
-							? "border-violet-500/20 bg-violet-500/[0.06]"
-							: "border-border/70 bg-muted/40",
+						isAgent ? AGENT_ACCENT.surface : "border-border/70 bg-muted/40",
 					)}
 				>
-					<MessageResponse className="text-sm leading-relaxed">{body}</MessageResponse>
+					<MessageResponse className="text-sm leading-relaxed" lightweight={lightweight}>
+						{body}
+					</MessageResponse>
 				</div>
 			</div>
 		</li>
@@ -494,7 +504,7 @@ const MESSAGE_ITEM = `${ITEM} first:pt-0`
 // `whitespace-nowrap`: `formatRelativeTime` can return "just now", and a gutter
 // that wraps it onto two lines pushes the dot out of line with its own row.
 const STAMP =
-	"py-3 text-right text-[11px] leading-5 whitespace-nowrap tabular-nums text-muted-foreground transition-opacity"
+	"py-3 text-right text-2xs leading-5 whitespace-nowrap tabular-nums text-muted-foreground transition-opacity"
 
 /** The connector column: a hairline the full row height, marker centred on it. */
 function Rail({ children }: { children: ReactNode }) {

@@ -1,12 +1,13 @@
+import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { cn } from "@maple/ui/lib/utils"
+import { formatNumber } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Schema } from "effect"
-import { Result, useAtomValue } from "@/lib/effect-atom"
-
-import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { MagnifierIcon, ServerIcon } from "@/components/icons"
 import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
@@ -14,7 +15,7 @@ import { NodeTable, NodeTableLoading } from "@/components/infra/node-table"
 import { deriveHostStatus, type HostStatus } from "@/components/infra/format"
 import { NodesFilterSidebarView, type NodeFilters } from "@/components/infra/k8s-filter-sidebar"
 import { FleetBand, type FleetBandCell } from "@/components/infra/primitives/fleet-band"
-import { ListToolbar, countLabel } from "@/components/infra/primitives/list-toolbar"
+import { SearchToolbar, countLabel } from "@/components/common/search-toolbar"
 import { statusLabel } from "@/components/infra/severity-tokens"
 import { listNodesResultAtom, nodeFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -24,8 +25,11 @@ import {
 	pickTimeRangeSearch,
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
+import { TONE_FILL } from "@maple/ui/lib/tone"
 
 const DEFAULT_PRESET = "12h"
+// The list query returns the most recently seen N nodes; the toolbar says so when it hits the cap.
+const NODE_LIST_LIMIT = 200
 
 const NodeStatusParam = Schema.optional(Schema.Literals(["active", "idle", "ended"]))
 
@@ -64,8 +68,8 @@ const STATUS_CELLS: ReadonlyArray<{
 ]
 
 const STATUS_SEGMENT: Record<HostStatus, string> = {
-	active: "bg-[var(--severity-info)]",
-	idle: "bg-[var(--severity-warn)]",
+	active: TONE_FILL.info,
+	idle: TONE_FILL.warn,
 	ended: "bg-muted-foreground/40",
 } satisfies Record<HostStatus, string>
 
@@ -92,7 +96,11 @@ function NodesPage() {
 		environments: search.environments,
 	}
 
-	const nodesResult = useAtomValue(listNodesResultAtom({ data: { startTime, endTime, ...filters } }))
+	const nodesAtom = listNodesResultAtom({
+		data: { startTime, endTime, ...filters, limit: NODE_LIST_LIMIT },
+	})
+	const nodesResult = useAtomValue(nodesAtom)
+	const refreshNodes = useAtomRefresh(nodesAtom)
 	const facetsResult = useAtomValue(nodeFacetsResultAtom({ data: { startTime, endTime } }))
 
 	const onFilterChange = <K extends keyof NodeFilters>(key: K, value: NodeFilters[K]) => {
@@ -129,7 +137,9 @@ function NodesPage() {
 		>
 			{Result.builder(nodesResult)
 				.onInitial(() => <NodeTableLoading />)
-				.onError((err) => <QueryErrorState error={err} />)
+				.onError((err) => (
+					<ErrorState error={err} title="Failed to load nodes" onRetry={refreshNodes} />
+				))
 				.onSuccess((response, result) => {
 					const nodes = response.data
 					const hasStructuredFilter = Object.values(filters).some((v) => (v?.length ?? 0) > 0)
@@ -159,7 +169,10 @@ function NodesPage() {
 						: named
 
 					return (
-						<div className={`space-y-5 transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+						<div
+							className={cn("space-y-5", refreshingClass(result.waiting))}
+							aria-busy={result.waiting || undefined}
+						>
 							<FleetBand
 								total={nodes.length}
 								noun="node"
@@ -181,33 +194,30 @@ function NodesPage() {
 								waiting={result.waiting}
 							/>
 							<div className="space-y-3">
-								<ListToolbar
+								<SearchToolbar
 									value={searchText}
 									onChange={(value) => patchSearch({ q: value || undefined })}
 									placeholder="Search nodes…"
-									trailing={countLabel(filtered.length, filtered.length, "node")}
+									trailing={
+										nodes.length >= NODE_LIST_LIMIT
+											? `${formatNumber(filtered.length)} of the ${formatNumber(NODE_LIST_LIMIT)} most recently seen nodes`
+											: countLabel(filtered.length, filtered.length, "node")
+									}
 								/>
 								{(q || statusScope) && filtered.length === 0 ? (
-									<Empty className="py-12">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<MagnifierIcon size={16} />
-											</EmptyMedia>
-											<EmptyTitle>No nodes match</EmptyTitle>
-											<EmptyDescription>
-												{q
-													? `Nothing named “${searchText}” in this scope.`
-													: "Nothing in this scope right now, which is good news."}
-											</EmptyDescription>
-										</EmptyHeader>
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => patchSearch({ q: undefined, status: undefined })}
-										>
-											{q ? "Clear search" : "Show all nodes"}
-										</Button>
-									</Empty>
+									<FilteredEmpty
+										noun="nodes"
+										className="py-12"
+										icon={<MagnifierIcon size={16} />}
+										title="No nodes match"
+										description={
+											q
+												? `Nothing named “${searchText}” in this scope.`
+												: "Nothing in this scope right now, which is good news."
+										}
+										onClear={() => patchSearch({ q: undefined, status: undefined })}
+										clearLabel={q ? "Clear search" : "Show all nodes"}
+									/>
 								) : (
 									<NodeTable
 										nodes={filtered}

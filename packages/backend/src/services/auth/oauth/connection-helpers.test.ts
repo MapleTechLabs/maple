@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Redacted, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Database, DatabaseError, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -93,7 +93,7 @@ const seedExpiredConnection = (helpers: Effect.Success<ReturnType<typeof makeHel
 			refreshTokenIv: refreshEnc.iv,
 			refreshTokenTag: refreshEnc.tag,
 			// Already expired — getValidConnectionToken must refresh.
-			expiresAt: new Date(Date.now() - 60_000),
+			expiresAt: Date.now() - 60_000,
 		})
 	})
 

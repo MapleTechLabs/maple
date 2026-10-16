@@ -4,15 +4,16 @@
 // side of the same table, and it keeps the `/analytics` session filters by
 // reusing `replaysWhere` so the two agree on what a filtered population is.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param, from, inSubquery } from "@maple-dev/effect-clickhouse"
-import type { CHQuery, ColumnAccessor, ColumnDefs } from "@maple-dev/effect-clickhouse"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import type { DateTime } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param, from, inSubquery } from "@maple-dev/effect-orm/clickhouse"
+import type { CHQuery, ColumnAccessor, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import type { AttributeFilter, ProductEventsGroupBy, ProductEventsMetric } from "@maple/domain/query-engine"
-import { ProductEvents, SessionReplays } from "../tables"
+import { ProductEvents, SessionReplays, orgIdParam } from "../tables"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
-import { soleValue } from "./query-helpers"
+import { soleValue, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
 import { replaysWhere, needsSessionSemiJoin, type WebAnalyticsFilters } from "./web-analytics"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 
@@ -55,10 +56,12 @@ export interface ProductEventsTimeseriesOpts extends ProductEventsQueryOpts {
 	groupBy?: readonly ProductEventsGroupByKey[]
 	bucketSeconds?: number
 	seriesLimit?: number
+	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
+	wholeRange?: boolean
 }
 
 export interface ProductEventsTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly groupName: string
 	readonly value: number
 	/** Rows behind `value` — the alert sample count, which a `uniq` metric cannot stand in for. */
@@ -81,7 +84,7 @@ export interface ProductEventsListOpts extends ProductEventsQueryOpts {
 }
 
 export interface ProductEventsListOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly eventName: string
 	readonly kind: string
 	readonly source: string
@@ -136,9 +139,9 @@ function sessionSemiJoin($: EventsAccessor, opts: ProductEventsQueryOpts): CH.Co
 
 function eventConditions($: EventsAccessor, opts: ProductEventsQueryOpts): Array<CH.Condition | undefined> {
 	return [
-		$.OrgId.eq(param.string("orgId")),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		inListOpt($.EventName, opts.eventNames),
 		inListOpt($.Kind, opts.kinds),
 		inListOpt($.Source, opts.sources),
@@ -218,7 +221,7 @@ function groupNameExpr($: EventsAccessor, opts: ProductEventsTimeseriesOpts): CH
 }
 
 const TS_COLUMNS: ColumnDefs = {
-	bucket: T.string,
+	bucket: T.dateTime64,
 	groupName: T.string,
 	value: T.float64,
 	eventCount: T.float64,
@@ -229,12 +232,12 @@ export function productEventsTimeseriesQuery(
 ): CHQuery<ColumnDefs, ProductEventsTimeseriesOutput, {}> {
 	const inner = from(ProductEvents)
 		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: groupNameExpr($, opts),
 			value: metricExpr($, opts.metric),
 			eventCount: CH.count(),
 		}))
-		.where(($) => eventConditions($, opts))
+		.where(($) => [...eventConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(inner, TS_COLUMNS, "value", opts) as CHQuery<

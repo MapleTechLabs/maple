@@ -1,31 +1,38 @@
-import { formatNumber } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { useState } from "react"
+import { Link } from "@tanstack/react-router"
+import { toQueryBuilderMetricType } from "@maple/query-model"
+import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
-import { Button } from "@maple/ui/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { MetricTypeBadge } from "./metric-type-badge"
 import { type Metric, type ListMetricsInput } from "@/api/warehouse/metrics"
 import { listMetricsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 
 interface MetricsTableProps {
 	search: string
 	metricType: ListMetricsInput["metricType"] | null
-	onOpenMetric: (metric: Metric) => void
+	/** The page's own time params, carried onto each metric's link. */
+	linkTime: { startTime?: string; endTime?: string; timePreset?: string }
 	onClearFilters: () => void
 	startTime?: string
 	endTime?: string
 }
 
 const SKELETON_COLUMNS = [
-	{ header: "Metric Name", headClassName: "w-[40%]", skeleton: "w-48" },
+	{ header: "Metric name", headClassName: "w-[40%]", skeleton: "w-48" },
 	{
 		header: "Type",
 		headClassName: "hidden md:table-cell w-[100px]",
@@ -45,7 +52,7 @@ const SKELETON_COLUMNS = [
 		skeleton: "w-12",
 	},
 	{
-		header: "Last Seen",
+		header: "Last seen",
 		headClassName: "hidden md:table-cell w-[100px]",
 		cellClassName: "hidden md:table-cell",
 		skeleton: "w-16",
@@ -64,7 +71,7 @@ const MAX_LIMIT = 1000
 export function MetricsTable({
 	search,
 	metricType,
-	onOpenMetric,
+	linkTime,
 	onClearFilters,
 	startTime,
 	endTime,
@@ -102,7 +109,7 @@ export function MetricsTable({
 
 	if (Result.isFailure(metricsResult) || view === null) {
 		return Result.builder(metricsResult)
-			.onError((error) => <QueryErrorState error={error} />)
+			.onError((error) => <ErrorState error={error} />)
 			.orElse(() => <LoadingState />)
 	}
 
@@ -116,16 +123,16 @@ export function MetricsTable({
 			onClearFilters={onClearFilters}
 		/>
 	) : (
-		<div className={`space-y-4 ${waiting ? "opacity-60" : ""}`}>
+		<div className={cn("space-y-4", refreshingClass(waiting))} aria-busy={waiting || undefined}>
 			<div className="rounded-md border overflow-auto">
 				<Table className="table-fixed">
 					<TableHeader>
 						<TableRow>
-							<TableHead className="w-[40%]">Metric Name</TableHead>
+							<TableHead className="w-[40%]">Metric name</TableHead>
 							<TableHead className="w-[100px]">Type</TableHead>
 							<TableHead className="w-[120px]">Service</TableHead>
 							<TableHead className="w-[100px]">Points</TableHead>
-							<TableHead className="w-[100px]">Last Seen</TableHead>
+							<TableHead className="w-[100px]">Last seen</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -133,19 +140,29 @@ export function MetricsTable({
 							return (
 								<TableRow
 									key={`${metric.metricName}-${metric.metricType}-${metric.serviceName}`}
-									className="cursor-pointer hover:bg-muted/50"
-									onClick={() => onOpenMetric(metric)}
+									className="hover:bg-muted/50"
 								>
 									<TableCell>
 										<div className="flex min-w-0 flex-col gap-0.5">
-											<span
-												className="truncate font-mono text-xs"
-												title={metric.metricName}
+											<Link
+												to="/metrics/$metricName"
+												params={{ metricName: metric.metricName }}
+												search={{
+													...linkTime,
+													type:
+														toQueryBuilderMetricType(metric.metricType) ??
+														undefined,
+												}}
+												className={cn("block min-w-0", ROW_STRETCHED_LINK_CLASS)}
 											>
-												{metric.metricName}
-											</span>
+												<TruncatedText
+													text={metric.metricName}
+													mono
+													className={cn("text-xs", ROW_LINK_LIFT)}
+												/>
+											</Link>
 											{metric.metricDescription && (
-												<span className="text-[10px] text-muted-foreground line-clamp-1">
+												<span className="text-3xs text-muted-foreground line-clamp-1">
 													{metric.metricDescription}
 												</span>
 											)}
@@ -154,24 +171,29 @@ export function MetricsTable({
 									<TableCell className="hidden md:table-cell">
 										<MetricTypeBadge type={metric.metricType} />
 									</TableCell>
-									<TableCell className="hidden md:table-cell">
+									<TableCell className="hidden md:table-cell overflow-hidden">
 										{metric.serviceName ? (
-											<Badge variant="outline" className="font-mono text-[10px]">
-												<ServiceDot
-													serviceName={metric.serviceName}
-													className="size-1.5"
-												/>
-												{metric.serviceName}
+											<Badge
+												variant="outline"
+												size="xs"
+												mono
+												className="max-w-full"
+												title={metric.serviceName}
+											>
+												<ServiceDot serviceName={metric.serviceName} size="sm" />
+												<span className="min-w-0 truncate">{metric.serviceName}</span>
 											</Badge>
 										) : (
-											<span className="text-xs text-muted-foreground">-</span>
+											<span className="text-xs text-muted-foreground">
+												{EMPTY_VALUE}
+											</span>
 										)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell font-mono text-xs">
 										{formatNumber(metric.dataPointCount)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell text-xs text-muted-foreground">
-										{formatRelativeTime(metric.lastSeen)}
+										<RelativeTime value={metric.lastSeen} tooltip="title" />
 									</TableCell>
 								</TableRow>
 							)
@@ -180,22 +202,15 @@ export function MetricsTable({
 				</Table>
 			</div>
 
-			<div className="flex items-center gap-3 text-sm text-muted-foreground">
-				<span>
-					Showing {metrics.length} metrics
-					{hasMore ? " — more available" : ""}
-				</span>
-				{hasMore && (
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={waiting}
-						onClick={() => setLimit((current) => current + PAGE_SIZE)}
-					>
-						{waiting ? "Loading…" : "Load more"}
-					</Button>
-				)}
-			</div>
+			<ListFooter
+				shown={metrics.length}
+				noun="metrics"
+				hasMore={hasMore}
+				loading={waiting}
+				onLoadMore={() => setLimit((current) => current + PAGE_SIZE)}
+				align="start"
+				className="justify-start p-0 text-sm"
+			/>
 		</div>
 	)
 }

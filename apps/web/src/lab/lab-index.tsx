@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Link } from "@tanstack/react-router"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -40,9 +41,9 @@ export function LabIndex() {
 								const entries = LAB_ENTRIES.filter((entry) => entry.kind === section.kind)
 								return (
 									<section key={section.kind} className="border-b px-4 py-4">
-										<h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+										<Eyebrow variant="label" as="h2">
 											{section.title}
-										</h2>
+										</Eyebrow>
 										<p className="mt-1 text-xs text-muted-foreground">{section.blurb}</p>
 										<ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
 											{entries.map((entry) => (
@@ -55,7 +56,7 @@ export function LabIndex() {
 															<span className="text-sm font-medium">
 																{entry.title}
 															</span>
-															<span className="font-mono text-[11px] text-muted-foreground">
+															<span className="font-mono text-2xs text-muted-foreground">
 																{entry.path}
 															</span>
 														</span>
@@ -63,7 +64,7 @@ export function LabIndex() {
 															{entry.description}
 														</span>
 														{entry.session === "required" && (
-															<span className="mt-1 self-start rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+															<span className="mt-1 self-start rounded-sm border px-1.5 py-0.5 text-3xs uppercase tracking-wide text-muted-foreground">
 																Session required
 															</span>
 														)}

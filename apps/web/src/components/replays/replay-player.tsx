@@ -2,9 +2,16 @@ import * as React from "react"
 import { createPortal } from "react-dom"
 import "@rrweb/replay/dist/style.css"
 import { Button } from "@maple/ui/components/ui/button"
+import { FilterChip } from "@maple/ui/components/ui/filter-chip"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Spinner } from "@maple/ui/components/ui/spinner"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { Panel } from "@maple/ui/components/ui/panel"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { displayError } from "@/lib/error-messages"
 import { DocsLink } from "@/components/common/docs-link"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { type DisplayMarker, type IdleBand, useReplayPlayer } from "./replay-player-context"
 import {
 	GlobeIcon,
@@ -19,7 +26,7 @@ import { formatClock, hostFromUrl, MARKER_STYLES } from "./replay-format"
 import { MarkerLegend } from "./marker-legend"
 import { useReplayKeyboardShortcuts } from "@/hooks/use-replay-keyboard-shortcuts"
 
-const SPEEDS = [0.5, 1, 2, 4, 8] as const
+const SPEED_OPTIONS = [0.5, 1, 2, 4, 8].map((s) => ({ value: String(s), label: `${s}×` }))
 
 /** Host + path for the faux browser address bar; blank URL reads as about:blank. */
 function prettyUrl(url: string | undefined): string {
@@ -68,10 +75,10 @@ export function ReplaySurface({
 	useReplayKeyboardShortcuts()
 
 	return (
-		<figure
+		<Panel
 			ref={figureRef}
 			className={cn(
-				"m-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm",
+				"block shadow-sm",
 				docked && "rounded-b-none shadow-none",
 				isFullscreen && "flex h-screen w-screen flex-col rounded-none border-0 bg-black",
 			)}
@@ -170,7 +177,7 @@ export function ReplaySurface({
 					)}
 				</>
 			)}
-		</figure>
+		</Panel>
 	)
 }
 
@@ -189,18 +196,18 @@ export function ReplayTransport({ docked = false }: { docked?: boolean }) {
 	if (status === "unrecorded") return null
 	if (docked) {
 		return (
-			<div className="overflow-hidden rounded-b-xl border border-t-0 border-border bg-card">
+			<Panel className="rounded-t-none border-t-0">
 				<ReplayControls detached />
-			</div>
+			</Panel>
 		)
 	}
 	return (
-		<div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+		<Panel className="shadow-sm">
 			<ReplayControls detached />
 			<div className="flex items-center justify-between gap-3 border-t border-border bg-muted/20 px-3 py-1.5">
 				<MarkerLegend />
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -235,22 +242,23 @@ function ReplayControls({ detached = false }: { detached?: boolean }) {
 			)}
 		>
 			<div className="flex items-center gap-3 sm:contents">
-				<button
-					type="button"
+				<IconButton
 					onClick={togglePlay}
-					aria-label={finished ? "Replay" : isPlaying ? "Pause" : "Play"}
+					label={finished ? "Replay" : isPlaying ? "Pause" : "Play"}
+					shortcut="Space"
 					aria-keyshortcuts="Space"
-					title={`${finished ? "Replay" : isPlaying ? "Pause" : "Play"} (Space)`}
-					className="relative grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-transform hover:scale-105 active:scale-95 pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11"
+					variant="default"
+					size="icon"
+					className="rounded-full before:rounded-full"
 				>
 					{finished ? (
-						<ArrowPathIcon className="size-4" />
+						<ArrowPathIcon />
 					) : isPlaying ? (
-						<MediaPauseIcon className="size-4" />
+						<MediaPauseIcon />
 					) : (
-						<MediaPlayIcon className="size-4 translate-x-px" />
+						<MediaPlayIcon className="translate-x-px" />
 					)}
-				</button>
+				</IconButton>
 
 				<Scrubber
 					currentMs={displayCurrentMs}
@@ -268,50 +276,40 @@ function ReplayControls({ detached = false }: { detached?: boolean }) {
 			</div>
 
 			<div className="flex items-center gap-2 sm:contents">
-				<div className="flex shrink-0 items-center rounded-md bg-muted p-0.5">
-					{SPEEDS.map((s) => (
-						<button
-							key={s}
-							type="button"
-							onClick={() => changeSpeed(s)}
-							className={cn(
-								// Grouped control: expand the touch target vertically only
-								// (min-h) so adjacent segments' hit areas don't overlap.
-								"relative rounded px-1.5 py-0.5 text-xs font-medium tabular-nums transition-colors pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11",
-								speed === s
-									? "bg-background text-foreground shadow-sm"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-						>
-							{s}×
-						</button>
-					))}
-				</div>
+				<SegmentedSelect
+					size="sm"
+					aria-label="Playback speed"
+					className="shrink-0"
+					options={SPEED_OPTIONS}
+					value={String(speed)}
+					onChange={(value) => changeSpeed(Number(value))}
+				/>
 
-				<button
-					type="button"
-					onClick={toggleSkipInactive}
-					aria-pressed={skipInactive}
-					title={skipInactive ? "Idle gaps skipped during playback" : "Skip idle gaps"}
-					className={cn(
-						"relative shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11",
-						skipInactive
-							? "bg-primary/10 text-primary"
-							: "text-muted-foreground hover:bg-muted hover:text-foreground",
-					)}
-				>
-					Skip idle
-				</button>
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<FilterChip
+								size="xs"
+								pressed={skipInactive}
+								onPressedChange={() => toggleSkipInactive()}
+							>
+								Skip idle
+							</FilterChip>
+						}
+					/>
+					<TooltipContent>
+						{skipInactive ? "Idle gaps skipped during playback" : "Skip idle gaps"}
+					</TooltipContent>
+				</Tooltip>
 
-				<button
-					type="button"
+				<IconButton
 					onClick={toggleFullscreen}
-					aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-					title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-					className="relative grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground max-sm:ml-auto pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11"
+					label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+					size="icon"
+					className="text-muted-foreground hover:text-foreground max-sm:ml-auto"
 				>
-					{isFullscreen ? <MinimizeIcon className="size-4" /> : <MaximizeIcon className="size-4" />}
-				</button>
+					{isFullscreen ? <MinimizeIcon /> : <MaximizeIcon />}
+				</IconButton>
 			</div>
 		</div>
 	)
@@ -379,46 +377,11 @@ function Scrubber({
 			{/* Track */}
 			<div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted">
 				{/* Idle bands — greyed/hatched, under the progress fill */}
-				{totalMs > 0 &&
-					idleBands.map((band, i) => {
-						const leftPct = Math.max(0, Math.min(100, (band.start / totalMs) * 100))
-						const widthPct = Math.max(
-							0,
-							Math.min(100 - leftPct, ((band.end - band.start) / totalMs) * 100),
-						)
-						return (
-							<span
-								key={`idle-${band.start}-${i}`}
-								className="absolute inset-y-0 bg-foreground/25"
-								style={{
-									left: `${leftPct}%`,
-									width: `${widthPct}%`,
-									minWidth: 3,
-									backgroundImage:
-										"repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)",
-								}}
-								title="Idle"
-							/>
-						)
-					})}
+				<ScrubberIdleBands idleBands={idleBands} totalMs={totalMs} />
 				<div className="relative h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
 			</div>
 			{/* Action markers */}
-			{totalMs > 0 &&
-				markers.map((m, i) => {
-					const markerPct = Math.min(100, Math.max(0, (m.ms / totalMs) * 100))
-					return (
-						<span
-							key={`${m.kind}-${m.ms}-${i}`}
-							className={cn(
-								"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
-								MARKER_STYLES[m.kind],
-							)}
-							style={{ left: `${markerPct}%` }}
-							title={m.kind}
-						/>
-					)
-				})}
+			<ScrubberMarkers markers={markers} totalMs={totalMs} />
 			{/* Thumb — hover-revealed on desktop, always shown on touch (no hover). */}
 			<div
 				className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100"
@@ -453,7 +416,7 @@ function HoverTimeBubble({
 	const left = Math.min(Math.max(hover.clientX, EDGE_MARGIN), window.innerWidth - EDGE_MARGIN)
 	return createPortal(
 		<div
-			className="pointer-events-none fixed z-55 -translate-x-1/2 -translate-y-full rounded bg-popover px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-popover-foreground shadow-sm ring-1 ring-border"
+			className="pointer-events-none fixed z-55 -translate-x-1/2 -translate-y-full rounded bg-popover px-1.5 py-0.5 font-mono text-3xs tabular-nums text-popover-foreground shadow-sm ring-1 ring-border"
 			style={{ left, top: rect.top - 8 }}
 		>
 			{formatClock(hover.ms)}
@@ -489,7 +452,7 @@ function PlayerError({ error, onRetry }: { error: unknown; onRetry: () => void }
 				role="alert"
 				aria-live="polite"
 			>
-				<div className="grid size-11 place-items-center rounded-full bg-destructive/10 text-destructive">
+				<div className={cn("grid size-11 place-items-center rounded-full", TONE_SOFT.crit)}>
 					<EyeIcon className="size-5" />
 				</div>
 				<div className="space-y-1">
@@ -511,14 +474,74 @@ function PlayerMessage({ children, spinner }: { children: React.ReactNode; spinn
 		<div className="flex aspect-video w-full items-center justify-center p-8">
 			<div className="flex max-w-sm flex-col items-center gap-3 text-center">
 				<div className="grid size-11 place-items-center rounded-full bg-muted text-muted-foreground">
-					{spinner ? (
-						<ArrowPathIcon className="size-5 animate-spin" />
-					) : (
-						<EyeIcon className="size-5" />
-					)}
+					{spinner ? <Spinner className="size-5" /> : <EyeIcon className="size-5" />}
 				</div>
 				<p className="text-sm leading-relaxed text-muted-foreground">{children}</p>
 			</div>
 		</div>
 	)
 }
+
+// Memoized on their inputs only: the playhead moves every frame, these don't.
+const ScrubberIdleBands = React.memo(function ScrubberIdleBands({
+	idleBands,
+	totalMs,
+}: {
+	idleBands: ReadonlyArray<IdleBand>
+	totalMs: number
+}) {
+	if (totalMs <= 0) return null
+	return (
+		<>
+			{idleBands.map((band, i) => {
+				const leftPct = Math.max(0, Math.min(100, (band.start / totalMs) * 100))
+				const widthPct = Math.max(
+					0,
+					Math.min(100 - leftPct, ((band.end - band.start) / totalMs) * 100),
+				)
+				return (
+					<span
+						key={`idle-${band.start}-${i}`}
+						className="absolute inset-y-0 bg-foreground/25"
+						style={{
+							left: `${leftPct}%`,
+							width: `${widthPct}%`,
+							minWidth: 3,
+							backgroundImage:
+								"repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)",
+						}}
+						title="Idle"
+					/>
+				)
+			})}
+		</>
+	)
+})
+
+const ScrubberMarkers = React.memo(function ScrubberMarkers({
+	markers,
+	totalMs,
+}: {
+	markers: ReadonlyArray<DisplayMarker>
+	totalMs: number
+}) {
+	if (totalMs <= 0) return null
+	return (
+		<>
+			{markers.map((m, i) => {
+				const markerPct = Math.min(100, Math.max(0, (m.ms / totalMs) * 100))
+				return (
+					<span
+						key={`${m.kind}-${m.ms}-${i}`}
+						className={cn(
+							"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
+							MARKER_STYLES[m.kind],
+						)}
+						style={{ left: `${markerPct}%` }}
+						title={m.kind}
+					/>
+				)
+			})}
+		</>
+	)
+})

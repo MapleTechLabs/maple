@@ -35,11 +35,10 @@ export interface ThresholdRulesOptions {
  * Used when a threshold carries no colour, or when one cannot reach the canvas.
  *
  * `--destructive` is what the Recharts predecessor fell back to, and it is the
- * token that follows the theme; the literal is only the value it resolves to
- * when there is no document to read (SSR, tests) or the token is unset.
+ * token that follows the theme; `TOKEN_FALLBACK` supplies the literal when there
+ * is no document to read (SSR, tests) or the token is unset.
  */
 const DEFAULT_THRESHOLD_TOKEN = "--destructive"
-const DEFAULT_THRESHOLD_COLOR = "#ef4444"
 const THRESHOLD_STROKE_WIDTH = 1.5
 const THRESHOLD_LABEL_FONT_SIZE = 10
 /** Keeps the label off the right edge and just above its own rule. */
@@ -61,7 +60,7 @@ const THRESHOLD_LABEL_DY = -6
  * and falls back.
  */
 export function canvasSafeThresholdColor(color: string | undefined): string {
-	const fallback = resolvePlotColor(DEFAULT_THRESHOLD_TOKEN, DEFAULT_THRESHOLD_COLOR)
+	const fallback = resolvePlotColor(DEFAULT_THRESHOLD_TOKEN)
 	const validated = validateCssColor(color)
 	if (validated == null) return fallback
 	const resolved = resolvePlotColor(validated, fallback)

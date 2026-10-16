@@ -1,3 +1,4 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { QUICK_SELECT_OPTIONS, relativeToAbsolute } from "@/lib/time-utils"
 
 interface QuickSelectGridProps {
@@ -7,9 +8,7 @@ interface QuickSelectGridProps {
 export function QuickSelectGrid({ onSelect }: QuickSelectGridProps) {
 	return (
 		<div className="space-y-2">
-			<div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/80">
-				Quick select
-			</div>
+			<Eyebrow as="div">Quick select</Eyebrow>
 			<div className="grid grid-cols-4 gap-1.5">
 				{QUICK_SELECT_OPTIONS.map((option) => (
 					<button
@@ -21,7 +20,7 @@ export function QuickSelectGrid({ onSelect }: QuickSelectGridProps) {
 								onSelect(range, option.value, option.label)
 							}
 						}}
-						className="flex h-7 items-center justify-center rounded-md border border-border/60 bg-background/30 font-mono text-[11px] tracking-wide text-foreground/90 transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						className="flex h-7 items-center justify-center rounded-md border border-border/60 bg-background/30 font-mono text-2xs tracking-wide text-foreground/90 transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
 						{option.label}
 					</button>

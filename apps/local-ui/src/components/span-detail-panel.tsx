@@ -6,17 +6,24 @@
 import { useState } from "react"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
-import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
-import { XmarkIcon, ClockIcon, CircleInfoIcon, CodeIcon } from "@maple/ui/components/icons"
-import { CopyableValue, AttributesSection, ResourceAttributesSection } from "@maple/ui/components/attributes"
+import { XmarkIcon, ClockIcon, CircleInfoIcon, FileIcon } from "@maple/ui/components/icons"
+import {
+	AttributesSection,
+	CopyableValue,
+	ResourceAttributesSection,
+	SelectableValue,
+} from "@maple/ui/components/attributes"
+import { ServiceDot } from "@maple/ui/components/service-dot"
+import { SpanPositionBar } from "@maple/ui/components/traces/span-position-bar"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { getCacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
-import { cn } from "@maple/ui/lib/utils"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
 import type { SpanNode } from "@maple/ui/lib/types"
 import { useLocalSpanDetail } from "../hooks/use-local-span-detail"
@@ -25,19 +32,35 @@ import { ErrorSection } from "@maple/ui/components/error-section"
 import { logKey, type LocalLog } from "../lib/log-shape"
 import { formatLocalDateTime, formatLocalTimestamp, formatUtcTitle } from "../lib/time"
 import { LogDetailSheet } from "./log-detail-sheet"
+import { failedWithoutData } from "../lib/query"
 
 /** Matches the query limit in `useLocalSpanLogs`; a full page means "at least". */
 const LOG_LIMIT = 100
 
+/**
+ * A deep-linked panel opens with nothing focused, so the trace view's Escape handler
+ * would never hear the key: take focus then. A click keeps focus where it was (the
+ * timeline's own keyboard navigation).
+ */
+const focusOnMount = (node: HTMLElement | null) => {
+	if (node && (document.activeElement === null || document.activeElement === document.body)) {
+		node.focus({ preventScroll: true })
+	}
+}
+
 interface SpanDetailPanelProps {
 	span: SpanNode
+	/** The trace's start and length, for the span's position bar. */
+	traceStartTime: string
+	totalDurationMs: number
 	onClose: () => void
 }
 
-export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
+export function SpanDetailPanel({ span, traceStartTime, totalDurationMs, onClose }: SpanDetailPanelProps) {
 	const cacheInfo = getCacheInfo(span.spanAttributes)
 	const statusStyle = getSpanStatusBadgeClass(span.statusCode)
 	const kindLabel = getSpanKindLabel(span.spanKind)
+	const serviceColor = getServiceColor(span.serviceName)
 
 	const logs = useLocalSpanLogs(span.traceId, span.spanId, span.startTime, span.durationMs)
 	const logCount = logs.data?.length ?? null
@@ -51,40 +74,45 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 	)
 
 	return (
-		<aside className="flex h-full w-full shrink-0 flex-col overflow-hidden border-l bg-background sm:w-[28rem]">
-			{/* Header */}
-			<div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
+		<aside
+			ref={focusOnMount}
+			tabIndex={-1}
+			className="flex h-full w-full shrink-0 flex-col overflow-hidden border-l bg-background focus:outline-none sm:w-[28rem]"
+		>
+			{/* Header: the left rail carries the span's service identity color */}
+			<div className="relative flex shrink-0 items-center justify-between border-b px-3 py-2">
+				<span
+					aria-hidden
+					className="absolute inset-y-0 left-0 w-0.5"
+					style={{ backgroundColor: serviceColor }}
+				/>
 				<div className="mr-2 min-w-0 flex-1 overflow-hidden">
-					<CopyableValue value={span.spanName} className="block min-w-0 overflow-hidden">
-						<div className="min-w-0">
-							<HttpSpanLabel
-								spanName={span.spanName}
-								spanAttributes={span.spanAttributes}
-								spanKind={span.spanKind}
-								textClassName="font-semibold text-sm"
-							/>
-						</div>
-					</CopyableValue>
-					<div className="mt-0.5 flex items-center gap-2">
-						<Badge
-							variant="outline"
-							className="font-mono text-[10px]"
-							style={{ color: getServiceColor(span.serviceName) }}
-						>
-							<CopyableValue value={span.serviceName}>{span.serviceName}</CopyableValue>
-						</Badge>
-						<span className="text-[10px] text-muted-foreground">{kindLabel}</span>
+					<SelectableValue
+						value={span.spanName}
+						label="span name"
+						className="flex min-w-0 items-center"
+						textClassName="min-w-0 flex-1"
+					>
+						<HttpSpanLabel
+							spanName={span.spanName}
+							spanAttributes={span.spanAttributes}
+							spanKind={span.spanKind}
+							textClassName="font-semibold text-sm"
+						/>
+					</SelectableValue>
+					<div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+						<ServiceDot serviceName={span.serviceName} size="sm" />
+						<CopyableValue value={span.serviceName} className="min-w-0 truncate">
+							<span className="font-mono text-3xs" style={{ color: serviceColor }}>
+								{span.serviceName}
+							</span>
+						</CopyableValue>
+						<span className="shrink-0 text-3xs text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
-				<Button
-					variant="ghost"
-					size="icon"
-					aria-label="Close span details"
-					onClick={onClose}
-					className="shrink-0"
-				>
-					<XmarkIcon size={16} />
-				</Button>
+				<IconButton size="icon" label="Close span details" onClick={onClose} className="shrink-0">
+					<XmarkIcon />
+				</IconButton>
 			</div>
 
 			{/* Everything under the title scrolls as one, so a tall error card never squeezes the
@@ -100,14 +128,11 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 							</CopyableValue>
 						</span>
 					</div>
-					<Badge variant="outline" className={cn("text-[10px] font-medium", statusStyle)}>
+					<Badge variant="outline" size="xs" className={statusStyle}>
 						{span.statusCode || "Unset"}
 					</Badge>
 					{cacheInfo?.result && (
-						<Badge
-							variant="outline"
-							className={cn("text-[10px] font-medium", cacheResultStyles[cacheInfo.result])}
-						>
+						<Badge variant="outline" size="xs" className={cacheResultStyles[cacheInfo.result]}>
 							{cacheInfo.result === "hit" ? "HIT" : "MISS"}
 						</Badge>
 					)}
@@ -135,9 +160,9 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 							<CircleInfoIcon size={14} /> Details
 						</TabsTrigger>
 						<TabsTrigger value="logs">
-							<CodeIcon size={14} /> Logs
+							<FileIcon size={14} /> Logs
 							{logCount !== null && logCount > 0 && (
-								<Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
+								<Badge variant="secondary" size="xs" className="ml-1">
 									{logCount >= LOG_LIMIT ? `${LOG_LIMIT}+` : logCount}
 								</Badge>
 							)}
@@ -148,59 +173,56 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 						<div className="space-y-3 p-3">
 							<div className="space-y-1">
 								<h4 className="text-xs font-medium text-muted-foreground">Timing</h4>
-								<div className="space-y-1 rounded-md border p-2 text-xs">
-									<div className="flex justify-between">
-										<span className="text-muted-foreground">Start Time</span>
-										<span className="font-mono" title={formatUtcTitle(span.startTime)}>
+								<SpanPositionBar
+									span={span}
+									traceStartTime={traceStartTime}
+									totalDurationMs={totalDurationMs}
+									color={serviceColor}
+								/>
+								<KeyValueList className="gap-1 rounded-md border p-2">
+									<KeyValue label="Start time" mono>
+										<span title={formatUtcTitle(span.startTime)}>
 											<CopyableValue value={span.startTime}>
 												{formatLocalDateTime(span.startTime)}
 											</CopyableValue>
 										</span>
-									</div>
-								</div>
+									</KeyValue>
+								</KeyValueList>
 							</div>
 
 							<div className="space-y-1">
 								<h4 className="text-xs font-medium text-muted-foreground">Identifiers</h4>
-								<div className="space-y-1 rounded-md border p-2 text-xs">
-									<div className="flex justify-between gap-3">
-										<span className="text-muted-foreground">Span ID</span>
-										<span className="truncate font-mono">
-											<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
-										</span>
-									</div>
-									<div className="flex justify-between gap-3">
-										<span className="text-muted-foreground">Trace ID</span>
-										<span className="truncate font-mono">
-											<CopyableValue value={span.traceId}>{span.traceId}</CopyableValue>
-										</span>
-									</div>
+								<KeyValueList className="gap-1 rounded-md border p-2">
+									<KeyValue label="Span ID" mono>
+										<CopyableValue value={span.spanId}>{span.spanId}</CopyableValue>
+									</KeyValue>
+									<KeyValue label="Trace ID" mono>
+										<CopyableValue value={span.traceId}>{span.traceId}</CopyableValue>
+									</KeyValue>
 									{span.parentSpanId && (
-										<div className="flex justify-between gap-3">
-											<span className="text-muted-foreground">Parent Span ID</span>
-											<span className="truncate font-mono">
-												<CopyableValue value={span.parentSpanId}>
-													{span.parentSpanId}
-												</CopyableValue>
-											</span>
-										</div>
+										<KeyValue label="Parent span ID" mono>
+											<CopyableValue value={span.parentSpanId}>
+												{span.parentSpanId}
+											</CopyableValue>
+										</KeyValue>
 									)}
-								</div>
+								</KeyValueList>
 							</div>
 
 							{span.isMissing ? (
 								<AttributesSection
 									attributes={span.spanAttributes ?? {}}
-									title="Span Attributes"
+									title="Span attributes"
 									groupByNamespace
 								/>
 							) : detail.isPending ? (
-								<div className="space-y-2">
-									<Skeleton className="h-4 w-32" />
-									<Skeleton className="h-24 w-full" />
-									<Skeleton className="h-4 w-32" />
-									<Skeleton className="h-24 w-full" />
-								</div>
+								<SkeletonList
+									rows={4}
+									gap="2"
+									renderRow={(i) => (
+										<Skeleton className={i % 2 === 0 ? "h-4 w-32" : "h-24 w-full"} />
+									)}
+								/>
 							) : (
 								<>
 									{detail.isError && (
@@ -211,7 +233,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 									)}
 									<AttributesSection
 										attributes={detail.data?.spanAttributes ?? span.spanAttributes ?? {}}
-										title="Span Attributes"
+										title="Span attributes"
 										groupByNamespace
 									/>
 									<ResourceAttributesSection
@@ -226,7 +248,11 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 					</TabsContent>
 
 					<TabsContent value="logs" className="mt-0">
-						<SpanLogs logs={logs.data ?? []} isPending={logs.isPending} isError={logs.isError} />
+						<SpanLogs
+							logs={logs.data ?? []}
+							isPending={logs.isPending}
+							isError={failedWithoutData(logs)}
+						/>
 					</TabsContent>
 				</Tabs>
 			</ScrollArea>
@@ -248,14 +274,17 @@ function SpanLogs({
 
 	if (isPending) {
 		return (
-			<div className="space-y-2 p-2">
-				{Array.from({ length: 3 }).map((_, i) => (
-					<div key={i} className="space-y-1">
+			<SkeletonList
+				rows={3}
+				gap="2"
+				className="p-2"
+				renderRow={() => (
+					<div className="space-y-1">
 						<Skeleton className="h-3 w-24" />
 						<Skeleton className="h-4 w-full" />
 					</div>
-				))}
-			</div>
+				)}
+			/>
 		)
 	}
 

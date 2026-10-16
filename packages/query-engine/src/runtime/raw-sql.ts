@@ -5,9 +5,10 @@ import {
 	MAX_RAW_SQL_RESULT_ROWS,
 	RawSqlValidationError,
 } from "@maple/domain/http"
-import { rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
+import { ORG_FILTER_MACRO_RE, rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
 import type { QueryProfileName } from "../profiles"
-import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-clickhouse/sql"
+import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-orm/sql"
+import type { OrgId } from "@maple/domain"
 
 // User-authored ClickHouse SQL: validation, macro expansion, and execution.
 //
@@ -24,11 +25,13 @@ export type { RawSqlWorkload }
 
 export interface PrepareRawSqlInput {
 	readonly sql: string
-	readonly orgId: string
+	readonly orgId: OrgId
 	readonly startTime: string
 	readonly endTime: string
 	readonly granularitySeconds: number
 	readonly workload: RawSqlWorkload
+	/** `$__timeGroup` keys every row at the range start: one bucket per group. Alert evaluation sets it. */
+	readonly wholeRange?: boolean
 }
 
 export interface PreparedRawSql {
@@ -54,6 +57,18 @@ export interface RawSqlWarehouse<TTenant, E> {
 		sql: string,
 		options: { readonly profile: QueryProfileName; readonly context: string },
 	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, E>
+}
+
+/**
+ * `$__timeGroup` on a grid of range-wide buckets anchored at the range start, so every
+ * row in [start, end) groups at start and a predicate on the macro still reads each
+ * row. Arithmetic, not `toStartOfInterval`'s origin argument, which 24.8 lacks.
+ */
+const rangeAlignedGroup = (column: string, startLiteral: string, endLiteral: string): string => {
+	const start = `toInt64(toUnixTimestamp(${startLiteral}))`
+	const width = `greatest(toInt64(toUnixTimestamp(${endLiteral})) - ${start}, 1)`
+	const offset = `toInt64(floor((toInt64(toUnixTimestamp(${column})) - ${start}) / ${width}))`
+	return `toDateTime(${start} + ${offset} * ${width})`
 }
 
 const fail = (code: RawSqlValidationError["code"], message: string) =>
@@ -84,17 +99,26 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// `escapeClickHouseString` escapes quotes and backslashes but not `$`. With a
 	// string replacement, `$'` would splice the rest of the statement into the
 	// literal — quotes and all.
-	sql = sql.replaceAll("$__orgFilter", () => `OrgId = ${orgLiteral}`)
+	// Parenthesised so the predicate is one operand wherever it lands; `rawSqlIssue`
+	// already rejected an org filter that sits beside a top-level OR.
+	sql = sql.replace(ORG_FILTER_MACRO_RE, (_match, alias: string | undefined) =>
+		alias === undefined ? `(OrgId = ${orgLiteral})` : `(${alias.trim()}.OrgId = ${orgLiteral})`,
+	)
 	sql = sql.replaceAll("$__startTime", () => startLiteral)
 	sql = sql.replaceAll("$__endTime", () => endLiteral)
 	sql = sql.replaceAll("$__interval_s", () => String(granularity))
 
+	// An alert window is half-open; interactive ranges keep their inclusive end.
+	const endOperator = input.wholeRange ? "<" : "<="
 	// Materialized before the loop mutates `sql`: the matches are positions in the
 	// text as it was when `matchAll` was called.
 	const timeFilterMatches = [...sql.matchAll(/\$__timeFilter\(([^)]*)\)/g)]
 	for (const match of timeFilterMatches) {
 		const column = match[1].trim()
-		sql = sql.replace(match[0], () => `${column} >= ${startLiteral} AND ${column} <= ${endLiteral}`)
+		sql = sql.replace(
+			match[0],
+			() => `${column} >= ${startLiteral} AND ${column} ${endOperator} ${endLiteral}`,
+		)
 	}
 
 	// Bucketing macro. An alert query that selects `$__timeGroup(Timestamp) AS bucket`
@@ -104,7 +128,11 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	const timeGroupMatches = [...sql.matchAll(/\$__timeGroup\(([^)]*)\)/g)]
 	for (const match of timeGroupMatches) {
 		const column = match[1].trim()
-		sql = sql.replace(match[0], () => `toStartOfInterval(${column}, INTERVAL ${granularity} SECOND)`)
+		sql = sql.replace(match[0], () =>
+			input.wholeRange
+				? rangeAlignedGroup(column, startLiteral, endLiteral)
+				: `toStartOfInterval(${column}, INTERVAL ${granularity} SECOND)`,
+		)
 	}
 
 	// A trailing FORMAT is dropped rather than rejected: the wire format belongs

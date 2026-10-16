@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2, PublicIdPrefixes, encodePublicId } from "@maple/domain/http/v2"
 import type { PublicIdPrefix, V2SetupAudit, V2SetupAuditAffectedEntity } from "@maple/domain/http/v2"

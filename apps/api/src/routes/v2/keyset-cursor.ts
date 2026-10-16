@@ -1,6 +1,7 @@
-import { Effect, Encoding, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
+import { Base64Url } from "effect/encoding"
 import { V2CursorInvalid } from "@maple/domain/http/v2"
-import { WarehouseDateTime } from "@maple/query-engine"
+import { parseUtc } from "@maple/query-engine"
 
 /**
  * Opaque keyset cursors for the v2 list endpoints backed by warehouse queries.
@@ -13,13 +14,18 @@ import { WarehouseDateTime } from "@maple/query-engine"
  * previous page already showed.
  */
 export const encodeKeysetCursor = (prefix: string, parts: ReadonlyArray<string>) =>
-	`${prefix}_${Encoding.encodeBase64Url(JSON.stringify(parts))}`
+	`${prefix}_${Base64Url.encode(JSON.stringify(parts))}`
+
+const WAREHOUSE_CURSOR_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/u
+
+const decodeCursorParts = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Array(Schema.String)))
 
 /**
  * Decode a keyset cursor into its parts.
  *
  * Element 0 is always the timestamp the keyset walks back from, and it is
- * checked against `WarehouseDateTime` here rather than trusted. It reaches the
+ * checked here rather than trusted: the warehouse shape, with or without the
+ * fraction a `DateTime64` row carries. It reaches the
  * query builder as a `DateTime` comparison, which encodes it through the
  * column's codec while the query is still being *built* — before `CH.compile`,
  * so outside the Effect that would have turned the failure into a value. A
@@ -30,21 +36,13 @@ export const decodeKeysetCursor = (value: string | undefined, prefix: string, le
 	const invalid = Effect.fail(V2CursorInvalid.make(undefined, { param: "cursor" }))
 	if (value === undefined) return Effect.succeed<ReadonlyArray<string> | undefined>(undefined)
 	if (!value.startsWith(`${prefix}_`)) return invalid
-	const decoded = Encoding.decodeBase64UrlString(value.slice(prefix.length + 1))
+	const decoded = Base64Url.decodeString(value.slice(prefix.length + 1))
 	if (Result.isFailure(decoded)) return invalid
-	const parsed = Result.try({
-		try: () => JSON.parse(decoded.success) as unknown,
-		catch: () => undefined,
-	})
+	const parsed = decodeCursorParts(decoded.success)
 	if (Result.isFailure(parsed)) return invalid
 	const parts = parsed.success
-	if (
-		!Array.isArray(parts) ||
-		parts.length !== length ||
-		!parts.every((part) => typeof part === "string")
-	) {
-		return invalid
-	}
-	if (Result.isFailure(Schema.decodeUnknownResult(WarehouseDateTime)(parts[0]))) return invalid
-	return Effect.succeed(parts as ReadonlyArray<string>)
+	if (parts.length !== length) return invalid
+	const at = parts[0]
+	if (at === undefined || !WAREHOUSE_CURSOR_TIME.test(at) || Option.isNone(parseUtc(at))) return invalid
+	return Effect.succeed<ReadonlyArray<string> | undefined>(parts)
 }

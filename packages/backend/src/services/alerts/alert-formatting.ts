@@ -128,7 +128,7 @@ export const formatSignalMetric = (value: number | null, display: SignalDisplay)
 			Match.value(display.unit).pipe(
 				Match.when("ratio", () => `${round(metric * 100, 1)}%`),
 				Match.when("ms", () => `${grouped(metric)}ms`),
-				Match.when("apdex", () => `${round(metric, 3)}`),
+				Match.when("apdex", () => round(metric, 3)),
 				Match.when("rpm", () => `${grouped(metric)} rpm`),
 				Match.whenOr("count", "plain", () => grouped(metric)),
 				Match.exhaustive,
@@ -180,8 +180,11 @@ export const formatThresholdSummary = (context: ThresholdContext): string => {
 		: `${formatComparator(context.comparator)} ${formatSignalMetric(context.threshold, display)}`
 }
 
+/** A breach without a value is a rule alerting on an empty window. */
 export const formatObservedSummary = (context: ObservedContext): string =>
-	`${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
+	context.value === null
+		? `No data (threshold ${formatThresholdSummary(context)})`
+		: `${formatSignalMetric(context.value, signalDisplayOf(context))} ${formatThresholdSummary(context)}`
 
 export const comparatorBreachPhrase = (context: ThresholdContext): string => {
 	const display = signalDisplayOf(context)

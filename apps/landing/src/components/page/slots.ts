@@ -17,6 +17,7 @@
 import type { ArtifactId, SectionId } from "../../lib/page-registry"
 import LiveAlertFiring from "../live/LiveAlertFiring.astro"
 import LiveBrowserSessions from "../live/LiveBrowserSessions.astro"
+import LiveFunnel from "../live/LiveFunnel.astro"
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro"
 import LiveLogStream from "../live/LiveLogStream.astro"
 import LiveMcpTranscript from "../live/LiveMcpTranscript.astro"
@@ -27,6 +28,7 @@ import K8sConsole from "./sections/K8sConsole.astro"
 import K8sCorrelation from "./sections/K8sCorrelation.astro"
 import K8sInstall from "./sections/K8sInstall.astro"
 import K8sViews from "./sections/K8sViews.astro"
+import ProductEventsSources from "./sections/ProductEventsSources.astro"
 
 /**
  * `satisfies`, not an annotation: it checks that every id has an entry while
@@ -43,6 +45,7 @@ export const ARTIFACTS = {
 	"mcp-transcript": LiveMcpTranscript,
 	"k8s-heatmap": LiveK8sHeatmap,
 	"alert-firing": LiveAlertFiring,
+	funnel: LiveFunnel,
 } satisfies Record<ArtifactId, unknown>
 
 export const EXTRA_SECTIONS = {
@@ -50,4 +53,5 @@ export const EXTRA_SECTIONS = {
 	"k8s-views": K8sViews,
 	"k8s-correlation": K8sCorrelation,
 	"k8s-install": K8sInstall,
+	"product-events-sources": ProductEventsSources,
 } satisfies Record<SectionId, unknown>

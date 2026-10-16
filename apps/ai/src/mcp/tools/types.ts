@@ -117,13 +117,13 @@ export interface McpToolHints {
  * Who a tool is for.
  *
  * `public` tools are listed on and callable from every surface, the MCP transport
- * included. `internal` tools exist for Maple's own agents only — the chat agent
- * and the investigation pass — and the public transport neither lists nor
- * executes them. Declared at registration, so a tool cannot reach a third-party
- * MCP client by the mere fact of being in the registry: until this existed,
- * registering was publishing, and `sandbox_exec` shipped as a public tool.
+ * included. `agent` tools exist for Maple's own agents, the chat-platform bot included,
+ * and the public transport neither lists nor executes them. `internal` tools are
+ * narrower still: the in-product agents only. Declared at registration, so a tool
+ * cannot reach a third-party MCP client by the mere fact of being in the registry:
+ * until this existed, registering was publishing, and `sandbox_exec` shipped as a public tool.
  */
-export type McpToolAudience = "public" | "internal"
+export type McpToolAudience = "public" | "agent" | "internal"
 
 /**
  * What a call is doing, in words a chat channel reads while it runs: `Running a query`, never
@@ -133,21 +133,33 @@ export type McpToolAudience = "public" | "internal"
 export type McpToolPhrases = readonly [string, ...Array<string>]
 
 /**
- * The surfaces an `internal` tool is offered on: Maple's own agents, answering someone who is
- * already inside the product.
+ * The surfaces an `agent` tool is offered on: every Maple agent, the bot included.
  *
- * `bot` is deliberately absent. The chat-platform bot runs the same engine as `chat`, but its reply
- * lands in a channel that anyone who can post there reads, under an org-level actor with no Maple
- * user behind it. `sandbox_exec` alone is code execution against the org's repository; handing that
- * to a channel is not the same decision as handing it to a signed-in user's chat panel. The bot
- * therefore sees exactly the tools the public MCP transport sees — its mutations included, since
- * those are proposed and approved rather than executed, which code execution is not.
+ * The bot answers into a channel anyone in it can read, under an org-level actor. The sandbox
+ * tools are fit for that: the checkout is the same source `read_source_file` already serves the
+ * bot, and `sandbox_exec` runs unprivileged, read-only, with no network and an empty environment,
+ * so its output is the repository and what can be computed from it.
+ */
+const AGENT_SURFACES: ReadonlySet<McpToolSurface> = new Set<McpToolSurface>(["chat", "workflow", "bot"])
+
+/**
+ * The surfaces an `internal` tool is offered on: Maple's own agents, answering someone who is
+ * already inside the product. `bot` is absent: these act on the org's behalf in ways a channel
+ * post was never meant to reach (the pull request reviewer's tools).
  */
 const INTERNAL_SURFACES: ReadonlySet<McpToolSurface> = new Set<McpToolSurface>(["chat", "workflow"])
 
 /** Whether a surface may see and call a tool of this audience. */
-export const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurface): boolean =>
-	audience === "public" || INTERNAL_SURFACES.has(surface)
+export const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurface): boolean => {
+	switch (audience) {
+		case "public":
+			return true
+		case "agent":
+			return AGENT_SURFACES.has(surface)
+		case "internal":
+			return INTERNAL_SURFACES.has(surface)
+	}
+}
 
 /**
  * A tool, declared as data: typed input, typed output, how the output reads to a model, and what

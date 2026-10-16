@@ -35,7 +35,7 @@ import {
 	type ChartPoint,
 	type ChartUnit,
 } from "@maple/widgets/chart/static-chart"
-import { Array as Arr, Duration, Effect, Option, Order, Result, Schema } from "effect"
+import { Array as Arr, DateTime, Duration, Effect, Option, Order, Result, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -118,7 +118,7 @@ export const chartWindow = (options: {
  * `output_format_json_quote_64bit_integers=0` sends quoted numbers.
  */
 const CheckRow = Schema.Struct({
-	timestamp: Schema.String,
+	timestamp: Schema.DateTimeUtc,
 	observedValue: Schema.NullOr(CHNumber),
 })
 const decodeCheckRow = Schema.decodeUnknownResult(CheckRow)
@@ -139,16 +139,11 @@ const toChartPoint = (row: unknown): Result.Result<ChartPoint, string> => {
 	// that as 0 would draw a recovery that never happened.
 	if (observedValue === null) return Result.fail("no observed value")
 
-	const at = Date.parse(timestamp)
-	return Number.isNaN(at) ? Result.fail("unparseable timestamp") : Result.succeed([at, observedValue])
+	return Result.succeed([DateTime.toEpochMillis(timestamp), observedValue])
 }
 
 /** The query pages newest-first for the checks table; a chart reads left to right. */
 const byTimestamp = Order.mapInput(Order.Number, (point: ChartPoint) => point[0])
-
-/** `alert_checks` is DateTime64(3) on the wire: "YYYY-MM-DD HH:MM:SS.mmm" UTC. */
-const toWarehouseDateTime = (epochMs: number): string =>
-	new Date(epochMs).toISOString().replace("T", " ").replace("Z", "")
 
 /**
  * The one warehouse method this module calls.
@@ -193,8 +188,8 @@ export const loadChartSeries = (
 				...(options.groupKey != null && options.groupKey !== ""
 					? { groupKey: options.groupKey }
 					: undefined),
-				since: toWarehouseDateTime(options.fromMs),
-				until: toWarehouseDateTime(options.toMs),
+				since: DateTime.makeUnsafe(options.fromMs),
+				until: DateTime.makeUnsafe(options.toMs),
 			}),
 			{
 				orgId: options.orgId,
@@ -202,8 +197,8 @@ export const loadChartSeries = (
 				...(options.groupKey != null && options.groupKey !== ""
 					? { groupKey: options.groupKey }
 					: undefined),
-				since: toWarehouseDateTime(options.fromMs),
-				until: toWarehouseDateTime(options.toMs),
+				since: DateTime.makeUnsafe(options.fromMs),
+				until: DateTime.makeUnsafe(options.toMs),
 			},
 		)
 

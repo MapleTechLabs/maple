@@ -8,6 +8,11 @@ import { formatDuration, formatNumber } from "@maple/domain/format"
 
 export { formatDuration, formatNumber }
 
+// A leaf module so time-format can use it without an import cycle through this file.
+import { EMPTY_VALUE } from "./empty-value"
+
+export { EMPTY_VALUE }
+
 /**
  * Format a duration for an axis tick, at a precision derived from the tick spacing.
  *
@@ -19,7 +24,7 @@ export { formatDuration, formatNumber }
  * follows the *step*, so a 0.001 ms step still reads "1234μs" rather than "1.234000ms".
  */
 export function formatDurationAtStep(ms: number, stepMs: number): string {
-	if (!Number.isFinite(ms)) return "—"
+	if (!Number.isFinite(ms)) return EMPTY_VALUE
 	const step = Number.isFinite(stepMs) && stepMs > 0 ? stepMs : 1
 	// Decimals needed to separate two ticks one step apart. The epsilon absorbs the float noise
 	// in log10(0.001) = -3.0000000000000004, which would otherwise ask for one extra digit.
@@ -42,8 +47,8 @@ export function formatDurationAtStep(ms: number, stepMs: number): string {
 // customer is billed for is quoted in decimal units, and quietly showing
 // "976.6 KB" where an invoice says "1.0 MB" is a support ticket.
 
-const BINARY_UNITS = ["B", "KB", "MB", "GB", "TB"] as const
-const DECIMAL_UNITS = ["B", "KB", "MB", "GB", "TB"] as const
+const BINARY_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
+const DECIMAL_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
 
 /** Binary (1024-based) byte size — memory, disk, page weight. */
 export function formatBytes(bytes: number): string {
@@ -88,8 +93,11 @@ export function formatBytesPerSecond(bytes: number): string {
  * past 10%, which suits gauges and resource bars. Error rates want the opposite
  * (a visible "<0.01%" so a rare failure never reads as zero).
  */
-export function formatPercent(fraction: number): string {
-	if (!Number.isFinite(fraction)) return "—"
+export function formatPercent(fraction: number, options?: { readonly floor?: number }): string {
+	if (!Number.isFinite(fraction)) return EMPTY_VALUE
+	// `floor` (a fraction) renders a non-zero value under it as "<0.1%" instead of "0%".
+	const floor = options?.floor
+	if (floor !== undefined && fraction > 0 && fraction < floor) return `<${+(floor * 100).toFixed(4)}%`
 	const pct = fraction * 100
 	if (pct < 0.05) return "0%"
 	if (pct < 10) return `${pct.toFixed(1)}%`
@@ -98,47 +106,34 @@ export function formatPercent(fraction: number): string {
 
 /** Two-decimal load average. */
 export function formatLoad(load: number): string {
-	if (!Number.isFinite(load)) return "—"
+	if (!Number.isFinite(load)) return EMPTY_VALUE
 	return load.toFixed(2)
 }
 
-/** Coarse uptime: minutes, then hours, then `"3d 4h"`. */
+/** Coarse uptime: `"<1m"`, minutes, hours, `"3d 4h"`, then `"2y 14d"`. */
 export function formatUptime(seconds: number): string {
-	if (!Number.isFinite(seconds) || seconds <= 0) return "—"
+	if (!Number.isFinite(seconds) || seconds <= 0) return EMPTY_VALUE
 	const m = Math.floor(seconds / 60)
+	if (m < 1) return "<1m"
 	if (m < 60) return `${m}m`
 	const h = Math.floor(m / 60)
 	if (h < 24) return `${h}h`
 	const d = Math.floor(h / 24)
-	return `${d}d ${h % 24}h`
+	if (d < 365) return `${d}d ${h % 24}h`
+	return `${Math.floor(d / 365)}y ${d % 365}d`
 }
 
-/**
- * Format a latency value in milliseconds to a human-readable string.
- */
+/** A latency in milliseconds; the duration ladder with a placeholder for missing values. */
 export function formatLatency(ms: number): string {
-	if (ms == null || Number.isNaN(ms)) {
-		return "-"
-	}
-	if (ms < 1) {
-		return `${(ms * 1000).toFixed(0)}μs`
-	}
-	if (ms < 1000) {
-		return `${ms.toFixed(1)}ms`
-	}
-	if (ms < 60_000) {
-		return `${(ms / 1000).toFixed(2)}s`
-	}
-	if (ms < 3_600_000) {
-		return `${(ms / 60_000).toFixed(1)}min`
-	}
-	return `${(ms / 3_600_000).toFixed(1)}h`
+	if (ms == null || Number.isNaN(ms)) return EMPTY_VALUE
+	return formatDuration(ms)
 }
 
 /**
  * Format an error rate (0–1 ratio) as a percentage string.
  */
 export function formatErrorRate(rate: number): string {
+	if (!Number.isFinite(rate)) return EMPTY_VALUE
 	const pct = rate * 100
 	if (pct === 0) {
 		return "0%"
@@ -273,7 +268,21 @@ export function bucketIntervalLabel(seconds: number | undefined): string {
  * Format a throughput value with a rate suffix for chart axes.
  */
 export function formatThroughput(value: number, suffix: string): string {
-	return `${formatNumber(value)}${suffix}`
+	return `${formatRate(value)}${suffix}`
+}
+
+/**
+ * A per-second (or per-anything) rate at reading precision: compacted past 1K, whole above 100,
+ * one decimal above 1, two significant digits below. `formatNumber` keeps three decimals, which
+ * turns a request rate into "12.346".
+ */
+export function formatRate(value: number): string {
+	if (!Number.isFinite(value)) return EMPTY_VALUE
+	const abs = Math.abs(value)
+	if (abs >= 1_000) return formatNumber(value)
+	if (abs >= 100) return Math.round(value).toLocaleString()
+	if (abs >= 1) return value.toLocaleString(undefined, { maximumFractionDigits: 1 })
+	return value.toLocaleString(undefined, { maximumSignificantDigits: 2 })
 }
 
 /** Decimals a percentage may grow to before the number stops being readable. */
@@ -329,3 +338,29 @@ export const formatValueByUnit: (num: number, unit?: string) => string = (num, u
 		Match.when("bytes", () => formatStorageBytes(num)),
 		Match.orElse(() => formatNumber(num)),
 	)
+
+/**
+ * The noun for a count: `pluralize(1, "host")` is "host", `pluralize(3, "host")` is "hosts".
+ * Pass `plural` for irregular nouns (`pluralize(n, "query", "queries")`).
+ */
+export function pluralize(count: number, singular: string, plural: string = `${singular}s`): string {
+	return count === 1 ? singular : plural
+}
+
+/** A count with its noun: `countLabel(3, "host")` is "3 hosts". The number is not compacted. */
+export function countLabel(count: number, singular: string, plural?: string): string {
+	return `${count.toLocaleString()} ${pluralize(count, singular, plural)}`
+}
+
+/**
+ * A per-hour rate in whatever unit reads naturally. "0.02 times per hour" is
+ * technically right and useless; "3 times a week" is the same number said in a
+ * way a reader can picture.
+ */
+export function formatRatePerHour(perHour: number): string {
+	const round = (n: number) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10)
+	if (perHour >= 1) return `${round(perHour)}× an hour`
+	const perDay = perHour * 24
+	if (perDay >= 1) return `${round(perDay)}× a day`
+	return `${round(perDay * 7)}× a week`
+}

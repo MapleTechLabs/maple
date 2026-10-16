@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Redacted } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { make, ClickHouseServerError, ClickHouseLimitError } from "./index"
 
 const enabled = process.env.CLICKHOUSE_HTTP_LIVE === "1"

@@ -308,6 +308,7 @@ struct FixtureAPI: MapleAPI {
 		threshold: Double, window: Int, breaches: Int, healthy: Int
 	) -> AlertRule {
 		AlertRule(
+			alertOnNoData: false,
 			comparator: .gt,
 			consecutiveBreachesRequired: breaches,
 			consecutiveHealthyRequired: healthy,

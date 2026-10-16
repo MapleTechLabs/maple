@@ -6,6 +6,7 @@
 interface BrowserNavigator {
 	readonly userAgent?: string
 	readonly language?: string
+	readonly onLine?: boolean
 }
 
 interface BrowserDocument {

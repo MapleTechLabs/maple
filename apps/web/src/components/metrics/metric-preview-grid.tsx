@@ -1,10 +1,10 @@
 import * as React from "react"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { Button } from "@maple/ui/components/ui/button"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { MetricPreviewCard, type MetricPreviewEntry } from "./metric-preview-card"
 import type { ListMetricsInput, Metric, MetricSparklinePoint } from "@/api/warehouse/metrics"
 import {
@@ -77,13 +77,13 @@ export function MetricPreviewGrid({
 
 	return Result.builder(catalogResult)
 		.onInitial(() => (
-			<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-				{Array.from({ length: 8 }).map((_, i) => (
-					<Skeleton key={i} className="h-32 w-full" />
-				))}
-			</div>
+			<SkeletonList
+				rows={8}
+				rowClassName="h-32"
+				className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+			/>
 		))
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess((response) => {
 			const entries = toEntries(response.data)
 
@@ -117,21 +117,15 @@ export function MetricPreviewGrid({
 						))}
 					</div>
 
-					<div className="flex items-center gap-3 text-sm text-muted-foreground">
-						<span>
-							Showing {Math.min(visiblePages * PAGE_SIZE, entries.length)} of {entries.length}{" "}
-							metrics
-						</span>
-						{hasMore && (
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => setVisiblePages((current) => current + 1)}
-							>
-								Load more
-							</Button>
-						)}
-					</div>
+					<ListFooter
+						shown={Math.min(visiblePages * PAGE_SIZE, entries.length)}
+						total={entries.length}
+						noun="metrics"
+						hasMore={hasMore}
+						onLoadMore={() => setVisiblePages((current) => current + 1)}
+						align="start"
+						className="justify-start p-0 text-sm"
+					/>
 				</div>
 			)
 		})
@@ -154,7 +148,7 @@ function GridPage({
 	endTime: string
 	onOpenMetric: (metric: Metric) => void
 }) {
-	const { pointsByMetric, loading } = usePageSparklines(entries, startTime, endTime)
+	const { pointsByMetric, loading, failedTypes } = usePageSparklines(entries, startTime, endTime)
 
 	return (
 		<>
@@ -164,6 +158,7 @@ function GridPage({
 					entry={entry}
 					points={pointsByMetric.get(`${entry.metricName}::${entry.metricType}`)}
 					loading={loading}
+					failed={failedTypes.has(entry.metricType)}
 					onOpen={() => onOpenMetric(entry.firstRow)}
 				/>
 			))}
@@ -217,10 +212,12 @@ function usePageSparklines(entries: ReadonlyArray<MetricPreviewEntry>, startTime
 	]
 
 	const pointsByMetric = new Map<string, MetricSparklinePoint[]>()
+	const failedTypes = new Set<string>()
 	let loading = false
 	for (const [metricType, result] of results) {
 		if (namesOfType(entries, metricType).length === 0) continue
 		if (!Result.isSuccess(result) && !Result.isFailure(result)) loading = true
+		if (Result.isFailure(result)) failedTypes.add(metricType)
 		if (Result.isSuccess(result)) {
 			for (const series of result.value.data) {
 				pointsByMetric.set(`${series.metricName}::${metricType}`, series.points)
@@ -228,5 +225,5 @@ function usePageSparklines(entries: ReadonlyArray<MetricPreviewEntry>, startTime
 		}
 	}
 
-	return { pointsByMetric, loading }
+	return { pointsByMetric, loading, failedTypes }
 }

@@ -13,10 +13,10 @@
 // The one computation left here is generic: the failure fingerprint, hashed
 // through the redaction chain `error_events` fingerprints messages with.
 
-import type { Expr } from "@maple-dev/effect-clickhouse/expr"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import type { Expr } from "@maple-dev/effect-orm/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { compile } from "@maple-dev/effect-orm/sql"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import { applyRedactions, chRedactChain, MSG_TEXT_REDACTIONS } from "./fingerprint"
 import { MAPLE_AI_STAMP_ATTRS } from "../gen-ai"
 

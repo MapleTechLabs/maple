@@ -16,15 +16,21 @@ import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
-import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { Cause, Effect, Layer, Match } from "effect"
+import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
+import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
+import { envPorts } from "@maple/backend/platform/env-ports"
+import { Cause, Effect, Layer, Match, Option } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
 /**
@@ -34,25 +40,38 @@ import type { AlertingWorkerEnv } from "./worker.ts"
  * provided either would shadow them — `worker-telemetry.test.ts` pins that
  * a tick's spans still reach the export.
  */
-export const buildLayer = (env: AlertingWorkerEnv) =>
+export const layerTick = (
+	env: AlertingWorkerEnv,
+	email: Option.Option<EmailSenderClient> = Option.none(),
+	chatSessions?: ChatSessionNamespace,
+) =>
 	Layer.mergeAll(
 		AlertsService.layer,
 		AnomalyDetectionService.layer,
 		CloudflareAnalyticsService.layer,
 		PlanetScaleService.layer,
+		RailwayMetricsService.layer,
 		DigestService.layer,
 		WebAnalyticsDigestService.layer,
 		ErrorsService.layer,
 		FixVerificationTickService.layer,
 		EscalationService.layer,
 		ServiceMapRollupService.layer,
+		PrReviewPostMergeService.layer,
 		// Read by `maybeEnqueueTriage` when present; its absence means every
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
-		Layer.provide(Layer.mergeAll(Env.layer, layerPg, EdgeCacheServiceLive)),
-		Layer.provideMerge(Layer.mergeAll(mapleDbConnectionLayer(env), workerEnvLayer(env))),
+		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
+		Layer.provideMerge(
+			Layer.mergeAll(
+				layerMapleDbConnection(env),
+				envPorts(env),
+				chatSessionsLayerIfBound(chatSessions, env),
+				Layer.succeed(EmailSender, email),
+			),
+		),
 	)
 
 /**
@@ -113,6 +132,7 @@ const alertTick = makeTick(
 		evaluatedCount: result.evaluatedCount,
 		processedCount: result.processedCount,
 		evaluationFailureCount: result.evaluationFailureCount,
+		warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
 		deliveryFailureCount: result.deliveryFailureCount,
 	}),
 )
@@ -246,6 +266,35 @@ const planetScaleTick = makeTick(
 			: undefined,
 )
 
+const railwayMetricsTick = makeTick(
+	RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
+	"railway_metrics",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					rowsIngested: result.rowsIngested,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
+const prReviewPostMergeTick = makeTick(
+	PrReviewPostMergeService.use((service) => service.runTick()),
+	"pr_review_post_merge",
+	(result) =>
+		result.examined > 0
+			? {
+					examined: result.examined,
+					reported: result.reported,
+					waiting: result.waiting,
+					gaveUp: result.gaveUp,
+					failedRows: result.failedRows,
+				}
+			: undefined,
+)
+
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
 	readonly anomaly: Effect.Effect<void, never, R>
@@ -255,46 +304,61 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
+	readonly prReviewPostMerge: Effect.Effect<void, never, R>
+	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
 }
 
-/**
- * Keep cron routing separate from the Worker shell so the schedule and its
- * concurrency groups can be characterized without acquiring production
- * drivers. The concrete tick Effects remain module-scoped and unchanged.
- */
-export const selectScheduledProgram = <R>(
-	cron: string,
-	ticks: ScheduledTickPrograms<R>,
-): Effect.Effect<void, never, R> =>
-	Match.value(cron).pipe(
-		Match.when("*/5 * * * *", () =>
-			Effect.all([ticks.anomaly, ticks.cloudflareAnalytics, ticks.planetScale], {
-				concurrency: 3,
-				discard: true,
-			}),
-		),
-		Match.when("*/15 * * * *", () => ticks.digest),
-		Match.when("0 * * * *", () => ticks.serviceMapRollup),
-		Match.when("* * * * *", () =>
-			// `fixVerification` is chained onto `error` rather than listed beside it:
-			// a window this minute's error tick just refuted must already be settled
-			// when the verification tick looks at it, and array order under bounded
-			// concurrency does not promise that — alert and escalation finishing
-			// first would have started fixVerification while error still ran.
-			Effect.all([ticks.alert, Effect.andThen(ticks.error, ticks.fixVerification), ticks.escalation], {
-				concurrency: 2,
-				discard: true,
-			}),
-		),
-		// Fail closed: a newly configured cron must not silently inherit the
-		// every-minute alert/error/escalation fan-out.
-		Match.orElse((unknownCron) =>
-			Effect.logWarning("Skipping unknown alerting cron schedule").pipe(
-				Effect.annotateLogs({ cron: unknownCron }),
-			),
-		),
+/** The program each lane runs; every tick belongs to exactly one lane. */
+const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect.Effect<void, never, R> =>
+	Match.value(lane).pipe(
+		Match.when("alert", () => ticks.alert),
+		// `fixVerification` is chained onto `error` rather than given its own lane:
+		// a window this minute's error tick just refuted must already be settled
+		// when the verification tick looks at it.
+		Match.when("error", () => Effect.andThen(ticks.error, ticks.fixVerification)),
+		Match.when("escalation", () => ticks.escalation),
+		Match.when("anomaly", () => ticks.anomaly),
+		Match.when("cloudflare_analytics", () => ticks.cloudflareAnalytics),
+		Match.when("planetscale", () => ticks.planetScale),
+		Match.when("railway_metrics", () => ticks.railwayMetrics),
+		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
+		Match.when("digest", () => ticks.digest),
+		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
+		Match.exhaustive,
 	)
+
+/**
+ * One lane of `cron`, bounded by the cron's deadline. Kept apart from the
+ * Worker shell so routing and the deadline can be characterized without
+ * production drivers.
+ */
+export const selectLaneProgram = <R>(
+	cron: string,
+	lane: string,
+	ticks: ScheduledTickPrograms<R>,
+): Effect.Effect<void, never, R> => {
+	const schedule = scheduleFor(cron)
+	// Fail closed: an unknown cron or lane must not run anything.
+	if (schedule === undefined || !isLaneOf(cron, lane)) {
+		return Effect.logWarning("Skipping unknown alerting cron lane").pipe(
+			Effect.annotateLogs({ cron, lane }),
+		)
+	}
+	return laneProgram(lane, ticks).pipe(
+		Effect.timeoutOrElse({
+			duration: schedule.deadline,
+			orElse: () =>
+				Effect.logError("Alerting lane exceeded its deadline and was interrupted").pipe(
+					Effect.annotateLogs({
+						"maple.alerting.cron": cron,
+						"maple.alerting.lane": lane,
+						"maple.alerting.deadline": schedule.deadline,
+					}),
+				),
+		}),
+	)
+}
 
 type ScheduledServices =
 	| AlertsService
@@ -306,6 +370,8 @@ type ScheduledServices =
 	| EscalationService
 	| FixVerificationTickService
 	| PlanetScaleService
+	| PrReviewPostMergeService
+	| RailwayMetricsService
 	| ServiceMapRollupService
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
@@ -317,22 +383,28 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
 	planetScale: planetScaleTick,
+	prReviewPostMerge: prReviewPostMergeTick,
+	railwayMetrics: railwayMetricsTick,
 	serviceMapRollup: serviceMapRollupTick,
 }
 
 /**
- * One cron fire: the tick group for `cron`, over the layer graph built from
- * this invocation's env and released when the fire completes — the same
- * build-per-fire the async entry did through `ManagedRuntime`. One Postgres
- * socket for the whole tick: alerting is ~97% of the workers' Postgres
- * traffic and a single anomaly tick was measured at 628 dials, each spending
- * one of the Worker's six outbound connection slots on a handshake; the
- * tick's statements now pipeline over one.
+ * One lane of a cron fire, over the layer graph built from this invocation's
+ * env and released when the lane completes. Each lane has its own Postgres
+ * pool: lanes used to share one per fire, so one stalled statement held every
+ * tick in it (alert, error and escalation together) for as long as it hung.
+ * The deadline sits inside the scope, so an interrupted lane's pool is closed.
  */
-export const runScheduled = (cron: string, env: AlertingWorkerEnv): Effect.Effect<void, unknown> =>
-	withPgConnectionScope(selectScheduledProgram(cron, scheduledTicks)).pipe(
-		// One fire is one application run: the layer is built here and released
+export const runScheduled = (
+	cron: string,
+	lane: string,
+	env: AlertingWorkerEnv,
+	email: Option.Option<EmailSenderClient>,
+	chatSessions: ChatSessionNamespace,
+): Effect.Effect<void, unknown> =>
+	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
+		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(buildLayer(env)),
+		Effect.provide(layerTick(env, email, chatSessions)),
 	)

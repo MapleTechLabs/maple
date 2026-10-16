@@ -37,9 +37,12 @@ import {
 	SubmitPrReviewRequest,
 } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
-import type { RunBudgetHook, RunUsageDelta } from "effect-agent/run-options"
+import type { RunBudgetHook, RunUsageDelta } from "@yielded/agent/run-options"
+import type { ModelCallUsage } from "@yielded/agent/usage"
+import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
+import { autumnModelId } from "../platform/ai-credits"
 import { type Cause, Effect, type Layer, Option, Schema } from "effect"
-import { Tool, Toolkit } from "effect/unstable/ai"
+import { Tool, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import {
@@ -119,9 +122,49 @@ export interface RunUsage {
 	input: number
 	output: number
 	cacheRead: number
+	/** The same calls as AI credit charges, in Autumn's exclusive pools; see {@link recordCharge}. */
+	readonly charges: Array<Mutable<AiModelSpend>>
 }
 
-export const makeRunUsage = (): RunUsage => ({ input: 0, output: 0, cacheRead: 0 })
+type Mutable<A> = { -readonly [K in keyof A]: A[K] }
+
+export const makeRunUsage = (): RunUsage => ({ input: 0, output: 0, cacheRead: 0, charges: [] })
+
+/**
+ * Below every long-context tier models.dev lists (the smallest is 32k). Autumn picks a model's
+ * tier from one charge's total input, so a charge that sums calls past a tier bills them all at
+ * the long-context rate. Calls are merged only while their sum stays under it.
+ */
+const MERGE_CEILING_TOKENS = 32_000
+
+const chargeInput = (spend: AiModelSpend) =>
+	spend.inputTokens + spend.cacheReadTokens + spend.cacheWriteTokens
+
+/** One model call into the run's AI credit charges, merged into the last one when that is safe. */
+const recordCharge = (usage: RunUsage, call: ModelCallUsage) => {
+	const charge = {
+		modelId: autumnModelId(call.model),
+		inputTokens: call.inputTokens.uncached,
+		outputTokens: call.outputTokens.text,
+		cacheReadTokens: call.inputTokens.cacheRead,
+		cacheWriteTokens: call.inputTokens.cacheWrite,
+		reasoningTokens: call.outputTokens.reasoning,
+	}
+	const last = usage.charges.at(-1)
+	if (
+		last === undefined ||
+		last.modelId !== charge.modelId ||
+		chargeInput(last) + chargeInput(charge) > MERGE_CEILING_TOKENS
+	) {
+		usage.charges.push(charge)
+		return
+	}
+	last.inputTokens += charge.inputTokens
+	last.outputTokens += charge.outputTokens
+	last.cacheReadTokens += charge.cacheReadTokens
+	last.cacheWriteTokens += charge.cacheWriteTokens
+	last.reasoningTokens += charge.reasoningTokens
+}
 
 /**
  * A budget hook that only watches.
@@ -138,6 +181,8 @@ export const accumulateUsage = (usage: RunUsage): RunBudgetHook => ({
 			usage.input += delta.inputTokens
 			usage.output += delta.outputTokens
 			usage.cacheRead += delta.usage.inputTokens.cacheRead ?? 0
+			// Absent only on tool-only charges, which carry no tokens.
+			if (delta.modelUsage !== undefined) recordCharge(usage, delta.modelUsage)
 		}),
 })
 
@@ -148,15 +193,21 @@ export const accumulateUsage = (usage: RunUsage): RunBudgetHook => ({
  * the model stream's error channel, which ends the run. Against a strict report schema that made
  * one missing key at the end of a full investigation throw the whole investigation away. The
  * handler normalizes instead, and records what the model left out.
+ *
+ * `failureMode: "return"` is what makes a call the schema still rejects a recoverable tool error:
+ * the engine defers validation for such tools instead of failing the model stream.
  */
 export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 	description:
 		"Record your structured diagnosis for THIS investigation. Call it exactly once, " +
-		"after you have gathered evidence, with your final assessment. It persists the report " +
-		"and renders it for the user. After calling it, stop unless the user asks a follow-up.",
+		"after you have gathered evidence, with your final assessment. `evidence` is an array of " +
+		"objects ({traceIds, logPatterns, relatedServices, note}); `suggestedActions`, `ruledOut` " +
+		"and `unchecked` are arrays of strings. It persists the report and renders it for the user. " +
+		"After calling it, stop unless the user asks a follow-up.",
 	parameters: AiTriageSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	failureMode: "return",
 })
 
 /** The investigation a session belongs to, or `undefined` for an ordinary conversation. */
@@ -215,6 +266,8 @@ export const replyTool = Tool.make(SUBMIT_REPLY, {
 	parameters: PrReviewReplySubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	// See `diagnosisTool`: a rejected call is a result the model fixes, not a retried model call.
+	failureMode: "return",
 })
 
 export const proposeEditTool = Tool.make(PROPOSE_EDIT, {
@@ -226,6 +279,7 @@ export const proposeEditTool = Tool.make(PROPOSE_EDIT, {
 	parameters: PrReviewEditSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	failureMode: "return",
 })
 
 /**
@@ -272,26 +326,31 @@ export const buildReplyCompletion = (
 /** `parameters` is the lenient {@link PrReviewSubmission}, for the reason `diagnosisTool`'s is. */
 export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
-		"Record your review of THIS pull request. Call it exactly once, after you have " +
-		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, coverage, line-anchored findings and the " +
-		"handles of earlier findings this head fixes. It " +
-		"persists the review and posts it to the pull request. After calling it, stop.",
+		"Record your review of THIS pull request. Call it once, after you have " +
+		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, before-merge steps, coverage, line-anchored findings and the " +
+		"handles of earlier findings this head fixes. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
+		"pass that location in telemetryDismissals. It " +
+		"persists the review and posts it to the pull request. A refusal says what to do before calling " +
+		"it again; once it answers that the review is recorded, stop.",
 	parameters: PrReviewSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	// A refusal (files unread, a post that failed) is an answer the model acts on, not the run's end.
+	failureMode: "return",
 })
 
 /** Same lenient finding shape `submit_review` takes, one at a time. */
 export const recordFindingTool = Tool.make(RECORD_FINDING, {
 	description:
 		"Save one finding the moment you have established it: path, new-side line, category, " +
-		"severity, title, body, and suggestion or replacement. Saved findings are posted with your " +
-		"review even if the pass stops before submit_review, and submit_review adds them for you, so " +
+		"severity, title, body, and suggestion or replacement. Saved findings are kept even if the " +
+		"pass stops before submit_review, and submit_review adds them for you, so " +
 		"never repeat one there or save the same issue twice. There is no way to edit or remove a " +
 		"saved finding: check it against the code before you save it.",
 	parameters: PrReviewFindingSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
+	failureMode: "return",
 })
 
 /** What the model reads back after a `record_finding` call. */
@@ -369,7 +428,7 @@ export const buildReviewCompletion = (
 	const record = (submission: PrReviewSubmission) =>
 		Effect.suspend(() => {
 			const normalized = normalizePrReviewSubmission(submission)
-			const { filled, droppedFindings, resolved } = normalized
+			const { filled, droppedFindings, resolved, telemetryDismissals } = normalized
 			const unread = unreadToRefuse(normalized.report.verdict)
 			if (unread.length > 0) {
 				return Effect.annotateCurrentSpan("maple.pr_review.unread_files", unread.length).pipe(
@@ -390,6 +449,7 @@ export const buildReviewCompletion = (
 					outputTokens: usage.output,
 					...(partial ? { partial: true } : undefined),
 					...(resolved.length > 0 ? { resolved } : undefined),
+					...(telemetryDismissals.length > 0 ? { telemetryDismissals } : undefined),
 				}),
 			).pipe(
 				Effect.tap(() =>

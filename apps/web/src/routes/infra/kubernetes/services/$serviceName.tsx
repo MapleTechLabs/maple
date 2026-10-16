@@ -1,16 +1,27 @@
 import { useMemo } from "react"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyMessage,
+	EmptyTitle,
+} from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatPercent } from "@maple/ui/lib/format"
+import { ChartLoading } from "@maple/ui/components/charts"
+import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { SectionHeading } from "@/components/common/section-heading"
 import { cn } from "@maple/ui/lib/utils"
 
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { GridIcon } from "@/components/icons"
 import { DocsLink } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
+import { PageHero } from "@/components/common/page-hero"
 import { PodTable, PodTableLoading } from "@/components/infra/pod-table"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import { toIsoBucket } from "@/api/warehouse/timeseries-utils"
@@ -130,9 +141,9 @@ function LensBody({
 		[workloadsResult],
 	)
 
-	const overviewResult = useAtomValue(
-		getServiceDetailOverviewResultAtom({ data: { serviceName, startTime, endTime } }),
-	)
+	const overviewAtom = getServiceDetailOverviewResultAtom({ data: { serviceName, startTime, endTime } })
+	const overviewResult = useAtomValue(overviewAtom)
+	const refreshOverview = useAtomRefresh(overviewAtom)
 
 	const points = useMemo(
 		() =>
@@ -184,18 +195,18 @@ function LensBody({
 		}),
 	)
 
-	const podsResult = useAtomValue(
-		listPodsResultAtom({
-			data: {
-				startTime,
-				endTime,
-				workloadKind: workload?.workloadKind,
-				workloadName: workload?.workloadName || undefined,
-				namespaces: workload?.namespace ? [workload.namespace] : undefined,
-				limit: POD_LIMIT,
-			},
-		}),
-	)
+	const podsAtom = listPodsResultAtom({
+		data: {
+			startTime,
+			endTime,
+			workloadKind: workload?.workloadKind,
+			workloadName: workload?.workloadName || undefined,
+			namespaces: workload?.namespace ? [workload.namespace] : undefined,
+			limit: POD_LIMIT,
+		},
+	})
+	const podsResult = useAtomValue(podsAtom)
+	const refreshPods = useAtomRefresh(podsAtom)
 
 	/**
 	 * The pod gauges, re-keyed onto the service series' bucket format.
@@ -296,7 +307,13 @@ function LensBody({
 	)
 
 	if (Result.isFailure(overviewResult)) {
-		return <QueryErrorState error={overviewResult.cause} titleOverride="Failed to load this service" />
+		return (
+			<ErrorState
+				error={overviewResult.cause}
+				title="Failed to load this service"
+				onRetry={refreshOverview}
+			/>
+		)
 	}
 
 	// The headline reads pods and CPU as well as the overview, and both of those
@@ -313,57 +330,52 @@ function LensBody({
 		(Result.isSuccess(overviewResult) && overviewResult.waiting) ||
 		(Result.isSuccess(cpuResult) && cpuResult.waiting)
 
+	const workloadMeta = workload ? (
+		<div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground">
+			<Link
+				to="/infra/kubernetes/workloads/$kind/$workloadName"
+				params={{ kind: workload.workloadKind, workloadName: workload.workloadName }}
+				search={{ namespace: workload.namespace || undefined }}
+				className="hover:text-foreground"
+			>
+				{workload.workloadKind} {workload.workloadName}
+			</Link>
+			{workload.namespace && <span>ns {workload.namespace}</span>}
+			{workload.clusterName && <span>cluster {workload.clusterName}</span>}
+			<Link
+				to="/services/$serviceName"
+				params={{ serviceName }}
+				search={search}
+				className="text-primary hover:underline"
+			>
+				Open the service
+			</Link>
+		</div>
+	) : null
+
 	return (
 		<div className="space-y-7 pb-4">
-			<header className="space-y-3">
-				{loading ? (
-					<>
-						<Skeleton className="h-9 w-[520px]" />
-						<Skeleton className="h-4 w-[420px]" />
-					</>
-				) : evidenceMissing ? (
-					<>
-						<h1 className="max-w-[820px] text-[30px] font-semibold leading-[1.15] tracking-tight text-foreground">
-							{serviceName} — evidence incomplete.
-						</h1>
-						<p className="max-w-[700px] text-[13px] leading-relaxed text-muted-foreground">
-							The pod list or the CPU series failed to load, so this page can't say whether
-							Kubernetes is involved. The charts below show what did arrive.
-						</p>
-					</>
-				) : (
-					<>
-						<h1 className="max-w-[820px] text-[30px] font-semibold leading-[1.15] tracking-tight text-foreground">
-							{lensHeadline(verdict, serviceName)}
-						</h1>
-						<p className="max-w-[700px] text-[13px] leading-relaxed text-muted-foreground">
-							{lensSubhead(verdict)}
-						</p>
-					</>
-				)}
-				{workload && (
-					<div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-[11px] text-muted-foreground">
-						<Link
-							to="/infra/kubernetes/workloads/$kind/$workloadName"
-							params={{ kind: workload.workloadKind, workloadName: workload.workloadName }}
-							search={{ namespace: workload.namespace || undefined }}
-							className="hover:text-foreground"
-						>
-							{workload.workloadKind} {workload.workloadName}
-						</Link>
-						{workload.namespace && <span>ns {workload.namespace}</span>}
-						{workload.clusterName && <span>cluster {workload.clusterName}</span>}
-						<Link
-							to="/services/$serviceName"
-							params={{ serviceName }}
-							search={search}
-							className="text-primary hover:underline"
-						>
-							Open the service
-						</Link>
-					</div>
-				)}
-			</header>
+			{loading ? (
+				<header className="space-y-3">
+					<Skeleton className="h-9 w-[520px]" />
+					<Skeleton className="h-4 w-[420px]" />
+					{workloadMeta}
+				</header>
+			) : (
+				<PageHero
+					title={
+						evidenceMissing
+							? `${serviceName}: evidence incomplete.`
+							: lensHeadline(verdict, serviceName)
+					}
+					description={
+						evidenceMissing
+							? "The pod list or the CPU series failed to load, so this page can't say whether Kubernetes is involved. The charts below show what did arrive."
+							: lensSubhead(verdict)
+					}
+					meta={workloadMeta}
+				/>
+			)}
 
 			{workload == null && !loading ? (
 				<Empty className="py-16">
@@ -383,51 +395,43 @@ function LensBody({
 			) : (
 				<>
 					<section className="space-y-2.5">
-						<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-							<h2 className="text-[13px] font-medium text-foreground">
-								Service signal over infrastructure signal
-							</h2>
-							<span className="font-mono text-[11px] text-muted-foreground">
-								one cursor, one time axis
-							</span>
-						</div>
+						<SectionHeading
+							title="Service signal over infrastructure signal"
+							hint="one cursor, one time axis"
+						/>
 						{loading ? (
-							<Skeleton className="h-[360px] w-full rounded-lg" />
+							<ChartLoading variant="line" height={360} />
 						) : (
 							<CorrelationStrips series={strips} xDomain={xDomain} waiting={waiting} />
 						)}
 					</section>
 
 					<section className="space-y-2.5">
-						<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-							<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-								<h2 className="text-[13px] font-medium text-foreground">
-									The pods behind this service
-								</h2>
-								<span className="font-mono text-[11px] text-muted-foreground">
-									worst first, by peak saturation
+						<SectionHeading
+							title="The pods behind this service"
+							hint="worst first, by peak saturation"
+							actions={
+								<span className="font-mono text-2xs tabular-nums text-muted-foreground">
+									{totalPods > pods.length
+										? `Top ${pods.length} of ${formatNumber(totalPods)}`
+										: countLabel(totalPods, "pod")}
 								</span>
-							</div>
-							<span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-								{totalPods > pods.length
-									? `Top ${pods.length} of ${totalPods.toLocaleString()}`
-									: `${totalPods.toLocaleString()} ${totalPods === 1 ? "pod" : "pods"}`}
-							</span>
-						</div>
+							}
+						/>
 						{Result.builder(podsResult)
 							.onInitial(() => <PodTableLoading />)
 							.onError((error) => (
-								<QueryErrorState error={error} titleOverride="Failed to load pods" />
+								<ErrorState error={error} title="Failed to load pods" onRetry={refreshPods} />
 							))
 							.onSuccess((response, holder) =>
 								response.data.length === 0 ? (
-									<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+									<EmptyMessage dashed className="py-12">
 										No pods reported for this workload in the selected window.
-									</div>
+									</EmptyMessage>
 								) : (
 									<PodTable
 										pods={response.data}
-										waiting={Boolean(holder.waiting)}
+										waiting={holder.waiting}
 										referenceTime={endTime}
 									/>
 								),
@@ -435,7 +439,7 @@ function LensBody({
 							.render()}
 					</section>
 
-					{workload && <PodDistribution pods={pods} className={cn(waiting && "opacity-60")} />}
+					{workload && <PodDistribution pods={pods} waiting={waiting} />}
 				</>
 			)}
 		</div>
@@ -452,10 +456,10 @@ function LensBody({
  */
 function PodDistribution({
 	pods,
-	className,
+	waiting,
 }: {
 	pods: ReadonlyArray<{ nodeName: string; saturation: number }>
-	className?: string
+	waiting: boolean
 }) {
 	const byNode = useMemo(() => {
 		const map = new Map<string, { count: number; worst: number }>()
@@ -473,20 +477,18 @@ function PodDistribution({
 	if (byNode.length <= 1) return null
 
 	return (
-		<section className={cn("space-y-2.5", className)}>
-			<h2 className="text-[13px] font-medium text-foreground">Spread across nodes</h2>
+		<section className={cn("space-y-2.5", refreshingClass(waiting))} aria-busy={waiting || undefined}>
+			<SectionHeading title="Spread across nodes" />
 			<div className="flex flex-wrap gap-2">
 				{byNode.map(([node, { count, worst }]) => (
 					<Link
 						key={node}
 						to="/infra/kubernetes/nodes/$nodeName"
 						params={{ nodeName: node }}
-						className="flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] transition-colors hover:bg-accent/50"
+						className="flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs transition-colors hover:bg-accent/50"
 					>
 						<span className="text-foreground">{node}</span>
-						<span className="text-muted-foreground">
-							{count} {count === 1 ? "pod" : "pods"}
-						</span>
+						<span className="text-muted-foreground">{countLabel(count, "pod")}</span>
 						<span className="tabular-nums text-muted-foreground">
 							worst {formatPercent(worst)}
 						</span>

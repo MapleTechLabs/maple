@@ -3,12 +3,16 @@
 import { useMemo } from "react"
 
 import { useTheme } from "../../hooks/use-theme"
+import { tokenFallback } from "../../lib/colors"
 
 /**
  * A design token (`--chart-p99`) or a literal colour. Tokens are resolved to
  * literals before they reach a chart definition.
  */
 export type PlotColorToken = `--${string}` | (string & {})
+
+/** A token alone (its fallback comes from `TOKEN_FALLBACK`), or a token with an explicit fallback. */
+export type PlotColorSource = PlotColorToken | readonly [token: PlotColorToken, fallback: string]
 
 /**
  * Resolve one token against the live document.
@@ -18,7 +22,7 @@ export type PlotColorToken = `--${string}` | (string & {})
  * would accept the `var()` directly, but both renderers share one definition, so
  * both take the resolved literal.
  */
-export function resolvePlotColor(token: PlotColorToken, fallback: string): string {
+export function resolvePlotColor(token: PlotColorToken, fallback: string = tokenFallback(token)): string {
 	if (typeof document === "undefined") return fallback
 	// `resolveSeriesColors` hands back WRAPPED tokens — `var(--chart-p95)`,
 	// `var(--severity-error)` — for every semantically named series, and a bare
@@ -52,7 +56,7 @@ export function resolvePlotColor(token: PlotColorToken, fallback: string): strin
  * literal each render defeats the memo and re-reads computed style per frame.
  */
 export function usePlotColors<TKey extends string>(
-	tokens: Readonly<Record<TKey, readonly [token: PlotColorToken, fallback: string]>>,
+	tokens: Readonly<Record<TKey, PlotColorSource>>,
 ): Readonly<Record<TKey, string>> {
 	const { theme } = useTheme()
 
@@ -60,8 +64,11 @@ export function usePlotColors<TKey extends string>(
 		() => {
 			const resolved = {} as Record<TKey, string>
 			for (const key of Object.keys(tokens) as TKey[]) {
-				const [token, fallback] = tokens[key]
-				resolved[key] = resolvePlotColor(token, fallback)
+				const source = tokens[key]
+				resolved[key] =
+					typeof source === "string"
+						? resolvePlotColor(source)
+						: resolvePlotColor(source[0], source[1])
 			}
 			return resolved
 		},
@@ -81,9 +88,9 @@ export function usePlotColors<TKey extends string>(
  * frame.
  */
 export const PLOT_CHROME_TOKENS = {
-	border: ["--border", "#3f3f46"],
-	background: ["--background", "#0c0a09"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	border: "--border",
+	background: "--background",
+} as const satisfies Record<string, PlotColorSource>
 
 export type PlotChromeColors = Readonly<Record<keyof typeof PLOT_CHROME_TOKENS, string>>
 
@@ -109,7 +116,8 @@ export function usePlotChromeColors(): PlotChromeColors {
  */
 export function useResolvedSeriesColors(
 	tokensByKey: ReadonlyMap<string, string>,
-	fallback: string,
+	/** Omit to fall back per token (`TOKEN_FALLBACK`). */
+	fallback?: string,
 ): ReadonlyMap<string, string> {
 	const { theme } = useTheme()
 
@@ -117,7 +125,7 @@ export function useResolvedSeriesColors(
 		() => {
 			const resolved = new Map<string, string>()
 			for (const [key, token] of tokensByKey) {
-				resolved.set(key, resolvePlotColor(token, fallback))
+				resolved.set(key, resolvePlotColor(token, fallback ?? tokenFallback(token)))
 			}
 			return resolved
 		},

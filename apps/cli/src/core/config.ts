@@ -1,6 +1,6 @@
-import { Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import { Clock, Config, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
 import * as path from "node:path"
 import { defaultLocalUrl } from "../lib/local-address"
@@ -30,6 +30,8 @@ export interface StoredConfig {
 	/** Latest release tag seen by the update check (e.g. "v0.6.0"), cached so the
 	 *  notice can render between probes without hitting the network. */
 	latestKnownVersion?: string
+	/** Version that last ran here, so the first run after an upgrade can point at its notes. */
+	lastSeenVersion?: string
 }
 
 /** The config file exists but cannot be read, parsed, or replaced. Names the
@@ -54,6 +56,7 @@ const StoredConfigFields = Schema.Struct({
 	defaultMode: Schema.optionalKey(Schema.Literals(["local", "remote"])),
 	lastUpdateCheck: Schema.optionalKey(Schema.String),
 	latestKnownVersion: Schema.optionalKey(Schema.String),
+	lastSeenVersion: Schema.optionalKey(Schema.String),
 })
 const KNOWN_KEYS = new Set(Object.keys(StoredConfigFields.fields))
 const decodeConfigObject = Schema.decodeUnknownResult(
@@ -160,6 +163,8 @@ export interface MapleConfigValues {
 	readonly lastUpdateCheck: Option.Option<string>
 	/** Latest release tag seen by the last update check, or `None`. */
 	readonly latestKnownVersion: Option.Option<string>
+	/** Version that last ran on this machine, or `None` before the first run that records it. */
+	readonly lastSeenVersion: Option.Option<string>
 	/** Persist config fields (merged with existing). */
 	readonly write: (next: StoredConfig) => Effect.Effect<void, ConfigFileError>
 	readonly saveRemoteCredential: (next: {
@@ -179,6 +184,19 @@ export interface MapleConfigValues {
 	readonly recordUpdateCheck: (latestTag?: string) => Effect.Effect<void, ConfigFileError>
 }
 
+const optionalEnv = (key: string) => Config.String(key).pipe(Config.option, Config.map(Option.getOrUndefined))
+
+const envConfig = Config.all({
+	MAPLE_API_URL: optionalEnv("MAPLE_API_URL"),
+	MAPLE_API_TOKEN: Config.Redacted("MAPLE_API_TOKEN").pipe(
+		Config.option,
+		Config.map(Option.getOrUndefined),
+	),
+	MAPLE_ORG_ID: optionalEnv("MAPLE_ORG_ID"),
+	MAPLE_LOCAL_URL: optionalEnv("MAPLE_LOCAL_URL"),
+	MAPLE_LOCAL_BIND_HOST: optionalEnv("MAPLE_LOCAL_BIND_HOST"),
+})
+
 export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>()("@maple/cli/MapleConfig", {
 	make: Effect.gen(function* () {
 		const fs = yield* FileSystem
@@ -194,9 +212,9 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 				Effect.logWarning(error.message).pipe(Effect.as<StoredConfig>({})),
 			),
 		)
-		const env = process.env
+		const env = yield* envConfig
 		const resolvedApiUrl = env.MAPLE_API_URL ?? stored.apiUrl
-		const envToken = env.MAPLE_API_TOKEN
+		const envToken = env.MAPLE_API_TOKEN === undefined ? undefined : Redacted.value(env.MAPLE_API_TOKEN)
 		const fileToken = storedTokenFor(stored, resolvedApiUrl)
 		const nativeToken =
 			!envToken && !fileToken && stored.credentialStore === "keychain" && resolvedApiUrl
@@ -224,6 +242,7 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 			defaultApiUrl: env.MAPLE_API_URL ?? DEFAULT_API_URL,
 			lastUpdateCheck: Option.fromNullishOr(stored.lastUpdateCheck),
 			latestKnownVersion: Option.fromNullishOr(stored.latestKnownVersion),
+			lastSeenVersion: Option.fromNullishOr(stored.lastSeenVersion),
 			write: (next) => writeMerged(fs, (cur) => ({ ...cur, ...next })),
 			saveRemoteCredential: (next) =>
 				Effect.gen(function* () {

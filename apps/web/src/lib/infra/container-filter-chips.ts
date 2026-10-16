@@ -5,8 +5,8 @@ const FACETS = [
 	{ label: "Container", include: "containerNames", exclude: "excludedContainerNames" },
 	{ label: "Image", include: "images", exclude: "excludedImages" },
 	{ label: "Host", include: "hostNames", exclude: "excludedHostNames" },
-	{ label: "Compose Project", include: "composeProjects", exclude: "excludedComposeProjects" },
-	{ label: "Compose Service", include: "composeServices", exclude: "excludedComposeServices" },
+	{ label: "Compose project", include: "composeProjects", exclude: "excludedComposeProjects" },
+	{ label: "Compose service", include: "composeServices", exclude: "excludedComposeServices" },
 	{ label: "Environment", include: "environments", exclude: "excludedEnvironments" },
 ] as const satisfies ReadonlyArray<{
 	label: string

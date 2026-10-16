@@ -37,6 +37,22 @@ export interface LabEntry {
 
 export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	{
+		path: "/lab/infra",
+		title: "Infrastructure",
+		description:
+			"The infra overview, hosts list and Railway list over fixture rows, no warehouse needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/cloudflare",
+		title: "Cloudflare",
+		description:
+			"The Cloudflare zone and Worker lists and the zone page, whole, over a copy of production data.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/onboarding",
 		title: "Onboarding",
 		description:
@@ -71,7 +87,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/timeline",
 		title: "Trace timeline",
 		description:
-			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom.",
+			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom, with span event markers and the events panel.",
 		kind: "lab",
 		session: "none",
 	},
@@ -140,10 +156,41 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/logs",
+		title: "Logs stream",
+		description:
+			"The `/logs` stream over a production-like fixture: access lines, slow queries, a payment outage with stack traces, JSON bodies. Toggles for wrap, density, search and pinned columns.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/code-review-repos",
+		title: "Code review repositories",
+		description: "The code review repository picker over 246 fixture repositories.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
 			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/alerts",
+		title: "Alerts",
+		description:
+			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/worst-case",
+		title: "Worst case",
+		description:
+			"Existing components over worst-case fixture data (long names, extreme numbers, unbroken URLs, 8KB messages) behind a Demo data / Worst case toggle, for before and after screenshots.",
 		kind: "lab",
 		session: "none",
 	},
@@ -205,6 +252,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Overview charts",
 		description:
 			"Service-detail chart bench pinned to cursor sync — the cross-browser gate's overview scenario.",
+		kind: "bench",
+		session: "none",
+	},
+	{
+		path: "/lab/bench/dashboard-grid",
+		title: "Dashboard grid",
+		description:
+			"A `?n=`-widget dashboard (default 50) in edit mode for drag, resize and mount timing via window.__dashboardGridBench.",
 		kind: "bench",
 		session: "none",
 	},

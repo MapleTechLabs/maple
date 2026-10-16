@@ -1,15 +1,15 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import React, { Fragment, useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { EMPTY_VALUE, formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { RelativeTime } from "@/components/common/relative-time"
 import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
 
 import { ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import {
@@ -31,6 +31,9 @@ import {
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
 } from "./release-model"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Panel } from "@maple/ui/components/ui/panel"
 
 /** The bulk VCS lookup takes one page of shas; rows past it fall back to the sha. */
 const COMMIT_RESOLVE_LIMIT = 50
@@ -61,7 +64,7 @@ function ResolvedCommits({
 	return <>{children(commits)}</>
 }
 
-interface DeltaProps {
+interface BaselineShiftProps {
 	value: number
 	baseline: number | undefined
 	format: (value: number) => string
@@ -70,11 +73,11 @@ interface DeltaProps {
 }
 
 /** "0.30% → 1.24%": the version it replaced, then this one. */
-function Delta({ value, baseline, format, tone }: DeltaProps) {
+function BaselineShift({ value, baseline, format, tone }: BaselineShiftProps) {
 	return (
 		<span className="inline-flex items-baseline gap-1 font-mono text-xs tabular-nums">
 			{baseline !== undefined ? (
-				<span className="text-[10px] text-muted-foreground/70" title="The version this one replaced">
+				<span className="text-3xs text-muted-foreground/70" title="The version this one replaced">
 					{format(baseline)} →
 				</span>
 			) : null}
@@ -94,7 +97,7 @@ function Delta({ value, baseline, format, tone }: DeltaProps) {
 function IssueCounts({ counts }: { counts: ReleaseIssueCounts | undefined | null }) {
 	if (counts === null) return null
 	if (counts === undefined || (counts.fresh === 0 && counts.regressed === 0)) {
-		return <span className="font-mono text-xs text-muted-foreground/50">-</span>
+		return <span className="font-mono text-xs text-muted-foreground/50">{EMPTY_VALUE}</span>
 	}
 	return (
 		<span className="inline-flex items-baseline gap-2 whitespace-nowrap font-mono text-xs tabular-nums">
@@ -125,13 +128,17 @@ function ServiceChips({ services }: { services: ReadonlyArray<ReleaseServiceImpa
 			<span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
 				<span className="tabular-nums">{names.length} services</span>
 				{flagged.slice(0, 2).map((serviceName) => (
-					<span key={serviceName} className="inline-flex items-center gap-1">
+					<span
+						key={serviceName}
+						className="inline-flex min-w-0 max-w-56 items-center gap-1"
+						title={serviceName}
+					>
 						<ServiceDot serviceName={serviceName} />
-						{serviceName}
+						<span className="truncate">{serviceName}</span>
 					</span>
 				))}
 				{flagged.length > 2 ? (
-					<span className="text-[11px] text-muted-foreground/70">+{flagged.length - 2}</span>
+					<span className="text-2xs text-muted-foreground/70">+{flagged.length - 2}</span>
 				) : null}
 			</span>
 		)
@@ -141,10 +148,11 @@ function ServiceChips({ services }: { services: ReadonlyArray<ReleaseServiceImpa
 			{names.map((serviceName) => (
 				<span
 					key={serviceName}
-					className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+					className="inline-flex min-w-0 max-w-56 items-center gap-1 text-xs text-muted-foreground"
+					title={serviceName}
 				>
 					<ServiceDot serviceName={serviceName} />
-					{serviceName}
+					<span className="truncate">{serviceName}</span>
 				</span>
 			))}
 		</span>
@@ -177,15 +185,15 @@ function ReleaseTitle({ commitSha, commit, health, figure, range }: ReleaseTitle
 					<CommitShaHoverCard
 						sha={commitSha}
 						className={cn(
-							"min-w-0 truncate text-[13px] text-foreground",
+							"min-w-0 truncate text-sm text-foreground",
 							commit === undefined && "font-mono text-xs",
 						)}
 					>
-						{commit ? firstLine(commit.message) : shortReleaseLabel(commitSha)}
+						{(commit ? firstLine(commit.message) : "") || shortReleaseLabel(commitSha)}
 					</CommitShaHoverCard>
 					{health === "healthy" ? null : <ReleaseHealthPill health={health} label={figure} />}
 				</div>
-				<div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+				<div className="flex items-center gap-1.5 text-2xs text-muted-foreground">
 					{commit ? <span className="font-mono">{shortReleaseLabel(commitSha)}</span> : null}
 					{author ? <span className="truncate">{author}</span> : null}
 					{!commit && !resolvable ? <span>deployment reference</span> : null}
@@ -272,10 +280,10 @@ function ReleasesTableRows({
 	let lastDay: string | undefined
 
 	return (
-		<div className={cn("rounded-md border bg-card transition-opacity", waiting && "opacity-60")}>
+		<Panel className={refreshingClass(waiting === true)} aria-busy={waiting || undefined}>
 			<Table>
 				<TableHeader>
-					<TableRow className="hover:bg-transparent">
+					<TableRow>
 						<TableHead className="w-[46%] min-w-[260px]">Release</TableHead>
 						<TableHead>Services</TableHead>
 						<TableHead className="whitespace-nowrap">Deployed</TableHead>
@@ -296,30 +304,31 @@ function ReleasesTableRows({
 							<Fragment key={group.commitSha}>
 								{showDay ? (
 									<TableRow className="hover:bg-transparent">
-										<TableCell
-											colSpan={6}
-											className="bg-muted/40 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
+										<Eyebrow
+											render={<TableCell colSpan={6} />}
+											className="bg-muted/40 py-1"
 										>
 											{day}
-										</TableCell>
+										</Eyebrow>
 									</TableRow>
 								) : null}
 								<TableRow className="group/row">
 									<TableCell className="max-w-0 py-2">
 										<div className="flex items-start gap-1">
-											<button
-												type="button"
+											<IconButton
+												size="icon-2xs"
 												aria-expanded={isOpen}
-												aria-label={isOpen ? "Hide services" : "Show services"}
+												label={isOpen ? "Hide services" : "Show services"}
+												tooltip={false}
 												onClick={() => toggle(group.commitSha)}
 												className={cn(
-													"mt-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition-transform hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+													"mt-1 text-muted-foreground/60 transition-transform hover:text-foreground",
 													isOpen && "rotate-90",
 													group.services.length <= 1 && "invisible",
 												)}
 											>
-												<ChevronRightIcon size={12} />
-											</button>
+												<ChevronRightIcon />
+											</IconButton>
 											<Link
 												to="/releases/$commitSha"
 												params={{ commitSha: group.commitSha }}
@@ -336,21 +345,15 @@ function ReleasesTableRows({
 											</Link>
 										</div>
 									</TableCell>
-									<TableCell className="py-2 align-top">
+									<TableCell className="whitespace-normal py-2 align-top">
 										<ServiceChips services={group.services} />
 									</TableCell>
-									<TableCell
-										className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground"
-										title={formatTimestampInTimezone(group.firstSeen, {
-											timeZone: effectiveTimezone,
-											withYear: true,
-										})}
-									>
-										{formatRelativeTimeOrDate(
-											group.firstSeen,
-											undefined,
-											effectiveTimezone,
-										)}
+									<TableCell className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground">
+										<RelativeTime
+											value={group.firstSeen}
+											variant="orDate"
+											tooltip="title"
+										/>
 									</TableCell>
 									<TableCell className="py-2 align-top">
 										<span className="inline-flex items-center gap-1.5">
@@ -362,7 +365,7 @@ function ReleasesTableRows({
 													<ServiceDot serviceName={worst.serviceName} />
 												</span>
 											) : null}
-											<Delta
+											<BaselineShift
 												value={worst.errorRate}
 												baseline={worst.baseline?.errorRate}
 												format={formatErrorRate}
@@ -371,7 +374,7 @@ function ReleasesTableRows({
 										</span>
 									</TableCell>
 									<TableCell className="py-2 align-top">
-										<Delta
+										<BaselineShift
 											value={worst.p95LatencyMs}
 											baseline={worst.baseline?.p95LatencyMs}
 											format={formatLatency}
@@ -394,7 +397,7 @@ function ReleasesTableRows({
 												key={`${service.serviceName}:${service.environment}`}
 												className="bg-muted/20"
 											>
-												<TableCell className="py-1.5 pl-12">
+												<TableCell className="max-w-0 py-1.5 pl-12">
 													<Link
 														to="/releases/$commitSha"
 														params={{ commitSha: group.commitSha }}
@@ -402,12 +405,17 @@ function ReleasesTableRows({
 															service.serviceName,
 															service.environment,
 														)}
-														className="inline-flex items-center gap-2 text-xs hover:underline"
+														className="inline-flex max-w-full items-center gap-2 text-xs hover:underline"
 													>
 														<ServiceDot serviceName={service.serviceName} />
-														{service.serviceName}
+														<span
+															className="min-w-0 truncate"
+															title={service.serviceName}
+														>
+															{service.serviceName}
+														</span>
 														{service.environment && !environments?.length ? (
-															<span className="text-muted-foreground/70">
+															<span className="min-w-0 truncate text-muted-foreground/70">
 																{service.environment}
 															</span>
 														) : null}
@@ -415,26 +423,21 @@ function ReleasesTableRows({
 															<ReleaseHealthPill
 																health={service.health}
 																label={releaseHealthFigure(service)}
+																className="shrink-0"
 															/>
 														)}
 													</Link>
 												</TableCell>
 												<TableCell className="py-1.5" />
-												<TableCell
-													className="whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground"
-													title={formatTimestampInTimezone(service.firstSeen, {
-														timeZone: effectiveTimezone,
-														withYear: true,
-													})}
-												>
-													{formatRelativeTimeOrDate(
-														service.firstSeen,
-														undefined,
-														effectiveTimezone,
-													)}
+												<TableCell className="whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground">
+													<RelativeTime
+														value={service.firstSeen}
+														variant="orDate"
+														tooltip="title"
+													/>
 												</TableCell>
 												<TableCell className="py-1.5">
-													<Delta
+													<BaselineShift
 														value={service.errorRate}
 														baseline={service.baseline?.errorRate}
 														format={formatErrorRate}
@@ -446,7 +449,7 @@ function ReleasesTableRows({
 													/>
 												</TableCell>
 												<TableCell className="py-1.5">
-													<Delta
+													<BaselineShift
 														value={service.p95LatencyMs}
 														baseline={service.baseline?.p95LatencyMs}
 														format={formatLatency}
@@ -462,6 +465,6 @@ function ReleasesTableRows({
 					})}
 				</TableBody>
 			</Table>
-		</div>
+		</Panel>
 	)
 }

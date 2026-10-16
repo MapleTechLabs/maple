@@ -19,20 +19,18 @@ describe("getSemanticSeriesColor", () => {
 		expect(getSemanticSeriesColor("101")).toMatch(/^oklch\(/)
 	})
 
-	it("resolves latency percentiles to their chart tokens", () => {
-		expect(getSemanticSeriesColor("p50")).toBe("var(--chart-p50)")
-		expect(getSemanticSeriesColor("p95")).toBe("var(--chart-p95)")
-		expect(getSemanticSeriesColor("p99")).toBe("var(--chart-p99)")
+	it("gives each latency percentile its own color", () => {
+		const colors = ["p50", "p95", "p99"].map((key) => getSemanticSeriesColor(key))
+		for (const color of colors) expect(color).toEqual(expect.any(String))
+		expect(new Set(colors).size).toBe(3)
 	})
 
-	it("resolves every log severity, with error taking the span-status color", () => {
-		for (const key of ["trace", "debug", "info", "warn", "warning", "fatal"]) {
-			expect(getSemanticSeriesColor(key), key).toBe(
-				`var(--color-severity-${key === "warning" ? "warn" : key})`,
-			)
-		}
-		// "error" matches the span-status map first; same underlying token.
-		expect(getSemanticSeriesColor("error")).toBe("var(--severity-error)")
+	it("resolves every log severity, treating warning as warn", () => {
+		const keys = ["trace", "debug", "info", "warn", "error", "fatal"]
+		const colors = keys.map((key) => getSemanticSeriesColor(key))
+		for (const color of colors) expect(color).toEqual(expect.any(String))
+		expect(new Set(colors).size).toBe(keys.length)
+		expect(getSemanticSeriesColor("warning")).toBe(getSemanticSeriesColor("warn"))
 	})
 
 	it("resolves HTTP methods to the shared hex palette", () => {

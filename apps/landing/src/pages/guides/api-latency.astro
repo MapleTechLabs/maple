@@ -40,7 +40,7 @@ const faqs = [
     {
         question: "Should latency come from metrics or traces?",
         answer:
-            "Use metrics or representative span-derived aggregates to detect and alert on the distribution. Use traces to explain the slow requests inside the affected slice. A trace is detailed evidence about one request, not a population summary.",
+            "Use metrics or representative span-derived aggregates to detect and alert on the distribution. Use traces to explain the slow requests inside the affected slice. A trace describes one request in detail. It can't stand in for the whole population.",
     },
     {
         question: "How do I know whether a third-party API is responsible?",
@@ -97,7 +97,7 @@ const articleJsonLd = {
                         When API p99 jumps but p50 doesn't
                     </h1>
                     <p class="mt-7 max-w-[60ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
-                        Measure the right clock, isolate the slow population, and follow one OpenTelemetry trace to the release and operation responsible.
+                        Pick the right clock, isolate the slow requests, and follow one OpenTelemetry trace to the release and operation that caused the regression.
                     </p>
                     <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                         <span>By Makisuo</span>
@@ -210,7 +210,7 @@ total:    0.389s</code></pre>
                     </div>
 
                     <p>
-                        The typical request is healthy. Even the first 95% are healthy. The problem lives in a much slower tail. That shape narrows the search: a general CPU shortage or consistently expensive code path usually moves the center of the distribution too. A p99-only regression suggests an intermittent branch such as a cache miss, lock contention, retries, a cold start, a saturated connection pool, or an input-specific query.
+                        The typical request is healthy, and so are the first 95%. The problem is in a much slower tail. That shape narrows the search: a general CPU shortage or consistently expensive code path usually moves the center of the distribution too. A p99-only regression suggests an intermittent branch such as a cache miss, lock contention, retries, a cold start, a saturated connection pool, or an input-specific query.
                     </p>
 
                     <h3>Percentiles need enough context to mean anything</h3>
@@ -251,17 +251,17 @@ service.version=def456</code></pre>
 
                 <section id="investigation" class="scroll-mt-24">
                     <p class="guide-eyebrow">05 · Investigation strategy</p>
-                    <h2>Opening the slowest trace first can waste the investigation</h2>
+                    <h2>Opening the slowest trace first can send you the wrong way</h2>
                     <p>
                         Sorting every trace by duration and opening the worst one feels efficient. It can send a team after a rare cold start while the actual regression is a release-specific database loop.
                     </p>
                     <p>
-                        Preserve the incident window first. Compare the affected route with its own baseline, group it by <code>service.version</code>, region, or instance, and only then choose slow traces from the group that moved. The few minutes spent scoping the population prevent an interesting outlier from becoming the diagnosis.
+                        Preserve the incident window first. Compare the affected route with its own baseline, group it by <code>service.version</code>, region, or instance, and only then choose slow traces from the group that moved. A few minutes of scoping keeps an odd outlier from being mistaken for the cause.
                     </p>
 
                     <div class="guide-table-wrap">
                         <table>
-                            <thead><tr><th>Observed shape</th><th>Likely direction</th><th>Evidence to inspect</th></tr></thead>
+                            <thead><tr><th>Observed shape</th><th>Likely direction</th><th>What to inspect</th></tr></thead>
                             <tbody>
                                 <tr><td><strong>p50, p95, and p99 rise</strong></td><td>Common work or broad saturation</td><td>Root children, CPU, queues, dependencies</td></tr>
                                 <tr><td><strong>p99 rises; p50 stays flat</strong></td><td>Intermittent branch or contention</td><td>Slow traces grouped by version and attributes</td></tr>
@@ -273,7 +273,7 @@ service.version=def456</code></pre>
                         </table>
                     </div>
 
-                    <h3>Make the smallest change supported by the evidence</h3>
+                    <h3>Make the smallest change the data supports</h3>
                     <ul>
                         <li>Batch repeated reads instead of adding a cache in front of an N+1 loop.</li>
                         <li>Index the predicate proven slow by the query plan, not every nearby column.</li>
@@ -323,7 +323,7 @@ export OTEL_SERVICE_NAME="order-service"</code></pre>
                             <span>01</span>
                             <div>
                                 <h3>Check which percentile moved</h3>
-                                <p>p50 and p95 stay nearly flat while p99 rises sharply. Request volume is steady. The evidence points to a conditional path affecting a small slice of checkout traffic.</p>
+                                <p>p50 and p95 stay nearly flat while p99 rises sharply. Request volume is steady. That points to a conditional path affecting a small slice of checkout traffic.</p>
                             </div>
                         </li>
                         <li>
@@ -387,10 +387,10 @@ duration &gt; 200ms</code></pre>
                     </ol>
 
                     <div class="guide-maple">
-                        <p class="guide-kicker">Keep the investigation anchored</p>
+                        <p class="guide-kicker">Before you open a trace</p>
                         <h3>Record the route, window, release, and target percentile</h3>
                         <p>
-                            Write down those four values before opening a trace. That small record keeps the first unusual span from pulling the investigation away from the population that actually triggered the alert.
+                            Write down those four values before opening a trace. With them written down, the first unusual span is less likely to pull you away from the requests that actually triggered the alert.
                         </p>
                         <div class="mt-6 flex flex-wrap gap-3">
                             <a href="/docs/local-mode" class="guide-button guide-button--primary">Start Maple locally</a>

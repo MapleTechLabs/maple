@@ -5,10 +5,11 @@ import type { V2SupportChannel } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
 import { DialogFooter, DialogPanel } from "@maple/ui/components/ui/dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { ErrorState } from "@/components/common/error-state"
 import { ExternalLinkIcon } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { trackProduct } from "@/lib/analytics"
-import { displayError } from "@/lib/error-messages"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import {
 	inviteToSupportChannelMutation,
 	supportChannelAtom,
@@ -22,23 +23,21 @@ export function SupportChannelBody() {
 	const result = useAtomValue(channelAtom)
 	const refresh = useAtomRefresh(channelAtom)
 	const runInvite = useAtomSet(inviteToSupportChannelMutation, { mode: "promiseExit" })
-	const [pending, setPending] = useState(false)
-	const [error, setError] = useState<string | null>(null)
+	// The failed Exit itself, so ErrorState words it like every other inline failure.
+	const [error, setError] = useState<unknown>(null)
 	const [invited, setInvited] = useState<V2SupportChannel | null>(null)
 
-	async function invite() {
-		setPending(true)
+	const [invite, pending] = useAsyncAction(async () => {
 		setError(null)
 		const exit = await runInvite({})
-		setPending(false)
 		if (Exit.isSuccess(exit)) {
 			trackProduct("support_channel_invite_sent")
 			setInvited(exit.value)
 			refresh()
 			return
 		}
-		setError(displayError(exit).message)
-	}
+		setError(exit)
+	})
 
 	if (invited !== null) {
 		return (
@@ -62,7 +61,7 @@ export function SupportChannelBody() {
 	if (Result.isFailure(result)) {
 		return (
 			<DialogPanel>
-				<p className="text-sm text-destructive">{displayError(result.cause).message}</p>
+				<ErrorState error={result.cause} onRetry={refresh} variant="inline" />
 			</DialogPanel>
 		)
 	}
@@ -106,18 +105,21 @@ export function SupportChannelBody() {
 						here.
 					</p>
 				)}
-				{error ? <p className="text-sm text-destructive">{error}</p> : null}
+				{error !== null ? (
+					<ErrorState
+						error={error}
+						title="Couldn't send the invite"
+						variant="inline"
+						className="py-0"
+					/>
+				) : null}
 			</DialogPanel>
 			<DialogFooter>
 				{channel.status === "active" && channel.slack_url ? (
 					<OpenInSlack url={channel.slack_url} />
 				) : null}
-				<Button onClick={() => void invite()} disabled={pending}>
-					{pending
-						? "Sending invite..."
-						: channel.status === "active"
-							? "Send me an invite"
-							: "Create channel"}
+				<Button onClick={() => void invite()} loading={pending}>
+					{channel.status === "active" ? "Send me an invite" : "Create channel"}
 				</Button>
 			</DialogFooter>
 		</>
@@ -131,7 +133,7 @@ function OpenInSlack({ url }: { url: string }) {
 			render={<a aria-label="Open in Slack" href={url} target="_blank" rel="noopener noreferrer" />}
 		>
 			Open in Slack
-			<ExternalLinkIcon size={14} />
+			<ExternalLinkIcon />
 		</Button>
 	)
 }

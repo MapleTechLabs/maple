@@ -1,3 +1,4 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Link } from "@tanstack/react-router"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -11,14 +12,13 @@ import { ALERT_TEMPLATES, type AlertTemplate } from "@/lib/alerts/templates"
 
 /**
  * First-run empty state for the alerts overview (zero rules). Replaces the
- * generic bell-badge with an operator-console "quiet monitor" readout — a live
- * signal held below a not-yet-placed threshold — then surfaces the five real
+ * generic bell-badge with an operator-console "quiet monitor" readout: a live
+ * signal held below a not-yet-placed threshold, then surfaces the five real
  * starter templates as brand-colored, one-click deep links into a pre-filled
  * create form. Non-admins get the readout + a nudge, no create affordances.
  *
- * The tile hues mirror `BUILTIN_SIGNAL_OPTIONS` on the create form
- * (signal-and-threshold-section.tsx) so a template reads with the same color it
- * paints on the live chart. Kept here rather than on the pure `ALERT_TEMPLATES`
+ * The tile hues are the signals' chart colors, so a template reads with the
+ * same color it paints on the live chart. Kept here rather than on the pure `ALERT_TEMPLATES`
  * module so `templates.ts` stays React-free beyond its display icons.
  */
 const TILE_TONE: Record<AlertTemplate["id"], { glyph: string; hoverBorder: string }> = {
@@ -41,7 +41,7 @@ export function AlertsEmptyState({
 	serviceName,
 }: {
 	isAdmin: boolean
-	/** Without one, a rule has nowhere to send its incidents — so that comes first. */
+	/** Without one, a rule has nowhere to send its incidents, so that comes first. */
 	hasDestinations: boolean
 	serviceName?: string
 }) {
@@ -67,7 +67,7 @@ export function AlertsEmptyState({
 			{isAdmin && (
 				<div className="flex w-full max-w-3xl flex-col items-center gap-4">
 					{needsDestination && (
-						<div className="flex w-full items-center gap-3 rounded-lg border border-primary/40 bg-primary/[0.06] p-3 text-left">
+						<div className="flex w-full items-center gap-3 rounded-md border border-primary/40 bg-primary/[0.06] p-3 text-left">
 							<StepBadge n={1} />
 							<div className="min-w-0 flex-1">
 								<p className="text-sm font-medium">Add a destination</p>
@@ -79,12 +79,12 @@ export function AlertsEmptyState({
 							</div>
 							{openDestinationDialog ? (
 								<Button size="sm" onClick={openDestinationDialog}>
-									<PaperPlaneIcon size={14} />
+									<PaperPlaneIcon />
 									Add destination
 								</Button>
 							) : (
-								<Button size="sm" render={<Link to="/alerts" search={{ tab: "settings" }} />}>
-									<PaperPlaneIcon size={14} />
+								<Button size="sm" render={<Link to="/alerts" search={{ tab: "routing" }} />}>
+									<PaperPlaneIcon />
 									Add destination
 								</Button>
 							)}
@@ -108,7 +108,7 @@ export function AlertsEmptyState({
 							size="sm"
 							render={<Link to="/alerts/create" search={{ serviceName }} />}
 						>
-							<PlusIcon size={14} />
+							<PlusIcon />
 							Start from scratch
 						</Button>
 						<DocsLink page="alertRules" />
@@ -136,7 +136,7 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
 			to="/alerts/create"
 			search={{ template: template.id, serviceName }}
 			className={cn(
-				"group flex flex-col gap-1.5 rounded-lg border bg-card p-3 text-left transition-colors",
+				"group flex flex-col gap-1.5 rounded-md border bg-card p-3 text-left transition-colors",
 				"hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 				tone.hoverBorder,
 			)}
@@ -149,24 +149,23 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
 				</span>
 				<span className="font-medium text-sm">{template.title}</span>
 			</div>
-			<code className="font-mono text-[11px] text-muted-foreground">{template.summary}</code>
+			<InlineCode className="self-start text-2xs text-muted-foreground">{template.summary}</InlineCode>
 		</Link>
 	)
 }
 
 /**
  * The signature graphic: a live signal (muted, with a pulsing leading edge)
- * running steadily below a dashed amber threshold that hasn't been placed yet —
+ * running steadily below a dashed amber threshold that hasn't been placed yet,
  * the exact thing a rule adds. The threshold reuses `.infra-ref-line` (dashed
- * draw-in) and the leading dot reuses `.infra-pulse`; both idioms already carry
- * their own `prefers-reduced-motion` guards from styles.css.
+ * draw-in, with its own `prefers-reduced-motion` guard in styles.css); the leading dot is static.
  */
 function QuietMonitor() {
 	return (
-		<div className="relative w-full max-w-[300px] overflow-hidden rounded-lg border bg-card/50 px-4 py-3">
+		<div className="relative w-full max-w-[300px] overflow-hidden rounded-md border bg-card/50 px-4 py-3">
 			<svg viewBox="0 0 300 84" className="w-full" role="img" aria-label="No threshold is watching yet">
 				<title>A steady signal running below an unset alert threshold</title>
-				{/* Dashed amber threshold — the line a rule would place. */}
+				{/* Dashed amber threshold: the line a rule would place. */}
 				<g className="infra-ref-line">
 					<line
 						x1="10"
@@ -188,15 +187,8 @@ function QuietMonitor() {
 					strokeLinejoin="round"
 					opacity="0.7"
 				/>
-				{/* Pulsing leading edge — signals are flowing, nothing is watching them. */}
-				<circle
-					cx="290"
-					cy="59"
-					r="4"
-					className="infra-pulse fill-primary"
-					style={{ transformBox: "fill-box", transformOrigin: "center" }}
-					opacity="0.5"
-				/>
+				{/* Leading edge: signals are flowing, nothing is watching them. */}
+				<circle cx="290" cy="59" r="4" className="fill-primary" opacity="0.5" />
 				<circle cx="290" cy="59" r="2.5" className="fill-primary" />
 			</svg>
 		</div>

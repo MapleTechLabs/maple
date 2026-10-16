@@ -2,6 +2,8 @@ import * as React from "react"
 import { widgetTypeByVisualization } from "@maple/domain/http"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { FieldError } from "@maple/ui/components/ui/field"
 import { Button } from "@maple/ui/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { visualizationFor } from "@/components/dashboard-builder/widgets/types"
@@ -460,9 +462,7 @@ export function WidgetQueryBuilderPage({
 				<div className="p-6 space-y-6" onFocusCapture={activateAutocomplete}>
 					{showSourceToggle && (
 						<div className="flex items-center gap-3">
-							<span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-								Source
-							</span>
+							<Eyebrow>Source</Eyebrow>
 							<Tabs value={mode} onValueChange={(value) => setMode(value as SourceMode)}>
 								<TabsList>
 									<TabsTrigger value="builder">Query Builder</TabsTrigger>
@@ -475,7 +475,9 @@ export function WidgetQueryBuilderPage({
 					{mode === "rawSql" && showSourceToggle ? (
 						<>
 							{rawSqlError && (
-								<p className="text-xs text-destructive font-medium">{rawSqlError}</p>
+								<FieldError match className="font-medium">
+									{rawSqlError}
+								</FieldError>
 							)}
 							<RawSqlEditorPanel
 								widget={widget}
@@ -487,7 +489,9 @@ export function WidgetQueryBuilderPage({
 					) : (
 						<>
 							{validationError && (
-								<p className="text-xs text-destructive font-medium">{validationError}</p>
+								<FieldError match className="font-medium">
+									{validationError}
+								</FieldError>
 							)}
 
 							{isMarkdown ? (
@@ -502,7 +506,7 @@ export function WidgetQueryBuilderPage({
 									<ListConfigPanel />
 									<div className="flex items-center gap-3">
 										<Button size="sm" onClick={runPreview}>
-											Run Preview
+											Run preview
 										</Button>
 									</div>
 								</>
@@ -515,9 +519,9 @@ export function WidgetQueryBuilderPage({
 									/>
 									<div className="flex items-center gap-3">
 										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
-											Run Preview
+											Run preview
 										</Button>
-										<span className="text-[11px] text-muted-foreground ml-auto">A</span>
+										<span className="text-2xs text-muted-foreground ml-auto">A</span>
 									</div>
 								</>
 							) : showFunnelPanel ? (
@@ -530,9 +534,9 @@ export function WidgetQueryBuilderPage({
 									/>
 									<div className="flex items-center gap-3">
 										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
-											Run Preview
+											Run preview
 										</Button>
-										<span className="text-[11px] text-muted-foreground ml-auto">A</span>
+										<span className="text-2xs text-muted-foreground ml-auto">A</span>
 									</div>
 								</>
 							) : (
@@ -588,9 +592,9 @@ export function WidgetQueryBuilderPage({
 											+ Formula
 										</Button>
 										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
-											Run Preview
+											Run preview
 										</Button>
-										<span className="text-[11px] text-muted-foreground ml-auto">
+										<span className="text-2xs text-muted-foreground ml-auto">
 											{state.queries.map((q) => q.name).join(", ")}
 											{state.formulas.length > 0 &&
 												`, ${state.formulas.map((f) => f.name).join(", ")}`}

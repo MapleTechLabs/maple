@@ -87,6 +87,7 @@ Every field accepted by `MapleBrowser.init`:
 | `privacy.maskAllText`                  | `boolean`                                                | `false`                                   | Mask all text in the recording, and omit captured click-target text from session events.                                                                                   |
 | `privacy.sanitizeUrl`                  | `(url: string) => string`                                | none                                      | Rewrite every URL before it leaves the page. See [Redacting URLs](#redacting-urls).                                                                                        |
 | `privacy.persistVisitorId`             | `boolean`                                                | `true`                                    | Store a persistent visitor id (localStorage and cookie) so unique and returning visitors can be counted. Turning it off also deletes any id already stored.                |
+| `privacy.persistence`                  | `"browser" \| "memory"`                                  | `"browser"`                               | `"memory"` keeps everything in memory: no cookies, Web Storage or IndexedDB, and no visitor id. See [Memory-only mode](#memory-only-mode).                                 |
 | `privacy.crossSubdomainCookie`         | `boolean`                                                | `true`                                    | Scope the visitor-id cookie to the registered domain so sibling subdomains share it. See [Linking a marketing site to your app](#linking-a-marketing-site-to-your-app).    |
 | `privacy.cookieDomain`                 | `string`                                                 | probed                                    | Explicit cookie `Domain=` (no leading dot). `""` forces a host-only cookie.                                                                                                |
 | `privacy.requireConsent`               | `boolean`                                                | `false`                                   | Capture nothing until `MapleBrowser.setConsent(true)`. See [Consent](#consent).                                                                                            |
@@ -120,6 +121,8 @@ Every span and replay event the SDK emits carries one **`session.id`** (a `crypt
 ### Storage and continuity
 
 The session is stored in `sessionStorage` under the key `maple.session`, so it **survives reloads within a tab**. `sessionStorage` is per tab, so **each tab or window gets its own session**. When `sessionStorage` is unavailable (for example in some private-browsing modes), the SDK keeps the session in memory for the life of the page.
+
+The replay chunk a page is still sending when it unloads is kept in `sessionStorage` under `maple.replay.pending` and sent by the next page of the same session in that tab, if that page starts recording within ten minutes. Revoking consent removes it; with `privacy.requireConsent`, it is sent once consent is granted on that next page, unless it was revoked in between.
 
 Client-side route changes in a single-page app do **not** start a new session. Session boundaries are purely time-based.
 
@@ -405,6 +408,22 @@ MapleBrowser.setConsent(true)
 ```
 
 Revoking stops capture without uploading what is buffered, and a later grant starts a new session. Global Privacy Control is honored regardless of `requireConsent`. It suppresses the persistent visitor id (the one cross-session identifier the SDK stores) and leaves session-scoped capture alone. `doNotTrack` is ignored unless you set `privacy.respectDoNotTrack`. `privacy.persistVisitorId: false` turns the visitor id off entirely and deletes any already stored. `privacy.captureUserEmail: false` keeps the email from `identify()` out of Maple.
+
+### Memory-only mode
+
+For sites that must not store anything on the device, set `privacy.persistence: "memory"`:
+
+```ts
+MapleBrowser.init({ ingestKey, serviceName, privacy: { persistence: "memory" } })
+```
+
+The SDK then writes no cookies, localStorage, sessionStorage or IndexedDB. Sessions, replays, traces, errors and `track()` events still work within a page load. What you give up:
+
+- **Each page load is a new session.** A reload or a full-page navigation starts a new session and a new replay. Single-page apps keep one session across client-side navigation.
+- **No visitor id.** Unique, new and returning visitors are not counted, and an anonymous visit cannot be linked to the account it becomes. `identify()` still attaches the user to the current session.
+- **Nothing is kept for later.** `transport.offline` stores no failed batches, and the last replay chunk of a closing page is sent only if the upload finishes before the page unloads.
+
+Turning it on also deletes the visitor id and visit cookies from an earlier configuration. The setting only tightens: if two SDKs on a page disagree, memory-only wins.
 
 ## Privacy and masking
 

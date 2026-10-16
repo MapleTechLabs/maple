@@ -22,10 +22,10 @@
 // and `DateTime64` (sessions, product events), and emitting the raw columns
 // would force a UNION supertype with inconsistent precision.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
-import { ProductEvents, ServiceUsage, SessionReplays } from "../tables"
-import { hourFloor } from "./query-helpers"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
+import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam } from "../tables"
+import { utcHourFloor } from "./query-helpers"
 
 /** The signals an empty state can be missing. Stable — the UI keys copy on these. */
 export type TelemetrySignal = "traces" | "logs" | "metrics" | "sessions" | "product_events"
@@ -60,9 +60,9 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 			lastSeen: CH.toString_(CH.max_($.Hour)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			$.TraceCount.gt(0),
 		])
 
@@ -74,9 +74,9 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 			lastSeen: CH.toString_(CH.max_($.Hour)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			$.LogCount.gt(0),
 		])
 
@@ -94,9 +94,9 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 			lastSeen: CH.toString_(CH.max_($.Hour)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(hourFloor("startTime")),
-			$.Hour.lte(hourFloor("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
 			$.SumMetricCount.add($.GaugeMetricCount)
 				.add($.HistogramMetricCount)
 				.add($.ExpHistogramMetricCount)
@@ -111,9 +111,9 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 			lastSeen: CH.toString_(CH.max_($.StartTime)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.StartTime.gte(param.dateTimeString("startTime")),
-			$.StartTime.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.StartTime.gte(param.dateTime("startTime")),
+			$.StartTime.lte(param.dateTime("endTime")),
 		])
 
 	const productEvents = from(ProductEvents)
@@ -124,9 +124,9 @@ export function signalPresenceQuery(): CHUnionQuery<SignalPresenceOutput> {
 			lastSeen: CH.toString_(CH.max_($.Timestamp)),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.Timestamp.gte(param.dateTimeString("startTime")),
-			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 
 	return unionAll(traces, logs, metrics, sessions, productEvents).format("JSON")

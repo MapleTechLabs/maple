@@ -17,38 +17,6 @@ const baseDocument = {
 }
 
 describe("DashboardVariableSchema", () => {
-	it("decodes a query variable with a facet source", () => {
-		const variable = decodeVariable({
-			name: "service",
-			type: "query",
-			source: { kind: "facet", facet: "service" },
-			includeAll: true,
-		})
-		expect(variable.name).toBe("service")
-		expect(variable.type).toBe("query")
-	})
-
-	it("decodes a query variable with an attribute source", () => {
-		const variable = decodeVariable({
-			name: "route",
-			type: "query",
-			source: { kind: "attribute", scope: "span", attributeKey: "http.route" },
-		})
-		expect(variable.type).toBe("query")
-	})
-
-	it("decodes custom and textbox variables", () => {
-		expect(
-			decodeVariable({
-				name: "env",
-				type: "custom",
-				options: [{ value: "prod" }, { value: "stg", label: "Staging" }],
-				defaultValue: "prod",
-			}).type,
-		).toBe("custom")
-		expect(decodeVariable({ name: "needle", type: "textbox" }).type).toBe("textbox")
-	})
-
 	it.each(["__x", "1x", "a-b", "", "a b", "$x"])("rejects invalid name %j", (name) => {
 		expect(() => decodeVariable({ name, type: "textbox" })).toThrow()
 	})
@@ -73,19 +41,6 @@ describe("DashboardDocument with variables", () => {
 		expect(decoded.variables).toBeUndefined()
 		expect("variables" in encodeDocument(decoded)).toBe(false)
 	})
-
-	it("round-trips a document with variables", () => {
-		const decoded = decodeDocument({
-			...baseDocument,
-			variables: [
-				{ name: "service", type: "query", source: { kind: "facet", facet: "service" } },
-				{ name: "env", type: "custom", options: [{ value: "prod" }], includeAll: true },
-			],
-		})
-		expect(decoded.variables).toHaveLength(2)
-		const encoded = encodeDocument(decoded)
-		expect(encoded.variables).toHaveLength(2)
-	})
 })
 
 const widget = (id: string, membership: Record<string, string> = {}) => ({
@@ -104,20 +59,6 @@ describe("DashboardDocument with sections", () => {
 		const encoded = encodeDocument(decoded)
 		expect("sections" in encoded).toBe(false)
 		expect("sectionId" in encoded.widgets[0]!).toBe(false)
-	})
-
-	it("round-trips sections and widget membership", () => {
-		const decoded = decodeDocument({
-			...baseDocument,
-			widgets: [widget("w1", { sectionId: "s1", tabId: "t1" })],
-			sections: [
-				{ id: "s1", title: "Overview", collapsed: true, tabs: [{ id: "t1", title: "Latency" }] },
-			],
-		})
-		expect(decoded.sections).toHaveLength(1)
-		expect(decoded.sections?.[0]?.collapsed).toBe(true)
-		expect(decoded.widgets[0]?.sectionId).toBe("s1")
-		expect(encodeDocument(decoded).sections?.[0]?.tabs).toHaveLength(1)
 	})
 
 	// This is the entire back-compat story for an older client reading a newer

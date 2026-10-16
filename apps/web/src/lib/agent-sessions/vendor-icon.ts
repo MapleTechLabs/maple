@@ -3,6 +3,7 @@ import { MapleMark } from "@maple/ui/components/icons"
 import {
 	ChatBubbleSparkleIcon,
 	ClaudeIcon,
+	CloudflareIcon,
 	CrewAiIcon,
 	EffectIcon,
 	GoogleIcon,
@@ -27,6 +28,7 @@ import {
  */
 const VENDOR_ICONS: Record<string, IconComponent> = {
 	claude_agent_sdk: ClaudeIcon,
+	cloudflare_ai_gateway: CloudflareIcon,
 	crewai: CrewAiIcon,
 	effect_ai: EffectIcon,
 	// eve is Vercel's agent framework and has no mark of its own.

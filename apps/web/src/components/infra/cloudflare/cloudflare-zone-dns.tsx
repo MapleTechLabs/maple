@@ -4,13 +4,15 @@
 // else gets zero rows and the section hides itself.
 
 import { useMemo } from "react"
+import { cn } from "@maple/ui/lib/utils"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Result } from "@/lib/effect-atom"
 import { cloudflareZoneDnsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable } from "../primitives/data-table"
-import { formatPercent } from "@maple/ui/lib/format"
+import { ColumnHead, DataTable } from "@/components/common/data-table"
+import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
 import { PanelScope } from "./panel-scope"
 import type { CloudflareFilters } from "./filters"
@@ -61,7 +63,10 @@ export function CloudflareZoneDnsSection({
 				value: bucket.queries,
 			}))
 			return (
-				<div className={`space-y-4 transition-opacity ${r.waiting ? "opacity-60" : ""}`}>
+				<div
+					className={cn("space-y-4", refreshingClass(r.waiting))}
+					aria-busy={r.waiting || undefined}
+				>
 					<StackedBreakdownChart
 						title="DNS queries by response code"
 						rows={rows}
@@ -102,14 +107,14 @@ function DnsNamesTable({
 
 			{rows.map((row) => (
 				<div key={row.queryName} className={ROW_CLASS}>
-					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-[13px] text-foreground">
+					<div className="w-0 min-w-[220px] flex-1 truncate font-mono text-xs text-foreground">
 						{row.queryName}
 					</div>
-					<div className="w-[100px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
+					<div className="w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80">
 						{formatNumber(row.queries)}
 					</div>
-					<div className="w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
-						{row.queries > 0 ? formatPercent(row.nxdomain / row.queries) : "—"}
+					<div className="w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80">
+						{row.queries > 0 ? formatPercent(row.nxdomain / row.queries) : EMPTY_VALUE}
 					</div>
 				</div>
 			))}

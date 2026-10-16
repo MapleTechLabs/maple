@@ -5,21 +5,11 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
-import { cn } from "@maple/ui/lib/utils"
-import { AlertWarningIcon, GithubIcon, GoogleIcon, type IconComponent } from "@/components/icons"
-import { toastAccountError } from "@/components/account/account-errors"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
+import { GithubIcon, GoogleIcon, type IconComponent } from "@/components/icons"
+import { settleClerk, toastAccountError } from "@/components/account/account-errors"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 
 interface Provider {
@@ -53,109 +43,97 @@ export function ConnectedAccountsSection() {
 	 * the browser has to visit so the provider can run its own consent screen. Coming back to
 	 * `/account?tab=connections` is what makes the new row appear.
 	 */
-	async function handleConnect(provider: Provider) {
+	/** Sends the browser to the provider's consent screen, or clears the busy row when there is none. */
+	function followRedirect(provider: Provider, redirect: URL | string | null | undefined) {
+		if (!redirect) {
+			toastManager.add({ title: `${provider.label} did not return a sign-in URL`, type: "error" })
+			setBusyProvider(null)
+			return
+		}
+		window.location.href = redirect.toString()
+	}
+
+	function handleConnect(provider: Provider) {
 		if (!user) return
 		setBusyProvider(provider.id)
-		try {
-			const account = await user.createExternalAccount({
-				strategy: provider.strategy,
-				redirectUrl: "/account?tab=connections",
-			})
-			const redirect = account.verification?.externalVerificationRedirectURL
-			if (!redirect) {
-				toastManager.add({ title: `${provider.label} did not return a sign-in URL`, type: "error" })
-				setBusyProvider(null)
-				return
-			}
-			window.location.href = redirect.toString()
-		} catch (err) {
-			toastAccountError(err, `Failed to connect ${provider.label}`)
-			setBusyProvider(null)
-		}
+		return user
+			.createExternalAccount({ strategy: provider.strategy, redirectUrl: "/account?tab=connections" })
+			.then(
+				(account) => followRedirect(provider, account.verification?.externalVerificationRedirectURL),
+				(err: unknown) => {
+					toastAccountError(err, `Failed to connect ${provider.label}`)
+					setBusyProvider(null)
+				},
+			)
 	}
 
 	/** An account that came back unverified needs the provider round trip run again. */
-	async function handleRetry(provider: Provider, account: ExternalAccount) {
+	function handleRetry(provider: Provider, account: ExternalAccount) {
 		setBusyProvider(provider.id)
-		try {
-			const reauthorized = await account.reauthorize({ redirectUrl: "/account?tab=connections" })
-			const redirect = reauthorized.verification?.externalVerificationRedirectURL
-			if (!redirect) {
-				toastManager.add({ title: `${provider.label} did not return a sign-in URL`, type: "error" })
+		return account.reauthorize({ redirectUrl: "/account?tab=connections" }).then(
+			(reauthorized) =>
+				followRedirect(provider, reauthorized.verification?.externalVerificationRedirectURL),
+			(err: unknown) => {
+				toastAccountError(err, `Failed to reconnect ${provider.label}`)
 				setBusyProvider(null)
-				return
-			}
-			window.location.href = redirect.toString()
-		} catch (err) {
-			toastAccountError(err, `Failed to reconnect ${provider.label}`)
-			setBusyProvider(null)
-		}
+			},
+		)
 	}
 
 	async function handleDisconnect() {
 		if (!pendingRemoval) return
-		setBusyProvider(pendingRemoval.account.provider)
-		try {
-			await destroyExternalAccount(pendingRemoval.account)
-			setPendingRemoval(null)
-			toastManager.add({ title: `${pendingRemoval.label} disconnected`, type: "success" })
-		} catch (err) {
-			toastAccountError(err, `Failed to disconnect ${pendingRemoval.label}`)
-		} finally {
-			setBusyProvider(null)
-		}
+		const { account, label } = pendingRemoval
+		setBusyProvider(account.provider)
+		const ok = await settleClerk(destroyExternalAccount(account), {
+			success: `${label} disconnected`,
+			error: `Failed to disconnect ${label}`,
+		})
+		if (ok) setPendingRemoval(null)
+		setBusyProvider(null)
 	}
 
 	return (
-		<div className="space-y-6">
-			<Card>
-				<CardHeader>
-					<CardTitle>Connected Accounts</CardTitle>
-					<CardDescription>
-						Sign in to Maple with a provider you already use. Disconnecting one removes it as a
-						sign-in method.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div className="max-w-xl space-y-1.5">
-						{PROVIDERS.map((provider) => {
-							const account = user.externalAccounts.find((a) => a.provider === provider.id)
-							const isVerified = account?.verification?.status === "verified"
-							const isBusy = busyProvider === provider.id
+		<SettingsSections>
+			<SettingsSection
+				title="Connected accounts"
+				description="Sign in to Maple with a provider you already use. Disconnecting one removes it as a sign-in method."
+				padded={false}
+			>
+				<div className="divide-y">
+					{PROVIDERS.map((provider) => {
+						const account = user.externalAccounts.find((a) => a.provider === provider.id)
+						const isVerified = account?.verification?.status === "verified"
+						const isBusy = busyProvider === provider.id
 
-							return (
-								<div
-									key={provider.id}
-									className={cn(
-										"flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors",
-										isVerified ? "border-primary/20 bg-primary/[0.02]" : "border-border",
-									)}
-								>
-									<div className="flex min-w-0 items-center gap-3">
-										<div className="text-muted-foreground">
-											<provider.icon size={18} />
-										</div>
-										<div className="min-w-0">
-											<div className="flex items-center gap-1.5">
-												<p className="text-sm font-medium">{provider.label}</p>
-												{account && !isVerified && (
-													<Badge
-														variant="outline"
-														className="text-muted-foreground"
-													>
-														Incomplete
-													</Badge>
-												)}
-											</div>
-											<p className="truncate text-muted-foreground text-xs">
-												{account
-													? account.emailAddress || account.username || "Connected"
-													: `Connect your ${provider.label} account`}
-											</p>
-										</div>
+						return (
+							<SettingRow
+								key={provider.id}
+								className="p-4"
+								icon={
+									<div className="text-muted-foreground">
+										<provider.icon size={18} />
 									</div>
-									{account ? (
-										<div className="flex shrink-0 items-center gap-2">
+								}
+								label={
+									<span className="flex items-center gap-1.5">
+										{provider.label}
+										{account && !isVerified && (
+											<Badge variant="outline" className="text-muted-foreground">
+												Incomplete
+											</Badge>
+										)}
+									</span>
+								}
+								description={
+									<span className="block truncate">
+										{account
+											? account.emailAddress || account.username || "Connected"
+											: `Connect your ${provider.label} account`}
+									</span>
+								}
+								control={
+									account ? (
+										<>
 											{!isVerified && (
 												<Button
 													variant="outline"
@@ -176,54 +154,35 @@ export function ConnectedAccountsSection() {
 											>
 												Disconnect
 											</Button>
-										</div>
+										</>
 									) : (
 										<Button
 											variant="outline"
 											size="sm"
-											className="shrink-0"
-											disabled={isBusy}
+											loading={isBusy}
 											onClick={() => void handleConnect(provider)}
 										>
-											{isBusy ? "Redirecting..." : "Connect"}
+											Connect
 										</Button>
-									)}
-								</div>
-							)
-						})}
-					</div>
-				</CardContent>
-			</Card>
+									)
+								}
+							/>
+						)
+					})}
+				</div>
+			</SettingsSection>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={pendingRemoval !== null}
 				onOpenChange={(open) => {
 					if (!open) setPendingRemoval(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Disconnect {pendingRemoval?.label}?</AlertDialogTitle>
-						<AlertDialogDescription>
-							You will no longer be able to sign in to Maple with {pendingRemoval?.label}. Make
-							sure you still have a password, a passkey or another connected account first.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={busyProvider !== null}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={handleDisconnect}
-							disabled={busyProvider !== null}
-						>
-							Disconnect
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
-		</div>
+				title={`Disconnect ${pendingRemoval?.label}?`}
+				description={`You will no longer be able to sign in to Maple with ${pendingRemoval?.label}. Make sure you still have a password, a passkey or another connected account first.`}
+				confirmLabel="Disconnect"
+				pending={busyProvider !== null}
+				onConfirm={() => void handleDisconnect()}
+			/>
+		</SettingsSections>
 	)
 }

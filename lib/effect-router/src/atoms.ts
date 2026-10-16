@@ -1,6 +1,6 @@
 import type { Effect } from "effect"
-import type { Atom } from "effect/unstable/reactivity"
-import type * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import type { Atom } from "effect/reactivity"
+import type * as AsyncResult from "effect/reactivity/AsyncResult"
 
 /**
  * Options for creating a route atom.

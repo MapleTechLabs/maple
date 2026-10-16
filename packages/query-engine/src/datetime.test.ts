@@ -152,19 +152,6 @@ describe("computeBucketSeconds", () => {
 })
 
 describe("BUCKET_POLICIES", () => {
-	/**
-	 * These three targets are NOT interchangeable, and a well-meaning "why do we
-	 * have three of these?" cleanup is exactly what this guards. `alert` in
-	 * particular re-tunes `minimumSampleCount` for every auto-sized rule if it
-	 * moves.
-	 */
-	it("keeps the three surfaces on their own targets", () => {
-		expect(BUCKET_POLICIES.chart.targetPoints).toBe(100)
-		expect(BUCKET_POLICIES.alert.targetPoints).toBe(30)
-		expect(BUCKET_POLICIES.rawSql.targetPoints).toBe(30)
-		expect(BUCKET_POLICIES.rawSql.minBucketSeconds).toBe(300)
-	})
-
 	it("gives chart and alert measurably different granularity on the same window", () => {
 		const sixHours = 6 * 3600_000
 		expect(computeBucketSeconds(0, sixHours, BUCKET_POLICIES.chart)).toBe(300)

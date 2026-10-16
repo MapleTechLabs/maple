@@ -51,7 +51,7 @@ The Workers preset uses a custom flushable tracer + Effect logger — Workers do
 ```typescript
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 
 const telemetry = MapleCloudflareSDK.make({
 	serviceName: "my-worker",
@@ -133,7 +133,7 @@ Effect.runPromise(program.pipe(Effect.provide(TracerLive)))
 Use the explicit `@maple-dev/effect-sdk/client` entry point with a compatible
 Effect 4 version (see `peerDependencies`). `Maple.layer` and `MapleFlush.make`
 can export Effect traces, logs, and metrics using the runtime's `fetch`,
-`TextEncoder`, and `TextDecoder`. `identify()` and `clearIdentity()` still
+`AbortController`, `TextEncoder`, and `TextDecoder`. `identify()` and `clearIdentity()` still
 control `user.id` on Effect spans.
 
 React Native's `window` does not imply a browser DOM. Browser sessions, replay,
@@ -313,7 +313,7 @@ const telemetry = MapleFlush.make({
 // telemetry.layer keeps the replay-session trace linking from Maple.layer.
 ```
 
-By default the client preset flushes on `pagehide` and `visibilitychange→hidden` so the tail of a session isn't lost when the tab goes away. Flush uses `fetch(url, { keepalive: true })`, **not** `navigator.sendBeacon`: Maple's ingest authenticates via the `Authorization` header (no query-param auth) and sendBeacon can't set headers, so it would 401 whenever an ingest key is set. `keepalive` carries the header and still survives unload for small bodies.
+By default the client preset flushes on `pagehide` and `visibilitychange→hidden` so the tail of a session isn't lost when the tab goes away. Flush uses `fetch` with `keepalive`, **not** `navigator.sendBeacon`: Maple's ingest authenticates via the `Authorization` header (no query-param auth) and sendBeacon can't set headers, so it would 401 whenever an ingest key is set. `keepalive` carries the header and survives unload, within a limit: browsers cap the in-flight keepalive bodies of one document at 64 KiB combined. The SDK keeps a 48 KiB budget for them, shared with the session writes, and OTLP uses at most 32 KiB of it. On unload the newest items of each signal go first, in a body of at most about 14 KiB (less when less of the budget is free). Older items follow in a second request, which keeps `keepalive` only while it still fits OTLP's share; without it, the browser terminates that request with the document.
 
 ## Configuration
 
@@ -337,10 +337,9 @@ Both server and client layers accept these options:
 | `shutdownTimeout`       | No                            | Graceful shutdown timeout                                                                 |
 
 `excludeLogSpans` (skip Effect log spans in OTLP log attributes) and the
-[span options](#span-options) below are accepted by every preset. The
-flushable presets (`MapleFlush.make`, and the Cloudflare `make`) replace the
-four interval options with `autoFlushInterval`, and add `tracesPath`,
-`logsPath`, and `metricsPath`.
+[span options](#span-options) below are accepted by every preset. `MapleFlush.make`
+replaces the four interval options with `autoFlushInterval`; it and the
+Cloudflare `make` add `tracesPath`, `logsPath`, and `metricsPath`.
 
 ### Span options
 

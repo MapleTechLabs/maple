@@ -1,9 +1,12 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { DashboardId, DashboardVersionId } from "@maple/domain/http"
 import { Atom, useAtom } from "@/lib/effect-atom"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { DashboardSections } from "@/components/dashboard-builder/sections/dashboard-sections"
 import { BlankDashboardEmpty } from "@/components/dashboard-builder/blank-dashboard-empty"
 import { LiveWidgetRenderer } from "@/components/dashboard-builder/canvas/live-widget-renderer"
@@ -38,6 +41,8 @@ import { useDashboardStore } from "@/hooks/use-dashboard-store"
 import { DashboardHistoryPanel, PreviewedCanvas } from "@/components/dashboard-builder/history"
 import { DashboardViewSkeleton } from "@/components/dashboard-builder/loading-skeletons"
 import { SyncDegradedBanner, SyncUnavailable } from "@/components/common/sync-unavailable"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
+import { CRUMB_ERROR, CRUMB_LOADING } from "@/components/layout/result-page"
 import { historyPanelOpenAtom, previewedVersionAtom } from "@/atoms/dashboard-history-atoms"
 import { useDashboardVersions } from "@/components/dashboard-builder/history/use-dashboard-history"
 import { Result } from "@/lib/effect-atom"
@@ -234,71 +239,38 @@ function DashboardViewPage() {
 	}
 
 	if (!activeDashboard) {
-		if (isLoading) {
-			return (
-				<DashboardLayout.Root>
-					<DashboardLayout.Breadcrumbs
-						items={[{ label: "Dashboards", href: "/dashboards" }, { label: "..." }]}
-					/>
-					<DashboardLayout.Body>
-						<DashboardLayout.Content>
-							<DashboardLayout.Scroll>
-								<DashboardViewSkeleton />
-							</DashboardLayout.Scroll>
-						</DashboardLayout.Content>
-					</DashboardLayout.Body>
-				</DashboardLayout.Root>
-			)
-		}
 		// A dead sync stream must not masquerade as a missing dashboard: the row may
 		// exist and simply never have arrived.
-		if (isError) {
-			return (
-				<DashboardLayout.Root>
-					<DashboardLayout.Breadcrumbs
-						items={[{ label: "Dashboards", href: "/dashboards" }, { label: "Unavailable" }]}
-					/>
-					<DashboardLayout.Body>
-						<DashboardLayout.Content>
-							<DashboardLayout.Scroll>
-								<SyncUnavailable
-									title="Couldn’t load this dashboard"
-									description="The sync stream isn’t reachable, so the dashboard couldn’t be read. Nothing has been lost — this is a read problem."
-									onRetry={retry}
-								/>
-							</DashboardLayout.Scroll>
-						</DashboardLayout.Content>
-					</DashboardLayout.Body>
-				</DashboardLayout.Root>
-			)
-		}
-		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Dashboards", href: "/dashboards" }, { label: "Not found" }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<div className="flex flex-col items-center gap-3 px-4 py-24 text-center">
-								<p className="text-sm font-medium text-foreground">Dashboard not found</p>
-								<p className="text-xs text-muted-foreground">
+		const [crumb, body] = isLoading
+			? [CRUMB_LOADING, <DashboardViewSkeleton />]
+			: isError
+				? [
+						CRUMB_ERROR,
+						<SyncUnavailable
+							title="Couldn’t load this dashboard"
+							description="The sync stream isn’t reachable, so the dashboard couldn’t be read. Nothing has been lost — this is a read problem."
+							onRetry={retry}
+						/>,
+					]
+				: [
+						"Not found",
+						<ResourceNotFound
+							title="Dashboard not found"
+							description={
+								<>
 									No dashboard with id{" "}
-									<code className="break-all rounded bg-muted px-1.5 py-0.5 text-foreground">
-										{dashboardId}
-									</code>
-								</p>
-								<Link
-									to="/dashboards"
-									className="mt-2 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-								>
-									← Back to all dashboards
-								</Link>
-							</div>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+									<InlineCode className="break-all px-1.5 py-0.5">{dashboardId}</InlineCode>
+								</>
+							}
+							backLink={<Link to="/dashboards" />}
+							backLabel="Back to all dashboards"
+							className="py-24"
+						/>,
+					]
+		return (
+			<DashboardPage breadcrumbs={[{ label: "Dashboards", href: "/dashboards" }, { label: crumb }]}>
+				{body}
+			</DashboardPage>
 		)
 	}
 
@@ -343,125 +315,113 @@ function DashboardViewPage() {
 						refreshIntervalSeconds={refreshIntervalSeconds}
 						paused={mode === "edit" || isPreviewing}
 					>
-						<DashboardLayout.Root>
-							<DashboardLayout.Breadcrumbs
-								items={[
-									{ label: "Dashboards", href: "/dashboards" },
-									{ label: activeDashboard.name },
-								]}
+						<DashboardPage
+							breadcrumbs={[
+								{ label: "Dashboards", href: "/dashboards" },
+								{ label: activeDashboard.name },
+							]}
+							titleContent={
+								<InlineEditableTitle
+									value={activeDashboard.name}
+									readOnly={readOnly || isPreviewing}
+									onChange={(name) => updateDashboard(dashboardId, { name })}
+								/>
+							}
+							headerActions={
+								<DashboardToolbar
+									dashboard={activeDashboard}
+									onToggleEdit={handleToggleEdit}
+									onAddWidget={() => setChartPickerOpen(true)}
+									onOpenHistory={openHistory}
+									refreshIntervalSeconds={refreshIntervalSeconds}
+									onRefreshIntervalChange={handleRefreshIntervalChange}
+								/>
+							}
+							rightPanel={
+								historyPanelOpen ? (
+									<HistoryPanelMount
+										dashboardId={dashboardId}
+										onClose={() => {
+											setHistoryPanelOpen(false)
+											setPreviewed(null)
+										}}
+									/>
+								) : undefined
+							}
+						>
+							{degraded && <SyncDegradedBanner onRetry={retry} />}
+							{persistenceError && (
+								<Alert variant="crit" size="sm" className="mb-4">
+									<AlertDescription className={TONE_TEXT.crit}>
+										{persistenceError}. Dashboard editing is temporarily disabled.
+									</AlertDescription>
+								</Alert>
+							)}
+
+							{isPreviewing && previewed ? (
+								<PreviewedCanvas
+									dashboardId={dashboardId}
+									preview={previewed}
+									onCancel={() => setPreviewed(null)}
+									onRestored={() => setPreviewed(null)}
+								/>
+							) : activeDashboard.widgets.length === 0 &&
+							  (activeDashboard.sections?.length ?? 0) === 0 ? (
+								// Shown while editing too: an edit-mode board with nothing on it
+								// renders as a blank page, which reads as a failed load.
+								<BlankDashboardEmpty
+									readOnly={readOnly}
+									onAddWidget={() => {
+										if (mode !== "edit") {
+											navigate({
+												to: "/dashboards/$dashboardId",
+												params: { dashboardId },
+												search: (prev) => ({
+													...pickDashboardControlParams(prev),
+													mode: "edit" as const,
+												}),
+											})
+										}
+										setChartPickerOpen(true)
+									}}
+								/>
+							) : (
+								<DashboardSections
+									renderWidget={LiveWidgetRenderer}
+									widgets={activeDashboard.widgets}
+									sections={activeDashboard.sections ?? []}
+									search={sectionViewSearch}
+									onToggleCollapsed={(sectionId, collapsed) =>
+										applySectionView((prev) =>
+											withSectionCollapsed(prev, sectionId, collapsed),
+										)
+									}
+									onSelectTab={(sectionId, tabId) =>
+										applySectionView((prev) => withActiveTab(prev, sectionId, tabId))
+									}
+									onAddWidget={(sectionId, tabId) => {
+										setPendingSectionTarget({ sectionId, tabId })
+										setChartPickerOpen(true)
+									}}
+								/>
+							)}
+
+							<WidgetPickerWithActions
+								open={readOnly || isPreviewing ? false : chartPickerOpen}
+								target={pendingSectionTarget}
+								onOpenChange={
+									readOnly || isPreviewing
+										? () => undefined
+										: (open) => {
+												setChartPickerOpen(open)
+												// Reset on close so the next toolbar "Add
+												// widget" lands on the root canvas rather
+												// than inheriting the last group used.
+												if (!open) setPendingSectionTarget(null)
+											}
+								}
 							/>
-							<DashboardLayout.Body>
-								<DashboardLayout.Content>
-									<DashboardLayout.Sticky>
-										<DashboardLayout.Header
-											titleContent={
-												<InlineEditableTitle
-													value={activeDashboard.name}
-													readOnly={readOnly || isPreviewing}
-													onChange={(name) =>
-														updateDashboard(dashboardId, { name })
-													}
-												/>
-											}
-										>
-											<DashboardToolbar
-												dashboard={activeDashboard}
-												onToggleEdit={handleToggleEdit}
-												onAddWidget={() => setChartPickerOpen(true)}
-												onOpenHistory={openHistory}
-												refreshIntervalSeconds={refreshIntervalSeconds}
-												onRefreshIntervalChange={handleRefreshIntervalChange}
-											/>
-										</DashboardLayout.Header>
-									</DashboardLayout.Sticky>
-									<DashboardLayout.Scroll>
-										{degraded && <SyncDegradedBanner onRetry={retry} />}
-										{persistenceError && (
-											<div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
-												{persistenceError}. Dashboard editing is temporarily disabled.
-											</div>
-										)}
-
-										{isPreviewing && previewed ? (
-											<PreviewedCanvas
-												dashboardId={dashboardId}
-												preview={previewed}
-												onCancel={() => setPreviewed(null)}
-												onRestored={() => setPreviewed(null)}
-											/>
-										) : activeDashboard.widgets.length === 0 &&
-										  (activeDashboard.sections?.length ?? 0) === 0 ? (
-											// Shown while editing too: an edit-mode board with nothing on it
-											// renders as a blank page, which reads as a failed load.
-											<BlankDashboardEmpty
-												readOnly={readOnly}
-												onAddWidget={() => {
-													if (mode !== "edit") {
-														navigate({
-															to: "/dashboards/$dashboardId",
-															params: { dashboardId },
-															search: (prev) => ({
-																...pickDashboardControlParams(prev),
-																mode: "edit" as const,
-															}),
-														})
-													}
-													setChartPickerOpen(true)
-												}}
-											/>
-										) : (
-											<DashboardSections
-												renderWidget={LiveWidgetRenderer}
-												widgets={activeDashboard.widgets}
-												sections={activeDashboard.sections ?? []}
-												search={sectionViewSearch}
-												onToggleCollapsed={(sectionId, collapsed) =>
-													applySectionView((prev) =>
-														withSectionCollapsed(prev, sectionId, collapsed),
-													)
-												}
-												onSelectTab={(sectionId, tabId) =>
-													applySectionView((prev) =>
-														withActiveTab(prev, sectionId, tabId),
-													)
-												}
-												onAddWidget={(sectionId, tabId) => {
-													setPendingSectionTarget({ sectionId, tabId })
-													setChartPickerOpen(true)
-												}}
-											/>
-										)}
-
-										<WidgetPickerWithActions
-											open={readOnly || isPreviewing ? false : chartPickerOpen}
-											target={pendingSectionTarget}
-											onOpenChange={
-												readOnly || isPreviewing
-													? () => undefined
-													: (open) => {
-															setChartPickerOpen(open)
-															// Reset on close so the next toolbar "Add
-															// widget" lands on the root canvas rather
-															// than inheriting the last group used.
-															if (!open) setPendingSectionTarget(null)
-														}
-											}
-										/>
-									</DashboardLayout.Scroll>
-								</DashboardLayout.Content>
-								<DashboardLayout.RightPanel>
-									{historyPanelOpen ? (
-										<HistoryPanelMount
-											dashboardId={dashboardId}
-											onClose={() => {
-												setHistoryPanelOpen(false)
-												setPreviewed(null)
-											}}
-										/>
-									) : undefined}
-								</DashboardLayout.RightPanel>
-							</DashboardLayout.Body>
-						</DashboardLayout.Root>
+						</DashboardPage>
 					</DashboardRefreshBridge>
 				</DashboardActionsProvider>
 			</DashboardVariablesProvider>

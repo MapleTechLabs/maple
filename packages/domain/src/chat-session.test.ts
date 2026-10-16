@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Effect, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { OrgId } from "./primitives"
 import {
@@ -28,36 +28,53 @@ import {
 	ChatTurnRetryEvent,
 	type ChatEventInput,
 } from "./chat-session"
-import { type ChatSessionNamespace, type ChatSessionStub, chatSessionStub } from "./chat-session-stub"
+import { ChatSessionCallError, type ChatSessionRpc, chatSessionClient } from "./chat-session-stub"
 
-describe("chatSessionStub", () => {
-	const stub = {} as ChatSessionStub
-	const namespace = (label: string, seen: string[]): ChatSessionNamespace => ({
-		idFromName: (name) => `${label}:${name}`,
-		get: (id) => {
-			seen.push(String(id))
-			return stub
-		},
-		jurisdiction: (jurisdiction) => namespace(`${label}/${jurisdiction}`, seen),
+describe("chatSessionClient", () => {
+	const unused = () => Effect.die("not called")
+	const rpc = (overrides: Partial<ChatSessionRpc>): ChatSessionRpc => ({
+		cursor: unused,
+		running: unused,
+		history: unused,
+		since: unused,
+		subscribe: unused,
+		append: unused,
+		beginTurn: unused,
+		settleProposal: unused,
+		holdsTurn: unused,
+		endTurn: unused,
+		abort: unused,
+		alarm: unused,
+		...overrides,
 	})
 
-	it("addresses the object through the eu jurisdiction on the EU instance", () => {
-		const seen: string[] = []
-		expect(chatSessionStub({ ChatSession: namespace("ns", seen), MAPLE_REGION: "eu" }, "org_a:t")).toBe(
-			stub,
-		)
-		expect(seen).toEqual(["ns/eu:org_a:t"])
+	it("keeps a failed RPC call in the typed channel, naming the method", async () => {
+		const client = chatSessionClient(rpc({ cursor: () => Effect.fail("rpc call failed") }))
+		const error = await Effect.runPromise(Effect.flip(client.cursor()))
+		expect(error).toBeInstanceOf(ChatSessionCallError)
+		expect(error.method).toBe("cursor")
 	})
 
-	it("leaves the us instance, and an env with no region, on the plain namespace", () => {
-		const seen: string[] = []
-		chatSessionStub({ ChatSession: namespace("ns", seen), MAPLE_REGION: "us" }, "org_a:t")
-		chatSessionStub({ ChatSession: namespace("ns", seen) }, "org_a:t")
-		expect(seen).toEqual(["ns:org_a:t", "ns:org_a:t"])
-	})
-
-	it("is undefined without the binding", () => {
-		expect(chatSessionStub({ MAPLE_REGION: "eu" }, "org_a:t")).toBeUndefined()
+	it("reads the subscription's bytes whether alchemy decoded them into a Stream or not", async () => {
+		const bytes = new TextEncoder().encode("id: 1\n\n")
+		const asStream = rpc({ subscribe: () => Effect.succeed(Stream.make(bytes)) })
+		const asReadable = rpc({
+			subscribe: () => Effect.succeed(Stream.toReadableStream(Stream.make(bytes))),
+		})
+		for (const source of [asStream, asReadable]) {
+			const chunks = await Effect.runPromise(
+				chatSessionClient(source)
+					.subscribe(0)
+					.pipe(
+						Effect.flatMap((body) =>
+							Stream.runCollect(
+								Stream.fromReadableStream({ evaluate: () => body, onError: String }),
+							),
+						),
+					),
+			)
+			expect(chunks).toEqual([bytes])
+		}
 	})
 })
 

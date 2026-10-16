@@ -161,7 +161,7 @@ export function AgentToolsLab() {
 						</button>
 					</>
 				) : null}
-				<span className="ml-2 font-mono text-[11px] text-muted-foreground">
+				<span className="ml-2 font-mono text-2xs text-muted-foreground">
 					{JSON.stringify(search)}
 				</span>
 			</div>

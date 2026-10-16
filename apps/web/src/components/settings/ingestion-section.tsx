@@ -1,33 +1,20 @@
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	AlertWarningIcon,
-	ArrowPathIcon,
-	ArrowRightIcon,
-	EyeIcon,
-	PaperPlaneIcon,
-	PulseIcon,
-} from "@/components/icons"
+import { ArrowPathIcon, ArrowRightIcon, EyeIcon, PaperPlaneIcon, PulseIcon } from "@/components/icons"
 import { CopyIndicator } from "@maple/ui/components/ui/copy-button"
 import { useCopy } from "@maple/ui/hooks/use-copy"
-import { formatNumber } from "@maple/ui/lib/format"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { docsUrl } from "@/lib/docs"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -39,43 +26,43 @@ import {
 	type IngestConnection,
 } from "@/components/ingest/use-ingest-connection"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
+import { SettingsSection, SettingsSections } from "./settings-section"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
 import { RecommendedMappingsSection } from "./recommended-mappings-section"
-
-const LANE_BADGE = "w-14 shrink-0 font-mono text-[10px] font-medium uppercase tracking-[0.12em]"
 
 /** Live ingest-health strip: green once telemetry lands, amber pulse while waiting. */
 function StatusBanner({ connection }: { connection: IngestConnection }) {
-	const [sending, setSending] = useState(false)
 	const connected = connection.status === "connected"
 
-	async function handleSendTest() {
-		if (!connection.apiKey || sending) return
-		setSending(true)
-		try {
-			await sendTestEvent(connection.apiKey)
-			toastManager.add({ title: "Test event sent — watch for it to land in traces", type: "success" })
-			connection.refresh()
-		} catch {
-			toastManager.add({
-				title: "Couldn't reach the ingest endpoint — double-check your API key",
-				type: "error",
-			})
-		} finally {
-			setSending(false)
-		}
-	}
+	const [handleSendTest, sending] = useAsyncAction(() => {
+		if (!connection.apiKey) return Promise.resolve()
+		return sendTestEvent(connection.apiKey).then(
+			() => {
+				toastManager.add({
+					title: "Test event sent. Watch for it to land in traces.",
+					type: "success",
+				})
+				connection.refresh()
+			},
+			() => {
+				toastManager.add({
+					title: "Failed to reach the ingest endpoint",
+					description: "Double-check your API key.",
+					type: "error",
+				})
+			},
+		)
+	})
 
 	const spansPerMinute = Math.round(connection.spansPerMinute)
 
 	return (
-		<div className="bg-card flex items-center gap-3 rounded-lg border px-4 py-2.5">
+		<Panel className="flex-row items-center gap-3 px-4 py-2.5">
 			{connected ? (
-				<span className="bg-severity-info size-2 shrink-0 rounded-full" />
+				<StatusDot tone="ok" size="lg" />
 			) : (
-				<PulseIcon
-					size={12}
-					className="text-primary shrink-0 animate-pulse motion-reduce:animate-none"
-				/>
+				<PulseIcon size={12} className="text-primary shrink-0" />
 			)}
 			<span className="text-sm font-medium whitespace-nowrap">
 				{connected ? "Receiving telemetry" : "Waiting for telemetry"}
@@ -83,7 +70,7 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 			<span className="text-muted-foreground truncate font-mono text-xs">
 				{connected
 					? [
-							`${connection.serviceCount} ${connection.serviceCount === 1 ? "service" : "services"}`,
+							countLabel(connection.serviceCount, "service"),
 							spansPerMinute > 0 ? `${formatNumber(spansPerMinute)} spans/min` : null,
 						]
 							.filter(Boolean)
@@ -99,21 +86,22 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 					render={<Link to="/traces" />}
 				>
 					Explore traces
-					<ArrowRightIcon size={13} />
+					<ArrowRightIcon />
 				</Button>
 			) : (
 				<Button
 					variant="outline"
 					size="sm"
 					className="shrink-0 gap-2"
-					onClick={handleSendTest}
-					disabled={sending || !connection.apiKey}
+					onClick={() => void handleSendTest()}
+					loading={sending}
+					disabled={!connection.apiKey}
 				>
-					<PaperPlaneIcon size={13} />
-					{sending ? "Sending…" : "Send test event"}
+					<PaperPlaneIcon />
+					Send test event
 				</Button>
 			)}
-		</div>
+		</Panel>
 	)
 }
 
@@ -121,7 +109,9 @@ interface CredentialRowProps {
 	label: string
 	badge: string
 	badgeClass: string
-	value: string
+	/** `null` while the value is still loading (or failed to, with `failed`). */
+	value: string | null
+	failed?: boolean
 	masked?: boolean
 	description?: string
 	isVisible?: boolean
@@ -142,77 +132,80 @@ function CredentialRow({
 	isVisible = false,
 	onToggleVisibility,
 	copyValue,
+	failed = false,
 	onRegenerate,
 	disabled = false,
 }: CredentialRowProps) {
 	// One copy state drives both affordances — the inline value and the trailing
 	// button — so they can never disagree about what was just copied.
 	const { copy, status } = useCopy({ label })
-	const onCopy = () => void copy(copyValue ?? value)
+	const isDisabled = disabled || value === null
+	const onCopy = () => {
+		if (value !== null) void copy(copyValue ?? value)
+	}
+	const hidden = masked && !isVisible
 
 	return (
-		<div className="flex items-center gap-3 border-t px-4 py-3">
-			<span className="w-[120px] shrink-0 text-sm">{label}</span>
-			<span className={cn(LANE_BADGE, badgeClass)}>{badge}</span>
-			<div className="flex min-w-0 grow flex-col items-start gap-0.5">
-				<button
-					type="button"
-					onClick={onCopy}
-					disabled={disabled}
-					title={status === "copied" ? "Copied!" : "Click to copy"}
-					className="group/value text-muted-foreground hover:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 font-mono text-xs tracking-wide transition-colors"
-				>
-					<span className="truncate">{masked && !isVisible ? maskKey(value) : value}</span>
-					<CopyIndicator
-						status={status}
-						size={12}
-						className={cn(
-							"transition-opacity group-hover/value:opacity-100",
-							status === "idle" && "opacity-0",
-						)}
-					/>
-				</button>
+		<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 sm:flex-nowrap">
+			<span className="w-full shrink-0 text-sm sm:w-[120px]">{label}</span>
+			<Eyebrow variant="mono" className={cn("hidden w-14 shrink-0 sm:block", badgeClass)}>
+				{badge}
+			</Eyebrow>
+			<div className="flex min-w-0 grow basis-0 flex-col items-start gap-0.5">
+				{value === null && failed ? (
+					<span className="text-muted-foreground text-xs">Could not load this key.</span>
+				) : value === null ? (
+					<Skeleton className="h-4 w-40 max-w-full" />
+				) : (
+					<button
+						type="button"
+						onClick={onCopy}
+						disabled={isDisabled}
+						aria-label={`Copy ${label}`}
+						className="group/value text-muted-foreground hover:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-mono text-xs tracking-wide transition-colors"
+					>
+						<span className={hidden ? "truncate" : "min-w-0 break-all"}>
+							{hidden ? maskKey(value) : value}
+						</span>
+						<CopyIndicator
+							status={status}
+							iconSize={12}
+							className={cn(
+								"shrink-0 transition-opacity group-hover/value:opacity-100",
+								status === "idle" && "opacity-0",
+							)}
+						/>
+					</button>
+				)}
 				{description && (
-					<span className="text-muted-foreground/75 text-[11px] leading-3.5">{description}</span>
+					<span className="text-muted-foreground/70 text-2xs leading-3.5">{description}</span>
 				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-1.5">
 				{onToggleVisibility && (
-					<Button
+					<IconButton
 						variant="outline"
-						size="icon-sm"
 						onClick={onToggleVisibility}
-						aria-label={isVisible ? "Hide key" : "Reveal key"}
-						title={isVisible ? "Hide" : "Reveal"}
-						disabled={disabled}
+						label={isVisible ? "Hide key" : "Reveal key"}
+						disabled={isDisabled}
 					>
 						<EyeIcon
-							size={13}
 							className={isVisible ? "text-foreground" : "text-muted-foreground"}
 						/>
-					</Button>
+					</IconButton>
 				)}
-				<Button
-					variant="outline"
-					size="icon-sm"
-					onClick={onCopy}
-					aria-label={`Copy ${label}`}
-					title={status === "copied" ? "Copied!" : "Copy"}
-					disabled={disabled}
-				>
-					<CopyIndicator status={status} size={13} />
-				</Button>
+				<IconButton variant="outline" onClick={onCopy} label={`Copy ${label}`} disabled={isDisabled}>
+					<CopyIndicator status={status} iconSize={13} />
+				</IconButton>
 				{onRegenerate && (
-					<Button
+					<IconButton
 						variant="outline"
-						size="icon-sm"
 						onClick={onRegenerate}
-						aria-label={`Regenerate ${label.toLowerCase()}`}
-						title="Regenerate"
+						label={`Regenerate ${label.toLowerCase()}`}
 						disabled={disabled}
 					>
-						<ArrowPathIcon size={13} className="text-destructive" />
-					</Button>
+						<ArrowPathIcon className="text-destructive" />
+					</IconButton>
 				)}
 			</div>
 		</div>
@@ -224,7 +217,6 @@ export function IngestionSection() {
 	const [privateKeyVisible, setPrivateKeyVisible] = useState(false)
 	const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false)
 	const [regenerateKeyType, setRegenerateKeyType] = useState<"public" | "private" | null>(null)
-	const [submittingKeyType, setSubmittingKeyType] = useState<"public" | "private" | null>(null)
 
 	const keysQueryAtom = retainedQueryV2("ingestKeys", "retrieve", {})
 	const keysResult = useAtomValue(keysQueryAtom)
@@ -240,154 +232,126 @@ export function IngestionSection() {
 		mode: "promiseExit",
 	})
 
-	const isBusy = useMemo(
-		() => !Result.isSuccess(keysResult) || submittingKeyType !== null,
-		[keysResult, submittingKeyType],
-	)
-
 	function openRegenerateDialog(keyType: "public" | "private") {
 		setRegenerateKeyType(keyType)
 		setRegenerateDialogOpen(true)
 	}
 
-	async function handleRegenerate() {
+	const [handleRegenerate, regenerating] = useAsyncAction(async () => {
 		if (!regenerateKeyType) return
-
-		setSubmittingKeyType(regenerateKeyType)
-
 		const result =
 			regenerateKeyType === "public" ? await rerollPublicMutation({}) : await rerollPrivateMutation({})
-
-		if (Exit.isSuccess(result)) {
-			refreshKeys()
-
-			toastManager.add({
-				title: `${regenerateKeyType === "public" ? "Public" : "Private"} key regenerated. Previous key was revoked immediately.`,
-				type: "success",
+		if (
+			toastExit(result, {
+				success: `${regenerateKeyType === "public" ? "Public" : "Private"} key regenerated. Previous key was revoked immediately.`,
+				error: "Unable to complete request",
 			})
-		} else {
-			toastManager.add({ title: "Unable to complete request", type: "error" })
+		) {
+			refreshKeys()
 		}
-
-		setSubmittingKeyType(null)
 		setRegenerateDialogOpen(false)
 		setRegenerateKeyType(null)
-	}
+	})
+	const isBusy = !Result.isSuccess(keysResult) || regenerating
 
 	const publicKey = Result.builder(keysResult)
-		.onSuccess((v) => v.public_key)
-		.orElse(() => "Loading...")
+		.onSuccess((v): string | null => v.public_key)
+		.orElse(() => null)
 	const privateKey = Result.builder(keysResult)
-		.onSuccess((v) => v.private_key)
-		.orElse(() => "Loading...")
+		.onSuccess((v): string | null => v.private_key)
+		.orElse(() => null)
 
 	return (
 		<>
-			<div className="space-y-5">
+			<SettingsSections>
 				<StatusBanner connection={connection} />
 
-				<div className="bg-card flex flex-col rounded-lg border">
-					<div className="flex items-start gap-3 px-4 pt-4 pb-3">
-						<div className="flex flex-col gap-1">
-							<h3 className="text-sm font-medium">Endpoint &amp; keys</h3>
-							<p className="text-muted-foreground text-xs">
-								Point your OTLP exporter at the endpoint and authenticate with an ingest key.
-							</p>
-						</div>
-						<div className="grow" />
+				<SettingsSection
+					title="Endpoint & keys"
+					description="Point your OTLP exporter at the endpoint and authenticate with an ingest key."
+					padded={false}
+					actions={
 						<a
 							href={docsUrl("instrumentation")}
 							target="_blank"
 							rel="noopener noreferrer"
-							className="text-muted-foreground hover:text-foreground font-mono text-[11px] whitespace-nowrap transition-colors"
+							className="text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors"
 						>
 							Docs ↗
 						</a>
+					}
+				>
+					<div className="divide-y">
+						<CredentialRow
+							label="OTLP endpoint"
+							badge="HTTP"
+							badgeClass="text-muted-foreground"
+							value={ingestUrl}
+						/>
+						<CredentialRow
+							label="Public key"
+							badge="Client"
+							badgeClass="text-info"
+							value={publicKey}
+							failed={Result.isFailure(keysResult)}
+							masked
+							description="For browser and client-side telemetry SDKs"
+							isVisible={publicKeyVisible}
+							onToggleVisibility={() => setPublicKeyVisible((v) => !v)}
+							onRegenerate={() => openRegenerateDialog("public")}
+							disabled={isBusy}
+						/>
+						<CredentialRow
+							label="Private key"
+							badge="Server"
+							badgeClass="text-warning"
+							value={privateKey}
+							failed={Result.isFailure(keysResult)}
+							masked
+							description="For server-side ingestion and backend services"
+							isVisible={privateKeyVisible}
+							onToggleVisibility={() => setPrivateKeyVisible((v) => !v)}
+							onRegenerate={() => openRegenerateDialog("private")}
+							disabled={isBusy}
+						/>
 					</div>
-					<CredentialRow
-						label="OTLP endpoint"
-						badge="HTTP"
-						badgeClass="text-muted-foreground"
-						value={ingestUrl}
-					/>
-					<CredentialRow
-						label="Public key"
-						badge="Client"
-						badgeClass="text-info"
-						value={publicKey}
-						copyValue={Result.isSuccess(keysResult) ? keysResult.value.public_key : ""}
-						masked
-						description="For browser and client-side telemetry SDKs"
-						isVisible={publicKeyVisible}
-						onToggleVisibility={() => setPublicKeyVisible((v) => !v)}
-						onRegenerate={() => openRegenerateDialog("public")}
-						disabled={isBusy}
-					/>
-					<CredentialRow
-						label="Private key"
-						badge="Server"
-						badgeClass="text-warning"
-						value={privateKey}
-						copyValue={Result.isSuccess(keysResult) ? keysResult.value.private_key : ""}
-						masked
-						description="For server-side ingestion and backend services"
-						isVisible={privateKeyVisible}
-						onToggleVisibility={() => setPrivateKeyVisible((v) => !v)}
-						onRegenerate={() => openRegenerateDialog("private")}
-						disabled={isBusy}
-					/>
-				</div>
+				</SettingsSection>
 
-				<div className="bg-card flex flex-col rounded-lg border">
-					<div className="flex flex-wrap items-start gap-x-6 gap-y-3 px-4 pt-4 pb-3">
-						<div className="flex min-w-[260px] flex-col gap-1">
-							<h3 className="text-sm font-medium whitespace-nowrap">
-								Send your first telemetry
-							</h3>
-							<p className="text-muted-foreground text-xs">
-								Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you.
-							</p>
-						</div>
-						<div className="ml-auto">
-							<FrameworkPicker compact selected={framework} onSelect={setFramework} />
-						</div>
-					</div>
-					<ConnectInstructions framework={framework} apiKey={connection.apiKey} variant="flush" />
-				</div>
+				<SettingsSection
+					title="Send your first telemetry"
+					description="Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you."
+					padded={false}
+					actions={<FrameworkPicker compact selected={framework} onSelect={setFramework} />}
+				>
+					<ConnectInstructions
+						framework={framework}
+						apiKey={connection.apiKey}
+						apiKeyStatus={connection.apiKeyStatus}
+						variant="flush"
+					/>
+				</SettingsSection>
 
 				<RecommendedMappingsSection />
 
 				<AttributeMappingsSection />
-			</div>
+			</SettingsSections>
 
-			<AlertDialog open={regenerateDialogOpen} onOpenChange={setRegenerateDialogOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>
-							Regenerate {regenerateKeyType === "public" ? "public" : "private"} key?
-						</AlertDialogTitle>
-						<AlertDialogDescription>
-							This action cannot be undone. All existing integrations using this key will stop
-							working immediately. You will need to update your{" "}
-							{regenerateKeyType === "public" ? "client-side SDKs" : "server configurations"}{" "}
-							with the new key.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={submittingKeyType !== null}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={handleRegenerate}
-							disabled={submittingKeyType !== null}
-						>
-							Regenerate key
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ConfirmDialog
+				open={regenerateDialogOpen}
+				onOpenChange={setRegenerateDialogOpen}
+				title={`Regenerate ${regenerateKeyType === "public" ? "public" : "private"} key?`}
+				description={
+					<>
+						This action cannot be undone. All existing integrations using this key will stop
+						working immediately. You will need to update your{" "}
+						{regenerateKeyType === "public" ? "client-side SDKs" : "server configurations"} with
+						the new key.
+					</>
+				}
+				confirmLabel="Regenerate key"
+				onConfirm={() => void handleRegenerate()}
+				pending={regenerating}
+			/>
 		</>
 	)
 }

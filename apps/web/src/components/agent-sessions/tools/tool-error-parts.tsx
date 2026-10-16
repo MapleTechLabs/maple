@@ -1,8 +1,12 @@
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 import { formatErrorRate } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { formatToolCount } from "@/lib/agent-sessions/tool-analytics"
+import { formatDateInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
 import type { ErrorPathPart, ErrorTextToken, FailureStatus } from "@/lib/agent-sessions/tool-error-display"
 
 // The pieces the Errors table and the error group modal both draw a failure
@@ -13,15 +17,15 @@ import type { ErrorPathPart, ErrorTextToken, FailureStatus } from "@/lib/agent-s
  *  raw text is its tooltip. */
 export function MaskChip({ label, raw, className }: { label: string; raw: string; className?: string }) {
 	return (
-		<span
+		<InlineCode
 			title={raw === "" ? undefined : raw}
 			className={cn(
-				"mx-px inline-block rounded-[3px] bg-muted px-[3px] align-baseline font-mono text-[11.5px] leading-[15px] font-normal text-muted-foreground",
+				"mx-px inline-block rounded-[3px] px-[3px] py-0 align-baseline text-2xs leading-3.75 font-normal text-muted-foreground",
 				className,
 			)}
 		>
 			{label}
-		</span>
+		</InlineCode>
 	)
 }
 
@@ -113,7 +117,7 @@ function HeadingToken({ token }: { token: ErrorTextToken }) {
 				<MaskChip
 					label={token.label}
 					raw={token.raw}
-					className="border border-border bg-transparent text-[15px] leading-5"
+					className="border border-border bg-transparent text-title leading-5"
 				/>
 			)
 		case "at":
@@ -132,7 +136,7 @@ function HeadingToken({ token }: { token: ErrorTextToken }) {
  */
 export function ErrorTextHeading({ tokens }: { tokens: ReadonlyArray<ErrorTextToken> }) {
 	const pathIndex = tokens.findIndex((token) => token.kind === "path")
-	const heading = "font-mono text-lg leading-[26px] font-semibold tracking-[-0.01em] text-foreground"
+	const heading = "font-mono text-lg leading-6.5 font-semibold tracking-[-0.01em] text-foreground"
 	if (pathIndex < 0) {
 		return (
 			<h2 className={cn(heading, "line-clamp-3 break-words")}>
@@ -152,85 +156,26 @@ export function ErrorTextHeading({ tokens }: { tokens: ReadonlyArray<ErrorTextTo
 					<HeadingToken key={index} token={token} />
 				))}
 			</span>
-			<span className="flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-[26px]">
+			<span className="flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-6.5">
 				<span className="text-muted-foreground">at</span>
-				<span className="break-all font-semibold tracking-[-0.01em] text-[var(--severity-error)]">
+				<span className={cn("break-all font-semibold tracking-[-0.01em]", TONE_TEXT.crit)}>
 					{path?.kind === "path" ? (
 						<PathParts
 							parts={path.parts}
 							keyClassName=""
-							maskClassName="border border-border bg-transparent text-[15px] leading-5"
+							maskClassName="border border-border bg-transparent text-title leading-5"
 						/>
 					) : null}
 				</span>
 			</span>
 			{tail.length > 0 ? (
-				<span className="line-clamp-2 break-words pl-6 font-mono text-[13px] leading-[18px] text-foreground/85">
+				<span className="line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground/80">
 					{tail.map((token, index) => (
 						<HeadingToken key={index} token={token} />
 					))}
 				</span>
 			) : null}
 		</h2>
-	)
-}
-
-/** Failed calls per bucket: a bar where there were some, a floor where there
- *  were none, so a group that stopped reads as a row of empty buckets rather
- *  than a short chart. */
-export function TrendBars({
-	counts,
-	width,
-	height,
-	radius = 1,
-	className,
-}: {
-	counts: ReadonlyArray<number>
-	width: number
-	height: number
-	radius?: number
-	className?: string
-}) {
-	const gap = counts.length > 12 ? 1 : width > 200 ? 12 : 4
-	const bar = Math.max(1, (width - gap * (counts.length - 1)) / Math.max(counts.length, 1))
-	const max = Math.max(1, ...counts)
-	return (
-		<svg
-			width={width}
-			height={height}
-			viewBox={`0 0 ${width} ${height}`}
-			className={cn("shrink-0", className)}
-			aria-hidden
-		>
-			{counts.map((count, index) => {
-				const x = index * (bar + gap)
-				if (count === 0) {
-					return (
-						<rect
-							key={index}
-							x={x}
-							y={height - 2}
-							width={bar}
-							height={2}
-							rx={1}
-							fill="var(--input)"
-						/>
-					)
-				}
-				const barHeight = Math.max(3, Math.round((count / max) * height))
-				return (
-					<rect
-						key={index}
-						x={x}
-						y={height - barHeight}
-						width={bar}
-						height={barHeight}
-						rx={radius}
-						fill="var(--severity-error)"
-					/>
-				)
-			})}
-		</svg>
 	)
 }
 
@@ -246,23 +191,17 @@ export function windowRangeLabel(startMs: number, endMs: number, timeZone: strin
 		: `${start} – ${monthDay.format(endMs)}`
 }
 
-const STATUS_DOT = {
-	stopped: "bg-[var(--severity-info)]",
-	ongoing: "bg-[var(--severity-error)]",
-	quiet: "bg-muted-foreground",
-} satisfies Record<FailureStatus["kind"], string>
+const STATUS_TONE = {
+	stopped: "ok",
+	ongoing: "crit",
+	quiet: "neutral",
+} satisfies Record<FailureStatus["kind"], Tone>
 
 const shortDate = (ms: number, timeZone: string) =>
-	new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone }).format(ms)
+	formatDateInTimezone(ms, { timeZone, withYear: false })
 
 const dateTime = (ms: number, timeZone: string) =>
-	new Intl.DateTimeFormat("en-US", {
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		timeZone,
-	}).format(ms)
+	formatTimestampInTimezone(ms, { timeZone, style: "range" })
 
 /**
  * Whether failing has stopped, in one line.
@@ -317,8 +256,8 @@ export function FailureStatusLine({
 								: `· failed in ${activeBuckets.active} of ${activeBuckets.total} ${activeBuckets.unit === "day" ? "days" : `${activeBuckets.unit} buckets`}`,
 						]
 	return (
-		<span className={cn("flex items-center gap-2 font-mono text-[11.5px] leading-3.5", className)}>
-			<span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status.kind])} />
+		<span className={cn("flex items-center gap-2 font-mono text-2xs leading-3.5", className)}>
+			<StatusDot tone={STATUS_TONE[status.kind]} />
 			<span className="text-foreground">{lead}</span>
 			{detail === undefined ? null : <span className="text-muted-foreground/70">{detail}</span>}
 		</span>

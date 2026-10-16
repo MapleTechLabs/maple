@@ -3,6 +3,7 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 import type { ResolvedScale } from "@tanstack/charts"
 
 import { usePlotRect, usePlotScales, useSuppressChartTooltip, type PlotRect } from "@maple/ui/components/plot"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { parseBucketMs } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -350,19 +351,17 @@ function MarkerGroup({
 						height: LABEL_HEIGHT,
 					}}
 					className={cn(
-						"pointer-events-auto flex cursor-pointer items-center justify-center gap-1 rounded-[5px] border px-1.5 font-mono text-[11px] leading-none backdrop-blur-sm transition-colors",
+						"pointer-events-auto flex cursor-pointer items-center justify-center gap-1 rounded-[5px] border px-1.5 font-mono text-2xs leading-none backdrop-blur-sm transition-colors",
 						active
 							? "border-border bg-popover text-popover-foreground shadow-sm"
 							: "border-border/60 bg-popover/85 text-muted-foreground hover:text-popover-foreground",
 					)}
 				>
-					<span className="min-w-0 truncate" title={group.label}>
-						{group.label}
-					</span>
+					<TruncatedText text={group.label}>{group.label}</TruncatedText>
 					{badge > 0 ? (
 						<span
 							className={cn(
-								"shrink-0 rounded-[3px] px-1 text-[10px] tabular-nums",
+								"shrink-0 rounded-[3px] px-1 text-3xs tabular-nums",
 								active ? "bg-muted text-foreground" : "bg-muted/70 text-muted-foreground",
 							)}
 						>

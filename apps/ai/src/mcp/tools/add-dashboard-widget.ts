@@ -10,6 +10,7 @@ import {
 } from "@maple/domain/http"
 import { AddDashboardWidgetOutput } from "@maple/domain/mcp-outputs"
 import {
+	DATA_SOURCE_VARIANTS,
 	defaultSizeForPanelType,
 	findNextWidgetPosition,
 	generateWidgetId,
@@ -130,14 +131,19 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 			// Likewise a paths widget: `display_json.paths` is the whole definition.
 			const pathsDefinition = decodedDisplay.paths
 
+			// A markdown note reads nothing, so its data source is always `{ kind: "static" }`.
+			const isMarkdown = panel_type === "markdown" || visualization === "markdown"
 			if (
 				!useRawSql &&
+				!isMarkdown &&
 				funnelDefinition === undefined &&
 				pathsDefinition === undefined &&
 				(!data_source_json || !display_json)
 			) {
 				return yield* invalid(
-					"add_dashboard_widget requires either `sql` (raw ClickHouse SQL path), both `data_source_json` and `display_json` (structured-query path), a `display_json.funnel.steps` definition (product-event funnel), or a `display_json.paths` definition (paths).",
+					"add_dashboard_widget requires either `sql` (raw ClickHouse SQL path), both `data_source_json` and `display_json` (structured-query path), a `display_json.funnel.steps` definition (product-event funnel), or a `display_json.paths` definition (paths). " +
+						'A markdown note is `panel_type: "markdown"` with `display_json: {"markdown":{"content":"..."}}` (its data source is `{"kind":"static"}`). ' +
+						`data_source_json shapes: ${DATA_SOURCE_VARIANTS}.`,
 					'{ "sql": "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)" }',
 				)
 			}
@@ -209,6 +215,8 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 					)
 				}
 				dataSource = makeProductEventsPathsDataSource(pathsDefinition)
+			} else if (isMarkdown && data_source_json === undefined) {
+				dataSource = { kind: "static" }
 			} else {
 				if (data_source_json === undefined) {
 					return yield* invalid(
@@ -263,7 +271,7 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 				Effect.gen(function* () {
 					if (existingWidgets.some((w) => w.id === newId)) {
 						return yield* invalid(
-							`Widget id "${newId}" already exists on dashboard ${dashboard_id}. Pass a different widget_id or omit it to auto-generate one.`,
+							`Widget id "${newId}" already exists on dashboard ${dashboard_id}. To change that widget use update_dashboard_widget widget_id="${newId}" (title, chart_id or patch_json for a partial edit); to add another, pass a different widget_id or omit it.`,
 							undefined,
 							"widget_id",
 						)

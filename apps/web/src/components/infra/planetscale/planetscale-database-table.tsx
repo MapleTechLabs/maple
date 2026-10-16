@@ -7,8 +7,9 @@ import { cn } from "@maple/ui/lib/utils"
 
 import type { V2PlanetScaleDatabase } from "@maple/domain/http/v2"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
-import { formatNumber } from "@maple/ui/lib/format"
-import { ColumnHead, DataTable, MetaChip, ROW_LINK_CLASS, useTableSort } from "../primitives/data-table"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { formatWholePercent } from "../format"
+import { ColumnHead, DataTable, MetaChip, ROW_LINK_CLASS, useTableSort } from "@/components/common/data-table"
 import {
 	MISSING,
 	abnormalState,
@@ -213,62 +214,74 @@ export function PlanetScaleDatabaseTable({
 						className={ROW_LINK_CLASS}
 					>
 						<div className="flex w-0 min-w-[220px] flex-1 items-center gap-2 overflow-hidden">
-							<span className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
+							<span
+								className="min-w-0 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+								title={row.name}
+							>
 								{row.name}
 							</span>
 							<Badge variant="outline" className="shrink-0">
 								{row.kind === "postgresql" ? "Postgres" : "MySQL"}
 							</Badge>
 							{state !== null ? (
-								<Badge variant="warning" className="shrink-0">
+								<Badge variant="warn" className="shrink-0">
 									{state}
 								</Badge>
 							) : null}
-							{row.region ? <MetaChip>{row.region}</MetaChip> : null}
-							{row.plan ? <MetaChip>{row.plan}</MetaChip> : null}
+							{/* Region and plan are context the detail page repeats; they yield to the name. */}
+							{row.region ? (
+								<span className="hidden shrink-0 xl:inline-flex">
+									<MetaChip>{row.region}</MetaChip>
+								</span>
+							) : null}
+							{row.plan ? (
+								<span className="hidden shrink-0 xl:inline-flex">
+									<MetaChip>{row.plan}</MetaChip>
+								</span>
+							) : null}
 						</div>
-						<div className="hidden w-[80px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
+						<div className="hidden w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 							{row.branchCount}
 						</div>
 						{metricsPaused ? null : (
 							<>
-								<div className="w-[96px] text-right font-mono text-[12px] tabular-nums text-foreground/80">
-									{row.hasStats ? formatNumber(row.connectionsAvg) : "—"}
+								<div className="w-[96px] text-right font-mono text-xs tabular-nums text-foreground/80">
+									{row.hasStats ? formatNumber(row.connectionsAvg) : EMPTY_VALUE}
 								</div>
 								<div
 									className={cn(
-										"w-[88px] text-right font-mono text-[12px] tabular-nums text-foreground/80",
+										"w-[88px] text-right font-mono text-xs tabular-nums text-foreground/80",
 										row.hasStats && utilizationClass(row.cpuMaxPercent),
 									)}
 								>
-									{row.hasStats ? `${row.cpuMaxPercent.toFixed(0)}%` : "—"}
+									{row.hasStats ? formatWholePercent(row.cpuMaxPercent / 100) : EMPTY_VALUE}
 								</div>
 								<div
 									className={cn(
-										"hidden w-[104px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block",
+										"hidden w-[104px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block",
 										row.hasStats && utilizationClass(row.memMaxPercent),
 									)}
 								>
-									{row.hasStats ? `${row.memMaxPercent.toFixed(0)}%` : "—"}
+									{row.hasStats ? formatWholePercent(row.memMaxPercent / 100) : EMPTY_VALUE}
 								</div>
 								<div
 									className={cn(
-										"w-[80px] text-right font-mono text-[12px] tabular-nums text-foreground/80",
+										"w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80",
 										row.storageUsedPercent !== MISSING &&
 											utilizationClass(row.storageUsedPercent),
 									)}
 								>
 									{row.storageUsedPercent === MISSING
-										? "—"
+										? EMPTY_VALUE
 										: formatStoragePercent(row.storageUsedPercent)}
 								</div>
 								<div
 									className={cn(
-										"w-[88px] text-right font-mono text-[12px] tabular-nums text-foreground/80",
+										"w-[88px] text-right font-mono text-xs tabular-nums text-foreground/80",
 										row.hasStats && lagClass(row.replicaLagMaxSeconds),
 									)}
 								>
-									{row.hasStats ? formatLag(row.replicaLagMaxSeconds) : "—"}
+									{row.hasStats ? formatLag(row.replicaLagMaxSeconds) : EMPTY_VALUE}
 								</div>
 							</>
 						)}

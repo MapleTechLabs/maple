@@ -23,7 +23,7 @@ import {
 	trackPublish,
 	trackSubscription,
 } from "./registry.js"
-import type * as KeyValueStore from "effect/unstable/persistence/KeyValueStore"
+import type * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { UnitflowMisuseError } from "./defects.js"
 import { makeSlot, type PersistOptions } from "./persistence.js"
 import { awaitFirst, evaluate, type WaitPredicate } from "./wait-for.js"

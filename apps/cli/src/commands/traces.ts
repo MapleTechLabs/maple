@@ -1,9 +1,10 @@
-import * as Command from "effect/unstable/cli/Command"
-import * as Argument from "effect/unstable/cli/Argument"
-import * as Flag from "effect/unstable/cli/Flag"
+import * as Command from "effect/cli/Command"
+import * as Argument from "effect/cli/Argument"
+import * as Flag from "effect/cli/Flag"
 import { Effect, Option } from "effect"
 import * as f from "../lib/flags"
 import { CliNotFoundError, CliUsageError } from "../lib/errors"
+import { traceLink, withTraceLinks } from "../lib/local-links"
 import { printResult } from "../lib/output"
 import { slowTracesView, traceView, tracesView } from "../lib/views"
 import { describeWindow, resolveRangeChecked } from "../core/time"
@@ -69,7 +70,11 @@ export const traces = Command.make("traces", {
 			if (result.spans.length === 0 && service !== undefined && a.offset === 0) {
 				yield* assertKnownService(service, range, window)
 			}
-			yield* printResult(result, tracesView(`No traces matched in ${window}`))
+			const output = Option.match(yield* Ops.localUiBase, {
+				onNone: () => result,
+				onSome: (base) => ({ ...result, spans: withTraceLinks(base, result.spans) }),
+			})
+			yield* printResult(output, tracesView(`No traces matched in ${window}`))
 		}),
 	),
 )
@@ -128,7 +133,11 @@ export const trace = Command.make("trace", {
 							: "try a wider window, e.g. --since 7d",
 				})
 			}
-			yield* printResult(result, traceView)
+			const output = Option.match(yield* Ops.localUiBase, {
+				onNone: () => result,
+				onSome: (base) => ({ url: traceLink(base, traceId), ...result }),
+			})
+			yield* printResult(output, traceView)
 		}),
 	),
 )
@@ -155,7 +164,11 @@ export const slowTraces = Command.make("slow-traces", {
 				environment: Option.getOrUndefined(a.environment),
 				limit: a.limit,
 			})
-			yield* printResult(result, slowTracesView(`No traces in ${describeWindow(a, range)}`))
+			const output = Option.match(yield* Ops.localUiBase, {
+				onNone: () => result,
+				onSome: (base) => ({ ...result, traces: withTraceLinks(base, result.traces) }),
+			})
+			yield* printResult(output, slowTracesView(`No traces in ${describeWindow(a, range)}`))
 		}),
 	),
 )

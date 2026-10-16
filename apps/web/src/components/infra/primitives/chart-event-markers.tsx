@@ -21,8 +21,9 @@ import { ruleX, rect, text } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { resolvePlotColor } from "@maple/ui/components/plot"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import type { Tone } from "@maple/ui/lib/tone"
 
-export type ChartEventTone = "neutral" | "warn" | "crit"
+export type ChartEventTone = Extract<Tone, "neutral" | "warn" | "crit">
 
 export interface ChartEventMarker {
 	readonly id: string
@@ -96,14 +97,13 @@ export function placeMarkersInWindow(
  * which takes literal colour strings and silently paints nothing for a `var()`.
  */
 const TONE_TOKENS = {
-	neutral: ["--muted-foreground", "#71717a"],
-	warn: ["--severity-warn", "#f59e0b"],
-	crit: ["--severity-error", "#ef4444"],
-} satisfies Record<ChartEventTone, readonly [token: string, fallback: string]>
+	neutral: "--muted-foreground",
+	warn: "--severity-warn",
+	crit: "--severity-error",
+} satisfies Record<ChartEventTone, string>
 
 function toneColor(tone: ChartEventTone): string {
-	const [token, fallback] = TONE_TOKENS[tone]
-	return resolvePlotColor(token, fallback)
+	return resolvePlotColor(TONE_TOKENS[tone])
 }
 
 /**
@@ -196,7 +196,7 @@ export function chartEventMarkerMarks(
 						// `position: "top"` put it.
 						y: () => yDomain[1],
 						text: (entry: PlacedMarker) => entry.marker.label,
-						fill: resolvePlotColor("--muted-foreground", "#71717a"),
+						fill: resolvePlotColor("--muted-foreground"),
 						anchor: "middle",
 						dy: -4,
 						fontSize: 9,

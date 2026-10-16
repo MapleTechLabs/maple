@@ -1,4 +1,4 @@
-import type { HttpClient } from "effect/unstable/http"
+import type { HttpClient } from "effect/http"
 import type { ChatConnector } from "../../connector"
 import type { ConnectorCredentials } from "../../outbound"
 import { SLACK_CONNECTOR_ID } from "./id"

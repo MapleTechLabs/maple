@@ -1,8 +1,11 @@
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Link } from "@tanstack/react-router"
 
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
-import { formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 
 import { severityLevel } from "@/components/infra/format"
@@ -44,19 +47,22 @@ export function ServiceLensRail({
 	activeService,
 	unlinkedCount,
 	loading,
-	waiting,
+	waiting = false,
 	timeSearch,
 }: ServiceLensRailProps) {
 	return (
-		<div className={cn("flex h-full flex-col gap-0.5 p-3", waiting && "opacity-60")}>
-			<div className="px-2 pb-2.5 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+		<div
+			className={cn("flex h-full flex-col gap-0.5 p-3", refreshingClass(waiting))}
+			aria-busy={waiting || undefined}
+		>
+			<Eyebrow as="div" className="px-2 pb-2.5">
 				Services on this cluster
-			</div>
+			</Eyebrow>
 
 			{loading ? (
 				<RailLoading />
 			) : services.length === 0 ? (
-				<p className="px-2 text-[11px] leading-relaxed text-muted-foreground">
+				<p className="px-2 text-2xs leading-relaxed text-muted-foreground">
 					No service resolves to a Kubernetes workload in this window.
 				</p>
 			) : (
@@ -72,10 +78,10 @@ export function ServiceLensRail({
 
 			{unlinkedCount != null && unlinkedCount > 0 && (
 				<div className="mt-auto space-y-1.5 border-t px-2 pb-1 pt-3.5">
-					<div className="text-[11px] text-foreground">
+					<div className="text-2xs text-foreground">
 						{unlinkedCount} {unlinkedCount === 1 ? "service" : "services"} not linked
 					</div>
-					<p className="text-[11px] leading-relaxed text-muted-foreground">
+					<p className="text-2xs leading-relaxed text-muted-foreground">
 						Their spans carry no workload identity, so the lens can't reach their pods.{" "}
 						<Link
 							to="/infra/kubernetes/pods"
@@ -113,23 +119,24 @@ function RailRow({
 			search={timeSearch}
 			className={cn(
 				"flex h-[34px] items-center gap-2.5 rounded-md px-2 transition-colors",
-				active ? "bg-accent" : "hover:bg-accent/50",
+				rowSelectedClass(active),
+				!active && "hover:bg-accent/50",
 			)}
 		>
-			<ServiceDot serviceName={service.serviceName} className="size-1.5" />
+			<ServiceDot serviceName={service.serviceName} size="sm" />
 			<span
 				className={cn(
-					"min-w-0 flex-1 truncate font-mono text-[12px]",
+					"min-w-0 flex-1 truncate font-mono text-xs",
 					active ? "text-foreground" : "text-muted-foreground",
 				)}
 				title={service.serviceName}
 			>
 				{service.serviceName}
 			</span>
-			<span className={cn("w-[38px] shrink-0 text-right font-mono text-[11px] tabular-nums", tone)}>
-				{utilization == null ? "—" : formatPercent(utilization)}
+			<span className={cn("w-[38px] shrink-0 text-right font-mono text-2xs tabular-nums", tone)}>
+				{utilization == null ? EMPTY_VALUE : formatPercent(utilization)}
 			</span>
-			<span className="w-[22px] shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+			<span className="w-[22px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground">
 				{service.podCount}
 			</span>
 		</Link>
@@ -137,11 +144,5 @@ function RailRow({
 }
 
 function RailLoading() {
-	return (
-		<div className="space-y-1.5 px-2 pt-1">
-			{Array.from({ length: 6 }, (_, i) => (
-				<Skeleton key={i} className="h-[22px] w-full" />
-			))}
-		</div>
-	)
+	return <SkeletonList rows={6} rowClassName="h-[22px]" className="gap-1.5 px-2 pt-1" />
 }

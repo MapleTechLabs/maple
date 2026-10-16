@@ -1,13 +1,18 @@
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { Field, FieldLabel } from "@maple/ui/components/ui/field"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { useId, useRef, useState } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
 import type { DashboardWidget } from "@/components/dashboard-builder/types"
 import { tokenizeSql } from "@/lib/sql-highlight"
+import { CollapseToggle } from "@/components/dashboard-builder/config/query-panel-shell"
 
 const MACRO_HINTS: Array<{ token: string; description: string }> = [
 	{ token: "$__orgFilter", description: "Required: expands to OrgId = '<your org>'" },
@@ -75,28 +80,25 @@ export function RawSqlEditorPanel({
 			<div className="border rounded-md">
 				{/* Header follows QueryPanel's compact query row. */}
 				<div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
-					<button
-						type="button"
-						onClick={() => setCollapsed((c) => !c)}
-						className="text-muted-foreground hover:text-foreground transition-colors text-xs shrink-0"
-						aria-label={collapsed ? "Expand SQL" : "Collapse SQL"}
-					>
-						{collapsed ? "▶" : "▼"}
-					</button>
+					<CollapseToggle
+						collapsed={collapsed}
+						onToggle={() => setCollapsed((c) => !c)}
+						noun="SQL"
+					/>
 
 					<Badge
 						variant="outline"
-						className={cn("font-mono text-[11px] text-white border-0 shrink-0 bg-primary/80")}
+						className={cn("font-mono text-2xs text-white border-0 shrink-0 bg-primary/80")}
 					>
 						sql
 					</Badge>
 
-					<span className="text-[11px] text-muted-foreground">ClickHouse</span>
+					<span className="text-2xs text-muted-foreground">ClickHouse</span>
 
 					<div className="flex-1" />
 
 					{sqlIssue !== null && !collapsed && (
-						<span className="text-[11px] text-destructive" title={sqlIssue.message}>
+						<span className={cn("text-2xs", TONE_TEXT.crit)} title={sqlIssue.message}>
 							{sqlIssue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : sqlIssue.message}
 						</span>
 					)}
@@ -138,37 +140,54 @@ export function RawSqlEditorPanel({
 						<div className="flex items-start gap-3 pt-1 border-t border-dashed">
 							<div className="flex flex-wrap gap-1.5 flex-1 pt-2">
 								{MACRO_HINTS.map((hint) => (
-									<button
-										key={hint.token}
-										type="button"
-										title={hint.description}
-										onClick={() => insertToken(hint.token)}
-										className="px-2 py-0.5 text-[11px] rounded-sm bg-muted/40 text-muted-foreground font-mono transition-colors hover:bg-muted hover:text-foreground"
-									>
-										{hint.token}
-									</button>
+									<Tooltip key={hint.token}>
+										<TooltipTrigger
+											render={
+												<Button
+													variant="ghost"
+													size="xs"
+													onClick={() => insertToken(hint.token)}
+													className="h-auto rounded-sm bg-muted/40 px-2 py-0.5 font-mono text-2xs text-muted-foreground hover:bg-muted hover:text-foreground sm:h-auto sm:text-2xs"
+												/>
+											}
+										>
+											{hint.token}
+										</TooltipTrigger>
+										<TooltipContent className="max-w-xs">
+											{hint.description}
+										</TooltipContent>
+									</Tooltip>
 								))}
 								{variableNames.map((name) => (
-									<button
-										key={`var-${name}`}
-										type="button"
-										title={`Dashboard variable — expands to the selected value, e.g. ServiceName IN ($${name}). "All" expands to every value.`}
-										onClick={() => insertToken(`$${name}`)}
-										className="px-2 py-0.5 text-[11px] rounded-sm bg-primary/10 text-primary font-mono transition-colors hover:bg-primary/20"
-									>
-										${name}
-									</button>
+									<Tooltip key={`var-${name}`}>
+										<TooltipTrigger
+											render={
+												<Button
+													variant="ghost"
+													size="xs"
+													onClick={() => insertToken(`$${name}`)}
+													className="h-auto rounded-sm bg-primary/10 px-2 py-0.5 font-mono text-2xs text-primary hover:bg-primary/20 sm:h-auto sm:text-2xs"
+												/>
+											}
+										>
+											${name}
+										</TooltipTrigger>
+										<TooltipContent className="max-w-xs">
+											Dashboard variable: expands to the selected value, e.g.
+											ServiceName IN (${name}). "All" expands to every value.
+										</TooltipContent>
+									</Tooltip>
 								))}
 							</div>
 
 							{showBucketControl && (
-								<div className="flex items-center gap-2 pt-1.5 shrink-0">
-									<label
+								<Field className="flex-row items-center gap-2 pt-1.5 shrink-0">
+									<FieldLabel
 										htmlFor={bucketInputId}
-										className="text-[11px] text-muted-foreground whitespace-nowrap"
+										className="font-normal text-2xs text-muted-foreground whitespace-nowrap sm:text-2xs"
 									>
 										Bucket
-									</label>
+									</FieldLabel>
 									<Input
 										id={bucketInputId}
 										type="number"
@@ -186,8 +205,8 @@ export function RawSqlEditorPanel({
 										}
 										className="h-7 w-20 text-xs"
 									/>
-									<span className="text-[11px] text-muted-foreground">s</span>
-								</div>
+									<span className="text-2xs text-muted-foreground">s</span>
+								</Field>
 							)}
 						</div>
 					</div>
@@ -198,14 +217,11 @@ export function RawSqlEditorPanel({
 				<div className="flex items-center gap-3">
 					{onRunPreview && (
 						<Button size="sm" onClick={onRunPreview} disabled={sqlIssue !== null}>
-							Run Preview
+							Run preview
 						</Button>
 					)}
-					<span className="text-[11px] text-muted-foreground ml-auto">
-						Targets{" "}
-						<code className="font-mono text-foreground">
-							{targetLabel ?? widget?.visualization}
-						</code>
+					<span className="text-2xs text-muted-foreground ml-auto">
+						Targets <InlineCode>{targetLabel ?? widget?.visualization}</InlineCode>
 					</span>
 				</div>
 			)}

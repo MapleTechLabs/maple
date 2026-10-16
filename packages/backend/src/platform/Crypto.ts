@@ -8,21 +8,18 @@ export interface EncryptedValue {
 }
 
 export const parseBase64Aes256GcmKey = <E>(raw: string, onError: (message: string) => E) =>
-	Effect.try({
-		try: () => {
-			const trimmed = raw.trim()
-			if (trimmed.length === 0) {
-				throw new Error("Expected a non-empty base64 encryption key")
-			}
+	Effect.suspend((): Effect.Effect<Buffer, E> => {
+		const trimmed = raw.trim()
+		if (trimmed.length === 0) {
+			return Effect.fail(onError("Expected a non-empty base64 encryption key"))
+		}
 
-			const decoded = Buffer.from(trimmed, "base64")
-			if (decoded.length !== 32) {
-				throw new Error("Expected base64 for exactly 32 bytes")
-			}
+		const decoded = Buffer.from(trimmed, "base64")
+		if (decoded.length !== 32) {
+			return Effect.fail(onError("Expected base64 for exactly 32 bytes"))
+		}
 
-			return decoded
-		},
-		catch: (error) => onError(error instanceof Error ? error.message : "Invalid encryption key"),
+		return Effect.succeed(decoded)
 	})
 
 /**

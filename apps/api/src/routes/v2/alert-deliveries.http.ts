@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { AlertDeliveryEventDocument } from "@maple/domain/http"
 import { CurrentTenant } from "@maple/domain/http"
 import type { V2AlertDelivery } from "@maple/domain/http/v2"

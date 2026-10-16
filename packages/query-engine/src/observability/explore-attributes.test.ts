@@ -4,6 +4,7 @@ import { exploreAttributeKeys, exploreAttributeValues } from "./explore-attribut
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
+import { OrgId } from "@maple/domain"
 
 interface CapturedCalls {
 	pipeCalls: Array<{ pipe: string; params: Record<string, unknown> }>
@@ -13,7 +14,7 @@ const makeMockExecutor = (
 	captured: CapturedCalls,
 	rows: ReadonlyArray<Record<string, unknown>> = [],
 ): WarehouseExecutorApi => ({
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => compiledQueryOf(compiled).decodeFirstRow([]).pipe(Effect.orDie),
 	query: (pipe: string, params: Record<string, unknown>) => {

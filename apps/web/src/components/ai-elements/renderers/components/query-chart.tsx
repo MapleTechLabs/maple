@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 
-import { QueryBuilderAreaChart } from "@maple/ui/components/charts"
+import { ChartEmpty, QueryBuilderAreaChart } from "@maple/ui/components/charts"
 
 import type { RendererComponentProps } from "./types"
 
@@ -33,16 +33,12 @@ export function QueryChart({ props }: RendererComponentProps<QueryChartProps>) {
 	const rows = useMemo(() => data.map((point) => ({ bucket: point.bucket, ...point.series })), [data])
 
 	if (rows.length === 0) {
-		return (
-			<div className="flex h-[140px] items-center justify-center text-[11px] text-muted-foreground">
-				No data points
-			</div>
-		)
+		return <ChartEmpty height={140}>No data points</ChartEmpty>
 	}
 
 	return (
 		<div className="space-y-1">
-			<p className="text-[11px] font-medium text-muted-foreground">{metric}</p>
+			<p className="text-2xs font-medium text-muted-foreground">{metric}</p>
 			{/*
 			 * `legend="hidden"`: the Recharts original drew no `<Legend>`. Nothing
 			 * opens a legend slot around an agent message either, so the series are

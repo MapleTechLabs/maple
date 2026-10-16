@@ -1,6 +1,6 @@
 import type { Duration } from "effect"
 import { Effect, Layer, Redacted } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { type MapleRegion, warnIfKeylessMapleIngest } from "@maple/browser-session/region"
 import { makeOtlpLayer } from "../shared/otlp-layer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"

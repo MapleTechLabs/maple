@@ -1,4 +1,5 @@
 import { memo, useMemo, useRef } from "react"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import {
 	Handle,
 	Position,
@@ -15,7 +16,8 @@ import "@xyflow/react/dist/style.css"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 import { CircleXmarkIcon, MaximizeIcon, MinusIcon, PlusIcon } from "@/components/icons"
-import { Button } from "@maple/ui/components/ui/button"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
@@ -294,9 +296,7 @@ export function SessionFlow({
 			    canvas rather than inside its transformed pane. */}
 			<div className="relative flex grow flex-col">
 				{lanes.length === 0 ? (
-					<p className="px-2.5 py-8 text-center text-muted-foreground text-sm">
-						No spans match this filter.
-					</p>
+					<EmptyMessage>No spans match this filter.</EmptyMessage>
 				) : (
 					<div ref={paneRef} className="relative min-h-48 grow">
 						<ReactFlow
@@ -355,7 +355,7 @@ export function SessionFlow({
 									)
 								})}
 								<span className="flex items-center gap-1.5">
-									<CircleXmarkIcon size={12} className="shrink-0 text-destructive" />
+									<CircleXmarkIcon size={12} className="shrink-0 text-severity-error" />
 									error
 								</span>
 							</div>
@@ -396,37 +396,20 @@ function FlowControls({ zoom }: { zoom: number }) {
 
 	return (
 		<div className="pointer-events-auto flex items-center gap-1 rounded-md bg-background/80 p-0.5 backdrop-blur-sm">
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Zoom in"
-				disabled={zoom >= MAX_ZOOM}
-				onClick={() => void flow.zoomIn()}
-			>
-				<PlusIcon size={14} />
-			</Button>
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Zoom out"
-				disabled={zoom <= MIN_ZOOM}
-				onClick={() => void flow.zoomOut()}
-			>
-				<MinusIcon size={14} />
-			</Button>
+			<IconButton label="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => void flow.zoomIn()}>
+				<PlusIcon />
+			</IconButton>
+			<IconButton label="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => void flow.zoomOut()}>
+				<MinusIcon />
+			</IconButton>
 			{/* A deliberate reset rather than `fitView`: fit clamps against the
 			    0.5 floor on any real session and lands somewhere unpredictable,
 			    while "top of the session at 1:1" is the one place the reader can
 			    always name. (`fitView` also queues behind the flow's own render
 			    when called from outside it, and this button lives in the floor.) */}
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Reset view"
-				onClick={() => void flow.setViewport({ x: 0, y: 0, zoom: 1 })}
-			>
-				<MaximizeIcon size={14} />
-			</Button>
+			<IconButton label="Reset view" onClick={() => void flow.setViewport({ x: 0, y: 0, zoom: 1 })}>
+				<MaximizeIcon />
+			</IconButton>
 		</div>
 	)
 }
@@ -473,7 +456,7 @@ const StepNode = memo(function StepNode({ data }: NodeProps & { data: StepData }
 				className={cn(
 					"flex size-full cursor-pointer flex-col justify-center gap-1 rounded-md border bg-card px-2.5 py-2 text-left hover:border-ring",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-					node.errored ? "border-destructive/60" : "border-border",
+					node.errored ? "border-severity-error/60" : "border-border",
 					focused && "border-ring",
 					// Selection is a state and hover is a pointer, so they cannot share a
 					// token: the waterfall marks its selected row with primary, and the
@@ -486,22 +469,22 @@ const StepNode = memo(function StepNode({ data }: NodeProps & { data: StepData }
 						size={12}
 						className={cn(
 							"shrink-0",
-							node.errored ? "text-destructive" : CATEGORY_TEXT[node.category],
+							node.errored ? "text-severity-error" : CATEGORY_TEXT[node.category],
 						)}
 					/>
 					<span className="min-w-0 truncate text-xs" title={node.title}>
 						{shortTarget(node.title)}
 					</span>
 					{node.count > 1 && (
-						<span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+						<span className="shrink-0 text-2xs text-muted-foreground tabular-nums">
 							×{node.count}
 						</span>
 					)}
 				</span>
 				<span
 					className={cn(
-						"truncate text-[11px]",
-						node.errored ? "text-destructive" : "text-muted-foreground",
+						"truncate text-2xs",
+						node.errored ? "text-severity-error" : "text-muted-foreground",
 					)}
 				>
 					{node.subtitle}
@@ -522,11 +505,13 @@ interface LaneLabelData extends Record<string, unknown> {
 const LaneLabelNode = memo(function LaneLabelNode({ data }: NodeProps & { data: LaneLabelData }) {
 	return (
 		<div className="pointer-events-none w-[110px] text-xs">
-			<p className="font-medium text-[10px] text-primary uppercase tracking-wider">Turn {data.index}</p>
-			<p className={cn("tabular-nums", data.failed ? "text-destructive" : "text-muted-foreground")}>
+			<Eyebrow as="p" className="text-primary">
+				Turn {data.index}
+			</Eyebrow>
+			<p className={cn("tabular-nums", data.failed ? "text-severity-error" : "text-muted-foreground")}>
 				{formatDuration(data.durationMs)}
 			</p>
-			{data.failed && <p className="text-destructive text-xs">failed</p>}
+			{data.failed && <p className="text-severity-error text-xs">failed</p>}
 		</div>
 	)
 })

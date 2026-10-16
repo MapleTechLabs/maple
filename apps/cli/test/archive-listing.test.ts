@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
-import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
+import { deepStrictEqual, ok, rejects, strictEqual, throws } from "node:assert"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -247,7 +247,7 @@ describe("archive listing", () => {
 			// Corrupt the pointer for a second range of the SAME signal.
 			mkdirSync(join(archiveDir, "traces", "2026-06-02"), { recursive: true })
 			writeFileSync(activePointerPath(archiveDir, "traces", "2026-06-02"), "{bad json")
-			throwsSync(() => activeParquetPaths(archiveDir, "traces"), /malformed range/)
+			throws(() => activeParquetPaths(archiveDir, "traces"), /malformed range/)
 		})
 	})
 
@@ -329,13 +329,3 @@ describe("archive catalog rebuild", () => {
 })
 
 const sha256Hex = (content: string): string => createHash("sha256").update(content).digest("hex")
-
-const throwsSync = (fn: () => unknown, pattern: RegExp): void => {
-	try {
-		fn()
-		throw new Error("expected function to throw")
-	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error)
-		if (!pattern.test(msg)) throw new Error(`expected ${pattern}, got: ${msg}`)
-	}
-}

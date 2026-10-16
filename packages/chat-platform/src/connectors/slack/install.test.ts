@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Redacted } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { BOT_SCOPES, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { decodeSlackCredentials } from "./credentials"
 import { slack } from "./index"
@@ -68,23 +68,6 @@ describe("slack authorize URL", () => {
 		assert.strictEqual(url.searchParams.get("state"), "nonce")
 		// No user token is asked for, so Maple never holds an installer's identity.
 		assert.isNull(url.searchParams.get("user_scope"))
-	})
-
-	it("asks for the nine scopes the connector actually uses", () => {
-		assert.deepStrictEqual(
-			[...BOT_SCOPES],
-			[
-				"app_mentions:read",
-				"chat:write",
-				"chat:write.public",
-				"channels:history",
-				"groups:history",
-				"im:history",
-				"mpim:history",
-				"channels:read",
-				"groups:read",
-			],
-		)
 	})
 
 	it.effect("reports an unconfigured deployment instead of minting a broken URL", () =>

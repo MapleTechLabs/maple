@@ -5,6 +5,7 @@
 import { startOfDayInTimeZone } from "@maple/query-engine/datetime"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
+import { shortId } from "@maple/ui/lib/ids"
 
 /**
  * Health, worst first. A single band per release so the sidebar facet and the
@@ -297,7 +298,7 @@ export function releaseFacetCounts(groups: ReadonlyArray<ReleaseGroup>): Release
 
 /** A 40-hex git sha reads as its 7-char short form; tags and versions stay verbatim. */
 export function shortReleaseLabel(sha: string): string {
-	return /^[0-9a-f]{40}$/i.test(sha) ? sha.slice(0, 7) : sha
+	return /^[0-9a-f]{40}$/i.test(sha) ? shortId(sha, "sha") : sha
 }
 
 /**

@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { isoTimestampOrNull, MapleApiV2, V2InsufficientPermissions } from "@maple/domain/http/v2"
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"

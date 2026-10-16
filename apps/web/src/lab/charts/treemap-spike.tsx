@@ -6,7 +6,7 @@ import {
 	usePlotChromeColors,
 	usePlotColors,
 	usePlotLegendHighlight,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotLegendSeries,
 } from "@maple/ui/components/plot"
 import { defineChart } from "@tanstack/charts"
@@ -32,14 +32,14 @@ export interface TreemapSpikeRow {
 }
 
 const TILE_TOKENS = {
-	c1: ["--chart-1", "#6366f1"],
-	c2: ["--chart-2", "#ec4899"],
-	c3: ["--chart-3", "#f59e0b"],
-	c4: ["--chart-4", "#10b981"],
-	c5: ["--chart-5", "#3b82f6"],
-	label: ["--background", "#0b0b0f"],
-	tileStroke: ["--background", "#0b0b0f"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	c1: "--chart-1",
+	c2: "--chart-2",
+	c3: "--chart-3",
+	c4: "--chart-4",
+	c5: "--chart-5",
+	label: "--background",
+	tileStroke: "--background",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * Deterministic fixture: 6 services × 3–5 operations, span counts in a realistic
@@ -278,7 +278,7 @@ function TreemapFigure({
 					<div className="flex flex-col gap-1">
 						<div className="flex items-center gap-2">
 							<span
-								className="size-2.5 shrink-0 rounded-[2px]"
+								className="size-2.5 shrink-0 rounded-xs"
 								style={{ backgroundColor: serviceColor(service) }}
 							/>
 							<span className="text-muted-foreground">{service}</span>

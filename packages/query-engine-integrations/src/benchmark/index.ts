@@ -14,6 +14,7 @@ import { MAPLE_AI_TRACE_SESSION_PREFIX } from "@maple/domain/gen-ai"
 import * as CH from "../index"
 import { BenchmarkError, type CatalogEntry } from "@maple/query-engine/benchmark"
 import { fingerprintSql } from "@maple/query-engine/execution"
+import { OrgId } from "@maple/domain"
 
 export interface IntegrationFixture {
 	/** Source module basename, e.g. `"cloudflare-infra"`. */
@@ -25,7 +26,7 @@ export interface IntegrationFixture {
 	readonly compile: () => CompiledQuery<unknown>
 }
 
-const ORG_ID = "org_sql_catalog"
+const ORG_ID = OrgId.make("org_sql_catalog")
 const START_TIME = "2026-01-01 10:30:00"
 const END_TIME = "2026-01-03 14:15:00"
 
@@ -47,6 +48,14 @@ const cfUsageCompare = { ...window, currentStartTime: "2026-01-02 10:30:00", pre
 /** One PlanetScale branch, as the /infra/planetscale pages scope them. */
 const psBranch = { ...window, database: "maple-prd", branch: "main" }
 const psBranchBucketed = { ...psBranch, bucketSeconds: 300 }
+
+const railwayWindow = { orgId: ORG_ID, startTime: START_TIME, endTime: END_TIME }
+const railwayServiceBucketed = {
+	...railwayWindow,
+	environmentId: "env_1",
+	serviceId: "svc_1",
+	bucketSeconds: 300,
+}
 
 /** The zone-slice filters the /infra/cloudflare page sends, as one bag. */
 const CF_FILTERS = { hosts: ["example.com"], statusClasses: ["5xx"], methods: ["GET"] }
@@ -666,6 +675,30 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnsafe(CH.cloudflareWorkerLatencySQL(), cfZone),
 	},
 	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerOutcomeTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerOutcomeTimeseriesSQL(), { ...cfZoneBucketed, accountId: "" }),
+	},
+	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerLatencyTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerLatencyTimeseriesSQL(), { ...cfZoneBucketed, accountId: "" }),
+	},
+	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerDurableObjectTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerDurableObjectTimeseriesSQL(), {
+				...cfZoneBucketed,
+				accountId: "",
+			}),
+	},
+	{
 		module: "cloudflare-infra-extended",
 		name: "cloudflareZoneFirewallTimeseriesSQL",
 		label: "default",
@@ -736,6 +769,18 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "planetscaleBranchInfraTimeseriesSQL",
 		label: "default",
 		compile: () => compileUnsafe(CH.planetscaleBranchInfraTimeseriesSQL(), psBranchBucketed),
+	},
+	{
+		module: "railway-infra",
+		name: "railwayServicesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.railwayServicesSQL(), railwayWindow),
+	},
+	{
+		module: "railway-infra",
+		name: "railwayServiceTimeseriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
 	},
 	{
 		module: "planetscale-map",

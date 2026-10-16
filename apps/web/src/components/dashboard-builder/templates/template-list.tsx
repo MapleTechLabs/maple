@@ -1,11 +1,12 @@
 import { useMemo } from "react"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
-import { ToolbarSearch } from "@maple/ui/components/toolbar"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Toolbar, ToolbarSearch } from "@maple/ui/components/toolbar"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import {
 	ArrowRightIcon,
 	CircleCheckIcon,
@@ -13,6 +14,9 @@ import {
 	MagnifierIcon,
 	PlusIcon,
 } from "@/components/icons"
+import { ListSectionHeader } from "@/components/dashboard-builder/list-section-header"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
+import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 import { templateIcon } from "./template-icons"
 import {
 	BLANK_TEMPLATE_ID,
@@ -24,6 +28,12 @@ import {
 import type { TemplateReadiness } from "./use-template-readiness"
 
 export type ReadinessFilter = "all" | "ready" | "needs-setup"
+
+const READINESS_OPTIONS: ReadonlyArray<SegmentedOption<ReadinessFilter>> = [
+	{ value: "all", label: "All" },
+	{ value: "ready", label: "Ready" },
+	{ value: "needs-setup", label: "Needs setup" },
+]
 
 interface TemplateListProps {
 	templates: ReadonlyArray<V2DashboardTemplate>
@@ -59,15 +69,12 @@ function TemplateRow({
 			onClick={onSelect}
 			aria-current={selected ? "true" : undefined}
 			className={cn(
-				"flex w-full items-center text-left transition-colors",
-				selected ? "bg-muted" : "hover:bg-muted/50",
+				"flex min-h-9 w-full items-center text-left transition-colors",
+				rowSelectedClass(selected),
+				!selected && "hover:bg-muted/50",
 			)}
 		>
-			<span
-				aria-hidden
-				className={cn("h-9 w-0.5 shrink-0", selected ? "bg-primary" : "bg-transparent")}
-			/>
-			<span className="flex min-w-0 grow items-center gap-2.5 py-2 pr-5 pl-4">
+			<span className="flex min-w-0 grow items-center gap-2.5 py-2 pr-5 pl-4.5">
 				<span
 					className={cn(
 						"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-border",
@@ -84,52 +91,18 @@ function TemplateRow({
 				>
 					{template.name}
 				</span>
-				<span className="text-muted-foreground w-18 shrink-0 text-right font-mono text-[11px]">
+				<span className="text-muted-foreground w-18 shrink-0 text-right font-mono text-2xs">
 					{widgetCountLabel(template)}
 				</span>
-				<span
-					// The lane is fixed so statuses form a column; long metric
-					// prefixes truncate and the tooltip recovers the full one.
-					title={status ?? undefined}
-					className="text-muted-foreground/80 w-31.5 shrink-0 truncate text-right font-mono text-[11px]"
-				>
-					{status}
-				</span>
+				{/* The lane is fixed so statuses form a column; long metric
+				    prefixes truncate and the tooltip recovers the full one. */}
+				<TruncatedText
+					mono
+					text={status ?? undefined}
+					className="text-muted-foreground/80 w-31.5 shrink-0 text-right text-2xs"
+				/>
 			</span>
 		</button>
-	)
-}
-
-function SectionHeader({
-	title,
-	count,
-	accent,
-	note,
-	bordered,
-}: {
-	title: string
-	count: number
-	accent?: boolean
-	note?: string
-	bordered?: boolean
-}) {
-	return (
-		<div
-			className={cn(
-				"flex items-center gap-2 px-5 pt-4 pb-2",
-				bordered && "mt-2 border-t border-border pt-6",
-			)}
-		>
-			{/* A real heading so the two groups are navigable, and so "Needs setup"
-			    here is distinguishable from the filter button of the same name. */}
-			<h3 className="text-muted-foreground text-[11px] font-medium tracking-wider uppercase">
-				{title}
-			</h3>
-			<span className={cn("font-mono text-[11px]", accent ? "text-primary" : "text-muted-foreground")}>
-				{count}
-			</span>
-			{note && <span className="text-muted-foreground ml-auto text-[11px]">{note}</span>}
-		</div>
 	)
 }
 
@@ -187,32 +160,24 @@ export function TemplateList({
 
 	return (
 		<div className="flex min-h-0 flex-col overflow-hidden">
-			<div className="flex shrink-0 items-center gap-2.5 border-b border-border px-5 py-3">
+			<Toolbar className="shrink-0 flex-nowrap gap-2.5 px-5">
 				<ToolbarSearch
 					query={query}
 					onSearch={onQueryChange}
 					placeholder="Search templates"
 					className="min-w-0 grow"
 				/>
-				<ToggleGroup
-					value={[filter]}
-					onValueChange={(values) => {
-						const next = values[0]
-						if (next) onFilterChange(next as ReadinessFilter)
-					}}
-					variant="outline"
-					size="sm"
+				<SegmentedSelect<ReadinessFilter>
+					options={READINESS_OPTIONS}
+					value={filter}
+					onChange={onFilterChange}
 					aria-label="Filter templates by readiness"
 					className="shrink-0"
-				>
-					<ToggleGroupItem value="all">All</ToggleGroupItem>
-					<ToggleGroupItem value="ready">Ready</ToggleGroupItem>
-					<ToggleGroupItem value="needs-setup">Needs setup</ToggleGroupItem>
-				</ToggleGroup>
-			</div>
+				/>
+			</Toolbar>
 
 			{searching && !loading && (
-				<div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-2 text-[11px]">
+				<div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-2 text-2xs">
 					<span className="font-mono text-foreground">{matched}</span>
 					<span className="text-muted-foreground">of {total} match name, description or tag</span>
 				</div>
@@ -220,11 +185,7 @@ export function TemplateList({
 
 			<div className="min-h-0 grow overflow-y-auto">
 				{loading ? (
-					<div className="flex flex-col gap-2 p-5">
-						{Array.from({ length: 8 }, (_, index) => (
-							<Skeleton key={index} className="h-7 w-full rounded-sm" />
-						))}
-					</div>
+					<SkeletonList rows={8} rowClassName="h-7 rounded-sm" gap="2" className="p-5" />
 				) : nothingMatched && !searching ? (
 					<Empty className="py-14">
 						<EmptyHeader>
@@ -239,20 +200,15 @@ export function TemplateList({
 						</Button>
 					</Empty>
 				) : nothingMatched ? (
-					<Empty className="py-14">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								<MagnifierIcon size={17} />
-							</EmptyMedia>
-							<EmptyTitle>No template matches “{query.trim()}”</EmptyTitle>
-							<EmptyDescription>
-								Try a shorter term. Or start blank and add the widgets you want.
-							</EmptyDescription>
-						</EmptyHeader>
-						<Button variant="outline" size="sm" onClick={() => onQueryChange(undefined)}>
-							Clear search
-						</Button>
-					</Empty>
+					<FilteredEmpty
+						noun="templates"
+						title={`No template matches “${query.trim()}”`}
+						description="Try a shorter term. Or start blank and add the widgets you want."
+						icon={<MagnifierIcon size={17} />}
+						onClear={() => onQueryChange(undefined)}
+						clearLabel="Clear search"
+						className="py-14"
+					/>
 				) : filterHidEverything ? (
 					<Empty className="py-14">
 						<EmptyHeader>
@@ -286,7 +242,12 @@ export function TemplateList({
 					<>
 						{ready.length > 0 && (
 							<>
-								<SectionHeader title="Ready for your data" count={ready.length} accent />
+								<ListSectionHeader
+									title="Ready for your data"
+									count={ready.length}
+									accent
+									className="px-5 pt-4"
+								/>
 								{ready.map((template) => (
 									<TemplateRow
 										key={template.id}
@@ -301,15 +262,18 @@ export function TemplateList({
 
 						{needsSetup.length > 0 && (
 							<>
-								<SectionHeader
+								<ListSectionHeader
 									title="Needs setup"
 									count={needsSetup.length}
 									note="these would render empty today"
-									bordered={ready.length > 0}
+									className={cn(
+										"px-5 pt-4",
+										ready.length > 0 && "mt-2 border-t border-border pt-6",
+									)}
 								/>
 								{gatedByCategory.map(({ category, templates: group }) => (
 									<div key={category}>
-										<div className="text-muted-foreground/75 pt-3.5 pr-5 pb-1 pl-12.75 text-[11px]">
+										<div className="text-muted-foreground/70 pt-3.5 pr-5 pb-1 pl-12.75 text-2xs">
 											{CATEGORY_LABELS[category] ?? category}
 										</div>
 										{group.map((template) => (
@@ -339,7 +303,7 @@ export function TemplateList({
 				</span>
 				<span className="flex min-w-0 grow items-baseline gap-2.25">
 					<span className="text-sm text-foreground">Blank dashboard</span>
-					<span className="text-muted-foreground text-[11px]">start from nothing</span>
+					<span className="text-muted-foreground text-2xs">start from nothing</span>
 				</span>
 				<ArrowRightIcon size={13} className="text-muted-foreground shrink-0" />
 			</button>

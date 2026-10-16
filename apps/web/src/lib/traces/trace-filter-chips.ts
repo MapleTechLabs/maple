@@ -9,9 +9,9 @@ const FACETS = [
 	{ label: "Environment", include: "deploymentEnvs", exclude: "excludedDeploymentEnvs" },
 	{ label: "Namespace", include: "namespaces", exclude: "excludedNamespaces" },
 	{ label: "Service", include: "services", exclude: "excludedServices" },
-	{ label: "Root Span", include: "spanNames", exclude: "excludedSpanNames" },
-	{ label: "HTTP Method", include: "httpMethods", exclude: "excludedHttpMethods" },
-	{ label: "Status Code", include: "httpStatusCodes", exclude: "excludedHttpStatusCodes" },
+	{ label: "Root span", include: "spanNames", exclude: "excludedSpanNames" },
+	{ label: "HTTP method", include: "httpMethods", exclude: "excludedHttpMethods" },
+	{ label: "Status code", include: "httpStatusCodes", exclude: "excludedHttpStatusCodes" },
 ] as const satisfies ReadonlyArray<{
 	label: string
 	include: keyof TracesSearchParams

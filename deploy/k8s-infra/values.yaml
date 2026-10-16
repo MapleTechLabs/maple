@@ -301,6 +301,8 @@ presets:
             - DiskPressure
             - PIDPressure
             - NetworkUnavailable
+        # Emits k8s.node.allocatable_cpu (cores) and k8s.node.allocatable_memory (bytes);
+        # the Nodes view divides kubelet usage by these for CPU/memory utilization.
         allocatableTypesToReport:
             - cpu
             - memory
@@ -313,6 +315,8 @@ presets:
                 enabled: true
             container.runtime.version:
                 enabled: true
+            # Off by default upstream. Rides on k8s.container.restarts, where the
+            # pod pages read it as the restart reason (OOMKilled, Error, ...).
             k8s.container.status.last_terminated_reason:
                 enabled: true
         metrics:

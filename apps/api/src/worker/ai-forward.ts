@@ -1,4 +1,3 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 /**
  * Forwarding the agent surfaces to maple-ai.
  *
@@ -7,14 +6,14 @@
  * its RFC 8707 resource identifiers on this origin — moving them would
  * invalidate every registered MCP client.
  *
- * Its own module for two reasons: the path predicate is the contract between
- * the two Workers and is worth testing without building a route graph, and the
- * binding arrives as an unparsed `env` value that has to be narrowed rather
- * than asserted.
+ * Its own module because the path predicate is the contract between the two
+ * Workers and is worth testing without building a route graph. The binding
+ * itself arrives already narrowed, as the `AiWorkerFetcher` port.
  */
+import { ISOLATE_AGE_HEADER, ISOLATE_ORDINAL_HEADER } from "@maple/infra/isolate-age"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Option } from "effect"
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { API_CORS_RESPONSE_HEADERS } from "@maple/backend/http/api-cors"
 
 /**
@@ -32,16 +31,6 @@ export const forwardsToAi = (path: string): boolean =>
 	path.startsWith("/api/chat/") ||
 	path.startsWith("/internal/chat/")
 
-/**
- * A service binding off `env`, narrowed rather than cast.
- *
- * Only `fetch` is checked, because that is all the forward calls; a binding
- * that is present but not a fetcher is then a logged 503 instead of a defect
- * inside alchemy's adapter.
- */
-export const isCloudflareFetcher = (value: unknown): value is Fetcher =>
-	typeof value === "object" && value !== null && typeof (value as { fetch?: unknown }).fetch === "function"
-
 /** maple-ai could not be reached. CORS headers included: the dashboard's chat calls this from a browser. */
 export const aiUnavailableResponse = (): HttpServerResponse.HttpServerResponse =>
 	HttpServerResponse.text("maple-ai is unavailable", {
@@ -52,6 +41,29 @@ export const aiUnavailableResponse = (): HttpServerResponse.HttpServerResponse =
 /** The W3C header carrying this hop's span, sampled flag included, as `apps/web`'s fetch wrapper writes it. */
 const traceparentOf = (span: { readonly traceId: string; readonly spanId: string }): string =>
 	`00-${span.traceId}-${span.spanId}-01`
+
+const headerNumber = (response: HttpServerResponse.HttpServerResponse, name: string): Option.Option<number> =>
+	Option.filter(Option.fromNullishOr(response.headers[name]).pipe(Option.map(Number)), Number.isFinite)
+
+/**
+ * maple-ai's isolate stamp, moved from its response onto this span. A cold maple-ai isolate's
+ * startup CPU shows only here, since workerd's clock stands still while maple-ai's span runs.
+ */
+const recordAiIsolate = (response: HttpServerResponse.HttpServerResponse) =>
+	Effect.gen(function* () {
+		const ordinal = headerNumber(response, ISOLATE_ORDINAL_HEADER)
+		const ageMs = headerNumber(response, ISOLATE_AGE_HEADER)
+		if (Option.isSome(ordinal) && Option.isSome(ageMs)) {
+			yield* Effect.annotateCurrentSpan({
+				"maple.ai.isolate.request_ordinal": ordinal.value,
+				"maple.ai.isolate.age_ms": ageMs.value,
+			})
+		}
+		return response.pipe(
+			HttpServerResponse.removeHeader(ISOLATE_ORDINAL_HEADER),
+			HttpServerResponse.removeHeader(ISOLATE_AGE_HEADER),
+		)
+	})
 
 /**
  * Forward one request to maple-ai and answer with its response.
@@ -91,7 +103,10 @@ export const forwardToAi = (
 				return new Request(web, { headers })
 			},
 		})
-		return yield* Cloudflare.fromCloudflareFetcher(fetcher).fetch(HttpServerRequest.fromWeb(forwarded))
+		const response = yield* Cloudflare.fromCloudflareFetcher(fetcher).fetch(
+			HttpServerRequest.fromWeb(forwarded),
+		)
+		return yield* recordAiIsolate(response)
 	}).pipe(
 		Effect.catch((error) =>
 			Effect.logError("Forwarding to the AI worker failed", error).pipe(

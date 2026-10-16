@@ -1,5 +1,5 @@
-import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore"
-import { Atom } from "effect/unstable/reactivity"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
+import { Atom } from "effect/reactivity"
 
 export const localStorageRuntime = Atom.runtime(KeyValueStore.layerStorage(() => localStorage))
 

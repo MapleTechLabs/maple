@@ -13,6 +13,7 @@ export const toggleVariants = cva(
 		// 5px of padding is correct. Inside a track that reads as cramped — the
 		// label sits right against the pill's edge.
 		compoundVariants: [
+			{ class: "px-2", size: "xs", variant: "segment" },
 			{ class: "px-2.5", size: "sm", variant: "segment" },
 			{ class: "px-3", size: "default", variant: "segment" },
 			{ class: "px-3.5", size: "lg", variant: "segment" },
@@ -26,6 +27,8 @@ export const toggleVariants = cva(
 				default: "h-9 min-w-9 px-[calc(--spacing(2)-1px)] sm:h-8 sm:min-w-8",
 				lg: "h-10 min-w-10 px-[calc(--spacing(2.5)-1px)] sm:h-9 sm:min-w-9",
 				sm: "h-8 min-w-8 px-[calc(--spacing(1.5)-1px)] sm:h-7 sm:min-w-7",
+				// Inline view switches inside panels and toolbars (raw/pretty, 2D/3D).
+				xs: "h-6 min-w-6 rounded-md px-1.5 text-xs sm:h-6 sm:min-w-6 sm:text-xs [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3.5",
 			},
 			variant: {
 				default: "border-transparent",

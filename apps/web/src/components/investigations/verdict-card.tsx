@@ -1,14 +1,20 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type { ReactNode } from "react"
 import type { V2Investigation } from "@maple/domain/http/v2"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { SEVERITY_LABEL } from "@/components/errors/severity-badge"
+import { StatFigure } from "@maple/ui/components/ui/stat-figure"
 import { CircleQuestionIcon, CircleXmarkIcon } from "@/components/icons"
 import { useTickingNow } from "@/hooks/use-ticking-now"
 import { type Elapsed, reportHeadline, splitDuration } from "./investigation-display"
 import { RunProgress } from "./run-progress"
 import { ConfidenceMeter } from "./confidence-meter"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 /**
  * What the investigation concluded, or how far it has got trying. One card, four
@@ -82,9 +88,7 @@ function Stat({ label, children, last }: { label: string; children: ReactNode; l
 				last ? null : "border-b max-lg:border-r",
 			)}
 		>
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<div className="text-sm">{children}</div>
 		</div>
 	)
@@ -92,27 +96,7 @@ function Stat({ label, children, last }: { label: string; children: ReactNode; l
 
 /** A big number with a small unit riding its baseline. */
 function BigStat({ value, unit }: { value: string; unit: string }) {
-	return (
-		<span className="flex items-baseline gap-1">
-			<span className="font-display text-2xl font-semibold tracking-tight text-foreground tabular-nums">
-				{value}
-			</span>
-			<span className="text-sm text-muted-foreground">{unit}</span>
-		</span>
-	)
-}
-
-function Eyebrow({ children, tone }: { children: ReactNode; tone: string }) {
-	return (
-		<div
-			className={cn(
-				"flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.12em]",
-				tone,
-			)}
-		>
-			{children}
-		</div>
-	)
+	return <StatFigure value={value} unit={unit} mono={false} valueClassName="text-foreground" />
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -132,7 +116,7 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 					</Stat>
 				}
 			>
-				<Eyebrow tone="text-muted-foreground">No diagnosis recorded</Eyebrow>
+				<Eyebrow as="div">No diagnosis recorded</Eyebrow>
 				<p className="text-sm text-muted-foreground">
 					The pass finished without attaching a report. Run it again to try for a cause.
 				</p>
@@ -154,29 +138,34 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 					<Stat label="AI severity">
 						{report.severityAssessment ? (
 							<span
-								className={cn("font-medium", SEVERITY_TEXT_TONE[report.severityAssessment])}
+								className={cn(
+									"font-medium",
+									TONE_TEXT[SEVERITY_TEXT_TONE[report.severityAssessment]],
+								)}
 							>
 								{SEVERITY_LABEL[report.severityAssessment]}
 							</span>
 						) : (
 							// The report judged no severity. "—" rather than a stand-in level,
 							// which would read as an assessment nobody made.
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 					<Stat label="Time to diagnosis" last>
 						{timeToDiagnosis ? (
 							<BigStat value={timeToDiagnosis.value} unit={timeToDiagnosis.unit} />
 						) : (
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 				</>
 			}
 		>
-			<Eyebrow tone="text-primary">Suspected cause</Eyebrow>
+			<Eyebrow as="div" className="text-primary">
+				Suspected cause
+			</Eyebrow>
 			{/* `headline` is the only field prompted to be one line; `reportHeadline` falls back for older reports. */}
-			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
+			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]">
 				{heading}
 			</h2>
 			{/* Each body field is drawn only if the heading is not already it (older reports fall back to `summary`). */}
@@ -194,7 +183,7 @@ const repeatsHeading = (heading: string | null, text: string): boolean =>
 /** The summary, unless the heading fell back to being it. */
 function Body({ heading, text }: { heading: string | null; text: string }) {
 	if (repeatsHeading(heading, text)) return null
-	return <p className="text-sm leading-6 text-muted-foreground">{text}</p>
+	return <p className="text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{text}</p>
 }
 
 /** The mechanism, set off by a rule so a reader who already believes the verdict can skip it. */
@@ -202,7 +191,9 @@ function Mechanism({ heading, text }: { heading: string | null; text: string }) 
 	if (repeatsHeading(heading, text)) return null
 	return (
 		<div className="mt-1 border-l-2 pl-4">
-			<p className="whitespace-pre-line text-sm leading-6 text-muted-foreground">{text}</p>
+			<p className="whitespace-pre-line text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+				{text}
+			</p>
 		</div>
 	)
 }
@@ -212,9 +203,7 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 	if (actions.length === 0) return null
 	return (
 		<div className="mt-2 flex flex-col gap-2.5 border-t pt-4">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				What to do
-			</span>
+			<Eyebrow>What to do</Eyebrow>
 			{/* Ordered, because the report is prompted for ordered steps. */}
 			<ol className="flex flex-col gap-2">
 				{actions.map((action, index) => (
@@ -222,7 +211,7 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 						<span className="mt-px shrink-0 text-xs tabular-nums text-muted-foreground">
 							{index + 1}
 						</span>
-						<span className="min-w-0">{action}</span>
+						<span className="min-w-0 [overflow-wrap:anywhere]">{action}</span>
 					</li>
 				))}
 			</ol>
@@ -231,13 +220,13 @@ function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
 }
 
 /** The badge tones are backgrounds; the stat column wants the text colour alone. */
-const SEVERITY_TEXT_TONE: Record<string, string> = {
-	critical: "text-destructive",
-	high: "text-destructive",
-	medium: "text-severity-warn",
-	low: "text-muted-foreground",
-	unclassified: "text-muted-foreground",
-} satisfies Record<string, string>
+const SEVERITY_TEXT_TONE: Record<string, Tone> = {
+	critical: "crit",
+	high: "crit",
+	medium: "warn",
+	low: "neutral",
+	unclassified: "neutral",
+} satisfies Record<string, Tone>
 
 /* -------------------------------------------------------------------------------------------------
  * Investigating
@@ -258,13 +247,13 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 				</>
 			}
 		>
-			<Eyebrow tone="text-primary">
+			<Eyebrow as="div" className="flex flex-wrap items-center gap-2 text-primary">
 				<span className="flex items-center gap-1.5">
-					<span aria-hidden className="size-1.5 animate-pulse rounded-full bg-primary" />
+					<StatusDot tone="live" />
 					Investigating
 				</span>
 			</Eyebrow>
-			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
+			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]">
 				Maple is gathering evidence.
 			</h2>
 			<p className="text-sm leading-6 text-muted-foreground">
@@ -291,14 +280,14 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 
 	return (
 		<VerdictShell
-			accent="bg-destructive"
+			accent="bg-severity-error"
 			stats={
 				<>
 					<Stat label="Ran for">
 						{ranFor ? (
 							<BigStat value={ranFor.value} unit={ranFor.unit} />
 						) : (
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 					<Stat label="Confidence" last>
@@ -307,8 +296,10 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 				</>
 			}
 		>
-			<Eyebrow tone="text-destructive">No diagnosis</Eyebrow>
-			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
+			<Eyebrow as="div" className="text-severity-error">
+				No diagnosis
+			</Eyebrow>
+			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]">
 				The pass ended without a diagnosis
 			</h2>
 			<p className="text-sm leading-6 text-muted-foreground">
@@ -316,10 +307,10 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 			</p>
 			{/* The raw error was on the wire and rendered nowhere but a toast. */}
 			{investigation.error ? (
-				<div className="flex items-start gap-3 rounded-lg border border-destructive/25 bg-destructive/6 px-3 py-2.5">
-					<span className="shrink-0 rounded-sm bg-destructive/12 px-1.5 py-0.5 font-mono text-[11px] text-destructive">
+				<div className="flex items-start gap-3 rounded-lg border border-severity-error/25 bg-severity-error/6 px-3 py-2.5">
+					<Badge size="xs" mono className="mt-0.5 bg-severity-error/12 text-severity-error">
 						reason
-					</span>
+					</Badge>
 					<code className="min-w-0 break-words font-mono text-xs leading-5 text-foreground">
 						{investigation.error}
 					</code>
@@ -375,7 +366,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 						{ranFor ? (
 							<BigStat value={ranFor.value} unit={ranFor.unit} />
 						) : (
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 					{/* What was eliminated is the run's actual output, so it gets the stat. */}
@@ -389,20 +380,20 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 						{report ? (
 							<ConfidenceMeter confidence="low" />
 						) : (
-							<span className="text-muted-foreground">—</span>
+							<span className="text-muted-foreground">{EMPTY_VALUE}</span>
 						)}
 					</Stat>
 				</>
 			}
 		>
-			<Eyebrow tone="text-severity-warn">
+			<Eyebrow as="div" className="flex flex-wrap items-center gap-2 text-severity-warn">
 				Partial result
 				<span aria-hidden className="text-muted-foreground/40">
 					·
 				</span>
 				<span>No cause established</span>
 			</Eyebrow>
-			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
+			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]">
 				{headline}
 			</h2>
 			{report ? <Body heading={headline} text={report.summary} /> : null}
@@ -453,9 +444,7 @@ function PartialList({
 	const hidden = items.length - visible.length
 	return (
 		<div className="flex min-w-0 flex-col gap-2">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
+			<Eyebrow>{label}</Eyebrow>
 			<ul className="flex flex-col gap-1.5">
 				{visible.map((item) => (
 					<li key={item} className={cn("flex gap-2 text-sm leading-6", tone)}>
@@ -490,7 +479,7 @@ function elapsedBetween(from: string, to: string | null): Elapsed | null {
 function LiveElapsedStat({ from }: { from: string }) {
 	const now = useTickingNow(true)
 	const start = toEpochMs(from)
-	if (!Number.isFinite(start)) return <span className="text-muted-foreground">—</span>
+	if (!Number.isFinite(start)) return <span className="text-muted-foreground">{EMPTY_VALUE}</span>
 	const { value, unit } = splitDuration(Math.max(0, now - start))
 	return <BigStat value={value} unit={unit} />
 }

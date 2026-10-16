@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/effect-sdk",
-	"version": "0.10.0",
+	"version": "0.10.1",
 	"description": "Maple observability SDK for Effect applications",
 	"keywords": [
 		"effect",
@@ -55,7 +55,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run"
 	},
 	"dependencies": {
@@ -72,6 +72,6 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"effect": ">=4.0.0-rc.113 <4.0.0-rc.118"
+		"effect": "^4.0.0"
 	}
 }

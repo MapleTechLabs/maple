@@ -3,8 +3,10 @@ import { ClockIcon, ExternalLinkIcon, LinkIcon, PulseIcon } from "@/components/i
 
 import { CopyableValue } from "@/components/attributes"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { shortId } from "@maple/ui/lib/ids"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
-import { encodeLogKey } from "@/lib/log-key"
+import { encodeLogKey, logPermalink } from "@/lib/log-key"
 import { buildLogJsonPayload } from "./log-raw-panel"
 import type { Log } from "@/api/warehouse/logs"
 
@@ -38,37 +40,36 @@ export function LogMetaStrip({ log, timeZone, showOpenFullPage = true }: LogMeta
 					to="/traces/$traceId"
 					params={{ traceId: log.traceId }}
 					search={{ t: log.timestamp }}
-					className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:bg-primary/10 transition-colors"
+					className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 font-mono text-2xs text-primary hover:bg-primary/10 transition-colors"
 					title={`View trace ${log.traceId}`}
 				>
 					<PulseIcon size={10} />
-					trace:{log.traceId.slice(0, 8)}
+					trace:{shortId(log.traceId, "trace")}
 				</Link>
 			)}
 
 			{log.spanId && (
-				<span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-					<CopyableValue value={log.spanId}>span:{log.spanId.slice(0, 8)}</CopyableValue>
+				<span className="shrink-0 font-mono text-2xs text-muted-foreground">
+					<CopyableValue value={log.spanId}>span:{shortId(log.spanId, "span")}</CopyableValue>
 				</span>
 			)}
 
 			{/* Icon-only actions keep the strip on a single line in the narrow drawer. */}
 			<div className="ml-auto flex shrink-0 items-center gap-0.5">
 				{showOpenFullPage && (
-					<Link
-						to="/logs/$logId"
-						params={{ logId: encodeLogKey(log) }}
-						className="flex shrink-0 items-center rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-						title="Open in full page"
-						aria-label="Open in full page"
+					<IconButton
+						label="Open in full page"
+						size="icon-xs"
+						className="text-muted-foreground"
+						render={<Link to="/logs/$logId" params={{ logId: encodeLogKey(log) }} />}
 					>
-						<ExternalLinkIcon size={13} />
-					</Link>
+						<ExternalLinkIcon />
+					</IconButton>
 				)}
 
 				<CopyButton
-					value={() => `${window.location.origin}/logs/${encodeLogKey(log)}`}
-					label="Shareable link"
+					value={() => logPermalink(log)}
+					label="Link to log"
 					idleIcon={LinkIcon}
 					iconSize={13}
 					tooltip

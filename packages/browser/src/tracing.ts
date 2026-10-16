@@ -17,10 +17,10 @@ import {
 	type TracerProvider,
 	trace,
 } from "@opentelemetry/api"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
 import { XMLHttpRequestInstrumentation } from "@opentelemetry/instrumentation-xml-http-request"
+import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
 import { resourceFromAttributes } from "@opentelemetry/resources"
 import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
@@ -30,6 +30,7 @@ import type { ResolvedConfig } from "./config"
 import { responseHeaders, setHeaderAttributes } from "./http-headers"
 import { HttpStatusExporter } from "./http-status"
 import { OfflineSpanExporter } from "./offline"
+import { flushUnloading, newestFirstOnExit, OtlpExporter } from "./otlp"
 import { SessionSampler } from "./sampling"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
@@ -110,6 +111,9 @@ class ConsentSpanExporter implements SpanExporter {
  */
 const EXPORT_INTERVAL_MS = 2_000
 
+/** Keepalive room the older spans of an exit batch leave for the logs, which are flushed after them. */
+const EXIT_LOGS_RESERVE_BYTES = 8 * 1024
+
 /**
  * The provider this SDK registered, while it is live. Everything Maple spans
  * goes through it directly: the global provider may belong to the host app,
@@ -168,15 +172,20 @@ export function resourceAttributes(config: ResolvedConfig): Record<string, strin
  * live id per span instead.
  */
 export function setupTracing(config: ResolvedConfig): () => Promise<void> {
-	const otlp = new OTLPTraceExporter({
-		url: `${config.endpoint}/v1/traces`,
+	const otlp = new OtlpExporter(
+		`${config.endpoint}/v1/traces`,
 		// The same auth + `x-maple-sdk` headers as every session write; a page
 		// cannot set `user-agent`, so ingest reads the SDK from the latter.
-		headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
-	})
+		ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
+		JsonTraceSerializer,
+	)
 	const exporter = new ConsentSpanExporter(
 		new HttpStatusExporter(
-			config.offlineQueue ? new OfflineSpanExporter(otlp) : otlp,
+			newestFirstOnExit(
+				config.offlineQueue ? new OfflineSpanExporter(otlp) : otlp,
+				JsonTraceSerializer,
+				EXIT_LOGS_RESERVE_BYTES,
+			),
 			config.errorFilters.captureHttpStatus,
 		),
 	)
@@ -218,8 +227,26 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			// Best-effort on the way out; never throw into the host app.
 		})
 	}
+	// Each time the page goes away or offline. A fetch in flight across one was cancelled
+	// by the browser (or never had a network), so its rejection is not the app's failure.
+	let connectionLosses = 0
+	let lastLossReason = ""
+	const lossesAtStart = new WeakMap<ApiSpan, number>()
+	const noteLost = (reason: string): void => {
+		connectionLosses += 1
+		lastLossReason = reason
+	}
+	const connectionLost = (span: ApiSpan): string | undefined => {
+		if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline"
+		if (typeof document !== "undefined" && document.visibilityState === "hidden") return "page_hidden"
+		const atStart = lossesAtStart.get(span)
+		return atStart !== undefined && atStart !== connectionLosses ? lastLossReason : undefined
+	}
+	const onOffline = (): void => noteLost("offline")
 	const onVisibilityChange = (): void => {
-		if (document.visibilityState === "hidden") onExit()
+		if (document.visibilityState !== "hidden") return
+		noteLost("page_hidden")
+		onExit()
 	}
 	// Fetch and XHR spans need a push first on the way out: both instrumentations
 	// end each one 300ms after its response (waiting on resource timing), so a
@@ -232,12 +259,15 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// may never be restored.
 	const settledRequests = new Map<ApiSpan, number>()
 	const onPageHide = (): void => {
-		for (const [span, endTime] of settledRequests) {
-			// Entries are only pruned on the next request, so some already ended.
-			if (span.isRecording()) span.end(endTime)
-		}
-		settledRequests.clear()
-		onExit()
+		noteLost("page_unload")
+		flushUnloading(() => {
+			for (const [span, endTime] of settledRequests) {
+				// Entries are only pruned on the next request, so some already ended.
+				if (span.isRecording()) span.end(endTime)
+			}
+			settledRequests.clear()
+			onExit()
+		})
 	}
 	// Runs as the response settles, right before the instrumentation schedules
 	// the span's deferred end. Pruning here keeps the map to spans still waiting.
@@ -251,6 +281,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	if (canListen) {
 		document.addEventListener("visibilitychange", onVisibilityChange)
 		window.addEventListener("pagehide", onPageHide)
+		window.addEventListener("offline", onOffline)
 	}
 
 	const requestOptions = {
@@ -266,6 +297,9 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			? [
 					new FetchInstrumentation({
 						...requestOptions,
+						requestHook: (span) => {
+							lossesAtStart.set(span, connectionLosses)
+						},
 						applyCustomAttributesOnSpan: (span, request, result) => {
 							noteSettled(span)
 							const sent =
@@ -283,8 +317,14 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 								// A rejected fetch (offline, DNS, CORS) ends with status 0 and no error; XHR marks its own.
 								// An abort rejects with its reason, whatever that is, so the signal decides; a
 								// timeout (`AbortSignal.timeout()`) is a failure, not the app changing its mind.
-								span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
-								span.setAttribute("error.type", result.name)
+								// One the page went away or offline under stays Unset, with the reason.
+								const lost = connectionLost(span)
+								if (lost !== undefined) {
+									span.setAttribute("maple.connection_lost", lost)
+								} else {
+									span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
+									span.setAttribute("error.type", result.name)
+								}
 							}
 						},
 					}),
@@ -321,6 +361,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		if (canListen) {
 			document.removeEventListener("visibilitychange", onVisibilityChange)
 			window.removeEventListener("pagehide", onPageHide)
+			window.removeEventListener("offline", onOffline)
 		}
 		unregisterInstrumentations?.()
 		if (mapleProvider === provider) mapleProvider = undefined

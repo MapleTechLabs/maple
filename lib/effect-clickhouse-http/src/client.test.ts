@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Redacted, Stream } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import {
 	make,
 	ClickHouseClient,

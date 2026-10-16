@@ -1,7 +1,10 @@
+import { FactLane, FactStrip } from "./fact-strip"
+import { IssueField } from "./issue-field"
 import type { ErrorIssueId } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { DetailRail } from "@maple/ui/components/detail-rail"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 
 import { PulseIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -64,7 +67,7 @@ export function IssueDetailSkeleton({
 								{/* Present but inert: the action it starts needs the issue it is
 								    still fetching, and removing it would shift the whole row. */}
 								<Button size="sm" disabled>
-									<PulseIcon className="size-3.5" />
+									<PulseIcon />
 									Investigate
 								</Button>
 							</div>
@@ -100,34 +103,40 @@ function OverviewSkeleton({ windowLabel }: { windowLabel: string }) {
 						<Skeleton className="h-4 w-full" />
 						<Skeleton className="h-4 w-3/5" />
 					</div>
-					<Field label="Culprit">
+					<IssueField label="Culprit">
 						<Skeleton className="h-4 w-[min(24rem,70%)]" />
-					</Field>
-					<Field label="Fingerprint">
+					</IssueField>
+					<IssueField label="Fingerprint">
 						<Skeleton className="h-4 w-48" />
-					</Field>
+					</IssueField>
 				</div>
 			</div>
 
 			{/* `IssueFactStrip`, lane labels and all — only the numbers are unknown. */}
-			<div className="grid shrink-0 grid-cols-2 gap-y-5 px-1 xl:grid-cols-4 [&>*]:border-l [&>*]:pl-6 [&>*:nth-child(odd)]:border-l-0 [&>*:nth-child(odd)]:pl-0 xl:[&>*:nth-child(odd)]:border-l xl:[&>*:nth-child(odd)]:pl-6 xl:[&>*:first-child]:border-l-0 xl:[&>*:first-child]:pl-0">
-				<Lane label={`Events · ${windowLabel}`} width="w-12" />
-				<Lane label="Events · all time" width="w-14" />
-				<Lane label="First seen" width="w-24" />
-				<Lane label="Last seen" width="w-20" />
-			</div>
+			<FactStrip>
+				<FactLane label={`Events · ${windowLabel}`}>
+					<Skeleton className="h-4 w-12" />
+				</FactLane>
+				<FactLane label="Events · all time">
+					<Skeleton className="h-4 w-14" />
+				</FactLane>
+				<FactLane label="First seen">
+					<Skeleton className="h-4 w-24" />
+				</FactLane>
+				<FactLane label="Last seen">
+					<Skeleton className="h-4 w-20" />
+				</FactLane>
+			</FactStrip>
 
 			{/* `IssueOccurrencePanel`. The heading is the real one; the plot is the
 			    chart's own `h-44`, so nothing reflows when the bars arrive. */}
-			<section className="flex shrink-0 flex-col gap-3.5 rounded-xl border bg-card px-5 py-4">
+			<Panel className="shrink-0 gap-3.5 px-5 py-4">
 				<div className="flex items-baseline gap-2.5">
-					<h2 className="font-display text-base font-semibold tracking-[-0.01em] text-foreground">
-						Occurrences
-					</h2>
-					<Skeleton className="h-3.5 w-28" />
+					<h2 className="text-sm font-medium text-foreground">Occurrences</h2>
+					<Skeleton className="h-3 w-28" />
 				</div>
 				<Skeleton className="h-44 w-full rounded-md" />
-			</section>
+			</Panel>
 		</div>
 	)
 }
@@ -137,11 +146,7 @@ function ListSkeleton() {
 	return (
 		<section className="flex shrink-0 flex-col gap-3.5">
 			<Skeleton className="h-5 w-40" />
-			<div className="flex flex-col gap-2.5">
-				{Array.from({ length: 6 }, (_, index) => (
-					<Skeleton key={index} className="h-11 w-full rounded-lg" />
-				))}
-			</div>
+			<SkeletonList rows={6} rowClassName="h-11 rounded-lg" className="gap-2.5" />
 		</section>
 	)
 }
@@ -169,29 +174,5 @@ function RailRow({ label, width }: { label: string; width: string }) {
 		<DetailRail.Row label={label}>
 			<Skeleton className={`h-4 ${width}`} />
 		</DetailRail.Row>
-	)
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-	return (
-		<div className="flex min-w-0 flex-col gap-1.5 border-t pt-3.5 first:border-t-0 first:pt-0">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
-			{children}
-		</div>
-	)
-}
-
-function Lane({ label, width }: { label: string; width: string }) {
-	return (
-		<div className="flex min-w-0 flex-col gap-1.5 border-border">
-			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				{label}
-			</span>
-			<div className="flex min-w-0 items-center text-sm">
-				<Skeleton className={`h-4 ${width}`} />
-			</div>
-		</div>
 	)
 }

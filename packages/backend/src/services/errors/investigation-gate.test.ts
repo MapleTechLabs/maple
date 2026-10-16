@@ -22,7 +22,7 @@ const verdict = (overrides?: Partial<IncidentTriageVerdict>) =>
 		severity: "low",
 		severityConfidence: 0.9,
 		userImpact: 0.02,
-		model: "~typesafe/jev-latest",
+		model: "@cf/cloudflare/clef",
 		...overrides,
 	})
 

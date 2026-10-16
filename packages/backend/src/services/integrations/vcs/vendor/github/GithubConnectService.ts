@@ -6,8 +6,7 @@ import {
 	IntegrationsValidationError,
 	isInstallationProcessable,
 	type OrgId,
-	type PrReviewListItem,
-	type PrReviewOrgSettings,
+	PrReviewOrgSettings,
 	PrReviewRepositoryConfig,
 	type UserId,
 	type VcsAccountType,
@@ -24,7 +23,6 @@ import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRep
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { BACKFILL_WINDOW_MS } from "@maple/backend/services/integrations/vcs/VcsSyncService"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { GithubAppClient, type GithubAppError } from "./GithubAppClient"
 import { githubWebBaseUrl } from "./github-hosts"
 
@@ -73,6 +71,7 @@ interface GithubConnectStatus {
 	readonly accountLogin: string | null
 	readonly accountType: VcsAccountType | null
 	readonly repositorySelection: VcsRepoSelection | null
+	readonly ciTracesEnabled: boolean
 	readonly repositories: ReadonlyArray<GithubRepoStatus>
 }
 
@@ -130,6 +129,14 @@ export interface GithubConnectServiceApi {
 		{ readonly trackedBranch: string; readonly backfillQueued: boolean },
 		IntegrationsPersistenceError | IntegrationsValidationError
 	>
+	/** Turn CI traces from GitHub Actions on or off for the org's active installation. */
+	readonly setCiTracesEnabled: (
+		orgId: OrgId,
+		enabled: boolean,
+	) => Effect.Effect<
+		{ readonly enabled: boolean },
+		IntegrationsPersistenceError | IntegrationsValidationError
+	>
 	/**
 	 * Turn the pull request review on or off for one repository.
 	 * Rejected for a repository the provider has removed: there is nothing to
@@ -159,14 +166,7 @@ export interface GithubConnectServiceApi {
 		orgId: OrgId,
 		settings: PrReviewOrgSettings,
 		updatedBy: UserId,
-	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError>
-	readonly listPrReviews: (
-		orgId: OrgId,
-		repositoryId: VcsRepositoryId,
-	) => Effect.Effect<
-		ReadonlyArray<PrReviewListItem>,
-		IntegrationsPersistenceError | IntegrationsValidationError
-	>
+	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError | IntegrationsValidationError>
 }
 
 // Repo / queue / state errors all carry a `message`; collapse them to the
@@ -189,6 +189,34 @@ const fromGithubError = (error: GithubAppError) =>
 				...(!(error.status === undefined) ? { status: error.status } : undefined),
 			})
 
+/** Trims and de-duplicates a review config, dropping empty fields so a later default reaches it. */
+const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig")(function* (
+	config: PrReviewRepositoryConfig,
+) {
+	const ignorePaths = [...new Set((config.ignorePaths ?? []).map((p) => p.trim()).filter((p) => p !== ""))]
+	if (ignorePaths.length > 50)
+		return yield* new IntegrationsValidationError({ message: "At most 50 ignored paths." })
+	const instructions = config.instructions?.trim()
+	return new PrReviewRepositoryConfig({
+		...(instructions ? { instructions } : undefined),
+		...(ignorePaths.length > 0 ? { ignorePaths } : undefined),
+		...(config.categories === undefined ? undefined : { categories: config.categories }),
+		...(config.minInlineSeverity === undefined
+			? undefined
+			: { minInlineSeverity: config.minInlineSeverity }),
+		...(config.reviewDrafts === undefined ? undefined : { reviewDrafts: config.reviewDrafts }),
+		...(config.dailyLimit === undefined ? undefined : { dailyLimit: config.dailyLimit }),
+		...(config.automaticReviewLimit === undefined
+			? undefined
+			: { automaticReviewLimit: config.automaticReviewLimit }),
+		...(config.feedbackScope === undefined ? undefined : { feedbackScope: config.feedbackScope }),
+		...(config.blockOnContractBreaks === undefined
+			? undefined
+			: { blockOnContractBreaks: config.blockOnContractBreaks }),
+		...(config.postMergeCheck === undefined ? undefined : { postMergeCheck: config.postMergeCheck }),
+	})
+})
+
 export class GithubConnectService extends Context.Service<GithubConnectService, GithubConnectServiceApi>()(
 	"@maple/api/services/vcs/vendor/github/GithubConnectService",
 	{
@@ -198,7 +226,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			const repo = yield* VcsRepository
 			const queue = yield* VcsSyncQueue
 			const githubApp = yield* GithubAppClient
-			const featureFlags = yield* OrganizationFeatureFlagsService
 
 			const startConnect = Effect.fn("GithubConnectService.startConnect")(function* (
 				orgId: OrgId,
@@ -227,8 +254,8 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						initiatedByUserId: userId,
 						redirectUri: options.callbackUrl,
 						returnTo: options.returnTo ?? null,
-						createdAt: new Date(now),
-						expiresAt: new Date(now + STATE_TTL_MS),
+						createdAt: now,
+						expiresAt: now + STATE_TTL_MS,
 					}),
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -271,7 +298,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						message: "Connect session provider mismatch — restart the connect flow",
 					})
 				}
-				if (stateRow.expiresAt.getTime() < now) {
+				if (stateRow.expiresAt < now) {
 					yield* Effect.annotateCurrentSpan({
 						orgId: stateRow.orgId,
 						"vcs.connect.outcome": "state_expired",
@@ -475,6 +502,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						accountLogin: active.accountLogin,
 						accountType: active.accountType,
 						repositorySelection: active.repositorySelection,
+						ciTracesEnabled: active.ciTracesEnabled,
 						repositories,
 					} satisfies GithubConnectStatus
 				}
@@ -499,6 +527,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						accountLogin: null,
 						accountType: null,
 						repositorySelection: null,
+						ciTracesEnabled: true,
 						repositories: [],
 					} satisfies GithubConnectStatus
 				}
@@ -520,6 +549,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					accountLogin: deactivated.accountLogin,
 					accountType: deactivated.accountType,
 					repositorySelection: deactivated.repositorySelection,
+					ciTracesEnabled: deactivated.ciTracesEnabled,
 					repositories,
 				} satisfies GithubConnectStatus
 			})
@@ -697,23 +727,32 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return { trackedBranch, backfillQueued: true }
 			})
 
+			const setCiTracesEnabled = Effect.fn("GithubConnectService.setCiTracesEnabled")(function* (
+				orgId: OrgId,
+				enabled: boolean,
+			) {
+				const installations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
+				const active = installations.find(
+					(i) => i.provider === GITHUB_PROVIDER && i.status === "active",
+				)
+				if (active === undefined) {
+					yield* Effect.annotateCurrentSpan({ orgId, "vcs.set_ci_traces.outcome": "not_connected" })
+					return yield* new IntegrationsValidationError({ message: "GitHub is not connected." })
+				}
+				yield* asPersistence(repo.setCiTracesEnabled(orgId, active.id, enabled))
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.set_ci_traces.outcome": "changed",
+					"vcs.ci_traces.enabled": enabled,
+				})
+				return { enabled }
+			})
+
 			const setPrReviewEnabled = Effect.fn("GithubConnectService.setPrReviewEnabled")(function* (
 				orgId: OrgId,
 				repositoryId: VcsRepositoryId,
 				enabled: boolean,
 			) {
-				// Staged rollout: an organization that is not flagged cannot turn reviews on, even by
-				// calling the endpoint directly. Turning them off is always allowed.
-				if (enabled && !(yield* featureFlags.flags(orgId)).prReview) {
-					yield* Effect.annotateCurrentSpan({
-						orgId,
-						"vcs.repository.id": repositoryId,
-						"vcs.set_pr_review.outcome": "not_rolled_out",
-					})
-					return yield* new IntegrationsValidationError({
-						message: "Pull request reviews are not available for this organization yet.",
-					})
-				}
 				const existing = yield* asPersistence(repo.getRepositoryById(orgId, repositoryId))
 				if (Option.isNone(existing)) {
 					yield* Effect.annotateCurrentSpan({
@@ -770,30 +809,9 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				config: PrReviewRepositoryConfig,
 			) {
 				yield* requireRepository(orgId, repositoryId)
-				const ignorePaths = [
-					...new Set((config.ignorePaths ?? []).map((p) => p.trim()).filter((p) => p !== "")),
-				]
-				if (ignorePaths.length > 50)
-					return yield* new IntegrationsValidationError({ message: "At most 50 ignored paths." })
-				const instructions = config.instructions?.trim()
-				const cleaned = new PrReviewRepositoryConfig({
-					...(instructions ? { instructions } : undefined),
-					...(ignorePaths.length > 0 ? { ignorePaths } : undefined),
-					...(config.categories === undefined ? undefined : { categories: config.categories }),
-					...(config.minInlineSeverity === undefined
-						? undefined
-						: { minInlineSeverity: config.minInlineSeverity }),
-					...(config.reviewDrafts === undefined
-						? undefined
-						: { reviewDrafts: config.reviewDrafts }),
-					...(config.dailyLimit === undefined ? undefined : { dailyLimit: config.dailyLimit }),
-					...(config.automaticReviewLimit === undefined
-						? undefined
-						: { automaticReviewLimit: config.automaticReviewLimit }),
-					...(config.feedbackScope === undefined
-						? undefined
-						: { feedbackScope: config.feedbackScope }),
-				})
+				const cleaned = yield* cleanPrReviewConfig(config)
+				const ignorePaths = cleaned.ignorePaths ?? []
+				const instructions = cleaned.instructions
 				yield* asPersistence(repo.setPrReviewConfig(orgId, repositoryId, cleaned))
 				yield* Effect.annotateCurrentSpan({
 					orgId,
@@ -815,20 +833,23 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				settings: PrReviewOrgSettings,
 				updatedBy: UserId,
 			) {
-				yield* asPersistence(repo.setPrReviewSettings(orgId, settings, updatedBy))
+				const defaults =
+					settings.defaults === undefined
+						? undefined
+						: yield* cleanPrReviewConfig(settings.defaults)
+				const cleaned = new PrReviewOrgSettings({
+					...(settings.model === undefined ? undefined : { model: settings.model }),
+					...(defaults === undefined || Object.keys(defaults).length === 0
+						? undefined
+						: { defaults }),
+				})
+				yield* asPersistence(repo.setPrReviewSettings(orgId, cleaned, updatedBy))
 				yield* Effect.annotateCurrentSpan({
 					orgId,
-					"vcs.pr_review.model": settings.model ?? "default",
+					"vcs.pr_review.model": cleaned.model ?? "default",
+					"vcs.pr_review.has_defaults": cleaned.defaults !== undefined,
 				})
-				return settings
-			})
-
-			const listPrReviews = Effect.fn("GithubConnectService.listPrReviews")(function* (
-				orgId: OrgId,
-				repositoryId: VcsRepositoryId,
-			) {
-				yield* requireRepository(orgId, repositoryId)
-				return yield* asPersistence(repo.listPrReviews(orgId, repositoryId, 50))
+				return cleaned
 			})
 
 			return {
@@ -838,12 +859,12 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				disconnect,
 				deleteRepository,
 				setTrackedBranch,
+				setCiTracesEnabled,
 				setPrReviewEnabled,
 				getPrReviewConfig,
 				getPrReviewSettings,
 				setPrReviewSettings,
 				setPrReviewConfig,
-				listPrReviews,
 			} satisfies GithubConnectServiceApi
 		}),
 	},
@@ -855,7 +876,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				GithubAppClient.layer,
 				VcsRepository.layer,
 				OAuthStateRepository.layer,
-				OrganizationFeatureFlagsService.layer,
 			),
 		),
 	)

@@ -1,31 +1,27 @@
+import { SectionHeading } from "@/components/common/section-heading"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { Exit } from "effect"
-import { useMemo, useState } from "react"
-import { toastManager } from "@maple/ui/components/ui/toast"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { useMutationAction } from "@/hooks/use-mutation-action"
+import { useMemo } from "react"
 
 import type { V2Recommendation } from "@maple/domain/http/v2"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { ResultPage } from "@/components/layout/result-page"
+import { DetailHeader } from "@/components/common/detail-header"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { displayError } from "@/lib/error-messages"
 import {
 	ingestAttributeMappingsListAtom,
 	recommendationIssuesListAtom,
 } from "@/lib/services/atoms/ingestion-atoms"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import {
-	Empty,
-	EmptyContent,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyMedia,
-	EmptyTitle,
-} from "@maple/ui/components/ui/empty"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	ArrowRotateAnticlockwiseIcon,
@@ -49,24 +45,23 @@ export const Route = createFileRoute("/recommendations/$recommendationKey")({
 })
 
 const INGESTION_HREF = "/settings?tab=ingestion"
-const MONO = "font-mono text-[0.92em] text-muted-foreground"
 
 type IssueKind = V2Recommendation["kind"]
 type IssueStatus = V2Recommendation["status"]
 type BusyAction = "apply" | "dismiss" | "reopen" | null
 
-const KIND_BADGE: Record<IssueKind, { label: string; variant: "success" | "warning" | "info" }> = {
-	rename: { label: "Safe rename", variant: "success" },
-	"double-emission": { label: "Both emitted", variant: "warning" },
+const KIND_BADGE: Record<IssueKind, { label: string; variant: "ok" | "warn" | "info" }> = {
+	rename: { label: "Safe rename", variant: "ok" },
+	"double-emission": { label: "Both emitted", variant: "warn" },
 	naming: { label: "Naming", variant: "info" },
-} satisfies Record<IssueKind, { label: string; variant: "success" | "warning" | "info" }>
+} satisfies Record<IssueKind, { label: string; variant: "ok" | "warn" | "info" }>
 
-const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "success" | "secondary" | "outline" }> = {
+const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "done" | "secondary" | "outline" }> = {
 	open: { label: "Open", variant: "outline" },
 	dismissed: { label: "Dismissed", variant: "secondary" },
-	applied: { label: "Applied", variant: "success" },
-	resolved: { label: "Resolved", variant: "success" },
-} satisfies Record<IssueStatus, { label: string; variant: "success" | "secondary" | "outline" }>
+	applied: { label: "Applied", variant: "ok" },
+	resolved: { label: "Resolved", variant: "done" },
+} satisfies Record<IssueStatus, { label: string; variant: "ok" | "done" | "secondary" | "outline" }>
 
 const MODE = {
 	auto: {
@@ -89,9 +84,9 @@ function recSentence(issue: V2Recommendation) {
 		return (
 			<>
 				<span className="text-foreground font-medium">Standardize on</span>{" "}
-				<code className={MONO}>{issue.canonical_key}</code>
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode>
 				<span className="text-muted-foreground"> — spans also emit </span>
-				<code className={MONO}>{issue.source_key}</code>
+				<InlineCode variant="plain">{issue.source_key}</InlineCode>
 			</>
 		)
 	}
@@ -99,15 +94,16 @@ function recSentence(issue: V2Recommendation) {
 		return (
 			<>
 				<span className="text-foreground font-medium">Rename non-conforming key</span>{" "}
-				<code className={MONO}>{issue.source_key}</code>
+				<InlineCode variant="plain">{issue.source_key}</InlineCode>
 			</>
 		)
 	}
 	return (
 		<>
 			<span className="text-foreground font-medium">Rename</span>{" "}
-			<code className={MONO}>{issue.source_key}</code> <span className="text-muted-foreground">→</span>{" "}
-			<code className={MONO}>{issue.canonical_key}</code>
+			<InlineCode variant="plain">{issue.source_key}</InlineCode>{" "}
+			<span className="text-muted-foreground">→</span>{" "}
+			<InlineCode variant="plain">{issue.canonical_key}</InlineCode>
 		</>
 	)
 }
@@ -120,23 +116,26 @@ function RecommendationDetailPage() {
 	// Applying a recommendation creates a mapping, so refresh the mappings list too.
 	const refreshMappings = useAtomRefresh(ingestAttributeMappingsListAtom)
 
-	const createMutation = useAtomSet(MapleApiV2AtomClient.mutation("attributeMappings", "create"), {
-		mode: "promiseExit",
-	})
-	const dismissMutation = useAtomSet(
+	const [create, applying] = useMutationAction(
+		MapleApiV2AtomClient.mutation("attributeMappings", "create"),
+		{
+			success: (mapping) => `Mapping created: ${mapping.source_key} → ${mapping.target_key}`,
+			error: "Failed to create mapping",
+			onSuccess: () => {
+				refreshIssues()
+				refreshMappings()
+			},
+		},
+	)
+	const [dismiss, dismissing] = useMutationAction(
 		MapleApiV2AtomClient.mutation("instrumentationRecommendations", "dismiss"),
-		{
-			mode: "promiseExit",
-		},
+		{ error: "Failed to dismiss recommendation", onSuccess: () => refreshIssues() },
 	)
-	const reopenMutation = useAtomSet(
+	const [reopen, reopening] = useMutationAction(
 		MapleApiV2AtomClient.mutation("instrumentationRecommendations", "reopen"),
-		{
-			mode: "promiseExit",
-		},
+		{ error: "Failed to reopen recommendation", onSuccess: () => refreshIssues() },
 	)
-
-	const [busy, setBusy] = useState<BusyAction>(null)
+	const busy: BusyAction = applying ? "apply" : dismissing ? "dismiss" : reopening ? "reopen" : null
 
 	const issue = useMemo(
 		() =>
@@ -149,8 +148,7 @@ function RecommendationDetailPage() {
 	async function handleApply(target: V2Recommendation) {
 		if (target.kind !== "rename" || !target.canonical_key) return
 		const canonicalKey = target.canonical_key
-		setBusy("apply")
-		const result = await createMutation({
+		await create({
 			payload: {
 				name: `Rename ${target.source_key} → ${canonicalKey}`,
 				source_context: "span",
@@ -159,124 +157,87 @@ function RecommendationDetailPage() {
 				operation: "copy",
 			},
 		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: `Mapping created — ${target.source_key} → ${canonicalKey}`,
-				type: "success",
-			})
-			refreshIssues()
-			refreshMappings()
-		} else {
-			toastManager.add({ title: "Failed to create mapping", type: "error" })
-		}
-		setBusy(null)
 	}
-
-	async function handleDismiss(target: V2Recommendation) {
-		setBusy("dismiss")
-		const result = await dismissMutation({ params: { id: target.id } })
-		if (Exit.isSuccess(result)) refreshIssues()
-		else toastManager.add({ title: "Failed to dismiss recommendation", type: "error" })
-		setBusy(null)
-	}
-
-	async function handleReopen(target: V2Recommendation) {
-		setBusy("reopen")
-		const result = await reopenMutation({ params: { id: target.id } })
-		if (Exit.isSuccess(result)) refreshIssues()
-		else toastManager.add({ title: "Failed to reopen recommendation", type: "error" })
-		setBusy(null)
-	}
-
-	return Result.builder(listResult)
-		.onInitial(() => <LoadingShell />)
-		.onError((error) => <ErrorShell message={displayError(error).message} />)
-		.onSuccess(() => {
-			if (!issue) return <InactiveShell />
-			return (
-				<DetailView
-					issue={issue}
-					busy={busy}
-					onApply={() => handleApply(issue)}
-					onDismiss={() => handleDismiss(issue)}
-					onReopen={() => handleReopen(issue)}
-				/>
-			)
-		})
-		.render()
-}
-
-/* -------------------------------------------------------------------------------------------------
- * Detail view
- * -------------------------------------------------------------------------------------------------*/
-
-function DetailView({
-	issue,
-	busy,
-	onApply,
-	onDismiss,
-	onReopen,
-}: {
-	issue: V2Recommendation
-	busy: BusyAction
-	onApply: () => void
-	onDismiss: () => void
-	onReopen: () => void
-}) {
-	const status = STATUS_BADGE[issue.status]
-	const isApplyable = issue.kind === "rename" && Boolean(issue.canonical_key)
-	const isLive = issue.status === "applied" || issue.status === "resolved"
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[
-					{ label: "Ingestion", href: INGESTION_HREF },
-					{ label: `Recommendation #${issue.number}` },
-				]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							titleContent={
-								<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-									<DashboardLayout.Title>{recSentence(issue)}</DashboardLayout.Title>
-									<Badge variant={status.variant} size="lg">
-										{status.label}
-									</Badge>
-								</div>
-							}
-							description={`Opened ${formatRelativeTime(issue.opened_at)} · ${issue.usage_count.toLocaleString()} spans · 24h`}
-						/>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						<div className="max-w-3xl space-y-6">
-							<Summary issue={issue} />
-							<ChangeBreakdown issue={issue} />
-							<CautionCallout issue={issue} isApplyable={isApplyable} />
-							{isApplyable && issue.canonical_key ? (
-								<MappingBlock issue={issue} isLive={isLive} />
-							) : (
-								<SdkFixBlock issue={issue} />
-							)}
-						</div>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-				<DashboardLayout.RightPanel>
-					<DetailSidebar
-						issue={issue}
-						busy={busy}
-						isApplyable={isApplyable}
-						isLive={isLive}
-						onApply={onApply}
-						onDismiss={onDismiss}
-						onReopen={onReopen}
+		<ResultPage
+			breadcrumbs={[{ label: "Ingestion", href: INGESTION_HREF }]}
+			result={listResult}
+			select={() => issue}
+			crumb={(issue) => `Recommendation #${issue.number}`}
+			width="narrow"
+			gap="lg"
+			errorTitle="Failed to load recommendation"
+			onRetry={refreshIssues}
+			loading={
+				<>
+					<Skeleton className="h-12 w-full" />
+					<Skeleton className="h-28 w-full" />
+					<Skeleton className="h-24 w-full" />
+				</>
+			}
+			notFound={
+				<ResourceNotFound
+					icon={<PulseIcon className="text-muted-foreground" />}
+					title="Recommendation not found"
+					description="This recommendation isn't in your list anymore. It may have resolved on its own."
+					backLink={<Link to="/settings" search={{ tab: "ingestion" }} />}
+					backLabel="Back to recommendations"
+				/>
+			}
+			header={(issue) => {
+				const status = STATUS_BADGE[issue.status]
+				return (
+					<DetailHeader
+						kind="Recommendation"
+						title={recSentence(issue)}
+						titleText={recTitleText(issue)}
+						meta={
+							<Badge variant={status.variant} size="lg">
+								{status.label}
+							</Badge>
+						}
 					/>
-				</DashboardLayout.RightPanel>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+				)
+			}}
+			rightPanel={(issue) => (
+				<DetailSidebar
+					issue={issue}
+					busy={busy}
+					isApplyable={isApplyable(issue)}
+					isLive={isLive(issue)}
+					onApply={() => void handleApply(issue)}
+					onDismiss={() => void dismiss({ params: { id: issue.id } })}
+					onReopen={() => void reopen({ params: { id: issue.id } })}
+				/>
+			)}
+		>
+			{(issue) => (
+				<>
+					<Summary issue={issue} />
+					<ChangeBreakdown issue={issue} />
+					<CautionCallout issue={issue} isApplyable={isApplyable(issue)} />
+					{isApplyable(issue) && issue.canonical_key ? (
+						<MappingBlock issue={issue} isLive={isLive(issue)} />
+					) : (
+						<SdkFixBlock issue={issue} />
+					)}
+				</>
+			)}
+		</ResultPage>
 	)
+}
+
+const isApplyable = (issue: V2Recommendation) => issue.kind === "rename" && Boolean(issue.canonical_key)
+const isLive = (issue: V2Recommendation) => issue.status === "applied" || issue.status === "resolved"
+
+/** `recSentence` as plain text, for the truncated title's tooltip. */
+function recTitleText(issue: V2Recommendation): string {
+	if (issue.kind === "double-emission") {
+		return `Standardize on ${issue.canonical_key}, spans also emit ${issue.source_key}`
+	}
+	if (issue.kind === "naming") return `Rename non-conforming key ${issue.source_key}`
+	return `Rename ${issue.source_key} → ${issue.canonical_key}`
 }
 
 /** Plain-language explanation of the recommendation, with mono-styled keys. */
@@ -285,31 +246,31 @@ function Summary({ issue }: { issue: V2Recommendation }) {
 	if (issue.kind === "double-emission") {
 		body = (
 			<>
-				Your spans emit both <code className={MONO}>{issue.source_key}</code> and{" "}
-				<code className={MONO}>{issue.canonical_key}</code>. Standardize on{" "}
-				<code className={MONO}>{issue.canonical_key}</code> in your SDK — an ingest mapping can't
-				merge them because the canonical key already exists on your spans.
+				Your spans emit both <InlineCode variant="plain">{issue.source_key}</InlineCode> and{" "}
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode>. Standardize on{" "}
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode> in your SDK — an ingest mapping
+				can't merge them because the canonical key already exists on your spans.
 			</>
 		)
 	} else if (issue.kind === "naming") {
 		body = (
 			<>
-				<code className={MONO}>{issue.source_key}</code> doesn't follow OpenTelemetry's lowercase{" "}
-				<code className={MONO}>dotted.snake_case</code> convention. Rename it where your spans are
-				created so it conforms to the semantic conventions.
+				<InlineCode variant="plain">{issue.source_key}</InlineCode> doesn't follow OpenTelemetry's
+				lowercase <InlineCode variant="plain">dotted.snake_case</InlineCode> convention. Rename it
+				where your spans are created so it conforms to the semantic conventions.
 			</>
 		)
 	} else {
 		body = (
 			<>
-				<code className={MONO}>{issue.source_key}</code> is a deprecated or non-conforming
+				<InlineCode variant="plain">{issue.source_key}</InlineCode> is a deprecated or non-conforming
 				OpenTelemetry attribute key. Maple can rewrite it to{" "}
-				<code className={MONO}>{issue.canonical_key}</code> at ingest time so newly ingested spans use
-				the current semantic-convention name.
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode> at ingest time so newly
+				ingested spans use the current semantic-convention name.
 			</>
 		)
 	}
-	return <p className="text-[15px] leading-relaxed text-foreground/90">{body}</p>
+	return <p className="text-base leading-relaxed text-foreground/90">{body}</p>
 }
 
 /** Before → after card — the deprecated key today vs. the key Maple writes. */
@@ -332,8 +293,8 @@ function ChangeBreakdown({ issue }: { issue: V2Recommendation }) {
 
 	return (
 		<section>
-			<SectionHeader label="What changes" />
-			<div className="overflow-hidden rounded-md border">
+			<SectionHeading variant="eyebrow" title="What changes" />
+			<Panel>
 				<div className="flex items-start gap-3 px-4 py-3">
 					<CircleXmarkIcon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
 					<div className="min-w-0 flex-1">
@@ -343,12 +304,12 @@ function ChangeBreakdown({ issue }: { issue: V2Recommendation }) {
 						</code>
 					</div>
 					<span className="shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
-						{issue.usage_count.toLocaleString()} spans · 24h
+						{formatNumber(issue.usage_count)} spans · 24h
 					</span>
 				</div>
 				{issue.canonical_key ? (
 					<div className="flex items-start gap-3 border-t border-border/60 px-4 py-3">
-						<CircleCheckIcon size={16} className="mt-0.5 shrink-0 text-success" />
+						<CircleCheckIcon size={16} className="mt-0.5 shrink-0 text-severity-info" />
 						<div className="min-w-0 flex-1">
 							<p className="text-xs text-muted-foreground">{labels.to}</p>
 							<code className="font-mono text-sm break-all text-foreground">
@@ -357,7 +318,7 @@ function ChangeBreakdown({ issue }: { issue: V2Recommendation }) {
 						</div>
 					</div>
 				) : null}
-			</div>
+			</Panel>
 			{note ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{note}</p> : null}
 		</section>
 	)
@@ -369,9 +330,10 @@ function CautionCallout({ issue, isApplyable }: { issue: V2Recommendation; isApp
 		isApplyable && issue.canonical_key ? (
 			<>
 				Applying creates an ingest mapping that copies{" "}
-				<code className={MONO}>{issue.source_key}</code> →{" "}
-				<code className={MONO}>{issue.canonical_key}</code> on newly ingested spans. Existing spans
-				aren't rewritten, and the mapping never overwrites a target that already exists.
+				<InlineCode variant="plain">{issue.source_key}</InlineCode> →{" "}
+				<InlineCode variant="plain">{issue.canonical_key}</InlineCode> on newly ingested spans.
+				Existing spans aren't rewritten, and the mapping never overwrites a target that already
+				exists.
 			</>
 		) : (
 			<>
@@ -380,9 +342,9 @@ function CautionCallout({ issue, isApplyable }: { issue: V2Recommendation; isApp
 			</>
 		)
 	return (
-		<div className="rounded-r-md border-l-2 border-warning bg-warning/8 px-4 py-3">
+		<div className="rounded-r-md border-l-2 border-severity-warn bg-severity-warn/8 px-4 py-3">
 			<p className="text-sm leading-relaxed text-foreground/90">
-				<span className="font-medium text-warning-foreground">Please note:</span> {text}
+				<span className="font-medium text-severity-warn">Please note:</span> {text}
 			</p>
 		</div>
 	)
@@ -394,15 +356,15 @@ function MappingBlock({ issue, isLive }: { issue: V2Recommendation; isLive: bool
 
 	return (
 		<section>
-			<SectionHeader label={isLive ? "Active ingest mapping" : "What Apply does"} />
-			<div className="overflow-hidden rounded-md border bg-muted/40">
+			<SectionHeading variant="eyebrow" title={isLive ? "Active ingest mapping" : "What Apply does"} />
+			<Panel tone="muted">
 				<div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
 					<span className="text-xs text-muted-foreground">
 						{isLive ? "This mapping is live" : "Ingest attribute mapping"}
 					</span>
 					<CopyButton value={snippet} label="Mapping" size="icon-sm" tooltip />
 				</div>
-				<div className="space-y-1.5 px-4 py-3 font-mono text-[13px] leading-relaxed">
+				<div className="space-y-1.5 px-4 py-3 font-mono text-xs leading-relaxed">
 					<div className="flex items-baseline gap-3">
 						<span className="w-12 shrink-0 text-muted-foreground">when</span>
 						<span className="break-all">
@@ -414,11 +376,11 @@ function MappingBlock({ issue, isLive }: { issue: V2Recommendation; isLive: bool
 						<span className="w-12 shrink-0 text-muted-foreground">copy</span>
 						<span className="break-all">
 							<span className="text-muted-foreground">→</span>{" "}
-							<span className="text-success">{issue.canonical_key}</span>
+							<span className="text-severity-info">{issue.canonical_key}</span>
 						</span>
 					</div>
 				</div>
-			</div>
+			</Panel>
 		</section>
 	)
 }
@@ -426,14 +388,14 @@ function MappingBlock({ issue, isLive }: { issue: V2Recommendation; isLive: bool
 function SdkFixBlock({ issue }: { issue: V2Recommendation }) {
 	return (
 		<section>
-			<SectionHeader label="How to fix" />
-			<div className="rounded-md border bg-muted/40 px-4 py-3">
+			<SectionHeading variant="eyebrow" title="How to fix" />
+			<Panel tone="muted" className="px-4 py-3">
 				<p className="text-sm leading-relaxed text-muted-foreground">
-					Rename <code className={MONO}>{issue.source_key}</code>
+					Rename <InlineCode variant="plain">{issue.source_key}</InlineCode>
 					{issue.canonical_key ? (
 						<>
 							{" "}
-							to <code className={MONO}>{issue.canonical_key}</code>
+							to <InlineCode variant="plain">{issue.canonical_key}</InlineCode>
 						</>
 					) : (
 						<> to a lowercase, dotted semantic-convention key</>
@@ -441,7 +403,7 @@ function SdkFixBlock({ issue }: { issue: V2Recommendation }) {
 					where your spans are created (the instrumentation / SDK). Once the conforming key appears
 					on incoming spans, this recommendation resolves automatically.
 				</p>
-			</div>
+			</Panel>
 		</section>
 	)
 }
@@ -488,12 +450,14 @@ function DetailSidebar({
 					</Badge>
 				</Row>
 				<Row label="Spans">
-					<span className="tabular-nums text-foreground">{issue.usage_count.toLocaleString()}</span>
+					<span className="tabular-nums text-foreground">{formatNumber(issue.usage_count)}</span>
 				</Row>
-				<Row label="Opened" title={new Date(issue.opened_at).toLocaleString()}>
-					<span className="tabular-nums text-muted-foreground">
-						{formatRelativeTime(issue.opened_at)}
-					</span>
+				<Row label="Opened">
+					<RelativeTime
+						value={issue.opened_at}
+						tooltip="title"
+						className="tabular-nums text-muted-foreground"
+					/>
 				</Row>
 				<Row label="Key" title={issue.source_key}>
 					<code className="truncate font-mono text-xs text-muted-foreground">
@@ -522,8 +486,8 @@ function DetailSidebar({
 			<DetailRail.Group label="Action">
 				{isLive ? (
 					<div className="flex flex-col gap-3">
-						<p className="flex items-center gap-2 text-sm text-success">
-							<CircleCheckIcon size={15} />
+						<p className="flex items-center gap-2 text-sm text-severity-info">
+							<CircleCheckIcon size={14} />
 							{issue.status === "resolved" ? "Resolved" : "Mapping is active"}
 						</p>
 						<Button
@@ -544,7 +508,7 @@ function DetailSidebar({
 							onClick={onReopen}
 							loading={busy === "reopen"}
 						>
-							<ArrowRotateAnticlockwiseIcon size={15} />
+							<ArrowRotateAnticlockwiseIcon />
 							Reopen recommendation
 						</Button>
 						<p className="text-xs leading-relaxed text-muted-foreground">
@@ -555,7 +519,7 @@ function DetailSidebar({
 					<div className="flex flex-col gap-2">
 						{isApplyable ? (
 							<Button className="w-full" onClick={onApply} loading={busy === "apply"}>
-								<BoltIcon size={15} />
+								<BoltIcon />
 								Apply mapping
 							</Button>
 						) : (
@@ -565,101 +529,12 @@ function DetailSidebar({
 							</p>
 						)}
 						<Button className="w-full" onClick={onDismiss} loading={busy === "dismiss"}>
-							<XmarkIcon size={15} />
+							<XmarkIcon />
 							Dismiss recommendation
 						</Button>
 					</div>
 				)}
 			</DetailRail.Group>
 		</div>
-	)
-}
-
-/* -------------------------------------------------------------------------------------------------
- * Shells (loading / error / inactive)
- * -------------------------------------------------------------------------------------------------*/
-
-function ShellLayout({ children }: { children: React.ReactNode }) {
-	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Ingestion", href: INGESTION_HREF }, { label: "Recommendation" }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Recommendation" />
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
-	)
-}
-
-function LoadingShell() {
-	return (
-		<ShellLayout>
-			<div className="max-w-3xl space-y-6">
-				<Skeleton className="h-12 w-full" />
-				<Skeleton className="h-28 w-full" />
-				<Skeleton className="h-24 w-full" />
-			</div>
-		</ShellLayout>
-	)
-}
-
-function ErrorShell({ message }: { message: string }) {
-	return (
-		<ShellLayout>
-			<Empty>
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<CircleXmarkIcon className="text-destructive" />
-					</EmptyMedia>
-					<EmptyTitle>Couldn't load recommendation</EmptyTitle>
-					<EmptyDescription>{message}</EmptyDescription>
-				</EmptyHeader>
-			</Empty>
-		</ShellLayout>
-	)
-}
-
-function InactiveShell() {
-	return (
-		<ShellLayout>
-			<Empty>
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<PulseIcon className="text-muted-foreground" />
-					</EmptyMedia>
-					<EmptyTitle>Recommendation not found</EmptyTitle>
-					<EmptyDescription>
-						This recommendation isn't in your list anymore. It may have resolved on its own.
-					</EmptyDescription>
-				</EmptyHeader>
-				<EmptyContent>
-					<Button
-						variant="outline"
-						size="sm"
-						render={<Link to="/settings" search={{ tab: "ingestion" }} />}
-					>
-						Back to recommendations
-					</Button>
-				</EmptyContent>
-			</Empty>
-		</ShellLayout>
-	)
-}
-
-/* -------------------------------------------------------------------------------------------------
- * Small shared pieces
- * -------------------------------------------------------------------------------------------------*/
-
-function SectionHeader({ label }: { label: string }) {
-	return (
-		<h2 className="mb-3 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-			{label}
-		</h2>
 	)
 }

@@ -6,7 +6,7 @@
  * decision to run anything at all. Everything below crosses a service binding
  * as JSON, so it is data only.
  *
- * The `SandboxRun*` names are deliberate: `effect-agent/sandbox` has its own
+ * The `SandboxRun*` names are deliberate: `@yielded/agent/sandbox` has its own
  * `SandboxExited` and friends, and both sets meet in the api's port. Distinct
  * names keep a `switch` on one from silently reading like the other.
  */
@@ -47,20 +47,6 @@ export const SANDBOX_COMMAND_ENV = {
 } as const satisfies Readonly<Record<string, string>>
 
 /**
- * Where one clone's credential is staged inside the container.
- *
- * It is written through the container's file API rather than named in a command,
- * because every process's arguments are readable by the unprivileged account
- * (`/proc/<pid>/cmdline`) while agent commands and a background clone overlap by
- * design. `/root` is not readable by that account.
- *
- * Per commit, not one shared file: two commits of the same repository clone
- * concurrently, and a shared path would let the first one to finish delete the
- * credential the second is still cloning with.
- */
-export const sandboxCredentialPath = (sha: string): string => `/root/.maple-clone-credential-${sha}`
-
-/**
  * Trailer the wrapper prints after the command's own output, carrying the real
  * exit code and whether either stream was cut.
  *
@@ -86,6 +72,9 @@ export type SandboxIsolationState = typeof SandboxIsolationState.Type
 /** How many checkouts a container keeps before the least recently used are dropped. */
 export const SANDBOX_MAX_CHECKOUTS = 3
 
+/** A checkout used within this many minutes is kept past the count, so a running review keeps its commit. */
+export const SANDBOX_CHECKOUT_GRACE_MINUTES = 15
+
 /** Bounded so a container's diagnostic can never overflow the agent contract's own limits. */
 const BoundedMessage = Schema.String.check(Schema.isMaxLength(4 * 1024))
 
@@ -95,7 +84,7 @@ const BoundedMessage = Schema.String.check(Schema.isMaxLength(4 * 1024))
  * checkout's git config immediately afterwards, so no token is left on disk.
  */
 /** A commit, as the only thing the sandbox will check out. */
-export const SandboxCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))
+export const SandboxCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u))
 
 /**
  * A checkout-relative directory. Validated here as well as at the api's own

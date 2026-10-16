@@ -14,7 +14,7 @@ import {
 import { selectedPlanKnownAtomFor } from "@/atoms/selected-plan-atoms"
 import { useAtom } from "@/lib/effect-atom"
 import { hasSelectedPlan, resolvePlanAccess } from "@/lib/billing/plan-gating"
-import { isFixturePath, isPublicPath } from "@/lib/public-routes"
+import { isOrgIndependentPath, isPublicPath } from "@/lib/public-routes"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { AnchoredToastProvider, ToastProvider } from "@maple/ui/components/ui/toast"
 import { AttributesProvider } from "@maple/ui/components/attributes/context"
@@ -201,10 +201,10 @@ function ClerkReverseRedirects() {
 		return <Navigate to={target.pathname} search={target.search} replace />
 	}
 
-	// A fixture surface has no org-scoped data to gate, so it renders whatever the
-	// plan query is doing. Checked after the auth-page redirects above, which are
-	// about sending a signed-in reader somewhere better rather than gating them.
-	if (isFixturePath(pathname)) {
+	// A fixture surface (or the email unsubscribe page) has no org-scoped data to
+	// gate, so it renders whatever the plan query is doing. Checked after the
+	// auth-page redirects above, which send a signed-in reader somewhere better.
+	if (isOrgIndependentPath(pathname)) {
 		return <AppFrame />
 	}
 

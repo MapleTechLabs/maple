@@ -1,7 +1,7 @@
 // One panel, every dimension.
 //
 // Replaces the standalone Hosts section and Top-traffic card: a dimension
-// switcher over a stacked timeseries plus a ranked table, where clicking a row
+// switcher over a ranked table, where clicking a row
 // name filters the whole page by it. Adding a dimension is a poller metric and
 // a registry row — not another card on an already-long page.
 //
@@ -12,13 +12,14 @@
 //     the dataset reads "not collected", never "no traffic".
 //   - The long tail. The toolbar filter narrows the keys already on screen;
 //     when that isn't enough, "Search all …" runs a live Cloudflare query that
-//     can see paths the stored top-N never kept. The chart hides there, because
-//     live mode has no history. Live is an action, never a side effect of
+//     can see paths the stored top-N never kept. Live is an action, never a side effect of
 //     typing — every keystroke used to be a Cloudflare GraphQL round trip.
 //   - Rank. Rows carry a share-proportional bar, so a hundred keys read as a
 //     decaying shape instead of a flat wall of names.
 
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
+import { ResultView } from "@/components/common/result-view"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
@@ -35,19 +36,18 @@ import {
 	cloudflareZoneBreakdownResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { formatNumber } from "@maple/ui/lib/format"
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
-import { ColumnHead, DataTable, useTableSort } from "../primitives/data-table"
+import { XmarkIcon } from "@/components/icons"
+import { MonoLinkButton } from "../primitives/mono-link-button"
+import { CompactFilterInput } from "./compact-filter-input"
+import { ColumnHead, DataTable, useTableSort } from "@/components/common/data-table"
+import { SegmentPivot } from "../primitives/segment-pivot"
 import { shareBar } from "../primitives/share-bar"
-import { formatBytes, formatPercent } from "@maple/ui/lib/format"
-import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
-import {
-	CACHE_STATUS_COLORS,
-	CACHE_STATUS_ORDER,
-	errorRateClass,
-	STATUS_CLASS_COLORS,
-	STATUS_CLASS_ORDER,
-} from "./constants"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
+import { errorRateClass } from "@maple/ui/lib/error-rate"
+import { EMPTY_VALUE, formatBytes, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatDateInTimezone } from "@/lib/timezone-format"
 import { PanelScope } from "./panel-scope"
 import type { CloudflareFilterKey, CloudflareFilters } from "./filters"
 
@@ -67,8 +67,6 @@ interface DimensionDef {
 	readonly noun: string
 	/** Which page filter a row click toggles. */
 	readonly filterKey: CloudflareFilterKey
-	readonly colors?: Record<string, string>
-	readonly order?: ReadonlyArray<string>
 	/** Live Cloudflare search is only wired for the dimensions the proxy exposes. */
 	readonly liveDimension?: "host" | "path"
 }
@@ -98,8 +96,6 @@ const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 		column: "Status class",
 		noun: "status classes",
 		filterKey: "statusClasses",
-		colors: STATUS_CLASS_COLORS,
-		order: STATUS_CLASS_ORDER,
 	},
 	{
 		id: "cacheStatus",
@@ -107,24 +103,15 @@ const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 		column: "Cache status",
 		noun: "cache statuses",
 		filterKey: "cacheStatuses",
-		colors: CACHE_STATUS_COLORS,
-		order: CACHE_STATUS_ORDER,
 	},
 ]
 
 const ROW_CLASS =
 	"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40"
 
-const CHIP_CLASS =
-	"inline-flex items-center rounded-sm border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-
 /** ISO-8601 UTC → "Jul 28". */
-const formatCollectedFrom = (iso: string, timeZone: string) => {
-	const date = new Date(iso)
-	return Number.isNaN(date.getTime())
-		? null
-		: date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone })
-}
+const formatCollectedFrom = (iso: string, timeZone: string) =>
+	Number.isNaN(new Date(iso).getTime()) ? null : formatDateInTimezone(iso, { timeZone, withYear: false })
 
 export function CloudflareBreakdownPanel({
 	serviceName,
@@ -134,7 +121,6 @@ export function CloudflareBreakdownPanel({
 	bucketSeconds,
 	filters,
 	onToggleFilter,
-	syncId,
 }: {
 	serviceName: string
 	zoneName: string
@@ -144,23 +130,13 @@ export function CloudflareBreakdownPanel({
 	bucketSeconds: number
 	filters: CloudflareFilters
 	onToggleFilter: (key: CloudflareFilterKey, value: string) => void
-	syncId?: string
 }) {
 	const [dimensionId, setDimensionId] = useState<CloudflareBreakdownDimension>("path")
-	const [search, setSearch] = useState("")
-	// Set only by the explicit "Search all …" action. Typing clears it, so the panel falls straight
-	// back to the stored rows instead of holding a stale Cloudflare result on screen.
-	const [liveQuery, setLiveQuery] = useState<string | null>(null)
-	const dimension = DIMENSIONS.find((d) => d.id === dimensionId) ?? DIMENSIONS[0]!
-	const live = liveQuery !== null
-
-	// Read here rather than inside StoredBreakdown so the header's scope marker can report the
-	// filters the server actually applied instead of guessing at them.
 	const storedResult = useRefreshableAtomValue(
 		cloudflareZoneBreakdownResultAtom({
 			data: {
 				serviceName,
-				dimension: dimension.id,
+				dimension: dimensionId,
 				startTime,
 				endTime,
 				bucketSeconds,
@@ -169,12 +145,52 @@ export function CloudflareBreakdownPanel({
 			},
 		}),
 	)
+	return (
+		<CloudflareBreakdownPanelBody
+			zoneName={zoneName}
+			startTime={startTime}
+			endTime={endTime}
+			filters={filters}
+			onToggleFilter={onToggleFilter}
+			dimensionId={dimensionId}
+			onDimensionChange={setDimensionId}
+			storedResult={storedResult}
+		/>
+	)
+}
+
+/** The panel over an already-fetched result, so the lab can render it from fixtures. */
+export function CloudflareBreakdownPanelBody({
+	zoneName,
+	startTime,
+	endTime,
+	filters,
+	onToggleFilter,
+	dimensionId,
+	onDimensionChange,
+	storedResult,
+}: {
+	zoneName: string
+	startTime: string
+	endTime: string
+	filters: CloudflareFilters
+	onToggleFilter: (key: CloudflareFilterKey, value: string) => void
+	dimensionId: CloudflareBreakdownDimension
+	onDimensionChange: (dimension: CloudflareBreakdownDimension) => void
+	storedResult: Result.Result<CloudflareZoneBreakdown, unknown>
+}) {
+	const [search, setSearch] = useState("")
+	// Set only by the explicit "Search all …" action. Typing clears it, so the panel falls straight
+	// back to the stored rows instead of holding a stale Cloudflare result on screen.
+	const [liveQuery, setLiveQuery] = useState<string | null>(null)
+	const dimension = DIMENSIONS.find((d) => d.id === dimensionId) ?? DIMENSIONS[0]!
+	const live = liveQuery !== null
 	const ignoredFilters = Result.builder(storedResult)
 		.onSuccess((data) => data.ignoredFilters)
 		.orElse(() => undefined)
 
 	const selectDimension = (id: CloudflareBreakdownDimension) => {
-		setDimensionId(id)
+		onDimensionChange(id)
 		setSearch("")
 		setLiveQuery(null)
 	}
@@ -185,19 +201,32 @@ export function CloudflareBreakdownPanel({
 	}
 
 	return (
-		<div className="rounded-md border bg-card">
-			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pt-2.5 pb-2">
+		<Panel className="overflow-visible">
+			<PanelHeader
+				divided={false}
+				className="gap-y-2 px-3 pt-2.5 pb-2"
+				action={
+					<SegmentPivot<CloudflareBreakdownDimension>
+						ariaLabel="Breakdown dimension"
+						options={DIMENSIONS.map((d) => ({ value: d.id, label: d.tab }))}
+						value={dimensionId}
+						onChange={selectDimension}
+					/>
+				}
+			>
 				<div className="flex flex-wrap items-center gap-2">
-					<span className="text-[11px] font-medium text-muted-foreground">Breakdown</span>
+					<PanelTitle>Breakdown</PanelTitle>
 					{live ? (
-						<button
-							type="button"
-							onClick={() => setLiveQuery(null)}
-							className={cn(CHIP_CLASS, "gap-1 transition-colors hover:text-foreground")}
+						<Badge
+							variant="meta"
+							size="xs"
+							mono
+							render={<button type="button" onClick={() => setLiveQuery(null)} />}
+							className="bg-background/60 font-normal transition-colors hover:text-foreground"
 						>
 							live
-							<XmarkIcon size={9} />
-						</button>
+							<XmarkIcon />
+						</Badge>
 					) : (
 						<PanelScope
 							filters={filters}
@@ -206,26 +235,7 @@ export function CloudflareBreakdownPanel({
 						/>
 					)}
 				</div>
-				<div className="flex items-center gap-1" role="tablist" aria-label="Breakdown dimension">
-					{DIMENSIONS.map((d) => (
-						<button
-							key={d.id}
-							type="button"
-							role="tab"
-							aria-selected={d.id === dimensionId}
-							onClick={() => selectDimension(d.id)}
-							className={cn(
-								"rounded px-2 py-0.5 text-[11px] transition-colors",
-								d.id === dimensionId
-									? "bg-muted font-medium text-foreground"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-						>
-							{d.tab}
-						</button>
-					))}
-				</div>
-			</div>
+			</PanelHeader>
 
 			{live ? (
 				<LiveBreakdown
@@ -244,13 +254,12 @@ export function CloudflareBreakdownPanel({
 					startTime={startTime}
 					filters={filters}
 					onToggleFilter={onToggleFilter}
-					syncId={syncId}
 					search={search}
 					onSearchChange={onSearchChange}
 					onSearchLive={() => setLiveQuery(search.trim())}
 				/>
 			)}
-		</div>
+		</Panel>
 	)
 }
 
@@ -274,27 +283,13 @@ function Toolbar({
 }) {
 	return (
 		<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pb-2">
-			<label className="flex h-6 min-w-0 max-w-xs flex-1 items-center gap-1.5 rounded-sm border border-border/70 bg-background/60 px-2 transition-colors focus-within:border-ring">
-				<MagnifierIcon size={11} className="shrink-0 text-muted-foreground" />
-				<input
-					type="search"
-					value={value}
-					onChange={(event) => onChange(event.target.value)}
-					placeholder={`Filter ${count} ${dimension.noun}`}
-					aria-label={`Filter the listed ${dimension.noun}`}
-					className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus-visible:outline-none [&::-webkit-search-cancel-button]:hidden"
-				/>
-				{value ? (
-					<button
-						type="button"
-						onClick={() => onChange("")}
-						aria-label="Clear filter"
-						className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
-					>
-						<XmarkIcon size={9} />
-					</button>
-				) : null}
-			</label>
+			<CompactFilterInput
+				className="min-w-0 max-w-xs flex-1"
+				value={value}
+				onChange={onChange}
+				placeholder={`Filter ${count} ${dimension.noun}`}
+				label={`Filter the listed ${dimension.noun}`}
+			/>
 			{meta}
 		</div>
 	)
@@ -364,35 +359,35 @@ function BreakdownTable({
 									type="button"
 									onClick={() => onToggleFilter(dimension.filterKey, row.key)}
 									aria-pressed={selected}
-									title={`Filter this page by ${row.key || "—"}`}
+									title={`Filter this page by ${row.key || EMPTY_VALUE}`}
 									className={cn(
-										"max-w-full truncate rounded-xs font-mono text-[13px] underline-offset-2 hover:underline focus-visible:outline-1 focus-visible:outline-ring",
+										"max-w-full truncate rounded-xs font-mono text-xs underline-offset-2 hover:underline focus-visible:outline-1 focus-visible:outline-ring",
 										selected ? "text-primary" : "text-foreground",
 									)}
 								>
-									{row.key || "—"}
+									{row.key || EMPTY_VALUE}
 								</button>
 							) : (
-								<span className="block max-w-full truncate font-mono text-[13px] text-foreground">
-									{row.key || "—"}
+								<span className="block max-w-full truncate font-mono text-xs text-foreground">
+									{row.key || EMPTY_VALUE}
 								</span>
 							)}
 						</div>
 						<div
-							className="w-[110px] text-right font-mono text-[12px] tabular-nums text-foreground/80"
+							className="w-[110px] text-right font-mono text-xs tabular-nums text-foreground/80"
 							title={`${formatPercent(row.share)} of listed requests`}
 						>
 							{formatNumber(row.requests)}
 						</div>
 						<div
 							className={cn(
-								"w-[90px] text-right font-mono text-[12px] tabular-nums",
+								"w-[90px] text-right font-mono text-xs tabular-nums",
 								errorRateClass(row.errorRate),
 							)}
 						>
-							{formatPercent(row.errorRate)}
+							{formatErrorRate(row.errorRate)}
 						</div>
-						<div className="hidden w-[90px] text-right font-mono text-[12px] tabular-nums text-foreground/80 md:block">
+						<div className="hidden w-[90px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 							{formatBytes(row.bytes)}
 						</div>
 					</div>
@@ -408,7 +403,6 @@ function StoredBreakdown({
 	startTime,
 	filters,
 	onToggleFilter,
-	syncId,
 	search,
 	onSearchChange,
 	onSearchLive,
@@ -419,7 +413,6 @@ function StoredBreakdown({
 	startTime: string
 	filters: CloudflareFilters
 	onToggleFilter: (key: CloudflareFilterKey, value: string) => void
-	syncId?: string
 	search: string
 	onSearchChange: (value: string) => void
 	onSearchLive: () => void
@@ -428,90 +421,81 @@ function StoredBreakdown({
 	const query = useDeferredValue(search).trim().toLowerCase()
 	const { effectiveTimezone } = useTimezonePreference()
 
-	return Result.builder(result)
-		.onInitial(() => (
-			<div className="space-y-2 px-3 pb-3">
-				<Skeleton className="h-40 w-full" />
-				<Skeleton className="h-4 w-5/6" />
-				<Skeleton className="h-4 w-2/3" />
-			</div>
-		))
-		.onError(() => (
-			<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
-				Couldn't load the {dimension.column.toLowerCase()} breakdown.
-			</p>
-		))
-		.onSuccess((data, r) => {
-			const collectedFrom =
-				data.coverageStart != null &&
-				warehouseTimeToMs(startTime) < new Date(data.coverageStart).getTime() - 60_000
-					? formatCollectedFrom(data.coverageStart, effectiveTimezone)
-					: null
-			const notCollected = data.coverageStart == null && data.totals.length === 0
-			const matches =
-				query === ""
-					? data.totals
-					: data.totals.filter((row) => row.key.toLowerCase().includes(query))
+	return (
+		<ResultView
+			result={result}
+			loading={
+				<div className="space-y-2 px-3 pb-3">
+					<Skeleton className="h-40 w-full" />
+					<Skeleton className="h-4 w-5/6" />
+					<Skeleton className="h-4 w-2/3" />
+				</div>
+			}
+			error={() => (
+				<p className="px-3 pb-3 font-mono text-2xs text-muted-foreground">
+					Couldn't load the {dimension.column.toLowerCase()} breakdown.
+				</p>
+			)}
+		>
+			{(data, { waiting }) => {
+				const collectedFrom =
+					data.coverageStart != null &&
+					warehouseTimeToMs(startTime) < new Date(data.coverageStart).getTime() - 60_000
+						? formatCollectedFrom(data.coverageStart, effectiveTimezone)
+						: null
+				const notCollected = data.coverageStart == null && data.totals.length === 0
+				const matches =
+					query === ""
+						? data.totals
+						: data.totals.filter((row) => row.key.toLowerCase().includes(query))
 
-			return (
-				<div className={cn("transition-opacity", r.waiting && "opacity-60")}>
-					<Toolbar
-						dimension={dimension}
-						value={search}
-						onChange={onSearchChange}
-						count={data.totals.length}
-						meta={
-							// Below 99.5% the fold is actually hiding something; above it, saying so is noise.
-							data.coverage < 0.995 && data.totals.length > 0 ? (
-								<span className="font-mono text-[10px] text-muted-foreground">
-									{formatPercent(data.coverage)} of zone requests
-								</span>
-							) : null
-						}
-					/>
-					<div className="px-3 pb-2">
-						<StackedBreakdownChart
-							title={dimension.column}
-							rows={data.buckets.map((b) => ({
-								bucket: b.bucket,
-								attributeValue: b.key,
-								value: b.requests,
-							}))}
-							colors={dimension.colors ?? {}}
-							order={dimension.order ?? []}
-							syncId={syncId}
+				return (
+					<div className={refreshingClass(waiting)} aria-busy={waiting || undefined}>
+						<Toolbar
+							dimension={dimension}
+							value={search}
+							onChange={onSearchChange}
+							count={data.totals.length}
+							meta={
+								// Below 99.5% the fold is actually hiding something; above it, saying so is noise.
+								data.coverage < 0.995 && data.totals.length > 0 ? (
+									<span className="font-mono text-3xs text-muted-foreground">
+										{formatPercent(data.coverage)} of zone requests
+									</span>
+								) : null
+							}
+						/>
+						<BreakdownTable
+							dimension={dimension}
+							rows={matches}
+							waiting={waiting}
+							emptyMessage={
+								query !== ""
+									? `No listed ${dimension.noun} match "${search.trim()}".`
+									: notCollected
+										? `Not collected for this period. ${dimension.column} data starts once the poller has run.`
+										: "No traffic in the selected window."
+							}
+							filters={filters}
+							onToggleFilter={onToggleFilter}
+							interactive
+						/>
+						<Footer
+							dimension={dimension}
+							shown={matches.length}
+							total={data.totals.length}
+							collectedFrom={collectedFrom}
+							onSearchLive={
+								dimension.liveDimension !== undefined && search.trim() !== ""
+									? onSearchLive
+									: undefined
+							}
 						/>
 					</div>
-					<BreakdownTable
-						dimension={dimension}
-						rows={matches}
-						waiting={r.waiting}
-						emptyMessage={
-							query !== ""
-								? `No listed ${dimension.noun} match "${search.trim()}".`
-								: notCollected
-									? `Not collected for this period. ${dimension.column} data starts once the poller has run.`
-									: "No traffic in the selected window."
-						}
-						filters={filters}
-						onToggleFilter={onToggleFilter}
-						interactive
-					/>
-					<Footer
-						dimension={dimension}
-						shown={matches.length}
-						total={data.totals.length}
-						collectedFrom={collectedFrom}
-						onSearchLive={
-							dimension.liveDimension !== undefined && search.trim() !== ""
-								? onSearchLive
-								: undefined
-						}
-					/>
-				</div>
-			)
-		})
-		.render()
+				)
+			}}
+		</ResultView>
+	)
 }
 
 function Footer({
@@ -529,24 +513,22 @@ function Footer({
 	onSearchLive?: () => void
 }) {
 	if (total === 0 && onSearchLive === undefined) return null
-	const parts = [
-		shown === total ? `${total} ${dimension.noun}` : `Showing ${shown} of ${total} ${dimension.noun}`,
-		collectedFrom ? `collected from ${collectedFrom}` : null,
-	].filter((part): part is string => part !== null)
 
 	return (
-		<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2">
-			<p className="font-mono text-[10px] text-muted-foreground">{parts.join(" · ")}</p>
+		<ListFooter
+			shown={shown}
+			total={total}
+			noun={dimension.noun}
+			align="start"
+			className="justify-start gap-x-3 gap-y-1 px-3 py-2 font-mono text-3xs"
+		>
+			{collectedFrom ? <span>collected from {collectedFrom}</span> : null}
 			{onSearchLive ? (
-				<button
-					type="button"
-					onClick={onSearchLive}
-					className="font-mono text-[10px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
-				>
+				<MonoLinkButton onClick={onSearchLive} className="ml-auto">
 					Search all {dimension.noun} in Cloudflare
-				</button>
+				</MonoLinkButton>
 			) : null}
-		</div>
+		</ListFooter>
 	)
 }
 
@@ -595,69 +577,73 @@ function LiveBreakdown({
 			onChange={onSearchChange}
 			count={count}
 			meta={
-				<span className="font-mono text-[10px] text-muted-foreground">
+				<span className="font-mono text-3xs text-muted-foreground">
 					Live from Cloudflare · no history
 				</span>
 			}
 		/>
 	)
 
-	return Result.builder(result)
-		.onInitial(() => (
-			<>
-				{toolbar(0)}
-				<div className="space-y-2 px-3 pb-3">
-					<Skeleton className="h-4 w-full" />
-					<Skeleton className="h-4 w-5/6" />
-					<Skeleton className="h-4 w-2/3" />
-				</div>
-			</>
-		))
-		.onError(() => (
-			<>
-				{toolbar(0)}
-				<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
-					Couldn't reach Cloudflare's analytics API for this zone right now.
-				</p>
-			</>
-		))
-		.onSuccess((data, r) => {
-			if (data.unavailableReason != null) {
-				return (
-					<>
-						{toolbar(0)}
-						<p className="px-3 pb-3 font-mono text-[11px] text-muted-foreground">
-							Cloudflare can't serve this breakdown: {data.unavailableReason}
-						</p>
-					</>
-				)
+	return (
+		<ResultView
+			result={result}
+			loading={
+				<>
+					{toolbar(0)}
+					<div className="space-y-2 px-3 pb-3">
+						<Skeleton className="h-4 w-full" />
+						<Skeleton className="h-4 w-5/6" />
+						<Skeleton className="h-4 w-2/3" />
+					</div>
+				</>
 			}
-			const attributed = data.rows.reduce((sum, row) => sum + row.requests, 0)
-			const rows = data.rows.map((row): CloudflareBreakdownTotal => ({
-				key: row.key,
-				requests: row.requests,
-				errors5xx: 0,
-				bytes: row.bytes,
-				errorRate: row.errorRate,
-				share: attributed > 0 ? row.requests / attributed : 0,
-			}))
-
-			return (
-				<div className={cn("transition-opacity", r.waiting && "opacity-60")}>
-					{toolbar(rows.length)}
-					<BreakdownTable
-						dimension={dimension}
-						rows={rows}
-						waiting={r.waiting}
-						emptyMessage={`No ${dimension.noun} match "${query}" in this window.`}
-						interactive={false}
-					/>
-					<p className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
-						Cloudflare's top {rows.length} for "{query}" · clear the filter to return to stored
-						data
+			error={() => (
+				<>
+					{toolbar(0)}
+					<p className="px-3 pb-3 font-mono text-2xs text-muted-foreground">
+						Couldn't reach Cloudflare's analytics API for this zone right now.
 					</p>
-				</div>
-			)
-		})
-		.render()
+				</>
+			)}
+		>
+			{(data, { waiting }) => {
+				if (data.unavailableReason != null) {
+					return (
+						<>
+							{toolbar(0)}
+							<p className="px-3 pb-3 font-mono text-2xs text-muted-foreground">
+								Cloudflare can't serve this breakdown: {data.unavailableReason}
+							</p>
+						</>
+					)
+				}
+				const attributed = data.rows.reduce((sum, row) => sum + row.requests, 0)
+				const rows = data.rows.map((row): CloudflareBreakdownTotal => ({
+					key: row.key,
+					requests: row.requests,
+					errors5xx: 0,
+					bytes: row.bytes,
+					errorRate: row.errorRate,
+					share: attributed > 0 ? row.requests / attributed : 0,
+				}))
+
+				return (
+					<div className={refreshingClass(waiting)} aria-busy={waiting || undefined}>
+						{toolbar(rows.length)}
+						<BreakdownTable
+							dimension={dimension}
+							rows={rows}
+							waiting={waiting}
+							emptyMessage={`No ${dimension.noun} match "${query}" in this window.`}
+							interactive={false}
+						/>
+						<p className="px-3 py-2 font-mono text-3xs text-muted-foreground">
+							Cloudflare's top {rows.length} for "{query}" · clear the filter to return to
+							stored data
+						</p>
+					</div>
+				)
+			}}
+		</ResultView>
+	)
 }

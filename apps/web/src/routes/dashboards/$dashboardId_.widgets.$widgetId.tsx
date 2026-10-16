@@ -1,8 +1,14 @@
 import * as React from "react"
-import { createFileRoute, useNavigate, useBlocker } from "@tanstack/react-router"
+import { errorMessage } from "@/lib/error-toast"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { createFileRoute, Link, Navigate, useNavigate, useBlocker } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { CRUMB_ERROR, CRUMB_LOADING, CRUMB_NOT_FOUND } from "@/components/layout/result-page"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
+import { SyncUnavailable } from "@/components/common/sync-unavailable"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import {
 	WidgetQueryBuilderPage,
 	type WidgetQueryBuilderPageHandle,
@@ -24,6 +30,7 @@ import {
 	variableSearchRest,
 } from "@/lib/dashboard-controls/search-params"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 // The editor carries the dashboard's per-viewer controls through its own search
@@ -43,10 +50,10 @@ function WidgetConfigurePage() {
 	const { dashboardId, widgetId } = Route.useParams()
 	const navigate = useNavigate()
 
-	const { dashboards, readOnly, updateWidget, updateDashboardTimeRange } = useDashboardStore()
+	const { dashboards, isLoading, isError, retry, readOnly, updateWidget, updateDashboardTimeRange } =
+		useDashboardStore()
 
 	const builderRef = React.useRef<WidgetQueryBuilderPageHandle>(null)
-	const [isSaving, setIsSaving] = React.useState(false)
 	// Stabilize time range value — only update when the value actually changes,
 	// not when the dashboard object is rebuilt (e.g. from widget save optimistic update).
 	// Without this, DashboardTimeRangeSync fires spurious mutations that overwrite concurrent saves.
@@ -64,27 +71,25 @@ function WidgetConfigurePage() {
 		})
 	}
 
-	const handleApply = async (updates: {
-		visualization: VisualizationType
-		dataSource: WidgetDataSource
-		display: WidgetDisplayConfig
-		timeRange: TimeRange | undefined
-	}) => {
+	const [save, isSaving] = useAsyncAction(
+		(updates: {
+			visualization: VisualizationType
+			dataSource: WidgetDataSource
+			display: WidgetDisplayConfig
+			timeRange: TimeRange | undefined
+		}) =>
+			updateWidget(dashboardId, widgetId, updates).then(navigateBack, (cause: unknown) => {
+				// `onApply` is a fire-and-forget callback, so an uncaught rejection here
+				// would strand the user on the editor with no idea the save failed.
+				toastManager.add({
+					title: errorMessage(cause, "Failed to save this widget"),
+					type: "error",
+				})
+			}),
+	)
+	const handleApply = (updates: Parameters<typeof save>[0]) => {
 		if (readOnly || isSaving) return
-		setIsSaving(true)
-		try {
-			await updateWidget(dashboardId, widgetId, updates)
-			navigateBack()
-		} catch (cause) {
-			// `onApply` is a fire-and-forget callback, so an uncaught rejection here
-			// would strand the user on the editor with no idea the save failed.
-			toastManager.add({
-				title: cause instanceof Error ? cause.message : "Couldn’t save this widget",
-				type: "error",
-			})
-		} finally {
-			setIsSaving(false)
-		}
+		void save(updates)
 	}
 
 	// Block navigation when there are unsaved changes
@@ -94,25 +99,49 @@ function WidgetConfigurePage() {
 	})
 
 	if (!activeDashboard || !configureWidget) {
+		// Same triage as the dashboard page: a dead sync stream is not a missing widget.
+		const [crumb, body] =
+			isLoading && !activeDashboard
+				? [CRUMB_LOADING, <WidgetEditorSkeleton />]
+				: isError && !activeDashboard
+					? [
+							CRUMB_ERROR,
+							<SyncUnavailable
+								title="Failed to load this dashboard"
+								description="The sync stream isn’t reachable, so the dashboard couldn’t be read. Nothing has been lost; this is a read problem."
+								onRetry={retry}
+							/>,
+						]
+					: [
+							CRUMB_NOT_FOUND,
+							<ResourceNotFound
+								title="Widget not found"
+								description={
+									<>
+										No widget with id{" "}
+										<InlineCode className="break-all px-1.5 py-0.5">{widgetId}</InlineCode>
+									</>
+								}
+								backLink={<Link to="/dashboards/$dashboardId" params={{ dashboardId }} />}
+								backLabel="Back to dashboard"
+								className="py-24"
+							/>,
+						]
 		return (
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[{ label: "Dashboards", href: "/dashboards" }, { label: "..." }]}
-				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll>
-							<WidgetEditorSkeleton />
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			<DashboardPage breadcrumbs={[{ label: "Dashboards", href: "/dashboards" }, { label: crumb }]}>
+				{body}
+			</DashboardPage>
 		)
 	}
 
 	if (readOnly) {
-		navigateBack()
-		return null
+		return (
+			<Navigate
+				to="/dashboards/$dashboardId"
+				params={{ dashboardId }}
+				search={(prev) => ({ ...pickDashboardControlParams(prev), mode: "edit" as const })}
+			/>
+		)
 	}
 
 	let initialTimeRange = stableTimeRange
@@ -136,62 +165,46 @@ function WidgetConfigurePage() {
 				urlValues={{}}
 				onValueChange={() => undefined}
 			>
-				<DashboardLayout.Root>
-					<DashboardLayout.Breadcrumbs
-						items={[
-							{ label: "Dashboards", href: "/dashboards" },
-							{
-								label: activeDashboard.name,
-								href: `/dashboards/${activeDashboard.id}`,
-							},
-							{ label: "Configure Widget" },
-						]}
-					>
+				<DashboardPage
+					breadcrumbs={[
+						{ label: "Dashboards", href: "/dashboards" },
+						{
+							label: activeDashboard.name,
+							href: `/dashboards/${activeDashboard.id}`,
+						},
+						{ label: "Configure widget" },
+					]}
+					topbarActions={
 						<div className="flex items-center gap-2">
-							<Button variant="ghost" size="sm" onClick={navigateBack} disabled={isSaving}>
-								&larr; Back
-							</Button>
 							<Button variant="outline" size="sm" onClick={navigateBack} disabled={isSaving}>
 								Cancel
 							</Button>
-							<Button size="sm" onClick={() => builderRef.current?.apply()} disabled={isSaving}>
-								{isSaving ? "Saving..." : "Apply"}
+							<Button size="sm" onClick={() => builderRef.current?.apply()} loading={isSaving}>
+								Apply
 							</Button>
 						</div>
-					</DashboardLayout.Breadcrumbs>
-					<DashboardLayout.Body>
-						<DashboardLayout.Content>
-							<DashboardLayout.Scroll>
-								<WidgetBuilderProvider widget={configureWidget}>
-									<WidgetQueryBuilderPage
-										ref={builderRef}
-										widget={configureWidget}
-										onApply={handleApply}
-									/>
-								</WidgetBuilderProvider>
-							</DashboardLayout.Scroll>
-						</DashboardLayout.Content>
-					</DashboardLayout.Body>
-				</DashboardLayout.Root>
+					}
+				>
+					<WidgetBuilderProvider widget={configureWidget}>
+						<WidgetQueryBuilderPage
+							ref={builderRef}
+							widget={configureWidget}
+							onApply={handleApply}
+						/>
+					</WidgetBuilderProvider>
+				</DashboardPage>
 
-				{status === "blocked" && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-						<div className="bg-background rounded-lg border p-6 shadow-lg max-w-sm">
-							<h3 className="text-sm font-medium mb-2">Unsaved changes</h3>
-							<p className="text-sm text-muted-foreground mb-4">
-								You have unsaved widget changes. Are you sure you want to leave?
-							</p>
-							<div className="flex justify-end gap-2">
-								<Button variant="outline" size="sm" onClick={reset}>
-									Stay
-								</Button>
-								<Button variant="destructive" size="sm" onClick={proceed}>
-									Discard changes
-								</Button>
-							</div>
-						</div>
-					</div>
-				)}
+				<ConfirmDialog
+					open={status === "blocked"}
+					onOpenChange={(open) => {
+						if (!open) reset?.()
+					}}
+					title="Unsaved changes"
+					description="You have unsaved widget changes. Are you sure you want to leave?"
+					cancelLabel="Stay"
+					confirmLabel="Discard changes"
+					onConfirm={() => proceed?.()}
+				/>
 			</DashboardVariablesProvider>
 		</DashboardTimeRangeWrapper>
 	)

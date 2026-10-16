@@ -22,7 +22,13 @@ export { listServices } from "./list-services"
 export { searchTraces } from "./search-traces"
 export { inspectTrace } from "./inspect-trace"
 export { spanDetail, type SpanDetailInput, type SpanDetailResult } from "./span-detail"
-export { findErrors } from "./find-errors"
+export { findErrors, findErrorsTotals } from "./find-errors"
+export {
+	isUnlabelledError,
+	labelExceptionlessFingerprints,
+	spanErrorLabel,
+	UNKNOWN_ERROR_LABEL,
+} from "./fingerprint-labels"
 export {
 	errorDetail,
 	type ErrorDetailIdentity,

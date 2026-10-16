@@ -62,7 +62,7 @@ A built-in signal only sees entry-point spans. A service that records a failure 
 
 **Query** (`builder_query`) uses the same query builder as dashboard charts. It can read traces, logs, metrics or product events, with its own filters and group-by. The quickest way to build one is from a chart: open a dashboard, open the chart's menu and choose **Create alert**.
 
-**Raw SQL** (`raw_query`) runs your own SQL. The query must include `$__orgFilter` and a `$__timeFilter(...)` on the time column, and return a time bucket and a value. **Reduce buckets by** turns the buckets in the window into one value: **Last bucket**, **Sum**, **Average**, **Minimum** or **Maximum**. To evaluate several groups, return a group column. See the [SQL reference](/docs/reference/sql).
+**Raw SQL** (`raw_query`) runs your own SQL. The query must include `$__orgFilter` and a `$__timeFilter(...)` on the time column, and return a time bucket and a value. **Reduce buckets by** turns the buckets in the window into one value: **Last bucket**, **Sum**, **Average**, **Minimum** or **Maximum**. To evaluate several groups, return a group column. Return a `samples` column with the number of events behind each row: **Min samples** sums it, and without it every row counts as one sample, so the minimum counts buckets rather than events. See the [SQL reference](/docs/reference/sql).
 
 For **Query** and **Raw SQL** rules the query carries its own filters, so the **Scope** section is hidden.
 
@@ -97,7 +97,7 @@ Maple evaluates every enabled rule once a minute. Each check aggregates the last
 
 A skipped check counts neither as a breach nor as healthy. It leaves the breach and healthy counters where they were.
 
-A window with no data at all is skipped, with one exception: a **Throughput** rule with `<` or `<=` treats an empty window as zero.
+A window with no data at all is skipped, with two exceptions: a rule with **Alert when there is no data** on (`alert_on_no_data`) counts it as a breach, and otherwise a **Throughput** rule with `<` or `<=` treats it as zero. Turn the switch on for **Raw SQL** rules, where a query that stops matching otherwise goes quiet instead of firing. It is not available on grouped rules: a group that stops reporting keeps its open incident until its telemetry returns. On a **Raw SQL** rule that returns a group column, it fires only when the query returns no rows at all.
 
 The **Min samples** check runs before the threshold comparison, and that zero still counts as zero samples. For **Throughput** the sample count is the signal, so a drop rule with the blank form's default of 50 skips every window below 50 requests, including a full outage, and cannot fire for those windows. Set **Min samples** to 0 for throughput drop rules, as the **Throughput drop** template does. Then traffic stopping entirely fires the rule.
 
@@ -171,7 +171,7 @@ The response lists the value and status of each window per group in `series`, an
 
 ## Troubleshooting
 
-- **The rule never fires.** Open the rule and look at its checks. If every check is skipped, the window has fewer samples than **Min samples**, or the scope matches no data. Check the service names and environments against what is arriving.
+- **The rule never fires.** Open the rule and look at its checks. If every check is skipped, each one says why: **no data** means the scope or query matches nothing, **below min samples** means the window has fewer samples than **Min samples**. Check the service names and environments against what is arriving.
 - **The rule fires and resolves over and over.** Raise **Breaches to fire** and **Healthy to resolve**, or widen the window.
 - **Save is disabled.** The action bar lists what is missing, such as a rule name or a destination.
 
@@ -179,4 +179,5 @@ The response lists the value and status of each window per group in `series`, an
 
 - [Incidents](/docs/alerting/incidents): what happens after a rule fires.
 - [Apdex alerts](/docs/alerting/apdex-alerts): choosing the target and threshold for an Apdex rule.
+- [Uptime monitoring](/docs/alerting/uptime-monitoring): availability alerts from traces, and HTTP checks from the OpenTelemetry Collector.
 - [Notification destinations](/docs/alerting/notification-destinations): where notifications go.

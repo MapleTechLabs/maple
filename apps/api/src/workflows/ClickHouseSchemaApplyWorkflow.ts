@@ -5,13 +5,15 @@
  * Maple's ClickHouse schema to a customer's BYO cluster, chunking heavy
  * backfills across durable steps so they never hit the Worker request budget.
  */
-import { layerPg } from "@maple/backend/platform/DatabasePgLive"
+import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
-import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { MapleDb } from "@maple/infra/cloudflare"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/http"
 import {
 	runClickHouseSchemaApply,
 	type SchemaApplyWorkflowPayload,
@@ -25,19 +27,25 @@ export default class ClickHouseSchemaApplyWorkflow extends Cloudflare.Workflow<C
 	"ClickHouseSchemaApplyWorkflow",
 	Effect.gen(function* () {
 		// Init: the application database, bound to the host Worker under `MAPLE_DB`
-		// (a run reads it off its env through `mapleDbConnectionLayer`).
+		// (a run reads it off its env through `layerMapleDbConnection`).
 		yield* MapleDb("api")
-		return Effect.fn("ClickHouseSchemaApplyWorkflow")(function* (payload: SchemaApplyWorkflowPayload) {
+		return Effect.fn("ClickHouseSchemaApplyWorkflow.run")(function* (
+			payload: SchemaApplyWorkflowPayload,
+		) {
 			const env = yield* Cloudflare.WorkerEnvironment
 			return yield* withPgConnectionScope(runClickHouseSchemaApply(payload)).pipe(
 				// `Database` over one Postgres connection for the run, released with it,
 				// and the run's own telemetry, flushed when alchemy closes the run's scope.
+				// `workerEnvLayer` resolves the run's `Config` reads against the env.
 				// The Workflow class IS the entry point these layers belong to.
 				// oxlint-disable-next-line effecttsgo/strict-effect-provide
 				Effect.provide(
-					Layer.mergeAll(layerPg, schemaApplyTelemetry).pipe(
-						Layer.provideMerge(mapleDbConnectionLayer(env)),
-					),
+					Layer.mergeAll(
+						DatabasePgLive,
+						schemaApplyTelemetry,
+						workerEnvLayer(env),
+						FetchHttpClient.layer,
+					).pipe(Layer.provideMerge(layerMapleDbConnection(env))),
 				),
 			)
 		})

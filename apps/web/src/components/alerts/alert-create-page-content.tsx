@@ -11,9 +11,10 @@ import { cn } from "@maple/ui/lib/utils"
 import { AlertCreateFormSurface } from "@/components/alerts/alert-create-form-surface"
 import { ErrorState } from "@/components/common/error-state"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
 import { defaultRuleForm, ruleToFormState, type RuleFormState } from "@/lib/alerts/form-utils"
+import { switchSignalKind } from "@/lib/alerts/rule-modes"
 import { ALERT_TEMPLATES, applyTemplate } from "@/lib/alerts/templates"
 import { decodeAlertChartFromSearchParam, type AlertChartContext } from "@/lib/alerts/widget-chart-param"
 import {
@@ -64,7 +65,7 @@ export type RuleInitialization =
 	| { readonly status: "ready"; readonly draft: RuleDraft }
 
 export function AlertCreatePageContent() {
-	const search = useSearch({ from: "/alerts/create" }) as AlertCreateSearchValue
+	const search = useSearch({ from: "/alerts/create" })
 
 	const chartContext = useMemo(
 		() => (search.chart ? decodeAlertChartFromSearchParam(search.chart) : undefined),
@@ -138,19 +139,14 @@ export function AlertCreatePageContent() {
  */
 function AlertRuleFormShell({ editing, children }: { editing: boolean; children: ReactNode }) {
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Alerts", href: "/alerts" }, { label: editing ? "Edit Rule" : "New Rule" }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={editing ? "Edit alert rule" : "Create alert rule"} />
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[
+				{ label: "Alerts", href: "/alerts" },
+				{ label: editing ? "Edit rule" : "New rule" },
+			]}
+		>
+			{children}
+		</DashboardPage>
 	)
 }
 
@@ -215,7 +211,8 @@ export function deriveRuleInitialization({
 		unknown
 	>
 }): RuleInitialization {
-	const base = defaultRuleForm(search.serviceName)
+	// New rules open in the query builder; the default error-rate signal carries over as a query.
+	const base = switchSignalKind(defaultRuleForm(search.serviceName), "builder_query").form
 
 	if (search.ruleId) {
 		// Terminal: the stream is gone, so "which rule is this?" has no answer

@@ -2,8 +2,13 @@ import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { Meter } from "@maple/ui/components/ui/meter"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Popover, PopoverPopup, PopoverTrigger } from "@maple/ui/components/ui/popover"
+import { formatCountdown as formatRemaining } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
+
 import {
 	ArrowRightIcon,
 	CircleCheckIcon,
@@ -17,15 +22,9 @@ import { useOnboardingChecklist } from "@/hooks/use-onboarding-checklist"
 import { parseSearchFromHref } from "@/lib/href"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
-const pad = (value: number) => value.toString().padStart(2, "0")
-
-/** `23:41:07` — the pill's live countdown; clamps at `00:00:00`. */
+/** `23:41:07`, the pill's live countdown; clamps at `00:00:00`. */
 export function formatCountdown(deadlineMs: number, nowMs: number): string {
-	const remaining = Math.max(0, Math.floor((deadlineMs - nowMs) / 1000))
-	const hours = Math.floor(remaining / 3600)
-	const minutes = Math.floor((remaining % 3600) / 60)
-	const seconds = remaining % 60
-	return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+	return formatRemaining(deadlineMs - nowMs, { fixedHours: true })
 }
 
 const formatCredits = (checklist: Pick<V2OnboardingChecklist, "reward_amount_usd">) =>
@@ -87,7 +86,7 @@ function OnboardingChecklistPill() {
 								claimable && "border-primary bg-primary/20",
 							)}
 						>
-							<StarIcon size={14} className="text-primary" />
+							<StarIcon className="text-primary" />
 							{claimable || deadlineMs === null ? (
 								<span>Claim {credits} credits</span>
 							) : (
@@ -131,14 +130,17 @@ function OnboardingChecklistPill() {
 /** `2/5` as a small chip: the count is the whole message, so it is written out. */
 function ProgressChip({ completed, total }: { completed: number; total: number }) {
 	return (
-		<span
+		<Badge
+			pill
+			size="xs"
+			mono
 			className={cn(
-				"rounded-full px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums",
+				"text-2xs font-semibold sm:text-2xs",
 				completed === total ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary",
 			)}
 		>
 			{completed}/{total}
-		</span>
+		</Badge>
 	)
 }
 
@@ -177,15 +179,9 @@ function RewardCallout({
 						and get {credits} in credits.
 					</span>
 				</button>
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					aria-label="Got it"
-					onClick={onClose}
-					className="-mt-1 shrink-0 text-muted-foreground"
-				>
-					<XmarkIcon size={12} />
-				</Button>
+				<IconButton label="Got it" onClick={onClose} className="-mt-1 shrink-0 text-muted-foreground">
+					<XmarkIcon />
+				</IconButton>
 			</div>
 		</div>
 	)
@@ -239,12 +235,7 @@ export function OnboardingChecklistPanel({
 						</p>
 					</div>
 				</div>
-				<div className="h-1 overflow-hidden rounded-full bg-primary/15" aria-hidden>
-					<div
-						className="h-full rounded-full bg-primary transition-[width] duration-500"
-						style={{ width: `${Math.round(progress * 100)}%` }}
-					/>
-				</div>
+				<Meter value={progress} minVisible={0} className="bg-primary/15" fillClassName="bg-primary" />
 			</div>
 
 			<ol className="space-y-0.5 p-2">
@@ -267,13 +258,13 @@ export function OnboardingChecklistPanel({
 							<span
 								className={cn(
 									"text-muted-foreground",
-									claimError !== null && "text-destructive",
+									claimError !== null && "text-severity-error",
 								)}
 							>
 								{claimError ?? "Every step is done."}
 							</span>
-							<Button size="sm" onClick={onClaim} disabled={claimPending}>
-								{claimPending ? "Claiming…" : `Claim ${credits} credits`}
+							<Button size="sm" onClick={onClaim} loading={claimPending}>
+								Claim {credits} credits
 							</Button>
 						</>
 					) : (
@@ -301,9 +292,9 @@ export function OnboardingChecklistPanel({
 
 function OptionalTag() {
 	return (
-		<span className="shrink-0 rounded-full border px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+		<Badge variant="meta" size="xs" pill>
 			Optional
-		</span>
+		</Badge>
 	)
 }
 
@@ -338,7 +329,7 @@ function StepRow({
 				className="group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
 			>
 				<span
-					className="flex size-[18px] shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 font-mono text-[10px] text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
+					className="flex size-4.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 font-mono text-3xs text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary"
 					aria-hidden
 				>
 					{index}

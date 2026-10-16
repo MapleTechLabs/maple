@@ -5,26 +5,20 @@
 
 /**
  * Format a duration in milliseconds to a human-readable string.
- * - < 1ms: microseconds (μs)
- * - < 1s: milliseconds (ms)
- * - < 60s: seconds (s)
- * - < 1h: minutes (min)
- * - >= 1h: hours (h)
+ * ns, μs, ms, s, min, h, then d. Each tier is picked after rounding, so 999.96ms
+ * reads "1.00s" rather than "1000.0ms". Negatives (clock skew, deltas) keep their
+ * sign; NaN and Infinity read "—".
  */
 export function formatDuration(ms: number): string {
-	if (ms < 1) {
-		return `${(ms * 1000).toFixed(0)}μs`
-	}
-	if (ms < 1000) {
-		return `${ms.toFixed(1)}ms`
-	}
-	if (ms < 60_000) {
-		return `${(ms / 1000).toFixed(2)}s`
-	}
-	if (ms < 3_600_000) {
-		return `${(ms / 60_000).toFixed(1)}min`
-	}
-	return `${(ms / 3_600_000).toFixed(1)}h`
+	if (!Number.isFinite(ms)) return "—"
+	if (ms < 0) return `-${formatDuration(-ms)}`
+	if (ms > 0 && ms < 0.0005) return `${Math.max(1, Math.round(ms * 1_000_000))}ns`
+	if (Math.round(ms * 1000) < 1000) return `${(ms * 1000).toFixed(0)}μs`
+	if (Number(ms.toFixed(1)) < 1000) return `${ms.toFixed(1)}ms`
+	if (Number((ms / 1000).toFixed(2)) < 60) return `${(ms / 1000).toFixed(2)}s`
+	if (Number((ms / 60_000).toFixed(1)) < 60) return `${(ms / 60_000).toFixed(1)}min`
+	if (Number((ms / 3_600_000).toFixed(1)) < 24) return `${(ms / 3_600_000).toFixed(1)}h`
+	return `${(ms / 86_400_000).toFixed(1)}d`
 }
 
 /**
@@ -41,6 +35,7 @@ export function formatDuration(ms: number): string {
  * columns on comparison tables.
  */
 export function formatNumber(num: number): string {
+	if (!Number.isFinite(num)) return "—"
 	const abs = Math.abs(num)
 	if (abs >= 1_000_000_000_000) {
 		return `${(num / 1_000_000_000_000).toFixed(1)}T`

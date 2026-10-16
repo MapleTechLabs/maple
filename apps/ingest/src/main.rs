@@ -68,7 +68,10 @@ use maple_ingest::wal_store::WalSegmentStore;
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{LogExporter, MetricExporter, Protocol, SpanExporter, WithExportConfig};
+use opentelemetry_otlp::{
+    Compression as OtlpCompression, LogExporter, MetricExporter, Protocol, SpanExporter,
+    WithExportConfig, WithHttpConfig,
+};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
@@ -81,7 +84,9 @@ use opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicRead
 use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
 use opentelemetry_sdk::runtime::Tokio as OtelTokio;
 use opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor;
-use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
+use opentelemetry_sdk::trace::{
+    BatchConfigBuilder, Sampler, SamplingDecision, SamplingResult, SdkTracerProvider, ShouldSample,
+};
 use prost::Message;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -148,6 +153,8 @@ struct AppConfig {
     otlp_grpc_port: Option<u16>,
     forward_endpoint: String,
     forward_timeout: Duration,
+    /// Head-sampling ratio for the gateway's own traces, in (0, 1].
+    self_trace_sample_ratio: f64,
     write_mode: WriteMode,
     tinybird: TinybirdConfig,
     max_request_body_bytes: usize,
@@ -278,6 +285,11 @@ impl AppConfig {
         if forward_endpoint.is_empty() {
             return Err("INGEST_FORWARD_OTLP_ENDPOINT is required".to_owned());
         }
+        let self_trace_sample_ratio = parse_sample_ratio(
+            "INGEST_SELF_TRACE_SAMPLE_RATIO",
+            std::env::var("INGEST_SELF_TRACE_SAMPLE_RATIO").ok(),
+            1.0,
+        )?;
 
         let internal_org_id = std::env::var("MAPLE_INTERNAL_ORG_ID")
             .unwrap_or_default()
@@ -651,6 +663,7 @@ impl AppConfig {
             otlp_grpc_port,
             forward_endpoint,
             forward_timeout: Duration::from_millis(forward_timeout_ms),
+            self_trace_sample_ratio,
             write_mode,
             tinybird,
             max_request_body_bytes,
@@ -1064,7 +1077,10 @@ async fn entitlement_rejection(
     if allowed {
         return None;
     }
-    warn!(
+    // `debug!`, not `warn!`: this runs once per refused request. The denial is
+    // already on the span, and `AutumnEntitlements::post_check` warns with
+    // Autumn's answer each time the decision is fetched.
+    debug!(
         org_id,
         feature_id, "Ingestion blocked: plan limit reached or no active subscription"
     );
@@ -1711,12 +1727,15 @@ fn record_rejection_reason(span: &Span, status: u16, error_kind: &str, reason: &
 /// caller-caused rejection leaves the SERVER span `Ok`, only a server-side
 /// failure is `Error`. `accept_grpc_decoded` maps the pipeline's 429 to
 /// `ResourceExhausted` and everything else to `Unavailable`, so the split here
-/// mirrors the 4xx/5xx split on the HTTP path.
+/// mirrors the 4xx/5xx split on the HTTP path. tonic's own refusals of an export
+/// are classified here too: `Unimplemented` is a `grpc-encoding` these services
+/// do not accept, this path's 415.
 fn grpc_otel_status_for_rejection(code: tonic::Code) -> &'static str {
     match code {
         tonic::Code::Unauthenticated
         | tonic::Code::PermissionDenied
         | tonic::Code::ResourceExhausted
+        | tonic::Code::Unimplemented
         | tonic::Code::InvalidArgument
         | tonic::Code::NotFound
         | tonic::Code::FailedPrecondition
@@ -1739,27 +1758,25 @@ fn record_grpc_identity(resolved: &ResolvedIngestKey) {
     span.record("maple.ingest.key_type", resolved.key_type.as_str());
 }
 
-/// Fill in the deferred outcome fields on a gRPC server span. Generic over the
-/// response body so the three OTLP services share one implementation.
-fn record_grpc_outcome<T>(span: &Span, result: &Result<tonic::Response<T>, tonic::Status>) {
-    match result {
-        Ok(_) => {
-            span.record("rpc.grpc.status_code", tonic::Code::Ok as i32);
-            span.record("otel.status_code", "Ok");
-        }
-        Err(status) => {
-            let code = status.code();
-            span.record("rpc.grpc.status_code", code as i32);
-            span.record("error.type", code.description());
-            span.record("maple.ingest.reject_reason", status.message());
-            if grpc_otel_status_for_rejection(code) == "Error" {
-                // See `record_rejection_reason`: the description is only kept
-                // on a span whose status stays `Error`.
-                span.record("otel.status_description", status.message());
-            } else {
-                span.record("otel.status_code", "Ok");
-            }
-        }
+/// Fill in the deferred outcome fields on a gRPC server span. tonic answers a
+/// failed unary call trailers-only, with `grpc-status` in the response headers;
+/// a response without one succeeded.
+fn record_grpc_outcome(span: &Span, response: &Response) {
+    let Some(status) = tonic::Status::from_header_map(response.headers()) else {
+        span.record("rpc.grpc.status_code", tonic::Code::Ok as i32);
+        span.record("otel.status_code", "Ok");
+        return;
+    };
+    let code = status.code();
+    span.record("rpc.grpc.status_code", code as i32);
+    span.record("error.type", code.description());
+    span.record("maple.ingest.reject_reason", status.message());
+    if grpc_otel_status_for_rejection(code) == "Error" {
+        // See `record_rejection_reason`: the description is only kept on a span
+        // whose status stays `Error`.
+        span.record("otel.status_description", status.message());
+    } else {
+        span.record("otel.status_code", "Ok");
     }
 }
 
@@ -1849,6 +1866,7 @@ fn init_tracing(
     bind_port: u16,
     service_instance_id: &str,
     internal_org_id: &str,
+    trace_sample_ratio: f64,
 ) -> Option<TelemetryProviders> {
     // Two filters on purpose. The registry-wide filter is pinned at `info`
     // because every gateway span (`ingest`, `ingest.authenticate`, the Postgres
@@ -1898,6 +1916,7 @@ fn init_tracing(
         .with_http()
         .with_endpoint(format!("{forward_endpoint}/v1/traces"))
         .with_protocol(Protocol::HttpBinary)
+        .with_compression(OtlpCompression::Gzip)
         .build()
     {
         Ok(exporter) => exporter,
@@ -1916,6 +1935,7 @@ fn init_tracing(
         .with_http()
         .with_endpoint(format!("{forward_endpoint}/v1/logs"))
         .with_protocol(Protocol::HttpBinary)
+        .with_compression(OtlpCompression::Gzip)
         .build()
     {
         Ok(exporter) => exporter,
@@ -1932,11 +1952,11 @@ fn init_tracing(
     };
 
     // Sized for the per-request child spans (ingest.authenticate / .decode /
-    // .parse / .accept / .encode_rows / .wal_commit): a request emits ~7 spans,
-    // not 1. At 2048 the queue held only a few seconds of that volume, so a
-    // brief export stall silently dropped spans — parents and children alike.
-    // Head volume is controlled by OTEL_TRACES_SAMPLER / _ARG, which the SDK
-    // reads via TracerProviderBuilder's derived Default.
+    // .parse / .accept / .encode_rows / .wal_commit): a sampled request emits ~7
+    // spans, not 1. At 2048 the queue held only a few seconds of that volume, so
+    // a brief export stall silently dropped spans, parents and children alike.
+    // Head volume is INGEST_SELF_TRACE_SAMPLE_RATIO (see `SelfTraceSampler`);
+    // the queue is sized for the unsampled default.
     let batch_config = BatchConfigBuilder::default()
         .with_max_queue_size(8192)
         .with_max_export_batch_size(1024)
@@ -1949,6 +1969,7 @@ fn init_tracing(
 
     let provider = SdkTracerProvider::builder()
         .with_resource(resource.clone())
+        .with_sampler(SelfTraceSampler::new(trace_sample_ratio))
         .with_span_processor(processor)
         .build();
     // The runtime argument is not optional here: the runtime-less
@@ -1989,6 +2010,47 @@ fn init_tracing(
     })
 }
 
+/// Head sampler for the gateway's own traces: whole traces by trace id, children
+/// following their parent. Sampled spans carry `SampleRate` = 1/ratio, which
+/// Maple's throughput math weights by, so request rates still read true.
+#[derive(Clone, Debug)]
+struct SelfTraceSampler {
+    inner: Sampler,
+    sample_rate: Option<opentelemetry::KeyValue>,
+}
+
+impl SelfTraceSampler {
+    fn new(ratio: f64) -> Self {
+        Self {
+            inner: Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(ratio))),
+            sample_rate: (ratio < 1.0)
+                .then(|| opentelemetry::KeyValue::new("SampleRate", 1.0 / ratio)),
+        }
+    }
+}
+
+impl ShouldSample for SelfTraceSampler {
+    fn should_sample(
+        &self,
+        parent_context: Option<&opentelemetry::Context>,
+        trace_id: opentelemetry::trace::TraceId,
+        name: &str,
+        span_kind: &opentelemetry::trace::SpanKind,
+        attributes: &[opentelemetry::KeyValue],
+        links: &[opentelemetry::trace::Link],
+    ) -> SamplingResult {
+        let mut result =
+            self.inner
+                .should_sample(parent_context, trace_id, name, span_kind, attributes, links);
+        if let (SamplingDecision::RecordAndSample, Some(rate)) =
+            (&result.decision, &self.sample_rate)
+        {
+            result.attributes.push(rate.clone());
+        }
+        result
+    }
+}
+
 /// Wire up OTLP metric export, mirroring `init_tracing`. The gateway's own
 /// operational metrics are pushed to `{forward_endpoint}/v1/metrics` on a
 /// periodic interval — the same downstream collector → Tinybird pipeline that
@@ -2020,6 +2082,7 @@ fn init_metrics(
         .with_http()
         .with_endpoint(format!("{forward_endpoint}/v1/metrics"))
         .with_protocol(Protocol::HttpBinary)
+        .with_compression(OtlpCompression::Gzip)
         .build()
     {
         Ok(exporter) => exporter,
@@ -2082,6 +2145,7 @@ fn init_usage_metrics(
         .with_http()
         .with_endpoint(format!("{forward_endpoint}/v1/metrics"))
         .with_protocol(Protocol::HttpBinary)
+        .with_compression(OtlpCompression::Gzip)
         .with_temporality(Temporality::Delta)
         .build()
     {
@@ -2145,6 +2209,7 @@ async fn main() {
         config.port,
         &service_instance_id,
         &config.internal_org_id,
+        config.self_trace_sample_ratio,
     );
     let meter_provider = init_metrics(
         &config.forward_endpoint,
@@ -2490,7 +2555,7 @@ async fn main() {
                 "Shutdown drain deadline hit with WAL backlog remaining"
             );
         }
-        // Even a clean drain runs this: it retires the owner heartbeat, so a
+        // Even a clean drain runs this: it marks the owner retired, so a
         // successor claims anything left instead of waiting out the staleness
         // window. With a backlog it also seals and ships the tail, which is the
         // difference between "replays if this task's storage survives" (it does
@@ -2553,24 +2618,103 @@ async fn shutdown_signal() {
 }
 
 async fn run_grpc_server(state: Arc<AppState>, port: u16) {
-    use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer;
-    use opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
-    use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::TraceServiceServer;
-
     let addr = ([0, 0, 0, 0], port).into();
-    let server = tonic::transport::Server::builder()
-        .add_service(TraceServiceServer::new(GrpcTraceService {
-            state: Arc::clone(&state),
-        }))
-        .add_service(LogsServiceServer::new(GrpcLogsService {
-            state: Arc::clone(&state),
-        }))
-        .add_service(MetricsServiceServer::new(GrpcMetricsService { state }));
+    let server = tonic::transport::Server::builder().add_routes(grpc_router(state).into());
 
     info!(port, "Maple OTLP gRPC server listening");
     if let Err(error) = server.serve_with_shutdown(addr, shutdown_signal()).await {
         error!(error = %error, "OTLP gRPC server failed");
     }
+}
+
+/// The three OTLP services behind `grpc_admission`.
+fn grpc_router(state: Arc<AppState>) -> Router {
+    use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer;
+    use opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
+    use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::TraceServiceServer;
+
+    tonic::service::Routes::new(TraceServiceServer::new(GrpcTraceService {
+        state: Arc::clone(&state),
+    }))
+    .add_service(LogsServiceServer::new(GrpcLogsService {
+        state: Arc::clone(&state),
+    }))
+    .add_service(MetricsServiceServer::new(GrpcMetricsService {
+        state: Arc::clone(&state),
+    }))
+    .into_axum_router()
+    .layer(axum::middleware::from_fn_with_state(state, grpc_admission))
+}
+
+/// Authenticate and entitlement-gate an OTLP/gRPC export on its headers alone.
+///
+/// tonic reads and decodes the whole message before a service method runs, so a
+/// check inside `export` runs only after the request it refuses has been
+/// received and decoded. Made here, in front of the services, an unknown key or
+/// a denied org is turned away before any of the message is read. The resolved
+/// key reaches `export` through the request extensions.
+async fn grpc_admission(
+    State(state): State<Arc<AppState>>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    // Not an OTLP export: tonic answers `Unimplemented`.
+    let Some((rpc_service, signal)) = grpc_export_route(request.uri().path()) else {
+        return next.run(request).await;
+    };
+    let span = grpc_server_span(rpc_service, signal.path());
+    let span_handle = span.clone();
+    let response = async move {
+        let admitted = admit_grpc_export(&state, request.headers(), signal).await;
+        match admitted {
+            Ok(resolved) => {
+                request.extensions_mut().insert(resolved);
+                next.run(request).await
+            }
+            Err(status) => status.into_http(),
+        }
+    }
+    .instrument(span)
+    .await;
+    record_grpc_outcome(&span_handle, &response);
+    response
+}
+
+async fn admit_grpc_export(
+    state: &AppState,
+    headers: &HeaderMap,
+    signal: Signal,
+) -> Result<ResolvedIngestKey, tonic::Status> {
+    let resolved = resolve_grpc_ingest_key(state, headers).await?;
+    record_grpc_identity(&resolved);
+    if resolved.org_id != SENTINEL_ORG_ID {
+        if let Some(error) = entitlement_rejection(state, &resolved.org_id, signal.path()).await {
+            return Err(tonic::Status::resource_exhausted(error.message));
+        }
+    }
+    Ok(resolved)
+}
+
+/// The OTLP service and signal a gRPC request path exports to.
+fn grpc_export_route(path: &str) -> Option<(&'static str, Signal)> {
+    let service = path.strip_prefix('/')?.strip_suffix("/Export")?;
+    [
+        (GRPC_TRACE_SERVICE, Signal::Traces),
+        (GRPC_LOGS_SERVICE, Signal::Logs),
+        (GRPC_METRICS_SERVICE, Signal::Metrics),
+    ]
+    .into_iter()
+    .find(|(name, _)| *name == service)
+}
+
+/// The key `grpc_admission` resolved for this request.
+fn grpc_admitted_key<T>(
+    request: &mut tonic::Request<T>,
+) -> Result<ResolvedIngestKey, tonic::Status> {
+    request
+        .extensions_mut()
+        .remove::<ResolvedIngestKey>()
+        .ok_or_else(|| tonic::Status::internal("Internal error"))
 }
 
 #[derive(Clone)]
@@ -2594,42 +2738,33 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
 {
     async fn export(
         &self,
-        request: tonic::Request<ExportTraceServiceRequest>,
+        mut request: tonic::Request<ExportTraceServiceRequest>,
     ) -> Result<
         tonic::Response<
             opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceResponse,
         >,
         tonic::Status,
     > {
-        let span = grpc_server_span(GRPC_TRACE_SERVICE, "traces");
-        let span_handle = span.clone();
-        let result = async {
-            let resolved = resolve_grpc_ingest_key(&self.state, request.metadata()).await?;
-            let mut inner = request.into_inner();
-            // Sized before enrichment injects resource attributes, so this is
-            // the client's own payload size — the same basis as the HTTP path's
-            // `decoded_payload.len()`.
-            let decoded_bytes = inner.encoded_len();
-            enrich_trace_request(&mut inner, &resolved);
-            record_grpc_identity(&resolved);
-            accept_grpc_decoded(
-                &self.state,
-                Signal::Traces,
-                DecodedPayload::Traces(inner),
-                &resolved,
-                decoded_bytes,
-            )
-            .await?;
-            Ok(tonic::Response::new(
-                opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceResponse {
-                    partial_success: None,
-                },
-            ))
-        }
-        .instrument(span)
-        .await;
-        record_grpc_outcome(&span_handle, &result);
-        result
+        let resolved = grpc_admitted_key(&mut request)?;
+        let mut inner = request.into_inner();
+        // Sized before enrichment injects resource attributes, so this is the
+        // client's own payload size — the same basis as the HTTP path's
+        // `decoded_payload.len()`.
+        let decoded_bytes = inner.encoded_len();
+        enrich_trace_request(&mut inner, &resolved);
+        accept_grpc_decoded(
+            &self.state,
+            Signal::Traces,
+            DecodedPayload::Traces(inner),
+            &resolved,
+            decoded_bytes,
+        )
+        .await?;
+        Ok(tonic::Response::new(
+            opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceResponse {
+                partial_success: None,
+            },
+        ))
     }
 }
 
@@ -2639,37 +2774,28 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
 {
     async fn export(
         &self,
-        request: tonic::Request<ExportLogsServiceRequest>,
+        mut request: tonic::Request<ExportLogsServiceRequest>,
     ) -> Result<
         tonic::Response<opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse>,
         tonic::Status,
     > {
-        let span = grpc_server_span(GRPC_LOGS_SERVICE, "logs");
-        let span_handle = span.clone();
-        let result = async {
-            let resolved = resolve_grpc_ingest_key(&self.state, request.metadata()).await?;
-            let mut inner = request.into_inner();
-            let decoded_bytes = inner.encoded_len();
-            enrich_logs_request(&mut inner, &resolved);
-            record_grpc_identity(&resolved);
-            accept_grpc_decoded(
-                &self.state,
-                Signal::Logs,
-                DecodedPayload::Logs(inner),
-                &resolved,
-                decoded_bytes,
-            )
-            .await?;
-            Ok(tonic::Response::new(
-                opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse {
-                    partial_success: None,
-                },
-            ))
-        }
-        .instrument(span)
-        .await;
-        record_grpc_outcome(&span_handle, &result);
-        result
+        let resolved = grpc_admitted_key(&mut request)?;
+        let mut inner = request.into_inner();
+        let decoded_bytes = inner.encoded_len();
+        enrich_logs_request(&mut inner, &resolved);
+        accept_grpc_decoded(
+            &self.state,
+            Signal::Logs,
+            DecodedPayload::Logs(inner),
+            &resolved,
+            decoded_bytes,
+        )
+        .await?;
+        Ok(tonic::Response::new(
+            opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse {
+                partial_success: None,
+            },
+        ))
     }
 }
 
@@ -2679,42 +2805,35 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
 {
     async fn export(
         &self,
-        request: tonic::Request<ExportMetricsServiceRequest>,
+        mut request: tonic::Request<ExportMetricsServiceRequest>,
     ) -> Result<
         tonic::Response<
             opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceResponse,
         >,
         tonic::Status,
     > {
-        let span = grpc_server_span(GRPC_METRICS_SERVICE, "metrics");
-        let span_handle = span.clone();
-        let result = async {
-            let resolved = resolve_grpc_ingest_key(&self.state, request.metadata()).await?;
-            let mut inner = request.into_inner();
-            let decoded_bytes = inner.encoded_len();
-            enrich_metrics_request(&mut inner, &resolved);
-            record_grpc_identity(&resolved);
-            accept_grpc_decoded(
-                &self.state,
-                Signal::Metrics,
-                DecodedPayload::Metrics(inner),
-                &resolved,
-                decoded_bytes,
-            )
-            .await?;
-            Ok(tonic::Response::new(
-                opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceResponse {
-                    partial_success: None,
-                },
-            ))
-        }
-        .instrument(span)
-        .await;
-        record_grpc_outcome(&span_handle, &result);
-        result
+        let resolved = grpc_admitted_key(&mut request)?;
+        let mut inner = request.into_inner();
+        let decoded_bytes = inner.encoded_len();
+        enrich_metrics_request(&mut inner, &resolved);
+        accept_grpc_decoded(
+            &self.state,
+            Signal::Metrics,
+            DecodedPayload::Metrics(inner),
+            &resolved,
+            decoded_bytes,
+        )
+        .await?;
+        Ok(tonic::Response::new(
+            opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceResponse {
+                partial_success: None,
+            },
+        ))
     }
 }
 
+/// Accept a decoded export, already authenticated and entitlement-gated by
+/// `grpc_admission`.
 async fn accept_grpc_decoded(
     state: &AppState,
     signal: Signal,
@@ -2738,11 +2857,6 @@ async fn accept_grpc_decoded(
         .try_acquire(&resolved.org_id)
         .ok_or_else(|| tonic::Status::resource_exhausted("Per-org ingest limit exceeded"))?;
     let item_count = decoded.item_count();
-    if resolved.org_id != SENTINEL_ORG_ID {
-        if let Some(error) = entitlement_rejection(state, &resolved.org_id, signal.path()).await {
-            return Err(tonic::Status::resource_exhausted(error.message));
-        }
-    }
 
     let result = process_decoded_payload(
         state,
@@ -2787,26 +2901,9 @@ async fn accept_grpc_decoded(
 
 async fn resolve_grpc_ingest_key(
     state: &AppState,
-    metadata: &tonic::metadata::MetadataMap,
+    headers: &HeaderMap,
 ) -> Result<ResolvedIngestKey, tonic::Status> {
-    let token = metadata
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| {
-            if value.len() > 7 && value[..7].eq_ignore_ascii_case("Bearer ") {
-                Some(value[7..].trim().to_owned())
-            } else {
-                None
-            }
-        })
-        .or_else(|| {
-            metadata
-                .get("x-maple-ingest-key")
-                .and_then(|value| value.to_str().ok())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-        })
+    let token = extract_ingest_key(headers)
         .ok_or_else(|| tonic::Status::unauthenticated("Missing ingest key"))?;
 
     if is_sentinel_token(&token) {
@@ -4278,6 +4375,15 @@ async fn handle_signal_inner(
 
     metrics::request_body_bytes(signal.path(), body.len() as u64);
 
+    // Before the body is decoded, so a denied org's request is not gunzipped
+    // and parsed only to be refused.
+    if resolved_key.org_id != SENTINEL_ORG_ID {
+        if let Some(error) = entitlement_rejection(state, &resolved_key.org_id, signal.path()).await
+        {
+            return Err((error, "billing_limit"));
+        }
+    }
+
     let encoding_label = content_encoding.as_deref().unwrap_or("identity");
     // Synchronous, so the span is entered rather than instrumented. Scoped so the
     // span closes on the decompress itself and not on the rest of the handler.
@@ -4333,13 +4439,6 @@ async fn handle_signal_inner(
     metrics::items_accepted(signal.path(), item_count as u64);
 
     let decoded_bytes = decoded_payload.len();
-
-    if resolved_key.org_id != SENTINEL_ORG_ID {
-        if let Some(error) = entitlement_rejection(state, &resolved_key.org_id, signal.path()).await
-        {
-            return Err((error, "billing_limit"));
-        }
-    }
 
     let response_result = process_decoded_payload(
         state,
@@ -4471,6 +4570,17 @@ async fn handle_cloudflare_logpush_inner(
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty() && value != "identity");
 
+    // Before the body is decoded, as in `handle_signal_inner`. Cloudflare's
+    // destination-validation ping is gated with everything else: it can only be
+    // told apart from a log batch by decoding it.
+    if resolved.org_id != SENTINEL_ORG_ID {
+        if let Some(error) =
+            entitlement_rejection(state, &resolved.org_id, Signal::Logs.path()).await
+        {
+            return Err((error, "billing_limit"));
+        }
+    }
+
     let decoded_payload = match decode_payload(&body, content_encoding.as_deref()) {
         Ok(decoded) => decoded,
         Err(error) => {
@@ -4516,13 +4626,6 @@ async fn handle_cloudflare_logpush_inner(
                 clickhouse_ready: resolved.clickhouse_ready,
             };
             let decoded = DecodedPayload::Logs(request);
-            if resolved.org_id != SENTINEL_ORG_ID {
-                if let Some(error) =
-                    entitlement_rejection(state, &resolved.org_id, Signal::Logs.path()).await
-                {
-                    return Err((error, "billing_limit"));
-                }
-            }
             let response = match process_decoded_payload(
                 state,
                 Signal::Logs,
@@ -6509,6 +6612,25 @@ fn parse_u64(name: &str, raw: Option<String>, default: u64) -> Result<u64, Strin
         .map_err(|_| format!("{name} must be a positive integer"))
 }
 
+/// A sampling ratio in (0, 1]. Zero is refused rather than read as "off": it
+/// would silence the gateway's traces while every other signal keeps flowing.
+fn parse_sample_ratio(name: &str, raw: Option<String>, default: f64) -> Result<f64, String> {
+    let Some(raw) = raw else {
+        return Ok(default);
+    };
+
+    let value = raw.trim();
+    if value.is_empty() {
+        return Ok(default);
+    }
+
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|ratio| *ratio > 0.0 && *ratio <= 1.0)
+        .ok_or_else(|| format!("{name} must be a number in (0, 1]"))
+}
+
 fn parse_u32(name: &str, raw: Option<String>, default: u32) -> Result<u32, String> {
     let Some(raw) = raw else {
         return Ok(default);
@@ -6546,6 +6668,70 @@ mod tests {
     // top-level import avoids an unused-import warning in non-test bin builds.
     use opentelemetry_proto::tonic::metrics::v1::metric;
     use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn self_trace_sample_ratio_must_be_in_the_unit_interval() {
+        let parse = |raw: &str| parse_sample_ratio("RATIO", Some(raw.to_owned()), 1.0);
+        assert_eq!(parse_sample_ratio("RATIO", None, 1.0), Ok(1.0));
+        assert_eq!(parse(" "), Ok(1.0));
+        assert_eq!(parse("0.05"), Ok(0.05));
+        assert_eq!(parse("1"), Ok(1.0));
+        for invalid in ["0", "-0.1", "1.5", "NaN", "inf", "five percent"] {
+            assert!(parse(invalid).is_err(), "{invalid} must refuse to boot");
+        }
+    }
+
+    #[test]
+    fn sampled_self_spans_carry_their_sample_rate() {
+        use opentelemetry::trace::{
+            SpanContext, SpanId, SpanKind, TraceContextExt, TraceFlags, TraceId, TraceState,
+        };
+
+        let sample = |sampler: &SelfTraceSampler, parent: Option<&opentelemetry::Context>, id| {
+            sampler.should_sample(
+                parent,
+                TraceId::from(id),
+                "ingest",
+                &SpanKind::Server,
+                &[],
+                &[],
+            )
+        };
+        let sample_rate = |result: &SamplingResult| {
+            result
+                .attributes
+                .iter()
+                .find(|kv| kv.key.as_str() == "SampleRate")
+                .map(|kv| kv.value.clone())
+        };
+
+        let sampled = SelfTraceSampler::new(0.05);
+        // The ratio sampler keeps a trace when its id's low 64 bits fall under
+        // ratio * 2^64, so 1 is always kept and u128::MAX never is.
+        let root = sample(&sampled, None, 1);
+        assert_eq!(root.decision, SamplingDecision::RecordAndSample);
+        assert_eq!(sample_rate(&root), Some(opentelemetry::Value::F64(20.0)));
+        let dropped = sample(&sampled, None, u128::MAX);
+        assert_eq!(dropped.decision, SamplingDecision::Drop);
+        assert_eq!(sample_rate(&dropped), None);
+
+        // Children follow the root's decision and are weighted the same.
+        let parent = opentelemetry::Context::new().with_remote_span_context(SpanContext::new(
+            TraceId::from(u128::MAX),
+            SpanId::from(7),
+            TraceFlags::SAMPLED,
+            false,
+            TraceState::default(),
+        ));
+        let child = sample(&sampled, Some(&parent), u128::MAX);
+        assert_eq!(child.decision, SamplingDecision::RecordAndSample);
+        assert_eq!(sample_rate(&child), Some(opentelemetry::Value::F64(20.0)));
+
+        // Unsampled, nothing is added: a SampleRate of 1 would only cost bytes.
+        let unsampled = sample(&SelfTraceSampler::new(1.0), None, u128::MAX);
+        assert_eq!(unsampled.decision, SamplingDecision::RecordAndSample);
+        assert_eq!(sample_rate(&unsampled), None);
+    }
 
     #[test]
     fn invalid_key_message_points_at_the_other_region() {
@@ -6903,6 +7089,48 @@ mod tests {
             panic!("gauge data dropped");
         };
         assert_eq!(gauge.data_points.len(), 1);
+    }
+
+    /// `asInt` as a JSON number or a decimal string must both decode to a
+    /// value. It used to be stringified for the derives, which want a number,
+    /// so every integer gauge and sum point decoded to `None` and stored 0.
+    #[test]
+    fn integer_metric_points_keep_their_value() {
+        use opentelemetry_proto::tonic::metrics::v1::number_data_point;
+
+        let decoded = decode_json(
+            Signal::Metrics,
+            r#"{"resourceMetrics":[{"resource":{"attributes":[]},"scopeMetrics":[{"metrics":[{"name":"g","gauge":{"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":42},{"timeUnixNano":"1753660000000000000","asInt":"43"}]}},{"name":"s","sum":{"aggregationTemporality":2,"isMonotonic":true,"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":44},{"timeUnixNano":"1753660000000000000","asInt":"-45"}]}}]}]}]}"#,
+        )
+        .expect("payload accepted");
+
+        let DecodedPayload::Metrics(request) = decoded else {
+            panic!("expected metrics");
+        };
+        let metrics = &request.resource_metrics[0].scope_metrics[0].metrics;
+        let Some(metric::Data::Gauge(gauge)) = &metrics[0].data else {
+            panic!("gauge data dropped");
+        };
+        let Some(metric::Data::Sum(sum)) = &metrics[1].data else {
+            panic!("sum data dropped");
+        };
+        let values = |points: &[opentelemetry_proto::tonic::metrics::v1::NumberDataPoint]| {
+            points.iter().map(|p| p.value).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            values(&gauge.data_points),
+            vec![
+                Some(number_data_point::Value::AsInt(42)),
+                Some(number_data_point::Value::AsInt(43)),
+            ]
+        );
+        assert_eq!(
+            values(&sum.data_points),
+            vec![
+                Some(number_data_point::Value::AsInt(44)),
+                Some(number_data_point::Value::AsInt(-45)),
+            ]
+        );
     }
 
     #[test]
@@ -7558,6 +7786,7 @@ mod tests {
                 internal_org_id: "org_test_internal".to_owned(),
                 forward_endpoint,
                 forward_timeout: Duration::from_secs(5),
+                self_trace_sample_ratio: 1.0,
                 write_mode: WriteMode::Forward,
                 tinybird,
                 max_request_body_bytes: 1024 * 1024,
@@ -7951,6 +8180,52 @@ mod tests {
         ));
         state.autumn_tracker = Some(AutumnTracker::spawn("am_sk_test".to_string(), &api_url, 1));
         (state, rx)
+    }
+
+    /// Point `state` at a fake Autumn that denies `denied_org` every feature
+    /// and allows every other org.
+    async fn with_autumn_denying(mut state: AppState, denied_org: &'static str) -> AppState {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().route(
+            "/v1/{*path}",
+            post(move |body: Bytes| async move {
+                let body: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+                axum::Json(serde_json::json!({ "allowed": body["customer_id"] != denied_org }))
+            }),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        state.autumn_entitlements = Some(AutumnEntitlements::new(
+            state.http_client.clone(),
+            "am_sk_test".to_owned(),
+            &format!("http://{addr}"),
+            60,
+            60,
+        ));
+        state
+    }
+
+    /// A fake collector for `WriteMode::Forward` to deliver logs to.
+    async fn spawn_forward_collector() -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<FakeForwardImport>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/v1/logs", post(fake_forward_collector))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (format!("http://{addr}"), rx)
     }
 
     /// Everything the fake Autumn has seen. The entitlement gate resolves before
@@ -8796,9 +9071,7 @@ mod tests {
         )
         .await;
 
-        let mut metadata = tonic::metadata::MetadataMap::new();
-        metadata.insert("authorization", "Bearer MAPLE_TEST".parse().unwrap());
-        let sentinel = resolve_grpc_ingest_key(&state, &metadata)
+        let sentinel = resolve_grpc_ingest_key(&state, &bearer_headers("MAPLE_TEST"))
             .await
             .expect("the sentinel token authenticates");
         assert_eq!(sentinel.org_id, SENTINEL_ORG_ID);
@@ -8846,6 +9119,438 @@ mod tests {
             .expect("a real key forwards")
             .expect("forward channel should stay open");
         assert!(forwarded.body_len > 0);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// A body no decoder accepts, so a billing refusal for it means the
+    /// entitlement gate answered before any decoder saw it.
+    const UNDECODABLE_BODY: &[u8] = b"neither gzip nor protobuf nor json";
+
+    #[tokio::test]
+    async fn otlp_gate_precedes_decode_and_admits_an_allowed_org() {
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("otlp-gate");
+        let store = Arc::new(FakeKeyStore::default());
+        for (raw_key, org_id) in [
+            ("maple_sk_test_otlp_denied", "org_otlp_denied"),
+            ("maple_sk_test_otlp_allowed", "org_otlp_allowed"),
+        ] {
+            store.insert_private(
+                raw_key,
+                KeyRow {
+                    org_id: org_id.to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                },
+            );
+        }
+        let state = with_autumn_denying(
+            test_app_state(
+                store,
+                queue_dir.clone(),
+                forward_url,
+                Duration::from_millis(5),
+            )
+            .await,
+            "org_otlp_denied",
+        )
+        .await;
+
+        let mut headers = test_headers("maple_sk_test_otlp_denied");
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        let (error, error_kind) = handle_signal_inner(
+            &state,
+            &headers,
+            Bytes::from_static(UNDECODABLE_BODY),
+            Signal::Logs,
+        )
+        .await
+        .expect_err("a denied org must be refused");
+        assert_eq!(error.status, StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(error_kind, "billing_limit");
+
+        // The same gate lets an allowed org through to the collector, and its
+        // own undecodable body is still the decoder's to refuse.
+        let (response, item_count, org_id, _) = handle_signal_inner(
+            &state,
+            &test_headers("maple_sk_test_otlp_allowed"),
+            Bytes::from(test_log_request("allowed").encode_to_vec()),
+            Signal::Logs,
+        )
+        .await
+        .expect("an allowed org is accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!((item_count, org_id.as_str()), (1, "org_otlp_allowed"));
+        tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("an allowed export is forwarded")
+            .expect("forward channel should stay open");
+
+        let mut headers = test_headers("maple_sk_test_otlp_allowed");
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        let (error, error_kind) = handle_signal_inner(
+            &state,
+            &headers,
+            Bytes::from_static(UNDECODABLE_BODY),
+            Signal::Logs,
+        )
+        .await
+        .expect_err("an undecodable body is refused");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(error_kind, "decode");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn logpush_gate_precedes_decode_and_admits_an_allowed_org() {
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("logpush-gate");
+        let store = Arc::new(FakeKeyStore::default());
+        for (connector_id, org_id) in [
+            ("connector_denied", "org_logpush_denied"),
+            ("connector_allowed", "org_logpush_allowed"),
+        ] {
+            store.insert_connector(
+                connector_id,
+                "connector-secret",
+                ConnectorRow {
+                    org_id: org_id.to_owned(),
+                    service_name: "cloudflare/example.com".to_owned(),
+                    zone_name: "example.com".to_owned(),
+                    dataset: "http_requests".to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                },
+            );
+        }
+        let state = with_autumn_denying(
+            test_app_state(
+                store,
+                queue_dir.clone(),
+                forward_url,
+                Duration::from_millis(5),
+            )
+            .await,
+            "org_logpush_denied",
+        )
+        .await;
+        let push = |connector_id: &'static str, gzip: bool, body: &'static [u8]| {
+            let state = &state;
+            async move {
+                let mut headers = HeaderMap::new();
+                if gzip {
+                    headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+                }
+                handle_cloudflare_logpush_inner(
+                    state,
+                    connector_id,
+                    Some("connector-secret"),
+                    &headers,
+                    Bytes::from_static(body),
+                )
+                .await
+            }
+        };
+
+        let (error, error_kind) = push("connector_denied", true, UNDECODABLE_BODY)
+            .await
+            .expect_err("a denied org must be refused");
+        assert_eq!(error.status, StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(error_kind, "billing_limit");
+
+        // An allowed org's validation ping and log batch both pass the gate.
+        let (response, _, _, is_validation) =
+            push("connector_allowed", false, br#"{"content":"tests"}"#)
+                .await
+                .expect("a validation ping is accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(is_validation);
+
+        let (response, item_count, org_id, is_validation) = push(
+            "connector_allowed",
+            false,
+            b"{\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":200}\n\
+              {\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":404}\n",
+        )
+        .await
+        .expect("a log batch is accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!((item_count, org_id.as_str()), (2, "org_logpush_allowed"));
+        assert!(!is_validation);
+        tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("an allowed batch is forwarded")
+            .expect("forward channel should stay open");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    fn grpc_export_request(raw_key: &str, body: Vec<u8>) -> Request {
+        Request::builder()
+            .method(Method::POST)
+            .uri(format!("/{GRPC_LOGS_SERVICE}/Export"))
+            .header(CONTENT_TYPE, "application/grpc")
+            .header(AUTHORIZATION, format!("Bearer {raw_key}"))
+            .body(axum::body::Body::from(body))
+            .unwrap()
+    }
+
+    /// A gRPC frame: uncompressed flag, big-endian length, then the message.
+    fn grpc_frame(message: &[u8]) -> Vec<u8> {
+        let mut frame = vec![0u8];
+        frame.extend_from_slice(&u32::try_from(message.len()).unwrap().to_be_bytes());
+        frame.extend_from_slice(message);
+        frame
+    }
+
+    /// `grpc-status` from the response headers; tonic puts it there only when
+    /// the call failed.
+    fn grpc_header_status(response: &Response) -> Option<&str> {
+        response
+            .headers()
+            .get("grpc-status")
+            .and_then(|value| value.to_str().ok())
+    }
+
+    /// `grpc_export_route` decides which requests are admitted, so it has to
+    /// name exactly the paths tonic serves.
+    #[test]
+    fn grpc_export_route_matches_the_paths_tonic_serves() {
+        use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer;
+        use opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
+        use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::TraceServiceServer;
+        use tonic::server::NamedService;
+
+        let signal_for = |service: &str| {
+            grpc_export_route(&format!("/{service}/Export")).map(|(_, signal)| signal.path())
+        };
+        assert_eq!(
+            signal_for(TraceServiceServer::<GrpcTraceService>::NAME),
+            Some("traces")
+        );
+        assert_eq!(
+            signal_for(LogsServiceServer::<GrpcLogsService>::NAME),
+            Some("logs")
+        );
+        assert_eq!(
+            signal_for(MetricsServiceServer::<GrpcMetricsService>::NAME),
+            Some("metrics")
+        );
+        assert_eq!(signal_for("grpc.health.v1.Health"), None);
+    }
+
+    #[tokio::test]
+    async fn grpc_admission_refuses_on_the_headers_alone() {
+        use tonic::codegen::Service as _;
+
+        let queue_dir = unique_main_test_dir("grpc-admission-refuse");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_denied";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_denied".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let state = with_autumn_denying(
+            test_app_state(
+                store,
+                queue_dir.clone(),
+                "http://127.0.0.1:1".to_owned(),
+                Duration::from_secs(30),
+            )
+            .await,
+            "org_grpc_denied",
+        )
+        .await;
+        let mut router = grpc_router(Arc::new(state));
+
+        // Neither body is a gRPC frame: had tonic been handed either, it would
+        // have answered with a decode failure instead.
+        let denied = router
+            .call(grpc_export_request(raw_key, UNDECODABLE_BODY.to_vec()))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&denied),
+            Some("8"),
+            "a denied org is RESOURCE_EXHAUSTED"
+        );
+
+        let unknown = router
+            .call(grpc_export_request(
+                "maple_sk_test_grpc_unknown",
+                UNDECODABLE_BODY.to_vec(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&unknown),
+            Some("16"),
+            "an unknown key is UNAUTHENTICATED"
+        );
+
+        // The sentinel token has no org to bill, so it is never gated.
+        let sentinel = router
+            .call(grpc_export_request(
+                "MAPLE_TEST",
+                grpc_frame(&test_log_request("sentinel").encode_to_vec()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&sentinel), None);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn grpc_export_is_accepted_through_admission() {
+        use tonic::codegen::Service as _;
+
+        let (forward_tx, mut forward_rx) = tokio::sync::mpsc::unbounded_channel();
+        let forward_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let forward_addr = forward_listener.local_addr().unwrap();
+        let forward_app = Router::new()
+            .route("/v1/logs", post(fake_forward_collector))
+            .with_state(forward_tx);
+        tokio::spawn(async move {
+            axum::serve(forward_listener, forward_app).await.unwrap();
+        });
+
+        let queue_dir = unique_main_test_dir("grpc-admission-accept");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_admitted";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_admitted".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let (state, mut autumn_rx) = with_fake_autumn(
+            test_app_state(
+                store,
+                queue_dir.clone(),
+                format!("http://{forward_addr}"),
+                Duration::from_millis(5),
+            )
+            .await,
+        )
+        .await;
+        let mut router = grpc_router(Arc::new(state));
+
+        let response = router
+            .call(grpc_export_request(
+                raw_key,
+                grpc_frame(&test_log_request("through admission").encode_to_vec()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&response), None, "the export succeeded");
+        // Gated in admission, against the signal's own feature.
+        let check = autumn_rx.try_recv().expect("admission asks Autumn");
+        assert_eq!(
+            (check.path.as_str(), check.feature_id()),
+            ("balances.check", "logs")
+        );
+        let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("an admitted export is forwarded")
+            .expect("forward channel should stay open");
+        assert!(forwarded.body_len > 0);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// The router tests above call the services in-process. This one puts a
+    /// real gRPC client on a real HTTP/2 connection, where a refusal is answered
+    /// while the client is still sending its message.
+    #[tokio::test]
+    async fn grpc_client_sees_refusals_and_keeps_its_connection() {
+        use opentelemetry_proto::tonic::collector::logs::v1::logs_service_client::LogsServiceClient;
+
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("grpc-wire");
+        let store = Arc::new(FakeKeyStore::default());
+        for (raw_key, org_id) in [
+            ("maple_sk_test_wire_denied", "org_wire_denied"),
+            ("maple_sk_test_wire_allowed", "org_wire_allowed"),
+        ] {
+            store.insert_private(
+                raw_key,
+                KeyRow {
+                    org_id: org_id.to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                },
+            );
+        }
+        let state = with_autumn_denying(
+            test_app_state(
+                store,
+                queue_dir.clone(),
+                forward_url,
+                Duration::from_millis(5),
+            )
+            .await,
+            "org_wire_denied",
+        )
+        .await;
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(
+            tonic::transport::Server::builder()
+                .add_routes(grpc_router(Arc::new(state)).into())
+                .serve_with_incoming(tonic::transport::server::TcpIncoming::from(listener)),
+        );
+        let mut client = LogsServiceClient::connect(format!("http://{addr}"))
+            .await
+            .unwrap();
+        let export = |raw_key: &str, message: &str| {
+            let mut request = tonic::Request::new(test_log_request(message));
+            request.metadata_mut().insert(
+                "authorization",
+                format!("Bearer {raw_key}").parse().unwrap(),
+            );
+            request
+        };
+
+        // Far larger than the HTTP/2 flow-control window, so every refusal
+        // lands mid-upload. Repeated to show the abandoned streams do not cost
+        // the connection.
+        let large = "x".repeat(1024 * 1024);
+        for _ in 0..64 {
+            let status = client
+                .export(export("maple_sk_test_wire_denied", &large))
+                .await
+                .expect_err("a denied org must be refused");
+            assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+        }
+        let status = client
+            .export(export("maple_sk_test_wire_unknown", &large))
+            .await
+            .expect_err("an unknown key must be refused");
+        assert_eq!(status.code(), tonic::Code::Unauthenticated);
+
+        client
+            .export(export("maple_sk_test_wire_allowed", &large))
+            .await
+            .expect("an allowed export succeeds on the same connection");
+        let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("an allowed export is forwarded")
+            .expect("forward channel should stay open");
+        assert!(forwarded.body_len > large.len());
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }

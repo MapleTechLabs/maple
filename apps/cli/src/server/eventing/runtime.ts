@@ -1,5 +1,5 @@
 // BOUNDARY: activation candidates and decoded OTLP bodies arrive unparsed; this runtime decodes them.
-import { Context, Duration, Effect, Exit, Layer, Result, Schema, SynchronizedRef } from "effect"
+import { Clock, Context, Duration, Effect, Exit, Layer, Result, Schema, SynchronizedRef } from "effect"
 import { createHash } from "node:crypto"
 import {
 	canonicalJson,
@@ -7,7 +7,7 @@ import {
 	isJsonValue,
 	ProjectorRegistry,
 	SignalSourceRegistry,
-	assertSignalProjectionInputBudget,
+	checkSignalProjectionInputBudget,
 	SignalProjectionSpecSchema,
 	type MapleCloudEvent,
 	type JsonValue,
@@ -261,11 +261,11 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 		const prepareActivation = Effect.fn("LocalEventing.prepareActivation")(function* (
 			candidate: unknown,
 		) {
+			yield* Effect.fromResult(checkSignalProjectionInputBudget(candidate)).pipe(
+				Effect.mapError(activationInvalid),
+			)
 			const spec = yield* Effect.try({
-				try: () => {
-					assertSignalProjectionInputBudget(candidate)
-					return Schema.decodeUnknownSync(SignalProjectionSpecSchema)(candidate)
-				},
+				try: () => Schema.decodeUnknownSync(SignalProjectionSpecSchema)(candidate),
 				catch: activationInvalid,
 			})
 			if (spec.tenantId !== TENANT_ID)
@@ -324,7 +324,7 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 				!(yield* store.hasStagedSourceKind(TENANT_ID, sourceKind))
 			)
 				return emptyEvaluation()
-			const acceptedAt = new Date().toISOString()
+			const acceptedAt = new Date(yield* Clock.currentTimeMillis).toISOString()
 			const [elapsed, normalization] = yield* Effect.timed(
 				Effect.exit(
 					signal === "logs"

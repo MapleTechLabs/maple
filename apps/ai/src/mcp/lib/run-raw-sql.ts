@@ -38,7 +38,7 @@ export interface RunRawSqlInput {
  * guardrails. Fails with `RawSqlValidationError` (macro/safety) or a
  * `WarehouseError` (execution); callers surface these to the agent.
  */
-export const runRawSql = Effect.fn("runRawSql")(function* (input: RunRawSqlInput) {
+export const runRawSql = Effect.fn("McpRawSql.runRawSql")(function* (input: RunRawSqlInput) {
 	const warehouse = yield* WarehouseQueryService
 	const executeRawSql = makeExecuteRawSql<TenantContext, WarehouseExecutionError | RawSqlValidationError>(
 		warehouse,

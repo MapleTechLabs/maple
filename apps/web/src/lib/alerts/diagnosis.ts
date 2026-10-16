@@ -6,6 +6,7 @@ import type {
 	AlertRuleDocument,
 } from "@maple/domain/http"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
 import { comparatorLabels, formatSignalValue } from "@/lib/alerts/form-utils"
 import { staleThresholdMs } from "@/lib/alerts/rule-status"
@@ -162,7 +163,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			id: "query",
 			label: "Query succeeded",
 			status: "warn",
-			summary: `${errorChecks.length} failed evaluation${errorChecks.length === 1 ? "" : "s"} in this window (recovered since)`,
+			summary: `${countLabel(errorChecks.length, "failed evaluation")} in this window (recovered since)`,
 			evidence: errorChecks[0]?.errorMessage != null ? [errorChecks[0].errorMessage] : [],
 		})
 	} else {
@@ -184,15 +185,25 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	const noDataExplainer =
 		rule.noDataBehavior === "zero"
 			? "No-data windows are treated as 0 (they still evaluate)."
-			: "No-data windows are skipped (they never breach)."
+			: rule.noDataBehavior === "alert"
+				? "No-data windows count as breaches."
+				: "No-data windows are skipped (they never breach). Turn on alerting when there is no data to hear about it."
+	// Checks recorded before skip reasons existed carry none and count as neither.
+	const belowMinChecks = groupChecks.filter((c) => c.skipReason === "below_min_samples").length
+	const noDataChecks = groupChecks.filter((c) => c.skipReason === "no_data").length
 	if (observableChecks > 0 && skippedChecks === observableChecks) {
 		stages.push({
 			id: "data",
 			label: "Data found",
 			status: "fail",
-			summary: "Every check in this window was skipped — no matching data",
+			summary:
+				belowMinChecks > 0 && noDataChecks === 0
+					? "Every check in this window was skipped: fewer samples than the minimum"
+					: "Every check in this window was skipped: no matching data",
 			evidence: [
 				`${skippedChecks} of ${observableChecks} checks skipped`,
+				noDataChecks > 0 ? `${noDataChecks} had no data (the query matched nothing)` : null,
+				belowMinChecks > 0 ? `${belowMinChecks} were below the minimum sample count` : null,
 				rule.minimumSampleCount > 0
 					? `Minimum sample count: ${rule.minimumSampleCount} — windows below it are skipped`
 					: null,

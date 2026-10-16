@@ -96,7 +96,11 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // carries, the pill in the persistent top bar with its live clock, and the
 // hook's query and seen-flag atoms. The popover's panel and pointer are small
 // and render only while open, so nothing there is worth a lazy chunk.
-const maxGzipBytes = 695 * 1024
+// 697 KB from the MCP integrations and alerts hub merges (#1494, #1500, #1502,
+// 2026-10-15): each fit against its own base (694.2, 694.8, 694.3), but main
+// with all three measures 695.6 against 694.6 before them. No lazy-only chunk
+// leaked; the growth is contract and route-registry weight every page carries.
+const maxGzipBytes = 697 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
@@ -120,8 +124,11 @@ const forbidden = [...staticGraph].filter((key) =>
 console.log(
 	`Initial static JS: ${(gzipBytes / 1024).toFixed(1)} KB gzip across ${chunks.length} chunks (budget: ${budgetLabel})`,
 )
-for (const chunk of chunks.sort((a, b) => b.gzipBytes - a.gzipBytes).slice(0, 10)) {
-	console.log(`  ${(chunk.gzipBytes / 1024).toFixed(1).padStart(7)} KB  ${chunk.file}`)
+// Over budget, list every chunk with its source key so the culprit is in the CI log.
+const overBudget = gzipBytes > maxGzipBytes
+for (const chunk of chunks.sort((a, b) => b.gzipBytes - a.gzipBytes).slice(0, overBudget ? undefined : 10)) {
+	const label = overBudget ? `${chunk.file}  ${chunk.key}` : chunk.file
+	console.log(`  ${(chunk.gzipBytes / 1024).toFixed(1).padStart(7)} KB  ${label}`)
 }
 
 if (forbidden.length > 0) {

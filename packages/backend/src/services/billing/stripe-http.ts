@@ -1,6 +1,6 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import type { AutumnResult, AutumnTransportFailure } from "./autumn-http"
@@ -155,10 +155,10 @@ const callStripe = (
 
 				const errorBody = errorResponse(response.status, text)
 				if (typeof errorBody.code === "string") {
-					yield* Effect.annotateCurrentSpan({ "stripe.code": errorBody.code })
+					yield* Effect.annotateCurrentSpan({ "maple.stripe.code": errorBody.code })
 				}
 				return { statusCode: response.status, response: errorBody }
-			}).pipe(Effect.withSpan("stripe.request", { attributes: { "stripe.route": route } }))
+			}).pipe(Effect.withSpan("stripe.request", { attributes: { "maple.stripe.route": route } }))
 
 const customerPath = (stripeCustomerId: string) => `/v1/customers/${encodeURIComponent(stripeCustomerId)}`
 

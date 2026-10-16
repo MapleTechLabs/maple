@@ -1,39 +1,37 @@
 import { areaY, d3Curve, defineChart, lineY, stack } from "@tanstack/charts"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
 import { useMemo, type ReactNode } from "react"
 
 import {
-	PlotFrame,
-	PlotTooltipBody,
-	createTooltipFocusStore,
-	cursorTooltip,
+	CursorPlot,
 	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	linearYDomain,
+	makeBucketAxis,
 	niceLinearDomain,
 	thresholdRules,
 	useChartId,
-	usePlotChromeColors,
-	useResolvedSeriesColors,
+	useCursorPlot,
 	verticalGradient,
-	type PlotTooltipSeries,
+	type CursorPlotSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty, useChartPlotHeight } from "@maple/ui/components/charts"
 import { cn } from "@maple/ui/lib/utils"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
+import { CHART_EMPTY_MESSAGE } from "@/components/common/chart-card"
 import {
-	CHART_EMPTY_MESSAGE,
 	formatValueWithUnit,
-	makeBucketAxis,
 	transformRows,
 	UNNAMED_SERIES_KEY,
 	type ChartUnit,
 	type TransformedPoint,
 } from "../chart-utils"
 import { LinkedCursorOverlay, linkedCursorChartProps } from "@/hooks/use-linked-cursor"
+import { chartEventMarkerMarks, placeMarkersInWindow, type ChartEventMarker } from "./chart-event-markers"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 /**
@@ -67,6 +65,10 @@ export interface InfraMetricChartProps {
 	 * apparent.
 	 */
 	xDomain?: ReadonlyArray<string>
+	/** Events drawn as vertical lines at their own instant (deploys); ones outside the window are dropped. */
+	markers?: ReadonlyArray<ChartEventMarker>
+	/** Fixed colours for series whose meaning the name hash can't see ("Script threw an exception"). */
+	seriesColors?: Readonly<Record<string, string>>
 	/**
 	 * The last-value summary above the plot.
 	 *
@@ -122,7 +124,7 @@ function isCell(datum: InfraDatum): datum is InfraCell {
 }
 
 function rowOf(datum: InfraDatum): TransformedPoint {
-	return isCell(datum) ? datum.point : (datum as TransformedPoint)
+	return isCell(datum) ? datum.point : datum
 }
 
 /**
@@ -144,6 +146,8 @@ export function InfraMetricChart({
 	showThreshold = false,
 	linkedChartId,
 	xDomain,
+	markers,
+	seriesColors,
 	header,
 	waiting = false,
 	height,
@@ -157,9 +161,7 @@ export function InfraMetricChart({
 	const inheritedHeight = useChartPlotHeight()
 	const plotHeight = height ?? inheritedHeight ?? INFRA_METRIC_CHART_HEIGHT
 
-	const chromeColors = usePlotChromeColors()
 	const gradientPrefix = useChartId("infra")
-	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 
 	const { data, series } = useMemo(() => transformRows(rows), [rows])
 
@@ -170,15 +172,6 @@ export function InfraMetricChart({
 		() => makeBucketAxis(xDomain ?? data.map((point) => point.bucket), effectiveTimezone),
 		[xDomain, data, effectiveTimezone],
 	)
-
-	/**
-	 * Series names carry dots and slashes (container names, mount points), which
-	 * is why they were never routed through `ChartContainer`'s `var(--color-…)`
-	 * variables. They are resolved to literals here for a further reason: canvas
-	 * cannot read a `var()` at all.
-	 */
-	const colorTokens = useMemo(() => resolveSeriesColors(series), [series])
-	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
 
 	const labelFor = useMemo(
 		() => (name: string) => (name === UNNAMED_SERIES_KEY ? (seriesLabel ?? name) : name),
@@ -221,22 +214,26 @@ export function InfraMetricChart({
 		return niceLinearDomain(linearYDomain({ rows: data, keys: series, stacked, thresholds }))
 	}, [data, series, stacked, showThreshold, unit])
 
-	const tooltipSeries = useMemo<PlotTooltipSeries<InfraDatum>[]>(
-		() =>
-			series.map((name) => ({
-				label: labelFor(name),
-				color: colors.get(name) ?? chromeColors.border,
-				// Read off the pivoted ROW, so a stacked chart still prints every
-				// series at the hovered bucket rather than only the band under the
-				// cursor — the same reason the bar chart reads through `cell.row`.
-				value: (datum: InfraDatum) => {
-					const value = rowOf(datum)[name]
-					return typeof value === "number" ? value : null
-				},
-				format: (value: number) => formatValueWithUnit(value, unit),
-			})),
-		[series, labelFor, colors, chromeColors.border, unit],
-	)
+	// Series names carry dots and slashes (container names, mount points), which
+	// is why they were never routed through `var(--color-…)` variables.
+	const cursorSeries = useMemo<CursorPlotSeries<InfraDatum>[]>(() => {
+		const tokens = resolveSeriesColors(series)
+		return series.map((name) => ({
+			key: name,
+			label: labelFor(name),
+			color: seriesColors?.[name] ?? tokens.get(name) ?? "--border",
+			// Read off the pivoted ROW, so a stacked chart still prints every
+			// series at the hovered bucket rather than only the band under the
+			// cursor, the same reason the bar chart reads through `cell.row`.
+			value: (datum: InfraDatum) => {
+				const value = rowOf(datum)[name]
+				return typeof value === "number" ? value : null
+			},
+			format: (value: number) => formatValueWithUnit(value, unit),
+		}))
+	}, [series, labelFor, unit, seriesColors])
+	const plot = useCursorPlot(cursorSeries)
+	const colors = plot.colors
 
 	const definition = useMemo(() => {
 		const at = (point: TransformedPoint) => point.date
@@ -244,7 +241,7 @@ export function InfraMetricChart({
 			const value = point[name]
 			return typeof value === "number" ? value : null
 		}
-		const colorOf = (name: string) => colors.get(name) ?? chromeColors.border
+		const colorOf = plot.color
 		const gradientFor = (name: string) => `${gradientPrefix}-${name.replace(/\W+/g, "_")}`
 		const curve = d3Curve(curveMonotoneX)
 
@@ -286,6 +283,11 @@ export function InfraMetricChart({
 					}),
 				)
 
+		const placed =
+			markers === undefined || markers.length === 0
+				? []
+				: placeMarkersInWindow(markers, xDomain ?? data.map((point) => point.bucket))
+
 		return defineChart({
 			gradients: stacked
 				? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
@@ -293,12 +295,13 @@ export function InfraMetricChart({
 			marks: [
 				// Labels sit at the domain's right end, whether that is the last row
 				// or a shared domain that outruns this chart's rows.
+				...chartEventMarkerMarks(placed, { yDomain }),
 				...thresholdRules(thresholds, {
 					labelX: axis.domainMs ? new Date(axis.domainMs[1]) : undefined,
 				}),
 				...bands,
-				...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), chromeColors)),
-				focusCrosshair(chromeColors),
+				...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), plot.chrome)),
+				focusCrosshair(plot.chrome),
 			],
 			scales: {
 				x: axis.x,
@@ -316,29 +319,36 @@ export function InfraMetricChart({
 			margin: { top: 12, right: 12, left: 56 },
 			focus: "group-x",
 			focusRing: false,
-			tooltip: cursorTooltip(focusStore.anchor),
+			tooltip: plot.tooltip,
 		})
 	}, [
 		data,
 		series,
 		axis,
 		stacked,
-		colors,
-		chromeColors,
+		plot,
 		gradientPrefix,
 		yDomain,
 		tickFormatter,
 		showThreshold,
 		unit,
-		focusStore,
+		markers,
+		xDomain,
 	])
 
-	if (data.length === 0) {
+	// Buckets with no finite value for any series plot nothing, so they count as empty too.
+	const hasValue = data.some((point) =>
+		series.some((name) => {
+			const value = point[name]
+			return typeof value === "number" && Number.isFinite(value)
+		}),
+	)
+	if (!hasValue) {
 		return <ChartEmpty height={height}>{CHART_EMPTY_MESSAGE}</ChartEmpty>
 	}
 
 	return (
-		<div className={cn("transition-opacity", waiting && "opacity-60", className)}>
+		<div className={cn(refreshingClass(waiting), className)} aria-busy={waiting || undefined}>
 			{header?.({ series, colors, lastValues, labelFor, unit })}
 			<div className="relative" {...linkedCursorChartProps(linkedChartId)}>
 				{/*
@@ -351,21 +361,14 @@ export function InfraMetricChart({
 				 * overlays and was finding zero.
 				 */}
 				{linkedChartId != null && <LinkedCursorOverlay chartId={linkedChartId} />}
-				<div style={{ height: plotHeight }}>
-					<PlotFrame
-						definition={definition}
-						ariaLabel={seriesLabel ?? "Utilization"}
-						className="h-full w-full"
-						renderTooltipBody={({ points }) => (
-							<PlotTooltipBody
-								points={points}
-								series={tooltipSeries}
-								focusStore={focusStore}
-								heading={(datum: InfraDatum) => axis.heading(rowOf(datum).bucket)}
-							/>
-						)}
-					/>
-				</div>
+				<CursorPlot
+					plot={plot}
+					definition={definition}
+					series={cursorSeries}
+					heading={(datum: InfraDatum) => axis.heading(rowOf(datum).bucket)}
+					ariaLabel={seriesLabel ?? "Utilization"}
+					height={plotHeight}
+				/>
 			</div>
 		</div>
 	)

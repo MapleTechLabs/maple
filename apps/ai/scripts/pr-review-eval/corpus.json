@@ -237,6 +237,46 @@
 			"split": "development",
 			"enabled": true,
 			"curationNote": "Verified introduction: this PR adds token-mode filtering; the parent used ILIKE without this filter. Shares bug family with the contaminated PR1057 development cases."
+		},
+		{
+			"id": "pr1259-rename-404-swallowed",
+			"number": 1259,
+			"range": "d47f57dc36ebd6cbb81b9e459991f9f14712411f..5f768b47745f6b3f34704a1d047963aea9738558",
+			"bug": "nameCustomerAfterOrg renames the Autumn customer with customers.update before attach and the portal, and swallows any failure. customers.update needs an existing customer, so for an org with no Autumn customer yet it 404s, the failure is logged and dropped, and attach then creates the customer unnamed: the payer's name can become its display name, the exact bug the PR set out to fix.",
+			"fix": {
+				"sha": "3e723797c3f129e5cc733846eb541b669066d028",
+				"subject": "fix(billing): create a missing Autumn customer already named after the org"
+			},
+			"locations": [
+				{
+					"path": "apps/api/src/routes/internal/billing.http.ts",
+					"lines": [103, 111]
+				}
+			],
+			"expected": "present",
+			"split": "holdout",
+			"enabled": true,
+			"curationNote": "Missed by the Maple reviewer on 5f768b4 (no findings, flagged line 272 as only 'unexercised'); caught by another reviewer. Needs no outside knowledge beyond reading the call order. Commits live on PR #1259's head; after a squash merge fetch them with `git fetch origin pull/1259/head`."
+		},
+		{
+			"id": "pr1259-rename-404-swallowed-fixed",
+			"number": 1259,
+			"range": "d47f57dc36ebd6cbb81b9e459991f9f14712411f..3e723797c3f129e5cc733846eb541b669066d028",
+			"bug": "nameCustomerAfterOrg renames the Autumn customer with customers.update before attach and the portal, and swallows any failure. customers.update needs an existing customer, so for an org with no Autumn customer yet it 404s, the failure is logged and dropped, and attach then creates the customer unnamed: the payer's name can become its display name, the exact bug the PR set out to fix.",
+			"fix": {
+				"sha": "3e723797c3f129e5cc733846eb541b669066d028",
+				"subject": "fix(billing): create a missing Autumn customer already named after the org"
+			},
+			"locations": [
+				{
+					"path": "apps/api/src/routes/internal/billing.http.ts",
+					"lines": [103, 111]
+				}
+			],
+			"expected": "absent",
+			"split": "holdout",
+			"enabled": true,
+			"curationNote": "Target-specific negative control after the real fix; not a claim the entire PR is bug-free. Commits live on PR #1259's head; after a squash merge fetch them with `git fetch origin pull/1259/head`."
 		}
 	]
 }

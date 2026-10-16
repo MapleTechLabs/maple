@@ -24,6 +24,5 @@ describe("ONBOARD_SKILL_COMMAND", () => {
 	it("installs the skills folder, not maple-onboard alone", () => {
 		// A path ending in /maple-onboard installs only that skill and drops its companions.
 		expect(ONBOARD_SKILL_COMMAND).not.toMatch(/skills\/maple-onboard\b/)
-		expect(ONBOARD_SKILL_COMMAND).toContain("MapleTechLabs/maple/skills --skill '*'")
 	})
 })

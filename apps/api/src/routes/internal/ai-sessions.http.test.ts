@@ -6,18 +6,18 @@ import {
 	AI_SESSION_SUMMARY_MAX_TURNS,
 	AI_TOOL_ERRORS_MAX,
 	CurrentTenant,
-	V1SchemaErrors,
-	V1UnexpectedErrors,
+	ApiSchemaErrors,
+	ApiUnexpectedErrors,
 } from "@maple/domain/http"
 
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { Context, Effect, Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "../v2/v2-test-support"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiSessionsInternalLive } from "./ai-sessions.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -33,8 +33,8 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 
 class AiSessionsOnlyApi extends HttpApi.make("MapleInternalApi")
 	.add(AiSessionsInternalApiGroup)
-	.middleware(V1SchemaErrors)
-	.middleware(V1UnexpectedErrors) {}
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
 
 const SESSION_ID = "wrun_01KZTEST"
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
@@ -76,7 +76,7 @@ const spanRow = (index: number) => ({
 const makeHarness = (overrides: Partial<WarehouseQueryServiceApi>) => {
 	const routes = HttpApiBuilder.layer(AiSessionsOnlyApi).pipe(
 		Layer.provide(HttpAiSessionsInternalLive),
-		Layer.provide(V1ErrorBoundaryLive),
+		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
 		Layer.provideMerge(Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub(overrides))),
 	)
@@ -647,7 +647,7 @@ describe("POST /internal/ai-sessions/details", () => {
 			// Exactly the page's ids, and the page's counted filters, so a trace
 			// resolves to the session it was ranked into.
 			for (const sessionId of DETAILS_BODY.sessionIds) expect(sql).toContain(`'${sessionId}'`)
-			expect(sql).toContain("countIf(VendorId IN ('eve')) > 0")
+			expect(sql).toContain("countIf(ai_trace_index.VendorId IN ('eve')) > 0")
 			expect(sql).not.toContain("__PARAM_")
 			// The rows as the fan-out returned them; the client merges by id.
 			expect(response.body).toEqual({
@@ -671,9 +671,10 @@ describe("POST /internal/ai-sessions/details", () => {
 		const harness = makeHarness({
 			compiledQuery: (_tenant, compiled) => {
 				const { sql } = compiledQueryOf(compiled)
-				const start = /Timestamp >= '([^']+)'\n\s+AND Timestamp <= '([^']+)'\n\s+AND TraceId IN/.exec(
-					sql,
-				)
+				const start =
+					/trace_detail_spans\.Timestamp >= '([^']+)'\n\s+AND trace_detail_spans\.Timestamp <= '([^']+)'\n\s+AND trace_detail_spans\.TraceId IN/.exec(
+						sql,
+					)
 				spansBounds.push([start?.[1] ?? "", start?.[2] ?? ""])
 				// The first read (the earlier day) sees the session's first spans, the
 				// second its last; only one of them sees the `trace:` session at all.
@@ -801,7 +802,7 @@ describe("POST /internal/ai-sessions/facets", () => {
 	})
 })
 
-describe("POST /internal/ai-sessions/list", () => {
+describe("POST /internal/ai-sessions/list filters and sort", () => {
 	// Every filter is a payload field the handler has to hand to the builder by
 	// name; a field the schema accepts and the handler forgets is a 200 that
 	// silently ignores the sidebar. So the compiled SQL is what gets asserted —
@@ -843,13 +844,15 @@ describe("POST /internal/ai-sessions/list", () => {
 			expect(response.status).toBe(200)
 			expect(response.body).toEqual({ data: [] })
 			for (const fragment of [
-				"countIf(VendorId IN ('eve')) > 0",
-				"countIf(ServiceName IN ('agent-runner')) > 0",
-				"countIf(DeploymentEnv IN ('production')) > 0",
-				"countIf(Model IN ('claude-sonnet-5')) > 0",
-				"countIf(AgentName IN ('slack-agent')) > 0",
-				"countIf(ToolName IN ('search_traces')) > 0",
-				"SessionId LIKE 'wrun01%'",
+				"countIf(ai_trace_index.VendorId IN ('eve')) > 0",
+				"countIf(ai_trace_index.ServiceName IN ('agent-runner')) > 0",
+				"countIf(ai_trace_index.DeploymentEnv IN ('production')) > 0",
+				"countIf(ai_trace_index.Model IN ('claude-sonnet-5')) > 0",
+				"countIf(ai_trace_index.AgentName IN ('slack-agent')) > 0",
+				"countIf(ai_trace_index.ToolName IN ('search_traces')) > 0",
+				// Session ids match as a substring (their key sits mid-string); trace ids as a prefix.
+				"SessionId LIKE '%wrun01%'",
+				"TraceId LIKE 'wrun01%'",
 				"errorAgentSpans > 0",
 				"NOT (sessionId LIKE 'trace:%')",
 				"agentDurationMs >= 1000",
@@ -934,7 +937,7 @@ describe("POST /internal/ai-sessions/spans — pages and scopes", () => {
 			expect(response.status).toBe(200)
 			expect(sql()).toContain("SpanAttributes['maple_ai.vendor.id'] != ''")
 			expect(sql()).toContain(
-				`(Timestamp > '${after.timestamp}' OR (Timestamp = '${after.timestamp}' AND SpanId > '${after.spanId}'))`,
+				`(trace_detail_spans.Timestamp > '${after.timestamp}' OR (trace_detail_spans.Timestamp = '${after.timestamp}' AND trace_detail_spans.SpanId > '${after.spanId}'))`,
 			)
 			expect(sql()).toContain("LIMIT 501")
 		} finally {

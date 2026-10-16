@@ -10,11 +10,10 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { actors, type ActorInsert, type ActorRow } from "@maple/db"
-import { and, desc, eq, inArray } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { Actors, type ActorInsert, type ActorRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
 import { isReservedAgentName, SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -37,7 +36,9 @@ export const actorRowToDocument = (row: ActorRow): ActorDocument =>
 		model: row.model ?? null,
 		capabilities: parseCapabilities(row.capabilitiesJson),
 		lastActiveAt:
-			row.lastActiveAt == null ? null : decodeActorDateTimeSync(row.lastActiveAt.toISOString()),
+			row.lastActiveAt == null
+				? null
+				: decodeActorDateTimeSync(new Date(row.lastActiveAt).toISOString()),
 	})
 
 export interface ErrorActorsPublicApi {
@@ -96,14 +97,38 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 
 	const selectActorRow = (orgId: OrgId, actorId: ActorId) =>
 		dbExecute((db) =>
-			db
-				.select()
-				.from(actors)
-				.where(and(eq(actors.orgId, orgId), eq(actors.id, actorId)))
-				.limit(1),
+			db.run(
+				PG.from(Actors)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(actorId)])
+					.limit(1),
+			),
 		).pipe(Effect.map((rows) => rows[0] ?? null))
 
-	const lookupActor: ErrorActorsServiceApi["lookupActor"] = Effect.fn("ErrorsService.lookupActor")(
+	const selectUserActor = (orgId: OrgId, userId: UserId) =>
+		dbExecute((db) =>
+			db.run(
+				PG.from(Actors)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.type.eq("user"), $.userId.eq(userId)])
+					.limit(1),
+			),
+		)
+
+	const selectAgentByName = (orgId: OrgId, agentName: string) =>
+		dbExecute((db) =>
+			db.run(
+				PG.from(Actors)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.type.eq("agent"), $.agentName.eq(agentName)])
+					.limit(1),
+			),
+		)
+
+	const insertActorIfAbsent = (insert: ActorInsert) =>
+		dbExecute((db) => db.run(PG.insertInto(Actors).values(insert).onConflictDoNothing()))
+
+	const lookupActor: ErrorActorsServiceApi["lookupActor"] = Effect.fn("ErrorActorsService.lookupActor")(
 		function* (orgId, actorId) {
 			const row = yield* selectActorRow(orgId, actorId)
 			if (!row) {
@@ -125,10 +150,11 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	// mutation, but persistent failures should still be diagnosable.
 	const touchActor: ErrorActorsServiceApi["touchActor"] = (orgId, actorId, timestamp) =>
 		dbExecute((db) =>
-			db
-				.update(actors)
-				.set({ lastActiveAt: msToDate(timestamp) })
-				.where(and(eq(actors.orgId, orgId), eq(actors.id, actorId))),
+			db.run(
+				PG.update(Actors)
+					.set({ lastActiveAt: timestamp })
+					.where(($) => [$.orgId.eq(orgId), $.id.eq(actorId)]),
+			),
 		).pipe(
 			Effect.tapCause((cause) =>
 				Effect.logWarning("ErrorsService.touchActor failed to update lastActiveAt").pipe(
@@ -139,15 +165,9 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		)
 
 	const ensureUserActor: ErrorActorsServiceApi["ensureUserActor"] = Effect.fn(
-		"ErrorsService.ensureUserActor",
+		"ErrorActorsService.ensureUserActor",
 	)(function* (orgId, userId) {
-		const existing = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(actors)
-				.where(and(eq(actors.orgId, orgId), eq(actors.type, "user"), eq(actors.userId, userId)))
-				.limit(1),
-		)
+		const existing = yield* selectUserActor(orgId, userId)
 		if (existing[0]) return actorRowToDocument(existing[0])
 
 		const timestamp = yield* Clock.currentTimeMillis
@@ -161,17 +181,11 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 			model: null,
 			capabilitiesJson: [],
 			createdBy: userId,
-			createdAt: msToDate(timestamp),
-			lastActiveAt: msToDate(timestamp),
+			createdAt: timestamp,
+			lastActiveAt: timestamp,
 		}
-		yield* dbExecute((db) => db.insert(actors).values(insert).onConflictDoNothing())
-		const after = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(actors)
-				.where(and(eq(actors.orgId, orgId), eq(actors.type, "user"), eq(actors.userId, userId)))
-				.limit(1),
-		)
+		yield* insertActorIfAbsent(insert)
+		const after = yield* selectUserActor(orgId, userId)
 		const row = after[0]
 		if (!row) {
 			return yield* Effect.fail(
@@ -182,17 +196,9 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	})
 
 	const ensureAgentActor: ErrorActorsServiceApi["ensureAgentActor"] = Effect.fn(
-		"ErrorsService.ensureAgentActor",
+		"ErrorActorsService.ensureAgentActor",
 	)(function* (orgId, agentName, opts) {
-		const selectByName = dbExecute((db) =>
-			db
-				.select()
-				.from(actors)
-				.where(
-					and(eq(actors.orgId, orgId), eq(actors.type, "agent"), eq(actors.agentName, agentName)),
-				)
-				.limit(1),
-		)
+		const selectByName = selectAgentByName(orgId, agentName)
 		const existing = yield* selectByName
 		if (existing[0]) return actorRowToDocument(existing[0])
 
@@ -207,10 +213,10 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 			model: null,
 			capabilitiesJson: opts?.capabilities ?? [],
 			createdBy: opts?.createdBy ?? null,
-			createdAt: msToDate(timestamp),
-			lastActiveAt: msToDate(timestamp),
+			createdAt: timestamp,
+			lastActiveAt: timestamp,
 		}
-		yield* dbExecute((db) => db.insert(actors).values(insert).onConflictDoNothing())
+		yield* insertActorIfAbsent(insert)
 		const after = yield* selectByName
 		const row = after[0]
 		if (!row) {
@@ -224,87 +230,85 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	const ensureSystemActor: ErrorActorsServiceApi["ensureSystemActor"] = (orgId) =>
 		ensureAgentActor(orgId, SYSTEM_ERRORS_AGENT_NAME, { capabilities: ["system", "auto-triage"] })
 
-	const registerAgent: ErrorActorsServiceApi["registerAgent"] = Effect.fn("ErrorsService.registerAgent")(
-		function* (orgId, byUserId, request) {
-			const name = request.name.trim()
-			if (name.length === 0) {
-				return yield* Effect.fail(
-					new ErrorValidationError({
-						message: "Agent name must not be empty",
-						details: [request.name],
-					}),
-				)
-			}
-			if (isReservedAgentName(name)) {
-				return yield* Effect.fail(
-					new ErrorValidationError({
-						message: `Agent name '${name}' is reserved`,
-						details: [name],
-					}),
-				)
-			}
-
-			const timestamp = yield* Clock.currentTimeMillis
-			const id = newActorId()
-			const capabilities = request.capabilities ?? []
-			const insert: ActorInsert = {
-				id,
-				orgId,
-				type: "agent",
-				userId: null,
-				agentName: name,
-				model: request.model ?? null,
-				capabilitiesJson: capabilities,
-				createdBy: byUserId,
-				createdAt: msToDate(timestamp),
-				lastActiveAt: msToDate(timestamp),
-			}
-
-			yield* dbExecute((db) => db.insert(actors).values(insert).onConflictDoNothing())
-			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(actors)
-					.where(and(eq(actors.orgId, orgId), eq(actors.type, "agent"), eq(actors.agentName, name)))
-					.limit(1),
+	const registerAgent: ErrorActorsServiceApi["registerAgent"] = Effect.fn(
+		"ErrorActorsService.registerAgent",
+	)(function* (orgId, byUserId, request) {
+		const name = request.name.trim()
+		if (name.length === 0) {
+			return yield* Effect.fail(
+				new ErrorValidationError({
+					message: "Agent name must not be empty",
+					details: [request.name],
+				}),
 			)
-			const row = rows[0]
-			if (!row) {
-				return yield* Effect.fail(new ErrorPersistenceError({ message: "Failed to register agent" }))
-			}
-			if (row.id !== id) {
-				return yield* Effect.fail(
-					new ErrorValidationError({
-						message: `An agent named '${name}' already exists for this org`,
-						details: [name],
-					}),
-				)
-			}
-			return actorRowToDocument(row)
-		},
-	)
+		}
+		if (isReservedAgentName(name)) {
+			return yield* Effect.fail(
+				new ErrorValidationError({
+					message: `Agent name '${name}' is reserved`,
+					details: [name],
+				}),
+			)
+		}
 
-	const listAgents: ErrorActorsServiceApi["listAgents"] = Effect.fn("ErrorsService.listAgents")(
+		const timestamp = yield* Clock.currentTimeMillis
+		const id = newActorId()
+		const capabilities = request.capabilities ?? []
+		const insert: ActorInsert = {
+			id,
+			orgId,
+			type: "agent",
+			userId: null,
+			agentName: name,
+			model: request.model ?? null,
+			capabilitiesJson: capabilities,
+			createdBy: byUserId,
+			createdAt: timestamp,
+			lastActiveAt: timestamp,
+		}
+
+		yield* insertActorIfAbsent(insert)
+		const rows = yield* selectAgentByName(orgId, name)
+		const row = rows[0]
+		if (!row) {
+			return yield* Effect.fail(new ErrorPersistenceError({ message: "Failed to register agent" }))
+		}
+		if (row.id !== id) {
+			return yield* Effect.fail(
+				new ErrorValidationError({
+					message: `An agent named '${name}' already exists for this org`,
+					details: [name],
+				}),
+			)
+		}
+		return actorRowToDocument(row)
+	})
+
+	const listAgents: ErrorActorsServiceApi["listAgents"] = Effect.fn("ErrorActorsService.listAgents")(
 		function* (orgId) {
 			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(actors)
-					.where(and(eq(actors.orgId, orgId), eq(actors.type, "agent")))
-					.orderBy(desc(actors.createdAt)),
+				db.run(
+					PG.from(Actors)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.type.eq("agent")])
+						.orderBy(["createdAt", "desc"]),
+				),
 			)
 			return new ActorsListResponse({ actors: rows.map(actorRowToDocument) })
 		},
 	)
 
 	const collectActorDocs: ErrorActorsServiceApi["collectActorDocs"] = (orgId, actorIds) => {
-		const filtered = Array.from(new Set(actorIds.filter((value): value is ActorId => value != null)))
-		if (filtered.length === 0) return Effect.succeed(new Map<ActorId, ActorDocument>())
+		const [first, ...rest] = Array.from(
+			new Set(actorIds.filter((value): value is ActorId => value != null)),
+		)
+		if (first === undefined) return Effect.succeed(new Map<ActorId, ActorDocument>())
 		return dbExecute((db) =>
-			db
-				.select()
-				.from(actors)
-				.where(and(eq(actors.orgId, orgId), inArray(actors.id, filtered))),
+			db.run(
+				PG.from(Actors)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.id.in_(first, ...rest)]),
+			),
 		).pipe(
 			Effect.map((rows) => {
 				const map = new Map<ActorId, ActorDocument>()

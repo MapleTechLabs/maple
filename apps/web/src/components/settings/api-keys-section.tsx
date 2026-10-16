@@ -1,33 +1,21 @@
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { useAtomSet } from "@/lib/effect-atom"
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
 import type { V2ApiKey } from "@maple/domain/http/v2"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@maple/ui/components/ui/dropdown-menu"
+import { CopyableField } from "@maple/ui/components/ui/copyable-field"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import {
 	Empty,
 	EmptyContent,
@@ -37,41 +25,27 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import {
-	AlertWarningIcon,
-	ArrowPathIcon,
-	CodeIcon,
-	DotsVerticalIcon,
-	KeyIcon,
-	PlusIcon,
-	SquareTerminalIcon,
-	TrashIcon,
-} from "@/components/icons"
-import { apiBaseUrl } from "@/lib/services/common/api-base-url"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { ColumnHead, DataTable } from "@/components/common/data-table"
+import { RelativeTime } from "@/components/common/relative-time"
+import { ArrowPathIcon, CodeIcon, KeyIcon, PlusIcon, SquareTerminalIcon, TrashIcon } from "@/components/icons"
+import { apiPublicUrl } from "@/lib/services/common/api-base-url"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
+import { SyncUnavailable } from "@/components/common/sync-unavailable"
+import { retryOrgCollections } from "@/lib/collections/org-collections"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
-import { displayError } from "@/lib/error-messages"
+import { toastExit } from "@/lib/error-toast"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatDateInTimezone } from "@/lib/timezone-format"
+import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { CreateApiKeyDialog } from "./create-api-key-dialog"
 import { RollApiKeyDialog } from "./roll-api-key-dialog"
 
 type ApiKey = V2ApiKey
-
-function formatDate(timestamp: string | null): string {
-	if (!timestamp) return "Never"
-	try {
-		return new Date(timestamp).toLocaleDateString("en-US", {
-			month: "short",
-			day: "numeric",
-			year: "numeric",
-		})
-	} catch {
-		return "Unknown"
-	}
-}
 
 /**
  * A key has exactly one status, and the list is grouped by it. "Expiring" is not a separate bucket —
@@ -123,7 +97,6 @@ export function ApiKeysSection() {
 	const [createOpen, setCreateOpen] = useState(false)
 	const [revokeOpen, setRevokeOpen] = useState(false)
 	const [revokingKey, setRevokingKey] = useState<ApiKey | null>(null)
-	const [isRevoking, setIsRevoking] = useState(false)
 	const [rollOpen, setRollOpen] = useState(false)
 	const [rollingKey, setRollingKey] = useState<ApiKey | null>(null)
 
@@ -143,22 +116,15 @@ export function ApiKeysSection() {
 		setRollOpen(true)
 	}
 
-	async function handleRevoke() {
-		if (!revokingKey) return
-		setIsRevoking(true)
+	async function handleRevoke(): Promise<boolean> {
+		if (!revokingKey) return false
 		prepareForMutation()
 		const result = await revokeMutation({ params: { id: revokingKey.id } })
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "API key revoked", type: "success" })
-			void reconcileTxid(result.value.txid)
-		} else {
-			const { title, message } = displayError(result)
-			toastManager.add({ title, description: message, type: "error" })
-		}
-		setIsRevoking(false)
-		setRevokeOpen(false)
-		// Keep `revokingKey` set so the dialog copy doesn't swap to the generic
-		// fallback while the close animation plays; the next open overwrites it.
+		// ConfirmDialog closes on `true` (`revokingKey` stays set so the copy doesn't swap mid-animation);
+		// `false` keeps it open so the user can retry.
+		const ok = toastExit(result, { success: "API key revoked", error: "Failed to revoke API key" })
+		if (Exit.isSuccess(result)) void reconcileTxid(result.value.txid)
+		return ok
 	}
 
 	// One pass, one clock. An expired key used to count as "Active" and sit in the active list behind
@@ -196,69 +162,67 @@ export function ApiKeysSection() {
 	const showSearch = buckets[activeView].length > 5 || needle.length > 0
 
 	return (
-		<div className="space-y-6">
-			<div className="space-y-3">
-				<div className="flex flex-wrap items-center gap-3">
-					{keys.length > 0 && (
-						<>
-							<div className="border-border flex items-center gap-0.5 rounded-md border p-0.5">
-								{(["active", "expired", "revoked"] as const).map((tab) =>
-									// A tab for an empty bucket is a dead end. Active always shows, so
-									// there is something to fall back to.
-									tab === "active" || buckets[tab].length > 0 ? (
-										<FilterTab
-											key={tab}
-											active={activeView === tab}
-											onClick={() => setView(tab)}
-										>
-											{VIEW_LABELS[tab]} · {buckets[tab].length}
-										</FilterTab>
-									) : null,
-								)}
-							</div>
-							{buckets.active.length > 0 && (
-								<span className="text-muted-foreground font-mono text-[11px]">
-									<span className="text-success-foreground">{standardCount} standard</span>
-									<span className="text-muted-foreground/40"> · </span>
-									<span className="text-info-foreground">{mcpCount} mcp</span>
-								</span>
-							)}
-						</>
-					)}
-					<div className="flex-1" />
-					{showSearch && (
-						<SearchInput
-							value={search}
-							onValueChange={setSearch}
-							placeholder="Filter by name or prefix"
-							className="w-56"
-						/>
-					)}
+		<SettingsSections>
+			<SettingsSection
+				title="API keys"
+				framed={false}
+				actions={
 					<Button onClick={() => setCreateOpen(true)} size="sm" disabled={!isAdmin}>
-						<PlusIcon data-icon="inline-start" size={14} />
+						<PlusIcon data-icon="inline-start" />
 						Create key
 					</Button>
-				</div>
+				}
+			>
+				{keys.length > 0 || showSearch ? (
+					<div className="flex flex-wrap items-center gap-3">
+						{keys.length > 0 && (
+							<>
+								<SegmentedSelect
+									size="sm"
+									aria-label="Key status"
+									value={activeView}
+									onChange={setView}
+									options={(["active", "expired", "revoked"] as const)
+										// A tab for an empty bucket is a dead end. Active always shows, so
+										// there is something to fall back to.
+										.filter((tab) => tab === "active" || buckets[tab].length > 0)
+										.map((tab) => ({
+											value: tab,
+											label: `${VIEW_LABELS[tab]} · ${buckets[tab].length}`,
+										}))}
+								/>
+								{buckets.active.length > 0 && (
+									<span className="text-muted-foreground font-mono text-2xs">
+										<span className="text-success-foreground">
+											{standardCount} standard
+										</span>
+										<span className="text-muted-foreground/40"> · </span>
+										<span className="text-info-foreground">{mcpCount} mcp</span>
+									</span>
+								)}
+							</>
+						)}
+						<div className="flex-1" />
+						{showSearch && (
+							<SearchInput
+								value={search}
+								onValueChange={setSearch}
+								placeholder="Filter by name or prefix"
+								className="w-56"
+							/>
+						)}
+					</div>
+				) : null}
 
-				<div className="bg-card rounded-lg border">
+				<Panel>
 					{isLoading ? (
-						<div className="space-y-2 p-4">
-							<Skeleton className="h-[52px] w-full" />
-							<Skeleton className="h-[52px] w-full" />
-						</div>
+						<SkeletonList rows={2} rowClassName="h-[52px]" gap="2" className="p-4" />
 					) : isError ? (
-						<Empty className="py-8">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<AlertWarningIcon size={16} />
-								</EmptyMedia>
-								<EmptyTitle>Couldn't load API keys</EmptyTitle>
-								<EmptyDescription>
-									Something went wrong while loading your keys. Reload the page to try
-									again.
-								</EmptyDescription>
-							</EmptyHeader>
-						</Empty>
+						<SyncUnavailable
+							title="Couldn't load API keys"
+							description="The key list couldn't be synced. Your keys are unaffected; this is a read problem."
+							onRetry={retryOrgCollections}
+						/>
 					) : keys.length === 0 ? (
 						<Empty className="py-8">
 							<EmptyHeader>
@@ -274,7 +238,7 @@ export function ApiKeysSection() {
 								<EmptyActions>
 									{isAdmin ? (
 										<Button size="sm" onClick={() => setCreateOpen(true)}>
-											<PlusIcon data-icon="inline-start" size={14} />
+											<PlusIcon data-icon="inline-start" />
 											Create key
 										</Button>
 									) : (
@@ -308,22 +272,27 @@ export function ApiKeysSection() {
 							{needle.length === 0 && activeView === "active" && isAdmin && (
 								<EmptyContent>
 									<Button size="sm" onClick={() => setCreateOpen(true)}>
-										<PlusIcon data-icon="inline-start" size={14} />
+										<PlusIcon data-icon="inline-start" />
 										Create key
 									</Button>
 								</EmptyContent>
 							)}
 						</Empty>
 					) : (
-						<div className="divide-border divide-y">
-							<div className="flex items-center gap-3 px-4 py-2">
-								<span className={cn(COL_HEADER, "min-w-0 flex-1")}>Key</span>
-								<span className={cn(COL_HEADER, COL.prefix)}>Prefix</span>
-								<span className={cn(COL_HEADER, COL.scopes)}>Scopes</span>
-								<span className={cn(COL_HEADER, COL.lastUsed)}>Last used</span>
-								<span className={cn(COL_HEADER, COL.expires)}>Expires</span>
-								<span className={cn(COL.menu)} />
-							</div>
+						// The card frame replaces DataTable's own top/bottom rule.
+						<DataTable.Root
+							ariaLabel="API keys"
+							stickySurfaceClass="bg-card"
+							className="border-y-0"
+						>
+							<DataTable.Head>
+								<ColumnHead label="Key" width="min-w-0 flex-1" />
+								<ColumnHead label="Prefix" width={COL.prefix} />
+								<ColumnHead label="Scopes" width={COL.scopes} />
+								<ColumnHead label="Last used" width={COL.lastUsed} />
+								<ColumnHead label="Expires" width={COL.expires} />
+								<span className={COL.menu} />
+							</DataTable.Head>
 							{visibleKeys.map((key) => (
 								<ApiKeyRow
 									key={key.id}
@@ -334,10 +303,10 @@ export function ApiKeysSection() {
 									onRevoke={key.revoked ? undefined : () => openRevokeDialog(key)}
 								/>
 							))}
-						</div>
+						</DataTable.Root>
 					)}
-				</div>
-			</div>
+				</Panel>
+			</SettingsSection>
 
 			{!isAdmin ? (
 				<p className="text-muted-foreground text-xs">
@@ -348,7 +317,7 @@ export function ApiKeysSection() {
 					>
 						MCP
 					</Link>{" "}
-					page — you can create one of those yourself.
+					page; you can create one of those yourself.
 				</p>
 			) : null}
 
@@ -358,37 +327,28 @@ export function ApiKeysSection() {
 
 			<RollApiKeyDialog open={rollOpen} onOpenChange={setRollOpen} apiKey={rollingKey} />
 
-			<AlertDialog open={revokeOpen} onOpenChange={setRevokeOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<AlertWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Revoke API key?</AlertDialogTitle>
-						<AlertDialogDescription>
-							{revokingKey ? (
-								<>
-									<span className="text-foreground font-medium">{revokingKey.name}</span> (
-									<span className="font-mono text-xs">{revokingKey.key_prefix}</span>) will
-									stop working immediately. This action cannot be undone.
-								</>
-							) : (
-								<>
-									This action cannot be undone. Any integrations using this key will stop
-									working immediately.
-								</>
-							)}
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isRevoking}>Cancel</AlertDialogCancel>
-						<AlertDialogAction variant="destructive" onClick={handleRevoke} disabled={isRevoking}>
-							{isRevoking ? "Revoking..." : "Revoke key"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
-		</div>
+			<ConfirmDialog
+				open={revokeOpen}
+				onOpenChange={setRevokeOpen}
+				title="Revoke API key?"
+				description={
+					revokingKey ? (
+						<>
+							<span className="text-foreground font-medium">{revokingKey.name}</span> (
+							<span className="font-mono text-xs">{revokingKey.key_prefix}</span>) will stop
+							working immediately. This action cannot be undone.
+						</>
+					) : (
+						<>
+							This action cannot be undone. Any integrations using this key will stop working
+							immediately.
+						</>
+					)
+				}
+				confirmLabel="Revoke key"
+				onConfirm={handleRevoke}
+			/>
+		</SettingsSections>
 	)
 }
 
@@ -419,7 +379,7 @@ const SCOPE_FAMILY_ROWS = [
 	{
 		id: "investigations",
 		label: "Investigations",
-		description: "AI investigation war-rooms — list, open, and update status",
+		description: "AI investigation war-rooms: list, open, and update status",
 	},
 	{
 		id: "anomalies",
@@ -438,11 +398,12 @@ const SCOPE_FAMILY_ROWS = [
 	{ id: "service_map", label: "Service map", description: "Service-to-service topology" },
 	{ id: "query", label: "Query", description: "Structured telemetry queries" },
 	{ id: "organization", label: "Organization", description: "Read the organization's identity" },
+	{ id: "audit_log", label: "Audit log", description: "Read the audit log (org admins only)" },
 ] as const
 
-const docsUrl = `${apiBaseUrl}/v2/docs`
+const docsUrl = `${apiPublicUrl}/v2/docs`
 
-const curlExample = `curl ${apiBaseUrl}/v2/alerts/rules \\
+const curlExample = `curl ${apiPublicUrl}/v2/alerts/rules \\
   -H "Authorization: Bearer maple_ak_..."`
 
 /**
@@ -452,93 +413,71 @@ const curlExample = `curl ${apiBaseUrl}/v2/alerts/rules \\
  */
 function ApiReference() {
 	return (
-		<div className="space-y-6">
-			<Card>
-				<CardHeader>
-					<div className="flex items-start justify-between gap-4">
-						<div className="space-y-1">
-							<CardTitle>API Reference</CardTitle>
-							<CardDescription>
-								The Maple v2 API is a resource-oriented REST interface — snake_case JSON,
-								prefixed object IDs, cursor-paginated lists, and scoped API keys.
-							</CardDescription>
-						</div>
-						<Button
-							size="sm"
-							render={
-								<a
-									href={docsUrl}
-									target="_blank"
-									rel="noopener noreferrer"
-									aria-label="Open API reference"
-								/>
-							}
-						>
-							<CodeIcon data-icon="inline-start" size={14} />
-							Open API reference
-						</Button>
-					</div>
-				</CardHeader>
-				<CardContent className="space-y-4">
-					<div className="space-y-1.5">
-						<div className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-							Base URL
-						</div>
-						<div className="bg-muted/50 flex items-center justify-between gap-2 rounded-md border px-3 py-2">
-							<code className="font-mono text-sm">{apiBaseUrl}/v2</code>
-							<CopyButton value={`${apiBaseUrl}/v2`} label="Base URL" size="icon-sm" />
-						</div>
-					</div>
-					<div className="space-y-1.5">
-						<div className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-							Quick start
-						</div>
-						<div className="bg-muted/50 flex items-start justify-between gap-2 rounded-md border px-3 py-2">
-							<pre className="overflow-x-auto font-mono text-sm leading-6">{curlExample}</pre>
+		<>
+			<SettingsSection
+				title="API reference"
+				description="The Maple v2 API is a resource-oriented REST interface: snake_case JSON, prefixed object IDs, cursor-paginated lists, and scoped API keys."
+				actions={
+					<Button
+						size="sm"
+						variant="outline"
+						render={<a href={docsUrl} target="_blank" rel="noopener noreferrer" />}
+					>
+						<CodeIcon data-icon="inline-start" />
+						Open API reference
+					</Button>
+				}
+			>
+				<div className="space-y-4">
+					<CopyableField label="Base URL" value={`${apiPublicUrl}/v2`} />
+					<div className="space-y-1">
+						<span className="text-xs text-muted-foreground">Quick start</span>
+						<Panel tone="muted" className="flex-row items-start justify-between gap-2 px-3 py-2">
+							<pre className="min-w-0 flex-1 overflow-x-auto font-mono text-sm leading-6">
+								{curlExample}
+							</pre>
 							<CopyButton value={curlExample} label="curl example" size="icon-sm" />
-						</div>
+						</Panel>
 					</div>
-				</CardContent>
-			</Card>
+				</div>
+			</SettingsSection>
 
-			<Card>
-				<CardHeader>
-					<CardTitle>Scopes</CardTitle>
-					<CardDescription>
-						Restricted keys grant <code className="font-mono text-xs">read</code> or{" "}
-						<code className="font-mono text-xs">write</code> access per resource family (
-						<code className="font-mono text-xs">write</code> implies{" "}
-						<code className="font-mono text-xs">read</code>). A key without scopes has full
-						access.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div className="divide-y rounded-md border">
-						{SCOPE_FAMILY_ROWS.map((family) => (
-							<div
-								key={family.id}
-								className="flex items-center justify-between gap-4 px-3 py-2.5"
-							>
-								<div className="min-w-0 space-y-0.5">
-									<div className="text-sm font-medium">{family.label}</div>
-									<div className="text-muted-foreground truncate text-xs">
-										{family.description}
-									</div>
-								</div>
-								<div className="flex shrink-0 items-center gap-1.5">
-									<Badge variant="outline" className="font-mono text-[11px]">
-										{family.id}:read
-									</Badge>
-									<Badge variant="outline" className="font-mono text-[11px]">
-										{family.id}:write
-									</Badge>
-								</div>
+			<SettingsSection
+				title="Scopes"
+				description={
+					<>
+						Restricted keys grant <InlineCode>read</InlineCode> or <InlineCode>write</InlineCode>{" "}
+						access per resource family (<InlineCode>write</InlineCode> implies{" "}
+						<InlineCode>read</InlineCode>). A key without scopes has full access.
+					</>
+				}
+				padded={false}
+			>
+				<div className="divide-y">
+					{SCOPE_FAMILY_ROWS.map((family) => (
+						<div
+							key={family.id}
+							className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 py-2.5"
+						>
+							<div className="min-w-0 flex-1 space-y-0.5">
+								<div className="text-sm font-medium">{family.label}</div>
+								<TruncatedText className="text-xs text-muted-foreground">
+									{family.description}
+								</TruncatedText>
 							</div>
-						))}
-					</div>
-				</CardContent>
-			</Card>
-		</div>
+							<div className="flex shrink-0 basis-full items-center gap-1.5 sm:basis-auto">
+								<Badge variant="outline" mono className="text-2xs">
+									{family.id}:read
+								</Badge>
+								<Badge variant="outline" mono className="text-2xs">
+									{family.id}:write
+								</Badge>
+							</div>
+						</div>
+					))}
+				</div>
+			</SettingsSection>
+		</>
 	)
 }
 
@@ -551,38 +490,12 @@ const COL = {
 	expires: "hidden w-[110px] shrink-0 md:block",
 	menu: "w-7 shrink-0",
 }
-const COL_HEADER = "text-muted-foreground/70 font-mono text-[10px] uppercase tracking-[0.12em]"
-
-function FilterTab({
-	active,
-	onClick,
-	children,
-}: {
-	active: boolean
-	onClick: () => void
-	children: ReactNode
-}) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			className={cn(
-				"rounded px-2.5 py-1 font-mono text-[11px] leading-4 transition-colors",
-				active
-					? "bg-accent text-foreground font-medium"
-					: "text-muted-foreground hover:text-foreground",
-			)}
-		>
-			{children}
-		</button>
-	)
-}
 
 /** "in 3 days" / "today" — the urgency, not the date. The Expires column carries the date. */
 function expiresInLabel(expiresAt: number, now: number): string {
 	const days = Math.floor((expiresAt - now) / 86_400_000)
 	if (days < 1) return "Expires today"
-	return `Expires in ${days} ${days === 1 ? "day" : "days"}`
+	return `Expires in ${countLabel(days, "day")}`
 }
 
 function ApiKeyRow({
@@ -601,7 +514,6 @@ function ApiKeyRow({
 }) {
 	const isMcp = apiKey.kind === "mcp"
 	const Icon = isMcp ? SquareTerminalIcon : KeyIcon
-	const relativeLastUsed = apiKey.last_used_at ? formatRelativeTime(apiKey.last_used_at) : null
 	const expiresAt = apiKey.expires_at === null ? null : Date.parse(apiKey.expires_at)
 	const expiresInPast = status === "expired"
 	const expiresSoon = status === "expiring"
@@ -615,6 +527,8 @@ function ApiKeyRow({
 				? "bg-info/10 text-info"
 				: "bg-success/10 text-success"
 
+	const { effectiveTimezone } = useTimezonePreference()
+	const formatDate = (timestamp: string) => formatDateInTimezone(timestamp, { timeZone: effectiveTimezone })
 	const createdMeta = [
 		apiKey.description,
 		`Created ${formatDate(apiKey.created_at)}${apiKey.created_by_email ? ` by ${apiKey.created_by_email}` : ""}`,
@@ -625,7 +539,7 @@ function ApiKeyRow({
 	return (
 		<div
 			className={cn(
-				"flex items-center gap-3 px-4 py-3 transition-colors",
+				"flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0",
 				status === "revoked" || status === "expired" ? "opacity-60" : "hover:bg-muted/20",
 			)}
 		>
@@ -635,16 +549,17 @@ function ApiKeyRow({
 				</div>
 				<div className="flex min-w-0 flex-col gap-0.5">
 					<div className="flex min-w-0 items-center gap-1.5">
-						<span className="text-foreground truncate text-sm font-medium leading-none">
-							{apiKey.name}
-						</span>
+						<TruncatedText
+							text={apiKey.name}
+							className="text-foreground text-sm font-medium leading-none"
+						/>
 						{isMcp && (
 							<Badge variant="info" size="sm">
 								MCP
 							</Badge>
 						)}
 						{status === "revoked" && (
-							<Badge variant="error" size="sm">
+							<Badge variant="crit" size="sm">
 								Revoked
 							</Badge>
 						)}
@@ -656,39 +571,39 @@ function ApiKeyRow({
 						{/* The Expires column is hidden below `md`, so the one state that silently
 						    breaks a running integration rides in the name row instead. */}
 						{expiresSoon && expiresAt !== null && (
-							<Badge variant="warning" size="sm">
+							<Badge variant="warn" size="sm">
 								{expiresInLabel(expiresAt, now)}
 							</Badge>
 						)}
 					</div>
-					<span className="text-muted-foreground truncate text-[11px]" title={createdMeta}>
-						{createdMeta}
-					</span>
+					<TruncatedText className="text-muted-foreground text-2xs">{createdMeta}</TruncatedText>
 				</div>
 			</div>
 
-			<code
-				className={cn(COL.prefix, "text-foreground/55 truncate font-mono text-[11px] tracking-tight")}
+			<InlineCode
+				variant="plain"
+				className={cn(COL.prefix, "text-foreground/55 truncate text-2xs tracking-tight")}
 			>
 				{apiKey.key_prefix}
-			</code>
+			</InlineCode>
 
 			<div className={cn(COL.scopes)}>
 				<ScopesCell apiKey={apiKey} />
 			</div>
 
-			<span
-				className={cn(COL.lastUsed, "text-muted-foreground truncate text-[11px]")}
-				title={apiKey.last_used_at ? formatDate(apiKey.last_used_at) : undefined}
-			>
-				{apiKey.last_used_at ? (relativeLastUsed ?? formatDate(apiKey.last_used_at)) : "—"}
+			<span className={cn(COL.lastUsed, "text-muted-foreground truncate text-2xs")}>
+				{apiKey.last_used_at ? (
+					<RelativeTime value={apiKey.last_used_at} tooltip="title" />
+				) : (
+					EMPTY_VALUE
+				)}
 			</span>
 
 			<span
 				className={cn(
 					COL.expires,
-					"truncate text-[11px]",
-					expiresSoon ? "text-warning-foreground" : "text-muted-foreground",
+					"truncate text-2xs",
+					expiresSoon ? "text-severity-warn" : "text-muted-foreground",
 				)}
 			>
 				{apiKey.expires_at ? formatDate(apiKey.expires_at) : "Never"}
@@ -696,26 +611,18 @@ function ApiKeyRow({
 
 			<div className={cn(COL.menu, "flex items-center justify-end")}>
 				{onRevoke && (
-					<DropdownMenu>
-						<DropdownMenuTrigger
-							render={<Button variant="ghost" size="icon" className="size-7" />}
-							aria-label={`Actions for ${apiKey.name}`}
-						>
-							<DotsVerticalIcon size={14} />
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
-							{onRoll && (
-								<DropdownMenuItem onClick={onRoll}>
-									<ArrowPathIcon size={14} />
-									Roll key
-								</DropdownMenuItem>
-							)}
-							<DropdownMenuItem variant="destructive" onClick={onRevoke}>
-								<TrashIcon size={14} />
-								Revoke key
+					<RowActionsMenu label={`Actions for ${apiKey.name}`}>
+						{onRoll && (
+							<DropdownMenuItem onClick={onRoll}>
+								<ArrowPathIcon />
+								Roll key
 							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
+						)}
+						<DropdownMenuItem variant="destructive" onClick={onRevoke}>
+							<TrashIcon />
+							Revoke key
+						</DropdownMenuItem>
+					</RowActionsMenu>
 				)}
 			</div>
 		</div>
@@ -724,21 +631,22 @@ function ApiKeyRow({
 
 function ScopesCell({ apiKey }: { apiKey: ApiKey }) {
 	if (apiKey.kind === "mcp") {
-		return <span className="text-muted-foreground text-[11px]">MCP tools</span>
+		return <span className="text-muted-foreground text-2xs">MCP tools</span>
 	}
 	if (apiKey.scopes === null) {
-		return <span className="text-foreground/80 text-[11px]">Full access</span>
+		return <span className="text-foreground/80 text-2xs">Full access</span>
 	}
 	const compact = apiKey.scopes.map((scope) => scope.replace(/:write$/, ":w").replace(/:read$/, ":r"))
 	const shown = compact.slice(0, 2).join(" · ")
 	const extra = compact.length - 2
 	return (
-		<span
-			className="text-muted-foreground block truncate font-mono text-[11px] tracking-tight"
-			title={apiKey.scopes.join(", ")}
+		<TruncatedText
+			mono
+			text={apiKey.scopes.join(", ")}
+			className="text-muted-foreground text-2xs tracking-tight"
 		>
 			{shown}
 			{extra > 0 ? ` · +${extra}` : ""}
-		</span>
+		</TruncatedText>
 	)
 }

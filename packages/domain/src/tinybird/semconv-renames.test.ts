@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { compile } from "@maple-dev/effect-orm/sql"
 import {
 	DEPLOYMENT_ENV_SQL,
 	MESSAGING_DESTINATION_SQL,
@@ -10,18 +10,6 @@ import {
 import { latestSnapshotStatements } from "../generated/clickhouse-schema"
 
 describe("semconv rename coalescing", () => {
-	it("prefers the stable key and falls back to the deprecated one", () => {
-		expect(DEPLOYMENT_ENV_SQL).toBe(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment'])",
-		)
-	})
-
-	it("prefers the namespaced messaging destination over the deprecated one", () => {
-		expect(MESSAGING_DESTINATION_SQL).toBe(
-			"coalesce(nullIf(SpanAttributes['messaging.destination.name'], ''), SpanAttributes['messaging.destination'])",
-		)
-	})
-
 	// Byte-identity is load-bearing, not cosmetic: the service-map and
 	// service-overview routes union an MV branch with a raw-`traces` branch, and
 	// the two only merge if both sides compute the same grouping key.

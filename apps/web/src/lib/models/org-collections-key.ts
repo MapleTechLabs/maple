@@ -11,7 +11,7 @@ import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Queue from "effect/Queue"
 import * as Stream from "effect/Stream"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 
 import {
 	getCollectionsGeneration,

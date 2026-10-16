@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Option, Schema } from "effect"
 
@@ -6,12 +6,10 @@ import { INVESTIGATION_TABS } from "@/components/investigations/investigation-ta
 import { ProvenanceCanvasLoading } from "@/components/investigations/flow/provenance-loading"
 import { InvestigationView } from "@/components/investigations/investigation-view"
 import { ErrorState } from "@/components/common/error-state"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { DetailHeaderSkeleton } from "@/components/common/detail-header"
 import { useInvestigation } from "@/hooks/use-investigation"
 import { retryOrgCollections } from "@/lib/collections/org-collections"
-import { Button } from "@maple/ui/components/ui/button"
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { InvestigationId } from "@maple/domain/http"
 
 const SearchSchema = Schema.Struct({
@@ -101,43 +99,13 @@ function InvestigationDetail({
 	}
 }
 
-/**
- * Every non-success state wears the same chrome — breadcrumbs, a sticky header,
- * a scrolling body — and four hand-copied versions of it drifted apart the moment
- * anything about the shell changed. Only the trail label, the title and the body
- * differ, so those are the parameters.
- */
-function InvestigationShell({
-	trail,
-	title,
-	children,
-}: {
-	trail: string
-	title: string
-	children: ReactNode
-}) {
-	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Investigations", href: "/investigations" }, { label: trail }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={title} />
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>{children}</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
-	)
-}
+const INVESTIGATIONS_CRUMB = { label: "Investigations", href: "/investigations" }
 
 function LoadFailureShell({ error, onRetry }: { error: unknown; onRetry: () => void }) {
 	return (
-		<InvestigationShell trail="Unavailable" title="Investigation">
+		<DashboardPage breadcrumbs={[INVESTIGATIONS_CRUMB, { label: "Error" }]}>
 			<ErrorState error={error} title="This investigation could not be loaded" onRetry={onRetry} />
-		</InvestigationShell>
+		</DashboardPage>
 	)
 }
 
@@ -146,32 +114,26 @@ function LoadFailureShell({ error, onRetry }: { error: unknown; onRetry: () => v
  * and a grey block standing in for it told the reader nothing about what was
  * coming. The ghost draws the chain it is about to be replaced by.
  */
-function LoadingShell({ label = "Loading investigation…" }: { label?: string }) {
+function LoadingShell() {
 	return (
-		<InvestigationShell trail="…" title={label}>
-			<div className="mx-auto w-full max-w-4xl space-y-4">
-				<Skeleton className="h-4 w-32" />
-				<Skeleton className="h-8 w-3/4" />
-				<ProvenanceCanvasLoading />
-			</div>
-		</InvestigationShell>
+		<DashboardPage
+			breadcrumbs={[INVESTIGATIONS_CRUMB, { label: "Loading…" }]}
+			header={<DetailHeaderSkeleton />}
+		>
+			<ProvenanceCanvasLoading />
+		</DashboardPage>
 	)
 }
 
 function NotFoundShell() {
 	return (
-		<InvestigationShell trail="Missing" title="Investigation not found">
-			<Empty>
-				<EmptyHeader>
-					<EmptyTitle>This investigation is unavailable</EmptyTitle>
-					<EmptyDescription>
-						It may have been removed, or it belongs to a different organization.
-					</EmptyDescription>
-				</EmptyHeader>
-				<Button variant="outline" size="sm" render={<Link to="/investigations" />}>
-					View investigations
-				</Button>
-			</Empty>
-		</InvestigationShell>
+		<DashboardPage breadcrumbs={[INVESTIGATIONS_CRUMB, { label: "Not found" }]}>
+			<ResourceNotFound
+				title="This investigation is unavailable"
+				description="It may have been removed, or it belongs to a different organization."
+				backLink={<Link to="/investigations" />}
+				backLabel="View investigations"
+			/>
+		</DashboardPage>
 	)
 }

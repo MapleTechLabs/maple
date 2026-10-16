@@ -1,11 +1,22 @@
 import { Result } from "@/lib/effect-atom"
-import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { SectionHeading } from "@/components/common/section-heading"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import {
+	Empty,
+	EmptyContent,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@maple/ui/components/ui/empty"
+import { FaceRobotIcon } from "@/components/icons"
 
 import type { WebAnalyticsAiCrawlers } from "@/api/warehouse/web-analytics"
-import { DocsLink } from "@/components/common/docs-link"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
+import { ResultView } from "@/components/common/result-view"
+import { StatRail, StatRailItem } from "@/components/common/stat-rail"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import {
 	webAnalyticsAiCrawlersResultAtom,
@@ -13,8 +24,8 @@ import {
 	webAnalyticsSummaryResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { AnalyticsBreakdownPanel } from "../analytics-breakdown-panel"
-import { Delta } from "../analytics-metric-strip"
-import { DEFAULT_TRAFFIC, type AnalyticsFilterKey, type AnalyticsFilters } from "../filters"
+import { Delta } from "@maple/ui/components/ui/delta"
+import { DEFAULT_TRAFFIC, hasActiveFilters, type AnalyticsFilterKey, type AnalyticsFilters } from "../filters"
 import { previousWindow } from "../previous-window"
 import { Favicon } from "../row-icon"
 import {
@@ -54,8 +65,9 @@ const VISITOR_ONLY_FILTERS: ReadonlyArray<AnalyticsFilterKey> = [
 const NO_CRAWLS_MESSAGE = (
 	<>
 		AI crawlers fetch pages without running JavaScript, so the browser SDK never sees them. They are
-		counted from your server&apos;s traces: HTTP server spans whose <code>user_agent.original</code> names
-		GPTBot, ClaudeBot, PerplexityBot or another AI fetcher.
+		counted from your server&apos;s traces: HTTP server spans whose{" "}
+		<InlineCode>user_agent.original</InlineCode> names GPTBot, ClaudeBot, PerplexityBot or another AI
+		fetcher.
 		<span className="mt-2 flex justify-center">
 			<DocsLink page="traces" />
 		</span>
@@ -114,6 +126,15 @@ export function AnalyticsAiTab({
 		VISITOR_ONLY_FILTERS.some((key) => filters[key] !== undefined) ||
 		(filters.traffic !== undefined && filters.traffic !== DEFAULT_TRAFFIC)
 
+	// Nothing from AI anywhere in the window and nothing narrowing it: a page of zeroed cards and
+	// per-panel explanations says less than one empty state does.
+	const noAiTraffic =
+		referrals !== undefined &&
+		crawlers !== undefined &&
+		[...referrals.values()].every((summary) => summary.visits === 0) &&
+		crawlers.crawlers.every((row) => row.requests === 0)
+	if (noAiTraffic && !hasActiveFilters(filters)) return <NoAiTraffic />
+
 	return (
 		<div className="space-y-6">
 			<AiKpis
@@ -125,16 +146,17 @@ export function AnalyticsAiTab({
 				crawlers={crawlers}
 			/>
 
-			{Result.builder(referralsResult)
-				.onInitial(() => (
+			<ResultView
+				result={referralsResult}
+				loading={
 					<div className="grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3">
 						{CARD_PRODUCTS.map((product) => (
 							<Skeleton key={product.id} className="h-[148px] w-full" />
 						))}
 					</div>
-				))
-				.onError((error) => <QueryErrorState error={error} />)
-				.onSuccess(() => (
+				}
+			>
+				{() => (
 					<div className="grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3">
 						{CARD_PRODUCTS.map((product, index) => (
 							<AiProductCard
@@ -146,8 +168,8 @@ export function AnalyticsAiTab({
 							/>
 						))}
 					</div>
-				))
-				.render()}
+				)}
+			</ResultView>
 
 			<div className="grid items-start gap-4 @min-[880px]/page:grid-cols-2">
 				{referrals ? (
@@ -155,28 +177,22 @@ export function AnalyticsAiTab({
 				) : (
 					<Skeleton className="h-64 w-full" />
 				)}
-				{Result.builder(crawlersResult)
-					.onInitial(() => <Skeleton className="h-64 w-full" />)
-					.onError((error) => <QueryErrorState error={error} />)
-					.onSuccess((data) => (
-						<AiCrawlerTable crawlers={data.crawlers} emptyMessage={NO_CRAWLS_MESSAGE} />
-					))
-					.render()}
+				<ResultView result={crawlersResult} loading={<Skeleton className="h-64 w-full" />}>
+					{(data) => <AiCrawlerTable crawlers={data.crawlers} emptyMessage={NO_CRAWLS_MESSAGE} />}
+				</ResultView>
 			</div>
 
 			<section className="space-y-3">
-				<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-					<h2 className="text-[13px] font-medium">What AI crawlers read</h2>
-					{visitorFiltered ? (
-						<span className="text-[11px] text-muted-foreground">
-							Crawls follow the site and page filters only
-						</span>
-					) : null}
-				</div>
-				{Result.builder(crawlersResult)
-					.onInitial(() => <Skeleton className="h-32 w-full" />)
-					.onError(() => null)
-					.onSuccess((data) => (
+				<SectionHeading
+					title="What AI crawlers read"
+					hint={visitorFiltered ? "Crawls follow the site and page filters only" : undefined}
+				/>
+				<ResultView
+					result={crawlersResult}
+					loading={<Skeleton className="h-32 w-full" />}
+					error={() => null}
+				>
+					{(data) => (
 						<>
 							<AiContentFormats formats={data.formats} />
 							<CrawledPages
@@ -185,8 +201,8 @@ export function AnalyticsAiTab({
 								onToggleFilter={onToggleFilter}
 							/>
 						</>
-					))
-					.render()}
+					)}
+				</ResultView>
 			</section>
 		</div>
 	)
@@ -224,9 +240,9 @@ function AiKpis({
 		<StatRail>
 			<StatRailItem
 				eyebrow="AI visits"
-				value={referrals ? formatNumber(visits) : "—"}
+				value={referrals ? formatNumber(visits) : EMPTY_VALUE}
 				spark={spark}
-				delta={delta === null ? undefined : <Delta delta={delta} />}
+				delta={delta === null ? undefined : <Delta ratio={delta} />}
 				subline={
 					referrals
 						? products > 0
@@ -237,19 +253,19 @@ function AiKpis({
 			/>
 			<StatRailItem
 				eyebrow="Share of sessions"
-				value={referrals && sessions ? formatPercent(visits / sessions) : "—"}
+				value={referrals && sessions ? formatPercent(visits / sessions) : EMPTY_VALUE}
 				subline={sessions !== undefined ? `of ${formatNumber(sessions)} sessions` : undefined}
 				delay={60}
 			/>
 			<StatRailItem
 				eyebrow="Pages read by AI"
-				value={crawlers ? formatNumber(pages) : "—"}
+				value={crawlers ? formatNumber(pages) : EMPTY_VALUE}
 				subline={crawlers ? "Distinct pages served to crawlers" : undefined}
 				delay={120}
 			/>
 			<StatRailItem
 				eyebrow="Crawler fetches"
-				value={crawlers ? formatNumber(fetches) : "—"}
+				value={crawlers ? formatNumber(fetches) : EMPTY_VALUE}
 				tone={crawlers && fetches > 0 && failed / fetches > 0.5 ? "warn" : "neutral"}
 				subline={
 					crawlers
@@ -301,5 +317,28 @@ function CrawledPages({
 			activeValue={(key) => (key === "pagePath" ? activePath : undefined)}
 			onToggleFilter={onToggleFilter}
 		/>
+	)
+}
+
+function NoAiTraffic() {
+	return (
+		<Empty>
+			<EmptyHeader>
+				<EmptyMedia variant="icon">
+					<FaceRobotIcon />
+				</EmptyMedia>
+				<EmptyTitle>No AI traffic yet</EmptyTitle>
+				<EmptyDescription>
+					See visits sent by ChatGPT, Claude and other assistants, and which pages AI crawlers read.
+					Visits come from the Maple browser SDK, crawler fetches from your server&apos;s traces.
+				</EmptyDescription>
+			</EmptyHeader>
+			<EmptyContent>
+				<EmptyActions>
+					<DocsLink page="browserSdk">Setup guide</DocsLink>
+					<DocsLink page="webAnalytics" />
+				</EmptyActions>
+			</EmptyContent>
+		</Empty>
 	)
 }

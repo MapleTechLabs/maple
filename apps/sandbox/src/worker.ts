@@ -1,24 +1,14 @@
 /**
- * The sandbox Worker: the one place Cloudflare's Sandbox Durable Object is
- * hosted, and the only Worker in the fleet whose module is its own bundle entry.
- *
- * That is why this app exists rather than the container living in `apps/api`. A
- * container-backed Durable Object is a class the script must export, and
- * alchemy's Effect-native Workers generate their entry — it exports the bridge
- * classes it created and nothing else, so a third-party class declared in
- * `worker.ts` would never reach the deployed script. A plain module is used
- * verbatim, so the `Sandbox` class below is what binds.
- *
- * The api reaches this over a service binding and is the only caller: there is
- * no route and no public hostname. It carries the tenant, mints the credential
- * and decides whether to run anything; this Worker owns the container.
- *
- * Everything this Worker decides lives in `handle.ts`, which the SDK's import
- * would otherwise keep out of a test: this module is the SDK, the binding and
- * the runtime, and nothing else.
+ * The sandbox Worker and its Durable Object, which owns one container per repository per org.
+ * It must stay a plain bundle entry: an alchemy-generated entry would drop the `Sandbox` and
+ * `DirectoryBackupGateway` exports. Reached only over a service binding; request handling lives
+ * in `handle.ts`, and everything the container is asked to do in `checkout.ts`.
  */
-import { Sandbox as SdkSandbox, getSandbox } from "@cloudflare/sandbox"
-import { Effect, Option } from "effect"
+import { DirectoryBackup, SandboxBackupError } from "@cloudflare/sandbox"
+import { SandboxExecRequest, SandboxExecResponse, SandboxRunUnavailable } from "@maple/domain/sandbox"
+import { DurableObject } from "cloudflare:workers"
+import { Duration, Effect, Option, Schema } from "effect"
+import { SandboxCallError, type SandboxContainer, commandArgv, execute, isTimedOut } from "./checkout"
 import { handle } from "./handle"
 import {
 	MIRROR_BACKUP_KEY,
@@ -28,59 +18,176 @@ import {
 	restoreMirror,
 } from "./mirror-backup"
 
+// Moves each mirror archive between the container and R2; reached through `ctx.exports`.
+export { DirectoryBackupGateway } from "@cloudflare/sandbox"
+
+// Types `ctx.exports` from this module's own exports, as `wrangler types` would.
+declare global {
+	namespace Cloudflare {
+		interface GlobalProps {
+			mainModule: typeof import("./worker")
+			durableNamespaces: "Sandbox"
+		}
+	}
+}
+
 interface SandboxWorkerEnv {
 	readonly Sandbox: DurableObjectNamespace<Sandbox>
 	readonly SANDBOX_INTERNAL_SERVICE_TOKEN?: string
-	// Read by the SDK itself for its backup API; all of them, or backups stay off.
+	/** Mirror archives. Without it backups are off and every cold container clones in full. */
 	readonly BACKUP_BUCKET?: R2Bucket
-	readonly BACKUP_BUCKET_NAME?: string
-	readonly R2_ACCESS_KEY_ID?: string
-	readonly R2_SECRET_ACCESS_KEY?: string
-	readonly CLOUDFLARE_ACCOUNT_ID?: string
-	/**
-	 * `"true"` in local dev, where the SDK can neither presign R2 URLs nor mount FUSE: archives go
-	 * through the bucket binding and restores extract instead. Same archive format.
-	 */
-	readonly SANDBOX_BACKUP_LOCAL_BUCKET?: string
 }
 
-/** The SDK's own marker for a sessionless command, which is what every call here uses. */
-const SESSIONLESS = "__DISABLE_SESSION__"
+/** Replaces 0.x `sleepAfter`; 10m covers the gaps between an agent's tool calls. */
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000
 
-/**
- * Cloudflare's Sandbox, plus the mirror backup (`mirror-backup.ts`). One instance per repository
- * per organization, so its storage is where that repository's backup handle belongs.
- */
-export class Sandbox extends SdkSandbox<SandboxWorkerEnv> {
+/** `exec()` passes on only `PATH`; git and node expect the rest of what a login shell had. */
+const EXEC_ENV = { HOME: "/root", LANG: "C.UTF-8" }
+
+const decodeRequest = Schema.decodeEffect(SandboxExecRequest)
+const encodeResponse = Schema.encodeSync(SandboxExecResponse)
+
+const attempt = <A>(what: string, run: () => Promise<A>) =>
+	Effect.tryPromise({
+		try: () => run(),
+		catch: (cause) =>
+			new SandboxCallError({
+				message: `${what}: ${cause instanceof Error ? cause.message : String(cause)}`,
+				cause,
+			}),
+	})
+
+const decoder = new TextDecoder()
+
+/** The repository's container. Its one RPC method is {@link Sandbox.run}. */
+export class Sandbox extends DurableObject<SandboxWorkerEnv> {
+	private readonly backups: DirectoryBackup | undefined
+	/** Set up once per container; cleared when the container stops so the next call starts one. */
+	private setup: Promise<void> | undefined
 	private backupRunning = false
-	/**
-	 * The restore in flight. Two cold clones of different commits both ask; the SDK queues a second
-	 * restore, which starts by unmounting the seed the first clone is copying from.
-	 */
+	/** Shared in-flight restore: two clones claimed at once must not both replace the seed. */
 	private restoring: Promise<void> | undefined
 
+	constructor(ctx: DurableObjectState, env: SandboxWorkerEnv) {
+		super(ctx, env)
+		const container = ctx.container
+		this.backups =
+			container &&
+			env.BACKUP_BUCKET &&
+			new DirectoryBackup(container, ctx.exports.DirectoryBackupGateway, {
+				binding: "BACKUP_BUCKET",
+				prefix: "mirrors/",
+			})
+		// A restarted Durable Object starts without a timeout, even over a running container.
+		if (container?.running)
+			void ctx.blockConcurrencyWhile(() => container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS))
+	}
+
+	/** One sandbox request, encoded both ways because it crosses RPC: the whole of `handle.ts`'s call. */
+	async run(request: typeof SandboxExecRequest.Encoded): Promise<typeof SandboxExecResponse.Encoded> {
+		return Effect.runPromise(
+			decodeRequest(request).pipe(
+				Effect.flatMap((exec) => execute(this.port, exec)),
+				// Encoded by the same module in the same bundle; reaching this is a bug.
+				Effect.orElseSucceed(
+					() => new SandboxRunUnavailable({ message: "the sandbox could not read the request" }),
+				),
+				Effect.map(encodeResponse),
+			),
+		)
+	}
+
+	/** The running container. `exec()` itself waits out one that is still booting. */
+	private readonly running = Effect.suspend(() => {
+		const container = this.ctx.container
+		if (container === undefined)
+			return Effect.fail(
+				new SandboxCallError({ message: "no container is bound to this Durable Object" }),
+			)
+		return attempt("start the container", () => {
+			if (this.setup === undefined || !container.running) {
+				this.setup = (async () => {
+					// The image and instance size come from the application: `default` scheduling policy.
+					if (!container.running) container.start({ enableInternet: true })
+					await container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS)
+				})().catch((cause: unknown) => {
+					this.setup = undefined
+					return Promise.reject(cause)
+				})
+			}
+			return this.setup
+		}).pipe(Effect.as(container))
+	})
+
+	private readonly port: SandboxContainer = {
+		exec: (command, options) =>
+			Effect.gen({ self: this }, function* () {
+				const container = yield* this.running
+				const argv = [...commandArgv(command, options?.timeout)]
+				const [elapsed, output] = yield* Effect.timed(
+					attempt(`run ${argv[0]}`, async () => {
+						const process = await container.exec(argv, { env: EXEC_ENV, cwd: options?.cwd })
+						return process.output()
+					}),
+				)
+				const duration = Duration.toMillis(elapsed)
+				return {
+					exitCode: output.exitCode,
+					stdout: decoder.decode(output.stdout),
+					stderr: decoder.decode(output.stderr),
+					duration,
+					timedOut: isTimedOut(output.exitCode, duration, options?.timeout),
+				}
+			}),
+		// Ignored output is what lets the process outlive this request.
+		spawn: (command, env) =>
+			Effect.flatMap(this.running, (container) =>
+				attempt("start a background command", () =>
+					container.exec(["bash", "-c", command], {
+						env: { ...EXEC_ENV, ...env },
+						stdout: "ignore",
+						stderr: "ignore",
+					}),
+				),
+			).pipe(Effect.asVoid),
+		restoreMirror: Effect.promise(() => this.restoreMirror()),
+		backupMirror: Effect.sync(() => this.backupMirror()),
+	}
+
 	private mirrorHost(): MirrorBackupHost {
-		const env = this.env
-		const localBucket = env.SANDBOX_BACKUP_LOCAL_BUCKET === "true"
+		const backups = this.backups
+		const unavailable = () =>
+			Promise.reject(new SandboxCallError({ message: "this Worker has no backup bucket" }))
 		return {
-			configured:
-				env.BACKUP_BUCKET !== undefined &&
-				(localBucket ||
-					(env.BACKUP_BUCKET_NAME !== undefined &&
-						env.R2_ACCESS_KEY_ID !== undefined &&
-						env.R2_SECRET_ACCESS_KEY !== undefined &&
-						env.CLOUDFLARE_ACCOUNT_ID !== undefined)),
-			exec: (command) => this.execWithSessionToken(command, SESSIONLESS),
-			createBackup: (options) => this.createBackup({ ...options, localBucket }),
-			restoreBackup: async (backup) => {
-				await this.restoreBackup({ ...backup, localBucket })
+			configured: backups !== undefined,
+			exec: (command) => Effect.runPromise(this.port.exec(command)),
+			createBackup: async (options) => {
+				if (backups === undefined) return unavailable()
+				await Effect.runPromise(this.running)
+				return backups.backup(options)
+			},
+			restoreBackup: async (record, dir) => {
+				if (backups === undefined) return unavailable()
+				await Effect.runPromise(this.running)
+				return backups.restore(record, { dir }).then(
+					() => "restored" as const,
+					// Missing, or no longer what the record describes: either way, never usable again.
+					(cause: unknown) =>
+						SandboxBackupError.is(cause) &&
+						(cause.code === "BACKUP_NOT_FOUND" || cause.code === "BACKUP_INTEGRITY")
+							? ("gone" as const)
+							: Promise.reject(cause),
+				)
 			},
 			readBackup: async () =>
 				Option.flatMap(Option.fromNullishOr(await this.ctx.storage.get(MIRROR_BACKUP_KEY)), (value) =>
 					decodeStoredMirrorBackup(value),
 				),
 			writeBackup: (backup) =>
-				this.ctx.storage.put(MIRROR_BACKUP_KEY, { id: backup.id, createdAt: backup.createdAt }),
+				this.ctx.storage.put(MIRROR_BACKUP_KEY, {
+					record: backup.record,
+					createdAt: backup.createdAt,
+				}),
 			forgetBackup: async () => {
 				await this.ctx.storage.delete(MIRROR_BACKUP_KEY)
 			},
@@ -88,8 +195,8 @@ export class Sandbox extends SdkSandbox<SandboxWorkerEnv> {
 		}
 	}
 
-	/** Awaited by the clone path: the seed has to be in place before the clone script looks for it. */
-	async restoreMirror(): Promise<void> {
+	/** Best effort and never rejects: a failed restore only costs a full fetch. */
+	private restoreMirror(): Promise<void> {
 		this.restoring ??= Effect.runPromise(
 			restoreMirror(this.mirrorHost()).pipe(
 				Effect.tap((outcome) =>
@@ -97,21 +204,22 @@ export class Sandbox extends SdkSandbox<SandboxWorkerEnv> {
 						Effect.annotateLogs({ "maple.sandbox.mirror.restore": outcome }),
 					),
 				),
+				Effect.catch((error) =>
+					Effect.logWarning("sandbox mirror restore failed").pipe(
+						Effect.annotateLogs({ "error.message": error.message }),
+					),
+				),
 				Effect.asVoid,
 			),
-			// Cleared after the assignment above even when the Effect finishes synchronously, which
-			// `Effect.ensuring` would not be: it would run first and leave a settled promise here.
+			// Not `Effect.ensuring`: on a synchronous finish it would clear before the assignment.
 		).finally(() => {
 			this.restoring = undefined
 		})
 		return this.restoring
 	}
 
-	/**
-	 * Returns at once: the archive is written in the background, which the container keeps alive
-	 * for. One at a time per repository; a call while one runs is dropped, not queued.
-	 */
-	async backupMirror(): Promise<void> {
+	/** Returns at once and archives in the background. A call while one runs is dropped. */
+	private backupMirror(): void {
 		if (this.backupRunning) return
 		this.backupRunning = true
 		this.ctx.waitUntil(
@@ -132,31 +240,14 @@ export class Sandbox extends SdkSandbox<SandboxWorkerEnv> {
 	}
 }
 
-/**
- * Idle containers sleep and take their checkouts with them, so a cold call pays
- * the clone again. Ten minutes is Cloudflare's own default and covers the gap
- * between an agent's tool calls without holding compute across investigations.
- */
-const SLEEP_AFTER = "10m"
-
 export default {
 	fetch: (request: Request, env: SandboxWorkerEnv): Promise<Response> =>
 		Effect.runPromise(
 			handle(request, {
 				token: env.SANDBOX_INTERNAL_SERVICE_TOKEN,
-				// Sessionless: every command is a fresh process. The default is one
-				// shared, long-lived shell, which carries `set -e` and any `exec` from
-				// one command into the next — a `git grep` that matched nothing would
-				// kill the session the following call expected to use.
-				open: (sandboxKey) =>
-					getSandbox(env.Sandbox, sandboxKey, {
-						sleepAfter: SLEEP_AFTER,
-						enableDefaultSession: false,
-					}),
+				run: (sandboxKey, exec) => env.Sandbox.getByName(sandboxKey).run(exec),
 			}).pipe(
-				// `handle` answers every request it can read, so a cause reaching here
-				// is a bug in the request-shaped part above it — before a token has been
-				// decoded, which is why this one says nothing beyond that it happened.
+				// `handle` answers every readable request; reaching here is a bug before auth.
 				Effect.catchCause((cause) =>
 					Effect.logError("sandbox worker failed", cause).pipe(
 						Effect.as(new Response("Sandbox error", { status: 500 })),

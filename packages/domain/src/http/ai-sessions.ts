@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { AiAgentSpanSchema, AiGenAiValuesSchema } from "../gen-ai"
 import { TinybirdDateTime } from "../query-engine"
@@ -352,7 +352,7 @@ export type AiSessionSpanCursor = Schema.Schema.Type<typeof AiSessionSpanCursor>
 
 /** A trace id as the warehouse stores it. Exported because the MCP span
  *  inspector validates its `trace_id` parameter against this same shape. */
-export const TraceIdHex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/))
+export const TraceIdHex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/u))
 
 /** Traces one span read may be pinned to — a turn's worth, not a session's. */
 export const AI_SESSION_SPANS_MAX_TRACE_IDS = 100
@@ -866,7 +866,7 @@ export const AiToolErrorTrendPoint = Schema.Struct({
 	/** ISO-8601 with a literal `Z`, like every Maple timeseries bucket — the
 	 *  shape every consumer parses back to an instant, checked so a drift in
 	 *  the read's `ISO_Z_FORMAT` is not a silently unparseable point. */
-	bucket: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/)),
+	bucket: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/u)),
 	calls: Schema.Number,
 })
 

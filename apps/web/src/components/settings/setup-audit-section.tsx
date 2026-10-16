@@ -1,14 +1,20 @@
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { countLabel } from "@maple/ui/lib/format"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2SetupAudit, V2SetupAuditCheck } from "@maple/domain/http/v2"
 
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Button, buttonVariants } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import {
-	ArrowRotateAnticlockwiseIcon,
 	CircleCheckIcon,
 	CircleInfoIcon,
 	CircleWarningIcon,
@@ -18,15 +24,17 @@ import {
 import { setupAuditAtom } from "@/lib/services/atoms/audit-atoms"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import type { SettingsTab } from "@/components/settings/settings-nav"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
+import { ErrorState } from "@/components/common/error-state"
+import { SettingsSection } from "@/components/settings/settings-section"
 
 type Severity = V2SetupAuditCheck["severity"]
 type Category = V2SetupAuditCheck["category"]
 
 const SEVERITY: Record<Severity, { label: string; icon: IconComponent; className: string }> = {
-	critical: { label: "Critical", icon: CircleWarningIcon, className: "text-destructive" },
-	warn: { label: "Warning", icon: CircleWarningIcon, className: "text-warning" },
-	info: { label: "Info", icon: CircleInfoIcon, className: "text-info" },
+	critical: { label: "Critical", icon: CircleWarningIcon, className: TONE_TEXT.crit },
+	warn: { label: "Warning", icon: CircleWarningIcon, className: TONE_TEXT.warn },
+	info: { label: "Info", icon: CircleInfoIcon, className: TONE_TEXT.info },
 } satisfies Record<Severity, { label: string; icon: IconComponent; className: string }>
 
 const SEVERITY_ORDER: ReadonlyArray<Severity> = ["critical", "warn", "info"]
@@ -34,7 +42,7 @@ const SEVERITY_ORDER: ReadonlyArray<Severity> = ["critical", "warn", "info"]
 /**
  * Each category's owning surface, so a finding is one click from where it gets fixed. `tab` targets a
  * sibling settings tab; `to` targets a standalone route. Kept as separate fields because TanStack
- * Router types `search` per route — a widened `object` does not typecheck.
+ * Router types `search` per route; a widened `object` does not typecheck.
  */
 type CategoryTarget =
 	| { label: string; fixLabel: string; tab: SettingsTab }
@@ -82,7 +90,7 @@ const CATEGORY_ORDER: ReadonlyArray<Category> = [
 
 function SummaryPill({ count, label, className }: { count: number; label: string; className: string }) {
 	return (
-		<span className={cn("font-mono text-[11px] leading-3.5", count === 0 && "text-muted-foreground")}>
+		<span className={cn("font-mono text-2xs leading-3.5", count === 0 && "text-muted-foreground")}>
 			<span className={cn("font-medium", count > 0 && className)}>{count}</span> {label}
 		</span>
 	)
@@ -103,9 +111,11 @@ function CheckRow({ check }: { check: V2SetupAuditCheck }) {
 			<div className="flex min-w-0 flex-col gap-1.5">
 				<div className="flex flex-wrap items-center gap-2">
 					<span className="text-sm font-medium">{check.title}</span>
-					<code className="text-muted-foreground font-mono text-[11px]">{check.id}</code>
+					<InlineCode variant="plain" className="text-2xs">
+						{check.id}
+					</InlineCode>
 					{check.status === "skip" && (
-						<Badge variant="secondary" className="text-[10px]">
+						<Badge variant="secondary" size="xs">
 							Skipped
 						</Badge>
 					)}
@@ -116,16 +126,16 @@ function CheckRow({ check }: { check: V2SetupAuditCheck }) {
 				{check.affected.length > 0 && (
 					<div className="flex flex-wrap items-center gap-1.5 pt-0.5">
 						{check.affected.map((entity) => (
-							<span
+							<InlineCode
 								key={`${entity.kind}:${entity.name}`}
 								title={entity.note ?? undefined}
-								className="bg-muted/60 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[11px] leading-4"
+								className="text-muted-foreground text-2xs leading-4"
 							>
 								{entity.name}
-							</span>
+							</InlineCode>
 						))}
 						{check.affected_count > check.affected.length && (
-							<span className="text-muted-foreground/70 text-[11px]">
+							<span className="text-muted-foreground/70 text-2xs">
 								+{check.affected_count - check.affected.length} more
 							</span>
 						)}
@@ -159,13 +169,14 @@ function CategoryCard({
 	const meta = CATEGORY[category]
 	const findings = checks.filter((check) => check.status === "fail").length
 	return (
-		<div className="bg-card flex flex-col rounded-lg border">
-			<div className="flex items-center gap-3 px-4 pt-4 pb-3">
-				<h3 className="text-sm font-medium">{meta.label}</h3>
-				<span className="text-muted-foreground font-mono text-[11px]">
-					{findings > 0 ? `${findings} finding${findings === 1 ? "" : "s"}` : "clear"}
-				</span>
-				<div className="grow" />
+		<Panel>
+			<div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
+				<h3 className="flex items-center gap-3 text-sm font-medium">
+					{meta.label}
+					<span className="text-muted-foreground font-mono text-2xs font-normal">
+						{findings > 0 ? countLabel(findings, "finding") : "clear"}
+					</span>
+				</h3>
 				<CategoryLink
 					target={meta}
 					label={meta.fixLabel}
@@ -175,11 +186,11 @@ function CategoryCard({
 			{checks.map((check) => (
 				<CheckRow key={check.id} check={check} />
 			))}
-		</div>
+		</Panel>
 	)
 }
 
-function Report({ audit }: { audit: V2SetupAudit }) {
+function Report({ audit, refreshing }: { audit: V2SetupAudit; refreshing: boolean }) {
 	const [showPassing, setShowPassing] = useState(false)
 	const refresh = useAtomRefresh(setupAuditAtom)
 
@@ -199,82 +210,90 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 
 	if (audit.data_status === "no_data") {
 		return (
-			<div className="bg-card flex flex-col items-center gap-3 rounded-lg border px-4 py-10 text-center">
-				<ServerIcon size={20} className="text-muted-foreground/60" />
-				<div className="flex flex-col gap-1">
-					<p className="text-sm font-medium">No telemetry yet</p>
-					<p className="text-muted-foreground max-w-sm text-xs leading-relaxed">
-						The audit runs once your first service reports in. Connect one from the Ingestion tab
-						and come back.
-					</p>
-				</div>
-				<EmptyActions>
-					<Link
-						to="/settings"
-						search={{ tab: "ingestion" }}
-						className={buttonVariants({ variant: "outline", size: "sm" })}
-					>
-						Go to Ingestion
-					</Link>
-					<DocsLink page="quickstart" />
-				</EmptyActions>
-			</div>
+			<Panel>
+				<Empty className="py-10">
+					<EmptyHeader>
+						<EmptyMedia variant="icon">
+							<ServerIcon size={16} />
+						</EmptyMedia>
+						<EmptyTitle>No telemetry yet</EmptyTitle>
+						<EmptyDescription>
+							The audit runs once your first service reports in. Connect one from the Ingestion
+							tab and come back.
+						</EmptyDescription>
+					</EmptyHeader>
+					<EmptyActions>
+						<Link
+							to="/settings"
+							search={{ tab: "ingestion" }}
+							className={buttonVariants({ variant: "outline", size: "sm" })}
+						>
+							Go to Ingestion
+						</Link>
+						<DocsLink page="quickstart" />
+					</EmptyActions>
+				</Empty>
+			</Panel>
 		)
 	}
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="bg-card flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border px-4 py-3">
-				<SummaryPill count={summary.critical} label="critical" className="text-destructive" />
-				<SummaryPill count={summary.warn} label="warning" className="text-warning" />
-				<SummaryPill count={summary.info} label="info" className="text-info" />
+			<Panel className="flex-row flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+				<SummaryPill count={summary.critical} label="critical" className={TONE_TEXT.crit} />
+				<SummaryPill count={summary.warn} label="warning" className={TONE_TEXT.warn} />
+				<SummaryPill count={summary.info} label="info" className={TONE_TEXT.info} />
 				<span className="text-muted-foreground/40">·</span>
-				<SummaryPill count={summary.pass} label="passing" className="text-success" />
+				<SummaryPill count={summary.pass} label="passing" className="text-severity-info" />
 				{summary.skip > 0 && (
 					<SummaryPill count={summary.skip} label="skipped" className="text-muted-foreground" />
 				)}
 				<div className="grow" />
-				<span className="text-muted-foreground/70 text-[11px]">
-					{formatRelativeTime(audit.generated_at)}
-				</span>
-				<Button variant="ghost" size="sm" onClick={() => refresh()}>
-					<ArrowRotateAnticlockwiseIcon size={14} />
-					Re-run
-				</Button>
-			</div>
+				<RelativeTime value={audit.generated_at} className="text-muted-foreground/70 text-2xs" />
+				<RefreshButton
+					variant="ghost"
+					label="Re-run"
+					pending={refreshing}
+					onRefresh={() => refresh()}
+				/>
+			</Panel>
 
 			{!audit.telemetry_checks_available && (
-				<div className="border-warning/30 bg-warning/5 text-muted-foreground rounded-lg border px-4 py-3 text-xs leading-relaxed">
-					<span className="text-foreground font-medium">Telemetry checks skipped.</span> Your
-					warehouse could not be queried, so only configuration was audited. The findings below
-					still apply.
-				</div>
+				<Alert variant="warn" className="px-4 text-xs leading-relaxed">
+					<CircleWarningIcon />
+					<AlertTitle>Telemetry checks skipped.</AlertTitle>
+					<AlertDescription>
+						Your warehouse could not be queried, so only configuration was audited. The findings
+						below still apply.
+					</AlertDescription>
+				</Alert>
 			)}
 
 			{findingCount === 0 && !showPassing ? (
-				<div className="bg-card flex flex-col items-center gap-2 rounded-lg border px-4 py-10 text-center">
-					<CircleCheckIcon size={20} className="text-success" />
+				<Panel className="items-center gap-2 px-4 py-10 text-center">
+					<CircleCheckIcon size={20} className="text-severity-info" />
 					<p className="text-sm font-medium">Everything checks out</p>
 					<p className="text-muted-foreground text-xs">
-						All {summary.pass} checks passed. Alerts can deliver, and your telemetry follows the
-						conventions Maple reads.
+						All {countLabel(summary.pass, "check")} passed. Alerts can deliver, and your telemetry
+						follows the conventions Maple reads.
 					</p>
-				</div>
+				</Panel>
 			) : (
 				grouped.map((group) => (
 					<CategoryCard key={group.category} category={group.category} checks={group.checks} />
 				))
 			)}
 
-			<button
-				type="button"
+			<Button
+				variant="link"
+				size="xs"
 				onClick={() => setShowPassing((value) => !value)}
-				className="text-muted-foreground hover:text-foreground self-start text-xs transition-colors"
+				className="h-auto self-start p-0 text-muted-foreground hover:text-foreground"
 			>
 				{showPassing
 					? "Hide passing checks"
 					: `Show ${summary.pass + summary.skip} passing and skipped checks`}
-			</button>
+			</Button>
 		</div>
 	)
 }
@@ -282,26 +301,18 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 export function SetupAuditSection() {
 	const result = useAtomValue(setupAuditAtom)
 
-	if (Result.isFailure(result)) {
-		return (
-			<div className="bg-card flex flex-col items-center gap-3 rounded-lg border px-4 py-10 text-center">
-				<CircleWarningIcon size={20} className="text-destructive" />
-				<p className="text-sm font-medium">Could not run the audit</p>
-				<p className="text-muted-foreground max-w-sm text-xs leading-relaxed">
-					Your workspace configuration could not be read. Try again in a moment.
-				</p>
-			</div>
-		)
-	}
-
-	if (!Result.isSuccess(result)) {
-		return (
-			<div className="flex flex-col gap-4">
-				<Skeleton className="h-12 w-full rounded-lg" />
-				<Skeleton className="h-48 w-full rounded-lg" />
-			</div>
-		)
-	}
-
-	return <Report audit={result.value} />
+	return (
+		<SettingsSection title="Setup audit" framed={false}>
+			{Result.isFailure(result) ? (
+				<ErrorState error={result.cause} title="Could not run the audit" />
+			) : !Result.isSuccess(result) ? (
+				<div className="flex flex-col gap-4">
+					<Skeleton className="h-12 w-full rounded-md" />
+					<Skeleton className="h-48 w-full rounded-md" />
+				</div>
+			) : (
+				<Report audit={result.value} refreshing={result.waiting} />
+			)}
+		</SettingsSection>
+	)
 }

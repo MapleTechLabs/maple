@@ -4,19 +4,17 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
-import {
-	CheckIcon,
-	CircleWarningIcon,
-	FloppyDiskIcon,
-	LoaderIcon,
-	SquareTerminalIcon,
-} from "@/components/icons"
+import { CheckIcon, CircleWarningIcon, FloppyDiskIcon, SquareTerminalIcon } from "@/components/icons"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
 
 interface RuleActionBarProps {
 	editing: boolean
+	/** Unsaved field changes while editing; null on a new rule. */
+	changeCount?: number | null
 	saving: boolean
 	validationIssues: string[]
+	/** The rule as one sentence, so the whole condition reads without scrolling. */
+	summary?: string
 	onCancel: () => void
 	onSave: () => void
 	onShowTemplates?: () => void
@@ -35,8 +33,10 @@ const MAX_VISIBLE_ISSUES = 3
  */
 export function RuleActionBar({
 	editing,
+	changeCount = null,
 	saving,
 	validationIssues,
+	summary,
 	onCancel,
 	onSave,
 	onShowTemplates,
@@ -68,29 +68,44 @@ export function RuleActionBar({
 							onClick={onShowTemplates}
 							className="hidden sm:inline-flex"
 						>
-							<SquareTerminalIcon size={14} />
+							<SquareTerminalIcon />
 							Templates
 						</Button>
 					)}
-					<ValidationSummary
+					<div className="flex min-w-0 flex-col gap-0.5">
+						{summary && (
+							<p className="truncate text-sm text-foreground" title={summary}>
+								{summary}
+							</p>
+						)}
+						<ValidationSummary
 						ready={ready}
 						visibleIssues={visibleIssues}
 						hiddenCount={hiddenCount}
 						fullList={validationIssues}
 					/>
+					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
+					{changeCount !== null && (
+						<span className="hidden text-xs text-muted-foreground sm:inline">
+							{changeCount === 0
+								? "No changes"
+								: `${changeCount} unsaved ${changeCount === 1 ? "change" : "changes"}`}
+						</span>
+					)}
 					{cancelSlot ?? (
 						<Button type="button" variant="outline" onClick={onCancel}>
 							Cancel
 						</Button>
 					)}
-					<Button type="button" onClick={onSave} disabled={!ready || saving}>
-						{saving ? (
-							<LoaderIcon size={14} className="animate-spin" />
-						) : (
-							<FloppyDiskIcon size={14} />
-						)}
+					<Button
+						type="button"
+						onClick={onSave}
+						disabled={!ready || changeCount === 0}
+						loading={saving}
+					>
+						<FloppyDiskIcon />
 						{editing ? "Save changes" : "Create rule"}
 					</Button>
 				</div>
@@ -112,7 +127,7 @@ function ValidationSummary({
 }) {
 	if (ready) {
 		return (
-			<span className="flex items-center gap-1.5 text-xs text-success-foreground">
+			<span className="flex items-center gap-1.5 text-xs text-severity-info">
 				<CheckIcon size={14} />
 				Ready to save
 			</span>
@@ -121,7 +136,7 @@ function ValidationSummary({
 	const summary = visibleIssues.join(", ") + (hiddenCount > 0 ? ` +${hiddenCount} more` : "")
 	return (
 		<span className={cn("flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground")}>
-			<CircleWarningIcon size={14} className="shrink-0 text-warning" />
+			<CircleWarningIcon size={14} className="shrink-0 text-severity-warn" />
 			<span className="truncate">
 				Missing: <span className="text-foreground">{summary}</span>
 			</span>
@@ -129,9 +144,10 @@ function ValidationSummary({
 				<Tooltip>
 					<TooltipTrigger
 						render={
-							<button
-								type="button"
-								className="rounded-sm px-1 text-xs underline decoration-dotted underline-offset-2 hover:text-foreground"
+							<Button
+								variant="link"
+								size="xs"
+								className="text-muted-foreground underline decoration-dotted hover:text-foreground"
 							/>
 						}
 					>

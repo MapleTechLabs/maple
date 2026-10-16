@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -65,7 +65,7 @@ const makeHarness = () => {
 		Layer.provide(Phase1ResourceStubsLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),

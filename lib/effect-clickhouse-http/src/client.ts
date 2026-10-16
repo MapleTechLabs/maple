@@ -1,5 +1,6 @@
-import { Context, Effect, Encoding, Layer, Option, Redacted, type Scope, Stream, type Types } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { Context, Effect, Layer, Option, Redacted, type Scope, Stream, type Types } from "effect"
+import { Base64 } from "effect/encoding"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ClickHouseConfigError,
 	ClickHouseRedirectError,
@@ -111,7 +112,7 @@ export const make = (
 		const http = yield* HttpClient.HttpClient
 		// UTF-8 Basic auth: `HttpClientRequest.basicAuth` goes through `btoa`, which
 		// rejects anything outside Latin-1 and mis-encodes what it accepts.
-		const authorization = `Basic ${Encoding.encodeBase64(
+		const authorization = `Basic ${Base64.encode(
 			`${config.username ?? "default"}:${config.password ? Redacted.value(config.password) : ""}`,
 		)}`
 

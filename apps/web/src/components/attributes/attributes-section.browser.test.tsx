@@ -9,11 +9,11 @@ afterEach(() => {
 
 /**
  * The gateway stamps `maple_*` keys on spans as well as resources (`maple_ai.*`
- * since the AI-session work), so the "Maple Internal" fold has to key off the
+ * since the AI-session work), so the "Maple internal" fold has to key off the
  * prefix wherever an attribute map is rendered — not off which map it is.
  */
 describe("AttributesSection", () => {
-	it("folds maple_ keys out of the main table into Maple Internal", () => {
+	it("folds maple_ keys out of the main table into Maple internal", () => {
 		render(
 			<AttributesSection
 				title="Span Attributes"
@@ -25,7 +25,7 @@ describe("AttributesSection", () => {
 			/>,
 		)
 
-		expect(screen.getByText("Maple Internal (2)")).toBeTruthy()
+		expect(screen.getByText("Maple internal (2)")).toBeTruthy()
 		// Collapsed by default: the internal keys are not in the open table.
 		expect(screen.queryByText("maple_ai.vendor.id")).toBeNull()
 		expect(screen.getByText("http.request.method")).toBeTruthy()
@@ -39,7 +39,7 @@ describe("AttributesSection", () => {
 			/>,
 		)
 
-		expect(screen.getByText("AI Attributes")).toBeTruthy()
+		expect(screen.getByText("AI attributes")).toBeTruthy()
 		expect(screen.getByText("Input")).toBeTruthy()
 		// The key column is the label now; the key itself is only the copy payload.
 		expect(screen.queryByText("gen_ai.usage.input_tokens")).toBeNull()
@@ -55,7 +55,7 @@ describe("AttributesSection", () => {
 			/>,
 		)
 
-		expect(screen.getByText("AI Attributes")).toBeTruthy()
+		expect(screen.getByText("AI attributes")).toBeTruthy()
 		expect(screen.queryByText(/No span attributes available/i)).toBeNull()
 	})
 
@@ -68,6 +68,6 @@ describe("AttributesSection", () => {
 	it("renders no fold when nothing is internal", () => {
 		render(<AttributesSection title="Span Attributes" attributes={{ "http.route": "/v1" }} />)
 
-		expect(screen.queryByText(/Maple Internal/)).toBeNull()
+		expect(screen.queryByText(/Maple internal/)).toBeNull()
 	})
 })

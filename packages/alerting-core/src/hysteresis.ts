@@ -49,8 +49,6 @@ export const HysteresisStates = Machine.state({
 	},
 })
 
-const targets = Machine.targets(HysteresisStates)
-
 /** One evaluated window, in the order the scheduler saw it. */
 export const HysteresisEvent = Machine.eventsFromSchemas(
 	Schema.TaggedUnion({
@@ -82,17 +80,17 @@ export const IncidentHysteresis = Machine.make({
 	emittedEvents: HysteresisEmit,
 	branches: {
 		breach: {
-			breaching: { target: targets.root.Breaching },
-			opened: { target: targets.root.Open },
+			breaching: { target: "Breaching" },
+			opened: { target: "Open" },
 		},
 		recover: {
-			open: { target: targets.root.Open },
-			resolved: { target: targets.root.Clear },
+			open: { target: "Open" },
+			resolved: { target: "Clear" },
 		},
 	},
 }).handle({
 	initial: {
-		target: targets.root.Clear,
+		target: "Clear",
 		data: () => ({ consecutiveHealthy: 0, cooldownUntilMs: null }),
 	},
 	states: {
@@ -118,7 +116,7 @@ export const IncidentHysteresis = Machine.make({
 					},
 				},
 				Recovered: {
-					update: targets.root.Clear,
+					update: "Clear",
 					data: ({ state, event }) => ({
 						consecutiveHealthy: Math.min(
 							state.consecutiveHealthy + 1,
@@ -155,7 +153,7 @@ export const IncidentHysteresis = Machine.make({
 					},
 				},
 				Recovered: {
-					target: targets.root.Clear,
+					target: "Clear",
 					data: ({ state, event }) => ({
 						consecutiveHealthy: Math.min(1, event.config.healthyToResolve),
 						cooldownUntilMs: carryCooldown(state.cooldownUntilMs, event.nowMs),
@@ -167,7 +165,7 @@ export const IncidentHysteresis = Machine.make({
 		Open: {
 			on: {
 				Breached: {
-					update: targets.root.Open,
+					update: "Open",
 					data: ({ state, event }) => ({
 						consecutiveBreaches: Math.min(
 							state.consecutiveBreaches + 1,

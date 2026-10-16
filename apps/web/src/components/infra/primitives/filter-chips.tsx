@@ -13,7 +13,9 @@
 
 import { useState } from "react"
 
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { XmarkIcon } from "@/components/icons"
+import { MonoLinkButton } from "./mono-link-button"
 
 export interface FilterChip<Key extends string> {
 	readonly key: Key
@@ -25,7 +27,7 @@ export interface FilterChip<Key extends string> {
 const VISIBLE_LIMIT = 6
 
 const CHIP_CLASS =
-	"inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-[10px] text-muted-foreground"
+	"inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
 
 export function FilterChipRail<Key extends string>({
 	chips,
@@ -47,32 +49,23 @@ export function FilterChipRail<Key extends string>({
 			{visible.map((chip) => (
 				<span key={`${chip.key}:${chip.value}`} className={CHIP_CLASS}>
 					<span className="max-w-[22ch] truncate text-foreground/80">{chip.label}</span>
-					<button
-						type="button"
+					<IconButton
+						size="icon-2xs"
+						label={`Remove ${chip.label}`}
+						tooltip={false}
 						onClick={() => onRemove(chip)}
-						aria-label={`Remove ${chip.label}`}
-						className="rounded-xs p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
+						className="text-muted-foreground hover:text-foreground"
 					>
-						<XmarkIcon size={9} />
-					</button>
+						<XmarkIcon />
+					</IconButton>
 				</span>
 			))}
 			{hidden > 0 ? (
-				<button
-					type="button"
-					onClick={() => setExpanded(true)}
-					className="font-mono text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-				>
-					+{hidden} more
-				</button>
+				<MonoLinkButton onClick={() => setExpanded(true)}>+{hidden} more</MonoLinkButton>
 			) : null}
-			<button
-				type="button"
-				onClick={onClear}
-				className="ml-1 font-mono text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-			>
+			<MonoLinkButton onClick={onClear} className="ml-1">
 				Clear all
-			</button>
+			</MonoLinkButton>
 		</div>
 	)
 }

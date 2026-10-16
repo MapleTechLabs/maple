@@ -44,12 +44,12 @@ const faqs = [
     {
         question: "Do failed requests count against the Apdex score?",
         answer:
-            "Yes. A request that returns an error counts as frustrated no matter how fast it was, because a 200 millisecond 500 Internal Server Error did not satisfy anybody. This is what makes Apdex a proxy for user experience rather than a pure latency statistic, and it is why Apdex catches fast-failing dependencies that a latency alert sleeps through.",
+            "Yes. A request that returns an error counts as frustrated no matter how fast it was, because a 200 millisecond 500 Internal Server Error did not satisfy anybody. That makes Apdex a proxy for user experience as well as latency, and it is why Apdex catches fast-failing dependencies that a latency alert misses.",
     },
     {
         question: "Should I alert on Apdex or on p95 latency?",
         answer:
-            "Both, for different reasons. Apdex measures how many users had a bad time, including the ones whose requests failed, so it is the better single page-me signal. Percentiles measure how bad the slow tail got, which is what you want once you are already looking. Alert on Apdex, debug on p99.",
+            "Both, for different reasons. Apdex measures how many users had a bad time, including the ones whose requests failed, so it is the better single page-me signal. Percentiles measure how bad the slow tail got, which is what you want once you are already looking. In practice, alert on Apdex and debug with p99.",
     },
     {
         question: "Why is my Apdex score flat at 1.0?",
@@ -257,7 +257,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow">03 · The one input</p>
                     <h2>How to choose T, the Apdex target time</h2>
                     <p>
-                        <strong>T</strong> is the whole rule. It sets the satisfied boundary directly, and the frustrated boundary follows from it, because the tolerating band always ends at 4T. Move T from 500ms to 1s and you have also moved the frustrated line from 2s to 4s. Two teams reporting an Apdex of 0.95 against different targets are not reporting the same thing.
+                        <strong>T</strong> is the only setting. It sets the satisfied boundary directly, and the frustrated boundary follows from it, because the tolerating band always ends at 4T. Move T from 500ms to 1s and you have also moved the frustrated line from 2s to 4s. Two teams reporting an Apdex of 0.95 against different targets are not reporting the same thing.
                     </p>
                     <p>
                         Pick T as the latency at which your users stop perceiving the response as immediate, per class of traffic:
@@ -294,7 +294,7 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        The honest way to choose is empirical: set T, look at a healthy week, and check that the score reads somewhere in the 0.9 to 1.0 band. That leaves room below for a threshold to mean something. If the chart is pinned at 1.0, T is too generous; if it never gets near 0.95, T is too tight or the service is genuinely slow.
+                        Choose it empirically: set T, look at a healthy week, and check that the score reads somewhere in the 0.9 to 1.0 band. That leaves room below for a threshold to mean something. If the chart is pinned at 1.0, T is too generous; if it never gets near 0.95, T is too tight or the service is genuinely slow.
                     </p>
                 </section>
 
@@ -302,7 +302,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow">04 · Interpretation</p>
                     <h2>What is a good Apdex score?</h2>
                     <p>
-                        The conventional bands below are a reasonable default, and they are the ones most tools ship with. Read them as relative to the T you chose, not as absolutes.
+                        The conventional bands below are a reasonable default, and they are the ones most tools ship with. They only mean something relative to the T you chose.
                     </p>
 
                     <div class="apdex-scale">
@@ -314,7 +314,7 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        0.8 is a convention, not a law. The number that matters is where your service sits when it is healthy, and how far it has to fall before you would want to be woken up. Publish T next to any score you share; without it the number is not comparable to anyone else's.
+                        0.8 is a convention. The number that matters is where your service sits when it is healthy, and how far it has to fall before you would want to be woken up. Publish T next to any score you share; without it the number is not comparable to anyone else's.
                     </p>
                 </section>
 
@@ -322,7 +322,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow">05 · Comparison</p>
                     <h2>Apdex vs p95 latency: where the two disagree</h2>
                     <p>
-                        A p95 alert fires on the shape of the tail; Apdex fires on its size. Most of the time they agree — if a bad deploy makes 30% of requests take 3 seconds, a p95 alert at 1s fires and so does Apdex. The cases worth knowing are the ones where they disagree.
+                        A p95 alert fires on the shape of the tail; Apdex fires on its size. Most of the time they agree. If a bad deploy makes 30% of requests take 3 seconds, a p95 alert at 1s fires and so does Apdex. The cases worth knowing are the ones where they disagree.
                     </p>
 
                     <div class="overflow-x-auto">
@@ -334,7 +334,7 @@ const articleJsonLd = {
                                 <tr><td>30% of requests slow to 3s</td><td>Fires</td><td>Falls sharply</td></tr>
                                 <tr><td>A dependency fails 15% of requests in 40ms</td><td>Gets <em>faster</em>, stays quiet</td><td>0.97 → about 0.83</td></tr>
                                 <tr><td>The slowest 3% go from 4s to 40s</td><td>Moves a long way</td><td>Unchanged</td></tr>
-                                <tr><td>Traffic drops to a handful of requests</td><td>Noisy</td><td>Noisy — needs a minimum sample count</td></tr>
+                                <tr><td>Traffic drops to a handful of requests</td><td>Noisy</td><td>Noisy without a minimum sample count</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -357,7 +357,7 @@ const articleJsonLd = {
                             ["Sampling shifts it", "Under uniform sampling the ratio stays representative. A policy that preferentially keeps slow or failed traces will drag the score below reality."],
                             ["Low traffic is noisy", "A handful of requests moves a ratio a long way. Require a minimum sample count before a score is allowed to trigger anything."],
                             ["It measures what you instrument", "A service that swallows failures internally and returns success from its entry point looks healthy at any threshold."],
-                            ["The bands are a convention", "The 4T frustrated boundary and the 0.8 alerting line are inherited defaults, not properties of your users."],
+                            ["The bands are a convention", "The 4T frustrated boundary and the 0.8 alerting line are defaults inherited from the spec, and may not match your users."],
                         ].map(([title, body], index) => (
                             <div><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{body}</p></div></div>
                         ))}
@@ -368,13 +368,13 @@ const articleJsonLd = {
                     <p class="guide-eyebrow">07 · In practice</p>
                     <h2>Measuring Apdex from your existing traces</h2>
                     <p>
-                        Apdex needs no special instrumentation. If a service already emits <a href="/opentelemetry">OpenTelemetry</a> traces, every ingredient is present: each entry-point span carries a duration and a status, which is exactly the satisfied / tolerating / frustrated decision.
+                        Apdex needs no special instrumentation. If a service already emits <a href="/opentelemetry">OpenTelemetry</a> traces, it already has what Apdex needs: each entry-point span carries a duration and a status, which is exactly the satisfied / tolerating / frustrated decision.
                     </p>
 
                     <ol class="guide-steps">
                         <li>
                             <span>01</span>
-                            <div><h3>Pick the request population</h3><p>Score the spans that represent a request arriving — server and consumer spans, and trace roots — not every internal span. Counting internal work inflates the denominator with requests nobody made.</p></div>
+                            <div><h3>Pick the request population</h3><p>Score only the spans that represent a request arriving: server and consumer spans, and trace roots. Counting internal work inflates the denominator with requests nobody made.</p></div>
                         </li>
                         <li>
                             <span>02</span>
@@ -382,7 +382,7 @@ const articleJsonLd = {
                         </li>
                         <li>
                             <span>03</span>
-                            <div><h3>Count errors as frustrated</h3><p>Any span with an error status scores zero regardless of duration. Skip this and you have built a latency metric wearing an Apdex label.</p></div>
+                            <div><h3>Count errors as frustrated</h3><p>Any span with an error status scores zero regardless of duration. Without this rule the score is only a latency metric.</p></div>
                         </li>
                         <li>
                             <span>04</span>
@@ -398,7 +398,7 @@ const articleJsonLd = {
                         <p class="guide-kicker">Apdex in Maple</p>
                         <h3>A score on every service, and an alert rule behind it</h3>
                         <p>
-                            Maple computes Apdex over the entry-point spans of each service from the OpenTelemetry data you already send, draws it on the service page, and ships a <strong>Low Apdex score</strong> alert template — target 500ms, fires below 0.8 over five minutes, every field editable. The setup walkthrough, the tuning fields that keep it from paging you at 3am, and the API body are in the alerting docs.
+                            Maple computes Apdex over the entry-point spans of each service from the OpenTelemetry data you already send, draws it on the service page, and ships a <strong>Low Apdex score</strong> alert template (target 500ms, fires below 0.8 over five minutes, every field editable). The setup walkthrough, the tuning fields that keep it from paging you at 3am, and the API body are in the alerting docs.
                         </p>
                         <div class="mt-6 flex flex-wrap gap-3">
                             <a href="/docs/alerting/apdex-alerts#setting-up-an-apdex-alert-in-maple" class="guide-button guide-button--primary">Set up an Apdex alert</a>

@@ -1,5 +1,6 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Dialog, DialogPopup } from "@maple/ui/components/ui/dialog"
 import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -119,19 +120,19 @@ function TitleRow({
 			<Glyph
 				aria-hidden
 				size={14}
-				className={cn("shrink-0", errored ? "text-destructive" : CATEGORY_TEXT[category])}
+				className={cn("shrink-0", errored ? "text-severity-error" : CATEGORY_TEXT[category])}
 			/>
 			<span className="min-w-0 truncate font-medium font-mono text-sm">{span.spanName}</span>
 			{subtitle !== "" && <span className="text-muted-foreground text-xs">{subtitle}</span>}
 			<div className="ml-auto flex items-center gap-2">
 				{onOpenTraceView !== undefined && (
-					<Button variant="outline" size="sm" className="h-6.5 text-xs" onClick={onOpenTraceView}>
+					<Button variant="outline" size="xs" onClick={onOpenTraceView}>
 						Open in Traces view
 					</Button>
 				)}
-				<Button variant="ghost" size="icon-sm" aria-label="Close span detail" onClick={onClose}>
-					<XmarkIcon size={14} />
-				</Button>
+				<IconButton label="Close span detail" onClick={onClose}>
+					<XmarkIcon />
+				</IconButton>
 			</div>
 		</div>
 	)

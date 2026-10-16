@@ -5,7 +5,7 @@ import { Schema } from "effect"
 // Must not start with an underscore so `$name` references can never collide
 // with the `$__` built-in macros ($__startTime, $__timeFilter, ...).
 export const DashboardVariableName = Schema.String.check(
-	Schema.isPattern(/^[A-Za-z][A-Za-z0-9_]*$/),
+	Schema.isPattern(/^[A-Za-z][A-Za-z0-9_]*$/u),
 ).annotate({ identifier: "@maple/DashboardVariableName", title: "Dashboard Variable Name" })
 export type DashboardVariableName = Schema.Schema.Type<typeof DashboardVariableName>
 

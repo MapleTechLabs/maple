@@ -49,8 +49,12 @@ describe("MCP tool catalog contract", () => {
 	it("publishes an object-rooted output schema for every tool", () => {
 		for (const tool of mapleToolCatalog) {
 			if (tool.outputSchema === undefined) continue
-			const output = tool.outputSchema
-			expect(() => toOutputSchema(output), tool.name).not.toThrow()
+			const document = toOutputSchema(tool.outputSchema)
+			// A `$ref` root points into `$defs`; follow it to the type a client sees.
+			const ref = typeof document.$ref === "string" ? document.$ref.replace("#/$defs/", "") : undefined
+			const defs = isRecord(document.$defs) ? document.$defs : {}
+			const root = ref === undefined ? document : defs[ref]
+			expect(isRecord(root) ? root.type : undefined, tool.name).toBe("object")
 		}
 	})
 
@@ -73,6 +77,15 @@ describe("MCP tool catalog contract", () => {
 			}
 		}
 		expect(offenders).toEqual([])
+	})
+
+	it("publishes the multi-issue transition with an array of ids", () => {
+		const tool = mapleToolCatalog.find((candidate) => candidate.name === "transition_error_issues")
+		expect(tool?.hints?.readOnly).toBe(false)
+		const ids = properties(tool === undefined ? {} : inputSchemaOf(tool)).find(
+			([name]) => name === "issue_ids",
+		)
+		expect(JSON.stringify(ids?.[1])).toContain('"array"')
 	})
 
 	it("points every alias at a parameter the tool has", () => {

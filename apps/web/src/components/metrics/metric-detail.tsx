@@ -4,8 +4,10 @@ import { Suspense } from "react"
 import { Result } from "@/lib/effect-atom"
 import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
+import { ChartLoading } from "@maple/ui/components/charts/_shared/chart-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ChartCard } from "@/components/common/chart-card"
+import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
 import { MetricQueryControls, type MetricQueryPatch } from "./metric-query-controls"
 import { MetricBreakdown, appendWhereFilter } from "./metric-breakdown"
@@ -22,6 +24,7 @@ import {
 	type MetricsQueryDraft,
 	type QueryBuilderMetricType,
 } from "@maple/query-engine/query-builder"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 export interface MetricDetailQueryState {
 	type?: QueryBuilderMetricType
@@ -143,6 +146,8 @@ export function buildMetricExplorerDraft(
 	}
 }
 
+const GROUP_BY_SERIES_LIMIT = 20
+
 interface MetricDetailProps {
 	metricName: string
 	state: MetricDetailQueryState
@@ -162,25 +167,26 @@ export function MetricDetail({ metricName, state, startTime, endTime, onPatch }:
 		.onInitial(() => (
 			<div className="space-y-4">
 				<Skeleton className="h-14 w-full" />
-				<Skeleton className="h-80 w-full" />
+				<ChartLoading variant="area" height={320} />
 			</div>
 		))
-		.onError((error) => <QueryErrorState error={error} titleOverride="Failed to load metric" />)
+		.onError((error) => <ErrorState error={error} title="Failed to load metric" />)
 		.onSuccess((response) => {
 			const summary = summarizeCatalogRows(response.data, metricName, state.type)
 			if (!summary) {
 				return (
-					<div className="flex flex-col items-center justify-center rounded-md border border-dashed p-12 text-center">
-						<p className="text-sm font-medium">No data for this metric in the selected range</p>
-						<p className="mt-2 max-w-md text-sm text-muted-foreground">
-							<span className="font-mono">{metricName}</span> has no datapoints between{" "}
-							{startTime} and {endTime}. Widen the time range, or check that the service
-							emitting it is still running.
+					<EmptyMessage dashed className="flex flex-col items-center p-12">
+						<p className="font-medium text-foreground">
+							No data for this metric in the selected range
+						</p>
+						<p className="mt-2 max-w-md">
+							<span className="font-mono">{metricName}</span> has no datapoints in this window.
+							Widen the time range, or check that the service emitting it is still running.
 						</p>
 						<span className="mt-3">
 							<DocsLink page="metrics" />
 						</span>
-					</div>
+					</EmptyMessage>
 				)
 			}
 			return (
@@ -260,9 +266,15 @@ function MetricChart({
 	startTime: string
 	endTime: string
 }) {
+	// A group-by can fan out to thousands of series; cap the chart to the top N.
+	const grouped = draft.groupBy.length > 0
 	const result = useRefreshableAtomValue(
 		getQueryBuilderTimeseriesResultAtom({
-			data: { startTime, endTime, queries: [draft] },
+			data: {
+				startTime,
+				endTime,
+				queries: [grouped ? { ...draft, seriesLimit: String(GROUP_BY_SERIES_LIMIT) } : draft],
+			},
 		}),
 	)
 
@@ -270,27 +282,42 @@ function MetricChart({
 	if (!entry) return null
 	const ChartComponent = entry.component
 
+	// The cap runs in SQL, so the total is unknown; flag only when it was hit.
+	const capped =
+		grouped &&
+		Result.isSuccess(result) &&
+		new Set(result.value.data.flatMap((row) => Object.keys(row).filter((k) => k !== "bucket"))).size >=
+			GROUP_BY_SERIES_LIMIT
+
 	const queryLabel = `${draft.aggregation}(${draft.metricName})${
 		draft.groupBy[0] ? ` by ${draft.groupBy[0]}` : ""
 	}`
 
 	return (
-		<div className="rounded-md border bg-card">
-			<div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-				<span className="truncate font-mono text-xs text-muted-foreground">{queryLabel}</span>
-				{unit && <span className="shrink-0 text-xs text-muted-foreground">unit: {unit}</span>}
-			</div>
+		<ChartCard
+			title={
+				<span className="font-mono" title={queryLabel}>
+					{queryLabel}
+				</span>
+			}
+			legend={
+				capped || unit ? (
+					<span className="flex items-center gap-3 text-xs text-muted-foreground">
+						{capped ? <span>Top {GROUP_BY_SERIES_LIMIT} series</span> : null}
+						{unit ? <span>unit: {unit}</span> : null}
+					</span>
+				) : undefined
+			}
+		>
 			<div className="h-80 p-3">
 				{Result.builder(result)
 					.onInitial(() => <ChartSkeleton variant="area" />)
-					.onError((error) => (
-						<QueryErrorState error={error} titleOverride="Failed to load metric data" />
-					))
+					.onError((error) => <ErrorState error={error} title="Failed to load metric data" />)
 					.onSuccess((response) =>
 						response.data.length === 0 ? (
-							<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+							<EmptyMessage className="flex h-full items-center justify-center">
 								No datapoints match this query in the selected range.
-							</div>
+							</EmptyMessage>
 						) : (
 							<Suspense fallback={<ChartSkeleton variant="area" />}>
 								<ChartComponent
@@ -305,6 +332,6 @@ function MetricChart({
 					)
 					.render()}
 			</div>
-		</div>
+		</ChartCard>
 	)
 }

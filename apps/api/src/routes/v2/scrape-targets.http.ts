@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { ScrapeTargetResponse } from "@maple/domain/http"
 import { CreateScrapeTargetRequest, CurrentTenant, UpdateScrapeTargetRequest } from "@maple/domain/http"
 import {
@@ -14,6 +14,7 @@ import { auditDiff, redactAuditUrl } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { timestampMs } from "@maple/backend/platform/time"
 
 // Every write is admin-gated: a scrape target stores credentials and makes
 // Maple's infrastructure fetch an operator-chosen URL, so `probe` (which sends
@@ -235,10 +236,10 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 						service
 							.listChecks(tenant.orgId, params.id, {
 								...(query.since !== undefined
-									? { startTime: Date.parse(query.since) }
+									? { startTime: timestampMs(query.since) }
 									: undefined),
 								...(query.until !== undefined
-									? { endTime: Date.parse(query.until) }
+									? { endTime: timestampMs(query.until) }
 									: undefined),
 								limit,
 								offset,

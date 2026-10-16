@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
-import { compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
+import { describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect } from "effect"
+import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	listContainersQuery,
 	listContainersSummaryQuery,
@@ -10,9 +11,10 @@ import {
 	containerSumTimeseriesQuery,
 	containerFacetsQuery,
 } from "./containers"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 	bucketSeconds: 60,
@@ -46,17 +48,17 @@ describe("listContainersQuery", () => {
 	it("normalizes docker's 0..100 percents to the 0..1 scale the pod pages use", () => {
 		const { sql } = compileUnsafe(listContainersQuery({}), baseParams)
 		expect(sql).toContain(
-			"ifNull(ifNotFinite(avgIf(Value, MetricName = 'container.cpu.utilization'), 0), 0) / 100 AS cpuPct",
+			"ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'container.cpu.utilization'), 0), 0) / 100 AS cpuPct",
 		)
 		expect(sql).toContain(
-			"ifNotFinite(maxIf(Value, MetricName = 'container.memory.percent'), 0) / 100 AS memoryPctPeak",
+			"ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'container.memory.percent'), 0) / 100 AS memoryPctPeak",
 		)
 	})
 
 	it("defaults to worst-first: peak saturation, then peak CPU, then name", () => {
 		const { sql } = compileUnsafe(listContainersQuery({}), baseParams)
 		expect(sql).toContain(
-			"greatest(ifNotFinite(maxIf(Value, MetricName = 'container.cpu.utilization'), 0) / 100, ifNotFinite(maxIf(Value, MetricName = 'container.memory.percent'), 0) / 100) AS saturation",
+			"greatest(ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'container.cpu.utilization'), 0) / 100, ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'container.memory.percent'), 0) / 100) AS saturation",
 		)
 		expect(sql).toContain("ORDER BY saturation DESC, cpuPctPeak DESC, containerName ASC")
 	})
@@ -91,7 +93,7 @@ describe("listContainersQuery", () => {
 		expect(sql).toContain("ResourceAttributes['compose.project'] IN")
 		expect(sql).toContain("ResourceAttributes['compose.service'] IN")
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN",
+			"coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment']) IN",
 		)
 		expect(sql).toContain("'production'")
 	})
@@ -106,12 +108,12 @@ describe("listContainersQuery", () => {
 	it("filters the saturated scope outside the grouping", () => {
 		const { sql } = compileUnsafe(listContainersQuery({ scope: "saturated" }), baseParams)
 		expect(sql).toContain("GROUP BY containerName, hostName) AS containers")
-		expect(sql).toContain("WHERE saturation >= 0.9")
+		expect(sql).toContain("WHERE containers.saturation >= 0.9")
 	})
 
 	it("scopes stale containers relative to the window end, not wall-clock now", () => {
 		const { sql } = compileUnsafe(listContainersQuery({ scope: "stale" }), baseParams)
-		expect(sql).toContain("WHERE lastSeen < '2024-01-02 00:00:00' - INTERVAL 300 SECOND")
+		expect(sql).toContain("WHERE containers.lastSeen < '2024-01-02 00:00:00' - INTERVAL 300 SECOND")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
 
@@ -126,8 +128,10 @@ describe("listContainersSummaryQuery", () => {
 		const { sql } = compileUnsafe(listContainersSummaryQuery({}), baseParams)
 		expect(sql).toContain("GROUP BY containerName, hostName")
 		expect(sql).toContain("count() AS totalContainers")
-		expect(sql).toContain("countIf(saturation >= 0.9) AS saturatedContainers")
-		expect(sql).toContain("countIf((saturation >= 0.6 AND saturation < 0.9)) AS elevatedContainers")
+		expect(sql).toContain("countIf(containers.saturation >= 0.9) AS saturatedContainers")
+		expect(sql).toContain(
+			"countIf((containers.saturation >= 0.6 AND containers.saturation < 0.9)) AS elevatedContainers",
+		)
 		expect(sql).not.toContain("uniq(")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
@@ -160,14 +164,14 @@ describe("containerFacetsQuery", () => {
 		expect(sql).toContain("ResourceAttributes['compose.project']")
 		expect(sql).toContain("ResourceAttributes['compose.service']")
 		expect(sql).toContain(
-			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment'])",
+			"coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment'])",
 		)
 		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("counts by container.id — recreated containers keep their name, not their id", () => {
 		const { sql } = compileUnionUnsafe(containerFacetsQuery({}), baseParams)
-		expect(sql).toContain("uniq(ResourceAttributes['container.id'])")
+		expect(sql).toContain("uniq(metrics_gauge.ResourceAttributes['container.id'])")
 	})
 
 	it("propagates active filters into facet counts", () => {
@@ -212,7 +216,7 @@ describe("containerCountersSummaryQuery", () => {
 	it("computes the restart window delta from the cumulative counter", () => {
 		const { sql } = compileUnsafe(containerCountersSummaryQuery({ containerName: "redis" }), baseParams)
 		expect(sql).toContain(
-			"ifNotFinite(maxIf(Value, MetricName = 'container.restarts') - minIf(Value, MetricName = 'container.restarts'), 0) AS restartsDelta",
+			"ifNotFinite(maxIf(metrics_sum.Value, metrics_sum.MetricName = 'container.restarts') - minIf(metrics_sum.Value, metrics_sum.MetricName = 'container.restarts'), 0) AS restartsDelta",
 		)
 	})
 
@@ -221,7 +225,7 @@ describe("containerCountersSummaryQuery", () => {
 		// max-min would report their offset as restarts.
 		const { sql } = compileUnsafe(containerCountersSummaryQuery({ containerName: "redis" }), baseParams)
 		expect(sql).toContain("GROUP BY hostName")
-		expect(sql).toContain("sum(restartsDelta) AS restartsDelta")
+		expect(sql).toContain("sum(hosts.restartsDelta) AS restartsDelta")
 	})
 })
 
@@ -238,7 +242,7 @@ describe("containerGaugeTimeseriesQuery", () => {
 		expect(sql).toContain("toStartOfInterval")
 		expect(sql).toContain("INTERVAL 60 SECOND")
 		expect(sql).toContain("MetricName = 'container.cpu.utilization'")
-		expect(sql).toContain("avg(Value) / 100")
+		expect(sql).toContain("avg(metrics_gauge.Value) / 100")
 	})
 
 	it("leaves non-percent gauges unscaled", () => {
@@ -280,7 +284,7 @@ describe("containerSumTimeseriesQuery", () => {
 			}),
 			baseParams,
 		)
-		expect(sql).toContain("avg(Value) AS sumValue")
+		expect(sql).toContain("avg(metrics_sum.Value) AS sumValue")
 		expect(sql).not.toContain("sum(Value)")
 	})
 
@@ -350,4 +354,32 @@ describe("conditional aggregates are NaN-guarded", () => {
 			expect(sql).toMatch(/ifNotFinite\((?:avgIf|maxIf)\(/)
 		})
 	}
+})
+
+describe("container rows decode timestamps to DateTime.Utc", () => {
+	it.effect("containerDetailSummaryQuery", () =>
+		Effect.gen(function* () {
+			const compiled = yield* compile(containerDetailSummaryQuery({ containerName: "c" }), baseParams)
+			expect(compiled.rowSchemaSource).toBe("derived")
+			const [row] = yield* compiled.decodeRows([
+				{
+					containerName: "c",
+					hostName: "h",
+					containerId: "id",
+					imageName: "img",
+					composeProject: "",
+					composeService: "",
+					runtime: "docker",
+					firstSeen: "2024-01-01 09:00:00.000000000",
+					lastSeen: "2024-01-01 10:00:00.500000000",
+					cpuPct: 0.1,
+					memoryPct: 0.2,
+					cpuLimitCores: 1,
+					uptimeSeconds: 60,
+				},
+			])
+			expect(DateTime.formatIso(row!.firstSeen)).toBe("2024-01-01T09:00:00.000Z")
+			expect(DateTime.formatIso(row!.lastSeen)).toBe("2024-01-01T10:00:00.500Z")
+		}),
+	)
 })

@@ -5,6 +5,7 @@ import { findSlowTraces } from "./find-slow-traces"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
+import { OrgId } from "@maple/domain"
 
 interface CapturedCalls {
 	pipeCalls: Array<{ pipe: string; params: Record<string, unknown> }>
@@ -15,7 +16,7 @@ const makeMockExecutor = (
 	slowRows: ReadonlyArray<Record<string, unknown>> = [],
 	statsRows: ReadonlyArray<Record<string, unknown>> = [],
 ): WarehouseExecutorApi => ({
-	orgId: "org_test",
+	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => compiledQueryOf(compiled).decodeFirstRow([]).pipe(Effect.orDie),
 	query: (pipe: string, params: Record<string, unknown>) => {
@@ -127,7 +128,7 @@ describe("findSlowTraces", () => {
 	it.effect("propagates warehouse errors from the executor", () =>
 		Effect.gen(function* () {
 			const failingExecutor: WarehouseExecutorApi = {
-				orgId: "org_test",
+				orgId: OrgId.make("org_test"),
 				compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 				compiledQueryFirst: (compiled) =>
 					compiledQueryOf(compiled).decodeFirstRow([]).pipe(Effect.orDie),

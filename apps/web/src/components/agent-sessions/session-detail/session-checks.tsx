@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react"
 
+import { DisclosureChevron } from "@/components/common/disclosure-chevron"
 import type {
 	SessionCheck,
 	SessionCheckStatus,
@@ -9,24 +10,28 @@ import type {
 	SessionFinding,
 } from "@maple/agent-sessions"
 
-import { ArrowRightIcon, CheckIcon, ChevronRightIcon } from "@/components/icons"
+import { ArrowRightIcon, CheckIcon } from "@/components/icons"
 import { Button } from "@maple/ui/components/ui/button"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 
+import { SectionHeading } from "@/components/common/section-heading"
+import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
+
 /** One tone per status, for the dot beside a name and the text of a label. */
-const STATUS_DOT = {
-	failed: "bg-destructive",
-	warning: "bg-severity-warn",
-	passed: "bg-severity-info",
-	skipped: "border border-muted-foreground",
-} satisfies Record<SessionCheckStatus, string>
+const STATUS_TONE = {
+	failed: "crit",
+	warning: "warn",
+	passed: "ok",
+	skipped: "neutral",
+} satisfies Record<SessionCheckStatus, Tone>
 
 const STATUS_TEXT = {
-	failed: "text-destructive",
-	warning: "text-severity-warn",
+	failed: TONE_TEXT.crit,
+	warning: TONE_TEXT.warn,
 	passed: "text-severity-info",
-	skipped: "text-muted-foreground",
+	skipped: TONE_TEXT.neutral,
 } satisfies Record<SessionCheckStatus, string>
 
 /**
@@ -70,11 +75,9 @@ export function SessionChecks({
 			<Verdict report={report} onOpenSpan={onOpenSpan} />
 
 			<section className="flex flex-col gap-2">
-				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
-					Needs attention
-				</h3>
+				<SectionHeading variant="eyebrow" as="h3" title="Needs attention" className="mb-0" />
 				{clean ? (
-					<p className="flex items-center gap-2 py-2 text-[13px]">
+					<p className="flex items-center gap-2 py-2 text-ui">
 						<CheckIcon size={14} aria-hidden className="shrink-0 text-severity-info" />
 						{skipped.length === 0
 							? "Nothing to fix. Every check below carries what it measured."
@@ -143,10 +146,7 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 		<section className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-base">
-					<span
-						aria-hidden
-						className={cn("size-2 shrink-0 self-center rounded-full", STATUS_DOT[tone])}
-					/>
+					<StatusDot size="lg" tone={STATUS_TONE[tone]} className="self-center" />
 					{/* The word alone: the report's headline and its counts restate
 					    the list right under it — the checks that need attention, and
 					    how many passed. They are the MCP's line. */}
@@ -161,7 +161,7 @@ function Verdict({ report, onOpenSpan }: { report: SessionChecksReport; onOpenSp
 					onClick={() => onOpenSpan(failingSpanId)}
 				>
 					Open failing span
-					<ArrowRightIcon size={14} />
+					<ArrowRightIcon />
 				</Button>
 			)}
 		</section>
@@ -190,22 +190,23 @@ function CheckBlock({
 	const toolsAction = check.id === "tool-errors"
 	return (
 		<div data-testid={`check-${check.id}`} className={cn(ROW_GRID, "py-3")}>
-			<StatusDot status={check.status} />
-			<span className="truncate font-semibold text-[13px]">{check.name}</span>
+			<CheckDot status={check.status} />
+			<span className="truncate font-semibold text-ui">{check.name}</span>
 			<div className="flex min-w-0 flex-col gap-1">
-				<p className="text-[13px] leading-relaxed">{withCode(check.headline)}</p>
+				<p className="text-ui leading-relaxed">{withCode(check.headline)}</p>
 				{toolsAction ? (
 					<p className="flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed">
 						<ArrowRightIcon size={12} aria-hidden className="mt-[3px] shrink-0" />
 						<span>
 							Check the{" "}
-							<button
-								type="button"
+							<Button
+								variant="link"
+								size="xs"
 								onClick={onOpenTools}
-								className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-muted-foreground"
+								className="h-auto p-0 align-baseline text-xs text-muted-foreground underline decoration-muted-foreground/40 hover:decoration-muted-foreground"
 							>
 								Tools section
-							</button>{" "}
+							</Button>{" "}
 							at the bottom of this page for details.
 						</span>
 					</p>
@@ -268,13 +269,14 @@ function EvidenceRow({
 	)
 }
 
-function StatusDot({ status }: { status: SessionCheckStatus }) {
+function CheckDot({ status }: { status: SessionCheckStatus }) {
 	return (
-		<span
-			aria-hidden
+		// Skipped checks draw a hollow ring rather than a filled dot.
+		<StatusDot
+			tone={status === "skipped" ? "custom" : STATUS_TONE[status]}
 			className={cn(
-				"size-1.5 shrink-0 translate-y-[-1px] justify-self-center rounded-full",
-				STATUS_DOT[status],
+				"translate-y-[-1px] justify-self-center",
+				status === "skipped" && "border border-muted-foreground",
 			)}
 		/>
 	)
@@ -311,19 +313,18 @@ function Disclosure({
 	const expanded = disclosable && (choice ?? open)
 	const head = (
 		<>
-			<ChevronRightIcon
+			<DisclosureChevron
+				open={expanded}
 				size={12}
-				aria-hidden
 				className={cn(
-					"shrink-0 translate-y-px justify-self-center text-muted-foreground transition-transform",
-					expanded && "rotate-90",
+					"translate-y-px justify-self-center text-muted-foreground",
 					!disclosable && "invisible",
 				)}
 			/>
 			<span className="flex items-baseline gap-2">
 				<span
 					className={cn(
-						"font-semibold text-[13px]",
+						"font-semibold text-ui",
 						disclosable ? STATUS_TEXT[status] : "text-muted-foreground",
 					)}
 				>
@@ -367,8 +368,8 @@ function Disclosure({
 function CheckFact({ check }: { check: SessionCheck }) {
 	return (
 		<div className={ROW_GRID}>
-			<StatusDot status={check.status} />
-			<span className="truncate text-[13px]">{check.name}</span>
+			<CheckDot status={check.status} />
+			<span className="truncate text-ui">{check.name}</span>
 			<span className="min-w-0 text-muted-foreground text-xs leading-relaxed">
 				{withCode(check.headline)}
 			</span>
@@ -391,7 +392,7 @@ interface Signal {
 
 const SIGNAL_MARK = {
 	captured: { glyph: "✓", tone: "text-severity-info", says: "captured:" },
-	missing: { glyph: "✕", tone: "text-destructive", says: "not captured:" },
+	missing: { glyph: "✕", tone: "text-severity-error", says: "not captured:" },
 	absent: { glyph: "–", tone: "text-muted-foreground/60", says: "nothing to capture:" },
 } satisfies Record<SessionCoverageSignal, { glyph: string; tone: string; says: string }>
 
@@ -420,10 +421,8 @@ function coverageSignals(coverage: SessionCoverage): readonly Signal[] {
 			state: coverage.toolPayloads,
 			title: "Tool arguments and results",
 			explains: {
-				captured:
-					"Each tool call's arguments and result were recorded. Tool errors reads them.",
-				missing:
-					"No tool call recorded its arguments or result. A failed call has only its status.",
+				captured: "Each tool call's arguments and result were recorded. Tool errors reads them.",
+				missing: "No tool call recorded its arguments or result. A failed call has only its status.",
 				absent: "No tool was called in this session.",
 			}[coverage.toolPayloads],
 		},

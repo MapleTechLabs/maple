@@ -2,46 +2,32 @@ import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-a
 import { ScrapeIntervalSeconds } from "@maple/domain/http"
 import type { ScrapeAuthType, ScrapeTargetId } from "@maple/domain/http"
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
-import { useState, type KeyboardEvent, type ReactNode } from "react"
-import { Exit, Schema } from "effect"
+import { useState, type KeyboardEvent } from "react"
+import { Exit, Option, Schema } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
+import { Field, FieldLabel, FieldDescription, FieldError } from "@maple/ui/components/ui/field"
+import { FormDialog } from "@maple/ui/components/ui/form-dialog"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
+import { trySync } from "@maple/ui/lib/try-sync"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { type ScrapeTargetChecksResponse, useScrapeTargetChecks } from "@/hooks/use-scrape-target-checks"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
 
 import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@maple/ui/components/ui/dropdown-menu"
+import { DropdownMenuItem, DropdownMenuSeparator } from "@maple/ui/components/ui/dropdown-menu"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
@@ -51,23 +37,26 @@ import {
 	CircleInfoIcon,
 	CircleWarningIcon,
 	CircleXmarkIcon,
-	DotsVerticalIcon,
 	ExternalLinkIcon,
 	FireIcon,
 	HistoryIcon,
-	LoaderIcon,
 	PencilIcon,
 	PlusIcon,
 	PulseIcon,
 	TrashIcon,
 } from "@/components/icons"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { formatDuration, formatNumber } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { diagnoseScrapeError } from "@/lib/scrape-error-diagnosis"
 import { scheduledStatusFromChecks, scheduledStatusFromRollup } from "@/lib/scrape-target-status"
 import { catalogEntry } from "../integrations/integration-catalog"
 import { DocsLink } from "@/components/common/docs-link"
+import { ErrorState } from "@/components/common/error-state"
+import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -90,47 +79,36 @@ const AUTH_TYPE_LABELS: Record<ScrapeAuthType, string> = {
 	planetscale_oauth: "PlanetScale OAuth",
 } satisfies Record<ScrapeAuthType, string>
 
-const asScrapeIntervalSeconds = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
+const decodeScrapeInterval = Schema.decodeUnknownOption(ScrapeIntervalSeconds)
 
 function formatDurationSeconds(value: number | null): string {
-	if (value == null) return "-"
+	if (value == null) return EMPTY_VALUE
 	return formatDuration(value * 1000)
 }
 
 function formatOptionalCount(value: number | null): string {
-	if (value == null) return "-"
+	if (value == null) return EMPTY_VALUE
 	return formatNumber(Math.round(value))
 }
 
-function formatDateTime(value: string): string {
-	return new Date(value).toLocaleString(undefined, {
-		month: "short",
-		day: "2-digit",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	})
+/** Created/updated/check times, in the viewer's chosen timezone. */
+function useFormatDateTime(): (value: string) => string {
+	const { effectiveTimezone } = useTimezonePreference()
+	return (value) => formatTimestampInTimezone(value, { timeZone: effectiveTimezone })
 }
 
 function hostnameFromUrl(value: string): string {
-	try {
-		return new URL(value).host
-	} catch {
-		return value
-	}
+	return Option.getOrElse(
+		trySync(() => new URL(value).host),
+		() => value,
+	)
 }
 
 function labelEntries(labelsJson: string | null): Array<[string, string]> {
 	if (!labelsJson) return []
-	try {
-		const parsed = JSON.parse(labelsJson) as unknown
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return []
-		return Object.entries(parsed).filter(
-			(entry): entry is [string, string] => typeof entry[1] === "string",
-		)
-	} catch {
-		return []
-	}
+	const parsed = Option.getOrNull(trySync((): Record<string, unknown> => JSON.parse(labelsJson)))
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return []
+	return Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string")
 }
 
 function checksFromResult(result: ScrapeTargetChecksResult): ScrapeTargetCheck[] {
@@ -164,7 +142,7 @@ const COPY = {
 
 /**
  * Prometheus scrape-target manager. PlanetScale metrics collection is fully
- * managed by its integration and never surfaces here — this section only
+ * managed by its integration and never surfaces here; this section only
  * lists and edits user-created prometheus targets.
  */
 export function ScrapeTargetsSection({
@@ -173,10 +151,7 @@ export function ScrapeTargetsSection({
 	sourceFilter?: "prometheus"
 } = {}) {
 	const [dialogOpen, setDialogOpen] = useState(false)
-	const [isSaving, setIsSaving] = useState(false)
-	const [togglingId, setTogglingId] = useState<ScrapeTargetId | null>(null)
 	const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<ScrapeTarget | null>(null)
-	const [probingId, setProbingId] = useState<ScrapeTargetId | null>(null)
 	const [selectedTargetId, setSelectedTargetId] = useState<ScrapeTargetId | null>(null)
 
 	const [editingTarget, setEditingTarget] = useState<ScrapeTarget | null>(null)
@@ -213,31 +188,28 @@ export function ScrapeTargetsSection({
 		.filter((target) => target.target_type === sourceFilter)
 	const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null
 	const copy = COPY
-	// When empty, the centered empty state owns the primary action — hide the toolbar row.
+	// When empty, the centered empty state owns the primary action, so hide the toolbar row.
 	const isEmpty = Result.isSuccess(listResult) && targets.length === 0
 	const emptyEntry = catalogEntry(sourceFilter)
 
-	async function handleProbe(target: ScrapeTarget) {
-		setProbingId(target.id)
+	const probe = useKeyedAsyncAction(async (_id: ScrapeTargetId, target: ScrapeTarget) => {
 		const result = await probeMutation({
 			params: { id: target.id },
 			reactivityKeys: ["scrapeTargets"],
 		})
-		if (Exit.isSuccess(result)) {
-			refreshTargets()
-			if (result.value.success) {
-				toastManager.add({ title: "Connection successful", type: "success" })
-			} else {
-				toastManager.add({
-					title: `Connection failed: ${result.value.last_scrape_error}`,
-					type: "error",
-				})
-			}
+		if (!toastExit(result, { error: "Failed to test connection" }) || !Exit.isSuccess(result)) return
+		refreshTargets()
+		if (result.value.success) {
+			toastManager.add({ title: "Connection successful", type: "success" })
 		} else {
-			toastManager.add({ title: "Failed to test connection", type: "error" })
+			toastManager.add({
+				title: "Connection failed",
+				description: result.value.last_scrape_error ?? undefined,
+				type: "error",
+			})
 		}
-		setProbingId(null)
-	}
+	})
+	const handleProbe = (target: ScrapeTarget) => void probe.run(target.id, target)
 
 	function openAddDialog() {
 		setEditingTarget(null)
@@ -280,102 +252,77 @@ export function ScrapeTargetsSection({
 		return null
 	}
 
-	async function handleSave() {
-		if (!formName.trim() || !formUrl.trim()) {
-			toastManager.add({ title: "Name and URL are required", type: "error" })
-			return
-		}
+	const parsedInterval = Option.getOrNull(decodeScrapeInterval(Number.parseInt(formInterval, 10) || 15))
+	const formValid = formName.trim().length > 0 && formUrl.trim().length > 0 && parsedInterval !== null
 
-		let parsedInterval: ScrapeIntervalSeconds
-		try {
-			parsedInterval = asScrapeIntervalSeconds(Number.parseInt(formInterval, 10) || 15)
-		} catch {
-			toastManager.add({
-				title: "Scrape interval must be an integer from 5 to 300 seconds",
-				type: "error",
-			})
-			return
-		}
-
+	const [handleSave, isSaving] = useAsyncAction(async () => {
+		if (!formValid || parsedInterval === null) return
 		const authCredentials = buildAuthCredentials()
-
-		setIsSaving(true)
+		const payload = {
+			name: formName.trim(),
+			scrape_interval_seconds: parsedInterval,
+			service_name: formServiceName.trim() || null,
+			url: formUrl.trim(),
+			auth_type: formAuthType,
+			...(authCredentials !== null ? { auth_credentials: authCredentials } : undefined),
+		}
 
 		if (editingTarget) {
 			const result = await updateMutation({
 				params: { id: editingTarget.id },
-				payload: {
-					name: formName.trim(),
-					scrape_interval_seconds: parsedInterval,
-					service_name: formServiceName.trim() || null,
-					url: formUrl.trim(),
-					auth_type: formAuthType,
-					...(authCredentials !== null ? { auth_credentials: authCredentials } : undefined),
-				},
+				payload,
 				reactivityKeys: ["scrapeTargets"],
 			})
-			if (Exit.isSuccess(result)) {
-				refreshTargets()
-				toastManager.add({ title: "Scrape target updated", type: "success" })
-				setDialogOpen(false)
-			} else {
-				toastManager.add({ title: "Failed to update scrape target", type: "error" })
-			}
+			if (
+				!toastExit(result, {
+					success: "Scrape target updated",
+					error: "Failed to update scrape target",
+				})
+			)
+				return
+			refreshTargets()
+			setDialogOpen(false)
 		} else {
-			const result = await createMutation({
-				payload: {
-					name: formName.trim(),
-					scrape_interval_seconds: parsedInterval,
-					service_name: formServiceName.trim() || null,
-					url: formUrl.trim(),
-					auth_type: formAuthType,
-					...(authCredentials !== null ? { auth_credentials: authCredentials } : undefined),
-				},
-				reactivityKeys: ["scrapeTargets"],
-			})
-			if (Exit.isSuccess(result)) {
-				refreshTargets()
-				toastManager.add({ title: "Scrape target created", type: "success" })
-				setDialogOpen(false)
-				setSelectedTargetId(result.value.id)
-			} else {
-				toastManager.add({ title: "Failed to create scrape target", type: "error" })
-			}
+			const result = await createMutation({ payload, reactivityKeys: ["scrapeTargets"] })
+			if (
+				!toastExit(result, {
+					success: "Scrape target created",
+					error: "Failed to create scrape target",
+				}) ||
+				!Exit.isSuccess(result)
+			)
+				return
+			refreshTargets()
+			setDialogOpen(false)
+			setSelectedTargetId(result.value.id)
 		}
-		setIsSaving(false)
-	}
+	})
 
 	async function handleDelete(targetId: ScrapeTargetId) {
-		setDeleteConfirmTarget(null)
 		const result = await deleteMutation({
 			params: { id: targetId },
 			reactivityKeys: ["scrapeTargets"],
 		})
-		if (Exit.isSuccess(result)) {
+		const ok = toastExit(result, {
+			success: "Scrape target deleted",
+			error: "Failed to delete scrape target",
+		})
+		if (ok) {
 			refreshTargets()
-			toastManager.add({ title: "Scrape target deleted", type: "success" })
 			if (selectedTargetId === targetId) setSelectedTargetId(null)
-		} else {
-			toastManager.add({ title: "Failed to delete scrape target", type: "error" })
 		}
+		return ok
 	}
 
-	async function handleToggleEnabled(target: ScrapeTarget) {
-		setTogglingId(target.id)
+	const toggle = useKeyedAsyncAction(async (_id: ScrapeTargetId, target: ScrapeTarget) => {
 		const result = await updateMutation({
 			params: { id: target.id },
-			payload: {
-				enabled: !target.enabled,
-			},
+			payload: { enabled: !target.enabled },
 			reactivityKeys: ["scrapeTargets"],
 		})
-		if (!Exit.isSuccess(result)) {
-			toastManager.add({ title: "Failed to update scrape target", type: "error" })
-		} else {
-			refreshTargets()
-		}
-		setTogglingId(null)
-	}
+		if (toastExit(result, { error: "Failed to update scrape target" })) refreshTargets()
+	})
+	const handleToggleEnabled = (target: ScrapeTarget) => void toggle.run(target.id, target)
 
 	return (
 		<>
@@ -384,25 +331,20 @@ export function ScrapeTargetsSection({
 					<div className="flex items-center justify-between gap-3">
 						<p className="text-muted-foreground text-sm">{copy.description}</p>
 						<Button size="sm" className="shrink-0" onClick={openAddDialog}>
-							<PlusIcon size={14} />
-							Add Target
+							<PlusIcon data-icon="inline-start" />
+							Add target
 						</Button>
 					</div>
 				)}
 
 				{Result.isInitial(listResult) ? (
-					<div className="space-y-2">
-						<Skeleton className="h-[60px] w-full" />
-						<Skeleton className="h-[60px] w-full" />
-						<Skeleton className="h-[60px] w-full" />
-					</div>
+					<SkeletonList rows={3} rowClassName="h-[60px]" gap="2" />
 				) : !Result.isSuccess(listResult) ? (
-					<div className="text-muted-foreground flex flex-col items-center gap-3 py-8 text-center text-sm">
-						Failed to load scrape targets.
-						<Button variant="outline" size="sm" onClick={() => refreshTargets()}>
-							Try again
-						</Button>
-					</div>
+					<ErrorState
+						error={listResult.cause}
+						title="Failed to load scrape targets"
+						onRetry={() => refreshTargets()}
+					/>
 				) : targets.length === 0 ? (
 					<IntegrationEmpty
 						icon={emptyEntry?.icon ?? FireIcon}
@@ -418,8 +360,8 @@ export function ScrapeTargetsSection({
 							<IntegrationEmptyMedia />
 							<IntegrationEmptyHint>{copy.emptyHint}</IntegrationEmptyHint>
 							<Button onClick={openAddDialog}>
-								<PlusIcon size={16} />
-								Add Target
+								<PlusIcon data-icon="inline-start" />
+								Add target
 							</Button>
 							<DocsLink page="prometheus" />
 							<IntegrationEmptyFooter>{copy.emptyFooter}</IntegrationEmptyFooter>
@@ -427,14 +369,14 @@ export function ScrapeTargetsSection({
 					</IntegrationEmpty>
 				) : (
 					<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-						<div className="divide-y overflow-hidden rounded-lg border bg-card">
+						<Panel className="divide-y">
 							{targets.map((target) => (
 								<ScrapeTargetRow
 									key={target.id}
 									target={target}
 									selected={target.id === selectedTarget?.id}
-									toggling={togglingId === target.id}
-									probing={probingId === target.id}
+									toggling={toggle.isPending(target.id)}
+									probing={probe.isPending(target.id)}
 									onSelect={setSelectedTargetId}
 									onProbe={handleProbe}
 									onToggle={handleToggleEnabled}
@@ -442,206 +384,176 @@ export function ScrapeTargetsSection({
 									onDelete={setDeleteConfirmTarget}
 								/>
 							))}
-						</div>
+						</Panel>
 						{selectedTarget ? (
 							<ScrapeTargetDetails
 								target={selectedTarget}
-								probing={probingId === selectedTarget.id}
-								toggling={togglingId === selectedTarget.id}
+								probing={probe.isPending(selectedTarget.id)}
+								toggling={toggle.isPending(selectedTarget.id)}
 								onProbe={handleProbe}
 								onToggle={handleToggleEnabled}
 								onEdit={openEditDialog}
 								onDelete={setDeleteConfirmTarget}
 							/>
 						) : (
-							<div className="hidden rounded-lg border bg-card p-4 lg:block">
+							<Panel padded className="hidden lg:flex">
 								<div className="text-muted-foreground flex h-full min-h-[260px] flex-col items-center justify-center gap-2 text-center text-xs">
 									<CircleInfoIcon size={18} />
 									<span>Click a target to inspect scheduled checks.</span>
 								</div>
-							</div>
+							</Panel>
 						)}
 					</div>
 				)}
 			</div>
 
-			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>
-							{editingTarget ? "Edit Scrape Target" : "Add Scrape Target"}
-						</DialogTitle>
-						<DialogDescription>
-							{editingTarget
-								? "Update the scrape target configuration."
-								: "Enter the URL of a Prometheus exporter endpoint. Maple will periodically scrape this endpoint for metrics."}
-						</DialogDescription>
-					</DialogHeader>
-					<div className="space-y-4 px-6 py-2">
-						<div className="space-y-2">
-							<Label htmlFor="scrape-name">Name</Label>
+			<FormDialog
+				open={dialogOpen}
+				onOpenChange={setDialogOpen}
+				title={editingTarget ? "Edit scrape target" : "Add scrape target"}
+				description={
+					editingTarget
+						? "Update the scrape target configuration."
+						: "Enter the URL of a Prometheus exporter endpoint. Maple will periodically scrape this endpoint for metrics."
+				}
+				onSubmit={() => void handleSave()}
+				submitLabel={editingTarget ? "Save changes" : "Add target"}
+				pending={isSaving}
+				submitDisabled={!formValid}
+			>
+				<Field>
+					<FieldLabel htmlFor="scrape-name">Name</FieldLabel>
+					<Input
+						id="scrape-name"
+						placeholder="e.g. Node Exporter"
+						value={formName}
+						onChange={(e) => setFormName(e.target.value)}
+					/>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="scrape-service-name">Service name</FieldLabel>
+					<Input
+						id="scrape-service-name"
+						placeholder="e.g. my-api-server"
+						value={formServiceName}
+						onChange={(e) => setFormServiceName(e.target.value)}
+					/>
+					<FieldDescription>
+						Metrics will appear under this service name. Defaults to the target name if empty.
+					</FieldDescription>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="scrape-url">URL</FieldLabel>
+					<Input
+						id="scrape-url"
+						placeholder="e.g. https://myapp.com:9090/metrics"
+						value={formUrl}
+						onChange={(e) => setFormUrl(e.target.value)}
+					/>
+				</Field>
+				<Field invalid={parsedInterval === null}>
+					<FieldLabel htmlFor="scrape-interval">Scrape interval (seconds)</FieldLabel>
+					<Input
+						id="scrape-interval"
+						type="number"
+						min={5}
+						max={300}
+						value={formInterval}
+						onChange={(e) => setFormInterval(e.target.value)}
+					/>
+					{parsedInterval === null ? (
+						<FieldError match>
+							Scrape interval must be an integer from 5 to 300 seconds.
+						</FieldError>
+					) : null}
+				</Field>
+				<Field>
+					<FieldLabel>Authentication</FieldLabel>
+					<Select
+						items={{ none: "None", bearer: "Bearer Token", basic: "Basic Auth" }}
+						value={formAuthType}
+						onValueChange={(val: string | null) => {
+							setFormAuthType(val === "bearer" || val === "basic" ? val : "none")
+							setFormAuthToken("")
+							setFormAuthUsername("")
+							setFormAuthPassword("")
+						}}
+					>
+						<SelectTrigger className="w-full">
+							<SelectValue placeholder="Select auth type" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="none">None</SelectItem>
+							<SelectItem value="bearer">Bearer Token</SelectItem>
+							<SelectItem value="basic">Basic Auth</SelectItem>
+						</SelectContent>
+					</Select>
+				</Field>
+				{formAuthType === "bearer" && (
+					<Field>
+						<FieldLabel htmlFor="scrape-auth-token">Bearer Token</FieldLabel>
+						<Input
+							id="scrape-auth-token"
+							type="password"
+							placeholder={
+								editingTarget?.has_credentials && editingTarget.auth_type === "bearer"
+									? "Leave blank to keep existing"
+									: "Enter bearer token"
+							}
+							value={formAuthToken}
+							onChange={(e) => setFormAuthToken(e.target.value)}
+						/>
+					</Field>
+				)}
+				{formAuthType === "basic" && (
+					<>
+						<Field>
+							<FieldLabel htmlFor="scrape-auth-username">Username</FieldLabel>
 							<Input
-								id="scrape-name"
-								placeholder="e.g. Node Exporter"
-								value={formName}
-								onChange={(e) => setFormName(e.target.value)}
+								id="scrape-auth-username"
+								placeholder={
+									editingTarget?.has_credentials && editingTarget.auth_type === "basic"
+										? "Leave blank to keep existing"
+										: "Enter username"
+								}
+								value={formAuthUsername}
+								onChange={(e) => setFormAuthUsername(e.target.value)}
 							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="scrape-service-name">Service Name</Label>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="scrape-auth-password">Password</FieldLabel>
 							<Input
-								id="scrape-service-name"
-								placeholder="e.g. my-api-server"
-								value={formServiceName}
-								onChange={(e) => setFormServiceName(e.target.value)}
+								id="scrape-auth-password"
+								type="password"
+								placeholder={
+									editingTarget?.has_credentials && editingTarget.auth_type === "basic"
+										? "Leave blank to keep existing"
+										: "Enter password"
+								}
+								value={formAuthPassword}
+								onChange={(e) => setFormAuthPassword(e.target.value)}
 							/>
-							<p className="text-muted-foreground text-xs">
-								Metrics will appear under this service name. Defaults to the target name if
-								empty.
-							</p>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="scrape-url">URL</Label>
-							<Input
-								id="scrape-url"
-								placeholder="e.g. https://myapp.com:9090/metrics"
-								value={formUrl}
-								onChange={(e) => setFormUrl(e.target.value)}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="scrape-interval">Scrape Interval (seconds)</Label>
-							<Input
-								id="scrape-interval"
-								type="number"
-								min={5}
-								max={300}
-								value={formInterval}
-								onChange={(e) => setFormInterval(e.target.value)}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label>Authentication</Label>
-							<Select
-								items={{ none: "None", bearer: "Bearer Token", basic: "Basic Auth" }}
-								value={formAuthType}
-								onValueChange={(val: string | null) => {
-									setFormAuthType((val as ScrapeAuthType | null) ?? "none")
-									setFormAuthToken("")
-									setFormAuthUsername("")
-									setFormAuthPassword("")
-								}}
-							>
-								<SelectTrigger className="w-full">
-									<SelectValue placeholder="Select auth type" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="none">None</SelectItem>
-									<SelectItem value="bearer">Bearer Token</SelectItem>
-									<SelectItem value="basic">Basic Auth</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
-						{formAuthType === "bearer" && (
-							<div className="space-y-2">
-								<Label htmlFor="scrape-auth-token">Bearer Token</Label>
-								<Input
-									id="scrape-auth-token"
-									type="password"
-									placeholder={
-										editingTarget?.has_credentials && editingTarget.auth_type === "bearer"
-											? "Leave blank to keep existing"
-											: "Enter bearer token"
-									}
-									value={formAuthToken}
-									onChange={(e) => setFormAuthToken(e.target.value)}
-								/>
-							</div>
-						)}
-						{formAuthType === "basic" && (
-							<>
-								<div className="space-y-2">
-									<Label htmlFor="scrape-auth-username">Username</Label>
-									<Input
-										id="scrape-auth-username"
-										placeholder={
-											editingTarget?.has_credentials &&
-											editingTarget.auth_type === "basic"
-												? "Leave blank to keep existing"
-												: "Enter username"
-										}
-										value={formAuthUsername}
-										onChange={(e) => setFormAuthUsername(e.target.value)}
-									/>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="scrape-auth-password">Password</Label>
-									<Input
-										id="scrape-auth-password"
-										type="password"
-										placeholder={
-											editingTarget?.has_credentials &&
-											editingTarget.auth_type === "basic"
-												? "Leave blank to keep existing"
-												: "Enter password"
-										}
-										value={formAuthPassword}
-										onChange={(e) => setFormAuthPassword(e.target.value)}
-									/>
-								</div>
-							</>
-						)}
-					</div>
-					<DialogFooter>
-						<Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
-							Cancel
-						</Button>
-						<Button onClick={handleSave} disabled={isSaving}>
-							{isSaving ? (
-								<>
-									<LoaderIcon size={14} className="animate-spin" />
-									{editingTarget ? "Saving..." : "Adding..."}
-								</>
-							) : editingTarget ? (
-								"Save Changes"
-							) : (
-								"Add Target"
-							)}
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+						</Field>
+					</>
+				)}
+			</FormDialog>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={deleteConfirmTarget !== null}
 				onOpenChange={(open) => {
 					if (!open) setDeleteConfirmTarget(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Delete scrape target</AlertDialogTitle>
-						<AlertDialogDescription>
-							Are you sure you want to delete{" "}
-							<span className="font-medium text-foreground">{deleteConfirmTarget?.name}</span>?
-							This action cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => {
-								if (deleteConfirmTarget) {
-									void handleDelete(deleteConfirmTarget.id)
-								}
-							}}
-						>
-							Delete
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title="Delete scrape target?"
+				description={
+					<>
+						Are you sure you want to delete{" "}
+						<span className="font-medium text-foreground">{deleteConfirmTarget?.name}</span>? This
+						action cannot be undone.
+					</>
+				}
+				confirmLabel="Delete"
+				onConfirm={() => (deleteConfirmTarget ? handleDelete(deleteConfirmTarget.id) : undefined)}
+			/>
 		</>
 	)
 }
@@ -688,17 +600,19 @@ function ScrapeTargetRow({
 				selected && "bg-muted/60",
 			)}
 		>
-			<div className={cn("size-2 shrink-0 rounded-full", status.dotClass)} />
+			<StatusDot tone={status.tone} size="lg" />
 
 			<div className="min-w-0 flex-1">
 				<div className="flex min-w-0 items-center gap-2">
-					<span className="truncate text-sm font-medium">{target.name}</span>
-					<Badge variant={status.badgeVariant} className="shrink-0">
+					<span className="min-w-16 truncate text-sm font-medium" title={target.name}>
+						{target.name}
+					</span>
+					<Badge variant={status.tone === "neutral" ? "outline" : status.tone} className="shrink-0">
 						{status.label}
 					</Badge>
 					{target.service_name && (
-						<Badge variant="outline" className="shrink-0">
-							{target.service_name}
+						<Badge variant="outline" className="min-w-0 max-w-40" title={target.service_name}>
+							<span className="truncate">{target.service_name}</span>
 						</Badge>
 					)}
 					{target.auth_type !== "none" && (
@@ -708,11 +622,13 @@ function ScrapeTargetRow({
 					)}
 				</div>
 				<div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-					<span className="max-w-[280px] truncate font-mono">{hostnameFromUrl(target.url)}</span>
+					<span className="max-w-[280px] truncate font-mono" title={target.url}>
+						{hostnameFromUrl(target.url)}
+					</span>
 					<span>{target.scrape_interval_seconds}s interval</span>
 					<span>{status.detail}</span>
 					{target.last_scrape_at && (
-						<span>Last scrape {formatRelativeTime(target.last_scrape_at)}</span>
+						<RelativeTime value={target.last_scrape_at} prefix="Last scrape" tooltip="title" />
 					)}
 				</div>
 				{target.last_scrape_error && (
@@ -746,42 +662,32 @@ function ScrapeTargetRow({
 					event.stopPropagation()
 					onProbe(target)
 				}}
-				disabled={probing}
+				loading={probing}
 			>
-				{probing ? <LoaderIcon size={14} className="animate-spin" /> : <BoltIcon size={14} />}
+				<BoltIcon />
 				Test
 			</Button>
 
 			<div onClick={(event) => event.stopPropagation()}>
-				<DropdownMenu>
-					<DropdownMenuTrigger
-						render={
-							<Button
-								variant="ghost"
-								size="icon-sm"
-								className="text-muted-foreground hover:text-foreground shrink-0"
-							/>
-						}
+				<RowActionsMenu
+					label={`Actions for ${target.name}`}
+					className="text-muted-foreground hover:text-foreground shrink-0"
+				>
+					{/* Managed targets are edited/removed through the owning integration card. */}
+					<DropdownMenuItem disabled={target.managed_by != null} onClick={() => onEdit(target)}>
+						<PencilIcon />
+						Edit
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem
+						variant="destructive"
+						disabled={target.managed_by != null}
+						onClick={() => onDelete(target)}
 					>
-						<DotsVerticalIcon size={14} />
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end">
-						{/* Managed targets are edited/removed through the owning integration card. */}
-						<DropdownMenuItem disabled={target.managed_by != null} onClick={() => onEdit(target)}>
-							<PencilIcon size={14} />
-							Edit
-						</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem
-							variant="destructive"
-							disabled={target.managed_by != null}
-							onClick={() => onDelete(target)}
-						>
-							<TrashIcon size={14} />
-							Delete
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
+						<TrashIcon />
+						Delete
+					</DropdownMenuItem>
+				</RowActionsMenu>
 			</div>
 		</div>
 	)
@@ -820,23 +726,33 @@ function ScrapeTargetDetails({
 	const failureMessage =
 		latestCheck && !latestCheck.success ? latestCheck.message : target.last_scrape_error
 	const diagnosis = diagnoseScrapeError(failureMessage, target.target_type)
+	const formatDateTime = useFormatDateTime()
 
 	return (
-		<aside className="rounded-lg border bg-card">
+		<Panel>
 			<div className="space-y-3 border-b p-4">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">
 						<div className="flex items-center gap-2">
-							<div className={cn("size-2 rounded-full", status.dotClass)} />
-							<h3 className="truncate text-sm font-semibold">{target.name}</h3>
+							<StatusDot tone={status.tone} size="lg" />
+							<h3 className="truncate text-sm font-semibold" title={target.name}>
+								{target.name}
+							</h3>
 						</div>
-						<p className="text-muted-foreground mt-1 truncate font-mono text-xs">{target.url}</p>
+						<p
+							className="text-muted-foreground mt-1 line-clamp-2 break-all font-mono text-xs"
+							title={target.url}
+						>
+							{target.url}
+						</p>
 					</div>
-					<Badge variant={status.badgeVariant}>{status.label}</Badge>
+					<Badge variant={status.tone === "neutral" ? "outline" : status.tone}>
+						{status.label}
+					</Badge>
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
-					<Button variant="outline" size="sm" onClick={() => onProbe(target)} disabled={probing}>
-						{probing ? <LoaderIcon size={14} className="animate-spin" /> : <BoltIcon size={14} />}
+					<Button variant="outline" size="sm" onClick={() => onProbe(target)} loading={probing}>
+						<BoltIcon />
 						Test
 					</Button>
 					{/* Managed targets are edited/removed through the owning integration card. */}
@@ -846,7 +762,7 @@ function ScrapeTargetDetails({
 						onClick={() => onEdit(target)}
 						disabled={target.managed_by != null}
 					>
-						<PencilIcon size={14} />
+						<PencilIcon />
 						Edit
 					</Button>
 					<Button variant="ghost" size="sm" onClick={() => onToggle(target)} disabled={toggling}>
@@ -859,7 +775,7 @@ function ScrapeTargetDetails({
 						onClick={() => onDelete(target)}
 						disabled={target.managed_by != null}
 					>
-						<TrashIcon size={14} />
+						<TrashIcon />
 						Delete
 					</Button>
 				</div>
@@ -881,7 +797,7 @@ function ScrapeTargetDetails({
 								</ul>
 							</div>
 							{failureMessage && (
-								<p className="font-mono text-[0.7rem] text-muted-foreground/80">
+								<p className="font-mono text-2xs text-muted-foreground/80">
 									{failureMessage}
 								</p>
 							)}
@@ -890,47 +806,54 @@ function ScrapeTargetDetails({
 				)}
 
 				<section className="space-y-2">
-					<div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+					<Eyebrow variant="label" className="flex items-center gap-2" as="div">
 						<PulseIcon size={13} />
-						Scheduled Scrape
-					</div>
+						Scheduled scrape
+					</Eyebrow>
 					<div className="grid grid-cols-2 gap-2 text-xs">
 						<MetricBox label="Interval" value={`${target.scrape_interval_seconds}s`} />
 						<MetricBox
 							label="Duration"
-							value={latestCheck ? formatDurationSeconds(latestCheck.duration_seconds) : "-"}
+							value={
+								latestCheck
+									? formatDurationSeconds(latestCheck.duration_seconds)
+									: EMPTY_VALUE
+							}
 						/>
 						<MetricBox
 							label="Samples"
-							value={latestCheck ? formatOptionalCount(latestCheck.samples_scraped) : "-"}
+							value={
+								latestCheck ? formatOptionalCount(latestCheck.samples_scraped) : EMPTY_VALUE
+							}
 						/>
 						<MetricBox
 							label="Post relabel"
 							value={
 								latestCheck
 									? formatOptionalCount(latestCheck.samples_post_metric_relabeling)
-									: "-"
+									: EMPTY_VALUE
 							}
 						/>
 					</div>
 				</section>
 
 				<section className="space-y-2">
-					<div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+					<Eyebrow variant="label" className="flex items-center gap-2" as="div">
 						<ExternalLinkIcon size={13} />
 						Target
-					</div>
-					<div className="divide-y rounded-md border bg-background/35 text-xs">
-						<DetailRow label="Service" value={target.service_name ?? target.name} />
-						<DetailRow label="Instance" value={hostnameFromUrl(target.url)} />
-						<DetailRow
-							label="Auth"
-							value={AUTH_TYPE_LABELS[target.auth_type] ?? target.auth_type}
-						/>
-						<DetailRow label="Target ID" value={<span className="font-mono">{target.id}</span>} />
-						<DetailRow label="Created" value={formatDateTime(target.created_at)} />
-						<DetailRow label="Updated" value={formatDateTime(target.updated_at)} />
-					</div>
+					</Eyebrow>
+					<KeyValueList divided className="rounded-md border bg-background/35 px-3">
+						<KeyValue label="Service">{target.service_name ?? target.name}</KeyValue>
+						<KeyValue label="Instance">{hostnameFromUrl(target.url)}</KeyValue>
+						<KeyValue label="Auth">
+							{AUTH_TYPE_LABELS[target.auth_type] ?? target.auth_type}
+						</KeyValue>
+						<KeyValue label="Target ID" mono>
+							{target.id}
+						</KeyValue>
+						<KeyValue label="Created">{formatDateTime(target.created_at)}</KeyValue>
+						<KeyValue label="Updated">{formatDateTime(target.updated_at)}</KeyValue>
+					</KeyValueList>
 					{labels.length > 0 && (
 						<div className="flex flex-wrap gap-1.5 pt-1">
 							{labels.map(([key, value]) => (
@@ -946,38 +869,31 @@ function ScrapeTargetDetails({
 
 				<section className="space-y-2">
 					<div className="flex items-center justify-between gap-3">
-						<div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+						<Eyebrow variant="label" className="flex items-center gap-2" as="div">
 							<HistoryIcon size={13} />
-							Check History
-						</div>
+							Check history
+						</Eyebrow>
 						{latestCheck && (
-							<span className="text-muted-foreground text-xs">
-								Latest {formatRelativeTime(latestCheck.timestamp)}
-							</span>
+							<RelativeTime
+								value={latestCheck.timestamp}
+								prefix="Latest"
+								className="text-muted-foreground text-xs"
+							/>
 						)}
 					</div>
 					<ScrapeTargetChecksTable result={checksResult} checks={checks} />
 				</section>
 			</div>
-		</aside>
+		</Panel>
 	)
 }
 
 function MetricBox({ label, value }: { label: string; value: string }) {
 	return (
-		<div className="rounded-md border bg-background/35 px-3 py-2">
-			<div className="text-muted-foreground text-[0.65rem] uppercase">{label}</div>
+		<Panel tone="background" className="px-3 py-2">
+			<Eyebrow as="div">{label}</Eyebrow>
 			<div className="mt-1 font-mono text-sm">{value}</div>
-		</div>
-	)
-}
-
-function DetailRow({ label, value }: { label: string; value: ReactNode }) {
-	return (
-		<div className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 px-3 py-2">
-			<span className="text-muted-foreground">{label}</span>
-			<span className="min-w-0 truncate text-right">{value}</span>
-		</div>
+		</Panel>
 	)
 }
 
@@ -988,73 +904,72 @@ export function ScrapeTargetChecksTable({
 	result: ScrapeTargetChecksResult
 	checks: ScrapeTargetCheck[]
 }) {
+	const formatDateTime = useFormatDateTime()
 	if (Result.isInitial(result)) {
-		return (
-			<div className="space-y-2">
-				<Skeleton className="h-8 w-full" />
-				<Skeleton className="h-8 w-full" />
-				<Skeleton className="h-8 w-full" />
-			</div>
-		)
+		return <SkeletonList rows={3} gap="2" />
 	}
 	if (!Result.isSuccess(result)) {
-		return (
-			<div className="rounded-md border bg-background/35 px-3 py-6 text-center text-xs text-muted-foreground">
-				Failed to load scheduled checks.
-			</div>
-		)
+		return <ErrorState error={result.cause} title="Failed to load scheduled checks" variant="row" />
 	}
 	if (checks.length === 0) {
 		return (
-			<div className="rounded-md border bg-background/35 px-3 py-6 text-center text-xs text-muted-foreground">
+			<EmptyMessage className="rounded-md border bg-background/35 px-3 py-6">
 				The first scrape runs shortly after you save. Use Test to check the endpoint now.
-			</div>
+			</EmptyMessage>
 		)
 	}
 
 	return (
-		<div className="overflow-hidden rounded-md border bg-background/35">
-			<div className="grid grid-cols-[minmax(100px,1fr)_64px_70px_72px] gap-2 border-b px-3 py-2 text-[0.65rem] uppercase text-muted-foreground">
-				<span>Time</span>
-				<span>State</span>
-				<span>Duration</span>
-				<span>Samples</span>
-			</div>
-			<div className="divide-y">
-				{checks.map((check) => (
-					<div
-						key={`${check.timestamp}-${check.sub_target_key ?? ""}`}
-						className="grid grid-cols-[minmax(100px,1fr)_64px_70px_72px] items-center gap-2 px-3 py-2 text-xs"
-					>
-						<div className="min-w-0">
-							<div className="truncate font-mono">{formatDateTime(check.timestamp)}</div>
-							{check.message && (
-								<Tooltip>
-									<TooltipTrigger
-										render={<div />}
-										className="text-muted-foreground mt-0.5 cursor-default truncate"
-									>
-										{check.message}
-									</TooltipTrigger>
-									<TooltipContent className="max-w-xs font-mono text-xs">
-										{check.message}
-									</TooltipContent>
-								</Tooltip>
-							)}
-						</div>
-						<div className="flex items-center gap-1.5">
-							{check.success ? (
-								<CircleCheckIcon size={12} className="text-success-foreground" />
-							) : (
-								<CircleXmarkIcon size={12} className="text-destructive" />
-							)}
-							<span>{check.success ? "up" : "down"}</span>
-						</div>
-						<span className="font-mono">{formatDurationSeconds(check.duration_seconds)}</span>
-						<span className="font-mono">{formatOptionalCount(check.samples_scraped)}</span>
-					</div>
-				))}
-			</div>
-		</div>
+		<Panel tone="background">
+			<Table size="sm">
+				<TableHeader>
+					<TableRow>
+						<TableHead className="w-full pl-3">Time</TableHead>
+						<TableHead className="w-[64px]">State</TableHead>
+						<TableHead className="w-[70px]">Duration</TableHead>
+						<TableHead className="w-[72px] pr-3">Samples</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{checks.map((check) => (
+						<TableRow key={`${check.timestamp}-${check.sub_target_key ?? ""}`}>
+							{/* max-w-0 lets the flexible column truncate instead of widening the table. */}
+							<TableCell className="max-w-0 min-w-[100px] pl-3">
+								<div className="truncate font-mono">{formatDateTime(check.timestamp)}</div>
+								{check.message && (
+									<Tooltip>
+										<TooltipTrigger
+											render={<div />}
+											className="text-muted-foreground mt-0.5 cursor-default truncate"
+										>
+											{check.message}
+										</TooltipTrigger>
+										<TooltipContent className="max-w-xs font-mono text-xs">
+											{check.message}
+										</TooltipContent>
+									</Tooltip>
+								)}
+							</TableCell>
+							<TableCell>
+								<span className="flex items-center gap-1.5">
+									{check.success ? (
+										<CircleCheckIcon size={12} className="text-severity-info" />
+									) : (
+										<CircleXmarkIcon size={12} className="text-severity-error" />
+									)}
+									<span>{check.success ? "up" : "down"}</span>
+								</span>
+							</TableCell>
+							<TableCell className="font-mono">
+								{formatDurationSeconds(check.duration_seconds)}
+							</TableCell>
+							<TableCell className="pr-3 font-mono">
+								{formatOptionalCount(check.samples_scraped)}
+							</TableCell>
+						</TableRow>
+					))}
+				</TableBody>
+			</Table>
+		</Panel>
 	)
 }

@@ -1,13 +1,15 @@
 import {
 	IntegrationsRevokedError,
-	OrgId,
 	ScrapeTargetAuthError,
 	ScrapeTargetEncryptionError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetUpstreamError,
 } from "@maple/domain/http"
 import { globToRegExp } from "@maple/domain/glob"
-import type { scrapeTargets } from "@maple/db"
+import type { ScrapeTargetRow as StoredScrapeTargetRow } from "@maple/db/tables"
+
+/** Discovery reads a target's connection, never its labels. */
+type ScrapeTargetRow = Omit<StoredScrapeTargetRow, "labelsJson">
 import {
 	Clock,
 	Context,
@@ -22,19 +24,17 @@ import {
 	Result,
 	Schema,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { buildScrapeAuthHeaders } from "@maple/backend/services/auth/scrape-auth"
-import { validateExternalUrlSync } from "@maple/safe-fetch"
+import { parseExternalUrl } from "@maple/safe-fetch"
 import { decodeDiscoveryConfig } from "./planetscale/discovery-config"
 import {
 	PlanetScaleOAuthService,
 	planetScaleBearerHeader,
 	type PlanetScaleAccessTokenError,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-
-type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
 
 /**
  * Resolves PlanetScale `planetscale`-type scrape targets into their concrete
@@ -101,8 +101,6 @@ type DiscoveryError =
 	| ScrapeTargetUpstreamError
 	| PlanetScaleAccessTokenError
 
-const toPersistenceError = (message: string) => new ScrapeTargetPersistenceError({ message })
-
 // Provider-side (http_sd) failures: transport, timeout, non-2xx non-auth, or an
 // undecodable payload. Kept distinct from persistence (our DB) so the class —
 // not a regex over the message — carries the failure kind downstream.
@@ -143,9 +141,7 @@ export const subTargetsFromGroup = (group: {
 	const dropped: Array<string> = []
 	for (const hostPort of group.targets) {
 		const url = `${scheme}://${hostPort}${path}`
-		try {
-			validateExternalUrlSync(url)
-		} catch {
+		if (Result.isFailure(parseExternalUrl(url))) {
 			dropped.push(url)
 			continue
 		}
@@ -266,8 +262,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			if (row.authType !== "planetscale_oauth") {
 				return yield* buildScrapeAuthHeaders(row, encryptionKey)
 			}
-			const orgId = yield* Schema.decodeEffect(OrgId)(row.orgId).pipe(Effect.orDie)
-			const { accessToken } = yield* psOAuth.getValidAccessToken(orgId)
+			const { accessToken } = yield* psOAuth.getValidAccessToken(row.orgId)
 			return { Authorization: planetScaleBearerHeader(accessToken) }
 		})
 

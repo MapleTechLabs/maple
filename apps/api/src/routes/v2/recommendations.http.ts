@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { RecommendationIssue, RecommendationIssueId } from "@maple/domain/http"
 import { CurrentTenant, RecommendationIssueNotFoundError } from "@maple/domain/http"
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"

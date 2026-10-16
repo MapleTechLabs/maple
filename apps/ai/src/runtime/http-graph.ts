@@ -21,15 +21,15 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  * MCP client.
  */
 import { MapleAiApi } from "@maple/domain/http"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Effect, Layer } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { McpLive } from "../mcp/app"
 import { HttpChatLive } from "../routes/internal/chat.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
-import { layerDecisionModel, layerLlm } from "../platform/Llm"
-import { ChatSessionsRouter } from "../routes/v1/chat-sessions.http"
+import { layerDecisionModelFromConfig } from "../platform/Llm"
+import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
+import { ChatSessionsRouter } from "../routes/chat-sessions.http"
 import { HealthRouter } from "../routes/health"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { Env } from "@maple/backend/platform/Env"
@@ -37,9 +37,9 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
-import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
-import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import type { AiPortsLayer } from "../worker/bindings"
 
 /**
@@ -75,17 +75,15 @@ const RawRoutes = rawRoutes(Layer.mergeAll(HealthRouter, ChatSessionsRouter, Mcp
 
 /**
  * The decision model the triage route asks, built once per isolate from the
- * Worker env — the same layers the investigation turn builds per turn in
- * `turn-runner.ts`, on the same OpenRouter key.
+ * Worker's config: the same layers the investigation turn builds per turn in
+ * `turn-runner.ts`, on the same AI Gateway binding.
  */
-const DecisionModelLive = Layer.unwrap(
-	Effect.map(WorkerEnvironment, (env) => layerDecisionModel(env).pipe(Layer.provide(layerLlm(env)))),
-)
+const DecisionModelLive = Layer.unwrap(Effect.map(WorkersAiGateway, layerDecisionModelFromConfig))
 
 const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),
 	Layer.provide(HttpTriageLive.pipe(Layer.provide(DecisionModelLive))),
-	Layer.provide(V1ErrorBoundaryLive),
+	Layer.provide(ApiErrorBoundaryLive),
 )
 
 export const AllRoutes = Layer.mergeAll(AiInternalRoutes, RawRoutes).pipe(
@@ -103,7 +101,7 @@ export const AllRoutes = Layer.mergeAll(AiInternalRoutes, RawRoutes).pipe(
  * `McpOAuthRateLimiter` is deliberately absent: the OAuth endpoints stayed on
  * api, which still owns its own limiter for them.
  */
-export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLayer).pipe(
+export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLive).pipe(
 	// `/mcp` falls back to session auth when the bearer is neither an API key nor
 	// an MCP OAuth token, so the transport resolves tenants through this too.
 	Layer.provideMerge(AuthService.layer),

@@ -20,6 +20,8 @@ import { SeveritySelect } from "./severity-select"
 import { StateSelect } from "./state-select"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { DetailRail } from "@maple/ui/components/detail-rail"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 type Busy =
 	| "state"
@@ -125,7 +127,7 @@ export function IssueSidebar({
 			<DetailRail.Group label="Scope">
 				<DetailRail.Field label="Service" title={issue.serviceName}>
 					<span className="flex min-w-0 items-center gap-2">
-						<ServiceDot serviceName={issue.serviceName} className="size-1.5 shrink-0" />
+						<ServiceDot serviceName={issue.serviceName} size="sm" />
 						<span className="truncate text-sm text-foreground">{issue.serviceName}</span>
 					</span>
 				</DetailRail.Field>
@@ -163,7 +165,7 @@ export function IssueSidebar({
 								size="xs"
 								variant="ghost"
 								onClick={onHeartbeat}
-								disabled={busy === "heartbeat"}
+								loading={busy === "heartbeat"}
 							>
 								Extend
 							</Button>
@@ -171,7 +173,7 @@ export function IssueSidebar({
 								size="xs"
 								variant="ghost"
 								onClick={onRelease}
-								disabled={busy === "release"}
+								loading={busy === "release"}
 							>
 								Release
 							</Button>
@@ -185,7 +187,7 @@ export function IssueSidebar({
 								variant="outline"
 								className="-mr-0.5"
 								onClick={onClaim}
-								disabled={busy === "claim"}
+								loading={busy === "claim"}
 							>
 								Claim
 							</Button>
@@ -215,7 +217,7 @@ const ENVIRONMENT_ROWS_SHOWN = 4
  * in the window, or no `deployment.environment` set) is the Assignee dash.
  */
 function EnvironmentValue({ environments }: { environments: ReadonlyArray<ErrorIssueEnvironment> }) {
-	if (environments.length === 0) return <span className="text-xs text-muted-foreground">–</span>
+	if (environments.length === 0) return <span className="text-xs text-muted-foreground">{EMPTY_VALUE}</span>
 	const shown = environments.slice(0, ENVIRONMENT_ROWS_SHOWN)
 	const hidden = environments.length - shown.length
 	return (
@@ -223,13 +225,13 @@ function EnvironmentValue({ environments }: { environments: ReadonlyArray<ErrorI
 			{shown.map((env) => (
 				<li key={env.name} className="flex min-w-0 items-baseline justify-between gap-3">
 					<span className="truncate text-sm text-foreground">{env.name}</span>
-					<span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
-						{env.count.toLocaleString()}
+					<span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
+						{formatNumber(env.count)}
 					</span>
 				</li>
 			))}
 			{hidden > 0 ? (
-				<li className="text-right text-[11px] text-muted-foreground">+{hidden} more</li>
+				<li className="text-right text-2xs text-muted-foreground">+{hidden} more</li>
 			) : null}
 		</ul>
 	)
@@ -243,18 +245,24 @@ function EnvironmentValue({ environments }: { environments: ReadonlyArray<ErrorI
 function IssueIdCopy({ id }: { id: string }) {
 	const { copy, status } = useCopy({ label: "Issue ID" })
 	return (
-		<button
-			type="button"
-			onClick={() => void copy(id)}
-			title="Copy issue ID"
-			className="group/copy -mr-1.5 inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 font-mono text-xs tabular-nums text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-		>
-			{shortIssueId(id)}
-			<CopyIndicator
-				status={status}
-				size={12}
-				className="opacity-0 transition-opacity group-hover/copy:opacity-100 data-[copy-status=copied]:opacity-100"
-			/>
-		</button>
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<button
+						type="button"
+						onClick={() => void copy(id)}
+						className="group/copy -mr-1.5 inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 font-mono text-xs tabular-nums text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				}
+			>
+				{shortIssueId(id)}
+				<CopyIndicator
+					status={status}
+					iconSize={12}
+					className="opacity-0 transition-opacity group-hover/copy:opacity-100 data-[copy-status=copied]:opacity-100 pointer-coarse:opacity-100"
+				/>
+			</TooltipTrigger>
+			<TooltipContent>Copy issue ID</TooltipContent>
+		</Tooltip>
 	)
 }

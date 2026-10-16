@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	CLOUDFLARE_BREAKDOWN_DIMENSIONS,
 	CLOUDFLARE_BREAKDOWN_OTHER_KEY,
@@ -10,9 +10,10 @@ import {
 	cloudflareZoneBreakdownTotalsSQL,
 	cloudflareZoneFacetsQuery,
 } from "./cloudflare-infra-breakdowns"
+import { OrgId } from "@maple/domain"
 
 const zoneParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	serviceName: "cloudflare/example.com",
 	startTime: "2026-07-02 00:00:00.000",
 	endTime: "2026-07-03 00:00:00.000",
@@ -120,7 +121,7 @@ describe("cloudflareZoneBreakdownTimeseriesSQL", () => {
 describe("cloudflareZoneBreakdownCoverageSQL", () => {
 	it("reports when collection started, ignoring the caller's dimension filters", () => {
 		const { sql } = compileUnsafe(cloudflareZoneBreakdownCoverageSQL("path"), zoneParams)
-		expect(sql).toContain("min(TimeUnix)")
+		expect(sql).toContain("min(metrics_sum.TimeUnix)")
 		expect(sql).toContain("MetricName = 'cloudflare.http.requests.by_path'")
 		// Coverage is a property of what the poller collected, not of the current selection.
 		expect(sql).not.toContain("IN (")
@@ -144,7 +145,7 @@ describe("cloudflareZoneFacetsQuery", () => {
 			expect(sql).toContain(`'${facetType}' AS facetType`)
 		}
 		// Weight, not entity count — the list is ranked by traffic.
-		expect(sql).toContain("sum(Value) AS count")
+		expect(sql).toContain("sum(metrics_sum.Value) AS count")
 	})
 
 	it("self-excludes each facet so a selection does not hide its siblings", () => {

@@ -1,6 +1,6 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import type { BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -71,6 +71,7 @@ type AutumnRoute =
 	| "openCustomerPortal"
 	| "listPlans"
 	| "updateSubscription"
+	| "updateCustomer"
 
 const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	getOrCreateCustomer: "/v1/customers.get_or_create",
@@ -80,6 +81,7 @@ const ROUTE_PATHS: Record<AutumnRoute, string> = {
 	openCustomerPortal: "/v1/billing.open_customer_portal",
 	listPlans: "/v1/plans.list",
 	updateSubscription: "/v1/billing.update",
+	updateCustomer: "/v1/customers.update",
 } satisfies Record<AutumnRoute, string>
 
 /**
@@ -231,10 +233,10 @@ const callAutumn = (
 				// read an upstream 4xx becomes a generic 502 by design, so without this
 				// attribute there is nothing left to tell us WHY Autumn refused.
 				if (typeof errorBody.code === "string") {
-					yield* Effect.annotateCurrentSpan({ "autumn.code": errorBody.code })
+					yield* Effect.annotateCurrentSpan({ "maple.autumn.code": errorBody.code })
 				}
 				return { statusCode: response.status, response: errorBody }
-			}).pipe(Effect.withSpan("autumn.request", { attributes: { "autumn.route": route } }))
+			}).pipe(Effect.withSpan("autumn.request", { attributes: { "maple.autumn.route": route } }))
 
 type AutumnCall = Effect.Effect<AutumnResult, AutumnTransportFailure>
 
@@ -312,6 +314,8 @@ export interface AutumnClientApi {
 		orgId: string,
 		controls: AutumnBillingControlsUpdate,
 	) => AutumnCall
+	/** Overwrites the customer's display name. */
+	readonly updateCustomerName: (customerId: string, name: string) => AutumnCall
 }
 
 const customerDataFields = (data: AutumnCustomerData | undefined): Record<string, unknown> =>
@@ -387,7 +391,7 @@ const callUpdateBillingControls = (
 				return { statusCode: response.status, response: responseBody } satisfies AutumnResult
 			}).pipe(
 				Effect.withSpan("autumn.request", {
-					attributes: { "autumn.route": "updateCustomerBillingControls" },
+					attributes: { "maple.autumn.route": "updateCustomerBillingControls" },
 				}),
 			)
 
@@ -483,6 +487,9 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 
 				updateCustomerBillingControls: (orgId, controls) =>
 					callUpdateBillingControls(httpClient, secretKey, apiUrl, orgId, controls),
+
+				updateCustomerName: (customerId, name) =>
+					call("updateCustomer", { customer_id: customerId, name }),
 			} satisfies AutumnClientApi
 		}),
 	},

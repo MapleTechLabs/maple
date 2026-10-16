@@ -13,8 +13,8 @@ import {
 	type ToolErrorSamplesState,
 } from "@/components/agent-sessions/tools/tool-error-modal"
 import { prepareToolErrors, type ToolErrorsWindow } from "@/components/agent-sessions/tools/tool-errors-table"
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { ResultView } from "@/components/common/result-view"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
@@ -75,42 +75,35 @@ function ToolDetailPage() {
 
 	return (
 		<PageRefreshProvider timePreset={preset}>
-			<DashboardLayout.Root>
-				<DashboardLayout.Breadcrumbs
-					items={[
-						{ label: "Agent Sessions", href: "/agent-sessions" },
-						{ label: "Tools", href: "/agent-sessions/tools" },
-						{ label: toolName },
-					]}
+			<DashboardPage
+				breadcrumbs={[
+					{ label: "Agent Sessions", href: "/agent-sessions" },
+					{ label: "Tools", href: "/agent-sessions/tools" },
+					{ label: toolName },
+				]}
+				// The view lays out its own header and gutters edge to edge.
+				scrollClassName="p-0"
+			>
+				<ToolDetailBody
+					tool={toolName}
+					search={search}
+					window={window}
+					onSearchChange={onSearchChange}
+					headerControls={
+						<TimeRangeHeaderControls
+							search={search}
+							startTime={startTime}
+							endTime={endTime}
+							defaultPreset={TOOL_ANALYTICS_DEFAULT_PRESET}
+							onTimeChange={(range) => {
+								navigate({
+									search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
+								})
+							}}
+						/>
+					}
 				/>
-				<DashboardLayout.Body>
-					<DashboardLayout.Content>
-						<DashboardLayout.Scroll className="p-0">
-							<ToolDetailBody
-								tool={toolName}
-								search={search}
-								window={window}
-								onSearchChange={onSearchChange}
-								headerControls={
-									<TimeRangeHeaderControls
-										startTime={search.startTime ?? startTime}
-										endTime={search.endTime ?? endTime}
-										presetValue={
-											search.timePreset ??
-											(search.startTime ? undefined : TOOL_ANALYTICS_DEFAULT_PRESET)
-										}
-										onTimeChange={(range) => {
-											navigate({
-												search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
-											})
-										}}
-									/>
-								}
-							/>
-						</DashboardLayout.Scroll>
-					</DashboardLayout.Content>
-				</DashboardLayout.Body>
-			</DashboardLayout.Root>
+			</DashboardPage>
 		</PageRefreshProvider>
 	)
 }
@@ -226,63 +219,67 @@ function ToolDetailBody({
 			? undefined
 			: errorRows.find((candidate) => candidate.fingerprint === search.error)
 
-	return Result.builder(totals)
-		.onInitial(() => (
-			<div className="flex flex-col gap-5 p-6">
-				<Skeleton className="h-14 w-full max-w-2xl" />
-				<Skeleton className="h-64" />
-				<Skeleton className="h-64" />
-			</div>
-		))
-		.onError((error) => <QueryErrorState error={error} titleOverride={`Failed to load ${tool}`} />)
-		.onSuccess((resolved, result) => (
-			<ToolDetailView
-				tool={tool}
-				search={search}
-				onSearchChange={onSearchChange}
-				data={{
-					series: seriesData,
-					totals: resolved.current,
-					// The toolbar's predicates narrow this tool's calls; the denominator
-					// is the same read without them, which the tool's own totals are
-					// only when nothing is set. `scopeSummary` drops the ratio when the
-					// two agree, so this is the honest one of the two.
-					scopeCalls: resolved.current.calls,
-					firstSeen: resolved.firstSeen,
-					lastSeen: resolved.lastSeen,
-					description: resolved.description,
-					range,
-					errors: errorRows,
-					errorsLoading: Result.isInitial(errors),
-					errorsFailure,
-					sessions: sessionRows,
-					sessionsCapped: sessionRows.length >= SESSIONS_LIMIT,
-					sessionsLoading: Result.isInitial(sessions),
-					sessionsFailure,
-				}}
-				serviceOptions={facets?.services ?? []}
-				modelOptions={facets?.models ?? []}
-				envOptions={facets?.environments ?? []}
-				headerControls={headerControls}
-				modal={
-					openError === undefined ? null : (
-						<ErrorModal
-							tool={tool}
-							rows={errorRows}
-							fingerprint={openError.fingerprint}
-							range={range}
-							toolCalls={resolved.current.calls}
-							selection={selection}
-							session={search.session}
-							variant={search.variant}
-							onSearchChange={onSearchChange}
-						/>
-					)
-				}
-				waiting={result.waiting}
-			/>
-		))
-		.render()
+	return (
+		<ResultView
+			result={totals}
+			loading={
+				<div className="flex flex-col gap-5 p-6">
+					<Skeleton className="h-14 w-full max-w-2xl" />
+					<Skeleton className="h-64" />
+					<Skeleton className="h-64" />
+				</div>
+			}
+			errorTitle={`Failed to load ${tool}`}
+		>
+			{(resolved, { waiting }) => (
+				<ToolDetailView
+					tool={tool}
+					search={search}
+					onSearchChange={onSearchChange}
+					data={{
+						series: seriesData,
+						totals: resolved.current,
+						// The toolbar's predicates narrow this tool's calls; the denominator
+						// is the same read without them, which the tool's own totals are
+						// only when nothing is set. `scopeSummary` drops the ratio when the
+						// two agree, so this is the honest one of the two.
+						scopeCalls: resolved.current.calls,
+						firstSeen: resolved.firstSeen,
+						lastSeen: resolved.lastSeen,
+						description: resolved.description,
+						range,
+						errors: errorRows,
+						errorsLoading: Result.isInitial(errors),
+						errorsFailure,
+						sessions: sessionRows,
+						sessionsCapped: sessionRows.length >= SESSIONS_LIMIT,
+						sessionsLoading: Result.isInitial(sessions),
+						sessionsFailure,
+					}}
+					serviceOptions={facets?.services ?? []}
+					modelOptions={facets?.models ?? []}
+					envOptions={facets?.environments ?? []}
+					headerControls={headerControls}
+					modal={
+						openError === undefined ? null : (
+							<ErrorModal
+								tool={tool}
+								rows={errorRows}
+								fingerprint={openError.fingerprint}
+								range={range}
+								toolCalls={resolved.current.calls}
+								selection={selection}
+								session={search.session}
+								variant={search.variant}
+								onSearchChange={onSearchChange}
+							/>
+						)
+					}
+					waiting={waiting}
+				/>
+			)}
+		</ResultView>
+	)
 }
 
 /**

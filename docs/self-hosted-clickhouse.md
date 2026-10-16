@@ -17,7 +17,7 @@ Tested on ClickHouse 24.8+. Earlier versions may work but aren't validated. The 
 
 ## How runtime config works
 
-Self-managed Maple is a **per-org BYO** feature. Each org configures its own ClickHouse under Settings → "Bring your own ClickHouse". The credentials live in the `org_clickhouse_settings` Postgres table (`packages/db/src/schema/org-clickhouse-settings.ts`), with the password encrypted at rest with `MAPLE_INGEST_KEY_ENCRYPTION_KEY`. There is no sync workflow: the schema lives in the org's ClickHouse instance and is applied from the settings page or the CLI below.
+Self-managed Maple is a **per-org BYO** feature. Each org configures its own ClickHouse under Settings → "Bring your own ClickHouse". The credentials live in the `org_clickhouse_settings` Postgres table (`packages/db/src/tables/org-clickhouse-settings.ts`), with the password encrypted at rest with `MAPLE_INGEST_KEY_ENCRYPTION_KEY`. There is no sync workflow: the schema lives in the org's ClickHouse instance and is applied from the settings page or the CLI below.
 
 Orgs without a BYO row use the deployment's managed warehouse. API query routing needs no new env vars for BYO ClickHouse. Postgres-backed direct ingest does need `MAPLE_INGEST_KEY_ENCRYPTION_KEY` so the ingest gateway can decrypt stored ClickHouse passwords.
 
@@ -144,7 +144,7 @@ Postgres-backed ingest deployments must set `MAPLE_INGEST_KEY_ENCRYPTION_KEY` be
 Operational caveats:
 
 - **Readiness keys on the latest ingest-required migration, which only the API marks.** The `schema_version` stored in Postgres is set to `clickHouseSchemaVersion` **only** by the API's apply workflow (or by the `schemaDiff` self-heal, below). A credential re-save _preserves_ the prior value. The standalone `clickhouse-cli` writes `_maple_schema_migrations` **on your ClickHouse server but never touches Maple's application database**. So an org whose schema was applied entirely via the CLI stays `schema_version`-stale, and the gateway keeps routing to Tinybird even though the cluster is fully migrated. Symptom: the dashboard (which reads ClickHouse whenever a settings row exists) shows collector-written data, but data sent through the public ingestor is invisible because it landed in Tinybird.
-- **Self-heal:** calling `schemaDiff` (opening the settings page, or `GET /api/org-clickhouse-settings/schema-diff`) re-stamps `schema_version` to `clickHouseSchemaVersion` whenever the live schema is fully in sync (every diff entry `up_to_date`). This is the supported way to mark a CLI-applied org ready without forcing an Apply that has nothing to migrate. The read path also annotates a `clickhouse.schemaDrift` span attribute (`OrgClickHouseSettingsService.resolveRuntimeConfig`). Alert on it to catch stale orgs.
+- **Self-heal:** calling `schemaDiff` (opening the settings page, which calls `GET /internal/org-clickhouse-settings/schema-diff`) re-stamps `schema_version` to `clickHouseSchemaVersion` whenever the live schema is fully in sync (every diff entry `up_to_date`). This is the supported way to mark a CLI-applied org ready without forcing an Apply that has nothing to migrate. The read path also annotates a `maple.clickhouse.schema_drift` span attribute (`OrgClickHouseSettingsService.resolveRuntimeConfig`). Alert on it to catch stale orgs.
 - ClickHouse-routed frames never fall back to Tinybird. After the configured export retry budget is exhausted, the batch is dropped, the WAL cursor advances, and `ingest_clickhouse_export_dropped_total` records the datasource and final drop reason. Alert on any non-zero increase in that counter.
 - Password-authenticated ClickHouse endpoints must use `https://`. The gateway drops passworded `http://` targets before attaching `X-ClickHouse-Key`.
 - Direct ClickHouse routing writes WAL v3 frames. Do not roll back to a pre-direct-ClickHouse ingest binary while v3 frames may remain in the queue. Drain the WAL first, or accept that clearing the queue directory is a data-loss recovery step.
@@ -185,7 +185,7 @@ Apps then point `OTEL_EXPORTER_OTLP_ENDPOINT` at `http://maple-otel.maple.svc.cl
 
 **Anywhere else (Docker / VM / ECS / Nomad / …):** download a pre-rendered config from Maple:
 
-1. `GET /api/org-clickhouse-settings/collector-config` (there is no download button in the settings UI).
+1. `GET /internal/org-clickhouse-settings/collector-config` with a signed-in dashboard session (API keys are refused, and there is no download button in the settings UI yet).
 2. Drop the YAML next to a copy of the image and run:
 
     ```bash

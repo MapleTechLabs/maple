@@ -1,11 +1,11 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Fiber, Layer, Redacted } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { OtlpIngest } from "./OtlpIngest"
 import { ScraperEnv, type ScraperEnvConfig } from "./Env"
 import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
-import type { OtlpExportRequest } from "./prometheus/otlp"
+import type { OtlpExportRequest } from "@maple/prometheus-otlp"
 
 const testEnv: ScraperEnvConfig = {
 	MAPLE_API_URL: "http://api.test",
@@ -20,6 +20,17 @@ const testEnv: ScraperEnvConfig = {
 const TestLayer = OtlpIngest.layer.pipe(
 	Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(ScraperEnv, testEnv))),
 )
+
+/** Lets the stubbed fetch settle on the real event loop, then moves the test clock past a backoff. */
+const settleAndAdvance = (steps: number, by: Duration.Input = "2 seconds") =>
+	Effect.forEach(
+		Array.from({ length: steps }),
+		() =>
+			Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0))).pipe(
+				Effect.andThen(TestClock.adjust(by)),
+			),
+		{ discard: true },
+	)
 
 const SAMPLE_REQUEST: OtlpExportRequest = {
 	resourceMetrics: [
@@ -108,29 +119,58 @@ describe("OtlpIngest", () => {
 				),
 				Effect.flip,
 			)
-			assert.strictEqual(error._tag, "@maple/scraper/OtlpIngestError")
-			assert.strictEqual(error.status, 402)
+			assert.strictEqual(error.reason, "delivery_blocked")
+			assert.strictEqual(error.statusCode, 402)
 			assert.include(error.message, "billing limit")
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
-	it.effect("fails with a typed error on other non-2xx responses", () =>
+	// Any other rejection loses the export (bad key, oversized body), so it is a
+	// real failure: it errors the span and holds cadence.
+	it.effect("fails and errors its span on any other non-2xx response", () =>
 		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
 			const otlp = yield* OtlpIngest
 			const error = yield* otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
 				Effect.provideService(
 					FetchHttpClient.Fetch,
 					stubFetch([], () => new Response("nope", { status: 401 })),
 				),
+				Effect.provide(tracer.layer),
 				Effect.flip,
 			)
-			assert.strictEqual(error.status, 401)
+			assert.strictEqual(error.reason, "scrape_failed")
+			assert.strictEqual(error.statusCode, 401)
+			const [span] = endedSpansNamed(tracer.ended, "OtlpIngest.send")
+			assert.isTrue(Exit.isFailure(span!.exit))
+			assert.strictEqual(span!.attributes.get("http.response.status_code"), 401)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
-	// A 4xx is the gateway telling us about the *caller*, not a fault of this
-	// send — only 5xx is `Error` (CLAUDE.md). The typed error still reaches the
-	// caller; it just must not be blamed on the span.
+	it.effect("retries a gateway 503 and delivers the export", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const otlp = yield* OtlpIngest
+			const fiber = yield* Effect.forkChild(
+				otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () =>
+							recorded.length === 1
+								? new Response("deploying", { status: 503 })
+								: Response.json({ partialSuccess: {} }),
+						),
+					),
+				),
+			)
+			yield* settleAndAdvance(2)
+			yield* Fiber.join(fiber)
+			assert.lengthOf(recorded, 2)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	// A billing block is the expected, caller-side outcome for an org over its
+	// limit: the typed error still reaches the caller, but the span stays Ok.
 	it.effect("annotates rather than errors its span on a billing rejection (402)", () =>
 		Effect.gen(function* () {
 			const tracer = makeCapturingTracer()
@@ -152,24 +192,6 @@ describe("OtlpIngest", () => {
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
-	it.effect("still errors its span when the gateway itself fails (5xx)", () =>
-		Effect.gen(function* () {
-			const tracer = makeCapturingTracer()
-			const otlp = yield* OtlpIngest
-			yield* otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
-				Effect.provideService(
-					FetchHttpClient.Fetch,
-					stubFetch([], () => new Response("boom", { status: 500 })),
-				),
-				Effect.provide(tracer.layer),
-				Effect.flip,
-			)
-
-			const spans = endedSpansNamed(tracer.ended, "OtlpIngest.send")
-			assert.lengthOf(spans, 1)
-			assert.isTrue(Exit.isFailure(spans[0]!.exit))
-		}).pipe(Effect.provide(TestLayer)),
-	)
 	// A gateway that accepts the connection but never answers must not pin the
 	// scrape (and its global concurrency permit) forever — the send times out
 	// as a retryable typed error.
@@ -186,10 +208,11 @@ describe("OtlpIngest", () => {
 					.pipe(Effect.provideService(FetchHttpClient.Fetch, stalled), Effect.flip),
 				{ startImmediately: true },
 			)
-			yield* TestClock.adjust("31 seconds")
+			// Each of the three attempts times out at 30s, with a backoff between them.
+			yield* settleAndAdvance(3, "35 seconds")
 			const error = yield* Fiber.join(fiber)
-			assert.strictEqual(error._tag, "@maple/scraper/OtlpIngestError")
-			assert.strictEqual(error.status, null)
+			assert.strictEqual(error.reason, "scrape_failed")
+			assert.strictEqual(error.statusCode, null)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -292,13 +315,13 @@ describe("OtlpIngest", () => {
 					Effect.flip,
 				)
 
-				assert.strictEqual(error.status, 402)
+				assert.strictEqual(error.statusCode, 402)
 				// Chunk 3 is never attempted — the org is over its limit.
 				assert.lengthOf(recorded, 2)
 			}).pipe(Effect.provide(ChunkedLayer)),
 		)
 
-		it.effect("keeps the parent span Ok on a 4xx and records how much was delivered", () =>
+		it.effect("keeps the parent span Ok on a 402 and records how much was delivered", () =>
 			Effect.gen(function* () {
 				const tracer = makeCapturingTracer()
 				let call = 0

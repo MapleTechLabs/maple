@@ -1,28 +1,29 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { useEffect, useState } from "react"
+import { Link } from "@tanstack/react-router"
+import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Exit, Option } from "effect"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import {
-	GithubSetPrReviewRequest,
+	GithubSetCiTracesRequest,
 	GithubSetTrackedBranchRequest,
 	type GithubIntegrationStatus,
 	type GithubRepoSummary,
 	type VcsRepoSyncStatus,
 } from "@maple/domain/http"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia } from "@maple/ui/components/ui/item"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { SettingRow } from "@maple/ui/components/ui/setting-row"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { RefreshButton } from "@maple/ui/components/ui/refresh-button"
 import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import {
@@ -37,13 +38,16 @@ import {
 	LoaderIcon,
 	TrashIcon,
 } from "@/components/icons"
+import { ErrorState } from "@/components/common/error-state"
+import { RelativeTime } from "@/components/common/relative-time"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
-import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
-import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
+import { toastExit } from "@/lib/error-toast"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
+import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
-import { useIntegrationConnect, type IntegrationConnect } from "./integration-connect"
-import { PrReviewModelSetting, PrReviewSettingsButton } from "./pr-review-settings"
+import { useRequiredIntegrationConnect, type IntegrationConnect } from "./integration-connect"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -53,6 +57,7 @@ import {
 	IntegrationEmptyHint,
 	IntegrationEmptyMedia,
 } from "./integration-empty-state"
+import { useIntegrationDisconnect } from "./use-integration-disconnect"
 
 /** How often to re-fetch status while the connect flow / background sync is active. */
 const POLL_INTERVAL_MS = 3_000
@@ -67,10 +72,10 @@ const SYNC_PRESENTATION: Record<
 	VcsRepoSyncStatus,
 	{ label: string; tone: string; Icon: typeof CircleCheckIcon; spin?: boolean }
 > = {
-	ready: { label: "Synced", tone: "text-success-foreground", Icon: CircleCheckIcon },
-	backfilling: { label: "Syncing", tone: "text-info-foreground", Icon: LoaderIcon, spin: true },
+	ready: { label: "Synced", tone: "text-severity-info", Icon: CircleCheckIcon },
+	backfilling: { label: "Syncing", tone: "text-severity-info", Icon: LoaderIcon, spin: true },
 	pending: { label: "Queued", tone: "text-muted-foreground", Icon: ClockIcon },
-	error: { label: "Sync failed", tone: "text-destructive-foreground", Icon: CircleWarningIcon },
+	error: { label: "Sync failed", tone: "text-severity-error", Icon: CircleWarningIcon },
 } satisfies Record<
 	VcsRepoSyncStatus,
 	{ label: string; tone: string; Icon: typeof CircleCheckIcon; spin?: boolean }
@@ -78,52 +83,53 @@ const SYNC_PRESENTATION: Record<
 
 export function GithubIntegrationCard() {
 	// Assigned once so the refresh hook targets the same memoized query atom.
-	const statusQuery = retainedQuery("integrations", "githubStatus", {
+	const statusQuery = retainedInternalQuery("integrations", "githubStatus", {
 		reactivityKeys: ["githubIntegrationStatus"],
 	})
 	const statusResult = useAtomValue(statusQuery)
 	const refreshStatus = useAtomRefresh(statusQuery)
 
-	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubDisconnect"), {
+	const disconnect = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubDisconnect"), {
 		mode: "promiseExit",
 	})
 	const deleteRepository = useAtomSet(
-		MapleApiAtomClient.mutation("integrations", "githubDeleteRepository"),
+		MapleInternalAtomClient.mutation("integrations", "githubDeleteRepository"),
 		{ mode: "promiseExit" },
 	)
 	const setTrackedBranch = useAtomSet(
-		MapleApiAtomClient.mutation("integrations", "githubSetTrackedBranch"),
+		MapleInternalAtomClient.mutation("integrations", "githubSetTrackedBranch"),
 		{ mode: "promiseExit" },
 	)
-	const setPrReview = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubSetPrReview"), {
-		mode: "promiseExit",
-	})
 
 	// Connect flow (popup, busy, refresh-on-return, post-close grace window) lives in
 	// IntegrationConnectProvider — shared with the drill-in header's Connect button.
-	const connectFlow = useIntegrationConnect()
-	if (connectFlow === null) {
-		throw new Error("GithubIntegrationCard must be rendered inside IntegrationConnectProvider")
-	}
-	const [disconnectBusy, setDisconnectBusy] = useState(false)
+	const connectFlow = useRequiredIntegrationConnect("GithubIntegrationCard")
+	const { disconnect: handleDisconnect, pending: disconnectBusy } = useIntegrationDisconnect(
+		() => disconnect({ reactivityKeys: ["githubIntegrationStatus"] }),
+		{ success: "GitHub disconnected", error: "Failed to disconnect GitHub" },
+	)
 	// Separate from the query's `waiting` flag — only true on an explicit Refresh click, not background polls.
 	const [refreshing, setRefreshing] = useState(false)
 	// Repo awaiting delete confirmation; id of the repo currently being deleted (shows spinner).
 	const [repoToDelete, setRepoToDelete] = useState<GithubRepoSummary | null>(null)
-	const [deletingRepoId, setDeletingRepoId] = useState<string | null>(null)
+	const deleteAction = useKeyedAsyncAction((_repoId: string, repo: GithubRepoSummary) =>
+		deleteRepository({
+			params: { repositoryId: repo.id },
+			reactivityKeys: ["githubIntegrationStatus"],
+		}).then((result) =>
+			toastExit(result, {
+				success: `Deleted ${repo.fullName} from Maple`,
+				error: `Failed to delete ${repo.fullName}`,
+			}),
+		),
+	)
 	// Disconnect is a full purge (repos + commit history), so it routes through a confirmation.
 	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 	const [forcePoll, setForcePoll] = useState(false)
 
-	const status = Result.builder(statusResult)
-		.onSuccess((s) => s)
-		.orElse(() =>
-			// Keep the last loaded status visible if a refresh/poll fails, so a transient error
-			// doesn't blow away the connected view.
-			Result.isFailure(statusResult)
-				? Option.getOrNull(Option.map(statusResult.previousSuccess, (prev) => prev.value))
-				: null,
-		)
+	// Keep the last loaded status visible if a refresh/poll fails, so a transient error
+	// doesn't blow away the connected view.
+	const status = Option.getOrNull(AsyncResult.value(statusResult))
 	const isLoading = Result.isInitial(statusResult) && status === null
 	// A genuine load failure with nothing to fall back on — surface a retry instead of silently
 	// rendering the first-run "Connect" screen (which is indistinguishable from "never connected").
@@ -158,92 +164,50 @@ export function GithubIntegrationCard() {
 		return () => clearTimeout(id)
 	}, [refreshing])
 
-	async function handleDisconnect() {
-		setDisconnectBusy(true)
-		const result = await disconnect({ reactivityKeys: ["githubIntegrationStatus"] })
-		setDisconnectBusy(false)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: "GitHub disconnected", type: "success" })
-		} else {
-			toastManager.add({ title: "Failed to disconnect GitHub", type: "error" })
-		}
-	}
-
-	async function handleDeleteRepository(repo: GithubRepoSummary) {
+	function handleDeleteRepository(repo: GithubRepoSummary) {
 		setRepoToDelete(null)
-		setDeletingRepoId(repo.id)
-		const result = await deleteRepository({
-			params: { repositoryId: repo.id },
-			reactivityKeys: ["githubIntegrationStatus"],
-		})
-		setDeletingRepoId(null)
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: `Deleted ${repo.fullName} from Maple`, type: "success" })
-		} else {
-			toastManager.add({ title: `Failed to delete ${repo.fullName}`, type: "error" })
-		}
+		void deleteAction.run(repo.id, repo)
 	}
 
+	/** Resolves false on failure so the selector can revert its optimistic state. */
 	async function handleSetTrackedBranch(repo: GithubRepoSummary, trackedBranch: string) {
 		const result = await setTrackedBranch({
 			params: { repositoryId: repo.id },
 			payload: new GithubSetTrackedBranchRequest({ trackedBranch }),
 			reactivityKeys: ["githubIntegrationStatus"],
 		})
-		if (Exit.isSuccess(result)) {
-			if (result.value.backfillQueued) {
-				toastManager.add({
-					title: `Now tracking ${trackedBranch} — re-syncing commits…`,
-					type: "success",
-				})
-				// Poll through the gap between enqueue and the worker flipping the repo to "backfilling".
-				setForcePoll(true)
-				refreshStatus()
-			}
-		} else {
-			toastManager.add({ title: "Failed to change tracked branch", type: "error" })
-			// Surface failure so the selector can revert its optimistic state.
-			throw new Error("Failed to change tracked branch")
+		if (!toastExit(result, { error: "Failed to change tracked branch" })) return false
+		if (Exit.isSuccess(result) && result.value.backfillQueued) {
+			toastManager.add({ title: `Now tracking ${trackedBranch}, re-syncing commits…`, type: "success" })
+			// Poll through the gap between enqueue and the worker flipping the repo to "backfilling".
+			setForcePoll(true)
+			refreshStatus()
 		}
-	}
-
-	async function handleSetPrReview(repo: GithubRepoSummary, enabled: boolean) {
-		const result = await setPrReview({
-			params: { repositoryId: repo.id },
-			payload: new GithubSetPrReviewRequest({ enabled }),
-			reactivityKeys: ["githubIntegrationStatus"],
-		})
-		if (Exit.isSuccess(result)) {
-			toastManager.add({
-				title: enabled
-					? `Maple will review pull requests on ${repo.fullName}`
-					: `Pull request reviews off for ${repo.fullName}`,
-				type: "success",
-			})
-		} else {
-			toastManager.add({ title: "Failed to change pull request reviews", type: "error" })
-			throw new Error("Failed to change pull request reviews")
-		}
+		return true
 	}
 
 	return (
 		<>
 			{isLoading ? (
 				<LoadingState />
-			) : loadFailed ? (
-				<LoadFailedState onRetry={handleManualRefresh} />
+			) : loadFailed && Result.isFailure(statusResult) ? (
+				<ErrorState
+					error={statusResult.cause}
+					title="Failed to load the GitHub integration"
+					onRetry={handleManualRefresh}
+				/>
 			) : status?.connected ? (
 				<ConnectedView
 					status={status}
 					connectFlow={connectFlow}
 					disconnectBusy={disconnectBusy}
 					refreshing={refreshing}
-					deletingRepoId={deletingRepoId}
+					isDeleting={deleteAction.isPending}
+					anyDeleting={deleteAction.anyPending}
 					onRefresh={handleManualRefresh}
 					onRequestDisconnect={() => setConfirmingDisconnect(true)}
 					onRequestDelete={setRepoToDelete}
 					onSetTrackedBranch={handleSetTrackedBranch}
-					onSetPrReview={handleSetPrReview}
 				/>
 			) : status?.state === "disconnected" || status?.state === "suspended" ? (
 				<DeactivatedState status={status} connectFlow={connectFlow} />
@@ -251,65 +215,37 @@ export function GithubIntegrationCard() {
 				<NotConnectedState connectFlow={connectFlow} />
 			)}
 
-			<AlertDialog
+			<ConfirmDialog
 				open={confirmingDisconnect}
-				onOpenChange={(open) => {
-					if (!open) setConfirmingDisconnect(false)
+				onOpenChange={setConfirmingDisconnect}
+				title="Disconnect GitHub"
+				description="This removes the Maple GitHub App connection and permanently deletes all synced repositories and their commit history from Maple. This cannot be undone. You can reconnect later, but everything will be re-synced from scratch."
+				confirmLabel="Disconnect"
+				onConfirm={() => {
+					setConfirmingDisconnect(false)
+					void handleDisconnect()
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Disconnect GitHub</AlertDialogTitle>
-						<AlertDialogDescription>
-							This removes the Maple GitHub App connection and permanently deletes all synced
-							repositories and their commit history from Maple. This cannot be undone. You can
-							reconnect later, but everything will be re-synced from scratch.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => {
-								setConfirmingDisconnect(false)
-								void handleDisconnect()
-							}}
-						>
-							Disconnect
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			/>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={repoToDelete !== null}
 				onOpenChange={(open) => {
 					if (!open) setRepoToDelete(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Delete repository from Maple</AlertDialogTitle>
-						<AlertDialogDescription>
-							This permanently removes{" "}
-							<span className="font-medium text-foreground">{repoToDelete?.fullName}</span> and
-							all of its synced commits from Maple. This cannot be undone. If you re-enable
-							access in GitHub later, the repository will be re-synced from scratch.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => {
-								if (repoToDelete) void handleDeleteRepository(repoToDelete)
-							}}
-						>
-							Delete
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title="Delete repository from Maple"
+				description={
+					<>
+						This permanently removes{" "}
+						<span className="font-medium text-foreground">{repoToDelete?.fullName}</span> and all
+						of its synced commits from Maple. This cannot be undone. If you re-enable access in
+						GitHub later, the repository will be re-synced from scratch.
+					</>
+				}
+				confirmLabel="Delete"
+				onConfirm={() => {
+					if (repoToDelete) handleDeleteRepository(repoToDelete)
+				}}
+			/>
 		</>
 	)
 }
@@ -318,27 +254,15 @@ export function GithubIntegrationCard() {
 function LoadingState() {
 	return (
 		<div className="space-y-4">
-			<Skeleton className="h-16 w-full rounded-lg" />
-			<div className="overflow-hidden rounded-lg border">
+			<Skeleton className="h-16 w-full rounded-md" />
+			<Panel className="overflow-hidden">
 				<Skeleton className="h-11 w-full rounded-none" />
 				<div className="divide-y">
 					{[0, 1, 2].map((i) => (
 						<Skeleton key={i} className="m-3 h-9 rounded-md" />
 					))}
 				</div>
-			</div>
-		</div>
-	)
-}
-
-/** Shown when the status query fails outright (and there's no prior value to fall back on). */
-function LoadFailedState({ onRetry }: { onRetry: () => void }) {
-	return (
-		<div className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
-			Failed to load the GitHub integration.
-			<Button variant="outline" size="sm" onClick={onRetry}>
-				Try again
-			</Button>
+			</Panel>
 		</div>
 	)
 }
@@ -369,12 +293,8 @@ function NotConnectedState({ connectFlow }: { connectFlow: IntegrationConnect })
 				<IntegrationEmptyHint>
 					Your repositories and commits will appear here after installing.
 				</IntegrationEmptyHint>
-				<Button onClick={connectFlow.connect} disabled={connectFlow.busy}>
-					{connectFlow.busy ? (
-						<LoaderIcon size={16} className="animate-spin" />
-					) : (
-						<GithubIcon size={16} />
-					)}
+				<Button onClick={connectFlow.connect} loading={connectFlow.busy}>
+					<GithubIcon />
 					Connect GitHub
 				</Button>
 				<IntegrationEmptyFooter>
@@ -410,7 +330,7 @@ function DeactivatedState({
 	const repoCount = status.repositories.length
 
 	return (
-		<div className="flex flex-col items-center gap-5 rounded-lg border border-warning/40 bg-warning/5 px-6 py-10 text-center">
+		<div className="flex flex-col items-center gap-5 rounded-lg border border-severity-warn/40 bg-severity-warn/5 px-6 py-10 text-center">
 			<IntegrationIconPlate
 				icon={GithubIcon}
 				accent={GITHUB_ACCENT}
@@ -419,7 +339,7 @@ function DeactivatedState({
 				plateClassName="size-14 rounded-xl"
 				overlay={
 					<span className="absolute -bottom-1.5 -right-1.5 inline-flex items-center justify-center rounded-full bg-card">
-						<CircleWarningIcon size={18} className="text-warning-foreground" />
+						<CircleWarningIcon size={18} className="text-severity-warn" />
 					</span>
 				}
 			/>
@@ -445,18 +365,14 @@ function DeactivatedState({
 
 			{repoCount > 0 ? (
 				<p className="text-xs text-muted-foreground">
-					{repoCount} {repoCount === 1 ? "repository" : "repositories"} and their commit history are
+					{countLabel(repoCount, "repository", "repositories")} and their commit history are
 					preserved.
 				</p>
 			) : null}
 
 			<div className="flex flex-col items-center gap-2">
-				<Button onClick={onReconnect} disabled={busy}>
-					{busy ? (
-						<LoaderIcon size={16} className="animate-spin" />
-					) : (
-						<ArrowRotateClockwiseIcon size={16} />
-					)}
+				<Button onClick={onReconnect} loading={busy}>
+					<ArrowRotateClockwiseIcon />
 					Reconnect GitHub
 				</Button>
 				<p className="text-xs text-muted-foreground">
@@ -472,26 +388,25 @@ function ConnectedView({
 	connectFlow,
 	disconnectBusy,
 	refreshing,
-	deletingRepoId,
+	isDeleting,
+	anyDeleting,
 	onRefresh,
 	onRequestDisconnect,
 	onRequestDelete,
 	onSetTrackedBranch,
-	onSetPrReview,
 }: {
 	status: GithubIntegrationStatus
 	connectFlow: IntegrationConnect
 	disconnectBusy: boolean
 	refreshing: boolean
-	deletingRepoId: string | null
+	isDeleting: (repoId: string) => boolean
+	anyDeleting: boolean
 	onRefresh: () => void
 	onRequestDisconnect: () => void
 	onRequestDelete: (repo: GithubRepoSummary) => void
-	onSetTrackedBranch: (repo: GithubRepoSummary, branch: string) => Promise<void>
-	onSetPrReview: (repo: GithubRepoSummary, enabled: boolean) => Promise<void>
+	onSetTrackedBranch: (repo: GithubRepoSummary, branch: string) => Promise<boolean>
 }) {
 	const actionBusy = connectFlow.busy || disconnectBusy
-	const prReviewRolledOut = useOrganizationFeatureFlags().flags.prReview
 	const activeRepos = status.repositories.filter((r) => r.status === "active")
 	const removedRepos = status.repositories.filter((r) => r.status === "removed")
 	const counts = {
@@ -505,91 +420,116 @@ function ConnectedView({
 
 	return (
 		<div className="space-y-4">
-			<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
-				<div className="flex items-center gap-3">
-					<span className="size-2 shrink-0 rounded-full bg-success" aria-hidden />
-					<div className="leading-tight">
-						<div className="text-sm font-medium">
-							Connected
-							{status.accountLogin ? (
-								<>
-									{" "}
-									as{" "}
-									<a
-										href={`https://github.com/${status.accountLogin}`}
-										target="_blank"
-										rel="noreferrer"
-										className="font-semibold hover:underline"
-									>
-										@{status.accountLogin}
-									</a>
-								</>
-							) : null}
-						</div>
-						<div className="text-xs text-muted-foreground">
-							{status.accountType === "organization"
-								? "Organization"
-								: status.accountType === "user"
-									? "Personal account"
-									: "GitHub App"}{" "}
-							· {scopeLabel}
-						</div>
+			<Item variant="card" size="lg" className="justify-between">
+				<ItemMedia>
+					<StatusDot tone="ok" size="lg" />
+				</ItemMedia>
+				<ItemContent className="leading-tight">
+					<div className="text-sm font-medium [overflow-wrap:anywhere]">
+						Connected
+						{status.accountLogin ? (
+							<>
+								{" "}
+								as{" "}
+								<a
+									href={`https://github.com/${status.accountLogin}`}
+									target="_blank"
+									rel="noreferrer"
+									className="font-semibold hover:underline"
+								>
+									@{status.accountLogin}
+								</a>
+							</>
+						) : null}
 					</div>
-				</div>
+					<ItemDescription>
+						{status.accountType === "organization"
+							? "Organization"
+							: status.accountType === "user"
+								? "Personal account"
+								: "GitHub App"}{" "}
+						· {scopeLabel}
+					</ItemDescription>
+				</ItemContent>
 
-				<div className="flex items-center gap-1.5">
-					<Button size="sm" variant="outline" onClick={onRefresh} disabled={refreshing}>
-						<ArrowRotateClockwiseIcon size={14} className={refreshing ? "animate-spin" : ""} />
-						Refresh
-					</Button>
-					<Button size="sm" variant="outline" onClick={connectFlow.connect} disabled={actionBusy}>
-						{connectFlow.busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+				<ItemActions className="gap-1.5">
+					<RefreshButton onRefresh={onRefresh} pending={refreshing} />
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={connectFlow.connect}
+						disabled={actionBusy}
+						loading={connectFlow.busy}
+					>
 						Manage
 					</Button>
-					<Button size="sm" variant="outline" onClick={onRequestDisconnect} disabled={actionBusy}>
-						{disconnectBusy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={onRequestDisconnect}
+						disabled={actionBusy}
+						loading={disconnectBusy}
+					>
 						Disconnect
 					</Button>
-				</div>
-			</div>
+				</ItemActions>
+			</Item>
 
-			{prReviewRolledOut && activeRepos.some((repo) => repo.prReviewEnabled) ? (
-				<PrReviewModelSetting />
-			) : null}
+			<CiTracesSetting enabled={status.ciTracesEnabled} />
 
-			<div className="overflow-hidden rounded-lg border bg-card">
-				<div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
+			<SettingRow
+				framed
+				className="bg-card px-4 py-3"
+				label="Pull request reviews"
+				description={
+					<>
+						{activeRepos.filter((repo) => repo.prReviewEnabled).length} of {activeRepos.length}{" "}
+						repositories reviewed. Rules, models and analytics live in Code Review.
+					</>
+				}
+				control={
+					<Button size="sm" variant="outline" render={<Link to="/code-review/settings" />}>
+						Open Code Review
+					</Button>
+				}
+			/>
+
+			<Panel>
+				<PanelHeader
+					action={
+						activeRepos.length > 0 ? (
+							<div className="flex items-center gap-3 text-xs text-muted-foreground">
+								{counts.synced > 0 ? (
+									<span className="flex items-center gap-1">
+										<CircleCheckIcon size={13} className="text-severity-info" />
+										{counts.synced} synced
+									</span>
+								) : null}
+								{counts.syncing > 0 ? (
+									<span className="flex items-center gap-1">
+										<Spinner size={13} className="text-severity-info" />
+										{counts.syncing} syncing
+									</span>
+								) : null}
+								{counts.failed > 0 ? (
+									<span className="flex items-center gap-1">
+										<CircleWarningIcon size={13} className="text-severity-error" />
+										{counts.failed} failed
+									</span>
+								) : null}
+							</div>
+						) : null
+					}
+				>
 					<h3 className="text-sm font-medium">
 						Repositories
 						<span className="ml-1.5 text-muted-foreground">{activeRepos.length}</span>
 					</h3>
-					{activeRepos.length > 0 ? (
-						<div className="flex items-center gap-3 text-xs text-muted-foreground">
-							{counts.synced > 0 ? (
-								<span className="flex items-center gap-1">
-									<CircleCheckIcon size={13} className="text-success-foreground" />
-									{counts.synced} synced
-								</span>
-							) : null}
-							{counts.syncing > 0 ? (
-								<span className="flex items-center gap-1">
-									<LoaderIcon size={13} className="animate-spin text-info-foreground" />
-									{counts.syncing} syncing
-								</span>
-							) : null}
-							{counts.failed > 0 ? (
-								<span className="flex items-center gap-1">
-									<CircleWarningIcon size={13} className="text-destructive-foreground" />
-									{counts.failed} failed
-								</span>
-							) : null}
-						</div>
-					) : null}
-				</div>
+				</PanelHeader>
 
 				{activeRepos.length === 0 && removedRepos.length === 0 ? (
 					<div className="flex items-center gap-2.5 px-4 py-6 text-sm text-muted-foreground">
-						<LoaderIcon size={16} className="animate-spin" />
+						<Spinner size={16} />
 						Syncing repositories from GitHub… this can take a moment.
 					</div>
 				) : (
@@ -599,27 +539,28 @@ function ConnectedView({
 								key={repo.id}
 								repo={repo}
 								onSetTrackedBranch={(branch) => onSetTrackedBranch(repo, branch)}
-								onSetPrReview={(enabled) => onSetPrReview(repo, enabled)}
 							/>
 						))}
 					</ul>
 				)}
-			</div>
+			</Panel>
 
 			{/* Repos GitHub revoked access to — kept (with history) until explicitly deleted. */}
 			{removedRepos.length > 0 ? (
-				<div className="overflow-hidden rounded-lg border bg-card">
-					<div className="border-b px-4 py-2.5">
+				<Panel>
+					<PanelHeader>
 						<h3 className="flex items-center gap-1.5 text-sm font-medium">
-							<CircleWarningIcon size={15} className="text-warning-foreground" />
+							<CircleWarningIcon size={15} className="text-severity-warn" />
 							Needs attention
 						</h3>
-					</div>
+					</PanelHeader>
 					<ul className="divide-y">
 						{removedRepos.map((repo) => (
-							<li key={repo.id} className="flex items-center gap-3 px-4 py-3">
-								<CircleWarningIcon size={17} className="shrink-0 text-warning-foreground" />
-								<div className="min-w-0 flex-1">
+							<Item key={repo.id} variant="flush" size="lg" render={<li />}>
+								<ItemMedia>
+									<CircleWarningIcon size={17} className="text-severity-warn" />
+								</ItemMedia>
+								<ItemContent className="gap-0">
 									<div className="flex items-center gap-2">
 										<a
 											href={repo.htmlUrl}
@@ -627,7 +568,9 @@ function ConnectedView({
 											rel="noreferrer"
 											className="group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline"
 										>
-											<span className="truncate">{repo.fullName}</span>
+											<span className="truncate" title={repo.fullName}>
+												{repo.fullName}
+											</span>
 											<ExternalLinkIcon
 												size={12}
 												className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
@@ -642,22 +585,19 @@ function ConnectedView({
 									<div className="text-xs text-muted-foreground">
 										Access removed on GitHub · commit history kept
 									</div>
-								</div>
+								</ItemContent>
 								<Button
 									size="sm"
 									variant="destructive-outline"
 									className="shrink-0"
 									onClick={() => onRequestDelete(repo)}
-									disabled={deletingRepoId !== null}
+									disabled={anyDeleting}
+									loading={isDeleting(repo.id)}
 								>
-									{deletingRepoId === repo.id ? (
-										<LoaderIcon size={13} className="animate-spin" />
-									) : (
-										<TrashIcon size={13} />
-									)}
+									<TrashIcon />
 									Delete
 								</Button>
-							</li>
+							</Item>
 						))}
 					</ul>
 					<p className="border-t px-4 py-2.5 text-xs text-muted-foreground">
@@ -672,33 +612,85 @@ function ConnectedView({
 						</a>{" "}
 						to resume syncing. Deleting removes their synced commits permanently.
 					</p>
-				</div>
+				</Panel>
 			) : null}
 		</div>
 	)
 }
 
-/** A single active repository: leading sync-status icon, name + meta, review toggle, tracked-branch picker. */
+/** The org-wide opt-out for GitHub Actions runs as traces and job logs. On by default; admins can turn it off. */
+function CiTracesSetting({ enabled: serverEnabled }: { enabled: boolean }) {
+	const isAdmin = useIsOrgAdmin()
+	const setCiTraces = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetCiTraces"), {
+		mode: "promiseExit",
+	})
+	const [enabled, setEnabled] = useState(serverEnabled)
+	// A fresh server value wins over the optimistic one; adjusted during render, not in an effect.
+	const [seenServer, setSeenServer] = useState(serverEnabled)
+	if (seenServer !== serverEnabled) {
+		setSeenServer(serverEnabled)
+		setEnabled(serverEnabled)
+	}
+
+	const [toggle, busy] = useAsyncAction(async (next: boolean) => {
+		setEnabled(next)
+		const result = await setCiTraces({
+			payload: new GithubSetCiTracesRequest({ enabled: next }),
+			reactivityKeys: ["githubIntegrationStatus"],
+		})
+		const ok = toastExit(result, {
+			success: next ? "GitHub Actions runs will show up as traces and logs" : "CI traces and logs turned off",
+			error: "Failed to change CI traces and logs.",
+		})
+		if (!ok) setEnabled(!next)
+	})
+
+	return (
+		<SettingRow
+			framed
+			className="bg-card px-4 py-3"
+			label="CI traces and logs"
+			description={
+				<>
+					Each finished GitHub Actions run becomes a trace under the{" "}
+					<span className="font-mono text-foreground">github-actions</span> service, with a span per
+					job and step. Each job's log lines become logs on the step that wrote them, up to 5 MB per
+					job. Counts toward your usage.
+				</>
+			}
+			control={
+				<Switch
+					checked={enabled}
+					aria-busy={busy}
+					disabled={!isAdmin}
+					// Ignored while a change is in flight, so keyboard focus stays on the switch.
+					onCheckedChange={(next) => (busy ? undefined : void toggle(next))}
+				/>
+			}
+		/>
+	)
+}
+
+/** A single active repository: leading sync-status icon, name + meta, tracked-branch picker. */
 function RepoRow({
 	repo,
 	onSetTrackedBranch,
-	onSetPrReview,
 }: {
 	repo: GithubRepoSummary
-	onSetTrackedBranch: (branch: string) => Promise<void>
-	onSetPrReview: (enabled: boolean) => Promise<void>
+	onSetTrackedBranch: (branch: string) => Promise<boolean>
 }) {
-	const prReviewRolledOut = useOrganizationFeatureFlags().flags.prReview
 	const presentation = SYNC_PRESENTATION[repo.syncStatus]
 	const StatusIcon = presentation.Icon
 
 	return (
-		<li className="flex items-center gap-3 px-4 py-3">
-			<StatusIcon
-				size={17}
-				className={`shrink-0 ${presentation.tone} ${presentation.spin ? "animate-spin" : ""}`}
-			/>
-			<div className="min-w-0 flex-1">
+		<Item variant="flush" size="lg" render={<li />}>
+			<ItemMedia>
+				<StatusIcon
+					size={17}
+					className={`${presentation.tone} ${presentation.spin ? "animate-spin" : ""}`}
+				/>
+			</ItemMedia>
+			<ItemContent className="gap-0">
 				<div className="flex items-center gap-2">
 					<a
 						href={repo.htmlUrl}
@@ -706,7 +698,9 @@ function RepoRow({
 						rel="noreferrer"
 						className="group inline-flex max-w-full items-center gap-1 truncate text-sm font-medium hover:underline"
 					>
-						<span className="truncate">{repo.fullName}</span>
+						<span className="truncate" title={repo.fullName}>
+							{repo.fullName}
+						</span>
 						<ExternalLinkIcon
 							size={12}
 							className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
@@ -721,70 +715,28 @@ function RepoRow({
 				<div className="flex items-center gap-1.5 text-xs">
 					<span className={presentation.tone}>{presentation.label}</span>
 					{repo.syncStatus === "error" && repo.lastSyncError ? (
-						<span className="truncate text-muted-foreground" title={repo.lastSyncError}>
+						<TruncatedText text={repo.lastSyncError} className="text-muted-foreground">
 							· {repo.lastSyncError}
-						</span>
+						</TruncatedText>
 					) : repo.lastSyncedAt ? (
 						<span className="text-muted-foreground">
-							· {formatRelativeFrom(repo.lastSyncedAt)}
+							· <RelativeTime value={repo.lastSyncedAt} />
 						</span>
 					) : null}
 				</div>
-			</div>
-			{/* Staged per organization: the switch appears only once the org carries the `prreview` flag. */}
-			{prReviewRolledOut ? <PrReviewToggle repo={repo} onChange={onSetPrReview} /> : null}
-			{prReviewRolledOut && repo.prReviewEnabled ? <PrReviewSettingsButton repo={repo} /> : null}
+			</ItemContent>
+			{repo.prReviewEnabled ? (
+				<Badge
+					variant="outline"
+					size="sm"
+					className="shrink-0"
+					title="Maple reviews this repository's pull requests"
+				>
+					Reviewed
+				</Badge>
+			) : null}
 			<BranchSelector repo={repo} onSelect={onSetTrackedBranch} />
-		</li>
-	)
-}
-
-/**
- * Per-repo opt-in to the pull request review. Optimistic like the branch
- * selector: the switch moves at once and snaps back if the server refuses.
- */
-function PrReviewToggle({
-	repo,
-	onChange,
-}: {
-	repo: GithubRepoSummary
-	onChange: (enabled: boolean) => Promise<void>
-}) {
-	const [enabled, setEnabled] = useState(repo.prReviewEnabled)
-	const [busy, setBusy] = useState(false)
-	// A fresh server value wins over the optimistic one; adjusted during render, not in an effect.
-	const [seenServer, setSeenServer] = useState(repo.prReviewEnabled)
-	if (seenServer !== repo.prReviewEnabled) {
-		setSeenServer(repo.prReviewEnabled)
-		setEnabled(repo.prReviewEnabled)
-	}
-	const id = `pr-review-${repo.id}`
-
-	return (
-		<label
-			htmlFor={id}
-			className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
-			title="Post a Maple code review on every pull request opened against this repository"
-		>
-			<span>Review PRs</span>
-			<Switch
-				id={id}
-				aria-label={`Review pull requests on ${repo.fullName}`}
-				checked={enabled}
-				aria-busy={busy}
-				onCheckedChange={(next) => {
-					// Ignored while a change is in flight, rather than disabling the switch, which
-					// would drop keyboard focus mid-toggle.
-					if (busy) return
-					const previous = enabled
-					setEnabled(next)
-					setBusy(true)
-					onChange(next)
-						.catch(() => setEnabled(previous))
-						.finally(() => setBusy(false))
-				}}
-			/>
-		</label>
+		</Item>
 	)
 }
 
@@ -800,11 +752,10 @@ function BranchSelector({
 	onSelect,
 }: {
 	repo: GithubRepoSummary
-	onSelect: (trackedBranch: string) => Promise<void>
+	onSelect: (trackedBranch: string) => Promise<boolean>
 }) {
 	const [open, setOpen] = useState(false)
 	const [query, setQuery] = useState("")
-	const [saving, setSaving] = useState(false)
 	// Optimistic view of the tracked branch; falls back to the default like the API.
 	const serverTracked = repo.trackedBranch ?? repo.branches.find((b) => b.isDefault)?.name ?? null
 	const [tracked, setTracked] = useState<string | null>(serverTracked)
@@ -816,26 +767,20 @@ function BranchSelector({
 		setTracked(repo.trackedBranch ?? repo.branches.find((b) => b.isDefault)?.name ?? null)
 	}, [repo.trackedBranch, repo.branches])
 
+	// Every hook runs before the early return: a new repo syncs in with zero branches.
+	const [commit, saving] = useAsyncAction(async (name: string) => {
+		const prev = tracked
+		setTracked(name)
+		setOpen(false)
+		if (!(await onSelect(name))) setTracked(prev) // revert on failure
+	})
+
 	// Nothing to offer until branches have synced.
 	if (repo.branches.length === 0) return null
 
 	const filtered = query
 		? repo.branches.filter((b) => b.name.toLowerCase().includes(query.toLowerCase()))
 		: repo.branches
-
-	async function commit(name: string) {
-		const prev = tracked
-		setTracked(name)
-		setSaving(true)
-		setOpen(false)
-		try {
-			await onSelect(name)
-		} catch {
-			setTracked(prev) // revert on failure
-		} finally {
-			setSaving(false)
-		}
-	}
 
 	function pick(name: string) {
 		if (name === tracked) {
@@ -855,12 +800,13 @@ function BranchSelector({
 							size="sm"
 							variant="outline"
 							className="h-7 shrink-0 gap-1.5 px-2.5 font-normal"
-							disabled={saving}
+							loading={saving}
 						>
-							{saving ? <LoaderIcon size={12} className="animate-spin" /> : null}
 							<span className="text-muted-foreground">branch</span>
-							<span className="max-w-[10rem] truncate font-medium">{tracked ?? "—"}</span>
-							<ChevronDownIcon size={12} className="text-muted-foreground" />
+							<span className="max-w-[10rem] truncate font-medium">
+								{tracked ?? EMPTY_VALUE}
+							</span>
+							<ChevronDownIcon className="text-muted-foreground" />
 						</Button>
 					}
 				/>
@@ -874,11 +820,10 @@ function BranchSelector({
 					</div>
 					{repo.branches.length > 8 ? (
 						<div className="border-b p-2">
-							<input
+							<SearchInput
 								value={query}
-								onChange={(e) => setQuery(e.target.value)}
+								onValueChange={setQuery}
 								placeholder="Search branches…"
-								className="w-full rounded-md border bg-transparent px-2 py-1 text-xs outline-none focus:border-ring"
 							/>
 						</div>
 					) : null}
@@ -913,36 +858,29 @@ function BranchSelector({
 				</PopoverContent>
 			</Popover>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={pending !== null}
 				onOpenChange={(o) => {
 					if (!o) setPending(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Change tracked branch</AlertDialogTitle>
-						<AlertDialogDescription>
-							This switches <span className="font-medium text-foreground">{repo.fullName}</span>{" "}
-							to track <span className="font-medium text-foreground">{pending}</span>. Maple
-							deletes this repo&apos;s currently synced commits and re-syncs the last 90 days
-							from <span className="font-medium text-foreground">{pending}</span>.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							onClick={() => {
-								const next = pending
-								setPending(null)
-								if (next) void commit(next)
-							}}
-						>
-							Track branch
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				title="Change tracked branch"
+				description={
+					<>
+						This switches <span className="font-medium text-foreground">{repo.fullName}</span> to
+						track <span className="font-medium text-foreground">{pending}</span>. Maple deletes
+						this repo&apos;s currently synced commits and re-syncs the last 90 days from{" "}
+						<span className="font-medium text-foreground">{pending}</span>.
+					</>
+				}
+				confirmLabel="Track branch"
+				tone="default"
+				icon={null}
+				onConfirm={() => {
+					const next = pending
+					setPending(null)
+					if (next) void commit(next)
+				}}
+			/>
 		</>
 	)
 }

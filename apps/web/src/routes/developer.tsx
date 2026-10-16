@@ -1,13 +1,15 @@
-import { useNavigate, createFileRoute } from "@tanstack/react-router"
+import { Link, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { ApiKeysSection } from "@/components/settings/api-keys-section"
 import { IngestionSection } from "@/components/settings/ingestion-section"
 
+const DeveloperTab = Schema.Literals(["ingestion", "api-keys"])
+
 const DeveloperSearch = Schema.Struct({
-	tab: Schema.optional(Schema.Literals(["ingestion", "api-keys"])),
+	tab: Schema.optional(DeveloperTab),
 })
 
 export const Route = createFileRoute("/developer")({
@@ -15,42 +17,35 @@ export const Route = createFileRoute("/developer")({
 	validateSearch: Schema.toStandardSchemaV1(DeveloperSearch),
 })
 
+const DEVELOPER_TABS = [
+	{ value: "ingestion", label: "Ingestion" },
+	{ value: "api-keys", label: "API keys" },
+] as const
+
 function DeveloperPage() {
 	const search = Route.useSearch()
-	const navigate = useNavigate({ from: Route.fullPath })
+	const tab = search.tab ?? "ingestion"
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Developer" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Developer"
-							description="Manage API keys and ingestion credentials."
-						/>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						<Tabs
-							value={search.tab ?? "ingestion"}
-							onValueChange={(tab) =>
-								navigate({ search: { tab: tab as "ingestion" | "api-keys" } })
-							}
+		<DashboardPage
+			breadcrumbs={[{ label: "Developer" }]}
+			tabs={
+				<UnderlineTabStrip navigation label="Developer sections">
+					{DEVELOPER_TABS.map((item) => (
+						<Link
+							key={item.value}
+							to="/developer"
+							search={{ tab: item.value }}
+							aria-current={item.value === tab ? "page" : undefined}
+							className={underlineTabClass(item.value === tab)}
 						>
-							<TabsList variant="underline">
-								<TabsTrigger value="ingestion">Ingestion</TabsTrigger>
-								<TabsTrigger value="api-keys">API Keys</TabsTrigger>
-							</TabsList>
-							<TabsContent value="ingestion" className="pt-4">
-								<IngestionSection />
-							</TabsContent>
-							<TabsContent value="api-keys" className="pt-4">
-								<ApiKeysSection />
-							</TabsContent>
-						</Tabs>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+							{item.label}
+						</Link>
+					))}
+				</UnderlineTabStrip>
+			}
+		>
+			{tab === "ingestion" ? <IngestionSection /> : <ApiKeysSection />}
+		</DashboardPage>
 	)
 }

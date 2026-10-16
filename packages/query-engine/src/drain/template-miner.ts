@@ -1,5 +1,5 @@
 import { TemplateMinerConfig } from "./config"
-import { Drain } from "./drain"
+import { Drain, type FullSearchStrategy } from "./drain"
 import { LogCluster } from "./log-cluster"
 import { LruCache } from "./lru-cache"
 import { LogMasker, MaskingInstruction } from "./masking"
@@ -62,7 +62,7 @@ export class TemplateMiner {
 		}
 	}
 
-	match(logMessage: string, fullSearchStrategy: string = "never"): LogCluster | null {
+	match(logMessage: string, fullSearchStrategy: FullSearchStrategy = "never"): LogCluster | null {
 		const maskedContent = this.masker.mask(logMessage)
 		return this.drain.match(maskedContent, fullSearchStrategy)
 	}

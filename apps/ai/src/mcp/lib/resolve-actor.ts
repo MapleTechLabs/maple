@@ -34,7 +34,7 @@ const toResolveError = (error: { readonly message: string }) =>
  * then the authenticated user — so automation driven through a human session
  * shows up in the activity timeline as the agent that did it.
  */
-export const resolveActor = Effect.fn("resolveActor")(function* (tenant: TenantContext) {
+export const resolveActor = Effect.fn("McpActor.resolveActor")(function* (tenant: TenantContext) {
 	if (tenant.actorId) return { actorId: tenant.actorId, isAgent: true }
 	const actors = yield* ErrorActorsService
 

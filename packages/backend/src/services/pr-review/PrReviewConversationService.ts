@@ -27,16 +27,20 @@ import {
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReplySessionId } from "@maple/domain/chat-session"
-import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { UserId } from "@maple/domain/primitives"
-import { prReviewEdits, prReviewFindings, prReviewReplies, prReviews, type PrReviewReplyRow } from "@maple/db"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { and, count, desc, eq, gte, inArray } from "drizzle-orm"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import {
+	PrReviewEdits,
+	PrReviewFindings,
+	PrReviewReplies,
+	PrReviews,
+	type PrReviewReplyRow,
+} from "@maple/db/tables"
 import { Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { msToDate } from "@maple/backend/platform/time"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { PrReviewService } from "./PrReviewService"
@@ -200,11 +204,11 @@ export class PrReviewConversationService extends Context.Service<
 >()("@maple/api/services/pr-review/PrReviewConversationService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
+		const dbExecute = makeDbExecute(database, "PrReviewConversationService", toPersistence)
 		const repositories = yield* VcsRepository
 		const providers = yield* VcsProviderRegistry
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const reviews = yield* PrReviewService
-		const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+		const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 
 		const skip = (reason: string): PrReplyOutcome => ({
 			replyId: null,
@@ -233,48 +237,36 @@ export class PrReviewConversationService extends Context.Service<
 			orgId: OrgId,
 			replyId: PrReviewReplyId,
 			fromStatuses: ReadonlyArray<PrReviewReplyStatus> | undefined,
-			values: Partial<typeof prReviewReplies.$inferInsert>,
+			values: PG.UpdateSetOf<typeof PrReviewReplies>,
 		) =>
-			database
-				.execute((db) =>
-					db
-						.update(prReviewReplies)
+			dbExecute((db) =>
+				db.run(
+					PG.update(PrReviewReplies)
 						.set(values)
-						.where(
-							and(
-								eq(prReviewReplies.orgId, orgId),
-								eq(prReviewReplies.id, replyId),
-								...(fromStatuses === undefined
-									? []
-									: [inArray(prReviewReplies.status, [...fromStatuses])]),
-							),
-						)
-						.returning({ id: prReviewReplies.id }),
-				)
-				.pipe(
-					Effect.mapError(toPersistence),
-					Effect.map((rows) => rows.length > 0),
-				)
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.id.eq(replyId),
+							fromStatuses === undefined ? undefined : $.status.in_(...fromStatuses),
+						])
+						.returning("id"),
+				),
+			).pipe(Effect.map((rows) => rows.length > 0))
 
 		const getReply = (orgId: OrgId, replyId: PrReviewReplyId) =>
-			database
-				.execute((db) =>
-					db
+			dbExecute((db) =>
+				db.run(
+					PG.from(PrReviewReplies)
 						.select()
-						.from(prReviewReplies)
-						.where(and(eq(prReviewReplies.orgId, orgId), eq(prReviewReplies.id, replyId)))
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(replyId)])
 						.limit(1),
-				)
-				.pipe(
-					Effect.mapError(toPersistence),
-					Effect.flatMap((rows) =>
-						rows[0] === undefined
-							? Effect.fail(
-									new PrReviewReplyNotFoundError({ message: "No such reply", replyId }),
-								)
-							: Effect.succeed(rows[0]),
-					),
-				)
+				),
+			).pipe(
+				Effect.flatMap((rows) =>
+					rows[0] === undefined
+						? Effect.fail(new PrReviewReplyNotFoundError({ message: "No such reply", replyId }))
+						: Effect.succeed(rows[0]),
+				),
+			)
 
 		/** Post on the pull request where the row says; a failure is logged, never thrown into the turn. */
 		const post = Effect.fn("PrReviewConversationService.post")(function* (
@@ -328,29 +320,19 @@ export class PrReviewConversationService extends Context.Service<
 				return skip("disabled")
 			}
 			const repo = repository.value
-			if (!(yield* featureFlags.flags(orgId)).prReview) {
-				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "not_rolled_out" })
-				return skip("not_rolled_out")
-			}
 			if (!ANSWERED_ASSOCIATIONS.has(job.authorAssociation.toUpperCase())) {
 				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "not_collaborator" })
 				return skip("not_collaborator")
 			}
 			const nowMs = yield* Clock.currentTimeMillis
-			const today = yield* database
-				.execute((db) =>
-					db
-						.select({ total: count() })
-						.from(prReviewReplies)
-						.where(
-							and(
-								eq(prReviewReplies.orgId, orgId),
-								gte(prReviewReplies.createdAt, msToDate(nowMs - (nowMs % DAY_MS))),
-							),
-						),
-				)
-				.pipe(Effect.mapError(toPersistence))
-			if (Number(today[0]?.total ?? 0) >= PR_REPLY_DAILY_CEILING) {
+			const today = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PrReviewReplies)
+						.select(() => ({ total: PG.count() }))
+						.where(($) => [$.orgId.eq(orgId), $.createdAt.gte(nowMs - (nowMs % DAY_MS))]),
+				),
+			)
+			if ((today[0]?.total ?? 0) >= PR_REPLY_DAILY_CEILING) {
 				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "quota" })
 				return skip("quota")
 			}
@@ -361,10 +343,9 @@ export class PrReviewConversationService extends Context.Service<
 			)
 			const { command, text } = parseReplyCommand(job.body, Option.getOrUndefined(mention))
 			const replyId = newReplyId()
-			const inserted = yield* database
-				.execute((db) =>
-					db
-						.insert(prReviewReplies)
+			const inserted = yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(PrReviewReplies)
 						.values({
 							id: replyId,
 							orgId,
@@ -377,15 +358,13 @@ export class PrReviewConversationService extends Context.Service<
 							command,
 							status: "queued",
 							sessionId: prReplySessionId(orgId, replyId),
-							createdAt: msToDate(nowMs),
-							updatedAt: msToDate(nowMs),
+							createdAt: nowMs,
+							updatedAt: nowMs,
 						})
-						.onConflictDoNothing({
-							target: [prReviewReplies.repositoryId, prReviewReplies.commentId],
-						})
-						.returning({ id: prReviewReplies.id }),
-				)
-				.pipe(Effect.mapError(toPersistence))
+						.onConflictDoNothing({ target: ["repositoryId", "commentId"] })
+						.returning("id"),
+				),
+			)
 			if (inserted.length === 0) {
 				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "duplicate" })
 				return skip("duplicate")
@@ -397,7 +376,7 @@ export class PrReviewConversationService extends Context.Service<
 					yield* updateReply(orgId, replyId, ACTIVE, {
 						status: "failed",
 						error: reason,
-						updatedAt: msToDate(nowMs),
+						updatedAt: nowMs,
 					})
 					if (say !== undefined) {
 						const url = yield* post(orgId, row, say)
@@ -456,7 +435,7 @@ export class PrReviewConversationService extends Context.Service<
 					)
 				yield* updateReply(orgId, replyId, ACTIVE, {
 					status: "completed",
-					updatedAt: msToDate(nowMs),
+					updatedAt: nowMs,
 				})
 				yield* annotate("reviewing")
 				return { replyId, outcome: "reviewing" as const }
@@ -484,54 +463,45 @@ export class PrReviewConversationService extends Context.Service<
 			const finding =
 				job.threadRootId === undefined
 					? undefined
-					: (yield* database
-							.execute((db) =>
-								db
+					: (yield* dbExecute((db) =>
+							db.run(
+								PG.from(PrReviewFindings)
 									.select()
-									.from(prReviewFindings)
-									.where(
-										and(
-											eq(prReviewFindings.repositoryId, repo.id),
-											eq(prReviewFindings.number, job.number),
-											eq(prReviewFindings.commentId, job.threadRootId ?? ""),
-										),
-									)
+									.where(($) => [
+										$.repositoryId.eq(repo.id),
+										$.number.eq(job.number),
+										$.commentId.eq(job.threadRootId ?? ""),
+									])
 									.limit(1),
-							)
-							.pipe(Effect.mapError(toPersistence)))[0]
-			const open = yield* database
-				.execute((db) =>
-					db
+							),
+						))[0]
+			const open = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PrReviewFindings)
 						.select()
-						.from(prReviewFindings)
-						.where(
-							and(
-								eq(prReviewFindings.repositoryId, repo.id),
-								eq(prReviewFindings.number, job.number),
-								eq(prReviewFindings.status, "open"),
-							),
-						),
-				)
-				.pipe(Effect.mapError(toPersistence))
-			const lastReview = yield* database
-				.execute((db) =>
-					db
-						.select({ report: prReviews.reportJson })
-						.from(prReviews)
-						.where(
-							and(
-								eq(prReviews.repositoryId, repo.id),
-								eq(prReviews.number, job.number),
-								eq(prReviews.status, "completed"),
-							),
-						)
-						.orderBy(desc(prReviews.finishedAt))
+						.where(($) => [
+							$.repositoryId.eq(repo.id),
+							$.number.eq(job.number),
+							$.status.eq("open"),
+						]),
+				),
+			)
+			const lastReview = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PrReviews)
+						.select(($) => ({ report: $.reportJson }))
+						.where(($) => [
+							$.repositoryId.eq(repo.id),
+							$.number.eq(job.number),
+							$.status.eq("completed"),
+						])
+						.orderBy(($) => [[$.finishedAt, "desc"]])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistence))
+				),
+			)
 
 			const sessionId = prReplySessionId(orgId, replyId)
-			const stub = workerEnv === undefined ? undefined : chatSessionStub(workerEnv, sessionId)
+			const stub = chatSessions?.session(sessionId)
 			if (stub === undefined) return yield* fail("agent_unavailable")
 			const kickoff = buildReplyKickoff({
 				repository: repo.fullName,
@@ -562,23 +532,21 @@ export class PrReviewConversationService extends Context.Service<
 				})),
 			})
 			const claimed = yield* Effect.exit(
-				Effect.tryPromise(() =>
-					stub.beginTurn({
-						sessionId,
-						messageId: randomUUID(),
-						text: kickoff,
-						origin: { kind: "autonomous" },
-						tenant: encodeChatTurnTenant({
-							orgId,
-							userId: internalServiceUserId,
-							roles: [],
-							authMode: "self_hosted",
-						}),
+				stub.beginTurn({
+					sessionId,
+					messageId: randomUUID(),
+					text: kickoff,
+					origin: { kind: "autonomous" },
+					tenant: encodeChatTurnTenant({
+						orgId,
+						userId: internalServiceUserId,
+						roles: [],
+						authMode: "self_hosted",
 					}),
-				),
+				}),
 			)
 			if (Exit.isFailure(claimed) || claimed.value === undefined) return yield* fail("start_failed")
-			yield* updateReply(orgId, replyId, ["queued"], { status: "running", updatedAt: msToDate(nowMs) })
+			yield* updateReply(orgId, replyId, ["queued"], { status: "running", updatedAt: nowMs })
 			yield* annotate("started")
 			return { replyId, outcome: "started" as const }
 		})
@@ -604,20 +572,19 @@ export class PrReviewConversationService extends Context.Service<
 			if (refused !== undefined) return `Not staged: ${refused}.`
 			if (edit.newText.length > MAX_EDIT_CHARS || edit.oldText.length > MAX_EDIT_CHARS)
 				return "Not staged: the edit is too large. Make smaller, exact edits."
-			const staged = yield* database
-				.execute((db) =>
-					db
-						.select({ total: count() })
-						.from(prReviewEdits)
-						.where(eq(prReviewEdits.replyId, replyId)),
-				)
-				.pipe(Effect.mapError(toPersistence))
-			const seq = Number(staged[0]?.total ?? 0)
+			const staged = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PrReviewEdits)
+						.select(() => ({ total: PG.count() }))
+						.where(($) => [$.replyId.eq(replyId)]),
+				),
+			)
+			const seq = staged[0]?.total ?? 0
 			if (seq >= MAX_EDITS) return `Not staged: at most ${MAX_EDITS} edits per fix.`
 			const nowMs = yield* Clock.currentTimeMillis
-			yield* database
-				.execute((db) =>
-					db.insert(prReviewEdits).values({
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(PrReviewEdits).values({
 						id: randomUUID(),
 						orgId,
 						replyId,
@@ -625,10 +592,10 @@ export class PrReviewConversationService extends Context.Service<
 						path: edit.path.trim().replace(/^\.\//, ""),
 						oldText: edit.oldText,
 						newText: edit.newText,
-						createdAt: msToDate(nowMs),
+						createdAt: nowMs,
 					}),
-				)
-				.pipe(Effect.mapError(toPersistence))
+				),
+			)
 			yield* Effect.annotateCurrentSpan({
 				"maple.pr_reply.id": replyId,
 				"maple.pr_reply.edits": seq + 1,
@@ -641,15 +608,14 @@ export class PrReviewConversationService extends Context.Service<
 			orgId: OrgId,
 			row: PrReviewReplyRow,
 		) {
-			const edits = yield* database
-				.execute((db) =>
-					db
+			const edits = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PrReviewEdits)
 						.select()
-						.from(prReviewEdits)
-						.where(eq(prReviewEdits.replyId, row.id))
-						.orderBy(prReviewEdits.seq),
-				)
-				.pipe(Effect.mapError(toPersistence))
+						.where(($) => [$.replyId.eq(row.id)])
+						.orderBy(["seq", "asc"]),
+				),
+			)
 			if (edits.length === 0) return { note: "", commitSha: null }
 			const repo = yield* repositories
 				.getRepositoryById(orgId, row.repositoryId)
@@ -671,26 +637,40 @@ export class PrReviewConversationService extends Context.Service<
 				}
 			const byPath = new Map<string, Array<{ oldText: string; newText: string }>>()
 			for (const edit of edits) byPath.set(edit.path, [...(byPath.get(edit.path) ?? []), edit])
-			const files: Array<{ path: string; content: string }> = []
-			for (const [path, pathEdits] of byPath) {
-				// Only a 404 (`Option.none`) is a missing file; a failed read must never look like one.
-				const current = yield* provider
-					.fetchSourceFile(installation, ref, path, row.headSha)
-					.pipe(Effect.result)
-				if (Result.isFailure(current))
-					return {
-						note: `I did not push the fix: I could not read \`${path}\` at the head. Mention me with \`fix\` again to retry.`,
-						commitSha: null,
-					}
-				const original = Option.isSome(current.success) ? current.success.value.content : undefined
-				const applied = applyEdits(original, pathEdits)
-				if ("error" in applied)
-					return {
-						note: `I did not push the fix: an edit to \`${path}\` does not apply (${applied.error}).`,
-						commitSha: null,
-					}
-				files.push({ path, content: applied.content })
-			}
+			// Stops at the first path that fails: later files are not read.
+			const headSha = row.headSha
+			const collected = yield* Effect.reduce(
+				byPath,
+				(): Result.Result<ReadonlyArray<{ path: string; content: string }>, string> =>
+					Result.succeed([]),
+				(acc, [path, pathEdits]) =>
+					Result.isFailure(acc)
+						? Effect.succeed(acc)
+						: provider.fetchSourceFile(installation, ref, path, headSha).pipe(
+								// Only a 404 (`Option.none`) is a missing file; a failed read must never look like one.
+								Effect.result,
+								Effect.map((current) => {
+									if (Result.isFailure(current))
+										return Result.fail(
+											`I did not push the fix: I could not read \`${path}\` at the head. Mention me with \`fix\` again to retry.`,
+										)
+									const original = Option.isSome(current.success)
+										? current.success.value.content
+										: undefined
+									const applied = applyEdits(original, pathEdits)
+									if ("error" in applied)
+										return Result.fail(
+											`I did not push the fix: an edit to \`${path}\` does not apply (${applied.error}).`,
+										)
+									return Result.succeed([
+										...acc.success,
+										{ path, content: applied.content },
+									])
+								}),
+							),
+			)
+			if (Result.isFailure(collected)) return { note: collected.failure, commitSha: null }
+			const files = collected.success
 			const commit = yield* provider
 				.commitFiles(installation, ref, {
 					branch: head.value.headRef,
@@ -725,7 +705,7 @@ export class PrReviewConversationService extends Context.Service<
 				replyUrl: Option.getOrNull(url),
 				commitSha: fix.commitSha,
 				...(Option.isNone(url) ? { error: "the answer could not be posted" } : undefined),
-				updatedAt: msToDate(nowMs),
+				updatedAt: nowMs,
 			})
 			yield* Effect.annotateCurrentSpan({
 				"maple.pr_reply.id": replyId,
@@ -739,21 +719,20 @@ export class PrReviewConversationService extends Context.Service<
 			"PrReviewConversationService.failReply",
 		)(function* (orgId, replyId, error) {
 			const nowMs = yield* Clock.currentTimeMillis
-			const rows = yield* database
-				.execute((db) =>
-					db
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PrReviewReplies)
 						.select()
-						.from(prReviewReplies)
-						.where(and(eq(prReviewReplies.orgId, orgId), eq(prReviewReplies.id, replyId)))
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(replyId)])
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistence))
+				),
+			)
 			const row = rows[0]
 			if (row === undefined) return
 			const settled = yield* updateReply(orgId, replyId, ACTIVE, {
 				status: "failed",
 				error,
-				updatedAt: msToDate(nowMs),
+				updatedAt: nowMs,
 			})
 			if (!settled) return
 			const url = yield* post(
@@ -778,7 +757,6 @@ export class PrReviewConversationService extends Context.Service<
 				PrReviewService.layer,
 				VcsRepository.layer,
 				VcsProviderRegistry.layer,
-				OrganizationFeatureFlagsService.layer,
 			),
 		),
 	)

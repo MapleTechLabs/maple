@@ -1,19 +1,11 @@
 import { useState } from "react"
 import { Exit } from "effect"
-import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Dialog,
-	DialogClose,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import type { DashboardId } from "@maple/domain/http"
 import { ArrowPathIcon, HistoryIcon } from "@/components/icons"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
+import { toastExit } from "@/lib/error-toast"
 import { buildRestorePayload, useRestoreDashboardVersion } from "./use-dashboard-history"
 import type { PreviewedVersion } from "@/atoms/dashboard-history-atoms"
 import { useDashboardMutationSync } from "@/hooks/use-dashboard-store"
@@ -27,33 +19,29 @@ interface PreviewBannerProps {
 
 export function PreviewBanner({ dashboardId, preview, onCancel, onRestored }: PreviewBannerProps) {
 	const [confirmOpen, setConfirmOpen] = useState(false)
-	const [pending, setPending] = useState(false)
 	const restore = useRestoreDashboardVersion()
 	const { prepareForMutation, reconcileTxid } = useDashboardMutationSync()
 
+	// Resolves false on failure so the confirm dialog stays open for a retry.
 	const performRestore = async () => {
-		setPending(true)
-		try {
-			prepareForMutation()
-			const result = await restore(buildRestorePayload(dashboardId, preview.versionId) as never)
-			if (Exit.isSuccess(result)) {
-				void reconcileTxid(result.value.txid)
-				toastManager.add({ title: `Restored from v${preview.versionNumber}`, type: "success" })
-				setConfirmOpen(false)
-				onRestored()
-			} else {
-				toastManager.add({ title: "Restore failed", type: "error" })
-			}
-		} finally {
-			setPending(false)
+		prepareForMutation()
+		const result = await restore(buildRestorePayload(dashboardId, preview.versionId) as never)
+		const restored = toastExit(result, {
+			success: `Restored from v${preview.versionNumber}`,
+			error: "Restore failed",
+		})
+		if (Exit.isSuccess(result)) {
+			void reconcileTxid(result.value.txid)
+			onRestored()
 		}
+		return restored
 	}
 
 	return (
 		<>
 			<div className="mb-4 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
 				<HistoryIcon className="size-4 shrink-0 text-primary" />
-				<div className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11px] text-foreground/80">
+				<div className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-2xs text-foreground/80">
 					<span className="font-semibold text-primary">PREVIEW</span>
 					<span aria-hidden className="opacity-50">
 						·
@@ -62,36 +50,29 @@ export function PreviewBanner({ dashboardId, preview, onCancel, onRestored }: Pr
 					<span aria-hidden className="opacity-50">
 						·
 					</span>
-					<span className="truncate">{formatRelativeTime(preview.createdAt)}</span>
+					<RelativeTime value={preview.createdAt} className="truncate" />
 				</div>
 				<div className="flex items-center gap-1.5">
 					<Button variant="ghost" size="sm" onClick={onCancel}>
 						Cancel
 					</Button>
 					<Button variant="default" size="sm" onClick={() => setConfirmOpen(true)}>
-						<ArrowPathIcon size={14} data-icon="inline-start" />
+						<ArrowPathIcon data-icon="inline-start" />
 						Restore this version
 					</Button>
 				</div>
 			</div>
 
-			<Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Restore version v{preview.versionNumber}?</DialogTitle>
-						<DialogDescription>
-							The current dashboard will be replaced with this version. The current state will
-							be saved as a new history entry, so this is undoable.
-						</DialogDescription>
-					</DialogHeader>
-					<DialogFooter>
-						<DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-						<Button variant="default" onClick={performRestore} disabled={pending}>
-							{pending ? "Restoring…" : "Restore"}
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+			<ConfirmDialog
+				open={confirmOpen}
+				onOpenChange={setConfirmOpen}
+				tone="default"
+				icon={null}
+				title={`Restore version v${preview.versionNumber}?`}
+				description="The current dashboard will be replaced with this version. The current state will be saved as a new history entry, so this is undoable."
+				confirmLabel="Restore"
+				onConfirm={performRestore}
+			/>
 		</>
 	)
 }

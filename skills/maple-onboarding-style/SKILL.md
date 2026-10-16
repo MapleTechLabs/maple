@@ -1,6 +1,6 @@
 ---
 name: maple-onboarding-style
-description: "General OpenTelemetry onboarding style for Maple: native APIs, the business-span pattern, signal quality, inline keys, VCS resource attributes, LLM calls, and smoke checks."
+description: "General OpenTelemetry onboarding style for Maple: native APIs, the business-span pattern, inline keys, VCS resource attributes, per-framework notes, business signals, export verification, LLM calls, and smoke checks."
 ---
 
 # Maple OTel onboarding style
@@ -84,6 +84,63 @@ Use `vcs.repository.url.full` and `vcs.ref.head.revision` exactly as named. Thes
 - Metrics: critical operations have low-cardinality counters/histograms.
 - Tenant/org/project information is included where available.
 - Do not put raw user ids or request ids in metric tags unless the repo already treats them as bounded tenant-like ids.
+
+## Framework notes
+
+- **Next.js/Vercel:** server side uses `instrumentation.ts` with `@vercel/otel` `registerOTel(...)`. Do not substitute a raw `@opentelemetry/sdk-node` / `NodeSDK` bootstrap unless the repo already uses that architecture and you are extending it. Use `@opentelemetry/api` tracers/meters inside route handlers only where auto-instrumentation is blind. The client side uses `@maple-dev/browser` from a client component in the root layout (see `maple-nextjs-style`).
+- **Browser frontends:** call `MapleBrowser.init` once at the top of the entry module:
+
+	```ts
+	import { MapleBrowser } from "@maple-dev/browser"
+
+	MapleBrowser.init({
+		ingestKey: "MAPLE_TEST", // public key (maple_pk_…) only
+		serviceName: "acme-web",
+		region: "us", // "eu" for EU organizations
+		environment: import.meta.env.MODE,
+		tracing: { propagateTraceHeaderCorsUrls: [/^https:\/\/api\.acme\.com\//] },
+	})
+	```
+
+	Use `region`; pass `endpoint` instead only when the prompt's endpoint is not a Maple host (a proxy or self-hosted ingest). Session replay is on by default with inputs masked; say so in the hand-off. If the API is on another origin, list it in `tracing.propagateTraceHeaderCorsUrls`, or browser and server spans land in separate traces. The API's CORS preflight must also allow `traceparent`. Check the current preflight response first: many setups (the `cors` package default) already echo the requested headers. Only when the config has an explicit allow-list, add `traceparent` to it and keep the existing entries. Effect frontends use `@maple-dev/effect-sdk/client` instead (see `maple-effect-style`).
+- **Expo/React Native:** preserve existing Expo Go / unsupported-runtime guards. In supported builds, initialize telemetry before other SDKs that wrap `fetch` or the global error handler, and before app registration/user code. Inline the endpoint + public key in the observability module, with no `EXPO_PUBLIC_*` env vars.
+- **Supabase Edge Functions / Cloudflare Workers:** native Deno / Workers OpenTelemetry can be quirky. Keep the exporter shim tiny, provider-neutral, and OTel-shaped: `tracer.startActiveSpan`, `span.setAttributes`, `SpanStatusCode`, `meter.createCounter`, `histogram.record`. For Effect on Workers, use `@maple-dev/effect-sdk/cloudflare` (see `maple-effect-style`).
+- **Python/FastAPI:** use native instrumentation such as `FastAPIInstrumentor.instrument_app(app)` rather than replacing request handling with manual middleware.
+
+## Business signals
+
+Auto-instrumentation covers HTTP in/out, DB queries, and framework lifecycle. That is the floor. Read the project to find the operations an operator would want to see when something looks wrong.
+
+### Business spans
+
+Wrap **every critical business operation** with an active span. Auto-instrumented spans are fine where they exist. If an operation isn't already getting a span, add one.
+
+- Naming: `domain.verb` (`order.process`, `payment.charge`, `email.send`, `agent.run`, `job.<type>`).
+- Attributes: entity IDs (order.id, user.id, workspace.id, tenant.id), counts, key boolean branch outcomes.
+- Record exceptions and set `Error` status on failure paths, and always end the span (`finally` in TS/JS).
+- For Python functions with clear boundaries, prefer `@tracer.start_as_current_span("operation.name")`. Use a context manager when a decorator does not fit. Do not use detached `start_span()` + manual `end()` for bounded work.
+- Skip trivial getters, pure transforms, and internal helpers: anything with no real latency or failure mode.
+- **Never put PII in attributes** (emails, passwords, tokens, full request bodies).
+
+### Logs
+
+Make sure logs are **structured and carry operation context**. Concretely: every log line emitted inside a span should arrive at Maple with `trace_id` / `span_id` populated and any structured fields (orderId, userId, etc.) preserved as attributes. Trace/span context may be added natively by the log bridge or integration, or may require additional work.
+
+Use logs for narrative ("starting batch reconcile", "retrying after 3xx") and exceptional events. An error log must only be emitted if the operation cannot recover and manual intervention is required. This applies to logs you add; leave existing log levels alone.
+
+### Metrics
+
+Cover **business and performance** signals:
+
+- **Business logic counters.** Every meaningful state transition: created, started, completed, failed, retried. Break down per tenant, channel, or status, using low-cardinality dimensions only (never user/order IDs).
+- **Performance histograms.** Latency of operations the user cares about, queue depth, batch sizes, payload sizes. Reuse existing timing instrumentation if the project has any (`time.perf_counter` blocks, custom `LatencyTracker`s, "[TIMING]" log lines). Emit a histogram from those measurements rather than measuring twice.
+
+Get the meter once at module level, create instruments at module level, increment in the hot path. Don't create a fresh meter per call.
+
+## Verify export
+
+1. **Run the project's own dev or build command** (whatever its `package.json` / `pyproject` / `Makefile` already wires up). Confirm it starts cleanly with no errors that trace back to your OTel install. Also run a telemetry bootstrap smoke that imports or starts the app, so provider setup, exporter construction, log bridging, and framework instrumentation all initialize. For a Python server this can be an import/startup command such as `uv run python -c 'from app.main import app; print(app.title)'`; for Node/Next use the repo's build/start path. For a server, hit at least one route with curl so traffic flows through the instrumentation; choose a route that exercises an instrumented operation when practical, not only a static health route. For a CLI, invoke a real command. **Don't ship if the app's own startup is now broken.** That is a regression.
+2. **Confirm telemetry leaves the process.** Exporters report failures and stay quiet on success, so turn diagnostics on for the smoke run and look for errors: `OTEL_LOG_LEVEL=debug` for Node's `NodeSDK` (each batch is dumped before it is sent; a failure logs `Export failed` / `OTLPExporterError` with the HTTP status); Python exporters log failures through `logging` at `WARNING`/`ERROR`, which reach stderr unless the app silences them; Go's default error handler prints to stderr. Batches sent and no export error once the process has shut down (so the final flush ran) means the exports got 2xx. A `401` means the key is wrong or belongs to the other region: try it once against the other region's ingest with curl. If both reject it, prove the export path with `MAPLE_TEST` for the smoke run, put the user's key back, and say in the hand-off that ingest rejected their key. As a network sanity check, `curl -X POST <endpoint>/v1/traces -H "authorization: Bearer MAPLE_TEST" -H "content-type: application/json" -d '{}'` returns 200. If the app's own exports never happen, the bootstrap is wrong (most often the SDK loads too late, or shutdown doesn't flush).
 
 ## LLM calls
 

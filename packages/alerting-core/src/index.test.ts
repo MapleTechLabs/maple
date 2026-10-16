@@ -176,7 +176,7 @@ describe("planAlertLifecycle", () => {
 			{ value: null, sampleCount: 0, hasData: false },
 			"above threshold",
 		)
-		expect(evaluation).toMatchObject({ status: "skipped", skippedForNoData: true })
+		expect(evaluation).toMatchObject({ status: "skipped", skipReason: "no_data" })
 		const input = {
 			policy,
 			evaluation,
@@ -217,6 +217,45 @@ describe("planAlertLifecycle", () => {
 		})
 	})
 
+	it("breaches on an empty window when the rule alerts on no data, and opens an incident", () => {
+		const evaluation = evaluateAlertObservation(
+			{
+				comparator: "gt",
+				threshold: 10,
+				thresholdUpper: null,
+				minimumSampleCount: 50,
+				noDataBehavior: "alert",
+			},
+			{ value: null, sampleCount: 0, hasData: false },
+			"above threshold",
+		)
+		expect(evaluation).toMatchObject({ status: "breached", value: null, derivedFromNoData: true })
+		expect(evaluation.skipReason).toBeUndefined()
+		expect(
+			planAlertLifecycle({
+				policy: { ...policy, consecutiveBreachesRequired: 1 },
+				evaluation,
+				state: null,
+				openIncident: null,
+				nowMs: 1_000,
+			}),
+		).toMatchObject({ transition: "opened", eventType: "trigger" })
+
+		// Data that is present but thin is still gated by the minimum, not read as no data.
+		const thin = evaluateAlertObservation(
+			{
+				comparator: "gt",
+				threshold: 10,
+				thresholdUpper: null,
+				minimumSampleCount: 50,
+				noDataBehavior: "alert",
+			},
+			{ value: 20, sampleCount: 3, hasData: true },
+			"above threshold",
+		)
+		expect(thin).toMatchObject({ status: "skipped", skipReason: "below_min_samples" })
+	})
+
 	it("never turns insufficient samples or invalid scalars into empty-window recovery", () => {
 		for (const observation of [
 			{ value: 5, sampleCount: 1, hasData: true },
@@ -235,7 +274,7 @@ describe("planAlertLifecycle", () => {
 				"above threshold",
 			)
 			expect(evaluation.status).toBe("skipped")
-			expect(evaluation.skippedForNoData).not.toBe(true)
+			expect(evaluation.skipReason).not.toBe("no_data")
 			const state = { consecutiveBreaches: 2, consecutiveHealthy: 1 }
 			expect(
 				planAlertLifecycle({

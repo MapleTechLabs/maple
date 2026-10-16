@@ -11,7 +11,6 @@
  * connector half of the approval policy; a connector approver's chat account rides along as
  * forensic context on the audit entry.
  */
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import {
 	connectorApprovalTenant,
 	decidedBy,
@@ -23,23 +22,24 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
+import { envPorts } from "@maple/backend/platform/env-ports"
+import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { toTenantContext, withConnectorActor } from "./turn-actor"
 
 /** Its own instance, at module scope, so an approval exports its spans from the isolate it ran in. */
-const telemetry = MapleCloudflareSDK.make(
-	workerTelemetryConfig({
-		serviceName: "maple-chat",
-		anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-	}),
-)
+const telemetry = runtimeTelemetry({
+	serviceName: "maple-chat",
+	anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+})
 
 export type ApplyChatProposalInput = ChatProposalApproval & {
 	readonly env: Record<string, unknown>
+	/** This Worker's `ChatSession` namespace, from the activation; the graph's `ChatSessions` port. */
+	readonly chatSessions?: ChatSessionNamespace
 	/** `"<orgId>:<tabId>"` — the org the change is made in. */
 	readonly sessionId: string
 	/** The tool and arguments the session read out of its own log, never off the wire. */
@@ -166,7 +166,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 
 	// `ErrorActorsService` is deliberately absent: `./turn-actor` already puts it in this module's
 	// static graph, so deferring it would only re-resolve a module that is loaded anyway.
-	const [{ ChatApplyServicesLive }, { layerPg }, { mapleDbConnectionLayer }, { McpToolExecutor }] =
+	const [{ ChatApplyServicesLive }, { DatabasePgLive }, { layerMapleDbConnection }, { McpToolExecutor }] =
 		await Promise.all([
 			import("../runtime/mcp-service-graph"),
 			import("@maple/backend/platform/DatabasePgLive"),
@@ -176,9 +176,10 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 
 	const runtime = ManagedRuntime.make(
 		ChatApplyServicesLive.pipe(
-			Layer.provideMerge(layerPg),
-			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
-			Layer.provideMerge(workerEnvLayer(input.env)),
+			Layer.provideMerge(DatabasePgLive),
+			Layer.provideMerge(layerMapleDbConnection(input.env)),
+			Layer.provideMerge(envPorts(input.env)),
+			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
 			Layer.provideMerge(telemetry.layer),
 		),
 	)
@@ -242,10 +243,13 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		),
 	)
 
-	try {
-		return await runtime.runPromise(program)
-	} finally {
-		await runtime.dispose().catch(() => undefined)
-		await telemetry.flush(input.env).catch(() => undefined)
-	}
+	// The outcome (an interrupt included, which the session settles with its own copy) is replayed
+	// after the runtime is disposed and the spans flushed, both best effort.
+	return Effect.runPromise(
+		Effect.promise(() => runtime.runPromiseExit(program)).pipe(
+			Effect.ensuring(Effect.tryPromise(() => runtime.dispose()).pipe(Effect.ignore)),
+			Effect.ensuring(Effect.tryPromise(() => telemetry.flush(input.env)).pipe(Effect.ignore)),
+			Effect.flatMap((exit) => exit),
+		),
+	)
 }

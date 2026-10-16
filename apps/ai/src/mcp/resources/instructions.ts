@@ -1,4 +1,4 @@
-import { McpServer } from "effect/unstable/ai"
+import { McpServer } from "effect/ai"
 import { Effect } from "effect"
 
 export const InstructionsResource = McpServer.resource({
@@ -81,6 +81,8 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - \`set_issue_severity\` — how bad it is, with a reason.
 - \`propose_fix\` / \`link_pull_request\` — attach the fix.
 - \`transition_error_issue\` — everything else, e.g. \`wontfix\` with a \`snooze_until\`.
+- \`transition_error_issues\`: the same move on many issues at once (one note, per-issue results).
+  \`propose_fix\` takes \`also_issue_ids\` when one PR fixes several issues.
 
 ## Attribute Filtering
 - Call \`explore_attributes\` before filtering by custom attributes
@@ -93,6 +95,8 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - For traces: available metrics are count, avg_duration, p50/p95/p99_duration, error_rate, apdex
 - For logs: only count is available
 - For custom metrics: specify both metric_name and metric_type
+- Counters (sum metrics, Prometheus \`*_total\` gauges): use metric=increase or metric=rate, computed per series and reset-aware. metric=sum adds raw cumulative samples and is not a real total
+- Histogram percentiles (p50/p95/p99) are not available for metrics in query_data; use avg, or source=traces p95_duration for request latency
 
 ## Pagination
 - Tools that return lists support pagination via offset parameter
@@ -105,8 +109,12 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - Performance analysis: find_slow_traces -> inspect_trace -> get_service_top_operations
 - Trend analysis: query_data (timeseries or breakdown)
 - Service discovery: list_services -> diagnose_service
-- Alert management: list_alert_rules / list_alert_destinations -> get_alert_rule -> create_alert_rule / update_alert_rule / delete_alert_rule -> list_alert_incidents
-- AI agent sessions (LLM agent traces — NOT browser replays): list_agent_sessions -> get_agent_session -> inspect_span (decodes an AI span's messages and tool calls)
+- Integrations: list_integrations is what is connected and broken (revoked grants, stale pollers, repos that stop syncing, failing scrape targets); audit_setup adds fix hints. Admins can poll Railway now (sync_railway) and manage plain Prometheus scrape targets (create_scrape_target, update_scrape_target enabled=false to pause, delete_scrape_target); connecting a provider stays in Settings.
+- CI and deploys: ci_runs is GitHub Actions runs from CI traces; for a red workflow it names the first failing and last green commits and hands both to compare_commits, which lists the commits between them. compare_commits service=<service.name> lists what its latest deploy shipped (service_deployments has the versions).
+- Infrastructure (hosts, Kubernetes pods/nodes/workloads, Docker containers): list_infra (no \`kind\` = overview of what reports, hottest first) -> inspect_infra (CPU/memory over the window with the peak time, a node's or workload's pods). diagnose_service shows the workload and pods a service runs on. Connected integrations add kinds: cloudflare_zones / cloudflare_workers (requests, 5xx, latency; inspect a zone with section=traffic|breakdown|security|dns), railway_services and planetscale_databases; list_integrations says which are connected and healthy. Resource metrics are also chartable: create_dashboard group_by \`resource.host.name\` / \`resource.k8s.pod.name\` on source=metrics
+- Deploy verification: service_deployments (versions per service, newest vs previous) -> compare_periods around the rollout. Route usage over up to 90 days: route_usage. Silence check before calling an outage: ingest_freshness. Volume per service: ingest_usage. Database query shapes by volume: db_query_volume
+- Alert management: list_alert_rules / list_alert_destinations -> get_alert_rule -> preview_alert_rule (dry-run before saving; a window with no data is a blind rule, not a healthy one) -> create_alert_rule / update_alert_rule / delete_alert_rule -> list_alert_incidents
+- AI agent sessions (LLM agent traces — NOT browser replays): list_agent_sessions -> get_agent_session (verdict and checks) -> get_agent_session_transcript (what it did step by step; \`failed_only\`, \`turn\`) -> inspect_span (one span in full)
 - Agent tool health: get_agent_tools_overview -> get_agent_tools_overview tool="<tool>" (its failure groups) -> get_agent_tool_error
 - Product analytics / conversion: list_product_events -> query_funnel (steps over page views, \`track()\` events and server events, stitched per person; \`breakdown_by\` a UTM/referrer dimension or an event attribute) -> add_dashboard_widget with \`panel_type: "funnel"\` and \`display_json.funnel.steps\` to pin it (\`display_json.funnel.variant: "dropoff"\` for the step-by-step drop-off view), or \`panel_type: "paths"\` with \`display_json.paths.anchor\` for what people do after / before one event
 

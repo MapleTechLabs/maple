@@ -7,7 +7,7 @@
  * and cost nothing but live streaming, so only unattended runs use this.
  */
 import { Stream } from "effect"
-import type { Response } from "effect/unstable/ai"
+import type { Response } from "effect/ai"
 
 /** The most a joined delta holds, so one never grows past a response's byte bound in one piece. */
 export const COALESCED_DELTA_CHARS = 4_000

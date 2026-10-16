@@ -1,11 +1,13 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { CreateDashboardOutput } from "@maple/domain/mcp-outputs"
+import { quoteWhereValue } from "@maple/domain/where-clause"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import {
 	DashboardTemplateParameterKey,
 	PortableDashboardDocument,
+	WIDGET_UNIT_TOKENS,
 	defaultWidgetLayout,
 	findNextPosition,
 } from "@maple/domain/http"
@@ -55,7 +57,9 @@ const SimpleWidgetSpec = Schema.Struct({
 	metric_type: Schema.optionalKey(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	service_name: Schema.optionalKey(Schema.String),
 	group_by: Schema.optionalKey(Schema.String),
-	unit: Schema.optionalKey(Schema.String),
+	/** A whereClause in the query-builder grammar, AND-ed with `service_name`. */
+	where: Schema.optionalKey(Schema.String),
+	unit: Schema.optionalKey(Schema.Literals(WIDGET_UNIT_TOKENS)),
 })
 type SimpleWidgetSpec = typeof SimpleWidgetSpec.Type
 
@@ -86,14 +90,41 @@ const VALID_GROUP_BY: Record<string, readonly string[]> = {
 /** Sources whose query builder also groups by an attribute key, `attr.<key>`. */
 const ATTR_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["metrics", "product_events"])
 
+/** Sources that also group by a resource attribute, `resource.<key>` (host.name, k8s.pod.name). */
+const RESOURCE_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["metrics"])
+
+/** query_data's group_by spellings, accepted here too so one vocabulary works in both tools. */
+const QUERY_DATA_GROUP_BY_ALIASES: ReadonlyMap<string, string> = new Map([
+	["service", "service.name"],
+	["span_name", "span.name"],
+	["status_code", "status.code"],
+	["http_method", "http.method"],
+	["event_name", "event.name"],
+	["kind", "event.kind"],
+	["page_path", "page.path"],
+	["group", "group.id"],
+])
+
+/** The builder token for a query_data alias valid on this source; otherwise the input unchanged. */
+export function normalizeGroupBy(rawGroupBy: string, source: string): string {
+	const alias = QUERY_DATA_GROUP_BY_ALIASES.get(rawGroupBy)
+	return alias !== undefined && (VALID_GROUP_BY[source] ?? []).includes(alias) ? alias : rawGroupBy
+}
+
 function validateGroupBy(rawGroupBy: string, source: string, widgetTitle: string): string | null {
 	const validOptions = VALID_GROUP_BY[source] ?? []
 	const allowsAttr = ATTR_GROUP_BY_SOURCES.has(source)
 
 	if (validOptions.includes(rawGroupBy)) return null
 	if (allowsAttr && rawGroupBy.startsWith("attr.") && rawGroupBy.length > 5) return null
+	const allowsResource = RESOURCE_GROUP_BY_SOURCES.has(source)
+	if (allowsResource && rawGroupBy.startsWith("resource.") && rawGroupBy.length > 9) return null
 
-	const optsList = [...validOptions, ...(allowsAttr ? ["attr.<key>"] : [])]
+	const optsList = [
+		...validOptions,
+		...(allowsAttr ? ["attr.<key>"] : []),
+		...(allowsResource ? ["resource.<key>"] : []),
+	]
 	return `Widget "${widgetTitle}": invalid group_by "${rawGroupBy}" for source=${source}. Valid: ${optsList.join(", ")}. ${allowsAttr ? "Example: attr.signal" : ""}`
 }
 
@@ -113,13 +144,20 @@ function simpleSpecToWidget(
 	const metricType = spec.metric_type
 
 	const metric = spec.metric ?? (source === "metrics" ? "avg" : "count")
-	const where = spec.service_name ? `service.name = "${spec.service_name}"` : ""
+	const extraWhere = spec.where?.trim() ?? ""
+	const where = [
+		spec.service_name ? `service.name = ${quoteWhereValue(spec.service_name)}` : "",
+		extraWhere,
+	]
+		.filter((clause) => clause !== "")
+		.join(" AND ")
 
 	let groupBy: string[]
 	if (spec.group_by) {
-		const validationError = validateGroupBy(spec.group_by, source, spec.title)
+		const normalized = normalizeGroupBy(spec.group_by, source)
+		const validationError = validateGroupBy(normalized, source, spec.title)
 		if (validationError) return validationError
-		groupBy = [spec.group_by]
+		groupBy = [normalized]
 	} else {
 		groupBy = viz === "stat" ? [] : ["service.name"]
 	}
@@ -164,6 +202,9 @@ function simpleSpecToWidget(
 	}
 
 	if (viz === "list") {
+		if (extraWhere !== "") {
+			return `Widget "${spec.title}": where is not supported on list widgets; use service_name, or a chart/table.`
+		}
 		if (source === "logs") {
 			return {
 				id,
@@ -249,7 +290,7 @@ function computeAutoLayout(
 	return placed.map((widget) => widget.layout)
 }
 
-function buildSimpleWidgets(specs: ReadonlyArray<SimpleWidgetSpec>): WidgetDef[] | string {
+export function buildSimpleWidgets(specs: ReadonlyArray<SimpleWidgetSpec>): WidgetDef[] | string {
 	const layouts = computeAutoLayout(specs)
 	const widgets: WidgetDef[] = []
 	const errors: string[] = []
@@ -289,6 +330,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 		[
 			...(VALID_GROUP_BY[source] ?? []),
 			...(ATTR_GROUP_BY_SOURCES.has(source) ? ["attr.<key>"] : []),
+			...(RESOURCE_GROUP_BY_SOURCES.has(source) ? ["resource.<key>"] : []),
 		].join("|")
 
 	server.define({
@@ -301,6 +343,8 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			"Create a dashboard one of three ways: a `template`, simplified `widgets` specs, or full `dashboard_json`.\n\n" +
 			"Templates:\n" +
 			templateList +
+			"\n\nTemplates chart one service or host at a time. To compare entities in one chart (CPU per host, memory per pod), " +
+			"use `widgets` on source=metrics with group_by `resource.host.name` / `resource.k8s.pod.name`; list_infra names the metrics." +
 			"\n\nCreated widgets are inspected (up to 12) and returned with a verdict " +
 			"(looks_healthy / suspicious / broken). Use inspect_chart_data beyond the cap, or validate=false to skip.",
 		parameters: Schema.Struct({
@@ -323,9 +367,11 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			),
 			widgets: P.optionalJson(
 				Schema.Array(SimpleWidgetSpec),
-				`Simplified widget specs, one per widget: { title, visualization?: ${SIMPLE_SPEC_VISUALIZATIONS.join("|")}, source: ${QUERY_BUILDER_DATA_SOURCES.join("|")}, metric?, metric_name?, metric_type?, service_name?, group_by?, unit? }. ` +
+				`Simplified widget specs, one per widget: { title, visualization?: ${SIMPLE_SPEC_VISUALIZATIONS.join("|")}, source: ${QUERY_BUILDER_DATA_SOURCES.join("|")}, metric?, metric_name?, metric_type?, service_name?, group_by?, where?, unit?: ${WIDGET_UNIT_TOKENS.join("|")} }. ` +
 					`Not the query_data vocabulary: group_by is ${groupByDoc("traces")} for traces, ${groupByDoc("logs")} for logs, ${groupByDoc("metrics")} for metrics, ${groupByDoc("product_events")} for product_events. ` +
-					"table needs a group_by; list shows recent traces or logs. Charts default to group_by service.name.",
+					"table needs a group_by; list shows recent traces or logs. Charts default to group_by service.name. " +
+					'where is a whereClause (describe_dashboard_schema "queries"), e.g. attr.state = "idle" to read one state of a per-state metric like system.cpu.utilization (unscoped it averages to about 1/states). ' +
+					"unit percent expects a 0-1 fraction, percent_100 a 0-100 value.",
 			),
 			dashboard_json: optionalJsonText(
 				PortableDashboardDocument,

@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen } from "@testing-library/react"
-import { HttpClientError, HttpClientRequest } from "effect/unstable/http"
+import { HttpClientError, HttpClientRequest } from "effect/http"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ErrorState } from "./error-state"
 

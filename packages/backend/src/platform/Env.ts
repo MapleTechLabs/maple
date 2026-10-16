@@ -1,8 +1,3 @@
-// oxlint-disable maple/no-effect-die -- Startup configuration validation. Every
-// check here runs once while the layer is built, before a request exists; there
-// is no caller that could answer a missing or malformed env var differently, and
-// a worker that boots with one is worse than one that refuses to boot. Each is a
-// tagged `EnvValidationError` so the crash names the variable.
 import {
 	chatConnectorConfig,
 	chatConnectorOutboundConfig,
@@ -13,9 +8,9 @@ import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infr
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 
-/** Fatal misconfiguration discovered at startup — surfaces as a tagged defect in the Cause. */
+/** Fatal misconfiguration discovered at startup: fails the layer build, so the worker refuses to boot. */
 class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(
-	"@maple/api/lib/EnvValidationError",
+	"@maple/backend/lib/EnvValidationError",
 	{ message: Schema.String },
 ) {}
 
@@ -60,14 +55,16 @@ export interface EnvConfig {
 	/** The regional instance this worker belongs to, derived by the stack from the stage (`prd-eu` → `eu`). */
 	readonly MAPLE_REGION: MapleRegion
 	/** Escape hatch: allow real email sends outside production (e.g. a deliberate test run on a dev stage). */
-	readonly MAPLE_EMAIL_ALLOW_NONPROD: string
+	readonly MAPLE_EMAIL_ALLOW_NONPROD: boolean
 	/** Route every org to the managed warehouse; honoured only in development. */
-	readonly MAPLE_IGNORE_ORG_CLICKHOUSE: string
+	readonly MAPLE_IGNORE_ORG_CLICKHOUSE: boolean
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
 	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted<string>>
 	/** Svix signing secret (`whsec_…`) for `POST /webhooks/clerk`; the route answers 503 while unset. */
 	readonly CLERK_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
+	/** Shared access key for PR-preview sign-in; bound on `pr-<n>` stages only (`PreviewSignInService`). */
+	readonly PREVIEW_SIGNIN_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
 	readonly AUTUMN_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly AUTUMN_API_URL: string
@@ -89,6 +86,11 @@ export interface EnvConfig {
 	readonly MAPLE_SUPPORT_SLACK_BOT_TOKEN: Option.Option<Redacted.Redacted<string>>
 	/** Comma-separated Slack user ids of the Maple team, added to every new support channel. */
 	readonly MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: Option.Option<string>
+	/**
+	 * Channel in Maple's own workspace that plan-cancellation reports are posted to, with the
+	 * support bot token above (the bot must be in the channel). Unset → no report is produced.
+	 */
+	readonly MAPLE_CANCELLATION_SLACK_CHANNEL_ID: Option.Option<string>
 	/**
 	 * Self-observability ingest key (`@maple-dev/effect-sdk` reads the same variable
 	 * for OTLP export). Also the default credential for server-side product events.
@@ -202,12 +204,17 @@ const envConfig = Config.all({
 	MAPLE_API_BASE_URL: stringWithDefault("MAPLE_API_BASE_URL", "http://127.0.0.1:3472"),
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
 	MAPLE_REGION: stringWithDefault("MAPLE_REGION", "us").pipe(Config.map(parseMapleRegion)),
-	MAPLE_EMAIL_ALLOW_NONPROD: stringWithDefault("MAPLE_EMAIL_ALLOW_NONPROD", "false"),
-	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false"),
+	MAPLE_EMAIL_ALLOW_NONPROD: stringWithDefault("MAPLE_EMAIL_ALLOW_NONPROD", "false").pipe(
+		Config.map((value) => value === "true"),
+	),
+	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false").pipe(
+		Config.map((value) => value === "1" || value === "true"),
+	),
 	CLERK_SECRET_KEY: optionalRedacted("CLERK_SECRET_KEY"),
 	CLERK_PUBLISHABLE_KEY: optionalString("CLERK_PUBLISHABLE_KEY"),
 	CLERK_JWT_KEY: optionalRedacted("CLERK_JWT_KEY"),
 	CLERK_WEBHOOK_SECRET: optionalRedacted("CLERK_WEBHOOK_SECRET"),
+	PREVIEW_SIGNIN_KEY: optionalRedacted("PREVIEW_SIGNIN_KEY"),
 	MAPLE_ORG_ID_OVERRIDE: optionalString("MAPLE_ORG_ID_OVERRIDE"),
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
 	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", "https://api.useautumn.com"),
@@ -216,6 +223,7 @@ const envConfig = Config.all({
 	STRIPE_API_URL: stringWithDefault("STRIPE_API_URL", "https://api.stripe.com"),
 	MAPLE_SUPPORT_SLACK_BOT_TOKEN: optionalRedacted("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 	MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: optionalString("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
+	MAPLE_CANCELLATION_SLACK_CHANNEL_ID: optionalString("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
 	MAPLE_INGEST_KEY: optionalRedacted("MAPLE_INGEST_KEY"),
 	MAPLE_ENDPOINT: optionalString("MAPLE_ENDPOINT"),
 	MAPLE_PRODUCT_EVENTS_INGEST_KEY: optionalRedacted("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),
@@ -334,26 +342,22 @@ const makeEnv = Effect.gen(function* () {
 	const env: EnvConfig = yield* envConfig
 
 	if (env.MAPLE_DEFAULT_ORG_ID.trim().length === 0) {
-		return yield* Effect.die(new EnvValidationError({ message: "MAPLE_DEFAULT_ORG_ID cannot be empty" }))
+		return yield* new EnvValidationError({ message: "MAPLE_DEFAULT_ORG_ID cannot be empty" })
 	}
 
 	if (env.CLICKHOUSE_PROVIDER !== "clickhouse" && env.CLICKHOUSE_PROVIDER !== "tinybird") {
-		return yield* Effect.die(
-			new EnvValidationError({
-				message: "CLICKHOUSE_PROVIDER must be either 'clickhouse' or 'tinybird'",
-			}),
-		)
+		return yield* new EnvValidationError({
+			message: "CLICKHOUSE_PROVIDER must be either 'clickhouse' or 'tinybird'",
+		})
 	}
 
 	const hasTinybirdSigningKey = Option.isSome(env.TINYBIRD_SIGNING_KEY)
 	const hasTinybirdWorkspaceId = Option.isSome(env.TINYBIRD_WORKSPACE_ID)
 	if (hasTinybirdSigningKey !== hasTinybirdWorkspaceId) {
-		return yield* Effect.die(
-			new EnvValidationError({
-				message:
-					"TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID must be configured together for Tinybird raw SQL",
-			}),
-		)
+		return yield* new EnvValidationError({
+			message:
+				"TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID must be configured together for Tinybird raw SQL",
+		})
 	}
 
 	if (
@@ -361,11 +365,9 @@ const makeEnv = Effect.gen(function* () {
 		(!Number.isSafeInteger(env.TINYBIRD_RAW_SQL_JWT_RPS_LIMIT.value) ||
 			env.TINYBIRD_RAW_SQL_JWT_RPS_LIMIT.value <= 0)
 	) {
-		return yield* Effect.die(
-			new EnvValidationError({
-				message: "TINYBIRD_RAW_SQL_JWT_RPS_LIMIT must be a positive integer when configured",
-			}),
-		)
+		return yield* new EnvValidationError({
+			message: "TINYBIRD_RAW_SQL_JWT_RPS_LIMIT must be a positive integer when configured",
+		})
 	}
 
 	if (
@@ -380,24 +382,22 @@ const makeEnv = Effect.gen(function* () {
 	const authMode = env.MAPLE_AUTH_MODE.toLowerCase()
 
 	if (authMode !== "clerk" && Option.isNone(env.MAPLE_ROOT_PASSWORD)) {
-		return yield* Effect.die(
-			new EnvValidationError({
-				message: "MAPLE_ROOT_PASSWORD is required when MAPLE_AUTH_MODE=self_hosted",
-			}),
-		)
+		return yield* new EnvValidationError({
+			message: "MAPLE_ROOT_PASSWORD is required when MAPLE_AUTH_MODE=self_hosted",
+		})
 	}
 
 	if (authMode === "clerk" && Option.isNone(env.CLERK_SECRET_KEY)) {
-		return yield* Effect.die(
-			new EnvValidationError({ message: "CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk" }),
-		)
+		return yield* new EnvValidationError({
+			message: "CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk",
+		})
 	}
 
 	if (
 		Option.isSome(env.MAPLE_ROOT_PASSWORD) &&
 		Redacted.value(env.MAPLE_ROOT_PASSWORD.value).trim().length === 0
 	) {
-		return yield* Effect.die(new EnvValidationError({ message: "MAPLE_ROOT_PASSWORD cannot be empty" }))
+		return yield* new EnvValidationError({ message: "MAPLE_ROOT_PASSWORD cannot be empty" })
 	}
 
 	return Env.of(env)

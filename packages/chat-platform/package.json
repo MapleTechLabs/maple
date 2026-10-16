@@ -6,11 +6,12 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./connectors": "./src/connectors/index.ts",
-		"./manifests": "./src/connectors/manifests.ts"
+		"./manifests": "./src/connectors/manifests.ts",
+		"./anticipated": "./src/anticipated.ts"
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"@maple/domain": "workspace:*",

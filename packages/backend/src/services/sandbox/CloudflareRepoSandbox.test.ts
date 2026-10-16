@@ -19,7 +19,7 @@ import {
 	SandboxRequest,
 	SandboxRuntime,
 	SandboxSecretHandle,
-} from "effect-agent/sandbox"
+} from "@yielded/agent/sandbox"
 import { Duration, Effect, Exit, Fiber, Option, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import type { RepositoryCheckout } from "@maple/backend/services/integrations/vcs/VcsSourceService"
@@ -293,6 +293,26 @@ describe("the Cloudflare repository sandbox", () => {
 			assert.strictEqual(calls.filter((call) => call.startsWith("exec:")).length, 3)
 			assert.strictEqual(calls.filter((call) => call.startsWith("checkout:")).length, 1)
 			assert.strictEqual(events.at(-1)?._tag, "SandboxExited")
+		}),
+	)
+
+	it.effect("reports a sandbox call that never answers as unavailable instead of waiting on it", () =>
+		Effect.gen(function* () {
+			const hung = makeCloudflareRepoSandbox({
+				resolveCheckout: () => Effect.succeed(checkout),
+				exec: () => Effect.never,
+			})
+			const running = yield* Effect.forkChild(Effect.exit(Stream.runCollect(hung.execute(request()))))
+			const exit = yield* settleWithClock(running)
+			assert.match(failureMessage(exit) ?? "", /did not answer within 65s/)
+			// Carried as the Worker's own "unavailable" answer, which the tools report as such.
+			const error =
+				Exit.isFailure(exit) && exit.cause.reasons[0]?._tag === "Fail"
+					? exit.cause.reasons[0].error
+					: undefined
+			assert.isTrue(
+				error?._tag === "SandboxSpawnError" && Schema.is(SandboxRunUnavailable)(error.cause),
+			)
 		}),
 	)
 

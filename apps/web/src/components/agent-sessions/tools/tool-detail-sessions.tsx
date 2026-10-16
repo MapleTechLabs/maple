@@ -1,18 +1,19 @@
 import { Link } from "@tanstack/react-router"
 
-import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { TONE_FILL } from "@maple/ui/lib/tone"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { ErrorCountPill } from "@/components/replays/session-pills"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 
 import { ExternalLinkIcon } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
+import { RelativeTime } from "@/components/common/relative-time"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { sessionLinkWindow, sessionRowId } from "@maple/agent-sessions"
 import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
-
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
 
 /**
  * The sessions that ran this tool, newest first — the way back down from an
@@ -43,8 +44,6 @@ export function ToolDetailSessions({
 	failure?: unknown
 	waiting?: boolean
 }) {
-	const { effectiveTimezone } = useTimezonePreference()
-
 	return (
 		<section
 			className="@container/panel border-b border-border px-6 pt-5 pb-6"
@@ -52,38 +51,31 @@ export function ToolDetailSessions({
 		>
 			<div className="flex flex-wrap items-center justify-between gap-4 pb-3">
 				<div className="flex min-w-0 items-baseline gap-2.5 font-mono">
-					<span className="text-[12.5px] font-medium text-foreground">Sessions running {tool}</span>
-					<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
-						{plural(rows.length, "session")}
+					<span className="text-xs font-medium text-foreground">Sessions running {tool}</span>
+					<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
+						{countLabel(rows.length, "session")}
 					</span>
 				</div>
 				<Link
 					to="/agent-sessions"
 					// The sessions list's own param is `tools`, not `toolNames`.
 					search={{ tools: [tool] }}
-					className="inline-flex h-7 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-[11.5px] text-foreground transition-colors hover:bg-muted/50"
+					className="inline-flex h-7 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-2xs text-foreground transition-colors hover:bg-muted/50"
 				>
 					Open in Sessions
 					<ExternalLinkIcon size={11} className="text-muted-foreground" aria-hidden />
 				</Link>
 			</div>
 
-			<div className={cn("transition-opacity", waiting && "opacity-60")}>
+			<div className={refreshingClass(waiting ?? false)} aria-busy={waiting || undefined}>
 				{failure !== undefined ? (
-					<QueryErrorState
-						error={failure}
-						titleOverride={`Failed to load sessions running ${tool}`}
-					/>
+					<ErrorState error={failure} title={`Failed to load sessions running ${tool}`} />
 				) : loading ? (
-					<div className="flex flex-col gap-1.5 py-3">
-						<Skeleton className="h-[46px]" />
-						<Skeleton className="h-[46px]" />
-						<Skeleton className="h-[46px]" />
-					</div>
+					<SkeletonList rows={3} rowClassName="h-[46px]" className="gap-1.5 py-3" />
 				) : rows.length === 0 ? (
-					<div className="px-3 py-12 text-center font-mono text-xs text-muted-foreground">
+					<EmptyMessage className="py-12 font-mono">
 						No sessions called {tool} in the selected window.
-					</div>
+					</EmptyMessage>
 				) : (
 					rows.map((session) => {
 						const hasErrors = session.errorSpanCount > 0
@@ -101,13 +93,13 @@ export function ToolDetailSessions({
 								{hasErrors ? (
 									<span
 										aria-hidden
-										className="absolute inset-y-0 left-0 w-[3px] bg-[var(--severity-error)]"
+										className={`absolute inset-y-0 left-0 w-[3px] ${TONE_FILL.crit}`}
 									/>
 								) : null}
 
 								<span className="flex w-0 min-w-0 flex-1 flex-col gap-px">
 									<span
-										className="truncate font-mono text-sm font-medium leading-[18px] text-foreground"
+										className="truncate font-mono text-sm font-medium leading-4.5 text-foreground"
 										title={session.sessionId}
 									>
 										{sessionRowId(session.sessionId)}
@@ -124,36 +116,24 @@ export function ToolDetailSessions({
 								</span>
 
 								<span className="hidden w-[216px] shrink-0 items-baseline gap-2 @min-[560px]/panel:flex">
-									<span className="font-mono text-[13px] font-semibold tabular-nums text-foreground">
+									<span className="font-mono text-ui font-semibold tabular-nums text-foreground">
 										{formatSessionDuration(session.durationMs)}
 									</span>
 									<span className="truncate text-xs text-muted-foreground">
-										{plural(session.traceCount, "trace")} ·{" "}
-										{plural(session.spanCount, "span")}
+										{countLabel(session.traceCount, "trace")} ·{" "}
+										{countLabel(session.spanCount, "span")}
 									</span>
 								</span>
 
 								<span className="hidden w-[140px] shrink-0 @min-[900px]/panel:flex">
-									{hasErrors ? (
-										<span className="inline-flex items-center gap-1 rounded-full border border-[var(--severity-error)]/30 bg-[var(--severity-error)]/10 px-1.5 py-0.5">
-											<span
-												aria-hidden
-												className="size-1 shrink-0 rounded-full bg-[var(--severity-error)]"
-											/>
-											<span className="font-mono text-[11px] font-medium leading-3 text-[var(--severity-error)]">
-												{plural(session.errorSpanCount, "error")}
-											</span>
-										</span>
-									) : null}
+									{hasErrors ? <ErrorCountPill count={session.errorSpanCount} /> : null}
 								</span>
 
-								<span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-									{formatRelativeTimeOrDate(
-										session.startTime,
-										undefined,
-										effectiveTimezone,
-									)}
-								</span>
+								<RelativeTime
+									value={session.startTime}
+									variant="orDate"
+									className="shrink-0 whitespace-nowrap text-xs text-muted-foreground"
+								/>
 							</Link>
 						)
 					})
@@ -162,7 +142,7 @@ export function ToolDetailSessions({
 
 			{capped ? (
 				<p className="px-3 pt-3 text-sm text-muted-foreground">
-					Showing the {rows.length.toLocaleString()} most recent sessions — narrow the time range to
+					Showing the {formatNumber(rows.length)} most recent sessions — narrow the time range to
 					see older ones
 				</p>
 			) : null}

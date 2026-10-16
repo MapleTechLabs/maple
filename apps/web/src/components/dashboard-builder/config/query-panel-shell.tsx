@@ -2,16 +2,42 @@ import { useState, type ReactNode } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
+import { FilterChip } from "@maple/ui/components/ui/filter-chip"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
 import { queryBadgeColor, type QueryBuilderDataSource } from "@maple/query-engine/query-builder"
 import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
+import { ChevronDownIcon, ChevronRightIcon } from "@/components/icons"
 
 // The chrome every query panel shares — the collapsible header with the
 // query's badge, its source select and its actions — and the add-on toggle
 // bar under a panel's body. `QueryPanel` and the funnel widget's
 // `FunnelQueryPanel` (the step editor a funnel shows for Product events) both
 // render through these, so the funnel reads as one more query.
+
+/** The expand/collapse caret at the start of a query panel's header row. */
+export function CollapseToggle({
+	collapsed,
+	onToggle,
+	noun,
+}: {
+	collapsed: boolean
+	onToggle: () => void
+	noun: string
+}) {
+	return (
+		<IconButton
+			size="icon-xs"
+			label={collapsed ? `Expand ${noun}` : `Collapse ${noun}`}
+			tooltip={false}
+			onClick={onToggle}
+			className="text-muted-foreground hover:text-foreground"
+		>
+			{collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
+		</IconButton>
+	)
+}
 
 /** What a panel's source select offers: every query-builder data source. */
 export type QueryPanelSource = QueryBuilderDataSource
@@ -60,14 +86,7 @@ export function QueryPanelShell({
 		<div className="border rounded-md">
 			{/* Header */}
 			<div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
-				<button
-					type="button"
-					onClick={() => setCollapsed((c) => !c)}
-					className="text-muted-foreground hover:text-foreground transition-colors text-xs shrink-0"
-					aria-label={collapsed ? "Expand query" : "Collapse query"}
-				>
-					{collapsed ? "▶" : "▼"}
-				</button>
+				<CollapseToggle collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} noun="query" />
 
 				{visibility && (
 					<Checkbox
@@ -80,7 +99,7 @@ export function QueryPanelShell({
 
 				<Badge
 					variant="outline"
-					className={cn("font-mono text-[11px] text-white border-0 shrink-0", badgeColor)}
+					className={cn("font-mono text-2xs text-white border-0 shrink-0", badgeColor)}
 				>
 					{name}
 				</Badge>
@@ -94,7 +113,8 @@ export function QueryPanelShell({
 					}}
 				>
 					<SelectTrigger
-						className="h-7 w-36 text-xs border-none bg-transparent shadow-none px-1"
+						size="sm"
+						className="w-36 border-none bg-transparent shadow-none px-1"
 						aria-label="Query source"
 					>
 						<SelectValue />
@@ -132,20 +152,9 @@ export function AddOnToggleBar<K extends string>({
 	return (
 		<div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-dashed">
 			{items.map(({ key, label }) => (
-				<button
-					key={key}
-					type="button"
-					onClick={() => onToggle(key)}
-					aria-pressed={active[key]}
-					className={cn(
-						"px-2 py-0.5 text-[11px] rounded-sm border transition-colors",
-						active[key]
-							? "bg-primary/10 border-primary/30 text-primary"
-							: "bg-muted/40 border-transparent text-muted-foreground hover:text-foreground",
-					)}
-				>
+				<FilterChip key={key} size="xs" pressed={active[key]} onPressedChange={() => onToggle(key)}>
 					{label}
-				</button>
+				</FilterChip>
 			))}
 		</div>
 	)

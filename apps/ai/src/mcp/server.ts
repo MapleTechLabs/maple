@@ -1,8 +1,9 @@
-import { McpSchema, McpServer as EffectMcpServer } from "effect/unstable/ai"
+import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
 import { Context, Effect, Layer } from "effect"
 import { McpToolExecutor, listMcpTools } from "./dispatcher"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
 import type { McpToolResult } from "./tools/types"
+import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 
 /**
  * The text blocks are what a model reads; `structuredContent` is the typed output the tool's
@@ -26,13 +27,19 @@ const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message:
 		content: [{ type: "text", text: `${error._tag}: ${error.message}` }],
 	})
 
-/** Public MCP transport backed by the same dispatcher as internal Worker RPC. */
-export const McpToolsLive = Layer.effectDiscard(
-	Effect.gen(function* () {
+/**
+ * Public MCP transport backed by the same dispatcher as internal Worker RPC. Loading the catalog
+ * and building its JSON Schemas is costly, so tools register once per isolate, before the first
+ * authorized `tools/*` request.
+ */
+export class McpToolRegistration extends Context.Service<
+	McpToolRegistration,
+	{ readonly ensureRegistered: Effect.Effect<void> }
+>()("@maple/ai/mcp/McpToolRegistration", {
+	make: Effect.gen(function* () {
 		const server = yield* EffectMcpServer.McpServer
 		const executor = yield* McpToolExecutor
-		const descriptors = yield* listMcpTools
-		yield* Effect.forEach(descriptors, (descriptor) =>
+		const addTool = (descriptor: McpToolDescriptor) =>
 			server.addTool({
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
@@ -64,7 +71,12 @@ export const McpToolsLive = Layer.effectDiscard(
 							),
 						)
 					}),
-			}),
+			})
+		const register = Effect.flatMap(listMcpTools, (descriptors) =>
+			Effect.forEach(descriptors, addTool, { discard: true }),
 		)
+		return { ensureRegistered: yield* Effect.cached(register) }
 	}),
-)
+}) {
+	static readonly layer = Layer.effect(this, this.make)
+}

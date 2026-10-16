@@ -1,5 +1,6 @@
+import { useState } from "react"
 import { cn } from "@maple/ui/lib/utils"
-import { Button } from "@maple/ui/components/ui/button"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { PlusIcon, TrashIcon } from "@/components/icons"
 
 import { InlineEditableText } from "@/components/dashboard-builder/sections/inline-editable-text"
@@ -33,6 +34,8 @@ export function SectionTabBar({
 	onDelete,
 	onAddTab,
 }: SectionTabBarProps) {
+	// F2 on a focused tab renames it; the title can't own focus inside the tab button.
+	const [editingTabId, setEditingTabId] = useState<string | null>(null)
 	return (
 		<div className="flex min-w-0 items-center gap-1 overflow-x-auto" role="tablist">
 			{tabs.map((tab) => {
@@ -52,43 +55,51 @@ export function SectionTabBar({
 							role="tab"
 							aria-selected={isActive}
 							onClick={() => onSelect(tab.id)}
-							className="min-w-0 cursor-pointer truncate font-medium outline-none"
+							onKeyDown={(event) => {
+								if (editable && event.key === "F2") {
+									event.preventDefault()
+									setEditingTabId(tab.id)
+								}
+							}}
+							aria-keyshortcuts={editable ? "F2" : undefined}
+							className="min-w-0 max-w-48 cursor-pointer font-medium outline-none"
 						>
 							<InlineEditableText
 								value={tab.title}
 								ariaLabel={`Rename tab ${tab.title}`}
 								readOnly={!editable}
 								onChange={(title) => onRename(tab.id, title)}
-								className="text-xs font-medium"
+								editing={editingTabId === tab.id}
+								onEditingChange={(next) => setEditingTabId(next ? tab.id : null)}
+								focusable={false}
+								className="block truncate text-xs font-medium"
 							/>
 						</button>
 						{/* Hover-revealed so a read-only viewer, and the common case of
 						    just switching tabs, never sees a destructive control. The
 						    last tab can't be deleted — that's deleting the group. */}
 						{editable && tabs.length > 1 && (
-							<Button
-								variant="ghost"
+							<IconButton
 								size="icon-xs"
-								aria-label={`Delete tab ${tab.title}`}
-								className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover/tab:opacity-100"
+								label={`Delete tab ${tab.title}`}
+								className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover/tab:opacity-100 pointer-coarse:opacity-100"
 								onClick={() => onDelete(tab.id)}
 							>
-								<TrashIcon size={11} />
-							</Button>
+								<TrashIcon />
+							</IconButton>
 						)}
 					</div>
 				)
 			})}
 			{editable && (
-				<Button
-					variant="ghost"
+				<IconButton
 					size="icon-xs"
-					aria-label="Add tab"
+					label="Add tab"
 					className="shrink-0 text-muted-foreground"
 					onClick={onAddTab}
 				>
-					<PlusIcon size={13} />
-				</Button>
+					<PlusIcon />
+				</IconButton>
 			)}
 		</div>
 	)

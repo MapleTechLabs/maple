@@ -28,7 +28,7 @@ export function ServiceCombobox({
 		() =>
 			options.map((name) => ({
 				value: name,
-				adornment: <ServiceDot className="size-1.5" serviceName={name} />,
+				adornment: <ServiceDot size="sm" serviceName={name} />,
 			})),
 		[options],
 	)

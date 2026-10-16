@@ -104,7 +104,7 @@ describe("TwoFactorSection", () => {
 			createTOTP: vi.fn(),
 			verifyTOTP: vi.fn(),
 		})
-		expect(screen.queryByText("Backup Codes")).toBeNull()
+		expect(screen.queryByText("Backup codes")).toBeNull()
 
 		cleanup()
 
@@ -115,7 +115,7 @@ describe("TwoFactorSection", () => {
 			createTOTP: vi.fn(),
 			verifyTOTP: vi.fn(),
 		})
-		expect(screen.getByText("Backup Codes")).toBeTruthy()
+		expect(screen.getByText("Backup codes")).toBeTruthy()
 		expect(screen.getByRole("button", { name: "Regenerate codes" })).toBeTruthy()
 	}, 30_000)
 })

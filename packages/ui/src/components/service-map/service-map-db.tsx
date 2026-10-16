@@ -153,8 +153,8 @@ export function getDbDescriptor(system: string | undefined): DbDescriptor {
 	}
 }
 
-/** Cloudflare brand orange, used to brand the collapsed Hyperdrive node. */
-const HYPERDRIVE_COLOR = "oklch(0.7 0.16 50)"
+/** Cloudflare brand orange: the collapsed Hyperdrive node and the Worker overlay accent. */
+export const CLOUDFLARE_COLOR = "oklch(0.7 0.16 50)"
 
 /** Everything a DB node / detail-panel header needs to render, brand included. */
 export interface DbNodePresentation {
@@ -193,7 +193,7 @@ export function resolveDbNodePresentation(
 			title: "Hyperdrive",
 			badge: sys.label,
 			Icon: CloudflareBrandIcon,
-			color: HYPERDRIVE_COLOR,
+			color: CLOUDFLARE_COLOR,
 			branded: true,
 			category: sys.category,
 			systemLabel: `${sys.label} via Hyperdrive`,

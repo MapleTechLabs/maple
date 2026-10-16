@@ -19,56 +19,26 @@ const baseParams = () => ({
 })
 
 describe("compilePipeQuery", () => {
-	describe("returns compiled SQL for known pipes", () => {
-		const knownPipes = [
-			"list_traces",
-			"span_hierarchy",
-			"traces_duration_stats",
-			"traces_facets",
-			"list_logs",
-			"logs_count",
-			"logs_facets",
-			"error_rate_by_service",
-			"service_overview",
-			"services_facets",
-			"service_releases_timeline",
-			"service_apdex_time_series",
-			"get_service_usage",
-			"service_dependencies",
-			"errors_by_type",
-			"errors_timeseries",
-			"errors_facets",
-			"errors_summary",
-			"error_detail_traces",
-			"list_metrics",
-			"metrics_summary",
-			"span_attribute_keys",
-			"resource_attribute_keys",
-			"metric_attribute_keys",
-			"span_attribute_values",
-			"resource_attribute_values",
-			"metric_attribute_values",
-			"custom_traces_timeseries",
-			"custom_traces_breakdown",
-			"top_operations",
-			"slow_traces",
-			"span_search",
-		] as const
-
-		for (const pipe of knownPipes) {
-			it(pipe, () => {
-				const result = compilePipeQuery(pipe, {
-					...baseParams(),
-					trace_id: "abc123",
-					service_name: "my-svc",
-					fingerprint_hash: "12345",
-					attribute_key: "http.method",
-					bucket_seconds: 60,
-				})
-				expect(result).toBeDefined()
-				expect(result!.sql).toContain("test-org")
-				expect(typeof result!.decodeRows).toBe("function")
+	describe("attribute discovery honors service_name", () => {
+		for (const pipe of ["span_attribute_keys", "resource_attribute_keys"]) {
+			it(`${pipe} reads that service's spans, not the org-wide rollup`, () => {
+				const scoped = compilePipeQuery(pipe, { ...baseParams(), service_name: "maple-ios" })!.sql
+				expect(scoped).toContain("ServiceName = 'maple-ios'")
+				expect(scoped).not.toContain("attribute_keys_hourly")
+				const orgWide = compilePipeQuery(pipe, baseParams())!.sql
+				expect(orgWide).toContain("attribute_keys_hourly")
 			})
+		}
+	})
+
+	it("span_search and list_traces filter by deployment_env", () => {
+		for (const pipe of ["span_search", "list_traces"]) {
+			const sql = compilePipeQuery(pipe, {
+				...baseParams(),
+				span_name: "x",
+				deployment_env: "production",
+			})!.sql
+			expect(sql).toContain("'production'")
 		}
 	})
 
@@ -92,7 +62,7 @@ describe("compilePipeQuery", () => {
 
 			it("keeps only errored spans when errors_only is set", () => {
 				const sql = compilePipeQuery(pipe, { ...baseParams(), errors_only: "1" })!.sql
-				expect(sql).toContain("AND StatusCode = 'Error'")
+				expect(sql).toContain("AND traces.StatusCode = 'Error'")
 			})
 
 			it("treats a falsy errors_only value as absent", () => {
@@ -160,7 +130,7 @@ describe("compilePipeQuery", () => {
 		})
 		expect(result).toBeDefined()
 		expect(result!.sql).toContain("metrics_gauge")
-		expect(result!.sql).toContain("arrayJoin(mapKeys(Attributes))")
+		expect(result!.sql).toContain("arrayJoin(mapKeys(metrics_gauge.Attributes))")
 		expect(result!.sql).toContain("MetricName = 'http.server.duration'")
 	})
 
@@ -205,9 +175,25 @@ describe("compilePipeQuery", () => {
 		}
 	})
 
-	it("injects OrgId into SQL", () => {
-		const result = compilePipeQuery("list_traces", baseParams())
-		expect(result!.sql).toContain("test-org")
+	it.effect("list_traces rejects an unparseable cursor instead of restarting at page one", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				lowerPipeQuery("list_traces", { ...baseParams(), cursor: "2026-02-30 10:00:00" })!,
+			)
+			expect(error._tag).toBe("@maple-dev/effect-orm/QueryBuilderError")
+			const paged = compilePipeQuery("list_traces", { ...baseParams(), cursor: "2026-01-01 10:00:00" })
+			expect(paged!.sql).toContain("2026-01-01 10:00:00")
+		}),
+	)
+
+	// Two root spans 400ns apart share a millisecond. A cursor truncated to ms
+	// would compare `< '...10:00:00.123'` and skip the second one on the next page.
+	it("list_traces keeps a wire cursor's nanoseconds", () => {
+		const paged = compilePipeQuery("list_traces", {
+			...baseParams(),
+			cursor: "2026-01-01 10:00:00.123456789",
+		})
+		expect(paged!.sql).toContain("Timestamp < '2026-01-01 10:00:00.123456789'")
 	})
 
 	it("injects start_time and end_time into SQL", () => {
@@ -215,6 +201,16 @@ describe("compilePipeQuery", () => {
 		expect(result!.sql).toContain("2024-01-01 00:00:00")
 		expect(result!.sql).toContain("2024-01-02 00:00:00")
 	})
+
+	// An absent required param fails the compile: any stand-in value would be an
+	// ordinary string, and `""` reads as "no filter" and returns every service.
+	it.effect("fails an absent required param before compiling", () =>
+		Effect.gen(function* () {
+			const failure = yield* Effect.flip(lowerPipeQuery("service_releases_timeline", baseParams())!)
+			expect(failure.code).toBe("UnresolvedParam")
+			expect(failure.message).toContain("service_name")
+		}),
+	)
 
 	// `list_traces` derives its row schema from the SELECT, so `decodeRows`
 	// validates rather than casting: a row missing a selected column is a decode
@@ -315,10 +311,9 @@ describe("buildAttributeFiltersFromParams", () => {
 	})
 
 	it("returns no filters when no filter keys present", () => {
-		const result = compilePipeQuery("custom_traces_timeseries", baseParams())
-		expect(result).toBeDefined()
-		// Should compile without errors even with no filters
-		expect(result!.sql).toBeTruthy()
+		const { sql } = compilePipeQuery("custom_traces_timeseries", baseParams())!
+		expect(sql).not.toContain("SpanAttributes[")
+		expect(sql).not.toContain("ResourceAttributes[")
 	})
 
 	it("handles exists mode filters", () => {

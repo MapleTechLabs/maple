@@ -99,6 +99,19 @@ describe("mapWarehouseError", () => {
 				expect(mapped).not.toBeInstanceOf(WarehouseQueryError)
 			})
 
+			// Production: `EventsName != ''` on an Array column, written by the chat agent.
+			it("reports a literal the column cannot read as invalid SQL", () => {
+				const mapped = classify(
+					"rawSqlQuery",
+					{
+						message:
+							"Array does not start with '[' character: while converting '' to Array(String) (CANNOT_READ_ARRAY_FROM_TEXT)",
+					},
+					"caller",
+				)
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
+			})
+
 			// The stale `FROM web_events` left in a saved raw_sql widget by the
 			// product_events rename: the author's to fix, not a Maple 5xx.
 			it("reports a table dropped out from under a saved widget to the author", () => {
@@ -112,6 +125,44 @@ describe("mapWarehouseError", () => {
 				)
 				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
 				expect(mapped.message).toContain("web_events")
+			})
+
+			// Agent SQL from prod, as Tinybird returns it: the exception type only in the text.
+			it.each([
+				"[Error] Unknown expression identifier `Status` in scope SELECT * FROM traces FORMAT JSON. (UNKNOWN_IDENTIFIER)",
+				"[Error] Function with name `toStartOfTenSeconds` does not exist. In scope SELECT 1. (UNKNOWN_FUNCTION)",
+				"[Error] Illegal type DateTime64(9) of argument of function intDiv. (ILLEGAL_TYPE_OF_ARGUMENT)",
+				"[Error] Column `SpanName` is not under aggregate function and not in GROUP BY keys. (NOT_AN_AGGREGATE)",
+				"[Error] Cannot parse string '2026-10-04T00:00:00Z' as DateTime64(9). (CANNOT_PARSE_DATETIME)",
+				"[Error] Table expression modifiers FINAL are not supported for subquery SELECT * FROM (SELECT * FROM session_replays) AS session_replays. (UNSUPPORTED_METHOD)",
+			])("reports agent SQL the warehouse refused as invalid SQL: %s", (message) => {
+				expect(classify("rawSqlQuery", { message }, "caller")).toBeInstanceOf(
+					WarehouseInvalidSqlError,
+				)
+			})
+
+			// A 500 must not make a typo transient: only WarehouseUpstreamError is retried.
+			const typed500 = {
+				message:
+					"[Error] Unknown expression identifier `Status` in scope SELECT 1. (UNKNOWN_IDENTIFIER)",
+				status: 500,
+			}
+
+			it("lets a message-borne type outrank a 500 on caller SQL, so it is not retried", () => {
+				const mapped = classify("rawSqlQuery", typed500, "caller")
+				expect(mapped).toBeInstanceOf(WarehouseInvalidSqlError)
+				expect(mapped).not.toBeInstanceOf(WarehouseUpstreamError)
+			})
+
+			it("keeps a Maple query's untyped 500 a transient upstream failure", () => {
+				expect(classify("p", typed500, "maple")).toBeInstanceOf(WarehouseUpstreamError)
+			})
+
+			// The message-borne type is read for caller SQL only; Maple's own queries keep their rules.
+			it("does not read the exception type out of a Maple query's message", () => {
+				expect(
+					classify("p", "[Error] Unknown expression identifier `x`. (UNKNOWN_IDENTIFIER)", "maple"),
+				).not.toBeInstanceOf(WarehouseInvalidSqlError)
 			})
 
 			it("defaults to caller authorship, the conservative reading", () => {
@@ -285,6 +336,14 @@ describe("mapWarehouseError", () => {
 })
 
 describe("cleanErrorMessage", () => {
+	it("drops the vendor's plan upsell", () => {
+		expect(
+			cleanErrorMessage(
+				"[Error] Memory limit exceeded. Upgrade your plan for higher capacity. (MEMORY_LIMIT_EXCEEDED)",
+			),
+		).toBe("[Error] Memory limit exceeded. (MEMORY_LIMIT_EXCEEDED)")
+	})
+
 	it("retains the authentication diagnostic without the echoed token", () => {
 		const message =
 			"invalid authentication token. Invalid token b'opaque-secret': Signature verification failed"
@@ -312,6 +371,33 @@ describe("cleanErrorMessage", () => {
 		)
 		expect(cleaned).not.toContain("<")
 		expect(cleaned).toBe("Request failed with status 503")
+	})
+
+	it("keeps comparison operators in echoed SQL across UNION branches", () => {
+		const branch = (t: string) =>
+			`SELECT count() FROM ${t} WHERE TimeUnix >= toDateTime('2026-10-01 12:00:00') AND TimeUnix <= toDateTime('2026-10-01 12:10:00')`
+		const sql = `${branch("metrics_histogram")} UNION ALL ${branch("metrics_sum")} UNION ALL ${branch("metrics_gauge")} AND a < 5 AND b > 3`
+		const message = `Code: 47. DB::Exception: Unknown expression identifier 'n' in scope ${sql}. (UNKNOWN_IDENTIFIER)`
+		const cleaned = cleanErrorMessage(message)
+		expect(cleaned).toBe(message)
+		expect(cleaned.match(/TimeUnix <= /g)).toHaveLength(3)
+		expect(cleaned.match(/TimeUnix >= /g)).toHaveLength(3)
+	})
+
+	it("strips inline HTML tags outside a full page", () => {
+		expect(cleanErrorMessage('Bad gateway <b>upstream</b> <p class="x">down</p>')).toBe(
+			"Bad gateway upstream down",
+		)
+	})
+
+	it("strips a doctype and unquoted attributes but keeps tag-like SQL comparisons", () => {
+		expect(cleanErrorMessage("Request failed with status 503: <!DOCTYPE html>\n<html><head>")).toBe(
+			"Request failed with status 503",
+		)
+		expect(cleanErrorMessage("Bad gateway <p class=x>down</p>")).toBe("Bad gateway down")
+		expect(cleanErrorMessage("Syntax error near WHERE x<b AND y>3")).toBe(
+			"Syntax error near WHERE x<b AND y>3",
+		)
 	})
 
 	it("trims a trailing colon", () => {

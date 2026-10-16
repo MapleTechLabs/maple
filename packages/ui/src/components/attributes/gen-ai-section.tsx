@@ -23,11 +23,11 @@ export function GenAiSection({
 
 	return (
 		<div className="space-y-1.5">
-			<h4 className="text-xs font-medium tracking-wide text-foreground/70">AI Attributes</h4>
+			<h4 className="text-xs font-medium tracking-wide text-foreground/70">AI attributes</h4>
 			<div className="divide-y divide-border/60 overflow-hidden rounded-md border">
 				{matched.map((group) => (
 					<div key={group.id}>
-						<div className="px-1.5 py-1.5 text-[11px] font-semibold tracking-wide text-foreground/80">
+						<div className="px-1.5 py-1.5 text-2xs font-semibold tracking-wide text-foreground/80">
 							{group.label}
 						</div>
 						<div className="divide-y divide-border/40 border-t border-border/60 bg-muted/15">

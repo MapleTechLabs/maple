@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
@@ -11,7 +11,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiV2RateLimiter, type RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
@@ -65,7 +65,7 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(Layer.succeed(ApiV2RateLimiter, { check: checkRateLimit })),
 		Layer.provideMerge(servicesLive),

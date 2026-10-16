@@ -1,4 +1,5 @@
-import { useCallback, useMemo, type ReactNode } from "react"
+import { useMemo, type MouseEvent, type ReactNode } from "react"
+import { ReachEndSentinel } from "@/components/common/reach-end-sentinel"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
 	columnSizingFeature,
@@ -10,16 +11,22 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual"
 import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { badgeVariants } from "@maple/ui/components/ui/badge"
+import { Table, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
+import { EMPTY_VALUE, countLabel, formatNumber } from "@maple/ui/lib/format"
 import { formatCount } from "@maple/ui/components/filters/range-filter-section"
 import { cn } from "@maple/ui/lib/utils"
 import { FaceRobotIcon, GearIcon, PixelSparkleIcon, type IconComponent } from "@/components/icons"
-import { ServicePills } from "@/components/common/service-pills"
+import { ServicePills } from "@maple/ui/components/service-pills"
+import { ROW_LIFT_TOOLTIPS, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { SortableHeader } from "@/components/common/sortable-header"
+import { VirtualTableBody } from "@/components/common/virtual-table-body"
 import { useDetectedModels } from "@/hooks/use-detected-models"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -34,18 +41,6 @@ import { CATEGORY_TEXT } from "./session-detail/span-visuals"
 import { sessionHeading } from "./session-name"
 
 /** How sessions get here, under the setup copy: the attributes Maple groups on. */
-function AgentSessionsSourceDetail() {
-	return (
-		<p className="max-w-md text-sm text-muted-foreground">
-			Trace your AI agents with a supported framework, or emit OpenTelemetry{" "}
-			<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8em]">gen_ai</code> spans. A
-			framework that groups its turns with a{" "}
-			<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8em]">maple_ai.session.id</code>{" "}
-			attribute gets one session across every trace; anything else gets one per trace.
-		</p>
-	)
-}
-
 /** The wire row from `listAiSessions` — one AI agent session, newest first. */
 export interface AgentSessionRow {
 	readonly sessionId: string
@@ -87,8 +82,6 @@ function absoluteTs(startTime: string, timeZone: string): string {
 	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone, withYear: true })
 }
 
-const plural = (count: number, noun: string) => `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`
-
 /** The row's buckets under the detail page's keys, so one palette serves both. */
 function rowTokenBuckets(session: AgentSessionRow): Record<TokenBucketKey, number> {
 	return {
@@ -108,11 +101,6 @@ const TABLE_FEATURES = tableFeatures({ columnSizingFeature })
 
 /** Two lines — the name over the id — at text-sm and text-xs, plus the cell padding. */
 const ROW_HEIGHT = 53
-
-// No wrap: a two-word label ("LLM calls") breaking onto a second line would
-// make the whole header row taller.
-const HEADER_CELL_CLASS =
-	"h-10 whitespace-nowrap px-2 text-left align-middle font-medium text-muted-foreground"
 
 /**
  * Column layout, shared by the real table and the loading skeleton so the two can't drift apart.
@@ -223,34 +211,6 @@ interface AgentSessionsListProps {
 	onClearFilters?: () => void
 }
 
-function observeReachEnd(element: HTMLDivElement, onReachEnd: () => void): () => void {
-	const observer = new IntersectionObserver(
-		(entries) => {
-			if (entries[0]?.isIntersecting) onReachEnd()
-		},
-		{ rootMargin: "400px 0px" },
-	)
-	observer.observe(element)
-	return () => observer.disconnect()
-}
-
-function SessionsSentinel({
-	onReachEnd,
-	loadingMore,
-}: Pick<AgentSessionsListProps, "onReachEnd" | "loadingMore">) {
-	const elementRef = useCallback(
-		(element: HTMLDivElement | null) => {
-			if (!element) return
-			return observeReachEnd(element, () => {
-				if (!loadingMore) onReachEnd?.()
-			})
-		},
-		[loadingMore, onReachEnd],
-	)
-
-	return <div ref={elementRef} aria-hidden className="h-px w-full" />
-}
-
 export function AgentSessionsListSkeleton() {
 	return (
 		<TableSkeleton
@@ -347,7 +307,7 @@ export function AgentSessionsList({
 				cell: ({ row }) => (
 					<Hint
 						className="font-mono text-xs tabular-nums"
-						content={`Across ${plural(row.original.traceCount, "trace")} · ${plural(row.original.spanCount, "span")}`}
+						content={`Across ${countLabel(row.original.traceCount, "trace")} · ${countLabel(row.original.spanCount, "span")}`}
 					>
 						{formatSessionDuration(row.original.durationMs)}
 					</Hint>
@@ -446,24 +406,20 @@ export function AgentSessionsList({
 		overscan: 10,
 		scrollMargin,
 	})
-	const virtualItems = virtualizer.getVirtualItems()
 
 	if (sessions.length === 0) {
 		return (
 			<SignalEmptyState
 				signal="traces"
 				noun="agent sessions"
-				purpose="Agent sessions group your AI agent's LLM calls and tool calls into one conversation you can replay."
+				purpose="Replay each AI agent conversation, with its LLM and tool calls in order."
 				guideDocs="agentSessions"
+				setupDocs="agentSessions"
 				filtered={filtered}
 				onClearFilters={onClearFilters}
-				detail={filtered ? undefined : <AgentSessionsSourceDetail />}
 			/>
 		)
 	}
-
-	const firstItem = virtualItems[0]
-	const lastItem = virtualItems[virtualItems.length - 1]
 
 	return (
 		<div>
@@ -472,12 +428,12 @@ export function AgentSessionsList({
 				 * table-fixed makes the declared column widths authoritative: the sized columns stay
 				 * pinned and Session, the only column that should flex, takes the remainder.
 				 */}
-				<table className="w-full table-fixed caption-bottom text-sm" aria-label="Agent sessions">
-					<thead className="sticky top-0 z-10 bg-background [&_tr]:border-b">
+				<Table scroll={false} className="table-fixed" aria-label="Agent sessions">
+					<TableHeader sticky>
 						{table.getHeaderGroups().map((headerGroup) => (
-							<tr key={headerGroup.id}>
+							<TableRow key={headerGroup.id}>
 								{headerGroup.headers.map((header) => (
-									<th
+									<TableHead
 										key={header.id}
 										aria-sort={
 											header.id === sortBy
@@ -486,10 +442,7 @@ export function AgentSessionsList({
 													: "descending"
 												: undefined
 										}
-										className={cn(
-											HEADER_CELL_CLASS,
-											COLUMN_LAYOUT.get(header.id)?.responsive,
-										)}
+										className={cn("px-2", COLUMN_LAYOUT.get(header.id)?.responsive)}
 										style={{
 											width: header.getSize() !== 150 ? header.getSize() : undefined,
 										}}
@@ -497,88 +450,72 @@ export function AgentSessionsList({
 										{header.isPlaceholder
 											? null
 											: flexRender(header.column.columnDef.header, header.getContext())}
-									</th>
+									</TableHead>
 								))}
-							</tr>
+							</TableRow>
 						))}
-					</thead>
-					<tbody ref={listRef}>
-						{firstItem && (
-							<tr
-								aria-hidden
-								style={{ height: firstItem.start - virtualizer.options.scrollMargin }}
-							>
-								<td />
-							</tr>
-						)}
-						{virtualItems.map((virtualRow) => {
-							const row = rows[virtualRow.index]!
+					</TableHeader>
+					<VirtualTableBody
+						ref={listRef}
+						virtualizer={virtualizer}
+						rows={rows}
+						colSpan={SESSION_COLUMNS.length}
+						loadingMore={loadingMore}
+						loadingLabel="Loading more sessions…"
+						renderRow={(row, index, measureRef) => {
 							const session = row.original
 							return (
-								<tr
+								<TableRow
 									key={row.id}
-									ref={virtualizer.measureElement}
-									data-index={virtualRow.index}
-									onClick={() =>
+									ref={measureRef}
+									data-index={index}
+									// The stretched link covers the row; lifted tooltip triggers sit above
+									// it, so a plain click on one still opens the session from here.
+									onClick={(event) => {
+										if (!isPlainClick(event) || isInsideLink(event)) return
 										navigate({
 											to: "/agent-sessions/$sessionId",
 											params: { sessionId: session.sessionId },
 											search: sessionLinkWindow(session),
 										})
-									}
-									className="cursor-pointer border-b transition-colors hover:bg-muted/50"
+									}}
+									className={cn("cursor-pointer hover:bg-muted/50", ROW_LIFT_TOOLTIPS)}
 								>
 									{row.getAllCells().map((cell) => (
-										<td
+										<TableCell
 											key={cell.id}
 											className={cn(
-												"p-2 align-middle",
+												"p-2 whitespace-normal leading-normal",
 												COLUMN_LAYOUT.get(cell.column.id)?.responsive,
 											)}
 										>
 											{flexRender(cell.column.columnDef.cell, cell.getContext())}
-										</td>
+										</TableCell>
 									))}
-								</tr>
+								</TableRow>
 							)
-						})}
-						{lastItem && (
-							<tr
-								aria-hidden
-								style={{
-									height:
-										virtualizer.getTotalSize() -
-										(lastItem.end - virtualizer.options.scrollMargin),
-								}}
-							>
-								<td />
-							</tr>
-						)}
-						{loadingMore && (
-							<tr>
-								<td colSpan={SESSION_COLUMNS.length} className="p-2">
-									<div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-										<span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-										Loading more sessions…
-									</div>
-								</td>
-							</tr>
-						)}
-					</tbody>
-				</table>
+						}}
+					/>
+				</Table>
 			</div>
 
-			{hasMore && <SessionsSentinel onReachEnd={onReachEnd} loadingMore={loadingMore} />}
+			{hasMore && <ReachEndSentinel onReachEnd={onReachEnd} loading={loadingMore} />}
 
 			{isCapped && (
 				<p className="py-3 text-sm text-muted-foreground">
-					Showing the {sessions.length.toLocaleString()} most recent sessions — filter the list to
-					see older ones
+					Showing the {formatNumber(sessions.length)} most recent sessions — filter the list to see
+					older ones
 				</p>
 			)}
 		</div>
 	)
 }
+
+const isPlainClick = (event: MouseEvent) =>
+	event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+
+const isInsideLink = (event: MouseEvent) =>
+	event.target instanceof Element && event.target.closest("a") !== null
 
 /** An inline figure with a tooltip saying what it counts. */
 function Hint({
@@ -631,6 +568,14 @@ function SessionCell({ session, timeZone }: { session: AgentSessionRow; timeZone
 	const id = sessionRowIdParts(session.sessionId)
 	return (
 		<div className="min-w-0">
+			<Link
+				to="/agent-sessions/$sessionId"
+				params={{ sessionId: session.sessionId }}
+				search={sessionLinkWindow(session)}
+				tabIndex={-1}
+				aria-hidden
+				className={ROW_STRETCHED_LINK_CLASS}
+			/>
 			<div className="flex min-w-0 items-center gap-2">
 				<Tooltip>
 					<TooltipTrigger
@@ -653,9 +598,6 @@ function SessionCell({ session, timeZone }: { session: AgentSessionRow; timeZone
 								// extent until the row's details land, the true one after — so the
 								// detail page reads straight from these.
 								search={sessionLinkWindow(session)}
-								// The row navigates on its own; the link is for a new tab and the
-								// keyboard, and must not navigate twice.
-								onClick={(event) => event.stopPropagation()}
 							/>
 						}
 						className="min-w-0 truncate text-sm font-medium hover:underline focus-visible:underline focus-visible:outline-none"
@@ -719,7 +661,7 @@ function WorkCount({
 				"inline-flex items-center gap-1 text-xs tabular-nums",
 				count > 0 ? tone : "text-muted-foreground",
 			)}
-			content={plural(count, noun)}
+			content={countLabel(count, noun)}
 		>
 			<Icon size={12} className="shrink-0" aria-hidden />
 			{formatCount(count)}
@@ -768,7 +710,7 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 		return (
 			<Hint
 				className="font-mono text-xs tabular-nums text-muted-foreground"
-				content={plural(total, "token")}
+				content={countLabel(total, "token")}
 			>
 				{formatCount(total)}
 			</Hint>
@@ -786,11 +728,11 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 			className="flex flex-col gap-0.5 font-mono text-xs tabular-nums"
 			content={
 				<div className="flex flex-col gap-1 tabular-nums">
-					<span className="font-medium">{plural(total, "token")}</span>
+					<span className="font-medium">{countLabel(total, "token")}</span>
 					{sides.map((side) => (
 						<div key={side.label} className="flex flex-col gap-0.5">
 							<span className="flex items-center gap-1.5 font-medium">
-								<span aria-hidden className={cn("size-1.5 rounded-full", side.fill)} />
+								<StatusDot tone="custom" className={side.fill} />
 								{side.title}: {side.count.toLocaleString()}
 							</span>
 							{side.parts.map((bucket) => (
@@ -811,7 +753,7 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 							side.count > 0 ? side.tone : "text-muted-foreground/50",
 						)}
 					>
-						{side.count > 0 ? formatCount(side.count) : "—"}
+						{side.count > 0 ? formatCount(side.count) : EMPTY_VALUE}
 					</span>
 					<span className="text-muted-foreground">{side.label}</span>
 				</span>
@@ -831,7 +773,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 	// Unlike cost, none is a measurement here — the index counts every errored
 	// span — so the cell says so rather than sitting empty.
 	if (session.errorSpanCount === 0) {
-		return <span className="text-xs text-muted-foreground/50">—</span>
+		return <span className="text-xs text-muted-foreground/50">{EMPTY_VALUE}</span>
 	}
 	const classified = session.toolErrorCount + session.turnErrorCount
 	const other = session.errorSpanCount - classified
@@ -842,8 +784,8 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 					icon={FaceRobotIcon}
 					count={session.turnErrorCount}
 					noun="turn"
-					hint={`${plural(session.turnErrorCount, "failed turn")} — a model call or agent turn errored`}
-					className="border-destructive/30 bg-destructive/10 text-destructive"
+					hint={`${countLabel(session.turnErrorCount, "failed turn")} — a model call or agent turn errored`}
+					className="border-severity-error/30 bg-severity-error/10 text-severity-error"
 				/>
 			)}
 			{session.toolErrorCount > 0 && (
@@ -851,7 +793,7 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 					icon={GearIcon}
 					count={session.toolErrorCount}
 					noun="tool"
-					hint={`${plural(session.toolErrorCount, "failed tool call")} — the agent may have recovered`}
+					hint={`${countLabel(session.toolErrorCount, "failed tool call")} — the agent may have recovered`}
 					className="border-severity-warn/40 bg-severity-warn/10 text-severity-warn"
 				/>
 			)}
@@ -859,8 +801,8 @@ function ErrorChips({ session }: { session: AgentSessionRow }) {
 				<ErrorChip
 					count={other}
 					noun="span"
-					hint={`${plural(other, "errored span")} outside the agent's turns and tools`}
-					className="border-destructive/30 bg-destructive/10 text-destructive"
+					hint={`${countLabel(other, "errored span")} outside the agent's turns and tools`}
+					className="border-severity-error/30 bg-severity-error/10 text-severity-error"
 				/>
 			)}
 		</div>
@@ -881,17 +823,11 @@ function ErrorChip({
 	className: string
 }) {
 	return (
-		<Hint
-			className={cn(
-				"inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums",
-				className,
-			)}
-			content={hint}
-		>
+		<Hint className={cn(badgeVariants({ pill: true, size: "xs", mono: true }), className)} content={hint}>
 			{Icon ? (
 				<Icon size={10} className="shrink-0" aria-hidden />
 			) : (
-				<span className="size-1 rounded-full bg-current" aria-hidden />
+				<StatusDot tone="custom" size="sm" className="bg-current" />
 			)}
 			{/* Two digits of room, and the noun always as wide as its plural: a
 			    row's "1 tool" above the next row's "12 tools" otherwise makes two

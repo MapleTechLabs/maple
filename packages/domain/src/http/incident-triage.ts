@@ -8,7 +8,7 @@
  * and must never become one — see CLAUDE.md on the one-turn investigation.
  */
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { InvestigationId } from "../primitives"
 import { IssueSeverity } from "./errors"
 

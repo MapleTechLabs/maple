@@ -3,6 +3,10 @@ import { Handle, Position } from "@xyflow/react"
 import { DatabaseIcon } from "../icons"
 
 import { cn } from "../../lib/utils"
+import { httpStatusTone } from "../../lib/http"
+import { TONE_SOFT } from "../../lib/tone"
+import { TruncatedId } from "../ui/truncated-id"
+import { TruncatedText } from "../ui/truncated-text"
 import { formatDuration } from "../../lib/format"
 import { cacheResultStyles } from "../../lib/cache"
 import type { CacheInfo } from "../../lib/cache"
@@ -97,7 +101,7 @@ function StatusBadge({
 	statusCode: string
 }) {
 	const { platform, cacheInfo, httpInfo } = desc
-	const base = "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+	const base = "shrink-0 rounded px-1.5 py-0.5 text-3xs font-semibold"
 
 	if (platform?.outcome?.bad) {
 		return (
@@ -115,6 +119,7 @@ function StatusBadge({
 	}
 	if (httpInfo?.statusCode != null) {
 		const code = httpInfo.statusCode
+		const tone = httpStatusTone(code)
 		return (
 			<span
 				className={cn(
@@ -122,8 +127,7 @@ function StatusBadge({
 					"font-mono",
 					code >= 200 && code < 300 && "bg-severity-info/15 text-severity-info",
 					code >= 300 && code < 400 && "bg-chart-p50/15 text-chart-p50",
-					code >= 400 && code < 500 && "bg-severity-warn/15 text-severity-warn",
-					code >= 500 && "bg-severity-error/15 text-severity-error",
+					tone !== "neutral" && TONE_SOFT[tone],
 					code < 200 && "text-muted-foreground",
 				)}
 			>
@@ -163,14 +167,12 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 						isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
 					)}
 				>
-					<div className="flex items-center gap-1.5 min-w-0 text-[11px]">
-						<span className="font-semibold text-muted-foreground">Missing Span</span>
+					<div className="flex items-center gap-1.5 min-w-0 text-2xs">
+						<span className="font-semibold text-muted-foreground">Missing span</span>
 						<span className="flex-1" />
-						<span className="font-mono text-muted-foreground/60 truncate" title={span.spanId}>
-							{span.spanId.slice(0, 8)}
-						</span>
+						<TruncatedId value={span.spanId} kind="span" className="text-muted-foreground/60 truncate" />
 					</div>
-					<div className="text-[10px] italic text-muted-foreground/50">Not ingested or dropped</div>
+					<div className="text-3xs italic text-muted-foreground/50">Not ingested or dropped</div>
 				</div>
 				<Handle
 					type="source"
@@ -227,7 +229,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 				)}
 			>
 				{isCombined && (
-					<span className="absolute -top-2 -right-2 rounded-full border bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground shadow-sm">
+					<span className="absolute -top-2 -right-2 rounded-full border bg-muted px-1.5 py-0.5 text-3xs font-semibold tabular-nums text-muted-foreground shadow-sm">
 						×{count}
 					</span>
 				)}
@@ -252,17 +254,14 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 					<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 						{/* Row 1: operation + status */}
 						<div className="flex min-w-0 items-center gap-1.5">
-							<span
-								className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground"
-								title={primaryText}
-							>
+							<TruncatedText mono className="flex-1 text-2xs font-medium text-foreground">
 								{primaryText}
-							</span>
+							</TruncatedText>
 							<StatusBadge desc={desc} isError={isError} statusCode={span.statusCode} />
 						</div>
 
 						{/* Row 2: service + category label + duration */}
-						<div className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+						<div className="flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground">
 							<ServiceDot serviceName={span.serviceName} className="size-1.5" />
 							<span className="truncate">{span.serviceName}</span>
 							<span className="shrink-0 text-muted-foreground/50">·</span>

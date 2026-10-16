@@ -1,6 +1,8 @@
-import { formatDuration } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
 import * as React from "react"
+import { cn } from "@maple/ui/lib/utils"
 import { Result } from "@/lib/effect-atom"
 import { Link, linkOptions, useNavigate } from "@tanstack/react-router"
 import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
@@ -15,17 +17,25 @@ import {
 } from "@tanstack/react-table"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
-import { Badge } from "@maple/ui/components/ui/badge"
-import { ServicePills } from "@/components/common/service-pills"
+import { TraceStatusBadge } from "@maple/ui/components/traces/trace-status-badge"
+import { Button } from "@maple/ui/components/ui/button"
+import { ROW_LANE } from "@maple/ui/components/ui/list-row"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { ListFooter } from "@maple/ui/components/ui/list-footer"
+import { Table, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+import { VirtualTableBody } from "@/components/common/virtual-table-body"
+import { shortId } from "@maple/ui/lib/ids"
+import { ServicePills } from "@maple/ui/components/service-pills"
 import { SortableHeader } from "@/components/common/sortable-header"
 import { type Trace } from "@/api/warehouse/traces"
 import type { TracesSearchParams } from "@/routes/traces"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { useInfiniteTraces, FETCH_THRESHOLD } from "@/hooks/use-infinite-traces"
+import { useVirtualReachEnd } from "@/components/common/reach-end-sentinel"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
 import { TracePeekSheet } from "@/components/traces/trace-peek-sheet"
@@ -98,45 +108,6 @@ function deepLinkSpanId(trace: Trace): string | undefined {
 const isPlainClick = (event: React.MouseEvent) =>
 	event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
 
-function truncateId(id: string, length = 8): string {
-	if (id.length <= length) return id
-	return id.slice(0, length)
-}
-
-function StatusBadge({ hasError }: { hasError: boolean }) {
-	if (hasError) {
-		return (
-			<Badge variant="secondary" className="bg-severity-error/15 text-severity-error">
-				Error
-			</Badge>
-		)
-	}
-	return (
-		<Badge variant="secondary" className="bg-severity-info/15 text-severity-info">
-			OK
-		</Badge>
-	)
-}
-
-function HttpStatusBadge({ statusCode }: { statusCode: number }) {
-	return (
-		<Badge
-			variant="secondary"
-			className={
-				statusCode >= 500
-					? "bg-severity-error/15 text-severity-error"
-					: statusCode >= 400
-						? "bg-severity-warn/15 text-severity-warn"
-						: statusCode >= 300
-							? "bg-chart-p50/15 text-chart-p50"
-							: "bg-severity-info/15 text-severity-info"
-			}
-		>
-			{statusCode}
-		</Badge>
-	)
-}
-
 /**
  * v9 registers features explicitly. Sorting is server-side and nothing else here is table-driven,
  * so column sizing — the declared widths the header cells read back — is the only one needed.
@@ -144,8 +115,6 @@ function HttpStatusBadge({ statusCode }: { statusCode: number }) {
 const TABLE_FEATURES = tableFeatures({ columnSizingFeature })
 
 const ROW_HEIGHT = 44
-
-const HEADER_CELL_CLASS = "h-10 px-2 text-left align-middle font-medium text-muted-foreground"
 
 /**
  * Column layout, shared by the real table, the loading skeleton and the empty state so the three
@@ -174,7 +143,7 @@ interface TraceColumnLayout {
 const TRACE_COLUMNS: readonly TraceColumnLayout[] = [
 	{ id: "traceId", header: "Trace ID", width: 100, skeleton: "w-16" },
 	// No width: under table-fixed the unsized column absorbs whatever the sized ones leave.
-	{ id: "rootSpan", header: "Root Span", skeleton: "w-40" },
+	{ id: "rootSpan", header: "Root span", skeleton: "w-40" },
 	{
 		id: "services",
 		header: "Services",
@@ -217,6 +186,8 @@ function LoadingState() {
 		<div className="flex-1 min-h-0 flex flex-col gap-4">
 			<TableSkeleton
 				rows={10}
+				// ROW_HEIGHT, so the list doesn't grow by a row's worth when data lands.
+				rowClassName="h-11"
 				tableClassName="w-full table-fixed"
 				columns={TRACE_COLUMNS.map((column) => ({
 					header: column.header,
@@ -265,13 +236,13 @@ function TracesTableView({
 						{...traceLink(row.original)}
 						className="relative z-10 font-mono text-xs text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary"
 					>
-						{truncateId(row.original.traceId)}
+						{shortId(row.original.traceId, "trace")}
 					</Link>
 				),
 			},
 			{
 				id: "rootSpan",
-				header: "Root Span",
+				header: "Root span",
 				cell: ({ row }) => {
 					const name = row.original.rootSpan.name || row.original.rootSpanName || "Unknown"
 					// Mobile screen spans are all named `ui.screen`/`screen.load`; the
@@ -312,9 +283,9 @@ function TracesTableView({
 							 * the absolute timestamp gives way to it (the more useful of the two at a
 							 * glance); the full timestamp stays available on the tooltip.
 							 */}
-							<span
-								className="truncate text-[10px] text-muted-foreground"
-								title={formatTimestampInTimezone(row.original.startTime, {
+							<TruncatedText
+								className="text-3xs text-muted-foreground"
+								text={formatTimestampInTimezone(row.original.startTime, {
 									timeZone: effectiveTimezone,
 								})}
 							>
@@ -324,13 +295,13 @@ function TracesTableView({
 									})}{" "}
 								</span>
 								<span className="text-muted-foreground/60">
-									({formatRelativeTime(row.original.startTime)})
+									(<RelativeTime value={row.original.startTime} tooltip="title" />)
 								</span>
 								<span className="@min-[480px]/page:hidden">
 									{" · "}
 									{formatDuration(row.original.durationMs)}
 								</span>
-							</span>
+							</TruncatedText>
 						</div>
 					)
 				},
@@ -347,7 +318,7 @@ function TracesTableView({
 				size: 70,
 				cell: ({ row }) => (
 					<span className="font-mono text-xs text-muted-foreground">
-						{row.original.spanCount.toLocaleString()}
+						{formatNumber(row.original.spanCount)}
 					</span>
 				),
 			},
@@ -371,12 +342,12 @@ function TracesTableView({
 				id: "status",
 				header: "Status",
 				size: 80,
-				cell: ({ row }) =>
-					row.original.rootSpan.http?.statusCode != null ? (
-						<HttpStatusBadge statusCode={row.original.rootSpan.http.statusCode} />
-					) : (
-						<StatusBadge hasError={row.original.hasError} />
-					),
+				cell: ({ row }) => (
+					<TraceStatusBadge
+						hasError={row.original.hasError}
+						httpStatusCode={row.original.rootSpan.http?.statusCode}
+					/>
+				),
 			},
 		],
 		[effectiveTimezone, sortBy, sortDir, onSortChange, onPeek],
@@ -397,16 +368,13 @@ function TracesTableView({
 		overscan: 10,
 	})
 
-	const virtualItems = virtualizer.getVirtualItems()
-
-	React.useEffect(() => {
-		const lastItem = virtualItems[virtualItems.length - 1]
-		if (!lastItem) return
-
-		if (lastItem.index >= rows.length - FETCH_THRESHOLD && hasNextPage && !isFetchingNextPage) {
-			fetchNextPage()
-		}
-	}, [virtualItems, rows.length, hasNextPage, isFetchingNextPage, fetchNextPage])
+	useVirtualReachEnd(virtualizer, {
+		count: rows.length,
+		hasMore: hasNextPage,
+		loading: isFetchingNextPage,
+		onReachEnd: fetchNextPage,
+		threshold: FETCH_THRESHOLD,
+	})
 
 	// Index-keyed nav ids — the list is append-only for a given query.
 	const rowIds = React.useMemo(() => allData.map((_, index) => String(index)), [allData])
@@ -446,7 +414,8 @@ function TracesTableView({
 
 	return (
 		<div
-			className={`flex-1 min-h-0 flex flex-col gap-4 transition-opacity ${waiting ? "opacity-50" : ""}`}
+			className={cn("flex min-h-0 flex-1 flex-col gap-4", refreshingClass(waiting))}
+			aria-busy={waiting || undefined}
 		>
 			<div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto rounded-md border">
 				{/*
@@ -455,12 +424,12 @@ function TracesTableView({
 				 * fixed layout pins the sized columns and hands the remainder to Root Span, which is the
 				 * only column that should flex.
 				 */}
-				<table className="w-full table-fixed caption-bottom text-sm" aria-label="Traces">
-					<thead className="[&_tr]:border-b sticky top-0 z-20 bg-background">
+				<Table scroll={false} className="table-fixed" aria-label="Traces">
+					<TableHeader sticky className="z-20">
 						{table.getHeaderGroups().map((headerGroup) => (
-							<tr key={headerGroup.id} className="border-b transition-colors hover:bg-muted/50">
+							<TableRow key={headerGroup.id}>
 								{headerGroup.headers.map((header) => (
-									<th
+									<TableHead
 										key={header.id}
 										aria-sort={
 											header.id === sortBy
@@ -469,7 +438,7 @@ function TracesTableView({
 													: "descending"
 												: undefined
 										}
-										className={`${HEADER_CELL_CLASS} ${columnClasses(header.id).responsive ?? ""}`}
+										className={cn("px-2", columnClasses(header.id).responsive)}
 										style={{
 											width: header.getSize() !== 150 ? header.getSize() : undefined,
 										}}
@@ -477,93 +446,85 @@ function TracesTableView({
 										{header.isPlaceholder
 											? null
 											: flexRender(header.column.columnDef.header, header.getContext())}
-									</th>
+									</TableHead>
 								))}
-							</tr>
+							</TableRow>
 						))}
-					</thead>
-					<tbody className="[&_tr:last-child]:border-0">
-						{virtualItems.length > 0 && (
-							<tr style={{ height: virtualItems[0].start }} aria-hidden="true">
-								<td />
-							</tr>
-						)}
-						{virtualItems.map((virtualRow) => {
-							const row = rows[virtualRow.index]
-							return (
-								<tr
-									key={row.id}
-									ref={virtualizer.measureElement}
-									data-index={virtualRow.index}
-									data-focused={virtualRow.index === focusedIndex || undefined}
-									data-active={row.original.spanId === activeRowSpanId || undefined}
-									className="relative border-b transition-colors hover:bg-muted/50 data-[active]:bg-primary/5 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-									tabIndex={0}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault()
-											onTraceClick(row.original)
-										}
-									}}
-								>
-									{row.getAllCells().map((cell) => {
-										const { responsive, cellClass } = columnClasses(cell.column.id)
-										return (
-											<td
-												key={cell.id}
-												className={`p-2 align-middle [&:has([role=checkbox])]:pr-0 ${responsive ?? ""} ${cellClass ?? ""}`}
-											>
-												{flexRender(cell.column.columnDef.cell, cell.getContext())}
-											</td>
-										)
-									})}
-								</tr>
-							)
-						})}
-						{virtualItems.length > 0 && (
-							<tr
-								style={{
-									height:
-										virtualizer.getTotalSize() -
-										virtualItems[virtualItems.length - 1].end,
+					</TableHeader>
+					<VirtualTableBody
+						virtualizer={virtualizer}
+						rows={rows}
+						colSpan={TRACE_COLUMNS.length}
+						loadingMore={isFetchingNextPage}
+						loadingLabel="Loading more traces…"
+						renderRow={(row, index, measureRef) => (
+							<TableRow
+								key={row.id}
+								ref={measureRef}
+								data-index={index}
+								data-focused={index === focusedIndex || undefined}
+								className={cn(
+									row.original.spanId === activeRowSpanId && "bg-muted/40",
+									"hover:bg-muted/50 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+								)}
+								tabIndex={0}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.preventDefault()
+										onTraceClick(row.original)
+									}
 								}}
-								aria-hidden="true"
 							>
-								<td />
-							</tr>
+								{row.getAllCells().map((cell, cellIndex) => {
+									const { responsive, cellClass } = columnClasses(cell.column.id)
+									return (
+										<TableCell
+											key={cell.id}
+											className={cn(
+												"p-2 whitespace-normal leading-normal",
+												// The lane's ::before goes on the cell: on a <tr> it becomes an extra table cell.
+												cellIndex === 0 && ROW_LANE,
+												cellIndex === 0 &&
+													(row.original.spanId === activeRowSpanId
+														? "before:bg-primary"
+														: "before:bg-transparent"),
+												responsive,
+												cellClass,
+											)}
+										>
+											{flexRender(cell.column.columnDef.cell, cell.getContext())}
+										</TableCell>
+									)
+								})}
+							</TableRow>
 						)}
-						{isFetchingNextPage && (
-							<tr className="border-b transition-colors">
-								<td
-									colSpan={TRACE_COLUMNS.length}
-									className="p-2 text-center text-sm text-muted-foreground"
-								>
-									Loading more traces…
-								</td>
-							</tr>
-						)}
-					</tbody>
-				</table>
+					/>
+				</Table>
 			</div>
 
-			<div className="text-sm text-muted-foreground shrink-0">
-				{isCapped
-					? `Showing first ${allData.length.toLocaleString()} traces — narrow filters to continue`
-					: `Showing ${allData.length.toLocaleString()} traces${!hasNextPage ? " (all loaded)" : ""}`}
-				{/* Hidden rows are never silently dropped — say how many and offer the way back. */}
+			<div className="flex shrink-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
+				<ListFooter
+					shown={allData.length}
+					noun="traces"
+					capped={isCapped}
+					hasMore={hasNextPage}
+					align="start"
+					className="p-0"
+				/>
+				{/* Hidden rows are never silently dropped: say how many and offer the way back. */}
 				{hiddenCount > 0 && (
-					<>
+					<span>
 						{" · "}
-						{hiddenCount.toLocaleString()} single-span noise{" "}
-						{hiddenCount === 1 ? "trace" : "traces"} hidden{" "}
-						<button
-							type="button"
+						{formatNumber(hiddenCount)} single-span noise {pluralize(hiddenCount, "trace")} hidden{" "}
+						<Button
+							variant="link"
+							size="xs"
 							onClick={onShowNoise}
-							className="text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary"
+							className="h-auto p-0 text-primary underline decoration-primary/30 hover:decoration-primary"
 						>
 							show
-						</button>
-					</>
+						</Button>
+					</span>
 				)}
 			</div>
 		</div>
@@ -693,7 +654,7 @@ export function TracesTable({ filters }: TracesTableProps) {
 
 	const table = Result.builder(firstPageResult)
 		.onInitial(() => <LoadingState />)
-		.onError((error) => <QueryErrorState error={error} />)
+		.onError((error) => <ErrorState error={error} />)
 		.onSuccess((_response, result) => (
 			<TracesTableView
 				allData={allData}

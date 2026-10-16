@@ -10,8 +10,11 @@ import { Cause, Effect, Exit, type ManagedRuntime } from "effect"
 import { DeleteError, InsertError, MissingTxIdError, UpdateError } from "./errors"
 import type { EffectDeleteHandler, EffectInsertHandler, EffectUpdateHandler } from "./types"
 
-type MutationResult = { txid: Txid | Array<Txid> }
-type PromiseMutationHandler<Params> = (params: Params) => Promise<MutationResult>
+type PromiseMutationHandler<Params> = (params: Params) => Promise<void>
+
+// Electric deprecated returning `{ txid }`; awaiting it here is what it did with the return value.
+const awaitTxids = (utils: UtilsRecord, txid: Txid | Array<Txid>) =>
+	Promise.all((Array.isArray(txid) ? txid : [txid]).map((id) => utils.awaitTxId(id)))
 
 /** Adapts an Effect insert handler to Electric's Promise API. */
 export function convertInsertHandler<
@@ -88,7 +91,7 @@ export function convertInsertHandler<
 			})
 		}
 
-		return result
+		await awaitTxids(params.collection.utils, result.txid)
 	}
 }
 
@@ -167,7 +170,7 @@ export function convertUpdateHandler<
 			})
 		}
 
-		return result
+		await awaitTxids(params.collection.utils, result.txid)
 	}
 }
 
@@ -246,6 +249,6 @@ export function convertDeleteHandler<
 			})
 		}
 
-		return result
+		await awaitTxids(params.collection.utils, result.txid)
 	}
 }

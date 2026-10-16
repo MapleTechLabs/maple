@@ -93,6 +93,11 @@ const fixtures: FixtureRule[] = [
 			}),
 		],
 	},
+	// An event-refined list: the replay row's ErrorCount is 0, as most SDKs leave it.
+	{
+		match: (sql) => sql.includes("session_replays") && sql.includes("matchCount"),
+		rows: [{ ...replayRow, errorCount: "0", matchCount: "5" }],
+	},
 	{
 		match: (sql) => sql.includes("session_events"),
 		rows: [{ sessionId: SESSION_ID, activeTimeMs: "4000", idleTimeMs: "1000", eventCount: "2" }],
@@ -135,7 +140,8 @@ describe("search_sessions", () => {
 	it("returns typed rows and renders the identified user", async () => {
 		const result = await call("search_sessions", { has_errors: "true" })
 		const output = Schema.decodeUnknownSync(SearchSessionsOutput)(result.structuredContent)
-		expect(output.sessions[0]?.errorCount).toBe(2)
+		// has_errors reads recorded error events, so the 0 ErrorCount column yields to their count.
+		expect(output.sessions[0]?.errorCount).toBe(5)
 		expect(output.filters).toEqual({ hasErrors: true })
 		const text = markdown(result)
 		expect(text).toContain(`| ${SESSION_ID} | Ada |`)
@@ -177,7 +183,9 @@ describe("get_session_transcript", () => {
 		expect(text).toContain("NET   POST 500 /api/pay (120ms)")
 		// The first event's timestamp rides along so `inspect_trace` prunes to the right day.
 		expect(text).toMatch(
-			new RegExp(`\\\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24 10:00:0\\d"\\\``),
+			new RegExp(
+				`\\\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24T10:00:0\\d\\.000Z"\\\``,
+			),
 		)
 
 		const bad = await call("get_session_transcript", { session_id: SESSION_ID, event_types: ["clicks"] })
@@ -194,7 +202,7 @@ describe("get_session_traces", () => {
 		const text = markdown(result)
 		expect(text).toContain("### Backend traces")
 		expect(text).toContain(
-			`\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24 10:00:02"\`: errored POST /api/pay in api`,
+			`\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24T10:00:02.000Z"\`: errored POST /api/pay in api`,
 		)
 	})
 

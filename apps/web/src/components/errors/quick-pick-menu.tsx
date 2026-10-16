@@ -165,7 +165,7 @@ export function QuickPickMenu<V extends string>({
 									onKeyDown={onInputKeyDown}
 									className="h-9 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
 								/>
-								{hotkey ? <Kbd className="h-4.5 min-w-4.5 text-[10px]">{hotkey}</Kbd> : null}
+								{hotkey ? <Kbd className="h-4.5 min-w-4.5 text-3xs">{hotkey}</Kbd> : null}
 							</div>
 							<CommandList className="not-empty:p-1">
 								<CommandEmpty className="not-empty:py-4 text-xs">No match</CommandEmpty>
@@ -183,10 +183,10 @@ export function QuickPickMenu<V extends string>({
 											</span>
 											<span className="min-w-0 flex-1 truncate">{item.label}</span>
 											{item.value === current ? (
-												<CheckIcon size={12} className="shrink-0 text-foreground" />
+												<CheckIcon size={14} className="shrink-0 text-foreground" />
 											) : null}
 											{item.shortcut ? (
-												<span className="w-3 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/70">
+												<span className="w-3 shrink-0 text-right text-2xs tabular-nums text-muted-foreground/70">
 													{item.shortcut}
 												</span>
 											) : null}

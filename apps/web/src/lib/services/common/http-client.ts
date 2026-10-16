@@ -1,4 +1,4 @@
-import { FetchHttpClient, HttpClient, HttpClientError } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 import { Clock, Duration, Effect, Layer } from "effect"
 import { apiBaseUrl } from "./api-base-url"
 import { getMapleAuthHeaders } from "./auth-headers"

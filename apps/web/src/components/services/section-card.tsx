@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { cn } from "@maple/ui/lib/utils"
+import { Panel, PanelBody, PanelHeader } from "@maple/ui/components/ui/panel"
 
 interface SectionCardProps {
 	title: string
@@ -16,12 +16,9 @@ interface SectionCardProps {
  */
 export function SectionCard({ title, action, children, className }: SectionCardProps) {
 	return (
-		<div className={cn("flex flex-col rounded-md border bg-card", className)}>
-			<div className="flex items-center justify-between gap-3 border-b px-4 py-2.5">
-				<span className="text-[11px] font-medium text-muted-foreground">{title}</span>
-				{action}
-			</div>
-			<div className="min-h-0 flex-1">{children}</div>
-		</div>
+		<Panel className={className}>
+			<PanelHeader title={title} action={action} />
+			<PanelBody>{children}</PanelBody>
+		</Panel>
 	)
 }

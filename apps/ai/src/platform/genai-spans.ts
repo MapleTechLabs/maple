@@ -2,7 +2,7 @@
  * Gen-AI semconv content for Maple's own agents: the model call, the tool call and the agent pass.
  *
  * Effect AI's providers annotate the model-call span with the requested and served model, the
- * response id, the finish reasons and two token totals. Everything else the convention defines —
+ * response id, the finish reasons, the output type and two token totals. Everything else the convention defines —
  * the provider name, the messages, the system instructions, the tool definitions, the cache and
  * reasoning buckets, the cost the provider billed, time to first chunk — is added here. Agent
  * Sessions reads all of it off the spans, and without it an investigation renders as a list of
@@ -18,14 +18,13 @@ import {
 	MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR,
 	MAPLE_GENAI_MODEL_DURATION_MS_ATTR,
 } from "@maple/domain/gen-ai"
-import { Effect, Option, Predicate, Stream } from "effect"
-import type { Tracer } from "effect"
-import * as AiError from "effect/unstable/ai/AiError"
-import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
-import type * as Prompt from "effect/unstable/ai/Prompt"
-import * as Telemetry from "effect/unstable/ai/Telemetry"
-import * as Tool from "effect/unstable/ai/Tool"
-import type * as Toolkit from "effect/unstable/ai/Toolkit"
+import { Duration, Effect, Exit, Layer, Option, Predicate, Stream, Tracer } from "effect"
+import * as AiError from "effect/ai/AiError"
+import type * as LanguageModel from "effect/ai/LanguageModel"
+import type * as Prompt from "effect/ai/Prompt"
+import * as Telemetry from "effect/ai/Telemetry"
+import * as Tool from "effect/ai/Tool"
+import type * as Toolkit from "effect/ai/Toolkit"
 import { coalesceDeltas } from "./coalesce-deltas"
 
 /**
@@ -59,13 +58,8 @@ const truncated = (text: string, cap: number): string =>
 	text.length > cap ? text.slice(0, cap) + TRUNCATION_MARKER : text
 
 /** `JSON.stringify` that reports an unserializable value (a cycle, a bigint) as nothing. */
-const stringify = (value: unknown): string | undefined => {
-	try {
-		return JSON.stringify(value)
-	} catch {
-		return undefined
-	}
-}
+const stringify = (value: unknown): string | undefined =>
+	Option.getOrUndefined(Option.liftThrowable((input: unknown) => JSON.stringify(input))(value))
 
 /**
  * The convention's message part for one prompt part. Media is size and reasoning is
@@ -272,13 +266,15 @@ interface CallTiming {
 	readonly startedMs: number
 	firstChunkMs: number | undefined
 	finishedMs: number | undefined
+	/** 1 for the first attempt; a retry past the cap is 2 (see {@link ModelCallAttempts}). */
+	readonly attempt: number
 	/** The clock the two stamps above are read from, for a finish part that never passed the tap. */
 	readonly now: () => number
 }
 
 const modelCallTransformer =
 	(telemetry: ModelCallTelemetry, timing: CallTiming): Telemetry.SpanTransformer =>
-	({ span, prompt, responseFormat, response }) => {
+	({ span, prompt, response }) => {
 		// Read before the serialization below, which is this side's work and not the model's.
 		const endedMs = timing.now()
 		const input = messagesJson(inputMessages(prompt), INPUT_MESSAGES_BUDGET)
@@ -293,10 +289,10 @@ const modelCallTransformer =
 		const attributes = {
 			"gen_ai.provider.name": telemetry.providerName,
 			"gen_ai.request.stream": true,
+			...(timing.attempt === 1 ? undefined : { [MODEL_CALL_ATTEMPT_ATTR]: timing.attempt }),
 			...(telemetry.reasoningLevel === undefined
 				? undefined
 				: { "gen_ai.request.reasoning.level": telemetry.reasoningLevel }),
-			"gen_ai.output.type": responseFormat.type,
 			"gen_ai.input.messages": input.json,
 			...(input.dropped > 0 ? { [MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR]: input.dropped } : undefined),
 			...(system === undefined ? undefined : { "gen_ai.system_instructions": system }),
@@ -348,33 +344,69 @@ const modelCallTransformer =
  */
 const MODEL_STREAM_IDLE_TIMEOUT = "2 minutes"
 
-const idleTimeout = (): AiError.AiError =>
+/**
+ * One model call's whole stream, however steadily it emits. A runaway generation streamed for 577s
+ * of a 600s review budget (2026-10-13) and never tripped the idle timeout.
+ */
+export const MODEL_CALL_TIMEOUT = "4 minutes"
+
+const streamTimeout = (description: string): AiError.AiError =>
 	new AiError.AiError({
 		module: "Maple",
 		method: "streamText",
-		reason: new AiError.UnknownError({
-			description: `Model stream produced nothing for ${MODEL_STREAM_IDLE_TIMEOUT}`,
-		}),
+		reason: new AiError.UnknownError({ description }),
 	})
+
+const idleTimeout = (): AiError.AiError =>
+	streamTimeout(`Model stream produced nothing for ${MODEL_STREAM_IDLE_TIMEOUT}`)
+
+const callTimeout = (): AiError.AiError =>
+	streamTimeout(`Model stream did not finish within ${MODEL_CALL_TIMEOUT}`)
+
+/**
+ * How an unattended model call is attempted: the first attempt is cut at `cap` and run again with
+ * `retry` applied, on whatever is left of {@link MODEL_CALL_TIMEOUT}.
+ *
+ * A slow call is a long generation, not a stalled one: the 190-231s calls of 2026-10-15 streamed
+ * 5-6k reasoning tokens at about 34 per second, first chunk at 14s. Only a retry that reasons less
+ * returns sooner, which is why `retry` exists. The first attempt is held until it finishes, because
+ * the engine never repeats a call that streamed content; that costs nothing but live streaming.
+ */
+export interface ModelCallAttempts {
+	readonly cap: Duration.Duration
+	/** What the retry changes, such as a lower reasoning effort; the identity repeats the call as it was. */
+	readonly retry: <A, E, R>(stream: Stream.Stream<A, E, R>) => Stream.Stream<A, E, R>
+	/** `gen_ai.request.reasoning.level` of the retry, when `retry` changes it. */
+	readonly retryReasoningLevel?: string
+}
+
+/** Which attempt a model-call span is; only a retry past the cap carries it. */
+export const MODEL_CALL_ATTEMPT_ATTR = "maple_ai.model_call.attempt"
 
 /**
  * Build a provider's language model so that every `streamText` call — the only call Maple makes, and
  * the only one effect-agent makes — annotates its own span.
  *
- * The transformer is provided per call because two of its numbers are per call: the first chunk and
- * the finish are timed as they pass through, and the transformer reads them when Effect AI applies
- * it, as the stream ends, including when it fails.
+ * The transformer is provided per attempt because two of its numbers are per attempt: the first
+ * chunk and the finish are timed as they pass through, and the transformer reads them when Effect AI
+ * applies it, as the stream ends, including when it fails.
  */
 export const instrumentLanguageModel = <R>(
 	make: Effect.Effect<LanguageModel.LanguageModel, never, R>,
 	telemetry: ModelCallTelemetry,
-	/** Join streamed deltas (see `coalesceDeltas`); for models only unattended runs use. */
-	instrumentation: { readonly coalesceDeltas?: boolean } = {},
+	instrumentation: {
+		/** Join streamed deltas (see `coalesceDeltas`); for models only unattended runs use. */
+		readonly coalesceDeltas?: boolean
+		/** Cut and retry a long call (see {@link ModelCallAttempts}); for unattended runs only. */
+		readonly attempts?: ModelCallAttempts
+	} = {},
 ): Effect.Effect<LanguageModel.LanguageModel, never, R> =>
 	make.pipe(
-		Effect.map((service) => ({
-			...service,
-			streamText: ((options: Parameters<LanguageModel.LanguageModel["streamText"]>[0]) =>
+		Effect.map((service) => {
+			const attempt = (
+				options: Parameters<LanguageModel.LanguageModel["streamText"]>[0],
+				ordinal: number,
+			) =>
 				Stream.unwrap(
 					Effect.clockWith((clock) =>
 						Effect.sync(() => {
@@ -383,6 +415,7 @@ export const instrumentLanguageModel = <R>(
 								startedMs: now(),
 								firstChunkMs: undefined,
 								finishedMs: undefined,
+								attempt: ordinal,
 								now,
 							}
 							return service.streamText(options).pipe(
@@ -403,13 +436,58 @@ export const instrumentLanguageModel = <R>(
 									instrumentation.coalesceDeltas === true ? coalesceDeltas(stream) : stream,
 								Stream.provideService(
 									Telemetry.CurrentSpanTransformer,
-									modelCallTransformer(telemetry, timing),
+									modelCallTransformer(
+										ordinal === 1 ||
+											instrumentation.attempts?.retryReasoningLevel === undefined
+											? telemetry
+											: {
+													...telemetry,
+													reasoningLevel:
+														instrumentation.attempts.retryReasoningLevel,
+												},
+										timing,
+									),
 								),
 							)
 						}),
 					),
-				)) as LanguageModel.LanguageModel["streamText"],
-		})),
+				)
+			const attempts = instrumentation.attempts
+			return {
+				...service,
+				streamText: ((options: Parameters<LanguageModel.LanguageModel["streamText"]>[0]) =>
+					(attempts === undefined
+						? attempt(options, 1)
+						: retriedPastCap(attempt, options, attempts)
+					).pipe(
+						Stream.interruptWhen(
+							Effect.sleep(MODEL_CALL_TIMEOUT).pipe(Effect.andThen(Effect.fail(callTimeout()))),
+						),
+					)) as LanguageModel.LanguageModel["streamText"],
+			}
+		}),
+	)
+
+/** The first attempt, replayed once it finishes inside the cap; otherwise the retry, streamed live. */
+const retriedPastCap = <O, A, E, R>(
+	attempt: (options: O, ordinal: number) => Stream.Stream<A, E, R>,
+	options: O,
+	attempts: ModelCallAttempts,
+): Stream.Stream<A, E, R> =>
+	Stream.unwrap(
+		Stream.runCollect(attempt(options, 1)).pipe(
+			Effect.timeoutOption(attempts.cap),
+			Effect.flatMap(
+				Option.match({
+					onSome: (parts) => Effect.succeed(Stream.fromIterable(parts)),
+					onNone: () =>
+						Effect.logWarning("Model call cut at its attempt cap; retrying").pipe(
+							Effect.annotateLogs({ capMillis: Duration.toMillis(attempts.cap) }),
+							Effect.as(attempts.retry(attempt(options, 2))),
+						),
+				}),
+			),
+		),
 	)
 
 /**
@@ -460,15 +538,14 @@ const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined
 		name: tool.name,
 		description: Tool.getDescription(tool) ?? "",
 	}))
-	let full: string | undefined
-	try {
-		// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
-		full = JSON.stringify(
-			tools.map((tool, index) => ({ ...described[index], parameters: Tool.getJsonSchema(tool) })),
-		)
-	} catch {
-		full = undefined
-	}
+	// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
+	const full = Option.getOrUndefined(
+		Option.liftThrowable(() =>
+			JSON.stringify(
+				tools.map((tool, index) => ({ ...described[index], parameters: Tool.getJsonSchema(tool) })),
+			),
+		)(),
+	)
 	if (full !== undefined && full.length <= TOOL_DEFINITIONS_BUDGET) return full
 	return JSON.stringify(
 		described.map((tool) => ({ ...tool, description: truncated(tool.description, 128) })),
@@ -511,7 +588,7 @@ const EXECUTE_TOOL_SPAN_PREFIX = "execute_tool "
 /**
  * The engine's `execute_tool` span, found from inside a tool handler.
  *
- * effect-agent's tool spans are content-free by design, and it runs a handler under a local span it
+ * @yielded/agent's tool spans are content-free by design, and it runs a handler under a local span it
  * never exports (`AgentRuntime.toolkit.handle`) whose parent is the canonical `execute_tool` one — so
  * an `annotateCurrentSpan` there would land on a span nobody sees. Matched by the convention's span
  * name, not the engine's internal one, so a handler that already runs directly under the tool span
@@ -524,6 +601,68 @@ const executeToolSpan = (span: Tracer.Span): Option.Option<Tracer.Span> =>
 	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
 		? Option.some(span)
 		: Option.filter(span.parent, isExecuteToolSpan)
+
+/** A tool failure handed back to the model as the call's result: it retries, the run carries on. */
+const isReturnedToolFailure = (span: Tracer.Span, exit: Exit.Exit<unknown, unknown>): boolean =>
+	Exit.isFailure(exit) &&
+	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX) &&
+	span.attributes.get("effect_agent.tool.failure_handling") === "returned-to-model"
+
+/**
+ * Export a returned tool failure as `Ok` + `error.type` rather than `Error`, so it stops opening error
+ * issues while Agent Sessions still counts it failed (the gateway stamps `maple_ai.error` from
+ * `error.type`). Propagated failures keep their Error span.
+ */
+export const withReturnedToolFailuresOk = (tracer: Tracer.Tracer): Tracer.Tracer =>
+	Tracer.make({
+		...(tracer.context === undefined ? undefined : { context: tracer.context }),
+		span(options) {
+			const span = tracer.span(options)
+			if (!options.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)) return span
+			const end = span.end.bind(span)
+			return Object.assign(span, {
+				end: (endTime: bigint, exit: Exit.Exit<unknown, unknown>) => {
+					if (!isReturnedToolFailure(span, exit)) return end(endTime, exit)
+					if (span.attributes.get("error.type") === undefined)
+						span.attribute("error.type", "ToolCallFailed")
+					end(endTime, Exit.void)
+				},
+			})
+		},
+	})
+
+const INVOKE_AGENT_SPAN_PREFIX = "invoke_agent "
+
+/**
+ * Stamp one run's session identity on every engine agent and tool span opened under it.
+ *
+ * The engine labels those spans with the thread they ran on, and a `review_files` child runs on a
+ * thread of its own: the gateway filed its `invoke_agent` span (and any tool call it rejected
+ * before a handler ran) under that thread, splitting one review across several sessions.
+ */
+export const withRunSessionAttributes = (
+	tracer: Tracer.Tracer,
+	sessionAttributes: Readonly<Record<string, string>>,
+): Tracer.Tracer =>
+	Tracer.make({
+		...(tracer.context === undefined ? undefined : { context: tracer.context }),
+		span(options) {
+			const span = tracer.span(options)
+			if (
+				options.name.startsWith(INVOKE_AGENT_SPAN_PREFIX) ||
+				options.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
+			) {
+				for (const [key, value] of Object.entries(sessionAttributes)) span.attribute(key, value)
+			}
+			return span
+		},
+	})
+
+/** Wraps the current tracer; put it over the telemetry layer with `Layer.provideMerge`. */
+export const ReturnedToolFailuresOkLive = Layer.effect(
+	Tracer.Tracer,
+	Effect.map(Effect.tracer, withReturnedToolFailuresOk),
+)
 
 /**
  * Untraced on purpose: a span of its own would become the current span, one level further from the
@@ -579,7 +718,7 @@ export const withToolCallContent = <A, E, R>(
 /**
  * A toolkit's handler map and its layer, with every handler recording its own call content.
  *
- * The one seam Maple has for this: effect-agent's `execute_tool` span is content-free, so a handler
+ * The one seam Maple has for this: @yielded/agent's `execute_tool` span is content-free, so a handler
  * registered straight through `toolkit.toLayer` produces a tool call Agent Sessions renders with no
  * arguments and no result. `submit_diagnosis` — whose arguments ARE the diagnosis report — shipped
  * that way. Wrapping is a whole-map operation rather than something each handler remembers, the

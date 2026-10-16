@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
+import { cn } from "@maple/ui/lib/utils"
 
-export function AuthLayout({ children, maxWidth = "max-w-sm" }: { children: ReactNode; maxWidth?: string }) {
+function AuthLayoutRoot({ children, maxWidth = "max-w-sm" }: { children: ReactNode; maxWidth?: string }) {
 	return (
 		<main className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-4 py-10 sm:p-6">
 			{/* Grid pattern — stronger lines, radial fade. Desktop only: on phones the form sits straight on the page and the lines run through it. */}
@@ -38,3 +39,16 @@ export function AuthLayout({ children, maxWidth = "max-w-sm" }: { children: Reac
 		</main>
 	)
 }
+
+/** The card's one heading. */
+function Title({ children, className }: { children: ReactNode; className?: string }) {
+	return <h1 className={cn("text-xl font-semibold", className)}>{children}</h1>
+}
+
+/** The muted line under `Title`. */
+function Description({ children, className }: { children: ReactNode; className?: string }) {
+	return <p className={cn("mt-2 text-sm text-muted-foreground", className)}>{children}</p>
+}
+
+/** Centred brand card for signed-out and interstitial screens (auth, consent, unsubscribe, errors). */
+export const AuthLayout = Object.assign(AuthLayoutRoot, { Title, Description })

@@ -2,23 +2,21 @@
 //
 // Every PlanetScale surface — the fleet table, the branch table, the detail
 // charts, the stat rails, the service-map panel — reads its severity from here.
-// That matters: `severityLevel()` in ../format takes a 0–1 fraction and goes
-// crit at 0.9, while these gauges arrive as 0–100 percentages and go crit at 80.
-// Deriving the cell class and the KPI tone from two different scales is how you
-// end up with an amber number next to a red one for the same 85%.
+// These gauges arrive as 0–100 percentages; utilization divides them onto the
+// shared 0–1 thresholds (`@maple/ui/lib/utilization`) so an 85% reads the same
+// colour here as on every other infra gauge.
 
 import type { Tone } from "../severity-tokens"
 import { VALUE_TONE } from "../severity-tokens"
+import { utilizationLevel } from "@maple/ui/lib/utilization"
 
 /** Metrics missing for the window sort below every real value (see `useTableSort`). */
 export const MISSING = Number.NEGATIVE_INFINITY
 
-/** Utilization percentage (0–100) → tone. Shared by CPU, memory, and storage. */
+/** Utilization percentage (0–100) → tone, on the shared fraction thresholds. Shared by CPU, memory, and storage. */
 export function utilizationTone(percent: number): Tone {
-	if (!Number.isFinite(percent)) return "neutral"
-	if (percent > 80) return "crit"
-	if (percent > 60) return "warn"
-	return "neutral"
+	const level = utilizationLevel(percent / 100)
+	return level === "ok" ? "neutral" : level
 }
 
 /** Replica lag in seconds → tone. A second of lag is already worth noticing. */

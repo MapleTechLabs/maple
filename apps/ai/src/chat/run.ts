@@ -7,15 +7,16 @@
  */
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
-import * as AgentRuntime from "effect-agent/agent-runtime"
-import * as ThreadHistory from "effect-agent/thread-history"
-import { ThreadId } from "effect-agent/identifiers"
-import { Effect, Layer, Schema, Stream } from "effect"
-import { Prompt, Toolkit } from "effect/unstable/ai"
+import * as AgentRuntime from "@yielded/agent/agent-runtime"
+import * as ThreadHistory from "@yielded/agent/thread-history"
+import { ThreadId } from "@yielded/agent/identifiers"
+import { Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
+import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
+import { withRunSessionAttributes } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
@@ -143,7 +144,10 @@ export interface ChatRunOutcome {
  * appended by the time it settles, and the terminal reason is whatever the engine reported — this
  * module never invents one.
  */
-export const runChatTurn = (input: ChatRunInput) => {
+export const runChatTurn = (input: ChatRunInput) =>
+	Clock.currentTimeMillis.pipe(Effect.flatMap((startedAt) => runChatTurnFrom(input, startedAt)))
+
+const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	const agent = input.agent ?? agentForSession(input.sessionId)
 	const profile = profileForTurn(agent, input.origin)
 	// Per run, and fed by the Maple handlers the review_files children share, so a group a child
@@ -153,12 +157,13 @@ export const runChatTurn = (input: ChatRunInput) => {
 		: undefined
 	// A call's UI payload, held until its result event is written. Never part of what the model reads.
 	const uiByCall = new Map<string, ToolUiPayload>()
+	const sessionAttributes = agentSessionSpanAttributes(input.model.tags)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,
 		profile.ruleset,
 		profile.surface,
-		agentSessionSpanAttributes(input.model.tags),
+		sessionAttributes,
 		coverage?.observe,
 		(toolCallId, ui) => uiByCall.set(toolCallId, ui),
 	)
@@ -173,7 +178,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 			input.usage,
 			input.model.name,
 			input.closeOut === true,
-			agentSessionSpanAttributes(input.model.tags),
+			sessionAttributes,
 		) ??
 		(input.submitReview === undefined
 			? undefined
@@ -185,7 +190,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 					input.usage,
 					input.model.name,
 					input.closeOut === true,
-					agentSessionSpanAttributes(input.model.tags),
+					sessionAttributes,
 					coverage,
 					input.review?.ledger,
 				)) ??
@@ -197,13 +202,17 @@ export const runChatTurn = (input: ChatRunInput) => {
 					input.origin,
 					input.submitReply,
 					input.stageEdit,
-					agentSessionSpanAttributes(input.model.tags),
+					sessionAttributes,
 				))
 
 	// A review's own pass may hand groups of a large pull request's files to child reviewers.
 	const fanout =
 		completion?.tool === SUBMIT_REVIEW && completion.autonomous
-			? buildReviewFanout(maple.toolkit, input.model)
+			? buildReviewFanout(
+					maple.toolkit,
+					input.model,
+					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
+				)
 			: undefined
 
 	const toolkit = Toolkit.merge(
@@ -220,6 +229,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
 	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
+		autonomous: input.origin.kind === "autonomous",
 		...(completion === undefined
 			? undefined
 			: { completion: { tool: completion.tool, required: false } }),
@@ -291,6 +301,12 @@ export const runChatTurn = (input: ChatRunInput) => {
 		// client stays in the requirements channel, where the Durable Object's runtime answers it.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layer)),
+		// The `review_files` children run on threads of their own; their spans still belong to this
+		// session, so one review is one session.
+		(run) =>
+			Effect.flatMap(Effect.tracer, (tracer) =>
+				Effect.withTracer(run, withRunSessionAttributes(tracer, sessionAttributes)),
+			),
 	)
 }
 

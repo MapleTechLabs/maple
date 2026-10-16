@@ -1,6 +1,6 @@
 import { ChatConnectorId } from "./connector"
 import { Effect, Redacted, Schema } from "effect"
-import type { HttpClient } from "effect/unstable/http"
+import type { HttpClient } from "effect/http"
 import type { ConnectorConfigKey } from "./ingress"
 
 /**

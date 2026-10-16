@@ -54,8 +54,8 @@ export interface HttpRequestSpec {
 	readonly headers: Readonly<Record<string, string>>
 	readonly body: string
 	/**
-	 * `true` → route through `safeFetch` (the SSRF guard), because the host came
-	 * from user configuration. `false` → call `fetch` directly, because the host
+	 * `true` → route through the SSRF `guard` client, because the host came
+	 * from user configuration. `false` → the plain client, because the host
 	 * is a compile-time vendor constant and there is nothing to validate.
 	 */
 	readonly guarded: boolean

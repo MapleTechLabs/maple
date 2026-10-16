@@ -3,25 +3,25 @@
 // DSL-based query definitions for listing historical alert rule check rows
 // from the `alert_checks` datasource.
 
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import { from } from "@maple-dev/effect-clickhouse"
-import { AlertChecks } from "../tables"
-import { ISO_Z_FORMAT } from "./format"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import type { DateTime } from "effect"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import { from } from "@maple-dev/effect-orm/clickhouse"
+import { AlertChecks, orgIdParam } from "../tables"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export interface ListRuleChecksOpts {
 	readonly groupKey?: string
 	readonly status?: string
-	readonly since?: string
-	readonly until?: string
-	readonly beforeTimestamp?: string
+	readonly since?: DateTime.Utc
+	readonly until?: DateTime.Utc
+	readonly beforeTimestamp?: DateTime.Utc
 	readonly beforeGroupKey?: string
 	readonly limit: number
 }
 
 export interface ListRuleChecksOutput {
-	readonly timestamp: string
+	readonly timestamp: DateTime.Utc
 	readonly groupKey: string
 	readonly status: string
 	readonly signalType: string
@@ -30,8 +30,8 @@ export interface ListRuleChecksOutput {
 	readonly observedValue: number | null
 	readonly sampleCount: number
 	readonly windowMinutes: number
-	readonly windowStart: string
-	readonly windowEnd: string
+	readonly windowStart: DateTime.Utc
+	readonly windowEnd: DateTime.Utc
 	readonly consecutiveBreaches: number
 	readonly consecutiveHealthy: number
 	readonly incidentId: string | null
@@ -39,13 +39,14 @@ export interface ListRuleChecksOutput {
 	readonly evaluationDurationMs: number
 	readonly errorMessage: string | null
 	readonly errorCategory: string
+	readonly skipReason: string
 }
 
 export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 	return (
 		from(AlertChecks)
 			.select(($) => ({
-				timestamp: CH.formatDateTime($.Timestamp, ISO_Z_FORMAT),
+				timestamp: $.Timestamp,
 				groupKey: $.GroupKey,
 				status: $.Status,
 				signalType: $.SignalType,
@@ -54,8 +55,8 @@ export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 				observedValue: $.ObservedValue,
 				sampleCount: $.SampleCount,
 				windowMinutes: $.WindowMinutes,
-				windowStart: CH.formatDateTime($.WindowStart, ISO_Z_FORMAT),
-				windowEnd: CH.formatDateTime($.WindowEnd, ISO_Z_FORMAT),
+				windowStart: $.WindowStart,
+				windowEnd: $.WindowEnd,
 				consecutiveBreaches: $.ConsecutiveBreaches,
 				consecutiveHealthy: $.ConsecutiveHealthy,
 				incidentId: $.IncidentId,
@@ -63,23 +64,24 @@ export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 				evaluationDurationMs: $.EvaluationDurationMs,
 				errorMessage: $.ErrorMessage,
 				errorCategory: $.ErrorCategory,
+				skipReason: $.SkipReason,
 			}))
 			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
+				$.OrgId.eq(orgIdParam),
 				$.RuleId.eq(param.string("ruleId")),
-				opts.groupKey != null && opts.groupKey !== ""
-					? $.GroupKey.eq(param.string("groupKey"))
-					: undefined,
-				opts.status != null ? $.Status.eq(param.string("status")) : undefined,
-				opts.since != null ? $.Timestamp.gte(param.dateTimeString("since")) : undefined,
-				opts.until != null ? $.Timestamp.lte(param.dateTimeString("until")) : undefined,
-				opts.beforeTimestamp != null
-					? $.Timestamp.lt(param.dateTimeString("beforeTimestamp")).or(
-							$.Timestamp.eq(param.dateTimeString("beforeTimestamp")).and(
-								$.GroupKey.gt(param.string("beforeGroupKey")),
-							),
-						)
-					: undefined,
+				CH.whenTrue(opts.groupKey != null && opts.groupKey !== "", () =>
+					$.GroupKey.eq(param.string("groupKey")),
+				),
+				CH.whenTrue(opts.status != null, () => $.Status.eq(param.string("status"))),
+				CH.whenTrue(opts.since != null, () => $.Timestamp.gte(param.dateTime("since"))),
+				CH.whenTrue(opts.until != null, () => $.Timestamp.lte(param.dateTime("until"))),
+				CH.whenTrue(opts.beforeTimestamp != null, () =>
+					$.Timestamp.lt(param.dateTime("beforeTimestamp")).or(
+						$.Timestamp.eq(param.dateTime("beforeTimestamp")).and(
+							$.GroupKey.gt(param.string("beforeGroupKey")),
+						),
+					),
+				),
 			])
 			.orderBy(["timestamp", "desc"], ["groupKey", "asc"])
 			.limit(opts.limit)
@@ -92,8 +94,8 @@ export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 }
 
 export interface AlertCheckGroupTotalsOpts {
-	readonly since: string
-	readonly until: string
+	readonly since: DateTime.Utc
+	readonly until: DateTime.Utc
 	readonly limit?: number
 }
 
@@ -109,10 +111,10 @@ export function alertCheckGroupTotalsQuery(opts: AlertCheckGroupTotalsOpts) {
 			totalCount: CH.count(),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.RuleId.eq(param.string("ruleId")),
-			$.Timestamp.gte(param.dateTimeString("since")),
-			$.Timestamp.lte(param.dateTimeString("until")),
+			$.Timestamp.gte(param.dateTime("since")),
+			$.Timestamp.lte(param.dateTime("until")),
 		])
 		.groupBy("groupKey")
 		.orderBy(["totalCount", "desc"], ["groupKey", "asc"])
@@ -126,7 +128,7 @@ export interface AlertChecksSummaryOpts {
 }
 
 export interface AlertChecksSummaryOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly groupKey: string
 	readonly totalCount: number
 	readonly breachedCount: number
@@ -156,10 +158,10 @@ export function alertChecksSummaryQuery(opts: AlertChecksSummaryOpts) {
 			threshold: CH.avg($.Threshold),
 		}))
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.RuleId.eq(param.string("ruleId")),
-			$.Timestamp.gte(param.dateTimeString("since")),
-			$.Timestamp.lte(param.dateTimeString("until")),
+			$.Timestamp.gte(param.dateTime("since")),
+			$.Timestamp.lte(param.dateTime("until")),
 		])
 		.groupBy("bucket", "groupKey")
 		.orderBy(["bucket", "asc"], ["groupKey", "asc"])

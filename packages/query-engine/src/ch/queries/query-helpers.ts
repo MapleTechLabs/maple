@@ -3,17 +3,52 @@
 // Reusable expression builders and WHERE condition helpers used across
 // traces, alerts, services, and metrics queries.
 
+import type { DateTime } from "effect"
 import { finiteOrZero } from "./format"
 import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { param } from "@maple-dev/effect-clickhouse"
-import type { ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { param } from "@maple-dev/effect-orm/clickhouse"
+import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import type { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
-import { MetricsSum, MetricsGauge, MetricsHistogram, MetricsExpHistogram } from "../tables"
+import {
+	MetricsSum,
+	MetricsGauge,
+	MetricsHistogram,
+	MetricsExpHistogram,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 import type { AttributeIndexMode } from "../../capabilities"
-import * as T from "@maple-dev/effect-clickhouse/types"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+
+/**
+ * A timeseries row's bucket. `wholeRange` keys every row at `startTime`, so the
+ * query returns one aggregate per group over exactly its range: an alert window
+ * slides by the minute and rarely starts on the epoch grid `toStartOfInterval` uses.
+ */
+export function timeseriesBucket<Q>(column: CH.Expr<DateTime.Utc, Q>, wholeRange: boolean | undefined) {
+	const epochAligned = CH.toStartOfInterval(column, param.int("bucketSeconds"))
+	const rangeStart = CH.toDateTime(utcSecondsParam("startTime"))
+	const chosen = wholeRange ? rangeStart : epochAligned
+	// One expression type whichever branch is taken, declaring both branches' params.
+	return CH.makeExpr(CH.toFragment(chosen), CH.schemaOf<DateTime.Utc>(chosen), undefined, [
+		epochAligned,
+		rangeStart,
+	])
+}
+
+/**
+ * The half-open end of a `wholeRange` query: an alert window is [startTime, endTime),
+ * while the shared source filters keep their inclusive `<= endTime` for dashboards.
+ */
+export function wholeRangeEnd<Q>(
+	column: CH.Expr<DateTime.Utc, Q>,
+	wholeRange: boolean | undefined,
+): CH.Condition | undefined {
+	return wholeRange ? column.lt(utcSecondsParam("endTime")) : undefined
+}
 
 // APDEX expressions
 
@@ -145,8 +180,8 @@ export function inclusionValues(
  * files defined this identically; the expression has to agree with the MV's
  * `Hour` column or the join silently misses.
  */
-export function hourFloor(name: string): CH.Expr<string> {
-	return CH.toStartOfHour(CH.toDateTime(param.dateTimeString(name)))
+export function utcHourFloor(name: string): CH.Expr<DateTime.Utc> {
+	return CH.toStartOfHour(CH.toDateTime(utcSecondsParam(name)))
 }
 
 /**
@@ -276,9 +311,9 @@ export function tracesBaseWhereConditions(
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
-		$.OrgId.eq(param.string("orgId")),
-		$.Timestamp.gte(param.dateTimeString("startTime")),
-		$.Timestamp.lte(param.dateTimeString("endTime")),
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
@@ -427,9 +462,9 @@ export function serviceOverviewWhereConditions(
 	const mm = opts.matchModes
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const conditions: Array<CH.Condition | undefined> = [
-		$.OrgId.eq(param.string("orgId")),
-		$.Timestamp.gte(param.dateTimeSeconds("startTime")),
-		$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+		$.OrgId.eq(orgIdParam),
+		$.Timestamp.gte(utcSecondsParam("startTime")),
+		$.Timestamp.lte(utcSecondsParam("endTime")),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
@@ -531,13 +566,13 @@ export function tracesAggregatesWhereConditions(
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
-		$.OrgId.eq(param.string("orgId")),
+		$.OrgId.eq(orgIdParam),
 		hourBounds
-			? $.Hour.gte(CH.rawExpr(hourBounds.gte, T.dateTimeString))
-			: $.Hour.gte(param.dateTimeSeconds("startTime")),
+			? $.Hour.gte(CH.rawExpr(hourBounds.gte, T.dateTime))
+			: $.Hour.gte(utcSecondsParam("startTime")),
 		hourBounds
-			? $.Hour.lt(CH.rawExpr(hourBounds.lt, T.dateTimeString))
-			: $.Hour.lte(param.dateTimeSeconds("endTime")),
+			? $.Hour.lt(CH.rawExpr(hourBounds.lt, T.dateTime))
+			: $.Hour.lte(utcSecondsParam("endTime")),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
@@ -585,9 +620,7 @@ const HISTOGRAM_TABLES = {
 
 export function resolveMetricTable(metricType: MetricType) {
 	const isHistogram = metricType === "histogram" || metricType === "exponential_histogram"
-	const tbl = isHistogram
-		? HISTOGRAM_TABLES[metricType as keyof typeof HISTOGRAM_TABLES]
-		: VALUE_TABLES[metricType as keyof typeof VALUE_TABLES]
+	const tbl = isHistogram ? HISTOGRAM_TABLES[metricType] : VALUE_TABLES[metricType]
 	return { tbl, isHistogram }
 }
 

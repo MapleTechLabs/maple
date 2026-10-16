@@ -2,15 +2,22 @@
 import { BunRuntime } from "@effect/platform-bun"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { Cause, Console, Effect, Exit, Layer, Logger, Metric, Runtime } from "effect"
-import * as CliOutput from "effect/unstable/cli/CliOutput"
-import * as Command from "effect/unstable/cli/Command"
-import { FetchHttpClient } from "effect/unstable/http"
+import * as CliOutput from "effect/cli/CliOutput"
+import * as Command from "effect/cli/Command"
+import { FetchHttpClient } from "effect/http"
 import { cli } from "./cli"
 import { MapleConfig } from "./core/config"
 import { Mode } from "./core/mode"
-import { annotateOutcome, isExpectedFailure, recoverExpected, renderUnexpected } from "./core/outcomes"
+import {
+	annotateOutcome,
+	isExpectedFailure,
+	markFailedExit,
+	recoverExpected,
+	renderUnexpected,
+} from "./core/outcomes"
 import { TelemetryLayer } from "./core/telemetry"
 import { maybeNotifyUpdate } from "./core/update"
+import { maybeNotifyWhatsNew } from "./core/changelog"
 import { WarehouseExecutorFromMode } from "./core/warehouse"
 import { debugEnabled } from "./lib/debug"
 import { makeHelpCapture, usageHint } from "./lib/help"
@@ -77,7 +84,8 @@ if (checkpointProbeDataDir !== undefined) {
 
 	/* oxlint-disable effecttsgo/multiple-effect-provide */
 	/* oxlint-disable effecttsgo/strict-effect-provide */
-	maybeNotifyUpdate.pipe(
+	maybeNotifyWhatsNew.pipe(
+		Effect.andThen(maybeNotifyUpdate),
 		Effect.flatMap(() =>
 			Command.run(cli, { version: MAPLE_VERSION }).pipe(
 				Effect.track(cliInvocations),
@@ -130,7 +138,7 @@ if (checkpointProbeDataDir !== undefined) {
 				? Effect.failCause(cause)
 				: Effect.sync(() => {
 						process.stderr.write(renderUnexpected(cause, debugEnabled()))
-						process.exitCode = 1
+						markFailedExit()
 					}),
 		),
 		// Logs are diagnostics, never results: keep them off stdout.

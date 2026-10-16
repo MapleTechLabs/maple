@@ -3,9 +3,9 @@ import { getChipTone, pickImportantAttributes } from "./log-attributes"
 
 describe("getChipTone for rpc.response.status_code", () => {
 	it("marks the gRPC codes semconv treats as server errors", () => {
-		expect(getChipTone("rpc.response.status_code", "UNAVAILABLE", "INFO", "grpc")).toBe("error")
-		expect(getChipTone("rpc.response.status_code", "internal", "INFO", "grpc")).toBe("error")
-		expect(getChipTone("rpc.response.status_code", "14", "INFO", "grpc")).toBe("error")
+		expect(getChipTone("rpc.response.status_code", "UNAVAILABLE", "INFO", "grpc")).toBe("crit")
+		expect(getChipTone("rpc.response.status_code", "internal", "INFO", "grpc")).toBe("crit")
+		expect(getChipTone("rpc.response.status_code", "14", "INFO", "grpc")).toBe("crit")
 	})
 
 	it("warns on other non-OK gRPC codes and leaves OK alone", () => {
@@ -28,6 +28,6 @@ describe("getChipTone for rpc.response.status_code", () => {
 			severityText: "INFO",
 		}
 		const status = pickImportantAttributes(log).find((a) => a.key === "rpc.response.status_code")
-		expect(status?.tone).toBe("error")
+		expect(status?.tone).toBe("crit")
 	})
 })

@@ -1,7 +1,9 @@
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { TableSkeleton } from "@maple/ui/components/ui/table-skeleton"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
+import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { SearchableFilterSection } from "@maple/ui/components/filters/filter-section"
 import {
@@ -25,7 +27,8 @@ import {
 	ToolbarStat,
 	ToolbarStats,
 } from "../components/toolbar"
-import { ErrorState, ListSkeleton } from "../components/view-states"
+import { ErrorState } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 export function ServicesListView() {
 	const [query, setParams] = useQueryParams()
@@ -85,8 +88,20 @@ export function ServicesListView() {
 	return (
 		<PageShell sidebar={sidebar} toolbar={toolbar} activeFilterCount={activeFilterCount}>
 			{catalog.query.isPending ? (
-				<ListSkeleton rows={8} />
-			) : catalog.query.isError ? (
+				<div className="p-4">
+					<TableSkeleton
+						rows={8}
+						columns={[
+							{ header: "Service", skeleton: "w-40" },
+							...["Spans", "Errors", "Error rate", "p50", "p95", "Logs"].map((header) => ({
+								header,
+								headClassName: "text-right",
+								skeleton: "ml-auto w-12",
+							})),
+						]}
+					/>
+				</div>
+			) : failedWithoutData(catalog.query) ? (
 				<ErrorState
 					label="services"
 					error={catalog.query.error}
@@ -149,13 +164,13 @@ function ServiceRow({ entry, query }: { entry: ServiceCatalogEntry; query: URLSe
 				</RowLink>
 			</TableCell>
 			<TableCell className="text-right tabular-nums">{formatNumber(entry.spanCount)}</TableCell>
-			<TableCell className={cn("text-right tabular-nums", entry.errorCount > 0 && "text-destructive")}>
+			<TableCell
+				className={cn("text-right tabular-nums", entry.errorCount > 0 && "text-severity-error")}
+			>
 				{formatNumber(entry.errorCount)}
 			</TableCell>
-			<TableCell
-				className={cn("text-right tabular-nums", entry.errorRate > 0.05 && "text-destructive")}
-			>
-				{formatErrorRate(entry.errorRate)}
+			<TableCell className="text-right">
+				<ErrorRateValue rate={entry.errorRate} />
 			</TableCell>
 			<TableCell className="text-right">
 				<LatencyValue ms={entry.p50LatencyMs} scale="p50" />

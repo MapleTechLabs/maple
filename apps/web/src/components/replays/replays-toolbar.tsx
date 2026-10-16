@@ -1,5 +1,10 @@
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { FilterChip } from "@maple/ui/components/ui/filter-chip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import type { Tone } from "@maple/ui/lib/tone"
 
 interface ReplaysToolbarProps {
 	/** Current `q` search param (URL substring filter). */
@@ -48,54 +53,59 @@ export function ReplaysToolbar({
 			/>
 
 			<div
-				className={cn(
-					"flex flex-wrap items-center gap-2 transition-opacity",
-					waiting && "opacity-60",
-				)}
+				aria-busy={waiting || undefined}
+				className={cn("flex flex-wrap items-center gap-2", refreshingClass(waiting))}
 			>
-				<button
-					type="button"
-					onClick={onToggleErrorsOnly}
-					aria-pressed={errorsOnly}
-					title={errorsOnly ? "Show all sessions" : "Show only sessions with errors"}
-					className={cn(
-						"inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors",
-						errorsOnly
-							? "border-destructive bg-destructive text-white"
-							: "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15",
-					)}
+				<TriageChip
+					pressed={errorsOnly}
+					onToggle={onToggleErrorsOnly}
+					tooltip={errorsOnly ? "Show all sessions" : "Show only sessions with errors"}
+					tone="crit"
 				>
-					<span
-						className={cn("size-1.5 rounded-full", errorsOnly ? "bg-white" : "bg-destructive")}
-						aria-hidden
-					/>
-					<span className="tabular-nums">{errorSessions.toLocaleString()}</span> with errors
-				</button>
+					<span className="tabular-nums">{formatNumber(errorSessions)}</span> with errors
+				</TriageChip>
 
-				<button
-					type="button"
-					onClick={onToggleEngagedOnly}
-					aria-pressed={engagedOnly}
-					title={
+				<TriageChip
+					pressed={engagedOnly}
+					onToggle={onToggleEngagedOnly}
+					tooltip={
 						engagedOnly ? "Show every session type" : "Hide bots, bounces, idle tabs and glances"
 					}
-					className={cn(
-						"inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors",
-						engagedOnly
-							? "border-emerald-600 bg-emerald-600 text-white"
-							: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400",
-					)}
+					tone="ok"
 				>
-					<span
-						className={cn("size-1.5 rounded-full", engagedOnly ? "bg-white" : "bg-emerald-500")}
-						aria-hidden
-					/>
 					{engagedSessions !== undefined && (
-						<span className="tabular-nums">{engagedSessions.toLocaleString()}</span>
+						<span className="tabular-nums">{formatNumber(engagedSessions)}</span>
 					)}
 					engaged
-				</button>
+				</TriageChip>
 			</div>
 		</div>
+	)
+}
+
+function TriageChip({
+	pressed,
+	onToggle,
+	tooltip,
+	tone,
+	children,
+}: {
+	pressed: boolean
+	onToggle: () => void
+	tooltip: string
+	tone: Tone
+	children: React.ReactNode
+}) {
+	return (
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<FilterChip pressed={pressed} onPressedChange={() => onToggle()} tone={tone} dot>
+						{children}
+					</FilterChip>
+				}
+			/>
+			<TooltipContent>{tooltip}</TooltipContent>
+		</Tooltip>
 	)
 }

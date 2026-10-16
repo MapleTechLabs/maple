@@ -91,6 +91,8 @@ export const ListSourceRepositoriesOutput = Schema.Struct({
 			htmlUrl: Schema.String,
 			isPrivate: Schema.Boolean,
 			isArchived: Schema.Boolean,
+			/** The last sync failed: reads of it may fail too, and its commits are stale. */
+			syncError: Schema.optionalKey(Schema.String),
 		}),
 	),
 })
@@ -107,6 +109,8 @@ export const SearchSourceCodeOutput = Schema.Struct({
 			htmlUrl: Schema.String,
 			/** Up to two snippets, each clipped. */
 			snippets: Schema.Array(Schema.String),
+			/** 1-based lines of the tracked branch that hold the query; only for the top matches. */
+			lines: Schema.optionalKey(Schema.Array(Schema.Number)),
 		}),
 	),
 })

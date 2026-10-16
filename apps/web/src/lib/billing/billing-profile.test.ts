@@ -34,9 +34,9 @@ describe("formatAddressLines", () => {
 
 describe("verificationBadge", () => {
 	it("maps Stripe's statuses and stays silent on the rest", () => {
-		expect(verificationBadge("verified")).toEqual({ label: "Verified", variant: "success" })
+		expect(verificationBadge("verified")).toEqual({ label: "Verified", variant: "ok" })
 		expect(verificationBadge("pending")?.variant).toBe("secondary")
-		expect(verificationBadge("unverified")?.variant).toBe("warning")
+		expect(verificationBadge("unverified")?.variant).toBe("warn")
 		expect(verificationBadge("unavailable")).toBeNull()
 		expect(verificationBadge(null)).toBeNull()
 		expect(verificationBadge("something_new")).toBeNull()

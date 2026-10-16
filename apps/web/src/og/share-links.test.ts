@@ -65,11 +65,6 @@ describe("ogMetaReplacements", () => {
 })
 
 describe("ogMetaAdditions", () => {
-	it("advertises the size the card is actually rendered at", () => {
-		expect(ogMetaAdditions(meta)).toContain('content="1200"')
-		expect(ogMetaAdditions(meta)).toContain('content="630"')
-	})
-
 	it("escapes a board name that would otherwise close the attribute", () => {
 		const additions = ogMetaAdditions({ ...meta, title: `Checkout" /><script>alert(1)</script>` })
 

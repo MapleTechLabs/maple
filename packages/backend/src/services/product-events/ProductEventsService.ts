@@ -1,5 +1,5 @@
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 
 /**
@@ -24,7 +24,7 @@ import { Env } from "@maple/backend/platform/Env"
  */
 
 export class ProductEventsError extends Schema.TaggedError<ProductEventsError>()(
-	"@maple/api/services/product-events/ProductEventsError",
+	"@maple/backend/services/product-events/ProductEventsError",
 	{
 		message: Schema.String,
 		status: Schema.optionalKey(Schema.Number),

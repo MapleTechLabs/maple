@@ -1,9 +1,10 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../../query-engine"
 import { PostgresTransactionId, UserId } from "../../primitives"
 import {
 	AlertCheckStatus,
+	AlertSkipReason,
 	AlertComparator,
 	AlertEvaluationStatus,
 	AlertIncidentTransition,
@@ -85,6 +86,7 @@ const alertRuleExample = {
 	raw_query_reducer: null,
 	destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
 	no_data_behavior: "skip",
+	alert_on_no_data: false,
 	last_evaluation_error: null,
 	last_evaluated_at: "2026-07-15T09:10:00.000Z",
 	last_scheduled_at: "2026-07-15T09:10:00.000Z",
@@ -195,8 +197,12 @@ export const V2AlertRule = Schema.Struct({
 	}),
 	no_data_behavior: QueryEngineNoDataBehavior.annotate({
 		description:
-			"What the evaluator does when the window has no data: `skip` the check or treat the value as `zero`.",
+			"What the evaluator does when the window has no data: `skip` the check, treat the value as `zero`, or `alert` (count it as a breach; set with `alert_on_no_data`).",
 		examples: ["skip"],
+	}),
+	alert_on_no_data: Schema.Boolean.annotate({
+		description: "Whether a window with no data counts as a breach (`no_data_behavior` is `alert`).",
+		examples: [false],
 	}),
 	last_evaluation_error: Schema.NullOr(Schema.String).annotate({
 		description:
@@ -313,6 +319,12 @@ const createParamsFields = {
 	query_builder_draft: Schema.optionalKey(Schema.NullOr(QueryBuilderDraftPassthrough)),
 	raw_query_sql: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	raw_query_reducer: Schema.optionalKey(Schema.NullOr(QueryEngineAlertReducer)),
+	alert_on_no_data: Schema.optionalKey(
+		Schema.Boolean.annotate({
+			description:
+				"Count a window with no data (e.g. a raw query returning no rows) as a breach, so a rule that goes blind opens an incident. Default `false`: such windows are skipped. Not supported on grouped rules, where a group that stops reporting keeps its incident open until telemetry returns.",
+		}),
+	),
 	destination_ids: Schema.Array(AlertDestinationPublicId).annotate({
 		description: "The alert destinations (`dest_…`) to notify. May be empty.",
 	}),
@@ -364,6 +376,7 @@ export const V2AlertRuleUpdateParams = Schema.Struct({
 	query_builder_draft: createParamsFields.query_builder_draft,
 	raw_query_sql: createParamsFields.raw_query_sql,
 	raw_query_reducer: createParamsFields.raw_query_reducer,
+	alert_on_no_data: createParamsFields.alert_on_no_data,
 }).annotate({
 	identifier: "AlertRuleUpdateParams",
 	title: "Alert rule update parameters",
@@ -450,6 +463,12 @@ const V2AlertRulePreviewPoint = Schema.Struct({
 	value: Schema.NullOr(Schema.Number),
 	sample_count: Schema.Number,
 	status: AlertEvaluationStatus,
+	skip_reason: Schema.optionalKey(
+		AlertSkipReason.annotate({
+			description:
+				"Set on `skipped` points: `no_data` (the window had no data), `below_min_samples`, or `no_value`.",
+		}),
+	),
 	provisional: Schema.optionalKey(
 		Schema.Boolean.annotate({
 			description:
@@ -543,6 +562,10 @@ export const V2AlertCheck = Schema.Struct({
 		description: "`breached`, `healthy`, `skipped`, or `error` (the evaluation query failed).",
 		examples: ["breached"],
 	}),
+	skip_reason: Schema.NullOr(AlertSkipReason).annotate({
+		description:
+			"Why a `skipped` check skipped: `no_data` (the window had no data, e.g. a raw query returned no rows), `below_min_samples`, or `no_value`. `null` on other checks and on checks recorded before this field existed.",
+	}),
 	signal_type: AlertSignalType,
 	comparator: AlertComparator,
 	threshold: Schema.Number,
@@ -580,6 +603,7 @@ export const V2AlertCheck = Schema.Struct({
 			timestamp: "2026-07-15T09:10:00.000Z",
 			group_key: "__total__",
 			status: "breached",
+			skip_reason: null,
 			signal_type: "error_rate",
 			comparator: "gt",
 			threshold: 0.05,

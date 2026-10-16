@@ -1,6 +1,6 @@
 import type { SpanNode } from "@maple/query-engine/observability"
 import type { InspectTraceOutput, SpanNodeOutput } from "@maple/domain/mcp-outputs"
-import { formatDurationFromMs, truncate } from "./format"
+import { formatDurationFromMs, toSecondTimestamp, truncate } from "./format"
 import { selectOverviewSpans, type OverviewOptions } from "./span-tree"
 import { doc, type DocBlock, type ToolDoc } from "./tool-doc"
 
@@ -24,9 +24,33 @@ export interface TraceOverviewInput {
 	readonly options?: OverviewOptions
 	/** The `timestamp` hint the scan was narrowed around, echoed for follow-up calls. */
 	readonly timestamp?: string
+	readonly scanned?: Output["scanned"]
 }
 
 type Output = typeof InspectTraceOutput.Type
+type Rollup = NonNullable<Output["rollup"]>[number]
+
+const ROLLUP_ROWS = 15
+
+/** Per (span name, service) totals over every span, longest total first. */
+export function rollupSpanNames(roots: ReadonlyArray<SpanNode>): Array<Rollup> {
+	const byKey = new Map<string, Rollup>()
+	const stack = [...roots]
+	for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+		stack.push(...node.children)
+		const key = `${node.serviceName}\u0000${node.spanName}`
+		const prev = byKey.get(key)
+		byKey.set(key, {
+			spanName: node.spanName,
+			serviceName: node.serviceName,
+			count: (prev?.count ?? 0) + 1,
+			totalDurationMs: (prev?.totalDurationMs ?? 0) + node.durationMs,
+			maxDurationMs: Math.max(prev?.maxDurationMs ?? 0, node.durationMs),
+			errorCount: (prev?.errorCount ?? 0) + (node.statusCode === "Error" ? 1 : 0),
+		})
+	}
+	return [...byKey.values()].sort((a, b) => b.totalDurationMs - a.totalDurationMs).slice(0, ROLLUP_ROWS)
+}
 
 /**
  * Bound a trace to its overview: the output mirrors the rendered tree, not the full
@@ -50,12 +74,16 @@ export function buildTraceOverview(input: TraceOverviewInput): Output {
 		})),
 		errorsOnly: input.options?.errorsOnly === true,
 		...(input.timestamp === undefined ? undefined : { timestamp: input.timestamp }),
+		...(input.scanned === undefined ? undefined : { scanned: input.scanned }),
+		...(overview.truncated ? { rollup: rollupSpanNames(input.spans) } : undefined),
 	}
 }
 
 const renderTree = (output: Output): string => {
 	const omittedByParent = new Map(output.omitted.map((entry) => [entry.parentSpanId, entry]))
 	const lines: Array<string> = []
+	// Resource attributes are per service; print them once, on its first span.
+	const servicesWithResource = new Set<string>()
 	const renderNode = (node: SpanNodeOutput, prefix: string, isLast: boolean): void => {
 		const connector = prefix === "" ? "" : isLast ? "└── " : "├── "
 		const status = node.statusCode === "Error" ? " [Error]" : node.statusCode === "Ok" ? " [Ok]" : ""
@@ -65,6 +93,13 @@ const renderTree = (output: Output): string => {
 			`${prefix}${connector}${node.spanName} — ${node.serviceName} (${formatDurationFromMs(node.durationMs)})${status}  span=${node.spanId}`,
 		)
 		const detailPrefix = prefix + (prefix === "" ? "" : isLast ? "    " : "│   ")
+		// Filters match the stored name, not the display rewrite. A 0 duration on a
+		// parent is what the SDK reported (e.g. a frozen clock), not a render bug.
+		const notes = [
+			...(node.rawSpanName === undefined ? [] : [`span_name="${node.rawSpanName}"`]),
+			...(node.durationMs === 0 && node.children.length > 0 ? ["duration not recorded"] : []),
+		]
+		if (notes.length > 0) lines.push(`${detailPrefix}    ${notes.join(", ")}`)
 		if (node.statusCode === "Error" && node.statusMessage) {
 			lines.push(`${detailPrefix}    Status: "${truncate(node.statusMessage, 100)}"`)
 		}
@@ -72,8 +107,11 @@ const renderTree = (output: Output): string => {
 		if (attrs.length > 0) {
 			lines.push(`${detailPrefix}    {${attrs.map(([k, v]) => `${k}=${truncate(v, 60)}`).join(", ")}}`)
 		}
-		const resourceAttrs = Object.entries(node.resourceAttributes).slice(0, 5)
+		const resourceAttrs = servicesWithResource.has(node.serviceName)
+			? []
+			: Object.entries(node.resourceAttributes).slice(0, 5)
 		if (resourceAttrs.length > 0) {
+			servicesWithResource.add(node.serviceName)
 			lines.push(
 				`${detailPrefix}    resource: {${resourceAttrs.map(([k, v]) => `${k}=${truncate(v, 60)}`).join(", ")}}`,
 			)
@@ -101,7 +139,7 @@ const renderLogs = (logs: Output["logs"]): string =>
 			const time = log.timestamp.split(" ")[1] ?? log.timestamp
 			const sevUpper = log.severityText.toUpperCase()
 			const marker = sevUpper === "ERROR" || sevUpper === "FATAL" ? "●" : " "
-			const spanRef = log.spanId ? ` span:${log.spanId.slice(0, 8)}` : ""
+			const spanRef = log.spanId ? ` span=${log.spanId}` : ""
 			return `${marker} ${time} [${log.severityText.padEnd(5)}] ${log.serviceName}: ${truncate(log.body, 100)}${spanRef}`
 		}),
 	].join("\n")
@@ -110,6 +148,14 @@ const collectServices = (node: SpanNodeOutput): Array<string> => [
 	node.serviceName,
 	...node.children.flatMap(collectServices),
 ]
+
+const findFirstError = (nodes: ReadonlyArray<SpanNodeOutput>): SpanNodeOutput | undefined => {
+	for (const node of nodes) {
+		const hit = node.statusCode === "Error" ? node : findFirstError(node.children)
+		if (hit !== undefined) return hit
+	}
+	return undefined
+}
 
 const hasErrorSpan = (node: SpanNodeOutput): boolean =>
 	node.statusCode === "Error" || node.children.some(hasErrorSpan)
@@ -120,33 +166,65 @@ const hasErrorSpan = (node: SpanNodeOutput): boolean =>
  */
 export function renderTraceOverview(output: Output): ToolDoc {
 	if (output.spanCount === 0) {
+		const scanned = output.scanned
+		const where =
+			scanned !== undefined
+				? ` (scanned ${scanned.startTime} to ${scanned.endTime}${scanned.widened ? ", widened past the first window" : ""})`
+				: output.timestamp === undefined
+					? " (scanned last 24h)"
+					: ` within an hour of ${output.timestamp}`
 		return {
 			title: `Trace ${output.traceId}`,
 			blocks: [],
 			empty: {
-				message: `No spans found for trace ${output.traceId}${output.timestamp === undefined ? " (scanned last 24h)" : ` within an hour of ${output.timestamp}`}.`,
-				hints:
-					output.timestamp === undefined
-						? ["If this trace is older, pass timestamp from `search_traces` results."]
-						: ["Check the trace id, or pass a timestamp from one of the trace's own spans."],
+				message: `No spans found for trace ${output.traceId}${where}.`,
+				hints: [
+					"Check the trace id is a full 32-hex trace id, not a span id or a prefix.",
+					"For an older trace, pass `timestamp` from a search_traces row's Start column.",
+				],
 			},
 		}
 	}
 	const truncated = output.truncated === true
 	const policy = output.errorsOnly ? "error spans and their ancestors only" : "errors and longest first"
 	const blocks: Array<DocBlock> = [doc.text(renderTree(output))]
-	if (truncated) {
+	blocks.push(
+		doc.text(
+			truncated
+				? "Collapsed spans show as `… +K more`. Lines show a trimmed attribute set: `inspect_span` with a `span=` id lists every attribute; `search_traces` finds more."
+				: "Lines show a trimmed attribute set: `inspect_span` with a `span=` id lists every attribute.",
+		),
+	)
+	if (output.rollup !== undefined && output.rollup.length > 0) {
 		blocks.push(
-			doc.text(
-				"Collapsed spans show as `… +K more`. Use `inspect_span` with a `span=` id for one span's full attributes, or `search_traces` to find more.",
+			doc.heading(`Span names across all ${output.spanCount} spans (by total time)`),
+			doc.table(
+				["Span Name", "Service", "Count", "Total", "Max", "Errors"],
+				output.rollup.map((r) => [
+					r.spanName,
+					r.serviceName,
+					String(r.count),
+					formatDurationFromMs(r.totalDurationMs),
+					formatDurationFromMs(r.maxDurationMs),
+					r.errorCount === 0 ? "" : String(r.errorCount),
+				]),
 			),
 		)
 	}
 	if (output.logs.length > 0) blocks.push(doc.text(renderLogs(output.logs)))
 	const services = [...new Set(output.spans.flatMap(collectServices))]
+	const focus = findFirstError(output.spans) ?? output.spans[0]
 	return {
 		title: `Trace ${output.traceId} (${output.serviceCount} services, ${output.spanCount} spans, ${formatDurationFromMs(output.rootDurationMs)})`,
-		...(output.timestamp === undefined ? undefined : { scope: [["Around", output.timestamp]] }),
+		scope: [
+			["Around", output.timestamp],
+			[
+				"Scanned",
+				output.scanned?.widened === true
+					? `${output.scanned.startTime} to ${output.scanned.endTime} (widened)`
+					: undefined,
+			],
+		],
 		blocks,
 		...(truncated
 			? {
@@ -158,6 +236,24 @@ export function renderTraceOverview(output: Output): ToolDoc {
 				}
 			: undefined),
 		next: [
+			...(focus === undefined
+				? []
+				: [
+						doc.next(
+							"inspect_span",
+							{
+								trace_id: output.traceId,
+								span_id: focus.spanId,
+								timestamp:
+									focus.startTime === undefined
+										? undefined
+										: toSecondTimestamp(focus.startTime),
+							},
+							focus.statusCode === "Error"
+								? "every attribute of the first error span"
+								: "every attribute of the root span",
+						),
+					]),
 			...(output.spans.some(hasErrorSpan)
 				? [doc.next("search_logs", { trace_id: output.traceId }, "see all logs for this trace")]
 				: []),

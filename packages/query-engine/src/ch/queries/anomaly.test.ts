@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileUnsafe } from "@maple-dev/effect-clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	anomalyErrorSpikeBaselineQuery,
 	anomalyErrorSpikeCurrentQuery,
@@ -10,9 +10,10 @@ import {
 	anomalyTraceSignalTimeseriesQuery,
 	matchedHoursOfDay,
 } from "./anomaly"
+import { OrgId } from "@maple/domain"
 
 const baseParams = {
-	orgId: "org_1",
+	orgId: OrgId.make("org_1"),
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-08 00:00:00",
 }
@@ -34,7 +35,7 @@ describe("anomalyTraceSignalsQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces_aggregates_hourly")
 		expect(sql).toContain("IsEntryPoint = 1")
-		expect(sql).toContain("toHour(Hour) IN (13, 14, 15)")
+		expect(sql).toContain("toHour(traces_aggregates_hourly.Hour) IN (13, 14, 15)")
 		expect(sql).toContain("sum(WeightedCount) AS requestCount")
 		expect(sql).toContain("sum(WeightedErrorCount) AS errorCount")
 		expect(sql).toContain("quantilesTDigestWeightedMerge(0.95)(DurationQuantiles)")
@@ -49,9 +50,13 @@ describe("anomalyLogVolumeQuery", () => {
 		const q = anomalyLogVolumeQuery({ hoursOfDay: matchedHoursOfDay(0) })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM logs_aggregates_hourly")
-		expect(sql).toContain("toHour(Hour) IN (23, 0, 1)")
-		expect(sql).toContain("sumIf(Count, lower(SeverityText) IN ('error', 'fatal', 'critical'))")
-		expect(sql).toContain("sumIf(Count, lower(SeverityText) IN ('warn', 'warning'))")
+		expect(sql).toContain("toHour(logs_aggregates_hourly.Hour) IN (23, 0, 1)")
+		expect(sql).toContain(
+			"sumIf(logs_aggregates_hourly.Count, lower(logs_aggregates_hourly.SeverityText) IN ('error', 'fatal', 'critical'))",
+		)
+		expect(sql).toContain(
+			"sumIf(logs_aggregates_hourly.Count, lower(logs_aggregates_hourly.SeverityText) IN ('warn', 'warning'))",
+		)
 		expect(sql).toContain("OrgId = 'org_1'")
 	})
 })
@@ -61,7 +66,7 @@ describe("anomalyErrorSpikeCurrentQuery", () => {
 		const q = anomalyErrorSpikeCurrentQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toString(FingerprintHash) AS fingerprintHash")
+		expect(sql).toContain("toString(error_events_by_time.FingerprintHash) AS fingerprintHash")
 		expect(sql).toContain("GROUP BY fingerprintHash, deploymentEnv")
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 500")
@@ -74,11 +79,11 @@ describe("anomalyErrorSpikeBaselineQuery", () => {
 		const q = anomalyErrorSpikeBaselineQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toStartOfHour(Timestamp)")
+		expect(sql).toContain("toStartOfHour(error_events_by_time.Timestamp)")
 		expect(sql).toContain("count() AS hourCount")
-		expect(sql).toContain("sum(hourCount) AS totalCount")
-		expect(sql).toContain("quantile(0.5)(hourCount)")
-		expect(sql).toContain("max(hourCount) AS maxHourly")
+		expect(sql).toContain("sum(hourly.hourCount) AS totalCount")
+		expect(sql).toContain("quantile(0.5)(hourly.hourCount)")
+		expect(sql).toContain("max(hourly.hourCount) AS maxHourly")
 		expect(sql).toContain("GROUP BY fingerprintHash, deploymentEnv")
 		expect(sql).toContain("LIMIT 5000")
 		expect(sql).toContain("OrgId = 'org_1'")
@@ -115,7 +120,9 @@ describe("anomalyLogVolumeTimeseriesQuery", () => {
 		const q = anomalyLogVolumeTimeseriesQuery()
 		const { sql } = compileUnsafe(q, seriesParams)
 		expect(sql).toContain("FROM logs_aggregates_hourly")
-		expect(sql).toContain("sumIf(Count, lower(SeverityText) IN ('error', 'fatal', 'critical'))")
+		expect(sql).toContain(
+			"sumIf(logs_aggregates_hourly.Count, lower(logs_aggregates_hourly.SeverityText) IN ('error', 'fatal', 'critical'))",
+		)
 		expect(sql).toContain("ServiceName = 'checkout'")
 		expect(sql).toContain("DeploymentEnv = 'prod'")
 		expect(sql).toContain("OrgId = 'org_1'")
@@ -134,7 +141,7 @@ describe("anomalyErrorSpikeTimeseriesQuery", () => {
 			bucketSeconds: 300,
 		})
 		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toStartOfInterval(Timestamp, INTERVAL 300 SECOND)")
+		expect(sql).toContain("toStartOfInterval(error_events_by_time.Timestamp, INTERVAL 300 SECOND)")
 		expect(sql).toContain("FingerprintHash = toUInt64('12345')")
 		expect(sql).toContain("DeploymentEnv = 'prod'")
 		expect(sql).toContain("OrgId = 'org_1'")

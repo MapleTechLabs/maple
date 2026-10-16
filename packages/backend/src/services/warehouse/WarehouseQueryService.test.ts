@@ -16,10 +16,10 @@ import {
 	WarehouseScopeError,
 	WarehouseUpstreamError,
 } from "@maple/domain/http"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { rawCompiledQuery } from "@maple/query-engine/ch"
-import { parseStatement, type ClickHouseStatement } from "@maple-dev/effect-clickhouse/sql"
+import { parseStatement, type ClickHouseStatement } from "@maple-dev/effect-orm/sql"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import {
 	makeWarehouseExecutor,
@@ -361,6 +361,23 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 			assert.instanceOf(getError(exit), WarehouseConfigError)
 			assert.isFalse(constructed)
 		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("ClickHouse-protocol session settings", () => {
+	it("pins UTC on BYO ClickHouse and chDB, never on the Tinybird gateway", () => {
+		assert.deepStrictEqual(__testables.clickHouseSessionSettings("clickhouse"), {
+			output_format_json_quote_64bit_integers: 0,
+			session_timezone: "UTC",
+		})
+		assert.deepStrictEqual(__testables.clickHouseSessionSettings("chdb"), {
+			output_format_json_quote_64bit_integers: 0,
+			session_timezone: "UTC",
+		})
+		// Tinybird rejects `session_timezone` as a restricted setting.
+		assert.deepStrictEqual(__testables.clickHouseSessionSettings("tinybird-gateway"), {
+			output_format_json_quote_64bit_integers: 0,
+		})
 	})
 })
 
@@ -1044,18 +1061,6 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 	})
 })
 
-describe("WarehouseUpstreamError surfaces transient classification", () => {
-	it("carries upstreamStatus on 503", () => {
-		// Sanity check that the constructor flow we depend on for retry is intact.
-		const err = new WarehouseUpstreamError({
-			pipeName: "test",
-			message: "upstream",
-			upstreamStatus: 503,
-		})
-		assert.strictEqual(err.upstreamStatus, 503)
-	})
-})
-
 describe("Tinybird response decoding", () => {
 	const tbConfig = { kind: "tinybird" as const, host: "https://api.tinybird.co", token: "tok" }
 	const statement = parseStatement("SELECT 1 FORMAT JSON")
@@ -1383,6 +1388,9 @@ describe("warehouse spans follow the database conventions", () => {
 		return { spans, tracer }
 	}
 	const okFetch: typeof fetch = async () => new Response('{"data":[]}')
+	// By kind and method, not name: Effect names it by method alone, and the database span is a client too.
+	const isHttpClientSpan = (span: Tracer.NativeSpan) =>
+		span.kind === "client" && span.attributes.has("http.request.method")
 
 	it.effect("emits one database span per query and no http.client span beneath it", () => {
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -1393,9 +1401,11 @@ describe("warehouse spans follow the database conventions", () => {
 					context: "spanShape",
 				}),
 			).pipe(Effect.withTracer(tracer))
-			const names = spans.map((span) => span.name)
-			assert.include(names, "WarehouseQueryService.executeSql")
-			assert.isFalse(names.some((name) => name.startsWith("http.client")))
+			assert.include(
+				spans.map((span) => span.name),
+				"WarehouseQueryService.executeSql",
+			)
+			assert.isFalse(spans.some(isHttpClientSpan))
 		}).pipe(Effect.provide(layer), Effect.provideService(FetchHttpClient.Fetch, okFetch))
 	})
 
@@ -1409,7 +1419,7 @@ describe("warehouse spans follow the database conventions", () => {
 				okFetch,
 			)
 			yield* client.sql(parseStatement("SELECT 1 FORMAT JSON")).pipe(Effect.withTracer(tracer))
-			assert.isTrue(spans.some((span) => span.name === "http.client POST"))
+			assert.isTrue(spans.some(isHttpClientSpan))
 		}),
 	)
 })

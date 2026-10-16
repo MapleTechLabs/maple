@@ -13,7 +13,7 @@
 // `initialize` or session id needed.
 
 import { Clock, Effect, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { McpToolOutputs, type McpToolName } from "@maple/domain/mcp-outputs"
 import { WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { debugLog } from "../lib/debug"

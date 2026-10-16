@@ -16,6 +16,34 @@ type AttributeValueRow = SpanAttributeValuesOutput | ResourceAttributeValuesOutp
 
 const byCountDesc = Order.mapInput(Order.flip(Order.Number), (r: AttributeKeyResult) => r.count)
 
+/**
+ * Pipe params that scope metrics discovery to one metric, so keys come from that
+ * metric's own data points (any metric type) instead of the org-wide sum rollup.
+ * A missing metric type is looked up in the metric catalog (scoped to the
+ * service); `undefined` means the named metric was not found, so callers
+ * return nothing rather than the unscoped rollup.
+ */
+const metricScopeParams = Effect.fnUntraced(function* (input: ExploreAttributesInput) {
+	if (input.source !== "metrics" || input.metricName === undefined) return {}
+	let metricType = input.metricType
+	if (metricType === undefined) {
+		const executor = yield* WarehouseExecutor
+		const catalog = yield* executor.query<{ metricName: string; metricType: string }>(
+			"list_metrics",
+			{
+				start_time: input.timeRange.startTime,
+				end_time: input.timeRange.endTime,
+				search: input.metricName,
+				...(input.service && { service: input.service }),
+				limit: 500,
+			},
+			{ profile: "discovery" },
+		)
+		metricType = catalog.data.find((row) => row.metricName === input.metricName)?.metricType
+	}
+	return metricType === undefined ? undefined : { metric_name: input.metricName, metric_type: metricType }
+})
+
 export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKeys")(function* (
 	input: ExploreAttributesInput,
 ) {
@@ -31,10 +59,10 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 				: ("services_facets" as const)
 
 	yield* Effect.annotateCurrentSpan({
-		source: input.source,
-		scope: input.scope ?? "span",
-		service: input.service ?? "all",
-		pipe: pipeName,
+		"query.source": input.source,
+		"maple.query.attribute_scope": input.scope ?? "span",
+		"maple.query.service": input.service ?? "all",
+		"query.pipe": pipeName,
 	})
 
 	if (pipeName === "services_facets") {
@@ -54,7 +82,7 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 			result.data,
 			Arr.map((d): AttributeKeyResult => ({
 				key: `${d.facetType}:${d.name}`,
-				count: Number(d.count),
+				count: d.count,
 				facetType: d.facetType,
 			})),
 			Arr.sort(byCountDesc),
@@ -62,12 +90,15 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 		)
 	}
 
+	const metricScope = yield* metricScopeParams(input)
+	if (metricScope === undefined) return []
 	const result = yield* executor.query<AttributeKeyRow>(
 		pipeName,
 		{
 			start_time: input.timeRange.startTime,
 			end_time: input.timeRange.endTime,
 			...(input.service && { service_name: input.service }),
+			...metricScope,
 			limit: input.limit ?? 50,
 		},
 		{ profile: "discovery" },
@@ -75,7 +106,7 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 
 	return pipe(
 		result.data,
-		Arr.map((d): AttributeKeyResult => ({ key: d.attributeKey, count: Number(d.usageCount) })),
+		Arr.map((d): AttributeKeyResult => ({ key: d.attributeKey, count: d.usageCount })),
 	)
 })
 
@@ -92,13 +123,15 @@ export const exploreAttributeValues = Effect.fn("Observability.exploreAttributeV
 				: ("span_attribute_values" as const)
 
 	yield* Effect.annotateCurrentSpan({
-		source: input.source,
-		scope: input.scope ?? "span",
-		key: input.key,
-		service: input.service ?? "all",
-		pipe: pipeName,
+		"query.source": input.source,
+		"maple.query.attribute_scope": input.scope ?? "span",
+		"maple.query.attribute_key": input.key,
+		"maple.query.service": input.service ?? "all",
+		"query.pipe": pipeName,
 	})
 
+	const metricScope = yield* metricScopeParams(input)
+	if (metricScope === undefined) return []
 	const result = yield* executor.query<AttributeValueRow>(
 		pipeName,
 		{
@@ -106,6 +139,7 @@ export const exploreAttributeValues = Effect.fn("Observability.exploreAttributeV
 			start_time: input.timeRange.startTime,
 			end_time: input.timeRange.endTime,
 			...(input.service && { service_name: input.service }),
+			...metricScope,
 			limit: input.limit ?? 50,
 		},
 		{ profile: "discovery" },
@@ -115,6 +149,6 @@ export const exploreAttributeValues = Effect.fn("Observability.exploreAttributeV
 
 	return pipe(
 		result.data,
-		Arr.map((d): AttributeValueResult => ({ value: d.attributeValue, count: Number(d.usageCount) })),
+		Arr.map((d): AttributeValueResult => ({ value: d.attributeValue, count: d.usageCount })),
 	)
 })

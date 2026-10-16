@@ -1,10 +1,12 @@
-// Header status pill: is the local server up, and is telemetry arriving? Uses
+// Sidebar status pill: is the local server up, and is telemetry arriving? Uses
 // the server's own last-ingest time (arrival, any signal), so a metrics-only
 // app reads as live and a replayed old trace does not.
 
 import type { ReactNode } from "react"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_BORDER, TONE_SOFT, type Tone } from "@maple/ui/lib/tone"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import {
 	MISSES_BEFORE_DOWN,
 	useLocalServerStatus,
@@ -18,10 +20,10 @@ import { localServerPort } from "../lib/constants"
  */
 const FRESH_MS = 90_000
 
-type Tone = "live" | "idle" | "warn" | "down"
+type IngestTone = "live" | "idle" | "warn" | "down"
 
 interface PillState {
-	readonly tone: Tone
+	readonly tone: IngestTone
 	readonly label: string
 	readonly title: string
 }
@@ -89,37 +91,25 @@ export function IngestStatus() {
 		<span
 			title={state.title}
 			className={cn(
-				"inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium tabular-nums",
-				state.tone === "live" && "border-success/30 bg-success/10 text-success",
-				state.tone === "idle" && "border-border bg-muted/40 text-muted-foreground",
-				state.tone === "warn" && "border-warning/30 bg-warning/10 text-warning-foreground",
-				state.tone === "down" && "border-destructive/30 bg-destructive/10 text-destructive",
+				"inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium tabular-nums group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
+				TONE_SOFT[STATUS_TONE[state.tone]],
+				TONE_BORDER[STATUS_TONE[state.tone]],
 			)}
 		>
 			<Dot tone={state.tone} />
-			<span className="truncate">{state.label}</span>
+			<span className="truncate group-data-[collapsible=icon]:sr-only">{state.label}</span>
 			<span className="sr-only">. {state.title}</span>
 		</span>
 	)
 }
 
-function Dot({ tone }: { tone: Tone }): ReactNode {
-	if (tone === "live") {
-		return (
-			<span className="relative flex size-1.5 shrink-0">
-				<span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-				<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-			</span>
-		)
-	}
-	return (
-		<span
-			className={cn(
-				"size-1.5 shrink-0 rounded-full",
-				tone === "idle" && "bg-muted-foreground/40",
-				tone === "warn" && "bg-warning",
-				tone === "down" && "bg-destructive",
-			)}
-		/>
-	)
+const STATUS_TONE = {
+	live: "ok",
+	idle: "neutral",
+	warn: "warn",
+	down: "crit",
+} satisfies Record<IngestTone, Tone>
+
+function Dot({ tone }: { tone: IngestTone }): ReactNode {
+	return <StatusDot tone={STATUS_TONE[tone]} />
 }

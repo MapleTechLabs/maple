@@ -6,8 +6,8 @@ import * as CH from "@maple/query-engine/ch"
 import { Clock, Duration, Effect, Schema } from "effect"
 import type { Chdb } from "./chdb"
 import { decodeJsonEachRow } from "./chdb-rows"
+import { LOCAL_ORG_ID } from "@maple/query-engine/local"
 
-const ORG_ID = "local"
 const HOUR_MS = CH.SERVICE_MAP_ROLLUP_HOUR_MS
 
 /** Lets exporters flush spans buffered while the server was down before hours seal. */
@@ -112,7 +112,7 @@ const firstTraceHourMs = (db: LocalServiceMapRollupDeps["db"], sinceMs: number, 
 		const sql = yield* selectBody(
 			CH.compileUnion(
 				CH.signalPresenceQuery(),
-				CH.serviceMapRollupWindowParams(ORG_ID, sinceMs, nowMs),
+				CH.serviceMapRollupWindowParams(LOCAL_ORG_ID, sinceMs, nowMs),
 			),
 			"signal presence",
 		)
@@ -131,12 +131,24 @@ const sealedHours = (db: LocalServiceMapRollupDeps["db"], oldestHourMs: number, 
 	Effect.gen(function* () {
 		const sql = yield* selectBody(
 			CH.serviceMapEdgesExistingHoursSQL(
-				CH.serviceMapRollupWindowParams(ORG_ID, oldestHourMs, currentHourMs),
+				CH.serviceMapRollupWindowParams(LOCAL_ORG_ID, oldestHourMs, currentHourMs),
 			),
 			"existing hours",
 		)
 		const text = yield* runQuery(db, sql, "existing hours")
 		return CH.serviceMapHourSet(yield* decodeRows(decodeHourRows, text, "existing hours"))
+	})
+
+/** The INSERTs that seal one hour from raw spans: resolutions, then edges (the seal). */
+export const serviceMapRollupInserts = (hourMs: number) =>
+	Effect.gen(function* () {
+		const params = CH.serviceMapRollupHourParams(LOCAL_ORG_ID, hourMs)
+		const resolutions = yield* selectBody(CH.serviceMapResolutionsRollupSQL(params), "resolutions")
+		const edges = yield* selectBody(CH.serviceMapEdgesRollupSQL(params), "edges")
+		return [
+			`INSERT INTO service_address_resolutions_hourly (${RESOLUTION_COLUMNS}) SELECT ${RESOLUTION_COLUMNS} FROM (${resolutions})`,
+			`INSERT INTO service_map_edges_hourly_ingest (${EDGE_COLUMNS}) SELECT ${EDGE_COLUMNS} FROM (${edges})`,
+		] as const
 	})
 
 /**
@@ -151,22 +163,9 @@ const rollupHour = (deps: LocalServiceMapRollupDeps, hourMs: number) =>
 			leave === null
 				? Effect.succeed(false)
 				: Effect.gen(function* () {
-						const params = CH.serviceMapRollupHourParams(ORG_ID, hourMs)
-						const resolutions = yield* selectBody(
-							CH.serviceMapResolutionsRollupSQL(params),
-							"resolutions",
-						)
-						const edges = yield* selectBody(CH.serviceMapEdgesRollupSQL(params), "edges")
-						yield* runExec(
-							deps.db,
-							`INSERT INTO service_address_resolutions_hourly (${RESOLUTION_COLUMNS}) SELECT ${RESOLUTION_COLUMNS} FROM (${resolutions})`,
-							"insert address resolutions",
-						)
-						yield* runExec(
-							deps.db,
-							`INSERT INTO service_map_edges_hourly_ingest (${EDGE_COLUMNS}) SELECT ${EDGE_COLUMNS} FROM (${edges})`,
-							"insert service map edges",
-						)
+						const [resolutions, edges] = yield* serviceMapRollupInserts(hourMs)
+						yield* runExec(deps.db, resolutions, "insert address resolutions")
+						yield* runExec(deps.db, edges, "insert service map edges")
 						return true
 					}),
 		(leave) => Effect.sync(() => leave?.()),

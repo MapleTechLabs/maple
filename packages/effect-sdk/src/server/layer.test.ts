@@ -1,5 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { Data, Effect, Layer, Tracer } from "effect"
+import { OtlpExporter } from "effect/observability"
 import { afterEach, beforeEach, expect, vi } from "vitest"
 import { layer } from "./layer.js"
 
@@ -127,6 +128,21 @@ describe("Maple.layer span options", () => {
 		expect(keys).toContain("service.name")
 		expect(keys).toContain("deployment.environment.name")
 		expect(exportedSpans().map((span) => span.name)).toEqual(["hello"])
+	})
+
+	// The signal layers share one memoized `layerFlusher`, so its flush drains them all.
+	it("drains traces and logs on a manual flush, before shutdown", async () => {
+		const exportedBeforeShutdown = await Effect.runPromise(
+			Effect.gen(function* () {
+				yield* Effect.log("processing").pipe(Effect.withSpan("job.process"))
+				const flusher = yield* OtlpExporter.Flusher
+				yield* flusher.flush
+				return calls.map((call) => new URL(call.url).pathname)
+			}).pipe(Effect.provide(layer(config))),
+		)
+
+		expect(exportedBeforeShutdown).toContain("/v1/traces")
+		expect(exportedBeforeShutdown).toContain("/v1/logs")
 	})
 
 	it("drops a subtree but keeps sibling work and its logs", async () => {

@@ -335,6 +335,7 @@ describe("confidencePrReview", () => {
 			readonly risk?: "low" | "medium" | "high"
 			readonly verdict?: "clean" | "issues" | "not_applicable"
 			readonly unobservable?: boolean
+			readonly unreviewed?: ReadonlyArray<string>
 		} = {},
 	) =>
 		new PrReviewReport({
@@ -347,6 +348,7 @@ describe("confidencePrReview", () => {
 			findings,
 			...(extra.tests === undefined ? undefined : { tests: extra.tests }),
 			...(extra.risk === undefined ? undefined : { risk: extra.risk }),
+			...(extra.unreviewed === undefined ? undefined : { unreviewed: extra.unreviewed }),
 			...(extra.confidence === undefined
 				? undefined
 				: { confidence: extra.confidence, confidenceReason: "why" }),
@@ -354,45 +356,74 @@ describe("confidencePrReview", () => {
 	const score = (...args: Parameters<typeof reportWith>) =>
 		confidencePrReview(reportWith(...args))?.confidence
 
-	it("reads 5 for a clean, tested, contained change and ignores notes", () => {
-		assert.equal(score([], { tests: "covered", risk: "low" }), 5)
-		assert.equal(score([], { tests: "not_needed", risk: "low" }), 5)
-		assert.equal(score([finding("info")], { tests: "covered", risk: "low" }), 5)
+	it("reads 10 for a clean, tested, contained change and ignores a note", () => {
+		assert.equal(score([], { tests: "covered", risk: "low" }), 10)
+		assert.equal(score([], { tests: "not_needed", risk: "low" }), 10)
+		assert.equal(score([finding("info")], { tests: "covered", risk: "low" }), 10)
 		assert.isUndefined(confidencePrReview(reportWith([], { verdict: "not_applicable" })))
 	})
 
-	it("takes off for untested behavior, a risky area and unobservable work", () => {
-		assert.equal(score([], { tests: "partial", risk: "low" }), 4)
-		assert.equal(score([], { tests: "covered", risk: "medium" }), 4)
-		assert.equal(score([], { tests: "missing", risk: "low" }), 4)
-		assert.equal(score([], { tests: "missing", risk: "high" }), 3)
-		assert.equal(score([], { tests: "covered", risk: "low", unobservable: true }), 4)
+	it("keeps one soft signal in the safe band", () => {
+		// The calibration this scale exists for: a clean review with one soft signal read 4/5.
+		assert.equal(score([], { tests: "partial", risk: "low" }), 9)
+		assert.equal(score([], { tests: "covered", risk: "medium" }), 9)
+		assert.equal(score([], { tests: "not_needed", risk: "medium" }), 9)
+		assert.equal(score([], { tests: "partial", risk: "medium" }), 8)
+		assert.equal(score([], { tests: "covered", risk: "high" }), 8)
+	})
+
+	it("takes whole points off for untested behavior, a risky area and unobservable work", () => {
+		assert.equal(score([], { tests: "missing", risk: "low" }), 8)
+		assert.equal(score([], { tests: "missing", risk: "high" }), 6)
+		assert.equal(score([], { tests: "covered", risk: "low", unobservable: true }), 9)
+		assert.equal(score([], { tests: "missing", risk: "high", unobservable: true }), 5)
 	})
 
 	it("folds the findings' quality score in", () => {
-		assert.equal(score([finding("warn")], { tests: "covered", risk: "low" }), 4)
-		assert.equal(score([finding("warn"), finding("warn")], { tests: "covered", risk: "low" }), 3)
-		assert.equal(score([finding("warn")], { tests: "missing", risk: "high" }), 2)
+		assert.equal(score([finding("info"), finding("info")], { tests: "covered", risk: "low" }), 9)
+		assert.equal(score([finding("warn")], { tests: "covered", risk: "low" }), 8)
+		assert.equal(score([finding("warn")], { tests: "partial", risk: "medium" }), 6)
+		assert.equal(score([finding("warn"), finding("warn")], { tests: "covered", risk: "low" }), 6)
+		assert.equal(score([finding("warn")], { tests: "missing", risk: "high" }), 4)
 	})
 
 	it("caps on a critical, a security warning or an early end, and says why", () => {
 		const one = confidencePrReview(reportWith([finding("critical")], { tests: "covered", risk: "low" }))
-		assert.equal(one?.confidence, 2)
-		assert.equal(one?.reason, "Held at 2 because a critical finding is open.")
+		assert.equal(one?.confidence, 4)
+		assert.equal(one?.reason, "Held at 4 because a critical finding is open.")
 		assert.equal(one?.cappedBy, "critical")
 		assert.equal(
 			confidencePrReview(reportWith([finding("critical")]), [finding("critical")])?.confidence,
-			1,
+			2,
 		)
-		assert.equal(score([finding("warn", "security")]), 3)
-		assert.equal(confidencePrReview(reportWith([]), [], true)?.confidence, 3)
+		assert.equal(score([finding("warn", "security")]), 6)
+		assert.equal(confidencePrReview(reportWith([]), [], true)?.confidence, 6)
 	})
 
-	it("lets the reviewer lower the number by one point, never raise it", () => {
-		assert.equal(score([], { confidence: 1 }), 4)
-		assert.equal(score([], { confidence: 4 }), 4)
-		assert.equal(score([finding("warn"), finding("warn")], { confidence: 5 }), 3)
-		assert.equal(confidencePrReview(reportWith([], { confidence: 4 }))?.reason, "why")
+	// A pass that skipped files cannot vouch for them, whatever it found in the rest.
+	it("caps on reviewed files left unread", () => {
+		const one = confidencePrReview(reportWith([], { unreviewed: ["src/b.ts"] }))
+		assert.equal(one?.confidence, 8)
+		assert.equal(one?.cappedBy, "unread")
+		assert.equal(one?.reason, "Held at 8 because 1 reviewed file was not read.")
+		assert.include(one?.factors ?? [], "1 file not read")
+		const many = confidencePrReview(reportWith([], { unreviewed: ["a.ts", "b.ts", "c.ts"] }))
+		assert.equal(many?.confidence, 6)
+		assert.equal(many?.reason, "Held at 6 because 3 reviewed files were not read.")
+		// A tighter cap still says what binds.
+		assert.equal(
+			confidencePrReview(reportWith([finding("critical")], { unreviewed: ["a.ts"] }))?.cappedBy,
+			"critical",
+		)
+	})
+
+	it("lets the reviewer lower the number by two points or raise it by one, never past a cap", () => {
+		assert.equal(score([], { confidence: 1 }), 8)
+		assert.equal(score([], { confidence: 9 }), 9)
+		assert.equal(score([], { tests: "partial", risk: "medium", confidence: 10 }), 9)
+		assert.equal(score([finding("warn")], { confidence: 10 }), 8)
+		assert.equal(score([finding("warn"), finding("warn")], { confidence: 10 }), 7)
+		assert.equal(confidencePrReview(reportWith([], { confidence: 9 }))?.reason, "why")
 	})
 
 	it("keeps a known test or risk signal and drops an unknown one", () => {
@@ -414,8 +445,8 @@ describe("confidencePrReview", () => {
 	})
 
 	it("normalizes a quoted or out-of-range number from the model", () => {
-		const high = normalizePrReviewSubmission({ verdict: "clean", summary: "s", confidence: "9" }).report
-		assert.equal(high.confidence, 5)
+		const high = normalizePrReviewSubmission({ verdict: "clean", summary: "s", confidence: "14" }).report
+		assert.equal(high.confidence, 10)
 		const low = normalizePrReviewSubmission({ verdict: "clean", summary: "s", confidence: 0.2 }).report
 		assert.equal(low.confidence, 1)
 	})

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatValueByUnit } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 
 import { buildRowKeys, formatCellValue } from "./table-widget"
 
@@ -14,7 +14,7 @@ describe("formatCellValue", () => {
 
 	it("leaves non-numeric and unitless values untouched", () => {
 		expect(formatCellValue("checkout", "percent")).toBe("checkout")
-		expect(formatCellValue(null, "percent")).toBe("-")
+		expect(formatCellValue(null, "percent")).toBe(EMPTY_VALUE)
 		expect(formatCellValue("raw", undefined)).toBe("raw")
 	})
 
@@ -30,14 +30,6 @@ describe("formatCellValue", () => {
 	it("formats byte columns the way charts and stat tiles do", () => {
 		expect(formatCellValue(314_572_800, "bytes")).toBe(formatValueByUnit(314_572_800, "bytes"))
 		expect(formatCellValue(314_572_800, "bytes")).not.toBe("314572800")
-	})
-
-	// The delegation is the point: every unit @maple/ui knows must render
-	// identically in a table, so the two can never drift apart again.
-	it("matches formatValueByUnit for every shared unit", () => {
-		for (const unit of ["bytes", "number", "percent", "duration_ms", "duration_s", "requests_per_sec"]) {
-			expect(formatCellValue(1536, unit), unit).toBe(formatValueByUnit(1536, unit))
-		}
 	})
 })
 

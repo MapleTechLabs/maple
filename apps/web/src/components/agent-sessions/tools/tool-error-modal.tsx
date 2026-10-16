@@ -1,11 +1,17 @@
+import { MiniBars } from "@maple/ui/components/ui/mini-bars"
 import { useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { Meter } from "@maple/ui/components/ui/meter"
 import { Dialog, DialogPopup } from "@maple/ui/components/ui/dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { formatPercent, pluralize } from "@maple/ui/lib/format"
 
 import {
 	CheckIcon,
@@ -17,7 +23,8 @@ import {
 	LinkIcon,
 	XmarkIcon,
 } from "@/components/icons"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
+import { RelativeTime } from "@/components/common/relative-time"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
@@ -45,7 +52,7 @@ import {
 	type VariantDifference,
 } from "@/lib/agent-sessions/tool-error-display"
 
-import { ErrorTextHeading, FailureStatusLine, TrendBars, windowRangeLabel } from "./tool-error-parts"
+import { ErrorTextHeading, FailureStatusLine, windowRangeLabel } from "./tool-error-parts"
 import type { PreparedToolError, ToolErrorsWindow } from "./tool-errors-table"
 
 /** One group's facts, read once per group — they do not page. */
@@ -159,7 +166,7 @@ export function ToolErrorModal({
 		return new Map(detail.variants.map((row, index) => [row.message, found[index]!] as const))
 	}, [detail.variants])
 
-	const share = toolFailures > 0 ? Math.round((group.calls / toolFailures) * 100) : 0
+	const share = formatPercent(toolFailures > 0 ? group.calls / toolFailures : 0, { floor: 0.01 })
 	const samplesTotal =
 		variant !== undefined && session === undefined
 			? (detail.variants.find((row) => row.message === variant)?.calls ?? samples.occurrences.length)
@@ -199,7 +206,7 @@ export function ToolErrorModal({
 				<div data-slot="tool-error-modal" className="flex min-h-0 min-w-0 grow flex-col">
 					<header className="flex shrink-0 items-start gap-8 border-b border-border px-6 pt-5 pb-[18px] max-lg:flex-col max-lg:gap-4">
 						<div className="flex min-w-0 flex-1 flex-col gap-2.5">
-							<div className="flex flex-wrap items-center gap-2.5 font-mono text-[11px] leading-3.5 text-muted-foreground/80">
+							<div className="flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/80">
 								<span>{tool}</span>
 								<span className="text-muted-foreground/40">/</span>
 								<span>errors</span>
@@ -208,7 +215,7 @@ export function ToolErrorModal({
 									{position.index + 1} of {position.total}
 								</span>
 								{group.errorType === "" ? null : (
-									<span className="ml-1 rounded-sm border border-border px-[5px] text-[10.5px] text-muted-foreground/70">
+									<span className="ml-1 rounded-sm border border-border px-[5px] text-2xs text-muted-foreground/70">
 										error.type {group.errorType}
 									</span>
 								)}
@@ -231,14 +238,14 @@ export function ToolErrorModal({
 							) : (
 								<ErrorTextHeading tokens={tokens} />
 							)}
-							<div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-[11.5px] leading-3.5">
+							<div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5">
 								<Facts
 									items={[
 										<span key="calls" className="text-foreground">
 											{formatToolCount(group.calls)} failed call
 											{group.calls === 1 ? "" : "s"}
 										</span>,
-										`${share}% of failures`,
+										`${share} of failures`,
 										`${formatToolCount(group.sessions)} session${group.sessions === 1 ? "" : "s"}`,
 										`first seen ${formatTimestampInTimezone(group.firstSeen, { timeZone: effectiveTimezone })}`,
 										`last seen ${formatTimestampInTimezone(group.lastSeen, { timeZone: effectiveTimezone })}`,
@@ -250,20 +257,26 @@ export function ToolErrorModal({
 						<div className="flex w-[340px] shrink-0 flex-col items-end gap-3.5 max-lg:items-start">
 							<div className="flex items-center gap-2">
 								<IconButton
+									variant="outline"
+									className="text-muted-foreground hover:text-foreground"
 									label="Previous error"
 									disabled={position.index === 0}
 									onClick={() => onStep(-1)}
 								>
-									<ChevronUpIcon size={12} aria-hidden />
+									<ChevronUpIcon aria-hidden />
 								</IconButton>
 								<IconButton
+									variant="outline"
+									className="text-muted-foreground hover:text-foreground"
 									label="Next error"
 									disabled={position.index >= position.total - 1}
 									onClick={() => onStep(1)}
 								>
-									<ChevronDownIcon size={12} aria-hidden />
+									<ChevronDownIcon aria-hidden />
 								</IconButton>
 								<IconButton
+									variant="outline"
+									className="text-muted-foreground hover:text-foreground"
 									label={
 										linkCopy === "failed"
 											? "Copy failed"
@@ -279,9 +292,9 @@ export function ToolErrorModal({
 									}}
 								>
 									{linkCopy === "copied" ? (
-										<CheckIcon size={12} aria-hidden />
+										<CheckIcon aria-hidden />
 									) : (
-										<LinkIcon size={12} aria-hidden />
+										<LinkIcon aria-hidden />
 									)}
 								</IconButton>
 								<Link
@@ -289,7 +302,7 @@ export function ToolErrorModal({
 									// The sessions list reads `tools`, not `toolNames` — see its
 									// own search schema.
 									search={{ tools: [tool], hasErrors: true }}
-									className="inline-flex h-[30px] items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-[11.5px] text-foreground transition-colors hover:bg-muted/50"
+									className="inline-flex h-[30px] items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-2xs text-foreground transition-colors hover:bg-muted/50"
 								>
 									Open in Sessions
 									<ExternalLinkIcon
@@ -299,20 +312,28 @@ export function ToolErrorModal({
 									/>
 								</Link>
 								<IconButton label="Close" onClick={onClose}>
-									<XmarkIcon size={12} aria-hidden />
+									<XmarkIcon aria-hidden />
 								</IconButton>
 							</div>
 							<div className="flex w-[340px] flex-col gap-1.5">
 								<div className="flex items-baseline justify-between font-mono">
-									<span className="text-[10.5px] uppercase leading-3.5 tracking-[0.07em] text-muted-foreground/80">
+									<Eyebrow variant="mono" className="leading-3.5">
 										Failed calls / {bucket.unit}
-									</span>
-									<span className="text-[11px] leading-3.5 tabular-nums text-muted-foreground/70">
+									</Eyebrow>
+									<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 										max {formatToolCount(Math.max(0, ...group.spark))}
 									</span>
 								</div>
-								<TrendBars counts={group.spark} width={340} height={44} radius={2} />
-								<div className="flex justify-between font-mono text-[10.5px] leading-3.5 text-muted-foreground/70">
+								<MiniBars
+									values={group.spark}
+									color="var(--color-severity-error)"
+									floor={4.5}
+									floorColor="var(--input)"
+									minHeight={6.8}
+									gap={group.spark.length > 12 ? 0.3 : 3.5}
+									className="h-11 w-[340px] shrink-0"
+								/>
+								<div className="flex justify-between font-mono text-2xs leading-3.5 text-muted-foreground/70">
 									<span>
 										{windowRangeLabel(range.startMs, range.startMs, effectiveTimezone)}
 									</span>
@@ -340,9 +361,9 @@ export function ToolErrorModal({
 					<div className="flex min-h-0 grow max-md:flex-col">
 						<aside className="flex w-[340px] shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-border bg-sidebar max-md:h-56 max-md:w-full max-md:border-r-0 max-md:border-b">
 							{detailFailure !== undefined ? (
-								<QueryErrorState
+								<ErrorState
 									error={detailFailure}
-									titleOverride="Failed to load this error's details"
+									title="Failed to load this error's details"
 								/>
 							) : (
 								<>
@@ -401,33 +422,7 @@ function Facts({ items }: { items: ReadonlyArray<ReactNode> }) {
 	)
 }
 
-function IconButton({
-	label,
-	disabled,
-	onClick,
-	children,
-}: {
-	label: string
-	disabled?: boolean
-	onClick: () => void
-	children: ReactNode
-}) {
-	return (
-		<button
-			type="button"
-			aria-label={label}
-			title={label}
-			disabled={disabled}
-			onClick={onClick}
-			className="inline-flex size-[30px] shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground"
-		>
-			{children}
-		</button>
-	)
-}
-
-const railTitle = "font-mono text-[12.5px] font-medium text-foreground"
-const railLabel = "font-mono text-[10.5px] uppercase leading-3.5 tracking-[0.07em] text-muted-foreground/80"
+const railTitle = "font-mono text-xs font-medium text-foreground"
 
 /** The raw texts a group folded, where there is more than one. Picking one
  *  narrows the samples to it. */
@@ -450,7 +445,7 @@ function VariantsSection({
 		<section className="flex flex-col gap-2 border-b border-border p-4">
 			<div className="flex items-baseline gap-2 pb-1">
 				<span className={railTitle}>Variants</span>
-				<span className="font-mono text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+				<span className="font-mono text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 					{formatToolCount(total)} raw messages
 				</span>
 			</div>
@@ -488,19 +483,20 @@ function VariantsSection({
 								</>
 							)}
 						</span>
-						<span className="h-1 w-12 shrink-0 overflow-hidden rounded-[2px] bg-muted">
-							<span
-								className="block h-full bg-[var(--severity-error)]"
-								style={{ width: `${Math.max(4, (row.calls / max) * 100)}%` }}
-							/>
-						</span>
+						<Meter
+							value={row.calls}
+							max={max}
+							minVisible={4}
+							tone="crit"
+							className="w-12 shrink-0 rounded-xs bg-muted"
+						/>
 						<span className="w-7 shrink-0 text-right tabular-nums text-foreground">
 							{formatToolCount(row.calls)}
 						</span>
 					</button>
 				)
 			})}
-			<p className="pt-1 font-mono text-[11px] leading-[15px] text-muted-foreground/70">
+			<p className="pt-1 font-mono text-2xs leading-[15px] text-muted-foreground/70">
 				{onlyIndex
 					? "Grouped because only the array index differs."
 					: "Grouped because only masked values differ."}{" "}
@@ -554,7 +550,9 @@ function Breakdown({
 	const max = rows[0]?.[1] ?? 1
 	return (
 		<div className="flex flex-col gap-1.5">
-			<span className={railLabel}>{label}</span>
+			<Eyebrow variant="mono" className="leading-3.5">
+				{label}
+			</Eyebrow>
 			{rows.map(([key, calls], index) => (
 				<div key={key} className="flex items-center gap-2.5 font-mono text-xs leading-4">
 					<span
@@ -566,12 +564,13 @@ function Breakdown({
 					>
 						{key === "" ? blank : key}
 					</span>
-					<span className="h-1 w-14 shrink-0 overflow-hidden rounded-[2px] bg-muted">
-						<span
-							className="block h-full bg-muted-foreground"
-							style={{ width: `${Math.max(4, (calls / max) * 100)}%` }}
-						/>
-					</span>
+					<Meter
+						value={calls}
+						max={max}
+						minVisible={4}
+						fillClassName="bg-muted-foreground"
+						className="w-14 shrink-0 rounded-xs bg-muted"
+					/>
 					<span
 						className={cn(
 							"w-10 shrink-0 text-right tabular-nums",
@@ -648,45 +647,46 @@ function SessionsSection({
 	onSelect: (session: string | undefined) => void
 	loading?: boolean
 }) {
-	const { effectiveTimezone } = useTimezonePreference()
-	const relative = (ms: number) => formatRelativeTimeOrDate(ms, undefined, effectiveTimezone)
 	const rowClass = (isSelected: boolean) =>
 		cn(
-			"group relative flex w-full shrink-0 items-center gap-3 border-b border-l-2 border-border/50 pr-4 pl-3.5 text-left transition-colors",
-			isSelected ? "border-l-primary bg-primary/10" : "border-l-transparent hover:bg-muted/30",
+			"group flex w-full shrink-0 items-center gap-3 border-b border-border/50 pr-4 pl-4 text-left transition-colors",
+			rowSelectedClass(isSelected),
+			!isSelected && "hover:bg-muted/30",
 		)
 
 	return (
 		<section className="flex flex-col">
 			<div className="flex items-baseline gap-2 px-4 pt-4 pb-2.5">
 				<span className={railTitle}>Sessions</span>
-				<span className="font-mono text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+				<span className="font-mono text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 					{formatToolCount(total)}
 				</span>
 			</div>
-			<div
-				className={cn(
-					"flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-4",
-					railLabel,
-				)}
+			<Eyebrow
+				variant="mono"
+				as="div"
+				className="flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-4"
 			>
 				<span className="grow">Session</span>
 				<span className="w-10 shrink-0 text-right">Hits</span>
 				<span className="w-14 shrink-0 text-right">Last</span>
-			</div>
+			</Eyebrow>
 			<button
 				type="button"
 				aria-pressed={selected === undefined}
 				onClick={() => onSelect(undefined)}
 				className={cn(rowClass(selected === undefined), "h-10")}
 			>
-				<span className="grow font-mono text-[12.5px] font-medium text-foreground">All sessions</span>
+				<span className="grow font-mono text-xs font-medium text-foreground">All sessions</span>
 				<span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
 					{formatToolCount(calls)}
 				</span>
-				<span className="w-14 shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground/70">
-					{relative(lastSeen)}
-				</span>
+				<RelativeTime
+					value={lastSeen}
+					variant="orDate"
+					tooltip="title"
+					className="w-14 shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70"
+				/>
 			</button>
 			{loading && rows.length === 0 ? (
 				<div className="flex flex-col gap-1.5 px-4 py-3">
@@ -713,7 +713,7 @@ function SessionsSection({
 									sessionId={row.sessionId}
 									className="max-w-full font-mono text-xs"
 								/>
-								<span className="w-full truncate font-mono text-[11px] leading-3.5 text-muted-foreground/70">
+								<span className="w-full truncate font-mono text-2xs leading-3.5 text-muted-foreground/70">
 									{row.service === ""
 										? row.agentName === ""
 											? row.vendorId
@@ -724,9 +724,12 @@ function SessionsSection({
 							<span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
 								{formatToolCount(row.hits)}
 							</span>
-							<span className="w-14 shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground/70">
-								{relative(row.lastSeen)}
-							</span>
+							<RelativeTime
+								value={row.lastSeen}
+								variant="orDate"
+								tooltip="title"
+								className="w-14 shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70"
+							/>
 						</div>
 					)
 				})
@@ -785,40 +788,44 @@ function SamplesPane({
 		<div className="flex min-w-0 grow flex-col overflow-hidden">
 			<div className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-6 font-mono">
 				<div className="flex items-baseline gap-2">
-					<span className="text-[12.5px] font-medium text-foreground">Samples</span>
-					<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
-						{formatToolCount(total)} failed call{total === 1 ? "" : "s"} · newest first
+					<span className="text-xs font-medium text-foreground">Samples</span>
+					<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
+						{formatToolCount(total)} failed {pluralize(total, "call")} · newest first
 					</span>
 				</div>
 				<div className="flex items-center gap-2">
-					<span className="pr-1 text-[11px] text-muted-foreground/60 max-md:hidden">j / k</span>
-					<button
-						type="button"
-						aria-label="Newer sample"
+					<span className="pr-1 text-2xs text-muted-foreground/60 max-md:hidden">j / k</span>
+					<IconButton
+						variant="outline"
+						size="icon-xs"
+						label="Newer sample"
+						shortcut="k"
 						disabled={current === 0}
 						onClick={() => select(current - 1)}
-						className="inline-flex size-[26px] items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+						className="text-muted-foreground hover:text-foreground"
 					>
-						<ChevronLeftIcon size={12} aria-hidden />
-					</button>
+						<ChevronLeftIcon aria-hidden />
+					</IconButton>
 					<span className="w-[72px] text-center text-xs tabular-nums text-foreground">
 						{rows.length === 0 ? 0 : current + 1} of {formatToolCount(total)}
 					</span>
-					<button
-						type="button"
-						aria-label="Older sample"
+					<IconButton
+						variant="outline"
+						size="icon-xs"
+						label="Older sample"
+						shortcut="j"
 						disabled={current >= rows.length - 1 && samples.paging !== "more"}
 						onClick={() => select(current + 1)}
-						className="inline-flex size-[26px] items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+						className="text-muted-foreground hover:text-foreground"
 					>
-						<ChevronRightIcon size={12} aria-hidden />
-					</button>
+						<ChevronRightIcon aria-hidden />
+					</IconButton>
 				</div>
 			</div>
 
 			<div className="min-h-0 grow overflow-y-auto overscroll-contain">
 				{samples.failure !== undefined ? (
-					<QueryErrorState error={samples.failure} titleOverride="Failed to load samples" />
+					<ErrorState error={samples.failure} title="Failed to load samples" />
 				) : samples.loading && rows.length === 0 ? (
 					<div className="flex flex-col gap-1.5 px-6 py-3">
 						<Skeleton className="h-10" />
@@ -868,7 +875,7 @@ function SamplesPane({
 							<button
 								type="button"
 								onClick={samples.onLoadMore}
-								className="text-[var(--severity-error)] transition-colors hover:text-foreground"
+								className="text-severity-error transition-colors hover:text-foreground"
 							>
 								Couldn't load more — retry
 							</button>
@@ -917,7 +924,7 @@ function Sample({
 					className="absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 				/>
 				<Chevron size={12} className="shrink-0 text-muted-foreground" aria-hidden />
-				<span className="shrink-0 text-[12.5px] text-foreground">{time}</span>
+				<span className="shrink-0 text-xs text-foreground">{time}</span>
 				<span className="flex min-w-0 shrink items-center gap-[5px] text-xs">
 					<span className="shrink-0 text-muted-foreground/70">session</span>
 					<SessionLink
@@ -938,13 +945,13 @@ function Sample({
 					</span>
 				)}
 				{variant === undefined || variant === "" ? null : (
-					<span className="hidden shrink-0 rounded-sm border border-border px-[5px] text-[10.5px] leading-3.5 text-muted-foreground/70 md:block">
+					<span className="hidden shrink-0 rounded-sm border border-border px-[5px] text-2xs leading-3.5 text-muted-foreground/70 md:block">
 						variant <span className="text-foreground/85">{variant}</span>
 					</span>
 				)}
 				<span className="grow" />
 				{open || row.argumentsBytes === 0 ? null : (
-					<span className="hidden shrink-0 text-[11.5px] tabular-nums text-muted-foreground/70 md:block">
+					<span className="hidden shrink-0 text-2xs tabular-nums text-muted-foreground/70 md:block">
 						args {formatToolCount(row.argumentsBytes)} B
 					</span>
 				)}
@@ -957,7 +964,7 @@ function Sample({
 					// The call's own timestamp narrows the trace read to one partition;
 					// without it the detail page scans every retained day.
 					search={{ spanId: row.spanId, t: formatWarehouseDateTime(row.timestamp) }}
-					className="relative flex shrink-0 items-center gap-[5px] text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+					className="relative flex shrink-0 items-center gap-[5px] text-2xs text-muted-foreground transition-colors hover:text-foreground"
 				>
 					Open trace
 					<ExternalLinkIcon size={11} aria-hidden />
@@ -978,10 +985,10 @@ function SampleBody({ row }: { row: ToolErrorOccurrenceRow }) {
 	return (
 		<div className="flex flex-col gap-3.5 pr-6 pb-5 pl-[50px]">
 			{hint === undefined ? null : (
-				<div className="flex items-baseline gap-3 rounded-md border border-[var(--severity-error)]/20 bg-[var(--severity-error)]/[0.07] px-3 py-[9px] font-mono">
-					<span className="shrink-0 text-[10.5px] uppercase leading-4 tracking-[0.07em] text-[var(--severity-error)]">
+				<div className="flex items-baseline gap-3 rounded-md border border-severity-error/20 bg-severity-error/[0.07] px-3 py-[9px] font-mono">
+					<Eyebrow variant="label" className="shrink-0 leading-4 text-severity-error">
 						What's wrong
-					</span>
+					</Eyebrow>
 					<span className="text-xs leading-4 text-foreground/85">
 						<span className="font-medium text-foreground">{hint.subject}</span> {hint.text}
 					</span>
@@ -989,12 +996,9 @@ function SampleBody({ row }: { row: ToolErrorOccurrenceRow }) {
 			)}
 			{row.arguments === "" && row.result === "" ? (
 				<div className="flex items-start gap-3 rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono">
-					<span
-						aria-hidden
-						className="mt-[5px] size-1.5 shrink-0 rounded-full bg-muted-foreground"
-					/>
+					<StatusDot tone="custom" className="mt-[5px] bg-muted-foreground" />
 					<span className="flex flex-col gap-1">
-						<span className="text-[12.5px] leading-4 text-foreground">
+						<span className="text-xs leading-4 text-foreground">
 							The tool reported no error detail
 						</span>
 						<span className="text-xs leading-[17px] text-muted-foreground">
@@ -1025,10 +1029,8 @@ function PayloadHead({
 }) {
 	return (
 		<div className="flex items-center gap-2 font-mono leading-3.5">
-			<span className="text-[10.5px] uppercase tracking-[0.07em] text-muted-foreground/80">
-				{label}
-			</span>
-			<span className="truncate text-[10.5px] text-muted-foreground/50">
+			<Eyebrow variant="mono">{label}</Eyebrow>
+			<span className="truncate text-2xs text-muted-foreground/50">
 				{attribute}
 				{bytes > 0 ? ` · ${formatToolCount(bytes)} B` : null}
 			</span>
@@ -1042,7 +1044,7 @@ function NotRecorded({ what }: { what: "arguments" | "result" }) {
 	return (
 		<div className="flex flex-col gap-1 rounded-md border border-dashed border-input p-3.5 font-mono">
 			<span className="text-xs text-muted-foreground">Not recorded</span>
-			<span className="text-[11px] leading-[15px] text-muted-foreground/70">
+			<span className="text-2xs leading-[15px] text-muted-foreground/70">
 				The span has no {what} attribute.
 			</span>
 		</div>
@@ -1098,7 +1100,7 @@ function ArgumentsBlock({
 								() => setCopy("failed"),
 							)
 						}
-						className="font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+						className="font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground"
 					>
 						{copy === "failed" ? "Copy failed" : copy === "copied" ? "Copied" : "Copy"}
 					</button>
@@ -1115,7 +1117,7 @@ function ArgumentsBlock({
 					))}
 				</div>
 			)}
-			<div className="flex items-center gap-2.5 font-mono text-[11px] leading-3.5 text-muted-foreground/70">
+			<div className="flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/70">
 				<span>
 					{truncatedByRead
 						? `The first ${formatToolCount(row.arguments.length)} characters of ${formatToolCount(row.argumentsBytes)} B`
@@ -1143,12 +1145,12 @@ function PayloadLineView({ line }: { line: PayloadLine }) {
 		<div
 			className={cn(
 				"pr-3.5",
-				line.highlight && "border-l-2 border-l-[var(--severity-error)] bg-[var(--severity-error)]/10",
+				line.highlight && "border-l-2 border-l-severity-error bg-severity-error/10",
 			)}
 			style={{ paddingLeft: 14 + line.depth * 16 - (line.highlight ? 2 : 0) }}
 		>
 			{line.missingKey !== undefined ? (
-				<span className="my-0.5 inline-flex items-center gap-2 rounded-[3px] border border-dashed border-[var(--severity-error)]/60 px-1.5 text-[11px] leading-4 text-[var(--severity-error)]">
+				<span className="my-0.5 inline-flex items-center gap-2 rounded-[3px] border border-dashed border-severity-error/60 px-1.5 text-2xs leading-4 text-severity-error">
 					"{line.missingKey}"<span className="opacity-80">missing, required</span>
 				</span>
 			) : (
@@ -1166,15 +1168,15 @@ function PayloadLineView({ line }: { line: PayloadLine }) {
 				</span>
 			)}
 			{line.folded === undefined ? null : (
-				<span className="ml-2 rounded-[3px] bg-muted px-1 text-[10.5px] text-muted-foreground">
+				<span className="ml-2 rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground">
 					{line.folded}
 				</span>
 			)}
 			{line.note === undefined ? null : (
-				<div className="flex items-center gap-2.5 pb-1 text-[11px] leading-3.5">
-					<span className="text-[var(--severity-error)]">↑ {line.note.text}</span>
+				<div className="flex items-center gap-2.5 pb-1 text-2xs leading-3.5">
+					<span className="text-severity-error">↑ {line.note.text}</span>
 					{line.note.hiddenBytes > 0 ? (
-						<span className="rounded-[3px] bg-muted px-1 text-[10.5px] text-muted-foreground">
+						<span className="rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground">
 							+{formatToolCount(line.note.hiddenBytes)} B not shown
 						</span>
 					) : null}
@@ -1193,12 +1195,12 @@ function ResultBlock({ row }: { row: ToolErrorOccurrenceRow }) {
 			{row.result === "" ? (
 				<NotRecorded what="result" />
 			) : (
-				<pre className="max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--severity-error)]/25 bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/85">
+				<pre className="max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error/25 bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/85">
 					{parsed === undefined ? row.result : JSON.stringify(parsed, null, 2)}
 				</pre>
 			)}
 			{source === undefined ? null : (
-				<span className="font-mono text-[11px] leading-3.5 text-muted-foreground/70">
+				<span className="font-mono text-2xs leading-3.5 text-muted-foreground/70">
 					Error message read from {source}
 				</span>
 			)}

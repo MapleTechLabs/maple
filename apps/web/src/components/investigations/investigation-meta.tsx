@@ -18,11 +18,12 @@ import { Link } from "@tanstack/react-router"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import type { IssueEscalationAttemptDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { formatNumber } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { investigationOriginLabel } from "./investigation-status"
+import { SectionHeading } from "@/components/common/section-heading"
 
 export function InvestigationMeta({ investigation }: { investigation: V2Investigation }) {
 	const { snapshot, subject } = investigation
@@ -30,9 +31,7 @@ export function InvestigationMeta({ investigation }: { investigation: V2Investig
 
 	return (
 		<section className="flex shrink-0 flex-col gap-3 border-t pt-5">
-			<h2 className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-				Linked
-			</h2>
+			<SectionHeading variant="eyebrow" title="Linked" className="mb-0" />
 			{/*
 			 * A wrapping row of labelled pairs rather than the rail's stacked list.
 			 * The rail stacked them because it was 320px wide; across the full page a
@@ -96,7 +95,7 @@ function Provenance({ investigation }: { investigation: V2Investigation }) {
 	const tokens =
 		input === null && output === null
 			? null
-			: `${input === null ? "—" : formatNumber(input)} in · ${output === null ? "—" : formatNumber(output)} out`
+			: `${input === null ? EMPTY_VALUE : formatNumber(input)} in · ${output === null ? EMPTY_VALUE : formatNumber(output)} out`
 
 	const opened =
 		investigation.seeded_by === "system"
@@ -104,7 +103,7 @@ function Provenance({ investigation }: { investigation: V2Investigation }) {
 			: "Opened by a member of your team"
 
 	return (
-		<p className="text-[11px] text-muted-foreground">
+		<p className="text-2xs text-muted-foreground">
 			{[model, tokens, opened].filter(Boolean).join(" · ")}
 		</p>
 	)
@@ -126,7 +125,7 @@ function Escalation({
 	issueId: NonNullable<Extract<V2Investigation["subject"], { type: "incident" }>["issue_id"]>
 }) {
 	const result = useAtomValue(
-		retainedQuery("errors", "listIssueEscalations", {
+		retainedInternalQuery("errors", "listIssueEscalations", {
 			params: { issueId },
 			reactivityKeys: [`errorIssue:${issueId}:escalations`],
 		}),
@@ -141,7 +140,9 @@ function Escalation({
 			return (
 				<Pair label="Escalation">
 					<span
-						className={cn(attempt.status === "failed" ? "text-destructive" : "text-foreground")}
+						className={cn(
+							attempt.status === "failed" ? "text-severity-error" : "text-foreground",
+						)}
 						title={attempt.deliveries
 							.map(
 								(delivery) =>
@@ -151,7 +152,7 @@ function Escalation({
 					>
 						{ESCALATION_LABEL[attempt.status]}
 						{attempt.deliveries.length > 0
-							? ` · ${attempt.deliveries.length} destination${attempt.deliveries.length === 1 ? "" : "s"}`
+							? ` · ${countLabel(attempt.deliveries.length, "destination")}`
 							: ""}
 						{failed > 0 ? ` · ${failed} failed` : ""}
 					</span>

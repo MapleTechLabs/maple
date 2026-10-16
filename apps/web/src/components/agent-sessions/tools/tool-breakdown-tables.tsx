@@ -1,15 +1,22 @@
 import { useMemo, type ReactNode } from "react"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { Link } from "@tanstack/react-router"
 
 import { cn } from "@maple/ui/lib/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { Eyebrow, eyebrowVariants } from "@maple/ui/components/ui/eyebrow"
+import { Meter } from "@maple/ui/components/ui/meter"
+import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
+import { PlotSparkline } from "@maple/ui/components/plot"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
+import { ERROR_RATE_FILL, ERROR_RATE_TEXT, errorRateLevel, formatErrorRate } from "@maple/ui/lib/error-rate"
 
-import { QueryErrorState } from "@/components/common/query-error-state"
-import { useTableSort, type SortDir } from "@/components/infra/primitives/data-table"
-import { relativeRatio } from "@/components/infra/primitives/share-bar"
+import { ErrorState } from "@/components/common/error-state"
+import { RelativeTime } from "@/components/common/relative-time"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { useTableSort, type SortDir } from "@/components/common/data-table"
 import { ArrowUpDownIcon, ChevronRightIcon } from "@/components/icons"
-import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import type { ToolDetailLinkSearch } from "@/lib/agent-sessions/tool-search"
 import {
 	breakdownKeyLabel,
@@ -36,7 +43,7 @@ import {
  * `w-0 flex-1` name lane contributes nothing to that measure, so the table is
  * exactly as wide as its numbers need and the name takes whatever is left.
  */
-export function Table({ children, className }: { children: ReactNode; className?: string }) {
+export function ToolTable({ children, className }: { children: ReactNode; className?: string }) {
 	return (
 		<div className={cn("overflow-x-auto", className)}>
 			<div className="min-w-fit">{children}</div>
@@ -45,7 +52,7 @@ export function Table({ children, className }: { children: ReactNode; className?
 }
 
 /** A column head row: 30px, hairline above and below. The body scrolls under it. */
-export function TableHead({ children, className }: { children: ReactNode; className?: string }) {
+export function ToolTableHead({ children, className }: { children: ReactNode; className?: string }) {
 	return (
 		<div
 			className={cn(
@@ -83,7 +90,7 @@ export function Th<K extends string>({
 	hidden?: string
 }) {
 	const active = sortKey !== undefined && currentKey === sortKey
-	const text = "font-mono text-[10.5px] uppercase leading-3.5 tracking-[0.07em] transition-colors"
+	const text = cn(eyebrowVariants({ variant: "mono" }), "transition-colors")
 	return (
 		<div className={cn("flex items-center", align === "right" && "justify-end", width, hidden)}>
 			{sortKey !== undefined ? (
@@ -93,7 +100,7 @@ export function Th<K extends string>({
 					className={cn(
 						"inline-flex items-center gap-1",
 						text,
-						active ? "text-foreground" : "text-muted-foreground/80 hover:text-foreground",
+						active ? "text-foreground" : "hover:text-foreground",
 					)}
 				>
 					{label}
@@ -107,7 +114,7 @@ export function Th<K extends string>({
 					/>
 				</button>
 			) : (
-				<span className={cn(text, "text-muted-foreground/80")}>{label}</span>
+				<Eyebrow variant="mono">{label}</Eyebrow>
 			)}
 		</div>
 	)
@@ -115,7 +122,7 @@ export function Th<K extends string>({
 
 /** Rows scroll inside this once a list outgrows it, so one long table never
  *  pushes the sections under it off the page. */
-export function TableBody({
+export function ToolTableBody({
 	maxHeight = 460,
 	waiting,
 	children,
@@ -126,7 +133,8 @@ export function TableBody({
 }) {
 	return (
 		<div
-			className={cn("overflow-y-auto transition-opacity", waiting && "opacity-60")}
+			className={cn("overflow-y-auto", refreshingClass(waiting ?? false))}
+			aria-busy={waiting || undefined}
 			style={{ maxHeight }}
 		>
 			{children}
@@ -139,17 +147,16 @@ export function TableBody({
  * only a selected row paints — so rows never shift sideways as a selection
  * moves. The same mark the metric strip uses.
  */
-export const ROW =
-	"relative flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border/50 px-2.5 text-left transition-colors last:border-0 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:transition-colors focus-visible:outline-none"
-export const ROW_SELECTED = "bg-muted/50 before:bg-primary"
-export const ROW_IDLE = "before:bg-transparent hover:bg-muted/30 focus-visible:bg-muted/30"
+const ROW =
+	"flex h-[38px] w-full shrink-0 items-center gap-3 border-b border-border/50 px-2.5 text-left transition-colors last:border-0 focus-visible:outline-none"
 
-export function TableEmpty({ children }: { children: ReactNode }) {
-	return <div className="px-2.5 py-12 text-center font-mono text-xs text-muted-foreground">{children}</div>
+/** A row's classes: the shared selection lane, with a hover tint only while unselected. */
+export function toolRowClass(selected: boolean): string {
+	return cn(ROW, rowSelectedClass(selected), !selected && "hover:bg-muted/30 focus-visible:bg-muted/30")
 }
 
 /** The table's closing line: what is on screen, then the totals behind it. */
-export function TableFooter({ subject, detail }: { subject: string; detail: string }) {
+export function ToolTableFooter({ subject, detail }: { subject: string; detail: string }) {
 	return (
 		<div className="flex h-9 items-center gap-[9px] px-2.5 font-mono text-xs">
 			<span className="text-muted-foreground">{subject}</span>
@@ -158,19 +165,13 @@ export function TableFooter({ subject, detail }: { subject: string; detail: stri
 	)
 }
 
-/**
- * Error rate → severity tone. Thresholds rather than a gradient because the
- * question is triage-shaped: under 1% is background noise for a tool that runs
- * thousands of times, over 10% is something a person should look at today.
- */
-export function errorTone(rate: number): { bar: string; text: string } {
-	if (rate >= 0.1) return { bar: "bg-[var(--severity-error)]", text: "text-[var(--severity-error)]" }
-	if (rate >= 0.01) return { bar: "bg-[var(--severity-warn)]", text: "text-[var(--severity-warn)]" }
-	return { bar: "bg-[var(--severity-info)]", text: "text-muted-foreground" }
-}
-
-export function formatRate(rate: number): string {
-	return rate === 0 ? "0%" : `${(rate * 100).toFixed(rate < 0.01 ? 2 : 1)}%`
+/** Error rate → severity tone, on the app-wide thresholds (lib/error-rate). */
+function errorTone(rate: number): { bar: string; text: string } {
+	const level = errorRateLevel(rate)
+	return {
+		bar: ERROR_RATE_FILL[level],
+		text: level === "neutral" ? "text-muted-foreground" : ERROR_RATE_TEXT[level],
+	}
 }
 
 /**
@@ -193,43 +194,19 @@ export function ShareCell({
 	label: string
 	tone: { bar: string; text: string }
 }) {
-	const width = relativeRatio(ratio, max)
 	return (
 		<span className="flex w-[150px] shrink-0 items-center justify-end gap-2.5">
-			<span className="hidden h-1 w-[60px] shrink-0 overflow-hidden rounded-[2px] bg-muted @min-[560px]/panel:block">
-				<span
-					className={cn("block h-full", tone.bar)}
-					style={{ width: `${Math.max(width * 100, ratio > 0 ? 3 : 0)}%` }}
-				/>
-			</span>
+			<Meter
+				value={ratio}
+				max={max}
+				minVisible={3}
+				fillClassName={tone.bar}
+				className="hidden w-[60px] shrink-0 rounded-xs bg-muted @min-[560px]/panel:block"
+			/>
 			<span className={cn("w-[46px] text-right font-mono text-xs tabular-nums", tone.text)}>
 				{label}
 			</span>
 		</span>
-	)
-}
-
-/** A 110×22 line: the row's call volume over the window, in the primary. */
-export function LineSpark({ values, className }: { values: ReadonlyArray<number>; className?: string }) {
-	if (values.length < 2) return <span className="h-[22px] w-[110px] shrink-0" />
-	const max = Math.max(...values, 0.0001)
-	const step = 110 / (values.length - 1)
-	const points = values
-		.map((value, index) => {
-			const safe = Number.isFinite(value) && value >= 0 ? value : 0
-			return `${(index * step).toFixed(1)},${(20 - (safe / max) * 18).toFixed(1)}`
-		})
-		.join(" ")
-	return (
-		<svg viewBox="0 0 110 22" className={cn("h-[22px] w-[110px] shrink-0", className)} aria-hidden>
-			<polyline
-				points={points}
-				fill="none"
-				stroke="currentColor"
-				strokeWidth={1.5}
-				vectorEffect="non-scaling-stroke"
-			/>
-		</svg>
 	)
 }
 
@@ -278,7 +255,6 @@ export function ToolsTable({
 	failure,
 	waiting,
 }: ToolsTableProps) {
-	const { effectiveTimezone } = useTimezonePreference()
 	const prepared = useMemo(() => rows.map((row) => ({ ...row, errorRate: errorRate(row) })), [rows])
 	const maxErrorRate = useMemo(
 		() => prepared.reduce((max, row) => Math.max(max, row.errorRate), 0),
@@ -305,14 +281,14 @@ export function ToolsTable({
 	return (
 		<section className="@container/panel min-w-0 px-6 pt-5 pb-6" aria-label="Tools">
 			<div className="flex items-baseline gap-2.5 pb-3 font-mono">
-				<span className="text-[12.5px] font-medium text-foreground">Tools</span>
-				<span className="text-[11.5px] leading-3.5 tabular-nums text-muted-foreground/70">
+				<span className="text-xs font-medium text-foreground">Tools</span>
+				<span className="text-2xs leading-3.5 tabular-nums text-muted-foreground/70">
 					{formatToolCount(rows.length)}
 				</span>
 			</div>
 
-			<Table>
-				<TableHead>
+			<ToolTable>
+				<ToolTableHead>
 					<Th<ToolSortKey>
 						label="Tool"
 						width="w-0 flex-1 min-w-0"
@@ -399,19 +375,15 @@ export function ToolsTable({
 						hidden="hidden @min-[800px]/panel:flex"
 					/>
 					<span className="w-3.5 shrink-0" aria-hidden />
-				</TableHead>
+				</ToolTableHead>
 
-				<TableBody waiting={waiting}>
+				<ToolTableBody waiting={waiting}>
 					{failure !== undefined ? (
-						<QueryErrorState error={failure} titleOverride="Failed to load tools" />
+						<ErrorState error={failure} title="Failed to load tools" />
 					) : loading ? (
-						<div className="flex flex-col gap-1.5 px-2.5 py-3">
-							<Skeleton className="h-[38px]" />
-							<Skeleton className="h-[38px]" />
-							<Skeleton className="h-[38px]" />
-						</div>
+						<SkeletonList rows={3} rowClassName="h-[38px]" className="gap-1.5 px-2.5 py-3" />
 					) : sorted.length === 0 ? (
-						<TableEmpty>No tool calls in the selected window.</TableEmpty>
+						<EmptyMessage className="py-12 font-mono">No tool calls in the selected window.</EmptyMessage>
 					) : (
 						sorted.map((row) => {
 							const color = colorFor(row.key)
@@ -421,28 +393,32 @@ export function ToolsTable({
 										<span
 											aria-hidden
 											className={cn(
-												"size-2 shrink-0 rounded-[2px]",
+												"size-2 shrink-0 rounded-xs",
 												color === undefined && "bg-muted-foreground/50",
 											)}
 											style={
 												color === undefined ? undefined : { backgroundColor: color }
 											}
 										/>
-										<span
+										<TruncatedText
+											mono
 											className={cn(
-												"truncate font-mono text-[12.5px] text-foreground",
+												"text-xs text-foreground",
 												row.key === selected && "font-medium",
 											)}
-											title={breakdownKeyLabel(row.key)}
 										>
 											{breakdownKeyLabel(row.key)}
-										</span>
+										</TruncatedText>
 									</span>
-									<LineSpark
-										values={sparkFor(row.key).slice(-24)}
-										className="hidden text-primary/70 @min-[720px]/panel:block"
-									/>
-									<span className="w-[76px] shrink-0 text-right font-mono text-[12.5px] tabular-nums text-foreground">
+									{/* Display utilities go on a wrapper: PlotFrame merges its own `flex` over them. */}
+									<span className="hidden h-[22px] w-[110px] shrink-0 @min-[720px]/panel:block">
+										<PlotSparkline
+											values={sparkFor(row.key).slice(-24)}
+											color="--primary"
+											className="size-full"
+										/>
+									</span>
+									<span className="w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
 										{formatToolCount(row.calls)}
 									</span>
 									{duration(
@@ -459,15 +435,13 @@ export function ToolsTable({
 									<ShareCell
 										ratio={row.errorRate}
 										max={maxErrorRate}
-										label={formatRate(row.errorRate)}
+										label={formatErrorRate(row.errorRate)}
 										tone={errorTone(row.errorRate)}
 									/>
 									<span
 										className={cn(
 											"hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums @min-[640px]/panel:block",
-											row.errors > 0
-												? "text-[var(--severity-error)]"
-												: "text-muted-foreground/60",
+											row.errors > 0 ? TONE_TEXT.crit : "text-muted-foreground/60",
 										)}
 									>
 										{formatToolCount(row.errors)}
@@ -475,9 +449,12 @@ export function ToolsTable({
 									<span className="hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block">
 										{formatToolCount(row.sessions)}
 									</span>
-									<span className="hidden w-[96px] shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground/70 @min-[800px]/panel:block">
-										{formatRelativeTimeOrDate(row.lastSeen, undefined, effectiveTimezone)}
-									</span>
+									<RelativeTime
+										value={row.lastSeen}
+										variant="orDate"
+										tooltip="title"
+										className="hidden w-[96px] shrink-0 text-right font-mono text-2xs tabular-nums text-muted-foreground/70 @min-[800px]/panel:block"
+									/>
 									<span className="flex w-3.5 shrink-0 items-center justify-end text-muted-foreground/60">
 										{row.key === "" ? null : <ChevronRightIcon size={14} aria-hidden />}
 									</span>
@@ -487,7 +464,7 @@ export function ToolsTable({
 							// The unattributed row has no name to route on: a tool call the
 							// index could not name has no page of its own.
 							return row.key === "" ? (
-								<div key={row.key} className={cn(ROW, "before:bg-transparent")}>
+								<div key={row.key} className={toolRowClass(false)}>
 									{cells}
 								</div>
 							) : (
@@ -496,19 +473,19 @@ export function ToolsTable({
 									to="/agent-sessions/tools/$toolName"
 									params={{ toolName: row.key }}
 									search={detailSearch}
-									className={cn(ROW, row.key === selected ? ROW_SELECTED : ROW_IDLE)}
+									className={toolRowClass(row.key === selected)}
 								>
 									{cells}
 								</Link>
 							)
 						})
 					)}
-				</TableBody>
-			</Table>
+				</ToolTableBody>
+			</ToolTable>
 
 			{/* Totals of rows that have not arrived (or never will) are not totals. */}
 			{failure === undefined && !loading ? (
-				<TableFooter subject={footer.subject} detail={footer.detail} />
+				<ToolTableFooter subject={footer.subject} detail={footer.detail} />
 			) : null}
 		</section>
 	)

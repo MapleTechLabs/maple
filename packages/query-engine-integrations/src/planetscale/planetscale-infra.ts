@@ -11,10 +11,11 @@
 // the database-wide `max()` is dominated by whichever ephemeral branch spiked.
 // Scoping to a branch is what makes the chart mean anything.
 
+import type { DateTime } from "effect"
 import { finiteOrZero } from "@maple/query-engine/ch/format"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import { from, fromQuery, param } from "@maple-dev/effect-clickhouse"
-import { MetricsGauge } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
+import { MetricsGauge, orgIdParam } from "@maple/query-engine/ch/tables"
 import {
 	CONNECTION_METRIC_NAMES,
 	CPU_METRIC_NAMES,
@@ -34,7 +35,7 @@ const ALL_METRIC_NAMES = [
 ] as const
 
 export interface PlanetScaleInfraTimeseriesOutput {
-	readonly bucket: string
+	readonly bucket: DateTime.Utc
 	readonly connectionsAvg: number
 	readonly cpuMaxPercent: number
 	readonly memMaxPercent: number
@@ -94,14 +95,14 @@ const bucketOuter = (inner: ReturnType<typeof timeseriesInner>) =>
 export function planetscaleInfraTimeseriesSQL() {
 	const inner = timeseriesInner()
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...ALL_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).eq(param.string("database")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("t")
 
@@ -112,7 +113,7 @@ export function planetscaleInfraTimeseriesSQL() {
 export function planetscaleBranchInfraTimeseriesSQL() {
 	const inner = timeseriesInner()
 		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
+			$.OrgId.eq(orgIdParam),
 			$.MetricName.in_(...ALL_METRIC_NAMES),
 			CH.coalesce(
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
@@ -122,8 +123,8 @@ export function planetscaleBranchInfraTimeseriesSQL() {
 				CH.nullIf($.Attributes.get("planetscale_branch_name"), ""),
 				$.Attributes.get("planetscale_branch"),
 			).eq(param.string("branch")),
-			$.TimeUnix.gte(param.dateTimeString("startTime")),
-			$.TimeUnix.lte(param.dateTimeString("endTime")),
+			$.TimeUnix.gte(param.dateTime("startTime")),
+			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
 		.groupBy("t")
 

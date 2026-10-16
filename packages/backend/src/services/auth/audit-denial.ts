@@ -1,5 +1,5 @@
 import { Clock, Effect } from "effect"
-import type { HttpServerRequest } from "effect/unstable/http"
+import type { HttpServerRequest } from "effect/http"
 import type { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { httpRequestForensics, type AuditLogServiceApi } from "@maple/backend/services/audit/AuditLogService"
 

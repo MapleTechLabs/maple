@@ -29,10 +29,10 @@
 //   Reporters without an id are counted as they are — the page does not
 //   guess.
 
-import type { Expr } from "@maple-dev/effect-clickhouse/expr"
-import * as CH from "@maple-dev/effect-clickhouse/expr"
-import * as T from "@maple-dev/effect-clickhouse/types"
-import { compile } from "@maple-dev/effect-clickhouse/sql"
+import type { Expr } from "@maple-dev/effect-orm/expr"
+import * as CH from "@maple-dev/effect-orm/expr"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { compile } from "@maple-dev/effect-orm/sql"
 import { AI_SESSION_SPANS_MAX_SPANS } from "@maple/domain/http"
 
 /**

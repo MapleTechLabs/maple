@@ -7,7 +7,7 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Redacted } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { discord } from "./index"
 import { API_BASE, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { discordIdentityAuthorizeUrl } from "./identity"

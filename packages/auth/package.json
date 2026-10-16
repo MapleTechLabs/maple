@@ -8,10 +8,10 @@
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
-		"@clerk/backend": "^3.20.1",
+		"@clerk/backend": "^3.23.0",
 		"@maple/domain": "workspace:*",
 		"effect": "catalog:effect"
 	},

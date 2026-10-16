@@ -6,8 +6,8 @@
  * workflow tests stub every model call, so a diagnosis that invented a trace id
  * or reported "it's an unknown error" passed everything in the repo.
  *
- * Kept as pure functions over the report rather than as `vitest-evals` scorers
- * directly, so the same rules are unit-tested in the normal suite (see
+ * Kept as pure functions over the report rather than as eval scorers directly,
+ * so the same rules are unit-tested in the normal suite (see
  * `diagnosis-scorers.test.ts`) and wrapped for the model-driven eval. A scoring
  * rule that only runs when someone sets an API key is a rule that rots.
  */

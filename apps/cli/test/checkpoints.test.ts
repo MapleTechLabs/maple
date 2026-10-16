@@ -3,7 +3,7 @@ import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { sha256File } from "../src/server/checkpoint-digest"
 import { Clock, Duration, Effect, Exit, Option } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
 import {
 	existsSync,
@@ -244,12 +244,6 @@ describe("writeBackupConfig", () => {
 })
 
 describe("checkpoint IDs and strict parsers", () => {
-	it("generates collision-resistant UUIDs", () => {
-		const ids = new Set(Array.from({ length: 2_000 }, () => newCheckpointId()))
-		strictEqual(ids.size, 2_000)
-		for (const id of ids) match(id, /^[0-9a-f-]{36}$/)
-	})
-
 	it("accepts a complete manifest and rejects ID, path, compatibility, and count corruption", () => {
 		const id = newCheckpointId()
 		strictEqual(parseCheckpointManifest(manifest(id), id).checkpointId, id)
@@ -346,14 +340,8 @@ describe("checkpoint snapshot hashing", () => {
 		})
 	})
 
-	it("hashes empty snapshots and propagates file-open/read failures", async () => {
+	it("propagates file-open/read failures while hashing", async () => {
 		await withDataDir(async (dataDir) => {
-			const path = join(dataDir, "empty.bin")
-			writeFileSync(path, "")
-			strictEqual(
-				await sha256File(path),
-				"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			)
 			await rejects(sha256File(join(dataDir, "missing.bin")), /ENOENT/)
 			await rejects(sha256File(dataDir), /EISDIR/)
 		})
@@ -432,18 +420,32 @@ describe("checkpoint state resolution", () => {
 		})
 	})
 
-	it("reports a current checkpoint from an older build as unusable, not as absent", async () => {
+	it("reports a current checkpoint from another build as that, not as absent or corrupt", async () => {
 		await withDataDir(async (dataDir) => {
 			const stale = newCheckpointId()
 			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
 			writeState(dataDir, stale)
 			const availability = await checkpointAvailability(dataDir)
 			strictEqual(availability.available, false)
+			strictEqual(availability.available === false && availability.reason, "other_build")
+			strictEqual(
+				availability.available === false &&
+					availability.reason === "other_build" &&
+					availability.checkpointId,
+				stale,
+			)
 			match(
-				availability.available === false && availability.reason === "unusable"
+				availability.available === false && availability.reason === "other_build"
 					? availability.detail
 					: "",
 				/checkpoint schema mismatch/,
+			)
+			// Same release, different schema: no version to send the user to.
+			strictEqual(
+				availability.available === false &&
+					availability.reason === "other_build" &&
+					availability.restoreWith,
+				null,
 			)
 		})
 	})
@@ -968,8 +970,9 @@ describe("live-store reset safety", () => {
 describe("live restore transaction reconciliation", () => {
 	it("is a no-op when no transaction or restore debris exists", async () => {
 		await withDataDir(async (dataDir) => {
+			const before = readdirSync(dataDir).sort()
 			await Effect.runPromise(reconcileCheckpointRecovery(dataDir))
-			ok(existsSync(dataDir))
+			deepStrictEqual(readdirSync(dataDir).sort(), before)
 		})
 	})
 

@@ -69,7 +69,7 @@ export function BlankDashboardEmpty({
 			<EmptyContent className="max-w-none">
 				<div className="flex flex-wrap items-center justify-center gap-2">
 					<Button size="sm" onClick={onAddWidget} disabled={readOnly}>
-						<PlusIcon size={14} />
+						<PlusIcon />
 						Add your first widget
 					</Button>
 					<Button
@@ -83,7 +83,7 @@ export function BlankDashboardEmpty({
 				</div>
 				{/* Templates instantiate into a *new* board, so say so here rather than
 				    letting the button read as "fill this one in for me". */}
-				<p className="text-muted-foreground font-mono text-[11px]">
+				<p className="text-muted-foreground font-mono text-2xs">
 					{readOnly
 						? "Read-only. You can’t add widgets to this dashboard."
 						: "Templates create a new dashboard from this org’s data."}

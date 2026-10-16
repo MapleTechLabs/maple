@@ -25,13 +25,13 @@ PORT="${2:-45291}"
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORKER="$REPO/apps/cli/test/probes/archive-crash-worker.ts"
 RECONCILE="$REPO/apps/cli/test/probes/archive-reconcile-worker.ts"
-# The bundled `maple` binary bakes __CHDB_VERSION__=v26.1.0 via bun --define at
+# The bundled `maple` binary bakes __CHDB_VERSION__=v26.7.3 via bun --define at
 # compile time; running the workers from SOURCE defaults CHDB_VERSION to "dev",
 # which makes the restore version-check reject a checkpoint made by the bundle.
 # Define it to match so the source-tree workers are version-consistent with the
 # bundle's checkpoints. (The deployed binary is consistent by construction.)
 CHDB_VER="$("$MAPLE" --version 2>/dev/null | grep -oE 'chdb v[^ ]+' | sed 's/chdb //')"
-[ -z "$CHDB_VER" ] && CHDB_VER="v26.1.0"
+[ -z "$CHDB_VER" ] && CHDB_VER="v26.7.3"
 BUN=(bun --define "__CHDB_VERSION__=\"${CHDB_VER}\"")
 
 command -v duckdb >/dev/null 2>&1 || { echo "FAIL: duckdb required" >&2; exit 1; }

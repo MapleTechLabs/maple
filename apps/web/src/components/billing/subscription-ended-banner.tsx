@@ -6,10 +6,9 @@ import { Button } from "@maple/ui/components/ui/button"
 import { CircleWarningIcon } from "@/components/icons"
 import { getLapsedPlan } from "@/lib/billing/plan-gating"
 
-// Dev-only escape hatch so the banner can be eyeballed without a lapsed Autumn
-// customer: load any page with `?subscription_ended_preview=1`. Compiled out of
-// production builds (import.meta.env.DEV).
-function previewLapsed(): boolean {
+// Dev-only escape hatch so the lapsed framing (this banner, /select-plan) can be eyeballed without
+// a lapsed Autumn customer: load any page with `?subscription_ended_preview=1`. Dev builds only.
+export function previewLapsed(): boolean {
 	if (!import.meta.env.DEV || typeof window === "undefined") return false
 	return new URLSearchParams(window.location.search).get("subscription_ended_preview") === "1"
 }
@@ -32,7 +31,7 @@ export function SubscriptionEndedBanner() {
 
 	return (
 		<div className="px-4 pt-3">
-			<Alert variant="error">
+			<Alert variant="crit">
 				<CircleWarningIcon size={16} />
 				<AlertTitle>Subscription ended</AlertTitle>
 				<AlertDescription>

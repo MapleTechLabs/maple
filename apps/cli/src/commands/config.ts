@@ -1,5 +1,5 @@
-import * as Command from "effect/unstable/cli/Command"
-import * as Argument from "effect/unstable/cli/Argument"
+import * as Command from "effect/cli/Command"
+import * as Argument from "effect/cli/Argument"
 import { Console, Effect } from "effect"
 import { MapleConfig } from "../core/config"
 

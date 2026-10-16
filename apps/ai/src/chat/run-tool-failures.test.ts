@@ -6,16 +6,18 @@
  * the run — as a finished turn with the proposal open.
  */
 import { OrgId, UserId } from "@maple/domain"
+import { prReplySessionId, prReviewSessionId } from "@maple/domain/chat-session"
 import { Effect, Exit, Layer, Schema, Stream } from "effect"
-import { LanguageModel } from "effect/unstable/ai"
-import type { Prompt, Response } from "effect/unstable/ai"
-import * as AiModel from "effect/unstable/ai/Model"
+import { LanguageModel } from "effect/ai"
+import type { Prompt, Response } from "effect/ai"
+import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { ResolvedModel } from "../platform/Llm"
 import type { ChatTurnEvent } from "./events"
 import { runChatTurn } from "./run"
+import { makeReviewLedger } from "./review-ledger"
 import { makeRunUsage } from "./tools"
 
 const TENANT: TenantContext = {
@@ -149,5 +151,134 @@ describe("runChatTurn tool failures", () => {
 			},
 			{ type: "turn-end", messageId: "msg-1", reason: "stop" },
 		])
+	})
+})
+
+describe("runChatTurn diagnosis rejections", () => {
+	// A malformed submission used to fail the model stream and lose the whole investigation.
+	it("hands a rejected submit_diagnosis back to the model, which submits again", async () => {
+		const filed: Array<unknown> = []
+		const { model, prompts } = scriptedModel([
+			callTool("submit_diagnosis", { summary: "s", evidence: 42 }),
+			callTool("submit_diagnosis", {
+				summary: "s",
+				evidence: "p99 tripled",
+				suggestedActions: "Roll back",
+			}),
+			answer("Filed."),
+		])
+		const effect = runChatTurn({
+			sessionId: `${TENANT.orgId}:inv-0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40`,
+			messageId: "msg-1",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+			toolExecutor: rejectingExecutor,
+			model,
+			submitDiagnosis: (_org, _id, request) => Effect.sync(() => filed.push(request.report)),
+			text: "Investigate.",
+			history: [],
+			usage: makeRunUsage(),
+			holdsTurn: () => true,
+			append: () => {},
+		})
+
+		const exit = await Effect.runPromiseExit(effect)
+
+		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
+		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted)
+		// The rejection is a failed tool result the model reads, not a retried model call.
+		const results = prompts[1]!.content.flatMap((message) =>
+			message.role === "tool" ? message.content : [],
+		)
+		assert.deepInclude(
+			results.map(
+				(part) => part.type === "tool-result" && { name: part.name, isFailure: part.isFailure },
+			),
+			{ name: "submit_diagnosis", isFailure: true },
+		)
+		assert.lengthOf(filed, 1)
+		assert.deepInclude(filed[0], { suggestedActions: ["Roll back"] })
+	})
+})
+
+describe("runChatTurn reply rejections", () => {
+	it("hands a malformed propose_edit back to the model, which still replies", async () => {
+		const posted: Array<string> = []
+		const { model, prompts } = scriptedModel([
+			callTool("propose_edit", { path: "src/a.ts" }),
+			callTool("submit_reply", { body: "Done." }),
+			answer("Posted."),
+		])
+		const effect = runChatTurn({
+			sessionId: prReplySessionId(TENANT.orgId, "3c2e9a4b-7f1d-4c8d-8e2f-1a2b3c4d5e6f"),
+			messageId: "msg-1",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+			toolExecutor: rejectingExecutor,
+			model,
+			submitDiagnosis: () => Effect.die("no investigation in a reply session"),
+			submitReply: (_org, _id, body) => Effect.sync(() => (posted.push(body), "posted")),
+			stageEdit: () => Effect.die("a malformed edit must never reach staging"),
+			text: "@maple fix this",
+			history: [],
+			usage: makeRunUsage(),
+			holdsTurn: () => true,
+			append: () => {},
+		})
+
+		const exit = await Effect.runPromiseExit(effect)
+
+		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
+		const results = prompts[1]!.content.flatMap((message) =>
+			message.role === "tool" ? message.content : [],
+		)
+		assert.deepInclude(
+			results.map(
+				(part) => part.type === "tool-result" && { name: part.name, isFailure: part.isFailure },
+			),
+			{ name: "propose_edit", isFailure: true },
+		)
+		assert.deepEqual(posted, ["Done."])
+	})
+})
+
+describe("runChatTurn review refusals", () => {
+	const REVIEW_SESSION = prReviewSessionId(TENANT.orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f")
+	const CLEAN = { verdict: "clean", summary: "Adds a retry to the order client." }
+
+	// The unread-files refusal asks for a second call, so it has to reach the model rather than end the run.
+	it("hands the unread-files refusal back to the model, which submits again", async () => {
+		const filed: Array<unknown> = []
+		const { model, prompts } = scriptedModel([
+			callTool("submit_review", CLEAN),
+			callTool("submit_review", CLEAN),
+			answer("Filed."),
+		])
+		const effect = runChatTurn({
+			sessionId: REVIEW_SESSION,
+			messageId: "msg-1",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+			toolExecutor: rejectingExecutor,
+			model,
+			submitDiagnosis: () => Effect.die("no investigation in a review session"),
+			submitReview: (_org, _id, request) => Effect.sync(() => filed.push(request)),
+			review: {
+				coverage: { observe: () => {}, unread: () => ["src/b.ts"] },
+				ledger: makeReviewLedger(),
+			},
+			text: "Review pull request #1.",
+			history: [],
+			usage: makeRunUsage(),
+			holdsTurn: () => true,
+			append: () => {},
+		})
+
+		const exit = await Effect.runPromiseExit(effect)
+
+		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
+		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted)
+		assert.isAtLeast(prompts.length, 2, "the model is called again after the refusal")
+		assert.lengthOf(filed, 1)
 	})
 })

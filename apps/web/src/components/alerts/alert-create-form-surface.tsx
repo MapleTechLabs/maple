@@ -10,16 +10,23 @@ import { cn } from "@maple/ui/lib/utils"
 import { DetailsSection } from "@/components/alerts/details-section"
 import { NotificationsSection } from "@/components/alerts/notifications-section"
 import { DestinationDialog } from "@/components/alerts/destination-dialog"
-import { useDestinationManager } from "@/components/alerts/overview/settings-tab"
+import { useDestinationManager } from "@/components/alerts/overview/routing-tab"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
+import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { RuleActionBar } from "@/components/alerts/rule-action-bar"
 import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
+import {
+	RuleConditionFields,
+	conditionSubject,
+	describeRuleCondition,
+} from "@/components/alerts/rule-condition-bar"
+import { RuleStep } from "@/components/alerts/rule-step"
 import { RuleLiveChartHero } from "@/components/alerts/rule-live-chart-hero"
+import { RuleNoiseSection } from "@/components/alerts/rule-noise-section"
+import { RuleQuerySection } from "@/components/alerts/rule-query-section"
 import { RuleTemplatesOverlay } from "@/components/alerts/rule-templates-overlay"
-import { ScopeSection } from "@/components/alerts/scope-section"
-import { SignalAndThresholdSection } from "@/components/alerts/signal-and-threshold-section"
 import { WidgetPrefillNoticeBanner } from "@/components/alerts/widget-prefill-notice-banner"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import { trackProduct } from "@/lib/analytics"
 import { useAlertRulePreview } from "@/hooks/use-alert-rule-preview"
@@ -29,20 +36,23 @@ import {
 	buildRuleCreateParamsV2,
 	buildRuleTestParamsV2,
 	deriveRuleQueryIssues,
-	getExitErrorMessage,
 	isRangeComparator,
 	isRulePreviewReady,
-	signalLabels,
+	pickDefaultDestination,
+	ruleToFormState,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
+import { diffRuleForms, incidentsClearedByDraft } from "@/lib/alerts/preview-insights"
+import { toastExit } from "@/lib/error-toast"
 import { applyTemplate } from "@/lib/alerts/templates"
+import { switchSignalKind } from "@/lib/alerts/rule-modes"
 import type { WidgetAlertPrefillNotice } from "@/lib/alerts/widget-prefill"
 import { Result, useAtomSet } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { useAlertRulesList } from "@/hooks/use-alerts-list"
+import { useAlertIncidentsList, useAlertRulesList } from "@/hooks/use-alerts-list"
 
-/** Preview lookback the form opens on — the rule detail page's default too. */
-const DEFAULT_PREVIEW_PRESET = "24h"
+/** Preview lookback the form opens on: a week shows how often the rule would really fire. */
+const DEFAULT_PREVIEW_PRESET = "7d"
 
 export function AlertCreateFormSurface({
 	initialForm,
@@ -75,7 +85,6 @@ export function AlertCreateFormSurface({
 	})
 
 	const [ruleForm, setRuleForm] = useState<RuleFormState>(() => initialForm)
-	const [savingRule, setSavingRule] = useState(false)
 	// A destination made from this form is selected on it: the user came here to
 	// write a rule, and leaving to make the destination would have lost the draft.
 	// Creating a destination is admin-only server-side; a member gets the nudge, not the dialog.
@@ -87,8 +96,6 @@ export function AlertCreateFormSurface({
 				destinationIds: [...new Set([...current.destinationIds, id])],
 			})),
 	})
-	const [previewingRule, setPreviewingRule] = useState(false)
-	const [sendingTestNotification, setSendingTestNotification] = useState(false)
 	// Tagged with the rule config it was produced from. A "Would trigger" verdict
 	// is only meaningful for the exact signal/threshold/scope that was tested, so
 	// editing any of those makes the stored result stale rather than wrong-but-shown.
@@ -119,16 +126,50 @@ export function AlertCreateFormSurface({
 
 	const { preview, previewLoading, previewError } = useAlertRulePreview(ruleForm, previewRange)
 
-	const validationIssues = useMemo(
-		() => deriveValidationIssues(ruleForm, destinations),
-		[ruleForm, destinations],
+	// Edit mode replays the saved rule over the same window, but only once the
+	// draft evaluates differently; until then the two charts would be identical.
+	const savedForm = useMemo(() => (editingRule ? ruleToFormState(editingRule) : null), [editingRule])
+	const changes = useMemo(
+		() => (savedForm === null ? [] : diffRuleForms(savedForm, ruleForm)),
+		[savedForm, ruleForm],
 	)
+	const evaluationChanged =
+		savedForm !== null && previewIdentityKey(savedForm) !== previewIdentityKey(ruleForm)
+	const savedReplay = useAlertRulePreview(evaluationChanged ? savedForm : null, previewRange)
+	const { result: incidentsResult } = useAlertIncidentsList()
+	const clearedIncidents = useMemo(() => {
+		if (editingRule === null || !evaluationChanged) return []
+		const open = Result.builder(incidentsResult)
+			.onSuccess((response) =>
+				response.incidents.filter(
+					(incident) => incident.ruleId === editingRule.id && incident.status === "open",
+				),
+			)
+			.orElse(() => [])
+		return incidentsClearedByDraft(open, preview)
+	}, [editingRule, evaluationChanged, incidentsResult, preview])
+
+	const validationIssues = useMemo(() => deriveValidationIssues(ruleForm), [ruleForm])
 
 	const suggestedName = useMemo(() => makeSuggestedName(ruleForm), [ruleForm])
 
+	const { result: rulesResult } = useAlertRulesList()
+
+	// A new rule starts on the destination the org's rules already use most (or the only one), once
+	// the list has answered. Adjusted during render, not in an effect; it runs once per form.
+	const [defaultDestinationApplied, setDefaultDestinationApplied] = useState(editingRule !== null)
+	if (!defaultDestinationApplied && destinations.length > 0 && Result.isSuccess(rulesResult)) {
+		setDefaultDestinationApplied(true)
+		const fallback = pickDefaultDestination(destinations, rulesResult.value.rules)
+		if (fallback !== null && ruleForm.destinationIds.length === 0) {
+			setRuleForm((current) =>
+				current.destinationIds.length === 0 ? { ...current, destinationIds: [fallback] } : current,
+			)
+		}
+	}
+
 	// Tags already in use across the org's rules, offered as autocomplete so
 	// teams converge on a shared vocabulary instead of typo-forking groups.
-	const { result: rulesResult } = useAlertRulesList()
 	const tagSuggestions = useMemo(
 		() =>
 			Result.builder(rulesResult)
@@ -137,8 +178,7 @@ export function AlertCreateFormSurface({
 		[rulesResult],
 	)
 
-	async function handleSave() {
-		setSavingRule(true)
+	const [handleSave, savingRule] = useAsyncAction(async () => {
 		const payload = buildRuleCreateParamsV2(ruleForm)
 		const result = editingRule
 			? await updateRule({
@@ -148,15 +188,12 @@ export function AlertCreateFormSurface({
 				})
 			: await createRule({ payload, reactivityKeys: ["alertRules"] })
 
-		if (Exit.isSuccess(result)) {
-			toastManager.add({ title: editingRule ? "Rule updated" : "Rule created", type: "success" })
+		const success = editingRule ? "Rule updated" : "Rule created"
+		if (toastExit(result, { success, error: "Failed to save rule" })) {
 			if (!editingRule) trackProduct("alert_rule_created", { signal: ruleForm.signalType })
 			navigate({ to: "/alerts" })
-		} else {
-			toastManager.add({ title: getExitErrorMessage(result, "Failed to save rule"), type: "error" })
 		}
-		setSavingRule(false)
-	}
+	})
 
 	async function runTest(sendNotification: boolean) {
 		if (!isRulePreviewReady(ruleForm)) {
@@ -166,13 +203,13 @@ export function AlertCreateFormSurface({
 			})
 			return
 		}
-		const setLoading = sendNotification ? setSendingTestNotification : setPreviewingRule
-		setLoading(true)
 		const testedKey = previewIdentityKey(ruleForm)
 		const result = await testRule({
 			payload: buildRuleTestParamsV2(ruleForm, sendNotification),
 			reactivityKeys: ["alertDeliveryEvents"],
 		})
+		const success = sendNotification ? "Preview ran and sent a test notification" : "Preview updated"
+		if (!toastExit(result, { success, error: "Failed to preview rule" })) return
 		if (Exit.isSuccess(result)) {
 			setPreviewResult({
 				key: testedKey,
@@ -181,112 +218,143 @@ export function AlertCreateFormSurface({
 				sampleCount: result.value.sample_count,
 				reason: result.value.reason,
 			})
-			toastManager.add({
-				title: sendNotification ? "Preview ran and sent a test notification" : "Preview updated",
-				type: "success",
-			})
-		} else {
-			toastManager.add({ title: getExitErrorMessage(result, "Failed to preview rule"), type: "error" })
 		}
-		setLoading(false)
 	}
+	const [previewRule, previewingRule] = useAsyncAction(() => runTest(false))
+	const [sendTestNotification, sendingTestNotification] = useAsyncAction(() => runTest(true))
 
-	const pageTitle = editingRule ? "Edit alert rule" : "Create alert rule"
-	const showScope = ruleForm.signalType !== "builder_query" && ruleForm.signalType !== "raw_query"
 	// Drop the verdict as soon as the user edits anything it depended on.
 	const currentPreviewKey = previewIdentityKey(ruleForm)
 	const freshPreviewResult = previewResult?.key === currentPreviewKey ? previewResult : null
+	const thresholdMissing = !Number.isFinite(Number(ruleForm.threshold)) || ruleForm.threshold.trim() === ""
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[
+		<>
+			<DashboardPage
+				breadcrumbs={[
 					{ label: "Alerts", href: "/alerts" },
-					{ label: editingRule ? "Edit Rule" : "New Rule" },
+					{ label: editingRule ? "Edit rule" : "New rule" },
 				]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title={pageTitle} />
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						<div className={cn("mx-auto w-full space-y-4", RULE_FORM_MAX_WIDTH)}>
-							<WidgetPrefillNoticeBanner notices={prefillNotices} />
-							<RuleLiveChartHero
-								form={ruleForm}
-								preview={preview}
-								previewLoading={previewLoading}
-								previewError={previewError}
-								onTestRule={() => runTest(false)}
-								testing={previewingRule}
-								previewResult={freshPreviewResult}
-								range={previewRange}
-								timeRange={previewTimeRange}
-								onTimeRangeChange={setPreviewTimeRange}
-							/>
-							<div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-								<SignalAndThresholdSection
-									form={ruleForm}
-									onChange={setRuleForm}
-									autocompleteValues={autocompleteValues}
-								/>
-								<div className="space-y-4">
-									{showScope && (
-										<ScopeSection
-											form={ruleForm}
-											onChange={setRuleForm}
-											serviceNameOptions={serviceNameOptions}
-											environmentOptions={environmentOptions}
-											autocompleteValues={autocompleteValues}
-										/>
-									)}
-									<NotificationsSection
-										form={ruleForm}
-										onChange={setRuleForm}
-										destinations={destinations}
-										onSendTest={() => runTest(true)}
-										testing={sendingTestNotification}
-										onAddDestination={
-											isAdmin ? () => destinationManager.openDialog() : undefined
+			>
+				<div className={cn("mx-auto w-full space-y-10", RULE_FORM_MAX_WIDTH)}>
+					<WidgetPrefillNoticeBanner notices={prefillNotices} />
+					<RuleStep
+						number={1}
+						divider={false}
+						title="What to watch"
+						hint="Pick a built-in signal, or build the query like a dashboard widget."
+						status="done"
+					>
+						<RuleQuerySection
+							form={ruleForm}
+							onChange={setRuleForm}
+							autocompleteValues={autocompleteValues}
+							serviceNameOptions={serviceNameOptions}
+							environmentOptions={environmentOptions}
+						/>
+					</RuleStep>
+					<RuleStep
+						number={2}
+						title="When to alert"
+						hint="The dashed line is your threshold. Shaded bands show when the rule would have fired."
+						status={thresholdMissing ? "missing" : "done"}
+					>
+						<div className="space-y-4">
+						<RuleLiveChartHero
+							form={ruleForm}
+							preview={preview}
+							previewLoading={previewLoading}
+							previewError={previewError}
+							onTestRule={() => void previewRule()}
+							testing={previewingRule}
+							previewResult={freshPreviewResult}
+							range={previewRange}
+							timeRange={previewTimeRange}
+							onTimeRangeChange={setPreviewTimeRange}
+							comparison={
+								savedForm !== null && changes.length > 0
+									? {
+											savedPreview: evaluationChanged ? savedReplay.preview : preview,
+											savedLoading: evaluationChanged && savedReplay.previewLoading,
+											changes,
+											clearedIncidents,
 										}
-									/>
-									<DetailsSection
-										form={ruleForm}
-										onChange={setRuleForm}
-										suggestedName={suggestedName}
-										tagSuggestions={tagSuggestions}
-									/>
-								</div>
-							</div>
-						</div>
-
-						<RuleActionBar
-							editing={!!editingRule}
-							saving={savingRule}
-							validationIssues={validationIssues}
-							onCancel={() => navigate({ to: "/alerts" })}
-							onSave={handleSave}
-							onShowTemplates={editingRule ? undefined : () => setTemplatesOpen(true)}
-							cancelSlot={
-								<Button type="button" variant="outline" render={<Link to="/alerts" />}>
-									Cancel
-								</Button>
+									: null
 							}
 						/>
+							<RuleConditionFields form={ruleForm} onChange={setRuleForm} saved={savedForm} />
+							<RuleNoiseSection form={ruleForm} onChange={setRuleForm} />
+						</div>
+					</RuleStep>
+					<div className="grid gap-6 border-t pt-8 lg:grid-cols-2 lg:items-start">
+						<RuleStep
+							number={3}
+							divider={false}
+							title="Who gets notified"
+							status={ruleForm.destinationIds.length === 0 ? "missing" : "done"}
+						>
+							<NotificationsSection
+								form={ruleForm}
+								onChange={setRuleForm}
+								destinations={destinations}
+								onSendTest={() => void sendTestNotification()}
+								testing={sendingTestNotification}
+								onAddDestination={
+									isAdmin
+										? (preset) => destinationManager.openDialog(undefined, preset)
+										: undefined
+								}
+								onQuickCreate={isAdmin ? destinationManager.quickCreate : undefined}
+							/>
+						</RuleStep>
+						<RuleStep
+							number={4}
+							divider={false}
+							title="Name it"
+							status={ruleForm.name.trim().length === 0 ? "missing" : "done"}
+						>
+							<DetailsSection
+								form={ruleForm}
+								onChange={setRuleForm}
+								suggestedName={suggestedName}
+								tagSuggestions={tagSuggestions}
+							/>
+						</RuleStep>
+					</div>
+				</div>
 
-						<RuleTemplatesOverlay
-							open={templatesOpen}
-							onOpenChange={setTemplatesOpen}
-							onPick={(template) => {
-								setRuleForm((current) => applyTemplate(template, current))
-								setTemplatesOpen(false)
-							}}
-							onStartBlank={() => setTemplatesOpen(false)}
-						/>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
+				<RuleActionBar
+					editing={!!editingRule}
+					changeCount={editingRule ? changes.length : null}
+					saving={savingRule}
+					validationIssues={validationIssues}
+					summary={describeRuleCondition(ruleForm)}
+					onCancel={() => navigate({ to: "/alerts" })}
+					onSave={() => void handleSave()}
+					onShowTemplates={editingRule ? undefined : () => setTemplatesOpen(true)}
+					cancelSlot={
+						<Button type="button" variant="outline" render={<Link to="/alerts" />}>
+							Cancel
+						</Button>
+					}
+				/>
+
+				<RuleTemplatesOverlay
+					open={templatesOpen}
+					onOpenChange={setTemplatesOpen}
+					onPick={(template) => {
+						setRuleForm((current) => {
+							const applied = applyTemplate(template, current)
+							// Templates fill the query builder; Apdex has no builder aggregation, so it stays Built-in.
+							return applied.signalType === "apdex"
+								? applied
+								: switchSignalKind(applied, "builder_query").form
+						})
+						setTemplatesOpen(false)
+					}}
+					onStartBlank={() => setTemplatesOpen(false)}
+				/>
+			</DashboardPage>
 			<DestinationDialog
 				open={destinationManager.dialogOpen}
 				onOpenChange={destinationManager.setDialogOpen}
@@ -295,26 +363,28 @@ export function AlertCreateFormSurface({
 				isEditing={destinationManager.isEditing}
 				saving={destinationManager.saving}
 				onSave={destinationManager.save}
+				providerLocked={destinationManager.providerLocked}
+				onUnlockProvider={destinationManager.unlockProvider}
 			/>
-		</DashboardLayout.Root>
+		</>
 	)
 }
 
-function deriveValidationIssues(form: RuleFormState, destinations: AlertDestinationDocument[]): string[] {
+function deriveValidationIssues(form: RuleFormState): string[] {
 	const issues: string[] = []
 	if (form.name.trim().length === 0) issues.push("Rule name")
 	if (!Number.isFinite(Number(form.threshold))) issues.push("Threshold")
 	if (isRangeComparator(form.comparator) && !Number.isFinite(Number(form.thresholdUpper))) {
 		issues.push("Upper threshold")
 	}
-	// The four timing fields silently fall back to a default when they don't parse
+	// The timing fields silently fall back to a default when they don't parse
 	// (see `parsePositiveNumber` in form-utils), so name them here rather than
 	// letting a typo save as a different rule than the one on screen.
 	for (const [label, value] of [
-		["Window (min)", form.windowMinutes],
-		["Breaches to fire", form.consecutiveBreachesRequired],
-		["Healthy to resolve", form.consecutiveHealthyRequired],
-		["Renotify (min)", form.renotifyIntervalMinutes],
+		["Window", form.windowMinutes],
+		["Checks to fire", form.consecutiveBreachesRequired],
+		["Checks to resolve", form.consecutiveHealthyRequired],
+		["Remind interval", form.renotifyIntervalMinutes],
 	] as const) {
 		const parsed = Number(value)
 		if (!Number.isFinite(parsed) || parsed <= 0) issues.push(label)
@@ -330,11 +400,7 @@ function deriveValidationIssues(form: RuleFormState, destinations: AlertDestinat
 		}
 	}
 	for (const issue of deriveRuleQueryIssues(form)) issues.push(issue)
-	if (destinations.length === 0) {
-		issues.push("A notification destination")
-	} else if (form.destinationIds.length === 0) {
-		issues.push("At least one destination")
-	}
+	if (form.destinationIds.length === 0) issues.push("Who gets notified")
 	return issues
 }
 
@@ -359,7 +425,8 @@ function previewIdentityKey(form: RuleFormState): string {
 
 function makeSuggestedName(form: RuleFormState): string | null {
 	if (form.name.trim().length > 0) return null
-	const base = signalLabels[form.signalType]
+	const subject = conditionSubject(form)
+	const base = subject.charAt(0).toUpperCase() + subject.slice(1)
 	const queryGroupBy =
 		form.signalType === "builder_query" && form.queryBuilderDraft.addOns?.groupBy
 			? (form.queryBuilderDraft.groupBy ?? [])
@@ -378,5 +445,5 @@ function makeSuggestedName(form: RuleFormState): string | null {
 					: null
 	const env = !queryOwnsScope && form.environments.length > 0 ? form.environments.join(" · ") : null
 	const suffix = [scope, env].filter((part) => part !== null).join(" · ")
-	return suffix.length > 0 ? `${base} — ${suffix}` : base
+	return suffix.length > 0 ? `${base} · ${suffix}` : base
 }

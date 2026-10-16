@@ -49,10 +49,10 @@ export function AttributeKeyAutocomplete({
 				{Result.isInitial(result) && <AutocompleteStatus>Loading attributes…</AutocompleteStatus>}
 				{Result.isFailure(result) && (
 					<AutocompleteStatus>
-						Couldn't load attribute suggestions — you can still type a key
+						Couldn't load attribute suggestions; you can still type a key
 					</AutocompleteStatus>
 				)}
-				<AutocompleteEmpty>No matching attributes — press Enter to use as typed</AutocompleteEmpty>
+				<AutocompleteEmpty>No matching attributes. Press Enter to use as typed</AutocompleteEmpty>
 				<AutocompleteList>
 					<AutocompleteCollection>
 						{(key: string) => (

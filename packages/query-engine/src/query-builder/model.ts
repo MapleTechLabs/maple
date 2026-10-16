@@ -413,12 +413,17 @@ function applyOrGroup<A extends AttributeFilterAccumulator>(
 ): A {
 	const label = `(${group.map((c) => `${typedKey(c)} ${c.operator} ${c.value}`.trim()).join(" OR ")})`
 	const members: Array<{ map: keyof AttributeFilterAccumulator; filter: AccumulatedAttributeFilter }> = []
+	const emptyFields = new Map<string, unknown>(Object.entries(empty))
 	for (const clause of group) {
 		const memberWarnings: string[] = []
 		const next = apply(empty, clause, memberWarnings)
+		// Fields the empty accumulator already carries (the metrics metric name) are not set by the member.
 		const setsOtherField = Object.entries(next).some(
 			([field, value]) =>
-				field !== "attributeFilters" && field !== "resourceAttributeFilters" && value !== undefined,
+				field !== "attributeFilters" &&
+				field !== "resourceAttributeFilters" &&
+				value !== undefined &&
+				value !== emptyFields.get(field),
 		)
 		const map =
 			next.attributeFilters.length === 1 && next.resourceAttributeFilters.length === 0
@@ -976,19 +981,12 @@ function applyMetricsClause(
 ): MetricsFilterAccumulator {
 	const key = normalizeKey(clause.key)
 
-	// Datapoint labels live in the Attributes map. The metrics CH path carries a
-	// single equality predicate on it (attributeKey/attributeValue), so exactly
-	// one `attr.<key> = value` clause is honored; anything else warns instead of
-	// being silently dropped.
+	// Datapoint labels live in the Attributes map. Every operator applies, so
+	// `attr.state != idle` can drop one state of a per-state metric.
 	if (key.startsWith("attr.")) {
 		const attributeKey = typedKey(clause, 5)
-		const { mode, negated } = operatorToAttrFilter(clause.operator)
-		if (mode !== "equals" || negated) {
-			warnings.push(`Metrics attr.* filters support only equality; ignoring attr.${attributeKey}`)
-			return filters
-		}
-		if (filters.attributeFilters.length >= 1) {
-			warnings.push(`Metrics queries support a single attr.* filter; ignoring attr.${attributeKey}`)
+		if (filters.attributeFilters.length >= 5) {
+			warnings.push(`Maximum of 5 attr.* filters supported; ignoring attr.${attributeKey}`)
 			return filters
 		}
 		return {
@@ -1454,7 +1452,8 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 	} = parseWhereClause(query.whereClause ?? "", {
 		// Only the sources that lower groups ask for them. Any other source gets the
 		// parser's "unsupported clause" warning, so a group is never dropped silently.
-		orGroups: query.dataSource === "traces" || query.dataSource === "logs",
+		orGroups:
+			query.dataSource === "traces" || query.dataSource === "logs" || query.dataSource === "metrics",
 	})
 	for (const w of parseWarnings) warnings.push(w.message)
 
@@ -1668,14 +1667,15 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		}
 	}
 
-	const metricsFilters = clauses.reduce<MetricsFilterAccumulator>(
-		(acc, clause) => applyMetricsClause(acc, clause, warnings),
-		{
-			metricName: query.metricName,
-			metricType: query.metricType ?? "gauge",
-			attributeFilters: [],
-			resourceAttributeFilters: [],
-		},
+	const emptyMetrics: MetricsFilterAccumulator = {
+		metricName: query.metricName,
+		metricType: query.metricType ?? "gauge",
+		attributeFilters: [],
+		resourceAttributeFilters: [],
+	}
+	const metricsFilters = groups.reduce(
+		(acc, group) => applyOrGroup(acc, group, applyMetricsClause, emptyMetrics, "Metrics", warnings),
+		clauses.reduce((acc, clause) => applyMetricsClause(acc, clause, warnings), emptyMetrics),
 	)
 
 	const metricsGroupByKeys: MetricsGroupByKey[] = []

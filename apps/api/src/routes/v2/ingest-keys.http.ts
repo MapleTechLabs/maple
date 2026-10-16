@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import type { IngestKeysResponse } from "@maple/domain/http"
 import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2, V2InsufficientPermissions } from "@maple/domain/http/v2"

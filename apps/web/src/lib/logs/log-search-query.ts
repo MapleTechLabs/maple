@@ -31,6 +31,3 @@ export function parseLogSearch(raw: string | undefined): LogSearchQuery | undefi
 
 	return { kind: "text", text: value }
 }
-
-/** First 8 characters of a trace id — what the chip and the trace page show. */
-export const shortTraceId = (id: string): string => id.slice(0, 8)

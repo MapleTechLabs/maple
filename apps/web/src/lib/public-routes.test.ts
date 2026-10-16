@@ -1,10 +1,6 @@
-import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { LAB_ENTRIES } from "@/lab/registry"
-import { isChromelessPath, isPublicPath } from "./public-routes"
-
-const read = (relative: string) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
+import { isChromelessPath, isOrgIndependentPath, isPublicPath } from "./public-routes"
 
 describe("isPublicPath", () => {
 	it("covers the auth pages and sessionless lab surfaces", () => {
@@ -52,15 +48,12 @@ describe("isPublicPath", () => {
 	})
 })
 
-describe("the auth gate has exactly one source of truth", () => {
-	// These two files each carried their own copy of the public-path list, and
-	// they had already drifted — main.tsx was missing four entries. Asserted
-	// structurally rather than by inspection so the next copy is caught.
-	it("is not re-declared in __root.tsx or main.tsx", () => {
-		for (const file of ["../routes/__root.tsx", "../main.tsx"]) {
-			const source = read(file)
-			expect(source, file).toContain("public-routes")
-			expect(source, file).not.toMatch(/const PUBLIC_PATHS\s*=/)
-		}
+describe("isOrgIndependentPath", () => {
+	it("lets an email recipient reach /unsubscribe past the plan and region gates", () => {
+		expect(isPublicPath("/unsubscribe")).toBe(true)
+		expect(isOrgIndependentPath("/unsubscribe")).toBe(true)
+		// Public, but the post-auth redirects still apply to it.
+		expect(isOrgIndependentPath("/sign-in")).toBe(false)
+		expect(isOrgIndependentPath("/share/abc")).toBe(false)
 	})
 })

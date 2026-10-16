@@ -1,3 +1,6 @@
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { addMinutes, subMinutes } from "date-fns"
 import { Link } from "@tanstack/react-router"
 
@@ -66,14 +69,14 @@ export function InfraCorrelationPanel({
 
 	if (correlations.length === 0) {
 		return (
-			<div className="flex flex-col items-center gap-2 rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+			<EmptyMessage dashed className="flex flex-col items-center gap-2 py-12">
 				<p>No Kubernetes, container, or host metadata on this record.</p>
 				<p className="text-xs">
 					Set host.name, container.id or k8s.pod.name as resource attributes to link records to
 					infrastructure.
 				</p>
 				<DocsLink page="otelConventions" />
-			</div>
+			</EmptyMessage>
 		)
 	}
 
@@ -88,17 +91,12 @@ export function InfraCorrelationPanel({
 					    gets its own truncating line so neither clips the other. */}
 					<div className="space-y-0.5">
 						<div className="flex items-center justify-between gap-2">
-							<span className="text-[12px] font-medium text-foreground">
-								{correlation.title}
-							</span>
+							<span className="text-xs font-medium text-foreground">{correlation.title}</span>
 							<CorrelationLink correlation={correlation} />
 						</div>
-						<div
-							className="truncate font-mono text-[11px] text-muted-foreground"
-							title={correlation.identifier}
-						>
+						<TruncatedText mono className="text-2xs text-muted-foreground">
 							{correlation.identifier}
-						</div>
+						</TruncatedText>
 					</div>
 					{renderCharts(correlation, startTime, endTime, syncId)}
 				</section>
@@ -171,8 +169,8 @@ function renderCharts(correlation: InfraCorrelation, startTime: string, endTime:
 			return (
 				<div className="space-y-3">
 					{correlation.charts.map((c) => (
-						<div key={c.metric} className="rounded-lg border bg-card p-4">
-							<div className="mb-1 text-[12px] font-medium text-foreground">{c.label}</div>
+						<Panel key={c.metric} padded>
+							<div className="mb-1 text-xs font-medium text-foreground">{c.label}</div>
 							<HostDetailChart
 								hostName={correlation.identifier}
 								metric={c.metric}
@@ -181,7 +179,7 @@ function renderCharts(correlation: InfraCorrelation, startTime: string, endTime:
 								bucketSeconds={BUCKET_SECONDS}
 								syncId={syncId}
 							/>
-						</div>
+						</Panel>
 					))}
 				</div>
 			)
@@ -191,7 +189,7 @@ function renderCharts(correlation: InfraCorrelation, startTime: string, endTime:
 /** Typed SPA deep-link into the matching infra detail route, per kind. */
 function CorrelationLink({ correlation }: { correlation: InfraCorrelation }) {
 	const className =
-		"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+		"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs text-muted-foreground transition-colors hover:text-foreground"
 	const content = (
 		<>
 			View in Infrastructure
@@ -235,7 +233,7 @@ function CorrelationLink({ correlation }: { correlation: InfraCorrelation }) {
 		case "host":
 			return (
 				<Link
-					to="/infra/$hostName"
+					to="/infra/hosts/$hostName"
 					params={{ hostName: correlation.identifier }}
 					className={className}
 				>

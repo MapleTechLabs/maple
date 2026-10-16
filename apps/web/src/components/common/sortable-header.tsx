@@ -16,18 +16,21 @@ export function SortableHeader<K extends string>({
 	dir,
 	onSort,
 	hint,
+	className: classNameProp,
 }: {
-	label: string
+	label: ReactNode
 	sortKey: K
-	activeKey: K
+	activeKey: K | null
 	dir: "asc" | "desc"
 	onSort: (key: K) => void
 	hint?: ReactNode
+	className?: string
 }) {
 	const active = activeKey === sortKey
 	const className = cn(
 		"inline-flex items-center gap-1 transition-colors",
 		active ? "text-foreground" : "hover:text-foreground",
+		classNameProp,
 	)
 	const onClick = () => onSort(sortKey)
 	const content = (
@@ -36,7 +39,7 @@ export function SortableHeader<K extends string>({
 			<ArrowUpDownIcon
 				size={10}
 				className={cn(
-					"transition-opacity",
+					"shrink-0 transition-opacity",
 					active ? "opacity-100" : "opacity-40",
 					active && dir === "asc" && "rotate-180",
 				)}

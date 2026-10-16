@@ -1,4 +1,5 @@
 import type { AlertComparator, AlertSignalType } from "@maple/domain/http"
+import { formatPercent } from "@maple/ui/lib/format"
 import { formatSignalValue } from "@/lib/alerts/form-utils"
 
 /**
@@ -70,7 +71,7 @@ export function formatBreach(
 	}
 
 	const magnitude = Math.abs(value - threshold) / Math.abs(threshold)
-	const pct = Math.round(magnitude * 100)
+	const pct = formatPercent(magnitude)
 
 	switch (comparator) {
 		case "gt":
@@ -79,7 +80,7 @@ export function formatBreach(
 			return {
 				observed,
 				threshold: thresholdLabel,
-				delta: `${over ? "+" : "−"}${pct}% ${over ? "over" : "under"}`,
+				delta: `${over ? "+" : "−"}${pct} ${over ? "over" : "under"}`,
 				exceedsThreshold: over,
 			}
 		}
@@ -89,7 +90,7 @@ export function formatBreach(
 			return {
 				observed,
 				threshold: thresholdLabel,
-				delta: `${under ? "−" : "+"}${pct}% ${under ? "under" : "over"}`,
+				delta: `${under ? "−" : "+"}${pct} ${under ? "under" : "over"}`,
 				exceedsThreshold: under,
 			}
 		}

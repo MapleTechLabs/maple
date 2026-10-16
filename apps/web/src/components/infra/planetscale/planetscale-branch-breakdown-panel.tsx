@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react"
 
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatNumber } from "@maple/ui/lib/format"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
+import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
-import { ColumnHead, DataTable, MetaChip, useTableSort } from "../primitives/data-table"
+import { ColumnHead, DataTable, MetaChip, useTableSort } from "@/components/common/data-table"
+import { formatWholePercent } from "../format"
+import { SegmentPivot } from "../primitives/segment-pivot"
 import { relativeRatio, shareBar } from "../primitives/share-bar"
 import type { BranchCandidate } from "./branch-selection"
 import { BRANCH_STATE_LABEL, branchStateOf } from "./filters"
@@ -49,14 +52,14 @@ const MEASURES: Record<Measure, MeasureSpec> = {
 	cpu: {
 		label: "CPU (max)",
 		of: (c) => c.stat?.cpuMaxPercent ?? MISSING,
-		format: (v) => `${v.toFixed(0)}%`,
+		format: (v) => formatWholePercent(v / 100),
 		className: utilizationClass,
 		additive: false,
 	},
 	memory: {
 		label: "Memory (max)",
 		of: (c) => c.stat?.memMaxPercent ?? MISSING,
-		format: (v) => `${v.toFixed(0)}%`,
+		format: (v) => formatWholePercent(v / 100),
 		className: utilizationClass,
 		additive: false,
 	},
@@ -169,29 +172,19 @@ export function PlanetScaleBranchBreakdownPanel({
 	})
 
 	return (
-		<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-			<div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
-				<span className="text-xs font-medium text-foreground">Branches</span>
-				<div role="tablist" aria-label="Measure" className="flex flex-wrap items-center gap-0.5">
-					{MEASURE_ORDER.map((key) => (
-						<button
-							key={key}
-							type="button"
-							role="tab"
-							aria-selected={measure === key}
-							onClick={() => setMeasure(key)}
-							className={cn(
-								"rounded-sm px-1.5 py-0.5 text-[11px] transition-colors",
-								measure === key
-									? "bg-muted font-medium text-foreground"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-						>
-							{MEASURES[key].label}
-						</button>
-					))}
-				</div>
-			</div>
+		<Panel className="border-border/60">
+			<PanelHeader
+				title="Branches"
+				className="border-border/60 px-3 py-2"
+				action={
+					<SegmentPivot<Measure>
+						ariaLabel="Measure"
+						options={MEASURE_ORDER.map((key) => ({ value: key, label: MEASURES[key].label }))}
+						value={measure}
+						onChange={setMeasure}
+					/>
+				}
+			/>
 
 			<DataTable.Root ariaLabel="PlanetScale branch breakdown" waiting={waiting} maxHeight={420}>
 				<DataTable.Head>
@@ -222,7 +215,7 @@ export function PlanetScaleBranchBreakdownPanel({
 							<div className="flex w-0 min-w-[200px] flex-1 items-center gap-2 overflow-hidden">
 								<span
 									className={cn(
-										"truncate text-[13px]",
+										"truncate text-sm",
 										row.isOther
 											? "text-muted-foreground"
 											: "font-mono text-foreground/90",
@@ -238,11 +231,11 @@ export function PlanetScaleBranchBreakdownPanel({
 							</div>
 							<div
 								className={cn(
-									"w-[120px] text-right font-mono text-[12px] tabular-nums text-foreground/80",
+									"w-[120px] text-right font-mono text-xs tabular-nums text-foreground/80",
 									row.hasValue && spec.className?.(row.value),
 								)}
 							>
-								{row.hasValue ? spec.format(row.value) : "—"}
+								{row.hasValue ? spec.format(row.value) : EMPTY_VALUE}
 							</div>
 						</>
 					)
@@ -279,27 +272,23 @@ export function PlanetScaleBranchBreakdownPanel({
 				})}
 			</DataTable.Root>
 
-			<div className="border-t border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
+			<div className="border-t border-border/60 px-3 py-1.5 text-2xs text-muted-foreground">
 				{spec.additive
-					? `Bars show share of ${formatNumber(total)} total across ${candidates.length} branch${candidates.length === 1 ? "" : "es"}.`
+					? `Bars show share of ${formatNumber(total)} total across ${countLabel(candidates.length, "branch", "branches")}.`
 					: // Not "% of database": these are maxima, and they do not sum.
 						`Bars are relative to the worst branch (${spec.format(max)}). Peaks don't sum, so there is no database total.`}
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
 export function PlanetScaleBranchBreakdownPanelLoading() {
 	return (
-		<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-			<div className="border-b border-border/60 px-3 py-2">
+		<Panel className="border-border/60">
+			<PanelHeader className="border-border/60 px-3 py-2">
 				<Skeleton className="h-4 w-56" />
-			</div>
-			<div className="flex flex-col gap-2 p-3">
-				{Array.from({ length: 5 }, (_, index) => (
-					<Skeleton key={index} className="h-4 w-full" />
-				))}
-			</div>
-		</div>
+			</PanelHeader>
+			<SkeletonList rows={5} rowClassName="h-4" gap="2" className="p-3" />
+		</Panel>
 	)
 }

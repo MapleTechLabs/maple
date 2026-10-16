@@ -22,6 +22,7 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"claim_error_issue",
 	"release_error_issue",
 	"transition_error_issue",
+	"transition_error_issues",
 	"comment_on_error_issue",
 	"set_issue_severity",
 	"update_error_notification_policy",
@@ -29,6 +30,11 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"propose_fix",
 	"link_pull_request",
 	"register_agent",
+	// integrations
+	"sync_railway",
+	"create_scrape_target",
+	"update_scrape_target",
+	"delete_scrape_target",
 	// feedback
 	"send_maple_feedback",
 ])

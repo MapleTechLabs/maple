@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { IssueKind } from "@maple/domain/http"
 import { BooleanFromStringParam } from "@/lib/search-params"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
 import { ErrorsFilterSidebar } from "@/components/errors/errors-filter-sidebar"
 import { ErrorsHub } from "@/components/errors/errors-hub"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
@@ -14,9 +14,10 @@ import {
 	ERRORS_WINDOW,
 	HUB_SORTS,
 	HUB_VIEWS,
+	LEGACY_HUB_VIEWS,
 	SEVERITY_FILTERS,
+	hubViewOf,
 	type HubSort,
-	type HubView,
 	type SeverityFilter,
 } from "@/lib/errors/hub-params"
 import { CLEARED_ERROR_FILTERS, errorFilterChips, hasErrorFilters } from "@/lib/errors/error-filter-chips"
@@ -34,7 +35,9 @@ const errorsSearchSchema = Schema.Struct({
 	env: Schema.optional(Schema.String),
 	kind: Schema.optional(IssueKind),
 	regressed: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
-	view: Schema.optional(Schema.Literals(HUB_VIEWS)),
+	view: Schema.optional(Schema.Literals([...HUB_VIEWS, ...LEGACY_HUB_VIEWS])),
+	// Free-text search over type, message, label and service, applied server-side.
+	q: Schema.optional(Schema.String),
 	sort: Schema.optional(Schema.Literals(HUB_SORTS)),
 	severity: Schema.optional(Schema.Literals(SEVERITY_FILTERS)),
 })
@@ -73,39 +76,29 @@ function ErrorsContent() {
 		navigate({ search: (prev) => ({ ...prev, ...CLEARED_ERROR_FILTERS }) })
 	}
 
-	const view: HubView = search.view ?? "open"
+	const view = hubViewOf(search.view)
 	const sort: HubSort = search.sort ?? "last_seen"
 	const severity: SeverityFilter = search.severity ?? "all"
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Errors" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Filters>
-					<ErrorsFilterSidebar />
-				</DashboardLayout.Filters>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header title="Errors">
-							<ReloadControls />
-						</DashboardLayout.Header>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						<ActiveFilterChips chips={activeFilterChips} onClearAll={clearFilters} />
-						<ErrorsHub
-							view={view}
-							sort={sort}
-							severity={severity}
-							range={trendWindow}
-							service={search.service}
-							env={search.env}
-							kind={search.kind}
-							regressed={search.regressed}
-							onClearFilters={hasErrorFilters(search) ? clearFilters : undefined}
-						/>
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<DashboardPage
+			breadcrumbs={[{ label: "Errors" }]}
+			filters={<ErrorsFilterSidebar />}
+			headerActions={<ReloadControls />}
+		>
+			<ActiveFilterChips chips={activeFilterChips} onClearAll={clearFilters} />
+			<ErrorsHub
+				view={view}
+				sort={sort}
+				severity={severity}
+				range={trendWindow}
+				service={search.service}
+				env={search.env}
+				kind={search.kind}
+				regressed={search.regressed}
+				search={search.q}
+				onClearFilters={hasErrorFilters(search) ? clearFilters : undefined}
+			/>
+		</DashboardPage>
 	)
 }

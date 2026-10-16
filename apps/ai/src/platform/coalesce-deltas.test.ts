@@ -2,7 +2,7 @@
  * Joined deltas carry the same text in fewer parts, and never cross a part or a kind.
  */
 import { Effect, Stream } from "effect"
-import { Response } from "effect/unstable/ai"
+import { Response } from "effect/ai"
 import { assert, describe, it } from "vitest"
 import { COALESCED_DELTA_CHARS, coalesceDeltas } from "./coalesce-deltas"
 

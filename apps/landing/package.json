@@ -4,6 +4,8 @@
 	"type": "module",
 	"scripts": {
 		"generate:og": "node scripts/generate-og.mjs",
+		"screenshots": "bun scripts/screenshots/capture.ts",
+		"screenshots:thread": "bun scripts/screenshots/capture.ts --set thread",
 		"dev": "bun run --silent sync:cli && exec env -u CLAUDECODE astro dev --port ${PORT:-3391} --host ${HOST:-127.0.0.1}",
 		"sync:i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy url baseLocale && astro sync",
 		"sync:cli": "mkdir -p public/cli && cp ../../scripts/install.sh public/cli/install && cp ../../scripts/uninstall.sh public/cli/uninstall",
@@ -26,18 +28,20 @@
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"@maple/ui": "workspace:*",
-		"@shikijs/themes": "^4.4.3",
-		"@shikijs/transformers": "^4.4.3",
+		"@shikijs/themes": "^4.5.0",
+		"@shikijs/transformers": "^4.5.0",
 		"@tailwindcss/vite": "catalog:tailwind",
+		"@takumi-rs/helpers": "2.14.0",
+		"@takumi-rs/wasm": "2.14.0",
 		"@tanstack/charts": "catalog:charts",
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
 		"astro": "^7.3.5",
-		"autumn-js": "^1.3.25",
+		"autumn-js": "^1.3.55",
 		"d3-scale": "^4.0.2",
 		"effect": "catalog:effect",
 		"fuse.js": "^7.5.0",
-		"motion": "^13.4.4",
+		"motion": "^14.0.0",
 		"ogl": "^1.0.11",
 		"react": "catalog:react",
 		"react-dom": "catalog:react",
@@ -45,9 +49,12 @@
 		"tw-animate-css": "catalog:tailwind"
 	},
 	"devDependencies": {
+		"@effect/platform-node": "catalog:effect",
 		"@inlang/paraglide-js": "^2.25.4",
 		"@types/d3-scale": "^4.0.9",
+		"playwright": "catalog:",
 		"typescript": "catalog:tooling",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"woff2-encoder": "^2.0.0"
 	}
 }

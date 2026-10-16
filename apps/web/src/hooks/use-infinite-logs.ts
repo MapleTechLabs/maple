@@ -9,6 +9,7 @@ import { useTableRefreshTimeRange } from "@/hooks/use-table-refresh-time-range"
 import { mapleRuntime } from "@/lib/registry"
 import { logClientError } from "@/lib/services/common/telemetry"
 import type { LogsSearchParams } from "@/routes/logs"
+import { logAttributeQueryFilters } from "@/lib/logs/log-attribute-filters"
 
 const PAGE_SIZE = 100
 const FETCH_THRESHOLD = 20
@@ -58,6 +59,7 @@ function buildQueryParams(
 		excludedNamespaces: pinned ? undefined : filters?.excludedNamespaces,
 		search: filters?.search,
 		traceId: filters?.traceId,
+		...logAttributeQueryFilters(filters?.attrs),
 	}
 }
 

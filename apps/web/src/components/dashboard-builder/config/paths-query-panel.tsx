@@ -1,7 +1,8 @@
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { cn } from "@maple/ui/lib/utils"
 import { PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 
 import { FUNNEL_KEY_BY_OPTIONS, FUNNEL_WINDOW_OPTIONS } from "@/components/funnels/definition"
@@ -9,6 +10,7 @@ import { FunnelStepBuilder } from "@/components/funnels/funnel-step-builder"
 import { useFunnelSuggestions, type FunnelSuggestions } from "@/components/funnels/use-funnel-suggestions"
 import { AddOnToggleBar, QueryPanelShell } from "@/components/dashboard-builder/config/query-panel-shell"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
+import { SegmentedSelect } from "@/components/common/segmented-select"
 import { parseProductEventsFilterClause } from "@/lib/query-builder/funnel-filters"
 import type { PathsAddOnKey, PathsWidgetDraft } from "@/lib/query-builder/widget-builder-shared"
 
@@ -27,6 +29,8 @@ const ADD_ONS: ReadonlyArray<{ key: PathsAddOnKey; label: string }> = [
 
 const DEPTHS = Array.from({ length: PATHS_MAX_DEPTH }, (_, i) => i + 1)
 const BRANCHES = [3, 4, 6, PATHS_MAX_BRANCHES]
+const DEPTH_OPTIONS = DEPTHS.map((value) => ({ value: String(value), label: String(value) }))
+const BRANCH_OPTIONS = BRANCHES.map((value) => ({ value: String(value), label: String(value) }))
 
 interface PathsQueryPanelViewProps {
 	paths: PathsWidgetDraft
@@ -41,39 +45,6 @@ interface PathsQueryPanelProps extends Omit<PathsQueryPanelViewProps, "suggestio
 export function PathsQueryPanel({ suggestionWindow, ...props }: PathsQueryPanelProps) {
 	const suggestions = useFunnelSuggestions(suggestionWindow)
 	return <PathsQueryPanelView {...props} suggestions={suggestions} />
-}
-
-function Segmented<T extends string | number>({
-	options,
-	value,
-	onSelect,
-	ariaLabel,
-}: {
-	options: ReadonlyArray<{ value: T; label: string }>
-	value: T
-	onSelect: (next: T) => void
-	ariaLabel: string
-}) {
-	return (
-		<div className="flex h-8 rounded-md border bg-muted/40 p-0.5" role="group" aria-label={ariaLabel}>
-			{options.map((option) => (
-				<button
-					key={String(option.value)}
-					type="button"
-					onClick={() => onSelect(option.value)}
-					aria-pressed={value === option.value}
-					className={cn(
-						"rounded-sm px-2.5 text-xs transition-colors",
-						value === option.value
-							? "bg-background text-foreground shadow-sm"
-							: "text-muted-foreground hover:text-foreground",
-					)}
-				>
-					{option.label}
-				</button>
-			))}
-		</div>
-	)
 }
 
 export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQueryPanelViewProps) {
@@ -116,19 +87,19 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 			{/* Anchor + direction */}
 			<div className="space-y-1.5">
 				<div className="flex items-center gap-2">
-					<span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-						Paths
-					</span>
-					<Segmented
-						ariaLabel="Direction"
+					<Eyebrow>Paths</Eyebrow>
+					<SegmentedSelect
+						size="sm"
+						className="*:text-xs"
+						aria-label="Direction"
 						value={paths.direction}
 						options={[
 							{ value: "after", label: "After" },
 							{ value: "before", label: "Before" },
 						]}
-						onSelect={(direction) => onUpdate((current) => ({ ...current, direction }))}
+						onChange={(direction) => onUpdate((current) => ({ ...current, direction }))}
 					/>
-					<span className="font-mono text-[10px] text-muted-foreground">
+					<span className="font-mono text-3xs text-muted-foreground">
 						{paths.direction === "after"
 							? "what people did next, from the first time they hit the anchor"
 							: "how people got there, back from the last time they hit the anchor"}
@@ -152,23 +123,29 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 			{/* Depth + branches */}
 			<div className="flex flex-wrap items-center gap-x-4 gap-y-2">
 				<div className="flex items-center gap-2">
-					<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Steps</span>
-					<Segmented
-						ariaLabel="Steps"
-						value={paths.depth}
-						options={DEPTHS.map((value) => ({ value, label: String(value) }))}
-						onSelect={(depth) => onUpdate((current) => ({ ...current, depth }))}
+					<span className="w-16 shrink-0 text-2xs text-muted-foreground">Steps</span>
+					<SegmentedSelect
+						aria-label="Steps"
+						size="sm"
+						className="*:text-xs"
+						value={String(paths.depth)}
+						options={DEPTH_OPTIONS}
+						onChange={(depth) => onUpdate((current) => ({ ...current, depth: Number(depth) }))}
 					/>
 				</div>
 				<div className="flex items-center gap-2">
-					<span className="shrink-0 text-[11px] text-muted-foreground">Branches</span>
-					<Segmented
-						ariaLabel="Branches per step"
-						value={paths.branches}
-						options={BRANCHES.map((value) => ({ value, label: String(value) }))}
-						onSelect={(branches) => onUpdate((current) => ({ ...current, branches }))}
+					<span className="shrink-0 text-2xs text-muted-foreground">Branches</span>
+					<SegmentedSelect
+						aria-label="Branches per step"
+						size="sm"
+						className="*:text-xs"
+						value={String(paths.branches)}
+						options={BRANCH_OPTIONS}
+						onChange={(branches) =>
+							onUpdate((current) => ({ ...current, branches: Number(branches) }))
+						}
 					/>
-					<span className="text-[11px] text-muted-foreground">
+					<span className="text-2xs text-muted-foreground">
 						named per step, the rest fold into Other
 					</span>
 				</div>
@@ -177,7 +154,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 			{/* Population filter */}
 			<div className="space-y-1">
 				<div className="flex items-start gap-2">
-					<span className="w-16 shrink-0 pt-2 text-[11px] text-muted-foreground">Where</span>
+					<span className="w-16 shrink-0 pt-2 text-2xs text-muted-foreground">Where</span>
 					<WhereClauseEditor
 						className="flex-1"
 						rows={1}
@@ -191,9 +168,9 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 						ariaLabel="Paths population filter"
 					/>
 				</div>
-				<p className="pl-18 text-[11px] text-muted-foreground">
+				<p className="pl-18 text-2xs text-muted-foreground">
 					{filterError ? (
-						<span className="text-destructive">{filterError}</span>
+						<span className={TONE_TEXT.crit}>{filterError}</span>
 					) : (
 						"Only persons with a session matching these dimensions take part."
 					)}
@@ -206,7 +183,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 				<div className="space-y-2 pt-1">
 					{paths.addOns.keyBy && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Count by</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Count by</span>
 							<Select
 								items={Object.fromEntries(
 									FUNNEL_KEY_BY_OPTIONS.map((option) => [option.value, option.label]),
@@ -219,7 +196,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 									if (option) onUpdate((current) => ({ ...current, keyBy: option.value }))
 								}}
 							>
-								<SelectTrigger className="h-8 w-[220px] text-xs" aria-label="Count by">
+								<SelectTrigger size="sm" className="w-[220px]" aria-label="Count by">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -227,7 +204,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 										<SelectItem key={option.value} value={option.value}>
 											<span className="flex flex-col">
 												<span>{option.label}</span>
-												<span className="text-[10px] text-muted-foreground">
+												<span className="text-3xs text-muted-foreground">
 													{option.description}
 												</span>
 											</span>
@@ -240,7 +217,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 
 					{paths.addOns.window && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Within</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Within</span>
 							<Select
 								items={Object.fromEntries(
 									FUNNEL_WINDOW_OPTIONS.map((option) => [
@@ -255,7 +232,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 										onUpdate((current) => ({ ...current, windowSeconds: seconds }))
 								}}
 							>
-								<SelectTrigger className="h-8 w-[160px] text-xs" aria-label="Window">
+								<SelectTrigger size="sm" className="w-[160px]" aria-label="Window">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -273,29 +250,31 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 									) : null}
 								</SelectContent>
 							</Select>
-							<span className="text-[11px] text-muted-foreground">of the anchor</span>
+							<span className="text-2xs text-muted-foreground">of the anchor</span>
 						</div>
 					)}
 
 					{paths.addOns.include && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Include</span>
-							<Segmented
-								ariaLabel="Include"
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Include</span>
+							<SegmentedSelect
+								size="sm"
+								className="*:text-xs"
+								aria-label="Include"
 								value={paths.include}
 								options={[
 									{ value: "all", label: "Events + pages" },
 									{ value: "events", label: "Events" },
 									{ value: "pages", label: "Pages" },
 								]}
-								onSelect={(include) => onUpdate((current) => ({ ...current, include }))}
+								onChange={(include) => onUpdate((current) => ({ ...current, include }))}
 							/>
 						</div>
 					)}
 
 					{paths.addOns.exclude && (
 						<div className="flex items-center gap-2">
-							<span className="w-16 shrink-0 text-[11px] text-muted-foreground">Exclude</span>
+							<span className="w-16 shrink-0 text-2xs text-muted-foreground">Exclude</span>
 							<Input
 								size="sm"
 								value={paths.excludeText}
@@ -306,7 +285,7 @@ export function PathsQueryPanelView({ paths, onUpdate, suggestions }: PathsQuery
 								aria-label="Excluded names"
 								className="w-[320px] font-mono text-xs"
 							/>
-							<span className="text-[11px] text-muted-foreground">
+							<span className="text-2xs text-muted-foreground">
 								event names or page paths, comma-separated, dropped before sequencing
 							</span>
 						</div>

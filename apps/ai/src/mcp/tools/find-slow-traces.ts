@@ -2,7 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
-import { formatDurationFromMs, truncate } from "../lib/format"
+import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
@@ -16,7 +16,7 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 		name: "find_slow_traces",
 		title: "Find Slow Traces",
 		description:
-			"Find the slowest traces with percentile context (p50, p95, min, max). Use inspect_trace on slow trace_ids to find bottleneck spans.",
+			"Find the slowest traces with percentile context (p50, p95, min, max). Use inspect_trace on slow trace_ids, with the row's Start as `timestamp`, to find bottleneck spans.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -46,7 +46,6 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 					traceId: t.traceId,
 					rootSpanName: t.spanName,
 					durationMs: t.durationMs,
-					spanCount: 1,
 					services: [t.serviceName],
 					hasError: t.statusCode === "Error",
 					...(t.timestamp ? { startTime: t.timestamp } : undefined),
@@ -89,8 +88,9 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 								]),
 							]),
 					doc.table(
-						["Trace ID", "Root Span", "Duration", "Service", "Error"],
+						["Start", "Trace ID", "Root Span", "Duration", "Service", "Error"],
 						output.traces.map((t) => [
+							t.startTime === undefined ? "" : toSecondTimestamp(t.startTime),
 							t.traceId,
 							truncate(t.rootSpanName, 30),
 							formatDurationFromMs(t.durationMs),
@@ -99,9 +99,16 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 						]),
 					),
 				],
-				next: output.traces
-					.slice(0, 3)
-					.map((t) => doc.next("inspect_trace", { trace_id: t.traceId }, "find bottleneck spans")),
+				next: output.traces.slice(0, 3).map((t) =>
+					doc.next(
+						"inspect_trace",
+						{
+							trace_id: t.traceId,
+							timestamp: t.startTime === undefined ? undefined : toSecondTimestamp(t.startTime),
+						},
+						"find bottleneck spans",
+					),
+				),
 			}
 		},
 	})

@@ -24,7 +24,7 @@ export const ensureLocalToken = async (path: string, label: string): Promise<str
 		await durableWrite(path, `${randomBytes(32).toString("hex")}\n`)
 	}
 	const token = readRealFile(path, label).trim()
-	return Schema.decodeUnknownSync(Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)))(token)
+	return Schema.decodeUnknownSync(Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u)))(token)
 }
 
 export const localTokenMatches = (expected: string, supplied: string | null): boolean => {

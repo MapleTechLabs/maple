@@ -218,6 +218,19 @@ dir) beside the store; the query CLI reads it to find a server on a non-default
 port. `maple start -d` checks the port before spawning and reports ready only
 when `/local/status` answers with the child's pid (120s budget).
 
+**Under a supervisor.** A start refusal that retrying cannot fix (an unloadable
+libchdb, a dirty or incompatible store; the list is `DETERMINISTIC_START_TAGS` in
+`apps/cli/src/commands/start-failures.ts`) exits with status **78**, and so does
+a `maple start -d` whose child exited 78. Tell the supervisor not to restart on
+it: systemd `RestartPreventExitStatus=78`, launchd `KeepAlive` =
+`{ SuccessfulExit = false; }` plus a `ThrottleInterval`, Docker
+`restart: on-failure:5`. A taken port keeps the ordinary exit code, since it can
+clear by itself. Either way `maple start` protects itself: it records the
+failure in `start-failures.json` beside the store (a `-d` child uses
+`start-failures-child.json`), reports the same failure to Maple's telemetry at
+most once an hour, and from the third consecutive non-interactive repeat waits
+before exiting (1s, doubling, capped at 60s). A successful start clears both.
+
 ### Service map rollup
 
 `service_map_edges_hourly` has no materialized view: an edge needs a
@@ -234,6 +247,93 @@ inside the request admission gate and ingest and queries run between hours.
 Checkpoints and `maple stop` wait for at most one hour's join. Sealed hours and
 retired UTC days are skipped. A span that arrives after its hour is sealed is
 not counted in the map's complete hours.
+
+### Deleting a service's or namespace's data
+
+`maple delete` removes one service's or one `service.namespace`'s telemetry from
+the live store without a full `maple reset`, for example when one shared local
+Maple serves many throwaway dev environments:
+
+```bash
+maple delete --service checkout-pr-42                 # preview: per-table counts, exits 1
+maple delete --service checkout-pr-42 --yes           # delete everything for the service
+maple delete --namespace pr-42 --yes                  # every service in one service.namespace
+maple delete --service api --namespace pr-42 --yes    # one service within one namespace
+maple delete --service api --env preview-17 --yes     # one deployment.environment only
+maple delete --service api --before 7d --yes          # rows older than an age or UTC timestamp
+```
+
+Pass `--service`, `--namespace`, or both (a row must match all given). `--env`
+matches `deployment.environment.name`, falling back to `deployment.environment`,
+the same expression the rollups store as `DeploymentEnv`. `--before` is floored
+to the UTC hour, because hourly rollups cannot split an hour; the report echoes
+the effective cutoff. A namespace delete keeps a same-named service in another
+namespace: `api` in `pr-41` survives `--namespace pr-42`.
+
+The command is local-only: `--remote`, or a mode that resolves to remote, is
+refused before anything is sent. It needs a running `maple start`, reads the
+maintenance token beside the server's data directory (so only the machine and
+user owning the store can delete), and posts to `POST /local/maintenance/delete`.
+The read-only `/local/query` path is not involved. The server runs the delete
+inside the admission gate's exclusive section, so ingest, queries, the service
+map rollup and checkpoint backups wait for it.
+
+**Which tables.** Every table in the local schema is classified in
+`TABLE_DELETE_PLAN` (`apps/cli/src/server/scoped-delete.ts`). A table either is
+`excluded` or declares which of the three dimensions (service, namespace, env)
+it can filter exactly, plus how to recompute it when a request names one it
+lacks. `validateDeletePlan` checks the map against the bundled schema manifest
+for every request shape. The server refuses to delete when they disagree, and
+`apps/cli/test/scoped-delete.test.ts` fails when a table is added without a
+classification. Per request, each table is handled one of three ways:
+
+- **filter**: the table declares every requested dimension, so
+  `ALTER TABLE ... DELETE` removes exactly the matching rows. The six raw tables
+  read namespace and env from `ResourceAttributes` and can always filter.
+  `trace_list_mv`, `service_overview_*`, `trace_facets_hourly`,
+  `logs_aggregates_hourly` and `trace_detail_spans` also carry the namespace;
+  most other rollups carry `ServiceName` and `DeploymentEnv` only. On a merging
+  engine (Aggregating, Summing, Replacing) every filter column must be in the
+  sorting key, so a row never mixes scopes. `service_map_edges_hourly` and
+  `service_address_resolutions_hourly` match the service on either end of the
+  edge, because an edge is derived from both services' spans.
+- **rebuild**: the table lacks a requested dimension. The hours the deleted
+  source rows covered are cleared, limited to the requested dimensions the table
+  does key on, and recomputed from the surviving source rows. Most tables are
+  recomputed by re-running their own materialized-view bodies, one UTC day per
+  insert, in dependency order: a recomputed source fires its downstream views
+  (`service_operations_minutely` into `_hourly`, `error_events` into
+  `error_fingerprints_minutely`), and the downstream recompute that follows
+  wipes and redoes those hours. The two service map tables are recomputed by
+  re-running the hourly rollup from raw spans, only for hours it had already
+  sealed. `attribute_keys_hourly`, `attribute_values_hourly` and
+  `error_fingerprints_minutely` have no usable service key, so they are always
+  recomputed. An hour is recomputed only while every source still holds all of
+  it (bundled TTL plus a day of margin). Older hours are left as they are and
+  reported as skipped; their TTL removes them.
+- **excluded**: tables no local telemetry reaches. `session_events`,
+  `session_replay_events`, `session_replays` and `identity_links` hold browser
+  session data that local OTLP ingest never writes. `alert_checks` and
+  `audit_log` are control-plane history, and `service_map_edges_hourly_ingest` is
+  a `Null` table that stores nothing. The validator also refuses any
+  materialized view that writes an excluded table from a deletable one.
+
+**Crash safety.** Before the first mutation the server durably writes
+`maple-pending-delete.json` beside the data directory, holding the request and
+the hours each rebuild will recompute. It is removed after the last step.
+Filter deletes are idempotent, so a delete that fails midway is finished at the
+next start (before the listener binds) or by the next `maple delete`.
+
+**Checkpoints and archives.** A delete changes only the live store.
+`/local/status` reports `lastDeleteAtMs`, and the checkpoint refresh treats a
+delete like ingest, so the next tick replaces `current`. Until two refreshes
+have rotated `previous` as well, and for pinned or reset-preserved checkpoints,
+`maple restore` brings the deleted rows back. Run `maple checkpoint` right after
+a delete to refresh `current` at once. Parquet archives are immutable exports
+of earlier checkpoints and are not touched; remove an archived day with
+`maple archive expire`. Re-archiving a day after a delete exports fewer rows,
+which `archive create` refuses without `--allow-shrink`. Retired days hold no
+live raw rows, so a delete never recomputes them.
 
 ### Versioned local-store migrations
 
@@ -359,7 +459,7 @@ and every table function that reaches the filesystem or network are refused, and
 the statement runs with `readonly = 1` plus caps (30s, 4 GB memory, 1M rows,
 256 MiB result). A refusal is HTTP 400 with a body starting
 `read-only query endpoint: `. Internal writes (ingest, checkpoints, archives)
-use chDB directly; the native test probes write through `/local/query` with the
+and scoped deletes use chDB directly; the native test probes write through `/local/query` with the
 `x-maple-maintenance-token` header, a single-statement path reserved for them.
 
 The **server owns the output FORMAT**. `CH.compile(...)` appends
@@ -368,8 +468,9 @@ the statement as JSON rows, and keeps a client's own SETTINGS only where they
 lower the caps. Clients therefore POST `compiled.sql` verbatim.
 
 `GET /local/status` returns `{service: "maple-local", pid, version, url,
-dataDir, lastIngestAtMs}`, where `lastIngestAtMs` is when the server last
-accepted a non-empty OTLP batch of any signal. The CLI probe and the UI's
+dataDir, lastIngestAtMs, lastDeleteAtMs}`, where `lastIngestAtMs` is when the
+server last accepted a non-empty OTLP batch of any signal and `lastDeleteAtMs`
+is when a `maple delete` last ran (absent on older binaries). The CLI probe and the UI's
 connection pill use it; `/health` still answers `OK` for shell probes.
 
 Browser requests to `/local/*` are accepted only from the same origin, the
@@ -545,6 +646,8 @@ maple query 'SELECT ServiceName, count() FROM traces WHERE $__orgFilter AND $__t
 - `maple slow-traces` and span search report error-or-not rather than the status
   code, and no span id.
 - v2 lists cap at 100 rows per page; `maple error` caps sample traces at 20.
+- `maple delete` is local-only: it deletes from the local store (see
+  [Deleting a service's or namespace's data](#deleting-a-services-or-namespaces-data)) and refuses remote mode.
 
 ### Seeding data
 
@@ -561,6 +664,14 @@ way. Ids that decode to any other length are rejected with a `400` naming the
 field instead of being stored mangled. A hex trace id read as base64 yields a
 _deterministic_ 24-byte value, so the trace still self-joins and looks correct
 until you compare it against the emitting service's logs.
+
+## Release workflow opt-in
+
+Set the repository Actions variable `MAPLE_RELEASE_ENABLED=true` to enable **Release**
+and **Local Binary Release**, including manual runs. Forks can leave it unset to skip
+these jobs. Use a repository variable or an organization variable scoped to this
+repository, not an environment variable.
+Upstream maintainers must set it before merging the gate to keep releases running.
 
 ## Release bundle
 

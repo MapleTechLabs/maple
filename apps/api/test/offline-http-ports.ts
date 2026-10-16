@@ -1,14 +1,17 @@
 /** Offline graph fixtures. Every external operation fails rather than reaching a real service. */
 import { Effect, Layer, Option } from "effect"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
+import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { envPorts } from "@maple/backend/platform/env-ports"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
 	CliAuthRateLimit,
+	EmailSender,
 	MapleDbConnection,
 	McpOAuthRateLimit,
 	PlanetScaleWebhookQueueProducer,
 	ReplayBlobBucket,
+	SchemaApplyWorkflow,
 	VcsSyncQueueProducer,
 } from "@maple/backend/platform/bindings"
 const rejectIO = () => Effect.die("Unexpected external I/O in cold-path probe")
@@ -23,7 +26,11 @@ export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(McpOAuthRateLimit, limiter),
 	Layer.succeed(ReplayBlobBucket, { getBytes: rejectIO }),
 	Layer.succeed(MapleDbConnection, Option.none()),
-	workerEnvLayer({
+	Layer.succeed(EmailSender, Option.none()),
+	Layer.succeed(SchemaApplyWorkflow, { create: rejectIO }),
+	// Every session call fails: the probe must not reach a Durable Object.
+	fakeChatSessionsLayer(() => ({})),
+	envPorts({
 		TINYBIRD_HOST: "https://warehouse.invalid",
 		TINYBIRD_TOKEN: "offline",
 		MAPLE_ROOT_PASSWORD: "offline-benchmark-only",

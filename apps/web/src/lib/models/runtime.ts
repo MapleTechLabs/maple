@@ -15,7 +15,7 @@
 
 import { UnitflowRuntime } from "@maple/unitflow"
 import { Layer } from "effect"
-import * as Reactivity from "effect/unstable/reactivity/Reactivity"
+import * as Reactivity from "effect/reactivity/Reactivity"
 import { appMemoMap, mapleApiClientLayer, mapleApiV2ClientLayer } from "@/lib/registry"
 import { AlertsOverviewModel } from "./alerts-overview-model"
 import { DashboardsListModel } from "./dashboards-list-model"

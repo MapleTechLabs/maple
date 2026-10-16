@@ -18,6 +18,13 @@
 
 import { MapleBrowser, type TrackProps } from "@maple-dev/browser"
 
+// Speculation-rules prerendering (Chromium); not in TypeScript's DOM lib yet.
+declare global {
+	interface Document {
+		readonly prerendering?: boolean
+	}
+}
+
 const INGEST_KEY = import.meta.env.PUBLIC_MAPLE_INGEST_KEY
 const ENDPOINT = import.meta.env.PUBLIC_INGEST_URL || "https://ingest.maple.dev"
 /**
@@ -41,6 +48,7 @@ const LANDING_EVENTS = [
 	"pricing_plan_selected",
 	"pricing_calculator_changed",
 	"install_command_copied",
+	"agent_prompt_copied",
 	"docs_search",
 	"docs_snippet_copied",
 	"changelog_link_copied",
@@ -68,6 +76,12 @@ export function startLandingTelemetry(): void {
 	// No key configured (fresh clone, `astro dev` without env) — stay silent
 	// rather than post a marketing site's traffic at whatever the default is.
 	if (started || !INGEST_KEY || typeof window === "undefined") return
+	// Hover prefetch prerenders pages the visitor may never open; start the
+	// session and replay only once the page is actually shown.
+	if (document.prerendering) {
+		document.addEventListener("prerenderingchange", startLandingTelemetry, { once: true })
+		return
+	}
 	started = true
 
 	MapleBrowser.init({

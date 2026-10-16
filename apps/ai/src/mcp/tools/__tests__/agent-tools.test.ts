@@ -276,12 +276,7 @@ const REJECTED: Array<[string, string, ToolParams, Array<string>]> = [
 		{ ...WINDOW, tool: "   ", fingerprint: FINGERPRINT },
 		["Invalid tool", 'tool="search_docs"'],
 	],
-	[
-		"a window wider than the search cap",
-		OVERVIEW,
-		{ start_time: "2026-01-01 00:00:00", end_time: "2026-09-12 00:00:00" },
-		["Time range too large"],
-	],
+	["a start_time in the future", OVERVIEW, { start_time: "2099-01-01 00:00:00" }, ["is not in the past"]],
 ]
 
 it.each(REJECTED)("rejects %s with a message naming the fix", async (_case, name, params, phrases) => {
@@ -295,6 +290,13 @@ describe("structured output", () => {
 		const overview = await call(OVERVIEW, { ...WINDOW, tool: "search_docs" })
 		const decoded = Schema.decodeUnknownSync(GetAgentToolsOverviewOutput)(overview.structuredContent)
 		expect(decoded.failureGroups?.groups[0]?.trend).toHaveLength(TREND_BUCKETS)
+		// A selected tool's read is about that tool: the every-tool breakdown is not read or carried.
+		expect(decoded.tools).toBeUndefined()
+		expect(markdown(overview)).not.toContain("### Tools (busiest first")
+		const all = Schema.decodeUnknownSync(GetAgentToolsOverviewOutput)(
+			(await call(OVERVIEW, WINDOW)).structuredContent,
+		)
+		expect(all.tools?.length).toBeGreaterThan(0)
 		const detail = await call(ERROR_DETAIL, {
 			...WINDOW,
 			tool: "search_docs",

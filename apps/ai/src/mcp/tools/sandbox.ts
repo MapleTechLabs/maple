@@ -57,11 +57,11 @@ const unsafeRef = (ref: string): boolean =>
 	/[\u0000-\u001f\u007f ~^:?*[\\]/.test(ref)
 
 /**
- * Maple's own agents only. These run commands inside a container holding the
- * org's source, and until the audience existed they were published to every MCP
- * client like any other tool.
+ * Maple's own agents only, the chat-platform bot included. These run commands inside a
+ * container holding the org's source, and until the audience existed they were published
+ * to every MCP client like any other tool.
  */
-const INTERNAL = "internal" as const
+const AGENT = "agent" as const
 
 /** Reads only, but against a repository checkout outside Maple's own data. */
 const HINTS = { readOnly: true, openWorld: true } as const
@@ -132,7 +132,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxGrepOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Searching the repository", "Grepping the code"],
 		handler: Effect.fn("McpTool.sandboxGrep")(function* ({
 			repository,
@@ -228,7 +228,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxListFilesOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Listing files"],
 		handler: Effect.fn("McpTool.sandboxListFiles")(function* ({ repository, path, glob, ref }) {
 			yield* checkPath("path", path)
@@ -290,7 +290,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxReadFileOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Reading a file"],
 		handler: Effect.fn("McpTool.sandboxReadFile")(function* ({
 			repository,
@@ -413,7 +413,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		}),
 		output: SandboxExecOutput,
 		hints: HINTS,
-		audience: INTERNAL,
+		audience: AGENT,
 		phrases: ["Running a command"],
 		handler: Effect.fn("McpTool.sandboxExec")(function* ({
 			repository,

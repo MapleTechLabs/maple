@@ -1,8 +1,12 @@
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useCallback, useMemo, useReducer, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 
 import type { ErrorIssueId, WorkflowState } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
+import { ToolbarSearch } from "@maple/ui/components/toolbar"
+import { LoadMoreButton } from "@maple/ui/components/ui/list-footer"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
@@ -42,7 +46,7 @@ import {
 	type RowPicker,
 } from "./error-signal-row"
 import { IssuesBulkBar } from "./issues-bulk-bar"
-import { SEVERITY_FILL, SEVERITY_ORDER, SeverityDot, severityRank } from "./severity-badge"
+import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, SeverityDot, severityRank } from "./severity-badge"
 import { useIssueMutations } from "./use-issue-mutations"
 
 /**
@@ -60,36 +64,21 @@ const SKELETON_ROWS = 8
 
 const VIEW_LABEL: Record<HubView, string> = {
 	open: "Open",
-	triage: "Triage",
-	active: "Active",
-	resolved: "Resolved",
+	closed: "Closed",
 	all: "All",
 } satisfies Record<HubView, string>
 
 /**
- * Which workflow states each view covers. `triage` is the untouched queue,
- * `active` is everything someone has picked up, `resolved` is closed work.
- * `regressed` sits in triage because a fix that did not hold is untriaged
- * again, not in-progress.
- *
- * `open` is the union of triage and active, spelled out rather than left as
- * `"all"`. The SERVER already narrows it — `actionable=true` maps to exactly
- * these five states — so on the real page the client filter passes every row it
- * is given and discards nothing. Spelling it out is what lets the view be
- * rendered off a fixture (`/lab/errors`) and still show the set the server
- * would have returned.
+ * Which workflow states each view covers. The server applies the same sets
+ * (`state=open|closed`); spelling them out here lets `/lab/errors` render a
+ * view off a fixture, and drops a row the moment a triage action moves it out.
+ * `verifying` is Closed: the fix has merged and the tick, not a person, acts next.
  */
 const VIEW_STATES = {
 	open: ["triage", "regressed", "todo", "in_progress", "in_review"],
-	triage: ["triage", "regressed"],
-	active: ["todo", "in_progress", "in_review"],
-	resolved: ["done", "cancelled", "wontfix"],
+	closed: ["verifying", "done", "cancelled", "wontfix"],
 	all: "all",
 } satisfies Record<HubView, ReadonlyArray<WorkflowState> | "all">
-
-/** Views the server can narrow with `actionable=true`, so the page it returns
- *  is already the right one. */
-export const ACTIONABLE_VIEWS: ReadonlyArray<HubView> = ["open", "triage", "active"]
 
 /** Membership against the view's state set. The literal tuples above keep their
  *  inferred element types, which do not accept an arbitrary `WorkflowState` as
@@ -121,10 +110,7 @@ const LOAD_MORE_SKELETON_ROWS = 3
 
 const SEVERITY_FILTER_LABEL: Record<SeverityFilter, string> = {
 	all: "All severities",
-	critical: "Critical",
-	high: "High",
-	medium: "Medium",
-	low: "Low",
+	...SEVERITY_LABEL,
 	unset: "Unset",
 } satisfies Record<SeverityFilter, string>
 
@@ -136,12 +122,8 @@ const SEVERITY_FILTER_LABEL: Record<SeverityFilter, string> = {
  * options rather than as a current state.
  */
 const SEVERITY_TRIGGER_LABEL: Record<SeverityFilter, string> = {
+	...SEVERITY_FILTER_LABEL,
 	all: "Severity",
-	critical: "Critical",
-	high: "High",
-	medium: "Medium",
-	low: "Low",
-	unset: "Unset",
 } satisfies Record<SeverityFilter, string>
 
 /** Base UI renders the raw value in the trigger unless it is given a renderer,
@@ -161,9 +143,11 @@ function SeverityFilterDot({ value }: { value: SeverityFilter }) {
 		return (
 			<span aria-hidden="true" className="flex shrink-0 -space-x-1">
 				{SEVERITY_ORDER.map((severity) => (
-					<span
+					<StatusDot
 						key={severity}
-						className={cn("size-2 rounded-full ring-1 ring-popover", SEVERITY_FILL[severity])}
+						tone="custom"
+						size="lg"
+						className={cn("ring-1 ring-popover", SEVERITY_FILL[severity])}
 					/>
 				))}
 			</span>
@@ -202,32 +186,21 @@ const EMPTY_COPY = {
 	open: {
 		icon: CircleCheckIcon,
 		title: "Nothing open",
-		description: "Every error here is closed out. Check Resolved to see recent fixes.",
-	},
-	triage: {
-		icon: CircleCheckIcon,
-		title: "Nothing waiting on triage",
-		description: "Every error here has been picked up.",
-	},
-	active: {
-		icon: CircleCheckIcon,
-		title: "Nothing in progress",
-		description: "No one has claimed an error yet. Start from the triage queue.",
+		description: "Every issue here is closed out. Check Closed to see recent fixes.",
 	},
 	all: {
 		icon: CircleCheckIcon,
 		title: "No errors recorded",
 		description: "Your services are sending traces and none have failed.",
 	},
-	resolved: {
+	closed: {
 		icon: HistoryIcon,
-		title: "Nothing resolved yet",
-		description: "Errors you close land here, so you can check whether a fix held.",
+		title: "Nothing closed yet",
+		description: "Issues you close land here, so you can check whether a fix held.",
 	},
 } satisfies Record<HubView, { icon: typeof CircleCheckIcon; title: string; description: string }>
 
-const ERRORS_PURPOSE =
-	"Errors groups failed spans and exception logs into issues you can triage, assign and resolve."
+const ERRORS_PURPOSE = "Group failed spans and exceptions into issues you can triage, assign and resolve."
 
 export interface ErrorsHubViewProps {
 	/** `loading` draws row skeletons, `failed` the retry card. Both keep the
@@ -243,6 +216,9 @@ export interface ErrorsHubViewProps {
 	onViewChange: (view: HubView) => void
 	onSortChange: (sort: HubSort) => void
 	onSeverityChange: (severity: SeverityFilter) => void
+	/** The applied search term, matched server-side. */
+	search: string
+	onSearchChange: (search: string | undefined) => void
 	/** The window totals above the toolbar. A slot rather than a component
 	 *  because it is the one part of the list that fetches for itself. */
 	stats?: React.ReactNode
@@ -263,6 +239,8 @@ export function ErrorsHubView({
 	onViewChange,
 	onSortChange,
 	onSeverityChange,
+	search,
+	onSearchChange,
 	stats,
 	paging,
 	onClearFilters,
@@ -281,14 +259,21 @@ export function ErrorsHubView({
 				tabs={HUB_VIEWS.map((value) => ({ value, label: VIEW_LABEL[value] }))}
 				active={view}
 				label="Filter errors"
-				countNoun={["error", "errors"]}
+				countNoun={["issue", "issues"]}
 				/* No count until there is one to state. "0 errors" under a spinner is
 				   a claim about the data, and it is wrong every time. */
 				totalCount={status === "ready" ? sorted.length : undefined}
-				countLabel={status === "ready" && hasUnshownPages ? `${sorted.length}+ errors` : undefined}
+				countLabel={status === "ready" && hasUnshownPages ? `${sorted.length}+ issues` : undefined}
 				onChange={onViewChange}
 				trailing={
 					<>
+						<ToolbarSearch
+							query={search}
+							onSearch={onSearchChange}
+							placeholder="Search issues..."
+							size="sm"
+							className="w-52"
+						/>
 						<Select
 							value={sort}
 							onValueChange={(value) => {
@@ -355,11 +340,11 @@ export function ErrorsHubView({
 				    known, it explains what is loading, and keeping it means the rows
 				    land in the columns the eye is already resting on. */}
 				<ErrorSignalHeader />
-				<div className="divide-y divide-border/40">
-					{Array.from({ length: SKELETON_ROWS }).map((_, index) => (
-						<ErrorSignalRowSkeleton key={index} index={index} />
-					))}
-				</div>
+				<SkeletonList
+					rows={SKELETON_ROWS}
+					renderRow={(index) => <ErrorSignalRowSkeleton index={index} />}
+					className="gap-0 divide-y divide-border/40"
+				/>
 			</div>
 		)
 	}
@@ -386,8 +371,10 @@ export function ErrorsHubView({
 			toolbar={toolbar}
 			view={view}
 			severity={severity}
+			search={search}
 			onViewChange={onViewChange}
 			onSeverityChange={onSeverityChange}
+			onSearchChange={onSearchChange}
 			paging={paging}
 			onClearFilters={onClearFilters}
 		/>
@@ -403,8 +390,10 @@ function HubList({
 	toolbar,
 	view,
 	severity,
+	search,
 	onViewChange,
 	onSeverityChange,
+	onSearchChange,
 	paging,
 	onClearFilters,
 }: {
@@ -413,8 +402,10 @@ function HubList({
 	toolbar: React.ReactNode
 	view: HubView
 	severity: SeverityFilter
+	search: string
 	onViewChange: (view: HubView) => void
 	onSeverityChange: (severity: SeverityFilter) => void
+	onSearchChange: (search: string | undefined) => void
 	paging: HubPaging | undefined
 	onClearFilters: (() => void) | undefined
 }) {
@@ -479,8 +470,10 @@ function HubList({
 				<HubEmpty
 					view={view}
 					severity={severity}
+					search={search}
 					onViewChange={onViewChange}
 					onSeverityChange={onSeverityChange}
+					onSearchChange={onSearchChange}
 					onClearFilters={onClearFilters}
 				/>
 			) : (
@@ -519,14 +512,18 @@ function HubList({
 function HubEmpty({
 	view,
 	severity,
+	search,
 	onViewChange,
 	onSeverityChange,
+	onSearchChange,
 	onClearFilters,
 }: {
 	view: HubView
 	severity: SeverityFilter
+	search: string
 	onViewChange: (view: HubView) => void
 	onSeverityChange: (severity: SeverityFilter) => void
+	onSearchChange: (search: string | undefined) => void
 	onClearFilters: (() => void) | undefined
 }) {
 	const empty = EMPTY_COPY[view]
@@ -538,6 +535,34 @@ function HubEmpty({
 	// errors the filter is hiding.
 	const narrowed = filtered || onClearFilters !== undefined
 	const presence = useSignalPresence("traces")
+
+	if (search !== "") {
+		return (
+			<Empty className="py-12">
+				<EmptyHeader>
+					<EmptyMedia variant="icon">
+						<MagnifierIcon size={18} />
+					</EmptyMedia>
+					<EmptyTitle>No issues match “{search}”</EmptyTitle>
+					<EmptyDescription>
+						{view === "all"
+							? "Search covers the type, message and service of every issue."
+							: `Nothing in ${VIEW_LABEL[view]} matches. It may be in another tab.`}
+					</EmptyDescription>
+				</EmptyHeader>
+				<div className="flex flex-wrap items-center justify-center gap-2">
+					{view !== "all" ? (
+						<Button size="sm" variant="outline" onClick={() => onViewChange("all")}>
+							Search all issues
+						</Button>
+					) : null}
+					<Button size="sm" variant="ghost" onClick={() => onSearchChange(undefined)}>
+						Clear search
+					</Button>
+				</div>
+			</Empty>
+		)
+	}
 
 	// An all-clear is only true once traces arrive. Before that, the empty list means setup.
 	if (!narrowed && presence.status === "absent") {
@@ -627,11 +652,11 @@ function HubPagingFooter({ paging }: { paging: HubPaging }) {
 
 	if (paging.state === "loading") {
 		return (
-			<div className="divide-y divide-border/40 border-t border-border/40" aria-busy="true">
-				{Array.from({ length: LOAD_MORE_SKELETON_ROWS }).map((_, index) => (
-					<ErrorSignalRowSkeleton key={index} index={index} />
-				))}
-			</div>
+			<SkeletonList
+				rows={LOAD_MORE_SKELETON_ROWS}
+				renderRow={(index) => <ErrorSignalRowSkeleton index={index} />}
+				className="gap-0 divide-y divide-border/40 border-t border-border/40"
+			/>
 		)
 	}
 
@@ -640,9 +665,10 @@ function HubPagingFooter({ paging }: { paging: HubPaging }) {
 			{paging.state === "failed" ? (
 				<span className="text-xs text-muted-foreground">More errors could not be loaded.</span>
 			) : null}
-			<Button variant="outline" size="sm" onClick={paging.onLoadMore}>
-				{paging.state === "failed" ? "Retry" : "Load more"}
-			</Button>
+			<LoadMoreButton
+				onClick={paging.onLoadMore}
+				label={paging.state === "failed" ? "Retry" : "Load more"}
+			/>
 		</div>
 	)
 }

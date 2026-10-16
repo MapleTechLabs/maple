@@ -5,15 +5,16 @@
  * sits in a filled tile, and the node's fill against the canvas. Colour alone
  * never distinguishes a node, so the graph still reads with the hue stripped out.
  */
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { memo } from "react"
 import { Link } from "@tanstack/react-router"
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 import { cn } from "@maple/ui/lib/utils"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
+import { RelativeTime } from "@/components/common/relative-time"
 
 import {
-	AlertWarningIcon,
 	BellIcon,
 	BoltIcon,
 	ChartBarIcon,
@@ -22,13 +23,12 @@ import {
 	CodeIcon,
 	type IconComponent,
 	MagnifierIcon,
-	NetworkNodesIcon,
 	RadioCheckedIcon,
 	RocketIcon,
 	ServerIcon,
 	SlidersIcon,
-	SquareTerminalIcon,
 } from "@/components/icons"
+import { CONCEPT_ICON } from "@/components/icons/concept"
 import type { ActionKind } from "./action-target"
 import type { ActionNodeData, FlowGlyph, PendingVerdictNodeData, SpineNodeData } from "./provenance-graph"
 
@@ -37,15 +37,13 @@ import type { ActionNodeData, FlowGlyph, PendingVerdictNodeData, SpineNodeData }
  * -----------------------------------------------------------------------------------------------*/
 
 const GLYPH: Record<FlowGlyph, IconComponent> = {
-	issue: AlertWarningIcon,
+	issue: CONCEPT_ICON.error,
 	check: RadioCheckedIcon,
 	incident: BellIcon,
 	investigation: MagnifierIcon,
 	verdict: CircleCheckIcon,
 } satisfies Record<FlowGlyph, IconComponent>
 
-/** The eyebrow strip: an icon in its tile, then the kind in caps. */
-const EYEBROW = "text-[10px] font-medium uppercase tracking-[0.12em]"
 /** Both handles are hidden — this graph is read-only, nothing connects to anything. */
 const HANDLE = "!size-0 !min-h-0 !min-w-0 !border-0 !bg-transparent"
 
@@ -119,23 +117,18 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 						size={13}
 						className={cn(
 							"relative",
-							data.current
-								? null
-								: data.glyph === "verdict"
-									? "text-info"
-									: "text-severity-error",
+							data.current ? null : data.glyph === "verdict" ? TONE_TEXT.info : TONE_TEXT.crit,
 						)}
 					/>
 				</span>
-				<span
+				<Eyebrow
 					className={cn(
-						EYEBROW,
 						"min-w-0 flex-1 truncate",
 						data.current ? "tracking-[0.06em] text-primary" : "text-muted-foreground",
 					)}
 				>
 					{data.eyebrow}
-				</span>
+				</Eyebrow>
 			</div>
 			<p
 				className={cn(
@@ -152,9 +145,9 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 			 * that *is* the running thing was the only one on the canvas not saying.
 			 */}
 			{data.phase ? (
-				<p className={cn(EYEBROW, "truncate text-[9px] leading-3 text-primary")} title={data.phase}>
+				<Eyebrow as="p" className="truncate text-4xs leading-3 text-primary" title={data.phase}>
 					{data.phase}
-				</p>
+				</Eyebrow>
 			) : null}
 			{/*
 			 * Directly under the phase line, so the stage and the fact that it is
@@ -163,8 +156,13 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 			 */}
 			{data.live ? <LiveBar /> : null}
 			{data.status ? (
-				<p className="flex items-baseline gap-1 text-[9px] leading-3">
-					<span className="shrink-0 font-medium tracking-[0.06em] text-severity-error">
+				<p className="flex items-baseline gap-1 text-4xs leading-3">
+					<span
+						className={cn(
+							"shrink-0 font-medium tracking-[0.06em]",
+							TONE_TEXT[data.statusTone ?? "crit"],
+						)}
+					>
 						{data.status}
 					</span>
 					{data.detail ? (
@@ -173,7 +171,7 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 				</p>
 			) : null}
 			{data.note ? (
-				<p className="whitespace-pre-line text-[10px] leading-[1.4] text-muted-foreground">
+				<p className="whitespace-pre-line text-3xs leading-[1.4] text-muted-foreground">
 					{data.note}
 					{data.current ? "\nyou are here" : null}
 				</p>
@@ -188,13 +186,13 @@ export const FlowSpineNode = memo(function FlowSpineNode({ data }: NodeProps & {
 			 * number nobody converts back into a date.
 			 */}
 			{data.at ? (
-				<time
-					dateTime={data.at}
-					title={new Date(toEpochMs(data.at)).toLocaleString()}
-					className="mt-auto pt-0.5 font-mono text-[9px] leading-3 text-muted-foreground/70 tabular-nums"
-				>
-					{formatRelativeTimeOrDate(data.at)}
-				</time>
+				<RelativeTime
+					value={data.at}
+					variant="orDate"
+					tooltip="title"
+					mono
+					className="mt-auto pt-0.5 text-4xs leading-3 text-muted-foreground/70"
+				/>
 			) : null}
 		</>
 	)
@@ -256,12 +254,12 @@ export const FlowPendingVerdictNode = memo(function FlowPendingVerdictNode({
 					 * 146px node on one line at the eyebrow's tracking, and the word IS
 					 * this node — a node reading "AWAITING VE…" says nothing at all.
 					 */}
-					<span className={cn(EYEBROW, "min-w-0 flex-1 leading-[1.3] text-muted-foreground")}>
+					<Eyebrow className="min-w-0 flex-1 leading-[1.3] text-muted-foreground">
 						{data.word}
-					</span>
+					</Eyebrow>
 				</div>
 				{data.note ? (
-					<p className="text-[10px] leading-[1.4] text-muted-foreground">{data.note}</p>
+					<p className="text-3xs leading-[1.4] text-muted-foreground">{data.note}</p>
 				) : null}
 				{/*
 				 * Two bars where the verdict node prints its suspected cause and its
@@ -290,15 +288,9 @@ export const FlowHeadingNode = memo(function FlowHeadingNode({
 	data,
 }: NodeProps & { data: { text: string } }) {
 	return (
-		<span
-			className={cn(
-				EYEBROW,
-				"block whitespace-nowrap tracking-[0.1em] text-muted-foreground",
-				"pointer-events-none text-[9px] leading-3",
-			)}
-		>
+		<Eyebrow className="pointer-events-none block whitespace-nowrap text-4xs leading-3 tracking-[0.1em] text-muted-foreground">
 			{data.text}
-		</span>
+		</Eyebrow>
 	)
 })
 
@@ -318,9 +310,9 @@ export const ACTION_GLYPH: Record<ActionKind, { Icon: IconComponent; label: stri
 	rollback: { Icon: RocketIcon, label: "Deploy or rollback" },
 	alert: { Icon: BellIcon, label: "Alerting" },
 	dashboard: { Icon: ChartBarIcon, label: "Dashboard" },
-	traces: { Icon: NetworkNodesIcon, label: "Traces" },
-	logs: { Icon: SquareTerminalIcon, label: "Logs" },
-	issue: { Icon: AlertWarningIcon, label: "Error issue" },
+	traces: { Icon: CONCEPT_ICON.trace, label: "Traces" },
+	logs: { Icon: CONCEPT_ICON.log, label: "Logs" },
+	issue: { Icon: CONCEPT_ICON.error, label: "Error issue" },
 	config: { Icon: SlidersIcon, label: "Configuration" },
 	code: { Icon: CodeIcon, label: "Code change" },
 	service: { Icon: ServerIcon, label: "Service setup" },
@@ -400,7 +392,7 @@ export const FlowActionNode = memo(function FlowActionNode({ data }: NodeProps &
 				 * `task` is a real kind — so the two lanes hold across every row.
 				 */}
 				<span className="flex w-4 shrink-0 flex-col items-center gap-1.5 self-start pt-3">
-					<span className="font-mono text-[10px] leading-3 text-muted-foreground tabular-nums">
+					<span className="font-mono text-3xs leading-3 text-muted-foreground tabular-nums">
 						{data.ordinal}
 					</span>
 					<ActionGlyph kind={data.kind} />
@@ -411,7 +403,7 @@ export const FlowActionNode = memo(function FlowActionNode({ data }: NodeProps &
 						{data.target ? (
 							<Link
 								to={data.target.href}
-								className="shrink-0 text-[9px] font-medium tracking-[0.06em] text-primary hover:underline"
+								className="shrink-0 text-4xs font-medium tracking-[0.06em] text-primary hover:underline"
 							>
 								{data.target.label} →
 							</Link>
@@ -421,7 +413,7 @@ export const FlowActionNode = memo(function FlowActionNode({ data }: NodeProps &
 						 * dim chip on the action they would perform — a roadmap promise
 						 * attached to a real handle, not a placeholder box on the canvas.
 						 */}
-						<span className="min-w-0 flex-1 truncate text-right text-[9px] tracking-[0.06em] text-muted-foreground/60">
+						<span className="min-w-0 flex-1 truncate text-right text-4xs tracking-[0.06em] text-muted-foreground/60">
 							{data.promise}
 						</span>
 					</p>

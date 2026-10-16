@@ -205,6 +205,9 @@ enum ClickHouseExportOutcome {
     Dropped,
 }
 
+/// Upper bound on how long one batch waits on an open breaker before shedding.
+const MAX_BREAKER_DEFERRAL: Duration = Duration::from_secs(30);
+
 /// Tuning for the per-org ClickHouse circuit breaker.
 #[derive(Clone, Copy, Debug)]
 pub struct ClickHouseBreakerConfig {
@@ -212,8 +215,8 @@ pub struct ClickHouseBreakerConfig {
     /// `0` disables the breaker entirely (every batch is allowed to run its
     /// full retry budget).
     pub failure_threshold: u32,
-    /// How long the breaker stays open (fast-shedding batches) before it lets a
-    /// single probe batch through to re-test the target.
+    /// How long the breaker stays open (deferring batches without calling the
+    /// target) before it lets a single probe batch through to re-test it.
     pub cooldown: Duration,
 }
 
@@ -221,9 +224,8 @@ impl Default for ClickHouseBreakerConfig {
     fn default() -> Self {
         Self {
             // Trip after 2 consecutive failures (not 4) so a stalled BYO-ClickHouse
-            // target enters fast-shed quickly, keeping the single-threaded lane
-            // worker draining instead of holding batches through the retry budget
-            // (which backs the bounded channel up into accept-path 503s).
+            // target stops being hammered quickly instead of each batch burning the
+            // retry budget against it.
             failure_threshold: 2,
             cooldown: Duration::from_secs(30),
         }
@@ -234,8 +236,8 @@ impl Default for ClickHouseBreakerConfig {
 enum BreakerDecision {
     /// The target looks healthy enough to attempt an export.
     Allow,
-    /// The target is in the open state; drop the batch immediately instead of
-    /// holding the lane worker through the retry budget.
+    /// The target is in the open state; make no attempt. The caller defers the
+    /// batch for one short window, then sheds it.
     Shed,
 }
 
@@ -247,6 +249,9 @@ struct BreakerState {
     /// When the in-flight half-open probe was admitted. `None` when no probe is
     /// outstanding. Only meaningful while `opened_at` is set.
     probe_started_at: Option<Instant>,
+    /// A batch already waited out a full deferral window in this outage, so later
+    /// batches shed at once instead of each holding the lane again. Cleared on success.
+    deferral_spent: bool,
 }
 
 /// Pure transition: should the next attempt run, given the current state? Kept
@@ -300,6 +305,43 @@ impl ClickHouseBreakerRegistry {
         self.cfg.failure_threshold > 0
     }
 
+    /// How long one batch may wait on an open breaker before it sheds. Kept to one
+    /// cooldown (at most 30s) and well under the max queue age, because every other
+    /// org on the lane waits behind it and would otherwise age out.
+    fn deferral_window(&self, queue_max_age: Duration) -> Duration {
+        let window = self.cfg.cooldown.min(MAX_BREAKER_DEFERRAL);
+        if queue_max_age.is_zero() {
+            window
+        } else {
+            window.min(queue_max_age / 4)
+        }
+    }
+
+    fn deferral_spent(&self, org_id: &str) -> bool {
+        self.states.get(org_id).is_some_and(|state| {
+            state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .deferral_spent
+        })
+    }
+
+    fn mark_deferral_spent(&self, org_id: &str) {
+        let state = self.state_for(org_id);
+        state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .deferral_spent = true;
+    }
+
+    /// How often a breaker-deferred batch re-checks for a half-open probe slot.
+    fn poll_interval(&self) -> Duration {
+        self.cfg
+            .cooldown
+            .min(Duration::from_secs(1))
+            .max(Duration::from_millis(10))
+    }
+
     fn state_for(&self, org_id: &str) -> Arc<Mutex<BreakerState>> {
         self.states
             .entry(org_id.to_owned())
@@ -341,6 +383,7 @@ impl ClickHouseBreakerRegistry {
             guard.consecutive_failures = 0;
             guard.opened_at = None;
             guard.probe_started_at = None;
+            guard.deferral_spent = false;
         }
     }
 
@@ -876,9 +919,9 @@ impl TelemetryPipeline {
     /// this task as alive.
     ///
     /// Shutdown calls this once the drain has done what it can: whatever did not
-    /// export is now in the object store under an owner whose heartbeat is gone,
-    /// so the next task claims it immediately instead of waiting out the
-    /// staleness window. Returns the bytes shipped.
+    /// export is now in the object store under a retired owner, which the next
+    /// task to boot claims without waiting out the staleness window. A clean
+    /// drain ships nothing. Returns the bytes shipped.
     pub async fn flush_wal_to_object_store(&self) -> u64 {
         let shipped = self.inner.wal.flush_to_object_store().await;
         if let Some(store) = self.inner.wal.store.get() {
@@ -1563,20 +1606,32 @@ impl WalLane {
 
     /// Whether the exporter has already moved past this segment.
     fn is_exported(&self, seq: u64) -> bool {
-        self.export.lock().is_ok_and(|state| seq < state.cursor.seq)
+        self.export
+            .lock()
+            .is_ok_and(|state| self.is_behind(state.cursor, seq))
+    }
+
+    /// Whether `cursor` has consumed all of sealed segment `seq`. A cursor
+    /// parked at the end of a segment that sealed after its last export (the
+    /// shutdown seal, typically) counts: it holds nothing left to replay.
+    fn is_behind(&self, cursor: SegmentCursor, seq: u64) -> bool {
+        seq < cursor.seq
+            || (seq == cursor.seq
+                && seq < self.active_seq.load(Ordering::Acquire)
+                && cursor.offset >= file_len(&segment_path(&self.dir, seq)))
     }
 
     /// Sealed segments this lane still owes, oldest first.
     fn unexported_segments(&self) -> Vec<u64> {
-        let cursor_seq = match self.export.lock() {
-            Ok(state) => state.cursor.seq,
+        let cursor = match self.export.lock() {
+            Ok(state) => state.cursor,
             Err(_) => return Vec::new(),
         };
         let active = self.active_seq.load(Ordering::Acquire);
         list_segments(&self.dir)
             .unwrap_or_default()
             .into_iter()
-            .filter(|seq| *seq >= cursor_seq && *seq < active)
+            .filter(|seq| *seq < active && !self.is_behind(cursor, *seq))
             .collect()
     }
 
@@ -1922,6 +1977,9 @@ impl ShardedWal {
                 }
             };
             let mut recovered_frames = 0usize;
+            // Segments still in the bucket after this pass. Any at all keeps the
+            // owner discoverable so a later boot retries them.
+            let mut left_behind = 0usize;
             let mut keys = Vec::with_capacity(segments.len());
             for segment in segments {
                 let Some(lane) = Self::lane_for_key(&segment.lane_key, cfg) else {
@@ -1930,6 +1988,7 @@ impl ShardedWal {
                         lane_key = segment.lane_key,
                         "Skipping an orphaned WAL segment for an unknown lane"
                     );
+                    left_behind += 1;
                     continue;
                 };
                 let frames = decode_segment_frames(&segment.bytes);
@@ -1956,10 +2015,14 @@ impl ShardedWal {
                 }
                 if committed {
                     keys.push(segment.key);
+                } else {
+                    left_behind += 1;
                 }
             }
             if recovered_frames == 0 && keys.is_empty() {
-                drop(store.release_owner(&owner).await);
+                if left_behind == 0 {
+                    drop(store.release_owner(&owner).await);
+                }
                 continue;
             }
             // Sealed and re-shipped under our own owner id *before* the source
@@ -1969,9 +2032,16 @@ impl ShardedWal {
             for key in keys {
                 if let Err(error) = store.release_key(&key).await {
                     warn!(owner, key, error = %error, "Failed to delete a recovered WAL segment");
+                    left_behind += 1;
                 }
             }
-            if let Err(error) = store.release_owner(&owner).await {
+            if left_behind > 0 {
+                warn!(
+                    owner,
+                    left_behind,
+                    "Keeping a WAL owner so a later boot retries its remaining segments"
+                );
+            } else if let Err(error) = store.release_owner(&owner).await {
                 warn!(owner, error = %error, "Failed to retire a recovered WAL owner");
             }
             metrics::wal_frames_recovered(recovered_frames as u64);
@@ -2954,31 +3024,62 @@ impl ExportWorker {
         // exhausted (which can only happen after at least one failure).
         let mut last_status: String;
 
+        let deferral_window = self
+            .clickhouse_breakers
+            .deferral_window(self.cfg.queue_max_age);
+        let mut deferred_since: Option<Instant> = None;
+        let mut waited_on_breaker = false;
         loop {
-            // Fast-shed before doing any work: if this org's target has been
-            // failing, drop the batch instead of holding the lane worker through
-            // the retry budget. This bounds how long one unhealthy BYO-ClickHouse
-            // target can starve co-sharded ClickHouse orgs.
-            if self.clickhouse_breakers.decide(org_id, Instant::now()) == BreakerDecision::Shed {
-                // A shed makes no HTTP call, but it silently discards customer
-                // data — emit a span anyway or the drop is invisible in traces.
-                let span = clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
-                span.record("maple.ingest.outcome", "shed_circuit_open");
-                record_stage_error(&span, "circuit_open", "target circuit breaker open", true);
-                metrics::clickhouse_export_dropped(datasource, "circuit_open", rows as u64);
-                warn!(
-                    org_id,
-                    datasource,
-                    rows,
-                    attempt,
-                    "Shedding ClickHouse batch: target circuit breaker open"
-                );
-                return Ok(ClickHouseExportOutcome::Dropped);
+            // An open breaker first defers the batch (cursor held) for one short window,
+            // so a blip is delivered without loss; past it the batch sheds, which bounds
+            // how long co-sharded orgs on this lane wait behind a broken target.
+            let now = Instant::now();
+            if self.clickhouse_breakers.decide(org_id, now) == BreakerDecision::Shed {
+                let window_spent = self.clickhouse_breakers.deferral_spent(org_id)
+                    || deferred_since
+                        .is_some_and(|since| now.duration_since(since) >= deferral_window);
+                if window_spent {
+                    self.clickhouse_breakers.mark_deferral_spent(org_id);
+                    // A shed makes no HTTP call, but it discards customer data, so it
+                    // still gets a span or the drop is invisible in traces.
+                    let span =
+                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
+                    span.record("maple.ingest.outcome", "shed_circuit_open");
+                    record_stage_error(&span, "circuit_open", "target circuit breaker open", true);
+                    metrics::clickhouse_export_dropped(datasource, "circuit_open", rows as u64);
+                    warn!(
+                        org_id,
+                        datasource,
+                        rows,
+                        attempt,
+                        "Shedding ClickHouse batch: target circuit breaker open"
+                    );
+                    return Ok(ClickHouseExportOutcome::Dropped);
+                }
+                let since = *deferred_since.get_or_insert_with(|| {
+                    // One span per deferred batch, left Unset: waiting is not a failure.
+                    let span =
+                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
+                    span.record("maple.ingest.outcome", "deferred_circuit_open");
+                    metrics::clickhouse_export_retry(datasource, "circuit_open");
+                    warn!(
+                        org_id,
+                        datasource,
+                        rows,
+                        attempt,
+                        "Deferring ClickHouse batch: target circuit breaker open"
+                    );
+                    now
+                });
+                waited_on_breaker = true;
+                let remaining = deferral_window.saturating_sub(now.duration_since(since));
+                sleep(self.clickhouse_breakers.poll_interval().min(remaining)).await;
+                continue;
             }
             // Backoff is taken here (before the attempt) so that when the breaker
-            // trips mid-batch the shed-check above can bail without first sleeping
-            // out the previous failure's backoff.
-            if attempt > 0 {
+            // trips mid-batch the shed-check above can wait without first sleeping
+            // out the previous failure's backoff; a breaker wait replaces it.
+            if attempt > 0 && !std::mem::take(&mut waited_on_breaker) {
                 backoff(attempt).await;
             }
 
@@ -4105,15 +4206,16 @@ fn bytes_hex(bytes: &[u8]) -> String {
 }
 
 fn format_timestamp_nano(unix_nano: u64) -> String {
+    // DateTime64(9) is an Int64 of nanoseconds: anything past i64::MAX (year 2262+)
+    // fails the whole insert with DECIMAL_OVERFLOW, so it maps to epoch like 0 does.
+    let Ok(unix_nano) = i64::try_from(unix_nano) else {
+        return "1970-01-01 00:00:00.000000000".to_owned();
+    };
     if unix_nano == 0 {
         return "1970-01-01 00:00:00.000000000".to_owned();
     }
-    #[expect(
-        clippy::cast_possible_wrap,
-        reason = "u64 nanoseconds divided by a billion cannot reach i64::MAX seconds"
-    )]
-    let secs = (unix_nano / 1_000_000_000) as i64;
-    let nanos = (unix_nano % 1_000_000_000) as u32;
+    let secs = unix_nano / 1_000_000_000;
+    let nanos = u32::try_from(unix_nano % 1_000_000_000).unwrap_or_default();
     let Some(dt) = chrono::DateTime::from_timestamp(secs, nanos) else {
         return "1970-01-01 00:00:00.000000000".to_owned();
     };
@@ -4533,6 +4635,18 @@ mod tests {
         assert_eq!(
             format_timestamp_nano(1_700_000_000_123_456_789),
             "2023-11-14 22:13:20.123456789"
+        );
+    }
+
+    #[test]
+    fn timestamp_outside_datetime64_range_maps_to_epoch() {
+        let epoch = "1970-01-01 00:00:00.000000000";
+        assert_eq!(format_timestamp_nano(0), epoch);
+        assert_eq!(format_timestamp_nano(u64::MAX), epoch);
+        assert_eq!(format_timestamp_nano(9_223_372_036_854_775_808), epoch);
+        assert_eq!(
+            format_timestamp_nano(9_223_372_036_854_775_807),
+            "2262-04-11 23:47:16.854775807"
         );
     }
 
@@ -5344,9 +5458,8 @@ mod tests {
     #[tokio::test]
     async fn clickhouse_breaker_sheds_after_threshold_failures() {
         // A persistently failing target must not burn the full retry budget on
-        // every batch: after `failure_threshold` failures the breaker bails the
-        // current batch and fast-sheds subsequent batches without touching the
-        // target, bounding how long it can hold the lane worker.
+        // every batch: after `failure_threshold` failures the breaker stops calling
+        // it, the batch sheds after one deferral window, and later batches shed at once.
         let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -5366,6 +5479,7 @@ mod tests {
         cfg.queue_dir = queue_dir.clone();
         cfg.wal_shards = 1;
         cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.queue_max_age = Duration::from_millis(300);
         // Generous retry budget so the breaker — not the budget — is what stops
         // the hammering.
         cfg.export_max_attempts = 20;
@@ -5427,6 +5541,195 @@ mod tests {
             2,
             "breaker-open batches must shed without hitting the target"
         );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// ClickHouse target that answers 503 until `healthy` flips, then 200,
+    /// counting each kind of answer.
+    #[derive(Clone, Default)]
+    struct RecoveringClickHouse {
+        healthy: Arc<std::sync::atomic::AtomicBool>,
+        failed: Arc<std::sync::atomic::AtomicUsize>,
+        delivered: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    async fn recovering_clickhouse_handler(
+        State(target): State<RecoveringClickHouse>,
+        _body: Bytes,
+    ) -> StatusCode {
+        if target.healthy.load(Ordering::SeqCst) {
+            target.delivered.fetch_add(1, Ordering::SeqCst);
+            StatusCode::OK
+        } else {
+            target.failed.fetch_add(1, Ordering::SeqCst);
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+    }
+
+    #[tokio::test]
+    async fn clickhouse_breaker_open_holds_wal_cursor_until_target_recovers() {
+        // Regression for the 2026-10-13 BYO-ClickHouse 503 window: an open breaker
+        // dropped batches and advanced the cursor past them. It must hold them.
+        let target = RecoveringClickHouse::default();
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(recovering_clickhouse_handler))
+            .with_state(target.clone());
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("ch-breaker-holds");
+        let mut cfg = test_cfg();
+        cfg.endpoint = String::new();
+        cfg.token = String::new();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.clickhouse_breaker = ClickHouseBreakerConfig {
+            failure_threshold: 2,
+            cooldown: Duration::from_millis(400),
+        };
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_owned(),
+                password: String::new(),
+                database: "maple".to_owned(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse_validation(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            Some(provider),
+            false,
+        )
+        .await
+        .unwrap();
+
+        pipeline
+            .accept_logs_to(
+                "org_flap",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while target.failed.load(Ordering::SeqCst) < 2 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the target should fail enough to trip the breaker");
+        sleep(Duration::from_millis(100)).await;
+
+        let cursor_path = queue_dir.join("shard-000-clickhouse").join("lane.cursor");
+        assert_eq!(
+            read_cursor(&cursor_path),
+            SegmentCursor::default(),
+            "an open breaker must not advance the WAL cursor"
+        );
+        assert_eq!(target.delivered.load(Ordering::SeqCst), 0);
+
+        target.healthy.store(true, Ordering::SeqCst);
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::ClickHouse).await;
+        assert_eq!(
+            target.delivered.load(Ordering::SeqCst),
+            1,
+            "the held batch should be exported once the breaker closes"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// Fails every insert for `org_broken` and accepts everything else, counting
+    /// the accepted ones. The org is read from the INSERT's query string.
+    async fn one_org_broken_clickhouse_handler(
+        State(delivered): State<Arc<std::sync::atomic::AtomicUsize>>,
+        uri: axum::http::Uri,
+        _body: Bytes,
+    ) -> StatusCode {
+        if uri.query().unwrap_or_default().contains("org_broken") {
+            StatusCode::SERVICE_UNAVAILABLE
+        } else {
+            delivered.fetch_add(1, Ordering::SeqCst);
+            StatusCode::OK
+        }
+    }
+
+    #[tokio::test]
+    async fn clickhouse_breaker_deferral_does_not_age_out_cosharded_orgs() {
+        // One lane exports every org's ClickHouse groups in turn, so a broken org's
+        // deferral must stay short enough that a healthy org behind it is not shed.
+        let delivered = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(one_org_broken_clickhouse_handler))
+            .with_state(Arc::clone(&delivered));
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("ch-breaker-cosharded");
+        let mut cfg = test_cfg();
+        cfg.endpoint = String::new();
+        cfg.token = String::new();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        // Deferral window is a quarter of this (1s); one breaker cooldown is far longer.
+        cfg.queue_max_age = Duration::from_secs(4);
+        cfg.clickhouse_breaker = ClickHouseBreakerConfig {
+            failure_threshold: 2,
+            cooldown: Duration::from_secs(30),
+        };
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_owned(),
+                password: String::new(),
+                database: "maple".to_owned(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse_validation(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            Some(provider),
+            false,
+        )
+        .await
+        .unwrap();
+
+        // Separate batches, so the healthy frame is age-checked after the broken wait.
+        for org in ["org_broken", "org_healthy"] {
+            pipeline
+                .accept_logs_to(org, &populated_log_request(), ExportDestination::ClickHouse)
+                .await
+                .unwrap();
+            sleep(Duration::from_millis(50)).await;
+        }
+        // Two failures (one 500ms backoff) plus the 1s window, far short of the 4s age.
+        tokio::time::timeout(Duration::from_millis(2500), async {
+            while delivered.load(Ordering::SeqCst) == 0 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("a healthy org must wait at most one deferral window behind a broken one");
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
@@ -7331,21 +7634,149 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn a_clean_drain_ships_nothing_but_an_unexported_tail_still_ships() {
+        // The shutdown seal leaves the cursor parked at the end of a segment it
+        // fully exported; shipping that one only buys duplicates on recovery.
+        let queue_dir = unique_test_dir("wal-clean-drain");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        wal.attach_object_store(&test_wal_store(&endpoint));
+        let frame = wal_test_frame(200);
+
+        let (seq, _, end) = wal.append(0, &frame).await.expect("append");
+        wal.mark_exported(0, SegmentCursor { seq, offset: end }, end)
+            .await
+            .expect("mark_exported");
+        assert_eq!(
+            wal.flush_to_object_store().await,
+            0,
+            "a drained lane owes nothing"
+        );
+
+        let (_, _, tail) = wal.append(0, &frame).await.expect("append tail");
+        assert_eq!(
+            wal.flush_to_object_store().await,
+            tail,
+            "the unexported tail ships"
+        );
+        sleep(Duration::from_millis(100)).await;
+        let segments: Vec<_> = bucket
+            .keys()
+            .into_iter()
+            .filter(|key| key.contains("/segments/"))
+            .collect();
+        assert_eq!(
+            segments.len(),
+            1,
+            "only the tail is in the bucket: {segments:?}"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn segments_shipped_at_shutdown_are_claimed_by_the_next_boot() {
+        // Retiring used to only delete the heartbeat, which left the owner
+        // invisible to recovery and its shutdown segments stranded in the bucket.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let frame = wal_test_frame(64);
+
+        let old_dir = unique_test_dir("wal-retired-owner");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        let old_cfg = segmented_cfg(old_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let old_wal = ShardedWal::open(&old_cfg).expect("open WAL");
+        // No shipper attached, so its async upload cannot race the cleanup.
+        let old_store = test_wal_store(&endpoint);
+        old_store.heartbeat().await.expect("heartbeat");
+        old_wal.append(0, &frame).await.expect("append");
+        assert!(
+            old_wal.flush_segments_to(&old_store).await > 0,
+            "the undrained tail ships"
+        );
+        old_store.retire().await.expect("retire");
+        let retired = old_store.owner().to_owned();
+
+        // Booting right away: no staleness window to wait out.
+        let new_dir = unique_test_dir("wal-retired-successor");
+        std::fs::create_dir_all(&new_dir).unwrap();
+        let new_cfg = segmented_cfg(new_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let new_wal = ShardedWal::open(&new_cfg).expect("open WAL");
+        new_wal
+            .recover_orphans(&new_cfg, &test_wal_store(&endpoint))
+            .await;
+
+        let replayed = new_wal.replay(0).await.expect("replay");
+        assert_eq!(replayed.len(), 1, "the shipped frame is recovered");
+        let keys = bucket.keys();
+        assert!(
+            keys.iter().all(|key| !key.contains(&retired)),
+            "the retired owner's segments and markers are cleaned up: {keys:?}"
+        );
+
+        drop(std::fs::remove_dir_all(old_dir));
+        drop(std::fs::remove_dir_all(new_dir));
+    }
+
+    #[tokio::test]
+    async fn an_owner_with_unrecovered_segments_stays_claimable() {
+        // Releasing the owner after a partial recovery dropped its last discovery
+        // path, so the segments it still held were never retried.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let frame = wal_test_frame(64);
+
+        let old_dir = unique_test_dir("wal-partial-owner");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        let old_cfg = segmented_cfg(old_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let old_wal = ShardedWal::open(&old_cfg).expect("open WAL");
+        let old_store = test_wal_store(&endpoint);
+        old_store.heartbeat().await.expect("heartbeat");
+        old_wal.append(0, &frame).await.expect("append");
+        assert!(old_wal.flush_segments_to(&old_store).await > 0);
+        // A lane this binary cannot place, so recovery has to leave it behind.
+        old_store
+            .put_segment("shard-000-unknown", 0, b"unplaceable".to_vec())
+            .await
+            .expect("put unknown-lane segment");
+        old_store.retire().await.expect("retire");
+        let retired = old_store.owner().to_owned();
+
+        let new_dir = unique_test_dir("wal-partial-successor");
+        std::fs::create_dir_all(&new_dir).unwrap();
+        let new_cfg = segmented_cfg(new_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let new_wal = ShardedWal::open(&new_cfg).expect("open WAL");
+        new_wal
+            .recover_orphans(&new_cfg, &test_wal_store(&endpoint))
+            .await;
+
+        assert_eq!(new_wal.replay(0).await.expect("replay").len(), 1);
+        let keys = bucket.keys();
+        assert!(
+            keys.iter().any(|key| key.ends_with(&format!("/retired/{retired}"))),
+            "the retired marker survives while a segment is left: {keys:?}"
+        );
+
+        drop(std::fs::remove_dir_all(old_dir));
+        drop(std::fs::remove_dir_all(new_dir));
+    }
+
     /// Cross-language contract with the Prometheus scraper (apps/scraper).
     ///
     /// The scraper converts scraped exposition text into OTLP/JSON
-    /// (`convertFamiliesToOtlp` in apps/scraper/src/prometheus/otlp.ts) and
-    /// POSTs it to this gateway's `/v1/metrics` with the org's public ingest
-    /// key, so scraped metrics are billed and warehouse-routed like customer
-    /// traffic. The fixture below is generated by that converter and pinned
-    /// on the TS side in apps/scraper/src/prometheus/otlp.test.ts ("gateway
-    /// contract fixture"). If either side changes shape, both tests must be
-    /// updated together.
+    /// (`convertFamiliesToOtlp` in lib/prometheus-otlp, with the scraper's
+    /// `otlpContext`) and POSTs it to this gateway's `/v1/metrics` with the
+    /// org's public ingest key, so scraped metrics are billed and
+    /// warehouse-routed like customer traffic. The fixture below is pinned on
+    /// the TS side in apps/scraper/src/Scraper.test.ts ("gateway contract
+    /// fixture"). If either side changes shape, both tests must be updated
+    /// together.
     mod scraper_contract {
         use super::*;
 
         const SCRAPER_FIXTURE: &str =
-            include_str!("../../scraper/src/prometheus/__fixtures__/otlp-export.json");
+            include_str!("../../scraper/src/__fixtures__/otlp-export.json");
 
         fn rows_by_datasource(frames: Vec<EncodedFrame>) -> BTreeMap<String, Vec<Value>> {
             frames
@@ -7362,6 +7793,29 @@ mod tests {
                     (frame.datasource, rows)
                 })
                 .collect()
+        }
+
+        /// Integer points sent over OTLP/JSON, as a number or a decimal string,
+        /// must reach the row as that value. They used to land as 0.
+        #[test]
+        fn otlp_json_int_points_encode_their_value() {
+            let mut json: Value = serde_json::from_str(
+                r#"{"resourceMetrics":[{"resource":{"attributes":[{"key":"maple_org_id","value":{"stringValue":"org_1"}}]},"scopeMetrics":[{"metrics":[{"name":"probe.gauge","gauge":{"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":42},{"timeUnixNano":"1753660000000000001","asInt":"43"}]}},{"name":"probe.sum","sum":{"aggregationTemporality":2,"isMonotonic":true,"dataPoints":[{"timeUnixNano":"1753660000000000000","asInt":44},{"timeUnixNano":"1753660000000000001","asInt":"45"}]}}]}]}]}"#,
+            )
+            .unwrap();
+            crate::otlp_json::normalize(&mut json, "resourceMetrics");
+            let request: ExportMetricsServiceRequest = serde_json::from_value(json).unwrap();
+
+            let (frames, _) = encode_metrics(&test_cfg().datasources, "org_1", &request).unwrap();
+            let rows = rows_by_datasource(frames);
+            let values = |datasource: &str| {
+                rows[datasource]
+                    .iter()
+                    .map(|row| row["value"].clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(values("metrics_gauge"), vec![json!(42.0), json!(43.0)]);
+            assert_eq!(values("metrics_sum"), vec![json!(44.0), json!(45.0)]);
         }
 
         #[test]

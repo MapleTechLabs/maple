@@ -4,14 +4,16 @@ import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Option, Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DashboardPage } from "@/components/layout/dashboard-page"
+import type { TimeRange } from "@/components/time-range-picker/types"
 import { UnnamedServiceHint, isUnnamedService } from "@/components/services/unnamed-service-hint"
-import { QueryErrorState } from "@/components/common/query-error-state"
+import { ErrorState } from "@/components/common/error-state"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import { APDEX_HINT } from "@/components/dashboard/chart-hints"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
-import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
+import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import {
 	getServiceDetailOverviewResultAtom,
 	getServiceDetailThroughputRefinementResultAtom,
@@ -22,8 +24,6 @@ import { useCommitMarkers } from "@/components/vcs/commit-markers/use-commit-mar
 import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
-import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { Button } from "@maple/ui/components/ui/button"
 import { BellIcon } from "@/components/icons"
 import { ServiceDependenciesTab } from "@/components/services/service-dependencies-tab"
@@ -37,7 +37,6 @@ import { ServiceTopOperationsPanel } from "@/components/services/service-top-ope
 import { ServiceUsagePanel } from "@/components/services/service-usage-panel"
 import { ServiceWorkloadsPanel } from "@/components/services/service-workloads-panel"
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import { PageLayout } from "@maple/ui/components/ui/page-layout"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
 
@@ -115,16 +114,14 @@ const SERVICE_CHARTS: ServiceChartConfig[] = [
 	},
 ]
 
-function ServiceDetailPage() {
-	const search = Route.useSearch()
-	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? "12h"}>
-			<ServiceDetailContent />
-		</PageRefreshProvider>
-	)
-}
+const SERVICE_TABS: ReadonlyArray<{ value: ServiceDetailTabValue; label: string }> = [
+	{ value: "overview", label: "Overview" },
+	{ value: "api", label: "API" },
+	{ value: "operations", label: "Operations" },
+	{ value: "dependencies", label: "Dependencies" },
+]
 
-function ServiceDetailContent() {
+function ServiceDetailPage() {
 	const { serviceName } = Route.useParams()
 	const search = Route.useSearch()
 	// Links minted before the services list labelled the empty environment carried
@@ -140,14 +137,7 @@ function ServiceDetailContent() {
 	)
 
 	const handleTimeChange = useCallback(
-		(
-			range: {
-				startTime?: string
-				endTime?: string
-				presetValue?: string
-			},
-			options?: { replace?: boolean },
-		) => {
+		(range: TimeRange, options?: { replace?: boolean }) => {
 			navigate({
 				replace: options?.replace,
 				search: (prev: Record<string, unknown>) => applyTimeRangeSearch(prev, range),
@@ -193,141 +183,109 @@ function ServiceDetailContent() {
 	const handleShowOperations = useCallback(() => handleTabChange("operations"), [handleTabChange])
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Services", href: "/services" }, { label: serviceName }]}
-			/>
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							titleContent={
-								<PageLayout.Title className="flex items-center gap-2.5" title={serviceName}>
-									<ServiceDot serviceName={serviceName} className="size-3" />
-									<span className="truncate">{serviceName}</span>
-									{isUnnamedService(serviceName) && <UnnamedServiceHint />}
-								</PageLayout.Title>
-							}
+		<DashboardPage
+			breadcrumbs={[{ label: "Services", href: "/services" }, { label: serviceName }]}
+			titleContent={
+				<DashboardLayout.Title className="flex items-center gap-2.5" title={serviceName}>
+					<ServiceDot serviceName={serviceName} className="size-3" />
+					<span className="truncate">{serviceName}</span>
+					{isUnnamedService(serviceName) && <UnnamedServiceHint />}
+				</DashboardLayout.Title>
+			}
+			headerActions={
+				<>
+					{/* Env scope drives every tab: the Dependencies bundle takes the same
+					    single-select value via its deploymentEnv field (see toSingleDeploymentEnv). */}
+					<ServiceEnvironmentSwitcher
+						serviceName={serviceName}
+						startTime={effectiveStartTime}
+						endTime={effectiveEndTime}
+						environments={environments}
+						value={environments?.[0]}
+						onChange={handleEnvironmentChange}
+					/>
+					<Button
+						variant="outline"
+						aria-label="Create alert"
+						render={<Link to="/alerts/create" search={{ serviceName }} />}
+					>
+						<BellIcon />
+						<span className="hidden sm:inline">Create alert</span>
+					</Button>
+				</>
+			}
+			time={{
+				search,
+				defaultPreset: "12h",
+				onChange: handleTimeChange,
+				presets: LONG_RANGE_PRESET_OPTIONS,
+				maxRangeSeconds: ONE_YEAR_SECONDS,
+			}}
+			tabs={
+				<UnderlineTabStrip navigation label="Service sections">
+					{SERVICE_TABS.map((tab) => (
+						<Link
+							key={tab.value}
+							to="/services/$serviceName"
+							params={{ serviceName }}
+							replace
+							search={(prev: Record<string, unknown>) => ({
+								...prev,
+								tab: tab.value === "overview" ? undefined : tab.value,
+							})}
+							aria-current={tab.value === activeTab ? "page" : undefined}
+							className={underlineTabClass(tab.value === activeTab)}
 						>
-							<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-								{/* View switch lives inline with other page controls so it reads as a
-												    perspective toggle, not a navigation bar. Sized to match the time
-												    picker buttons (h-7) and tucked left of them so the visual order is:
-												    "what view → what window → what action". */}
-								<Tabs
-									value={activeTab}
-									onValueChange={handleTabChange}
-									className="w-full sm:w-auto"
-								>
-									<TabsList variant="default" className="h-7 w-full gap-0 p-0.5 sm:w-auto">
-										<TabsTrigger
-											value="overview"
-											className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
-										>
-											Overview
-										</TabsTrigger>
-										<TabsTrigger
-											value="api"
-											className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
-										>
-											API
-										</TabsTrigger>
-										<TabsTrigger
-											value="operations"
-											className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
-										>
-											Operations
-										</TabsTrigger>
-										<TabsTrigger
-											value="dependencies"
-											className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
-										>
-											Dependencies
-										</TabsTrigger>
-									</TabsList>
-								</Tabs>
-								{/* Env scope drives every tab — the Dependencies bundle takes the same
-												    single-select value via its deploymentEnv field (see
-												    toSingleDeploymentEnv). */}
-								<ServiceEnvironmentSwitcher
-									serviceName={serviceName}
-									startTime={effectiveStartTime}
-									endTime={effectiveEndTime}
-									environments={environments}
-									value={environments?.[0]}
-									onChange={handleEnvironmentChange}
-								/>
-								<div className="flex items-center gap-2">
-									<TimeRangeHeaderControls
-										startTime={search.startTime}
-										endTime={search.endTime}
-										presetValue={
-											search.timePreset ?? (search.startTime ? undefined : "12h")
-										}
-										presets={LONG_RANGE_PRESET_OPTIONS}
-										maxRangeSeconds={ONE_YEAR_SECONDS}
-										onTimeChange={handleTimeChange}
-									/>
-									<Button
-										variant="outline"
-										aria-label="Create Alert"
-										render={<Link to="/alerts/create" search={{ serviceName }} />}
-									>
-										<BellIcon size={14} />
-										<span className="hidden sm:inline">Create Alert</span>
-									</Button>
-								</div>
-							</div>
-						</DashboardLayout.Header>
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						{activeTab === "overview" && (
-							<OverviewTab
-								serviceName={serviceName}
-								effectiveStartTime={effectiveStartTime}
-								effectiveEndTime={effectiveEndTime}
-								environments={environments}
-								onShowDependencies={handleShowDependencies}
-								onShowOperations={handleShowOperations}
-							/>
-						)}
-						{activeTab === "api" && (
-							<ServiceApiTab
-								serviceName={serviceName}
-								effectiveStartTime={effectiveStartTime}
-								effectiveEndTime={effectiveEndTime}
-								environments={environments}
-								startTime={search.startTime}
-								endTime={search.endTime}
-								timePreset={search.timePreset}
-							/>
-						)}
-						{activeTab === "operations" && (
-							<ServiceOperationsTab
-								serviceName={serviceName}
-								effectiveStartTime={effectiveStartTime}
-								effectiveEndTime={effectiveEndTime}
-								environments={environments}
-								startTime={search.startTime}
-								endTime={search.endTime}
-								timePreset={search.timePreset}
-							/>
-						)}
-						{activeTab === "dependencies" && (
-							<ServiceDependenciesTab
-								serviceName={serviceName}
-								startTime={search.startTime}
-								endTime={search.endTime}
-								timePreset={search.timePreset}
-								effectiveStartTime={effectiveStartTime}
-								effectiveEndTime={effectiveEndTime}
-								environments={environments}
-							/>
-						)}
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+							{tab.label}
+						</Link>
+					))}
+				</UnderlineTabStrip>
+			}
+		>
+			{activeTab === "overview" && (
+				<OverviewTab
+					serviceName={serviceName}
+					effectiveStartTime={effectiveStartTime}
+					effectiveEndTime={effectiveEndTime}
+					environments={environments}
+					onShowDependencies={handleShowDependencies}
+					onShowOperations={handleShowOperations}
+				/>
+			)}
+			{activeTab === "api" && (
+				<ServiceApiTab
+					serviceName={serviceName}
+					effectiveStartTime={effectiveStartTime}
+					effectiveEndTime={effectiveEndTime}
+					environments={environments}
+					startTime={search.startTime}
+					endTime={search.endTime}
+					timePreset={search.timePreset}
+				/>
+			)}
+			{activeTab === "operations" && (
+				<ServiceOperationsTab
+					serviceName={serviceName}
+					effectiveStartTime={effectiveStartTime}
+					effectiveEndTime={effectiveEndTime}
+					environments={environments}
+					startTime={search.startTime}
+					endTime={search.endTime}
+					timePreset={search.timePreset}
+				/>
+			)}
+			{activeTab === "dependencies" && (
+				<ServiceDependenciesTab
+					serviceName={serviceName}
+					startTime={search.startTime}
+					endTime={search.endTime}
+					timePreset={search.timePreset}
+					effectiveStartTime={effectiveStartTime}
+					effectiveEndTime={effectiveEndTime}
+					environments={environments}
+				/>
+			)}
+		</DashboardPage>
 	)
 }
 
@@ -416,9 +374,14 @@ function OverviewTab({
 	// generic `Record<string, unknown>[]`. Each point's fields are all primitive,
 	// so this is a safe widening (no `as unknown` round-trip needed). The exact
 	// SpanMetrics throughput overlay (when present) is merged by ISO bucket here.
-	const detailPoints: Record<string, unknown>[] = useMemo(() => {
-		return mergeExactThroughput(basePoints, exactThroughputByBucket).map((point) => ({ ...point }))
-	}, [basePoints, exactThroughputByBucket])
+	const mergedPoints = useMemo(
+		() => mergeExactThroughput(basePoints, exactThroughputByBucket),
+		[basePoints, exactThroughputByBucket],
+	)
+	const detailPoints: Record<string, unknown>[] = useMemo(
+		() => mergedPoints.map((point) => ({ ...point })),
+		[mergedPoints],
+	)
 
 	// Commit deploy markers (dashed verticals + labels) drawn over every chart.
 	// Derived from the overview's release timeline and snapped onto the chart's
@@ -430,7 +393,7 @@ function OverviewTab({
 				.orElse(() => EMPTY_RELEASES),
 		[overviewResult],
 	)
-	const chartBuckets = useMemo(() => detailPoints.map((point) => String(point.bucket)), [detailPoints])
+	const chartBuckets = useMemo(() => mergedPoints.map((point) => point.bucket), [mergedPoints])
 	const commitMarkers = useCommitMarkers(releases, chartBuckets)
 
 	// Stable identity so the memoized chart components under MetricsGrid skip
@@ -455,9 +418,9 @@ function OverviewTab({
 
 	if (Result.isFailure(overviewResult)) {
 		return (
-			<QueryErrorState
+			<ErrorState
 				error={overviewResult.cause}
-				titleOverride="Failed to load service overview"
+				title="Failed to load service overview"
 				onRetry={refreshOverview}
 			/>
 		)
@@ -467,7 +430,7 @@ function OverviewTab({
 		<div className="flex flex-col gap-3">
 			<MetricsGrid
 				items={metrics}
-				waiting={!!isWaiting}
+				waiting={isWaiting}
 				syncId={`service-${serviceName}`}
 				overlay={commitMarkers}
 				// Pin every chart's plot to one left edge so the commit markers group the

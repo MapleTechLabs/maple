@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { warehouseQueries } from "../warehouse-queries"
+import { WireValue } from "../wire"
 
 export { UnauthorizedError } from "./current-tenant"
 
@@ -19,5 +20,5 @@ export class WarehouseQueryRequest extends Schema.Class<WarehouseQueryRequest>("
 }) {}
 
 export class WarehouseQueryResponse extends Schema.Class<WarehouseQueryResponse>("WarehouseQueryResponse")({
-	data: Schema.Array(Schema.Unknown),
+	data: Schema.Array(WireValue),
 }) {}

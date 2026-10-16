@@ -7,7 +7,7 @@ import {
 	usePlotChromeColors,
 	usePlotColors,
 	usePlotLegendHighlight,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotLegendSeries,
 } from "@maple/ui/components/plot"
 import { formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
@@ -30,12 +30,12 @@ import {
  * the same reason (`treemap-spike.tsx` has to wrap past the fifth).
  */
 const STACK_TOKENS = {
-	api: ["--chart-1", "#6366f1"],
-	web: ["--chart-2", "#22c55e"],
-	ingest: ["--chart-3", "#f59e0b"],
-	worker: ["--chart-4", "#ec4899"],
-	db: ["--chart-5", "#06b6d4"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	api: "--chart-1",
+	web: "--chart-2",
+	ingest: "--chart-3",
+	worker: "--chart-4",
+	db: "--chart-5",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * The partial bucket's outline. Open enough to read as dashes at a bar's width —
@@ -48,8 +48,8 @@ const PARTIAL_DASHARRAY = "4 4"
 
 /** The outline colour. Module scope — `usePlotColors` memoizes on identity. */
 const BAR_CHROME_TOKENS = {
-	foreground: ["--foreground", "#fafafa"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	foreground: "--foreground",
+} as const satisfies Record<string, PlotColorSource>
 
 /** SVG's "no dashes" — an empty string is not a valid `stroke-dasharray`. */
 const SOLID_DASHARRAY = "0"
@@ -256,8 +256,8 @@ function StackedBarFigure({
 									<span
 										className={
 											row.partial
-												? "size-2.5 shrink-0 rounded-[2px] border border-dashed"
-												: "size-2.5 shrink-0 rounded-[2px]"
+												? "size-2.5 shrink-0 rounded-xs border border-dashed"
+												: "size-2.5 shrink-0 rounded-xs"
 										}
 										style={
 											row.partial
@@ -492,7 +492,7 @@ export const StackedBarSceneLegendSpike = memo(function StackedBarSceneLegendSpi
 				return (
 					<div className="flex items-center gap-2">
 						<span
-							className="size-2.5 shrink-0 rounded-[2px]"
+							className="size-2.5 shrink-0 rounded-xs"
 							style={{ backgroundColor: colorFor(datum.service) }}
 						/>
 						<span className="text-muted-foreground">{datum.service}</span>

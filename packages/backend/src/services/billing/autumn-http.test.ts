@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { BillingCustomer, BillingUsage } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { classifyAutumn, decodeUpstream, ensureOk } from "@maple/backend/services/billing/autumn-client"

@@ -2,6 +2,7 @@ import * as React from "react"
 import * as ReactDOM from "react-dom"
 
 import { Textarea } from "@maple/ui/components/ui/textarea"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import type {
 	WhereClauseAutocompleteScope,
 	WhereClauseAutocompleteValues,
@@ -161,7 +162,7 @@ export function WhereClauseEditor({
 					role="option"
 					aria-selected={index === activeIndex}
 					className={cn(
-						"flex w-full items-center justify-between px-2 py-1 text-left text-xs",
+						"flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-xs",
 						index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
 					)}
 					onMouseDown={(event) => {
@@ -169,8 +170,10 @@ export function WhereClauseEditor({
 					}}
 					onClick={() => handleApplySuggestion(index)}
 				>
-					<span className="font-mono">{suggestion.label}</span>
-					<span className="text-[10px] uppercase text-muted-foreground">{suggestion.kind}</span>
+					<span className="min-w-0 truncate font-mono" title={suggestion.label}>
+						{suggestion.label}
+					</span>
+					<Eyebrow className="shrink-0">{suggestion.kind}</Eyebrow>
 				</button>
 			))}
 		</div>

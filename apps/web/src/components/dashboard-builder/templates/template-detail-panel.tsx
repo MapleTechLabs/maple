@@ -2,8 +2,9 @@ import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
+import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
 import { cn } from "@maple/ui/lib/utils"
 import { ArrowRightIcon, CheckIcon, ExternalLinkIcon } from "@/components/icons"
 import { templateIcon } from "./template-icons"
@@ -16,14 +17,6 @@ import {
 	widgetCountLabel,
 } from "./template-summary"
 import { READINESS_WINDOW_LABEL, type TemplateReadiness } from "./use-template-readiness"
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-	return (
-		<span className="text-muted-foreground text-[11px] font-medium tracking-wider uppercase">
-			{children}
-		</span>
-	)
-}
 
 /**
  * What the org needs before the widgets fill in. Both halves come from the
@@ -45,10 +38,10 @@ function RequirementBlock({
 
 	return (
 		<div className="flex flex-col gap-2.5">
-			<SectionLabel>What it needs</SectionLabel>
+			<Eyebrow variant="label">What it needs</Eyebrow>
 			<div className="flex items-start gap-2.5">
 				{ready ? (
-					<span className="bg-success flex size-4 shrink-0 items-center justify-center rounded-[3px]">
+					<span className="bg-severity-info flex size-4 shrink-0 items-center justify-center rounded-[3px]">
 						<CheckIcon size={10} className="text-background" />
 					</span>
 				) : (
@@ -76,13 +69,13 @@ function RequirementBlock({
 									: `no matching metrics in ${READINESS_WINDOW_LABEL}`}
 						</span>
 						{requirement.kind === "metrics" && readiness !== undefined && (
-							<span className="text-muted-foreground ml-auto shrink-0 font-mono text-[11px]">
+							<span className="text-muted-foreground ml-auto shrink-0 font-mono text-2xs">
 								{readiness.metricCount} {readiness.metricCount === 1 ? "metric" : "metrics"}
 								{age !== null && ` · last seen ${age}`}
 							</span>
 						)}
 					</div>
-					<p className="text-muted-foreground text-[11px]">
+					<p className="text-muted-foreground text-2xs">
 						{ready ? "Collected by" : "Emitted by"} {requirement.collector}.
 						{!ready && requirement.hint ? ` ${requirement.hint}` : ""}
 					</p>
@@ -135,7 +128,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 					</span>
 					<div className="flex min-w-0 flex-col gap-1">
 						<h2 className="text-lg font-semibold tracking-tight">{template.name}</h2>
-						<div className="text-muted-foreground flex items-center gap-2 text-[11px]">
+						<div className="text-muted-foreground flex items-center gap-2 text-2xs">
 							<span>{CATEGORY_LABELS[template.category] ?? template.category}</span>
 							<span className="text-border">/</span>
 							<span className="font-mono">
@@ -152,24 +145,22 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 
 			<div className="flex flex-col gap-2">
 				<TemplateLivePreview template={template} parameters={values} />
-				<p className="text-muted-foreground/85 text-[11px]">
-					That's the dashboard you'd get right now.
-				</p>
+				<p className="text-muted-foreground/80 text-2xs">That's the dashboard you'd get right now.</p>
 			</div>
 
 			<RequirementBlock template={template} readiness={readiness} />
 
 			{template.parameters.length > 0 && (
 				<div className="flex flex-col gap-2.5">
-					<SectionLabel>Parameters</SectionLabel>
+					<Eyebrow variant="label">Parameters</Eyebrow>
 					<div className="flex max-w-95 flex-col gap-4">
 						{template.parameters.map((parameter) => (
-							<div key={parameter.key} className="flex flex-col gap-1.75">
+							<Field key={parameter.key} className="items-stretch gap-1.75">
 								<div className="flex items-baseline gap-2">
-									<Label htmlFor={`template-param-${parameter.key}`}>
+									<FieldLabel htmlFor={`template-param-${parameter.key}`}>
 										{parameter.label}
-									</Label>
-									<span className="text-muted-foreground text-[11px]">
+									</FieldLabel>
+									<span className="text-muted-foreground text-2xs">
 										{parameter.required ? "required" : "optional"}
 									</span>
 								</div>
@@ -188,11 +179,11 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 									}}
 								/>
 								{parameter.description && (
-									<p className="text-muted-foreground text-[11px]">
+									<FieldDescription className="text-2xs">
 										{parameter.description}
-									</p>
+									</FieldDescription>
 								)}
-							</div>
+							</Field>
 						))}
 					</div>
 				</div>
@@ -222,13 +213,13 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 					{ready ? (
 						<Button onClick={submit} disabled={missingRequired.length > 0} loading={creating}>
 							Create dashboard
-							<ArrowRightIcon size={13} data-icon="inline-end" />
+							<ArrowRightIcon data-icon="inline-end" />
 						</Button>
 					) : (
 						<>
 							<Button render={<Link to={destination.to} search={destination.search} />}>
 								Set up {template.requirement?.setupLabel ?? "the collector"}
-								<ExternalLinkIcon size={13} data-icon="inline-end" />
+								<ExternalLinkIcon data-icon="inline-end" />
 							</Button>
 							<Button
 								variant="outline"
@@ -240,7 +231,7 @@ export function TemplateDetailPanel({ template, readiness, creating, onCreate }:
 							</Button>
 						</>
 					)}
-					<p className="text-muted-foreground min-w-0 text-[11px]">
+					<p className="text-muted-foreground min-w-0 text-2xs">
 						{missingRequired.length > 0
 							? `Fill in ${missingRequired.join(" and ")} first.`
 							: ready

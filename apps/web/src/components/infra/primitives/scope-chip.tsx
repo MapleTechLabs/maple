@@ -9,11 +9,9 @@
 // (Cloudflare's `PanelScope`) compose it.
 
 import type { ReactNode } from "react"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { cn } from "@maple/ui/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-
-export const SCOPE_CHIP_CLASS =
-	"inline-flex items-center rounded-sm border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[10px]"
 
 /**
  * A scope marker. `tone="muted"` is for the markers that describe a *limit* of the
@@ -32,18 +30,25 @@ export function ScopeChip({
 	className?: string
 }) {
 	const chipClass = cn(
-		SCOPE_CHIP_CLASS,
+		"bg-background/60 font-normal",
 		tone === "muted" ? "text-muted-foreground/70" : "text-muted-foreground",
 		className,
 	)
 
 	if (explanation === undefined) {
-		return <span className={chipClass}>{children}</span>
+		return (
+			<Badge variant="meta" size="xs" mono className={chipClass}>
+				{children}
+			</Badge>
+		)
 	}
 
 	return (
 		<Tooltip>
-			<TooltipTrigger render={<span />} className={cn(chipClass, "cursor-default")}>
+			<TooltipTrigger
+				render={<Badge variant="meta" size="xs" mono />}
+				className={cn(chipClass, "cursor-default")}
+			>
 				{children}
 			</TooltipTrigger>
 			<TooltipContent className="max-w-[32ch]">{explanation}</TooltipContent>

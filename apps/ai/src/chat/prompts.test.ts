@@ -11,17 +11,18 @@
  */
 import { createHash } from "node:crypto"
 import { assert, describe, it } from "vitest"
+import { mapleToolCatalog } from "../mcp/tools/registry"
 import { CONNECTOR_SYSTEM_PROMPT, INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
 
 const sha256 = (value: string) => createHash("sha256").update(value, "utf8").digest("hex")
 
 describe("the prompts the app and the investigation pass already shipped", () => {
 	it.each([
-		["SYSTEM_PROMPT", SYSTEM_PROMPT, "402c5f7f6af420f83fe3d3928a8cb41c677d435270cf2f3667f02677b32712cd"],
+		["SYSTEM_PROMPT", SYSTEM_PROMPT, "3e7ff9ab34673e959d233d891c07ec64854e8443fe94bb55cdfe363e14ae86a2"],
 		[
 			"INVESTIGATE_SYSTEM_PROMPT",
 			INVESTIGATE_SYSTEM_PROMPT,
-			"248ef2385d9e00e888bf26d5a1a367dd9aaa76f07b51a3a81ad319a34633285d",
+			"fd417ed6863dd0ebdb8037edde1ee213be5bcd2aeae0025932a27e1ff27c0ed8",
 		],
 	])("composes %s byte-for-byte as it was", (_name, prompt, digest) => {
 		assert.equal(sha256(prompt), digest)
@@ -38,11 +39,14 @@ describe("CONNECTOR_SYSTEM_PROMPT", () => {
 		}
 	})
 
-	it("teaches the approval step, and the prohibition on imitating one in prose", () => {
-		// Its mutations are gated, so it has to be told — and told not to render the gate itself,
-		// which the connector does. The prohibition quotes "[Approve]" on purpose.
-		assert.include(CONNECTOR_SYSTEM_PROMPT, "approved before they take effect")
-		assert.include(CONNECTOR_SYSTEM_PROMPT, 'NEVER emit "[Approve]"')
+	it("only sends the agent to sandbox tools that are registered", () => {
+		const named = [...CONNECTOR_SYSTEM_PROMPT.matchAll(/\bsandbox_[a-z_]+/g)].map((match) => match[0])
+		const registered = new Set(mapleToolCatalog.map((tool) => tool.name))
+		assert.isNotEmpty(named)
+		assert.deepEqual(
+			named.filter((name) => !registered.has(name)),
+			[],
+		)
 	})
 
 	it("sends nobody to the Maple app, because it can act from the channel", () => {
@@ -52,6 +56,5 @@ describe("CONNECTOR_SYSTEM_PROMPT", () => {
 	it("drops what does not survive the trip to a channel", () => {
 		// No 420px panel, and no markdown tables: the in-app prompt teaches both.
 		assert.notInclude(CONNECTOR_SYSTEM_PROMPT, "420px")
-		assert.include(SYSTEM_PROMPT, "420px")
 	})
 })

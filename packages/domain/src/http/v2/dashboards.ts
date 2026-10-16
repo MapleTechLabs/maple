@@ -1,6 +1,6 @@
 import { RAW_SQL_ENDPOINT } from "@maple/widgets/dashboard"
 import { RawSqlText } from "../../raw-sql"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema, SchemaGetter } from "effect"
 import {
 	DashboardId,

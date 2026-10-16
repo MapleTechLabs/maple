@@ -1,11 +1,17 @@
 // Browser telemetry preset with explicit and unload-triggered flushes for
 // buffered traces, logs, and metric snapshots. Transport uses keepalive fetch:
-// unlike sendBeacon it can carry the ingest key's Authorization header.
+// unlike sendBeacon it can carry the ingest key's Authorization header. The
+// browser caps a document's in-flight keepalive bodies at 64 KiB combined, so
+// every POST reserves from the budget shared with the session writes, within
+// OTLP's share of it, and goes out as a plain request past that.
 
 import {
 	hasConsent,
 	type MapleRegion,
 	onConsentChange,
+	OTLP_UNLOAD_TAIL_BYTES,
+	otlpKeepaliveRoom,
+	postToIngest,
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
@@ -33,6 +39,10 @@ import type { PrivacyOptions } from "./track.js"
 
 /** Default auto-flush cadence (ms), matching `Otlp.layerJson`'s 5s export interval. */
 const DEFAULT_AUTO_FLUSH_MS = 5_000
+
+/** Abort a POST after this long, plus an allowance per KiB of body, so it cannot block the flush queue. */
+const POST_TIMEOUT_MS = 30_000
+const POST_TIMEOUT_MS_PER_KIB = 10
 
 const browserInstanceId =
 	globalThis.crypto?.randomUUID?.() ??
@@ -136,23 +146,24 @@ export interface FlushableTelemetry {
 	 * anything. It is narrowed on the way into the exception event.
 	 */
 	readonly captureException: (error: unknown, options?: CaptureExceptionOptions) => void
-	/** Drain the buffers and POST them now (keepalive). Never rejects. */
+	/** Drain the buffers and POST them now (keepalive while the body fits the budget). Never rejects. */
 	readonly flush: () => Promise<void>
 	/** Remove unload listeners, stop the auto-flush timer, then do one final flush. */
 	readonly dispose: () => Promise<void>
 }
 
-/** `fetch(keepalive)` transport — see file header for why not `sendBeacon`. */
-const keepaliveTransport: FlushTransport = {
-	post: async (url, headers, body) => {
-		const res = await fetch(url, {
-			method: "POST",
-			headers,
-			body: JSON.stringify(body),
-			keepalive: true,
-		})
-		if (!res.ok) throw new Error(`OTLP ${res.status} ${res.statusText}`)
-	},
+/** Keepalive-budgeted POST (see file header), aborted when it takes too long. */
+const postOtlp = (url: string, headers: Record<string, string>, body: unknown) => {
+	const json = JSON.stringify(body)
+	const timeoutMs = POST_TIMEOUT_MS + (json.length / 1024) * POST_TIMEOUT_MS_PER_KIB
+	const controller = new AbortController()
+	const timer = setTimeout(
+		() => controller.abort(new Error(`OTLP POST timed out after ${Math.round(timeoutMs / 1000)}s`)),
+		timeoutMs,
+	)
+	return postToIngest(url, headers, json, true, { signal: controller.signal, otlp: true }).finally(() =>
+		clearTimeout(timer),
+	)
 }
 
 const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<string, unknown> => {
@@ -208,7 +219,24 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		privacy: config.privacy,
 	})
 
-	const spans: SpanBuffer = makeSpanBuffer(config)
+	// Each time the page goes away or offline. A request in flight across one was cancelled
+	// by the browser, so its transport failure is not the app's.
+	let connectionLosses = 0
+	let lastLossReason = ""
+	const noteLost = (reason: string): void => {
+		connectionLosses += 1
+		lastLossReason = reason
+	}
+	const watchConnection = () => {
+		const lossesAtStart = connectionLosses
+		return (): string | undefined => {
+			if (browserNavigator()?.onLine === false) return "offline"
+			if (browserDocument()?.visibilityState === "hidden") return "page_hidden"
+			return connectionLosses !== lossesAtStart ? lastLossReason : undefined
+		}
+	}
+
+	const spans: SpanBuffer = makeSpanBuffer({ ...config, watchConnection })
 	const logs: LogBuffer = makeLogBuffer({
 		excludeLogSpans: config.excludeLogSpans,
 	})
@@ -247,9 +275,32 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	const logsState: SignalState = { disabledUntil: 0 }
 	const metricsState: SignalState = { disabledUntil: 0 }
 
-	// Never rejects — fired from `pagehide`/`visibilitychange` handlers and the
-	// auto-flush timer as `void flush()`.
-	const flush = makeSerializedFlush(
+	// A request rejected around `pagehide` is not restored, cooled down or
+	// logged: an unloading document rejects keepalive fetches that ingest still
+	// receives. It also terminates its plain requests, and those are not sent
+	// again after a back/forward-cache restore either. "Around" means sent
+	// between `pagehide` and `pageshow`, or in flight when a `pagehide` fired.
+	let unloading = false
+	let pageHides = 0
+	const transport: FlushTransport = {
+		post: async (url, headers, body) => {
+			const sentUnloading = unloading
+			const sentPageHides = pageHides
+			const res = await postOtlp(url, headers, body).catch(async (cause: unknown) => {
+				// The browser can reject between two listeners of one `pagehide`,
+				// before ours has run. A task later they all have, and a document
+				// that is gone never gets that far.
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				if (sentUnloading || pageHides !== sentPageHides) return undefined
+				throw cause
+			})
+			// A non-2xx is ingest's answer: it throws so the signal cools down.
+			if (res && !res.ok) throw new Error(`OTLP ${res.status}`)
+		},
+	}
+
+	// Never rejects: fired as `void` from the auto-flush timer and the unload handlers.
+	const makeFlush = (unload?: { readonly ignoreCooldown: boolean }) =>
 		guardFlush("[MapleClientSDK]", async (): Promise<void> => {
 			if (!hasConsent()) {
 				spans.drain()
@@ -265,11 +316,18 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				tracesState,
 				logsState,
 				metricsState,
-				transport: keepaliveTransport,
+				transport,
 				logPrefix: "[MapleClientSDK]",
+				// The newest items get the keepalive room that is left at that moment.
+				tailBytes: unload && (() => Math.min(OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom())),
+				ignoreCooldown: unload?.ignoreCooldown,
 			})
-		}),
-	)
+		})
+	const flush = makeSerializedFlush(makeFlush())
+	// These skip the queue: the document may not live to see a queued flush
+	// start. A hidden tab usually comes back, so only `pagehide` ignores the cooldown.
+	const hiddenFlush = makeFlush({ ignoreCooldown: false })
+	const pageHideFlush = makeFlush({ ignoreCooldown: true })
 
 	const intervalMs =
 		config.autoFlushInterval === undefined
@@ -343,16 +401,29 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		globalThis.addEventListener("unhandledrejection", onUnhandledRejection)
 	}
 
+	// Connection-loss tracking needs these events even when unload flushing is off.
+	const flushOnUnload = config.flushOnUnload ?? true
 	const onPageHide = (): void => {
-		void flush()
+		unloading = true
+		pageHides += 1
+		noteLost("page_unload")
+		if (flushOnUnload) void pageHideFlush()
+	}
+	const onPageShow = (): void => {
+		unloading = false
 	}
 	const onVisibilityChange = (): void => {
-		if (browserDocument()?.visibilityState === "hidden") void flush()
+		if (browserDocument()?.visibilityState !== "hidden") return
+		noteLost("page_hidden")
+		if (flushOnUnload) void hiddenFlush()
 	}
-	const canListen = (config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
+	const onOffline = (): void => noteLost("offline")
+	const canListen = typeof globalThis.addEventListener === "function"
 	if (canListen) {
 		globalThis.addEventListener("pagehide", onPageHide)
+		globalThis.addEventListener("pageshow", onPageShow)
 		globalThis.addEventListener("visibilitychange", onVisibilityChange)
+		globalThis.addEventListener("offline", onOffline)
 	}
 
 	const dispose = async (): Promise<void> => {
@@ -362,7 +433,9 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		}
 		if (canListen) {
 			globalThis.removeEventListener("pagehide", onPageHide)
+			globalThis.removeEventListener("pageshow", onPageShow)
 			globalThis.removeEventListener("visibilitychange", onVisibilityChange)
+			globalThis.removeEventListener("offline", onOffline)
 		}
 		if (canCaptureGlobals) {
 			globalThis.removeEventListener("error", onWindowError)

@@ -91,7 +91,7 @@ const faqs = [
     },
     {
         question: "How is it different from the hosted Maple service?",
-        answer: "Same engine, same views, no account and no cloud. The hosted service adds what a team needs in production: multi-user access, alerting, retention at scale, and an MCP server for agents. Maple Local is complete on its own; the same CLI can talk to a hosted workspace if you ever want it to, but nothing requires it.",
+        answer: "It runs the same engine and views, without an account or the cloud. The hosted service adds what a team needs in production: multi-user access, alerting, retention at scale, and an MCP server for agents. Maple Local is complete on its own; the same CLI can talk to a hosted workspace if you ever want it to, but nothing requires it.",
     },
     {
         question: "Is it open source, and what does it cost?",
@@ -117,7 +117,7 @@ const faqs = [
                 <p class="mt-5 text-base leading-relaxed text-fg-muted">
                     The usual local setup is a collector, one backend per signal, and a dashboard on top:
                     five containers, five config files, and three different UIs. Maple Local is one process
-                    that does all of it, started with one command, on one port.
+                    that does all of it. You start it with one command and it listens on one port.
                 </p>
             </div>
             <LocalStackCompare />
@@ -130,12 +130,11 @@ const faqs = [
             <div class="mb-12 max-w-2xl">
                 <LocalEyebrow label="Standalone by design" />
                 <h2 class="font-display text-3xl font-medium leading-[1.06] tracking-[-0.02em] text-fg md:text-4xl">
-                    No account. No cloud. Your telemetry stays on your machine.
+                    No account or cloud needed. Your telemetry stays on your machine.
                 </h2>
                 <p class="mt-5 text-base leading-relaxed text-fg-muted">
                     Maple Local is the complete product running on 127.0.0.1. There is no trial and no
-                    hosted service behind it, and it stays complete whether or not you ever touch anything
-                    else Maple makes.
+                    hosted service behind it, and you never need another Maple product to use it.
                 </p>
             </div>
             <LocalLoopback />
@@ -154,8 +153,8 @@ const faqs = [
                     The full product, on your machine
                 </h2>
                 <p class="mt-5 text-base leading-relaxed text-fg-muted">
-                    Six views, one dashboard, all reading your local store. The same screens you'd want
-                    in production, with your development traffic in them.
+                    The dashboard has six views, all reading from your local store. They are the screens
+                    you'd want in production, showing your development traffic.
                 </p>
             </div>
 
@@ -273,7 +272,7 @@ const faqs = [
                 <div>
                     <LocalEyebrow label="Install" />
                     <h2 class="font-display text-3xl font-medium leading-[1.06] tracking-[-0.02em] text-fg md:text-4xl">
-                        One command in, one command out
+                        Install and remove with Homebrew
                     </h2>
                     <p class="mt-5 max-w-xl text-base leading-relaxed text-fg-muted">
                         Homebrew downloads the bundle for your platform from the latest GitHub release,

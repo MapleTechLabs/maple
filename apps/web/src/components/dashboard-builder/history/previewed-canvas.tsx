@@ -9,6 +9,8 @@ import {
 import type { DashboardSection, DashboardWidget } from "@/components/dashboard-builder/types"
 import { DashboardSections } from "@/components/dashboard-builder/sections/dashboard-sections"
 import { LiveWidgetRenderer } from "@/components/dashboard-builder/canvas/live-widget-renderer"
+import { DashboardViewSkeleton } from "@/components/dashboard-builder/loading-skeletons"
+import { ErrorState } from "@/components/common/error-state"
 import { PreviewBanner } from "./preview-banner"
 import { useDashboardVersionDetail } from "./use-dashboard-history"
 import type { PreviewedVersion } from "@/atoms/dashboard-history-atoms"
@@ -59,11 +61,9 @@ export function PreviewedCanvas({ dashboardId, preview, onCancel, onRestored }: 
 					readOnly
 				/>
 			) : Result.isFailure(result) ? (
-				<div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-6 text-xs text-destructive">
-					Couldn't load version snapshot.
-				</div>
+				<ErrorState error={result.cause} title="Couldn't load version snapshot" />
 			) : (
-				<div className="px-4 py-12 text-center text-xs text-muted-foreground">Loading snapshot…</div>
+				<DashboardViewSkeleton />
 			)}
 		</div>
 	)

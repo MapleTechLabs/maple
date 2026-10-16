@@ -1,11 +1,14 @@
 import type { ErrorIssuePullRequestDocument } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { Item, ItemContent, ItemDescription, ItemMedia } from "@maple/ui/components/ui/item"
+import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { cn } from "@maple/ui/lib/utils"
 
 import { DocsLink } from "@/components/common/docs-link"
 import { GithubIcon, PlusIcon, TrashIcon } from "@/components/icons"
-import { AttachPullRequestDialog } from "./attach-pull-request-dialog"
+import { AttachPullRequestDialog, PULL_REQUEST_STATE_TONE } from "./attach-pull-request-dialog"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
 
 /**
  * Pull requests attached to this issue.
@@ -16,12 +19,6 @@ import { AttachPullRequestDialog } from "./attach-pull-request-dialog"
  * panel says so on the empty state, because "attach a PR" is otherwise a
  * chore with no visible payoff.
  */
-
-const STATE_TONE: Record<ErrorIssuePullRequestDocument["state"], string> = {
-	open: "bg-success/10 text-success",
-	merged: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-	closed: "bg-muted text-muted-foreground",
-} satisfies Record<ErrorIssuePullRequestDocument["state"], string>
 
 const SOURCE_HINT: Record<ErrorIssuePullRequestDocument["linkSource"], string | null> = {
 	user: null,
@@ -48,20 +45,22 @@ export function IssuePullRequestsPanel({
 	onOpenChange: (open: boolean) => void
 }) {
 	return (
-		<section className="rounded-xl border bg-card">
-			<header className="flex items-center justify-between gap-2 border-b px-4 py-3">
-				<h2 className="text-sm font-medium text-foreground">Pull requests</h2>
-				<Button
-					size="sm"
-					variant="ghost"
-					className="h-7 gap-1 px-2 text-xs"
-					onClick={() => onOpenChange(true)}
-					disabled={busy}
-				>
-					<PlusIcon className="size-3.5" />
-					Attach
-				</Button>
-			</header>
+		<Panel>
+			<PanelHeader
+				title="Pull requests"
+				action={
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-7 gap-1 px-2 text-xs"
+						onClick={() => onOpenChange(true)}
+						disabled={busy}
+					>
+						<PlusIcon />
+						Attach
+					</Button>
+				}
+			/>
 
 			{pullRequests.length === 0 ? (
 				<div className="space-y-2 px-4 py-3">
@@ -76,9 +75,17 @@ export function IssuePullRequestsPanel({
 					{pullRequests.map((pr) => {
 						const hint = SOURCE_HINT[pr.linkSource]
 						return (
-							<li key={pr.id} className="group flex items-start gap-3 px-4 py-3">
-								<GithubIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-								<div className="min-w-0 flex-1">
+							<Item
+								key={pr.id}
+								render={<li />}
+								variant="flush"
+								size="lg"
+								className="group flex-nowrap items-start"
+							>
+								<ItemMedia variant="icon" className="text-muted-foreground">
+									<GithubIcon className="size-4" />
+								</ItemMedia>
+								<ItemContent>
 									<div className="flex flex-wrap items-center gap-2">
 										<a
 											href={pr.url}
@@ -90,31 +97,33 @@ export function IssuePullRequestsPanel({
 										</a>
 										<Badge
 											variant="outline"
-											className={cn("shrink-0 capitalize", STATE_TONE[pr.state])}
+											className={cn(
+												"shrink-0 capitalize",
+												PULL_REQUEST_STATE_TONE[pr.state],
+											)}
 										>
 											{pr.state}
 										</Badge>
 									</div>
 									{pr.title ? (
-										<p className="mt-0.5 truncate text-xs text-muted-foreground">
-											{pr.title}
-										</p>
+										<ItemDescription className="line-clamp-1">{pr.title}</ItemDescription>
 									) : null}
 									{hint ? (
-										<p className="mt-0.5 text-xs text-muted-foreground/80">{hint}</p>
+										<ItemDescription className="text-muted-foreground/80">
+											{hint}
+										</ItemDescription>
 									) : null}
-								</div>
-								<Button
+								</ItemContent>
+								<IconButton
 									size="icon"
-									variant="ghost"
-									aria-label={`Detach ${pr.repoFullName}#${pr.number}`}
+									label={`Detach ${pr.repoFullName}#${pr.number}`}
 									className="size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
 									onClick={() => onUnlink(pr.id)}
 									disabled={busy}
 								>
-									<TrashIcon className="size-3.5" />
-								</Button>
-							</li>
+									<TrashIcon />
+								</IconButton>
+							</Item>
 						)
 					})}
 				</ul>
@@ -127,6 +136,6 @@ export function IssuePullRequestsPanel({
 				onAttach={onLink}
 				busy={busy}
 			/>
-		</section>
+		</Panel>
 	)
 }

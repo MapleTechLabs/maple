@@ -2,17 +2,22 @@ import { useCallback, useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { cn } from "@maple/ui/lib/utils"
+import { ChartCard } from "@/components/common/chart-card"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { countLabel, pluralize } from "@maple/ui/lib/format"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure } from "./release-health"
+import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import {
 	RELEASE_HEALTH_ORDER,
 	shortReleaseLabel,
 	type ReleaseHealth,
 	type ReleaseServiceImpact,
 } from "./release-model"
+import { formatDateInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
 
 /** Lanes beyond this fold into a trailing count; the table still lists every release. */
 const MAX_LANES = 12
@@ -150,14 +155,8 @@ function axisLabels(startMs: number, endMs: number, timeZone: string): string[] 
 	return [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
 		const date = new Date(startMs + span * ratio)
 		return showTime
-			? date.toLocaleString(undefined, {
-					timeZone,
-					month: "short",
-					day: "numeric",
-					hour: "numeric",
-					minute: "2-digit",
-				})
-			: date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
+			? formatTimestampInTimezone(date, { timeZone, style: "range" })
+			: formatDateInTimezone(date, { timeZone, withYear: false })
 	})
 }
 
@@ -174,7 +173,7 @@ function markerTitle(marker: Marker, timeZone: string): string {
 		.map((m) => shortReleaseLabel(m.commitSha))
 		.join(", ")
 	const more = marker.members.length > 6 ? `, +${marker.members.length - 6} more` : ""
-	return `${marker.members.length} deploys · ${formatRelativeTimeOrDate(oldest.firstSeen, undefined, timeZone)} → ${formatRelativeTimeOrDate(newest.firstSeen, undefined, timeZone)}\n${listed}${more}`
+	return `${countLabel(marker.members.length, "deploy")} · ${formatRelativeTimeOrDate(oldest.firstSeen, undefined, timeZone)} → ${formatRelativeTimeOrDate(newest.firstSeen, undefined, timeZone)}\n${listed}${more}`
 }
 
 /**
@@ -212,34 +211,29 @@ export function ReleasesTimeline({
 	)
 
 	return (
-		<div className="flex flex-col rounded-md border bg-card">
-			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b px-4 py-2.5">
-				<span className="text-[11px] font-medium text-muted-foreground">Deploys over time</span>
-				<div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+		<ChartCard
+			className="overflow-visible"
+			title="Deploys over time"
+			legend={
+				<div className="flex items-center gap-3 text-3xs text-muted-foreground">
 					{RELEASE_HEALTH_ORDER.map((band) => (
 						<span key={band} className="inline-flex items-center gap-1">
-							<span
-								className={cn(
-									"inline-block size-2 rounded-full",
-									RELEASE_HEALTH_DOT_CLASS[band],
-								)}
-							/>
+							<StatusDot tone="custom" size="lg" className={RELEASE_HEALTH_DOT_CLASS[band]} />
 							{RELEASE_HEALTH_LABEL[band]}
 						</span>
 					))}
 				</div>
-			</div>
+			}
+		>
 			<div className="px-3 pb-2 pt-1">
 				{visible.map((lane, laneIndex) => (
 					<div
 						key={lane.serviceName}
 						className="grid h-8 grid-cols-[minmax(0,160px)_1fr] items-center gap-3"
 					>
-						<span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+						<span className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
 							<ServiceDot serviceName={lane.serviceName} />
-							<span className="truncate" title={lane.serviceName}>
-								{lane.serviceName}
-							</span>
+							<TruncatedText text={lane.serviceName} />
 						</span>
 						<div
 							ref={laneIndex === 0 ? trackRef : undefined}
@@ -275,7 +269,7 @@ export function ReleasesTimeline({
 											)}
 										/>
 										{count > 1 ? (
-											<span className="absolute left-full ml-0.5 rounded-sm bg-card px-0.5 font-mono text-[9px] leading-none tabular-nums text-muted-foreground">
+											<span className="absolute left-full ml-0.5 rounded-sm bg-card px-0.5 font-mono text-4xs leading-none tabular-nums text-muted-foreground">
 												{count}
 											</span>
 										) : null}
@@ -286,16 +280,16 @@ export function ReleasesTimeline({
 					</div>
 				))}
 				{hidden > 0 ? (
-					<div className="grid grid-cols-[minmax(0,160px)_1fr] gap-3 py-1 text-[10px] text-muted-foreground/70">
+					<div className="grid grid-cols-[minmax(0,160px)_1fr] gap-3 py-1 text-3xs text-muted-foreground/70">
 						<span>
-							+{hidden} more {hidden === 1 ? "service" : "services"}
+							+{hidden} more {pluralize(hidden, "service")}
 						</span>
 					</div>
 				) : null}
 				<div className="grid grid-cols-[minmax(0,160px)_1fr] gap-3 pt-1.5">
 					<span />
 					<div
-						className="flex justify-between font-mono text-[10px] tabular-nums text-muted-foreground/70"
+						className="flex justify-between font-mono text-3xs tabular-nums text-muted-foreground/70"
 						style={{ paddingLeft: TRACK_INSET_PX, paddingRight: TRACK_INSET_PX }}
 					>
 						{labels.map((label, index) => (
@@ -304,6 +298,6 @@ export function ReleasesTimeline({
 					</div>
 				</div>
 			</div>
-		</div>
+		</ChartCard>
 	)
 }

@@ -34,14 +34,16 @@ import type {
 	V2AlertRuleTestParams,
 } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
-import { Exit, Schema } from "effect"
-import { errorMessage } from "@/lib/error-toast"
+import { Schema } from "effect"
 import {
 	buildTimeseriesQuerySpec,
 	createQueryDraft,
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
-import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { getBrowserTimeZone } from "@/atoms/timezone-preference-atoms"
+import { formatDateInTimezone, formatTimeInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
+import type { Tone } from "@maple/ui/lib/tone"
 
 const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)
 const asHazelChannelId = Schema.decodeUnknownSync(HazelChannelId)
@@ -79,6 +81,8 @@ export type RuleFormState = {
 	thresholdUpper: string
 	windowMinutes: string
 	minimumSampleCount: string
+	/** Count an empty window as a breach instead of skipping it. */
+	alertOnNoData: boolean
 	consecutiveBreachesRequired: string
 	consecutiveHealthyRequired: string
 	renotifyIntervalMinutes: string
@@ -143,19 +147,15 @@ export const comparatorLabels: Record<AlertComparator, string> = {
 export const isRangeComparator = (c: AlertComparator): c is "between" | "not_between" =>
 	c === "between" || c === "not_between"
 
-export { destinationTypeLabels } from "@/components/alerts/destination-provider"
-
-export function getExitErrorMessage(exit: unknown, fallback: string): string {
-	if (!Exit.isExit(exit) || Exit.isSuccess(exit)) return fallback
-	return errorMessage(exit, fallback)
-}
-
 export function formatSignalValue(signalType: AlertSignalType, value: number | null): string {
 	if (value == null || Number.isNaN(value)) return "n/a"
 
 	switch (signalType) {
-		case "error_rate":
-			return formatErrorRate(value)
+		case "error_rate": {
+			// formatErrorRate floors to "<0.01%", which makes a tiny value and its tiny threshold read the same.
+			const pct = value * 100
+			return pct > 0 && pct < 0.01 ? `${pct.toPrecision(2)}%` : formatErrorRate(value)
+		}
 		case "p95_latency":
 		case "p99_latency":
 			return formatLatency(value)
@@ -168,21 +168,55 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 	}
 }
 
-/**
- * Threshold unit conversion at the form↔domain boundary.
- *
- * The domain stores `error_rate` thresholds as a 0–1 ratio (matching the query
- * engine's `countIf(Error)/count()` and the evaluation comparison). The form
- * lets users enter a percent (e.g. `5` = 5%), so we divide by 100 on submit and
- * multiply by 100 on load. All other signals pass through unchanged.
- */
-export function formThresholdToDomain(signalType: AlertSignalType, value: string): number {
-	const n = Number(value)
-	return signalType === "error_rate" ? n / 100 : n
+/** What decides a threshold's unit: the signal, and for builder rules the aggregation. */
+export type ThresholdSubject = {
+	readonly signalType: AlertSignalType
+	readonly queryBuilderDraft?: { readonly dataSource: string; readonly aggregation: string }
 }
 
-export function domainThresholdToForm(signalType: AlertSignalType, value: number): string {
-	return signalType === "error_rate" ? String(value * 100) : String(value)
+const isPercentSignal = (subject: ThresholdSubject): boolean =>
+	subject.signalType === "error_rate" ||
+	(subject.signalType === "builder_query" &&
+		subject.queryBuilderDraft?.dataSource === "traces" &&
+		subject.queryBuilderDraft.aggregation === "error_rate")
+
+const BUILDER_LATENCY_AGGREGATIONS = new Set(["avg_duration", "p50_duration", "p95_duration", "p99_duration"])
+
+/**
+ * The signal a rule's values read as, for formatting. A builder query over
+ * `error_rate` or a duration percentile reads like the matching built-in, so
+ * the chart, the threshold and the input all speak one unit.
+ */
+export function displaySignalType(subject: ThresholdSubject): AlertSignalType {
+	if (subject.signalType !== "builder_query" || subject.queryBuilderDraft?.dataSource !== "traces") {
+		return subject.signalType
+	}
+	if (isPercentSignal(subject)) return "error_rate"
+	if (BUILDER_LATENCY_AGGREGATIONS.has(subject.queryBuilderDraft.aggregation)) return "p95_latency"
+	return "builder_query"
+}
+
+/** The suffix the threshold input shows: `%` for error rates, `ms` for latencies. */
+export function thresholdUnitLabel(subject: ThresholdSubject): string | null {
+	const display = displaySignalType(subject)
+	if (display === "error_rate") return "%"
+	if (display === "p95_latency" || display === "p99_latency") return "ms"
+	return null
+}
+
+/**
+ * Threshold unit conversion at the form↔domain boundary, the one place it
+ * happens. The domain stores error rates as a 0–1 ratio (built-in and builder
+ * `error_rate` alike); the form takes a percent, so `5` means 5% in every mode.
+ */
+export function formThresholdToDomain(subject: ThresholdSubject, value: string): number {
+	const n = Number(value)
+	return isPercentSignal(subject) ? n / 100 : n
+}
+
+export function domainThresholdToForm(subject: ThresholdSubject, value: number): string {
+	// toPrecision(12) drops float noise: 0.07 * 100 is 7.000000000000001.
+	return isPercentSignal(subject) ? String(Number((value * 100).toPrecision(12))) : String(value)
 }
 
 function parsePositiveNumber(value: string, fallback: number): number {
@@ -250,6 +284,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		thresholdUpper: "",
 		windowMinutes: "5",
 		minimumSampleCount: "50",
+		alertOnNoData: false,
 		consecutiveBreachesRequired: "2",
 		consecutiveHealthyRequired: "2",
 		renotifyIntervalMinutes: "30",
@@ -263,8 +298,18 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 	}
 }
 
+/** Grouped rules cannot alert on no data: a group that stops reporting is held by its incident. */
+export function ruleFormIsGrouped(form: RuleFormState): boolean {
+	if (form.signalType === "raw_query") return false
+	if (form.signalType === "builder_query") {
+		return form.queryBuilderDraft.groupBy.some((token) => token !== "none" && token.length > 0)
+	}
+	return form.groupBy.length > 0
+}
+
 export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 	const queryBuilderDraft = normalizeRuleQueryDraft(rule.queryBuilderDraft)
+	const unitSubject = { signalType: rule.signalType, queryBuilderDraft }
 	return {
 		name: rule.name,
 		notes: rule.notes ?? "",
@@ -277,11 +322,12 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 		groupBy: rule.groupBy ? [...rule.groupBy] : [],
 		signalType: rule.signalType,
 		comparator: rule.comparator,
-		threshold: domainThresholdToForm(rule.signalType, rule.threshold),
+		threshold: domainThresholdToForm(unitSubject, rule.threshold),
 		thresholdUpper:
-			rule.thresholdUpper == null ? "" : domainThresholdToForm(rule.signalType, rule.thresholdUpper),
+			rule.thresholdUpper == null ? "" : domainThresholdToForm(unitSubject, rule.thresholdUpper),
 		windowMinutes: String(rule.windowMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
+		alertOnNoData: rule.noDataBehavior === "alert",
 		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
 		consecutiveHealthyRequired: String(rule.consecutiveHealthyRequired),
 		renotifyIntervalMinutes: String(rule.renotifyIntervalMinutes),
@@ -356,14 +402,15 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 		group_by: queryOwnsScope ? null : form.groupBy.length > 0 ? form.groupBy : null,
 		signal_type: signalType,
 		comparator: form.comparator,
-		threshold: formThresholdToDomain(signalType, form.threshold),
+		threshold: formThresholdToDomain(form, form.threshold),
 		threshold_upper: isRangeComparator(form.comparator)
 			? Number.isFinite(Number(form.thresholdUpper))
-				? formThresholdToDomain(signalType, form.thresholdUpper)
+				? formThresholdToDomain(form, form.thresholdUpper)
 				: null
 			: null,
 		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
 		minimum_sample_count: parseNonNegativeNumber(form.minimumSampleCount, 0),
+		alert_on_no_data: form.alertOnNoData && !ruleFormIsGrouped(form),
 		consecutive_breaches_required: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
 		consecutive_healthy_required: parsePositiveNumber(form.consecutiveHealthyRequired, 2),
 		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),
@@ -463,6 +510,49 @@ export function defaultDestinationForm(type: AlertDestinationType = "discord"): 
 		chatConnector: "",
 		chatChannelId: "",
 		chatChannelName: "",
+	}
+}
+
+/** The enabled destination most rules already notify, or the only enabled one. */
+export function pickDefaultDestination(
+	destinations: ReadonlyArray<Pick<AlertDestinationDocument, "id" | "enabled" | "disabledAt">>,
+	rules: ReadonlyArray<Pick<AlertRuleDocument, "destinationIds">>,
+): AlertDestinationDocument["id"] | null {
+	const usable = destinations.filter((d) => d.enabled && !d.disabledAt)
+	if (usable.length === 1) return usable[0]!.id
+	const uses = new Map<string, number>()
+	for (const id of rules.flatMap((rule) => rule.destinationIds)) uses.set(id, (uses.get(id) ?? 0) + 1)
+	const ranked = usable
+		.filter((d) => (uses.get(d.id) ?? 0) > 0)
+		.sort((a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0))
+	return ranked[0]?.id ?? null
+}
+
+/** A new `chat` destination posting through one linked workspace; the channel is still to pick. */
+export function chatDestinationForm(
+	connector: string,
+	workspaceId: DestinationFormState["chatWorkspaceId"],
+): DestinationFormState {
+	return { ...defaultDestinationForm("chat"), chatWorkspaceId: workspaceId, chatConnector: connector }
+}
+
+/** The name a destination gets when the user leaves Name blank: where it delivers, not what it is. */
+export function suggestedDestinationName(form: DestinationFormState): string {
+	switch (form.type) {
+		case "chat":
+			return form.chatChannelName.length > 0 ? `#${form.chatChannelName}` : ""
+		case "hazel-oauth":
+			return form.hazelChannelName.length > 0 ? `Hazel #${form.hazelChannelName}` : "Hazel"
+		case "webhook":
+			return URL.canParse(form.url.trim()) ? new URL(form.url.trim()).host : "Webhook"
+		case "pagerduty":
+			return "PagerDuty"
+		case "discord":
+			return "Discord"
+		case "telegram":
+			return "Telegram"
+		case "email":
+			return "Email"
 	}
 }
 
@@ -688,6 +778,9 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 								value: point.value,
 								sampleCount: point.sample_count,
 								status: point.status,
+								...(point.skip_reason !== undefined
+									? { skipReason: point.skip_reason }
+									: undefined),
 								...(point.provisional !== undefined
 									? { provisional: point.provisional }
 									: undefined),
@@ -711,6 +804,7 @@ export function v2CheckToDocument(check: V2AlertCheck): AlertCheckDocument {
 		timestamp: asIso(check.timestamp),
 		groupKey: check.group_key,
 		status: check.status,
+		skipReason: check.skip_reason,
 		signalType: check.signal_type,
 		comparator: check.comparator,
 		threshold: check.threshold,
@@ -767,14 +861,7 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 				}, 0) / resolvedIncidents.length
 			: 0
 
-	const avgResolution =
-		avgResolutionMs > 0
-			? avgResolutionMs < 60_000
-				? `${Math.round(avgResolutionMs / 1000)}s`
-				: avgResolutionMs < 3_600_000
-					? `${(avgResolutionMs / 60_000).toFixed(1)}m`
-					: `${(avgResolutionMs / 3_600_000).toFixed(1)}h`
-			: "—"
+	const avgResolution = avgResolutionMs > 0 ? formatResolutionDuration(avgResolutionMs) : EMPTY_VALUE
 
 	const groupCounts: Record<string, number> = {}
 	for (const i of incidents) {
@@ -792,38 +879,20 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 /*  Shared Formatters                                                         */
 /* -------------------------------------------------------------------------- */
 
-export function formatAlertDateTime(value: string | null, timeZone?: string): string {
+export function formatAlertDateTime(value: string | null, timeZone: string): string {
 	if (!value) return "Never"
-	return new Date(value).toLocaleString(undefined, {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	})
+	return `${formatDateInTimezone(value, { timeZone })}, ${formatTimeInTimezone(value, { timeZone })}`
 }
 
-export function formatAlertDateTimeFull(value: string | null, timeZone?: string): string {
-	if (!value) return "—"
-	return new Date(value).toLocaleString(undefined, {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	})
+export function formatAlertDateTimeFull(value: string | null, timeZone: string): string {
+	if (!value) return EMPTY_VALUE
+	return formatTimestampInTimezone(value, { timeZone })
 }
 
-/** Time of day only (`03:10 PM`) — used where a day header already carries the date. */
-export function formatAlertTime(value: string | null, timeZone?: string): string {
-	if (!value) return "—"
-	return new Date(value).toLocaleTimeString(undefined, {
-		timeZone,
-		hour: "2-digit",
-		minute: "2-digit",
-	})
+/** Time of day only (`03:10 PM`), used where a day header already carries the date. */
+export function formatAlertTime(value: string | null, timeZone: string): string {
+	if (!value) return EMPTY_VALUE
+	return formatTimeInTimezone(value, { timeZone })
 }
 
 /** Midnight of the day holding `ms`, in `timeZone` or the browser's zone. */
@@ -841,7 +910,7 @@ function formatAlertDayHeading(value: string, timeZone: string | undefined): str
 	if (target === today) return "Today"
 	// Any instant inside the previous day, so a 23- or 25-hour day still counts.
 	if (target === startOfDay(today - 1, timeZone)) return "Yesterday"
-	return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric", year: "numeric" })
+	return formatDateInTimezone(date, { timeZone: timeZone ?? getBrowserTimeZone() })
 }
 
 /* -------------------------------------------------------------------------- */
@@ -853,23 +922,23 @@ function formatAlertDayHeading(value: string, timeZone: string | undefined): str
  * the recent-activity table, and the chat attachment card. Color is always
  * paired with the label — never the only signal.
  */
-export const eventTypeMeta: Record<AlertEventType, { label: string; dot: string; text: string }> = {
-	trigger: { label: "Triggered", dot: "bg-destructive", text: "text-destructive" },
-	resolve: { label: "Resolved", dot: "bg-success", text: "text-success" },
-	renotify: { label: "Re-notified", dot: "bg-warning", text: "text-warning" },
-	test: { label: "Test", dot: "bg-info", text: "text-info" },
-} satisfies Record<AlertEventType, { label: string; dot: string; text: string }>
+export const eventTypeMeta: Record<AlertEventType, { label: string; tone: Tone }> = {
+	trigger: { label: "Triggered", tone: "crit" },
+	resolve: { label: "Resolved", tone: "ok" },
+	renotify: { label: "Re-notified", tone: "warn" },
+	test: { label: "Test", tone: "info" },
+} satisfies Record<AlertEventType, { label: string; tone: Tone }>
 
-export type DeliveryStatusVariant = "success" | "error" | "warning" | "outline"
+export type DeliveryStatusVariant = Exclude<Tone, "neutral"> | "outline"
 
 /** Delivery status → Badge variant + human label. */
 export const deliveryStatusMeta: Record<
 	AlertDeliveryStatus,
 	{ label: string; variant: DeliveryStatusVariant }
 > = {
-	success: { label: "Delivered", variant: "success" },
-	failed: { label: "Failed", variant: "error" },
-	processing: { label: "Sending", variant: "warning" },
+	success: { label: "Delivered", variant: "ok" },
+	failed: { label: "Failed", variant: "crit" },
+	processing: { label: "Sending", variant: "warn" },
 	queued: { label: "Queued", variant: "outline" },
 } satisfies Record<AlertDeliveryStatus, { label: string; variant: DeliveryStatusVariant }>
 
@@ -901,11 +970,11 @@ export function groupDeliveryEventsByDay(
 }
 
 export function formatAlertDuration(startStr: string | null, endStr: string | null): string {
-	if (!startStr) return "—"
+	if (!startStr) return EMPTY_VALUE
 	const start = new Date(startStr).getTime()
 	const end = endStr ? new Date(endStr).getTime() : Date.now()
 	const diffMs = end - start
-	if (diffMs < 0) return "—"
+	if (diffMs < 0) return EMPTY_VALUE
 	const mins = Math.floor(diffMs / 60_000)
 	if (mins < 60) return `${mins}m`
 	const hours = Math.floor(mins / 60)
@@ -913,4 +982,11 @@ export function formatAlertDuration(startStr: string | null, endStr: string | nu
 	if (hours < 24) return remainMins > 0 ? `${hours}h ${remainMins}m` : `${hours}h`
 	const days = Math.floor(hours / 24)
 	return `${days}d ${hours % 24}h`
+}
+
+/** Mean time to resolve: whole seconds under a minute, one decimal of minutes or hours above. */
+export function formatResolutionDuration(ms: number): string {
+	if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+	if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)}m`
+	return `${(ms / 3_600_000).toFixed(1)}h`
 }

@@ -3,15 +3,15 @@ import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -62,6 +62,7 @@ const testConfig = () =>
 
 const logRow = {
 	timestamp: "2026-07-15 12:00:01.123",
+	exactTimestamp: "2026-07-15 12:00:01.123456789",
 	severityText: "ERROR",
 	severityNumber: 17,
 	serviceName: "api",
@@ -78,6 +79,7 @@ const hierarchyRow = {
 	spanId: SPAN_ID,
 	parentSpanId: "",
 	spanName: "GET /checkout",
+	rawSpanName: "http.server GET",
 	serviceName: "api",
 	spanKind: "Server",
 	durationMs: 42.5,
@@ -126,7 +128,10 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 		return sql.includes("TraceId <") ? rows.slice(1) : rows
 	}
 	if (sql.includes("FROM trace_detail_spans") && sql.includes("AS relationship")) return [hierarchyRow]
-	if (sql.includes("FROM trace_detail_spans") && sql.includes("toJSONString(SpanAttributes)")) {
+	if (
+		sql.includes("FROM trace_detail_spans") &&
+		sql.includes("toJSONString(trace_detail_spans.SpanAttributes)")
+	) {
 		return [
 			{
 				...hierarchyRow,
@@ -320,7 +325,7 @@ const makeHarness = (
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),

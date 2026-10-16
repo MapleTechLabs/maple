@@ -1,24 +1,17 @@
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { ToolbarSearch } from "@maple/ui/components/toolbar"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { Toolbar, ToolbarSearch } from "@maple/ui/components/toolbar"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { MultiSelectCombobox } from "@maple/ui/components/multi-select-combobox"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogMedia,
-	AlertDialogTitle,
-} from "@maple/ui/components/ui/alert-dialog"
+import { FilteredEmpty } from "@/components/common/filtered-empty"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
+import { RelativeTime } from "@/components/common/relative-time"
+
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -38,7 +31,6 @@ import {
 	ChartBarIcon,
 	CircleWarningIcon,
 	CodeIcon,
-	DotsIcon,
 	FileIcon,
 	GridIcon,
 	MagnifierIcon,
@@ -52,6 +44,8 @@ import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "@/atoms/dashbo
 import type { Dashboard } from "@/components/dashboard-builder/types"
 import { TagEditorDialog } from "@/components/dashboard-builder/tag-editor"
 import { DocsLink } from "@/components/common/docs-link"
+import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
+import { ListSectionHeader } from "@/components/dashboard-builder/list-section-header"
 import {
 	collectTags,
 	dashboardDomains,
@@ -72,7 +66,17 @@ const SORT_LABELS: Record<DashboardSortOption, string> = {
 
 export type DashboardScope = "all" | "favorites"
 
+const SCOPE_OPTIONS: ReadonlyArray<SegmentedOption<DashboardScope>> = [
+	{ value: "all", label: "All" },
+	{ value: "favorites", label: "Favorites" },
+]
+
 /** The glyph stands for what the dashboard reads, so the lane carries meaning. */
+/** A whitespace-only name would render a blank row and dialogs reading "Delete “ ”?". */
+function displayName(name: string | undefined): string {
+	return name?.trim() ? name : "Untitled dashboard"
+}
+
 function dashboardGlyph(dashboard: Dashboard) {
 	if (dashboard.widgets.length === 0) return GridIcon
 	const [primary] = dashboardDomains(dashboard)
@@ -142,16 +146,24 @@ function DashboardRow({
 				</span>
 
 				<span className="flex min-w-0 grow flex-col gap-0.5">
-					<span className="truncate text-sm font-medium text-foreground">{dashboard.name}</span>
+					<span
+						className={cn(
+							"truncate text-sm font-medium",
+							dashboard.name.trim() ? "text-foreground" : "text-muted-foreground",
+						)}
+						title={displayName(dashboard.name)}
+					>
+						{displayName(dashboard.name)}
+					</span>
 					{/* Below sm the scope lane collapses onto this line, so the row keeps
 					    its information when the column can't fit. */}
-					<span className="text-muted-foreground truncate font-mono text-[11px] sm:hidden">
+					<span className="text-muted-foreground truncate font-mono text-2xs sm:hidden">
 						{[empty ? "no widgets" : widgetCountLabel(dashboard), reads.short]
 							.filter(Boolean)
 							.join(" · ")}
 					</span>
 					{dashboard.description && (
-						<span className="text-muted-foreground hidden truncate text-[11px] sm:block">
+						<span className="text-muted-foreground hidden truncate text-2xs sm:block">
 							{dashboard.description}
 						</span>
 					)}
@@ -161,32 +173,41 @@ function DashboardRow({
 				    breakdown and the tag chips both lived here and were cut — they
 				    made the row crowded without changing any decision. */}
 				<span title={reads.full} className="hidden w-40 shrink-0 flex-col items-end sm:flex">
-					<span className={cn("font-mono text-[11px]", empty ? "text-warning" : "text-foreground")}>
+					<span
+						className={cn("font-mono text-2xs", empty ? "text-severity-warn" : "text-foreground")}
+					>
 						{empty ? "no widgets" : widgetCountLabel(dashboard)}
 					</span>
-					<span className="text-muted-foreground truncate font-mono text-[10px]">
+					<span className="text-muted-foreground truncate font-mono text-3xs">
 						{empty ? "" : reads.short}
 					</span>
 				</span>
 
-				<span className="text-muted-foreground w-24 shrink-0 text-right font-mono text-[11px]">
-					{formatRelativeTimeOrDate(dashboard.updatedAt)}
-				</span>
+				<RelativeTime
+					value={dashboard.updatedAt}
+					variant="orDate"
+					mono
+					tooltip="title"
+					className="text-muted-foreground w-24 shrink-0 text-right text-2xs"
+				/>
 			</Link>
 
 			{/* Always rendered, low-contrast when off: a hover-only star hides the
 			    primary organising affordance from touch and keyboard users. */}
 			<div className="flex shrink-0 items-center gap-0.5 pr-2 pl-1">
-				<Button
-					variant="ghost"
+				<IconButton
 					size="icon-xs"
-					aria-label={isFavorite ? `Unstar ${dashboard.name}` : `Star ${dashboard.name}`}
+					label={
+						isFavorite
+							? `Unstar ${displayName(dashboard.name)}`
+							: `Star ${displayName(dashboard.name)}`
+					}
 					aria-pressed={isFavorite}
 					onClick={() => onToggleFavorite(dashboard.id)}
 					className={isFavorite ? "text-primary" : "text-muted-foreground/40"}
 				>
-					{isFavorite ? <StarFilledIcon size={14} /> : <StarIcon size={14} />}
-				</Button>
+					{isFavorite ? <StarFilledIcon /> : <StarIcon />}
+				</IconButton>
 				<DashboardRowMenu
 					dashboard={dashboard}
 					readOnly={readOnly}
@@ -216,53 +237,42 @@ function DashboardRowMenu({
 	onEditTags: (dashboard: Dashboard) => void
 }) {
 	return (
-		<DropdownMenu>
-			<DropdownMenuTrigger
-				render={
-					<Button
-						variant="ghost"
-						size="icon-xs"
-						aria-label={`More actions for ${dashboard.name}`}
-						className="text-muted-foreground"
-					/>
-				}
-			>
-				<DotsIcon size={14} />
-			</DropdownMenuTrigger>
-			<DropdownMenuContent align="end">
-				<DropdownMenuGroup>
-					{/* Export reads the payload the list already holds, so it survives a
-					    persistence error. Duplicate and delete write, so they don't. */}
-					<DropdownMenuItem onClick={() => onExport(dashboard)}>Export JSON</DropdownMenuItem>
-					<DropdownMenuItem disabled={readOnly} onClick={() => onDuplicate(dashboard)}>
-						Duplicate
-					</DropdownMenuItem>
-					{/* Editing, not display: the row deliberately carries no tag chips
-					    (see the row comment above), so this is the only way in from here. */}
-					<DropdownMenuItem disabled={readOnly} onClick={() => onEditTags(dashboard)}>
-						Edit tags…
-					</DropdownMenuItem>
-					<DropdownMenuSeparator />
-					<DropdownMenuItem
-						disabled={readOnly}
-						variant="destructive"
-						onClick={() => onDelete(dashboard)}
-					>
-						Delete…
-					</DropdownMenuItem>
-					{/* States the reason in the menu itself. A Tooltip here would need a
-					    wrapper element, which breaks the menu's roving-index nav. */}
-					{readOnly && (
-						<>
-							<DropdownMenuSeparator />
-							<DropdownMenuLabel className="font-normal text-[10px] leading-snug">
-								Dashboard store unreachable — writes are disabled
-							</DropdownMenuLabel>
-						</>
-					)}
-				</DropdownMenuGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
+		<RowActionsMenu
+			label={`More actions for ${displayName(dashboard.name)}`}
+			className="text-muted-foreground"
+		>
+			<DropdownMenuGroup>
+				{/* Export reads the payload the list already holds, so it survives a
+				    persistence error. Duplicate and delete write, so they don't. */}
+				<DropdownMenuItem onClick={() => onExport(dashboard)}>Export JSON</DropdownMenuItem>
+				<DropdownMenuItem disabled={readOnly} onClick={() => onDuplicate(dashboard)}>
+					Duplicate
+				</DropdownMenuItem>
+				{/* Editing, not display: the row deliberately carries no tag chips
+				    (see the row comment above), so this is the only way in from here. */}
+				<DropdownMenuItem disabled={readOnly} onClick={() => onEditTags(dashboard)}>
+					Edit tags…
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem
+					disabled={readOnly}
+					variant="destructive"
+					onClick={() => onDelete(dashboard)}
+				>
+					Delete…
+				</DropdownMenuItem>
+				{/* States the reason in the menu itself. A Tooltip here would need a
+				    wrapper element, which breaks the menu's roving-index nav. */}
+				{readOnly && (
+					<>
+						<DropdownMenuSeparator />
+						<DropdownMenuLabel className="font-normal text-3xs leading-snug">
+							Dashboard store unreachable — writes are disabled
+						</DropdownMenuLabel>
+					</>
+				)}
+			</DropdownMenuGroup>
+		</RowActionsMenu>
 	)
 }
 
@@ -281,27 +291,6 @@ function DisabledReason({ children, reason }: { children: React.ReactNode; reaso
 }
 
 const STORE_UNREACHABLE = "Unavailable while the dashboard store is unreachable"
-
-function SectionHeader({
-	title,
-	count,
-	note,
-	bordered,
-}: {
-	title: string
-	count: number
-	note?: string
-	bordered?: boolean
-}) {
-	return (
-		<div className={cn("flex items-center gap-2 pb-2", bordered && "mt-6 pt-2")}>
-			<h3 className="text-foreground text-[11px] font-medium tracking-wider uppercase">{title}</h3>
-			<span className="text-muted-foreground font-mono text-[11px]">{count}</span>
-			<span aria-hidden className="h-px grow bg-border" />
-			{note && <span className="text-muted-foreground text-[10px]">{note}</span>}
-		</div>
-	)
-}
 
 interface DashboardListProps {
 	dashboards: ReadonlyArray<Dashboard>
@@ -384,41 +373,34 @@ export function DashboardList({
 		// otherwise compress below its content, spilling the rows past its own
 		// box so the bottom padding lands behind them instead of after them.
 		<div className="flex shrink-0 flex-col pb-6">
-			<div className="flex flex-wrap items-center gap-2 pb-3">
+			<Toolbar className="justify-start gap-2 border-b-0 px-0 pt-0">
 				<ToolbarSearch
 					query={query}
 					onSearch={onQueryChange}
 					placeholder="Search dashboards"
 					className="min-w-0 grow sm:max-w-70"
 				/>
-				<ToggleGroup
-					value={[scope]}
-					onValueChange={(values) => {
-						const next = values[0]
-						if (next) onScopeChange(next as DashboardScope)
-					}}
-					variant="outline"
-					size="sm"
+				<SegmentedSelect<DashboardScope>
+					options={SCOPE_OPTIONS}
+					value={scope}
+					onChange={onScopeChange}
 					aria-label="Filter dashboards by favorite"
 					className="shrink-0"
-				>
-					<ToggleGroupItem value="all">All</ToggleGroupItem>
-					<ToggleGroupItem value="favorites">Favorites</ToggleGroupItem>
-				</ToggleGroup>
+				/>
 
 				<TagFilterMenu allTags={allTags} selected={tags} onChange={onTagsChange} />
 				<SortMenu sort={sort} onSortChange={onSortChange} />
 
 				<span className="grow" />
-				<span className="text-muted-foreground shrink-0 font-mono text-[11px]">
+				<span className="text-muted-foreground shrink-0 font-mono text-2xs">
 					{filtering || scope === "favorites"
 						? `${scoped} of ${dashboards.length}`
 						: `${dashboards.length} of ${dashboards.length}`}
 				</span>
-			</div>
+			</Toolbar>
 
 			{filtering && !nothingAtAll && (
-				<div className="flex items-center gap-2 border-y border-border py-2 text-[11px]">
+				<div className="flex items-center gap-2 border-y border-border py-2 text-2xs">
 					<span className="font-mono text-foreground">{matched}</span>
 					<span className="text-muted-foreground">
 						of {dashboards.length} match name, description or tag
@@ -429,35 +411,35 @@ export function DashboardList({
 			{nothingAtAll ? (
 				<FirstRunEmpty readOnly={readOnly} onCreate={onCreate} />
 			) : nothingMatched ? (
-				<Empty className="py-14">
-					<EmptyHeader>
-						<EmptyMedia variant="icon">
-							<MagnifierIcon size={17} />
-						</EmptyMedia>
-						<EmptyTitle>
-							{searching
-								? `No dashboard matches “${query.trim()}”`
-								: "No dashboard carries every selected tag"}
-						</EmptyTitle>
-						<EmptyDescription>
-							{searching
-								? "Search covers name, description and tags. A template might mention it."
-								: "Tags combine with AND. Drop one to widen the list."}
-						</EmptyDescription>
-					</EmptyHeader>
-					<div className="flex items-center gap-2">
-						{searching && (
-							<Button variant="outline" size="sm" onClick={() => onQueryChange(undefined)}>
-								Clear search
-							</Button>
-						)}
-						{tags.length > 0 && (
-							<Button variant="outline" size="sm" onClick={() => onTagsChange([])}>
-								Show all
-							</Button>
-						)}
-					</div>
-				</Empty>
+				<FilteredEmpty
+					noun="dashboards"
+					className="py-14"
+					icon={<MagnifierIcon size={17} />}
+					title={
+						searching
+							? `No dashboard matches “${query.trim()}”`
+							: "No dashboard carries every selected tag"
+					}
+					description={
+						searching
+							? "Search covers name, description and tags. A template might mention it."
+							: "Tags combine with AND. Drop one to widen the list."
+					}
+					detail={
+						<div className="flex items-center gap-2">
+							{searching && (
+								<Button variant="outline" size="sm" onClick={() => onQueryChange(undefined)}>
+									Clear search
+								</Button>
+							)}
+							{tags.length > 0 && (
+								<Button variant="outline" size="sm" onClick={() => onTagsChange([])}>
+									Show all
+								</Button>
+							)}
+						</div>
+					}
+				/>
 			) : scopeHidEverything ? (
 				<Empty className="py-14">
 					<EmptyHeader>
@@ -478,7 +460,7 @@ export function DashboardList({
 				<>
 					{favorited.length > 0 && (
 						<>
-							<SectionHeader
+							<ListSectionHeader
 								title="Favorites"
 								count={favorited.length}
 								note="on this device only"
@@ -495,10 +477,10 @@ export function DashboardList({
 					)}
 					{others.length > 0 && (
 						<>
-							<SectionHeader
+							<ListSectionHeader
 								title="All dashboards"
 								count={others.length}
-								bordered={favorited.length > 0}
+								className={cn(favorited.length > 0 && "mt-6 pt-2")}
 							/>
 							{others.map((dashboard) => (
 								<DashboardRow
@@ -524,7 +506,7 @@ export function DashboardList({
 				onOpenChange={(open) => {
 					if (!open) setPendingTags(null)
 				}}
-				dashboardName={pendingTags?.name ?? ""}
+				dashboardName={pendingTags ? displayName(pendingTags.name) : ""}
 				tags={pendingTags?.tags ?? []}
 				suggestions={allTags}
 				onSave={(next) => {
@@ -533,37 +515,25 @@ export function DashboardList({
 				}}
 			/>
 
-			<AlertDialog
+			<ConfirmDialog
 				open={pendingDelete !== null}
 				onOpenChange={(open) => {
 					if (!open) setPendingDelete(null)
 				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogMedia className="bg-destructive/10">
-							<CircleWarningIcon className="text-destructive" />
-						</AlertDialogMedia>
-						<AlertDialogTitle>Delete “{pendingDelete?.name}”?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This dashboard belongs to the whole org — deleting it removes it for everyone, not
-							just you. It can’t be undone. Export the JSON first if you might want it back.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							variant="destructive"
-							onClick={() => {
-								if (pendingDelete) onDelete(pendingDelete.id)
-								setPendingDelete(null)
-							}}
-						>
-							Delete for everyone
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+				icon={<CircleWarningIcon className="text-destructive" />}
+				title={<>Delete “{displayName(pendingDelete?.name)}”?</>}
+				description={
+					<>
+						This dashboard belongs to the whole org: deleting it removes it for everyone, not just
+						you. It can’t be undone. Export the JSON first if you might want it back.
+					</>
+				}
+				confirmLabel="Delete for everyone"
+				onConfirm={() => {
+					if (pendingDelete) onDelete(pendingDelete.id)
+					setPendingDelete(null)
+				}}
+			/>
 		</div>
 	)
 }
@@ -577,7 +547,7 @@ function SortMenu({
 }) {
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger render={<Button variant="outline" size="sm" className="shrink-0" />}>
+			<DropdownMenuTrigger render={<Button variant="outline" className="shrink-0" />}>
 				{SORT_LABELS[sort]}
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start">
@@ -619,7 +589,7 @@ function TagFilterMenu({
 	if (allTags.length === 0) {
 		return (
 			<DisabledReason reason="No dashboard carries a tag yet">
-				<Button variant="outline" size="sm" disabled className="shrink-0">
+				<Button variant="outline" disabled className="shrink-0">
 					Tags
 				</Button>
 			</DisabledReason>
@@ -631,6 +601,7 @@ function TagFilterMenu({
 			clearLabel={() => "Clear tags"}
 			emptyMessage="No matching tags"
 			mode="trigger"
+			triggerSize="default"
 			onChange={onChange}
 			options={allTags.map((tag) => ({ value: tag }))}
 			searchPlaceholder="Filter tags…"
@@ -639,9 +610,7 @@ function TagFilterMenu({
 				<>
 					Tags
 					{selected.length > 0 && (
-						<Badge className="ml-1.5 h-4 px-1.5 py-0 font-mono text-[9px]">
-							{selected.length}
-						</Badge>
+						<Badge className="ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs">{selected.length}</Badge>
 					)}
 				</>
 			}
@@ -663,7 +632,7 @@ function CreateRow({ readOnly, onCreate }: { readOnly: boolean; onCreate: () => 
 			</span>
 			<span className="flex min-w-0 grow flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
 				<span className="text-sm font-medium text-foreground">New dashboard</span>
-				<span className="text-muted-foreground text-[11px]">
+				<span className="text-muted-foreground text-2xs">
 					Start blank, or pick a template already wired to metrics you send.
 				</span>
 			</span>

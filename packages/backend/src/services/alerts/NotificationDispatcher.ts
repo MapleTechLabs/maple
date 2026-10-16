@@ -1,5 +1,5 @@
-import type { AlertDestinationRow } from "@maple/db"
-import { alertDestinations } from "@maple/db"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDestinations, type AlertDestinationRow } from "@maple/db/tables"
 import {
 	AlertDeliveryError,
 	type AlertComparator,
@@ -9,8 +9,8 @@ import {
 	type AlertSignalType,
 	type OrgId,
 } from "@maple/domain/http"
-import { and, eq, inArray } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { HttpClient } from "effect/http"
 import { buildAlertChatUrl } from "./AlertDeliveryDispatch"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
@@ -34,7 +34,7 @@ const DELIVERY_TIMEOUT_MS = 15_000
 const NOTIFICATION_DELIVERY_CONCURRENCY = 5
 
 class NotificationDispatchError extends Schema.TaggedError<NotificationDispatchError>()(
-	"@maple/api/services/NotificationDispatchError",
+	"@maple/backend/services/NotificationDispatchError",
 	{
 		message: Schema.String,
 		cause: Schema.optionalKey(Schema.Defect()),
@@ -107,9 +107,10 @@ export interface NotificationDestinationResult {
 const make: Effect.Effect<
 	NotificationDispatcherApi,
 	NotificationDispatchError,
-	Database | Env | EmailService | ChatAlertPoster
+	Database | Env | EmailService | ChatAlertPoster | HttpClient.HttpClient
 > = Effect.gen(function* () {
 	const database = yield* Database
+	const httpClient = yield* HttpClient.HttpClient
 	const env = yield* Env
 	const email = yield* EmailService
 	const chatAlertPoster = yield* ChatAlertPoster
@@ -209,12 +210,14 @@ const make: Effect.Effect<
 		const result = yield* dispatchDeliveryImpl(
 			context,
 			payloadJson,
-			globalThis.fetch,
 			DELIVERY_TIMEOUT_MS,
 			request.linkUrl,
 			chatUrl,
 			{ sendEmail, postChatAlert: chatAlertPoster.post },
-		).pipe(Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.delivery.outcome": "failed" })))
+		).pipe(
+			Effect.provideService(HttpClient.HttpClient, httpClient),
+			Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.delivery.outcome": "failed" })),
+		)
 		yield* Effect.annotateCurrentSpan({
 			"maple.delivery.outcome": "delivered",
 			...(result.responseCode != null
@@ -234,15 +237,11 @@ const make: Effect.Effect<
 
 			const rowsOption = yield* database
 				.execute((db) =>
-					db
-						.select()
-						.from(alertDestinations)
-						.where(
-							and(
-								eq(alertDestinations.orgId, orgId),
-								inArray(alertDestinations.id, [...destinationIds]),
-							),
-						),
+					db.run(
+						PG.from(AlertDestinations)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.in_(...destinationIds)]),
+					),
 				)
 				.pipe(
 					Effect.tapError((error) =>
@@ -255,7 +254,7 @@ const make: Effect.Effect<
 					// not exist": "missing" is terminal to every consumer (escalation
 					// outbox, error policies), while "failed" keeps their retry
 					// machinery in play for what is a transient database error.
-					Effect.catchTag("@maple/api/lib/DatabaseError", () => Effect.succeedNone),
+					Effect.catchTag("@maple/backend/lib/DatabaseError", () => Effect.succeedNone),
 				)
 
 			if (Option.isNone(rowsOption)) {
@@ -310,7 +309,7 @@ const make: Effect.Effect<
 							),
 						),
 						Effect.catchTags({
-							"@maple/api/services/NotificationDispatchError": (error) =>
+							"@maple/backend/services/NotificationDispatchError": (error) =>
 								failedResult(row, error),
 							// Every delivery failure class reports the same way here. The
 							// distinction between them exists to drive the delivery

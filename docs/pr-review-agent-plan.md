@@ -26,7 +26,6 @@ in order, skipping with the reason in brackets:
 
 - the action is `opened`, `reopened`, `synchronize` or `ready_for_review` (`action`);
 - the repository has `pr_review_enabled` (`disabled`);
-- the organization carries the `prreview` rollout flag, see "Staged rollout" (`not_rolled_out`);
 - the PR is not a draft (`draft`) and the job carries a head SHA (`no_head_sha`);
 - the author is not a bot: a `[bot]` suffix, dependabot, renovate or GitHub Actions
   (`bot_author`);
@@ -101,18 +100,20 @@ needs work (50+) or poor. A single warning scores 90 but grades good, so the hea
 gap excellent. The score is computed from the findings rather than asked of the model, so the same
 gaps always score the same, and it is stored in `pr_reviews.score`.
 
-The headline is now a confidence level from 1 to 5 (`confidencePrReview`, same file), from "do not
+The headline is now a confidence level from 1 to 10 (`confidencePrReview`, same file), from "do not
 merge" to "safe to merge". It starts from the quality score, deducts for missing tests, a high-risk
-area and unobservable new work, and is capped by findings. The quality score is shown beneath it.
+area and unobservable new work in whole points, and is capped by findings. The quality score is shown beneath it.
 
 ### Publishing to GitHub
 
 `PrReviewService.submitReview` stores the report, then calls
 `VcsProviderClient.publishPullRequestReview`, which posts, in order:
 
-1. **A check run** named `Maple / review` on the head SHA, titled `Confidence <n>/5 · <verdict>`.
+1. **A check run** named `Maple / review` on the head SHA, titled `Confidence <n>/10 · <verdict>`.
    It concludes `success` only when the review finished, left nothing to address and did not
-   rate confidence 3 or lower; otherwise `neutral`, never `failure`. An installation that has not granted
+   rate confidence 6 or lower; otherwise `neutral`. It concludes `failure` only when the repository enables
+   `blockOnContractBreaks` and an undismissed contract break is open (see "Production telemetry").
+   An installation that has not granted
    `checks: write` answers 403, and the review is posted without the check run. A rate-limited
    403, which carries a retry time, fails the publish instead.
 2. **One summary comment per review**, always, authored by the App and found again by its hidden
@@ -132,15 +133,29 @@ in `pr_reviews.publish_error` and is not retried into the run.
 
 ### Persistence and settings
 
-`pr_reviews` (`packages/db/src/schema/vcs.ts`, migration `20260922213359_pr_reviews`, which also
+`pr_reviews` (`packages/db/src/tables/vcs.ts`, migration `20260922213359_pr_reviews`, which also
 adds `vcs_repositories.pr_review_enabled`) holds the PR identity (`repository_id`, `number`,
 `head_sha`, `base_sha`, `url`, `title`), `status` (`queued`, `running`, `completed`, `failed`,
 `skipped`) with `skip_reason`, `session_id`, `report_json`, `score`, the three published URLs,
 `publish_error`, `error`, `model`, token counts and timestamps. The prd deploy applies the
 migration. The table is registered with `OrganizationService`, so an organization purge removes it.
 
-`PUT /api/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`, and
-Integrations → GitHub shows a "Review PRs" switch per repository.
+`PUT /internal/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`. Reviews have
+their own section, **Code Review** (`/code-review`, a sidebar row behind the flag), with four tabs:
+
+- **Analytics**: pull requests reviewed, reviews, time to merge and issues caught against the
+  previous window, issues by severity over time, by category, by repository and by author.
+  `pr_reviews.author_login` and `merged_at` (stamped on every review of a pull request by its
+  merged `closed` event) feed the author filter and time to merge.
+- **Pull requests**: every review in the organization, with a sheet for one review's report, its
+  tracked findings and the other reviews of the same pull request.
+- **Issues**: the tracked findings (`pr_review_findings`), filterable by severity, category and state.
+- **Settings**: the review model, the organization's default review rules
+  (`pr_review_settings.defaults`), and per repository the switch and its overrides.
+
+A review runs with `mergePrReviewConfig(defaults, repository)`: a repository field overrides the
+organization's, and instructions and ignored paths add up. The reads are `GET /internal/code-review/*`
+(`PrReviewAnalyticsService`); settings stay on the integrations endpoints.
 
 ### Observability of the reviewer
 
@@ -153,32 +168,79 @@ The publish span carries `vcs.pull_request.check_run_id`, `.comment_id`,
 `.review_id`, `.check_run_skipped` and `.review_comments_rejected`. The turn itself is an ordinary
 chat session, so Agent Sessions shows its transcript.
 
-## Staged rollout
+## Production telemetry
 
-Merging this feature turns it on for no one. It is gated per organization by the `prreview` rollout
-flag, in the same Clerk public metadata as the other rollout flags. To flag an organization, set
-this in the Clerk dashboard under the organization's public metadata:
+A review reads the diff against the organization's own telemetry before the agent starts, so the
+facts are computed rather than asked of the model. `PrReviewTelemetryService.analyze`
+(`packages/backend/src/services/pr-review/telemetry/`) runs in `start` beside the rule-file read,
+best effort with a 20 s ceiling, and stores its result on `pr_reviews.telemetry_json`. It reads:
 
-```json
-{ "prreview": true }
-```
+- the last 7 days of per-operation traffic across services (`operationTrafficHourlyQuery`, the
+  `service_operations_hourly` rollup), span and resource attribute keys, metric names, and the
+  org's average log record size;
+- every enabled alert rule and dashboard (Postgres), reduced to their stored strings;
+- open error issues seen in the last 14 days, with their top frame.
 
-Only the literal boolean `true` counts; a missing key, `false` or the string `"true"` all read as
-off. The flag is enforced in three places:
+`analyzeTelemetry` (pure) turns that and the pull request's patches into:
 
-- **The switch.** Integrations → GitHub shows "Review PRs" on a repository only for a flagged
-  organization.
-- **The endpoint.** The `pr-review` endpoint refuses to turn reviews on for an unflagged
-  organization, so the switch cannot be bypassed by calling the API. Turning reviews off is always
-  allowed.
-- **The trigger.** `PrReviewService` skips a pull request with `not_rolled_out` for an unflagged
-  organization, so removing the flag stops reviews even on repositories switched on earlier.
+| Fact           | How it is decided                                                                                                                                                                                             | What it becomes                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Contract break | A string literal on a removed line, not added back anywhere in the pull request, that the warehouse knows as a span name, attribute key or metric name, and that an alert or dashboard reads as a whole token | `TEL-01` finding, critical when an alert reads it, warn for dashboards only                                               |
+| Hot file       | Literals anywhere in the file's patch that name a production operation (exact span name, or a route inside `METHOD /route`)                                                                                   | Kickoff traffic block; the model's observability and performance notes in files over 10k calls/day are raised to warnings |
+| Linked issue   | An open issue whose top frame ends in the changed file's directory and name (any extension)                                                                                                                   | Kickoff and comment section; compared again after the merge ships                                                         |
+| Cost note      | A new log call in a hot file (calls/day × 30 × average record size), or a span name built from a template                                                                                                     | `TEL-02` (≥ 1 GB/month, warn from 10 GB) and `TEL-03` findings                                                            |
 
-The flag contract lives in `@maple/domain/organization-feature-flags` and is decoded on the server
-by `OrganizationFeatureFlagsService`, which reuses an organization's flags for 60 seconds per
-isolate, so withdrawing a flag takes effect within a minute. Self-hosted builds have no Clerk and
-get every rollout on, as the web app already did. A managed build that cannot reach Clerk treats
-every rollout as off for that call.
+Tests, docs, fixtures and config files are never read for any of these. A name quoted on an
+added comment or log line does not count as adding it back.
+
+**Untouched emitters.** The diff only shows changed lines, so before the review starts the service
+code-searches the repository for each removed name (up to 8) and reads the candidate files at the
+head SHA. A file that still emits the name on a line of code (not a comment or a log message)
+dismisses the break before the agent sees it.
+
+**Dismissals.** The kickoff asks the agent to grep the head for each removed name. When the name is
+still emitted elsewhere, `submit_review` takes `telemetryDismissals: [{ name, path, line }]`, and
+`submitReview` fetches that file at the head SHA and accepts the dismissal only when that line is
+code (not a comment) holding the quoted name. A later push that no longer breaks a name resolves
+its `TEL-01` finding by title. `TEL-*` findings repeat across pushes by title, wherever their line
+moved.
+
+**Gate.** `blockOnContractBreaks` in the repository config (off by default) makes the check run
+conclude `failure` while an undismissed break is open. It is the only path to a failing check, and
+it rests on facts the service established, never on a model's opinion.
+
+### After the merge ships
+
+A `closed` event with `merged` stamps the merged pull request's last completed review that has
+telemetry facts: `merge_commit_sha`, `post_merge_status = 'waiting'`, `post_merge_after = merge +
+15 min` (unless `postMergeCheck` is off). `PrReviewPostMergeService.runTick` runs on the alerting
+worker's 5-minute cron, at most 10 rows a tick:
+
+1. Claim the row for 10 minutes, so overlapping ticks post once.
+2. Find the deploy: the version (`vcs.ref.head.revision`) of a touched service equal to the merge
+   commit. After 2 h without it, the first version reported after the merge stands in
+   (`exact: false`), skipping versions whose commit is known to predate the merge. A review that
+   only found removed names reads every service and waits for the merge commit itself. No deploy
+   after 48 h settles `no_deploy`; otherwise it looks again in 30 minutes.
+3. Wait until an hour of traffic after the deploy has landed.
+4. Compare the hour before and after (`operationTrafficMinutelyQuery`) for the busiest operations
+   the review saw. A regression is at least 20 calls after and an error rate up 2 points and
+   doubled, or p95 up 1.5× and 100 ms. Also: issues first seen after the deploy in those services,
+   linked issues' rate before and after, and contract-break attributes that stopped arriving.
+5. Store `post_merge_json` (`PrReviewPostMerge`), mark it `reported`, and post one comment on the
+   pull request (`<!-- maple-pr-post-merge <reviewId> -->`). A refused post leaves the result
+   stored; the Code Review sheet shows it either way.
+
+A failed read is a typed failure, never an empty answer: the row is looked at again in 30
+minutes, and settles `failed` once the 48 h window passes. A review that finishes after its pull
+request merged schedules its own look, and a reviewed head that is reviewed again clears the old
+one.
+
+## Availability
+
+Code review is available to every organization; the per-repository `pr_review_enabled` switch is the
+only gate. It shipped behind a `prreview` Clerk rollout flag, retired 2026-10-16; organizations that
+still carry the key in their metadata decode it as an ignored extra.
 
 Maple's hosted App (`MapleLabsApp`) currently grants `checks: read`. Until it is raised to read and
 write and each installation accepts the change, reviews post the summary comment and the inline
@@ -249,14 +311,14 @@ open.
 - **Warehouse-grounded checks** (signal presence, attribute spelling, operation coverage) are
   prompt prose today; local runs cannot exercise them.
 - **Open work:** fingerprint dedupe of findings across pushes, an abandoned-row sweep next to
-  `sweepAbandonedInvestigations`, fan-out for large PRs through `effect-agent/subagent`
+  `sweepAbandonedInvestigations`, fan-out for large PRs through `@yielded/agent/subagent`
   `Subagent` once it is published at the engine's version, a reviews list, and per-repository
   config (path excludes, check-only, a required-check mode).
 
 ## The full review agent
 
 Built 2026-09-23 (PR #1001). The observability reviewer became a general code review agent, sold as
-one product behind the same `prreview` rollout flag. Observability is one lens of it, with its
+one product. Observability is one lens of it, with its
 `maple-audit` check ids, because it is what no other reviewer can check: the warehouse.
 
 ### General review
@@ -273,7 +335,7 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
   own comments excluded), and the head's checks, failing first.
 - **Large pull requests.** Past 12 reviewable files the pass calls `review_files` per group of
   related files, in parallel (`apps/ai/src/chat/review-fanout.ts`). Each group of up to 12 files
-  runs a child `pr-review-worker` agent through `effect-agent/subagent` `Subagent`: the parent's
+  runs a child `pr-review-worker` agent through `@yielded/agent/subagent` `Subagent`: the parent's
   own read-only toolkit (the grant is exactly those tools, depth one), 100 calls and 4 minutes
   each, at most 12 children and 4 at a time, reserved from the parent's budget. The child answers findings one per line; the parent verifies and files.
 - **Quality gate.** `bun run --cwd apps/ai review:eval mine` blames each `fix:` commit's changed
@@ -298,6 +360,75 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
   and its start is re-enqueued 90 s later; the delayed copy starts only a row no later push replaced.
 - When a pull request closes, its threads are read once more for reactions and dismissals.
   `maple.pr_review.reactions_up` / `reactions_down` on the span are the live precision signal.
+
+### Before merge
+
+Every review comment carries a "Before merge" task list: what has to happen outside the diff
+before the change ships. It is built at submit (`services/pr-review/merge-checklist.ts`) in three
+pure steps, with the service doing only the GitHub reads between them:
+
+1. `detectMergeSteps` reads the changed files. **Names** the diff starts reading: config helpers
+   (`requiredSecret("X")`, `Config.redacted("X")`), a name held in a constant named for config
+   (`CLIENT_SECRET_CONFIG = "X"`), runtime reads (`process.env.X` and the other languages'
+   equivalents), `${{ secrets.X }}` / `${{ vars.X }}` in workflows, `.env.example` keys.
+   A name a removed line still mentions is a move; tests, docs and `scripts/` are skipped.
+   **File steps**: added migrations, warehouse schema (`datasources.ts`, `.datasource`, `.pipe`)
+   and deployment config (`wrangler.*`, `alchemy.run.ts`, Terraform, Dockerfiles).
+2. `searchVerdict` rules on each name from a code search of the default branch (up to 10 names, 5
+   hits each): `exists` only when a hit holds the name as a whole word, `new` otherwise, and
+   `unverified` when no search ran or it failed.
+3. `buildChecklist` lists new and unverified names (a missed secret costs more than a redundant
+   line), the file steps and the reviewer's own steps (`beforeMerge` on `submit_review`, up to six).
+   A reviewer step whose text contains a diff step's `subject` (the exact name or path) replaces it
+   and takes over its kind and subject, so it keeps the step's identity. `ignorePaths` apply. The
+   list never changes the check's conclusion.
+
+**Ticks carry across pushes.** Each review posts its own comment, so steps are tracked per pull
+request in `pr_review_merge_steps`, keyed by `mergeStepKey` (`secret:STRIPE_KEY`,
+`migration:<path>`, `manual:<slug of the title>`). `reconcileMergeSteps` runs at submit: a step
+keeps its stored key and shows ticked when it was ticked, a reworded manual step matches a stored
+one on its telling words, and an open step the head no longer produces becomes `obsolete` (a done
+one stays done). A partial review tracks nothing, like its findings.
+
+Every rendered task ends with a hidden `<!-- ms:<key> -->`. Ticking a box edits the App's comment,
+which arrives as an `issue_comment` `edited` event; `GithubProvider` maps it to a
+`pull-request-checklist` job only when the comment is the App's own review comment, the editor is a
+person, and `changes.body.from` differs from the new body in at least one tagged box (the App's own
+re-renders change none). `PrReviewService.onMergeStepsTicked` records `done`, who and when, or
+reopens an unticked step; obsolete steps ignore ticks. The next comment renders them `[x]` with
+"ticked by @login", and the Code Review sheet strikes them through.
+
+**At merge.** The `closed` + `merged` event claims the pull request's open steps (`reminded_at`)
+and, if there are any, posts one comment listing them (`<!-- maple-pr-merge-steps -->`). The claim
+comes first, so a redelivered event posts nothing.
+
+**Debugging.** `submitReview` sets `maple.pr_review.checklist.*` on its span: `status` (`unread`
+when the files could not be read), `names_new` / `names_exists` / `names_unverified`, `file_steps`,
+`reviewer_steps`, `replaced`, `ignored`, `cut`. It also logs `[PrReview] before-merge checklist`
+with the same fields for any review that found something. To see what a pull request would get
+without running the model:
+
+```bash
+bun run --cwd apps/ai review:checklist MapleTechLabs/maple 1081
+```
+
+It prints each name's verdict, the file steps and the section as the comment renders it. Against a
+merged pull request, names read `exists`, since the default branch now has them.
+
+**Eval.** `merge-checklist.corpus.test.ts` scores the detectors on real pull requests in
+`bun run test`: recall per kind, precision, and steps listed on pull requests that needed nothing.
+Each case under `__fixtures__/merge-checklist/` is generated, and `labels.json` beside them holds
+what a careful reviewer would list (`expected`) and what is fine either way (`acceptable`). Add or
+refresh a case with:
+
+```bash
+bun run --cwd apps/ai review:checklist MapleTechLabs/maple 1290 --snapshot
+```
+
+It rules on names with a whole-word `git grep` at the pull request's base commit in a local clone
+(`--repo-dir`, default this checkout), cuts the patches to the lines detection could read, checks
+the cut decides the same steps, and never touches `labels.json`. A detector change that reads a new
+name fails the test until the cases it touches are re-snapshotted.
 
 ### Learning from feedback
 
@@ -337,10 +468,11 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
 
 ### Settings
 
-- `GET`/`PUT /api/integrations/github/repositories/:id/pr-review/config`: instructions, ignored
+- `GET`/`PUT /internal/integrations/github/repositories/:id/pr-review/config`: instructions, ignored
   paths, lenses, inline threshold, drafts and a per-repository daily limit. Stated in the kickoff
-  and enforced on submit. `GET .../pr-reviews` lists the 50 newest reviews.
-- Integrations → GitHub shows the settings and the review history beside each repository's switch.
+  and enforced on submit. Review history is `GET /internal/code-review/reviews`.
+- Code Review → Settings shows the settings beside each repository's switch; Code Review → Pull
+  requests lists the reviews.
 
 ### What the GitHub App needs
 

@@ -41,11 +41,14 @@ jobs:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - name: Setup mise (toolchain)
-              uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - name: Toolchain and dependencies
+              uses: ./.github/actions/setup
+              with:
+                  install-filters: "@maple/db"
+                  turbo-cache: "false"
 
             - name: Load secrets from Infisical
-              uses: Infisical/secrets-action@6cd3f7c0e4cc0d2395ee4ef414eb6eeb5d3e73db # v1.0.17
+              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
               with:
                   method: "oidc"
                   identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
@@ -53,11 +56,6 @@ jobs:
                   env-slug: ${{ env.INFISICAL_ENV_SLUG }}
                   export-type: "env"
                   secret-path: "/"
-
-            - name: Install dependencies
-              uses: ./.github/actions/bun-install
-              with:
-                  filters: "@maple/db"
 
             - name: Install PlanetScale CLI
               uses: planetscale/setup-pscale-action@b6a50ee45b4b24944e1d8de6e57b3a5f6476a1af # v1
@@ -76,7 +74,7 @@ jobs:
             # into its own evidence store.
             - name: Upload restore report
               if: ${{ always() }}
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: backup-restore-test-report
                   path: ${{ runner.temp }}/backup-restore-test/

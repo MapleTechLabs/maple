@@ -1,4 +1,18 @@
-import { formatLatency, formatPercent } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+	EMPTY_VALUE,
+	formatRate,
+	pluralize,
+} from "@maple/ui/lib/format"
+import { Separator } from "@maple/ui/components/ui/separator"
+import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { SampledValue } from "@/components/services/sampled-value"
+import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { LatencyLineChart, QueryBuilderBarChart } from "@maple/ui/components/charts"
 import { ChartTooltipSuppressionProvider } from "@maple/ui/components/plot"
 import { LinkedCursorOverlay, linkedCursorChartProps, useLinkedCursor } from "@/hooks/use-linked-cursor"
@@ -6,7 +20,7 @@ import { lazy, Suspense, useMemo } from "react"
 
 import { Result, useAtom, useAtomValue } from "@/lib/effect-atom"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
-import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { serviceMapLayoutAtomFamily } from "@/atoms/service-map-layout-atoms"
 import { serviceMapViewPrefsAtomFamily } from "@/atoms/service-map-view-prefs-atoms"
@@ -25,8 +39,17 @@ import {
 	EmptyHeader,
 	EmptyMedia,
 	EmptyTitle,
+	EmptyMessage,
 } from "@maple/ui/components/ui/empty"
-import { Button } from "@maple/ui/components/ui/button"
+import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
+import { Badge } from "@maple/ui/components/ui/badge"
+import { Panel } from "@maple/ui/components/ui/panel"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { TruncatedId } from "@maple/ui/components/ui/truncated-id"
+import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
+import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import {
 	ArrowRightIcon,
@@ -38,6 +61,7 @@ import {
 	XmarkIcon,
 } from "@/components/icons"
 import { DocsLink } from "@/components/common/docs-link"
+import { ResultView } from "@/components/common/result-view"
 import { SignalEmptyStateView } from "@/components/common/signal-empty-state"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import {
@@ -70,8 +94,14 @@ import {
 	resolvePlanetScaleDbPresentation,
 } from "@maple/ui/components/service-map/service-map-db"
 import { PlanetScaleTopQueries } from "@/components/infra/planetscale/planetscale-top-queries"
-import { formatStoragePercent, lagClass, utilizationClass } from "@/components/infra/planetscale/metrics"
 import {
+	formatLag,
+	formatStoragePercent,
+	lagClass,
+	utilizationClass,
+} from "@/components/infra/planetscale/metrics"
+import {
+	aggregateServiceOverviews,
 	buildFlowElements,
 	CLOUDFLARE_COLOR,
 	DB_NODE_PREFIX,
@@ -81,6 +111,7 @@ import {
 	type PlanetScaleNodeMetrics,
 	type ServiceMapColorMode,
 } from "@maple/ui/components/service-map/service-map-utils"
+import type { Tone } from "@maple/ui/lib/tone"
 import type {
 	HyperdriveConfigInput,
 	HyperdriveNodeInfo,
@@ -98,19 +129,129 @@ function renderLiveServiceMap3D(props: ServiceMap3DRenderProps) {
 	)
 }
 
-const formatReplicationLag = (seconds: number) =>
-	seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`
-
-function formatRate(value: number): string {
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	if (value >= 1) return value.toFixed(1)
-	return value.toFixed(2)
+// A quiet error rate reads as healthy, not unknown.
+const healthTone = (errorRate: number): Tone => {
+	const level = errorRateLevel(errorRate)
+	return level === "neutral" ? "ok" : level
 }
 
-function getHealthDotClass(errorRate: number): string {
-	if (errorRate > 0.05) return "bg-severity-error"
-	if (errorRate > 0.01) return "bg-severity-warn"
-	return "bg-severity-info"
+function MetricValue({ className, ...props }: React.ComponentProps<"p">) {
+	return (
+		<p
+			className={cn("font-mono text-xl font-semibold tabular-nums text-foreground", className)}
+			{...props}
+		/>
+	)
+}
+
+/** Label over a big metric value, with an optional unit or caption under it. */
+function MetricTile({
+	label,
+	caption,
+	children,
+}: {
+	label: string
+	caption?: React.ReactNode
+	children: React.ReactNode
+}) {
+	return (
+		<div className="space-y-0.5">
+			<span className="text-3xs text-muted-foreground">{label}</span>
+			{children}
+			{caption !== undefined && <span className="text-3xs text-muted-foreground">{caption}</span>}
+		</div>
+	)
+}
+
+/** Detail panel header: accent bar + title content on the left, actions on the right. */
+function DetailPanelHeader({
+	accentColor,
+	actions,
+	children,
+}: {
+	accentColor: string
+	actions: React.ReactNode
+	children: React.ReactNode
+}) {
+	return (
+		<div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
+			<div className="flex items-center gap-2 min-w-0">
+				<div
+					className="w-[3px] h-[18px] rounded-sm shrink-0"
+					style={{ backgroundColor: accentColor }}
+				/>
+				{children}
+			</div>
+			<div className="flex items-center gap-2 shrink-0">{actions}</div>
+		</div>
+	)
+}
+
+/** Badge for short uppercase tags (a branch's "prod", an origin scheme). */
+function TagBadge({ children }: { children: React.ReactNode }) {
+	return (
+		<Badge variant="tag" className="shrink-0 font-semibold">
+			{children}
+		</Badge>
+	)
+}
+
+/** One caller or dependency of a node: service swatch + name, call rate, error rate. */
+function EdgeRow({
+	service,
+	edge,
+	durationSeconds,
+	unit,
+	highlightError = false,
+	explainSampling = false,
+}: {
+	service: string
+	edge: {
+		hasSampling: boolean
+		callCount: number
+		estimatedCallCount: number
+		errorRate: number
+		samplingWeight: number
+	}
+	durationSeconds: number
+	unit: string
+	/** Tint the row when the error rate is critical. */
+	highlightError?: boolean
+	/** Native tooltip saying how a sampled rate was extrapolated. */
+	explainSampling?: boolean
+}) {
+	const safeDuration = Math.max(durationSeconds, 1)
+	const reqPerSec = (edge.hasSampling ? edge.estimatedCallCount : edge.callCount) / safeDuration
+	const isError = highlightError && errorRateLevel(edge.errorRate) === "crit"
+	return (
+		<div
+			className={cn(
+				"flex items-center justify-between px-2.5 py-2 rounded-md border text-xs",
+				isError ? "bg-severity-error/[0.04] border-severity-error/[0.12]" : "bg-card border-border",
+			)}
+			title={
+				explainSampling && edge.hasSampling
+					? `Estimated ×${edge.samplingWeight.toFixed(0)} from ${formatRate(edge.callCount / safeDuration)} traced req/s`
+					: undefined
+			}
+		>
+			<div className="flex items-center gap-1.5 min-w-0">
+				<div
+					className="w-[3px] h-3.5 rounded-sm shrink-0"
+					style={{ backgroundColor: getServiceColor(service) }}
+				/>
+				<span className="text-foreground truncate">{service}</span>
+			</div>
+			<div className="flex items-center gap-2 shrink-0 text-3xs">
+				<span className="text-muted-foreground tabular-nums font-mono">
+					<SampledValue estimated={edge.hasSampling} value={formatRate(reqPerSec)} /> {unit}
+				</span>
+				<span className={cn("tabular-nums font-mono", errorRateClass(edge.errorRate))}>
+					{formatErrorRate(edge.errorRate)}
+				</span>
+			</div>
+		</div>
+	)
 }
 
 interface ServiceDetailPanelProps {
@@ -140,7 +281,11 @@ function ServiceDetailPanel({
 	onFocus,
 	onClose,
 }: ServiceDetailPanelProps) {
-	const overview = overviews.find((o) => o.serviceName === serviceId)
+	// Same per-service aggregate the map node renders, so panel and node agree.
+	const overview = useMemo(
+		() => aggregateServiceOverviews(overviews).get(serviceId),
+		[overviews, serviceId],
+	)
 	const errorRate = overview?.errorRate ?? 0
 	const accentColor = getServiceMapNodeColor(
 		{
@@ -152,10 +297,7 @@ function ServiceDetailPanel({
 		colorMode,
 	)
 
-	const throughput = overview?.throughput ?? 0
 	const hasSampling = overview?.hasSampling ?? false
-	const avgLatencyMs = overview?.p50LatencyMs ?? 0
-	const p95LatencyMs = overview?.p95LatencyMs ?? 0
 
 	const dependencies = edges.filter((e) => e.sourceService === serviceId)
 	const calledBy = edges.filter((e) => e.targetService === serviceId)
@@ -163,44 +305,40 @@ function ServiceDetailPanel({
 
 	return (
 		<div className="flex flex-col h-full bg-background overflow-hidden">
-			{/* Header */}
-			<div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-				<div className="flex items-center gap-2 min-w-0">
-					<div
-						className="w-[3px] h-[18px] rounded-sm shrink-0"
-						style={{ backgroundColor: accentColor }}
-					/>
-					<div className={cn("h-1.5 w-1.5 rounded-full shrink-0", getHealthDotClass(errorRate))} />
-					<div className="flex flex-col min-w-0">
-						<span className="text-sm font-semibold text-foreground truncate">{serviceId}</span>
-						{overview?.serviceNamespace ? (
-							<span className="text-[10px] text-muted-foreground truncate">
-								{overview.serviceNamespace}
-							</span>
-						) : null}
-					</div>
+			<DetailPanelHeader
+				accentColor={accentColor}
+				actions={
+					<>
+						<IconButton
+							size="icon-xs"
+							onClick={onFocus}
+							label="Focus the map on this service's neighborhood"
+						>
+							<MagnifierIcon />
+						</IconButton>
+						<Link
+							to="/services/$serviceName"
+							params={{ serviceName: serviceId }}
+							className="text-3xs text-primary hover:text-primary/80 transition-colors"
+						>
+							View service
+						</Link>
+						<IconButton size="icon-xs" onClick={onClose} label="Close">
+							<XmarkIcon />
+						</IconButton>
+					</>
+				}
+			>
+				<StatusDot tone={healthTone(errorRate)} />
+				<div className="flex flex-col min-w-0">
+					<span className="text-sm font-semibold text-foreground truncate">{serviceId}</span>
+					{overview?.serviceNamespace ? (
+						<span className="text-3xs text-muted-foreground truncate">
+							{overview.serviceNamespace}
+						</span>
+					) : null}
 				</div>
-				<div className="flex items-center gap-2 shrink-0">
-					<Button
-						variant="ghost"
-						size="icon-xs"
-						onClick={onFocus}
-						title="Focus the map on this service's neighborhood"
-					>
-						<MagnifierIcon size={13} />
-					</Button>
-					<Link
-						to="/services/$serviceName"
-						params={{ serviceName: serviceId }}
-						className="text-[10px] text-primary hover:text-primary/80 transition-colors"
-					>
-						View service
-					</Link>
-					<Button variant="ghost" size="icon-xs" onClick={onClose}>
-						<XmarkIcon size={14} />
-					</Button>
-				</div>
-			</div>
+			</DetailPanelHeader>
 
 			<Tabs defaultValue="service" className="flex flex-col flex-1 min-h-0">
 				<TabsList variant="underline" className="shrink-0 px-4 pt-2">
@@ -212,7 +350,7 @@ function ServiceDetailPanel({
 						<CubeIcon size={12} />
 						Infrastructure
 						{serviceWorkloads.length > 0 && (
-							<span className="ml-1 text-[9px] tabular-nums text-muted-foreground/70">
+							<span className="ml-1 text-4xs tabular-nums text-muted-foreground/70">
 								{serviceWorkloads.length}
 							</span>
 						)}
@@ -224,126 +362,96 @@ function ServiceDetailPanel({
 						<div className="p-4 space-y-5">
 							{/* Metrics */}
 							<div className="space-y-3">
-								<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-									Metrics
-								</h4>
+								<Eyebrow as="h4">Metrics</Eyebrow>
 								<div className="grid grid-cols-2 gap-x-6 gap-y-4">
-									<div className="space-y-0.5">
-										<span className="text-[10px] text-muted-foreground">Throughput</span>
-										<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-											{hasSampling ? "~" : ""}
-											{formatRate(throughput)}
-										</p>
-										<span className="text-[10px] text-muted-foreground">req/s</span>
-									</div>
-									<div className="space-y-0.5">
-										<span className="text-[10px] text-muted-foreground">Error Rate</span>
-										<p
-											className={cn(
-												"text-xl font-semibold tabular-nums font-mono",
-												errorRate > 0.05
-													? "text-severity-error"
-													: errorRate > 0.01
-														? "text-severity-warn"
-														: "text-foreground",
+									<MetricTile label="Throughput" caption="req/s">
+										<MetricValue>
+											{overview ? (
+												<SampledValue
+													estimated={hasSampling}
+													value={formatRate(overview.throughput)}
+												/>
+											) : (
+												EMPTY_VALUE
 											)}
+										</MetricValue>
+									</MetricTile>
+									<MetricTile label="Error rate">
+										<MetricValue
+											className={overview ? errorRateClass(errorRate) : undefined}
 										>
-											{(errorRate * 100).toFixed(1)}%
-										</p>
-									</div>
-									<div className="space-y-0.5">
-										<span className="text-[10px] text-muted-foreground">Avg Latency</span>
-										<p
-											className={cn(
-												"text-xl font-semibold tabular-nums font-mono",
-												latencyToneClass(avgLatencyMs, "avg"),
-											)}
+											{overview ? formatErrorRate(errorRate) : EMPTY_VALUE}
+										</MetricValue>
+									</MetricTile>
+									<MetricTile label="P50 latency">
+										<MetricValue
+											className={
+												overview
+													? latencyToneClass(overview.p50LatencyMs, "p50")
+													: undefined
+											}
 										>
-											{formatLatency(avgLatencyMs)}
-										</p>
-									</div>
-									<div className="space-y-0.5">
-										<span className="text-[10px] text-muted-foreground">P95 Latency</span>
-										<p
+											{overview ? formatLatency(overview.p50LatencyMs) : EMPTY_VALUE}
+										</MetricValue>
+									</MetricTile>
+									<MetricTile label="P95 latency">
+										<MetricValue
 											className={cn(
-												"text-xl font-semibold tabular-nums font-mono",
-												// A p95 far above this service's own avg is a tail
+												// A p95 far above this service's own p50 is a tail
 												// problem worth flagging even when the absolute
 												// magnitude is fine, so it outranks the ramp.
-												p95LatencyMs > avgLatencyMs * 3
-													? "text-severity-warn"
-													: latencyToneClass(p95LatencyMs, "p95"),
+												overview === undefined
+													? undefined
+													: overview.p95LatencyMs > overview.p50LatencyMs * 3
+														? "text-severity-warn"
+														: latencyToneClass(overview.p95LatencyMs, "p95"),
 											)}
 										>
-											{formatLatency(p95LatencyMs)}
-										</p>
-									</div>
+											{overview ? formatLatency(overview.p95LatencyMs) : EMPTY_VALUE}
+										</MetricValue>
+									</MetricTile>
 								</div>
 							</div>
 
 							{/* Cloudflare edge (direct integration overlay) */}
 							{cloudflare && (
 								<div className="space-y-3">
-									<div className="h-px bg-border" />
+									<Separator />
 									<div className="flex items-center gap-1.5">
 										<CloudflareIcon size={12} style={{ color: CLOUDFLARE_COLOR }} />
-										<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-											Cloudflare edge
-										</h4>
+										<Eyebrow as="h4">Cloudflare edge</Eyebrow>
 									</div>
 									<div className="grid grid-cols-2 gap-x-6 gap-y-4">
-										<div className="space-y-0.5">
-											<span className="text-[10px] text-muted-foreground">
-												Requests
-											</span>
-											<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-												{formatCompactCount(cloudflare.requests)}
-											</p>
-											<span className="text-[10px] text-muted-foreground">
-												edge-reported (unsampled)
-											</span>
-										</div>
-										<div className="space-y-0.5">
-											<span className="text-[10px] text-muted-foreground">
-												Error Rate
-											</span>
-											<p
-												className={cn(
-													"text-xl font-semibold tabular-nums font-mono",
-													cloudflare.errorRate > 0.05
-														? "text-severity-error"
-														: cloudflare.errorRate > 0.01
-															? "text-severity-warn"
-															: "text-foreground",
-												)}
+										<MetricTile label="Requests" caption="edge-reported (unsampled)">
+											<MetricValue>{formatNumber(cloudflare.requests)}</MetricValue>
+										</MetricTile>
+										<MetricTile label="Error rate">
+											<MetricValue className={errorRateClass(cloudflare.errorRate)}>
+												{formatErrorRate(cloudflare.errorRate)}
+											</MetricValue>
+										</MetricTile>
+										<MetricTile label="CPU p99">
+											<MetricValue
+												className={
+													cloudflare.cpuP99Ms === undefined
+														? undefined
+														: latencyToneClass(cloudflare.cpuP99Ms, "cpu")
+												}
 											>
-												{(cloudflare.errorRate * 100).toFixed(1)}%
-											</p>
-										</div>
-										<div className="space-y-0.5">
-											<span className="text-[10px] text-muted-foreground">CPU p99</span>
-											<p
+												{cloudflare.cpuP99Ms === undefined
+													? EMPTY_VALUE
+													: formatLatency(cloudflare.cpuP99Ms)}
+											</MetricValue>
+										</MetricTile>
+										<MetricTile label="Duration p99">
+											<MetricValue
 												className={cn(
-													"text-xl font-semibold tabular-nums font-mono",
-													latencyToneClass(cloudflare.cpuP99Ms ?? 0, "cpu"),
-												)}
-											>
-												{formatLatency(cloudflare.cpuP99Ms ?? 0)}
-											</p>
-										</div>
-										<div className="space-y-0.5">
-											<span className="text-[10px] text-muted-foreground">
-												Duration p99
-											</span>
-											<p
-												className={cn(
-													"text-xl font-semibold tabular-nums font-mono",
 													latencyToneClass(cloudflare.latencyP99Ms, "p99"),
 												)}
 											>
 												{formatLatency(cloudflare.latencyP99Ms)}
-											</p>
-										</div>
+											</MetricValue>
+										</MetricTile>
 									</div>
 								</div>
 							)}
@@ -351,125 +459,40 @@ function ServiceDetailPanel({
 							{/* Dependencies */}
 							{dependencies.length > 0 && (
 								<div className="space-y-3">
-									<div className="h-px bg-border" />
-									<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-										Dependencies
-									</h4>
+									<Separator />
+									<Eyebrow as="h4">Dependencies</Eyebrow>
 									<div className="space-y-1.5">
-										{dependencies.map((dep) => {
-											const depColor = getServiceColor(dep.targetService)
-											const depErrorRate = dep.errorRate
-											const isError = depErrorRate > 0.05
-											const safeDuration = Math.max(durationSeconds, 1)
-											const depReqPerSec = dep.hasSampling
-												? dep.estimatedCallCount / safeDuration
-												: dep.callCount / safeDuration
-											const depTracedReqPerSec = dep.callCount / safeDuration
-											return (
-												<div
-													key={dep.targetService}
-													className={cn(
-														"flex items-center justify-between px-2.5 py-2 rounded-md border text-xs",
-														isError
-															? "bg-severity-error/[0.04] border-severity-error/[0.12]"
-															: "bg-card border-border",
-													)}
-													title={
-														dep.hasSampling
-															? `Estimated x${dep.samplingWeight.toFixed(0)} from ${formatRate(depTracedReqPerSec)} traced req/s`
-															: undefined
-													}
-												>
-													<div className="flex items-center gap-1.5 min-w-0">
-														<div
-															className="w-[3px] h-3.5 rounded-sm shrink-0"
-															style={{ backgroundColor: depColor }}
-														/>
-														<span className="text-foreground truncate">
-															{dep.targetService}
-														</span>
-													</div>
-													<div className="flex items-center gap-2 shrink-0 text-[10px]">
-														<span className="text-muted-foreground tabular-nums font-mono">
-															{dep.hasSampling ? "~" : ""}
-															{formatRate(depReqPerSec)} req/s
-														</span>
-														<span
-															className={cn(
-																"tabular-nums font-mono",
-																depErrorRate > 0.05
-																	? "text-severity-error"
-																	: depErrorRate > 0.01
-																		? "text-severity-warn"
-																		: "text-severity-info",
-															)}
-														>
-															{(depErrorRate * 100).toFixed(1)}%
-														</span>
-													</div>
-												</div>
-											)
-										})}
+										{dependencies.map((dep) => (
+											<EdgeRow
+												key={dep.targetService}
+												service={dep.targetService}
+												edge={dep}
+												durationSeconds={durationSeconds}
+												unit="req/s"
+												highlightError
+												explainSampling
+											/>
+										))}
 									</div>
 								</div>
 							)}
 
-							{/* Called By */}
+							{/* Called by */}
 							{calledBy.length > 0 && (
 								<div className="space-y-3">
-									<div className="h-px bg-border" />
-									<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-										Called By
-									</h4>
+									<Separator />
+									<Eyebrow as="h4">Called by</Eyebrow>
 									<div className="space-y-1.5">
-										{calledBy.map((caller) => {
-											const callerColor = getServiceColor(caller.sourceService)
-											const callerErrorRate = caller.errorRate
-											const safeDuration = Math.max(durationSeconds, 1)
-											const callerReqPerSec = caller.hasSampling
-												? caller.estimatedCallCount / safeDuration
-												: caller.callCount / safeDuration
-											const callerTracedReqPerSec = caller.callCount / safeDuration
-											return (
-												<div
-													key={caller.sourceService}
-													className="flex items-center justify-between px-2.5 py-2 rounded-md border bg-card border-border text-xs"
-													title={
-														caller.hasSampling
-															? `Estimated x${caller.samplingWeight.toFixed(0)} from ${formatRate(callerTracedReqPerSec)} traced req/s`
-															: undefined
-													}
-												>
-													<div className="flex items-center gap-1.5 min-w-0">
-														<div
-															className="w-[3px] h-3.5 rounded-sm shrink-0"
-															style={{ backgroundColor: callerColor }}
-														/>
-														<span className="text-foreground truncate">
-															{caller.sourceService}
-														</span>
-													</div>
-													<div className="flex items-center gap-2 shrink-0 text-[10px]">
-														<span className="text-muted-foreground tabular-nums font-mono">
-															{caller.hasSampling ? "~" : ""}
-															{formatRate(callerReqPerSec)} req/s
-														</span>
-														<span
-															className={cn(
-																"tabular-nums font-mono",
-																callerErrorRate > 0.05
-																	? "text-severity-error"
-																	: callerErrorRate > 0.01
-																		? "text-severity-warn"
-																		: "text-severity-info",
-															)}
-														>
-															{(callerErrorRate * 100).toFixed(1)}%
-														</span>
-													</div>
-												</div>
-											)
-										})}
+										{calledBy.map((caller) => (
+											<EdgeRow
+												key={caller.sourceService}
+												service={caller.sourceService}
+												edge={caller}
+												durationSeconds={durationSeconds}
+												unit="req/s"
+												explainSampling
+											/>
+										))}
 									</div>
 								</div>
 							)}
@@ -484,9 +507,7 @@ function ServiceDetailPanel({
 								<ServiceInfraEmptyState />
 							) : (
 								<div className="space-y-2">
-									<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-										Kubernetes workloads
-									</h4>
+									<Eyebrow as="h4">Kubernetes workloads</Eyebrow>
 									<div className="space-y-2">
 										{serviceWorkloads.map((wl) => (
 											<ServiceWorkloadRow
@@ -513,54 +534,48 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 			? workload.workloadKind
 			: null
 	return (
-		<div className="rounded-md border bg-card p-3 space-y-2.5">
+		<Panel padded="sm" className="space-y-2.5">
 			<div className="flex items-start justify-between gap-2">
 				<div className="min-w-0 flex-1">
-					<div className="flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wide">
+					<Eyebrow as="div" className="flex items-center gap-1.5">
 						<CubeIcon size={11} />
 						<span>{workload.workloadKind}</span>
-					</div>
+					</Eyebrow>
 					<p className="text-xs font-medium text-foreground truncate mt-0.5">
 						{workload.workloadName}
 					</p>
-					<p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+					<p className="text-3xs text-muted-foreground mt-0.5 truncate">
 						{workload.namespace || "default"}
 						{workload.clusterName ? ` · ${workload.clusterName}` : ""}
 					</p>
 				</div>
 				<div className="flex flex-col items-end gap-px shrink-0">
-					<span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">pods</span>
+					<Eyebrow>pods</Eyebrow>
 					<span className="text-sm font-semibold text-foreground tabular-nums font-mono">
 						{workload.podCount}
 					</span>
 				</div>
 			</div>
 
-			<div className="grid grid-cols-2 gap-2 text-[10px]">
-				<div className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-					<span className="text-muted-foreground">CPU</span>
-					<span className="font-mono tabular-nums text-foreground">
-						{workload.avgCpuLimitUtilization == null
-							? "—"
-							: formatPercent(workload.avgCpuLimitUtilization)}
-					</span>
-				</div>
-				<div className="flex items-center justify-between rounded bg-muted/30 px-2 py-1">
-					<span className="text-muted-foreground">Memory</span>
-					<span className="font-mono tabular-nums text-foreground">
-						{workload.avgMemoryLimitUtilization == null
-							? "—"
-							: formatPercent(workload.avgMemoryLimitUtilization)}
-					</span>
-				</div>
-			</div>
+			<KeyValueList className="grid grid-cols-2 gap-2 text-3xs">
+				<KeyValue label="CPU" mono className="rounded bg-muted/30 px-2 py-1">
+					{workload.avgCpuLimitUtilization == null
+						? EMPTY_VALUE
+						: formatPercent(workload.avgCpuLimitUtilization)}
+				</KeyValue>
+				<KeyValue label="Memory" mono className="rounded bg-muted/30 px-2 py-1">
+					{workload.avgMemoryLimitUtilization == null
+						? EMPTY_VALUE
+						: formatPercent(workload.avgMemoryLimitUtilization)}
+				</KeyValue>
+			</KeyValueList>
 
 			<div className="flex items-center gap-3 pt-0.5">
 				{knownKind && (
 					<Link
 						to="/infra/kubernetes/workloads/$kind/$workloadName"
 						params={{ kind: knownKind, workloadName: workload.workloadName }}
-						className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+						className="inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
 					>
 						View workload <ArrowRightIcon size={10} />
 					</Link>
@@ -577,12 +592,12 @@ function ServiceWorkloadRow({ workload }: { workload: ServiceWorkload }) {
 									namespaces: workload.namespace ? [workload.namespace] : undefined,
 								}
 					}
-					className="inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+					className="inline-flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
 				>
 					View pods <ArrowRightIcon size={10} />
 				</Link>
 			</div>
-		</div>
+		</Panel>
 	)
 }
 
@@ -593,13 +608,12 @@ function ServiceInfraEmptyState() {
 				<CubeIcon size={14} className="text-muted-foreground/50" />
 				<p className="text-xs font-medium text-foreground">No Kubernetes workloads found</p>
 			</div>
-			<p className="text-[11px] text-muted-foreground leading-relaxed">
-				This service has no spans tagged with{" "}
-				<code className="text-[10px] bg-muted px-1 py-0.5 rounded">k8s.deployment.name</code> in the
+			<p className="text-2xs text-muted-foreground leading-relaxed">
+				This service has no spans tagged with <InlineCode>k8s.deployment.name</InlineCode> in the
 				selected window. Install the maple-k8s-infra Helm chart and label your namespace to enable
 				infrastructure context:
 			</p>
-			<pre className="text-[10px] bg-muted px-2 py-1.5 rounded font-mono text-foreground overflow-x-auto">
+			<pre className="text-3xs bg-muted px-2 py-1.5 rounded font-mono text-foreground overflow-x-auto">
 				kubectl label namespace &lt;ns&gt; maple.io/instrument=true
 			</pre>
 			<DocsLink page="kubernetes" />
@@ -705,7 +719,7 @@ function ServiceMapEmptyState() {
 						signal="traces"
 						presence={tracesPresence}
 						noun="service calls"
-						purpose="The service map draws which services call each other, from the spans they send."
+						purpose="See which services call each other, drawn from the spans they send."
 						guideDocs="serviceMap"
 						className="flex-none bg-transparent py-0"
 					/>
@@ -737,12 +751,6 @@ function pickDbSummaryBucketSeconds(durationSeconds: number): number {
 	if (durationSeconds <= 24 * 60 * 60) return 15 * 60
 	if (durationSeconds <= 7 * 24 * 60 * 60) return 60 * 60
 	return 6 * 60 * 60
-}
-
-function formatCompactCount(value: number): string {
-	if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-	if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-	return value.toLocaleString()
 }
 
 function formatQueryLabel(value: string): string {
@@ -806,20 +814,19 @@ function DbQueryActivityChart({
 	}, [response])
 
 	if (!response && waiting) {
-		return (
-			<div className="flex h-44 items-center justify-center rounded-md border border-border/70 bg-muted/20 text-xs text-muted-foreground">
-				Loading query activity…
-			</div>
-		)
+		return <Skeleton className="h-44 w-full rounded-md" />
 	}
 
 	if (volumeRows.length === 0) {
 		return (
-			<div className="flex h-44 flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 bg-muted/10 px-4 text-center text-xs text-muted-foreground">
+			<EmptyMessage
+				dashed
+				className="flex h-44 flex-col items-center justify-center gap-1.5 border-border/60 bg-muted/10 text-xs"
+			>
 				No database query spans in this window
 				<span>Database nodes need spans with db.system.</span>
 				<DocsLink page="otelConventions" />
-			</div>
+			</EmptyMessage>
 		)
 	}
 
@@ -871,82 +878,54 @@ function PlanetScaleSection({
 
 	return (
 		<div className="space-y-3">
-			<div className="h-px bg-border" />
+			<Separator />
 			<div className="flex items-center gap-1.5">
 				<PlanetScaleIcon size={12} className="shrink-0 text-muted-foreground" />
-				<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-					PlanetScale
-				</h4>
-				<span className="ml-auto text-[10px] text-muted-foreground">
+				<Eyebrow as="h4">PlanetScale</Eyebrow>
+				<span className="ml-auto text-3xs text-muted-foreground">
 					{planetscale.kind === "postgresql" ? "Postgres" : "MySQL"} · {planetscale.branchCount}{" "}
-					branch{planetscale.branchCount === 1 ? "" : "es"}
+					{pluralize(planetscale.branchCount, "branch", "branches")}
 				</span>
 			</div>
 
 			{stats ? (
 				<div className="grid grid-cols-2 gap-x-6 gap-y-4">
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">Connections</span>
-						<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-							{formatRate(stats.connectionsAvg)}
-						</p>
-						<span className="text-[10px] text-muted-foreground">
-							peak {formatRate(stats.connectionsMax)}
-						</span>
-					</div>
+					<MetricTile label="Connections" caption={<>peak {formatRate(stats.connectionsMax)}</>}>
+						<MetricValue>{formatRate(stats.connectionsAvg)}</MetricValue>
+					</MetricTile>
 					{/* Thresholds come from the shared PlanetScale metrics module, so a
 					    number tinted red here is tinted red on /infra/planetscale too. */}
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">CPU (max)</span>
-						<p
+					<MetricTile label="CPU (max)">
+						<MetricValue className={cn(utilizationClass(stats.cpuMaxPercent))}>
+							{formatPercent(stats.cpuMaxPercent / 100)}
+						</MetricValue>
+					</MetricTile>
+					<MetricTile label="Memory (max)">
+						<MetricValue className={cn(utilizationClass(stats.memMaxPercent))}>
+							{formatPercent(stats.memMaxPercent / 100)}
+						</MetricValue>
+					</MetricTile>
+					<MetricTile label="Storage (max)">
+						<MetricValue
 							className={cn(
-								"text-xl font-semibold tabular-nums font-mono text-foreground",
-								utilizationClass(stats.cpuMaxPercent),
-							)}
-						>
-							{stats.cpuMaxPercent.toFixed(0)}%
-						</p>
-					</div>
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">Memory (max)</span>
-						<p
-							className={cn(
-								"text-xl font-semibold tabular-nums font-mono text-foreground",
-								utilizationClass(stats.memMaxPercent),
-							)}
-						>
-							{stats.memMaxPercent.toFixed(0)}%
-						</p>
-					</div>
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">Storage (max)</span>
-						<p
-							className={cn(
-								"text-xl font-semibold tabular-nums font-mono text-foreground",
 								stats.storageUsedPercent !== null &&
 									utilizationClass(stats.storageUsedPercent),
 							)}
 						>
 							{stats.storageUsedPercent === null
-								? "—"
+								? EMPTY_VALUE
 								: formatStoragePercent(stats.storageUsedPercent)}
-						</p>
-					</div>
-					<div className="space-y-0.5">
-						<span className="text-[10px] text-muted-foreground">Replica Lag (max)</span>
-						<p
-							className={cn(
-								"text-xl font-semibold tabular-nums font-mono text-foreground",
-								lagClass(stats.replicaLagMaxSeconds),
-							)}
-						>
-							{formatReplicationLag(stats.replicaLagMaxSeconds)}
-						</p>
-					</div>
+						</MetricValue>
+					</MetricTile>
+					<MetricTile label="Replica lag (max)">
+						<MetricValue className={cn(lagClass(stats.replicaLagMaxSeconds))}>
+							{formatLag(stats.replicaLagMaxSeconds)}
+						</MetricValue>
+					</MetricTile>
 				</div>
 			) : (
 				<p className="text-xs text-muted-foreground">
-					No PlanetScale metrics in this window yet — the scraper delivers them within a minute of
+					No PlanetScale metrics in this window yet; the scraper delivers them within a minute of
 					connecting.
 				</p>
 			)}
@@ -955,10 +934,10 @@ function PlanetScaleSection({
 				.onError((error) => {
 					const formatted = displayError(error)
 					return (
-						<div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs">
-							<p className="font-medium text-destructive">{formatted.title}</p>
-							<p className="mt-1 text-muted-foreground">{formatted.message}</p>
-						</div>
+						<Alert variant="crit" size="sm">
+							<AlertTitle className="text-severity-error">{formatted.title}</AlertTitle>
+							<AlertDescription>{formatted.message}</AlertDescription>
+						</Alert>
 					)
 				})
 				.orElse(() => null)}
@@ -968,75 +947,49 @@ function PlanetScaleSection({
 					{branchStats.map((row) => {
 						const info = branchInfoByName.get(row.branch)
 						return (
-							<div
+							<Panel
 								key={row.branch}
-								className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs"
+								className="flex-row items-center justify-between gap-2 px-2.5 py-2 text-xs"
 							>
 								<div className="flex min-w-0 items-center gap-1.5">
-									<span className="truncate font-mono text-[11px] text-foreground">
+									<span className="truncate font-mono text-2xs text-foreground">
 										{row.branch}
 									</span>
-									{info?.production ? (
-										<span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-											prod
-										</span>
-									) : null}
+									{info?.production ? <TagBadge>prod</TagBadge> : null}
 								</div>
-								<div className="flex shrink-0 items-center gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+								<div className="flex shrink-0 items-center gap-3 font-mono text-3xs tabular-nums text-muted-foreground">
 									<span>{formatRate(row.connectionsAvg)} conns</span>
-									<span
-										className={cn(
-											row.cpuMaxPercent > 80
-												? "text-severity-error"
-												: row.cpuMaxPercent > 60
-													? "text-severity-warn"
-													: undefined,
-										)}
-									>
-										{row.cpuMaxPercent.toFixed(0)}% cpu
+									<span className={utilizationClass(row.cpuMaxPercent)}>
+										{formatPercent(row.cpuMaxPercent / 100)} cpu
 									</span>
-									<span
-										className={cn(
-											row.replicaLagMaxSeconds > 10
-												? "text-severity-error"
-												: row.replicaLagMaxSeconds > 1
-													? "text-severity-warn"
-													: undefined,
-										)}
-									>
-										{formatReplicationLag(row.replicaLagMaxSeconds)} lag
+									<span className={lagClass(row.replicaLagMaxSeconds)}>
+										{formatLag(row.replicaLagMaxSeconds)} lag
 									</span>
 								</div>
-							</div>
+							</Panel>
 						)
 					})}
 					{idleBranches.map((branch) => (
-						<div
+						<Panel
 							key={branch.name}
-							className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-2.5 py-2 text-xs opacity-70"
+							className="flex-row items-center justify-between gap-2 border-border/60 px-2.5 py-2 text-xs opacity-70"
 						>
 							<div className="flex min-w-0 items-center gap-1.5">
-								<span className="truncate font-mono text-[11px] text-muted-foreground">
+								<span className="truncate font-mono text-2xs text-muted-foreground">
 									{branch.name}
 								</span>
-								{branch.production ? (
-									<span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-										prod
-									</span>
-								) : null}
+								{branch.production ? <TagBadge>prod</TagBadge> : null}
 							</div>
-							<span className="shrink-0 text-[10px] text-muted-foreground">
+							<span className="shrink-0 text-3xs text-muted-foreground">
 								{branch.ready ? "no metrics" : "not ready"}
 							</span>
-						</div>
+						</Panel>
 					))}
 				</div>
 			) : null}
 
 			<div className="space-y-2">
-				<h5 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-					Top Queries (PlanetScale Insights)
-				</h5>
+				<Eyebrow as="h5">Top queries (PlanetScale Insights)</Eyebrow>
 				<PlanetScaleTopQueries
 					database={planetscale.database}
 					startTime={startTime}
@@ -1055,37 +1008,29 @@ function PlanetScaleSection({
 function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeInfo> }) {
 	return (
 		<div className="space-y-3">
-			<div className="h-px bg-border" />
+			<Separator />
 			<div className="flex items-center gap-1.5">
 				<CloudflareIcon size={12} className="shrink-0 text-muted-foreground" />
-				<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-					Hyperdrive Configs
-				</h4>
-				<span className="ml-auto text-[10px] text-muted-foreground">
-					{configs.length} config{configs.length === 1 ? "" : "s"}
+				<Eyebrow as="h4">Hyperdrive configs</Eyebrow>
+				<span className="ml-auto text-3xs text-muted-foreground">
+					{countLabel(configs.length, "config")}
 				</span>
 			</div>
 			<div className="space-y-1.5">
 				{configs.map((config) => (
-					<div
-						key={config.id}
-						className="rounded-md border border-border bg-card px-2.5 py-2 text-xs"
-					>
+					<Panel key={config.id} className="px-2.5 py-2 text-xs">
 						<div className="flex items-center justify-between gap-2">
 							<div className="flex min-w-0 items-center gap-1.5">
 								<span className="truncate font-medium text-foreground">{config.name}</span>
-								<span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-									{config.originScheme}
-								</span>
+								<TagBadge>{config.originScheme}</TagBadge>
 							</div>
-							<span
-								className="shrink-0 font-mono text-[10px] text-muted-foreground/60"
-								title={config.id}
-							>
-								{config.id.slice(0, 8)}
-							</span>
+							<TruncatedId
+								value={config.id}
+								length={8}
+								className="shrink-0 text-3xs text-muted-foreground/60"
+							/>
 						</div>
-						<div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
+						<div className="mt-1.5 flex items-center gap-1.5 text-2xs">
 							<ArrowRightIcon size={10} className="shrink-0 text-muted-foreground/60" />
 							{config.matched ? (
 								<Link
@@ -1095,7 +1040,7 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 								>
 									<PlanetScaleIcon size={11} className="shrink-0 text-muted-foreground" />
 									<span className="truncate font-mono">{config.matched.name}</span>
-									<span className="shrink-0 text-[10px] text-muted-foreground">
+									<span className="shrink-0 text-3xs text-muted-foreground">
 										{config.matched.kind === "postgresql" ? "Postgres" : "MySQL"} on
 										PlanetScale
 									</span>
@@ -1104,26 +1049,24 @@ function HyperdriveSection({ configs }: { configs: ReadonlyArray<HyperdriveNodeI
 								<span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
 									<PlanetScaleIcon size={11} className="shrink-0" />
 									<span className="truncate font-mono">{config.originDatabase}</span>
-									<span className="shrink-0 text-[10px]">
-										PlanetScale (not in inventory)
-									</span>
+									<span className="shrink-0 text-3xs">PlanetScale (not in inventory)</span>
 								</span>
 							) : (
 								<span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
 									<span className="truncate font-mono">{config.originDatabase}</span>
 									{config.originHost ? (
-										<span className="truncate text-[10px] text-muted-foreground/60">
+										<span className="truncate text-3xs text-muted-foreground/60">
 											{config.originHost}
 										</span>
 									) : (
-										<span className="shrink-0 text-[10px] text-muted-foreground/60">
+										<span className="shrink-0 text-3xs text-muted-foreground/60">
 											private origin
 										</span>
 									)}
 								</span>
 							)}
 						</div>
-					</div>
+					</Panel>
 				))}
 			</div>
 		</div>
@@ -1181,7 +1124,7 @@ function DatabaseDetailPanel({
 	const metricHasSampling = summary
 		? summary.estimatedQueryCount > summary.queryCount + 1
 		: callers.some((caller) => caller.hasSampling)
-	const summaryWaiting = Boolean(summaryResult.waiting)
+	const summaryWaiting = summaryResult.waiting
 
 	const {
 		title: dbTitle,
@@ -1195,83 +1138,61 @@ function DatabaseDetailPanel({
 
 	return (
 		<div className="flex flex-col h-full bg-background overflow-hidden">
-			{/* Header */}
-			<div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-				<div className="flex items-center gap-2 min-w-0">
-					<div
-						className="w-[3px] h-[18px] rounded-sm shrink-0"
-						style={{ backgroundColor: dbColor }}
-					/>
-					<DbIcon
-						size={14}
-						className="shrink-0"
-						style={dbBranded ? undefined : { color: dbColor }}
-					/>
-					<span className="text-sm font-semibold text-foreground truncate">{dbTitle}</span>
-					<span className="text-[9px] font-medium tracking-wide text-muted-foreground/60 uppercase shrink-0">
-						{dbBadge}
-					</span>
-				</div>
-				<Button variant="ghost" size="icon-xs" onClick={onClose}>
-					<XmarkIcon size={14} />
-				</Button>
-			</div>
+			<DetailPanelHeader
+				accentColor={dbColor}
+				actions={
+					<IconButton size="icon-xs" onClick={onClose} label="Close">
+						<XmarkIcon />
+					</IconButton>
+				}
+			>
+				<DbIcon size={14} className="shrink-0" style={dbBranded ? undefined : { color: dbColor }} />
+				<span className="text-sm font-semibold text-foreground truncate">{dbTitle}</span>
+				<Eyebrow className="shrink-0">{dbBadge}</Eyebrow>
+			</DetailPanelHeader>
 
 			<ScrollArea className="flex-1 min-h-0">
 				<div className="p-4 space-y-5">
 					<div className="space-y-3">
-						<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-							Metrics
-						</h4>
+						<Eyebrow as="h4">Metrics</Eyebrow>
 						<div className="grid grid-cols-2 gap-x-6 gap-y-4">
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">Queries</span>
-								<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-									{metricHasSampling ? "~" : ""}
-									{formatCompactCount(metricQueryCount)}
-								</p>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">Throughput</span>
-								<p className="text-xl font-semibold text-foreground tabular-nums font-mono">
-									{metricHasSampling ? "~" : ""}
-									{formatRate(metricCallsPerSecond)}
-								</p>
-								<span className="text-[10px] text-muted-foreground">calls/s</span>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">Error Rate</span>
-								<p
+							<MetricTile label="Queries">
+								<MetricValue>
+									<SampledValue
+										estimated={metricHasSampling}
+										value={formatNumber(metricQueryCount)}
+									/>
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="Throughput" caption="calls/s">
+								<MetricValue>
+									<SampledValue
+										estimated={metricHasSampling}
+										value={formatRate(metricCallsPerSecond)}
+									/>
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="Error rate">
+								<MetricValue className={errorRateClass(metricErrorRate)}>
+									{formatErrorRate(metricErrorRate)}
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="P50 latency">
+								<MetricValue
 									className={cn(
-										"text-xl font-semibold tabular-nums font-mono",
-										metricErrorRate > 0.05
-											? "text-severity-error"
-											: metricErrorRate > 0.01
-												? "text-severity-warn"
-												: "text-foreground",
-									)}
-								>
-									{(metricErrorRate * 100).toFixed(1)}%
-								</p>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">P50 Latency</span>
-								<p
-									className={cn(
-										"text-xl font-semibold tabular-nums font-mono",
 										metricP50LatencyMs === null
 											? "text-muted-foreground"
 											: latencyToneClass(metricP50LatencyMs, "p50"),
 									)}
 								>
-									{metricP50LatencyMs === null ? "—" : formatLatency(metricP50LatencyMs)}
-								</p>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">P95 Latency</span>
-								<p
+									{metricP50LatencyMs === null
+										? EMPTY_VALUE
+										: formatLatency(metricP50LatencyMs)}
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="P95 latency">
+								<MetricValue
 									className={cn(
-										"text-xl font-semibold tabular-nums font-mono",
 										metricP95LatencyMs === null
 											? "text-muted-foreground"
 											: // A p95 far above this node's own p50 is a tail problem
@@ -1282,20 +1203,16 @@ function DatabaseDetailPanel({
 												: latencyToneClass(metricP95LatencyMs, "p95"),
 									)}
 								>
-									{metricP95LatencyMs === null ? "—" : formatLatency(metricP95LatencyMs)}
-								</p>
-							</div>
-							<div className="space-y-0.5">
-								<span className="text-[10px] text-muted-foreground">Avg Latency</span>
-								<p
-									className={cn(
-										"text-xl font-semibold tabular-nums font-mono",
-										latencyToneClass(metricAvgLatencyMs, "avg"),
-									)}
-								>
+									{metricP95LatencyMs === null
+										? EMPTY_VALUE
+										: formatLatency(metricP95LatencyMs)}
+								</MetricValue>
+							</MetricTile>
+							<MetricTile label="Avg latency">
+								<MetricValue className={cn(latencyToneClass(metricAvgLatencyMs, "avg"))}>
 									{formatLatency(metricAvgLatencyMs)}
-								</p>
-							</div>
+								</MetricValue>
+							</MetricTile>
 						</div>
 					</div>
 
@@ -1310,23 +1227,23 @@ function DatabaseDetailPanel({
 					) : null}
 
 					<div className="space-y-3">
-						<div className="h-px bg-border" />
+						<Separator />
 						<div className="flex items-center justify-between gap-2">
-							<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-								Query Activity
-							</h4>
+							<Eyebrow as="h4">Query activity</Eyebrow>
 							{summaryWaiting && summaryResponse && (
-								<span className="text-[10px] text-muted-foreground">Refreshing</span>
+								<span className="text-3xs text-muted-foreground">Refreshing</span>
 							)}
 						</div>
 						{Result.builder(summaryResult)
 							.onError((error) => {
 								const formatted = displayError(error)
 								return (
-									<div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs">
-										<p className="font-medium text-destructive">{formatted.title}</p>
-										<p className="mt-1 text-muted-foreground">{formatted.message}</p>
-									</div>
+									<Alert variant="crit" size="sm">
+										<AlertTitle className="text-severity-error">
+											{formatted.title}
+										</AlertTitle>
+										<AlertDescription>{formatted.message}</AlertDescription>
+									</Alert>
 								)
 							})
 							.orElse(() => null)}
@@ -1335,37 +1252,29 @@ function DatabaseDetailPanel({
 
 					{summaryResponse?.topQueries.length ? (
 						<div className="space-y-3">
-							<div className="h-px bg-border" />
-							<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-								Top Query Shapes
-							</h4>
+							<Separator />
+							<Eyebrow as="h4">Top query shapes</Eyebrow>
 							<div className="space-y-1.5">
 								{summaryResponse.topQueries.map((query) => (
-									<div
-										key={query.queryKey}
-										className="rounded-md border border-border bg-card px-2.5 py-2"
-									>
+									<Panel key={query.queryKey} className="px-2.5 py-2">
 										<div className="flex items-start justify-between gap-2">
-											<p className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground">
+											<p className="min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground">
 												{formatQueryLabel(query.queryLabel)}
 											</p>
-											<span
-												className={cn(
-													"shrink-0 font-mono text-[10px] tabular-nums",
-													query.errorRate > 0.05
-														? "text-severity-error"
-														: query.errorRate > 0.01
-															? "text-severity-warn"
-															: "text-muted-foreground",
-												)}
-											>
-												{(query.errorRate * 100).toFixed(1)}%
-											</span>
+											<ErrorRateValue
+												rate={query.errorRate}
+												className="shrink-0 text-3xs"
+											/>
 										</div>
-										<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+										<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground">
 											<span className="font-mono tabular-nums">
-												{query.estimatedQueryCount > query.queryCount + 1 ? "~" : ""}
-												{formatCompactCount(query.estimatedQueryCount)} calls
+												<SampledValue
+													estimated={
+														query.estimatedQueryCount > query.queryCount + 1
+													}
+													value={formatNumber(query.estimatedQueryCount)}
+												/>{" "}
+												calls
 											</span>
 											<span className="font-mono tabular-nums">
 												p50{" "}
@@ -1389,7 +1298,7 @@ function DatabaseDetailPanel({
 													: query.sampleService}
 											</span>
 										</div>
-									</div>
+									</Panel>
 								))}
 							</div>
 						</div>
@@ -1397,52 +1306,18 @@ function DatabaseDetailPanel({
 
 					{callers.length > 0 && (
 						<div className="space-y-3">
-							<div className="h-px bg-border" />
-							<h4 className="text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-								Called By
-							</h4>
+							<Separator />
+							<Eyebrow as="h4">Called by</Eyebrow>
 							<div className="space-y-1.5">
-								{callers.map((caller) => {
-									const callerColor = getServiceColor(caller.sourceService)
-									const safeDuration = Math.max(durationSeconds, 1)
-									const reqPerSec = caller.hasSampling
-										? caller.estimatedCallCount / safeDuration
-										: caller.callCount / safeDuration
-									return (
-										<div
-											key={caller.sourceService}
-											className="flex items-center justify-between px-2.5 py-2 rounded-md border bg-card border-border text-xs"
-										>
-											<div className="flex items-center gap-1.5 min-w-0">
-												<div
-													className="w-[3px] h-3.5 rounded-sm shrink-0"
-													style={{ backgroundColor: callerColor }}
-												/>
-												<span className="text-foreground truncate">
-													{caller.sourceService}
-												</span>
-											</div>
-											<div className="flex items-center gap-2 shrink-0 text-[10px]">
-												<span className="text-muted-foreground tabular-nums font-mono">
-													{caller.hasSampling ? "~" : ""}
-													{formatRate(reqPerSec)} calls/s
-												</span>
-												<span
-													className={cn(
-														"tabular-nums font-mono",
-														caller.errorRate > 0.05
-															? "text-severity-error"
-															: caller.errorRate > 0.01
-																? "text-severity-warn"
-																: "text-severity-info",
-													)}
-												>
-													{(caller.errorRate * 100).toFixed(1)}%
-												</span>
-											</div>
-										</div>
-									)
-								})}
+								{callers.map((caller) => (
+									<EdgeRow
+										key={caller.sourceService}
+										service={caller.sourceService}
+										edge={caller}
+										durationSeconds={durationSeconds}
+										unit="calls/s"
+									/>
+								))}
 							</div>
 						</div>
 					)}
@@ -1685,7 +1560,7 @@ export function ServiceMapView({
 		}),
 	)
 	const hyperdriveInventoryResult = useAtomValue(
-		retainedQuery("integrations", "cloudflareHyperdrives", {
+		retainedInternalQuery("integrations", "cloudflareHyperdrives", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
@@ -1809,49 +1684,39 @@ export function ServiceMapView({
 		[allWorkloads, memberServices],
 	)
 
-	return Result.builder(bundleResult)
-		.onInitial(() => <ServiceMapLoading />)
-		.onError((error) => {
-			const formatted = displayError(error)
-			return (
-				<div className="flex items-center justify-center h-full">
-					<div className="text-center space-y-2">
-						<p className="text-sm font-medium text-destructive">{formatted.title}</p>
-						<p className="text-xs text-muted-foreground">{formatted.message}</p>
-					</div>
-				</div>
-			)
-		})
-		.onSuccess((mapResponse) => (
-			<ServiceMapCanvas
-				viewMode={viewMode}
-				edges={
-					memberServices === null
-						? mapResponse.edges
-						: mapResponse.edges.filter(
-								(edge) =>
-									memberServices.has(edge.sourceService) &&
-									memberServices.has(edge.targetService),
-							)
-				}
-				dbEdges={dbEdges}
-				cloudflareServices={cloudflareServices}
-				faasNames={faasNames}
-				planetscaleDatabases={planetscaleDatabases}
-				planetscaleStats={planetscaleStats}
-				hyperdriveConfigs={hyperdriveConfigs}
-				platforms={platforms}
-				runtimes={runtimes}
-				overviews={overviews}
-				workloads={workloads}
-				durationSeconds={durationSeconds}
-				startTime={startTime}
-				endTime={endTime}
-				deploymentEnv={deploymentEnv}
-				layoutKey={orgId ?? "default"}
-				focus={focus}
-				onFocusChange={onFocusChange}
-			/>
-		))
-		.render()
+	return (
+		<ResultView result={bundleResult} loading={<ServiceMapLoading />}>
+			{(mapResponse) => (
+				<ServiceMapCanvas
+					viewMode={viewMode}
+					edges={
+						memberServices === null
+							? mapResponse.edges
+							: mapResponse.edges.filter(
+									(edge) =>
+										memberServices.has(edge.sourceService) &&
+										memberServices.has(edge.targetService),
+								)
+					}
+					dbEdges={dbEdges}
+					cloudflareServices={cloudflareServices}
+					faasNames={faasNames}
+					planetscaleDatabases={planetscaleDatabases}
+					planetscaleStats={planetscaleStats}
+					hyperdriveConfigs={hyperdriveConfigs}
+					platforms={platforms}
+					runtimes={runtimes}
+					overviews={overviews}
+					workloads={workloads}
+					durationSeconds={durationSeconds}
+					startTime={startTime}
+					endTime={endTime}
+					deploymentEnv={deploymentEnv}
+					layoutKey={orgId ?? "default"}
+					focus={focus}
+					onFocusChange={onFocusChange}
+				/>
+			)}
+		</ResultView>
+	)
 }

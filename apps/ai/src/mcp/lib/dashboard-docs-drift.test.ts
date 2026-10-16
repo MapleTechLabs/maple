@@ -1,3 +1,5 @@
+// Prose has no compiler: this scans agent-facing docs (incl. SKILL.md), which no lint rule can reach.
+/* oxlint-disable test-slop/no-source-text-assertions */
 import { describe, expect, it } from "vitest"
 import { readdirSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
@@ -70,14 +72,6 @@ const surfaces = (): ReadonlyArray<{ label: string; text: string }> => {
 	]
 }
 
-/**
- * `dashboard-mutations.ts` translates the retired names into their v3
- * equivalents for the decode-failure hint, so it necessarily contains them.
- * That file is excluded by not being a `*dashboard*` tool file — this assertion
- * documents the exemption so a future reader does not "fix" it.
- */
-const EXEMPT = "lib/dashboard-mutations.ts"
-
 describe("dashboard docs contain no retired identifiers", () => {
 	for (const { label, text } of surfaces()) {
 		for (const { needle, why } of RETIRED) {
@@ -86,14 +80,6 @@ describe("dashboard docs contain no retired identifiers", () => {
 			})
 		}
 	}
-
-	it("the v2→v3 translation table is the one deliberate exception", () => {
-		const hint = readFileSync(resolve(import.meta.dirname, "dashboard-mutations.ts"), "utf8")
-		// Reading it at all proves the file exists at the exempt path; its job is
-		// to name the retired endpoints so the error message can translate them.
-		expect(hint).toContain("markdown_static")
-		expect(EXEMPT).toContain("dashboard-mutations")
-	})
 })
 
 describe("unit guidance", () => {
@@ -101,14 +87,5 @@ describe("unit guidance", () => {
 		for (const { label, text } of surfaces()) {
 			expect(text, `${label} recommends an uncatalogued unit`).not.toMatch(/unit[^\n]{0,40}"GB"/)
 		}
-	})
-
-	it("the instructions resource states the percent scale rule", () => {
-		const instructions = readFileSync(
-			resolve(import.meta.dirname, "../resources/instructions.ts"),
-			"utf8",
-		)
-		expect(instructions).toContain("percent_100")
-		expect(instructions).toContain("Grafana")
 	})
 })

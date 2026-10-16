@@ -17,10 +17,12 @@ import { MapleMark } from "@maple/ui/components/icons"
  */
 function LocalLockup() {
 	return (
-		<span className="mr-3 flex shrink-0 items-center gap-1.5">
+		<span className="flex shrink-0 items-center gap-1.5">
 			<MapleMark size={16} className="shrink-0 text-primary" />
-			<span className="font-display text-sm font-semibold tracking-[-0.01em]">maple</span>
-			<span className="font-mono text-[11px] font-medium tracking-[0.08em] text-muted-foreground">
+			<span className="font-display text-sm font-semibold tracking-[-0.01em] group-data-[collapsible=icon]:hidden">
+				maple
+			</span>
+			<span className="font-mono text-[11px] font-medium tracking-[0.08em] text-muted-foreground group-data-[collapsible=icon]:hidden">
 				local
 			</span>
 		</span>

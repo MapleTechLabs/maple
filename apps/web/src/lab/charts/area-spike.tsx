@@ -15,7 +15,7 @@ import {
 	usePlotColors,
 	usePlotLegendHighlight,
 	verticalGradient,
-	type PlotColorToken,
+	type PlotColorSource,
 	type PlotLegendSeries,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
@@ -34,9 +34,9 @@ import {
 } from "@/lab/charts/timeseries-data"
 
 const AREA_TOKENS = {
-	throughput: ["--chart-throughput", "#3b82f6"],
-	error: ["--chart-error", "#ef4444"],
-} as const satisfies Record<string, readonly [PlotColorToken, string]>
+	throughput: "--chart-throughput",
+	error: "--chart-error",
+} as const satisfies Record<string, PlotColorSource>
 
 /**
  * The faded fill production uses under a dashed tail
