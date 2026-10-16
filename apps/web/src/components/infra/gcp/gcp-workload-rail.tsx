@@ -101,9 +101,10 @@ export function GcpWorkloadRail({
 							: gcpStateLabel(inventory.state)
 					}
 				/>
-				{facts.map((fact) => (
+				{facts.map((fact, index) => (
 					<DetailRail.MetaRow
-						key={fact.label}
+						// Several read replicas repeat a label.
+						key={`${fact.label}:${index}`}
 						label={fact.label}
 						value={fact.value}
 						valueClassName={fact.tone === undefined ? undefined : FACT_TONE[fact.tone]}
