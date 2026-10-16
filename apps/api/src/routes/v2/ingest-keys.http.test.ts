@@ -221,6 +221,11 @@ describe("v2 custom ingest keys", () => {
 			expect(deleted.body).toEqual({ id, object: "custom_ingest_key", deleted: true })
 			const missing = await harness.request("GET", `/v2/ingest_keys/custom/${id}`, token)
 			expect(missing.status).toBe(404)
+			// Usage is gated on the key existing in the caller's org, before any warehouse read.
+			const queriesBefore = recordedUsageSql.length
+			const goneUsage = await harness.request("GET", `/v2/ingest_keys/custom/${id}/usage`, token)
+			expect(goneUsage.status).toBe(404)
+			expect(recordedUsageSql).toHaveLength(queriesBefore)
 		} finally {
 			await harness.dispose()
 		}
@@ -251,6 +256,13 @@ describe("v2 custom ingest keys", () => {
 			})
 			const response = await harness.request("POST", "/v2/ingest_keys/custom", token, { name: "k" })
 			expect(response.status).toBe(403)
+			const pause = await harness.request(
+				"POST",
+				"/v2/ingest_keys/custom/ingk_aXunrkWtzvXSkw9Z2smcft/pause",
+				token,
+				{},
+			)
+			expect(pause.status).toBe(403)
 		} finally {
 			await harness.dispose()
 		}
