@@ -5,7 +5,7 @@
  *
  * Step times come from the API in whole seconds, so several steps can share the second a line was
  * stamped in. Lines are read in order and only ever move forward through the steps that ran; within
- * a shared second, the line that opens a step (`STEP_HEADER`) is what moves them on.
+ * a shared second, the line that opens a step of the next step's kind is what moves them on.
  */
 import type { WorkflowJobJob } from "@maple/domain/http"
 import { Stream } from "effect"
@@ -60,8 +60,17 @@ const MARKER = /^##\[(error|warning|notice|debug|group|command)\]/
 // oxlint-disable-next-line no-control-regex -- ANSI color codes are control characters by definition.
 const ANSI_ESCAPE = /\u001b\[[0-9;?]*[A-Za-z]/g
 /** The runner's first line of a step. Composite actions repeat some of these inside one step. */
-const STEP_HEADER =
-	/^(?:##\[group\]Run |##\[group\]Checking docker version|Current runner version|Prepare all required actions|Post job cleanup\.|Cleaning up orphan processes|Waiting for background step|Print service container logs|Evaluate and set job outputs)/
+const RUN_STEP_HEADER =
+	/^(?:##\[group\]Run |##\[group\]Checking docker version|Prepare all required actions|Waiting for background step|Print service container logs|Evaluate and set job outputs)/
+
+type StepKind = "setup" | "run" | "post" | "complete"
+
+const headerKind = (text: string): StepKind | undefined => {
+	if (text.startsWith("Current runner version")) return "setup"
+	if (text.startsWith("Post job cleanup.")) return "post"
+	if (text.startsWith("Cleaning up orphan processes")) return "complete"
+	return RUN_STEP_HEADER.test(text) ? "run" : undefined
+}
 
 const severityOf = (marker: string | undefined) => {
 	switch (marker) {
@@ -114,11 +123,18 @@ export const jobLogRecords = <E, R>(
 ): Stream.Stream<OtlpLogRecord, E, R> => {
 	const traceId = ciTraceId(job)
 	const jobSpan = jobSpanId(job)
+	// The runner names a post step after its step, so "Post …" alone is not one.
+	const stepNames = new Set(job.steps.map((step) => step.name))
+	const stepKind = (name: string): StepKind => {
+		if (name === "Set up job") return "setup"
+		if (name === "Complete job") return "complete"
+		return name.startsWith("Post ") && stepNames.has(name.slice(5)) ? "post" : "run"
+	}
 	// A skipped step prints nothing, though the API stamps it with the next step's start.
 	const steps = job.steps
 		.filter((step) => step.conclusion !== "skipped")
 		.toSorted((a, b) => a.number - b.number)
-		.map((step) => ({ step, spanId: stepSpanId(job, step) }))
+		.map((step) => ({ step, spanId: stepSpanId(job, step), kind: stepKind(step.name) }))
 	const shared = {
 		"cicd.pipeline.name": job.workflowName,
 		"cicd.pipeline.run.id": job.runId,
@@ -140,11 +156,13 @@ export const jobLogRecords = <E, R>(
 			return past ? advance(index + 1) : index
 		}
 		const index = advance(state.step)
+		const next = steps[index + 1]
 		const opensNext =
 			index === state.step &&
 			state.stepLines > 0 &&
-			(steps[index + 1]?.step.startedAtMs ?? Infinity) <= second &&
-			STEP_HEADER.test(text)
+			next !== undefined &&
+			next.step.startedAtMs <= second &&
+			headerKind(text) === next.kind
 		return opensNext ? index + 1 : index
 	}
 
