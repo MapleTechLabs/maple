@@ -1,4 +1,4 @@
-import type { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
+import type { V2AttributeMapping, V2CustomIngestKey, V2Recommendation } from "@maple/domain/http/v2"
 import { Effect } from "effect"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { collectV2Pages } from "@/lib/services/common/v2-pagination"
@@ -35,6 +35,18 @@ export const recommendationIssuesListAtom = MapleApiV2AtomClient.runtime.atom(
 		const client = yield* MapleApiV2AtomClient
 		const data: ReadonlyArray<V2Recommendation> = yield* collectV2Pages((cursor) =>
 			client.instrumentationRecommendations.list({
+				query: { limit: PAGE_LIMIT, ...(cursor !== undefined ? { cursor } : undefined) },
+			}),
+		)
+		return { data }
+	}),
+)
+
+export const customIngestKeysListAtom = MapleApiV2AtomClient.runtime.atom(
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2AtomClient
+		const data: ReadonlyArray<V2CustomIngestKey> = yield* collectV2Pages((cursor) =>
+			client.ingestKeys.listCustom({
 				query: { limit: PAGE_LIMIT, ...(cursor !== undefined ? { cursor } : undefined) },
 			}),
 		)

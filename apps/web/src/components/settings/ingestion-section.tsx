@@ -26,6 +26,7 @@ import {
 	type IngestConnection,
 } from "@/components/ingest/use-ingest-connection"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
+import { CustomIngestKeysSection } from "./custom-ingest-keys-section"
 import { SettingsSection, SettingsSections } from "./settings-section"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
@@ -189,9 +190,7 @@ function CredentialRow({
 						label={isVisible ? "Hide key" : "Reveal key"}
 						disabled={isDisabled}
 					>
-						<EyeIcon
-							className={isVisible ? "text-foreground" : "text-muted-foreground"}
-						/>
+						<EyeIcon className={isVisible ? "text-foreground" : "text-muted-foreground"} />
 					</IconButton>
 				)}
 				<IconButton variant="outline" onClick={onCopy} label={`Copy ${label}`} disabled={isDisabled}>
@@ -316,6 +315,8 @@ export function IngestionSection() {
 						/>
 					</div>
 				</SettingsSection>
+
+				<CustomIngestKeysSection />
 
 				<SettingsSection
 					title="Send your first telemetry"
