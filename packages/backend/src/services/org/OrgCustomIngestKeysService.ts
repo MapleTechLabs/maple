@@ -15,6 +15,7 @@ import {
 } from "@maple/domain/http"
 import type { IngestKeyResourceAttribute, IngestKeySignal } from "@maple/domain/primitives"
 import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgIngestCustomKeys, type OrgIngestCustomKeyRow } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
@@ -22,11 +23,12 @@ import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLi
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 
-export const CUSTOM_INGEST_KEY_PREFIX = "maple_ik_"
+const CUSTOM_INGEST_KEY_PREFIX = "maple_ik_"
 const MAX_KEYS_PER_ORG = 50
 const MAX_RESOURCE_ATTRIBUTES = 20
 const MAX_RATE_LIMIT_RPS = 100_000
 const MAX_NAME_LENGTH = 100
+const MAX_DESCRIPTION_LENGTH = 500
 const MAX_ATTRIBUTE_KEY_LENGTH = 255
 const MAX_ATTRIBUTE_VALUE_LENGTH = 1024
 // `maple_` attributes are stamped by the gateway and must never be overridable.
@@ -68,10 +70,13 @@ const normalizeName = Effect.fnUntraced(function* (name: string) {
 	return trimmed
 })
 
-const normalizeDescription = (description: string | null) => {
+const normalizeDescription = Effect.fnUntraced(function* (description: string | null) {
 	const trimmed = description?.trim() ?? ""
+	if (trimmed.length > MAX_DESCRIPTION_LENGTH) {
+		return yield* invalid(`Description must be at most ${MAX_DESCRIPTION_LENGTH} characters`)
+	}
 	return trimmed.length === 0 ? null : trimmed
-}
+})
 
 const normalizeSignals = Effect.fnUntraced(function* (signals: ReadonlyArray<IngestKeySignal> | null) {
 	if (signals === null) return null
@@ -105,15 +110,15 @@ const normalizeAttributes = Effect.fnUntraced(function* (
 			if (attribute.key.length > MAX_ATTRIBUTE_KEY_LENGTH) {
 				return yield* invalid(`Attribute keys must be at most ${MAX_ATTRIBUTE_KEY_LENGTH} characters`)
 			}
+			if (attribute.value.length === 0)
+				return yield* invalid(`Attribute "${attribute.key}" needs a value`)
 			if (attribute.value.length > MAX_ATTRIBUTE_VALUE_LENGTH) {
 				return yield* invalid(
 					`Attribute values must be at most ${MAX_ATTRIBUTE_VALUE_LENGTH} characters`,
 				)
 			}
-			if (
-				RESERVED_ATTRIBUTE_KEYS.has(attribute.key) ||
-				attribute.key.startsWith(RESERVED_ATTRIBUTE_PREFIX)
-			) {
+			const lower = attribute.key.toLowerCase()
+			if (RESERVED_ATTRIBUTE_KEYS.has(lower) || lower.startsWith(RESERVED_ATTRIBUTE_PREFIX)) {
 				return yield* invalid(`"${attribute.key}" is reserved by Maple and cannot be overridden`)
 			}
 		}),
@@ -124,8 +129,13 @@ const normalizeAttributes = Effect.fnUntraced(function* (
 	return normalized
 })
 
-const normalizeExpiry = Effect.fnUntraced(function* (expiresAtMs: number | null, now: number) {
-	if (expiresAtMs === null) return null
+// `current` is the stored expiry: sending it back unchanged is allowed even once it has passed.
+const normalizeExpiry = Effect.fnUntraced(function* (
+	expiresAtMs: number | null,
+	now: number,
+	current: number | null = null,
+) {
+	if (expiresAtMs === null || expiresAtMs === current) return expiresAtMs
 	if (expiresAtMs <= now) return yield* invalid("Expiry must be in the future")
 	return expiresAtMs
 })
@@ -197,47 +207,52 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 				const resourceAttributes = yield* normalizeAttributes(request.resourceAttributes ?? [])
 				const expiresAt = yield* normalizeExpiry(request.expiresAtMs ?? null, now)
 
-				const existing = yield* dbExecute((db) =>
-					db.run(
-						PG.from(OrgIngestCustomKeys)
-							.select(($) => ({ id: $.id }))
-							.where(($) => [$.orgId.eq(orgId)])
-							.limit(MAX_KEYS_PER_ORG),
+				const description = yield* normalizeDescription(request.description ?? null)
+				const id = decodeKeyIdSync(randomUUID())
+				const secret = generateSecret()
+				yield* Effect.annotateCurrentSpan("maple.ingest_key.id", id)
+				// The per-org lock makes the key cap hold under concurrent creates.
+				const rows = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+							const existing = yield* db.run(
+								PG.from(OrgIngestCustomKeys)
+									.select(($) => ({ id: $.id }))
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(MAX_KEYS_PER_ORG),
+							)
+							if (existing.length >= MAX_KEYS_PER_ORG) return null
+							return yield* db.run(
+								PG.insertInto(OrgIngestCustomKeys)
+									.values({
+										id,
+										orgId,
+										name,
+										description,
+										keyHash: hashIngestKey(secret, lookupHmacKey),
+										keyPrefix: displayPrefix(secret),
+										enabled: request.enabled ?? true,
+										allowedSignals,
+										rateLimitRps,
+										resourceAttributes,
+										expiresAt,
+										rolledAt: now,
+										createdAt: now,
+										updatedAt: now,
+										createdBy: userId,
+										updatedBy: userId,
+									})
+									.returning(),
+							)
+						}),
 					),
 				)
-				if (existing.length >= MAX_KEYS_PER_ORG) {
+				if (rows === null) {
 					return yield* invalid(
 						`An organization can have at most ${MAX_KEYS_PER_ORG} custom ingest keys`,
 					)
 				}
-
-				const id = decodeKeyIdSync(randomUUID())
-				const secret = generateSecret()
-				yield* Effect.annotateCurrentSpan("maple.ingest_key.id", id)
-				const rows = yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(OrgIngestCustomKeys)
-							.values({
-								id,
-								orgId,
-								name,
-								description: normalizeDescription(request.description ?? null),
-								keyHash: hashIngestKey(secret, lookupHmacKey),
-								keyPrefix: displayPrefix(secret),
-								enabled: request.enabled ?? true,
-								allowedSignals,
-								rateLimitRps,
-								resourceAttributes,
-								expiresAt,
-								rolledAt: now,
-								createdAt: now,
-								updatedAt: now,
-								createdBy: userId,
-								updatedBy: userId,
-							})
-							.returning(),
-					),
-				)
 				const row = rows[0]
 				if (row === undefined) {
 					return yield* new IngestKeyPersistenceError({ message: "Failed to create ingest key" })
@@ -252,7 +267,7 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 				request: UpdateCustomIngestKeyRequest,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_key.id": keyId })
-				yield* requireRow(orgId, keyId)
+				const existing = yield* requireRow(orgId, keyId)
 				const now = yield* Clock.currentTimeMillis
 				const updates = {
 					updatedAt: now,
@@ -261,7 +276,7 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 					description:
 						request.description === undefined
 							? undefined
-							: normalizeDescription(request.description),
+							: yield* normalizeDescription(request.description),
 					enabled: request.enabled,
 					allowedSignals:
 						request.allowedSignals === undefined
@@ -278,7 +293,7 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 					expiresAt:
 						request.expiresAtMs === undefined
 							? undefined
-							: yield* normalizeExpiry(request.expiresAtMs, now),
+							: yield* normalizeExpiry(request.expiresAtMs, now, existing.expiresAt),
 				}
 				const rows = yield* dbExecute((db) =>
 					db.run(

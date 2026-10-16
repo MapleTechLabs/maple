@@ -157,6 +157,14 @@ describe("v2 custom ingest keys", () => {
 			expect(rolled.body.secret).toMatch(/^maple_ik_/)
 			expect(rolled.body.secret).not.toBe(created.body.secret)
 
+			const audit = await harness.request("GET", "/v2/audit_log?limit=100", token)
+			expect(audit.status).toBe(200)
+			const auditText = JSON.stringify(audit.body)
+			expect(auditText).toContain("custom_ingest_key.created")
+			expect(auditText).toContain("custom_ingest_key.rolled")
+			expect(auditText).not.toContain(created.body.secret)
+			expect(auditText).not.toContain(rolled.body.secret)
+
 			const deleted = await harness.request("DELETE", `/v2/ingest_keys/custom/${id}`, token)
 			expect(deleted.body).toEqual({ id, object: "custom_ingest_key", deleted: true })
 			const missing = await harness.request("GET", `/v2/ingest_keys/custom/${id}`, token)
