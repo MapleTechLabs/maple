@@ -479,7 +479,9 @@ describe("CiTraceService", () => {
 		const calls: Array<IngestCall> = []
 		const logCalls: Array<OtlpLogsRequest> = []
 		const lines = [
-			`\uFEFF${stamped(123, "##[group]Run bun install")}`,
+			// The runner writes before the first step starts; that line belongs to the job.
+			`\uFEFF${stamped(-123, "Current runner version: '2.320.0'")}`,
+			stamped(123, "##[group]Run bun install"),
 			stamped(500, "##[endgroup]"),
 			// The second step starts 20s in.
 			stamped(30_000, "\u001b[31mFAIL\u001b[0m src/math.test.ts"),
@@ -492,8 +494,11 @@ describe("CiTraceService", () => {
 			yield* sink.onWorkflowJob(orgId, job, [])
 			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable(lines))
 
-			const [, , installStep, testStep] = spansOf(calls[0]!)
-			const records = recordsOf(logCalls)
+			const [jobSpan, , installStep, testStep] = spansOf(calls[0]!)
+			const records = recordsOf(logCalls).slice(1)
+			const [beforeSteps] = recordsOf(logCalls)
+			assert.strictEqual(beforeSteps!.spanId, jobSpan!.spanId)
+			assert.strictEqual(attr(beforeSteps!.attributes, "cicd.pipeline.task.run.id"), job.jobId)
 			assert.deepStrictEqual(
 				records.map((record) => [record.body.stringValue, record.severityText, record.spanId]),
 				[
