@@ -280,8 +280,18 @@ const mergeThresholds = (
 	if (patch.thresholds !== undefined) {
 		return Effect.succeed(Arr.map(patch.thresholds, fromV2Threshold))
 	}
+	// Legacy fields echoed back as read (a client PATCHing the document it fetched) are not edits.
+	const echoed = {
+		severity: patch.severity === doc.severity,
+		threshold: patch.threshold === doc.threshold,
+		threshold_upper: patch.threshold_upper === doc.thresholdUpper,
+		destination_ids:
+			patch.destination_ids !== undefined &&
+			patch.destination_ids.length === doc.destinationIds.length &&
+			patch.destination_ids.every((id) => doc.destinationIds.includes(id)),
+	}
 	const legacyKeys = (["severity", "threshold", "threshold_upper", "destination_ids"] as const).filter(
-		(key) => patch[key] !== undefined,
+		(key) => patch[key] !== undefined && !echoed[key],
 	)
 	if (legacyKeys.length === 0) return Effect.succeed(Arr.map(doc.thresholds, fitBound))
 	const [only, ...rest] = doc.thresholds

@@ -603,6 +603,18 @@ describe("v2 alerts over HTTP", () => {
 		expect(ambiguous.status).toBe(400)
 		expect(JSON.stringify(ambiguous.body)).toContain("thresholds")
 
+		// Echoing the derived single-threshold fields back unchanged is not an edit.
+		const echoed = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			name: "Echoed",
+			severity: created.body.severity,
+			threshold: created.body.threshold,
+			threshold_upper: created.body.threshold_upper,
+			destination_ids: [...created.body.destination_ids].reverse(),
+		})
+		expect(echoed.status, JSON.stringify(echoed.body)).toBe(200)
+		expect(echoed.body.name).toBe("Echoed")
+		expect(echoed.body.thresholds).toEqual(tiers)
+
 		await harness.dispose()
 	})
 
