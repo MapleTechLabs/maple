@@ -50,7 +50,7 @@ const SIGNALS: ReadonlyArray<{ value: IngestKeySignal; label: string; hint: stri
 
 const MODE_LABELS = {
 	set: "Always set",
-	default: "Only if missing",
+	default: "If missing",
 } satisfies Record<IngestKeyAttributeMode, string>
 
 const EXPIRY_LABELS = {
@@ -557,7 +557,7 @@ export function CustomIngestKeysSection() {
 									{signalsSummary(revealed.secret.allowed_signals)}
 								</Eyebrow>
 							</div>
-							<CopyableField value={revealed.secret.secret} copyLabel="Ingest key" />
+							<CopyableField value={revealed.secret.secret} copyLabel="Ingest key" masked />
 							<p className="text-muted-foreground text-xs">
 								Send it as{" "}
 								<InlineCode variant="plain">Authorization: Bearer &lt;key&gt;</InlineCode> to
