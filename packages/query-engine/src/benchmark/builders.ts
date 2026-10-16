@@ -1171,6 +1171,54 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.ciFailedJobsQuery({ traceIds: ["abc123"] }), window),
 	},
 	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "pageAfterCursor",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciRunsQuery({
+					ranOnly: true,
+					before: { startedAt: START_UTC, traceId: "abc123" },
+					limit: 51,
+				}),
+				{ ...window, beforeStartedAt: START_UTC, beforeTraceId: "abc123" },
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunTotalsQuery",
+		label: "allWorkflows",
+		compile: () => CH.compileUnsafe(CH.ciRunTotalsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunSeriesQuery",
+		label: "sixHourly",
+		compile: () => CH.compileUnsafe(CH.ciRunSeriesQuery({}), { ...window, bucketSeconds: 21_600 }),
+	},
+	{
+		module: "ci-runs",
+		name: "ciPipelineStatsQuery",
+		label: "oneRepository",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciPipelineStatsQuery({ owner: "acme", repository: "api", pipeline: "CI" }),
+				window,
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciJobStatsQuery",
+		label: "allWorkflows",
+		compile: () => CH.compileUnsafe(CH.ciJobStatsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciQueueTotalsQuery",
+		label: "allWorkflows",
+		compile: () => CH.compileUnsafe(CH.ciQueueTotalsQuery({}), window),
+	},
+	{
 		module: "pr-review",
 		name: "operationTrafficHourlyQuery",
 		label: "allServices",
