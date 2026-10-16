@@ -77,6 +77,8 @@ pub(crate) struct CustomKeyConfigRow {
     pub(crate) rate_limit_rps: Option<i32>,
     pub(crate) resource_attributes_json: String,
     pub(crate) expires_at_ms: Option<i64>,
+    pub(crate) paused_at_ms: Option<i64>,
+    pub(crate) paused_until_ms: Option<i64>,
 }
 
 /// A resolved custom key's policy, built once per cache fill.
@@ -89,6 +91,9 @@ pub(crate) struct CustomKeyPolicy {
     pub(crate) rate_limit_rps: Option<u32>,
     pub(crate) resource_attributes: Vec<ResourceAttributeOverride>,
     pub(crate) expires_at_ms: Option<i64>,
+    paused_at_ms: Option<i64>,
+    /// `None` while paused means paused until resumed.
+    paused_until_ms: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -114,6 +119,8 @@ impl CustomKeyPolicy {
                 .filter(|rps| *rps > 0),
             resource_attributes: parse_resource_attributes(&row.id, &row.resource_attributes_json),
             expires_at_ms: row.expires_at_ms,
+            paused_at_ms: row.paused_at_ms,
+            paused_until_ms: row.paused_until_ms,
         }
     }
 
@@ -126,6 +133,14 @@ impl CustomKeyPolicy {
     pub(crate) fn is_expired(&self, now_ms: i64) -> bool {
         self.expires_at_ms
             .is_some_and(|expires_at| now_ms >= expires_at)
+    }
+
+    /// A paused key is accepted but its data is dropped. Matches the API's status.
+    pub(crate) fn is_paused(&self, now_ms: i64) -> bool {
+        self.paused_at_ms.is_some()
+            && self
+                .paused_until_ms
+                .is_none_or(|paused_until| now_ms < paused_until)
     }
 }
 
@@ -310,6 +325,8 @@ mod tests {
             rate_limit_rps: None,
             resource_attributes_json: attributes.to_owned(),
             expires_at_ms: None,
+            paused_at_ms: None,
+            paused_until_ms: None,
         }
     }
 
@@ -398,6 +415,19 @@ mod tests {
         assert!(!policy.is_expired(999));
         assert!(policy.is_expired(1_000));
         assert!(!CustomKeyPolicy::from_row(&row(None, "[]")).is_expired(i64::MAX));
+    }
+
+    #[test]
+    fn a_timed_pause_ends_at_its_deadline_and_an_open_one_never_does() {
+        let mut config = row(None, "[]");
+        assert!(!CustomKeyPolicy::from_row(&config).is_paused(0));
+        config.paused_at_ms = Some(100);
+        config.paused_until_ms = Some(1_000);
+        let timed = CustomKeyPolicy::from_row(&config);
+        assert!(timed.is_paused(999));
+        assert!(!timed.is_paused(1_000));
+        config.paused_until_ms = None;
+        assert!(CustomKeyPolicy::from_row(&config).is_paused(i64::MAX));
     }
 
     #[test]

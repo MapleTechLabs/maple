@@ -789,6 +789,18 @@ struct IngestKeyResolver {
     // here instead of amplifying into a Postgres lookup per request.
     negative_cache: Cache<String, ()>,
     routing: Arc<OrgRoutingResolver>,
+    /// Custom key ids whose `last_used_at` was written within `CUSTOM_KEY_USE_WRITE_INTERVAL`.
+    recent_key_uses: Cache<String, ()>,
+}
+
+/// How often one custom key's `last_used_at` is rewritten per gateway instance.
+const CUSTOM_KEY_USE_WRITE_INTERVAL: Duration = Duration::from_mins(1);
+
+fn recent_key_uses_cache() -> Cache<String, ()> {
+    Cache::builder()
+        .time_to_live(CUSTOM_KEY_USE_WRITE_INTERVAL)
+        .max_capacity(50_000)
+        .build()
 }
 
 struct CloudflareConnectorResolver {
@@ -900,9 +912,12 @@ trait KeyStore: Send + Sync {
         hash_column: &'static str,
     ) -> Result<Option<KeyRow>, String>;
 
-    /// A `maple_ik_` key by hash. Disabled rows are `None`, like unknown keys.
+    /// A `maple_ik_` key by hash, paused or not; unknown keys are `None`.
     async fn fetch_custom_ingest_key(&self, key_hash: &str)
         -> Result<Option<CustomKeyRow>, String>;
+
+    /// Stamps `last_used_at` on a custom key the gateway just admitted.
+    async fn record_custom_key_used(&self, key_id: &str, now_ms: i64) -> Result<(), String>;
 
     async fn fetch_connector(
         &self,
@@ -2634,6 +2649,7 @@ async fn main() {
             cache: ingest_key_cache,
             negative_cache: ingest_key_negative_cache,
             routing: Arc::clone(&org_routing_resolver),
+            recent_key_uses: recent_key_uses_cache(),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
         key_rate_limiter: KeyRateLimiter::new(config.rate_limit_fleet_size),
@@ -2932,10 +2948,10 @@ async fn admit_grpc_export(
 ) -> Result<ResolvedIngestKey, tonic::Status> {
     let resolved = resolve_grpc_ingest_key(state, headers).await?;
     record_grpc_identity(&resolved);
-    authorize_custom_key(state, &resolved, &[signal.key_signal()])
+    let admission = authorize_custom_key(state, &resolved, &[signal.key_signal()])
         .await
         .map_err(|error| grpc_status_for_key_rejection(&error))?;
-    if resolved.org_id != SENTINEL_ORG_ID {
+    if admission == KeyAdmission::Ingest && resolved.org_id != SENTINEL_ORG_ID {
         if let Some(error) = entitlement_rejection(state, &resolved.org_id, signal.path()).await {
             return Err(tonic::Status::resource_exhausted(error.message));
         }
@@ -3108,6 +3124,14 @@ async fn accept_grpc_decoded(
         metrics::sentinel(signal.path());
         Span::current().record("maple.ingest.key_type", "sentinel");
         debug!("Sentinel token; skipping forward");
+        return Ok(());
+    }
+    // Admission already let it through; a paused key's data is dropped here.
+    if resolved
+        .custom
+        .as_ref()
+        .is_some_and(|custom| custom.is_paused(current_time_millis()))
+    {
         return Ok(());
     }
 
@@ -3451,18 +3475,27 @@ fn derive_country(headers: &HeaderMap, trust_proxy_geo: bool) -> String {
     code
 }
 
-/// Per-request checks for a custom ingest key: expiry, signal allow-list and
-/// rate limit, in that order. A no-op for default keys.
+/// What happens to an admitted request's data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KeyAdmission {
+    Ingest,
+    /// A paused custom key: answer with success, store and bill nothing.
+    Drop,
+}
+
+/// Per-request checks for a custom ingest key: expiry, signal allow-list, pause
+/// and rate limit, in that order. Admits default keys unchanged.
 /// `signals` is any-of: the key must allow at least one of them.
 async fn authorize_custom_key(
     state: &AppState,
     resolved_key: &ResolvedIngestKey,
     signals: &[KeySignal],
-) -> Result<(), ApiError> {
+) -> Result<KeyAdmission, ApiError> {
     let Some(custom) = &resolved_key.custom else {
-        return Ok(());
+        return Ok(KeyAdmission::Ingest);
     };
-    if custom.is_expired(current_time_millis()) {
+    let now_ms = current_time_millis();
+    if custom.is_expired(now_ms) {
         warn!(key_id = %custom.public_id, "Custom ingest key expired");
         return Err(ApiError::tagged(
             StatusCode::UNAUTHORIZED,
@@ -3487,6 +3520,10 @@ async fn authorize_custom_key(
             format!("This ingest key is not allowed to send {names}"),
         ));
     }
+    if custom.is_paused(now_ms) {
+        debug!(key_id = %custom.public_id, "Custom ingest key paused; dropping");
+        return Ok(KeyAdmission::Drop);
+    }
     if let Some(rps) = custom.rate_limit_rps {
         if !state.key_rate_limiter.try_acquire(&custom.id, rps).await {
             metrics::org_throttled(&resolved_key.org_id, "key_rate_limit");
@@ -3502,11 +3539,12 @@ async fn authorize_custom_key(
             ));
         }
     }
-    Ok(())
+    state.resolver.record_custom_key_use(&custom.id).await;
+    Ok(KeyAdmission::Ingest)
 }
 
-/// Auth shared by both replay endpoints. `Ok(None)` is the sentinel token —
-/// silently dropped like the OTLP path.
+/// Auth shared by the replay and session endpoints. `Ok(None)` is the sentinel
+/// token or a paused key: silently dropped like the OTLP path.
 async fn resolve_replay_key(
     state: &AppState,
     headers: &HeaderMap,
@@ -3523,8 +3561,10 @@ async fn resolve_replay_key(
         .await
         .map_err(|_| ApiError::service_unavailable("Ingest authentication unavailable"))?
         .ok_or_else(|| ApiError::unauthorized(state.config.invalid_key_message))?;
-    authorize_custom_key(state, &resolved, signals).await?;
-    Ok(Some(resolved))
+    match authorize_custom_key(state, &resolved, signals).await? {
+        KeyAdmission::Ingest => Ok(Some(resolved)),
+        KeyAdmission::Drop => Ok(None),
+    }
 }
 
 async fn handle_replay_meta(
@@ -3589,7 +3629,8 @@ async fn handle_replay_meta_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers, &[KeySignal::Sessions]).await? else {
+    let Some(resolved_key) = resolve_replay_key(state, headers, &[KeySignal::Sessions]).await?
+    else {
         return Ok(0);
     };
     let org_id = resolved_key.org_id.clone();
@@ -3853,7 +3894,11 @@ async fn handle_session_events_inner(
             continue;
         }
         let is_custom = obj.get("type").and_then(|v| v.as_str()) == Some("custom");
-        if !(if is_custom { allow_events } else { allow_sessions }) {
+        if !(if is_custom {
+            allow_events
+        } else {
+            allow_sessions
+        }) {
             denied += 1;
             continue;
         }
@@ -4176,7 +4221,8 @@ async fn handle_replay_blob_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<(), ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers, &[KeySignal::Sessions]).await? else {
+    let Some(resolved_key) = resolve_replay_key(state, headers, &[KeySignal::Sessions]).await?
+    else {
         return Ok(());
     };
     let org_id = resolved_key.org_id.clone();
@@ -4675,12 +4721,20 @@ async fn handle_signal_inner(
         "Authenticated"
     );
 
-    authorize_custom_key(state, &resolved_key, &[signal.key_signal()])
+    let admission = authorize_custom_key(state, &resolved_key, &[signal.key_signal()])
         .await
         .map_err(|error| {
             let error_kind = error.error_kind();
             (error, error_kind)
         })?;
+    if admission == KeyAdmission::Drop {
+        return Ok((
+            StatusCode::OK.into_response(),
+            0,
+            resolved_key.org_id.clone(),
+            0,
+        ));
+    }
 
     let _org_inflight_permit = state
         .org_inflight_limiter
@@ -6285,6 +6339,21 @@ impl OrgRoutingResolver {
 }
 
 impl IngestKeyResolver {
+    /// Writes `last_used_at` at most once per `CUSTOM_KEY_USE_WRITE_INTERVAL` per key.
+    async fn record_custom_key_use(&self, key_id: &str) {
+        let throttle = self.recent_key_uses.entry(key_id.to_owned()).or_insert(());
+        if !throttle.await.is_fresh() {
+            return;
+        }
+        if let Err(error) = self
+            .store
+            .record_custom_key_used(key_id, current_time_millis())
+            .await
+        {
+            debug!(key_id, error, "Failed to record custom ingest key use");
+        }
+    }
+
     #[hotpath::measure]
     async fn resolve_ingest_key(&self, raw_key: &str) -> Result<Option<ResolvedIngestKey>, String> {
         // Recorded on `ingest.authenticate` when this runs under the HTTP path;
@@ -7071,11 +7140,13 @@ impl KeyStore for PostgresKeyStore {
                     k.rate_limit_rps, \
                     k.resource_attributes::text AS resource_attributes, \
                     (EXTRACT(EPOCH FROM k.expires_at) * 1000)::bigint AS expires_at_ms, \
+                    (EXTRACT(EPOCH FROM k.paused_at) * 1000)::bigint AS paused_at_ms, \
+                    (EXTRACT(EPOCH FROM k.paused_until) * 1000)::bigint AS paused_until_ms, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
                     COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
              FROM org_ingest_custom_keys k \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
-             WHERE k.key_hash = $2 AND k.enabled = true LIMIT 1"
+             WHERE k.key_hash = $2 LIMIT 1"
         );
         let client = self.client().await?;
         let rows = client
@@ -7108,6 +7179,8 @@ impl KeyStore for PostgresKeyStore {
                 .map_err(decode_error)?
                 .unwrap_or_default(),
             expires_at_ms: row.try_get("expires_at_ms").map_err(decode_error)?,
+            paused_at_ms: row.try_get("paused_at_ms").map_err(decode_error)?,
+            paused_until_ms: row.try_get("paused_until_ms").map_err(decode_error)?,
         };
         Ok(Some(CustomKeyRow {
             key: KeyRow {
@@ -7336,6 +7409,26 @@ impl KeyStore for PostgresKeyStore {
         }))
     }
 
+    async fn record_custom_key_used(&self, key_id: &str, now_ms: i64) -> Result<(), String> {
+        let client = self.client().await?;
+        client
+            .execute(
+                "UPDATE org_ingest_custom_keys \
+                 SET last_used_at = to_timestamp($1::bigint / 1000.0) \
+                 WHERE id = $2",
+                &[&now_ms, &key_id],
+            )
+            .instrument(postgres_client_span(
+                "record_custom_key_used",
+                "UPDATE",
+                "org_ingest_custom_keys",
+                &self.target,
+            ))
+            .await
+            .map(|_| ())
+            .map_err(|error| format!("postgres record_custom_key_used failed: {error}"))
+    }
+
     async fn record_connector_success(
         &self,
         table: &'static str,
@@ -7506,6 +7599,10 @@ impl KeyStore for StaticKeyStore {
 
     async fn fetch_org_routing(&self, _org_id: &str) -> Result<Option<OrgRouting>, String> {
         Ok(None)
+    }
+
+    async fn record_custom_key_used(&self, _key_id: &str, _now_ms: i64) -> Result<(), String> {
+        Ok(())
     }
 
     async fn record_connector_success(
@@ -8639,8 +8736,9 @@ mod tests {
     #[derive(Default)]
     struct FakeKeyStore {
         keys: std::sync::Mutex<std::collections::HashMap<(String, &'static str), KeyRow>>,
-        /// Custom keys by hash, with their `enabled` flag (the SQL filters on it).
-        custom_keys: std::sync::Mutex<std::collections::HashMap<String, (CustomKeyRow, bool)>>,
+        custom_keys: std::sync::Mutex<std::collections::HashMap<String, CustomKeyRow>>,
+        /// Key id of every `record_custom_key_used` call.
+        custom_key_uses: std::sync::Mutex<Vec<String>>,
         connectors: std::sync::Mutex<std::collections::HashMap<(String, String), ConnectorRow>>,
         gcp_connectors:
             std::sync::Mutex<std::collections::HashMap<(String, String), GcpConnectorRow>>,
@@ -8674,13 +8772,10 @@ mod tests {
                 .insert((hash, "private_key_hash"), row);
         }
 
-        fn insert_custom(&self, raw_key: &str, row: CustomKeyRow, enabled: bool) {
+        fn insert_custom(&self, raw_key: &str, row: CustomKeyRow) {
             let hash = hash_ingest_key(raw_key, "test-hmac-key").unwrap();
             self.set_org_routing(&row.key.org_id, OrgRouting::from_key_row(&row.key));
-            self.custom_keys
-                .lock()
-                .unwrap()
-                .insert(hash, (row, enabled));
+            self.custom_keys.lock().unwrap().insert(hash, row);
         }
 
         fn insert_connector(&self, connector_id: &str, raw_secret: &str, row: ConnectorRow) {
@@ -8745,13 +8840,11 @@ mod tests {
             key_hash: &str,
         ) -> Result<Option<CustomKeyRow>, String> {
             self.ingest_key_fetches.fetch_add(1, Ordering::Relaxed);
-            Ok(self
-                .custom_keys
-                .lock()
-                .unwrap()
-                .get(key_hash)
-                .filter(|(_, enabled)| *enabled)
-                .map(|(row, _)| row.clone()))
+            Ok(self.custom_keys.lock().unwrap().get(key_hash).cloned())
+        }
+        async fn record_custom_key_used(&self, key_id: &str, _now_ms: i64) -> Result<(), String> {
+            self.custom_key_uses.lock().unwrap().push(key_id.to_owned());
+            Ok(())
         }
         async fn fetch_connector(
             &self,
@@ -8883,6 +8976,7 @@ mod tests {
                 .max_capacity(16)
                 .build(),
             routing,
+            recent_key_uses: recent_key_uses_cache(),
         }
     }
 
@@ -9124,6 +9218,7 @@ mod tests {
                     .max_capacity(16)
                     .build(),
                 routing: Arc::clone(&routing),
+                recent_key_uses: recent_key_uses_cache(),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
             key_rate_limiter: KeyRateLimiter::new(1),
@@ -11726,6 +11821,8 @@ mod tests {
             rate_limit_rps,
             resource_attributes_json: resource_attributes.to_owned(),
             expires_at_ms: None,
+            paused_at_ms: None,
+            paused_until_ms: None,
         }
     }
 
@@ -11835,9 +11932,9 @@ mod tests {
         let sessions_only = "maple_ik_session_events_sessions_only_000000";
         let events_only = "maple_ik_session_events_events_only_0000000";
         let traces_only = "maple_ik_session_events_traces_only_0000000";
-        store.insert_custom(sessions_only, routed(r#"["sessions"]"#), true);
-        store.insert_custom(events_only, routed(r#"["events"]"#), true);
-        store.insert_custom(traces_only, routed(r#"["traces"]"#), true);
+        store.insert_custom(sessions_only, routed(r#"["sessions"]"#));
+        store.insert_custom(events_only, routed(r#"["events"]"#));
+        store.insert_custom(traces_only, routed(r#"["traces"]"#));
         let state = test_app_state(
             store,
             queue_dir.clone(),
@@ -11866,9 +11963,14 @@ mod tests {
             }
         };
 
-        assert_eq!(send(sessions_only).await.expect("sessions key is admitted"), 1);
+        assert_eq!(
+            send(sessions_only).await.expect("sessions key is admitted"),
+            1
+        );
         assert_eq!(send(events_only).await.expect("events key is admitted"), 2);
-        let denied = send(traces_only).await.expect_err("traces-only key is refused");
+        let denied = send(traces_only)
+            .await
+            .expect_err("traces-only key is refused");
         assert_eq!(denied.status, StatusCode::FORBIDDEN);
 
         let _ = std::fs::remove_dir_all(&queue_dir);
@@ -11884,7 +11986,6 @@ mod tests {
                 "org_custom",
                 custom_key_config(Some(r#"["logs"]"#), Some(10), "[]"),
             ),
-            true,
         );
         let resolver = make_resolver(Arc::clone(&store));
 
@@ -11918,21 +12019,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disabled_and_expired_custom_keys_are_refused_with_401() {
+    async fn expired_custom_keys_are_refused_and_paused_ones_dropped_with_success() {
         let queue_dir = unique_main_test_dir("custom-key-401");
         let store = Arc::new(FakeKeyStore::default());
-        let disabled = "maple_ik_disabled_key_000000000000000000000";
+        let paused = "maple_ik_paused_key_00000000000000000000000";
         let expired = "maple_ik_expired_key_0000000000000000000000";
-        store.insert_custom(
-            disabled,
-            custom_key_row("org_custom", custom_key_config(None, None, "[]")),
-            false,
-        );
+        let mut paused_config = custom_key_config(None, None, "[]");
+        paused_config.id = "1f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b".to_owned();
+        paused_config.paused_at_ms = Some(current_time_millis() - 1_000);
+        store.insert_custom(paused, custom_key_row("org_custom", paused_config));
         let mut expired_config = custom_key_config(None, None, "[]");
         expired_config.expires_at_ms = Some(current_time_millis() - 1_000);
-        store.insert_custom(expired, custom_key_row("org_custom", expired_config), true);
+        store.insert_custom(expired, custom_key_row("org_custom", expired_config));
         let state = test_app_state(
-            store,
+            Arc::clone(&store),
             queue_dir.clone(),
             "http://127.0.0.1:1".to_owned(),
             Duration::from_secs(30),
@@ -11940,12 +12040,26 @@ mod tests {
         .await;
         let body = Bytes::from(test_log_request("refused").encode_to_vec());
 
-        let (error, error_kind) =
-            handle_signal_inner(&state, &test_headers(disabled), body.clone(), Signal::Logs)
+        let (response, decoded_bytes, org_id, items) =
+            handle_signal_inner(&state, &test_headers(paused), body.clone(), Signal::Logs)
                 .await
-                .expect_err("a disabled key is unknown");
-        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
-        assert_eq!(error_kind, "auth");
+                .expect("a paused key is answered with success");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            (decoded_bytes, org_id.as_str(), items),
+            (0, "org_custom", 0)
+        );
+        assert!(
+            resolve_replay_key(&state, &bearer_headers(paused), &[KeySignal::Events])
+                .await
+                .expect("the replay paths accept a paused key")
+                .is_none(),
+            "and drop what it sends"
+        );
+        assert!(
+            store.custom_key_uses.lock().unwrap().is_empty(),
+            "dropped data does not count as use"
+        );
 
         let (error, error_kind) =
             handle_signal_inner(&state, &test_headers(expired), body, Signal::Logs)
@@ -11965,6 +12079,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_admitted_custom_key_records_its_use_once_per_interval() {
+        let queue_dir = unique_main_test_dir("custom-key-use");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_ik_records_use_000000000000000000000";
+        store.insert_custom(
+            raw_key,
+            custom_key_row("org_custom", custom_key_config(None, None, "[]")),
+        );
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+
+        for _ in 0..3 {
+            assert!(
+                resolve_replay_key(&state, &bearer_headers(raw_key), &[KeySignal::Events])
+                    .await
+                    .expect("an active key is admitted")
+                    .is_some()
+            );
+        }
+        assert_eq!(
+            *store.custom_key_uses.lock().unwrap(),
+            vec![CUSTOM_KEY_UUID.to_owned()]
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
     async fn static_store_resolves_custom_keys_without_a_policy() {
         let store: Arc<dyn KeyStore> = Arc::new(StaticKeyStore {
             org_id: "org_static".to_owned(),
@@ -11979,6 +12126,7 @@ mod tests {
                 cache: Cache::builder().max_capacity(16).build(),
                 last_known: DashMap::new(),
             }),
+            recent_key_uses: recent_key_uses_cache(),
         };
         let resolved = resolver
             .resolve_ingest_key("maple_ik_static_backend_key_0000000000000")
@@ -12030,7 +12178,6 @@ mod tests {
                     r#"[{"key":"service.name","value":"checkout","mode":"set"}]"#,
                 ),
             ),
-            true,
         );
         let state = test_app_state(
             store,
