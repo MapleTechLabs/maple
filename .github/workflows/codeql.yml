@@ -3,8 +3,14 @@ name: CodeQL
 # Replaces GitHub's default code-scanning setup, which cannot be path-filtered:
 # it ran the Swift analysis on a macOS runner (~10x Linux billing, 20-30 min)
 # for every PR, including the large majority that never touch apps/ios. Swift
-# now runs only when Swift could have changed, plus on the weekly schedule; the
-# other languages are cheap and keep running on every PR.
+# now runs only when Swift could have changed, plus on the weekly schedule.
+#
+# The same goes for Rust (~6 min, 22 files in apps/ingest), Go and
+# Actions on pull requests: they start alongside CI and took four of the org's
+# runner slots on every push for code most PRs never touch. A PR analyzes them
+# only when their paths change; main pushes and the schedule analyze them all,
+# so the base-branch results PRs compare against stay current. JS/TS runs on
+# every event.
 #
 # Categories match default setup's (`/language:<lang>`), so alert history
 # carries over. Default setup must stay disabled (repo Settings → Code security)
@@ -32,6 +38,7 @@ jobs:
         timeout-minutes: 5
         outputs:
             swift: ${{ steps.filter.outputs.swift == 'true' }}
+            matrix: ${{ steps.matrix.outputs.matrix }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -42,9 +49,41 @@ jobs:
                       swift:
                         - 'apps/ios/**'
                         - '.github/workflows/codeql.yml'
+                      rust:
+                        - '**/*.rs'
+                        - '**/Cargo.toml'
+                        - '**/Cargo.lock'
+                        - '.github/workflows/codeql.yml'
+                      go:
+                        - '**/*.go'
+                        - '**/go.mod'
+                        - '**/go.sum'
+                        - '.github/workflows/codeql.yml'
+                      actions:
+                        - '.github/**'
+
+            - name: Pick languages to analyze
+              id: matrix
+              env:
+                  EVENT: ${{ github.event_name }}
+                  CHANGED: ${{ steps.filter.outputs.changes }}
+              run: |
+                  if [[ "$EVENT" != pull_request ]]; then
+                    CHANGED='["actions","go","rust"]'
+                  fi
+                  jq -cn --argjson changed "$CHANGED" '{include: (
+                    [{language: "javascript-typescript", "build-mode": "none"}]
+                    + [
+                      {language: "actions", "build-mode": "none"},
+                      {language: "go", "build-mode": "autobuild"},
+                      {language: "rust", "build-mode": "none"}
+                      | select(.language | IN($changed[]))
+                    ]
+                  )}' | sed 's/^/matrix=/' >> "$GITHUB_OUTPUT"
 
     analyze:
         name: Analyze (${{ matrix.language }})
+        needs: changes
         runs-on: ubuntu-latest
         timeout-minutes: 30
         permissions:
@@ -53,18 +92,7 @@ jobs:
             actions: read
         strategy:
             fail-fast: false
-            matrix:
-                include:
-                    - language: actions
-                      build-mode: none
-                    - language: go
-                      build-mode: autobuild
-                    - language: javascript-typescript
-                      build-mode: none
-                    - language: python
-                      build-mode: none
-                    - language: rust
-                      build-mode: none
+            matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 

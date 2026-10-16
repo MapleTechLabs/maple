@@ -31,8 +31,7 @@ export type PrReviewStatus = Schema.Schema.Type<typeof PrReviewStatus>
 
 /**
  * Why a delivery produced no review. Reported on the trigger's span and outcome; only `superseded`
- * is stored, since the other skips happen before a row exists. `not_rolled_out` is an organization
- * without the `prreview` rollout flag.
+ * is stored, since the other skips happen before a row exists.
  */
 export const PrReviewSkipReason = Schema.Literals([
 	"disabled",
@@ -44,7 +43,6 @@ export const PrReviewSkipReason = Schema.Literals([
 	"duplicate",
 	"superseded",
 	"agent_unavailable",
-	"not_rolled_out",
 	/** A push to a pull request that already had its repository's `automaticReviewLimit` reviews. */
 	"automatic_limit",
 ]).annotate({ identifier: "@maple/PrReviewSkipReason", title: "Pull Request Review Skip Reason" })

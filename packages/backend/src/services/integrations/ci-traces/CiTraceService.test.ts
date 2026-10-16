@@ -1,13 +1,14 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
 import { OrgId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Exit, Layer, Schema, Tracer } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Schema, Stream, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { CiTraceSinkWith } from "./CiTraceService"
+import { MAX_JOB_LOG_CHARS } from "./logs"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -71,18 +72,53 @@ const OtlpRequest = Schema.Struct({
 const decodeRequest = Schema.decodeUnknownSync(Schema.fromJsonString(OtlpRequest))
 type OtlpRequest = typeof OtlpRequest.Type
 
+const OtlpLogsRequest = Schema.Struct({
+	resourceLogs: Schema.Array(
+		Schema.Struct({
+			resource: Schema.Struct({ attributes: Schema.Array(OtlpKeyValue) }),
+			scopeLogs: Schema.Array(
+				Schema.Struct({
+					logRecords: Schema.Array(
+						Schema.Struct({
+							timeUnixNano: Schema.String,
+							severityText: Schema.String,
+							body: Schema.Struct({ stringValue: Schema.String }),
+							attributes: Schema.Array(OtlpKeyValue),
+							traceId: Schema.String,
+							spanId: Schema.String,
+						}),
+					),
+				}),
+			),
+		}),
+	),
+})
+const decodeLogsRequest = Schema.decodeUnknownSync(Schema.fromJsonString(OtlpLogsRequest))
+type OtlpLogsRequest = typeof OtlpLogsRequest.Type
+
 interface IngestCall {
 	readonly url: string
 	readonly authorization: string | null
 	readonly body: OtlpRequest
 }
 
-/** Records every ingest POST and answers with the next status in `statuses` (the last one repeats). */
+/**
+ * Records every ingest POST and answers with the next status in `statuses` (the last one repeats).
+ * Log batches go to `logCalls` instead of `calls`.
+ */
 const recordingFetch =
-	(calls: Array<IngestCall>, statuses: ReadonlyArray<number> = [200]): typeof fetch =>
+	(
+		calls: Array<IngestCall>,
+		statuses: ReadonlyArray<number> = [200],
+		logCalls: Array<OtlpLogsRequest> = [],
+	): typeof fetch =>
 	async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 		const text = await new Response(init?.body ?? null).text()
+		if (url.endsWith("/v1/logs")) {
+			logCalls.push(decodeLogsRequest(text))
+			return new Response("{}", { status: 200 })
+		}
 		calls.push({
 			url,
 			authorization: new Headers(init?.headers).get("authorization"),
@@ -160,6 +196,13 @@ const job: WorkflowJobJob = {
 		},
 	],
 }
+
+const recordsOf = (calls: ReadonlyArray<OtlpLogsRequest>) =>
+	calls.flatMap((call) => call.resourceLogs.flatMap((rl) => rl.scopeLogs.flatMap((sl) => sl.logRecords)))
+
+/** Stamps a log line at `ms` after the job started, the way the runner does. */
+const stamped = (ms: number, text: string) =>
+	`${new Date(job.startedAtMs + ms).toISOString().replace("Z", "0000Z")} ${text}`
 
 const spansOf = (call: IngestCall) =>
 	call.body.resourceSpans.flatMap((rs) => rs.scopeSpans.flatMap((ss) => ss.spans))
@@ -429,5 +472,106 @@ describe("CiTraceService", () => {
 			assert.isTrue(Exit.isFailure(emit.status.exit))
 			assert.strictEqual(emit.attributes.get("maple.cicd.outcome"), "ingest_failed")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [402]))))
+	})
+
+	it.live("writes a job's log as records on the step span that was running at each line", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		const logCalls: Array<OtlpLogsRequest> = []
+		const lines = [
+			// The runner writes before the first step starts; that line belongs to the job.
+			`\uFEFF${stamped(-123, "Current runner version: '2.320.0'")}`,
+			stamped(123, "##[group]Run bun install"),
+			stamped(500, "##[endgroup]"),
+			// The second step starts 20s in.
+			stamped(30_000, "\u001b[31mFAIL\u001b[0m src/math.test.ts"),
+			"  expected 2 to be 3",
+			stamped(31_000, "##[error]Process completed with exit code 1."),
+			stamped(31_500, ""),
+		]
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJob(orgId, job, [])
+			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable(lines))
+
+			const [jobSpan, , installStep, testStep] = spansOf(calls[0]!)
+			const records = recordsOf(logCalls).slice(1)
+			const [beforeSteps] = recordsOf(logCalls)
+			assert.strictEqual(beforeSteps!.spanId, jobSpan!.spanId)
+			assert.strictEqual(attr(beforeSteps!.attributes, "cicd.pipeline.task.run.id"), job.jobId)
+			assert.deepStrictEqual(
+				records.map((record) => [record.body.stringValue, record.severityText, record.spanId]),
+				[
+					["Run bun install", "INFO", installStep!.spanId],
+					["FAIL src/math.test.ts", "INFO", testStep!.spanId],
+					["  expected 2 to be 3", "INFO", testStep!.spanId],
+					["Process completed with exit code 1.", "ERROR", testStep!.spanId],
+				],
+			)
+			assert.isTrue(records.every((record) => record.traceId === testStep!.traceId))
+			assert.strictEqual(records[0]!.timeUnixNano, `${job.startedAtMs + 123}000000`)
+			// A line without a stamp takes the one before it.
+			assert.strictEqual(records[2]!.timeUnixNano, records[1]!.timeUnixNano)
+			assert.strictEqual(
+				attr(records[1]!.attributes, "cicd.pipeline.task.run.id"),
+				attr(testStep!.attributes, "cicd.pipeline.task.run.id"),
+			)
+			assert.strictEqual(attr(records[1]!.attributes, "cicd.pipeline.task.name"), "Test")
+			assert.strictEqual(
+				attr(logCalls[0]!.resourceLogs[0]!.resource.attributes, "service.name"),
+				"github-actions",
+			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
+	})
+
+	it.live("stops reading a long log at the cap and says where the rest is", () => {
+		const testDb = createTestDb(trackedDbs)
+		const logCalls: Array<OtlpLogsRequest> = []
+		const line = "x".repeat(1000)
+		const kept = MAX_JOB_LOG_CHARS / line.length
+		let pulled = 0
+		const lines = Stream.fromIterable({
+			*[Symbol.iterator]() {
+				for (;;) {
+					pulled++
+					yield stamped(30_000, line)
+				}
+			},
+		})
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJobLog(orgId, job, lines)
+
+			const records = recordsOf(logCalls)
+			assert.lengthOf(records, kept + 1)
+			assert.match(records.at(-1)!.body.stringValue, /^Log truncated: .*actions\/runs\/9001\/job\/555$/)
+			assert.strictEqual(records.at(-1)!.severityText, "WARN")
+			assert.isTrue(logCalls.every((call) => recordsOf([call]).length <= 1000))
+			// Reading stops within a chunk of the cap, not at the end of an endless log.
+			assert.isBelow(pulled, kept * 2)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch([], [200], logCalls))))
+	})
+
+	it.live("records a log that cannot be read on its span, without failing the webhook job", () => {
+		const testDb = createTestDb(trackedDbs)
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink
+				.onWorkflowJobLog(orgId, job, Stream.fail("log download reset"))
+				.pipe(Effect.provideService(Tracer.Tracer, tracer))
+			const emitLog = spans.find((span) => span.name === "CiTraceService.emitLog")
+			assert.strictEqual(emitLog?.status._tag, "Ended")
+			if (emitLog?.status._tag !== "Ended") return
+			assert.isTrue(Exit.isFailure(emitLog.status.exit))
+			assert.strictEqual(emitLog.attributes.get("maple.cicd.outcome"), "log_failed")
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch([]))))
 	})
 })

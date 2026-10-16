@@ -817,6 +817,29 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		// query-engine.http.ts spanDetail, after the detail row resolves the span's keys
+		module: "errors",
+		name: "spanEventsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.spanEventsQuery({
+					traceId: TRACE_ID,
+					spanId: SPAN_ID,
+					serviceName: "api",
+					spanName: "GET",
+				}),
+				window,
+			),
+	},
+	{
+		// query-engine.http.ts traceSpanEvents, the trace timeline's event markers
+		module: "errors",
+		name: "spanEventsByTraceQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.spanEventsByTraceQuery({ traceId: TRACE_ID }), window),
+	},
+	{
 		// ErrorsService errorIssuesScan (the scheduled sweep)
 		module: "errors",
 		name: "errorIssuesQuery",

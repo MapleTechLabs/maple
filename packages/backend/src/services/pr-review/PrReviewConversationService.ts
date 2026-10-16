@@ -41,7 +41,6 @@ import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { PrReviewService } from "./PrReviewService"
@@ -208,7 +207,6 @@ export class PrReviewConversationService extends Context.Service<
 		const dbExecute = makeDbExecute(database, "PrReviewConversationService", toPersistence)
 		const repositories = yield* VcsRepository
 		const providers = yield* VcsProviderRegistry
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const reviews = yield* PrReviewService
 		const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 
@@ -322,10 +320,6 @@ export class PrReviewConversationService extends Context.Service<
 				return skip("disabled")
 			}
 			const repo = repository.value
-			if (!(yield* featureFlags.flags(orgId)).prReview) {
-				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "not_rolled_out" })
-				return skip("not_rolled_out")
-			}
 			if (!ANSWERED_ASSOCIATIONS.has(job.authorAssociation.toUpperCase())) {
 				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "not_collaborator" })
 				return skip("not_collaborator")
@@ -763,7 +757,6 @@ export class PrReviewConversationService extends Context.Service<
 				PrReviewService.layer,
 				VcsRepository.layer,
 				VcsProviderRegistry.layer,
-				OrganizationFeatureFlagsService.layer,
 			),
 		),
 	)

@@ -835,12 +835,13 @@ SELECT
         GROUP BY fingerprintHash
         FORMAT JSON
 
--- builder:errors:spanDetailQuery:default  [02aceae6]
+-- builder:errors:spanDetailQuery:default  [a53b55ab]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           trace_detail_spans.SpanId AS spanId,
           trace_detail_spans.ParentSpanId AS parentSpanId,
           if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
+          trace_detail_spans.SpanName AS rawSpanName,
           trace_detail_spans.ServiceName AS serviceName,
           trace_detail_spans.SpanKind AS spanKind,
           trace_detail_spans.Duration / 1000000 AS durationMs,
@@ -856,12 +857,13 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:spanDetailQuery:narrowByTime  [39008ef8]
+-- builder:errors:spanDetailQuery:narrowByTime  [695c65dd]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           trace_detail_spans.SpanId AS spanId,
           trace_detail_spans.ParentSpanId AS parentSpanId,
           if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
+          trace_detail_spans.SpanName AS rawSpanName,
           trace_detail_spans.ServiceName AS serviceName,
           trace_detail_spans.SpanKind AS spanKind,
           trace_detail_spans.Duration / 1000000 AS durationMs,
@@ -876,6 +878,39 @@ SELECT
           AND trace_detail_spans.OrgId = 'org_sql_catalog'
           AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
           AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1
+        FORMAT JSON
+
+-- builder:errors:spanEventsByTraceQuery:default  [b03e077c]
+SELECT
+          traces.SpanId AS spanId,
+          toString(traces.Timestamp) AS spanStart,
+          toJSONString(traces.EventsTimestamp) AS eventsTimestamp,
+          toJSONString(traces.EventsName) AS eventsName
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND notEmpty(traces.EventsName)
+        ORDER BY spanStart ASC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:errors:spanEventsQuery:default  [9e3ce44c]
+SELECT
+          toString(traces.Timestamp) AS spanStart,
+          toJSONString(traces.EventsTimestamp) AS eventsTimestamp,
+          toJSONString(traces.EventsName) AS eventsName,
+          toJSONString(traces.EventsAttributes) AS eventsAttributes
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'api'
+          AND traces.SpanName = 'GET'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND traces.SpanId = 'b7ad6b7169203331'
         LIMIT 1
         FORMAT JSON
 

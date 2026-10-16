@@ -7,14 +7,14 @@ on:
             - "apps/ingest/**"
             - "packages/db/drizzle/**"
             - "packages/db/src/tables/**"
-            - ".github/scripts/format-ingest-benchmark-comment.py"
+            - "scripts/ci/format-ingest-benchmark-comment.ts"
             - ".github/workflows/ingest-rust-tests.yml"
     pull_request:
         paths:
             - "apps/ingest/**"
             - "packages/db/drizzle/**"
             - "packages/db/src/tables/**"
-            - ".github/scripts/format-ingest-benchmark-comment.py"
+            - "scripts/ci/format-ingest-benchmark-comment.ts"
             - ".github/workflows/ingest-rust-tests.yml"
     workflow_dispatch:
 
@@ -53,10 +53,11 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            # Installs the rust version pinned in the root mise.toml (was a floating
-            # `stable`). Keep rust-cache below — mise caches the toolchain, not the
-            # cargo registry / target dir.
+            # mise caches the pinned toolchain; rust-cache below covers the cargo
+            # registry and target dir.
             - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+              with:
+                  install_args: rust bun
 
             - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
               with:
@@ -250,7 +251,7 @@ jobs:
                   base_json=$(ls "$RUNNER_TEMP"/ingest-base-load-*.json 2>/dev/null | paste -sd, -)
                   HEAD_LOAD_JSON="$head_json" \
                     BASE_LOAD_JSON="$base_json" \
-                    python "$GITHUB_WORKSPACE/.github/scripts/format-ingest-benchmark-comment.py"
+                    bun "$GITHUB_WORKSPACE/scripts/ci/format-ingest-benchmark-comment.ts"
 
             - name: Post or update PR comment (sticky)
               if: ${{ always() && steps.bench-gate.outputs.ok == 'true' && github.event_name == 'pull_request' }}
