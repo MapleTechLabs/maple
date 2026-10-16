@@ -6,14 +6,12 @@ import { Link } from "@tanstack/react-router"
 
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { formatWarehouseDateTime } from "@maple/query-engine/datetime"
-import { Button } from "@maple/ui/components/ui/button"
 import type { ErrorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatLatency, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { SectionHeading } from "@/components/common/section-heading"
-import { ExternalLinkIcon } from "@/components/icons"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimeInTimezone } from "@/lib/timezone-format"
@@ -27,6 +25,7 @@ import {
 	type GcpAppWait,
 	type GcpConnectionPeak,
 } from "./cloud-sql-signals"
+import { GcpServiceIcon } from "./gcp-service-icon"
 import { GcpWorkloadCharts } from "./gcp-workload-charts"
 import type { GcpCloudSqlInstance } from "./inventory"
 import { gcpWorkloadName } from "./tabs"
@@ -51,44 +50,41 @@ const HEALTH_DOT = {
 
 /** Where a workload runs is its name alone; every other identity value says what it is. */
 const BARE_IDENTITY = ["Region", "Zone", "Location"]
-
-/** The logs of a workload: see `gcpWorkloadTelemetry`. */
-export interface GcpLogsTarget {
-	readonly service: string
-	readonly attrs: ReadonlyArray<string>
-}
+/** The rail lists the project. */
+const RAIL_IDENTITY = ["Project"]
 
 export function GcpWorkloadHeader({
 	service,
 	keys,
 	health,
-	traceable,
-	tracedService,
+	databaseVersion,
 	meta,
-	actions,
 }: {
 	service: GcpInfraServiceId
 	keys: ReadonlyArray<string>
 	/** Null while the workload has no metrics in the window. */
 	health: ErrorRateLevel | null
-	/** Whether the workload is named after its code, so a traced service can match it. */
-	traceable: boolean
-	/** The traced service of the workload's name that sent spans in the window. */
-	tracedService: string | null
+	/** A Cloud SQL instance's engine, for its logo; undefined until the inventory answers. */
+	databaseVersion?: string | null
 	/** Chips in place of the identity's: a Cloud SQL instance's say what it runs. */
 	meta?: ReactNode
-	actions: ReactNode
 }) {
 	return (
 		<PageHero
 			title={
 				<span className="flex items-center gap-3">
-					{health === null ? null : (
-						<span
-							aria-hidden
-							className={cn("size-2 shrink-0 rounded-full", HEALTH_DOT[health])}
-						/>
-					)}
+					<span className="relative">
+						<GcpServiceIcon service={service} databaseVersion={databaseVersion} size="lg" />
+						{health === null ? null : (
+							<span
+								aria-hidden
+								className={cn(
+									"absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-background",
+									HEALTH_DOT[health],
+								)}
+							/>
+						)}
+					</span>
 					<span className="font-mono">{gcpWorkloadName(service, keys)}</span>
 				</span>
 			}
@@ -98,7 +94,7 @@ export function GcpWorkloadHeader({
 						<HeroChip>{SERVICE_KIND[service]}</HeroChip>
 						{GCP_INFRA_SERVICES[service].identity.slice(1).map(([label], index) => {
 							const value = keys[index + 1]
-							if (!value) return null
+							if (!value || RAIL_IDENTITY.includes(label)) return null
 							return (
 								<HeroChip key={label}>
 									{BARE_IDENTITY.includes(label)
@@ -107,82 +103,14 @@ export function GcpWorkloadHeader({
 								</HeroChip>
 							)
 						})}
-						{!traceable ? null : tracedService === null ? (
-							<HeroChip>no traces matched</HeroChip>
-						) : (
-							<Link to="/services/$serviceName" params={{ serviceName: tracedService }}>
-								<HeroChip>traced as {tracedService}</HeroChip>
-							</Link>
-						)}
 					</>
 				)
 			}
-			actions={actions}
 		/>
 	)
 }
 
-/** The hero's buttons: the workload's logs, its traces when it sent spans, its console page. */
-export function GcpWorkloadActions({
-	logs,
-	tracedService,
-	consolePage,
-	timeSearch,
-}: {
-	logs: GcpLogsTarget
-	tracedService: string | null
-	consolePage: { readonly label: string; readonly href: string } | undefined
-	timeSearch: TimeRangeSearch
-}) {
-	return (
-		<>
-			<Button
-				size="sm"
-				variant="outline"
-				render={
-					<Link
-						to="/logs"
-						search={{
-							...timeSearch,
-							services: [logs.service],
-							attrs: logs.attrs.length > 0 ? [...logs.attrs] : undefined,
-						}}
-					/>
-				}
-			>
-				Logs
-			</Button>
-			{tracedService === null ? null : (
-				<Button
-					size="sm"
-					variant="outline"
-					render={<Link to="/traces" search={{ ...timeSearch, services: [tracedService] }} />}
-				>
-					Traces
-				</Button>
-			)}
-			{consolePage === undefined ? null : (
-				<Button
-					size="sm"
-					variant="outline"
-					render={
-						<a
-							href={consolePage.href}
-							target="_blank"
-							rel="noreferrer"
-							title={`${consolePage.label} in Google Cloud`}
-						>
-							Google Cloud
-							<ExternalLinkIcon />
-						</a>
-					}
-				/>
-			)}
-		</>
-	)
-}
-
-/** A Cloud SQL instance's chips: its engine, project, the services that query it, and its shape. */
+/** A Cloud SQL instance's chips: its engine, the services that query it, and its shape. */
 export function GcpCloudSqlChips({
 	keys,
 	instance,
@@ -203,7 +131,6 @@ export function GcpCloudSqlChips({
 	return (
 		<>
 			<HeroChip>{engine?.toLowerCase() ?? SERVICE_KIND.cloudSql}</HeroChip>
-			{keys[1] ? <HeroChip>project {keys[1]}</HeroChip> : null}
 			{services === undefined || services === 0 ? null : (
 				<HeroChip>
 					queried by {services} {services === 1 ? "service" : "services"}
