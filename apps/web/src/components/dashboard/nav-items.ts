@@ -257,7 +257,7 @@ export function navGroups(flags?: OrganizationFeatureFlags): NavGroup[] {
 				// { title: "Investigations", href: "/investigations", icon: MagnifierCheckIcon },
 				{ title: "Errors", href: "/errors", icon: CircleWarningIcon },
 				{ title: "Alerts", href: "/alerts", icon: BellIcon },
-				{ title: "Code Review", href: "/code-review", icon: CodeIcon },
+				{ title: "Code Review", href: "/code-review", icon: CodeIcon, badge: "Beta" },
 			],
 		},
 	]
