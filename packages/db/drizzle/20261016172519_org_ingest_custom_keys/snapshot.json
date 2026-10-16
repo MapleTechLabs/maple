@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "879bd57121c07c8066a2277d0c24f1892093e6258e0ceed9b6ee317d35a910a8",
+	"id": "1e54159f874b93fb0bbc4bae2a3f36e9f3dd3f1342a65bca9485b739152ec902",
 	"prevIds": [
-		"825059598ee5dc6c0dcb9a96c757752ad3f35c4bd83401351d640f65239930b6"
+		"48d3838043af2317670b4d331517fd04bd0799b1c95720a38eda958dac3f91dd"
 	],
 	"entities": [
 		{
@@ -351,6 +351,27 @@
 				"name": "error_tick_states_pkey",
 				"columns": [
 					"org_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "gcp_connectors",
+			"primaryKey": {
+				"name": "gcp_connectors_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "gcp_resources",
+			"primaryKey": {
+				"name": "gcp_resources_pkey",
+				"columns": [
+					"connector_id",
+					"name"
 				]
 			}
 		},
@@ -5740,6 +5761,386 @@
 			"table": "error_tick_states",
 			"name": "updated_at",
 			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "scope_type",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "scope_id",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "project_id",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "logs_enabled",
+			"position": 5,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "metrics_enabled",
+			"position": 6,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "secret_ciphertext",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "secret_iv",
+			"position": 8,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "secret_tag",
+			"position": 9,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "secret_hash",
+			"position": 10,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "last_received_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "last_error",
+			"position": 12,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "applied_logs_enabled",
+			"position": 13,
+			"type": "boolean",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "applied_metrics_enabled",
+			"position": 14,
+			"type": "boolean",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "setup_reported_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "metrics_watermark_at",
+			"position": 16,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "last_metrics_received_at",
+			"position": 17,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "last_metrics_error",
+			"position": 18,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "metrics_lease_until",
+			"position": 19,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "resources_synced_at",
+			"position": 20,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "last_resources_error",
+			"position": 21,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "created_by",
+			"position": 22,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "created_at",
+			"position": 23,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_connectors",
+			"name": "updated_at",
+			"position": 24,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "connector_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "name",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "asset_type",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "project_id",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "location",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "display_name",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "state",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "labels",
+			"position": 8,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "details",
+			"position": 9,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "resource_created_at",
+			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "resource_updated_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "gcp_resources",
+			"name": "last_seen_at",
+			"position": 12,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -12062,6 +12463,30 @@
 		},
 		{
 			"kind": "index",
+			"table": "gcp_connectors",
+			"name": "gcp_connectors_org_scope_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"scope_type\"",
+				"\"scope_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "gcp_connectors",
+			"name": "gcp_connectors_secret_hash_unique",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"secret_hash\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "investigations",
 			"name": "investigations_incident_idx",
 			"unique": true,
@@ -12821,6 +13246,20 @@
 			"foreignTable": "dashboards",
 			"foreignColumns": [
 				"org_id",
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "gcp_resources",
+			"name": "gcp_resources_connector_id_gcp_connectors_id_fk",
+			"columns": [
+				"connector_id"
+			],
+			"foreignTable": "gcp_connectors",
+			"foreignColumns": [
 				"id"
 			],
 			"onDelete": "CASCADE",

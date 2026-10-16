@@ -619,6 +619,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// Custom ingest key rps limits are split across this many tasks. The scaling
 				// floor, so a scaled-out fleet admits more rather than throttling below the limit.
 				INGEST_RATE_LIMIT_FLEET_SIZE: String(scaling?.min ?? desiredCount),
+				...(yield* optionalPlain("INGEST_GCP_ORG_MAX_IN_FLIGHT")),
 				...(yield* optionalPlain("INGEST_REQUEST_TIMEOUT_SECS")),
 				...(yield* optionalPlain("INGEST_QUEUE_MAX_AGE_SECS")),
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),

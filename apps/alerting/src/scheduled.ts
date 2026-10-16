@@ -15,6 +15,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
+import { GcpMetricsService } from "@maple/backend/services/integrations/GcpMetricsService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
@@ -49,6 +50,7 @@ export const layerTick = (
 		AlertsService.layer,
 		AnomalyDetectionService.layer,
 		CloudflareAnalyticsService.layer,
+		GcpMetricsService.layer,
 		PlanetScaleService.layer,
 		RailwayMetricsService.layer,
 		DigestService.layer,
@@ -251,6 +253,22 @@ const cloudflareAnalyticsTick = makeTick(
 	}),
 )
 
+const gcpMetricsTick = makeTick(
+	GcpMetricsService.use((gcp) => gcp.pollAll()),
+	"gcp_metrics",
+	(result) =>
+		result.polled + result.deferred > 0
+			? {
+					polled: result.polled,
+					deferred: result.deferred,
+					rowsIngested: result.rowsIngested,
+					failures: result.failures,
+					incompleteMetrics: result.incompleteMetrics,
+					calls: result.calls,
+				}
+			: undefined,
+)
+
 const planetScaleTick = makeTick(
 	PlanetScaleService.use((planetscale) => planetscale.pollAllOrgs()),
 	"planetscale",
@@ -303,6 +321,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly error: Effect.Effect<void, never, R>
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
+	readonly gcpMetrics: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
@@ -320,6 +339,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("escalation", () => ticks.escalation),
 		Match.when("anomaly", () => ticks.anomaly),
 		Match.when("cloudflare_analytics", () => ticks.cloudflareAnalytics),
+		Match.when("gcp_metrics", () => ticks.gcpMetrics),
 		Match.when("planetscale", () => ticks.planetScale),
 		Match.when("railway_metrics", () => ticks.railwayMetrics),
 		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
@@ -369,6 +389,7 @@ type ScheduledServices =
 	| ErrorsService
 	| EscalationService
 	| FixVerificationTickService
+	| GcpMetricsService
 	| PlanetScaleService
 	| PrReviewPostMergeService
 	| RailwayMetricsService
@@ -382,6 +403,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	error: errorTick,
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
+	gcpMetrics: gcpMetricsTick,
 	planetScale: planetScaleTick,
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,

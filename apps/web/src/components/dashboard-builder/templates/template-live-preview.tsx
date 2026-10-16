@@ -2,11 +2,13 @@ import { memo, useDeferredValue, useMemo, useRef, useState } from "react"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import { useContainerSize } from "@maple/ui/hooks/use-container-size"
-import type { V2DashboardTemplate } from "@maple/domain/http/v2"
+import type { V2DashboardTemplate, V2DashboardTemplatePreview } from "@maple/domain/http/v2"
+import { ALL_VALUE, type VariableValues } from "@maple/query-engine"
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { DashboardTimeRangeWrapper } from "@/components/dashboard-builder/dashboard-providers"
+import { ResolvedDashboardVariablesProvider } from "@/components/dashboard-builder/dashboard-variables-context"
 import { visualizationFor } from "@/components/dashboard-builder/widgets/types"
 import { WidgetTimeRangeProvider } from "@/components/dashboard-builder/widgets/widget-time-range-context"
 import type { DashboardWidget, TimeRange } from "@/components/dashboard-builder/types"
@@ -110,6 +112,23 @@ const PreviewWidget = memo(function PreviewWidget({
 		</div>
 	)
 })
+
+/**
+ * What a template's variables start on, with no options loaded: the declared
+ * default, else All. Without these a filter such as `"$project"` would reach the
+ * query literally and match nothing.
+ */
+function previewVariableValues(variables: V2DashboardTemplatePreview["variables"]): VariableValues {
+	const values: VariableValues = {}
+	for (const variable of variables) {
+		if (variable.defaultValue) {
+			values[variable.name] = { value: variable.defaultValue, isAll: false, options: [] }
+		} else if (variable.includeAll) {
+			values[variable.name] = { value: ALL_VALUE, isAll: true, options: [] }
+		}
+	}
+	return values
+}
 
 /**
  * This preview is a plain CSS grid rather than a react-grid-layout instance, so
@@ -226,12 +245,15 @@ export function TemplateLivePreview({ template, parameters, className }: Templat
 		>
 			{(preview) => {
 				const widgets = preview.widgets as DashboardWidget[]
+				const variableValues = previewVariableValues(preview.variables)
 				const shown = widgets.slice(0, MAX_PREVIEW_WIDGETS)
 				const hidden = widgets.length - shown.length
 				return (
 					<div className={cn("flex flex-col gap-2", className)}>
 						<DashboardTimeRangeWrapper initialTimeRange={preview.timeRange as TimeRange}>
-							<PreviewGrid widgets={shown} />
+							<ResolvedDashboardVariablesProvider values={variableValues}>
+								<PreviewGrid widgets={shown} />
+							</ResolvedDashboardVariablesProvider>
 						</DashboardTimeRangeWrapper>
 						{hidden > 0 && (
 							<p className="text-muted-foreground text-xs">

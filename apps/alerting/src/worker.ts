@@ -67,6 +67,8 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		apnsEnv,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		// Sign-in for the Google Cloud metrics poller; unset leaves its tick a no-op.
+		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 		// Ticks post pull-request replies through the GitHub App; without it each one fails.
 		githubAppSourceEnv,
 		// Outbound config for `chat` destinations' connectors.

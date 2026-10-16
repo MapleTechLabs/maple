@@ -68,6 +68,8 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.ingestKey,
 		verbs: ["created", "updated", "rolled", "deleted"],
 	},
+	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
+	gcp_connector: { prefix: PublicIdPrefixes.gcpConnector, verbs: ["created", "updated", "deleted"] },
 	/** Org-singleton public/private pair; which one rolled is in `metadata`. */
 	ingest_key: { verbs: ["rolled"] },
 	/**

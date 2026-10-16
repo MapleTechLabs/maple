@@ -10,7 +10,19 @@ import { useEffect } from "react"
  */
 export function useIntervalRefresh(
 	refresh: () => void,
-	{ intervalMs, enabled }: { intervalMs: number; enabled: boolean },
+	{
+		intervalMs,
+		enabled,
+		catchUp = false,
+	}: {
+		intervalMs: number
+		enabled: boolean
+		/**
+		 * Also refresh the moment a hidden tab returns. For a reading judged against the clock
+		 * ("no read in 30 minutes"): the ticks it skipped while hidden would make it look expired.
+		 */
+		catchUp?: boolean
+	},
 ) {
 	useEffect(() => {
 		if (!enabled) return
@@ -18,6 +30,14 @@ export function useIntervalRefresh(
 			if (typeof document !== "undefined" && document.hidden) return
 			refresh()
 		}, intervalMs)
-		return () => clearInterval(id)
-	}, [refresh, intervalMs, enabled])
+		if (!catchUp) return () => clearInterval(id)
+		const onVisible = () => {
+			if (!document.hidden) refresh()
+		}
+		document.addEventListener("visibilitychange", onVisible)
+		return () => {
+			clearInterval(id)
+			document.removeEventListener("visibilitychange", onVisible)
+		}
+	}, [refresh, intervalMs, enabled, catchUp])
 }
