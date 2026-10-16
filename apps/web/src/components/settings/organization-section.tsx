@@ -1,7 +1,7 @@
 import { useAtomSet } from "@/lib/effect-atom"
 import { useEffect, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { useAuth, useOrganization, useOrganizationList } from "@clerk/clerk-react"
+import { useOrganization, useOrganizationList } from "@clerk/clerk-react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { Field, FieldLabel, FieldDescription } from "@maple/ui/components/ui/field"
@@ -22,16 +22,16 @@ import { organizationHomeRegion } from "@maple/domain/organization-regions"
 import { MAPLE_REGION_LABELS } from "@/lib/region"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 
 export function OrganizationSection() {
-	const { orgRole } = useAuth()
 	const { organization, isLoaded } = useOrganization()
 	const { setActive, userMemberships } = useOrganizationList({
 		userMemberships: { infinite: true },
 	})
 	const navigate = useNavigate()
 
-	const isAdmin = orgRole === "org:admin"
+	const isAdmin = useIsOrgAdmin()
 
 	const [name, setName] = useState("")
 	const [withSavingName, isSavingName] = useAsyncAction((task: () => Promise<boolean>) => task())

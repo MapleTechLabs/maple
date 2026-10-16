@@ -33,6 +33,7 @@ import { PlusIcon, TrashIcon, ShieldIcon, UserIcon, EnvelopeIcon } from "@/compo
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatDateInTimezone } from "@/lib/timezone-format"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 
 function roleBadge(role: string) {
 	if (role === "org:admin") {
@@ -42,7 +43,7 @@ function roleBadge(role: string) {
 }
 
 export function MembersSection() {
-	const { orgRole, userId } = useAuth()
+	const { userId } = useAuth()
 	const { organization, memberships, invitations, isLoaded } = useOrganization({
 		memberships: { infinite: true },
 		invitations: { infinite: true, status: ["pending"] },
@@ -68,7 +69,7 @@ export function MembersSection() {
 	const [withRevokeLoading, revokeLoading] = useAsyncAction((task: () => Promise<void>) => task())
 	const { effectiveTimezone } = useTimezonePreference()
 
-	const isAdmin = orgRole === "org:admin"
+	const isAdmin = useIsOrgAdmin()
 
 	function handleInvite() {
 		if (!organization || !inviteEmail.trim()) return
