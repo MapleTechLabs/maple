@@ -141,7 +141,7 @@ function HeadlineStrip({
 
 /* ---------------------------------------------------------------------------------------------- */
 
-function AnalyticsPanel({
+export function AnalyticsPanel({
 	title,
 	control,
 	children,
@@ -161,7 +161,7 @@ function AnalyticsPanel({
 	)
 }
 
-function ChartFrame({ empty, children }: { empty: boolean; children: ReactNode }) {
+export function ChartFrame({ empty, children }: { empty: boolean; children: ReactNode }) {
 	return empty ? (
 		<EmptyMessage dashed className="flex h-56 items-center justify-center">
 			Nothing in this window

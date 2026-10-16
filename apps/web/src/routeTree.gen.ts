@@ -36,6 +36,7 @@ import { Route as AnalyticsIndexRouteImport } from './routes/analytics/index'
 import { Route as AnomaliesIndexRouteImport } from './routes/anomalies/index'
 import { Route as AnomaliesIncidentIdRouteImport } from './routes/anomalies/$incidentId'
 import { Route as CodeReviewIndexRouteImport } from './routes/code-review/index'
+import { Route as CodeReviewCiRouteImport } from './routes/code-review/ci'
 import { Route as CodeReviewIssuesRouteImport } from './routes/code-review/issues'
 import { Route as CodeReviewPullRequestsRouteImport } from './routes/code-review/pull-requests'
 import { Route as CodeReviewSettingsRouteImport } from './routes/code-review/settings'
@@ -254,6 +255,11 @@ const AnomaliesIncidentIdRoute = AnomaliesIncidentIdRouteImport.update({
 const CodeReviewIndexRoute = CodeReviewIndexRouteImport.update({
   id: '/code-review/',
   path: '/code-review/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeReviewCiRoute = CodeReviewCiRouteImport.update({
+  id: '/code-review/ci',
+  path: '/code-review/ci',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CodeReviewIssuesRoute = CodeReviewIssuesRouteImport.update({
@@ -714,6 +720,7 @@ export interface FileRoutesByFullPath {
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
+  '/code-review/ci': typeof CodeReviewCiRoute
   '/code-review/issues': typeof CodeReviewIssuesRoute
   '/code-review/pull-requests': typeof CodeReviewPullRequestsRoute
   '/code-review/settings': typeof CodeReviewSettingsRoute
@@ -826,6 +833,7 @@ export interface FileRoutesByTo {
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
+  '/code-review/ci': typeof CodeReviewCiRoute
   '/code-review/issues': typeof CodeReviewIssuesRoute
   '/code-review/pull-requests': typeof CodeReviewPullRequestsRoute
   '/code-review/settings': typeof CodeReviewSettingsRoute
@@ -940,6 +948,7 @@ export interface FileRoutesById {
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
   '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
+  '/code-review/ci': typeof CodeReviewCiRoute
   '/code-review/issues': typeof CodeReviewIssuesRoute
   '/code-review/pull-requests': typeof CodeReviewPullRequestsRoute
   '/code-review/settings': typeof CodeReviewSettingsRoute
@@ -1055,6 +1064,7 @@ export interface FileRouteTypes {
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
+    | '/code-review/ci'
     | '/code-review/issues'
     | '/code-review/pull-requests'
     | '/code-review/settings'
@@ -1167,6 +1177,7 @@ export interface FileRouteTypes {
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
+    | '/code-review/ci'
     | '/code-review/issues'
     | '/code-review/pull-requests'
     | '/code-review/settings'
@@ -1280,6 +1291,7 @@ export interface FileRouteTypes {
     | '/alerts/$ruleId'
     | '/alerts/create'
     | '/anomalies/$incidentId'
+    | '/code-review/ci'
     | '/code-review/issues'
     | '/code-review/pull-requests'
     | '/code-review/settings'
@@ -1394,6 +1406,7 @@ export interface RootRouteChildren {
   AlertsRuleIdRoute: typeof AlertsRuleIdRoute
   AlertsCreateRoute: typeof AlertsCreateRoute
   AnomaliesIncidentIdRoute: typeof AnomaliesIncidentIdRoute
+  CodeReviewCiRoute: typeof CodeReviewCiRoute
   CodeReviewIssuesRoute: typeof CodeReviewIssuesRoute
   CodeReviewPullRequestsRoute: typeof CodeReviewPullRequestsRoute
   CodeReviewSettingsRoute: typeof CodeReviewSettingsRoute
@@ -1642,6 +1655,13 @@ declare module '@tanstack/react-router' {
       path: '/code-review'
       fullPath: '/code-review/'
       preLoaderRoute: typeof CodeReviewIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code-review/ci': {
+      id: '/code-review/ci'
+      path: '/code-review/ci'
+      fullPath: '/code-review/ci'
+      preLoaderRoute: typeof CodeReviewCiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/code-review/issues': {
@@ -2332,6 +2352,7 @@ const rootRouteChildren: RootRouteChildren = {
   AlertsRuleIdRoute: AlertsRuleIdRoute,
   AlertsCreateRoute: AlertsCreateRoute,
   AnomaliesIncidentIdRoute: AnomaliesIncidentIdRoute,
+  CodeReviewCiRoute: CodeReviewCiRoute,
   CodeReviewIssuesRoute: CodeReviewIssuesRoute,
   CodeReviewPullRequestsRoute: CodeReviewPullRequestsRoute,
   CodeReviewSettingsRoute: CodeReviewSettingsRoute,

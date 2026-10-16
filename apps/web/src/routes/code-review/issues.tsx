@@ -38,6 +38,7 @@ import {
 } from "@/components/code-review/code-review-search"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
 import { ResultView } from "@/components/common/result-view"
+import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
@@ -54,7 +55,17 @@ const PAGE = 50
 const MAX_ROWS = 200
 const ALL = "all"
 
+/** Above the page, so the header's reload re-resolves the window the page reads. */
 function CodeReviewIssuesPage() {
+	const search = Route.useSearch()
+	return (
+		<PageRefreshProvider timePreset={search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET}>
+			<CodeReviewIssuesPageContent />
+		</PageRefreshProvider>
+	)
+}
+
+function CodeReviewIssuesPageContent() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 	const preset = search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET

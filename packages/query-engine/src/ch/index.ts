@@ -688,11 +688,22 @@ export {
 
 // Queries — CI pipeline runs (GitHub Actions traces)
 export {
+	CI_FAILED_RESULTS,
 	CI_TRACES_SERVICE_NAME,
 	ciFailedJobsQuery,
+	ciJobStatsQuery,
+	ciPipelineStatsQuery,
+	ciRedStreak,
+	isCiFailedResult,
+	ciQueueTotalsQuery,
+	ciRunSeriesQuery,
+	ciRunsSpanMs,
+	ciRunTotalsQuery,
 	ciRunsQuery,
 	type CiFailedJobsOpts,
 	type CiFailedJobsOutput,
+	type CiRedStreak,
 	type CiRunsOpts,
 	type CiRunsOutput,
+	type CiScopeOpts,
 } from "./queries/ci-runs"

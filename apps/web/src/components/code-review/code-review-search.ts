@@ -1,5 +1,8 @@
 import { Schema } from "effect"
 import {
+	CiBranchName,
+	CiPipelineName,
+	CiRunResult,
 	PrReviewCategory,
 	PrReviewFindingStatus,
 	PrReviewId,
@@ -35,6 +38,18 @@ export const CodeReviewListSearchFields = {
 	...CodeReviewSearchFields,
 	status: Schema.optional(Schema.Literals(["completed", "failed", "skipped", "running", "queued"])),
 	review: Schema.optional(PrReviewId),
+}
+
+/** CI scans raw traces, so the server reads at most 14 days; a week is the default. */
+export const CODE_REVIEW_CI_DEFAULT_PRESET = "7d"
+// "2w" starts at midnight 13 days back; the extra hour covers a DST change inside it.
+export const CODE_REVIEW_CI_MAX_RANGE_SECONDS = 14 * 24 * 60 * 60 + 60 * 60
+
+export const CodeReviewCiSearchFields = {
+	...CodeReviewSearchFields,
+	pipeline: Schema.optional(CiPipelineName),
+	branch: Schema.optional(CiBranchName),
+	result: Schema.optional(CiRunResult),
 }
 
 export interface CodeReviewSearch extends TimeRangeSearch {

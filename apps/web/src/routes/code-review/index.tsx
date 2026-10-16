@@ -17,6 +17,7 @@ import {
 	type CodeReviewSearch,
 } from "@/components/code-review/code-review-search"
 import { ResultView } from "@/components/common/result-view"
+import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
@@ -28,7 +29,17 @@ export const Route = createFileRoute("/code-review/")({
 	validateSearch: Schema.toStandardSchemaV1(searchSchema),
 })
 
+/** Above the page, so the header's reload re-resolves the window the page reads. */
 function CodeReviewAnalyticsPage() {
+	const search = Route.useSearch()
+	return (
+		<PageRefreshProvider timePreset={search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET}>
+			<CodeReviewAnalyticsPageContent />
+		</PageRefreshProvider>
+	)
+}
+
+function CodeReviewAnalyticsPageContent() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 	const preset = search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET

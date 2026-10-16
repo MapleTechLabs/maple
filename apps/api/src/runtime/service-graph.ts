@@ -74,6 +74,7 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
 /** Services consumed by HTTP routes; each service owns its implementation dependencies. */
@@ -146,6 +147,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	DemoService.layer,
 	GithubConnectService.layer,
 	PrReviewAnalyticsService.layer,
+	CiAnalyticsService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,

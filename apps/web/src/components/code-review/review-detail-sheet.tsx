@@ -32,6 +32,7 @@ import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 import { AuthorLabel } from "./author-avatar"
+import { PullRequestCiRuns } from "./ci/pull-request-ci-runs"
 import {
 	CATEGORY_LABELS,
 	FINDING_STATUS_LABELS,
@@ -236,6 +237,8 @@ function ReviewDetailContent({
 						) : null}
 					</>
 				) : null}
+
+				<PullRequestCiRuns repositoryId={review.repositoryId} pullRequest={review.number} />
 
 				{detail.history.length > 1 ? (
 					<Section title="Reviews of this pull request">

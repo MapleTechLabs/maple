@@ -33,6 +33,12 @@ describe("getSemanticSeriesColor", () => {
 		expect(getSemanticSeriesColor("warning")).toBe(getSemanticSeriesColor("warn"))
 	})
 
+	it("colors CI run results like the span statuses they stand for", () => {
+		expect(getSemanticSeriesColor("Succeeded")).toBe(getSemanticSeriesColor("ok"))
+		expect(getSemanticSeriesColor("Failed")).toBe(getSemanticSeriesColor("error"))
+		expect(getSemanticSeriesColor("Cancelled")).toBe(getSemanticSeriesColor("unset"))
+	})
+
 	it("resolves HTTP methods to the shared hex palette", () => {
 		expect(getSemanticSeriesColor("get")).toBe(HTTP_METHOD_HEX.GET)
 		expect(getSemanticSeriesColor("DELETE")).toBe(HTTP_METHOD_HEX.DELETE)
