@@ -1,9 +1,10 @@
-import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import type { DateTime } from "effect"
 import { CH } from "@maple/query-engine"
 import type { FilterOption } from "@maple/ui/components/filters/filter-section"
 import { boundsKey, executeLocalCompiledQuery, localParams, noCursor } from "@/lib/query"
 import type { TimeBounds } from "../lib/time"
+import { windowed } from "../lib/query-cache"
 
 const PAGE_SIZE = 50
 
@@ -25,9 +26,8 @@ export interface SessionFilters {
 /** Infinite list of browser sessions, newest first (keyset on StartTime). */
 export function useLocalSessions(filters: SessionFilters, bounds: TimeBounds) {
 	return useInfiniteQuery({
-		queryKey: ["local", "sessions", filters, boundsKey(bounds)],
+		...windowed(["local", "sessions", filters, boundsKey(bounds)]),
 		initialPageParam: noCursor<SessionCursor>(),
-		placeholderData: keepPreviousData,
 		queryFn: async ({ pageParam, signal }) => {
 			const compiled = CH.compile(
 				CH.sessionReplaysListQuery({
@@ -76,7 +76,7 @@ const EMPTY_FACETS: SessionFacets = {
  */
 export function useLocalSessionFacets(filters: SessionFilters, bounds: TimeBounds) {
 	return useQuery<SessionFacets>({
-		queryKey: ["local", "session-facets", filters, boundsKey(bounds)],
+		...windowed(["local", "session-facets", filters, boundsKey(bounds)]),
 		staleTime: 30_000,
 		queryFn: async ({ signal }) => {
 			const compiled = CH.compileUnion(

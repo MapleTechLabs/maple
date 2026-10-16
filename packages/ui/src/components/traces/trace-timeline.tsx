@@ -61,6 +61,7 @@ export function TraceTimeline() {
 		onSelectSpan,
 		colorBy,
 		setColorBy,
+		spanEvents,
 	} = useTraceView()
 	// Surfaced in the toolbar: a correction the user cannot see in the bars themselves
 	// should still be visible as a fact about the trace.
@@ -459,9 +460,7 @@ export function TraceTimeline() {
 	}, [virtualRangeKey, repaintRowDecorations])
 
 	if (rootSpans.length === 0) {
-		return (
-			<EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
-		)
+		return <EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
 	}
 
 	return (
@@ -633,6 +632,7 @@ export function TraceTimeline() {
 									dimmed={isSearchActive && !matched}
 									matched={matched}
 									showService={services.length > 1}
+									events={spanEvents?.get(id)}
 									onSelect={handleSelect}
 									onToggleCollapse={handleToggleCollapse}
 									onZoomSpan={handleZoomSpan}
@@ -667,32 +667,20 @@ export function TraceTimeline() {
 				{/* Pointer/keyboard hints are meaningless on touch — the legend takes the whole bar there. */}
 				<div className="hidden shrink-0 items-center gap-3 text-foreground/30 @min-[560px]/timeline:flex">
 					<span>
-						<Kbd className="h-4 font-mono text-4xs">
-							Drag
-						</Kbd>{" "}
-						zoom
+						<Kbd className="h-4 font-mono text-4xs">Drag</Kbd> zoom
 					</span>
 					<span>
-						<Kbd className="h-4 font-mono text-4xs">
-							W A S D
-						</Kbd>{" "}
-						navigate
+						<Kbd className="h-4 font-mono text-4xs">W A S D</Kbd> navigate
 					</span>
 					<span>
-						<Kbd className="h-4 font-mono text-4xs">
-							/
-						</Kbd>{" "}
-						search
+						<Kbd className="h-4 font-mono text-4xs">/</Kbd> search
 					</span>
 					<button
 						type="button"
 						onClick={() => setShowShortcuts((v) => !v)}
 						className="hover:text-foreground/70"
 					>
-						<Kbd className="h-4 font-mono text-4xs">
-							?
-						</Kbd>{" "}
-						all shortcuts
+						<Kbd className="h-4 font-mono text-4xs">?</Kbd> all shortcuts
 					</button>
 				</div>
 				{/* Legend: scrolls sideways on narrow screens rather than wrapping the bar taller. */}

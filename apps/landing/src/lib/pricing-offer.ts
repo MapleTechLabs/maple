@@ -37,8 +37,9 @@ export interface Allotment {
 	/** Price per `rateUnits` units once `included` is used up. */
 	rate?: number
 	/**
-	 * Units the rate is quoted per: 1 for GB and sessions, 1,000 for events.
-	 * Autumn's `billingUnits`; the rate is the price of one such block.
+	 * Units the rate is quoted per: 1 for GB and sessions, 1M for events. Autumn's
+	 * `billingUnits` except for events, which bill per 1,000 but are quoted per
+	 * million. The rate is the price of one such block.
 	 */
 	rateUnits: number
 }
@@ -72,6 +73,9 @@ const FEATURE_UNITS = {
 const hasOwnUnit = (featureId: string): featureId is keyof typeof FEATURE_UNITS => featureId in FEATURE_UNITS
 
 const unitFor = (featureId: string): Unit => (hasOwnUnit(featureId) ? FEATURE_UNITS[featureId] : "gb")
+
+/** "$5 / 1M events" reads better than the billed "$0.005 / 1,000 events". */
+const EVENTS_QUOTE_UNITS = 1_000_000
 
 /**
  * Capitalized, localized labels for the metered rows, keyed by Autumn featureId
@@ -141,14 +145,18 @@ export async function getOffer(): Promise<Offer> {
 					.filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
 					.map((item) => {
 						const featureId = item.featureId
+						const unit = unitFor(featureId)
+						const billingUnits = Math.max(1, item.price?.billingUnits ?? 1)
+						const rateUnits = unit === "events" ? EVENTS_QUOTE_UNITS : billingUnits
+						const amount = item.price?.amount
 						return {
 							featureId,
 							label: labels[featureId] ?? item.feature?.name ?? featureId,
-							unit: unitFor(featureId),
+							unit,
 							included: Number(item.included ?? 0),
 							unlimited: item.unlimited === true,
-							rate: item.price?.amount ?? undefined,
-							rateUnits: Math.max(1, item.price?.billingUnits ?? 1),
+							rate: amount == null ? undefined : (amount / billingUnits) * rateUnits,
+							rateUnits,
 						}
 					})
 					.sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
@@ -197,10 +205,10 @@ export async function getOffer(): Promise<Offer> {
 				featureId: "product_events",
 				label: labels.product_events!,
 				unit: "events",
-				// Free and unlimited during beta; mirrors `apps/api/autumn.config.ts`.
-				included: 0,
-				unlimited: true,
-				rateUnits: 1,
+				// Mirrors `apps/api/autumn.config.ts`: $0.005 per 1,000, quoted per 1M.
+				included: 1_000_000,
+				rate: 5,
+				rateUnits: EVENTS_QUOTE_UNITS,
 			},
 			{
 				featureId: "ai_credits",
@@ -229,21 +237,19 @@ export const money = (n: number) => {
 /** Sub-cent rates (per session) need three places; per-GB rates need two. */
 export const rateLabel = (n: number) => `$${n < 0.01 ? n.toFixed(3) : n.toFixed(2)}`
 
+/** Whole millions as "1M"; anything else exact. */
+const count = (n: number) =>
+	n >= 1_000_000 && n % 1_000_000 === 0 ? `${n / 1_000_000}M` : n.toLocaleString("en-US")
+
 /**
  * The block a rate is quoted per, for the "then {rate} / …" sentence: 1 for
- * GB and sessions, "1,000" for events. Localized unit words come from the
+ * GB and sessions, "1M" for events. Localized unit words come from the
  * message catalog; this only supplies the number.
  */
-export const rateBlock = (a: Allotment) => a.rateUnits.toLocaleString("en-US")
+export const rateBlock = (a: Allotment) => count(a.rateUnits)
 
 export const volume = (a: Allotment, n: number) =>
-	a.unlimited
-		? m.pricing_unlimited()
-		: a.unit === "gb"
-			? `${n} GB`
-			: a.unit === "usd"
-				? money(n)
-				: n.toLocaleString("en-US")
+	a.unlimited ? m.pricing_unlimited() : a.unit === "gb" ? `${n} GB` : a.unit === "usd" ? money(n) : count(n)
 
 /**
  * AI usage has no flat rate: a credit is a dollar of model spend, priced per

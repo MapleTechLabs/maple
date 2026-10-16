@@ -10,13 +10,16 @@ when services moved out of API, leaving the longest suite unsharded.
 root workspace patterns and tracked manifests. It sizes Vitest shards against
 a 140s estimated test budget and packs small suites into lanes with the same
 budget. Per-file rates for the large suites are measured from CI run
-35725366619 (backend 1.6s, api 2.3s, web 0.55s, …); unknown suites get a
-conservative 1s/file, plus a per-suite startup cost. File counts deliberately
+35725366619 (backend 1.6s, api 2.3s, web 0.55s, …); unknown suites get
+0.6s/file, plus a per-suite startup cost. That default is fitted to the slowest
+cold runs of the small-suite lanes: at the old 1s/file the planner put those
+lanes at ~138s when they never exceeded 86s, and spent two extra jobs on lanes
+that did 2s and 7s of work. File counts deliberately
 include all tracked test/spec files: this can overestimate a suite, but never
 filters the tests actually executed. Each lane invokes the original package
 scripts through Turbo; Vitest owns discovery and shard assignment.
 
-The current inventory produces 9 test lanes, including two backend shards.
+The current inventory produces 10 test lanes, including three backend shards.
 It used to produce 21 at a 100s budget: each job pays ~30s of setup and the
 org runs ~16 jobs at once, so the short lanes queued the run in waves (the last
 test lane of run 35725366619 started 234s in). Fewer, fuller lanes cut both the
@@ -44,8 +47,10 @@ cannot predict. Investigate a budget failure using the Vitest file timings:
 fix unnecessary real waits/repeated setup, split an oversized file, or update
 the measured per-file estimate. Do not simply increase the runtime budget.
 
-Bun-native CLI and otel-helper tests share unsharded lanes with each other, never
-with Vitest flags, and keep their original arguments; Rust retains its dedicated workflow.
+Bun-native suites pack into the small lanes alongside Vitest suites, listed in the
+lane's `bun-filters`. `run-tests.py` runs them in a second Turbo invocation without
+the Vitest flags, which `bun test` rejects, and keeps their original arguments; Rust
+retains its dedicated workflow.
 The runtime budget still applies to the Bun lanes. If those suites grow beyond it,
 they need runner-specific splitting rather than Vitest flags.
 

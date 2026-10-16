@@ -7,7 +7,7 @@ import {
 	type PlanLike,
 } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
-import { formatCount, formatUsage } from "./usage"
+import { formatCount, formatQuoteUnits, formatUsage, quoteUnits } from "./usage"
 
 // Metered features surfaced on the billing page. AI token features stay hidden,
 // matching HIDDEN_FEATURE_IDS in pricing-cards.tsx.
@@ -144,9 +144,11 @@ export function estimateCycleCost({
 		const billingUnits = item?.price?.billingUnits ?? 1
 		const units = Math.ceil(over / (billingUnits > 0 ? billingUnits : 1))
 		const unit = featureUnit(featureId)
+		const block = quoteUnits(featureId, billingUnits > 0 ? billingUnits : 1)
+		const blockRate = (rate / (billingUnits > 0 ? billingUnits : 1)) * block
 		const rateLabel =
-			billingUnits > 1
-				? `${formatUnitPrice(rate)} / ${formatCount(billingUnits)} ${unit}s`
+			block > 1
+				? `${formatUnitPrice(blockRate)} / ${formatQuoteUnits(block)} ${unit}s`
 				: `${formatUnitPrice(rate)} / ${unit}`
 		lines.push({
 			key: `overage:${featureId}`,

@@ -152,7 +152,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 										<Button
 											size="sm"
 											variant="outline"
-											render={<Link to="/alerts" search={{ tab: "settings" }} />}
+											render={<Link to="/alerts" search={{ tab: "routing" }} />}
 										>
 											Add a destination
 										</Button>

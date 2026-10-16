@@ -57,7 +57,11 @@ export function formatterCases(mode: WorstCaseMode): ReadonlyArray<FormatterCase
 			c("countLabel", '3, "host"', countLabel(3, "host")),
 			c("formatUsage", "12.5", formatUsage(12.5)),
 			c("formatSignalValue(error_rate)", "0.05", formatSignalValue("error_rate", 0.05)),
-			c("domainThresholdToForm(error_rate)", "0.05", domainThresholdToForm("error_rate", 0.05)),
+			c(
+				"domainThresholdToForm(error_rate)",
+				"0.05",
+				domainThresholdToForm({ signalType: "error_rate" }, 0.05),
+			),
 		]
 	}
 	return [
@@ -84,8 +88,16 @@ export function formatterCases(mode: WorstCaseMode): ReadonlyArray<FormatterCase
 		c("formatUsage (GB)", "NaN", formatUsage(Number.NaN)),
 		c("formatSignalValue(error_rate)", "0.07", formatSignalValue("error_rate", 0.07)),
 		c("formatSignalValue(error_rate)", "0.29", formatSignalValue("error_rate", 0.29)),
-		c("domainThresholdToForm(error_rate)", "0.07", domainThresholdToForm("error_rate", 0.07)),
-		c("domainThresholdToForm(error_rate)", "0.29", domainThresholdToForm("error_rate", 0.29)),
+		c(
+			"domainThresholdToForm(error_rate)",
+			"0.07",
+			domainThresholdToForm({ signalType: "error_rate" }, 0.07),
+		),
+		c(
+			"domainThresholdToForm(error_rate)",
+			"0.29",
+			domainThresholdToForm({ signalType: "error_rate" }, 0.29),
+		),
 	]
 }
 

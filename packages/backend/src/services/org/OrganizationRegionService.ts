@@ -83,9 +83,24 @@ export interface DirectoryOrganization {
 	readonly createdAt: number
 }
 
+/** None when the directory no longer has the organization: it was deleted. */
 export type ReadDirectoryOrganization = (
 	orgId: OrgId,
-) => Effect.Effect<DirectoryOrganization, ClerkRequestError>
+) => Effect.Effect<Option.Option<DirectoryOrganization>, ClerkRequestError>
+
+/**
+ * Whether this instance is an organization's home. `unknown` when Clerk could not say; `deleted`
+ * when Clerk no longer has the organization, an answer every region gets alike.
+ */
+export type HomeAnswer = "here" | "elsewhere" | "deleted" | "unknown"
+
+/** What the directory said: the organization's metadata, that it is gone, or nothing. */
+type DirectoryAnswer =
+	| { readonly _tag: "Found"; readonly metadata: unknown }
+	| { readonly _tag: "Deleted" }
+	| { readonly _tag: "Unreachable" }
+
+const found = (metadata: unknown): DirectoryAnswer => ({ _tag: "Found", metadata })
 
 export interface OrganizationRegionServiceApi {
 	/** The instance's own region. */
@@ -93,11 +108,10 @@ export interface OrganizationRegionServiceApi {
 	/** Fails when the organization lives in another region. Never fails on a Clerk outage. */
 	readonly ensureServedHere: (orgId: OrgId) => Effect.Effect<void, OrganizationWrongRegionError>
 	/**
-	 * Whether this instance is the organization's home. `None` when Clerk could not say: for
-	 * background work that every region receives and exactly one must do, which has to wait
-	 * rather than be served on a guess.
+	 * For background work that every region receives and exactly one must do, which has to wait
+	 * on `unknown` rather than be served on a guess.
 	 */
-	readonly servedHere: (orgId: OrgId) => Effect.Effect<Option.Option<boolean>>
+	readonly servedHere: (orgId: OrgId) => Effect.Effect<HomeAnswer>
 	/** Drops what this instance remembers about the organization, after its region was written. */
 	readonly forget: (orgId: OrgId) => Effect.Effect<void>
 }
@@ -116,7 +130,11 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	const readDirectory = Effect.fnUntraced(function* (read: ReadDirectoryOrganization, orgId: OrgId) {
 		const readAtMs = yield* Clock.currentTimeMillis
 		const organization = yield* read(orgId)
-		return { metadata: organization.publicMetadata, createdAtMs: organization.createdAt, readAtMs }
+		return Option.map(organization, (found): RegionRead => ({
+			metadata: found.publicMetadata,
+			createdAtMs: found.createdAt,
+			readAtMs,
+		}))
 	})
 
 	const readEdge = (orgId: OrgId, nowMs: number) =>
@@ -135,13 +153,13 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	const readOrigin = (read: ReadDirectoryOrganization, orgId: OrgId) =>
 		readDirectory(read, orgId).pipe(
 			Effect.tap((entry) =>
-				organizationServedIn(entry.metadata, region)
+				Option.isSome(entry) && organizationServedIn(entry.value.metadata, region)
 					? edgeCache
 							.rawPut(
 								REGIONS_CACHE_BUCKET,
 								orgId,
-								entry,
-								Math.ceil(regionTtlMs(entry, entry.readAtMs) / 1000),
+								entry.value,
+								Math.ceil(regionTtlMs(entry.value, entry.value.readAtMs) / 1000),
 							)
 							.pipe(
 								Effect.catch((error) =>
@@ -152,7 +170,7 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 							)
 					: Effect.void,
 			),
-			Effect.map((entry) => answer(entry, "origin")),
+			Effect.map(Option.map((entry) => answer(entry, "origin"))),
 		)
 
 	const readShared = Effect.fnUntraced(function* (
@@ -164,7 +182,7 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		const early = yield* Fiber.join(shared).pipe(Effect.timeoutOption(CLERK_HEDGE_AFTER_MS))
 		if (Option.isSome(early)) {
 			return Option.isSome(early.value)
-				? answer(early.value.value, "edge")
+				? Option.some(answer(early.value.value, "edge"))
 				: yield* readOrigin(read, orgId)
 		}
 		// Usually a fresh isolate's first read. Ask Clerk as well and take whichever answers first.
@@ -173,37 +191,48 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 			Effect.flatMap(
 				Option.match({
 					onNone: () => Effect.fail(new RegionNotShared({ message: "No shared region answer" })),
-					onSome: (entry) => Effect.succeed(answer(entry, "edge")),
+					onSome: (entry) => Effect.succeed(Option.some(answer(entry, "edge"))),
 				}),
 			),
 		)
 		return yield* Effect.race(lateHit, readOrigin(read, orgId))
 	})
 
-	const read = Effect.fn("OrganizationRegionService.read")(function* (orgId: OrgId) {
-		if (Option.isNone(readOrganization)) return Option.none<unknown>()
+	const read = Effect.fn("OrganizationRegionService.read")(function* (
+		orgId: OrgId,
+	): Effect.fn.Return<DirectoryAnswer> {
+		if (Option.isNone(readOrganization)) return { _tag: "Unreachable" }
 		const nowMs = yield* Clock.currentTimeMillis
 		const local = Option.filter(HashMap.get(yield* Ref.get(remembered), orgId), (entry) =>
 			isFresh(entry, nowMs),
 		)
 		if (Option.isSome(local)) {
 			yield* Effect.annotateCurrentSpan({ "cache.hit": true, "cache.layer": "isolate" })
-			return Option.some(local.value.metadata)
+			return found(local.value.metadata)
 		}
 		return yield* readShared(readOrganization.value, orgId, nowMs).pipe(
-			Effect.tap(({ entry, layer }) =>
-				Effect.andThen(
-					Effect.annotateCurrentSpan({ "cache.hit": layer === "edge", "cache.layer": layer }),
-					organizationServedIn(entry.metadata, region)
-						? Ref.update(remembered, HashMap.set(orgId, entry))
-						: Effect.void,
-				),
+			Effect.flatMap(
+				Option.match({
+					onNone: () =>
+						Effect.as(Effect.annotateCurrentSpan("maple.org_deleted", true), {
+							_tag: "Deleted" as const,
+						}),
+					onSome: ({ entry, layer }) =>
+						Effect.andThen(
+							Effect.annotateCurrentSpan({
+								"cache.hit": layer === "edge",
+								"cache.layer": layer,
+							}),
+							organizationServedIn(entry.metadata, region)
+								? Ref.update(remembered, HashMap.set(orgId, entry))
+								: Effect.void,
+						).pipe(Effect.as(found(entry.metadata))),
+				}),
 			),
-			Effect.map(({ entry }) => Option.some(entry.metadata)),
 			Effect.catch((error) =>
 				Effect.logWarning("Could not read organization regions; serving the request").pipe(
 					Effect.annotateLogs({ orgId, error: error.message }),
-					Effect.as(Option.none<unknown>()),
+					Effect.as<DirectoryAnswer>({ _tag: "Unreachable" }),
 				),
 			),
 		)
@@ -212,10 +241,10 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	const ensureServedHere: OrganizationRegionServiceApi["ensureServedHere"] = Effect.fn(
 		"OrganizationRegionService.ensureServedHere",
 	)(function* (orgId) {
-		const metadata = yield* read(orgId)
-		if (Option.isNone(metadata)) return
-		if (organizationRegionsFrom(metadata.value).includes(region)) return
-		const orgRegion = organizationHomeRegion(metadata.value)
+		const directory = yield* read(orgId)
+		if (directory._tag !== "Found") return
+		if (organizationRegionsFrom(directory.metadata).includes(region)) return
+		const orgRegion = organizationHomeRegion(directory.metadata)
 		yield* Effect.annotateCurrentSpan({ "maple.org_region": orgRegion, "maple.region": region })
 		return yield* new OrganizationWrongRegionError({
 			message: `This organization lives in the ${MAPLE_REGION_LABELS[orgRegion].short} region.`,
@@ -229,8 +258,16 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		"OrganizationRegionService.servedHere",
 	)(function* (orgId) {
 		// No directory means one instance, which serves everything.
-		if (Option.isNone(readOrganization)) return Option.some(true)
-		return Option.map(yield* read(orgId), (metadata) => organizationHomeRegion(metadata) === region)
+		if (Option.isNone(readOrganization)) return "here"
+		const directory = yield* read(orgId)
+		switch (directory._tag) {
+			case "Found":
+				return organizationHomeRegion(directory.metadata) === region ? "here" : "elsewhere"
+			case "Deleted":
+				return "deleted"
+			case "Unreachable":
+				return "unknown"
+		}
 	})
 
 	const forget: OrganizationRegionServiceApi["forget"] = Effect.fn("OrganizationRegionService.forget")(
@@ -271,6 +308,12 @@ export class OrganizationRegionService extends Context.Service<
 					(orgId) =>
 						clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
 							client.organizations.getOrganization({ organizationId: orgId }),
+						).pipe(
+							Effect.map(Option.some),
+							Effect.catchIf(
+								(error) => error.status === 404,
+								() => Effect.succeedNone,
+							),
 						),
 			),
 		)
@@ -282,7 +325,7 @@ export class OrganizationRegionService extends Context.Service<
 	static readonly servesAll = Layer.succeed(this, {
 		region: "us",
 		ensureServedHere: () => Effect.void,
-		servedHere: () => Effect.succeed(Option.some(true)),
+		servedHere: () => Effect.succeed("here"),
 		forget: () => Effect.void,
 	})
 }

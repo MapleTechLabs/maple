@@ -75,11 +75,26 @@ export function setRawCookie(name: string, value: string, domain: string, maxAge
 	}
 }
 
-/** Expire `name` on the shared domain and host-only: it may predate a narrowed scope. */
+/**
+ * Expire `name` host-only and on every parent domain it could have been scoped
+ * to: it may predate a narrowed scope. Expiring a cookie that does not exist
+ * stores nothing, unlike the domain probe, so a memory-only opt-out stays clean.
+ */
 export function deleteRawCookie(name: string): void {
-	const domain = cookieDomain()
-	setRawCookie(name, "", domain, 0)
-	if (domain) setRawCookie(name, "", "", 0)
+	setRawCookie(name, "", "", 0)
+	for (const domain of candidateDomains()) setRawCookie(name, "", domain, 0)
+	if (cookieDomainOverride) setRawCookie(name, "", cookieDomainOverride, 0)
+}
+
+/** Parent domains of this host, broadest first. Empty for single-label hosts and IPs. */
+function candidateDomains(): ReadonlyArray<string> {
+	if (typeof location === "undefined") return []
+	const hostname = location.hostname
+	if (!hostname || /^[\d.]+$/.test(hostname) || hostname.includes(":")) return []
+	const parts = hostname.split(".")
+	const candidates: string[] = []
+	for (let i = parts.length - 2; i >= 0; i--) candidates.push(parts.slice(i).join("."))
+	return candidates
 }
 
 /**
@@ -93,13 +108,8 @@ export function deleteRawCookie(name: string): void {
  * for bare IPs, neither of which can carry a `Domain=` attribute.
  */
 function probeCookieDomain(): string {
-	if (typeof document === "undefined" || typeof location === "undefined") return ""
-	const hostname = location.hostname
-	if (!hostname || /^[\d.]+$/.test(hostname) || hostname.includes(":")) return ""
-	const parts = hostname.split(".")
-	if (parts.length < 2) return ""
-	for (let i = parts.length - 2; i >= 0; i--) {
-		const candidate = parts.slice(i).join(".")
+	if (typeof document === "undefined") return ""
+	for (const candidate of candidateDomains()) {
 		const probe = "__maple_probe"
 		if (setRawCookie(probe, "1", candidate, 60) && readRawCookie(probe) === "1") {
 			setRawCookie(probe, "", candidate, 0)

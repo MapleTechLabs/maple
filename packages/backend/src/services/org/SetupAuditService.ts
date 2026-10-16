@@ -27,11 +27,12 @@ import {
 	runSetupAudit,
 } from "@maple/domain/setup-audit"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, Effect, Layer } from "effect"
+import { Clock, Context, Effect, Layer, Option } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 /** Telemetry lookback for the warehouse-backed checks — matches the recommendations reconcile. */
@@ -51,10 +52,13 @@ export interface SetupAuditServiceApi {
 	readonly run: (tenant: TenantContext) => Effect.Effect<SetupAuditReport, SetupAuditUnavailableError>
 }
 
-const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQueryService> = Effect.gen(
+type SetupAuditServiceRequirements = Database | WarehouseQueryService | IntegrationInventoryService
+
+const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirements> = Effect.gen(
 	function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
+		const inventory = yield* IntegrationInventoryService
 
 		const dbExecute = makeDbExecute(
 			database,
@@ -220,6 +224,13 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			)
 
 			const clickhouseRow = rows.clickhouse[0]
+			// Optional: an unreadable inventory drops the inventory-backed checks to a pass, not the audit.
+			const integrationInventory = yield* inventory.list(orgId).pipe(
+				Effect.tapError((error) =>
+					Effect.logWarning("Setup audit could not read integrations", error.message),
+				),
+				Effect.option,
+			)
 
 			const config: ConfigAuditInputs = {
 				firstDataReceivedAt: rows.onboarding[0]?.firstDataReceivedAt ?? null,
@@ -302,6 +313,9 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 					lastScrapeError: target.lastScrapeError,
 				})),
 				openRecommendationCount: rows.openRecommendations[0]?.count ?? 0,
+				...(Option.isSome(integrationInventory)
+					? { integrationInventory: integrationInventory.value }
+					: undefined),
 			}
 
 			return config
@@ -514,5 +528,7 @@ export class SetupAuditService extends Context.Service<SetupAuditService, SetupA
 	"@maple/api/services/SetupAuditService",
 	{ make },
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, IntegrationInventoryService.layer)),
+	)
 }

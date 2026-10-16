@@ -62,3 +62,12 @@ export function boundsKey(bounds: TimeBounds): string {
 export function shouldRetryLocalQuery(failureCount: number, error: unknown): boolean {
 	return failureCount < 2 && error instanceof LocalQueryUnreachable
 }
+
+/**
+ * A failed query with nothing to show. A failed refresh keeps its previous
+ * rows on screen; the stale-data notice says they are old.
+ */
+export const failedWithoutData = <Q extends { readonly isError: boolean; readonly data: unknown }>(
+	query: Q,
+): query is Q & { readonly isError: true; readonly data: undefined } =>
+	query.isError && query.data === undefined
