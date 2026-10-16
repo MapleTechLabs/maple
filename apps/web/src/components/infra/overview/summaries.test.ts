@@ -256,6 +256,27 @@ describe("summarizeGcp", () => {
 		])
 	})
 
+	it("caps its findings like every source, an unread service before an elevated workload", () => {
+		const [cloudRun, cloudSql] = fleet(80, 0.72)
+		const summary = summarizeGcp([cloudRun!, cloudSql!, ...gcpFleet([unread("pubsub")])])
+		expect(summary?.findings.map((finding) => finding.key)).toEqual([
+			"gcp:cloudRun:api/acme-prod/europe-west1",
+			"gcp:pubsub:unread",
+			"gcp:cloudSql:acme-prod:main/acme-prod/europe-west1",
+		])
+		const many = gcpFleet([
+			{
+				service: "cloudRun",
+				failed: false,
+				points: ["a", "b", "c", "d"].flatMap((name) => [
+					point([name, "acme-prod", "europe-west1"], "gcp.cloud_run.requests", "2xx", 900),
+					point([name, "acme-prod", "europe-west1"], "gcp.cloud_run.requests", "5xx", 100),
+				]),
+			},
+		])
+		expect(summarizeGcp([...many, ...gcpFleet([unread("pubsub")])])?.findings).toHaveLength(3)
+	})
+
 	it("has no summary when no service could be read", () => {
 		expect(summarizeGcp(gcpFleet([unread("cloudSql"), unread("pubsub")]))).toBeNull()
 	})
