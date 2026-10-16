@@ -464,15 +464,19 @@ PRs 3, 4 and 5 are independent of each other once PR 1 lands.
   row only adds `history_json` (jsonb `number[]`, not `int2[]`).
   - A state row without a history is replayed from its counters inside `planAlertLifecycle`. A
     property test proves the result matches the old consecutive-count machine.
-- **Legacy columns stay authoritative for pre-tier rows only.** `thresholds_json` is nullable and
-  backfilled. A null value reads as one tier from `severity`/`threshold`/`destination_ids_json`, and
-  writes keep those columns in step.
+- **Legacy columns stay authoritative for pre-tier rows only.** `thresholds_json` is nullable and not
+  backfilled: a null reads as one tier from `severity`/`threshold`/`destination_ids_json`, so an old
+  worker editing a rule mid-deploy cannot leave a stale tier list behind. Writes keep those columns in
+  step, and the drop migration backfills first.
   - `destination_ids_json` holds every tier's destinations, so the "destination in use" check is
     unchanged.
 - **`peak_severity` is not backfilled.** `alert_incidents` is synced with full-row WAL, so rewriting
   history is churn. Null reads as the current severity.
 - **v2 PATCH carries tiers forward.** Single-threshold fields edit a one-tier rule's tier in place,
   keeping its recovery value. On a two-tier rule they are rejected with a 400, never silently collapsed.
+- **Notification routing.** Trigger and escalation reach every tier at or below the new severity.
+  De-escalation and resolve also reach every tier up to the incident's peak; reminders only reach the
+  current tier's.
 - **Preview spans start at the first breach** inside the last M checks, not `(N-1)` windows before the
   tripping one. The two only differ when a skipped window sits inside the run.
 - **Template variables** (`severity.previous`, `threshold.warning`, ...) are not added yet; they land

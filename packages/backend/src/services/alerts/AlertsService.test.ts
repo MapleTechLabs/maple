@@ -1343,6 +1343,100 @@ describe("AlertsService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
 		})
 
+		const recordingFetch = (requests: Array<string>) =>
+			(async (input: RequestInfo | URL, init?: RequestInit) => {
+				requests.push(`${new Headers(init?.headers).get("x-maple-event-type")} ${String(input)}`)
+				return new Response("ok", { status: 200 })
+			}) as typeof fetch
+
+		it.effect("reminds only the current tier after a de-escalation", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+			const tick = (alerts: AlertsServiceApi, minutes = 1) =>
+				Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(minutes))
+					yield* alerts.runSchedulerTick()
+				})
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_remind")
+				yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_remind"))
+
+				yield* alerts.runSchedulerTick()
+				yield* tick(alerts)
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.severity, "critical")
+
+				state.tracesAggregateRows = errorRateRows(10)
+				yield* tick(alerts)
+				yield* tick(alerts)
+				const deescalated = (yield* alerts.listIncidents(orgId)).incidents[0]
+				assert.strictEqual(deescalated?.severity, "warning")
+				assert.strictEqual(deescalated?.peakSeverity, "critical")
+				// The pager that heard the critical hears it calm down.
+				assert.sameMembers(requests.slice(2), [
+					"renotify https://example.com/warn",
+					"renotify https://example.com/page",
+				])
+
+				yield* tick(alerts, 31)
+				assert.deepStrictEqual(requests.slice(4), ["renotify https://example.com/warn"])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("resolves a warning incident ended by a rule edit without paging", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_edit")
+				const userId = asUserId("user_tiers_edit")
+				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
+
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(requests, ["trigger https://example.com/warn"])
+
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						enabled: false,
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: rule.thresholds,
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+				assert.deepStrictEqual(requests.slice(1), ["resolve https://example.com/warn"])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
 		it.effect("rejects a critical threshold that is not worse than the warning one", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {

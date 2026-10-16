@@ -4,9 +4,9 @@ import {
 	classifyTier,
 	countersFromHistory,
 	encodeTick,
+	maxSeverity,
 	resolveActiveSeverity,
 	seedHistory,
-	SEVERITY_RANK,
 	type AlertThresholdTier,
 	type AlertTierLevel,
 	type TieredHysteresisPolicy,
@@ -400,11 +400,7 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 		const counters = input.state ?? { consecutiveBreaches: 0, consecutiveHealthy: 0, history: [] }
 		const seedSeverity =
 			current ??
-			policy.severities.reduce<AlertSeverity>(
-				(highest, severity) =>
-					SEVERITY_RANK[severity] > SEVERITY_RANK[highest] ? severity : highest,
-				"warning",
-			)
+			policy.severities.reduce<AlertSeverity>((highest, s) => maxSeverity(highest, s) ?? s, "warning")
 		const previous: AlertLifecycleState = {
 			consecutiveBreaches: counters.consecutiveBreaches,
 			consecutiveHealthy: counters.consecutiveHealthy,
@@ -453,8 +449,8 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 
 		// A severity change is news: escalation pages like a trigger, de-escalation
 		// reads as a reminder at the lower severity. Both restart the reminder clock.
-		if (current !== null && SEVERITY_RANK[next] !== SEVERITY_RANK[current]) {
-			const escalated = SEVERITY_RANK[next] > SEVERITY_RANK[current]
+		if (current !== null && next !== current) {
+			const escalated = maxSeverity(next, current) === next
 			return {
 				state,
 				transition: escalated ? "escalated" : "deescalated",

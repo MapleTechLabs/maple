@@ -560,7 +560,9 @@ const V2AlertRulePreviewFiringSpan = Schema.Struct({
 	group_key: Schema.String,
 	start: Timestamp,
 	end: Timestamp,
-	severity: AlertSeverity.annotate({ description: "The highest severity the incident reached." }),
+	severity: AlertSeverity.annotate({
+		description: "The incident's severity during this span. A span splits at each severity change.",
+	}),
 }).annotate({
 	identifier: "AlertRulePreviewFiringSpan",
 	title: "Alert rule preview firing span",

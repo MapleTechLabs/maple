@@ -113,7 +113,7 @@ import { simulateFiringSpans } from "./alert-firing-spans"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator } from "./alert-formatting"
-import { coreTiers, ruleAtSeverity } from "./alert-thresholds"
+import { ruleAtSeverity } from "./alert-thresholds"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -220,6 +220,17 @@ const afterHold = (
 	incident.holdReason === null
 		? null
 		: { reason: decodeAlertIncidentHoldReasonSync(incident.holdReason), heldForMs }
+
+/** The rule as an incident's resolve sees it: its current tier, reaching every destination up to its peak. */
+const ruleForResolve = (
+	rule: NormalizedRule,
+	incident: Pick<AlertIncidentRow, "severity" | "peakSeverity">,
+) =>
+	ruleAtSeverity(
+		rule,
+		decodeAlertSeveritySync(incident.severity),
+		incident.peakSeverity == null ? null : decodeAlertSeveritySync(incident.peakSeverity),
+	)
 
 const describeHold = (reason: Exclude<LivenessReason, "ok" | "no_baseline">): string => {
 	switch (reason) {
@@ -817,7 +828,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						comparator: rule.comparator,
 						threshold: rule.threshold,
 						thresholdUpper: rule.thresholdUpper,
-						tiers: coreTiers(rule.thresholds),
+						tiers: rule.thresholds,
 						minimumSampleCount: rule.minimumSampleCount,
 						noDataBehavior: rule.compiledPlan.noDataBehavior,
 					},
@@ -2438,8 +2449,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 					}
 
-					const openSeverity =
-						openIncident == null ? null : decodeAlertSeveritySync(openIncident.severity)
 					const lifecycleInput: AlertLifecycleInput = {
 						policy: {
 							consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
@@ -2458,10 +2467,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										history: state.historyJson,
 									},
 						openIncident:
-							openIncident == null || openSeverity == null
+							openIncident == null
 								? null
 								: {
-										severity: openSeverity,
+										severity: decodeAlertSeveritySync(openIncident.severity),
 										firstTriggeredAtMs: openIncident.firstTriggeredAt,
 										lastNotifiedAtMs: openIncident.lastNotifiedAt,
 										lastDeliveredEventType:
@@ -2688,7 +2697,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								? decodeAlertSeveritySync(openIncident.severity)
 								: decodeAlertSeveritySync(openIncident.peakSeverity),
 						)
-						const tierRule = ruleAtSeverity(normalized, severity, peakSeverity)
+						// A severity change reaches everyone notified so far; a reminder only the current tier.
+						const tierRule = ruleAtSeverity(
+							normalized,
+							severity,
+							severityChanged ? peakSeverity : null,
+						)
 						const refreshedIncident = {
 							...openIncident,
 							severity,
@@ -2817,16 +2831,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								}),
 							)
 						} else if (lifecycle.eventType === "resolve") {
-							const openSeverityForResolve = decodeAlertSeveritySync(openIncident.severity)
 							yield* queueIncidentNotifications(
 								row.orgId,
-								ruleAtSeverity(
-									normalized,
-									openSeverityForResolve,
-									openIncident.peakSeverity == null
-										? null
-										: decodeAlertSeveritySync(openIncident.peakSeverity),
-								),
+								ruleForResolve(normalized, openIncident),
 								resolvedIncident,
 								resolveEvaluation,
 								lifecycle.eventType,
@@ -3092,7 +3099,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const heldForMs = incident.heldSince === null ? 0 : timestamp - incident.heldSince
 						yield* queueIncidentNotifications(
 							orgId,
-							normalized,
+							ruleForResolve(normalized, incident),
 							{
 								...incident,
 								status: "resolved",
@@ -3254,7 +3261,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							} else {
 								yield* queueIncidentNotifications(
 									orgId,
-									normalized,
+									ruleForResolve(normalized, incident),
 									{
 										...incident,
 										status: "resolved",

@@ -732,7 +732,7 @@ export class AlertRulePreviewFiringSpan extends Schema.Class<AlertRulePreviewFir
 	groupKey: Schema.String,
 	start: IsoDateTimeString,
 	end: IsoDateTimeString,
-	/** The highest severity the incident reached during the span. */
+	/** The incident's severity during the span; a span splits at each severity change. */
 	severity: AlertSeverity,
 }) {}
 

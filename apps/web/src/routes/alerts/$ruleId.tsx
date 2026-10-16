@@ -1072,7 +1072,8 @@ function RuleDetailContent() {
 																				)
 																			}
 																		>
-																			<ChatBubbleSparkleIcon />
+																			<ChatBubbleSparkleIcon
+																			/>
 																			Open investigation
 																		</DropdownMenuItem>
 																		<DropdownMenuItem

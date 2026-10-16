@@ -78,10 +78,8 @@ export const AlertRules = PG.table("alert_rules", {
 		threshold: PG.float8,
 		thresholdUpper: PG.column(PG.nullable(PG.float8), { name: "threshold_upper" }),
 		/**
-		 * `AlertThresholds`: the rule's severity tiers. Null on rows written before
-		 * tiers, which read as one tier from severity / threshold / destinations.
-		 * Writes keep those legacy columns in step (the lowest tier, every tier's
-		 * destinations) until they are dropped.
+		 * `AlertThresholds`. Null on pre-tier rows, which read as one tier from the
+		 * legacy columns; writes keep those columns in step until they are dropped.
 		 */
 		thresholdsJson: PG.column(PG.nullable(PG.jsonb()), { name: "thresholds_json" }),
 		windowMinutes: PG.column(PG.int4, { name: "window_minutes" }),

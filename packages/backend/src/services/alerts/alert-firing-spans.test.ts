@@ -104,4 +104,39 @@ describe("simulateFiringSpans", () => {
 		)
 		expect(spans).toEqual([])
 	})
+
+	it("splits a span where the incident changes severity", () => {
+		const tiered: AlertReplayPolicy = {
+			...thresholds(2, 2),
+			thresholds: [{ severity: "warning" }, { severity: "critical" }],
+		}
+		// 0 = clear, w = warning only, c = warning and critical.
+		const ticks = ["w", "w", "c", "c", "w", "w", "0", "0"] as const
+		const spans = spansOf(
+			ticks.map((tick, i) => ({
+				bucketMs: i * MINUTE,
+				evaluation: {
+					status: tick === "0" ? "healthy" : "breached",
+					value: 1,
+					sampleCount: 1,
+					threshold: 1,
+					thresholdUpper: null,
+					comparator: "gte",
+					reason: "test",
+					derivedFromNoData: false,
+					levels: [
+						{ severity: "warning", status: tick === "0" ? "clear" : "breach" },
+						{ severity: "critical", status: tick === "c" ? "breach" : "clear" },
+					],
+				},
+			})),
+			tiered,
+			MINUTE,
+		)
+		expect(spans).toEqual([
+			{ startMs: 0, endMs: 3 * MINUTE, severity: "warning" },
+			{ startMs: 3 * MINUTE, endMs: 5 * MINUTE, severity: "critical" },
+			{ startMs: 5 * MINUTE, endMs: 8 * MINUTE, severity: "warning" },
+		])
+	})
 })

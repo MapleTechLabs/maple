@@ -1,11 +1,6 @@
+import { compareAlertThreshold, maxSeverity, tierFor } from "@maple/alerting-core"
 import {
-	compareAlertThreshold,
-	maxSeverity,
-	SEVERITY_RANK,
-	tierFor,
-	type AlertThresholdTier,
-} from "@maple/alerting-core"
-import {
+	ALERT_SEVERITY_RANK,
 	isRangeComparator,
 	MAX_ALERT_BREACH_WINDOW,
 	sortAlertThresholds,
@@ -17,14 +12,6 @@ import {
 } from "@maple/domain/http"
 import { Array as Arr } from "effect"
 
-export const coreTiers = (thresholds: AlertThresholds): Arr.NonEmptyReadonlyArray<AlertThresholdTier> =>
-	Arr.map(thresholds, ({ severity, value, upper, recoveryValue }) => ({
-		severity,
-		value,
-		upper,
-		recoveryValue,
-	}))
-
 /** Destinations an incident at `severity` notifies: its tier and every tier under it. */
 export const destinationsUpTo = (
 	thresholds: ReadonlyArray<AlertThreshold>,
@@ -32,7 +19,7 @@ export const destinationsUpTo = (
 ): ReadonlyArray<AlertDestinationId> =>
 	Arr.dedupe(
 		thresholds
-			.filter((tier) => SEVERITY_RANK[tier.severity] <= SEVERITY_RANK[severity])
+			.filter((tier) => ALERT_SEVERITY_RANK[tier.severity] <= ALERT_SEVERITY_RANK[severity])
 			.flatMap((tier) => tier.destinationIds),
 	)
 
@@ -55,7 +42,7 @@ export const ruleAtSeverity = <R extends TieredRuleFields>(
 	severity: AlertSeverity,
 	reachedSeverity: AlertSeverity | null = null,
 ): R => {
-	const tier = tierFor(coreTiers(rule.thresholds), severity)
+	const tier = tierFor(rule.thresholds, severity)
 	return {
 		...rule,
 		severity,

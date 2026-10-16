@@ -1,7 +1,6 @@
 import { Effect } from "effect"
 
 import {
-	maxSeverity,
 	planAlertLifecycle,
 	type AlertEvaluation,
 	type AlertLifecycleIncident,
@@ -28,7 +27,7 @@ export interface SimulatedEvaluation {
 	readonly provisional?: boolean
 }
 
-/** A stretch of wall time the rule would have held an incident open, at its peak severity. */
+/** A stretch of wall time the rule would have held an incident open at one severity. */
 export interface SimulatedFiringSpan {
 	readonly startMs: number
 	readonly endMs: number
@@ -38,7 +37,7 @@ export interface SimulatedFiringSpan {
 interface ReplayState {
 	readonly state: AlertLifecycleInput["state"]
 	readonly incident: AlertLifecycleIncident | null
-	readonly open: { readonly startMs: number; readonly peak: AlertSeverity } | null
+	readonly open: { readonly startMs: number; readonly severity: AlertSeverity } | null
 	/** Buckets of the recent non-skipped ticks that breached, to date a span's first breach. */
 	readonly recentBreaches: ReadonlyArray<number | null>
 	readonly lastCompleteBucketMs: number | null
@@ -56,8 +55,8 @@ interface ReplayState {
  * resolve.
  *
  * A span opens at the run's first breached window inside the last M checks,
- * not the window that tripped the count. A run still open at the end of the
- * series closes at the last complete window's boundary.
+ * not the window that tripped the count, and splits at each severity change.
+ * A run still open at the end of the series closes at the last complete window's boundary.
  */
 export const simulateFiringSpans = (
 	evaluations: ReadonlyArray<SimulatedEvaluation>,
@@ -120,7 +119,7 @@ export const simulateFiringSpans = (
 						}
 						if (plan.transition === "opened" && plan.severity !== null) {
 							const firstBreach = recentBreaches.find((ms) => ms !== null) ?? bucketMs
-							return { ...base, open: { startMs: firstBreach, peak: plan.severity } }
+							return { ...base, open: { startMs: firstBreach, severity: plan.severity } }
 						}
 						if (plan.transition === "resolved" && acc.open !== null) {
 							return {
@@ -131,18 +130,27 @@ export const simulateFiringSpans = (
 									{
 										startMs: acc.open.startMs,
 										endMs: bucketMs + windowMs,
-										severity: acc.open.peak,
+										severity: acc.open.severity,
 									},
 								],
 							}
 						}
-						if (acc.open !== null && plan.severity !== null) {
+						if (
+							acc.open !== null &&
+							plan.severity !== null &&
+							plan.severity !== acc.open.severity
+						) {
 							return {
 								...base,
-								open: {
-									...acc.open,
-									peak: maxSeverity(acc.open.peak, plan.severity) ?? plan.severity,
-								},
+								open: { startMs: bucketMs, severity: plan.severity },
+								spans: [
+									...acc.spans,
+									{
+										startMs: acc.open.startMs,
+										endMs: bucketMs,
+										severity: acc.open.severity,
+									},
+								],
 							}
 						}
 						return base
@@ -156,7 +164,7 @@ export const simulateFiringSpans = (
 					{
 						startMs: final.open.startMs,
 						endMs: final.lastCompleteBucketMs + windowMs,
-						severity: final.open.peak,
+						severity: final.open.severity,
 					},
 				]
 			: final.spans

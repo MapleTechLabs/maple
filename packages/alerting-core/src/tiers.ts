@@ -37,8 +37,6 @@ export interface TieredHysteresisPolicy {
 	readonly healthyToResolve: number
 }
 
-export const SEVERITY_RANK = ALERT_SEVERITY_RANK
-
 export const compareAlertThreshold = (
 	value: number,
 	comparator: AlertComparator,
@@ -86,7 +84,7 @@ export const encodeTick = (levels: ReadonlyArray<AlertTierLevel>): number =>
 export const tierStatusAt = (code: number, severity: AlertSeverity): AlertTierStatus =>
 	CODE_STATUS[(code >> shiftOf(severity)) & 0b11] ?? "clear"
 
-const shiftOf = (severity: AlertSeverity) => (SEVERITY_RANK[severity] - 1) * 2
+const shiftOf = (severity: AlertSeverity) => (ALERT_SEVERITY_RANK[severity] - 1) * 2
 
 const historyLength = (policy: TieredHysteresisPolicy) =>
 	Math.max(policy.breachWindow, policy.breachesToOpen, policy.healthyToResolve)
@@ -128,12 +126,12 @@ export const resolveActiveSeverity = (
 	const newest = history.at(-1)
 	if (newest === undefined) return current
 	const recent = history.slice(-policy.breachWindow)
-	const currentRank = current === null ? 0 : SEVERITY_RANK[current]
-	const ordered = [...severities].sort((a, b) => SEVERITY_RANK[b] - SEVERITY_RANK[a])
+	const currentRank = current === null ? 0 : ALERT_SEVERITY_RANK[current]
+	const ordered = [...severities].sort((a, b) => ALERT_SEVERITY_RANK[b] - ALERT_SEVERITY_RANK[a])
 	for (const severity of ordered) {
 		const breaches = recent.filter((code) => tierStatusAt(code, severity) === "breach").length
 		if (tierStatusAt(newest, severity) === "breach" && breaches >= policy.breachesToOpen) return severity
-		if (currentRank >= SEVERITY_RANK[severity]) {
+		if (currentRank >= ALERT_SEVERITY_RANK[severity]) {
 			const cleared = trailingRun(history, (code) => tierStatusAt(code, severity) === "clear")
 			if (cleared < policy.healthyToResolve) return severity
 		}
@@ -181,7 +179,7 @@ export const tierFor = (
 	tiers.find((tier) => tier.severity === severity) ?? Arr.headNonEmpty(Arr.sort(tiers, alertSeverityOrder))
 
 export const maxSeverity = (a: AlertSeverity | null, b: AlertSeverity | null): AlertSeverity | null =>
-	a === null ? b : b === null ? a : SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b
+	a === null ? b : b === null ? a : ALERT_SEVERITY_RANK[a] >= ALERT_SEVERITY_RANK[b] ? a : b
 
 /** The highest tier a tick breached, for the audit trail; null when none did. */
 export const highestBreachedLevel = (levels: ReadonlyArray<AlertTierLevel>): AlertSeverity | null =>
