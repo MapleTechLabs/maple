@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import {
 	type CreateCustomIngestKeyRequest,
+	CUSTOM_INGEST_KEY_LIMITS,
 	CustomIngestKey,
 	CustomIngestKeyId,
 	type CustomIngestKeyStatus,
@@ -25,9 +26,11 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 
 const CUSTOM_INGEST_KEY_PREFIX = "maple_ik_"
-const MAX_KEYS_PER_ORG = 50
-const MAX_RESOURCE_ATTRIBUTES = 20
-const MAX_RATE_LIMIT_RPS = 100_000
+const {
+	maxKeysPerOrg: MAX_KEYS_PER_ORG,
+	maxResourceAttributes: MAX_RESOURCE_ATTRIBUTES,
+	maxRateLimitRps: MAX_RATE_LIMIT_RPS,
+} = CUSTOM_INGEST_KEY_LIMITS
 const MAX_NAME_LENGTH = 100
 const MAX_DESCRIPTION_LENGTH = 500
 const MAX_ATTRIBUTE_KEY_LENGTH = 255
@@ -55,25 +58,27 @@ const statusOf = (row: OrgIngestCustomKeyRow, now: number): CustomIngestKeyStatu
 
 const isoOrNull = (epochMs: number | null) => (epochMs === null ? null : toIso(epochMs))
 
-const rowToKey = (row: OrgIngestCustomKeyRow, now: number): CustomIngestKey =>
-	new CustomIngestKey({
+const rowToKey = (row: OrgIngestCustomKeyRow, now: number): CustomIngestKey => {
+	const status = statusOf(row, now)
+	return new CustomIngestKey({
 		id: row.id,
 		name: row.name,
 		description: row.description,
 		keyPrefix: row.keyPrefix,
-		status: statusOf(row, now),
+		status,
 		allowedSignals: row.allowedSignals,
 		rateLimitRps: row.rateLimitRps,
 		resourceAttributes: row.resourceAttributes,
 		expiresAt: isoOrNull(row.expiresAt),
 		// A pause that already ended reads as not paused.
-		pausedAt: statusOf(row, now) === "paused" ? isoOrNull(row.pausedAt) : null,
-		pausedUntil: statusOf(row, now) === "paused" ? isoOrNull(row.pausedUntil) : null,
+		pausedAt: status === "paused" ? isoOrNull(row.pausedAt) : null,
+		pausedUntil: status === "paused" ? isoOrNull(row.pausedUntil) : null,
 		lastUsedAt: isoOrNull(row.lastUsedAt),
 		rolledAt: toIso(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
 	})
+}
 
 const normalizeName = Effect.fnUntraced(function* (name: string) {
 	const trimmed = name.trim()

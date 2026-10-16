@@ -2928,8 +2928,9 @@ async fn grpc_admission(
     let response = async move {
         let admitted = admit_grpc_export(&state, request.headers(), signal).await;
         match admitted {
-            Ok(resolved) => {
+            Ok((resolved, admission)) => {
                 request.extensions_mut().insert(resolved);
+                request.extensions_mut().insert(admission);
                 next.run(request).await
             }
             Err(status) => status.into_http(),
@@ -2945,7 +2946,7 @@ async fn admit_grpc_export(
     state: &AppState,
     headers: &HeaderMap,
     signal: Signal,
-) -> Result<ResolvedIngestKey, tonic::Status> {
+) -> Result<(ResolvedIngestKey, KeyAdmission), tonic::Status> {
     let resolved = resolve_grpc_ingest_key(state, headers).await?;
     record_grpc_identity(&resolved);
     let admission = authorize_custom_key(state, &resolved, &[signal.key_signal()])
@@ -2956,7 +2957,7 @@ async fn admit_grpc_export(
             return Err(tonic::Status::resource_exhausted(error.message));
         }
     }
-    Ok(resolved)
+    Ok((resolved, admission))
 }
 
 /// gRPC code for an `authorize_custom_key` rejection.
@@ -2985,11 +2986,15 @@ fn grpc_export_route(path: &str) -> Option<(&'static str, Signal)> {
 /// The key `grpc_admission` resolved for this request.
 fn grpc_admitted_key<T>(
     request: &mut tonic::Request<T>,
-) -> Result<ResolvedIngestKey, tonic::Status> {
-    request
-        .extensions_mut()
+) -> Result<(ResolvedIngestKey, KeyAdmission), tonic::Status> {
+    let extensions = request.extensions_mut();
+    let resolved = extensions
         .remove::<ResolvedIngestKey>()
-        .ok_or_else(|| tonic::Status::internal("Internal error"))
+        .ok_or_else(|| tonic::Status::internal("Internal error"))?;
+    let admission = extensions
+        .remove::<KeyAdmission>()
+        .unwrap_or(KeyAdmission::Ingest);
+    Ok((resolved, admission))
 }
 
 #[derive(Clone)]
@@ -3020,7 +3025,7 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
         >,
         tonic::Status,
     > {
-        let resolved = grpc_admitted_key(&mut request)?;
+        let (resolved, admission) = grpc_admitted_key(&mut request)?;
         let mut inner = request.into_inner();
         // Sized before enrichment injects resource attributes, so this is the
         // client's own payload size — the same basis as the HTTP path's
@@ -3032,6 +3037,7 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
             Signal::Traces,
             DecodedPayload::Traces(inner),
             &resolved,
+            admission,
             decoded_bytes,
         )
         .await?;
@@ -3054,7 +3060,7 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
         tonic::Response<opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse>,
         tonic::Status,
     > {
-        let resolved = grpc_admitted_key(&mut request)?;
+        let (resolved, admission) = grpc_admitted_key(&mut request)?;
         let mut inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         enrich_logs_request(&mut inner, &resolved);
@@ -3063,6 +3069,7 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
             Signal::Logs,
             DecodedPayload::Logs(inner),
             &resolved,
+            admission,
             decoded_bytes,
         )
         .await?;
@@ -3087,7 +3094,7 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
         >,
         tonic::Status,
     > {
-        let resolved = grpc_admitted_key(&mut request)?;
+        let (resolved, admission) = grpc_admitted_key(&mut request)?;
         let mut inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         enrich_metrics_request(&mut inner, &resolved);
@@ -3096,6 +3103,7 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
             Signal::Metrics,
             DecodedPayload::Metrics(inner),
             &resolved,
+            admission,
             decoded_bytes,
         )
         .await?;
@@ -3114,6 +3122,7 @@ async fn accept_grpc_decoded(
     signal: Signal,
     decoded: DecodedPayload,
     resolved: &ResolvedIngestKey,
+    admission: KeyAdmission,
     decoded_bytes: usize,
 ) -> Result<(), tonic::Status> {
     // The sentinel token is a PUBLIC constant, so anything it carries is
@@ -3126,12 +3135,8 @@ async fn accept_grpc_decoded(
         debug!("Sentinel token; skipping forward");
         return Ok(());
     }
-    // Admission already let it through; a paused key's data is dropped here.
-    if resolved
-        .custom
-        .as_ref()
-        .is_some_and(|custom| custom.is_paused(current_time_millis()))
-    {
+    // A paused key, decided at admission so a pause ending mid-upload cannot bill it.
+    if admission == KeyAdmission::Drop {
         return Ok(());
     }
 
@@ -3153,6 +3158,7 @@ async fn accept_grpc_decoded(
 
     match result {
         Ok(_) => {
+            state.resolver.note_custom_key_use(resolved);
             if resolved.org_id != SENTINEL_ORG_ID {
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(
@@ -3539,7 +3545,6 @@ async fn authorize_custom_key(
             ));
         }
     }
-    state.resolver.record_custom_key_use(&custom.id).await;
     Ok(KeyAdmission::Ingest)
 }
 
@@ -3751,6 +3756,7 @@ async fn handle_replay_meta_inner(
     )
     .await?;
 
+    state.resolver.note_custom_key_use(&resolved_key);
     Ok(count)
 }
 
@@ -3958,6 +3964,7 @@ async fn handle_session_events_inner(
         },
     )
     .await?;
+    state.resolver.note_custom_key_use(&resolved_key);
     Ok(count)
 }
 
@@ -4134,6 +4141,7 @@ async fn handle_product_events_inner(
         },
     )
     .await?;
+    state.resolver.note_custom_key_use(&resolved_key);
     Ok(count)
 }
 
@@ -4450,6 +4458,7 @@ async fn handle_replay_blob_inner(
             warn!(org_id = %org_id, error = %e, "session replay blob enqueue rejected");
             api_error_from_pipeline(&e)
         })?;
+    state.resolver.note_custom_key_use(&resolved_key);
     Ok(())
 }
 
@@ -4529,8 +4538,8 @@ async fn handle_signal(
             metrics::request_completed(signal.path(), "ok", "none", duration.as_secs_f64());
             // Usage and billing are emitted together, from one value, behind one
             // guard — they must never drift. `signal.path()` is both the Autumn
-            // feature id and the metric's `signal` dimension.
-            if org_id != SENTINEL_ORG_ID {
+            // feature id and the metric's `signal` dimension. A paused key reports 0 bytes.
+            if org_id != SENTINEL_ORG_ID && decoded_bytes > 0 {
                 let feature_id = signal.path();
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(&org_id, feature_id, decoded_bytes as u64, item_count as u64);
@@ -4862,6 +4871,7 @@ async fn handle_signal_inner(
     .await;
 
     let response = response_result.map_err(|error| (error, "forward"))?;
+    state.resolver.note_custom_key_use(&resolved_key);
 
     Ok((
         response,
@@ -6339,19 +6349,29 @@ impl OrgRoutingResolver {
 }
 
 impl IngestKeyResolver {
-    /// Writes `last_used_at` at most once per `CUSTOM_KEY_USE_WRITE_INTERVAL` per key.
-    async fn record_custom_key_use(&self, key_id: &str) {
-        let throttle = self.recent_key_uses.entry(key_id.to_owned()).or_insert(());
-        if !throttle.await.is_fresh() {
+    /// Stamps `last_used_at` for a custom key whose data was accepted, at most once per
+    /// `CUSTOM_KEY_USE_WRITE_INTERVAL` per key and off the request path.
+    fn note_custom_key_use(&self, resolved: &ResolvedIngestKey) {
+        let Some(custom) = &resolved.custom else {
             return;
-        }
-        if let Err(error) = self
-            .store
-            .record_custom_key_used(key_id, current_time_millis())
-            .await
-        {
-            debug!(key_id, error, "Failed to record custom ingest key use");
-        }
+        };
+        let store = Arc::clone(&self.store);
+        let recent = self.recent_key_uses.clone();
+        let key_id = custom.id.clone();
+        tokio::spawn(
+            async move {
+                if !recent.entry(key_id.clone()).or_insert(()).await.is_fresh() {
+                    return;
+                }
+                if let Err(error) = store
+                    .record_custom_key_used(&key_id, current_time_millis())
+                    .await
+                {
+                    debug!(key_id, error, "Failed to record custom ingest key use");
+                }
+            }
+            .in_current_span(),
+        );
     }
 
     #[hotpath::measure]
@@ -10925,6 +10945,7 @@ mod tests {
             Signal::Logs,
             DecodedPayload::Logs(payload),
             &sentinel,
+            KeyAdmission::Ingest,
             decoded_bytes,
         )
         .await
@@ -10952,6 +10973,7 @@ mod tests {
             Signal::Logs,
             DecodedPayload::Logs(real),
             &resolved,
+            KeyAdmission::Ingest,
             real_bytes,
         )
         .await
@@ -12079,36 +12101,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_admitted_custom_key_records_its_use_once_per_interval() {
-        let queue_dir = unique_main_test_dir("custom-key-use");
+    async fn accepted_custom_key_data_records_its_use_once_per_interval() {
         let store = Arc::new(FakeKeyStore::default());
         let raw_key = "maple_ik_records_use_000000000000000000000";
         store.insert_custom(
             raw_key,
             custom_key_row("org_custom", custom_key_config(None, None, "[]")),
         );
-        let state = test_app_state(
-            Arc::clone(&store),
-            queue_dir.clone(),
-            "http://127.0.0.1:1".to_owned(),
-            Duration::from_secs(30),
-        )
-        .await;
+        let resolver = make_resolver(Arc::clone(&store));
+        let resolved = resolver
+            .resolve_ingest_key(raw_key)
+            .await
+            .expect("resolution should not fail")
+            .expect("the key resolves");
 
         for _ in 0..3 {
-            assert!(
-                resolve_replay_key(&state, &bearer_headers(raw_key), &[KeySignal::Events])
-                    .await
-                    .expect("an active key is admitted")
-                    .is_some()
-            );
+            resolver.note_custom_key_use(&resolved);
         }
+        // The writes run on spawned tasks; give them a moment to land.
+        for _ in 0..50 {
+            if !store.custom_key_uses.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
         assert_eq!(
             *store.custom_key_uses.lock().unwrap(),
             vec![CUSTOM_KEY_UUID.to_owned()]
         );
-
-        drop(std::fs::remove_dir_all(&queue_dir));
     }
 
     #[tokio::test]

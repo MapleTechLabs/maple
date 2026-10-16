@@ -46,6 +46,13 @@ export class IngestKeyEncryptionError extends HttpTaggedError<IngestKeyEncryptio
 	},
 ) {}
 
+/** Shared by the API's validation and the settings form. */
+export const CUSTOM_INGEST_KEY_LIMITS = {
+	maxKeysPerOrg: 50,
+	maxResourceAttributes: 20,
+	maxRateLimitRps: 100_000,
+} as const
+
 /** `paused` keys are accepted but their data is dropped; `expired` keys are rejected. */
 export const CustomIngestKeyStatus = Schema.Literals(["active", "paused", "expired"])
 export type CustomIngestKeyStatus = Schema.Schema.Type<typeof CustomIngestKeyStatus>
