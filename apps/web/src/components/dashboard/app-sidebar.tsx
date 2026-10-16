@@ -12,7 +12,6 @@ import {
 	KeyboardIcon,
 	LogoutIcon,
 	MagnifierIcon,
-	PixelSparkleIcon,
 	UserIcon,
 } from "@/components/icons"
 import {
@@ -397,8 +396,7 @@ function NavRow({
 			{item.badge ? (
 				<SidebarMenuBadge>
 					<Badge className="gap-0.5 bg-primary font-semibold text-primary-foreground" variant="tag">
-						<PixelSparkleIcon className="size-2.5" />
-						{item.badge}
+						<span className="badge-shiny">{item.badge}</span>
 					</Badge>
 				</SidebarMenuBadge>
 			) : null}
