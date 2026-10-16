@@ -16,6 +16,7 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
+import { OrgCustomIngestKeysService } from "@maple/backend/services/org/OrgCustomIngestKeysService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
@@ -346,6 +347,14 @@ export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 		rerollPublic: die,
 		rerollPrivate: die,
 		resolveIngestKey: die,
+	}),
+	Layer.succeed(OrgCustomIngestKeysService, {
+		list: die,
+		get: die,
+		create: die,
+		update: die,
+		roll: die,
+		delete: die,
 	}),
 	Layer.succeed(RecommendationIssueService, {
 		listReconciled: die,

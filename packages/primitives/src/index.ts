@@ -229,6 +229,33 @@ export const IngestMappingOperation = Schema.Literals(["move", "copy"]).annotate
 })
 export type IngestMappingOperation = Schema.Schema.Type<typeof IngestMappingOperation>
 
+export const CustomIngestKeyId = MapleUuidId("@maple/CustomIngestKeyId", "Custom Ingest Key ID")
+export type CustomIngestKeyId = Schema.Schema.Type<typeof CustomIngestKeyId>
+
+/** Signal families a custom ingest key can be limited to; `sessions` covers replays and session events. */
+export const IngestKeySignal = Schema.Literals(["traces", "logs", "metrics", "sessions", "events"]).annotate({
+	identifier: "@maple/IngestKeySignal",
+	title: "Ingest Key Signal",
+})
+export type IngestKeySignal = Schema.Schema.Type<typeof IngestKeySignal>
+
+/** `set` always overwrites the resource attribute; `default` only fills it when the sender left it out. */
+export const IngestKeyAttributeMode = Schema.Literals(["set", "default"]).annotate({
+	identifier: "@maple/IngestKeyAttributeMode",
+	title: "Ingest Key Attribute Mode",
+})
+export type IngestKeyAttributeMode = Schema.Schema.Type<typeof IngestKeyAttributeMode>
+
+export const IngestKeyResourceAttribute = Schema.Struct({
+	key: Schema.String,
+	value: Schema.String,
+	mode: IngestKeyAttributeMode,
+}).annotate({
+	identifier: "@maple/IngestKeyResourceAttribute",
+	title: "Ingest Key Resource Attribute",
+})
+export type IngestKeyResourceAttribute = Schema.Schema.Type<typeof IngestKeyResourceAttribute>
+
 export const RecommendationIssueId = MapleUuidId("@maple/RecommendationIssueId", "Recommendation Issue ID")
 export type RecommendationIssueId = Schema.Schema.Type<typeof RecommendationIssueId>
 

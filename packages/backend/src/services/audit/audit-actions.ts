@@ -63,6 +63,11 @@ export const AuditResources = {
 	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
 	/** Verbs mirror the issue event types — `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
+	/** Named ingest keys beside the default pair; the secret is never in `changes`. */
+	custom_ingest_key: {
+		prefix: PublicIdPrefixes.ingestKey,
+		verbs: ["created", "updated", "rolled", "deleted"],
+	},
 	/** Org-singleton public/private pair; which one rolled is in `metadata`. */
 	ingest_key: { verbs: ["rolled"] },
 	/**

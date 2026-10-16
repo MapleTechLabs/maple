@@ -1,5 +1,10 @@
 import { Schema } from "effect"
-import { IsoDateTimeString } from "../primitives"
+import {
+	CustomIngestKeyId,
+	IngestKeyResourceAttribute,
+	IngestKeySignal,
+	IsoDateTimeString,
+} from "../primitives"
 import { HttpTaggedError } from "./error-policy"
 
 export class IngestKeysResponse extends Schema.Class<IngestKeysResponse>("IngestKeysResponse")({
@@ -38,5 +43,86 @@ export class IngestKeyEncryptionError extends HttpTaggedError<IngestKeyEncryptio
 		retry: "never",
 		recovery: "contact_support",
 		exposure: "redacted",
+	},
+) {}
+
+export class CustomIngestKey extends Schema.Class<CustomIngestKey>("CustomIngestKey")({
+	id: CustomIngestKeyId,
+	name: Schema.String,
+	description: Schema.NullOr(Schema.String),
+	keyPrefix: Schema.String,
+	enabled: Schema.Boolean,
+	allowedSignals: Schema.NullOr(Schema.Array(IngestKeySignal)),
+	rateLimitRps: Schema.NullOr(Schema.Int),
+	resourceAttributes: Schema.Array(IngestKeyResourceAttribute),
+	expiresAt: Schema.NullOr(IsoDateTimeString),
+	rolledAt: IsoDateTimeString,
+	createdAt: IsoDateTimeString,
+	updatedAt: IsoDateTimeString,
+}) {}
+
+/** Returned only by create and roll: the one time the raw key is visible. */
+export class CustomIngestKeyWithSecret extends Schema.Class<CustomIngestKeyWithSecret>(
+	"CustomIngestKeyWithSecret",
+)({
+	key: CustomIngestKey,
+	secret: Schema.String,
+}) {}
+
+export class CreateCustomIngestKeyRequest extends Schema.Class<CreateCustomIngestKeyRequest>(
+	"CreateCustomIngestKeyRequest",
+)({
+	name: Schema.String,
+	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	enabled: Schema.optionalKey(Schema.Boolean),
+	allowedSignals: Schema.optionalKey(Schema.NullOr(Schema.Array(IngestKeySignal))),
+	rateLimitRps: Schema.optionalKey(Schema.NullOr(Schema.Int)),
+	resourceAttributes: Schema.optionalKey(Schema.Array(IngestKeyResourceAttribute)),
+	expiresAtMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+}) {}
+
+/** Omitted fields are unchanged; `null` clears a nullable field. */
+export class UpdateCustomIngestKeyRequest extends Schema.Class<UpdateCustomIngestKeyRequest>(
+	"UpdateCustomIngestKeyRequest",
+)({
+	name: Schema.optionalKey(Schema.String),
+	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	enabled: Schema.optionalKey(Schema.Boolean),
+	allowedSignals: Schema.optionalKey(Schema.NullOr(Schema.Array(IngestKeySignal))),
+	rateLimitRps: Schema.optionalKey(Schema.NullOr(Schema.Int)),
+	resourceAttributes: Schema.optionalKey(Schema.Array(IngestKeyResourceAttribute)),
+	expiresAtMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+}) {}
+
+export class CustomIngestKeyNotFoundError extends HttpTaggedError<CustomIngestKeyNotFoundError>()(
+	"@maple/http/errors/CustomIngestKeyNotFoundError",
+	{
+		keyId: CustomIngestKeyId,
+		message: Schema.String,
+	},
+	{
+		status: 404,
+		code: "custom_ingest_key_not_found",
+		title: "Ingest key not found",
+		message: "No such ingest key.",
+		param: "id",
+		retry: "never",
+		recovery: "none",
+		exposure: "redacted",
+	},
+) {}
+
+export class CustomIngestKeyValidationError extends HttpTaggedError<CustomIngestKeyValidationError>()(
+	"@maple/http/errors/CustomIngestKeyValidationError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 400,
+		code: "custom_ingest_key_invalid",
+		title: "Invalid ingest key settings",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
 	},
 ) {}
