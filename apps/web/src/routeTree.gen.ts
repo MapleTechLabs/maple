@@ -61,6 +61,7 @@ import { Route as LabErrorsRouteImport } from './routes/lab/errors'
 import { Route as LabFlowRouteImport } from './routes/lab/flow'
 import { Route as LabGcpRouteImport } from './routes/lab/gcp'
 import { Route as LabGcpConnectRouteImport } from './routes/lab/gcp-connect'
+import { Route as LabGcpConnectionsRouteImport } from './routes/lab/gcp-connections'
 import { Route as LabGcpDashboardRouteImport } from './routes/lab/gcp-dashboard'
 import { Route as LabGcpInfraRouteImport } from './routes/lab/gcp-infra'
 import { Route as LabGcpWorkloadRouteImport } from './routes/lab/gcp-workload'
@@ -386,6 +387,11 @@ const LabGcpRoute = LabGcpRouteImport.update({
 const LabGcpConnectRoute = LabGcpConnectRouteImport.update({
   id: '/gcp-connect',
   path: '/gcp-connect',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabGcpConnectionsRoute = LabGcpConnectionsRouteImport.update({
+  id: '/gcp-connections',
+  path: '/gcp-connections',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabGcpDashboardRoute = LabGcpDashboardRouteImport.update({
@@ -776,6 +782,7 @@ export interface FileRoutesByFullPath {
   '/lab/flow': typeof LabFlowRoute
   '/lab/gcp': typeof LabGcpRoute
   '/lab/gcp-connect': typeof LabGcpConnectRoute
+  '/lab/gcp-connections': typeof LabGcpConnectionsRoute
   '/lab/gcp-dashboard': typeof LabGcpDashboardRoute
   '/lab/gcp-infra': typeof LabGcpInfraRoute
   '/lab/gcp-workload': typeof LabGcpWorkloadRoute
@@ -895,6 +902,7 @@ export interface FileRoutesByTo {
   '/lab/flow': typeof LabFlowRoute
   '/lab/gcp': typeof LabGcpRoute
   '/lab/gcp-connect': typeof LabGcpConnectRoute
+  '/lab/gcp-connections': typeof LabGcpConnectionsRoute
   '/lab/gcp-dashboard': typeof LabGcpDashboardRoute
   '/lab/gcp-infra': typeof LabGcpInfraRoute
   '/lab/gcp-workload': typeof LabGcpWorkloadRoute
@@ -1016,6 +1024,7 @@ export interface FileRoutesById {
   '/lab/flow': typeof LabFlowRoute
   '/lab/gcp': typeof LabGcpRoute
   '/lab/gcp-connect': typeof LabGcpConnectRoute
+  '/lab/gcp-connections': typeof LabGcpConnectionsRoute
   '/lab/gcp-dashboard': typeof LabGcpDashboardRoute
   '/lab/gcp-infra': typeof LabGcpInfraRoute
   '/lab/gcp-workload': typeof LabGcpWorkloadRoute
@@ -1138,6 +1147,7 @@ export interface FileRouteTypes {
     | '/lab/flow'
     | '/lab/gcp'
     | '/lab/gcp-connect'
+    | '/lab/gcp-connections'
     | '/lab/gcp-dashboard'
     | '/lab/gcp-infra'
     | '/lab/gcp-workload'
@@ -1257,6 +1267,7 @@ export interface FileRouteTypes {
     | '/lab/flow'
     | '/lab/gcp'
     | '/lab/gcp-connect'
+    | '/lab/gcp-connections'
     | '/lab/gcp-dashboard'
     | '/lab/gcp-infra'
     | '/lab/gcp-workload'
@@ -1377,6 +1388,7 @@ export interface FileRouteTypes {
     | '/lab/flow'
     | '/lab/gcp'
     | '/lab/gcp-connect'
+    | '/lab/gcp-connections'
     | '/lab/gcp-dashboard'
     | '/lab/gcp-infra'
     | '/lab/gcp-workload'
@@ -1905,6 +1917,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabGcpConnectRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/gcp-connections': {
+      id: '/lab/gcp-connections'
+      path: '/gcp-connections'
+      fullPath: '/lab/gcp-connections'
+      preLoaderRoute: typeof LabGcpConnectionsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/gcp-dashboard': {
       id: '/lab/gcp-dashboard'
       path: '/gcp-dashboard'
@@ -2383,6 +2402,7 @@ interface LabRouteRouteChildren {
   LabFlowRoute: typeof LabFlowRoute
   LabGcpRoute: typeof LabGcpRoute
   LabGcpConnectRoute: typeof LabGcpConnectRoute
+  LabGcpConnectionsRoute: typeof LabGcpConnectionsRoute
   LabGcpDashboardRoute: typeof LabGcpDashboardRoute
   LabGcpInfraRoute: typeof LabGcpInfraRoute
   LabGcpWorkloadRoute: typeof LabGcpWorkloadRoute
@@ -2423,6 +2443,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabFlowRoute: LabFlowRoute,
   LabGcpRoute: LabGcpRoute,
   LabGcpConnectRoute: LabGcpConnectRoute,
+  LabGcpConnectionsRoute: LabGcpConnectionsRoute,
   LabGcpDashboardRoute: LabGcpDashboardRoute,
   LabGcpInfraRoute: LabGcpInfraRoute,
   LabGcpWorkloadRoute: LabGcpWorkloadRoute,
