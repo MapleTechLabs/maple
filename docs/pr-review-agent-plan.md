@@ -209,6 +209,27 @@ moved.
 conclude `failure` while an undismissed break is open. It is the only path to a failing check, and
 it rests on facts the service established, never on a model's opinion.
 
+### Personal data and secrets in telemetry
+
+Two layers, both filed as `security` findings with check id `PII-01`:
+
+- **Scan** (`telemetry/privacy.ts`, no model, no warehouse). At submit, every added line of a
+  runtime source file that hands data to telemetry (span attributes and events, `annotateLogs`, log
+  calls, Go/Rust/Python attribute helpers, or an entry of such a call opened above) is checked for
+  sensitive names (keys in key position and identifier chains, split on camelCase and separators,
+  the way clear-text-logging heuristics and scrubbing denylists read them) and recognizable literal
+  values (JWTs, private keys, known API key prefixes, SSNs, Luhn-valid card numbers with an issuer
+  prefix). Names about the value (`tokenCount`, `emailVerified`, `hashedPassword`), entries whose
+  value is derived (a comparison, a presence check, a constant), arguments to a function that
+  derives from them, and lines that redact or hash are skipped, as are lines over 1000 characters,
+  scripts, generated code and migrations. Credentials, government ids and payment data are
+  critical, contact data and whole bodies or header maps warn, client IPs info. One finding per
+  file and kind, naming the other lines, at most 10 per review.
+  `bun run --cwd apps/ai review:checklist <owner/repo> <n>` prints the scan for any pull request.
+- **Reviewer.** The prompt's privacy lens covers what a name cannot show: whole objects, error
+  messages built from input, URLs with tokens, innocently named keys. A reviewer finding with a
+  `PII-*` id on the same line replaces the scan's.
+
 ### After the merge ships
 
 A `closed` event with `merged` stamps the merged pull request's last completed review that has

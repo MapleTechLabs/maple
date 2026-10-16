@@ -12,6 +12,13 @@ import type {
 	PullRequestReviewThread,
 } from "@maple/domain/http"
 import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
+import { isPrivacyScanFinding } from "./telemetry/privacy"
+
+/** Severities in order, for sorting and thresholds. */
+export const SEVERITY_RANK = { info: 0, warn: 1, critical: 2 } as const satisfies Record<
+	PrReviewSeverity,
+	number
+>
 
 /** A stored finding, as the review flow reads it. */
 export interface TrackedFinding {
@@ -98,8 +105,8 @@ const similarTitles = (a: string, b: string) => {
  * Whether a new finding is a near-exact restatement of one already tracked: same file, lens and
  * nearly the same line, and a title saying the same thing. Anything looser is left to the reviewer,
  * which judges each earlier finding at the new head: a different bug next to an old one is new.
- * A finding the service files from telemetry (`TEL-*`) names its subject in the title, so the same
- * title in the same file is the same issue wherever later pushes moved its line.
+ * A finding the service files itself (`TEL-*`, the privacy scan) names its subject in the title,
+ * so the same title in the same file is the same issue wherever later pushes moved it.
  */
 const restates = (
 	finding: PrReviewFinding,
@@ -107,7 +114,8 @@ const restates = (
 ) =>
 	finding.path === tracked.path &&
 	finding.category === tracked.category &&
-	((finding.checkId?.startsWith("TEL-") === true && finding.title === tracked.title) ||
+	((((finding.checkId?.startsWith("TEL-") ?? false) || isPrivacyScanFinding(finding)) &&
+		finding.title === tracked.title) ||
 		(Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
 			similarTitles(finding.title, tracked.title)))
 

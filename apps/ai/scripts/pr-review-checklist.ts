@@ -1,5 +1,6 @@
 /**
  * The "before merge" checklist for a real pull request, with every decision behind it, and no model.
+ * The privacy scan's findings (`PII-01`) are printed after it.
  *
  *   bun run --cwd apps/ai review:checklist MapleTechLabs/maple 1081
  *   bun run --cwd apps/ai review:checklist https://github.com/octo/shop/pull/12 --no-search
@@ -32,6 +33,7 @@ import {
 	MergeChecklistLabelFile,
 	minimizeFiles,
 } from "@maple/backend/services/pr-review/merge-checklist-corpus"
+import { privacyFindings } from "@maple/backend/services/pr-review/telemetry/privacy"
 import { Option, Schema } from "effect"
 import { fetchPullRequest, nameAtBase, run } from "./pr-review-local"
 
@@ -122,6 +124,11 @@ export const checklistLocally = (argv: ReadonlyArray<string>) => {
 			`https://github.com/${owner}/${repo}/blob/${pr.head.sha}/${path}${line === undefined ? "" : `#L${line}`}`,
 	)
 	console.log(`\n${section.length === 0 ? "Nothing before merge." : section.join("\n")}`)
+	const privacy = privacyFindings(files)
+	console.log(`\nPrivacy scan (${privacy.length}):`)
+	for (const finding of privacy) {
+		console.log(`  ${finding.severity.padEnd(8)} ${finding.path}:${finding.line}  ${finding.title}`)
+	}
 }
 
 const snapshot = (

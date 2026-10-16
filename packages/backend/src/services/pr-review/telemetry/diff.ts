@@ -11,6 +11,8 @@ export interface DiffLine {
 	 * removal sits at, since GitHub anchors comments only on the new side.
 	 */
 	readonly newLine: number
+	/** Which `@@` hunk of the patch the line is in, counted from 0. */
+	readonly hunk: number
 }
 
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/
@@ -19,20 +21,22 @@ export const parsePatch = (patch: string | null): ReadonlyArray<DiffLine> => {
 	if (patch === null) return []
 	const lines: Array<DiffLine> = []
 	let newLine = 0
+	let hunkIndex = -1
 	for (const raw of patch.split("\n")) {
 		const hunk = HUNK.exec(raw)
 		if (hunk !== null) {
 			newLine = Number(hunk[1])
+			hunkIndex += 1
 			continue
 		}
 		if (newLine === 0 || raw.startsWith("\\")) continue
 		if (raw.startsWith("+")) {
-			lines.push({ kind: "add", text: raw.slice(1), newLine })
+			lines.push({ kind: "add", text: raw.slice(1), newLine, hunk: hunkIndex })
 			newLine += 1
 		} else if (raw.startsWith("-")) {
-			lines.push({ kind: "del", text: raw.slice(1), newLine: Math.max(1, newLine) })
+			lines.push({ kind: "del", text: raw.slice(1), newLine: Math.max(1, newLine), hunk: hunkIndex })
 		} else {
-			lines.push({ kind: "ctx", text: raw.slice(1), newLine })
+			lines.push({ kind: "ctx", text: raw.slice(1), newLine, hunk: hunkIndex })
 			newLine += 1
 		}
 	}
@@ -41,7 +45,7 @@ export const parsePatch = (patch: string | null): ReadonlyArray<DiffLine> => {
 
 /** Files whose strings say nothing about what production emits. */
 const NOT_RUNTIME =
-	/(^|\/)(__tests__|__mocks__|test|tests|fixtures|e2e|docs?|examples?)\/|\.(test|spec|stories|e2e)\.[a-z]+$|\.(md|mdx|txt|snap|lock|json|ya?ml)$/i
+	/(^|\/)(__tests__|__mocks__|__fixtures__|test|tests|fixtures|e2e|docs?|examples?)\/|\.(test|spec|stories|e2e)\.[a-z]+$|\.(md|mdx|txt|snap|lock|json|ya?ml)$/i
 
 export const isRuntimeSource = (path: string): boolean => !NOT_RUNTIME.test(path)
 
@@ -53,7 +57,7 @@ export interface Literal {
 	readonly templated: boolean
 }
 
-const STRING_LITERAL = /(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g
+export const STRING_LITERAL = /(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g
 
 export const literalsOf = (text: string): ReadonlyArray<Literal> => {
 	const out: Array<Literal> = []
@@ -66,7 +70,7 @@ export const literalsOf = (text: string): ReadonlyArray<Literal> => {
 }
 
 /** Calls whose first argument names a span. */
-const SPAN_CALL =
+export const SPAN_CALL =
 	/(?:withSpan|startSpan|startActiveSpan|Effect\.fn|useSpan|makeSpan|tracer\.span|trace\.span|instrument|start_as_current_span|start_span)\s*\(\s*$/
 /** Calls whose first argument names a metric instrument. */
 const METRIC_CALL =
@@ -113,7 +117,7 @@ export const emittedNames = (text: string, nearby: string): ReadonlyArray<Emitte
 export const isLogCall = (text: string): boolean => LOG_CALL.test(text)
 
 /** A line that is only a comment, in the comment syntaxes runtime sources use. */
-export const isCommentLine = (text: string): boolean => /^\s*(\/\/|#|\*|\/\*|--)/.test(text)
+export const isCommentLine = (text: string): boolean => /^\s*(\/\/|#(?!\[)|\*|\/\*|--)/.test(text)
 
 /**
  * Whether line `index` hands `name` to the telemetry API as a `kind`: a span, attribute or metric
