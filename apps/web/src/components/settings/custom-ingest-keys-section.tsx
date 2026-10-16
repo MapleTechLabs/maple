@@ -54,6 +54,7 @@ const MODE_LABELS = {
 } satisfies Record<IngestKeyAttributeMode, string>
 
 const EXPIRY_LABELS = {
+	keep: "Keep current",
 	never: "Never",
 	"30": "In 30 days",
 	"90": "In 90 days",
@@ -61,7 +62,7 @@ const EXPIRY_LABELS = {
 } as const
 type ExpiryChoice = keyof typeof EXPIRY_LABELS
 const toExpiryChoice = (value: string | null): ExpiryChoice =>
-	value === "30" || value === "90" || value === "365" ? value : "never"
+	value === "keep" || value === "30" || value === "90" || value === "365" ? value : "never"
 
 const toMode = (value: string | null): IngestKeyAttributeMode => (value === "default" ? "default" : "set")
 
@@ -125,7 +126,7 @@ export function CustomIngestKeysSection() {
 
 	const keys = Result.builder(listResult)
 		.onSuccess((response) => [...response.data])
-		.orElse(() => [] as V2CustomIngestKey[])
+		.orElse((): ReadonlyArray<V2CustomIngestKey> => [])
 	const now = Date.now()
 
 	function openCreateDialog() {
@@ -148,6 +149,7 @@ export function CustomIngestKeysSection() {
 		setFormAttributes(
 			key.resource_attributes.map((attribute) => ({ rowId: crypto.randomUUID(), ...attribute })),
 		)
+		setFormExpiry("keep")
 		setDialogOpen(true)
 	}
 
@@ -157,14 +159,19 @@ export function CustomIngestKeysSection() {
 		rateLimit === null || (Number.isInteger(rateLimit) && rateLimit >= 1 && rateLimit <= 100_000)
 	const attributes = formAttributes.filter((attribute) => attribute.key.trim().length > 0)
 	const attributeKeys = attributes.map((attribute) => attribute.key.trim())
-	const reservedAttribute = attributeKeys.find((key) => key === "org_id" || key.startsWith("maple_"))
+	const reservedAttribute = attributeKeys.find((key) => {
+		const lower = key.toLowerCase()
+		return lower === "org_id" || lower.startsWith("maple_")
+	})
+	const missingValue = attributes.find((attribute) => attribute.value.length === 0)
 	const duplicateAttribute = attributeKeys.find((key, index) => attributeKeys.indexOf(key) !== index)
 	const formValid =
 		formName.trim().length > 0 &&
 		formSignals.length > 0 &&
 		rateLimitValid &&
 		reservedAttribute === undefined &&
-		duplicateAttribute === undefined
+		duplicateAttribute === undefined &&
+		missingValue === undefined
 
 	const [handleSave, isSaving] = useAsyncAction(async () => {
 		if (!formValid) return
@@ -178,8 +185,16 @@ export function CustomIngestKeysSection() {
 			rate_limit_rps: rateLimit,
 			resource_attributes: attributes.map(({ key, value, mode }) => ({ key: key.trim(), value, mode })),
 		}
+		// "keep" leaves the stored expiry untouched; it is only offered when editing.
+		const expiresAt =
+			formExpiry === "keep"
+				? undefined
+				: formExpiry === "never"
+					? null
+					: new Date(Date.now() + Number(formExpiry) * 86_400_000).toISOString()
 		if (editing) {
-			const ok = toastExit(await updateMutation({ params: { id: editing.id }, payload }), {
+			const update = expiresAt === undefined ? payload : { ...payload, expires_at: expiresAt }
+			const ok = toastExit(await updateMutation({ params: { id: editing.id }, payload: update }), {
 				success: "Ingest key updated. The gateway picks it up within a minute.",
 				error: "Failed to update ingest key",
 			})
@@ -188,11 +203,7 @@ export function CustomIngestKeysSection() {
 			refreshKeys()
 			return
 		}
-		const expiresAt =
-			formExpiry === "never"
-				? null
-				: new Date(Date.now() + Number(formExpiry) * 86_400_000).toISOString()
-		const result = await createMutation({ payload: { ...payload, expires_at: expiresAt } })
+		const result = await createMutation({ payload: { ...payload, expires_at: expiresAt ?? null } })
 		if (!toastExit(result, { error: "Failed to create ingest key" })) return
 		if (result._tag === "Success") setRevealed({ secret: result.value, rolled: false })
 		setDialogOpen(false)
@@ -397,6 +408,7 @@ export function CustomIngestKeysSection() {
 					<Input
 						id="ingest-key-description"
 						placeholder="Optional"
+						maxLength={500}
 						value={formDescription}
 						onChange={(e) => setFormDescription(e.target.value)}
 					/>
@@ -442,7 +454,7 @@ export function CustomIngestKeysSection() {
 					/>
 					<FieldDescription>
 						{rateLimitValid
-							? "Across all ingest servers. Requests over the limit get a 429 with Retry-After."
+							? "Split across the ingest servers. Requests over the limit get a 429 with Retry-After."
 							: "Enter a whole number between 1 and 100000, or leave it empty."}
 					</FieldDescription>
 				</Field>
@@ -512,30 +524,37 @@ export function CustomIngestKeysSection() {
 							? `"${reservedAttribute}" is reserved by Maple.`
 							: duplicateAttribute !== undefined
 								? `"${duplicateAttribute}" is listed twice.`
-								: "Written on every resource sent with this key. Rows with an empty key are ignored."}
+								: missingValue !== undefined
+									? `Give "${missingValue.key.trim()}" a value, or remove it.`
+									: "Written on every resource the key sends over OTLP. Rows with an empty key are ignored."}
 					</FieldDescription>
 				</Field>
-				{!editing && (
-					<Field>
-						<FieldLabel>Expires</FieldLabel>
-						<Select
-							items={EXPIRY_LABELS}
-							value={formExpiry}
-							onValueChange={(value: string | null) => setFormExpiry(toExpiryChoice(value))}
-						>
-							<SelectTrigger className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{Object.entries(EXPIRY_LABELS).map(([value, label]) => (
+				<Field>
+					<FieldLabel>Expires</FieldLabel>
+					<Select
+						items={EXPIRY_LABELS}
+						value={formExpiry}
+						onValueChange={(value: string | null) => setFormExpiry(toExpiryChoice(value))}
+					>
+						<SelectTrigger className="w-full">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{Object.entries(EXPIRY_LABELS)
+								.filter(([value]) => editing !== null || value !== "keep")
+								.map(([value, label]) => (
 									<SelectItem key={value} value={value}>
 										{label}
 									</SelectItem>
 								))}
-							</SelectContent>
-						</Select>
-					</Field>
-				)}
+						</SelectContent>
+					</Select>
+					{editing !== null && editing.expires_at !== null && formExpiry === "keep" && (
+						<FieldDescription>
+							Currently {formatRelativeTime(editing.expires_at)}.
+						</FieldDescription>
+					)}
+				</Field>
 			</FormDialog>
 
 			<Dialog open={revealed !== null} onOpenChange={(open) => !open && setRevealed(null)}>

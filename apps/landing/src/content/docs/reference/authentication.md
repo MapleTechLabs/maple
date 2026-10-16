@@ -47,12 +47,12 @@ The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is disc
 
 Beside the default pair you can create named keys under **Settings → Ingestion → Custom keys**, or with `POST /v2/ingest_keys/custom`. Give one to a team, a service or an environment so you can limit and revoke it on its own. Each key has:
 
-| Setting                 | What it does                                                                                                                                   |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Allowed signals**     | Traces, logs, metrics, sessions (replays and session events) and events. Other signals are rejected with `403`.                                |
-| **Rate limit**          | Requests per second across all ingest servers. Requests over it get `429` with a `Retry-After` header.                                         |
-| **Resource attributes** | Written on every resource the key sends. **Always set** overwrites the sender's value; **If missing** only fills it in. `maple_*` is reserved. |
-| **Expires**             | Never, or a date after which the key gets `401`.                                                                                               |
+| Setting                 | What it does                                                                                                                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Allowed signals**     | Traces, logs, metrics, sessions (replays and session events) and events. Other signals are rejected with `403`.                                                                  |
+| **Rate limit**          | Requests per second, split across the ingest servers. Requests over it get `429` with a `Retry-After` header.                                                                    |
+| **Resource attributes** | Written on every resource the key sends over OTLP (traces, logs, metrics). **Always set** overwrites the sender's value; **If missing** only fills it in. `maple_*` is reserved. |
+| **Expires**             | Never, or a date after which the key gets `401`.                                                                                                                                 |
 
 The key is shown once, when it is created or rolled; Maple keeps only a hash. Telemetry sent with a custom key carries a `maple_ingest_key_id` resource attribute with the key's `ingk_…` ID, so you can filter by key. Edits, disabling, rolling and deleting reach the ingest servers within a minute.
 
