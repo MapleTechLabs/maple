@@ -559,6 +559,11 @@ describe("v2 alerts over HTTP", () => {
 			name: "Ops hook",
 			url: "https://example.com/hooks/maple",
 		})
+		const pager = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Pager hook",
+			url: "https://example.com/hooks/pager",
+		})
 		const tiers = [
 			{
 				severity: "warning",
@@ -572,7 +577,7 @@ describe("v2 alerts over HTTP", () => {
 				value: 0.05,
 				upper: null,
 				recovery_value: null,
-				destination_ids: [destination.body.id],
+				destination_ids: [pager.body.id],
 			},
 		]
 		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
@@ -614,6 +619,13 @@ describe("v2 alerts over HTTP", () => {
 		expect(echoed.status, JSON.stringify(echoed.body)).toBe(200)
 		expect(echoed.body.name).toBe("Echoed")
 		expect(echoed.body.thresholds).toEqual(tiers)
+		expect(echoed.body).toMatchObject({
+			severity: "critical",
+			threshold: 0.02,
+			threshold_upper: null,
+			breaches_out_of: 5,
+		})
+		expect([...echoed.body.destination_ids].sort()).toEqual([destination.body.id, pager.body.id].sort())
 		expect(echoed.body.severity).toBe(created.body.severity)
 		expect(echoed.body.threshold).toBe(created.body.threshold)
 		expect(echoed.body.threshold_upper).toBe(created.body.threshold_upper)
