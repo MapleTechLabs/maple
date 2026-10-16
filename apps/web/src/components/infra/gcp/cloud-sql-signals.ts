@@ -7,7 +7,13 @@ import { formatBytes, formatLatency, formatPercent } from "@maple/ui/lib/format"
 
 import { gcpBuckets, gcpWindowPoints, type GcpBucketPoint } from "./charts"
 import type { GcpCloudSqlInstance } from "./inventory"
-import { GCP_IDLE_IN_TRANSACTION, GCP_LIMIT_FRACTION, type GcpReplica } from "./list-model"
+import {
+	GCP_IDLE_IN_TRANSACTION,
+	GCP_LIMIT_FRACTION,
+	GCP_WRAPAROUND_FRACTION,
+	gcpSqlEngineOf,
+	type GcpReplica,
+} from "./list-model"
 import { gcpMetricReader } from "./tabs"
 import { gcpRailFacts, type GcpRailFact } from "./workload-signals"
 
@@ -25,7 +31,7 @@ export function gcpSqlEngine(databaseVersion: string | null): string | undefined
 	const [prefix, ...version] = databaseVersion.split("_")
 	const name = ENGINES.find(([engine]) => engine === prefix)?.[1]
 	if (name === undefined) return databaseVersion
-	if (prefix !== "SQLSERVER") return `${name} ${version.join(".")}`
+	if (prefix !== "SQLSERVER") return [name, version.join(".")].filter(Boolean).join(" ")
 	const [year, ...edition] = version
 	return [name, year, edition.join(" ").toLowerCase()].filter(Boolean).join(" ")
 }
@@ -265,9 +271,30 @@ export function gcpCloudSqlHealth(points: ReadonlyArray<GcpBucketPoint>): Readon
 			: []),
 		...(transactionIds === undefined
 			? []
-			: [{ label: "transaction IDs", value: `${formatPercent(transactionIds)} used` }]),
+			: [
+					{
+						label: "transaction IDs",
+						value: `${formatPercent(transactionIds)} used`,
+						// Wraparound is the list's risk from half used on.
+						tone:
+							transactionIds >= 0.8
+								? "crit"
+								: transactionIds >= GCP_WRAPAROUND_FRACTION
+									? "warn"
+									: "ok",
+					} as const,
+				]),
 		// A tenth of a point matters near 100%: 99.2% and 99.9% are different caches.
-		...(blocks > 0 ? [{ label: "cache hit", value: `${((cached / blocks) * 100).toFixed(1)}%` }] : []),
+		...(blocks > 0
+			? [
+					{
+						label: "cache hit",
+						value: `${((cached / blocks) * 100).toFixed(1)}%`,
+						// Higher is better: most reads should come from memory.
+						tone: cached / blocks >= 0.99 ? "ok" : cached / blocks >= 0.95 ? "warn" : "crit",
+					} as const,
+				]
+			: []),
 		...(postgres
 			? [{ label: "temp spill", value: formatBytes(read.total(`${DATABASE}.postgresql.temp_file.io`)) }]
 			: []),
@@ -277,10 +304,11 @@ export function gcpCloudSqlHealth(points: ReadonlyArray<GcpBucketPoint>): Readon
 /** What the inventory and the instance's databases say about it, before its readings. */
 function cloudSqlFacts(
 	instance: GcpCloudSqlInstance | undefined,
+	databaseVersion: string | undefined,
 	databases: ReadonlyArray<string> | undefined,
 	replicas: ReadonlyArray<GcpReplica>,
 ): ReadonlyArray<GcpRailFact> {
-	const engine = instance === undefined ? undefined : gcpSqlEngine(instance.databaseVersion)
+	const engine = gcpSqlEngine(databaseVersion ?? null)
 	const edition = instance === undefined ? undefined : gcpSqlEdition(instance.edition)
 	return [
 		...(engine === undefined
@@ -321,7 +349,12 @@ export function gcpCloudSqlView(input: {
 		wait: gcpAppWait(statements, traced),
 		peak: gcpConnectionPeak(points, bucketSeconds, instance?.maxConnections ?? null),
 		facts: [
-			...cloudSqlFacts(instance, input.databases, input.replicas),
+			...cloudSqlFacts(
+				instance,
+				instance?.databaseVersion ?? gcpSqlEngineOf(points),
+				input.databases,
+				input.replicas,
+			),
 			...gcpRailFacts("cloudSql", points, bucketSeconds),
 		],
 		health: gcpCloudSqlHealth(points),

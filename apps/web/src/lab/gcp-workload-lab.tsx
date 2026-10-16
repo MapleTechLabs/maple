@@ -380,6 +380,8 @@ function WorkloadPage({ workload }: { workload: LabWorkload }) {
 				{ label: "Google Cloud" },
 				{ label: gcpWorkloadName(service, keys) },
 			]}
+			// The route's header: the time controls beside the title. The fixture window stays put.
+			time={{ search: {}, defaultPreset: "6h", onChange: () => {}, ...RANGE }}
 			rightPanel={
 				<GcpWorkloadRail
 					service={service}
@@ -397,23 +399,26 @@ function WorkloadPage({ workload }: { workload: LabWorkload }) {
 					timeSearch={{}}
 				/>
 			}
+			titleContent={
+				<GcpWorkloadHeader
+					service={service}
+					keys={keys}
+					health={health}
+					databaseVersion={cloudSql?.instance.databaseVersion}
+					meta={
+						cloudSql === undefined ? undefined : (
+							<GcpCloudSqlChips
+								keys={keys}
+								instance={cloudSql.instance}
+								databaseVersion={cloudSql.instance.databaseVersion ?? undefined}
+								services={cloudSql.services}
+							/>
+						)
+					}
+				/>
+			}
 			gap="lg"
 		>
-			<GcpWorkloadHeader
-				service={service}
-				keys={keys}
-				health={health}
-				databaseVersion={cloudSql?.instance.databaseVersion}
-				meta={
-					cloudSql === undefined ? undefined : (
-						<GcpCloudSqlChips
-							keys={keys}
-							instance={cloudSql.instance}
-							services={cloudSql.services}
-						/>
-					)
-				}
-			/>
 			<div className="space-y-6">
 				{gap === null || tracedService === null || service !== "cloudRun" ? null : (
 					<GcpTraceGapCallout

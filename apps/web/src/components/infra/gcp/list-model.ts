@@ -366,6 +366,8 @@ export interface GcpReplica {
 export interface GcpDatabaseRow extends GcpRowBase {
 	/** Its settings from the inventory; undefined until they load, or for an instance it does not list. */
 	readonly instance: GcpCloudSqlInstance | undefined
+	/** Its engine as a `databaseVersion`: the inventory's, else what its metrics give away. */
+	readonly engine: string | undefined
 	/** Fractions of the reserved CPU, the memory quota and the disk quota. */
 	readonly cpu: number | undefined
 	readonly memory: number | undefined
@@ -388,6 +390,17 @@ export interface GcpDatabaseRow extends GcpRowBase {
 }
 
 /**
+ * A Cloud SQL instance's engine from its own metrics, as a `databaseVersion` prefix, for when the
+ * inventory has no settings for it. SQL Server reports no engine metrics of its own.
+ */
+export const gcpSqlEngineOf = (points: ReadonlyArray<{ readonly metric: string }>): string | undefined =>
+	points.some((point) => point.metric.startsWith(`${DATABASE}.postgresql.`))
+		? "POSTGRES"
+		: points.some((point) => point.metric.startsWith(`${DATABASE}.mysql.`))
+			? "MYSQL"
+			: undefined
+
+/**
  * One row per instance, joined to its inventory settings by `<project>:<instance>`. A read replica
  * whose primary has a row is folded into it; without the inventory, replicas keep rows of their own.
  */
@@ -404,6 +417,7 @@ export function gcpDatabaseRows(
 		return {
 			...rowBase("cloudSql", keys),
 			instance: byId.get(keys[0]),
+			engine: byId.get(keys[0])?.databaseVersion ?? gcpSqlEngineOf(points),
 			cpu: read.mean(`${DATABASE}.cpu.utilization`),
 			memory: read.mean(`${DATABASE}.memory.utilization`),
 			disk: read.mean(`${DATABASE}.disk.utilization`),

@@ -114,15 +114,18 @@ export function GcpWorkloadHeader({
 export function GcpCloudSqlChips({
 	keys,
 	instance,
+	databaseVersion,
 	services,
 }: {
 	keys: ReadonlyArray<string>
 	/** Undefined until the inventory answers, or for an instance it does not list. */
 	instance: GcpCloudSqlInstance | undefined
+	/** The instance's engine: the inventory's, else what its metrics give away. */
+	databaseVersion: string | undefined
 	/** How many traced services query its databases; undefined while unknown. */
 	services: number | undefined
 }) {
-	const engine = instance === undefined ? undefined : gcpSqlEngine(instance.databaseVersion)
+	const engine = gcpSqlEngine(databaseVersion ?? null)
 	const machine = [
 		keys[2] || undefined,
 		instance === undefined ? undefined : gcpSqlSize(instance),
