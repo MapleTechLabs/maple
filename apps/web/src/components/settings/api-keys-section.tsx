@@ -174,12 +174,13 @@ export function ApiKeysSection() {
 							Only org admins can create, roll or revoke API keys; you can revoke MCP keys you
 							created. For a key that connects your editor to Maple, use the{" "}
 							<Link
-								to="/mcp"
+								to="/settings"
+								search={{ tab: "mcp" }}
 								className="text-foreground underline underline-offset-2 hover:no-underline"
 							>
 								MCP
 							</Link>{" "}
-							page; you can create one of those yourself.
+							tab; you can create one of those yourself.
 						</AdminOnlyNote>
 					)
 				}
