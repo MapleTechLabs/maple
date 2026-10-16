@@ -7,7 +7,7 @@ category: "guides"
 cover: "/blog/claude-platform-opentelemetry/session-transcript.webp"
 coverAlt: "A Maple Agent Session transcript built from Claude SDK spans: the user's question, a lookup_order tool call and Claude's reply"
 featured: false
-draft: true
+draft: false
 ---
 
 Anthropic now exports [OpenTelemetry traces](https://platform.claude.com/docs/en/manage-claude/opentelemetry) from the Claude API and the Claude SDKs (beta). The spans follow the OpenTelemetry GenAI conventions, so any backend that speaks OTLP can receive them. Maple is one of those backends, and it turns the spans into Agent Sessions: one row per conversation, with the transcript, each model and tool call, failed tools and token counts.
