@@ -18,7 +18,9 @@ import { AppErrorBoundary } from "./components/app-error-boundary"
 import { AppSidebar, type Section } from "./components/app-sidebar"
 import { LocalLockup } from "./components/local-lockup"
 import { DisconnectedState, RejectedState } from "./components/view-states"
+import { StaleDataNotice } from "./components/stale-data-notice"
 import { useLocalConnection } from "./hooks/use-local-connection"
+import { useShownData } from "./hooks/use-shown-data"
 import { rangeFromQuery } from "./hooks/use-range"
 import { highlightJson } from "./lib/highlight"
 
@@ -79,8 +81,11 @@ export function App() {
 	const section = activeSection(route)
 
 	// Only a server that is really gone (or refusing this page) swaps the views
-	// out; connecting, busy and connected all keep them.
+	// out; connecting, busy and connected all keep them. A gone server with saved
+	// results keeps them too, and the notice says what they are.
 	const connection = useLocalConnection()
+	const { hasCache } = useShownData()
+	const disconnected = connection.status === "disconnected"
 
 	// Section links carry the cross-cutting context: the service filter and the range.
 	const sectionQuery = new URLSearchParams({ range: rangeFromQuery(query) })
@@ -107,9 +112,9 @@ export function App() {
 								<SidebarTrigger className="-ml-1" />
 								<LocalLockup />
 							</header>
-							<div className="min-h-0 flex-1">
+							<div className="relative min-h-0 flex-1">
 								<AppErrorBoundary resetKey={path}>
-									{connection.status === "disconnected" ? (
+									{disconnected && !hasCache ? (
 										<DisconnectedState onRetry={connection.retry} />
 									) : connection.status === "rejected" && connection.rejection ? (
 										<RejectedState
@@ -158,6 +163,9 @@ export function App() {
 										<TraceListView />
 									)}
 								</AppErrorBoundary>
+								{connection.status === "rejected" || (disconnected && !hasCache) ? null : (
+									<StaleDataNotice disconnected={disconnected} onRetry={connection.retry} />
+								)}
 							</div>
 						</SidebarInset>
 					</SidebarProvider>

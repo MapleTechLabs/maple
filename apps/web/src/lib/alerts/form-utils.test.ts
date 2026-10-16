@@ -51,15 +51,15 @@ describe("threshold unit conversion", () => {
 	it("converts error_rate thresholds between percent (form) and ratio (domain)", () => {
 		// User enters 5 (%), domain stores 0.05 (ratio) — the unit the query
 		// engine emits and AlertsService compares against.
-		expect(formThresholdToDomain("error_rate", "5")).toBe(0.05)
-		expect(formThresholdToDomain("error_rate", "50")).toBe(0.5)
-		expect(domainThresholdToForm("error_rate", 0.05)).toBe("5")
-		expect(domainThresholdToForm("error_rate", 0.5)).toBe("50")
+		expect(formThresholdToDomain({ signalType: "error_rate" }, "5")).toBe(0.05)
+		expect(formThresholdToDomain({ signalType: "error_rate" }, "50")).toBe(0.5)
+		expect(domainThresholdToForm({ signalType: "error_rate" }, 0.05)).toBe("5")
+		expect(domainThresholdToForm({ signalType: "error_rate" }, 0.5)).toBe("50")
 	})
 
 	it("drops float noise when converting error_rate ratios to percent", () => {
-		expect(domainThresholdToForm("error_rate", 0.07)).toBe("7")
-		expect(domainThresholdToForm("error_rate", 0.29)).toBe("29")
+		expect(domainThresholdToForm({ signalType: "error_rate" }, 0.07)).toBe("7")
+		expect(domainThresholdToForm({ signalType: "error_rate" }, 0.29)).toBe("29")
 	})
 
 	it("keeps precision for error rates below 0.01%", () => {
@@ -69,9 +69,9 @@ describe("threshold unit conversion", () => {
 	})
 
 	it("passes non-error_rate thresholds through unchanged", () => {
-		expect(formThresholdToDomain("p95_latency", "500")).toBe(500)
-		expect(domainThresholdToForm("p95_latency", 500)).toBe("500")
-		expect(formThresholdToDomain("throughput", "1000")).toBe(1000)
+		expect(formThresholdToDomain({ signalType: "p95_latency" }, "500")).toBe(500)
+		expect(domainThresholdToForm({ signalType: "p95_latency" }, 500)).toBe("500")
+		expect(formThresholdToDomain({ signalType: "throughput" }, "1000")).toBe(1000)
 	})
 
 	it("stores error_rate threshold as a ratio on the create params", () => {

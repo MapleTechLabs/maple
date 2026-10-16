@@ -13,6 +13,7 @@ import {
 	MSG_SIGNATURE_CHARS,
 	NAMESPACED_TYPE_MAX_FRAMES,
 	SCHEMA_PATH_LINE_PATTERN,
+	SPAN_NAME_FRAME_PATTERN,
 } from "./fingerprint"
 import {
 	serviceUsage,
@@ -846,7 +847,8 @@ const errorEventsSelectSql = `
             arrayFilter(
               line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
                 AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0
-                AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)}),
+                AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})
+                AND NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)}),
               splitByChar('\\n', _exStack)
             ),
             -- A namespaced type plus its message names one failure: keep only the

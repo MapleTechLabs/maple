@@ -45,6 +45,7 @@ import {
 	RefreshButton,
 } from "../components/toolbar"
 import { ErrorState, ListSkeleton } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 const ROW_HEIGHT = 36
 const VISIBLE_CHIPS = 3
@@ -199,7 +200,7 @@ function LogPatternsMode({
 		since: patterns.dataUpdatedAt,
 		children: patterns.isPending ? (
 			<ListSkeleton variant="table" />
-		) : patterns.isError ? (
+		) : failedWithoutData(patterns) ? (
 			<ErrorState label="log patterns" error={patterns.error} onRetry={() => patterns.refetch()} />
 		) : data === undefined || data.patterns.length === 0 ? (
 			emptyState
@@ -260,7 +261,7 @@ function LogListMode({
 			<>
 				{logs.isPending ? (
 					<ListSkeleton variant="table" />
-				) : logs.isError ? (
+				) : failedWithoutData(logs) ? (
 					<ErrorState label="logs" error={logs.error} onRetry={() => logs.refetch()} />
 				) : rows.length === 0 ? (
 					emptyState
