@@ -451,6 +451,33 @@
 				]
 			}
 		},
+		// A cold `/mcp` request (initialize, resources, prompts, 401s) never loads the tool graph;
+		// McpToolExecutorLoader, the one importer, loads it on the first `tools/*` request. Types stay importable.
+		{
+			"files": [
+				"apps/ai/src/worker/http.ts",
+				"apps/ai/src/runtime/http-graph.ts",
+				"apps/ai/src/mcp/app.ts",
+				"apps/ai/src/mcp/server.ts",
+				"apps/ai/src/mcp/tool-catalog.ts",
+				"apps/ai/src/mcp/transport/*.ts"
+			],
+			"excludeFiles": ["**/*.test.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "(^|/)(dispatcher|mcp-service-graph)$",
+								"allowTypeImports": true,
+								"message": "The tool graph loads lazily through McpToolExecutorLoader; import its types only."
+							}
+						]
+					}
+				]
+			}
+		},
 		// The headless MCP root carries only what registered tools need.
 		{
 			"files": ["apps/ai/src/mcp/dispatcher.ts"],
