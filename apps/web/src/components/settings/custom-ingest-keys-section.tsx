@@ -45,7 +45,7 @@ const SIGNALS: ReadonlyArray<{ value: IngestKeySignal; label: string; hint: stri
 	{ value: "logs", label: "Logs", hint: "/v1/logs" },
 	{ value: "metrics", label: "Metrics", hint: "/v1/metrics" },
 	{ value: "sessions", label: "Sessions", hint: "Replays and session events" },
-	{ value: "events", label: "Events", hint: "Product events" },
+	{ value: "events", label: "Events", hint: "Product events, incl. browser track()" },
 ]
 
 const MODE_LABELS = {

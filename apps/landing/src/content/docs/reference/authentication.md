@@ -49,7 +49,7 @@ Beside the default pair you can create named keys under **Settings → Ingestion
 
 | Setting                 | What it does                                                                                                                                                                     |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Allowed signals**     | Traces, logs, metrics, sessions (replays and session events) and events. Other signals are rejected with `403`.                                                                  |
+| **Allowed signals**     | Traces, logs, metrics, sessions (replays and session events) and events (product events, including browser `track()` calls). Other signals are rejected with `403`.              |
 | **Rate limit**          | Requests per second, split across the ingest servers. Requests over it get `429` with a `Retry-After` header.                                                                    |
 | **Resource attributes** | Written on every resource the key sends over OTLP (traces, logs, metrics). **Always set** overwrites the sender's value; **If missing** only fills it in. `maple_*` is reserved. |
 | **Expires**             | Never, or a date after which the key gets `401`.                                                                                                                                 |
