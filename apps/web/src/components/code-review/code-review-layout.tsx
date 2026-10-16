@@ -5,7 +5,6 @@ import { VcsRepositoryId } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
 import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
@@ -14,7 +13,6 @@ import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { pickTimeRangeSearch } from "@/components/time-range-picker/search"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
-import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
@@ -77,10 +75,7 @@ function CodeReviewTabs({
 	)
 }
 
-/**
- * The frame every Code Review tab renders in. Gated on the `prReview` rollout like the reviewer
- * itself; while the flags load, a skeleton rather than a not-enabled flash.
- */
+/** The frame every Code Review tab renders in. */
 export function CodeReviewLayout({
 	active,
 	search,
@@ -93,43 +88,18 @@ export function CodeReviewLayout({
 	toolbar?: ReactNode
 	children: ReactNode
 }) {
-	const { flags, isLoaded } = useOrganizationFeatureFlags()
 	const label = TABS.find((tab) => tab.tab === active)?.label
-
-	const enabled = isLoaded && flags.prReview
 
 	return (
 		<PageRefreshProvider timePreset={search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET}>
 			<DashboardPage
 				breadcrumbs={[{ label: "Code Review", href: "/code-review" }, ...(label ? [{ label }] : [])]}
-				headerActions={enabled ? toolbar : undefined}
-				tabs={
-					enabled ? (
-						<CodeReviewTabs active={active} search={search} className="border-b border-border" />
-					) : undefined
-				}
+				headerActions={toolbar}
+				tabs={<CodeReviewTabs active={active} search={search} className="border-b border-border" />}
 				gap="lg"
 				scrollClassName="pb-8"
 			>
-				{!isLoaded ? (
-					<div className="space-y-4">
-						<Skeleton className="h-9 w-full" />
-						<Skeleton className="h-28 w-full" />
-						<Skeleton className="h-72 w-full" />
-					</div>
-				) : !flags.prReview ? (
-					<Empty>
-						<EmptyHeader>
-							<EmptyTitle>Code review is not enabled</EmptyTitle>
-							<EmptyDescription>
-								Pull request reviews are rolling out by organization. Ask us to turn them on
-								for yours.
-							</EmptyDescription>
-						</EmptyHeader>
-					</Empty>
-				) : (
-					children
-				)}
+				{children}
 			</DashboardPage>
 		</PageRefreshProvider>
 	)
