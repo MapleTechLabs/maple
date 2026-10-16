@@ -110,7 +110,6 @@ export const jobLogRecords = <E, R>(
 	const shared = {
 		"cicd.pipeline.name": job.workflowName,
 		"cicd.pipeline.run.id": job.runId,
-		"cicd.pipeline.task.run.id": job.jobId,
 		"vcs.ref.head.name": job.headBranch,
 		"vcs.ref.head.revision": job.headSha,
 		"maple.cicd.job.name": job.name,
@@ -129,7 +128,10 @@ export const jobLogRecords = <E, R>(
 			body: { stringValue: body },
 			attributes: attrs({
 				...shared,
+				// The same task the record's span names, so logs and spans join on it.
 				"cicd.pipeline.task.name": owner === undefined ? job.name : ciStepName(owner.step.name),
+				"cicd.pipeline.task.run.id":
+					owner === undefined ? job.jobId : `${job.jobId}.${owner.step.number}`,
 				"maple.cicd.step.number": owner?.step.number,
 			}),
 			traceId,

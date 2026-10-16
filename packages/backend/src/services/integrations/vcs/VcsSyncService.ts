@@ -58,6 +58,12 @@ const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
 const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "timed_out", "startup_failure"])
 /** How long a CI job waits on its annotations before going out without them. */
 const WORKFLOW_ANNOTATIONS_BUDGET = Duration.seconds(10)
+/**
+ * How long a CI job's log may hold the consumer, which runs a batch's messages one after another:
+ * about 14s waiting for GitHub to publish it, then the download and ingest. Past it, the batches
+ * already sent stay and the rest of the log is dropped.
+ */
+const WORKFLOW_LOG_BUDGET = Duration.seconds(30)
 
 // VcsInstallationGoneError is handled internally (→ disconnect) and never
 // surfaces here. VcsProviderError / VcsRepoUnavailableError that aren't caught
@@ -955,11 +961,19 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				const forwardsLog = installation.ciLogsEnabled && job.steps.length > 0 && ref !== undefined
 				yield* Effect.annotateCurrentSpan({ "vcs.workflow.log_forwarded": forwardsLog })
 				if (forwardsLog)
-					yield* workflowSink.onWorkflowJobLog(
-						installation.orgId,
-						job,
-						provider.streamWorkflowJobLog(installation, ref, job.jobId),
-					)
+					yield* workflowSink
+						.onWorkflowJobLog(
+							installation.orgId,
+							job,
+							provider.streamWorkflowJobLog(installation, ref, job.jobId),
+						)
+						.pipe(
+							Effect.timeoutOrElse({
+								duration: WORKFLOW_LOG_BUDGET,
+								orElse: () =>
+									Effect.annotateCurrentSpan({ "vcs.workflow.log_error": "timed out" }),
+							}),
+						)
 			})
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {

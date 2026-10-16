@@ -507,6 +507,10 @@ describe("CiTraceService", () => {
 			assert.strictEqual(records[0]!.timeUnixNano, `${job.startedAtMs + 123}000000`)
 			// A line without a stamp takes the one before it.
 			assert.strictEqual(records[2]!.timeUnixNano, records[1]!.timeUnixNano)
+			assert.strictEqual(
+				attr(records[1]!.attributes, "cicd.pipeline.task.run.id"),
+				attr(testStep!.attributes, "cicd.pipeline.task.run.id"),
+			)
 			assert.strictEqual(attr(records[1]!.attributes, "cicd.pipeline.task.name"), "Test")
 			assert.strictEqual(
 				attr(logCalls[0]!.resourceLogs[0]!.resource.attributes, "service.name"),

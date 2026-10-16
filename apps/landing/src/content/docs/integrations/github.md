@@ -56,7 +56,7 @@ With **CI logs** on, Maple downloads each finished job's log from GitHub and wri
 - **Linked to steps:** each record carries the job's trace id and the span id of the step that was running when the line was written, so a step's output shows up with that step in the trace view. Lines from before the first step belong to the job span.
 - **Timestamps** come from the runner's own per-line stamps. A line without one, such as the rest of a multi-line message, takes the stamp of the line before it.
 - **Severity:** `##[error]` lines (including `::error::` workflow commands) are `ERROR`, `##[warning]` lines are `WARN`, `##[debug]` lines are `DEBUG`, and everything else is `INFO`. The runner's markers and color codes are removed from the text, and blank lines are dropped.
-- **Attributes:** `cicd.pipeline.name`, `cicd.pipeline.run.id`, `cicd.pipeline.task.run.id` (the job id), `cicd.pipeline.task.name` (the step), `maple.cicd.step.number`, `maple.cicd.job.name`, `vcs.ref.head.name`, and `vcs.ref.head.revision`.
+- **Attributes:** `cicd.pipeline.name`, `cicd.pipeline.run.id`, `cicd.pipeline.task.name` and `cicd.pipeline.task.run.id` (the same as on the step span, or the job's for job-level lines), `maple.cicd.step.number`, `maple.cicd.job.name`, `vcs.ref.head.name`, and `vcs.ref.head.revision`.
 - **Size:** Maple keeps the first 5 MB of a job's log and cuts lines longer than 8,000 characters. A cut log ends with a `WARN` record that links to the full log on GitHub.
 - **Secrets:** GitHub masks registered secrets as `***` before Maple reads the log. Values a job prints that were never registered as secrets are kept as written.
 

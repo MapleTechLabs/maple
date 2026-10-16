@@ -1671,6 +1671,8 @@ describe("VcsSyncService orchestrator", () => {
 		readonly forwardedLogs?: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }>
 		/** The lines the stubbed provider serves as any job's log. */
 		readonly workflowLog?: ReadonlyArray<string>
+		/** Completed when the stubbed provider is asked for a log it then never finishes sending. */
+		readonly workflowLogHang?: Deferred.Deferred<void>
 		readonly repos?: ReadonlyArray<{
 			externalRepoId: string
 			owner: string
@@ -1741,7 +1743,14 @@ describe("VcsSyncService orchestrator", () => {
 					: opts.workflowAnnotationsError
 						? Effect.fail(opts.workflowAnnotationsError)
 						: Effect.succeed(opts.workflowAnnotations ?? []),
-			streamWorkflowJobLog: () => Stream.fromIterable(opts.workflowLog ?? []),
+			streamWorkflowJobLog: () =>
+				opts.workflowLogHang
+					? Stream.fromEffect(
+							Deferred.succeed(opts.workflowLogHang, undefined).pipe(
+								Effect.andThen(Effect.never),
+							),
+						)
+					: Stream.fromIterable(opts.workflowLog ?? []),
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
 			ids: ["github"],
@@ -2049,6 +2058,38 @@ describe("VcsSyncService orchestrator", () => {
 					forwardedWorkflows: [],
 					forwardedLogs,
 					workflowLog: ["first", "second"],
+				}),
+			),
+		)
+	})
+
+	it.effect("lets go of a job's log that outlasts its budget, so the rest of the batch moves on", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+		const asked = Deferred.makeUnsafe<void>()
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_ci")
+			yield* seedInstallation(repo, orgId)
+			const installation = yield* repo.resolveInstallation("github", "42")
+			if (Option.isNone(installation)) return assert.fail("installation not seeded")
+			yield* repo.setCiLogsEnabled(orgId, installation.value.id, true)
+			const processing = yield* Effect.forkChild(
+				svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42"))),
+			)
+			yield* Deferred.await(asked)
+			yield* TestClock.adjust(Duration.seconds(31))
+			const exit = yield* Fiber.await(processing)
+			assert.isTrue(Exit.isSuccess(exit))
+			assert.lengthOf(forwardedLogs, 0)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows: [],
+					forwardedLogs,
+					workflowLogHang: asked,
 				}),
 			),
 		)
