@@ -23,7 +23,6 @@ import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRep
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { BACKFILL_WINDOW_MS } from "@maple/backend/services/integrations/vcs/VcsSyncService"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { GithubAppClient, type GithubAppError } from "./GithubAppClient"
 import { githubWebBaseUrl } from "./github-hosts"
 
@@ -227,7 +226,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			const repo = yield* VcsRepository
 			const queue = yield* VcsSyncQueue
 			const githubApp = yield* GithubAppClient
-			const featureFlags = yield* OrganizationFeatureFlagsService
 
 			const startConnect = Effect.fn("GithubConnectService.startConnect")(function* (
 				orgId: OrgId,
@@ -755,18 +753,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				repositoryId: VcsRepositoryId,
 				enabled: boolean,
 			) {
-				// Staged rollout: an organization that is not flagged cannot turn reviews on, even by
-				// calling the endpoint directly. Turning them off is always allowed.
-				if (enabled && !(yield* featureFlags.flags(orgId)).prReview) {
-					yield* Effect.annotateCurrentSpan({
-						orgId,
-						"vcs.repository.id": repositoryId,
-						"vcs.set_pr_review.outcome": "not_rolled_out",
-					})
-					return yield* new IntegrationsValidationError({
-						message: "Pull request reviews are not available for this organization yet.",
-					})
-				}
 				const existing = yield* asPersistence(repo.getRepositoryById(orgId, repositoryId))
 				if (Option.isNone(existing)) {
 					yield* Effect.annotateCurrentSpan({
@@ -890,7 +876,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				GithubAppClient.layer,
 				VcsRepository.layer,
 				OAuthStateRepository.layer,
-				OrganizationFeatureFlagsService.layer,
 			),
 		),
 	)

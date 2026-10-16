@@ -192,8 +192,8 @@ SQL_STATUS="$(curl -sS -o "$ROOT/late-sql.out" -w '%{http_code}' "http://127.0.0
 
 # A mixed OTLP request partially accepts its current row and reports only the
 # retired row as rejected, per OTLP partial-success semantics.
-NANOS="$(python3 -c 'import datetime,sys; print(int(datetime.datetime.fromisoformat(sys.argv[1]+"T12:00:03+00:00").timestamp()*1_000_000_000))' "$RANGE_DATE")"
-CURRENT_NANOS="$(python3 -c 'import time; print(time.time_ns())')"
+NANOS="$(bun -e 'console.log(String(BigInt(Date.parse(process.argv.at(-1) + "T12:00:03Z")) * 1000000n))' "$RANGE_DATE")"
+CURRENT_NANOS="$(bun -e 'console.log(String(BigInt(Date.now()) * 1000000n))')"
 OTLP="$(jq -nc --arg old "$NANOS" --arg current "$CURRENT_NANOS" '{resourceLogs:[{resource:{attributes:[{key:"service.name",value:{stringValue:"retention-mixed"}}]},scopeLogs:[{logRecords:[{timeUnixNano:$old,body:{stringValue:"late-otlp"}},{timeUnixNano:$current,body:{stringValue:"current-otlp"}}]}]}]}')"
 STATUS="$(curl -sS -o "$ROOT/late-otlp.out" -w '%{http_code}' "http://127.0.0.1:$PORT/v1/logs" -H 'content-type: application/json' --data "$OTLP")"
 [[ "$STATUS" == "200" ]] || fail "mixed OTLP returned $STATUS instead of 200: $(cat "$ROOT/late-otlp.out")"
