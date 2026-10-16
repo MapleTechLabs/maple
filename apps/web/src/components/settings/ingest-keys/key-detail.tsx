@@ -463,9 +463,11 @@ export function IngestKeyDetail({
 						activity === "expired" && "text-muted-foreground",
 					)}
 					hint={
-						key.last_used_at === null
-							? "Updates once the first request lands"
-							: `Last data ${formatRelativeTime(key.last_used_at, now)}`
+						key.last_used_at !== null
+							? `Last data ${formatRelativeTime(key.last_used_at, now)}`
+							: activity === "paused"
+								? "Data sent while paused is dropped"
+								: "Updates once the first request lands"
 					}
 				/>
 				<StatCard

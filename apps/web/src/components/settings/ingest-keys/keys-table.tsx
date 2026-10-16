@@ -18,10 +18,9 @@ import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { KeyStatusMark } from "./key-status"
 import { useIngestionNavigation } from "./navigation"
 import {
-	ACTIVITY_LABELS,
 	attributeCountLabel,
+	type KeyActivity,
 	keyActivity,
-	pausedLabel,
 	rateLimitLabel,
 	signalsSummary,
 	toPublicKeyId,
@@ -29,22 +28,22 @@ import {
 
 const MAX_KEYS = 50
 
-const keySubtitle = (key: V2CustomIngestKey, now: number) => {
-	const activity = keyActivity(key, now)
-	if (activity === "paused") return pausedLabel(key)
-	if (activity === "expired" || key.expires_at === null) return ACTIVITY_LABELS[activity]
-	return `${ACTIVITY_LABELS[activity]} · expires ${formatRelativeTime(key.expires_at, now)}`
-}
+// Short enough for the key column; the key's page carries the long form.
+const SUBTITLE_LABELS = {
+	live: "Live",
+	idle: "Idle",
+	waiting: "No data yet",
+	paused: "Paused",
+	expired: "Expired",
+} satisfies Record<KeyActivity, string>
 
 function DefaultKeyRow({
 	label,
 	value,
-	audience,
 	onOpen,
 }: {
 	label: string
 	value: string | null
-	audience: string
 	onOpen: () => void
 }) {
 	return (
@@ -55,7 +54,7 @@ function DefaultKeyRow({
 					<div className="flex min-w-0 flex-col gap-0.5">
 						<span className="text-sm font-medium">{label}</span>
 						<span className="text-muted-foreground truncate font-mono text-2xs">
-							{value === null ? "…" : `${value.slice(0, 14)}…`} · Default, {audience}
+							{value === null ? "…" : `${value.slice(0, 14)}…`} · Default
 						</span>
 					</div>
 				</div>
@@ -136,13 +135,11 @@ export function IngestKeysTable() {
 							<DefaultKeyRow
 								label="Private key"
 								value={defaults.privateKey}
-								audience="servers"
 								onOpen={() => nav.openView("setup")}
 							/>
 							<DefaultKeyRow
 								label="Public key"
 								value={defaults.publicKey}
-								audience="browsers"
 								onOpen={() => nav.openView("setup")}
 							/>
 						</>
@@ -184,7 +181,7 @@ export function IngestKeysTable() {
 													{key.name}
 												</span>
 												<span className="text-muted-foreground truncate font-mono text-2xs">
-													{key.key_prefix}… · {keySubtitle(key, now)}
+													{key.key_prefix}… · {SUBTITLE_LABELS[activity]}
 												</span>
 											</div>
 										</div>
