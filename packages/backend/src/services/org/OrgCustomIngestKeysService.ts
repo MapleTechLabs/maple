@@ -215,7 +215,7 @@ export class OrgCustomIngestKeysService extends Context.Service<OrgCustomIngestK
 				const rows = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+							yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('custom_ingest_keys'))`)
 							const existing = yield* db.run(
 								PG.from(OrgIngestCustomKeys)
 									.select(($) => ({ id: $.id }))
