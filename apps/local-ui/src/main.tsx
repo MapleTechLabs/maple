@@ -1,12 +1,14 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClientProvider } from "@tanstack/react-query"
 import { setTheme } from "@maple/ui/hooks/use-theme"
 import { App } from "./App"
+import { localServerPort } from "./lib/constants"
 import { shouldRetryLocalQuery } from "./lib/query"
+import { LocalQueryClient, persistQueryCache, restoreQueryCache } from "./lib/query-cache"
 import "./styles.css"
 
-const queryClient = new QueryClient({
+const queryClient = new LocalQueryClient({
 	defaultOptions: {
 		queries: {
 			// Lists are anchored to a time window and offer a "new data" refresh
@@ -14,9 +16,16 @@ const queryClient = new QueryClient({
 			refetchOnWindowFocus: false,
 			staleTime: 30_000,
 			retry: shouldRetryLocalQuery,
+			// Older windows stay around to open pages on while the server is busy.
+			gcTime: 60 * 60 * 1000,
 		},
 	},
 })
+
+// Last results survive a reload or a stopped server; one cache per server port.
+const cacheKey = `maple-local:query-cache:${localServerPort()}`
+restoreQueryCache(queryClient, cacheKey)
+persistQueryCache(queryClient, cacheKey)
 
 // Follow the OS theme. Dark stays the default when nothing says light (the
 // markup ships `class="dark"`), and `setTheme` keeps chart colors in step.

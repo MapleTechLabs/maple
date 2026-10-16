@@ -69,6 +69,14 @@ export interface SpanBufferOptions {
 	readonly anticipatedErrorIdentifiers?: ReadonlySet<string> | undefined
 	/** @deprecated Use `anticipatedErrorIdentifiers`. */
 	readonly anticipatedErrorTags?: ReadonlySet<string> | undefined
+	/**
+	 * Called as each client span starts. The returned check, run as it ends, says why the
+	 * host lost its connection in between (or `undefined` if it did not). A client span
+	 * whose request failed in transport meanwhile exports as `Unset` with the reason in
+	 * `maple.connection_lost`: a hidden, unloading or offline page cancelled the request,
+	 * so nothing in the app failed.
+	 */
+	readonly watchConnection?: (() => () => string | undefined) | undefined
 }
 
 // Errors carrying Effect's `[ErrorReporter.ignore]` flag are benign by design —
@@ -99,22 +107,23 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 	const dropSpan = options.dropSpan
 	const anticipatedErrorIdentifiers = options.anticipatedErrorIdentifiers ?? options.anticipatedErrorTags
 
-	const exportFn = (span: SpanImpl) => {
+	const exportFn = (span: SpanImpl, connectionLost?: () => string | undefined) => {
 		if (disabled) return
 		if (!span.sampled) return
 		if (dropSpan !== undefined && dropSpan(span.name)) return
 		if (isIgnoredSpan(span, anticipatedErrorIdentifiers)) return
 		if (buffer.length >= MAX_BUFFER) return
-		buffer.push(makeOtlpSpan(span, anticipatedErrorIdentifiers))
+		buffer.push(makeOtlpSpan(span, anticipatedErrorIdentifiers, connectionLost))
 	}
 
 	const tracer = Tracer.make({
 		span(spanOptions) {
+			const connectionLost = spanOptions.kind === "client" ? options.watchConnection?.() : undefined
 			return makeSpan({
 				...spanOptions,
 				status: { _tag: "Started", startTime: spanOptions.startTime },
 				attributes: new Map(),
-				export: exportFn,
+				export: (span) => exportFn(span, connectionLost),
 			})
 		},
 	})
@@ -279,7 +288,36 @@ const isResponseFailure = (exit: Exit.Exit<unknown, unknown>): boolean => {
 	)
 }
 
-const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<string>): OtlpSpan => {
+// The single failure of a raw HTTP client span, when it is an Effect `HttpClientError`
+// with this reason. Anything carrying a defect or a second failure is a real error.
+const httpClientFailureReason = (exit: Exit.Exit<unknown, unknown>, reasonTag: string): unknown => {
+	if (exit._tag === "Success") return undefined
+	const [reason, ...rest] = exit.cause.reasons
+	if (rest.length > 0 || reason === undefined || !Cause.isFailReason(reason)) return undefined
+	const error = reason.error
+	if (!Predicate.isTagged(error, "HttpClientError") || !Predicate.hasProperty(error, "reason"))
+		return undefined
+	return Predicate.isTagged(error.reason, reasonTag) ? error.reason : undefined
+}
+
+// Effect ends every 4xx client span itself, failed with a synthetic `StatusCodeError`, before
+// the caller has seen the response. Whether the 4xx is a fault is the caller's to say: an
+// unhandled one fails the caller's span too, which carries its own exception.
+const isClientStatus4xx = (self: SpanImpl, exit: Exit.Exit<unknown, unknown>): boolean => {
+	if (self.kind !== "client") return false
+	const reason = httpClientFailureReason(exit, "StatusCodeError")
+	if (!Predicate.hasProperty(reason, "response") || !Predicate.hasProperty(reason.response, "status")) {
+		return false
+	}
+	const code = reason.response.status
+	return typeof code === "number" && code >= 400 && code < 500
+}
+
+const makeOtlpSpan = (
+	self: SpanImpl,
+	anticipatedErrorIdentifiers?: ReadonlySet<string>,
+	connectionLost?: () => string | undefined,
+): OtlpSpan => {
 	const status = self.status as ExtractTag<Tracer.SpanStatus, "Ended">
 	const attributes = OtlpResource.entriesToAttributes(self.attributes.entries())
 	const events = self.events.map(([name, startTime, attrs]) => ({
@@ -290,6 +328,10 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 	}))
 
 	let otelStatus: Status
+	const lostReason =
+		connectionLost !== undefined && httpClientFailureReason(status.exit, "TransportError") !== undefined
+			? connectionLost()
+			: undefined
 	const serverError = isResponseFailure(status.exit) ? renderedServerError(self) : undefined
 	if (serverError !== undefined) {
 		const method = self.attributes.get("http.request.method")
@@ -324,6 +366,16 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 		// Expected business outcome (4xx). Keep the span (latency / status code
 		// stay visible) but don't flag it as an error or fingerprint it.
 		otelStatus = constOtelStatusSuccess
+	} else if (isClientStatus4xx(self, status.exit)) {
+		// Semconv keeps a 4xx client span `Error`, but without an `exception` event: error
+		// tracking skips a 4xx span that carries none, so the issue is the caller's to open.
+		otelStatus = {
+			code: StatusCode.Error,
+			message: Cause.prettyErrors(status.exit.cause)[0]?.message ?? "",
+		}
+	} else if (lostReason !== undefined) {
+		otelStatus = { code: StatusCode.Unset }
+		attributes.push({ key: "maple.connection_lost", value: { stringValue: lostReason } })
 	} else {
 		const errors = Cause.prettyErrors(status.exit.cause)
 		otelStatus = { code: StatusCode.Error }

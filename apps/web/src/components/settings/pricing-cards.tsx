@@ -7,7 +7,7 @@ import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { billingCustomerAtom, billingPlansAtom } from "@/lib/services/atoms/billing-atoms"
 import { useBillingActions } from "@/hooks/use-billing-actions"
 import { showErrorToast } from "@/lib/error-toast"
-import { formatCount } from "@/lib/billing/usage"
+import { formatCount, formatQuoteUnits, quoteUnits } from "@/lib/billing/usage"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatDateInTimezone } from "@/lib/timezone-format"
 import { getTrialStatus } from "@/lib/billing/plan-gating"
@@ -131,6 +131,19 @@ function normalizeDetailText(text: string): string {
 	return text.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")
 }
 
+// Autumn words the rate per billing block ("$0.005 per 1,000"); events are quoted per million, in its style.
+function formatDetail(item: PlanItem): string | undefined {
+	const amount = item.price?.amount
+	const billingUnits = item.price?.billingUnits ?? 1
+	const unit = item.featureId ? COUNT_UNITS[item.featureId] : undefined
+	const quote = item.featureId ? quoteUnits(item.featureId, billingUnits) : billingUnits
+	if (amount != null && unit !== undefined && quote !== billingUnits && billingUnits > 0) {
+		const perQuote = (amount / billingUnits) * quote
+		return `then $${Number(perQuote.toPrecision(6))} per ${formatQuoteUnits(quote)} ${unit}`
+	}
+	return item.display?.secondaryText ? normalizeDetailText(item.display.secondaryText) : undefined
+}
+
 function getFeatureRows(plan: Plan) {
 	return plan.items
 		.filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
@@ -141,7 +154,7 @@ function getFeatureRows(plan: Plan) {
 				item.feature?.name ??
 				item.featureId,
 			value: formatIncludedUsage(item),
-			detail: item.display?.secondaryText ? normalizeDetailText(item.display.secondaryText) : undefined,
+			detail: formatDetail(item),
 		}))
 }
 

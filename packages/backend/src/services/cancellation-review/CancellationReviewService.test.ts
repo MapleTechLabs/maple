@@ -14,7 +14,10 @@ import {
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
-import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
+import {
+	type HomeAnswer,
+	OrganizationRegionService,
+} from "@maple/backend/services/org/OrganizationRegionService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -49,8 +52,8 @@ const job: CancellationToReview = {
 
 interface World {
 	channel: string | null
-	/** What the region lookup answers; `null` is Clerk not answering. */
-	servedHere: boolean | null
+	/** What the region lookup answers. */
+	home: HomeAnswer
 	/** Autumn's HTTP status, and the subscriptions it reports the org holding now. */
 	autumnStatus: number
 	subscriptions: Array<{ planId: string; status: string; addOn?: boolean }>
@@ -66,7 +69,7 @@ interface World {
 
 const freshWorld = (): World => ({
 	channel: "C_CANCELLATIONS",
-	servedHere: true,
+	home: "here",
 	autumnStatus: 200,
 	subscriptions: [{ planId: "startup", status: "active" }],
 	slack: "ok",
@@ -92,7 +95,7 @@ const stubs = (world: World) =>
 	Layer.mergeAll(
 		Layer.mock(OrganizationRegionService)({
 			region: "us",
-			servedHere: () => Effect.succeed(Option.fromNullishOr(world.servedHere)),
+			servedHere: () => Effect.succeed(world.home),
 		}),
 		Layer.mock(OrganizationService)({
 			retrieve: (orgId) =>
@@ -470,7 +473,7 @@ describe("CancellationReviewService", () => {
 	it.effect("waits rather than guesses when the org's region is unknown", () =>
 		Effect.gen(function* () {
 			const world = freshWorld()
-			world.servedHere = null
+			world.home = "unknown"
 			assert.strictEqual(yield* failedStep(world, createTestDb(trackedDbs)), "region")
 			assert.strictEqual(world.posts.length, 0)
 		}),
@@ -479,8 +482,17 @@ describe("CancellationReviewService", () => {
 	it.effect("leaves an org on another region's instance to that instance", () =>
 		Effect.gen(function* () {
 			const world = freshWorld()
-			world.servedHere = false
+			world.home = "elsewhere"
 			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "other_region")
+			assert.strictEqual(world.posts.length, 0)
+		}),
+	)
+
+	it.effect("settles a deleted org's cancellation instead of waiting for a region", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.home = "deleted"
+			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "org_deleted")
 			assert.strictEqual(world.posts.length, 0)
 		}),
 	)

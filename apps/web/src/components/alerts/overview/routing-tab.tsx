@@ -5,7 +5,11 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 
 import type { AlertDestinationDocument, AlertDestinationId } from "@maple/domain/http"
 
-import { DestinationCard } from "@/components/alerts/destination-card"
+import {
+	DESTINATION_ROW_GRID,
+	DestinationRow,
+	HEALTH_WINDOW,
+} from "@/components/alerts/overview/destination-row"
 import { ProviderLogo } from "@/components/alerts/destination-provider"
 import { TagGroupHeaderRow } from "@/components/alerts/overview/shared"
 import { Link } from "@tanstack/react-router"
@@ -72,7 +76,7 @@ export interface DestinationManager {
 }
 
 export function useDestinationManager(options?: {
-	/** Called with the new destination's id after a create succeeds — a rule form uses it to select the destination it just made. */
+	/** Called with the new destination's id after a create succeeds; a rule form uses it to select the destination it just made. */
 	readonly onCreated?: (id: AlertDestinationId) => void
 }): DestinationManager {
 	const createDestination = useAtomSet(MapleApiV2AtomClient.mutation("alertDestinations", "create"), {
@@ -191,11 +195,10 @@ export function useDestinationManager(options?: {
 }
 
 /**
- * Settings tab: the destinations grid + delivery log. The manager and the
- * dialog live on the route (the overview's empty state opens it too) so the page header's
- * "Add destination" action drives the same dialog.
+ * Routing tab: destinations with their delivery health, then the delivery log.
+ * The manager and dialog live on the route so the header's "Add destination" drives the same dialog.
  */
-export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationManager; isAdmin: boolean }) {
+export function AlertsRoutingTab({ manager, isAdmin }: { manager: DestinationManager; isAdmin: boolean }) {
 	const { result: destinationsResult } = useAlertDestinationsList()
 	const deliveryEventsResult = useAtomValue(
 		retainedQueryV2("alertDeliveries", "list", {
@@ -221,8 +224,8 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 					<div>
 						<SectionHeading title="Destinations" />
 						<p className="text-muted-foreground text-sm">
-							Destinations are reusable across rules and keep provider retries and failures
-							auditable.
+							Where rules send incidents. Health is read from each destination's last{" "}
+							{HEALTH_WINDOW} delivery attempts.
 						</p>
 					</div>
 
@@ -259,20 +262,39 @@ export function AlertsSettingsTab({ manager, isAdmin }: { manager: DestinationMa
 							</EmptyActions>
 						</Empty>
 					) : (
-						<div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-							{destinations.map((destination) => (
-								<DestinationCard
-									key={destination.id}
-									destination={destination}
-									isAdmin={isAdmin}
-									isTesting={manager.isTesting(destination.id)}
-									isDeleting={manager.isDeleting(destination.id)}
-									onToggle={manager.toggle}
-									onTest={manager.test}
-									onEdit={manager.openDialog}
-									onDelete={manager.remove}
-								/>
-							))}
+						<div className="overflow-x-auto rounded-md border">
+							<div className="min-w-[760px]">
+								<div
+									className={cn(
+										DESTINATION_ROW_GRID,
+										"border-b px-4 py-2 text-xs text-muted-foreground",
+									)}
+								>
+									<span>Destination</span>
+									<span>Type</span>
+									<span>Last {HEALTH_WINDOW} attempts</span>
+									<span className="text-right">Last delivered</span>
+									<span />
+								</div>
+								<ul className="divide-y">
+									{destinations.map((destination) => (
+										<DestinationRow
+											key={destination.id}
+											destination={destination}
+											recent={deliveryEvents
+												.filter((event) => event.destinationId === destination.id)
+												.slice(0, HEALTH_WINDOW)}
+											isAdmin={isAdmin}
+											isTesting={manager.isTesting(destination.id)}
+											isDeleting={manager.isDeleting(destination.id)}
+											onToggle={manager.toggle}
+											onTest={manager.test}
+											onEdit={manager.openDialog}
+											onDelete={manager.remove}
+										/>
+									))}
+								</ul>
+							</div>
 						</div>
 					)}
 				</section>

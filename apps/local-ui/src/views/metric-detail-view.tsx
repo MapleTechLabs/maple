@@ -20,6 +20,7 @@ import { chartUnitFromOtel, humanizeUnit, isCounter } from "../lib/units"
 import { SeriesChart } from "../components/series-chart"
 import { RefreshButton, TimeRangeSelect } from "../components/toolbar"
 import { EmptyState, ErrorState } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 interface MetricDetailViewProps {
 	metricName: string
@@ -72,7 +73,7 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 					<div className="flex h-full items-center justify-center">
 						<Spinner />
 					</div>
-				) : entryQuery.isError ? (
+				) : failedWithoutData(entryQuery) ? (
 					<ErrorState
 						label="metric"
 						error={entryQuery.error}
@@ -110,7 +111,7 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 									{formatRelativeTime(entry.lastSeen)}
 								</span>
 							</div>
-							{timeseries.isError ? (
+							{failedWithoutData(timeseries) ? (
 								<ErrorState
 									label="timeseries"
 									error={timeseries.error}
@@ -135,7 +136,7 @@ export function MetricDetailView({ metricName, backLabel, onBack }: MetricDetail
 								<div className="flex h-24 items-center justify-center rounded-md border">
 									<Spinner />
 								</div>
-							) : breakdown.isError ? (
+							) : failedWithoutData(breakdown) ? (
 								<ErrorState
 									label="breakdown"
 									error={breakdown.error}

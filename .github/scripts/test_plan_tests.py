@@ -40,7 +40,7 @@ class TestPlan(unittest.TestCase):
                     )
                 )
             else:
-                self.assertEqual(lanes[0]["args"], [])
+                self.assertIn(suite["name"], lanes[0]["bun-filters"])
         self.assertEqual(
             {s["name"] for s in suites},
             {name for lane in matrix["include"] for name in lane["filters"]},
@@ -68,7 +68,7 @@ class TestPlan(unittest.TestCase):
         self.assert_coverage(suites, planner.plan(suites))
         self.assertEqual(planner.plan(suites), planner.plan(list(reversed(suites))))
 
-    def test_bun_suites_share_a_lane_without_vitest_flags(self):
+    def test_bun_suites_share_small_lanes_but_are_marked(self):
         suites = [
             {"name": "bun-a", "files": 10, "vitest": False},
             {"name": "bun-b", "files": 1, "vitest": False},
@@ -76,9 +76,9 @@ class TestPlan(unittest.TestCase):
         ]
         lanes = planner.plan(suites)["include"]
         self.assert_coverage(suites, {"include": lanes})
-        bun = [lane for lane in lanes if "bun-a" in lane["filters"]]
-        self.assertEqual(bun[0]["filters"], ["bun-a", "bun-b"])
-        self.assertEqual(bun[0]["args"], [])
+        self.assertEqual(len(lanes), 1)
+        self.assertEqual(sorted(lanes[0]["filters"]), ["bun-a", "bun-b", "vitest-a"])
+        self.assertEqual(sorted(lanes[0]["bun-filters"]), ["bun-a", "bun-b"])
 
     def test_matrix_limit_is_explicit(self):
         with self.assertRaisesRegex(ValueError, "256"):
@@ -111,7 +111,7 @@ class TestPlan(unittest.TestCase):
 
 
 class TestRunner(unittest.TestCase):
-    def run_lane(self, args, returncode=0, elapsed=10):
+    def run_lane(self, args, returncode=0, elapsed=10, bun_filters=()):
         import json
         import os
         import runpy
@@ -122,6 +122,7 @@ class TestRunner(unittest.TestCase):
             "name": "fixture",
             "filters": ["@fixture/one", "@fixture/two"],
             "args": args,
+            "bun-filters": list(bun_filters),
         }
         with (
             patch.dict(os.environ, {"TEST_LANE": json.dumps(lane)}, clear=True),
@@ -135,14 +136,14 @@ class TestRunner(unittest.TestCase):
             runpy.run_path(
                 str(Path(__file__).with_name("run-tests.py")), run_name="__main__"
             )
-        return result.exception.code, run.call_args.args[0]
+        return result.exception.code, [call.args[0] for call in run.call_args_list]
 
     def test_vitest_arguments_and_failure_propagation(self):
-        code, command = self.run_lane(["--shard=2/5", "--maxWorkers=2"], returncode=7)
+        code, commands = self.run_lane(["--shard=2/5", "--maxWorkers=2"], returncode=7)
         self.assertEqual(code, 7)
         self.assertEqual(
-            command,
-            [
+            commands,
+            [[
                 "bun",
                 "turbo",
                 "test",
@@ -152,13 +153,29 @@ class TestRunner(unittest.TestCase):
                 "--",
                 "--shard=2/5",
                 "--maxWorkers=2",
-            ],
+            ]],
         )
 
-    def test_bun_receives_no_vitest_arguments(self):
-        code, command = self.run_lane([])
-        self.assertEqual(code, 0)
-        self.assertNotIn("--", command)
+    def test_bun_suites_in_a_mixed_lane_get_no_vitest_arguments(self):
+        code, commands = self.run_lane(
+            ["--maxWorkers=2"], returncode=3, bun_filters=["@fixture/two"]
+        )
+        self.assertEqual(code, 3)
+        self.assertEqual(
+            commands,
+            [
+                [
+                    "bun",
+                    "turbo",
+                    "test",
+                    "--concurrency=1",
+                    "--filter=@fixture/one",
+                    "--",
+                    "--maxWorkers=2",
+                ],
+                ["bun", "turbo", "test", "--concurrency=1", "--filter=@fixture/two"],
+            ],
+        )
 
     def test_slow_passing_suite_fails_budget(self):
         code, _ = self.run_lane([], elapsed=241)

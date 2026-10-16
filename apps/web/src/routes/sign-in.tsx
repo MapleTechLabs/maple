@@ -14,6 +14,7 @@ import { AccountLayout } from "@/components/layout/account-layout"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { clerkAuthCardAppearance } from "@/lib/clerk-appearance"
 import { tracedFetch } from "@/lib/services/common/telemetry"
+import { loadPreviewSignInEnabled, openTicketSignIn, requestPreviewTicket } from "@/lib/preview-sign-in"
 
 const SignInSearch = Schema.Struct({
 	redirect_url: Schema.optional(Schema.String),
@@ -22,6 +23,7 @@ const SignInSearch = Schema.Struct({
 export const Route = createFileRoute("/sign-in")({
 	component: SignInPage,
 	validateSearch: Schema.toStandardSchemaV1(SignInSearch),
+	loader: async () => ({ previewSignIn: isClerkAuthEnabled && (await loadPreviewSignInEnabled()) }),
 })
 
 export const redirectToDashboard = () => {
@@ -56,6 +58,58 @@ async function loginSelfHosted(password: string) {
 	}
 
 	return (await response.json()) as { token: string }
+}
+
+/**
+ * PR previews run on Clerk's development instance, where reviewers have no account. The
+ * shared access key buys a sign-in ticket for the preview reviewer, which `<SignIn>`
+ * redeems from `__clerk_ticket` once the page reloads with it.
+ */
+export function PreviewAccessForm({ onTicket }: { onTicket: (ticket: string) => void }) {
+	const [key, setKey] = useState("")
+	const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+	const [submit, isSubmitting] = useAsyncAction(async () => {
+		setErrorMessage(null)
+		await requestPreviewTicket(key.trim())
+			.then(onTicket)
+			.catch((error: unknown) => setErrorMessage(getErrorMessage(error)))
+	})
+
+	const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault()
+		if (!isSubmitting) void submit()
+	}
+
+	return (
+		<form className="mt-8 space-y-4 border-t border-border pt-6" onSubmit={onSubmit}>
+			<div className="space-y-1">
+				<p className="font-mono text-xs tracking-[0.02em]">PR preview</p>
+				<p className="font-display text-muted-foreground text-sm leading-relaxed">
+					Sign in as the shared preview reviewer with the preview access key.
+				</p>
+			</div>
+			<Field invalid={Boolean(errorMessage)} className="items-stretch">
+				<FieldLabel className="font-mono text-xs sm:text-xs tracking-[0.02em]">Access key</FieldLabel>
+				<Input
+					type="password"
+					value={key}
+					onChange={(event) => setKey(event.target.value)}
+					autoComplete="off"
+					disabled={isSubmitting}
+					required
+				/>
+				{errorMessage ? (
+					<FieldError match role="alert" className="font-mono">
+						{errorMessage}
+					</FieldError>
+				) : null}
+			</Field>
+			<Button type="submit" variant="outline" className="w-full" loading={isSubmitting}>
+				Sign in to preview
+			</Button>
+		</form>
+	)
 }
 
 export function SelfHostedSignInPage() {
@@ -120,6 +174,7 @@ export function SelfHostedSignInPage() {
 
 function SignInPage() {
 	const { redirect_url } = Route.useSearch()
+	const { previewSignIn } = Route.useLoaderData()
 	// Clerk's <SignIn> defaults its post-sign-in redirect to "/", which would
 	// discard the guard-preserved redirect_url (e.g. after a hard reload on a
 	// deep link bounced through /sign-in while the session was still settling).
@@ -129,6 +184,9 @@ function SignInPage() {
 		return (
 			<AccountLayout>
 				<SignIn appearance={clerkAuthCardAppearance} forceRedirectUrl={target ?? undefined} />
+				{previewSignIn ? (
+					<PreviewAccessForm onTicket={(ticket) => openTicketSignIn(ticket, target)} />
+				) : null}
 			</AccountLayout>
 		)
 	}
