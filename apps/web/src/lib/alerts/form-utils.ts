@@ -13,6 +13,7 @@ import {
 	HazelChannelId,
 	HazelOrganizationId,
 	IsoDateTimeString,
+	legacyAlertThreshold,
 	UserId,
 	type AlertComparator,
 	type AlertDeliveryStatus,
@@ -765,13 +766,23 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 		windowMinutes: result.window_minutes,
 		threshold: result.threshold,
 		thresholdUpper: result.threshold_upper,
-		thresholds: Arr.map(result.thresholds, (tier) => ({
-			severity: tier.severity,
-			value: tier.value,
-			upper: tier.upper,
-			recoveryValue: tier.recovery_value,
-			destinationIds: tier.destination_ids,
-		})),
+		// The wire bounds it to 1-2 tiers; a preview without any reads as its single threshold.
+		thresholds: Arr.isReadonlyArrayNonEmpty(result.thresholds)
+			? Arr.map(result.thresholds, (tier) => ({
+					severity: tier.severity,
+					value: tier.value,
+					upper: tier.upper,
+					recoveryValue: tier.recovery_value,
+					destinationIds: tier.destination_ids,
+				}))
+			: Arr.of(
+					legacyAlertThreshold({
+						severity: "warning",
+						threshold: result.threshold,
+						thresholdUpper: result.threshold_upper,
+						destinationIds: [],
+					}),
+				),
 		comparator: result.comparator,
 		truncatedToStart: asIsoOrNull(result.truncated_to_start),
 		series: result.series.map(

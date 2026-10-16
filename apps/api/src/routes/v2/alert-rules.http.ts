@@ -213,7 +213,7 @@ const toUpsertRequest = (
 			signalType: params.signal_type,
 			comparator: params.comparator,
 			windowMinutes: params.window_minutes,
-			...(params.thresholds !== undefined
+			...(params.thresholds !== undefined && Arr.isReadonlyArrayNonEmpty(params.thresholds)
 				? { thresholds: Arr.map(params.thresholds, fromV2Threshold) }
 				: undefined),
 			...(params.severity !== undefined ? { severity: params.severity } : undefined),
@@ -289,7 +289,9 @@ const mergeThresholds = (
 ): Effect.Effect<AlertThresholds, ReturnType<typeof V2ParameterInvalid.make>> => {
 	const fitBound = (tier: AlertThreshold): AlertThreshold =>
 		isRangeComparator(comparator) ? tier : { ...tier, upper: null }
-	if (patch.thresholds !== undefined) return Effect.succeed(Arr.map(patch.thresholds, fromV2Threshold))
+	if (patch.thresholds !== undefined && Arr.isReadonlyArrayNonEmpty(patch.thresholds)) {
+		return Effect.succeed(Arr.map(patch.thresholds, fromV2Threshold))
+	}
 	const legacyKeys = (["severity", "threshold", "threshold_upper", "destination_ids"] as const).filter(
 		(key) => patch[key] !== undefined,
 	)

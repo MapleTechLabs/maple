@@ -70,7 +70,9 @@ export const V2AlertThreshold = Schema.Struct({
 })
 export type V2AlertThreshold = Schema.Schema.Type<typeof V2AlertThreshold>
 
-const V2AlertThresholds = Schema.NonEmptyArray(V2AlertThreshold).check(Schema.isMaxLength(2))
+// A plain bounded array on the wire, not a tuple: generated clients (the iOS app's)
+// do not all read `prefixItems`. Servers narrow it to non-empty after decode.
+const V2AlertThresholds = Schema.Array(V2AlertThreshold).check(Schema.isMinLength(1), Schema.isMaxLength(2))
 
 /** Mirrors the v1 caps (alerts.ts): 32-char tags, at most 20 per rule. */
 const RuleTags = Schema.Array(Schema.String.check(Schema.isMaxLength(32))).check(Schema.isMaxLength(20))
