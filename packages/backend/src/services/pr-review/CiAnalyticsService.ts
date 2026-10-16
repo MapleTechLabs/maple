@@ -421,7 +421,7 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 				// Jobs are queued after their run starts and can outlast the window: read over the runs' span.
 				const span = CH.ciRunsSpanMs(failed)
 				const failedJobs =
-					failedIds.length === 0
+					span === undefined
 						? []
 						: yield* read(
 								tenant,

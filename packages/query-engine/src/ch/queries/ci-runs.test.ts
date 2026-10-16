@@ -122,8 +122,12 @@ describe("ciRunsSpanMs", () => {
 			{ startedAt: at("2026-10-05T12:00:00Z"), durationMs: 600_000 },
 			{ startedAt: at("2026-10-05T11:00:00Z"), durationMs: 60_000 },
 		])
-		expect(span.startMs).toBe(Date.parse("2026-10-05T11:00:00Z"))
-		expect(span.endMs).toBe(Date.parse("2026-10-05T12:10:01Z"))
+		expect(span?.startMs).toBe(Date.parse("2026-10-05T11:00:00Z"))
+		expect(span?.endMs).toBe(Date.parse("2026-10-05T12:10:01Z"))
+	})
+
+	it("is absent for no runs", () => {
+		expect(ciRunsSpanMs([])).toBeUndefined()
 	})
 })
 

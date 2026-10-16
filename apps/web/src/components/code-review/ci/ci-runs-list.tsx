@@ -18,7 +18,7 @@ import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 
 import { NothingInWindow } from "../code-review-layout"
-import { pullRequestUrl } from "./ci-format"
+import { externalUrl, pullRequestUrl } from "./ci-format"
 import { CiResultBadge } from "./ci-result-badge"
 
 const PAGE = 50
@@ -181,7 +181,9 @@ function RunRows({
 	onBranch: (branch: string) => void
 }) {
 	return runs.map((run) => {
-		const prUrl = run.pullRequest === null ? null : pullRequestUrl(run.url, run.pullRequest)
+		const runUrl = externalUrl(run.url)
+		const prUrl =
+			run.pullRequest === null || runUrl === null ? null : pullRequestUrl(runUrl, run.pullRequest)
 		const failed = run.failedJobs.slice(0, FAILED_JOBS_SHOWN)
 		const hidden = run.failedJobs.length - failed.length
 		return (
@@ -243,23 +245,38 @@ function RunRows({
 					</div>
 					{failed.length > 0 ? (
 						<ul className="mt-1 flex flex-col gap-0.5 text-xs">
-							{failed.map((job) => (
-								<li key={job.job} className="flex min-w-0 gap-1.5">
-									<a
-										href={job.url}
-										target="_blank"
-										rel="noreferrer"
-										className={cn("shrink-0 font-medium hover:underline", TONE_TEXT.crit)}
-									>
-										{job.job}
-									</a>
-									{job.reason ? (
-										<span className="truncate text-muted-foreground" title={job.reason}>
-											{job.reason}
-										</span>
-									) : null}
-								</li>
-							))}
+							{failed.map((job) => {
+								const jobUrl = externalUrl(job.url)
+								return (
+									<li key={job.job} className="flex min-w-0 gap-1.5">
+										{jobUrl === null ? (
+											<span className={cn("shrink-0 font-medium", TONE_TEXT.crit)}>
+												{job.job}
+											</span>
+										) : (
+											<a
+												href={jobUrl}
+												target="_blank"
+												rel="noreferrer"
+												className={cn(
+													"shrink-0 font-medium hover:underline",
+													TONE_TEXT.crit,
+												)}
+											>
+												{job.job}
+											</a>
+										)}
+										{job.reason ? (
+											<span
+												className="truncate text-muted-foreground"
+												title={job.reason}
+											>
+												{job.reason}
+											</span>
+										) : null}
+									</li>
+								)
+							})}
 							{hidden > 0 ? (
 								<li className="text-muted-foreground">+{hidden} more failed</li>
 							) : null}
@@ -276,13 +293,13 @@ function RunRows({
 				<TableCell className="hidden px-4 text-right align-top sm:table-cell">
 					<span className="inline-flex items-center justify-end gap-1">
 						<TraceLink run={run} />
-						{run.url ? (
+						{runUrl === null ? null : (
 							<Button
 								variant="ghost"
 								size="xs"
 								render={
 									<a
-										href={run.url}
+										href={runUrl}
 										target="_blank"
 										rel="noreferrer"
 										aria-label="Open the run on GitHub"
@@ -292,7 +309,7 @@ function RunRows({
 								GitHub
 								<ExternalLinkIcon aria-hidden />
 							</Button>
-						) : null}
+						)}
 					</span>
 				</TableCell>
 			</TableRow>

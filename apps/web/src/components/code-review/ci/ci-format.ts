@@ -49,6 +49,14 @@ export function pullRequestUrl(runUrl: string, pullRequest: number): string | nu
 	return repository === undefined ? null : `${repository}/pull/${pullRequest}`
 }
 
+/**
+ * A span-supplied link, only when it is http(s): anything that can write CI spans for the org sets
+ * these, and a `javascript:` href would run in Maple's origin.
+ */
+export function externalUrl(value: string): string | null {
+	return URL.canParse(value) && /^https?:$/u.test(new URL(value).protocol) ? value : null
+}
+
 /** Whether the server read less than asked: it keeps CI traces for a limited time. */
 export const windowWasCut = (requestedStartMs: number, readStartMs: number): boolean =>
 	readStartMs - requestedStartMs > 60_000

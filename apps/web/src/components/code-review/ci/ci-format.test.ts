@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
 	ciResultLabel,
 	ciResultTone,
+	externalUrl,
 	failRate,
 	pullRequestUrl,
 	rateChange,
@@ -66,5 +67,24 @@ describe("windowWasCut", () => {
 		const asked = Date.UTC(2026, 9, 1)
 		expect(windowWasCut(asked, asked + 30_000)).toBe(false)
 		expect(windowWasCut(asked, asked + 16 * 86_400_000)).toBe(true)
+	})
+})
+
+describe("externalUrl", () => {
+	it("keeps http and https links", () => {
+		expect(externalUrl("https://github.com/acme/web/actions/runs/1")).toBe(
+			"https://github.com/acme/web/actions/runs/1",
+		)
+		expect(externalUrl("http://ghe.internal/acme/web/actions/runs/1")).toBe(
+			"http://ghe.internal/acme/web/actions/runs/1",
+		)
+	})
+
+	it("drops script, data and unparsable links", () => {
+		expect(externalUrl("javascript:alert(1)")).toBeNull()
+		expect(externalUrl("JavaScript:alert(1)")).toBeNull()
+		expect(externalUrl("data:text/html,<script>alert(1)</script>")).toBeNull()
+		expect(externalUrl("")).toBeNull()
+		expect(externalUrl("/relative/path")).toBeNull()
 	})
 })

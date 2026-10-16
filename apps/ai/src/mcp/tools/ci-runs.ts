@@ -122,7 +122,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 					// Jobs can be queued after the window ends: read them over the failed runs' own span.
 					const span = CH.ciRunsSpanMs(failed)
 					const failedJobs =
-						failedIds.length === 0
+						span === undefined
 							? []
 							: yield* executor.compiledQuery(
 									CH.compile(

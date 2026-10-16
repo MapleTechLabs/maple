@@ -178,11 +178,16 @@ export const ciRedStreak = <R extends { readonly result: string }>(
  */
 export const ciRunsSpanMs = (
 	runs: ReadonlyArray<{ readonly startedAt: DateTime.Utc; readonly durationMs: number }>,
-) => ({
-	startMs: Math.min(...runs.map((run) => DateTime.toEpochMillis(run.startedAt))),
-	// A second past the end: span timestamps keep the milliseconds the run's own end rounds off.
-	endMs: Math.max(...runs.map((run) => DateTime.toEpochMillis(run.startedAt) + run.durationMs)) + 1000,
-})
+): { readonly startMs: number; readonly endMs: number } | undefined =>
+	runs.length === 0
+		? undefined
+		: {
+				startMs: Math.min(...runs.map((run) => DateTime.toEpochMillis(run.startedAt))),
+				// A second past the end: span timestamps keep the milliseconds the run's own end rounds off.
+				endMs:
+					Math.max(...runs.map((run) => DateTime.toEpochMillis(run.startedAt) + run.durationMs)) +
+					1000,
+			}
 
 /** What the CI analytics read: one repository and workflow, or every one. */
 export interface CiScopeOpts {
