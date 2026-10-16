@@ -11,6 +11,7 @@ Maple uses two kinds of credential. **Ingest keys** send telemetry. **API keys**
 | ------------------ | ----------- | ---------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | Public ingest key  | `maple_pk_` | **Settings → Ingestion**                 | Send telemetry                                 | Yes                          |
 | Private ingest key | `maple_sk_` | **Settings → Ingestion**                 | Send telemetry                                 | No                           |
+| Custom ingest key  | `maple_ik_` | **Settings → Ingestion → Custom keys**   | Send the signals you allow, up to its limit    | No                           |
 | API key            | `maple_ak_` | **Settings → API Keys**                  | REST API and MCP server, limited by its scopes | No                           |
 | MCP key            | `maple_ak_` | **Settings → MCP**                       | MCP server only                                | No                           |
 | OAuth token        |             | Issued to an MCP client when you sign in | MCP server only                                | No                           |
@@ -19,11 +20,11 @@ Every credential belongs to one organization in one [region](/docs/reference/reg
 
 ## Which endpoint accepts what
 
-| Endpoint                                | Accepts                                                                               |
-| --------------------------------------- | ------------------------------------------------------------------------------------- |
-| Ingest, `https://ingest.maple.dev/v1/*` | Public or private ingest key, as `Authorization: Bearer …` or `x-maple-ingest-key: …` |
-| REST API, `https://api.maple.dev/v2/*`  | API key, or a dashboard session token, as `Authorization: Bearer …`                   |
-| MCP server, `https://api.maple.dev/mcp` | API key, MCP key or OAuth token, as `Authorization: Bearer …`                         |
+| Endpoint                                | Accepts                                                                 |
+| --------------------------------------- | ----------------------------------------------------------------------- |
+| Ingest, `https://ingest.maple.dev/v1/*` | Any ingest key, as `Authorization: Bearer …` or `x-maple-ingest-key: …` |
+| REST API, `https://api.maple.dev/v2/*`  | API key, or a dashboard session token, as `Authorization: Bearer …`     |
+| MCP server, `https://api.maple.dev/mcp` | API key, MCP key or OAuth token, as `Authorization: Bearer …`           |
 
 Use the EU hosts (`ingest.eu.maple.dev`, `api.eu.maple.dev`) for an EU organization.
 
@@ -41,6 +42,19 @@ Send the key on every request, either as `Authorization: Bearer maple_pk_…` or
 To rotate a key, click **Regenerate** next to it in **Settings → Ingestion**, or call `POST /v2/ingest_keys/public/roll` or `POST /v2/ingest_keys/private/roll`. The old key stops working immediately, so deploy the new one first where you can.
 
 The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is discarded. Use it in CI or example code.
+
+### Custom ingest keys
+
+Beside the default pair you can create named keys under **Settings → Ingestion → Custom keys**, or with `POST /v2/ingest_keys/custom`. Give one to a team, a service or an environment so you can limit and revoke it on its own. Each key has:
+
+| Setting                 | What it does                                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Allowed signals**     | Traces, logs, metrics, sessions (replays and session events) and events. Other signals are rejected with `403`.                                |
+| **Rate limit**          | Requests per second across all ingest servers. Requests over it get `429` with a `Retry-After` header.                                         |
+| **Resource attributes** | Written on every resource the key sends. **Always set** overwrites the sender's value; **If missing** only fills it in. `maple_*` is reserved. |
+| **Expires**             | Never, or a date after which the key gets `401`.                                                                                               |
+
+The key is shown once, when it is created or rolled; Maple keeps only a hash. Telemetry sent with a custom key carries a `maple_ingest_key_id` resource attribute with the key's `ingk_…` ID, so you can filter by key. Edits, disabling, rolling and deleting reach the ingest servers within a minute.
 
 ## API keys
 
