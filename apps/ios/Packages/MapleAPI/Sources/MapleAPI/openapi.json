@@ -7766,7 +7766,7 @@
       "name": "Alert Incidents"
     },
     {
-      "description": "Telemetry ingest credentials for your organization: a public key for client-side senders and a private key for server-side senders. Retrieve them or roll either key. All operations are admin-only.",
+      "description": "Telemetry ingest credentials for your organization: a default public key for client-side senders, a default private key for server-side senders, and any number of custom keys with their own allowed signals, rate limit and resource attributes. All operations are admin-only.",
       "name": "Ingest Keys"
     },
     {
