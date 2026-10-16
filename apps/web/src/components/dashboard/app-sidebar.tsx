@@ -12,6 +12,7 @@ import {
 	KeyboardIcon,
 	LogoutIcon,
 	MagnifierIcon,
+	PixelSparkleIcon,
 	UserIcon,
 } from "@/components/icons"
 import {
@@ -395,7 +396,11 @@ function NavRow({
 			</SidebarMenuButton>
 			{item.badge ? (
 				<SidebarMenuBadge>
-					<Badge className="h-4 px-1.5 py-0 font-medium text-3xs" variant="secondary">
+					<Badge
+						className="gap-0.5 bg-primary font-semibold text-primary-foreground"
+						variant="tag"
+					>
+						<PixelSparkleIcon className="size-2.5" />
 						{item.badge}
 					</Badge>
 				</SidebarMenuBadge>
