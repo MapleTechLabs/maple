@@ -5,6 +5,8 @@ import type { GcpResource } from "@maple/domain/http"
 import {
 	gcpCloudSqlInstances,
 	gcpConsolePage,
+	gcpConsoleProjectPages,
+	gcpConsoleScopePage,
 	gcpExplorerWhere,
 	gcpMatchResource,
 	gcpResourceQuery,
@@ -240,5 +242,27 @@ describe("gcpCloudSqlInstances", () => {
 			api,
 		])
 		expect(instances).toEqual([{ ...settings, id: "acme-prod:orders-db", name: "orders-db" }])
+	})
+})
+
+describe("gcpConsoleScopePage", () => {
+	it("opens a project's dashboard, and a folder or organization in the resource manager", () => {
+		expect(gcpConsoleScopePage({ scope_type: "project", scope_id: "acme prod" })).toBe(
+			"https://console.cloud.google.com/home/dashboard?project=acme%20prod",
+		)
+		expect(gcpConsoleScopePage({ scope_type: "folder", scope_id: "4521" })).toBe(
+			"https://console.cloud.google.com/cloud-resource-manager?folder=4521",
+		)
+		expect(gcpConsoleScopePage({ scope_type: "organization", scope_id: "1234" })).toBe(
+			"https://console.cloud.google.com/cloud-resource-manager?organizationId=1234",
+		)
+	})
+})
+
+describe("gcpConsoleProjectPages", () => {
+	it("opens every page on the project", () => {
+		for (const page of gcpConsoleProjectPages("acme prod")) {
+			expect(new URL(page.href).searchParams.get("project"), page.label).toBe("acme prod")
+		}
 	})
 })
