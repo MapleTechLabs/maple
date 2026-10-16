@@ -46,6 +46,7 @@ import {
 	ToolbarStats,
 } from "../components/toolbar"
 import { ErrorState, ListSkeleton } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 /** Card height + the grid gap, for the virtualizer's row estimate. */
 const CARD_ROW_HEIGHT = 124 + 12
@@ -124,7 +125,7 @@ export function MetricsListView() {
 		<PageShell sidebar={sidebar} toolbar={toolbar} activeFilterCount={activeFilterCount}>
 			{list.query.isPending ? (
 				<ListSkeleton variant="grid" rows={9} />
-			) : list.query.isError ? (
+			) : failedWithoutData(list.query) ? (
 				<ErrorState label="metrics" error={list.query.error} onRetry={() => list.query.refetch()} />
 			) : entries.length === 0 ? (
 				<SignalEmptyState
@@ -139,7 +140,7 @@ export function MetricsListView() {
 					entries={entries}
 					points={sparklines.data}
 					loading={sparklines.isPending}
-					failed={sparklines.isError}
+					failed={failedWithoutData(sparklines)}
 					query={query}
 					dimmed={list.query.isPlaceholderData}
 				/>

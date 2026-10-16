@@ -2,10 +2,13 @@ import { assert, describe, it } from "@effect/vitest"
 import { Data, Effect, Schema } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
 import { HttpApiSchemaError } from "effect/http-api/HttpApiError"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as HttpServerError from "effect/http/HttpServerError"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
-import { makeSpanBuffer } from "./flushable-tracer.js"
+import { makeSpanBuffer, type OtlpSpan } from "./flushable-tracer.js"
 
 // A benign error flagged exactly the way Effect's RouteNotFound is.
 class BenignError extends Data.TaggedError("BenignError")<{}> {
@@ -315,7 +318,10 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 				assert.strictEqual(span!.status.code, 2 /* Error */)
 				const types = span!.events
 					.filter((event) => event.name === "exception")
-					.map((event) => event.attributes.find((attribute) => attribute.key === "exception.type")?.value)
+					.map(
+						(event) =>
+							event.attributes.find((attribute) => attribute.key === "exception.type")?.value,
+					)
 				assert.deepStrictEqual(types, [{ stringValue: "HttpServerError" }])
 			}),
 		)
@@ -372,6 +378,95 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 			yield* respond(buffer, 503, "internal")
 			const [span] = buffer.drain()
 			assert.strictEqual(span?.status.code, 1 /* Ok */)
+		}),
+	)
+})
+
+describe("makeSpanBuffer raw HTTP client spans", () => {
+	// A real Effect HttpClient over a stubbed fetch, so Effect itself ends the client span.
+	const request = (
+		buffer: ReturnType<typeof makeSpanBuffer>,
+		fetch: () => Promise<Response>,
+		handle: (
+			response: Effect.Effect<HttpClientResponse.HttpClientResponse, unknown, HttpClient.HttpClient>,
+		) => Effect.Effect<unknown, unknown, HttpClient.HttpClient> = (response) => response,
+	) =>
+		handle(HttpClient.get("https://api.test/v1/things")).pipe(
+			Effect.withSpan("caller"),
+			Effect.provide(FetchHttpClient.layer),
+			Effect.provideService(FetchHttpClient.Fetch, fetch),
+			Effect.provide(buffer.tracerLayer),
+			Effect.exit,
+		)
+	const clientSpan = (spans: ReadonlyArray<OtlpSpan>) => spans.find((span) => span.kind === 3 /* client */)
+	const callerSpan = (spans: ReadonlyArray<OtlpSpan>) => spans.find((span) => span.name === "caller")
+	const hasException = (span: OtlpSpan | undefined) =>
+		span?.events.some((event) => event.name === "exception")
+	const respond = (status: number) => () => Promise.resolve(new Response("{}", { status }))
+	const failToFetch = () => Promise.reject(new TypeError("Failed to fetch"))
+
+	it.effect("keeps a 4xx client span Error but leaves the exception to the caller", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* request(buffer, respond(401))
+			const spans = buffer.drain()
+			assert.strictEqual(clientSpan(spans)?.status.code, 2 /* Error */)
+			assert.isFalse(hasException(clientSpan(spans)))
+			// The caller read the 401 and moved on: nothing failed.
+			assert.strictEqual(callerSpan(spans)?.status.code, 1 /* Ok */)
+		}),
+	)
+
+	it.effect("still reports a 4xx the caller does not handle, on the caller's span", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* request(buffer, respond(403), (response) =>
+				response.pipe(Effect.flatMap(HttpClientResponse.filterStatusOk)),
+			)
+			const spans = buffer.drain()
+			assert.isFalse(hasException(clientSpan(spans)))
+			assert.strictEqual(callerSpan(spans)?.status.code, 2 /* Error */)
+			assert.isTrue(hasException(callerSpan(spans)))
+		}),
+	)
+
+	it.effect("lets an anticipated identifier record a 4xx client span as Ok", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ anticipatedErrorIdentifiers: new Set(["HttpClientError"]) })
+			yield* request(buffer, respond(401))
+			assert.strictEqual(clientSpan(buffer.drain())?.status.code, 1 /* Ok */)
+		}),
+	)
+
+	it.effect("keeps the exception on a 5xx client span", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* request(buffer, respond(503))
+			assert.isTrue(hasException(clientSpan(buffer.drain())))
+		}),
+	)
+
+	it.effect("exports a transport failure as Unset when the connection was lost mid-request", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ watchConnection: () => () => "page_unload" })
+			yield* request(buffer, failToFetch)
+			const span = clientSpan(buffer.drain())
+			assert.strictEqual(span?.status.code, 0 /* Unset */)
+			assert.isFalse(hasException(span))
+			assert.deepStrictEqual(
+				span?.attributes.find((attribute) => attribute.key === "maple.connection_lost")?.value,
+				{ stringValue: "page_unload" },
+			)
+		}),
+	)
+
+	it.effect("keeps a transport failure an Error while the connection held", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ watchConnection: () => () => undefined })
+			yield* request(buffer, failToFetch)
+			const span = clientSpan(buffer.drain())
+			assert.strictEqual(span?.status.code, 2 /* Error */)
+			assert.isTrue(hasException(span))
 		}),
 	)
 })

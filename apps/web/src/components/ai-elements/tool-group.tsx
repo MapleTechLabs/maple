@@ -1,8 +1,16 @@
-import { useMemo, useState, type ReactNode } from "react"
-import { DisclosureChevron } from "@/components/common/disclosure-chevron"
-import { CircleCheckIcon, CircleXmarkIcon } from "@/components/icons"
+import { useMemo, type ReactNode } from "react"
 import type { IconComponent } from "@/components/icons"
-import { RunningClock, TranscriptRowButton } from "./tool"
+import {
+	Trace,
+	TraceCollapsible,
+	TraceCollapsibleContent,
+	TraceCollapsibleTrigger,
+	TraceDescription,
+	TraceIcon,
+	TraceLine,
+	TraceTitle,
+} from "@maple/ui/components/ui/trace"
+import { RunningClock } from "./tool"
 import { DotLoader } from "./dot-loader"
 import { toolActivity, toolIcon, toolLabel } from "./tool-metadata"
 
@@ -44,10 +52,9 @@ const NAMED_TOOLS = 3
  *
  * Collapsed by default, even mid-burst: the header carries live progress, so a thirty-call
  * investigation costs the reader a single line instead of a screen of chrome. Expanding drops
- * the rows into a hairline rail rather than a bordered panel — the group is an aside to the
- * turn's prose, and a filled card reads as the main event.
+ * the rows into the trace's hairline rail, an aside to the turn's prose rather than a card.
  *
- * The settled header names the work — `Search Traces · Inspect Trace ×4` — because `4 tools`
+ * The settled header names the work (`Search Traces · Inspect Trace ×4`) because `4 tools`
  * told the reader only that something happened. Naming it is what makes the collapsed line
  * worth leaving collapsed.
  */
@@ -59,7 +66,6 @@ export function ToolGroup({
 	completedCount,
 	children,
 }: ToolGroupProps) {
-	const [open, setOpen] = useState(false)
 	const running = runningCount > 0
 	const count = toolNames.length
 	const tools = useMemo(() => tally(toolNames), [toolNames])
@@ -67,73 +73,64 @@ export function ToolGroup({
 	const hidden = tools.length - named.length
 
 	return (
-		<div className="text-xs" data-slot="tool-group">
-			<TranscriptRowButton onClick={() => setOpen((v) => !v)}>
-				{/* The loader only says "in flight"; the header text beside it names the call, so
-				    the glyph is decorative and stays out of the accessibility tree. */}
-				<span className="flex size-5 shrink-0 items-center justify-center">
-					{running ? (
-						<DotLoader />
-					) : errorCount > 0 ? (
-						<CircleXmarkIcon className="size-3.5 text-severity-error" />
-					) : (
-						<CircleCheckIcon className="size-3.5 text-severity-info" />
-					)}
-				</span>
-				{running ? (
-					// No "Running…" prefix and no generic code glyph: the loader already says running,
-					// and the tool's own name says more than either. Just what's happening, and how
-					// far in.
-					<span className="min-w-0 flex-1 truncate font-medium text-foreground">
-						<span className="shimmer">{toolActivity(currentToolName ?? "")}</span>
-						<span className="ml-1.5 font-normal tabular-nums text-muted-foreground/60">
-							{completedCount}/{count}
-						</span>
-					</span>
-				) : (
-					<>
-						{/* One glyph per distinct tool: the shape of the burst is readable before
-						    the text is, and it survives the truncation the labels don't. */}
-						<span className="flex shrink-0 items-center gap-1">
-							{named.map((tool) => (
-								<tool.icon
-									key={tool.label}
-									className="size-3.5 shrink-0 text-muted-foreground/70"
-								/>
-							))}
-						</span>
-						<span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
-							{named.map((tool, i) => (
-								<span key={tool.label}>
-									{i > 0 ? <span className="text-muted-foreground/40"> · </span> : null}
-									{tool.label}
-									{tool.count > 1 ? (
-										<span className="font-normal tabular-nums text-muted-foreground/60">
-											{" "}
-											×{tool.count}
+		<Trace data-slot="tool-group">
+			<TraceCollapsible>
+				<TraceCollapsibleTrigger>
+					{/* No `error` status here: one failed call in thirty would paint the whole header
+					    red. The `N failed` count says it instead. */}
+					<TraceLine status={running ? "running" : undefined}>
+						{running ? (
+							// No "Running…" prefix and no generic glyph: the loader already says running,
+							// and the tool's own activity says more than either.
+							<>
+								<TraceIcon className="size-5">
+									<DotLoader />
+								</TraceIcon>
+								<TraceTitle className="font-medium">{toolActivity(currentToolName ?? "")}</TraceTitle>
+								<TraceDescription>
+									{completedCount}/{count}
+								</TraceDescription>
+								<RunningClock />
+							</>
+						) : (
+							<>
+								{/* One glyph per distinct tool: the shape of the burst is readable before
+								    the text is, and it survives the truncation the labels don't. */}
+								{named.map((tool) => (
+									<TraceIcon key={tool.label}>
+										<tool.icon className="size-3.5" />
+									</TraceIcon>
+								))}
+								<TraceTitle className="font-medium">
+									{named.map((tool, i) => (
+										<span key={tool.label}>
+											{i > 0 ? <span className="text-muted-foreground/40"> · </span> : null}
+											{tool.label}
+											{tool.count > 1 ? (
+												<span className="font-normal tabular-nums text-muted-foreground/60">
+													{" "}
+													×{tool.count}
+												</span>
+											) : null}
 										</span>
+									))}
+									{hidden > 0 ? (
+										<span className="font-normal text-muted-foreground/60"> +{hidden} more</span>
 									) : null}
-								</span>
-							))}
-							{hidden > 0 ? (
-								<span className="font-normal text-muted-foreground/60"> +{hidden} more</span>
-							) : null}
-						</span>
-						{errorCount > 0 ? (
-							<span className="shrink-0 font-normal tabular-nums text-severity-error">
-								{errorCount} failed
-							</span>
-						) : null}
-					</>
-				)}
-				{running ? <RunningClock /> : null}
-				<DisclosureChevron open={open} className="size-3 text-muted-foreground/60" />
-			</TranscriptRowButton>
-			{open && (
-				<div className="ms-[0.9375rem] max-h-[55vh] overflow-y-auto border-s border-border/60 py-0.5 ps-1.5">
-					{children}
-				</div>
-			)}
-		</div>
+								</TraceTitle>
+								{errorCount > 0 ? (
+									<TraceDescription className="text-severity-error">
+										{errorCount} failed
+									</TraceDescription>
+								) : null}
+							</>
+						)}
+					</TraceLine>
+				</TraceCollapsibleTrigger>
+				<TraceCollapsibleContent>
+					<Trace className="max-h-[55vh] overflow-y-auto">{children}</Trace>
+				</TraceCollapsibleContent>
+			</TraceCollapsible>
+		</Trace>
 	)
 }

@@ -1,8 +1,9 @@
-import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
+import { skipToken, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import { Option } from "effect"
 import { boundsKey, executeLocalCompiledFirstRow, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import type { TimeBounds } from "../lib/time"
+import { windowed } from "../lib/query-cache"
 
 export interface ErrorsFilters {
 	/** Exact service name match. */
@@ -23,8 +24,7 @@ function sharedFilters(filters: ErrorsFilters) {
 /** Headline stats for the errors view (error_events × service_usage). */
 export function useLocalErrorsSummary(filters: ErrorsFilters, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "errors", "summary", filters, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "errors", "summary", filters, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<CH.ErrorsSummaryOutput | null> => {
 			const row = await executeLocalCompiledFirstRow(
 				CH.compile(
@@ -44,8 +44,7 @@ export type ErrorTypeRow = CH.ErrorsByTypeOutput
 /** Fingerprint-grouped error types, most frequent first. */
 export function useLocalErrorsByType(filters: ErrorsFilters, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "errors", "by-type", filters, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "errors", "by-type", filters, boundsKey(bounds)]),
 		queryFn: ({ signal }): Promise<ReadonlyArray<ErrorTypeRow>> =>
 			executeLocalCompiledQuery(
 				CH.compile(
@@ -72,8 +71,7 @@ export interface ErrorsFacets {
  */
 export function useLocalErrorsFacets(filters: ErrorsFilters, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "errors", "facets", filters, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "errors", "facets", filters, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<ErrorsFacets> => {
 			const rows = await executeLocalCompiledQuery(
 				CH.compileUnion(
@@ -96,7 +94,7 @@ export function useLocalErrorTraces(
 	bounds: TimeBounds,
 ) {
 	return useQuery({
-		queryKey: [
+		...windowed([
 			"local",
 			"errors",
 			"traces",
@@ -105,7 +103,7 @@ export function useLocalErrorTraces(
 			filters.service,
 			filters.env,
 			boundsKey(bounds),
-		],
+		]),
 		queryFn: fingerprintHash
 			? ({ signal }): Promise<ReadonlyArray<CH.ErrorDetailTracesOutput>> =>
 					executeLocalCompiledQuery(

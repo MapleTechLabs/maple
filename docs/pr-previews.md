@@ -22,11 +22,29 @@ callbacks, which are registered for fixed hosts.
 The app's own browser telemetry still goes to the shared ingest (`VITE_MAPLE_SELF_INGEST_URL`);
 setup snippets and connect flows hand out the preview's gateway.
 
+## Signing in
+
+Previews run Clerk's development instance, where reviewers have no account and the OAuth
+buttons lead nowhere useful. The sign-in page on a preview shows a **PR preview** form: the
+shared access key `PREVIEW_SIGNIN_KEY` (Infisical) buys a single-use Clerk sign-in ticket for
+`preview-reviewer+clerk_test@maple.dev`, a user created on first use with its own `Preview` org,
+apart from anyone's dev account. From a terminal:
+
+```bash
+infisical run --env dev -- bun run preview:signin <pr>
+```
+
+prints a signed-in link. The endpoint (`/api/auth/preview/sign-in`, `PreviewSignInService`)
+answers 404 unless the API runs on a `pr-<n>` stage with an `sk_test_` Clerk key and the access
+key bound, and alchemy binds the key on PR stages only. The repo is public, so the key never
+goes in the PR comment; rotate it in Infisical if it leaks.
+
 ## After the deploy
 
-`scripts/preview-seed-smoke.ts` signs in as the dev test user, seeds demo telemetry into its
-org through the preview's API, and fails the job if a Postgres- or warehouse-backed route
-returns a 5xx. The PR comment reports the outcome.
+`scripts/preview-seed-smoke.ts` calls the preview sign-in endpoint (which provisions the
+reviewer and its org), seeds demo telemetry into the reviewer's org through the preview's API,
+and fails the job if a Postgres- or warehouse-backed route returns a 5xx. Without
+`PREVIEW_SIGNIN_KEY` it seeds the dev test user instead. The PR comment reports the outcome.
 
 ## Limits and cost
 
@@ -42,7 +60,8 @@ returns a 5xx. The PR comment reports the outcome.
    and enable logical replication on it (Settings, Logical replication). Electric needs it,
    and the owner role only gets `REPLICATION` once it is on.
 2. **Infisical** (the preview environment, `dev` unless `PREVIEW_INFISICAL_ENV_SLUG` says
-   otherwise): `NEON_API_KEY` (an org or project API key) and `NEON_PROJECT_ID`.
+   otherwise): `NEON_API_KEY` (an org or project API key), `NEON_PROJECT_ID`, and
+   `PREVIEW_SIGNIN_KEY` (any long random string, e.g. `openssl rand -base64 24`).
 3. **AWS.** The deploy role must trust `repo:MapleTechLabs/maple:environment:pr-preview`.
 4. Optional: a dedicated Infisical environment for previews, then set the repo variable
    `PREVIEW_INFISICAL_ENV_SLUG`, so previews stop sharing every `dev` credential.

@@ -270,9 +270,27 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			clipToDomain(
 				incidents.map((incident) => ({
 					x1: new Date(incident.firstTriggeredAt).getTime(),
-					x2: incident.resolvedAt ? new Date(incident.resolvedAt).getTime() : domain.max,
+					x2: incident.resolvedAt
+						? new Date(incident.resolvedAt).getTime()
+						: incident.heldSince
+							? Date.parse(incident.heldSince)
+							: domain.max,
 					open: incident.status === "open",
 				})),
+				domain,
+			),
+		[incidents, domain],
+	)
+
+	// An open incident waiting on telemetry: the tail after `heldSince` is not a breach.
+	const heldBands = React.useMemo(
+		() =>
+			clipToDomain(
+				incidents.flatMap((incident) =>
+					incident.status === "open" && incident.heldSince
+						? [{ x1: Date.parse(incident.heldSince), x2: domain.max }]
+						: [],
+				),
 				domain,
 			),
 		[incidents, domain],
@@ -517,6 +535,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 					0.06,
 					"incident-closed",
 				),
+				...band(heldBands, palette.muted, 0.16, "incident-held"),
 				...band(wouldFireBands, palette.destructive, 0.08, "would-fire"),
 				// Threshold rules. The labels deliberately live in the caption below
 				// the plot, so they cannot clip at the right edge.
@@ -623,6 +642,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		yDomain,
 		noDataBands,
 		incidentBands,
+		heldBands,
 		wouldFireBands,
 		threshold,
 		thresholdUpper,
@@ -758,15 +778,17 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 					Shaded: rule would have fired (approximate — the live scheduler evaluates every minute).
 				</p>
 			)}
+			{hasSignal && heldBands.length > 0 && (
+				<p className="text-2xs text-muted-foreground">Grey tail: incident held, waiting on data.</p>
+			)}
 			{hasSignal && source === "preview" && noDataBands.length > 0 && (
 				<p className="text-2xs text-muted-foreground">Hatched: no data received in these windows.</p>
 			)}
 			{preview?.truncatedToStart != null && (
 				<p className="text-2xs text-muted-foreground">
 					{clampedToPreview ? "Axis starts at " : "Query series starts at "}
-					{formatTime(Date.parse(preview.truncatedToStart), "tooltip")} — the selected range needs
-					more evaluation windows than one preview replays. Widen the rule's window or shorten the
-					range for full coverage.
+					{formatTime(Date.parse(preview.truncatedToStart), "tooltip")}. The range needs more
+					windows than one preview replays: widen the rule's window or shorten the range.
 				</p>
 			)}
 

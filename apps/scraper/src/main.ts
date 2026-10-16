@@ -7,7 +7,6 @@
  * has gone stale.
  */
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Maple } from "@maple-dev/effect-sdk/server"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient, HttpRouter, HttpServerResponse } from "effect/http"
 import { ApiClient } from "./ApiClient"
@@ -18,13 +17,9 @@ import { ScrapeScheduler } from "./ScrapeScheduler"
 import { Scraper } from "./Scraper"
 import { TargetFetcher } from "./TargetFetcher"
 import { TargetRegistry } from "./TargetRegistry"
+import { telemetryLayer } from "./Telemetry"
 
-const TelemetryLive = Maple.layer({
-	serviceName: "scraper",
-	serviceNamespace: "core",
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	shutdownTimeout: "3 seconds",
-})
+const TelemetryLive = telemetryLayer()
 
 const SchedulerLive = ScrapeScheduler.layer.pipe(
 	Layer.provide(Layer.mergeAll(TargetRegistry.layer, ResultReporter.layer, Scraper.layer)),

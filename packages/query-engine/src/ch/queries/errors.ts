@@ -8,7 +8,7 @@ import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
 import { exists, inSubquery } from "@maple-dev/effect-orm/clickhouse"
-import { param } from "@maple-dev/effect-orm/clickhouse"
+import { defineCondFn, param } from "@maple-dev/effect-orm/clickhouse"
 import {
 	from,
 	fromQuery,
@@ -468,6 +468,8 @@ export interface SpanDetailOutput {
 	readonly spanId: string
 	readonly parentSpanId: string
 	readonly spanName: string
+	/** The stored `SpanName`, before the HTTP display rewrite. Keys `spanEventsQuery`. */
+	readonly rawSpanName: string
 	readonly serviceName: string
 	readonly spanKind: string
 	readonly durationMs: number
@@ -495,6 +497,7 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 				$.SpanAttributes.get("http.route"),
 				$.SpanAttributes.get("url.path"),
 			),
+			rawSpanName: $.SpanName,
 			serviceName: $.ServiceName,
 			spanKind: $.SpanKind,
 			durationMs: $.Duration.div(1000000),
@@ -513,6 +516,93 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 		])
 		.limit(1)
 		.format("JSON")
+}
+
+// Span events — the OTel events (incl. `exception`) recorded on one span
+
+export interface SpanEventsOpts {
+	traceId: string
+	spanId: string
+	serviceName: string
+	/** The stored `SpanName` (`SpanDetailOutput.rawSpanName`), not the display name. */
+	spanName: string
+}
+
+export interface SpanEventsOutput {
+	/** The span's own start, rendered like the event timestamps so offsets keep ns precision. */
+	readonly spanStart: string
+	readonly eventsTimestamp: string
+	readonly eventsName: string
+	readonly eventsAttributes: string
+}
+
+/**
+ * Events for one span, read from `traces` because `trace_detail_spans` does not
+ * carry the Events arrays. `(OrgId, ServiceName, SpanName, toDateTime(Timestamp))`
+ * is the sorting key, so with the span's exact start second (`startTime` and
+ * `endTime` one second apart) this seeks a handful of granules.
+ */
+export function spanEventsQuery(opts: SpanEventsOpts) {
+	return from(Traces)
+		.select(($) => ({
+			spanStart: CH.toString_($.Timestamp),
+			eventsTimestamp: CH.toJSONString($.EventsTimestamp),
+			eventsName: CH.toJSONString($.EventsName),
+			eventsAttributes: CH.toJSONString($.EventsAttributes),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.ServiceName.eq(opts.serviceName),
+			$.SpanName.eq(opts.spanName),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.TraceId.eq(opts.traceId),
+			$.SpanId.eq(opts.spanId),
+		])
+		.limit(1)
+		.format("JSON")
+}
+
+// Span events by trace — event markers for every span of one trace
+
+export interface SpanEventsByTraceOutput {
+	readonly spanId: string
+	/** The span's own start, rendered like the event timestamps so offsets keep ns precision. */
+	readonly spanStart: string
+	readonly eventsTimestamp: string
+	readonly eventsName: string
+}
+
+const notEmpty = defineCondFn<[CH.Expr<ReadonlyArray<string>>]>("notEmpty")
+
+/**
+ * Event times and names for the spans of one trace that recorded any, for the
+ * timeline markers. Attributes stay on `spanEventsQuery`, loaded per span.
+ * `TraceId` is not in `traces`' sorting key; `idx_trace_id` and the trace's own
+ * `startTime`/`endTime` window keep this to a few granules.
+ */
+export function spanEventsByTraceQuery(opts: { traceId: string; limit?: number }) {
+	return (
+		from(Traces)
+			.select(($) => ({
+				spanId: $.SpanId,
+				spanStart: CH.toString_($.Timestamp),
+				eventsTimestamp: CH.toJSONString($.EventsTimestamp),
+				eventsName: CH.toJSONString($.EventsName),
+			}))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				$.TraceId.eq(opts.traceId),
+				notEmpty($.EventsName),
+			])
+			// Earliest first, like `spanHierarchyQuery`, so the cap keeps the spans the timeline shows.
+			// `spanStart` is fixed-width DateTime64 text, so it sorts in time order.
+			.orderBy(["spanStart", "asc"])
+			.limit(opts.limit ?? SPAN_HIERARCHY_MAX_SPANS)
+			.format("JSON")
+	)
 }
 
 // Trace timestamp probe — resolve any one span timestamp for a trace

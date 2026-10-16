@@ -1,8 +1,9 @@
 import { useMemo } from "react"
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import type { TimeBounds } from "../lib/time"
+import { windowed } from "../lib/query-cache"
 
 export interface ServiceCatalogFilters {
 	/** Exact `deployment.environment` resource attribute. */
@@ -46,8 +47,7 @@ export function toCatalogEntry(row: CH.ServiceCatalogOutput, logCount: number): 
 
 function useCatalog(env: string | undefined, ns: string | undefined, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "services", "catalog", env ?? null, ns ?? null, boundsKey(bounds)],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "services", "catalog", env ?? null, ns ?? null, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<ReadonlyArray<ServiceCatalogEntry>> => {
 			const params = localParams(bounds)
 			const [catalogRows, usageRows] = await Promise.all([

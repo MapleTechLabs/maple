@@ -12,14 +12,13 @@ import { ALERT_TEMPLATES, type AlertTemplate } from "@/lib/alerts/templates"
 
 /**
  * First-run empty state for the alerts overview (zero rules). Replaces the
- * generic bell-badge with an operator-console "quiet monitor" readout — a live
- * signal held below a not-yet-placed threshold — then surfaces the five real
+ * generic bell-badge with an operator-console "quiet monitor" readout: a live
+ * signal held below a not-yet-placed threshold, then surfaces the five real
  * starter templates as brand-colored, one-click deep links into a pre-filled
  * create form. Non-admins get the readout + a nudge, no create affordances.
  *
- * The tile hues mirror `BUILTIN_SIGNAL_OPTIONS` on the create form
- * (signal-and-threshold-section.tsx) so a template reads with the same color it
- * paints on the live chart. Kept here rather than on the pure `ALERT_TEMPLATES`
+ * The tile hues are the signals' chart colors, so a template reads with the
+ * same color it paints on the live chart. Kept here rather than on the pure `ALERT_TEMPLATES`
  * module so `templates.ts` stays React-free beyond its display icons.
  */
 const TILE_TONE: Record<AlertTemplate["id"], { glyph: string; hoverBorder: string }> = {
@@ -42,7 +41,7 @@ export function AlertsEmptyState({
 	serviceName,
 }: {
 	isAdmin: boolean
-	/** Without one, a rule has nowhere to send its incidents — so that comes first. */
+	/** Without one, a rule has nowhere to send its incidents, so that comes first. */
 	hasDestinations: boolean
 	serviceName?: string
 }) {
@@ -84,7 +83,7 @@ export function AlertsEmptyState({
 									Add destination
 								</Button>
 							) : (
-								<Button size="sm" render={<Link to="/alerts" search={{ tab: "settings" }} />}>
+								<Button size="sm" render={<Link to="/alerts" search={{ tab: "routing" }} />}>
 									<PaperPlaneIcon />
 									Add destination
 								</Button>
@@ -157,7 +156,7 @@ function TemplateTile({ template, serviceName }: { template: AlertTemplate; serv
 
 /**
  * The signature graphic: a live signal (muted, with a pulsing leading edge)
- * running steadily below a dashed amber threshold that hasn't been placed yet —
+ * running steadily below a dashed amber threshold that hasn't been placed yet,
  * the exact thing a rule adds. The threshold reuses `.infra-ref-line` (dashed
  * draw-in, with its own `prefers-reduced-motion` guard in styles.css); the leading dot is static.
  */
@@ -166,7 +165,7 @@ function QuietMonitor() {
 		<div className="relative w-full max-w-[300px] overflow-hidden rounded-md border bg-card/50 px-4 py-3">
 			<svg viewBox="0 0 300 84" className="w-full" role="img" aria-label="No threshold is watching yet">
 				<title>A steady signal running below an unset alert threshold</title>
-				{/* Dashed amber threshold — the line a rule would place. */}
+				{/* Dashed amber threshold: the line a rule would place. */}
 				<g className="infra-ref-line">
 					<line
 						x1="10"
@@ -188,7 +187,7 @@ function QuietMonitor() {
 					strokeLinejoin="round"
 					opacity="0.7"
 				/>
-				{/* Pulsing leading edge — signals are flowing, nothing is watching them. */}
+				{/* Leading edge: signals are flowing, nothing is watching them. */}
 				<circle cx="290" cy="59" r="4" className="fill-primary" opacity="0.5" />
 				<circle cx="290" cy="59" r="2.5" className="fill-primary" />
 			</svg>
