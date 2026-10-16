@@ -171,7 +171,9 @@ function WorkloadLink({ service, keys }: { service: GcpInfraServiceId; keys: Rea
  * databases, so their nodes match nothing.
  */
 export function GcpCloudSqlSection(props: TimeWindow & { dbSystem: string; dbNamespace: string }) {
-	if (props.dbSystem !== "postgresql" || props.dbNamespace === "") return null
+	// `postgres` is the spelling of older instrumentations.
+	if ((props.dbSystem !== "postgresql" && props.dbSystem !== "postgres") || props.dbNamespace === "")
+		return null
 	return (
 		<WhenCollecting fallback={null}>
 			<GcpCloudSqlSectionData {...props} />
