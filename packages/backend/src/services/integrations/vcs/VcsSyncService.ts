@@ -18,6 +18,7 @@ import {
 	type VcsRepoDecodeError,
 	type VcsRepoPersistenceError,
 	type VcsRepositoryBlockedError,
+	type VcsRepositoryRef,
 	type VcsRepoUnavailableError,
 	VcsSyncJob,
 	type WorkflowJobAnnotation,
@@ -57,6 +58,12 @@ const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
 const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "timed_out", "startup_failure"])
 /** How long a CI job waits on its annotations before going out without them. */
 const WORKFLOW_ANNOTATIONS_BUDGET = Duration.seconds(10)
+/**
+ * How long a CI job's log may hold the consumer, which runs a batch's messages one after another:
+ * about 14s waiting for GitHub to publish it, then the download and ingest. Past it, the batches
+ * already sent stay and the rest of the log is dropped.
+ */
+const WORKFLOW_LOG_BUDGET = Duration.seconds(30)
 
 // VcsInstallationGoneError is handled internally (→ disconnect) and never
 // surfaces here. VcsProviderError / VcsRepoUnavailableError that aren't caught
@@ -892,6 +899,16 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* workflowSink.onWorkflowRun(installation.orgId, job)
 			})
 
+			const workflowRepoRef = (job: WorkflowJobJob): VcsRepositoryRef | undefined => {
+				const slash = job.repoFullName.indexOf("/")
+				if (slash === -1) return undefined
+				return {
+					externalRepoId: job.externalRepoId,
+					owner: job.repoFullName.slice(0, slash),
+					name: job.repoFullName.slice(slash + 1),
+				}
+			}
+
 			// A failed job's annotations say why it failed. Best effort: a job whose annotations
 			// cannot be read still becomes spans, just without the reason.
 			const workflowJobAnnotations = (
@@ -899,14 +916,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				installation: VcsInstallation,
 				job: WorkflowJobJob,
 			) => {
-				const slash = job.repoFullName.indexOf("/")
-				if (!WORKFLOW_FAILED_CONCLUSIONS.has(job.conclusion ?? "") || slash === -1)
+				const ref = workflowRepoRef(job)
+				if (!WORKFLOW_FAILED_CONCLUSIONS.has(job.conclusion ?? "") || ref === undefined)
 					return Effect.succeed<ReadonlyArray<WorkflowJobAnnotation>>([])
-				const ref = {
-					externalRepoId: job.externalRepoId,
-					owner: job.repoFullName.slice(0, slash),
-					name: job.repoFullName.slice(slash + 1),
-				}
 				return provider.fetchWorkflowJobAnnotations(installation, ref, job.jobId).pipe(
 					// Rate-limit backoff can wait inline; the reason is not worth holding the job's spans.
 					Effect.timeoutOrElse({
@@ -943,6 +955,25 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				if (workflowSink === undefined || !installation.ciTracesEnabled) return
 				const annotations = yield* workflowJobAnnotations(provider, installation, job)
 				yield* workflowSink.onWorkflowJob(installation.orgId, job, annotations)
+				// Logs ride on the spans just written. A job with no step that ran has nothing worth
+				// reading, and GitHub may have no log for it at all.
+				const ref = workflowRepoRef(job)
+				const forwardsLog = job.steps.length > 0 && ref !== undefined
+				yield* Effect.annotateCurrentSpan({ "vcs.workflow.log_forwarded": forwardsLog })
+				if (forwardsLog)
+					yield* workflowSink
+						.onWorkflowJobLog(
+							installation.orgId,
+							job,
+							provider.streamWorkflowJobLog(installation, ref, job.jobId),
+						)
+						.pipe(
+							Effect.timeoutOrElse({
+								duration: WORKFLOW_LOG_BUDGET,
+								orElse: () =>
+									Effect.annotateCurrentSpan({ "vcs.workflow.log_error": "timed out" }),
+							}),
+						)
 			})
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {

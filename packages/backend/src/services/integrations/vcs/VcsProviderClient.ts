@@ -1,4 +1,4 @@
-import type { Effect, Option } from "effect"
+import type { Effect, Option, Stream } from "effect"
 import type {
 	BranchUpsertInput,
 	CommitUpsertInput,
@@ -487,6 +487,19 @@ export interface VcsProviderClient {
 		jobId: string,
 	) => Effect.Effect<
 		ReadonlyArray<WorkflowJobAnnotation>,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/**
+	 * A finished CI job's log, one line per element, as the provider wrote it. Lazy: nothing is
+	 * fetched until it is run, and taking a prefix stops the download.
+	 */
+	readonly streamWorkflowJobLog: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		jobId: string,
+	) => Stream.Stream<
+		string,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 }

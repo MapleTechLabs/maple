@@ -1,5 +1,5 @@
 import { GitCommitSha, VcsRepositoryBlockedError, VcsRepoUnavailableError } from "@maple/domain/http"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schedule, Schema, Stream } from "effect"
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
@@ -66,6 +66,12 @@ const MAX_COMPARE_FILES = 300
 const MAX_PAGES = 1000
 /** Pages of check-run annotations read looking for a failure, past warnings and notices. */
 const MAX_ANNOTATION_PAGES = 3
+/**
+ * A job's log can trail its `completed` webhook by a few seconds; until then GitHub answers 404.
+ * Three retries from two seconds wait out about fourteen.
+ */
+const JOB_LOG_NOT_READY_RETRIES = 3
+const JOB_LOG_NOT_READY_BACKOFF = Duration.seconds(2)
 /** GitHub lists at most 3,000 files for one pull request. */
 const MAX_PR_FILE_PAGES = 30
 
@@ -1949,6 +1955,56 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return pages.flat()
 			})
 
+			// An Actions job's log as text lines, read as it downloads so a long log never sits in
+			// memory and a caller that stops early stops the download. Needs `actions: read`, which the
+			// App holds for its workflow webhooks. GitHub redirects to a short-lived signed URL on
+			// another host; the redirect is followed by hand so the installation token is not sent there.
+			const streamJobLog = (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				jobId: string,
+			): Stream.Stream<string, GithubAppError> =>
+				Stream.unwrap(
+					Effect.gen(function* () {
+						const config = yield* resolveConfig
+						const token = yield* mintInstallationToken(externalInstallationId)
+						const url = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${encodeURIComponent(jobId)}/logs`
+						const downloadUrl = yield* authedGet(config, token, url).pipe(
+							Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+							Effect.flatMap((response) => {
+								const location = response.headers["location"]
+								if (response.status >= 300 && response.status < 400 && location !== undefined)
+									return Effect.succeed(location)
+								return failure(response, "Get job log", "repository")
+							}),
+							Effect.retry({
+								while: (error) => error.status === 404,
+								schedule: Schedule.exponential(JOB_LOG_NOT_READY_BACKOFF),
+								times: JOB_LOG_NOT_READY_RETRIES,
+							}),
+						)
+						const download = yield* tracedFetch(
+							downloadUrl,
+							{ headers: { "user-agent": USER_AGENT } },
+							"GitHub job log download failed",
+						)
+						if (!isOk(download)) return yield* failure(download, "Download job log", "repository")
+						return download.stream.pipe(
+							Stream.mapError(
+								(cause) =>
+									new GithubAppError({ message: "GitHub job log download failed", cause }),
+							),
+							Stream.decodeText,
+							Stream.splitLines,
+						)
+					}),
+				).pipe(
+					Stream.withSpan("GithubAppClient.streamJobLog", {
+						attributes: { "cicd.pipeline.task.run.id": jobId },
+					}),
+				)
+
 			// Used by the dashboard connect flow to populate the installation row.
 			const getInstallation = Effect.fn("GithubAppClient.getInstallation")(function* (
 				externalInstallationId: string,
@@ -2083,6 +2139,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				searchCode,
 				getSourceFile,
 				listCheckRunAnnotations,
+				streamJobLog,
 				mintCloneCredentials,
 				getInstallation,
 				exchangeUserOAuthCode,

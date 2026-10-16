@@ -38,8 +38,11 @@ outputs:
 runs:
     using: composite
     steps:
-        - name: Setup mise (toolchain)
-          uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        # Before secrets load, so install scripts never see them.
+        - name: Toolchain and dependencies
+          uses: ./.github/actions/setup
+          with:
+              turbo-cache: "false"
 
         - name: Load deployment secrets from Infisical
           uses: Infisical/secrets-action@77ab1f4ccd183a543cb5b42435fbd181189f4995 # v1.0.16
@@ -59,8 +62,6 @@ runs:
           with:
               role-to-assume: ${{ inputs.aws-role-arn }}
               aws-region: ${{ inputs.aws-region }}
-
-        - uses: ./.github/actions/bun-install
 
         # `Dockerfile.prebuilt` targets linux/arm64 and has a `RUN apt-get` layer,
         # so this x86 runner needs binfmt for that one layer.

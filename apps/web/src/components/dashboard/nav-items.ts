@@ -257,8 +257,7 @@ export function navGroups(flags?: OrganizationFeatureFlags): NavGroup[] {
 				// { title: "Investigations", href: "/investigations", icon: MagnifierCheckIcon },
 				{ title: "Errors", href: "/errors", icon: CircleWarningIcon },
 				{ title: "Alerts", href: "/alerts", icon: BellIcon },
-				// Behind the `prReview` rollout, like the reviewer itself.
-				...(flags?.prReview ? [{ title: "Code Review", href: "/code-review", icon: CodeIcon }] : []),
+				{ title: "Code Review", href: "/code-review", icon: CodeIcon, badge: "Beta" },
 			],
 		},
 	]
