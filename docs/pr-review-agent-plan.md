@@ -26,7 +26,6 @@ in order, skipping with the reason in brackets:
 
 - the action is `opened`, `reopened`, `synchronize` or `ready_for_review` (`action`);
 - the repository has `pr_review_enabled` (`disabled`);
-- the organization carries the `prreview` rollout flag, see "Staged rollout" (`not_rolled_out`);
 - the PR is not a draft (`draft`) and the job carries a head SHA (`no_head_sha`);
 - the author is not a bot: a `[bot]` suffix, dependabot, renovate or GitHub Actions
   (`bot_author`);
@@ -237,32 +236,11 @@ minutes, and settles `failed` once the 48 h window passes. A review that finishe
 request merged schedules its own look, and a reviewed head that is reviewed again clears the old
 one.
 
-## Staged rollout
+## Availability
 
-Merging this feature turns it on for no one. It is gated per organization by the `prreview` rollout
-flag, in the same Clerk public metadata as the other rollout flags. To flag an organization, set
-this in the Clerk dashboard under the organization's public metadata:
-
-```json
-{ "prreview": true }
-```
-
-Only the literal boolean `true` counts; a missing key, `false` or the string `"true"` all read as
-off. The flag is enforced in three places:
-
-- **The section.** Code Review, and its per-repository switch, appear only for a flagged
-  organization.
-- **The endpoint.** The `pr-review` endpoint refuses to turn reviews on for an unflagged
-  organization, so the switch cannot be bypassed by calling the API. Turning reviews off is always
-  allowed.
-- **The trigger.** `PrReviewService` skips a pull request with `not_rolled_out` for an unflagged
-  organization, so removing the flag stops reviews even on repositories switched on earlier.
-
-The flag contract lives in `@maple/domain/organization-feature-flags` and is decoded on the server
-by `OrganizationFeatureFlagsService`, which reuses an organization's flags for 60 seconds per
-isolate, so withdrawing a flag takes effect within a minute. Self-hosted builds have no Clerk and
-get every rollout on, as the web app already did. A managed build that cannot reach Clerk treats
-every rollout as off for that call.
+Code review is available to every organization; the per-repository `pr_review_enabled` switch is the
+only gate. It shipped behind a `prreview` Clerk rollout flag, retired 2026-10-16; organizations that
+still carry the key in their metadata decode it as an ignored extra.
 
 Maple's hosted App (`MapleLabsApp`) currently grants `checks: read`. Until it is raised to read and
 write and each installation accepts the change, reviews post the summary comment and the inline
@@ -340,7 +318,7 @@ open.
 ## The full review agent
 
 Built 2026-09-23 (PR #1001). The observability reviewer became a general code review agent, sold as
-one product behind the same `prreview` rollout flag. Observability is one lens of it, with its
+one product. Observability is one lens of it, with its
 `maple-audit` check ids, because it is what no other reviewer can check: the warehouse.
 
 ### General review

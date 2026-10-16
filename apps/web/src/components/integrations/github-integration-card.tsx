@@ -45,7 +45,6 @@ import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
-import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useRequiredIntegrationConnect, type IntegrationConnect } from "./integration-connect"
@@ -408,7 +407,6 @@ function ConnectedView({
 	onSetTrackedBranch: (repo: GithubRepoSummary, branch: string) => Promise<boolean>
 }) {
 	const actionBusy = connectFlow.busy || disconnectBusy
-	const prReviewRolledOut = useOrganizationFeatureFlags().flags.prReview
 	const activeRepos = status.repositories.filter((r) => r.status === "active")
 	const removedRepos = status.repositories.filter((r) => r.status === "removed")
 	const counts = {
@@ -479,25 +477,22 @@ function ConnectedView({
 
 			<CiTracesSetting enabled={status.ciTracesEnabled} />
 
-			{prReviewRolledOut ? (
-				<SettingRow
-					framed
-					className="bg-card px-4 py-3"
-					label="Pull request reviews"
-					description={
-						<>
-							{activeRepos.filter((repo) => repo.prReviewEnabled).length} of{" "}
-							{activeRepos.length} repositories reviewed. Rules, models and analytics live in
-							Code Review.
-						</>
-					}
-					control={
-						<Button size="sm" variant="outline" render={<Link to="/code-review/settings" />}>
-							Open Code Review
-						</Button>
-					}
-				/>
-			) : null}
+			<SettingRow
+				framed
+				className="bg-card px-4 py-3"
+				label="Pull request reviews"
+				description={
+					<>
+						{activeRepos.filter((repo) => repo.prReviewEnabled).length} of {activeRepos.length}{" "}
+						repositories reviewed. Rules, models and analytics live in Code Review.
+					</>
+				}
+				control={
+					<Button size="sm" variant="outline" render={<Link to="/code-review/settings" />}>
+						Open Code Review
+					</Button>
+				}
+			/>
 
 			<Panel>
 				<PanelHeader
