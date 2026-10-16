@@ -55,7 +55,6 @@ import {
 	ArrowRightIcon,
 	CloudflareIcon,
 	CubeIcon,
-	GoogleCloudIcon,
 	MagnifierIcon,
 	NetworkNodesIcon,
 	PlanetScaleIcon,
@@ -66,7 +65,6 @@ import { ResultView } from "@/components/common/result-view"
 import { SignalEmptyStateView } from "@/components/common/signal-empty-state"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import {
-	gcpInfraFleetResultAtom,
 	getPlanetScaleBranchStatsResultAtom,
 	getServiceDbQuerySummaryResultAtom,
 	getServiceMapBundleResultAtom,
@@ -95,15 +93,7 @@ import {
 	resolveDbNodePresentation,
 	resolvePlanetScaleDbPresentation,
 } from "@maple/ui/components/service-map/service-map-db"
-import { GCP_INFRA_SERVICES } from "@maple/domain/gcp-infra"
-import { gcpWorkloadTelemetry } from "@/components/infra/gcp/inventory"
-import {
-	GCP_INFRA_COLUMNS,
-	NO_GCP_FLEET,
-	formatGcpValue,
-	gcpFleet,
-	gcpWorkloadSearch,
-} from "@/components/infra/gcp/tabs"
+import { GcpCloudSqlSection, GcpServiceWorkloads } from "./service-map-gcp"
 import { PlanetScaleTopQueries } from "@/components/infra/planetscale/planetscale-top-queries"
 import {
 	formatLag,
@@ -471,8 +461,6 @@ function ServiceDetailPanel({
 								</div>
 							)}
 
-							<GcpSection serviceName={serviceId} startTime={startTime} endTime={endTime} />
-
 							{/* Dependencies */}
 							{dependencies.length > 0 && (
 								<div className="space-y-3">
@@ -520,9 +508,13 @@ function ServiceDetailPanel({
 				<TabsContent value="infrastructure" className="flex-1 min-h-0 mt-0">
 					<ScrollArea className="h-full">
 						<div className="p-4 space-y-4">
-							{serviceWorkloads.length === 0 ? (
-								<ServiceInfraEmptyState />
-							) : (
+							<GcpServiceWorkloads
+								serviceName={serviceId}
+								startTime={startTime}
+								endTime={endTime}
+								empty={serviceWorkloads.length === 0 ? <ServiceInfraEmptyState /> : null}
+							/>
+							{serviceWorkloads.length === 0 ? null : (
 								<div className="space-y-2">
 									<Eyebrow as="h4">Kubernetes workloads</Eyebrow>
 									<div className="space-y-2">
@@ -863,92 +855,6 @@ function DbQueryActivityChart({
 				</div>
 			</div>
 		</ChartTooltipSuppressionProvider>
-	)
-}
-
-/**
- * Google Cloud overlay in the service detail panel: the workloads the Google Cloud integration
- * reads under this service's name (a Cloud Run service, a function, a GKE container, a VM), each
- * with its tab's headline columns and a link to its page. Nothing is read unless a connection
- * collects metrics.
- */
-function GcpSection(props: { serviceName: string; startTime: string; endTime: string }) {
-	const statusResult = useAtomValue(
-		retainedQueryV2("gcpIntegration", "status", { reactivityKeys: ["gcpIntegration"] }),
-	)
-	const collecting = Result.builder(statusResult)
-		.onSuccess((status) => status.connectors.some((connector) => connector.metrics_enabled))
-		.orElse(() => false)
-	return collecting ? <GcpSectionData {...props} /> : null
-}
-
-function GcpSectionData({
-	serviceName,
-	startTime,
-	endTime,
-}: {
-	serviceName: string
-	startTime: string
-	endTime: string
-}) {
-	const fleetResult = useRefreshableAtomValue(gcpInfraFleetResultAtom({ data: { startTime, endTime } }))
-	const matches = Result.builder(fleetResult)
-		.onSuccess((response) => gcpFleet(response.services))
-		.orElse(() => NO_GCP_FLEET)
-		.flatMap(({ service, workloads }) =>
-			workloads
-				.filter((workload) => {
-					const telemetry = gcpWorkloadTelemetry(service, workload.keys)
-					return telemetry.traced && telemetry.serviceName === serviceName
-				})
-				.map((workload) => ({ service, workload })),
-		)
-	if (matches.length === 0) return null
-
-	return (
-		<div className="space-y-3">
-			<Separator />
-			<div className="flex items-center gap-1.5">
-				<GoogleCloudIcon size={12} />
-				<Eyebrow as="h4">Google Cloud</Eyebrow>
-			</div>
-			{matches.map(({ service, workload }) => (
-				<div key={`${service}:${workload.keys.join("/")}`} className="space-y-3">
-					<div className="flex items-baseline justify-between gap-3 text-3xs text-muted-foreground">
-						<span className="truncate">
-							{[GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" · ")}
-						</span>
-						<Link
-							to="/infra/gcp/$service/$name"
-							params={{ service, name: workload.keys[0] }}
-							search={gcpWorkloadSearch(service, workload.keys)}
-							className="shrink-0 text-primary transition-colors hover:text-primary/80"
-						>
-							View infrastructure
-						</Link>
-					</div>
-					<div className="grid grid-cols-2 gap-x-6 gap-y-4">
-						{GCP_INFRA_COLUMNS[service].slice(0, 4).map((spec, index) => (
-							<MetricTile
-								key={spec.label}
-								label={spec.label}
-								caption={spec.total ? "total in range" : undefined}
-							>
-								<MetricValue
-									className={
-										spec.format === "errorRate"
-											? errorRateClass(workload.values[index] ?? 0)
-											: undefined
-									}
-								>
-									{formatGcpValue(spec.format, workload.values[index])}
-								</MetricValue>
-							</MetricTile>
-						))}
-					</div>
-				</div>
-			))}
-		</div>
 	)
 }
 
@@ -1320,6 +1226,13 @@ function DatabaseDetailPanel({
 					</div>
 
 					{hyperdrive && hyperdrive.length > 0 ? <HyperdriveSection configs={hyperdrive} /> : null}
+
+					<GcpCloudSqlSection
+						dbSystem={dbSystem}
+						dbNamespace={dbNamespace}
+						startTime={startTime}
+						endTime={endTime}
+					/>
 
 					{planetscale ? (
 						<PlanetScaleSection

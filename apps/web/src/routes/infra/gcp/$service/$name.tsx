@@ -33,7 +33,6 @@ import {
 	GcpAppWaitCallout,
 	GcpCloudSqlChips,
 	GcpTraceGapCallout,
-	GcpWorkloadActions,
 	GcpWorkloadHeader,
 	GcpWorkloadSignals,
 } from "@/components/infra/gcp/gcp-workload-page"
@@ -42,7 +41,7 @@ import { GcpWorkloadRail } from "@/components/infra/gcp/gcp-workload-rail"
 import {
 	GCP_CLOUD_SQL_INVENTORY_QUERY,
 	gcpCloudSqlInstances,
-	gcpConsolePage,
+	gcpConsoleLinks,
 	gcpExplorerWhere,
 	gcpMatchResource,
 	gcpResourceQuery,
@@ -236,7 +235,6 @@ function GcpWorkloadPage({
 		.onSuccess((inventory) => gcpMatchResource(service, keys, inventory.resources))
 		.orElse(() => undefined)
 
-	const consolePage = resource === undefined ? undefined : gcpConsolePage(resource)
 	const telemetry = gcpWorkloadTelemetry(service, keys)
 	const logs = { service: telemetry.logsService, attrs: telemetry.logAttrs }
 
@@ -298,8 +296,12 @@ function GcpWorkloadPage({
 					resource={resource}
 					facts={facts}
 					health={sql?.health}
+					traced={
+						telemetry.traced ? { name: telemetry.serviceName, service: tracedService } : undefined
+					}
+					logs={logs}
 					serviceMap={sql === undefined ? undefined : { focusService: sql.focusService }}
-					tracedService={tracedService}
+					consoleLinks={gcpConsoleLinks(service, keys)}
 					timeSearch={timeSearch}
 				/>
 			}
@@ -311,8 +313,7 @@ function GcpWorkloadPage({
 				health={
 					points.length === 0 ? null : gcpWorkloadTone(gcpWorkload(service, keys, windowPoints))
 				}
-				traceable={telemetry.traced}
-				tracedService={tracedService}
+				databaseVersion={instance?.databaseVersion}
 				meta={
 					cloudSql === undefined ? undefined : (
 						<GcpCloudSqlChips
@@ -321,14 +322,6 @@ function GcpWorkloadPage({
 							services={cloudSql.traceSide?.services}
 						/>
 					)
-				}
-				actions={
-					<GcpWorkloadActions
-						logs={logs}
-						tracedService={tracedService}
-						consolePage={consolePage}
-						timeSearch={timeSearch}
-					/>
 				}
 			/>
 			{Result.isInitial(result) ? (

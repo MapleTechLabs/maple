@@ -49,6 +49,7 @@ import {
 	type RowRules,
 } from "./list-model"
 import { gcpQueryInsightsConsoleUrl, gcpSqlEngine, gcpSqlSize } from "./cloud-sql-signals"
+import { GcpServiceIcon } from "./gcp-service-icon"
 import { gcpWorkloadId, gcpWorkloadSearch } from "./tabs"
 
 const TABLE_MAX_HEIGHT = 640
@@ -73,7 +74,7 @@ interface RowsProps<R> {
 	waiting?: boolean
 }
 
-/** A row of any list: the health dot, the name with its sub-line, then the view's cells. */
+/** A row of any list: the health dot, the service's glyph, the name with its sub-line, then the view's cells. */
 function WorkloadRow<R extends GcpServiceRow | GcpSubscriptionRow | GcpDatabaseRow, S extends string>({
 	row,
 	rules,
@@ -97,14 +98,20 @@ function WorkloadRow<R extends GcpServiceRow | GcpSubscriptionRow | GcpDatabaseR
 			className={ROW_LINK_CLASS}
 		>
 			<GcpHealthDot spec={spec} health={rowHealth(rules, row)} />
-			<div className={cn(NAME, "space-y-0.5")}>
-				<div
-					className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"
-					title={row.name}
-				>
-					{row.name}
+			<div className={cn(NAME, "flex items-center gap-3")}>
+				<GcpServiceIcon
+					service={row.service}
+					databaseVersion={"instance" in row ? row.instance?.databaseVersion : undefined}
+				/>
+				<div className="min-w-0 flex-1 space-y-0.5">
+					<div
+						className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+						title={row.name}
+					>
+						{row.name}
+					</div>
+					<MetaLine items={meta} />
 				</div>
-				<MetaLine items={meta} />
 			</div>
 			{children}
 		</Link>
