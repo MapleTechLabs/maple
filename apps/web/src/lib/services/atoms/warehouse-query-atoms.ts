@@ -88,6 +88,7 @@ import {
 } from "@/api/warehouse/planetscale-infra"
 import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
 import {
+	getGcpCloudSqlInstancesOfDatabase,
 	getGcpCloudSqlTopQueries,
 	getGcpCloudSqlTraceSide,
 	getGcpInfraFleet,
@@ -829,6 +830,11 @@ export const gcpCloudSqlTopQueriesResultAtom = makeQueryAtomFamily(getGcpCloudSq
 export const gcpCloudSqlTraceSideResultAtom = makeQueryAtomFamily(getGcpCloudSqlTraceSide, {
 	staleTime: 15_000,
 })
+
+export const gcpCloudSqlInstancesOfDatabaseResultAtom = makeQueryAtomFamily(
+	getGcpCloudSqlInstancesOfDatabase,
+	{ staleTime: 60_000 },
+)
 
 export const planetscaleQueryInsightsResultAtom = makeQueryAtomFamily(getPlanetScaleQueryInsights, {
 	// Server-side edge cache is 60s; match it so refreshes don't hammer PlanetScale.
