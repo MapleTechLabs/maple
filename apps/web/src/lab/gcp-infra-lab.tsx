@@ -4,7 +4,6 @@ import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import { GcpListPage, type GcpListState } from "@/components/infra/gcp/gcp-list-page"
-import { GcpListRail } from "@/components/infra/gcp/gcp-list-rail"
 import type { GcpCloudSqlInstance } from "@/components/infra/gcp/inventory"
 import {
 	gcpSparks,
@@ -489,12 +488,6 @@ const PROJECT_HEALTH: ReadonlyMap<string, GcpProjectHealth> = new Map([
 	["acme-data", { tone: "warn", message: "metrics incomplete" }],
 ])
 
-/** An organization and a project outside it, as the rail lists them. */
-const CONNECTORS = [
-	{ id: "gcpc_lab_org", scope_type: "organization", scope_id: "123456789012" },
-	{ id: "gcpc_lab_data", scope_type: "project", scope_id: "acme-data" },
-] as const
-
 const VIEWS = ["services", "pubsub", "cloudSql"] as const satisfies ReadonlyArray<GcpView>
 const VIEW_LABEL = { services: "Services", pubsub: "Pub/Sub", cloudSql: "Cloud SQL" } as const
 
@@ -518,7 +511,6 @@ export function GcpInfraLab() {
 			</div>
 			<DashboardPage
 				breadcrumbs={[{ label: "Infrastructure" }, { label: "Google Cloud" }]}
-				rightPanel={<GcpListRail connectors={CONNECTORS} project={state.project} />}
 				gap="lg"
 			>
 				<GcpListPage
