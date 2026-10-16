@@ -302,8 +302,11 @@ function GcpWorkloadPage({
 					resource={resource}
 					facts={facts}
 					health={sql?.health}
+					// Only once the overview answered: loading or failed is not "no spans".
 					traced={
-						telemetry.traced ? { name: telemetry.serviceName, service: tracedService } : undefined
+						telemetry.traced && Result.isSuccess(overviewResult)
+							? { name: telemetry.serviceName, service: tracedService }
+							: undefined
 					}
 					logs={logs}
 					serviceMap={sql === undefined ? undefined : { focusService: sql.focusService }}
