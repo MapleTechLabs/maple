@@ -71,17 +71,17 @@ const ACTOR_BADGES: Record<
 // Shared column lanes so the header row and entry rows stay aligned. Resource and
 // source collapse when the card is narrow; time + actor + action always stay
 // visible, and action is the lane that absorbs the remaining width. The card,
-// not the viewport, is what the breakpoints measure: the sidebar and settings
-// nav leave it far narrower than the window.
+// not the viewport, is what the breakpoints measure: the settings column caps it
+// at 48rem (766px inside its border), so every threshold must sit below that.
 // Below `@md` a row wraps: time + actor on the first line, the action on its own
 // line beneath, indented past the chevron.
 const COL = {
 	time: "flex w-[112px] shrink-0 items-center gap-2",
-	actor: "min-w-0 flex-1 @md:w-[176px] @md:flex-none",
+	actor: "min-w-0 flex-1 @md:w-[160px] @md:flex-none",
 	action: "min-w-0 basis-full pl-5 @md:basis-0 @md:flex-1 @md:pl-0",
-	resource: "hidden w-[200px] min-w-0 shrink-0 @3xl:block",
-	// 52rem: the card's width at a 1440px window, the narrowest desktop that should still show it.
-	source: "hidden w-[104px] shrink-0 @min-[52rem]:block",
+	resource: "hidden w-[176px] min-w-0 shrink-0 @2xl:block",
+	// 46rem: only a full-width settings column (736px+) leaves the action lane room for source too.
+	source: "hidden w-[88px] shrink-0 @min-[46rem]:block",
 }
 
 /**
@@ -234,7 +234,10 @@ export function AuditLogSection() {
 		refreshFirstPage()
 	}
 
-	const waiting = !Result.isSuccess(pageResult) || pageResult.waiting
+	// A failed page is settled, not loading: dimming the list and spinning the footer
+	// on it would never end. Only a retry (which sets `waiting`) puts it back in flight.
+	const failed = Result.isFailure(pageResult)
+	const waiting = failed ? pageResult.waiting : !Result.isSuccess(pageResult) || pageResult.waiting
 	const filtered = actorFilter !== "all" || outcomeFilter !== "all"
 
 	return (
@@ -336,7 +339,18 @@ export function AuditLogSection() {
 				)}
 			</Panel>
 
-			{view !== null && view.hasMore && view.nextCursor !== null && (
+			{view !== null && failed && (
+				<ErrorState
+					variant="row"
+					error={pageResult.cause}
+					title={
+						cursor === undefined ? "Couldn't refresh the audit log" : "Couldn't load more entries"
+					}
+					onRetry={() => refreshPage()}
+				/>
+			)}
+
+			{view !== null && !failed && view.hasMore && view.nextCursor !== null && (
 				<ListFooter
 					shown={view.entries.length}
 					noun="entries"
@@ -587,7 +601,7 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 		<div className="border-border/60 space-y-4 border-t px-4 py-3 @md:pl-[44px]">
 			<KeyValueList
 				layout="grid"
-				className="@3xl:grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_minmax(6rem,max-content)_minmax(0,1fr)] @3xl:gap-x-6"
+				className="@2xl:grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_minmax(6rem,max-content)_minmax(0,1fr)] @2xl:gap-x-6"
 			>
 				<KeyValue wrap label="Occurred">
 					<span className="tabular-nums">{formatDateTimeFull(entry.occurred_at)}</span>
