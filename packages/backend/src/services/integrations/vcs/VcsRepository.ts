@@ -118,7 +118,6 @@ const rowToInstallation = (row: VcsInstallationRow): VcsInstallation =>
 		status: row.status,
 		suspendedAt: row.suspendedAt,
 		ciTracesEnabled: row.ciTracesEnabled,
-		ciLogsEnabled: row.ciLogsEnabled,
 		installedByUserId: row.installedByUserId,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
@@ -368,21 +367,6 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				db.run(
 					PG.update(VcsInstallations)
 						.set({ ciTracesEnabled: enabled, updatedAt: now })
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)]),
-				),
-			)
-		})
-
-		const setCiLogsEnabled = Effect.fn("VcsRepository.setCiLogsEnabled")(function* (
-			orgId: OrgId,
-			installationId: VcsInstallationId,
-			enabled: boolean,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
-				db.run(
-					PG.update(VcsInstallations)
-						.set({ ciLogsEnabled: enabled, updatedAt: now })
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)]),
 				),
 			)
@@ -1163,7 +1147,6 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			upsertInstallation,
 			markInstallationStatus,
 			setCiTracesEnabled,
-			setCiLogsEnabled,
 			listRepositoriesByInstallation,
 			resolveRepository,
 			getRepositoryById,

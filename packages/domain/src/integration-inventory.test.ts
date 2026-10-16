@@ -225,28 +225,6 @@ describe("buildIntegrationInventory", () => {
 		expect(prometheus?.resources[0]?.note).toBe("https://metrics.example/metrics → service billing")
 	})
 
-	it("lists the CI logs feed only for an installation with CI logs on", () => {
-		const feedsWith = (ciLogsEnabled: boolean) =>
-			providerOf(
-				{
-					vcsInstallations: [
-						{
-							provider: "github",
-							accountLogin: "acme",
-							status: "active",
-							ciTracesEnabled: true,
-							ciLogsEnabled,
-							createdAt: NOW,
-						},
-					],
-				},
-				"github",
-			)?.feeds ?? []
-		expect(feedsWith(false).some((feed) => feed.includes("job logs"))).toBe(false)
-		expect(feedsWith(true).some((feed) => feed.includes("job logs"))).toBe(true)
-		expect(feedsWith(true).some((feed) => feed.startsWith("GitHub Actions runs as traces"))).toBe(true)
-	})
-
 	it("drops the CI traces feed when no GitHub installation has CI traces on", () => {
 		const github = providerOf(
 			{
@@ -256,7 +234,6 @@ describe("buildIntegrationInventory", () => {
 						accountLogin: "acme",
 						status: "active",
 						ciTracesEnabled: false,
-						ciLogsEnabled: true,
 						createdAt: NOW,
 					},
 				],

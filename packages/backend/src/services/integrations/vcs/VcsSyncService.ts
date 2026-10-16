@@ -955,10 +955,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				if (workflowSink === undefined || !installation.ciTracesEnabled) return
 				const annotations = yield* workflowJobAnnotations(provider, installation, job)
 				yield* workflowSink.onWorkflowJob(installation.orgId, job, annotations)
-				// Logs ride on the spans just written, so they need traces on as well. A job with no step
-				// that ran has nothing worth reading, and GitHub may have no log for it at all.
+				// Logs ride on the spans just written. A job with no step that ran has nothing worth
+				// reading, and GitHub may have no log for it at all.
 				const ref = workflowRepoRef(job)
-				const forwardsLog = installation.ciLogsEnabled && job.steps.length > 0 && ref !== undefined
+				const forwardsLog = job.steps.length > 0 && ref !== undefined
 				yield* Effect.annotateCurrentSpan({ "vcs.workflow.log_forwarded": forwardsLog })
 				if (forwardsLog)
 					yield* workflowSink

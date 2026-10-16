@@ -622,24 +622,6 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
 	})
 
-	it.effect("CI logs are off for a new connection and an admin can turn them on", () => {
-		const testDb = createTestDb(trackedDbs)
-		const sent: Array<VcsSyncJob> = []
-		return Effect.gen(function* () {
-			const svc = yield* GithubConnectService
-			const repo = yield* VcsRepository
-			const { orgId } = yield* connectedRepo(svc, repo)
-			assert.strictEqual((yield* svc.getStatus(orgId)).ciLogsEnabled, false)
-			assert.strictEqual((yield* svc.setCiLogsEnabled(orgId, true)).enabled, true)
-			assert.strictEqual((yield* svc.getStatus(orgId)).ciLogsEnabled, true)
-			// The traces switch leaves the logs choice alone.
-			yield* svc.setCiTracesEnabled(orgId, false)
-			assert.strictEqual((yield* svc.getStatus(orgId)).ciLogsEnabled, true)
-			const exit = yield* svc.setCiLogsEnabled(asOrgId("org_none"), true).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
-		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
-	})
-
 	it.effect("setCiTracesEnabled refuses an organization without a GitHub connection", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []

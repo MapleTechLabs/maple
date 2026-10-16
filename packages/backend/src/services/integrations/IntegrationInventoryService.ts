@@ -14,7 +14,10 @@ import {
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
-import { buildIntegrationInventory, type IntegrationInventory } from "@maple/domain/integration-inventory"
+import {
+	buildIntegrationInventory,
+	type IntegrationInventory,
+} from "@maple/domain/integration-inventory"
 import type { OrgId } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -56,25 +59,12 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				{
 					oauthConnections: db.run(
 						PG.from(OAuthConnections)
-							.select(
-								"provider",
-								"externalAccountName",
-								"externalUserEmail",
-								"revokedAt",
-								"createdAt",
-							)
+							.select("provider", "externalAccountName", "externalUserEmail", "revokedAt", "createdAt")
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 					vcsInstallations: db.run(
 						PG.from(VcsInstallations)
-							.select(
-								"provider",
-								"accountLogin",
-								"status",
-								"ciTracesEnabled",
-								"ciLogsEnabled",
-								"createdAt",
-							)
+							.select("provider", "accountLogin", "status", "ciTracesEnabled", "createdAt")
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 					vcsRepositories: db.run(
@@ -189,8 +179,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				railwayConnection: rows.railwayConnections[0] ?? null,
 				railwayEnvironments: rows.railwayEnvironments.map(({ servicesJson, ...env }) => ({
 					...env,
-					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({})))
-						.length,
+					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({}))).length,
 				})),
 				planetscaleConnection:
 					planetscale === undefined

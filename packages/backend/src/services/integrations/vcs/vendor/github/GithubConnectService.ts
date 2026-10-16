@@ -73,7 +73,6 @@ interface GithubConnectStatus {
 	readonly accountType: VcsAccountType | null
 	readonly repositorySelection: VcsRepoSelection | null
 	readonly ciTracesEnabled: boolean
-	readonly ciLogsEnabled: boolean
 	readonly repositories: ReadonlyArray<GithubRepoStatus>
 }
 
@@ -133,14 +132,6 @@ export interface GithubConnectServiceApi {
 	>
 	/** Turn CI traces from GitHub Actions on or off for the org's active installation. */
 	readonly setCiTracesEnabled: (
-		orgId: OrgId,
-		enabled: boolean,
-	) => Effect.Effect<
-		{ readonly enabled: boolean },
-		IntegrationsPersistenceError | IntegrationsValidationError
-	>
-	/** Turn GitHub Actions job logs on or off for the org's active installation. */
-	readonly setCiLogsEnabled: (
 		orgId: OrgId,
 		enabled: boolean,
 	) => Effect.Effect<
@@ -514,7 +505,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						accountType: active.accountType,
 						repositorySelection: active.repositorySelection,
 						ciTracesEnabled: active.ciTracesEnabled,
-						ciLogsEnabled: active.ciLogsEnabled,
 						repositories,
 					} satisfies GithubConnectStatus
 				}
@@ -540,7 +530,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						accountType: null,
 						repositorySelection: null,
 						ciTracesEnabled: true,
-						ciLogsEnabled: false,
 						repositories: [],
 					} satisfies GithubConnectStatus
 				}
@@ -563,7 +552,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					accountType: deactivated.accountType,
 					repositorySelection: deactivated.repositorySelection,
 					ciTracesEnabled: deactivated.ciTracesEnabled,
-					ciLogsEnabled: deactivated.ciLogsEnabled,
 					repositories,
 				} satisfies GithubConnectStatus
 			})
@@ -762,27 +750,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return { enabled }
 			})
 
-			const setCiLogsEnabled = Effect.fn("GithubConnectService.setCiLogsEnabled")(function* (
-				orgId: OrgId,
-				enabled: boolean,
-			) {
-				const installations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
-				const active = installations.find(
-					(i) => i.provider === GITHUB_PROVIDER && i.status === "active",
-				)
-				if (active === undefined) {
-					yield* Effect.annotateCurrentSpan({ orgId, "vcs.set_ci_logs.outcome": "not_connected" })
-					return yield* new IntegrationsValidationError({ message: "GitHub is not connected." })
-				}
-				yield* asPersistence(repo.setCiLogsEnabled(orgId, active.id, enabled))
-				yield* Effect.annotateCurrentSpan({
-					orgId,
-					"vcs.set_ci_logs.outcome": "changed",
-					"vcs.ci_logs.enabled": enabled,
-				})
-				return { enabled }
-			})
-
 			const setPrReviewEnabled = Effect.fn("GithubConnectService.setPrReviewEnabled")(function* (
 				orgId: OrgId,
 				repositoryId: VcsRepositoryId,
@@ -907,7 +874,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				deleteRepository,
 				setTrackedBranch,
 				setCiTracesEnabled,
-				setCiLogsEnabled,
 				setPrReviewEnabled,
 				getPrReviewConfig,
 				getPrReviewSettings,

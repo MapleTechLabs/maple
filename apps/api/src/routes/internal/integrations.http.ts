@@ -14,7 +14,6 @@ import {
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
 	GithubSetCiTracesResponse,
-	GithubSetCiLogsResponse,
 	GithubSetPrReviewResponse,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewSettingsResponse,
@@ -476,7 +475,6 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							accountType: status.accountType,
 							repositorySelection: status.repositorySelection,
 							ciTracesEnabled: status.ciTracesEnabled,
-							ciLogsEnabled: status.ciLogsEnabled,
 							repositories: status.repositories,
 						})
 					}),
@@ -527,14 +525,6 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						yield* requireAdmin(tenant.roles)
 						const result = yield* github.setCiTracesEnabled(tenant.orgId, payload.enabled)
 						return new GithubSetCiTracesResponse(result)
-					}),
-				)
-				.handle("githubSetCiLogs", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
-						const result = yield* github.setCiLogsEnabled(tenant.orgId, payload.enabled)
-						return new GithubSetCiLogsResponse(result)
 					}),
 				)
 				.handle("githubSetPrReview", ({ params, payload }) =>

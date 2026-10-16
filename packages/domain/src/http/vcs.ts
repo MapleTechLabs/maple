@@ -116,8 +116,6 @@ export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallat
 	suspendedAt: Schema.NullOr(Schema.Number),
 	/** Whether finished CI workflow runs become traces. On unless the org turned it off. */
 	ciTracesEnabled: Schema.Boolean,
-	/** Whether a finished CI job's log becomes log records on its trace. Off unless the org turned it on. */
-	ciLogsEnabled: Schema.Boolean,
 	installedByUserId: UserId,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,

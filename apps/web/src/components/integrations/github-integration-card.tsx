@@ -1,12 +1,11 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Spinner } from "@maple/ui/components/ui/spinner"
-import { type ReactNode, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { Exit, Option } from "effect"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import {
-	GithubSetCiLogsRequest,
 	GithubSetCiTracesRequest,
 	GithubSetTrackedBranchRequest,
 	type GithubIntegrationStatus,
@@ -479,7 +478,6 @@ function ConnectedView({
 			</Item>
 
 			<CiTracesSetting enabled={status.ciTracesEnabled} />
-			<CiLogsSetting enabled={status.ciLogsEnabled} tracesEnabled={status.ciTracesEnabled} />
 
 			{prReviewRolledOut ? (
 				<SettingRow
@@ -625,86 +623,12 @@ function ConnectedView({
 	)
 }
 
-/** The org-wide opt-out for GitHub Actions runs as traces. On by default; admins can turn it off. */
-function CiTracesSetting({ enabled }: { enabled: boolean }) {
+/** The org-wide opt-out for GitHub Actions runs as traces and job logs. On by default; admins can turn it off. */
+function CiTracesSetting({ enabled: serverEnabled }: { enabled: boolean }) {
+	const isAdmin = useIsOrgAdmin()
 	const setCiTraces = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetCiTraces"), {
 		mode: "promiseExit",
 	})
-	return (
-		<CiSwitchSetting
-			enabled={enabled}
-			label="CI traces"
-			description={
-				<>
-					Each finished GitHub Actions run becomes a trace under the{" "}
-					<span className="font-mono text-foreground">github-actions</span> service, with a span per
-					job and step. Counts toward your usage.
-				</>
-			}
-			save={(next) =>
-				setCiTraces({
-					payload: new GithubSetCiTracesRequest({ enabled: next }),
-					reactivityKeys: ["githubIntegrationStatus"],
-				})
-			}
-			toasts={{
-				on: "GitHub Actions runs will show up as traces",
-				off: "CI traces turned off",
-				error: "Failed to change CI traces.",
-			}}
-		/>
-	)
-}
-
-/** The org-wide opt-in for GitHub Actions job logs. Off by default; needs CI traces on. */
-function CiLogsSetting({ enabled, tracesEnabled }: { enabled: boolean; tracesEnabled: boolean }) {
-	const setCiLogs = useAtomSet(MapleInternalAtomClient.mutation("integrations", "githubSetCiLogs"), {
-		mode: "promiseExit",
-	})
-	return (
-		<CiSwitchSetting
-			enabled={enabled}
-			// Turning logs on needs traces; a saved "on" can still be turned off.
-			unavailable={!tracesEnabled && !enabled}
-			label="CI logs"
-			description={
-				tracesEnabled
-					? "Each finished job's log becomes logs on its trace, linked to the step that wrote each line. Up to 5 MB per job. Counts toward your usage."
-					: "Turn on CI traces to send job logs. Each line is linked to the step span that wrote it."
-			}
-			save={(next) =>
-				setCiLogs({
-					payload: new GithubSetCiLogsRequest({ enabled: next }),
-					reactivityKeys: ["githubIntegrationStatus"],
-				})
-			}
-			toasts={{
-				on: "GitHub Actions job logs will show up as logs",
-				off: "CI logs turned off",
-				error: "Failed to change CI logs.",
-			}}
-		/>
-	)
-}
-
-/** An org-wide CI switch: optimistic, admin only, rolled back with a toast when the save fails. */
-function CiSwitchSetting({
-	enabled: serverEnabled,
-	unavailable = false,
-	label,
-	description,
-	save,
-	toasts,
-}: {
-	enabled: boolean
-	/** Locked off: the switch cannot be turned on. */
-	unavailable?: boolean
-	label: string
-	description: ReactNode
-	save: (next: boolean) => Promise<Exit.Exit<unknown, unknown>>
-	toasts: { readonly on: string; readonly off: string; readonly error: string }
-}) {
-	const isAdmin = useIsOrgAdmin()
 	const [enabled, setEnabled] = useState(serverEnabled)
 	// A fresh server value wins over the optimistic one; adjusted during render, not in an effect.
 	const [seenServer, setSeenServer] = useState(serverEnabled)
@@ -715,9 +639,13 @@ function CiSwitchSetting({
 
 	const [toggle, busy] = useAsyncAction(async (next: boolean) => {
 		setEnabled(next)
-		const ok = toastExit(await save(next), {
-			success: next ? toasts.on : toasts.off,
-			error: toasts.error,
+		const result = await setCiTraces({
+			payload: new GithubSetCiTracesRequest({ enabled: next }),
+			reactivityKeys: ["githubIntegrationStatus"],
+		})
+		const ok = toastExit(result, {
+			success: next ? "GitHub Actions runs will show up as traces and logs" : "CI traces and logs turned off",
+			error: "Failed to change CI traces and logs.",
 		})
 		if (!ok) setEnabled(!next)
 	})
@@ -726,13 +654,20 @@ function CiSwitchSetting({
 		<SettingRow
 			framed
 			className="bg-card px-4 py-3"
-			label={label}
-			description={description}
+			label="CI traces and logs"
+			description={
+				<>
+					Each finished GitHub Actions run becomes a trace under the{" "}
+					<span className="font-mono text-foreground">github-actions</span> service, with a span per
+					job and step. Each job's log lines become logs on the step that wrote them, up to 5 MB per
+					job. Counts toward your usage.
+				</>
+			}
 			control={
 				<Switch
 					checked={enabled}
 					aria-busy={busy}
-					disabled={!isAdmin || unavailable}
+					disabled={!isAdmin}
 					// Ignored while a change is in flight, so keyboard focus stays on the switch.
 					onCheckedChange={(next) => (busy ? undefined : void toggle(next))}
 				/>

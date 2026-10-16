@@ -699,8 +699,6 @@ export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatu
 		repositorySelection: Schema.NullOr(VcsRepoSelection),
 		/** Whether GitHub Actions runs become traces. True before the org has connected. */
 		ciTracesEnabled: Schema.Boolean,
-		/** Whether GitHub Actions job logs become log records. False before the org has connected. */
-		ciLogsEnabled: Schema.Boolean,
 		repositories: Schema.Array(GithubRepoSummary),
 	},
 ) {}
@@ -757,16 +755,6 @@ export class GithubSetCiTracesResponse extends Schema.Class<GithubSetCiTracesRes
 )({
 	enabled: Schema.Boolean,
 }) {}
-
-export class GithubSetCiLogsRequest extends Schema.Class<GithubSetCiLogsRequest>("GithubSetCiLogsRequest")({
-	enabled: Schema.Boolean,
-}) {}
-
-export class GithubSetCiLogsResponse extends Schema.Class<GithubSetCiLogsResponse>("GithubSetCiLogsResponse")(
-	{
-		enabled: Schema.Boolean,
-	},
-) {}
 
 export class GithubSetPrReviewRequest extends Schema.Class<GithubSetPrReviewRequest>(
 	"GithubSetPrReviewRequest",
@@ -1264,14 +1252,6 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.put("githubSetCiTraces", "/github/ci-traces", {
 			payload: GithubSetCiTracesRequest,
 			success: GithubSetCiTracesResponse,
-			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
-		}),
-	)
-	.add(
-		// Org-wide opt-in to GitHub Actions job logs. Admin only.
-		HttpApiEndpoint.put("githubSetCiLogs", "/github/ci-logs", {
-			payload: GithubSetCiLogsRequest,
-			success: GithubSetCiLogsResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)

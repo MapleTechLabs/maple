@@ -2025,7 +2025,7 @@ describe("VcsSyncService orchestrator", () => {
 		)
 	})
 
-	it.effect("forwards a job's log once the org turns CI logs on, and only alongside its traces", () => {
+	it.effect("forwards a job's log alongside its traces, and neither once CI traces is off", () => {
 		const testDb = createTestDb(trackedDbs)
 		const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
 		return Effect.gen(function* () {
@@ -2037,17 +2037,12 @@ describe("VcsSyncService orchestrator", () => {
 			if (Option.isNone(installation)) return assert.fail("installation not seeded")
 			const job = Schema.encodeSync(VcsSyncJob)(workflowJob("42"))
 
-			// Off by default.
-			yield* svc.processMessage(job)
-			assert.lengthOf(forwardedLogs, 0)
-
-			yield* repo.setCiLogsEnabled(orgId, installation.value.id, true)
 			yield* svc.processMessage(job)
 			assert.deepStrictEqual(forwardedLogs, [{ orgId, jobId: "555", lines: ["first", "second"] }])
 
 			// A job none of whose steps ran has no log worth asking for.
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42", "skipped", [])))
-			// Logs hang off the job's spans, so traces off means no logs either.
+			// One switch covers both: CI traces off means no logs either.
 			yield* repo.setCiTracesEnabled(orgId, installation.value.id, false)
 			yield* svc.processMessage(job)
 			assert.lengthOf(forwardedLogs, 1)
@@ -2072,9 +2067,6 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_ci")
 			yield* seedInstallation(repo, orgId)
-			const installation = yield* repo.resolveInstallation("github", "42")
-			if (Option.isNone(installation)) return assert.fail("installation not seeded")
-			yield* repo.setCiLogsEnabled(orgId, installation.value.id, true)
 			const processing = yield* Effect.forkChild(
 				svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42"))),
 			)
@@ -3795,7 +3787,6 @@ describe("GithubProvider rate-limit handling", () => {
 		status: "active",
 		suspendedAt: null,
 		ciTracesEnabled: true,
-		ciLogsEnabled: false,
 		installedByUserId: "user_1",
 		createdAt: 0,
 		updatedAt: 0,
