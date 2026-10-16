@@ -1227,8 +1227,7 @@ function ChooseStage({
 				icon={stopping.length > 0 ? undefined : null}
 				title={
 					<>
-						{`Turn ${turned}`}{" "}
-						for {GCP_SCOPE_NAMES[connector.scope_type]}{" "}
+						{`Turn ${turned}`} for {GCP_SCOPE_NAMES[connector.scope_type]}{" "}
 						<span className="whitespace-nowrap">{connector.scope_id}</span>?
 					</>
 				}
