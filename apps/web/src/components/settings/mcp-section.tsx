@@ -10,6 +10,7 @@ import { mcpUrl } from "@/lib/services/common/mcp-url"
 import { McpToolsList } from "@/components/mcp/mcp-tools-list"
 import { CreateApiKeyDialog } from "@/components/settings/create-api-key-dialog"
 import { CodeBlock } from "@/components/quick-start/code-block"
+import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 
 const mcpEndpoint = `${mcpUrl}/mcp`
@@ -37,7 +38,7 @@ function generateCliCommand(apiKey?: string) {
 }
 
 const CONFIG_FILE_HINTS: Record<string, string> = {
-	"claude-code": "~/.claude/claude_desktop_config.json",
+	"claude-code": ".mcp.json",
 	cursor: ".cursor/mcp.json",
 	windsurf: "~/.codeium/windsurf/mcp_config.json",
 	other: "",
@@ -88,18 +89,22 @@ export function McpSection() {
 						<div className="space-y-4">
 							<div className="space-y-2">
 								<p className="text-muted-foreground text-xs">Run in your terminal</p>
+								{/* Configs carry the bearer secret once a key is created; the dashboard records itself with rrweb. */}
 								<CodeBlock
 									code={generateCliCommand(createdSecret ?? undefined)}
 									language="bash"
+									className={REPLAY_BLOCK_CLASS}
 								/>
 							</div>
 							<div className="space-y-2">
 								<p className="text-muted-foreground text-xs">
-									Or add to <InlineCode>{CONFIG_FILE_HINTS["claude-code"]}</InlineCode>
+									Or add to <InlineCode>{CONFIG_FILE_HINTS["claude-code"]}</InlineCode> in
+									your project root
 								</p>
 								<CodeBlock
 									code={generateConfig("claude-code", createdSecret ?? undefined)}
 									language="json"
+									className={REPLAY_BLOCK_CLASS}
 								/>
 							</div>
 						</div>
@@ -115,6 +120,7 @@ export function McpSection() {
 								<CodeBlock
 									code={generateConfig(client, createdSecret ?? undefined)}
 									language="json"
+									className={REPLAY_BLOCK_CLASS}
 								/>
 							</div>
 						</TabsContent>

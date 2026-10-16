@@ -30,6 +30,7 @@ import { SettingsSection, SettingsSections } from "./settings-section"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 import { RecommendedMappingsSection } from "./recommended-mappings-section"
+import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
 
 /** Live ingest-health strip: green once telemetry lands, amber pulse while waiting. */
 function StatusBanner({ connection }: { connection: IngestConnection }) {
@@ -162,7 +163,11 @@ function CredentialRow({
 						onClick={onCopy}
 						disabled={isDisabled}
 						aria-label={`Copy ${label}`}
-						className="group/value text-muted-foreground hover:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-mono text-xs tracking-wide transition-colors"
+						// A revealed key is plain text, which the dashboard's own rrweb recording would capture.
+						className={cn(
+							masked && REPLAY_BLOCK_CLASS,
+							"group/value text-muted-foreground hover:text-foreground flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-mono text-xs tracking-wide transition-colors",
+						)}
 					>
 						<span className={hidden ? "truncate" : "min-w-0 break-all"}>
 							{hidden ? maskKey(value) : value}
