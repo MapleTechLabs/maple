@@ -1,0 +1,234 @@
+---
+title: "Send Claude API traces to Maple with OpenTelemetry"
+description: "The Claude API and the Claude SDK now export OpenTelemetry spans. Point them at Maple's OTLP endpoint and every conversation becomes an Agent Session, with the transcript, tool failures and token counts next to your own service's traces."
+date: 2026-10-16
+author: "Jeremy Funk"
+category: "guides"
+cover: "/blog/claude-platform-opentelemetry/session-transcript.webp"
+coverAlt: "A Maple Agent Session transcript built from Claude SDK spans: the user's question, a lookup_order tool call and Claude's reply"
+featured: false
+draft: true
+---
+
+Anthropic now exports [OpenTelemetry traces](https://platform.claude.com/docs/en/manage-claude/opentelemetry) from the Claude API and the Claude SDKs (beta). The spans follow the OpenTelemetry GenAI conventions, so any backend that speaks OTLP can receive them. Maple is one of those backends, and it turns the spans into Agent Sessions: one row per conversation, with the transcript, each model and tool call, failed tools and token counts.
+
+This guide sets up both export paths against Maple. I ran the SDK path end to end on October 16, 2026, with `@anthropic-ai/sdk` 0.135.0 and a small support agent, and every screenshot below comes from that run.
+
+## SDK spans and API spans in the Claude OpenTelemetry export
+
+Claude can emit spans from two places, and they cover different parts of a request.
+
+**SDK tracing** runs inside your application. The SDK creates a span for each API request it sends (`anthropic.messages.create`, kind `CLIENT`), one for the tool runner loop (`anthropic.messages.tool_runner`) and one for each client tool the runner executes (`anthropic.custom_tool_use <name>`). Your own OpenTelemetry exporter sends them, so they carry your `service.name` and nest under your own spans. You configure it in code, it needs no admin rights, and it also works when you call Claude through Amazon Bedrock, Google Cloud or Microsoft Foundry.
+
+**API tracing** runs at Anthropic. You add a destination in the Claude Console and the API sends its own spans to it: a `SERVER` span per request, an `anthropic.model_request` span for each model run inside it, and spans for server tools such as web search and for Managed Agents turns. These arrive with `service.name` set to `claude-platform`. It needs the Console admin role and only covers the Claude Platform, including Claude Platform on AWS.
+
+With both turned on, one request produces a single trace:
+
+```text
+support.answer                              your span           service: support-agent
+└─ anthropic.messages.tool_runner           SDK, INTERNAL       service: support-agent
+   ├─ anthropic.messages.create             SDK, CLIENT         service: support-agent
+   │  └─ anthropic.messages.create          API, SERVER         service: claude-platform
+   │     ├─ anthropic.model_request         API                 service: claude-platform
+   │     └─ anthropic.tool_use web_search   API                 service: claude-platform
+   └─ anthropic.custom_tool_use lookup_order  SDK, INTERNAL     service: support-agent
+```
+
+The SDK links the two halves by sending a W3C `traceparent` header with each request. The API reads it and parents its `SERVER` span under the SDK's `CLIENT` span.
+
+Start with the SDK. It gives you the conversation, your tools and your own spans, which is what Agent Sessions needs. Add the Console destination when you want server tools, Managed Agents turns, or traffic from clients you don't control.
+
+## Set up Claude SDK tracing with a Maple exporter
+
+You need a Maple ingest key from **Settings → Ingestion**. Use the private key (`maple_sk_…`), since this runs on a server.
+
+Install the Claude SDK and the OpenTelemetry Node SDK with the OTLP/HTTP protobuf exporter:
+
+```bash
+npm install @anthropic-ai/sdk@0.135.0 @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-proto
+```
+
+Pin the Claude SDK version. Anthropic's docs warn that span names, attributes and options can change between releases during the beta, and a pinned version lets you choose when your dashboards and queries see the change.
+
+Register a tracer provider before the first Claude call:
+
+```ts
+// instrumentation.ts
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { NodeSDK } from "@opentelemetry/sdk-node"
+
+// Reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS.
+export const sdk = new NodeSDK({
+	serviceName: "support-agent",
+	traceExporter: new OTLPTraceExporter(),
+})
+
+sdk.start()
+```
+
+`NodeSDK` also installs the context manager and the W3C trace context propagator. The Claude SDK needs both: the context manager nests its spans under yours, and the propagator writes the `traceparent` header that links API spans to SDK spans.
+
+Point the exporter at Maple:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"   # https://ingest.eu.maple.dev for EU organizations
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer maple_sk_YOUR_INGEST_KEY"
+```
+
+The exporter appends `/v1/traces` to the endpoint itself.
+
+## Give each Claude conversation an ID
+
+Maple groups spans into a session by `gen_ai.conversation.id`. The SDK sets that attribute from the `conversationId` request option. Without it, Messages API spans carry no conversation ID and every request becomes a session of its own.
+
+This is the agent I ran, trimmed to one tool. It answers a support question with the tool runner, inside a span of its own:
+
+```ts
+// agent.ts
+import { sdk } from "./instrumentation.ts"
+
+import Anthropic from "@anthropic-ai/sdk"
+import { betaTool } from "@anthropic-ai/sdk/helpers/beta/json-schema"
+import { trace } from "@opentelemetry/api"
+
+const tracer = trace.getTracer("support-agent")
+
+// "content" puts prompts, replies and tool arguments on the spans.
+const client = new Anthropic({ openTelemetry: { traces: { contentMode: "content" } } })
+
+const orders: Record<string, { status: string; total: number }> = {
+	"A-1042": { status: "shipped", total: 89.5 },
+}
+
+const lookupOrder = betaTool({
+	name: "lookup_order",
+	description: "Look up an order by its id. Returns status and total.",
+	inputSchema: {
+		type: "object",
+		properties: { order_id: { type: "string" } },
+		required: ["order_id"],
+	},
+	run: ({ order_id }) => {
+		const order = orders[order_id]
+		if (!order) throw new Error(`order ${order_id} not found`)
+		return JSON.stringify({ order_id, ...order })
+	},
+})
+
+async function answer(conversationId: string, question: string) {
+	return tracer.startActiveSpan("support.answer", async (span) => {
+		try {
+			const message = await client.beta.messages
+				.toolRunner(
+					{
+						model: "claude-sonnet-5-5",
+						max_tokens: 1024,
+						system: "You are the support agent for an online shop. Use the tools to answer.",
+						tools: [lookupOrder],
+						messages: [{ role: "user", content: question }],
+					},
+					{ openTelemetry: { conversationId } },
+				)
+				.runUntilDone()
+			return message.content
+		} finally {
+			span.end()
+		}
+	})
+}
+
+console.log(await answer("conv_7f3a", "Where is my order A-1042?"))
+
+// Flush buffered spans before the process exits.
+await sdk.shutdown()
+```
+
+Node 26 runs this file directly with `node agent.ts`, which is why the import ends in `.ts`.
+
+Use `runUntilDone()`, or `await` the runner. My first version called `runner.done()`, which resolves only while something else iterates the runner, so the script waited forever and exported nothing.
+
+`sdk.shutdown()` matters for scripts and short-lived workers. The batch processor holds spans in memory, and on a later run my process crashed on an API error before it flushed: those spans never reached Maple.
+
+The conversation ID is exported in both content modes, so use an opaque ID. Don't put an email address or a user's name in it.
+
+### Content mode and what ends up in Maple
+
+`contentMode: "content"` adds the system prompt, the messages, the reply and tool arguments and results to the spans. Maple needs them for the transcript. The default, `metadata_only`, sends IDs, timing, status and token counts, and the session pages still work without the conversation text.
+
+Content is stored in Maple under your organization's retention settings. Each span holds up to 0.75 MB of content by default, and Anthropic's SDK cuts longer prompts from the oldest messages and sets `anthropic.content.truncated`. Maple's ingest accepts up to 20 MiB per request, measured on the compressed body, so you can raise `maxContentBytes` if you work with long contexts.
+
+## Add a Maple destination in the Claude Console
+
+API tracing needs no code. In the Console, open **Settings → OpenTelemetry** and click **Add destination**. Maple isn't in the **Provider** list, so pick **Custom**:
+
+- **OTLP endpoint URL:** `https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` for an EU organization. Leave off `/v1/traces`, the API appends it.
+- **Request headers:** `Authorization` with the value `Bearer maple_sk_…`. The Console never shows the value again after you save.
+- **Content mode:** **Full content** if you want transcripts, as in the SDK.
+- **Workspaces:** the workspaces whose traffic you want in Maple.
+
+![The Claude Console's Add destination form filled in for Maple: provider Custom, endpoint https://ingest.maple.dev, an Authorization header and Full content selected](/blog/claude-platform-opentelemetry/console-add-destination.webp)
+
+Save, then click **Test** in the destination's **More actions** menu. The API sends one `anthropic.test` span. In Maple, open **Explore → Traces** and filter on the service `claude-platform` to find it. After real traffic, the **Delivery** column in the Console turns **Healthy** within about a minute.
+
+Maple's ingest meets the destination's requirements: HTTPS on port 443, OTLP/HTTP with protobuf, gzip request bodies, and no redirects. A redirect would get the destination disabled. I filled this form in for the screenshot but didn't save it, so the Console steps follow Anthropic's docs rather than a run of my own.
+
+## Read a Claude agent session in Maple
+
+Open **Explore → Agent Sessions**. Each conversation ID is a row, with its duration, model and tool calls, tokens and errors:
+
+![Maple's Agent Sessions list with three Claude sessions, their LLM and tool call counts, input and output tokens, and one session flagged with a failed tool call](/blog/claude-platform-opentelemetry/agent-sessions-list.webp)
+
+The list's filters for model and tool come from the `anthropic.messages.create` and `anthropic.custom_tool_use` spans. The framework filter shows these sessions as **Unidentified** because Maple doesn't detect Claude Platform spans by name yet. It reads them as plain GenAI spans, which is all the session view needs.
+
+The session overview runs a set of checks over the spans: tool failures, rate limits, provider errors, refusals, the context window. In this session I asked about an order that doesn't exist, `lookup_order` threw, and Claude carried on and answered with what it had:
+
+![A Maple session overview: one failed lookup_order call flagged under Needs attention, 2 Claude Sonnet 5.5 calls, and the token split into input and output](/blog/claude-platform-opentelemetry/session-overview-tool-error.webp)
+
+The **Transcript** tab is where content mode pays off. Each turn shows the system prompt, the user message, every tool call with its timing and payload size, and the reply:
+
+![Maple's transcript view of a two-turn session: the user asks where order A-1042 is, the agent calls lookup_order, then answers](/blog/claude-platform-opentelemetry/session-transcript.webp)
+
+My demo had a bug, and the transcript caught it. To keep the second turn in context I stored only Claude's final reply in the history and dropped the tool call and tool result before it. In turn two, Claude couldn't see its own lookup and corrected itself for answering without one. Every span in that turn finished with status `Ok`, so the waterfall alone would not have shown it.
+
+The **Traces** tab shows the same session as spans, one trace per turn:
+
+![The Traces tab of a Maple Agent Session: two turns, each with anthropic.messages.tool_runner, two anthropic.messages.create calls with token counts, and a lookup_order tool span](/blog/claude-platform-opentelemetry/session-traces.webp)
+
+This tab lists only the GenAI spans. The same trace in **Explore → Traces** also holds `support.answer`, my own span, and anything else your service records around the Claude call: database queries, HTTP calls, errors and logs. That is the main reason to send Claude spans to the backend that already holds your application's telemetry instead of to a separate LLM tool.
+
+The same data is available to coding agents through [Maple's MCP server](/docs/reference/mcp). `list_agent_sessions`, `get_agent_session` and `get_agent_session_transcript` let Claude Code find the sessions with failed tools and read what happened in them.
+
+## Token counts and cost for Claude spans
+
+Claude's `gen_ai.usage.input_tokens` already includes cache reads and writes, which is what Maple expects, so cached tokens are not counted twice. When you send both SDK and API spans, a request reports its usage on the SDK's `CLIENT` span and again on the API's `SERVER` span. Maple charges usage to the deepest span in a trace that reports it and subtracts it from the spans above, so the request counts once as long as the API span is nested under the SDK span. That nesting comes from the `traceparent` header. If you turn the SDK's `propagation` option off and nothing else sends the header, the two halves land in separate traces and the tokens can be counted twice.
+
+Cost shows **no cost**. Claude's spans carry token counts and no price, and Maple doesn't price tokens itself: it reads cost only from a span attribute such as `gen_ai.usage.cost`. For spend per API key, Anthropic's [Usage and Cost API](https://platform.claude.com/docs/en/manage-claude/usage-cost-api) is the source of truth.
+
+## Troubleshooting Claude spans in Maple
+
+- **No spans at all:** register the tracer provider before the first Claude call, and check that `ANTHROPIC_OPEN_TELEMETRY` isn't set to `false`.
+- **Each request is its own session:** pass `conversationId`. Messages API spans have no conversation ID without it.
+- **Spans from the last seconds of a script are missing:** call `sdk.shutdown()` before the process exits.
+- **API spans don't nest under your spans:** make sure the W3C trace context propagator is registered. If you also run `@opentelemetry/auto-instrumentations-node`, set `propagation: false` on the Claude client: a bug in its undici instrumentation adds a second `traceparent` header, which makes the trace context invalid.
+- **The Console shows Failing with 401:** the `Authorization` header is wrong, or the key is from the other region. US keys only work on `ingest.maple.dev`, EU keys on `ingest.eu.maple.dev`.
+- **The transcript is empty:** the client or the destination is in metadata-only mode.
+
+## FAQ
+
+### Does Maple support the Claude API OpenTelemetry export?
+
+Yes. Maple accepts OTLP over HTTP with protobuf, which both the Claude SDK's exporter and the Console destination send. Configure the destination as **Custom** with Maple's ingest URL and an `Authorization: Bearer` header.
+
+### Do I need both SDK tracing and API tracing?
+
+No. SDK tracing alone gives you sessions, transcripts, model calls and your client tools. API tracing adds what only the API sees: each model run inside a request, server tools like web search, MCP connector tools and Managed Agents turns. Send both to Maple and they join into one trace per request.
+
+### Does Claude OpenTelemetry tracing work with Amazon Bedrock or Google Cloud?
+
+SDK tracing does, because it runs in your process; the spans then carry `gen_ai.provider.name` `aws.bedrock` or `gcp.vertex_ai`. API tracing only covers the Claude Platform and Claude Platform on AWS.
+
+### How is this different from tracing Claude Code or the Agent SDK?
+
+Claude Code and the Claude Agent SDK have their own telemetry switch and span names. The [Claude Agent SDK guide](/docs/agent-tracing/claude-agent-sdk) covers that setup. This guide is for applications that call the Messages API or Managed Agents through the Claude SDK.
+
+For the attributes Maple reads from any GenAI instrumentation, see [Trace any agent with OpenTelemetry](/docs/agent-tracing/opentelemetry). For every span and attribute Claude emits, see Anthropic's [span reference](https://platform.claude.com/docs/en/api/opentelemetry/spans).
