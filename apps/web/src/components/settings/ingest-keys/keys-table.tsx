@@ -1,7 +1,7 @@
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { CUSTOM_INGEST_KEY_LIMITS } from "@maple/domain/http"
 import type { V2CustomIngestKey } from "@maple/domain/http/v2"
-import type * as React from "react"
+import { Link } from "@tanstack/react-router"
 import { useState } from "react"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -30,18 +30,8 @@ import {
 
 const MAX_KEYS = CUSTOM_INGEST_KEY_LIMITS.maxKeysPerOrg
 
-// Rows open on click and on Enter or Space, so the table works from the keyboard.
-const rowActivation = (open: () => void) => ({
-	tabIndex: 0,
-	role: "link",
-	onClick: open,
-	onKeyDown: (event: React.KeyboardEvent) => {
-		if (event.key === "Enter" || event.key === " ") {
-			event.preventDefault()
-			open()
-		}
-	},
-})
+// The whole row opens on click; the name is the real link for keyboards and screen readers.
+const nameLinkClass = "truncate text-sm font-medium outline-none hover:underline focus-visible:underline"
 
 // Short enough for the key column; the key's page carries the long form.
 const SUBTITLE_LABELS = {
@@ -62,12 +52,19 @@ function DefaultKeyRow({
 	onOpen: () => void
 }) {
 	return (
-		<TableRow className="cursor-pointer" {...rowActivation(onOpen)} aria-label={`${label}, default key`}>
+		<TableRow className="cursor-pointer" onClick={onOpen}>
 			<TableCell>
 				<div className="flex min-w-0 items-center gap-3">
 					<StatusDot tone="ok" size="lg" />
 					<div className="flex min-w-0 flex-col gap-0.5">
-						<span className="text-sm font-medium">{label}</span>
+						<Link
+							to="/settings"
+							search={{ tab: "ingestion", view: "setup" }}
+							className={nameLinkClass}
+							onClick={(event) => event.stopPropagation()}
+						>
+							{label}
+						</Link>
 						<span className="text-muted-foreground truncate font-mono text-2xs">
 							{value === null ? "…" : `${value.slice(0, 14)}…`} · Default
 						</span>
@@ -190,8 +187,7 @@ export function IngestKeysTable() {
 								<TableRow
 									key={key.id}
 									className="cursor-pointer"
-									aria-label={key.name}
-									{...rowActivation(() => nav.openKey(toPublicKeyId(key.id)))}
+									onClick={() => nav.openKey(toPublicKeyId(key.id))}
 								>
 									<TableCell>
 										<div className="flex min-w-0 items-center gap-3">
@@ -199,9 +195,18 @@ export function IngestKeysTable() {
 												<KeyStatusMark activity={activity} />
 											</span>
 											<div className="flex min-w-0 flex-col gap-0.5">
-												<span className="truncate text-sm font-medium">
+												<Link
+													to="/settings"
+													search={{
+														tab: "ingestion",
+														view: "keys",
+														key: toPublicKeyId(key.id),
+													}}
+													className={nameLinkClass}
+													onClick={(event) => event.stopPropagation()}
+												>
 													{key.name}
-												</span>
+												</Link>
 												<span className="text-muted-foreground truncate font-mono text-2xs">
 													{key.key_prefix}… · {SUBTITLE_LABELS[activity]}
 												</span>
