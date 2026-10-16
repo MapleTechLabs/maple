@@ -448,8 +448,9 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 
 		// A severity change is news: escalation pages like a trigger, de-escalation
 		// reads as a reminder at the lower severity. Both restart the reminder clock.
-		if (current !== null && next !== current) {
-			const escalated = maxSeverity(next, current) === next
+		// A tier moved by a rule edit (next === current) is announced on its first breaching tick.
+		if (next !== openIncident.severity && (next !== current || evaluation.status === "breached")) {
+			const escalated = maxSeverity(next, openIncident.severity) === next
 			return {
 				state,
 				transition: escalated ? "escalated" : "deescalated",

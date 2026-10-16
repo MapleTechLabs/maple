@@ -6,6 +6,7 @@ import {
 	interleaveAlertRulesByTenant,
 	makeAlertDeliveryKey,
 	maxSeverity,
+	nearestSeverity,
 	planAlertLifecycle,
 	type AlertLifecycleInput,
 } from "@maple/alerting-core"
@@ -221,14 +222,17 @@ const afterHold = (
 		? null
 		: { reason: decodeAlertIncidentHoldReasonSync(incident.holdReason), heldForMs }
 
-/** The rule as an incident's resolve sees it: its current tier, reaching every destination up to its peak. */
+/** The rule as an incident's resolve sees it: its tier (or the one the rule kept), up to its peak. */
 const ruleForResolve = (
 	rule: NormalizedRule,
 	incident: Pick<AlertIncidentRow, "severity" | "peakSeverity">,
 ) =>
 	ruleAtSeverity(
 		rule,
-		decodeAlertSeveritySync(incident.severity),
+		nearestSeverity(
+			decodeAlertSeveritySync(incident.severity),
+			rule.thresholds.map((tier) => tier.severity),
+		),
 		incident.peakSeverity === null ? null : decodeAlertSeveritySync(incident.peakSeverity),
 	)
 
@@ -1229,19 +1233,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const oldRow = yield* requireRuleRow(orgId, ruleId)
 				const oldNormalized = yield* normalizeRuleRow(oldRow)
 				const newNormalized = yield* normalizeRule(orgId, request)
-				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
-				if (tierConditionChanged(oldNormalized, newNormalized)) {
-					// Ticks judged against the old condition must not count toward the new one;
-					// the next tick replays from the counters, as before histories existed.
-					const timestamp = yield* now
-					yield* dbExecute((db) =>
-						db.run(
-							PG.update(AlertRuleStates)
-								.set({ historyJson: null, updatedAt: timestamp })
-								.where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
-						),
-					)
-				}
+				const result = yield* upsertRuleRow(orgId, userId, ruleId, request, {
+					resetEvaluationState: tierConditionChanged(oldNormalized, newNormalized),
+				})
 
 				// Resolve stale incidents caused by the configuration change
 
@@ -2880,12 +2874,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				if (outcome.transition === "resolved") {
 					yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
 				}
-				if (outcome.transition === "escalated" && outcome.severity !== null) {
+				if (outcome.transition === "escalated" && outcome.severity === "critical") {
 					yield* escalateAlertIssue({
 						orgId: row.orgId,
 						ruleId: row.id,
 						groupKey,
-						severity: outcome.severity,
+						timestamp,
 					}).pipe(Effect.provideService(Database, database))
 				}
 

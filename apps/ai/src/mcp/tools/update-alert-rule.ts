@@ -5,6 +5,7 @@ import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { recoveryValueFits } from "@maple/backend/services/alerts/alert-thresholds"
 import {
 	AlertRuleUpsertRequest,
 	isRangeComparator,
@@ -163,11 +164,17 @@ const mergeThresholds = (
 		isRangeComparator(comparator) ? tier : { ...tier, upper: null }
 	const [only, ...rest] = current.thresholds
 	if (rest.length === 0) {
+		const value = params.threshold ?? only.value
+		// MCP cannot set a recovery value yet, so one the edit invalidates is dropped, not a dead end.
+		const recoveryValue = recoveryValueFits(comparator, { value, recoveryValue: only.recoveryValue })
+			? only.recoveryValue
+			: null
 		return Effect.succeed(
 			Arr.of({
 				...fitBound(only),
 				severity: params.severity ?? only.severity,
-				value: params.threshold ?? only.value,
+				value,
+				recoveryValue,
 				destinationIds: mergeDestinations(only.destinationIds, params),
 			}),
 		)

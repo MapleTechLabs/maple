@@ -1448,6 +1448,63 @@ describe("AlertsService", () => {
 			)
 		})
 
+		it.effect("resolves to the remaining tier after the incident's tier is removed", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_removed")
+				const userId = asUserId("user_tiers_removed")
+				const { rule, pageHook } = yield* createTieredSetup(alerts, orgId, userId)
+				const tick = Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+				})
+
+				yield* alerts.runSchedulerTick()
+				yield* tick
+				assert.deepStrictEqual(requests, ["trigger https://example.com/warn"])
+
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: [
+							{
+								severity: "critical",
+								value: 20,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [pageHook.id],
+							},
+						],
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+				state.tracesAggregateRows = errorRateRows(0.5)
+				yield* tick
+				yield* tick
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+				assert.deepStrictEqual(requests.slice(1), ["resolve https://example.com/page"])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
 		it.effect("does not count ticks judged against an edited threshold", () => {
 			const testDb = createTestDb(trackedDbs)
 			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }

@@ -50,6 +50,17 @@ export const ruleAtSeverity = <R extends TieredRuleFields>(
 	}
 }
 
+/** Whether a recovery value still fits its tier after an edit to the value or comparator. */
+export const recoveryValueFits = (
+	comparator: AlertComparator,
+	tier: Pick<AlertThreshold, "value" | "recoveryValue">,
+): boolean =>
+	tier.recoveryValue === null ||
+	(!isRangeComparator(comparator) &&
+		comparator !== "eq" &&
+		comparator !== "neq" &&
+		!compareAlertThreshold(tier.recoveryValue, comparator, tier.value))
+
 /** Whether an edit changes what a tick is classified against; destinations aside. */
 export const tierConditionChanged = (
 	a: { readonly comparator: AlertComparator; readonly thresholds: AlertThresholds },

@@ -278,6 +278,8 @@ export const upsertAlertIssue: (
 						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id), $.severity.isNull()]),
 				),
 			)
+			if (input.severity === "critical")
+				yield* raiseDetectorSeverity(input.orgId, fingerprintHash, input.timestamp)
 
 			const reopenFrom: WorkflowState | null =
 				prior.workflowState === "done" || prior.workflowState === "wontfix"
@@ -375,21 +377,14 @@ export const upsertAlertIssue: (
 export const escalateAlertIssue = Effect.fn("IssueHub.escalateAlertIssue")(
 	function* (input: {
 		readonly orgId: OrgId
-		readonly ruleId: string
+		readonly ruleId: AlertRuleId
 		readonly groupKey: string
-		readonly severity: AlertSeverity
+		readonly timestamp: number
 	}) {
-		const database = yield* Database
-		yield* database.execute((db) =>
-			db.run(
-				PG.update(ErrorIssues)
-					.set({ severity: detectorSeverityFor(input.severity) })
-					.where(($) => [
-						$.orgId.eq(input.orgId),
-						$.fingerprintHash.eq(alertIssueFingerprint(input.ruleId, input.groupKey)),
-						$.severitySource.eq("detector"),
-					]),
-			),
+		yield* raiseDetectorSeverity(
+			input.orgId,
+			alertIssueFingerprint(input.ruleId, input.groupKey),
+			input.timestamp,
 		)
 	},
 	(effect, input) =>
@@ -403,6 +398,29 @@ export const escalateAlertIssue = Effect.fn("IssueHub.escalateAlertIssue")(
 			),
 		),
 )
+
+/** Raise a detector-set alert issue to critical; manual and AI severities and wontfix issues stay. */
+const raiseDetectorSeverity = Effect.fn("IssueHub.raiseDetectorSeverity")(function* (
+	orgId: OrgId,
+	fingerprintHash: string,
+	timestamp: number,
+) {
+	const database = yield* Database
+	const critical = detectorSeverityFor("critical")
+	yield* database.execute((db) =>
+		db.run(
+			PG.update(ErrorIssues)
+				.set({ severity: critical, updatedAt: timestamp })
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.fingerprintHash.eq(fingerprintHash),
+					$.severitySource.eq("detector"),
+					$.severity.neq(critical),
+					$.workflowState.neq("wontfix"),
+				]),
+		),
+	)
+})
 
 const recordIssueEvent = Effect.fn("IssueHub.recordIssueEvent")(function* (
 	orgId: OrgId,

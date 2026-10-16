@@ -149,6 +149,7 @@ export const makeAlertRulePersistence = (options: {
 		userId: UserId,
 		existingId: AlertRuleId | null,
 		request: AlertRuleUpsertRequest,
+		options?: { readonly resetEvaluationState?: boolean },
 	) {
 		const normalized = yield* normalizeRule(orgId, request)
 		const ruleId = existingId ?? normalized.id
@@ -250,12 +251,33 @@ export const makeAlertRulePersistence = (options: {
 								db.run(
 									PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(existingId)]),
 								),
-								db.run(
-									PG.update(AlertRules)
-										.set(ruleFields)
-										.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
-										.returning(() => ({ txid: currentTxid })),
-								),
+								db
+									.run(
+										PG.update(AlertRules)
+											.set(ruleFields)
+											.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
+											.returning(() => ({ txid: currentTxid })),
+									)
+									.pipe(
+										// Ticks judged against the old condition must not count toward the new one.
+										Effect.tap(() =>
+											options?.resetEvaluationState === true
+												? db.run(
+														PG.update(AlertRuleStates)
+															.set({
+																historyJson: [],
+																consecutiveBreaches: 0,
+																consecutiveHealthy: 0,
+																updatedAt: timestamp,
+															})
+															.where(($) => [
+																$.orgId.eq(orgId),
+																$.ruleId.eq(existingId),
+															]),
+													)
+												: Effect.void,
+										),
+									),
 							)
 				}),
 			),
@@ -273,8 +295,9 @@ export const makeAlertRulePersistence = (options: {
 		userId: UserId,
 		existingId: AlertRuleId,
 		request: AlertRuleUpsertRequest,
+		options?: { readonly resetEvaluationState?: boolean },
 	) {
-		const { ruleId, txid } = yield* writeRuleRow(orgId, userId, existingId, request)
+		const { ruleId, txid } = yield* writeRuleRow(orgId, userId, existingId, request, options)
 		const row = yield* findRuleRow(orgId, ruleId)
 		if (row === undefined) {
 			return yield* Effect.fail(

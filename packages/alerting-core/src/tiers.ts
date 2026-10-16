@@ -176,7 +176,7 @@ export const tierFor = (
 
 /**
  * The rule tier an incident at `severity` reads as: its own, else the one the rule kept
- * (with two severities there is only one other). A rule edit then moves it silently.
+ * (with two severities there is only one other).
  */
 export const nearestSeverity = (
 	severity: AlertSeverity,

@@ -160,7 +160,7 @@ describe("severity tiers", () => {
 		expect(plans.map((p) => p.transition)).toEqual(["none", "none", "opened"])
 	})
 
-	it("keeps an incident open when its rule's only tier changes severity", () => {
+	it("escalates, not resolves, when its rule's only tier changes severity", () => {
 		// A warning incident whose rule is now critical-only; the state row predates the edit.
 		const kept = plan({
 			policy: {
@@ -180,7 +180,7 @@ describe("severity tiers", () => {
 			},
 			nowMs: 120_000,
 		})
-		expect(kept).toMatchObject({ transition: "continued", severity: "critical", eventType: null })
+		expect(kept).toMatchObject({ transition: "escalated", severity: "critical", eventType: "trigger" })
 	})
 
 	it("leaves a steady group's history byte-identical, so the state upsert can be skipped", () => {

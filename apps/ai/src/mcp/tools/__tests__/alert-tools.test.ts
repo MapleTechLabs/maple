@@ -639,6 +639,27 @@ describe("alert tools", () => {
 		expect(upperAfter({ threshold: 2 })).toBe(10)
 	})
 
+	it("update_alert_rule drops a recovery value the new threshold invalidates", () => {
+		const recovering = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			comparator: "gt",
+			thresholds: [
+				{
+					severity: "critical",
+					value: 100,
+					upper: null,
+					recoveryValue: 80,
+					destinationIds: [DEST_ID],
+				},
+			],
+		})
+		const recoveryAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(recovering, params)).thresholds[0].recoveryValue
+		expect(recoveryAfter({ threshold: 120 })).toBe(80)
+		expect(recoveryAfter({ threshold: 70 })).toBeNull()
+		expect(recoveryAfter({ comparator: "lt" })).toBeNull()
+	})
+
 	it("update_alert_rule keeps a two-tier rule's tiers and refuses to merge them", () => {
 		const tiered = Schema.decodeUnknownSync(AlertRuleDocument)({
 			...rule,
