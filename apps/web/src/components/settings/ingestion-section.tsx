@@ -26,7 +26,14 @@ import {
 	type IngestConnection,
 } from "@/components/ingest/use-ingest-connection"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
-import { CustomIngestKeysSection } from "./custom-ingest-keys-section"
+import { Option } from "effect"
+import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { IngestKeyDetail } from "./ingest-keys/key-detail"
+import { IngestKeyForm } from "./ingest-keys/key-form"
+import { IngestKeysTable } from "./ingest-keys/keys-table"
+import { type IngestionView, useIngestionNavigation } from "./ingest-keys/navigation"
+import { fromPublicKeyId, type RevealedSecret, toPublicKeyId } from "./ingest-keys/shared"
+import { customIngestKeysListAtom } from "@/lib/services/atoms/ingestion-atoms"
 import { SettingsSection, SettingsSections } from "./settings-section"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
@@ -211,7 +218,143 @@ function CredentialRow({
 	)
 }
 
-export function IngestionSection() {
+const VIEW_LABELS = {
+	setup: "Setup",
+	keys: "Keys",
+	mappings: "Attribute mappings",
+} satisfies Record<IngestionView, string>
+
+export function IngestionSection({
+	view = "setup",
+	keyParam,
+	keyView,
+}: {
+	view?: IngestionView
+	keyParam?: string
+	keyView?: "configure"
+}) {
+	const nav = useIngestionNavigation()
+	// The one-time secret lives only here, so it is gone once the key page is left or reloaded.
+	const [revealed, setRevealed] = useState<RevealedSecret | null>(null)
+	// Leaving the key's page drops the secret ("new" is the create step navigating to it).
+	if (
+		revealed !== null &&
+		keyParam !== "new" &&
+		(keyParam !== toPublicKeyId(revealed.keyId) || keyView === "configure")
+	) {
+		setRevealed(null)
+	}
+
+	if (keyParam !== undefined) {
+		return (
+			<IngestKeyPage
+				keyParam={keyParam}
+				configure={keyView === "configure"}
+				revealed={revealed}
+				onRevealed={setRevealed}
+			/>
+		)
+	}
+
+	return (
+		<div className="flex w-full max-w-4xl flex-col gap-6">
+			<ToggleGroup
+				variant="outline"
+				size="sm"
+				aria-label="Ingestion"
+				value={[view]}
+				onValueChange={(values) => {
+					const next = values.find((value) => value !== view)
+					if (next === "setup" || next === "keys" || next === "mappings") nav.openView(next)
+				}}
+			>
+				{Object.entries(VIEW_LABELS).map(([id, label]) => (
+					<ToggleGroupItem key={id} value={id}>
+						{label}
+					</ToggleGroupItem>
+				))}
+			</ToggleGroup>
+			{view === "keys" ? (
+				<IngestKeysTable />
+			) : view === "mappings" ? (
+				<SettingsSections>
+					<RecommendedMappingsSection />
+					<AttributeMappingsSection />
+				</SettingsSections>
+			) : (
+				<IngestionSetup />
+			)}
+		</div>
+	)
+}
+
+function IngestKeyPage({
+	keyParam,
+	configure,
+	revealed,
+	onRevealed,
+}: {
+	keyParam: string
+	configure: boolean
+	revealed: RevealedSecret | null
+	onRevealed: (revealed: RevealedSecret | null) => void
+}) {
+	const nav = useIngestionNavigation()
+	const listResult = useAtomValue(customIngestKeysListAtom)
+
+	if (keyParam === "new") {
+		return (
+			<IngestKeyForm
+				existing={null}
+				onCancel={nav.openKeys}
+				onSaved={() => nav.openKeys()}
+				onCreated={(key, secret) => {
+					onRevealed(secret)
+					nav.openKey(toPublicKeyId(key.id))
+				}}
+			/>
+		)
+	}
+	const keyId = fromPublicKeyId(keyParam)
+	if (Option.isNone(keyId)) {
+		return <p className="text-muted-foreground text-sm">That is not an ingest key id.</p>
+	}
+	if (configure) {
+		const existing = Result.builder(listResult)
+			.onSuccess((response) => response.data.find((key) => key.id === keyId.value) ?? null)
+			.orElse(() => null)
+		if (existing === null) {
+			return Result.isInitial(listResult) ? (
+				<Skeleton className="h-64 w-full max-w-4xl" />
+			) : (
+				<p className="text-muted-foreground text-sm">This ingest key no longer exists.</p>
+			)
+		}
+		return (
+			<IngestKeyForm
+				key={existing.id}
+				existing={existing}
+				onCancel={() => nav.openKey(keyParam)}
+				onSaved={() => nav.openKey(keyParam)}
+				onCreated={() => nav.openKey(keyParam)}
+			/>
+		)
+	}
+	return (
+		<IngestKeyDetail
+			keyId={keyId.value}
+			revealed={revealed}
+			onRevealed={onRevealed}
+			onConfigure={() => nav.configureKey(keyParam)}
+			onDeleted={() => {
+				onRevealed(null)
+				nav.openKeys()
+			}}
+		/>
+	)
+}
+
+function IngestionSetup() {
 	const [publicKeyVisible, setPublicKeyVisible] = useState(false)
 	const [privateKeyVisible, setPrivateKeyVisible] = useState(false)
 	const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false)
@@ -316,8 +459,6 @@ export function IngestionSection() {
 					</div>
 				</SettingsSection>
 
-				<CustomIngestKeysSection />
-
 				<SettingsSection
 					title="Send your first telemetry"
 					description="Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you."
@@ -331,10 +472,6 @@ export function IngestionSection() {
 						variant="flush"
 					/>
 				</SettingsSection>
-
-				<RecommendedMappingsSection />
-
-				<AttributeMappingsSection />
 			</SettingsSections>
 
 			<ConfirmDialog

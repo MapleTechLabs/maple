@@ -8,6 +8,7 @@ import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { BillingSection } from "@/components/settings/billing-section"
 import { MembersSection } from "@/components/settings/members-section"
 import { IngestionSection } from "@/components/settings/ingestion-section"
+import { ingestionViews, useIngestKeyCrumbs } from "@/components/settings/ingest-keys/navigation"
 import { ApiKeysSection } from "@/components/settings/api-keys-section"
 import { AuditLogSection } from "@/components/settings/audit-log-section"
 import { McpSection } from "@/components/settings/mcp-section"
@@ -33,6 +34,10 @@ const SettingsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacyTabValues])),
 	// Stripe Checkout return marker — see `lib/billing/checkout-return.ts`.
 	checkout: Schema.optional(Schema.Literal("complete")),
+	// Ingestion tab: sub-view, then a custom ingest key (`ingk_…` or `new`).
+	view: Schema.optional(Schema.Literals(ingestionViews)),
+	key: Schema.optional(Schema.String),
+	keyView: Schema.optional(Schema.Literal("configure")),
 })
 
 export const Route = createFileRoute("/settings")({
@@ -66,6 +71,7 @@ function SettingsPage() {
 	}
 
 	const activeTab = resolveActiveSettingsTab(search.tab, visibleItems)
+	const keyCrumbs = useIngestKeyCrumbs(activeTab === "ingestion" ? search.key : undefined, search.keyView)
 
 	function handleTabSelect(tab: SettingsTab) {
 		navigate({ search: { tab } })
@@ -86,7 +92,14 @@ function SettingsPage() {
 			breadcrumbs={
 				loading || empty
 					? [{ label: "Settings" }]
-					: [{ label: "Settings", href: "/settings" }, { label: settingsTabLabels[activeTab] }]
+					: [
+							{ label: "Settings", href: "/settings" },
+							{
+								label: settingsTabLabels[activeTab],
+								href: keyCrumbs.length > 0 ? "/settings?tab=ingestion&view=keys" : undefined,
+							},
+							...keyCrumbs,
+						]
 			}
 			filters={
 				loading || empty ? undefined : (
@@ -111,7 +124,9 @@ function SettingsPage() {
 					{activeTab === "members" && <MembersSection />}
 					{activeTab === "audit-log" && <AuditLogSection />}
 					{activeTab === "setup-audit" && <SetupAuditSection />}
-					{activeTab === "ingestion" && <IngestionSection />}
+					{activeTab === "ingestion" && (
+						<IngestionSection view={search.view} keyParam={search.key} keyView={search.keyView} />
+					)}
 					{activeTab === "api-keys" && <ApiKeysSection />}
 					{activeTab === "mcp" && <McpSection />}
 					{activeTab === "ai-provider" && <AiProviderSection />}

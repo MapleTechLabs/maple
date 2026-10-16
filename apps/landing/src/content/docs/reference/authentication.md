@@ -11,7 +11,7 @@ Maple uses two kinds of credential. **Ingest keys** send telemetry. **API keys**
 | ------------------ | ----------- | ---------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | Public ingest key  | `maple_pk_` | **Settings → Ingestion**                 | Send telemetry                                 | Yes                          |
 | Private ingest key | `maple_sk_` | **Settings → Ingestion**                 | Send telemetry                                 | No                           |
-| Custom ingest key  | `maple_ik_` | **Settings → Ingestion → Custom keys**   | Send the signals you allow, up to its limit    | No                           |
+| Custom ingest key  | `maple_ik_` | **Settings → Ingestion → Keys**          | Send the signals you allow, up to its limit    | No                           |
 | API key            | `maple_ak_` | **Settings → API Keys**                  | REST API and MCP server, limited by its scopes | No                           |
 | MCP key            | `maple_ak_` | **Settings → MCP**                       | MCP server only                                | No                           |
 | OAuth token        |             | Issued to an MCP client when you sign in | MCP server only                                | No                           |
@@ -47,14 +47,16 @@ The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is disc
 
 Beside the default pair you can create named keys under **Settings → Ingestion → Custom keys**, or with `POST /v2/ingest_keys/custom`. Give one to a team, a service or an environment so you can limit and revoke it on its own. Each key has:
 
-| Setting                 | What it does                                                                                                                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Allowed signals**     | Traces, logs, metrics, sessions (replays and session events) and events (product events, including browser `track()` calls). Other signals are rejected with `403`.              |
-| **Rate limit**          | Requests per second, split across the ingest servers. Requests over it get `429` with a `Retry-After` header.                                                                    |
-| **Resource attributes** | Written on every resource the key sends over OTLP (traces, logs, metrics). **Always set** overwrites the sender's value; **If missing** only fills it in. `maple_*` is reserved. |
-| **Expires**             | Never, or a date after which the key gets `401`.                                                                                                                                 |
+| Setting                 | What it does                                                                                                                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Allowed signals**     | Traces, logs, metrics, sessions (replays and session events) and events (product events, including browser `track()` calls). Other signals are rejected with `403`.          |
+| **Rate limit**          | Requests per second, split across the ingest servers. Requests over it get `429` with a `Retry-After` header.                                                                |
+| **Resource attributes** | Written on every resource the key sends over OTLP (traces, logs, metrics). **Always** overwrites the sender's value; **If missing** only fills it in. `maple_*` is reserved. |
+| **Expires**             | Never, or a date after which the key gets `401`.                                                                                                                             |
 
-The key is shown once, when it is created or rolled; Maple keeps only a hash. Telemetry sent with a custom key carries a `maple_ingest_key_id` resource attribute with the key's `ingk_…` ID, so you can filter by key. Edits, disabling, rolling and deleting reach the ingest servers within a minute.
+The key is shown once, when it is created or rolled; Maple keeps only a hash. Telemetry sent with a custom key carries a `maple_ingest_key_id` resource attribute with the key's `ingk_…` ID, so you can filter by key. Each key's page shows when it last sent data and its span and log volume over the last 24 hours.
+
+**Pausing** a key (for an hour, a day, or until you resume it, or with `POST /v2/ingest_keys/custom/{id}/pause`) keeps answering senders with success, so nothing retries or backs up, but drops what they send: it is not stored or billed. Revoke a key by rolling or deleting it instead. Edits, pauses, rolling and deleting reach the ingest servers within a minute.
 
 ## API keys
 
