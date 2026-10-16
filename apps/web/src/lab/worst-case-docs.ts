@@ -157,7 +157,7 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			consecutiveBreachesRequired: 1,
 			breachesOutOf: null,
 			thresholds: [
-				{ severity: "critical", value: 0, upper: null, recoveryValue: null, destinationIds: [] },
+				{ severity: "critical", value: threshold, upper: null, recoveryValue: null, destinationIds: [] },
 			],
 			consecutiveHealthyRequired: 1,
 			renotifyIntervalMinutes: 60,
