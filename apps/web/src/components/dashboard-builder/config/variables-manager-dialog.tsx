@@ -109,12 +109,14 @@ function draftError(draft: DashboardVariable, index: number, drafts: DashboardVa
 	if (draft.type === "query" && draft.source.kind !== "facet" && !draft.source.attributeKey.trim()) {
 		return "Pick the attribute key to list values for."
 	}
-	if (
-		draft.type === "query" &&
-		draft.source.kind === "metric" &&
-		draft.source.metricNames.some((name) => name === "")
-	) {
-		return "Name at least one metric to list values from."
+	if (draft.type === "query" && draft.source.kind === "metric") {
+		if (draft.source.metricNames.some((name) => name === "")) {
+			return "Name at least one metric to list values from."
+		}
+		// The variable's schema caps the list: a longer one would not decode once saved.
+		if (draft.source.metricNames.length > 20) {
+			return "List at most 20 metrics."
+		}
 	}
 	return null
 }
