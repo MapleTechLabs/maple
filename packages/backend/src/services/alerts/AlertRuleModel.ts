@@ -601,6 +601,14 @@ const decodeStoredAlertRuleThresholds = (
 				Effect.map(sortAlertThresholds),
 			)
 
+/** The stored condition ticks are judged against; none when the row no longer decodes. */
+export const storedRuleCondition = (row: StoredAlertRuleRow) =>
+	decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson).pipe(
+		Effect.flatMap((destinationIds) => decodeStoredAlertRuleThresholds(row, destinationIds)),
+		Effect.map((thresholds) => ({ comparator: row.comparator, thresholds })),
+		Effect.option,
+	)
+
 export const rowToRuleDocument = (
 	row: StoredAlertRuleRow,
 	evaluationState?: RuleEvaluationState,

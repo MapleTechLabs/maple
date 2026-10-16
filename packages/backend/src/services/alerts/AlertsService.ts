@@ -114,7 +114,7 @@ import { simulateFiringSpans } from "./alert-firing-spans"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator } from "./alert-formatting"
-import { ruleAtSeverity, tierConditionChanged } from "./alert-thresholds"
+import { ruleAtSeverity } from "./alert-thresholds"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -1233,9 +1233,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const oldRow = yield* requireRuleRow(orgId, ruleId)
 				const oldNormalized = yield* normalizeRuleRow(oldRow)
 				const newNormalized = yield* normalizeRule(orgId, request)
-				const result = yield* upsertRuleRow(orgId, userId, ruleId, request, {
-					resetEvaluationState: tierConditionChanged(oldNormalized, newNormalized),
-				})
+				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
 
 				// Resolve stale incidents caused by the configuration change
 

@@ -193,6 +193,7 @@ const mergeThresholds = (
 	return Effect.succeed(
 		Arr.map(current.thresholds, (tier, index) => ({
 			...fitBound(tier),
+			recoveryValue: recoveryValueFits(comparator, tier) ? tier.recoveryValue : null,
 			destinationIds: mergeDestinations(
 				tier.destinationIds,
 				index === 0 ? params : { remove_destination_ids: params.remove_destination_ids },

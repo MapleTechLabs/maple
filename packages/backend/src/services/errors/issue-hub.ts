@@ -278,9 +278,6 @@ export const upsertAlertIssue: (
 						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id), $.severity.isNull()]),
 				),
 			)
-			if (input.severity === "critical")
-				yield* raiseDetectorSeverity(input.orgId, fingerprintHash, input.timestamp)
-
 			const reopenFrom: WorkflowState | null =
 				prior.workflowState === "done" || prior.workflowState === "wontfix"
 					? prior.workflowState
@@ -314,6 +311,9 @@ export const upsertAlertIssue: (
 			} else {
 				action = "refreshed"
 			}
+			// After the reopen, which takes a wontfix issue out of the raise's exclusion.
+			if (input.severity === "critical")
+				yield* raiseDetectorSeverity(input.orgId, fingerprintHash, input.timestamp)
 		}
 
 		yield* database.execute((db) =>

@@ -25,7 +25,7 @@ import {
 	AlertRules,
 	AlertRuleStates,
 } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, HashSet, Layer, Schema } from "effect"
+import { Array as Arr, Context, Effect, HashSet, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
@@ -36,8 +36,10 @@ import {
 	normalizeOptionalString,
 	rowToRuleDocument,
 	selectStoredAlertRules,
+	storedRuleCondition,
 	type RuleEvaluationState,
 } from "./AlertRuleModel"
+import { tierConditionChanged } from "./alert-thresholds"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 
@@ -149,7 +151,6 @@ export const makeAlertRulePersistence = (options: {
 		userId: UserId,
 		existingId: AlertRuleId | null,
 		request: AlertRuleUpsertRequest,
-		options?: { readonly resetEvaluationState?: boolean },
 	) {
 		const normalized = yield* normalizeRule(orgId, request)
 		const ruleId = existingId ?? normalized.id
@@ -233,6 +234,22 @@ export const makeAlertRulePersistence = (options: {
 						}
 					}
 
+					const [previousRow] =
+						existingId == null
+							? []
+							: yield* db.run(
+									selectStoredAlertRules().where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(existingId),
+									]),
+								)
+					const previous =
+						previousRow === undefined ? Option.none() : yield* storedRuleCondition(previousRow)
+					const conditionChanged = Option.match(previous, {
+						onNone: () => true,
+						onSome: (condition) => tierConditionChanged(condition, normalized),
+					})
+
 					return existingId == null
 						? yield* db.run(
 								PG.insertInto(AlertRules)
@@ -260,8 +277,9 @@ export const makeAlertRulePersistence = (options: {
 									)
 									.pipe(
 										// Ticks judged against the old condition must not count toward the new one.
+										// Read under the lock, so a concurrent edit cannot restore it unnoticed.
 										Effect.tap(() =>
-											options?.resetEvaluationState === true
+											conditionChanged
 												? db.run(
 														PG.update(AlertRuleStates)
 															.set({
@@ -295,9 +313,8 @@ export const makeAlertRulePersistence = (options: {
 		userId: UserId,
 		existingId: AlertRuleId,
 		request: AlertRuleUpsertRequest,
-		options?: { readonly resetEvaluationState?: boolean },
 	) {
-		const { ruleId, txid } = yield* writeRuleRow(orgId, userId, existingId, request, options)
+		const { ruleId, txid } = yield* writeRuleRow(orgId, userId, existingId, request)
 		const row = yield* findRuleRow(orgId, ruleId)
 		if (row === undefined) {
 			return yield* Effect.fail(

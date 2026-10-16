@@ -63,8 +63,8 @@ export const recoveryValueFits = (
 
 /** Whether an edit changes what a tick is classified against; destinations aside. */
 export const tierConditionChanged = (
-	a: { readonly comparator: AlertComparator; readonly thresholds: AlertThresholds },
-	b: { readonly comparator: AlertComparator; readonly thresholds: AlertThresholds },
+	a: { readonly comparator: string; readonly thresholds: AlertThresholds },
+	b: { readonly comparator: string; readonly thresholds: AlertThresholds },
 ): boolean => {
 	const key = (rule: typeof a) =>
 		JSON.stringify([
