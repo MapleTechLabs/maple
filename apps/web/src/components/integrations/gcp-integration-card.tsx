@@ -54,6 +54,7 @@ import {
 	GCP_SCOPE_NAMES,
 	GCP_STATE_ORDER,
 	gcpConnectionState,
+	gcpLiveQueriesMissing,
 	gcpLogState,
 	gcpMessageParts,
 	gcpMetricsState,
@@ -177,22 +178,25 @@ type MetricsState = ReturnType<typeof gcpMetricsState>
 
 /**
  * What a connection needs said about it, worst first; empty when it is healthy. The card has one
- * filled button: the script being due takes it, else the first failure another run repairs.
+ * filled button: the script being due takes it, else the first failure another run repairs, else
+ * missing live queries.
  */
 function connectionIssues({
 	connector,
 	log,
 	metrics,
 	nowMs,
+	metricsAvailable,
 	onRunScript,
 }: {
 	connector: V2GcpConnector
 	log: LogState
 	metrics: MetricsState
 	nowMs: number
+	metricsAvailable: boolean
 	onRunScript: (() => void) | null
 }): ReadonlyArray<Issue> {
-	const needed = gcpScriptNeeded(connector, nowMs)
+	const needed = gcpScriptNeeded(connector, nowMs, metricsAvailable)
 	const repairs = needed === null ? gcpRunAsked(connector, nowMs)[0] : undefined
 	const rerun = (capability: GcpCapability) =>
 		repairs === capability ? <RunScript label="Run the script again" onRun={onRunScript} /> : undefined
@@ -212,7 +216,7 @@ function connectionIssues({
 		issues.push({
 			key: "metrics-failing",
 			tone: "crit",
-			title: "Metrics can't be read",
+			title: "Key metrics can't be read",
 			body: <GcpMessage text={metrics.error} />,
 			action: rerun("metrics"),
 		})
@@ -225,7 +229,7 @@ function connectionIssues({
 							? "Google Cloud has nothing of Maple's yet. Running the setup script takes about a minute."
 							: "The last run stopped part of the way. Run the script again: it continues where it stopped.",
 					]
-				: gcpPendingChanges(connector, nowMs)
+				: gcpPendingChanges(connector, nowMs, metricsAvailable)
 		issues.push({
 			key: "script",
 			tone: "warn",
@@ -258,13 +262,26 @@ function connectionIssues({
 		issues.push({
 			key: "metrics-incomplete",
 			tone: "warn",
-			title: "Metrics are incomplete",
+			title: "Key metrics are incomplete",
 			body: <GcpMessage text={metrics.error} />,
 			action: rerun("metrics"),
 		})
 	}
 	if (metrics.kind === "stalled") {
 		issues.push({ key: "metrics-stalled", tone: "warn", title: "No metrics in 30 minutes", body: RETRIES })
+	}
+	// With key metrics on, the poller's own error says this.
+	if (!connector.metrics_enabled && gcpLiveQueriesMissing(connector, nowMs, metricsAvailable)) {
+		issues.push({
+			key: "live-queries",
+			tone: "warn",
+			title: "Live queries not set up",
+			body: "The last setup run couldn't create the read-only service account, so Maple can't query this connection's metrics. Run the script again and fix what it names under Read-only access.",
+			action:
+				needed === null && repairs === undefined ? (
+					<RunScript label="Run the script again" onRun={onRunScript} />
+				) : undefined,
+		})
 	}
 	if (log.kind === "waiting" && log.overdue) {
 		issues.push({
@@ -293,7 +310,7 @@ function connectionIssues({
 	if (issues.length > 0) return issues
 
 	// Nothing wrong yet: what the connection is waiting for.
-	if (gcpSetupRunning(connector, nowMs)) {
+	if (gcpSetupRunning(connector, nowMs, metricsAvailable)) {
 		return [
 			{
 				key: "running",
@@ -440,12 +457,14 @@ export function GcpConnection({
 	connector,
 	isAdmin,
 	nowMs,
+	metricsAvailable,
 	onConfigure,
 	onRemoved,
 }: {
 	connector: V2GcpConnector
 	isAdmin: boolean
 	nowMs: number
+	metricsAvailable: boolean
 	onConfigure: (stage: "choose" | "apply") => void
 	onRemoved: (removed: RemovedGcpConnector) => void
 }) {
@@ -487,6 +506,7 @@ export function GcpConnection({
 		log,
 		metrics,
 		nowMs,
+		metricsAvailable,
 		onRunScript: isAdmin ? () => onConfigure("apply") : null,
 	})
 	const lastLog = log.kind === "receiving" || log.kind === "idle" ? log.lastLogReceivedAt : null
@@ -495,7 +515,7 @@ export function GcpConnection({
 		metrics.kind === "receiving" && metrics.projectCount !== null
 			? countLabel(metrics.projectCount, "project")
 			: null
-	const collects = [connector.logs_enabled ? "Logs" : null, connector.metrics_enabled ? "metrics" : null]
+	const collects = [connector.logs_enabled ? "Logs" : null, connector.metrics_enabled ? "key metrics" : null]
 		.filter((part) => part !== null)
 		.join(" and ")
 
@@ -588,7 +608,7 @@ export function GcpConnection({
 							}
 						/>
 						<Signal
-							name="Metrics"
+							name="Key metrics"
 							signal={signalText("metrics", log, metrics)}
 							link={
 								lastRead === null ? undefined : (
@@ -640,13 +660,17 @@ export function GcpConnection({
 /** Every connection, and the clock their states turn on. */
 function useGcpConnectors() {
 	const status = Option.getOrNull(AsyncResult.value(useAtomValue(gcpStatusQuery())))
-	return { connectors: status?.connectors ?? [], nowMs: useLiveClock() }
+	return {
+		connectors: status?.connectors ?? [],
+		metricsAvailable: status?.metrics_available === true,
+		nowMs: useLiveClock(),
+	}
 }
 
 /** The page header's state: the worst connection's, how many of several share it, and how many projects send data. */
 export function GcpHeaderStatus() {
-	const { connectors, nowMs } = useGcpConnectors()
-	const states = connectors.map((connector) => gcpConnectionState(connector, nowMs))
+	const { connectors, metricsAvailable, nowMs } = useGcpConnectors()
+	const states = connectors.map((connector) => gcpConnectionState(connector, nowMs, metricsAvailable))
 	const worst = gcpWorstState(states)
 	const inWorst = states.filter((state) => state === worst).length
 	const projects = connectors.reduce(
@@ -693,7 +717,9 @@ export function GcpIntegrationCard() {
 	const connectors = status?.connectors ?? []
 	const metricsAvailable = status?.metrics_available === true
 
-	const settling = connectors.some((connector) => gcpConnectionState(connector, nowMs) !== "healthy")
+	const settling = connectors.some(
+		(connector) => gcpConnectionState(connector, nowMs, metricsAvailable) !== "healthy",
+	)
 	useIntervalRefresh(refreshStatus, {
 		intervalMs: settling ? GCP_SETTLING_REFRESH_MS : STEADY_REFRESH_MS,
 		enabled: connectors.length > 0,
@@ -777,7 +803,7 @@ export function GcpIntegrationCard() {
 						<IntegrationEmptyFeature
 							label="Metrics"
 							title="Workloads, no agents"
-							description="Cloud Run, GKE, Compute Engine, Cloud SQL and more, read every 5 minutes."
+							description="Query any metric live, and keep key ones from Cloud Run, GKE, Cloud SQL and more every 5 minutes."
 						/>
 						<IntegrationEmptyFeature
 							label="Access"
@@ -815,8 +841,8 @@ export function GcpIntegrationCard() {
 	// Worst first: what needs its admin is at the top, however many connections there are.
 	const ordered = connectors.toSorted(
 		(a, b) =>
-			GCP_STATE_ORDER.indexOf(gcpConnectionState(a, nowMs)) -
-			GCP_STATE_ORDER.indexOf(gcpConnectionState(b, nowMs)),
+			GCP_STATE_ORDER.indexOf(gcpConnectionState(a, nowMs, metricsAvailable)) -
+			GCP_STATE_ORDER.indexOf(gcpConnectionState(b, nowMs, metricsAvailable)),
 	)
 
 	return (
@@ -842,6 +868,7 @@ export function GcpIntegrationCard() {
 						connector={connector}
 						isAdmin={isAdmin}
 						nowMs={nowMs}
+						metricsAvailable={metricsAvailable}
 						onConfigure={(stage) => setTarget({ kind: "connection", id: connector.id, stage })}
 						onRemoved={(entry) => setRemoved([...removed, entry])}
 					/>

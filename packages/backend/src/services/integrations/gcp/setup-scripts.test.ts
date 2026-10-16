@@ -21,7 +21,9 @@ const ACCOUNT = `${NAME}@acme-host.iam.gserviceaccount.com`
 const SECRET = "maple_gcp_s3cr3t-value"
 const WRITER = "serviceAccount:service-1@gcp-sa-logging.iam.gserviceaccount.com"
 const MAPLE_ACCOUNT = "collector@maple-prod.iam.gserviceaccount.com"
-const PUSH_ENDPOINT = `https://ingest.test/v1/logpush/gcp/${connectorId}?secret=${SECRET}`
+const PUSH_ENDPOINT = `https://ingest.test/v1/logpush/gcp/${connectorId}`
+const REPORT_ENDPOINT = `${PUSH_ENDPOINT}?secret=${SECRET}`
+const PUSH_ACCOUNT = "maple-push-018f2b3c4d5e4f70819@acme-host.iam.gserviceaccount.com"
 const MAPLE_URL = "https://app.maple.test/integrations?integration=gcp"
 const DEFAULT_LOG_FILTER = gcpLogFilter([])
 
@@ -67,21 +69,18 @@ const SCOPES = {
 type Scope = (typeof SCOPES)[keyof typeof SCOPES]
 const scopeTypes = ["project", "folder", "organization"] as const
 
-const setupInput = (
-	scope: keyof typeof SCOPES,
-	capabilities: { logs: boolean; metrics: boolean },
-): GcpSetupScriptInput => ({
+const setupInput = (scope: keyof typeof SCOPES, logsEnabled: boolean): GcpSetupScriptInput => ({
 	...SCOPES[scope].target,
 	pushEndpoint: PUSH_ENDPOINT,
+	reportEndpoint: REPORT_ENDPOINT,
 	mapleServiceAccountEmail: MAPLE_ACCOUNT,
-	logsEnabled: capabilities.logs,
-	metricsEnabled: capabilities.metrics,
+	logsEnabled,
 	applicationLogs: null,
 })
 
 const setup = (input: GcpSetupScriptInput) => Effect.runSync(renderGcpSetupScript(input))
-const cleanup = (scope: Scope, pushEndpoint?: string) =>
-	Effect.runSync(renderGcpCleanupScript({ ...scope.target, pushEndpoint }))
+const cleanup = (scope: Scope, reportEndpoint?: string) =>
+	Effect.runSync(renderGcpCleanupScript({ ...scope.target, reportEndpoint }))
 
 // A `gcloud` that records its commands, and each argument on its own line so a value split by
 // bad quoting shows. It talks on stderr like the real one, which a script must not pass on.
@@ -118,6 +117,7 @@ case "$*" in
   "config get-value account") echo "$GCLOUD_ACCOUNT" ;;
   "config get-value auth/impersonate_service_account") echo "$GCLOUD_IMPERSONATE" ;;
   "auth print-access-token") echo "ya29.token" ;;
+  "projects describe"*"projectNumber"*) echo 987654321098 ;;
   "projects describe"*) echo "Acme Production" ;;
   "organizations describe"* | "resource-manager folders describe"*) echo "acme.com" ;;
   "billing projects describe"*) echo "$GCLOUD_BILLING" ;;
@@ -289,7 +289,7 @@ const RESOURCE_MANAGER_ON = "services enable cloudresourcemanager.googleapis.com
 const isAccessCheck = (command: string) =>
 	command === API_LOOKUP ||
 	command === RESOURCE_MANAGER_ON ||
-	/^(version|config get-value|auth print-access-token|projects describe|organizations describe|resource-manager folders describe|billing projects describe|logging read)/.test(
+	/^(version|config get-value|auth print-access-token|projects describe(?!.*projectNumber)|organizations describe|resource-manager folders describe|billing projects describe|logging read)/.test(
 		command,
 	)
 
@@ -305,14 +305,22 @@ const publish = (members: string) =>
 		),
 	)
 
+const PUSH_ACCOUNT_DESCRIBE = `iam service-accounts describe ${PUSH_ACCOUNT} --project=acme-host`
+const PUSH_FLAGS = `--push-endpoint=${PUSH_ENDPOINT} --push-no-wrapper --push-auth-service-account=${PUSH_ACCOUNT} --push-auth-token-audience=${PUSH_ENDPOINT}`
+const PUSH_GRANT = `iam service-accounts add-iam-policy-binding ${PUSH_ACCOUNT} --project=acme-host --member=serviceAccount:service-987654321098@gcp-sa-pubsub.iam.gserviceaccount.com --role=roles/iam.serviceAccountTokenCreator --condition=None`
+
 const logsSetupCommands = (scope: Scope) => [
 	// The last access check: whether the sink exists decides whether the filter is tried out.
 	`logging sinks describe ${NAME} ${scope.sink}`,
-	"services enable pubsub.googleapis.com logging.googleapis.com --project=acme-host",
+	"services enable pubsub.googleapis.com logging.googleapis.com iam.googleapis.com --project=acme-host",
 	`pubsub topics describe ${NAME} --project=acme-host`,
 	`pubsub topics create ${NAME} --project=acme-host`,
+	PUSH_ACCOUNT_DESCRIBE,
+	`iam service-accounts create maple-push-018f2b3c4d5e4f70819 --project=acme-host --display-name=Maple log push identity --description=Signs Pub/Sub push requests to Maple. Holds no roles.`,
+	"projects describe acme-host --format=value(projectNumber)",
+	PUSH_GRANT,
 	`pubsub subscriptions describe ${NAME} --project=acme-host --format=value(topic)`,
-	`pubsub subscriptions create ${NAME} --topic=${NAME} --project=acme-host --push-endpoint=${PUSH_ENDPOINT} --push-no-wrapper --ack-deadline=30 --message-retention-duration=1d --expiration-period=never --min-retry-delay=10s --max-retry-delay=600s`,
+	`pubsub subscriptions create ${NAME} --topic=${NAME} --project=acme-host ${PUSH_FLAGS} --ack-deadline=30 --message-retention-duration=1d --expiration-period=never --min-retry-delay=10s --max-retry-delay=600s`,
 	`logging sinks create ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --log-filter=${DEFAULT_LOG_FILTER} ${scope.sinkWrite}`,
 	`logging sinks describe ${NAME} ${scope.sink} --format=value(writerIdentity)`,
 	`projects add-iam-policy-binding acme-host --member=${WRITER} --role=roles/logging.logWriter --condition=None`,
@@ -320,14 +328,20 @@ const logsSetupCommands = (scope: Scope) => [
 	publish('"logs":true'),
 ]
 
-const metricsSetupCommands = (scope: Scope) => [
-	"services enable monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com --project=acme-host",
-	`iam service-accounts describe ${ACCOUNT} --project=acme-host`,
+const ACCOUNT_DESCRIBE = `iam service-accounts describe ${ACCOUNT} --project=acme-host`
+
+// The account is looked for before the permission check and, missing, again once its APIs are on
+// (IAM is on already when log forwarding switched it on). Maple's grant comes before the roles on
+// the scope.
+const readerSetupCommands = (scope: Scope, logs = true) => [
+	ACCOUNT_DESCRIBE,
+	`services enable monitoring.googleapis.com cloudasset.googleapis.com ${logs ? "" : "iam.googleapis.com "}iamcredentials.googleapis.com --project=acme-host`,
+	ACCOUNT_DESCRIBE,
 	`iam service-accounts create ${NAME} --project=acme-host --display-name=Maple metrics and resource reader`,
+	`iam service-accounts add-iam-policy-binding ${ACCOUNT} --project=acme-host --member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator --condition=None`,
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --condition=None`,
 	`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --condition=None`,
 	`projects add-iam-policy-binding acme-host --member=serviceAccount:${ACCOUNT} --role=roles/serviceusage.serviceUsageConsumer --condition=None`,
-	`iam service-accounts add-iam-policy-binding ${ACCOUNT} --project=acme-host --member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator --condition=None`,
 ]
 
 const logsRemovalCommands = (scope: Scope) => [
@@ -335,16 +349,20 @@ const logsRemovalCommands = (scope: Scope) => [
 	`logging sinks delete ${NAME} ${scope.sink} --quiet`,
 	`pubsub subscriptions describe ${NAME} --project=acme-host`,
 	`pubsub subscriptions delete ${NAME} --project=acme-host --quiet`,
+	PUSH_ACCOUNT_LOOKUP,
+	`iam service-accounts delete ${PUSH_ACCOUNT} --project=acme-host --quiet`,
 	`pubsub topics describe ${NAME} --project=acme-host`,
 	`pubsub topics delete ${NAME} --project=acme-host --quiet`,
 ]
 
 const ACCOUNT_LOOKUP = `iam service-accounts list --project=acme-host --filter=email=${ACCOUNT} --format=value(email)`
+const PUSH_ACCOUNT_LOOKUP = `iam service-accounts list --project=acme-host --filter=email=${PUSH_ACCOUNT} --format=value(email)`
 
-/** A command that only looks: a describe, or the service account list. */
-const isLookup = (command: string) => command.includes(" describe ") || command === ACCOUNT_LOOKUP
+/** A command that only looks: a describe, or a service account list. */
+const isLookup = (command: string) =>
+	command.includes(" describe ") || command === ACCOUNT_LOOKUP || command === PUSH_ACCOUNT_LOOKUP
 
-const metricsRemovalCommands = (scope: Scope) => [
+const readerRemovalCommands = (scope: Scope) => [
 	ACCOUNT_LOOKUP,
 	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/monitoring.viewer --all`,
 	`${scope.iam} remove-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --all`,
@@ -358,15 +376,13 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 	const scope = SCOPES[scopeType]
 	const host = scopeType === "project" ? "Project" : "Host project"
 
-	it("sets up logs and metrics from nothing, at the right scope, one line per step", () => {
-		const { status, stdout, stderr, commands, access } = run(
-			setup(setupInput(scopeType, { logs: true, metrics: true })),
-		)
+	it("sets up logs and read-only access from nothing, at the right scope, one line per step", () => {
+		const { status, stdout, stderr, commands, access } = run(setup(setupInput(scopeType, true)))
 		expect(status).toBe(0)
 		expect(stderr).toBe("")
 		expect(commands).toEqual([
 			...logsSetupCommands(scope),
-			...metricsSetupCommands(scope),
+			...readerSetupCommands(scope),
 			publish('"metrics":true'),
 		])
 		expect(access).toEqual([
@@ -378,83 +394,74 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 			RESOURCE_MANAGER_ON,
 			...scope.open,
 			"projects describe acme-host --format=value(name)",
-			"billing projects describe acme-host --format=value(billingEnabled)",
 			`logging read ${DEFAULT_LOG_FILTER} --limit=1 --freshness=1h ${scope.sink}`,
+			"billing projects describe acme-host --format=value(billingEnabled)",
 		])
 		expect(stdout).toBe(`Maple setup for ${scopeType} ${scope.id}
-  Log forwarding          on
-  Metrics and resources   on
+  Log forwarding     on
+  Read-only access   on
 
 Checking access
   ✓ Signed in as jane@acme.com
 ${[...scope.found, `  ✓ ${host} acme-host found (Acme Production)`].join("\n")}
-  ✓ Billing is enabled
   ✓ jane@acme.com has the permissions this script needs
   ✓ Log filter accepted
 
 Log forwarding
-  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
+  ✓ APIs enabled (Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager)
   ✓ Topic created
+  ✓ Push service account created
+  ✓ Pub/Sub allowed to sign pushes as that account
   ✓ Push subscription created
   ✓ Log sink created
   ✓ Sink allowed to write to the project
   ✓ Sink allowed to publish to the topic
   ✓ Check message sent to Maple through the topic
 
-Metrics and resources
+Read-only access
+  ✓ Billing is enabled
   ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account created
-  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple notified
 
 Done. Google Cloud is set up for Maple.
   Maple confirms it within a minute: ${MAPLE_URL}
   Logs:    a new sink can take about 10 minutes to start forwarding. What is logged before
            it does is not forwarded later.
-  Metrics: the first read lands within about 10 minutes.
+  Metrics: Maple can query them within a few minutes.
 `)
 	})
 
 	it("says host project only where the scope is not the project itself", () => {
 		for (const enabled of [true, false]) {
-			const script = setup(setupInput(scopeType, { logs: enabled, metrics: enabled }))
+			const script = setup(setupInput(scopeType, enabled))
 			expect(/host project/i.test(script)).toBe(scopeType !== "project")
 		}
 	})
 
-	it("with logs only, sets up logs and removes an earlier metrics setup", () => {
-		const script = setup(setupInput(scopeType, { logs: true, metrics: false }))
-		expect(script).not.toContain(MAPLE_ACCOUNT)
-		const { status, stdout, commands, access } = run(script, { describe: "found" })
-		expect(status).toBe(0)
-		// Everything exists already, so the log pipeline is updated in place, filter untouched.
-		expect(commands.filter((command) => command.includes(" create "))).toEqual([])
-		expect(commands).toContain(
-			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --no-disabled ${scope.sinkWrite}`,
-		)
-		expect(commands).toContainEqual(
-			expect.stringMatching(/^pubsub subscriptions update .*--push-no-wrapper/),
-		)
-		expect(commands.slice(-metricsRemovalCommands(scope).length - 1)).toEqual([
-			...metricsRemovalCommands(scope),
-			publish('"metrics":false'),
-		])
-		// Billing only matters to Cloud Monitoring.
-		expect(access).not.toContainEqual(expect.stringContaining("billing"))
-		expect(stdout).toContain(`
-Metrics and resources
-  ✓ Read-only roles removed
-  ✓ Read-only service account deleted
-  ✓ Maple notified
-
-Done. Google Cloud matches your Maple switches.
-  Maple confirms it within a minute: ${MAPLE_URL}
-`)
+	it("never removes the read-only service account on a re-run, with log forwarding on or off", () => {
+		for (const logs of [true, false]) {
+			const { status, commands } = run(setup(setupInput(scopeType, logs)), { describe: "found" })
+			expect(status).toBe(0)
+			expect(commands).not.toContainEqual(expect.stringContaining("remove-iam-policy-binding"))
+			expect(commands).not.toContainEqual(
+				`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+			)
+			// Every grant is made again, so a run also restores one that was removed.
+			expect(commands).toEqual(
+				expect.arrayContaining(
+					readerSetupCommands(scope).filter((command) =>
+						command.includes("add-iam-policy-binding"),
+					),
+				),
+			)
+		}
 	})
 
-	it("with metrics only, removes an earlier log pipeline and reports without a topic", () => {
-		const script = setup(setupInput(scopeType, { logs: false, metrics: true }))
+	it("with log forwarding off, removes an earlier log pipeline and reports without a topic", () => {
+		const script = setup(setupInput(scopeType, false))
 		expect(script).not.toContain("LOG_FILTER")
 		const { status, stdout, commands, curl } = run(script, { describe: "found" })
 		expect(status).toBe(0)
@@ -464,28 +471,29 @@ Done. Google Cloud matches your Maple switches.
 		expect(commands).toContain(
 			`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --condition=None`,
 		)
-		expect(curl.filter((call) => call.startsWith(PUSH_ENDPOINT))).toEqual([
+		expect(curl.filter((call) => call.startsWith(REPORT_ENDPOINT))).toEqual([
 			expect.stringMatching(REPORT('"logs":false').source.slice(1)),
 			expect.stringMatching(REPORT('"metrics":true').source.slice(1)),
 		])
-		expect(stdout).toContain(`  Log forwarding          off, removing
-  Metrics and resources   on
+		expect(stdout).toContain(`  Log forwarding     off, removing
+  Read-only access   on
 `)
 		expect(stdout).toContain(`
 Log forwarding
   ✓ Log sink deleted
   … waiting a minute for Google to stop routing to the topic
   ✓ Push subscription deleted
+  ✓ Push service account deleted
   ✓ Topic deleted
   ✓ Maple notified
 `)
 	})
 
 	it("cleans up everything and tells Maple, and touches nothing when nothing exists", () => {
-		const script = cleanup(scope, PUSH_ENDPOINT)
+		const script = cleanup(scope, REPORT_ENDPOINT)
 		const existing = run(script, { describe: "found" })
 		expect(existing.status).toBe(0)
-		expect(existing.commands).toEqual([...logsRemovalCommands(scope), ...metricsRemovalCommands(scope)])
+		expect(existing.commands).toEqual([...logsRemovalCommands(scope), ...readerRemovalCommands(scope)])
 		expect(existing.curl).toEqual([
 			expect.stringMatching(REPORT('"logs":false,"metrics":false').source.slice(1)),
 		])
@@ -499,9 +507,10 @@ Log forwarding
   ✓ Log sink deleted
   … waiting a minute for Google to stop routing to the topic
   ✓ Push subscription deleted
+  ✓ Push service account deleted
   ✓ Topic deleted
 
-Metrics and resources
+Read-only access
   ✓ Read-only roles removed
   ✓ Read-only service account deleted
 
@@ -519,7 +528,7 @@ Done. Everything the setup script created is gone.
 })
 
 describe("the text that is copied", () => {
-	const script = setup(setupInput("project", { logs: true, metrics: true }))
+	const script = setup(setupInput("project", true))
 
 	it("is the script as a here-document for a child bash", () => {
 		const lines = script.split("\n")
@@ -562,7 +571,7 @@ describe("the text that is copied", () => {
 	})
 
 	it("is refused when a value would end the here-document early", () => {
-		const hostile = { ...setupInput("project", { logs: true, metrics: true }) }
+		const hostile = { ...setupInput("project", true) }
 		const result = Effect.runSync(
 			Effect.result(
 				renderGcpSetupScript({
@@ -588,30 +597,30 @@ describe("the text that is copied", () => {
 
 describe("renderGcpSetupScript", () => {
 	it("reads a re-run as already in place and keeps the sink's filter", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", { logs: true, metrics: true })),
-			{
-				describe: "found",
-			},
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			describe: "found",
+		})
 		expect(status).toBe(0)
 		expect(commands.filter((command) => command.includes(" create "))).toEqual([])
 		expect(commands).not.toContainEqual(expect.stringContaining("--log-filter"))
 		expect(stdout).toContain(`
 Log forwarding
-  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
+  ✓ APIs enabled (Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager)
   ✓ Topic already exists
+  ✓ Push service account already exists
+  ✓ Pub/Sub allowed to sign pushes as that account
   ✓ Push subscription up to date
   ✓ Log sink up to date (filter kept)
   ✓ Sink allowed to write to the project
   ✓ Sink allowed to publish to the topic
   ✓ Check message sent to Maple through the topic
 
-Metrics and resources
+Read-only access
+  ✓ Billing is enabled
   ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account already exists
-  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple notified
 
 Done. Everything is in place.
@@ -622,7 +631,7 @@ Done. Everything is in place.
 
 	it("replaces the sink's filter only when given the runtimes to forward", () => {
 		const filtered = (applicationLogs: GcpSetupScriptInput["applicationLogs"]) =>
-			setup({ ...setupInput("project", { logs: true, metrics: false }), applicationLogs })
+			setup({ ...setupInput("project", true), applicationLogs })
 		const all = GcpLogRuntime.literals
 		expect(filtered(null)).toContain(`LOG_FILTER_MODE='keep'\nLOG_FILTER='${DEFAULT_LOG_FILTER}'`)
 		expect(filtered(["cloud_run"])).toContain(
@@ -676,19 +685,18 @@ Done. Everything is in place.
 	})
 
 	it("shows Google's answer and what to do when a step is refused, and stops there", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", { logs: true, metrics: true })),
-			{
-				fail: "sinks create",
-			},
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			fail: "sinks create",
+		})
 		expect(status).toBe(1)
 		expect(commands.at(-1)).toContain("logging sinks create")
 		expect(
 			stdout.endsWith(`
 Log forwarding
-  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
+  ✓ APIs enabled (Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager)
   ✓ Topic created
+  ✓ Push service account created
+  ✓ Pub/Sub allowed to sign pushes as that account
   ✓ Push subscription created
   ✗ Couldn't create the log sink.
 
@@ -700,7 +708,7 @@ ${UNFINISHED}`),
 	})
 
 	it("prints Google's error without its machine-readable details", () => {
-		const { stdout } = run(setup(setupInput("project", { logs: true, metrics: true })), {
+		const { stdout } = run(setup(setupInput("project", true)), {
 			fail: "topics create",
 			answer: [
 				"WARNING: This command is using service account impersonation.",
@@ -717,7 +725,7 @@ ${UNFINISHED}`),
 	})
 
 	it("reads Google's other refusals for what they are, and never prints the secret back", () => {
-		const script = setup(setupInput("project", { logs: true, metrics: true }))
+		const script = setup(setupInput("project", true))
 		const propagating = run(script, {
 			fail: "topics create",
 			answer: "ERROR: (gcloud) PERMISSION_DENIED: Cloud Pub/Sub API has not been used in project 1 before or it is disabled.",
@@ -728,7 +736,7 @@ ${UNFINISHED}`),
 
 		const quoted = run(script, {
 			fail: "subscriptions create",
-			answer: `ERROR: (gcloud) INVALID_ARGUMENT: Invalid push endpoint given (endpoint=${PUSH_ENDPOINT}).`,
+			answer: `ERROR: (gcloud) INVALID_ARGUMENT: Invalid push endpoint given (endpoint=${REPORT_ENDPOINT}).`,
 		})
 		expect(quoted.stdout).toContain("?secret=HIDDEN).")
 		expect(quoted.stdout).not.toContain(SECRET)
@@ -746,7 +754,7 @@ ${UNFINISHED}`),
 	})
 
 	it("names the role of the scope for a refused grant there", () => {
-		const { stdout } = run(setup(setupInput("organization", { logs: false, metrics: true })), {
+		const { stdout } = run(setup(setupInput("organization", false)), {
 			fail: "organizations add-iam-policy-binding",
 		})
 		expect(stdout).toContain(`  ✗ Couldn't grant the read-only roles.`)
@@ -756,12 +764,9 @@ ${UNFINISHED}`),
 	})
 
 	it("changes nothing when the project cannot be opened", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", { logs: true, metrics: true })),
-			{
-				fail: "projects describe",
-			},
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			fail: "projects describe",
+		})
 		expect(status).toBe(1)
 		expect(commands).toEqual([])
 		expect(stdout).toContain(`
@@ -775,24 +780,66 @@ Checking access
 ${UNFINISHED}`)
 	})
 
-	it("needs the organization to open for metrics, and leaves that to the permissions for logs alone", () => {
-		const options = { fail: "organizations describe" }
-		const both = run(setup(setupInput("organization", { logs: true, metrics: true })), options)
-		expect(both.status).toBe(1)
-		expect(both.commands).toEqual([])
-		expect(both.stdout).toContain("  ✗ Can't open organization 123456789012 as jane@acme.com.")
-		expect(both.stdout).toContain(
-			"What to do: Check the ID with: gcloud organizations list. If it is wrong, remove the connection in Maple and connect the right ID: a connection's ID can't be changed. If it is right, this account needs Organization Administrator there.",
-		)
+	it("never lets read-only access block log forwarding for an admin with logging rights alone", () => {
+		const options = { lacking: "resourcemanager.organizations.setIamPolicy" }
+		// The organization's name is not theirs to read either, which is no error.
+		const on = run(setup(setupInput("organization", true)), {
+			...options,
+			fail: "organizations describe",
+		})
+		expect(on.status).toBe(0)
+		expect(on.commands).toEqual(expect.arrayContaining(logsSetupCommands(SCOPES.organization)))
+		expect(on.commands).not.toContainEqual(expect.stringContaining(`service-accounts create ${NAME} `))
+		expect(on.stdout).toContain(
+			`  ✗ jane@acme.com is missing permissions on organization 123456789012: resourcemanager.organizations.setIamPolicy.
 
-		// Logs Configuration Writer does not include reading the organization.
-		const logsOnly = run(setup(setupInput("organization", { logs: true, metrics: false })), options)
-		expect(logsOnly.status).toBe(0)
-		expect(logsOnly.stdout).not.toContain("Organization 123456789012 found")
+    What to do: Ask for Organization Administrator there, or have an administrator run this script. If the ID looks wrong, check it with: gcloud organizations list
+`,
+		)
+		expect(on.stdout).not.toContain(UNFINISHED)
+		expect(on.stdout).toContain(
+			"\nDone, except read-only access: live metric queries are not available yet. Fix what it\nnames above and paste the script again.\n",
+		)
+		expect(on.stdout).not.toContain("Metrics: ")
+
+		// Turning log forwarding off still removes the sink first; with nothing else to set up,
+		// the read-only access that fails then fails the run.
+		const off = run(setup(setupInput("organization", false)), { ...options, describe: "found" })
+		expect(off.commands.slice(0, logsRemovalCommands(SCOPES.organization).length)).toEqual(
+			logsRemovalCommands(SCOPES.organization),
+		)
+		expect(off.status).toBe(1)
+		expect(off.stdout).toContain(UNFINISHED)
+		expect(off.curl).not.toContainEqual(expect.stringContaining('"metrics"'))
+	})
+
+	it("reads an organization policy that refuses Maple's account as a note when logs are forwarded", () => {
+		const refusal =
+			"ERROR: (gcloud.iam.service-accounts.add-iam-policy-binding) FAILED_PRECONDITION: One or more users named in the policy do not belong to a permitted customer."
+		const options = {
+			fail: `--member=serviceAccount:${MAPLE_ACCOUNT} --role=roles/iam.serviceAccountTokenCreator`,
+			answer: refusal,
+		}
+		const on = run(setup(setupInput("project", true)), options)
+		expect(on.status).toBe(0)
+		expect(on.stdout).toContain("  ✗ Couldn't let Maple use the service account.")
+		expect(on.stdout).toContain(
+			"What to do: An organization policy (domain restricted sharing) blocks granting Maple's service account",
+		)
+		expect(on.stdout).toContain("https://maple.dev/docs/integrations/gcp#domain-restricted-sharing")
+		expect(on.stdout).toContain("\nDone, except read-only access")
+		// No report on the account: what an earlier run said stands.
+		expect(on.commands).toContainEqual(publish('"logs":true'))
+		expect(on.commands).not.toContainEqual(expect.stringContaining('"metrics"'))
+
+		const off = run(setup(setupInput("project", false)), options)
+		expect(off.status).toBe(1)
+		expect(off.stdout).toContain(UNFINISHED)
+		expect(off.curl).not.toContainEqual(expect.stringContaining('"metrics"'))
 	})
 
 	it("switches on only the APIs that are off, so a caller who may not switch any on can still run it", () => {
-		const script = setup(setupInput("project", { logs: true, metrics: true }))
+		const script = setup(setupInput("project", true))
 		const all = [
 			"pubsub.googleapis.com",
 			"logging.googleapis.com",
@@ -806,7 +853,9 @@ ${UNFINISHED}`)
 		expect(allOn.status).toBe(0)
 		expect(allOn.commands).not.toContainEqual(expect.stringContaining("services enable"))
 		expect(allOn.access).not.toContain(RESOURCE_MANAGER_ON)
-		expect(allOn.stdout).toContain("  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)\n")
+		expect(allOn.stdout).toContain(
+			"  ✓ APIs enabled (Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager)\n",
+		)
 
 		// One is off: only that one is switched on, and a refusal names it and the role.
 		const oneOff = run(script, { apis: all.filter((api) => api !== "iam.googleapis.com") })
@@ -824,14 +873,15 @@ ${UNFINISHED}`)
 		)
 	})
 
-	it("stops before the first change without billing, a sign-in, or gcloud", () => {
-		const script = setup(setupInput("project", { logs: true, metrics: true }))
+	it("stops before the first change without a sign-in or gcloud, and sets up without billing", () => {
+		const script = setup(setupInput("project", true))
+		// Only Maple's reads need billing: log forwarding and the account are set up anyway.
 		const unbilled = run(script, { billing: "False" })
-		expect(unbilled.commands).toEqual([])
-		expect(unbilled.stdout).toContain(`  ✗ Project acme-host has no billing account.
-
-    What to do: Cloud Monitoring only answers for projects with billing. Link one at https://console.cloud.google.com/billing/linkedaccount?project=acme-host
-${UNFINISHED}`)
+		expect(unbilled.status).toBe(0)
+		expect(unbilled.commands).toEqual(expect.arrayContaining(logsSetupCommands(SCOPES.project)))
+		expect(unbilled.stdout).toContain(
+			"  • Billing is off in project acme-host: live queries and key metrics stay unavailable until a billing account is linked at https://console.cloud.google.com/billing/linkedaccount?project=acme-host. The rest is set up regardless.\n",
+		)
 
 		const signedOut = run(script, { account: "" })
 		expect(signedOut.commands).toEqual([])
@@ -856,7 +906,7 @@ ${UNFINISHED}`)
 	it("tries the log filter out before anything is created, when the script is going to set it", () => {
 		const unparseable =
 			"ERROR: (gcloud.logging.read) INVALID_ARGUMENT: Unparseable filter: syntax error at line 1, column 16, token ' '"
-		const script = setup(setupInput("project", { logs: true, metrics: false }))
+		const script = setup(setupInput("project", true))
 		const refused = run(script, { fail: "logging read", answer: unparseable })
 		expect(refused.status).toBe(1)
 		expect(refused.commands).toEqual([`logging sinks describe ${NAME} --project=acme-host`])
@@ -878,32 +928,61 @@ ${UNFINISHED}`)
 		expect(kept.access).not.toContainEqual(expect.stringContaining("logging read"))
 	})
 
-	it("stops in the access check when an API is off and the account may not switch it on", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", { logs: true, metrics: true })),
-			{
-				apis: [
-					"pubsub.googleapis.com",
-					"logging.googleapis.com",
-					"cloudresourcemanager.googleapis.com",
-				],
-				lacking: "serviceusage.services.enable",
-			},
-		)
-		expect(status).toBe(1)
-		expect(commands).toEqual([])
+	it("ends read-only access at a failed step, with no report on the account", () => {
+		const created = run(setup(setupInput("folder", true)), { fail: `service-accounts create ${NAME} ` })
+		expect(created.status).toBe(0)
+		expect(created.commands).not.toContainEqual(expect.stringContaining(`serviceAccount:${ACCOUNT}`))
+		expect(created.commands).not.toContainEqual(expect.stringContaining('"metrics"'))
+		expect(created.stdout).toContain("  ✗ Couldn't create the service account.")
+		expect(created.stdout).toContain("\nDone, except read-only access")
+
+		// Maple's grant comes first, so a refused role on the scope is the last step issued.
+		const scope = run(setup(setupInput("folder", true)), { fail: "roles/monitoring.viewer" })
+		expect(scope.status).toBe(0)
+		expect(scope.commands).not.toContainEqual(expect.stringContaining("roles/cloudasset.viewer"))
+		expect(scope.commands).not.toContainEqual(expect.stringContaining('"metrics"'))
+	})
+
+	it("doesn't claim a confirmation when the report on the account doesn't reach Maple", () => {
+		const { status, stdout } = run(setup(setupInput("project", true)), { fail: '"metrics":true' })
+		expect(status).toBe(0)
+		expect(stdout).toContain("Couldn't reach Maple to confirm.")
+		expect(stdout).not.toContain("Maple confirms it")
+	})
+
+	it("ignores an OPTIONAL in the caller's environment", () => {
+		const { stdout } = run(setup(setupInput("project", true)), {
+			fail: "projects describe",
+			env: { OPTIONAL: "1" },
+		})
+		expect(stdout).toContain(UNFINISHED)
+	})
+
+	it("sets log forwarding up when an API read-only access needs is off and may not be switched on", () => {
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			apis: [
+				"pubsub.googleapis.com",
+				"logging.googleapis.com",
+				"iam.googleapis.com",
+				"cloudresourcemanager.googleapis.com",
+			],
+			lacking: "serviceusage.services.enable",
+		})
+		expect(status).toBe(0)
+		expect(commands).toContainEqual(publish('"logs":true'))
+		expect(commands).not.toContainEqual(expect.stringContaining(`service-accounts create ${NAME} `))
 		expect(stdout)
 			.toContain(`  ✗ jane@acme.com is missing permissions on project acme-host: serviceusage.services.enable.
 
-    What to do: This script has to switch on: monitoring.googleapis.com cloudasset.googleapis.com iam.googleapis.com iamcredentials.googleapis.com. Ask for Service Usage Admin there, or have an administrator switch them on.
+    What to do: This script has to switch on: monitoring.googleapis.com cloudasset.googleapis.com iamcredentials.googleapis.com. Ask for Service Usage Admin there, or have an administrator switch them on.
 `)
+		expect(stdout).toContain("\nDone, except read-only access")
 	})
 
 	it("reads an account without any of the permissions as a wrong ID first", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", { logs: true, metrics: true })),
-			{ lacking: "everything" },
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", true)), {
+			lacking: "everything",
+		})
 		expect(status).toBe(1)
 		expect(commands).toEqual([])
 		expect(stdout)
@@ -915,7 +994,7 @@ ${UNFINISHED}`)
 	})
 
 	it("names a missing permission before the first change", () => {
-		const script = setup(setupInput("organization", { logs: true, metrics: true }))
+		const script = setup(setupInput("organization", true))
 		const onHost = run(script, { lacking: "resourcemanager.projects.setIamPolicy" })
 		expect(onHost.status).toBe(1)
 		expect(onHost.commands).toEqual([])
@@ -933,7 +1012,7 @@ ${UNFINISHED}`)
 		expect(onScope.stdout)
 			.toContain(`  ✗ jane@acme.com is missing permissions on organization 123456789012: logging.sinks.create.
 
-    What to do: Ask for Logs Configuration Writer and Organization Administrator there, or have an administrator run this script. If the ID looks wrong, check it with: gcloud organizations list
+    What to do: Ask for Logs Configuration Writer there, or have an administrator run this script. If the ID looks wrong, check it with: gcloud organizations list
 `)
 		expect(onScope.curl.at(-1)).toContain("/v3/organizations/123456789012:testIamPermissions")
 
@@ -944,12 +1023,9 @@ ${UNFINISHED}`)
 	})
 
 	it("reads a folder this account can't see as a wrong ID, before the first change", () => {
-		const { status, stdout, commands } = run(
-			setup(setupInput("folder", { logs: true, metrics: false })),
-			{
-				lacking: "unseen",
-			},
-		)
+		const { status, stdout, commands } = run(setup(setupInput("folder", true)), {
+			lacking: "unseen",
+		})
 		expect(status).toBe(1)
 		expect(commands).toEqual([])
 		expect(stdout).toContain(`  ✗ jane@acme.com can't see project acme-host.
@@ -958,7 +1034,7 @@ ${UNFINISHED}`)
 	})
 
 	it("says what it could not check instead of passing over it", () => {
-		const script = setup(setupInput("project", { logs: true, metrics: true }))
+		const script = setup(setupInput("project", true))
 		const { status, stdout } = run(script, { lacking: "unanswered", billing: "" as "True" })
 		expect(status).toBe(0)
 		expect(stdout).toContain(
@@ -988,9 +1064,7 @@ esac
 		expect(stdout).not.toContain("Everything the setup script created is gone")
 
 		// A setup run with the API off has made nothing there, so it has nothing to say.
-		const setupRun = run(setup(setupInput("project", { logs: true, metrics: false })), {
-			gcloud: hostOff,
-		})
+		const setupRun = run(setup(setupInput("project", false)), { gcloud: hostOff })
 		expect(setupRun.stdout).not.toContain("its API is off")
 	})
 
@@ -1005,7 +1079,7 @@ esac
 	})
 
 	it("ends between two steps on Ctrl-C and says a re-run picks up from there", () => {
-		const script = setup(setupInput("project", { logs: true, metrics: true }))
+		const script = setup(setupInput("project", true))
 		// The signal lands where a step has just finished.
 		const marker = '\nsection "Log forwarding"\n'
 		expect(script).toContain(marker)
@@ -1018,7 +1092,7 @@ esac
 	})
 
 	it("finishes when Maple cannot be reached, and does not claim a confirmation", () => {
-		const { status, stdout } = run(setup(setupInput("project", { logs: false, metrics: true })), {
+		const { status, stdout } = run(setup(setupInput("project", false)), {
 			report: "unreachable",
 		})
 		expect(status).toBe(0)
@@ -1028,7 +1102,7 @@ esac
 		expect(stdout).toContain("Done. Google Cloud is set up for Maple.")
 		expect(stdout).not.toContain("Maple confirms it")
 
-		const unpublished = run(setup(setupInput("project", { logs: true, metrics: true })), {
+		const unpublished = run(setup(setupInput("project", true)), {
 			fail: "topics publish",
 		})
 		expect(unpublished.status).toBe(0)
@@ -1052,31 +1126,34 @@ case "$*" in
     fi ;;
 esac
 `
-		const { status, stdout, commands } = run(
-			setup(setupInput("project", { logs: false, metrics: true })),
-			{ gcloud: slow },
-		)
+		const { status, stdout, commands } = run(setup(setupInput("project", false)), { gcloud: slow })
 		expect(status).toBe(0)
 		expect(stdout.match(/ {2}… waiting for Google to publish the new service account\n/g)).toHaveLength(1)
-		expect(commands.filter((command) => command.includes("roles/monitoring.viewer"))).toHaveLength(3)
+		expect(
+			commands.filter((command) => command.includes("roles/iam.serviceAccountTokenCreator")),
+		).toHaveLength(3)
 	})
 
-	it("leaves an enabled metrics setup alone when the deployment has lost its Google identity", () => {
-		const script = setup({
-			...setupInput("organization", { logs: true, metrics: true }),
-			mapleServiceAccountEmail: undefined,
-		})
-		expect(script).toContain(
-			"#   Metrics and resources: not available on this Maple deployment, left as is\n",
-		)
-		const { status, stdout, commands } = run(script, { describe: "found" })
-		expect(status).toBe(0)
-		expect(stdout).toContain(
-			"  Metrics and resources   not available on this Maple deployment, left as is\n",
-		)
-		expect(stdout).not.toContain("\nMetrics and resources\n")
-		expect(commands).not.toContainEqual(expect.stringContaining("service-accounts"))
-		expect(commands).not.toContainEqual(expect.stringContaining("remove-iam-policy-binding"))
+	it("leaves the read-only access alone when the deployment has lost its Google identity", () => {
+		for (const logs of [true, false]) {
+			const script = setup({
+				...setupInput("organization", logs),
+				mapleServiceAccountEmail: undefined,
+			})
+			expect(script).toContain(
+				"#   Read-only access: not available on this Maple deployment, left as is\n",
+			)
+			const { status, stdout, commands } = run(script, { describe: "found" })
+			expect(status).toBe(0)
+			expect(stdout).toContain(
+				"  Read-only access   not available on this Maple deployment, left as is\n",
+			)
+			expect(stdout).not.toContain("\nRead-only access\n")
+			expect(commands).not.toContainEqual(expect.stringContaining(ACCOUNT))
+			expect(commands).not.toContainEqual(expect.stringContaining(`service-accounts create ${NAME} `))
+			// Nothing is said about the account: what an earlier run reported stands.
+			expect(script).not.toContain('"metrics":')
+		}
 	})
 
 	it("still deletes the service account when one of its role bindings is already gone", () => {
@@ -1089,7 +1166,9 @@ esac
 
 		// A binding that could not be removed keeps the account, so a later run can still name it.
 		const denied = run(script, { describe: "found", unbind: "denied" })
-		expect(denied.commands).not.toContainEqual(expect.stringContaining("service-accounts delete"))
+		expect(denied.commands).not.toContainEqual(
+			`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+		)
 		expect(denied.status).toBe(1)
 		expect(denied.stdout).toContain(`  ✗ Couldn't remove the read-only roles.`)
 		expect(denied.stdout).toContain(
@@ -1108,7 +1187,9 @@ esac
 			fail: "remove-iam-policy-binding",
 			answer: "ERROR: (gcloud) NOT_FOUND: Requested entity was not found.",
 		})
-		expect(unknown.commands).not.toContainEqual(expect.stringContaining("service-accounts delete"))
+		expect(unknown.commands).not.toContainEqual(
+			`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
+		)
 		expect(unknown.status).toBe(1)
 	})
 
@@ -1130,7 +1211,7 @@ esac
 		expect(removal.status).toBe(1)
 
 		// Setting up still works: a failed look falls through to the create, which reports for itself.
-		const created = run(setup(setupInput("organization", { logs: true, metrics: true })), {
+		const created = run(setup(setupInput("organization", true)), {
 			describe: "denied",
 		})
 		expect(created.status).toBe(0)
@@ -1164,28 +1245,21 @@ esac
 		expect(removal.stdout).toContain("Done. Everything the setup script created is gone.")
 		expect(removal.status).toBe(0)
 		expect(removal.commands.every(isLookup)).toBe(true)
-
-		// So does a setup script with metrics off, run a second time.
-		const metricsOff = run(setup(setupInput("project", { logs: true, metrics: false })), {
-			gcloud: FAKE_GCLOUD_ACCOUNT_DELETED,
-		})
-		expect(metricsOff.status).toBe(0)
-		expect(metricsOff.commands.slice(-2)).toEqual([ACCOUNT_LOOKUP, publish('"metrics":false')])
 	})
 
 	it("creates the service account again after an earlier run deleted it", () => {
-		const { status, commands } = run(setup(setupInput("folder", { logs: false, metrics: true })), {
+		const { status, commands } = run(setup(setupInput("folder", false)), {
 			gcloud: FAKE_GCLOUD_ACCOUNT_DELETED,
 		})
 		expect(status).toBe(0)
 		// The new account has none of the deleted one's roles: all four grants are made again.
-		expect(commands.slice(-metricsSetupCommands(SCOPES.folder).length)).toEqual(
-			metricsSetupCommands(SCOPES.folder),
+		expect(commands.slice(-readerSetupCommands(SCOPES.folder, false).length)).toEqual(
+			readerSetupCommands(SCOPES.folder, false),
 		)
 	})
 
 	it("makes the push subscription anew when its topic was deleted or it was detached", () => {
-		const script = setup(setupInput("project", { logs: true, metrics: false }))
+		const script = setup(setupInput("project", true))
 		const recreated = [
 			`pubsub subscriptions delete ${NAME} --project=acme-host --quiet`,
 			expect.stringMatching(`^pubsub subscriptions create ${NAME} --topic=${NAME} `),
@@ -1211,13 +1285,12 @@ esac
 	})
 
 	it("tries an IAM change again when it raced another change to the same policy", () => {
-		const granted = run(setup(setupInput("folder", { logs: true, metrics: true })), {
+		const granted = run(setup(setupInput("folder", true)), {
 			env: { GCLOUD_RACE: "add-iam-policy-binding" },
 		})
 		expect(granted.status).toBe(0)
-		expect(
-			granted.commands.filter((command) => command.includes("roles/logging.logWriter")),
-		).toHaveLength(2)
+		// The first grant of the run: Pub/Sub's, on the push service account.
+		expect(granted.commands.filter((command) => command === PUSH_GRANT)).toHaveLength(2)
 		expect(granted.stdout).not.toContain("waiting for Google")
 
 		const removed = run(cleanup(SCOPES.folder), {
@@ -1234,7 +1307,7 @@ esac
 	})
 
 	it("stops before the first change on a gcloud whose sink update cannot re-run a folder setup", () => {
-		const script = setup(setupInput("folder", { logs: true, metrics: true }))
+		const script = setup(setupInput("folder", true))
 		const old = run(script, { env: { GCLOUD_VERSION: "469.0.0" } })
 		expect(old.status).toBe(1)
 		expect(old.commands).toEqual([])
@@ -1243,17 +1316,14 @@ esac
 	})
 
 	it("counts every gcloud call against the host project, whatever the caller's settings say", () => {
-		const { projects } = run(setup(setupInput("organization", { logs: true, metrics: true })), {
+		const { projects } = run(setup(setupInput("organization", true)), {
 			env: { CLOUDSDK_CORE_PROJECT: "unrelated-project" },
 		})
 		expect(new Set(projects)).toEqual(new Set(["acme-host"]))
 	})
 
 	it("keeps gcloud from writing its arguments, the secret among them, to its log files", () => {
-		for (const script of [
-			setup(setupInput("project", { logs: true, metrics: true })),
-			cleanup(SCOPES.project, PUSH_ENDPOINT),
-		]) {
+		for (const script of [setup(setupInput("project", true)), cleanup(SCOPES.project, REPORT_ENDPOINT)]) {
 			const { fileLogging } = run(script, { describe: "found" })
 			expect(fileLogging.length).toBeGreaterThan(0)
 			expect(new Set(fileLogging)).toEqual(new Set(["1"]))
@@ -1261,7 +1331,7 @@ esac
 	})
 
 	it("names the impersonated service account as the one that needs the roles", () => {
-		const { stdout } = run(setup(setupInput("project", { logs: true, metrics: true })), {
+		const { stdout } = run(setup(setupInput("project", true)), {
 			fail: "sinks create",
 			env: { GCLOUD_IMPERSONATE: "deployer@acme-host.iam.gserviceaccount.com" },
 		})
@@ -1275,7 +1345,7 @@ esac
 		const script = cleanup(SCOPES.project)
 		expect(script).not.toMatch(/maple_gcp_[A-Za-z0-9_-]{20,}/)
 		expect(script).not.toContain("/v1/logpush/")
-		expect(script).not.toContain("PUSH_ENDPOINT=")
+		expect(script).not.toContain("REPORT_ENDPOINT=")
 		const { status, stdout, curl } = run(script, { describe: "found" })
 		expect(status).toBe(0)
 		expect(curl).toEqual([])
@@ -1283,7 +1353,7 @@ esac
 	})
 
 	it("hands gcloud each value as one argument", () => {
-		const { args } = run(setup(setupInput("folder", { logs: true, metrics: true })))
+		const { args } = run(setup(setupInput("folder", true)))
 		expect(args).toEqual(
 			expect.arrayContaining([
 				`--log-filter=${DEFAULT_LOG_FILTER}`,
@@ -1325,13 +1395,13 @@ esac
 		const hostile = `x'; touch pwned; echo '$(touch pwned)`
 		const { dir, status, commands } = run(
 			setup({
-				...setupInput("project", { logs: false, metrics: true }),
+				...setupInput("project", false),
 				mapleServiceAccountEmail: hostile,
 				mapleUrl: hostile,
 			}),
 		)
 		expect(status).toBe(0)
-		expect(commands.at(-1)).toContain(`--member=serviceAccount:${hostile} `)
+		expect(commands).toContainEqual(expect.stringContaining(`--member=serviceAccount:${hostile} `))
 		expect(existsSync(join(dir, "pwned"))).toBe(false)
 	})
 })

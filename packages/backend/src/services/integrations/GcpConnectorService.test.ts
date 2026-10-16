@@ -89,14 +89,16 @@ describe("GcpConnectorService", () => {
 			assert.isNull(connector.appliedLogsEnabled)
 			assert.isNull(connector.setupReportedAt)
 
-			const { setupScript } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
-			const endpoint = /PUSH_ENDPOINT='([^']+)'/.exec(setupScript)?.[1]
+			const { setupScript, terraform } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
+			// What Google Cloud is given carries no secret: Pub/Sub signs its pushes instead.
+			const pushEndpoint = `https://ingest.test/v1/logpush/gcp/${connector.id}`
+			assert.include(setupScript, `PUSH_ENDPOINT='${pushEndpoint}'\n`)
+			assert.match(terraform, new RegExp(` push_endpoint += "${pushEndpoint}"\n`))
+			assert.notInclude(terraform, "secret=")
+			const endpoint = /REPORT_ENDPOINT='([^']+)'/.exec(setupScript)?.[1]
 			assert.isDefined(endpoint)
 			const url = new URL(endpoint!)
-			assert.strictEqual(
-				url.origin + url.pathname,
-				`https://ingest.test/v1/logpush/gcp/${connector.id}`,
-			)
+			assert.strictEqual(url.origin + url.pathname, pushEndpoint)
 			const secret = url.searchParams.get("secret")!
 			assert.match(secret, /^maple_gcp_[A-Za-z0-9_-]{32}$/)
 
@@ -129,7 +131,7 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 
-	it.effect("requires one capability to stay on and refuses metrics without a Google identity", () => {
+	it.effect("without a Google identity, refuses key metrics and a connection that forwards no logs", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
@@ -154,7 +156,7 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("switches capabilities, and the scripts follow the stored flags", () => {
+	it.effect("switches capabilities, and the setup script follows log forwarding alone", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
@@ -183,6 +185,20 @@ describe("GcpConnectorService", () => {
 			})
 			assert.deepStrictEqual(logsOnly, { ...connector, metricsEnabled: false })
 			assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [logsOnly])
+			// The key-metrics switch is Maple's alone: the reader stays for live queries.
+			const keyMetricsOff = yield* gcp.scripts(orgId, connector.id, scriptOptions)
+			assert.include(keyMetricsOff.setupScript, `MAPLE_SERVICE_ACCOUNT='${MAPLE_ACCOUNT}'`)
+			assert.notInclude(keyMetricsOff.setupScript, "service-accounts delete")
+
+			// Both off is a connection for live queries only.
+			const liveOnly = yield* gcp.update(orgId, connector.id, { logsEnabled: false })
+			assert.deepStrictEqual(liveOnly, { ...connector, logsEnabled: false, metricsEnabled: false })
+			const created = yield* gcp.create(
+				orgId,
+				userId,
+				projectScope("acme-prod", { logsEnabled: false, metricsEnabled: false }),
+			)
+			assert.deepStrictEqual([created.logsEnabled, created.metricsEnabled], [false, false])
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 

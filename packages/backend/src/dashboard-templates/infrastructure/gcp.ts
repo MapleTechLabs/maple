@@ -439,10 +439,10 @@ export const gcpTemplate: TemplateDefinition = {
 	tags: ["gcp", "google cloud", "cloud run", "gke", "cloud sql", "pubsub"],
 	requirement: {
 		kind: "integration",
-		label: "Google Cloud integration connected with Metrics and resources switched on",
-		collector: "the Google Cloud integration with Metrics and resources switched on",
+		label: "Google Cloud integration connected with Key metrics switched on",
+		collector: "the Google Cloud integration with Key metrics switched on",
 		setupLabel: "the Google Cloud integration",
-		hint: "Connect a project, folder or organization, switch on Metrics and resources and run the setup script. Each widget fills in once its service reports.",
+		hint: "Connect a project, folder or organization, run its setup script and switch on Key metrics. Each widget fills in once its service reports.",
 	},
 	requiredMetricPrefixes: ["gcp."],
 	parameters: [

@@ -58,6 +58,7 @@ import {
 	gcpCollectLock,
 	gcpCreateRequest,
 	gcpDraftEffect,
+	gcpEffectNeedsScript,
 	gcpLogFilterChoice,
 	gcpLogState,
 	gcpMetricsState,
@@ -121,7 +122,7 @@ const SCOPES = {
 const SCOPE_TYPES: ReadonlyArray<GcpScopeType> = ["project", "folder", "organization"]
 
 const LOCK_NOTES = {
-	"last-on": "A connection collects at least one of the two. To stop collecting, disconnect.",
+	"logs-required": "This Maple deployment can't read Google Cloud metrics, so a connection forwards logs.",
 	"metrics-unavailable": "Not available on this Maple deployment.",
 } as const satisfies { readonly [Lock in GcpCollectLock]: string }
 
@@ -147,24 +148,27 @@ const CAPABILITIES = {
 		},
 	},
 	metrics: {
-		title: "Metrics and resources",
+		title: "Key metrics",
 		flag: "metrics_enabled",
-		description:
-			"Cloud Run, GKE, Compute Engine, Cloud SQL, Pub/Sub, Load Balancing and Cloud Functions. Read-only, every 5 minutes.",
-		run: { on: "Read-only service account", off: "Removes the service account" },
+		description: "Every 5 minutes, and resources hourly, for alerts, Infrastructure and dashboards.",
+		run: { on: "Read-only service account", off: "Read-only service account" },
 		effects: {
 			"starts-after-script": "Starts once the script has run",
-			"resumes-now": "Read again from the next 5-minute read",
-			"stops-now": "Maple stops reading when you save",
-			"removed-by-script": "Its service account stays in Google Cloud until the script has run",
+			"resumes-now": "Collected from the next 5-minute read",
+			"stops-now": "Maple stops collecting when you save",
+			// Never shown: the read-only service account stays for live queries.
+			"removed-by-script": "Nothing to remove in Google Cloud",
 		},
 		now: {
-			"stops-now": "Stops reading this connection's metrics and resources from the next 5-minute read.",
-			"resumes-now": "Reads this connection's metrics and resources again from the next 5-minute read.",
+			"stops-now":
+				"Stops collecting this connection's key metrics and resources from the next 5-minute read.",
+			"resumes-now":
+				"Collects this connection's key metrics and resources from the next 5-minute read.",
 		},
 		later: {
-			"stops-now": "Keeps the read-only service account and its roles until the script has run.",
-			"resumes-now": "Nothing to run: the read-only service account is still there.",
+			"stops-now":
+				"Nothing to run: the read-only service account stays, so live metric queries keep working.",
+			"resumes-now": "Nothing to run: the read-only service account is in place.",
 		},
 	},
 } as const satisfies {
@@ -600,8 +604,12 @@ function CollectFields({
 					)
 				})}
 			</div>
-			{/* A rule of the pair, so it stands under both and not under the one it happens to lock. */}
-			{locks.includes("last-on") ? <p className={SMALL}>{LOCK_NOTES["last-on"]}</p> : null}
+			{/* True of the pair whatever is ticked, so it stands under both. */}
+			<p className={SMALL}>
+				{metricsAvailable
+					? "Live queries of any Google Cloud metric work on every connection, with or without key metrics."
+					: LOCK_NOTES["logs-required"]}
+			</p>
 		</fieldset>
 	)
 }
@@ -947,7 +955,7 @@ function ScopeFields({
 				<Field className="items-stretch gap-2" invalid={hostInvalid}>
 					<FieldLabel htmlFor="gcp-host-project-id">Host project ID</FieldLabel>
 					<FieldDescription className="leading-5 text-pretty">
-						Holds Maple&apos;s Pub/Sub topic and read-only service account. A project inside the{" "}
+						Holds Maple&apos;s Pub/Sub topic and service accounts. A project inside the{" "}
 						{scopeName} with billing enabled that won&apos;t be deleted.
 					</FieldDescription>
 					<Input
@@ -1117,6 +1125,7 @@ function ChooseStage({
 	filter,
 	onFilter,
 	onApply,
+	onClose,
 }: {
 	title: React.ReactNode
 	connector: V2GcpConnector
@@ -1125,6 +1134,8 @@ function ChooseStage({
 	onFilter: (filter: FilterState) => void
 	/** Leads into the run step, with what was saved if anything changed. */
 	onApply: (saved: GcpFlags | null) => void
+	/** After a change that leaves the script nothing to do. */
+	onClose: () => void
 }) {
 	const update = useAtomSet(MapleApiV2AtomClient.mutation("gcpIntegration", "updateConnector"), {
 		mode: "promiseExit",
@@ -1149,18 +1160,16 @@ function ChooseStage({
 	const resuming = immediate.filter(({ acts }) => acts === "resumes-now")
 	const named = (list: typeof immediate) =>
 		list.map(({ capability }) => CAPABILITIES[capability].title.toLowerCase()).join(" and ")
-	// One save can turn one capability off and the other back on: the question names both.
+	// One save can turn one capability off and the other on: the question names both.
 	const turned = [
 		stopping.length > 0 ? `${named(stopping)} off` : null,
-		resuming.length > 0 ? `${named(resuming)} back on` : null,
+		resuming.length > 0 ? `${named(resuming)} on` : null,
 	]
 		.filter((part) => part !== null)
 		.join(" and ")
-	// Whether the script has anything to do once this is saved. Turning back on what still exists leaves nothing.
-	const scripted = CAPABILITY_IDS.some((capability) => {
-		const acts = effect(capability)
-		return acts !== null && acts !== "resumes-now"
-	})
+	// Whether the script has anything to do once this is saved: key metrics are Maple's alone, and
+	// turning back on what still exists leaves nothing.
+	const scripted = CAPABILITY_IDS.some((capability) => gcpEffectNeedsScript(capability, effect(capability)))
 
 	// Only what changed is sent: the API leaves an omitted capability as it is, so a stale view of
 	// the other cannot overwrite it. Resolving to `false` keeps the confirmation open for a retry.
@@ -1179,7 +1188,8 @@ function ChooseStage({
 			showErrorToast(result, { title: "Failed to save the change" })
 			return false
 		}
-		onApply(draft)
+		if (scripted) onApply(draft)
+		else onClose()
 		return true
 	})
 
@@ -1231,14 +1241,7 @@ function ChooseStage({
 						<span className="whitespace-nowrap">{connector.scope_id}</span>?
 					</>
 				}
-				// Turning off leaves something for the script to remove; turning back on leaves nothing to run.
-				confirmLabel={
-					stopping.length === 0
-						? "Turn on"
-						: resuming.length === 0
-							? "Turn off and continue"
-							: "Save and continue"
-				}
+				confirmLabel={`${stopping.length > 0 && resuming.length > 0 ? "Save" : `Turn ${stopping.length > 0 ? "off" : "on"}`}${scripted ? " and continue" : ""}`}
 				onConfirm={save}
 			>
 				<dl className="flex flex-col gap-3 pb-3 text-sm">
@@ -1298,11 +1301,7 @@ function RunSummary({
 			: connector.applied_logs_enabled === true
 				? "Logs · removed by this run"
 				: null,
-		connector.metrics_enabled
-			? "Metrics"
-			: connector.applied_metrics_enabled === true
-				? "Metrics · removed by this run"
-				: null,
+		connector.metrics_enabled ? "Key metrics" : null,
 	].filter((label) => label !== null)
 	return (
 		<div className="flex flex-wrap items-center gap-2">
@@ -1419,6 +1418,156 @@ function ScriptCard({
 	)
 }
 
+/**
+ * The Terraform module block: a few lines, shown whole. It holds no secret, so unlike the script it
+ * can be committed.
+ */
+function TerraformCard({ terraform, failure }: { terraform: string | null; failure: ScriptFailure | null }) {
+	const text = terraform?.trimEnd() ?? null
+	return (
+		<div className="overflow-clip rounded-lg border">
+			<div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
+				<span className="font-mono text-xs text-muted-foreground">
+					maple.tf{text === null ? null : ` · ${countLabel(text.split("\n").length, "line")}`}
+				</span>
+				<span className="ml-auto">
+					<GcpCopyScriptButton script={terraform} label="module" />
+				</span>
+			</div>
+			{failure !== null ? (
+				<div className="flex flex-wrap items-center gap-2 p-3">
+					<p className="text-xs text-severity-error" role="alert">
+						{failure.message}
+					</p>
+					<Button size="sm" variant="outline" onClick={failure.retry} loading={failure.retrying}>
+						Try again
+					</Button>
+				</div>
+			) : text === null ? (
+				<div className="p-3">
+					<Skeleton className="h-48 w-full" />
+				</div>
+			) : (
+				<pre
+					tabIndex={0}
+					role="region"
+					aria-label="The Terraform module block"
+					className={cn(
+						"max-h-80 overflow-auto p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+						REPLAY_BLOCK_CLASS,
+					)}
+				>
+					{text}
+				</pre>
+			)}
+			<div className="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs/5 text-muted-foreground">
+				<span className="min-w-0 flex-1 text-pretty">
+					No secret: Pub/Sub signs each push to Maple. Safe to commit.
+				</span>
+				<GcpExternalLink href={`${DOCS}#set-up-with-terraform`}>What it creates</GcpExternalLink>
+			</div>
+		</div>
+	)
+}
+
+/** Maple reading the scope as the read-only account, on request: Terraform reports nothing. */
+export interface GcpAccessCheck {
+	readonly checking: boolean
+	/** The last check's outcome; null before one. */
+	readonly outcome: { readonly ok: boolean; readonly message: string | null } | null
+	readonly onCheck: () => void
+}
+
+/**
+ * Under the module: what Maple has confirmed in Google Cloud. A Terraform run tells Maple nothing,
+ * so log forwarding is confirmed by its first signed push and read-only access by a check.
+ */
+function TerraformStatus({
+	connector,
+	metricsAvailable,
+	access,
+}: {
+	connector: V2GcpConnector
+	metricsAvailable: boolean
+	access: GcpAccessCheck
+}) {
+	const logsDone = connector.applied_logs_enabled === true
+	const accessDone = connector.applied_metrics_enabled === true
+	const rows = [
+		connector.logs_enabled
+			? {
+					key: "logs",
+					title: CAPABILITIES.logs.title,
+					state: logsDone ? ("done" as const) : ("running" as const),
+					detail: logsDone
+						? "Maple received a signed push"
+						: "Confirmed by the first entry, within about 10 minutes of the apply",
+				}
+			: logsDone
+				? {
+						key: "logs",
+						title: CAPABILITIES.logs.title,
+						state: "pending" as const,
+						// No push and no report says a sink is gone.
+						detail: "Removed by the apply. Maple isn't told: close this once it ran",
+					}
+				: null,
+		metricsAvailable
+			? {
+					key: "access",
+					title: "Read-only access",
+					state: accessDone ? ("done" as const) : ("pending" as const),
+					detail: accessDone ? "Maple read the scope as the account" : null,
+				}
+			: null,
+	].filter((row) => row !== null)
+	const done = rows.filter((row) => row.state === "done").length
+
+	return (
+		<div role="status" className="flex flex-col gap-3 border-t px-6 py-4">
+			<div className="flex items-center gap-2.5">
+				<Spinner className="size-3.5 shrink-0 text-severity-debug" />
+				<p className="text-sm font-medium">Waiting for Google Cloud</p>
+				<span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
+					{done > 0 ? `${done} of ${rows.length} done` : "Terraform reports nothing"}
+				</span>
+			</div>
+			<ul className="flex flex-col gap-1.5 pl-6">
+				{rows.map((row) => (
+					<li
+						key={row.key}
+						className="grid grid-cols-[auto_10rem_1fr] items-center gap-x-2.5 text-xs/5"
+					>
+						<RunRowMarker state={row.state} />
+						<span className="text-foreground">{row.title}</span>
+						{row.detail !== null ? (
+							<span className="text-muted-foreground">{row.detail}</span>
+						) : (
+							<span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+								<Button
+									size="xs"
+									variant="outline"
+									onClick={access.onCheck}
+									loading={access.checking}
+								>
+									Check access
+								</Button>
+								{access.outcome !== null && !access.outcome.ok ? (
+									<span className="text-pretty text-severity-error" role="alert">
+										{access.outcome.message}
+									</span>
+								) : (
+									<span className="text-muted-foreground">After the apply</span>
+								)}
+							</span>
+						)}
+					</li>
+				))}
+			</ul>
+		</div>
+	)
+}
+
 type RunRowState = "pending" | "running" | "done"
 
 function RunRowMarker({ state }: { state: RunRowState }) {
@@ -1440,24 +1589,42 @@ function RunStatus({
 	opened,
 	overdue,
 	nowMs,
+	metricsAvailable,
 }: {
 	connector: V2GcpConnector
 	opened: ApplyOpened
 	overdue: boolean
 	nowMs: number
+	metricsAvailable: boolean
 }) {
 	// A row ticks on a report made since the step opened, not on what an earlier run left in place.
 	const reported = connector.setup_reported_at !== opened.seen
-	const running = gcpSetupRunning(connector, nowMs)
-	const rows = CAPABILITY_IDS.flatMap((capability) => {
-		const { title, flag, run } = CAPABILITIES[capability]
-		const wanted = connector[flag]
-		const applied =
-			capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
-		if (!wanted && applied !== true) return []
+	const running = gcpSetupRunning(connector, nowMs, metricsAvailable)
+	const row = (key: string, title: string, detail: string, wanted: boolean, applied: boolean | null) => {
 		const state: RunRowState = applied === wanted && reported ? "done" : running ? "running" : "pending"
-		return [{ capability, title, detail: wanted ? run.on : run.off, state }]
-	})
+		return { key, title, detail, state }
+	}
+	const rows = [
+		connector.logs_enabled || connector.applied_logs_enabled === true
+			? row(
+					"logs",
+					CAPABILITIES.logs.title,
+					connector.logs_enabled ? CAPABILITIES.logs.run.on : CAPABILITIES.logs.run.off,
+					connector.logs_enabled,
+					connector.applied_logs_enabled,
+				)
+			: null,
+		// Every connection gets the read-only account while this deployment can read metrics.
+		metricsAvailable
+			? row(
+					"access",
+					"Read-only access",
+					"Service account for live queries and key metrics",
+					true,
+					connector.applied_metrics_enabled,
+				)
+			: null,
+	].filter((entry) => entry !== null)
 	const done = rows.filter((row) => row.state === "done").length
 	const reporting = done > 0 || running
 
@@ -1503,7 +1670,7 @@ function RunStatus({
 				<ul className="flex flex-col gap-1.5 pl-6">
 					{rows.map((row) => (
 						<li
-							key={row.capability}
+							key={row.key}
 							className="grid grid-cols-[auto_10rem_1fr] items-center gap-x-2.5 text-xs/5"
 						>
 							<RunRowMarker state={row.state} />
@@ -1540,7 +1707,7 @@ function Applied({
 		metrics.kind === "off"
 			? null
 			: {
-					title: "Metrics",
+					title: "Key metrics",
 					status: GCP_METRICS_STATUS[metrics.kind],
 					detail: metrics.kind === "waiting" ? "First read within about 10 minutes" : null,
 				},
@@ -1561,12 +1728,12 @@ function Applied({
 						"Google Cloud matches this configuration"
 					)}
 				</h3>
-				<p className={SMALL}>The script finished. Data shows up in Maple on its own.</p>
+				<p className={SMALL}>Setup finished. Data shows up in Maple on its own.</p>
 			</div>
 			<ul className="w-full divide-y divide-border/60 rounded-lg border text-left">
 				{rows.map((row) => (
 					<li key={row.title} className="flex items-center gap-3 px-4 py-2.5">
-						<span className="w-16 shrink-0 text-sm font-medium">{row.title}</span>
+						<span className="w-24 shrink-0 text-sm font-medium">{row.title}</span>
 						<span className="min-w-0 flex-1 text-xs/5 text-muted-foreground">{row.detail}</span>
 						<span className="flex shrink-0 items-center gap-1.5 text-xs/5">
 							<StatusDot tone={row.status.tone} />
@@ -1580,30 +1747,52 @@ function Applied({
 }
 
 /** A run's sections report one after the other: confirmed once the last one has. */
-const runConfirmed = (connector: V2GcpConnector, opened: ApplyOpened, nowMs: number) =>
-	gcpScriptNeeded(connector, nowMs) === null &&
-	!gcpSetupRunning(connector, nowMs) &&
+const runConfirmed = (
+	connector: V2GcpConnector,
+	opened: ApplyOpened,
+	nowMs: number,
+	metricsAvailable: boolean,
+) =>
+	gcpScriptNeeded(connector, nowMs, metricsAvailable) === null &&
+	!gcpSetupRunning(connector, nowMs, metricsAvailable) &&
 	(!opened.rerun || connector.setup_reported_at !== opened.seen)
 
 /** The run step: loads the script for the chosen filter and polls until Maple confirms the run. */
 function ApplyStage({
 	filter,
 	...view
-}: Omit<GcpApplyViewProps, "logFilter" | "script" | "failure"> & { filter: FilterState }) {
-	const { connector, opened, nowMs } = view
+}: Omit<GcpApplyViewProps, "logFilter" | "filterKept" | "script" | "terraform" | "failure" | "access"> & {
+	filter: FilterState
+}) {
+	const { connector, opened, nowMs, metricsAvailable } = view
 	const choice = gcpLogFilterChoice(filter, connector.applied_logs_enabled === true)
 	const { scripts, failure } = useGcpScripts(connector, choice.applicationLogs)
 	const refresh = useAtomRefresh(gcpStatusQuery())
 	useIntervalRefresh(refresh, {
 		intervalMs: GCP_SETTLING_REFRESH_MS,
-		enabled: !runConfirmed(connector, opened, nowMs),
+		enabled: !runConfirmed(connector, opened, nowMs, metricsAvailable),
+	})
+	const check = useAtomSet(MapleApiV2AtomClient.mutation("gcpIntegration", "checkAccess"), {
+		mode: "promiseExit",
+	})
+	const [outcome, setOutcome] = useState<GcpAccessCheck["outcome"]>(null)
+	const [onCheck, checking] = useAsyncAction(async () => {
+		const result = await check({ params: { id: connector.id }, reactivityKeys: GCP_REACTIVITY_KEYS })
+		if (Exit.isFailure(result)) {
+			showErrorToast(result, { title: "Couldn't check the read-only access" })
+			return
+		}
+		setOutcome(result.value)
 	})
 	return (
 		<GcpApplyView
 			{...view}
 			logFilter={filterShort(choice)}
+			filterKept={choice.keep}
 			script={scripts?.setup_script ?? null}
+			terraform={scripts?.terraform ?? null}
 			failure={failure}
+			access={{ checking, outcome, onCheck: () => void onCheck() }}
 		/>
 	)
 }
@@ -1613,10 +1802,17 @@ export interface GcpApplyViewProps {
 	connector: V2GcpConnector
 	/** Created in this surface: the confirmed run reads as the connection being made. */
 	created: boolean
+	/** This deployment has a Google identity: every run sets read-only access up. */
+	metricsAvailable: boolean
 	/** The log filter in a few words. */
 	logFilter: string
+	/** An existing sink keeps its filter: the script leaves it, Terraform cannot. */
+	filterKept: boolean
 	script: string | null
+	/** The same setup as a Terraform module block. */
+	terraform: string | null
 	failure: ScriptFailure | null
+	access: GcpAccessCheck
 	nowMs: number
 	opened: ApplyOpened
 	onBack: () => void
@@ -1628,20 +1824,25 @@ export function GcpApplyView({
 	title,
 	connector,
 	created,
+	metricsAvailable,
 	logFilter,
+	filterKept,
 	script,
+	terraform,
 	failure,
+	access,
 	nowMs,
 	opened,
 	onBack,
 	onClose,
 }: GcpApplyViewProps) {
+	const [method, setMethod] = useState<"script" | "terraform">("script")
 	const sinkExists = connector.applied_logs_enabled === true
 	const reportedAt = connector.setup_reported_at
-	const confirmed = runConfirmed(connector, opened, nowMs)
+	const confirmed = runConfirmed(connector, opened, nowMs, metricsAvailable)
 	const overdue = !opened.rerun && gcpScriptOverdue(connector, opened.at, nowMs)
 
-	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
+	const scopeRoles = gcpScopeRoles(connector.scope_type, connector.logs_enabled, metricsAvailable)
 	const scopeName = GCP_SCOPE_NAMES[connector.scope_type].toLowerCase()
 	const role = (name: string) => <span className="text-foreground">{name}</span>
 
@@ -1670,13 +1871,41 @@ export function GcpApplyView({
 			<DialogPanel className="flex flex-col gap-5">
 				<RunSummary connector={connector} logFilter={logFilter} onEdit={onBack} />
 				<section className="flex flex-col gap-3">
-					<div className="flex flex-col gap-0.5">
-						<h3 className={GCP_TITLE}>Run this script in Cloud Shell</h3>
-						<p className={SMALL}>Nothing changes in Google Cloud until it runs.</p>
+					<div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+						<div className="flex flex-col gap-0.5">
+							<h3 className={GCP_TITLE}>
+								{method === "script"
+									? "Run this script in Cloud Shell"
+									: "Add this module to your Terraform"}
+							</h3>
+							<p className={SMALL}>
+								{method === "script"
+									? "Nothing changes in Google Cloud until it runs."
+									: "It creates what the script does, under the same names."}
+							</p>
+						</div>
+						<ToggleGroup
+							variant="outline"
+							size="sm"
+							aria-label="How to set it up"
+							value={[method]}
+							onValueChange={(values) => {
+								// Pressing the selected segment again empties the group: the view stays.
+								const next = values.find((value) => value !== method)
+								if (next === "script" || next === "terraform") setMethod(next)
+							}}
+						>
+							<ToggleGroupItem value="script">Cloud Shell</ToggleGroupItem>
+							<ToggleGroupItem value="terraform">Terraform</ToggleGroupItem>
+						</ToggleGroup>
 					</div>
-					<ScriptCard script={script} failure={failure} projectId={connector.project_id} />
+					{method === "script" ? (
+						<ScriptCard script={script} failure={failure} projectId={connector.project_id} />
+					) : (
+						<TerraformCard terraform={terraform} failure={failure} />
+					)}
 					<p className={SMALL}>
-						Run it as an {role("Owner")} of{" "}
+						{method === "script" ? "Run" : "Apply"} it as an {role("Owner")} of{" "}
 						{connector.scope_type === "project" ? null : "the host project "}
 						<Mono>{connector.project_id}</Mono>
 						{scopeRoles.map((name, index) => (
@@ -1686,16 +1915,42 @@ export function GcpApplyView({
 							</Fragment>
 						))}
 						{scopeRoles.length > 0 ? ` on the ${scopeName}` : null}.{" "}
-						{!connector.logs_enabled && sinkExists
-							? "Takes one to two minutes. "
-							: "Takes about a minute and is safe to run again. "}
-						<GcpExternalLink href={`${DOCS}#roles-for-running-the-script`}>
-							Roles if you aren&apos;t an Owner
-						</GcpExternalLink>
+						{method === "terraform" ? (
+							<>
+								{connector.logs_enabled
+									? filterKept
+										? "Terraform sets the log filter in full, so the kept filter becomes platform logs only. "
+										: "Terraform sets the log filter in full. "
+									: null}
+								A connection the script set up is taken over by importing its resources first.{" "}
+								<GcpExternalLink href={`${DOCS}#set-up-with-terraform`}>
+									Terraform setup
+								</GcpExternalLink>
+							</>
+						) : (
+							<>
+								{!connector.logs_enabled && sinkExists
+									? "Takes one to two minutes. "
+									: "Takes about a minute and is safe to run again. "}
+								<GcpExternalLink href={`${DOCS}#roles-for-running-the-script`}>
+									Roles if you aren&apos;t an Owner
+								</GcpExternalLink>
+							</>
+						)}
 					</p>
 				</section>
 			</DialogPanel>
-			<RunStatus connector={connector} opened={opened} overdue={overdue} nowMs={nowMs} />
+			{method === "script" ? (
+				<RunStatus
+					connector={connector}
+					opened={opened}
+					overdue={overdue}
+					nowMs={nowMs}
+					metricsAvailable={metricsAvailable}
+				/>
+			) : (
+				<TerraformStatus connector={connector} metricsAvailable={metricsAvailable} access={access} />
+			)}
 			<DialogFooter>
 				<FooterNote>Saved. Close this any time and come back to it.</FooterNote>
 				<Button variant="outline" onClick={onClose}>
@@ -1756,7 +2011,7 @@ function ConnectionStages({
 	// any other way, nobody has said a run is under way.
 	const [opened, setOpened] = useState<ApplyOpened | null>(() =>
 		initialStage === "apply"
-			? open(!created && gcpScriptNeeded(saved, Date.now()) !== "setup-pending")
+			? open(!created && gcpScriptNeeded(saved, Date.now(), metricsAvailable) !== "setup-pending")
 			: null,
 	)
 
@@ -1771,12 +2026,14 @@ function ConnectionStages({
 				if (flags !== null) setAsked({ of: saved, flags })
 				setOpened(open(flags === null))
 			}}
+			onClose={onClose}
 		/>
 	) : (
 		<ApplyStage
 			title={title}
 			connector={connector}
 			created={created}
+			metricsAvailable={metricsAvailable}
 			filter={filter}
 			nowMs={nowMs}
 			opened={opened}
@@ -1923,7 +2180,7 @@ export function GcpDisconnectDialog({
 									<dl className="grid grid-cols-[auto_1fr] gap-x-3 text-xs/5">
 										<dt className="text-foreground">Deletes</dt>
 										<dd className="text-pretty text-muted-foreground">
-											The log sink, topic, subscription and read-only service account.
+											The log sink, topic, subscription and both service accounts.
 										</dd>
 										<dt className="text-foreground">Keeps</dt>
 										<dd className="text-muted-foreground">The APIs it switched on.</dd>
@@ -1937,6 +2194,10 @@ export function GcpDisconnectDialog({
 									</Script>
 									<p className={cn(SMALL, "text-foreground/80")}>
 										Waiting for the cleanup script. This updates on its own.
+									</p>
+									<p className={SMALL}>
+										Set up with Terraform? Remove the module and apply instead, then
+										disconnect anyway: Terraform tells Maple nothing.
 									</p>
 								</>
 							)}

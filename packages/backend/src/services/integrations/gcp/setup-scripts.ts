@@ -118,6 +118,8 @@ SUBSCRIPTION=${sh(names.subscription)}
 SINK=${sh(names.sink)}
 SERVICE_ACCOUNT=${sh(names.serviceAccountId)}
 SERVICE_ACCOUNT_EMAIL="$SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com"
+PUSH_SERVICE_ACCOUNT=${sh(names.pushServiceAccountId)}
+PUSH_SERVICE_ACCOUNT_EMAIL="$PUSH_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com"
 ${more.map((line) => `${line}\n`).join("")}MAPLE_URL=${sh(target.mapleUrl)}
 SCOPE="${target.scopeType} $SCOPE_ID"
 OWNER="Owner on project $PROJECT_ID"
@@ -140,6 +142,7 @@ interrupted() { printf '\\n\\n%s\\n' ${sh(interrupted)}; exit 130; }
 trap interrupted INT
 
 # stop <what went wrong> <what to do> [Google's answer]
+OPTIONAL=0
 stop() {
   printf '  \\342\\234\\227 %s\\n' "$1"
   # Google can quote the push endpoint back, and this output may be sent to support. The error
@@ -149,7 +152,8 @@ stop() {
     printf '%s\\n' "$3" | sed -e "/^- '@type':/,\\$d" -e 's/secret=[^ )&"]*/secret=HIDDEN/g' -e 's/maple_gcp_[A-Za-z0-9_-]*/maple_gcp_HIDDEN/g' -e 's/^/      /'
   fi
   printf '\\n    What to do: %s\\n' "$2"
-  printf '\\n%s\\n' ${sh(unfinished)}
+  # In a section the rest of the run does without (OPTIONAL=1), the run goes on.
+  [ "$OPTIONAL" = 1 ] || printf '\\n%s\\n' ${sh(unfinished)}
   exit 1
 }
 
@@ -212,7 +216,7 @@ notify() {
   if ${
 		throughTopic
 			? `gcloud pubsub topics publish "$TOPIC" --project="$PROJECT_ID" --message="$(report "$2")"`
-			: `${POST_REPORT} --data "$(report "$2")" "$PUSH_ENDPOINT"`
+			: `${POST_REPORT} --data "$(report "$2")" "$REPORT_ENDPOINT"`
   } >/dev/null 2>&1; then
     ok "$1"
   elif [ "$CONFIRMED" = 1 ]; then
@@ -251,6 +255,22 @@ api_off() {
   UNCHECKED=1
 }
 
+# account_remains <what it is> <gcloud iam service-accounts list ...>: looked up in the list. For
+# 30 days after a service account is deleted, describing it answers PERMISSION_DENIED even to an
+# Owner, which would read as "may still be there" on every re-run. A list that fails is read like
+# a failed describe.
+account_remains() {
+  local what="$1" output
+  shift
+  if output="$("$@" 2>/dev/null)"; then
+    [ -n "$output" ]
+    return
+  fi
+  output="$("$@" 2>&1 || true)"
+  case "$output" in *"has not been used"* | *"is disabled"*) api_off "$what"; return 1 ;; esac
+  stop "Couldn't check whether $what still exists." "$(fix "$output" "$OWNER")" "$output"
+}
+
 # remove <line when it worked> <line when it failed> <role that allows it> <gcloud ... delete ...>:
 # one that is gone already, a moment after it was seen, is fine.
 remove() {
@@ -281,8 +301,13 @@ unbind() {
 
 // APIs in the host project. Cloud Resource Manager is what gcloud reads projects and grants
 // roles through.
-const LOG_APIS = ["pubsub.googleapis.com", "logging.googleapis.com", "cloudresourcemanager.googleapis.com"]
-const METRIC_APIS = [
+const LOG_APIS = [
+	"pubsub.googleapis.com",
+	"logging.googleapis.com",
+	"iam.googleapis.com",
+	"cloudresourcemanager.googleapis.com",
+]
+const READER_APIS = [
 	"monitoring.googleapis.com",
 	"cloudasset.googleapis.com",
 	"iam.googleapis.com",
@@ -329,30 +354,17 @@ interface AccessChecks {
 	readonly apis: ReadonlyArray<string>
 	/** Setup with log forwarding on: the flag that places the sink. */
 	readonly sink: string | undefined
-	/** The scope's name must be readable: true when a role the run needs includes reading it. */
-	readonly scopeMustOpen: boolean
-	readonly billing: boolean
-	/** `testIamPermissions` calls: resource path, where in words, what to ask for, permissions. */
+	/** Log forwarding's `testIamPermissions` calls: resource path, where in words, what to ask for, permissions. */
 	readonly permissions: ReadonlyArray<readonly [string, string, string, ReadonlyArray<string>]>
 }
 
-const openScope = (scopeType: Exclude<GcpScopeType, "project">, mustOpen: boolean): string => {
-	const scope = SCOPES[scopeType]
-	const describe = `${scope.gcloud} describe "$SCOPE_ID"`
-	const label = scopeType === "folder" ? "Folder" : "Organization"
-	return mustOpen
-		? `if ! SCOPE_NAME="$(${describe} --format='value(displayName)' 2>/dev/null)"; then
-  stop "Can't open $SCOPE as $ACCOUNT." "Check the ID with: ${scope.list}. ${WRONG_ID} If it is right, this account needs ${scope.iamRole} there." "$(${describe} 2>&1 || true)"
-fi
-ok "${label} $SCOPE_ID found ($SCOPE_NAME)"
-`
-		: `# Not every role that can do this work may read the ${scopeType}'s name (Logs Configuration
+const openScope = (scopeType: Exclude<GcpScopeType, "project">): string =>
+	`# Not every role that can do this work may read the ${scopeType}'s name (Logs Configuration
 # Writer may not), so a look that fails is not an error.
-if SCOPE_NAME="$(${describe} --format='value(displayName)' 2>/dev/null)"; then
-  ok "${label} $SCOPE_ID found ($SCOPE_NAME)"
+if SCOPE_NAME="$(${SCOPES[scopeType].gcloud} describe "$SCOPE_ID" --format='value(displayName)' 2>/dev/null)"; then
+  ok "${scopeType === "folder" ? "Folder" : "Organization"} $SCOPE_ID found ($SCOPE_NAME)"
 fi
 `
-}
 
 const PERMISSION_CHECK = `
 # allowed <resource> <where, in words> <what to ask for> <permission...>: asks Google which of
@@ -409,31 +421,19 @@ fi
 IMPERSONATED="$(gcloud config get-value auth/impersonate_service_account 2>/dev/null || true)"
 [ -z "$IMPERSONATED" ] || ACCOUNT="$IMPERSONATED"
 ok "Signed in as $ACCOUNT"
-${checks.apis.length === 0 ? "" : apisOff(scopeType, checks.apis)}${scopeType === "project" ? "" : openScope(scopeType, checks.scopeMustOpen)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
+${checks.apis.length === 0 ? "" : apisOff(scopeType, checks.apis)}${scopeType === "project" ? "" : openScope(scopeType)}if ! PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)' 2>/dev/null)"; then
   stop "Can't open project $PROJECT_ID as $ACCOUNT." "Check the ID in Maple (it is the project ID, not the name or number; list yours with: gcloud projects list). ${WRONG_ID} If it is right, this account has no access to the project." "$(gcloud projects describe "$PROJECT_ID" 2>&1 || true)"
 fi
 ok "${scopeType === "project" ? "Project" : "Host project"} $PROJECT_ID found ($PROJECT_NAME)"
 ${
-	checks.billing
-		? `case "$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)" in
-  True) ok "Billing is enabled" ;;
-  False) stop "Project $PROJECT_ID has no billing account." "Cloud Monitoring only answers for projects with billing. Link one at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID" ;;
-  *) note "Couldn't tell whether billing is on. Cloud Monitoring only answers for projects with billing." ;;
-esac
-`
-		: ""
-}${
 	checks.permissions.length === 0
 		? ""
-		: `${PERMISSION_CHECK}${checks.permissions
+		: `${checks.permissions
 				.map(
 					([resource, where, ask, permissions]) =>
 						`allowed "${resource}" "${where}" "${ask}" \\\n  ${permissions.join(" ")}\n`,
 				)
-				.join("")}# Switching an API on takes a right of its own, asked about only when one is off.
-[ -z "$APIS_OFF" ] || allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "This script has to switch on:$APIS_OFF. Ask for Service Usage Admin there, or have an administrator switch them on." \\
-  serviceusage.services.enable
-if [ "$CHECKED" = 1 ]; then
+				.join("")}${switchingOn(LOG_APIS)}if [ "$CHECKED" = 1 ]; then
   ok "$ACCOUNT has the permissions this script needs"
 else
   note "Couldn't ask Google which permissions $ACCOUNT holds. A step it may not take says so."
@@ -441,52 +441,52 @@ fi
 `
 }${checks.sink === undefined ? "" : sinkAndFilter(checks.sink)}`
 
-/** What the enabled sections need, asked of Google before the first change. */
-const permissionChecks = (
-	scopeType: GcpScopeType,
-	logs: boolean,
-	metrics: boolean,
-): AccessChecks["permissions"] => {
-	if (!logs && !metrics) return []
+const ADMINISTRATOR = "or have an administrator run this script."
+
+/** What log forwarding needs, asked of Google before the first change. */
+const logPermissionChecks = (scopeType: GcpScopeType): AccessChecks["permissions"] => {
 	const scope = SCOPES[scopeType]
-	const administrator = "or have an administrator run this script."
 	const host = [
 		"resourcemanager.projects.getIamPolicy",
 		"resourcemanager.projects.setIamPolicy",
 		// The gets: a resource the caller may not look at is taken for missing and created again,
 		// which Google refuses as a duplicate.
-		...(logs
-			? [
-					"pubsub.topics.get",
-					"pubsub.topics.create",
-					"pubsub.topics.attachSubscription",
-					"pubsub.topics.setIamPolicy",
-					"pubsub.topics.publish",
-					"pubsub.subscriptions.get",
-					"pubsub.subscriptions.create",
-					"pubsub.subscriptions.update",
-				]
-			: []),
-		...(metrics
-			? ["iam.serviceAccounts.get", "iam.serviceAccounts.create", "iam.serviceAccounts.setIamPolicy"]
-			: []),
+		"pubsub.topics.get",
+		"pubsub.topics.create",
+		"pubsub.topics.attachSubscription",
+		"pubsub.topics.setIamPolicy",
+		"pubsub.topics.publish",
+		"pubsub.subscriptions.get",
+		"pubsub.subscriptions.create",
+		"pubsub.subscriptions.update",
+		// The push service account: created, Pub/Sub's agent allowed to sign as it, and attached to
+		// the subscription, which takes actAs.
+		"iam.serviceAccounts.get",
+		"iam.serviceAccounts.create",
+		"iam.serviceAccounts.setIamPolicy",
+		"iam.serviceAccounts.actAs",
 	]
-	const sink = logs ? ["logging.sinks.get", "logging.sinks.create", "logging.sinks.update"] : []
-	const askHost = `Ask for Owner there, ${administrator}`
+	const sink = ["logging.sinks.get", "logging.sinks.create", "logging.sinks.update"]
+	const askHost = `Ask for Owner there, ${ADMINISTRATOR}`
 	if (scopeType === "project") {
 		return [["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, [...host, ...sink]]]
 	}
-	const roles = [...(logs ? ["Logs Configuration Writer"] : []), ...(metrics ? [scope.iamRole] : [])]
 	return [
 		["projects/$PROJECT_ID", "project $PROJECT_ID", askHost, host],
 		[
 			`${scopeType}s/$SCOPE_ID`,
 			"$SCOPE",
-			`Ask for ${roles.join(" and ")} there, ${administrator} If the ID looks wrong, check it with: ${scope.list}`,
-			[...sink, ...(metrics ? [`resourcemanager.${scopeType}s.setIamPolicy`] : [])],
+			`Ask for Logs Configuration Writer there, ${ADMINISTRATOR} If the ID looks wrong, check it with: ${scope.list}`,
+			sink,
 		],
 	]
 }
+
+// Switching an API on takes a right of its own, asked about only when one of a section's is off.
+const switchingOn = (apis: ReadonlyArray<string>) => `OFF="$(missing ${apis.join(" ")})"
+[ -z "$OFF" ] || allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "This script has to switch on:$OFF. Ask for Service Usage Admin there, or have an administrator switch them on." \\
+  serviceusage.services.enable
+`
 
 // Setup only: granting to a service account Google may not have published yet, its own for the
 // log sink or the reader this script creates.
@@ -494,7 +494,7 @@ const GRANT = `
 # grant <line when it failed> <role that allows it> <gcloud ... add-iam-policy-binding ...>
 # Waited out, for a minute at most: a change that raced another one, and a service account Google
 # has not published yet. Until then it answers that the account does not exist, or for the policy
-# of a reader this run created (gcloud iam service-accounts ...), that the caller may not change it.
+# of an account this run created (gcloud iam service-accounts ...), that the caller may not change it.
 WAITED=0
 grant() {
   local failed="$1" role="$2" output tries=0
@@ -503,7 +503,7 @@ grant() {
     tries=$((tries + 1))
     conflict "$output" || case "$output" in
       *"does not exist"* | *NOT_FOUND*) ;;
-      *PERMISSION_DENIED*) { [ "$ACCOUNT_CREATED" = 1 ] && [ "$3" = service-accounts ]; } || tries=20 ;;
+      *PERMISSION_DENIED*) { [ "$NEW_ACCOUNT" = 1 ] && [ "$3" = service-accounts ]; } || tries=20 ;;
       *) tries=20 ;;
     esac
     if [ "$tries" -ge 20 ]; then stop "$failed" "$(fix "$output" "$role")" "$output"; fi
@@ -522,8 +522,9 @@ section "Log forwarding"
 DESTINATION="pubsub.googleapis.com/projects/$PROJECT_ID/topics/$TOPIC"
 
 # APIs in ${hostProject(scopeType)}: Pub/Sub carries the log entries, Cloud Logging routes them,
-# and Cloud Resource Manager is what gcloud grants the roles below through.
-apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" ${LOG_APIS.join(" ")}
+# IAM holds the push service account, and Cloud Resource Manager is what gcloud grants the roles
+# below through.
+apis "Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager" ${LOG_APIS.join(" ")}
 
 if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
   ok "Topic already exists"
@@ -532,11 +533,34 @@ else
     gcloud pubsub topics create "$TOPIC" --project="$PROJECT_ID"
 fi
 
-# One LogEntry per request, unwrapped. A day of retention bounds what is replayed after an
-# outage, and the subscription never expires while it is idle.
+# What Pub/Sub signs each push to Maple as. It holds no role anywhere. Maple accepts a push only
+# with an ID token for this account, so PUSH_ENDPOINT carries no secret.
+if exists gcloud iam service-accounts describe "$PUSH_SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
+  ok "Push service account already exists"
+else
+  run "Push service account created" "Couldn't create the push service account." "$OWNER" \\
+    gcloud iam service-accounts create "$PUSH_SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
+    --display-name="Maple log push identity" --description="Signs Pub/Sub push requests to Maple. Holds no roles."
+  NEW_ACCOUNT=1
+fi
+# Pub/Sub's service agent mints those tokens. Projects created after April 2021 allow it by
+# default; older ones need this grant. After the topic: Google creates the agent on first use.
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null || true)"
+[ -n "$PROJECT_NUMBER" ] ||
+  stop "Couldn't read the number of project $PROJECT_ID." "Wait a minute and paste the script again."
+grant "Couldn't let Pub/Sub sign pushes as the push service account." "$OWNER" \\
+  gcloud iam service-accounts add-iam-policy-binding "$PUSH_SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
+  --member="serviceAccount:service-$PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com" \\
+  --role=roles/iam.serviceAccountTokenCreator --condition=None
+ok "Pub/Sub allowed to sign pushes as that account"
+
+# One LogEntry per request, unwrapped, signed as the push service account for this connection. A
+# day of retention bounds what is replayed after an outage, and the subscription never expires
+# while it is idle.
 SUBSCRIPTION_FLAGS=(
   --project="$PROJECT_ID"
   --push-endpoint="$PUSH_ENDPOINT" --push-no-wrapper
+  --push-auth-service-account="$PUSH_SERVICE_ACCOUNT_EMAIL" --push-auth-token-audience="$PUSH_ENDPOINT"
   --ack-deadline=30 --message-retention-duration=1d --expiration-period=never
   --min-retry-delay=10s --max-retry-delay=600s
 )
@@ -613,6 +637,11 @@ if remains "the push subscription" "$OWNER" gcloud pubsub subscriptions describe
   remove "Push subscription deleted" "Couldn't delete the push subscription." "$OWNER" \\
     gcloud pubsub subscriptions delete "$SUBSCRIPTION" --project="$PROJECT_ID" --quiet
 fi
+if account_remains "the push service account" gcloud iam service-accounts list --project="$PROJECT_ID" \\
+  --filter="email=$PUSH_SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
+  remove "Push service account deleted" "Couldn't delete the push service account." "$OWNER" \\
+    gcloud iam service-accounts delete "$PUSH_SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
+fi
 if remains "the topic" "$OWNER" gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
   remove "Topic deleted" "Couldn't delete the Pub/Sub topic." "$OWNER" \\
     gcloud pubsub topics delete "$TOPIC" --project="$PROJECT_ID" --quiet
@@ -622,10 +651,33 @@ ${notifies ? `notify "Maple notified" '"logs":false'\n` : ""}`
 
 const serviceAccountMember = '--member="serviceAccount:$SERVICE_ACCOUNT_EMAIL"'
 
-const metricsSetup = (scopeType: GcpScopeType): string => `
-# ---- Metrics and resources: on ----
-section "Metrics and resources"
-
+const readerSetup = (scopeType: GcpScopeType, logs: boolean): string => `
+# ---- Read-only access ----
+# Every connection has it. Maple queries the scope's metrics live as this account and, while key
+# metrics are on in Maple, reads them every 5 minutes and lists resources every hour. A re-run
+# never removes it: only the cleanup script does.
+# It runs in a subshell with errexit on, which a failed step ends. ${logs ? "Log forwarding, set up above, does not depend on it: the run still finishes and says what is missing." : "Nothing else was set up, so the run stops there."}
+read_only_access() {
+section "Read-only access"
+# Only Maple's reads need billing, and Maple explains a refused read: the rest is set up anyway.
+case "$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)" in
+  True) ok "Billing is enabled" ;;
+  False) note "Billing is off in project $PROJECT_ID: live queries and key metrics stay unavailable until a billing account is linked at https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID. The rest is set up regardless." ;;
+  *) note "Couldn't tell whether billing is on. Cloud Monitoring only answers for projects with billing." ;;
+esac
+# A look before the APIs are on can miss the account: it is looked for again before it is created.
+ACCOUNT_EXISTS=0
+if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then ACCOUNT_EXISTS=1; fi
+# Unquoted on purpose: creating is asked about only while the account is missing.
+allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "Ask for Owner there, ${ADMINISTRATOR}" \\
+  resourcemanager.projects.getIamPolicy resourcemanager.projects.setIamPolicy iam.serviceAccounts.get iam.serviceAccounts.setIamPolicy $([ "$ACCOUNT_EXISTS" = 1 ] || echo iam.serviceAccounts.create)
+${
+	scopeType === "project"
+		? ""
+		: `allowed "${scopeType}s/$SCOPE_ID" "$SCOPE" "Ask for ${SCOPES[scopeType].iamRole} there, ${ADMINISTRATOR} If the ID looks wrong, check it with: ${SCOPES[scopeType].list}" \\
+  resourcemanager.${scopeType}s.setIamPolicy
+`
+}${switchingOn(READER_APIS)}
 # APIs in ${scopeType === "project" ? "the project" : "the host project, the project Maple's reads are made through"}:
 #   monitoring.googleapis.com      Cloud Monitoring, to read metrics
 #   cloudasset.googleapis.com      Cloud Asset Inventory, to list resources
@@ -633,23 +685,32 @@ section "Metrics and resources"
 #   iamcredentials.googleapis.com  short-lived tokens for that account; no key is ever created
 #   cloudresourcemanager.googleapis.com  what gcloud grants the roles below through
 apis "Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager" \\
-  ${METRIC_APIS.join(" ")}
+  ${READER_APIS.join(" ")}
 
-# A service account that an earlier run deleted (metrics switched off) fails this describe as
-# well and is created again. Google makes that a new account under the same name, with none of
-# the old one's roles, so every grant below is made for it.
-if exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
+# A service account that was deleted (by a cleanup run, or by a setup run from when key metrics
+# were off) fails this describe as well and is created again. Google makes that a new account
+# under the same name, with none of the old one's roles, so every grant below is made for it.
+if [ "$ACCOUNT_EXISTS" = 1 ] || exists gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID"; then
   ok "Read-only service account already exists"
 else
   run "Read-only service account created" "Couldn't create the service account." "$OWNER" \\
     gcloud iam service-accounts create "$SERVICE_ACCOUNT" --project="$PROJECT_ID" \\
     --display-name="Maple metrics and resource reader"
   ACCOUNT_CREATED=1
+  NEW_ACCOUNT=1
 fi
 
+# Maple's own account may mint short-lived tokens for this one service account, nothing else.
+# First: an organization policy that refuses Maple's account leaves no roles behind on the scope.
+grant "Couldn't let Maple use the service account." "$OWNER" \\
+  gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
+  --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator \\
+  --condition=None
+ok "Maple allowed to read as that account"
+
 # Read-only roles on the ${scopeType}${scopeType === "project" ? "" : ", inherited by every project under it"}:
-#   roles/monitoring.viewer  read metrics (monitoring.timeSeries.list)
-#   roles/cloudasset.viewer  list resources (cloudasset.assets.searchAllResources)
+#   roles/monitoring.viewer  read metrics (monitoring.timeSeries.list), live or every 5 minutes
+#   roles/cloudasset.viewer  list resources and the scope's projects (cloudasset.assets.searchAllResources)
 # These are the narrowest predefined roles for the two calls. Both are read-only, and broader
 # than the calls: Cloud Asset Viewer can also read resource metadata and IAM policies.
 for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
@@ -663,33 +724,26 @@ grant "Couldn't grant the read-only roles." "$OWNER" \\
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
   ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None
 ok "Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)"
-
-# Maple's own account may mint short-lived tokens for this one service account, nothing else.
-grant "Couldn't let Maple use the service account." "$OWNER" \\
-  gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" \\
-  --member="serviceAccount:$MAPLE_SERVICE_ACCOUNT" --role=roles/iam.serviceAccountTokenCreator \\
-  --condition=None
-ok "Maple allowed to read as that account"
-notify "Maple notified" '"metrics":true'
+# The status tells the caller whether the account is new.
+[ "$ACCOUNT_CREATED" = 0 ] || exit 3
+}
+${logs ? "OPTIONAL=1\n" : ""}set +e
+( set -e; read_only_access )
+READER=$?
+set -e
+${logs ? "OPTIONAL=0\n" : ""}case "$READER" in
+  0 | 3)
+    [ "$READER" = 0 ] || ACCOUNT_CREATED=1
+    # "metrics" in a report is this account: in place (true) or removed (false).
+    notify "Maple notified" '"metrics":true' ;;
+  *) ${logs ? "READER_FAILED=1" : 'exit "$READER"'} ;;
+esac
 `
 
-const metricsRemoval = (scopeType: GcpScopeType, notifies: boolean): string => `
-# ---- Metrics and resources: off. Remove what an earlier run created. ----
-section "Metrics and resources"
-# Looked up in the list: for 30 days after a service account is deleted, describing it answers
-# PERMISSION_DENIED even to an Owner, which would read as "may still be there" on every re-run.
-# A list that fails is read like a failed describe.
-account_remains() {
-  local output
-  if output="$("$@" 2>/dev/null)"; then
-    [ -n "$output" ]
-    return
-  fi
-  output="$("$@" 2>&1 || true)"
-  case "$output" in *"has not been used"* | *"is disabled"*) api_off "the read-only service account"; return 1 ;; esac
-  stop "Couldn't check whether the read-only service account still exists." "$(fix "$output" "$OWNER")" "$output"
-}
-if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
+const readerRemoval = (scopeType: GcpScopeType): string => `
+# ---- Read-only access: remove what a setup run created. ----
+section "Read-only access"
+if account_remains "the read-only service account" gcloud iam service-accounts list --project="$PROJECT_ID" \\
   --filter="email=$SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
   # Role bindings first: once the account is deleted they can no longer be removed by name.
   for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
@@ -704,7 +758,7 @@ if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
 else
   ok "Nothing left to remove"
 fi
-${notifies ? `notify "Maple notified" '"metrics":false'\n` : ""}`
+`
 
 /**
  * The text that is copied: the script as a here-document for a child bash. Pasted at a prompt,
@@ -735,45 +789,40 @@ ${body}${marker}
 			)
 
 export interface GcpSetupScriptInput extends GcpScriptTarget {
-	/** The ingest gateway's receiver URL for this connector, including its secret. */
+	/** The ingest gateway's receiver URL for this connector, and the audience of its push tokens. */
 	readonly pushEndpoint: string
-	/** Maple's own Google service account. Undefined: the metrics setup is left untouched. */
+	/** The receiver URL with the connector's secret: the script's own reports go there directly. */
+	readonly reportEndpoint: string
+	/** Maple's own Google service account. Undefined: the read-only access is left as it is. */
 	readonly mapleServiceAccountEmail: string | undefined
 	readonly logsEnabled: boolean
-	readonly metricsEnabled: boolean
 	/** Null: an existing sink keeps its filter, a new one forwards no application output. */
 	readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null
 }
 
 /**
  * The script an administrator pastes into Cloud Shell. Logs: a Log Router sink on the scope into
- * a Pub/Sub topic whose push subscription delivers each LogEntry to Maple. Metrics and resources:
- * a read-only service account Maple may impersonate. The script converges: what the connector has
- * enabled is created or updated, what it has not is removed, so a re-run applies an opt-out. Each
- * section ends by telling Maple what it applied.
+ * a Pub/Sub topic whose push subscription delivers each LogEntry to Maple; the script converges,
+ * so a re-run removes the sink once log forwarding is off. Every connection: a read-only service
+ * account Maple may impersonate, for live metric queries and, while `metrics_enabled`, the poller.
+ * Each section ends by telling Maple what it applied.
  */
 export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
-	const { scopeType, logsEnabled: logs } = input
+	const { scopeType, logsEnabled: logs, mapleServiceAccountEmail: maple } = input
 	const applicationLogs = input.applicationLogs ?? []
 	const leftOut = leftOutRuntimes(applicationLogs).map((runtime) => APPLICATION_LOGS[runtime].name)
-	// On for the connector while this deployment has lost its Google identity: nothing is set up
-	// and, above all, nothing a customer set up earlier is removed.
-	const metrics = !input.metricsEnabled
-		? "off"
-		: input.mapleServiceAccountEmail === undefined
-			? "lost"
-			: "on"
-	const state = (on: boolean) => (on ? "on" : "off, removing")
-	const metricsState =
-		metrics === "lost" ? "not available on this Maple deployment, left as is" : state(metrics === "on")
+	// Without a Google identity Maple can't read as the account: nothing is set up and, above all,
+	// nothing a customer set up earlier is removed.
+	const reader = maple !== undefined
+	const readerState = reader ? "on" : "not available on this Maple deployment, left as is"
 	return forPaste(
 		"MAPLE_SETUP_SCRIPT",
 		`#!/usr/bin/env bash
 # Maple setup for Google Cloud ${scopeType} ${input.scopeId}
-#   Log forwarding:        ${logs ? "on" : "off"}
-#   Metrics and resources: ${metrics === "lost" ? metricsState : metrics}
-# Safe to run again: it sets up what is on and removes what is off.
-# Keep it private: PUSH_ENDPOINT contains this connection's secret.
+#   Log forwarding:   ${logs ? "on" : "off"}
+#   Read-only access: ${readerState}
+# Safe to run again: it sets up what is on and removes log forwarding when it is off.
+# Keep it private: REPORT_ENDPOINT contains this connection's secret. Google Cloud never gets it.
 set -euo pipefail
 # gcloud would log every argument, the secret too, and the access token to ~/.config/gcloud/logs.
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1 CLOUDSDK_CORE_DISABLE_FILE_LOGGING=1
@@ -803,13 +852,14 @@ LOG_FILTER=${sh(gcpLogFilter(applicationLogs))}
 		: ""
 }${variables(input, [
 			`PUSH_ENDPOINT=${sh(input.pushEndpoint)}`,
-			...(input.mapleServiceAccountEmail === undefined || metrics !== "on"
-				? []
-				: [`MAPLE_SERVICE_ACCOUNT=${sh(input.mapleServiceAccountEmail)}`]),
+			`REPORT_ENDPOINT=${sh(input.reportEndpoint)}`,
+			...(maple === undefined ? [] : [`MAPLE_SERVICE_ACCOUNT=${sh(maple)}`]),
 		])}SINK_CREATED=0
 FILTER_REPLACED=0
 ACCOUNT_CREATED=0
+NEW_ACCOUNT=0
 REMOVED=0
+READER_FAILED=0
 ${output(
 	"Setup did not finish. Nothing needs undoing: fix this and paste the script again.",
 	"Setup interrupted. Nothing needs undoing: paste the script again to finish it.",
@@ -829,37 +879,40 @@ off() {
   done
 }
 
+# missing <api...>: the ones of them the access check found off.
+missing() {
+  local api
+  for api in "$@"; do
+    case " $APIS_OFF " in *" $api "*) printf ' %s' "$api" ;; esac
+  done
+}
+
 # apis <their names> <api...>: switches on the ones the access check found off.
 apis() {
-  local names="$1" api missing=""
+  local names="$1" missing api
   shift
-  for api in "$@"; do
-    case " $APIS_OFF " in *" $api "*) missing="$missing $api" ;; esac
-  done
+  missing="$(missing "$@")"
   if [ -n "$missing" ]; then
     # Unquoted on purpose: one argument per API.
     try "Couldn't switch on:$missing." "Service Usage Admin on project $PROJECT_ID" \\
       gcloud services enable $missing --project="$PROJECT_ID"
+    # A later section that needs one of them too finds it on.
+    for api in $missing; do APIS_OFF="\${APIS_OFF/ $api/}"; done
   fi
   ok "APIs enabled ($names)"
 }
-${logs || metrics === "on" ? GRANT : ""}${logs && metrics === "on" ? "" : REMOVAL_HELPERS}
+${logs || reader ? `${GRANT}${PERMISSION_CHECK}` : ""}${logs ? "" : REMOVAL_HELPERS}
 printf 'Maple setup for %s\\n' "$SCOPE"
-printf '  Log forwarding          %s\\n  Metrics and resources   %s\\n' ${sh(state(logs))} ${sh(metricsState)}
+printf '  Log forwarding     %s\\n  Read-only access   %s\\n' ${sh(logs ? "on" : "off, removing")} ${sh(readerState)}
 ${access(scopeType, {
-	apis: [...new Set([...(logs ? LOG_APIS : []), ...(metrics === "on" ? METRIC_APIS : [])])],
+	apis: [...new Set([...(logs ? LOG_APIS : []), ...(reader ? READER_APIS : [])])],
 	sink: logs ? SCOPES[scopeType].sink : undefined,
-	scopeMustOpen: metrics === "on",
-	billing: metrics === "on",
-	permissions: permissionChecks(scopeType, logs, metrics === "on"),
-})}${logs ? logsSetup(scopeType) : logsRemoval(scopeType, true)}${
-			metrics === "on"
-				? metricsSetup(scopeType)
-				: metrics === "off"
-					? metricsRemoval(scopeType, true)
-					: ""
-		}
-if [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED$FILTER_REPLACED" = 0000 ]; then
+	permissions: logs ? logPermissionChecks(scopeType) : [],
+})}${logs ? logsSetup(scopeType) : logsRemoval(scopeType, true)}${reader ? readerSetup(scopeType, logs) : ""}
+if [ "$READER_FAILED" = 1 ]; then
+  printf '\\nDone, except read-only access: live metric queries are not available yet. Fix what it\\n'
+  printf 'names above and paste the script again.\\n'
+elif [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED$FILTER_REPLACED" = 0000 ]; then
   printf '\\nDone. Everything is in place.\\n'
 elif [ "$SINK_CREATED$ACCOUNT_CREATED$REMOVED" = 000 ]; then
   printf '\\nDone. The log sink has the filter of this script. Everything else is in place.\\n'
@@ -873,40 +926,40 @@ if [ "$SINK_CREATED" = 1 ]; then
   printf '  Logs:    a new sink can take about 10 minutes to start forwarding. What is logged before\\n'
   printf '           it does is not forwarded later.\\n'
 fi
-if [ "$ACCOUNT_CREATED" = 1 ]; then printf '  Metrics: the first read lands within about 10 minutes.\\n'; fi
+if [ "$ACCOUNT_CREATED" = 1 ]; then printf '  Metrics: Maple can query them within a few minutes.\\n'; fi
 `,
 	)
 }
 
 export interface GcpCleanupScriptInput extends GcpScriptTarget {
-	/** Set while the connector exists: the script then tells Maple that it ran. */
-	readonly pushEndpoint: string | undefined
+	/** Set while the connector exists, with its secret: the script then tells Maple that it ran. */
+	readonly reportEndpoint: string | undefined
 }
 
-/** Removes what the setup script created. Without a push endpoint it carries no secret. */
+/** Removes what the setup script created. Without a report endpoint it carries no secret. */
 export const renderGcpCleanupScript = (input: GcpCleanupScriptInput) =>
 	forPaste(
 		"MAPLE_CLEANUP_SCRIPT",
 		`#!/usr/bin/env bash
 # Maple cleanup for Google Cloud ${input.scopeType} ${input.scopeId}
 # Removes what the Maple setup script created. The APIs it switched on stay on.
-# Safe to run again.${input.pushEndpoint === undefined ? "" : "\n# Keep it private: PUSH_ENDPOINT contains this connection's secret."}
+# Safe to run again.${input.reportEndpoint === undefined ? "" : "\n# Keep it private: REPORT_ENDPOINT contains this connection's secret."}
 set -euo pipefail
 # gcloud would log every argument, the secret too, and the access token to ~/.config/gcloud/logs.
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1 CLOUDSDK_CORE_DISABLE_FILE_LOGGING=1
-${variables(input, input.pushEndpoint === undefined ? [] : [`PUSH_ENDPOINT=${sh(input.pushEndpoint)}`])}REMOVED=0
+${variables(input, input.reportEndpoint === undefined ? [] : [`REPORT_ENDPOINT=${sh(input.reportEndpoint)}`])}REMOVED=0
 ANY_API_OFF_MATTERS=1
 ${output(
 	"Cleanup did not finish. Fix this and paste the script again: it continues where it stopped.",
 	"Cleanup interrupted. Paste the script again: it continues where it stopped.",
 )}${REMOVAL_HELPERS}
 printf 'Maple cleanup for %s\\n' "$SCOPE"
-${access(input.scopeType, { apis: [], sink: undefined, scopeMustOpen: false, billing: false, permissions: [] })}${logsRemoval(input.scopeType, false)}${metricsRemoval(input.scopeType, false)}${
-			input.pushEndpoint === undefined
+${access(input.scopeType, { apis: [], sink: undefined, permissions: [] })}${logsRemoval(input.scopeType, false)}${readerRemoval(input.scopeType)}${
+			input.reportEndpoint === undefined
 				? ""
 				: `
 # Tells Maple the cleanup ran. Maple refuses this once the connection is deleted, which is fine.
-${POST_REPORT} --data "$(report '"logs":false,"metrics":false')" "$PUSH_ENDPOINT" >/dev/null 2>&1 || true
+${POST_REPORT} --data "$(report '"logs":false,"metrics":false')" "$REPORT_ENDPOINT" >/dev/null 2>&1 || true
 `
 		}
 if [ "$UNCHECKED" = 1 ]; then
@@ -916,5 +969,5 @@ else
 fi
 printf '  Left in place: the APIs it switched on, and the Logs Writer role of Google'"'"'s logging\\n'
 printf '  service account on %s, which other sinks share.\\n' "$PROJECT_ID"
-${input.pushEndpoint === undefined ? "" : `printf '  Now disconnect in Maple: %s\\n' "$MAPLE_URL"\n`}`,
+${input.reportEndpoint === undefined ? "" : `printf '  Now disconnect in Maple: %s\\n' "$MAPLE_URL"\n`}`,
 	)

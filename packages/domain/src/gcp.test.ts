@@ -13,8 +13,10 @@ describe("gcpConnectorResourceNames", () => {
 			topic: "maple-018f2b3c4d5e4f708192a3b4",
 			subscription: "maple-018f2b3c4d5e4f708192a3b4",
 			sink: "maple-018f2b3c4d5e4f708192a3b4",
+			pushServiceAccountId: "maple-push-018f2b3c4d5e4f70819",
 		})
 		// Google: 6-30 characters, [a-z]([-a-z0-9]*[a-z0-9]).
 		expect(names.serviceAccountId).toMatch(/^[a-z][-a-z0-9]{4,28}[a-z0-9]$/)
+		expect(names.pushServiceAccountId).toMatch(/^[a-z][-a-z0-9]{4,28}[a-z0-9]$/)
 	})
 })

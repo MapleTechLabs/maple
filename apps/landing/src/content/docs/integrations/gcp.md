@@ -1,16 +1,18 @@
 ---
 title: "Google Cloud"
-description: "Connect a Google Cloud organization, folder or project by running one script in Cloud Shell. Maple receives Cloud Logging entries through Pub/Sub and reads Cloud Monitoring metrics every 5 minutes."
+description: "Connect a Google Cloud organization, folder or project by running one script in Cloud Shell. Maple receives Cloud Logging entries through Pub/Sub, queries Cloud Monitoring metrics live and collects key metrics every 5 minutes."
 group: "Integrations"
 order: 7
 ---
 
 The Google Cloud integration connects an organization, a folder or a single project to Maple. You choose what each connection collects:
 
-| What to collect           | Collects                                                                                                                                                                                                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Log forwarding**        | A Log Router sink sends Cloud Logging entries through Pub/Sub to Maple. They appear in [Logs](/docs/explore/logs) under the service that wrote them.                                                                                                                           |
-| **Metrics and resources** | Maple reads Cloud Monitoring metrics for Cloud Run, Cloud Functions, GKE, Compute Engine, Cloud SQL, Pub/Sub and HTTP(S) load balancers every 5 minutes, and lists the resources behind them every hour. The metrics are named `gcp.*` and work in dashboards and alert rules. |
+| What to collect    | Collects                                                                                                                                                                                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Log forwarding** | A Log Router sink sends Cloud Logging entries through Pub/Sub to Maple. They appear in [Logs](/docs/explore/logs) under the service that wrote them.                                                                                                                               |
+| **Key metrics**    | Maple reads key Cloud Monitoring metrics for Cloud Run, Cloud Functions, GKE, Compute Engine, Cloud SQL, Pub/Sub and HTTP(S) load balancers every 5 minutes, and lists the resources behind them every hour. The metrics are named `gcp.*` and work in dashboards and alert rules. |
+
+Every connection also lets Maple query any Cloud Monitoring metric of the connected scope live, with **Key metrics** on or off.
 
 There is no OAuth step and no service account key. You run a generated `gcloud` script in Cloud Shell, and Maple gets no write access to Google Cloud.
 
@@ -27,11 +29,11 @@ If your workloads also send telemetry over OpenTelemetry, read [Google Cloud wit
 | A folder        | Owner on the host project. On the folder: Logs Configuration Writer for the log sink, and Folder IAM Admin for the read-only roles.                 |
 | An organization | Owner on the host project. On the organization: Logs Configuration Writer for the log sink, and Organization Administrator for the read-only roles. |
 
-If you can't get Owner, see [Roles for running the script](#roles-for-running-the-script).
+For log forwarding alone, Owner on the host project and Logs Configuration Writer on a folder or organization are enough. The read-only access part of the script then stops with what it is missing, log forwarding stays set up, and the row says **Live queries not set up**. If you can't get Owner, see [Roles for running the script](#roles-for-running-the-script).
 
 The host project holds Maple's Pub/Sub topic, subscription and read-only service account. A project is its own host project. For a folder or organization, name a shared operations project inside it that won't be deleted. Google bills the Pub/Sub and Cloud Monitoring usage to the host project.
 
-**Metrics and resources** needs billing enabled on the host project: Cloud Monitoring only answers for projects that have a billing account. The script checks this before it changes anything.
+Live metric queries and **Key metrics** need billing enabled on the host project: Cloud Monitoring only answers for projects that have a billing account. Without billing the script says so and sets everything up anyway.
 
 ### Find your IDs
 
@@ -46,7 +48,7 @@ The host project holds Maple's Pub/Sub topic, subscription and read-only service
 1. Open **Integrations → Google Cloud** in Maple and click **Connect Google Cloud**. When the page already has a connection, click **Add connection** above the list. The dialog **Connect Google Cloud** opens on its first stage, **Connect**.
 2. Under **What to connect**, choose **Organization**, **Folder** or **Project** and enter its ID. An organization or folder covers every project in it, including new ones.
 3. For an organization or folder, enter the **Host project ID**.
-4. Under **Collect**, leave **Log forwarding** and **Metrics and resources** ticked, or untick one. To change which logs are forwarded, choose a [log filter](#log-filter) under **Log filter**.
+4. Under **Collect**, leave **Log forwarding** and **Key metrics** ticked, or untick either. With both unticked, the connection serves live metric queries only. To change which logs are forwarded, choose a [log filter](#log-filter) under **Log filter**.
 5. Click **Create and continue**. Maple creates the connection and the dialog moves to its second stage, **Apply in Google Cloud**. Nothing changes in Google Cloud until you run the script.
 6. In step 1, click **Open Cloud Shell** and sign in with the roles above. Click **Authorize** if Cloud Shell asks.
 7. In step 2, click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. **Read the script** shows it in the dialog.
@@ -58,58 +60,60 @@ A first run for a project prints:
 
 ```text
 Maple setup for project acme-prod
-  Log forwarding          on
-  Metrics and resources   on
+  Log forwarding     on
+  Read-only access   on
 
 Checking access
   ✓ Signed in as jane@acme.com
   ✓ Project acme-prod found (Acme Production)
-  ✓ Billing is enabled
   ✓ jane@acme.com has the permissions this script needs
   ✓ Log filter accepted
 
 Log forwarding
-  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
+  ✓ APIs enabled (Pub/Sub, Cloud Logging, IAM, Cloud Resource Manager)
   ✓ Topic created
+  ✓ Push service account created
+  ✓ Pub/Sub allowed to sign pushes as that account
   ✓ Push subscription created
   ✓ Log sink created
   ✓ Sink allowed to write to the project
   ✓ Sink allowed to publish to the topic
   ✓ Check message sent to Maple through the topic
 
-Metrics and resources
+Read-only access
+  ✓ Billing is enabled
   ✓ APIs enabled (Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager)
   ✓ Read-only service account created
-  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple allowed to read as that account
+  ✓ Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)
   ✓ Maple notified
 
 Done. Google Cloud is set up for Maple.
   Maple confirms it within a minute: https://app.maple.dev/integrations?integration=gcp
   Logs:    a new sink can take about 10 minutes to start forwarding. What is logged before
            it does is not forwarded later.
-  Metrics: the first read lands within about 10 minutes.
+  Metrics: Maple can query them within a few minutes.
 ```
 
-If a step fails, the script stops and prints what to do. Fix it and paste the script again: it continues where it stopped. Running the script again is safe, and its last line says what the run did:
+If a step fails, the script stops and prints what to do. Fix it and paste the script again: it continues where it stopped. A failed step under **Read-only access** stops only that section while log forwarding is on: the run ends with "Done, except read-only access". Running the script again is safe, and its last line says what the run did:
 
 | The script ends with                                                             | The run                                                                                            |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | "Done. Google Cloud is set up for Maple."                                        | Created the log sink or the read-only service account.                                             |
 | "Done. Everything is in place."                                                  | Created and removed nothing. It makes every grant again, so it also restores one that was removed. |
 | "Done. The log sink has the filter of this script. Everything else is in place." | Replaced the sink's filter and created nothing.                                                    |
-| "Done. Google Cloud matches your Maple switches."                                | Removed what **Log forwarding** or **Metrics and resources**, now off, had set up.                 |
+| "Done. Google Cloud matches your Maple switches."                                | Removed the log sink, topic, subscription and push service account: **Log forwarding** is off.     |
 
-After Maple confirms the run, **Log forwarding** and **Metrics and resources** each wait for their first data:
+After Maple confirms the run, **Log forwarding** and **Key metrics** each wait for their first data:
 
-| What to collect       | First data                                                                                                                          |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Log forwarding        | A new sink can take about 10 minutes to start forwarding. Entries logged before that are not forwarded.                             |
-| Metrics and resources | The first read lands within about 10 minutes. Maple reads every 5 minutes, about 5 minutes behind, so that each minute is complete. |
+| What to collect | First data                                                                                                                          |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Log forwarding  | A new sink can take about 10 minutes to start forwarding. Entries logged before that are not forwarded.                             |
+| Key metrics     | The first read lands within about 10 minutes. Maple reads every 5 minutes, about 5 minutes behind, so that each minute is complete. |
 
-The script contains a secret that lets anyone send logs to your Maple organization. Don't share it or commit it, and run it in Cloud Shell: there neither the paste nor the secret ends up in shell history. The pasted text keeps itself out of the history files of bash 5 and zsh, but it still shows in your terminal's scrollback.
+Google Cloud never gets a secret: Pub/Sub signs each push as the connection's push service account, and Maple accepts a push only when Google signed it for that account and for this connection. The script itself contains a secret, which it uses only to report its run to Maple. Don't share it or commit it, and run it in Cloud Shell: there neither the paste nor the secret ends up in shell history. The pasted text keeps itself out of the history files of bash 5 and zsh, but it still shows in your terminal's scrollback. If it leaks, disconnect and connect again: the new connection gets a new secret.
 
-The push endpoint with the secret is also visible in the subscription's configuration and in the host project's Admin Activity audit log, to anyone who can read those. If it leaks, disconnect and connect again: the new connection gets a new secret.
+A connection set up before Maple signed its pushes has the secret in its push endpoint, visible in the subscription's configuration and the host project's Admin Activity audit log. Run the setup script again to switch it to signed pushes.
 
 The first two lines and the last two lines of the pasted text run the script in a bash process of its own, so a failed step can't close your Cloud Shell session.
 
@@ -118,27 +122,28 @@ A project, folder or organization can be connected once per Maple organization. 
 ### Change what a connection collects
 
 1. On the connection's row, click **Configure**. The dialog opens on its first stage, **Configure**.
-2. Under **Collect**, tick or untick **Log forwarding** or **Metrics and resources**. The line beside a changed checkbox says what saving it does.
-3. Click **Save and continue**. For a change that takes effect in Maple at once, Maple asks first, in a dialog titled for example "Turn log forwarding off for Project acme-prod?". The dialog says what happens **In Maple** and what goes on **In Google Cloud**. Click **Turn off and continue**, or **Turn on** when you turn something back on that still exists in Google Cloud. Then the button of the first stage reads **Save**, and there is nothing to run.
-4. The dialog moves to **Apply in Google Cloud**. Its recap says what is saved and what this run does. Copy the script and run it in Cloud Shell again.
+2. Under **Collect**, tick or untick **Log forwarding** or **Key metrics**. The line beside a changed checkbox says what saving it does.
+3. Click **Save and continue**, or **Save** when the change leaves nothing to run. For a change that takes effect in Maple at once, Maple asks first, in a dialog titled for example "Turn log forwarding off for Project acme-prod?". The dialog says what happens **In Maple** and what goes on **In Google Cloud**. Click **Turn off and continue**, **Turn off** or **Turn on**. A change with nothing to run, such as one to **Key metrics**, closes the dialog once saved.
+4. Otherwise the dialog moves to **Apply in Google Cloud**. Its recap says what is saved and what this run does. Copy the script and run it in Cloud Shell again.
 5. When the run reports, the dialog shows **Google Cloud matches this configuration**. Click **Done**.
 
 A change takes effect in Maple and in Google Cloud at different times:
 
-| Change in **Configure**                                                  | In Maple                                                                                                       | In Google Cloud                                                                                             |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Log forwarding** off                                                   | Maple stops storing the connection's logs within about a minute of saving.                                     | Google Cloud keeps publishing logs to Pub/Sub, billed by Google, until the script has removed the log sink. |
-| **Metrics and resources** off                                            | Maple stops reading from the next 5-minute read.                                                               | The read-only service account and its roles stay until the script has removed them.                         |
-| **Log forwarding** or **Metrics and resources** on                       | Starts once the script has run.                                                                                | The script creates the log sink, or the read-only service account.                                          |
-| Back on while Google Cloud still has the log sink or the service account | At once: Maple stores the logs again as soon as you save, and reads metrics again from the next 5-minute read. | Nothing changes.                                                                                            |
+| Change in **Configure**                                  | In Maple                                                                   | In Google Cloud                                                                                             |
+| -------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Log forwarding** off                                   | Maple stops storing the connection's logs within about a minute of saving. | Google Cloud keeps publishing logs to Pub/Sub, billed by Google, until the script has removed the log sink. |
+| **Log forwarding** on                                    | Starts once the script has run.                                            | The script creates the log sink.                                                                            |
+| **Log forwarding** back on while Google Cloud has a sink | At once: Maple stores the logs again as soon as you save.                  | Nothing changes.                                                                                            |
+| **Key metrics** off                                      | Maple stops collecting from the next 5-minute read.                        | Nothing changes. The read-only service account stays, so live metric queries keep working.                  |
+| **Key metrics** on                                       | Maple collects from the next 5-minute read.                                | Nothing changes while the read-only service account exists. Without it, run the setup script.               |
 
-Until the script has run, the connection's row shows **Changes not applied in Google Cloud** and says what goes on until then, for example "Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink." Click **Apply changes** to open the dialog at the script.
+Until the script has run, the connection's row shows **Changes not applied in Google Cloud** and says what goes on until then, for example "Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink." Click **Apply changes** to open the dialog at the script. The same band shows while the read-only service account is missing: live metric queries and key metrics start once the script has run again.
 
 A run that removes the log sink takes one to two minutes: after it deletes the sink it waits a minute for Google to stop routing to the topic, so your project logs no sink error.
 
 When nothing is changed, the button in the first stage reads **Continue to the script**. The setup script exists only in the second stage of this dialog, so this is how you get it again, for example to change the [log filter](#log-filter) or to repair something. **Back** returns to the first stage.
 
-A connection collects at least one of the two: the last one that is on can't be unticked. To stop collecting, [disconnect](#disconnect).
+Both may be unticked: the connection then serves live metric queries only. To remove it, [disconnect](#disconnect).
 
 ### Log filter
 
@@ -161,6 +166,44 @@ On a connection that already has a sink, the choice starts on **Keep current fil
 
 For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep current filter** leave your filter in place, while **Replace filter** replaces it.
 
+## Set up with Terraform
+
+Instead of the script, apply the same setup from your own Terraform (1.5 or later) or OpenTofu configuration. The module creates the resources the script does, under the same names, and holds no secret, so you can commit it. Its source is [`deploy/terraform-google-maple`](https://github.com/MapleTechLabs/maple/tree/main/deploy/terraform-google-maple) in Maple's repository.
+
+1. Create the connection in Maple as in steps 1 to 5 above.
+2. On the **Run setup** step, switch from **Cloud Shell** to **Terraform** and click **Copy module**. Add the block to your configuration.
+3. Run `terraform apply` as an account with the [roles for running the script](#roles-for-running-the-script).
+4. Back in Maple, **Waiting for Google Cloud** under the module confirms each part: **Log forwarding** with the first log entry Maple receives, usually within 10 minutes, and **Read-only access** when you click **Check access**.
+
+A Terraform run sends Maple no report, which is why Maple checks Google Cloud itself. The module sets the sink's log filter in full: choose the filter in Maple before you copy the block. After changing **Log forwarding** in Maple, copy the block again and apply.
+
+To take over a connection the script set up, import its resources before the first apply. For a project connection, with the module named `maple_gcp_acme_prod` and the names from the script's header:
+
+```hcl
+import {
+  to = module.maple_gcp_acme_prod.google_pubsub_topic.logs[0]
+  id = "projects/acme-prod/topics/maple-0a1b2c3d4e5f40718293a4b5"
+}
+import {
+  to = module.maple_gcp_acme_prod.google_pubsub_subscription.logs[0]
+  id = "projects/acme-prod/subscriptions/maple-0a1b2c3d4e5f40718293a4b5"
+}
+import {
+  to = module.maple_gcp_acme_prod.google_logging_project_sink.logs[0]
+  id = "projects/acme-prod/sinks/maple-0a1b2c3d4e5f40718293a4b5"
+}
+import {
+  to = module.maple_gcp_acme_prod.google_service_account.reader[0]
+  id = "projects/acme-prod/serviceAccounts/maple-0a1b2c3d4e5f40718293a4b5@acme-prod.iam.gserviceaccount.com"
+}
+import {
+  to = module.maple_gcp_acme_prod.google_service_account.push[0]
+  id = "projects/acme-prod/serviceAccounts/maple-push-0a1b2c3d4e5f4071829@acme-prod.iam.gserviceaccount.com"
+}
+```
+
+A folder or organization connection imports `google_logging_folder_sink` from `folders/FOLDER_ID/sinks/NAME` or `google_logging_organization_sink` from `organizations/ORGANIZATION_ID/sinks/NAME`. Leave out the push service account if the script ran before Maple signed pushes. Role grants need no import: applying one that exists changes nothing.
+
 ## Verify
 
 Once a connection has delivered data, **Integrations → Google Cloud** opens with a row of numbers, summed over every connection:
@@ -172,40 +215,41 @@ Once a connection has delivered data, **Integrations → Google Cloud** opens wi
 | **Workloads · 24h**   | Workloads that reported metrics in the last 24 hours.                   |
 | **Resources**         | Resources in the [inventory](#resources), and the projects they are in. |
 
-The row follows what has delivered. While only **Log forwarding** delivers, it shows **Log entries**, **Errors** and **Warnings**. While only **Metrics and resources** delivers, it shows **Workloads**, **Resources** and **Projects**. A number Maple cannot count yet shows a dash. Below the numbers, **Workloads** lists what reported metrics in the last 24 hours, the worst first, each a link to its page under **Infrastructure → Google Cloud**. Beside it, **Resources** counts the [inventory](#resources) by type.
+The row follows what has delivered. While only **Log forwarding** delivers, it shows **Log entries**, **Errors** and **Warnings**. While only **Key metrics** delivers, it shows **Workloads**, **Resources** and **Projects**. A number Maple cannot count yet shows a dash. Below the numbers, **Workloads** lists what reported metrics in the last 24 hours, the worst first, each a link to its page under **Infrastructure → Google Cloud**. Beside it, **Resources** counts the [inventory](#resources) by type.
 
-Under **Connections**, each connection is a row, the worst state first, with a status for **Logs** and one for **Metrics**. A hint, a warning or a failure shows in a band under the row. The page updates on its own.
+Under **Connections**, each connection is a row, the worst state first, with a status for **Logs** and one for **Key metrics**. A hint, a warning or a failure shows in a band under the row. The page updates on its own.
 
 | Logs                            | Meaning                                                                                                                                                                 |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Not set up**                  | The setup script has not set log forwarding up yet. Run it.                                                                                                             |
-| **Setup running**               | A run reported on metrics and resources in the last two minutes and has not reported on log forwarding yet.                                                             |
+| **Setup running**               | A run reported on read-only access in the last two minutes and has not reported on log forwarding yet.                                                                  |
 | **Waiting for the first entry** | The script ran and no entry has arrived. After 20 minutes the band reads **No log entry in 20 minutes** with a `gcloud logging write` command that writes a test entry. |
 | **Receiving**                   | Entries arrive. The row shows when the last one did.                                                                                                                    |
 | **Nothing in 24 hours**         | Nothing passed the filter for a day. Not an error.                                                                                                                      |
 | **Rejected**                    | Maple refused the last push. The band says why and what to do.                                                                                                          |
 | **Off**                         | Turned off in **Configure**. While Google Cloud still has the log sink, the band **Changes not applied in Google Cloud** says so.                                       |
 
-| Metrics                        | Meaning                                                                                                                                                  |
+| Key metrics                    | Meaning                                                                                                                                                  |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Not set up**                 | The setup script has not granted Maple read access yet. Run it.                                                                                          |
-| **Setup running**              | A run reported on log forwarding in the last two minutes and has not reported on metrics and resources yet.                                              |
+| **Setup running**              | A run reported on log forwarding in the last two minutes and has not reported on read-only access yet.                                                   |
 | **Waiting for the first read** | The script ran and the first read has not landed. After 15 minutes the band says that no metrics have arrived yet.                                       |
 | **Receiving**                  | Reads succeed. The row shows when the last one landed. The label reads **Receiving, resource list incomplete** when Maple could not list every resource. |
 | **Incomplete**                 | The last read is under 10 minutes old, but some metric queries failed or were cut short. The band says which.                                            |
 | **Stalled**                    | No read for 30 minutes and no error. Maple retries every 5 minutes.                                                                                      |
 | **Can't be read**              | Reads fail, and none has succeeded in the last 10 minutes. The band says why and what to do.                                                             |
-| **Off**                        | Turned off in **Configure**. While the read-only service account still exists, the band **Changes not applied in Google Cloud** says so.                 |
+| **Off**                        | Turned off in **Configure**. Live metric queries work while the read-only service account exists.                                                        |
 
 The page header and the Integrations list show the connection's worst status: **Needs attention**, **Setup pending**, **Changes pending**, **Waiting for data** or **Healthy**.
 
 A connection that needs the setup script shows a band with one button. The button opens **Configure** at its second stage, **Apply in Google Cloud**.
 
-| Band                                    | Button                   | Shown when                                                                                                             |
-| --------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| **Setup pending**                       | **Finish setup**         | The script of a new connection has not reported, or its last run stopped part of the way.                              |
-| **Changes not applied in Google Cloud** | **Apply changes**        | The saved configuration and what the script last reported differ. The band says what goes on until the script has run. |
-| A failure's own message                 | **Run the script again** | The text of the failure asks for another run of the setup script.                                                      |
+| Band                                    | Button                   | Shown when                                                                                                                                                          |
+| --------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Setup pending**                       | **Finish setup**         | The script of a new connection has not reported, or its last run stopped part of the way.                                                                           |
+| **Changes not applied in Google Cloud** | **Apply changes**        | The saved configuration and what the script last reported differ, or the read-only service account is missing. The band says what goes on until the script has run. |
+| A failure's own message                 | **Run the script again** | The text of the failure asks for another run of the setup script.                                                                                                   |
+| **Live queries not set up**             | **Run the script again** | The last run could not create the read-only service account, for example for a missing role or an organization policy. Log forwarding is unaffected.                |
 
 Members who are not admins of the Maple organization see the statuses and the numbers, without **Configure**, the **⋮** menu or the band's button. The band asks them to have an admin run the setup script, and a line under the list says "Only Maple organization admins can add, configure or disconnect connections."
 
@@ -220,18 +264,19 @@ Then check the data:
 
 The script enables these APIs in the host project:
 
-- `pubsub.googleapis.com` and `logging.googleapis.com`, for log forwarding: carrying the log entries and routing them through the sink.
-- `monitoring.googleapis.com`, `cloudasset.googleapis.com`, `iam.googleapis.com` and `iamcredentials.googleapis.com`, for metrics and resources: reading metrics, listing resources, creating the read-only service account and minting its short-lived tokens. No key is ever created.
+- `pubsub.googleapis.com`, `logging.googleapis.com` and `iam.googleapis.com`, for log forwarding: carrying the log entries, routing them through the sink, and the push service account.
+- `monitoring.googleapis.com`, `cloudasset.googleapis.com`, `iam.googleapis.com` and `iamcredentials.googleapis.com`, for the read-only service account: reading metrics, listing resources, creating the account and minting its short-lived tokens. No key is ever created.
 - `cloudresourcemanager.googleapis.com`, for both: granting the roles below.
 
-For log forwarding it creates a Pub/Sub topic and push subscription in the host project and a log sink on the project, folder or organization. For metrics and resources it creates a read-only service account in the host project. Each is named `maple-` followed by 24 hexadecimal characters unique to the connection.
+For log forwarding it creates a Pub/Sub topic, a push subscription and a push service account in the host project, and a log sink on the project, folder or organization. The push service account, `maple-push-` followed by 19 hexadecimal characters, holds no role anywhere: Pub/Sub signs each push to Maple as it. For every connection it creates a read-only service account in the host project, which Maple reads metrics as: live queries, and **Key metrics** while it is on. Each is named `maple-` followed by 24 hexadecimal characters unique to the connection. Running the script again never removes the service account, whatever the switches say; only the [cleanup script](#disconnect) does.
 
 It grants these roles:
 
 - **Pub/Sub Publisher** (`roles/pubsub.publisher`) to the sink's Google-managed writer identity, on Maple's topic: publishing log entries to the topic.
 - **Logs Writer** (`roles/logging.logWriter`) to the same writer identity, on the host project: Google requires it on the project that holds a sink's destination.
-- **Monitoring Viewer** (`roles/monitoring.viewer`) to the read-only service account, on the project, folder or organization: reading metrics (`monitoring.timeSeries.list`).
-- **Cloud Asset Viewer** (`roles/cloudasset.viewer`) to the read-only service account, on the project, folder or organization: listing resources (`cloudasset.assets.searchAllResources`). The role can also read resource metadata and IAM policies.
+- **Service Account Token Creator** (`roles/iam.serviceAccountTokenCreator`) to the host project's Pub/Sub service agent, on the push service account: signing pushes as it. Projects created after April 2021 allow this by default.
+- **Monitoring Viewer** (`roles/monitoring.viewer`) to the read-only service account, on the project, folder or organization: reading metrics (`monitoring.timeSeries.list`), live and every 5 minutes.
+- **Cloud Asset Viewer** (`roles/cloudasset.viewer`) to the read-only service account, on the project, folder or organization: listing resources and the projects under a folder or organization (`cloudasset.assets.searchAllResources`). The role can also read resource metadata and IAM policies.
 - **Service Usage Consumer** (`roles/serviceusage.serviceUsageConsumer`) to the read-only service account, on the host project: calling both read APIs through the host project.
 - **Service Account Token Creator** (`roles/iam.serviceAccountTokenCreator`) to Maple's service account, on the read-only service account: minting short-lived tokens for that one account.
 
@@ -241,16 +286,17 @@ It grants these roles:
 
 Owner on the host project is the simplest. Without it, these predefined roles together cover what the script does:
 
-| On                                  | Role                                                                                                                                                                                             | For                                                   |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
-| The host project                    | Service Usage Admin (`roles/serviceusage.serviceUsageAdmin`)                                                                                                                                     | Switching on the APIs above.                          |
-| The host project                    | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`)                                                                                                                                      | The role grants on the host project.                  |
-| The host project                    | Pub/Sub Admin (`roles/pubsub.admin`)                                                                                                                                                             | Log forwarding: the topic and the subscription.       |
-| The host project                    | Service Account Admin (`roles/iam.serviceAccountAdmin`)                                                                                                                                          | Metrics and resources: the read-only service account. |
-| The project, folder or organization | Logs Configuration Writer (`roles/logging.configWriter`)                                                                                                                                         | Log forwarding: the sink.                             |
-| The project, folder or organization | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`), Folder IAM Admin (`roles/resourcemanager.folderIamAdmin`) or Organization Administrator (`roles/resourcemanager.organizationAdmin`) | Metrics and resources: the read-only roles.           |
+| On                                  | Role                                                                                                                                                                                             | For                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| The host project                    | Service Usage Admin (`roles/serviceusage.serviceUsageAdmin`)                                                                                                                                     | Switching on the APIs above.                                |
+| The host project                    | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`)                                                                                                                                      | The role grants on the host project.                        |
+| The host project                    | Pub/Sub Admin (`roles/pubsub.admin`)                                                                                                                                                             | Log forwarding: the topic and the subscription.             |
+| The host project                    | Service Account Admin (`roles/iam.serviceAccountAdmin`)                                                                                                                                          | The read-only and push service accounts.                    |
+| The host project                    | Service Account User (`roles/iam.serviceAccountUser`)                                                                                                                                            | Log forwarding: signing pushes as the push service account. |
+| The project, folder or organization | Logs Configuration Writer (`roles/logging.configWriter`)                                                                                                                                         | Log forwarding: the sink.                                   |
+| The project, folder or organization | Project IAM Admin (`roles/resourcemanager.projectIamAdmin`), Folder IAM Admin (`roles/resourcemanager.folderIamAdmin`) or Organization Administrator (`roles/resourcemanager.organizationAdmin`) | The read-only roles.                                        |
 
-Before it changes anything, the script asks Google which permissions the signed-in account holds and stops with the missing ones.
+Before it changes anything, the script asks Google which permissions the signed-in account holds and stops with the missing ones. Read-only access asks for its own just before its section: what it lacks stops only that section while log forwarding is on, and the run ends with "Done, except read-only access".
 
 ## Collected data
 
@@ -408,7 +454,7 @@ Every hour Maple lists these resources from Cloud Asset Inventory, with their pr
 
 ## Infrastructure → Google Cloud
 
-**Infrastructure → Google Cloud** is in the sidebar and on the Infrastructure overview while a connection has **Metrics and resources** on.
+**Infrastructure → Google Cloud** is in the sidebar and on the Infrastructure overview while a connection has **Key metrics** on.
 
 The page opens with a band that counts the workloads of every service by health, then one tab per service that reported metrics in the selected time range, with one row per workload. The tab you are on stays when you change the range. Counts and byte totals cover the time range; everything else is the average over it.
 
@@ -466,7 +512,7 @@ The **Resources** tab shows the first 500 resources that match its filters, and 
 
 Until a connection's setup script has run, the page reads **Finish setting up Google Cloud**. After the run it reads **Collecting your first Google Cloud metrics** until the first read lands, within about 10 minutes.
 
-With **Metrics and resources** off on every connection, the page leaves the sidebar and the overview. Its address still opens it: for a time range with data it shows the service tabs with what Maple collected before, under the notice **Google Cloud metrics are switched off**, and otherwise it reads **Turn on metrics for Google Cloud**. The **Resources** tab is back once a connection collects again.
+With **Key metrics** off on every connection, the page leaves the sidebar and the overview. Its address still opens it: for a time range with data it shows the service tabs with what Maple collected before, under the notice **Google Cloud metrics are switched off**, and otherwise it reads **Turn on metrics for Google Cloud**. The **Resources** tab is back once a connection collects again.
 
 ## Google Cloud costs
 
@@ -474,7 +520,7 @@ Google bills Pub/Sub and Cloud Monitoring usage to your account, separately from
 
 Google bills Pub/Sub for the log entries that pass through the topic and the subscription. A narrower `LOG_FILTER` lowers it. See [Pub/Sub pricing](https://cloud.google.com/pubsub/pricing).
 
-Google bills Cloud Monitoring API reads to the host project. Each connection runs 46 `timeSeries.list` queries every 5 minutes, and the cost grows with the number of time series in the project, folder or organization. See [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
+Google bills Cloud Monitoring API reads to the host project. Each connection with **Key metrics** on runs 46 `timeSeries.list` queries every 5 minutes, and the cost grows with the number of time series in the project, folder or organization. See [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
 
 Cloud Asset Inventory searches are free of charge. See [Cloud Asset Inventory pricing](https://cloud.google.com/asset-inventory/pricing).
 
@@ -502,7 +548,7 @@ A step that fails stops the script. It prints what went wrong, Google's answer, 
 | "Can't open project acme-prod as _account_."                                                 | The ID is wrong, or the account has no access to the project. Check the ID with `gcloud projects list`. It is the project ID, not the name or number. If it is wrong, remove the connection and connect the right ID.                                                                                       |
 | "_account_ has none of the permissions this script needs on project acme-prod."              | Check the ID in Maple first. If it is wrong, remove the connection and connect the right ID. If it is right, the account has no rights there: ask for the roles under [Prerequisites](#prerequisites), or have an administrator run the script.                                                             |
 | "_account_ is missing permissions on project acme-prod:" and a list                          | The account lacks a role. The line names the permissions and the role to ask for. If the only one listed is the permission to enable services, an API the script needs is off: ask for Service Usage Admin on the host project, or have an administrator switch the named APIs on. Nothing was created yet. |
-| "Project acme-prod has no billing account."                                                  | Link a billing account to the host project, then paste the script again.                                                                                                                                                                                                                                    |
+| "Billing is off in project acme-prod"                                                        | A note, not a failure: the script sets everything up. Live metric queries and key metrics stay unavailable until you link a billing account to the host project.                                                                                                                                            |
 | "gcloud _version_ is too old for this script."                                               | Run the script in Cloud Shell, or update gcloud (`gcloud components update`, or the package manager that installed it). Versions before 470 can't update a folder or organization sink.                                                                                                                     |
 | "_account_ can't see folder 123456789012." (or organization)                                 | The ID is wrong, or the account has no rights there. Check it with `gcloud resource-manager folders list --organization=ORGANIZATION_ID` or `gcloud organizations list`.                                                                                                                                    |
 | "Couldn't look for _a resource_: its API is off in project acme-prod."                       | Cleanup only. The API was switched off after a setup run, so the resource may still be there. Switch the API on and paste the cleanup script again.                                                                                                                                                         |
@@ -526,7 +572,7 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 | A workload's logs appear twice                                                             | The sink forwards its application output and the workload also sends its logs over OpenTelemetry. In **Configure**, choose **Replace filter**, leave its runtime unticked under [Log filter](#log-filter) and run the script again.  |
 | A workload's stdout and stderr are missing                                                 | Application output is not forwarded by default. Send it over OpenTelemetry, or tick its runtime under [Log filter](#log-filter) in **Configure** and run the script again.                                                           |
 
-### Metrics and resources
+### Key metrics
 
 **Can't be read** and **Incomplete** come with one of the messages below. The first means no read has succeeded in the last 10 minutes. The second means the last read is under 10 minutes old and something is missing. The messages about the resource list show under **Receiving, resource list incomplete**. Where a project's message says "the project", a folder's or organization's says "the host project".
 
@@ -550,29 +596,29 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 
 A message that ends in parentheses, such as "(Cloud Monitoring returned 403, BILLING_DISABLED)", quotes Google's answer. Include it when you write to support.
 
-On a self-hosted Maple, the **Metrics and resources** checkbox reads **Not available on this Maple deployment** until `MAPLE_GCP_SERVICE_ACCOUNT_EMAIL` names a Google service account the deployment owns. Reading metrics also needs `MAPLE_GCP_SERVICE_ACCOUNT_KEY`, that account's key file, base64-encoded.
+On a self-hosted Maple, the **Key metrics** checkbox reads **Not available on this Maple deployment** until `MAPLE_GCP_SERVICE_ACCOUNT_EMAIL` names a Google service account the deployment owns. Until then the setup script creates no read-only service account, there are no live metric queries, and **Log forwarding** stays on. Reading metrics also needs `MAPLE_GCP_SERVICE_ACCOUNT_KEY`, that account's key file, base64-encoded.
 
 ### Domain restricted sharing
 
-An organization policy can restrict which identities may hold IAM roles in your organization (`constraints/iam.allowedPolicyMemberDomains`, or a custom constraint on member domains). Maple's service account lives outside your organization, so such a policy can reject a grant the script makes, most often the one that lets Maple read as your read-only service account. The script then stops with "An organization policy (domain restricted sharing) blocks granting Maple's service account".
+An organization policy can restrict which identities may hold IAM roles in your organization (`constraints/iam.allowedPolicyMemberDomains`, or a custom constraint on member domains). Maple's service account lives outside your organization, so such a policy can reject a grant the script makes for every connection: the one that lets Maple read as your read-only service account. Google turns this policy on by default for newer organizations. The script then prints "An organization policy (domain restricted sharing) blocks granting Maple's service account". With log forwarding on, log forwarding is set up anyway and the row says **Live queries not set up**; without it, the run stops.
 
 Don't turn the policy off or allow all principals for this. An Organization Policy Administrator can allow Maple's one service account on the host project, and nothing else:
 
 1. Use the managed constraint **Restrict allowed policy members in IAM allow policies** (`iam.managed.allowedPolicyMembers`). The older `iam.allowedPolicyMemberDomains` can't make an exception for a single principal.
 2. On the host project, set a policy for it whose allowed principals are your organization's principal set plus Maple's service account (`serviceAccount:` followed by the address the script's error names). Listing your organization keeps everyone in it allowed on the project. Google's steps: [Restrict identities with domain-restricted sharing](https://cloud.google.com/resource-manager/docs/organization-policy/restricting-domains).
-3. Paste the setup script again. It continues where it stopped.
+3. Paste the setup script again. It sets up read-only access, and live metric queries work within a few minutes.
 
 Google checks the policy when a grant is made, so leave the exception in place: a later re-run grants again.
 
 ## Disconnect
 
 1. On **Integrations → Google Cloud**, open the **⋮** menu (**More actions**) on the connection's row and choose **Disconnect**.
-2. Click **Copy cleanup script** and run it in Cloud Shell. It deletes the log sink, topic, subscription and read-only service account, and ends with "Done. Everything the setup script created is gone."
+2. Click **Copy cleanup script** and run it in Cloud Shell. It deletes the log sink, topic, subscription and both service accounts, and ends with "Done. Everything the setup script created is gone." Set up with Terraform: remove the module and apply instead.
 3. Wait for the check mark in the dialog, then click **Disconnect**. Maple stops reading the connection's metrics, and stops accepting its logs within about a minute. Data already in Maple is kept.
 
 The cleanup takes one to two minutes when the connection forwards logs: after it deletes the sink it waits a minute for Google to stop routing to the topic, so your project logs no sink error. Turning **Log forwarding** off in **Configure** and running the setup script takes as long, for the same reason.
 
-**Disconnect anyway** disconnects without the cleanup. Google Cloud then keeps publishing logs to Pub/Sub, billed by Google, until the cleanup script runs. Maple keeps a panel with **Copy cleanup script** on the page until you click **Dismiss** and confirm.
+**Disconnect anyway** disconnects without the cleanup, and is the button to use after removing the module with Terraform, which reports nothing to Maple. Google Cloud then keeps publishing logs to Pub/Sub, billed by Google, until the cleanup script runs. Maple keeps a panel with **Copy cleanup script** on the page until you click **Dismiss** and confirm.
 
 The cleanup script leaves the APIs it switched on enabled, and the Logs Writer role of Google's logging service account on the host project, which other sinks share.
 

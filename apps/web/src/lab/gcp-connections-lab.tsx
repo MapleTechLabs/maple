@@ -96,6 +96,7 @@ export function GcpConnectionsLab() {
 										connector={scenario.connector}
 										isAdmin
 										nowMs={NOW}
+										metricsAvailable
 										onConfigure={() => undefined}
 										onRemoved={() => undefined}
 									/>

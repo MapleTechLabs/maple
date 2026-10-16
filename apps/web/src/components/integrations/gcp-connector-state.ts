@@ -54,6 +54,27 @@ const setupKind = (
 ): "setup-pending" | "setup-running" =>
 	applied === null && ageMs(reportedAt, nowMs) < RUNNING_MS ? "setup-running" : "setup-pending"
 
+/**
+ * The read-only service account that live queries and key metrics read as. A run that reported
+ * without it (`missing`) set log forwarding up and could not set the account up: the run says why,
+ * and log forwarding does not wait on it. Null when it is in place.
+ */
+const readerState = (
+	connector: Pick<
+		V2GcpConnector,
+		"applied_metrics_enabled" | "last_metrics_received_at" | "setup_reported_at"
+	>,
+	nowMs: number,
+): "setup-pending" | "setup-running" | "missing" | null => {
+	const applied = connector.applied_metrics_enabled
+	if (!needsSetup(applied, ageMs(connector.last_metrics_received_at, nowMs))) return null
+	return applied === null &&
+		connector.setup_reported_at !== null &&
+		ageMs(connector.setup_reported_at, nowMs) >= RUNNING_MS
+		? "missing"
+		: setupKind(applied, connector.setup_reported_at, nowMs)
+}
+
 type GcpLogState =
 	/** `stillSetUp`: the sink still forwards, because the script has not run since the switch. */
 	| { readonly kind: "off"; readonly stillSetUp: boolean }
@@ -89,9 +110,9 @@ export function gcpLogState(connector: LogFields, nowMs: number): GcpLogState {
 	return { kind: age > IDLE_LOG_MS ? "idle" : "receiving", lastLogReceivedAt }
 }
 
+/** Key metrics: the 5-minute reads of the curated metrics, switched in Maple alone. */
 type GcpMetricsState =
-	/** `stillSetUp`: the read-only service account still exists in Google Cloud. */
-	| { readonly kind: "off"; readonly stillSetUp: boolean }
+	| { readonly kind: "off" }
 	| { readonly kind: "setup-pending" | "setup-running" }
 	/** The script reported, and the first read after it has not landed. `overdue` after 15 minutes. */
 	| { readonly kind: "waiting"; readonly reportedAt: string | null; readonly overdue: boolean }
@@ -123,16 +144,15 @@ type MetricsFields = Pick<
 >
 
 export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMetricsState {
-	const applied = connector.applied_metrics_enabled === true
-	if (!connector.metrics_enabled) return { kind: "off", stillSetUp: applied }
+	if (!connector.metrics_enabled) return { kind: "off" }
 	const lastMetricsReceivedAt = connector.last_metrics_received_at
 	const error = connector.last_metrics_error
 	const age = ageMs(lastMetricsReceivedAt, nowMs)
 	// Before the script has run the poller says it can't sign in. That is the expected start.
+	// After a run without the account, the poller's error says what to do.
 	const reportedAt = connector.setup_reported_at
-	if (needsSetup(connector.applied_metrics_enabled, age)) {
-		return { kind: setupKind(connector.applied_metrics_enabled, reportedAt, nowMs) }
-	}
+	const reader = readerState(connector, nowMs)
+	if (reader === "setup-pending" || reader === "setup-running") return { kind: reader }
 	const reportedAge = ageMs(reportedAt, nowMs)
 	const waiting = { kind: "waiting", reportedAt, overdue: reportedAge > OVERDUE_READ_MS } as const
 	// A run just reported: what the poller said before its grant works counts for nothing yet.
@@ -178,14 +198,31 @@ export const GCP_METRICS_STATUS = {
 type ConnectorFields = LogFields & MetricsFields
 
 /**
- * What still waits on a re-run of the setup script, for a connection whose configuration disagrees
- * with what a run reported: a sentence per capability, saying what goes on until then. A capability
- * no run has reported on is not in the list: that is setup, and while a first run is under way its
- * sections report one after the other.
+ * The read-only service account, which the script sets up for every connection while this
+ * deployment has a Google identity (`metricsAvailable`), whatever the metrics switch says.
  */
-export const gcpPendingChanges = (connector: ConnectorFields, nowMs: number): ReadonlyArray<string> => {
+const gcpAccessState = (connector: ConnectorFields, nowMs: number, metricsAvailable: boolean) =>
+	metricsAvailable ? readerState(connector, nowMs) : null
+
+/** A run set log forwarding up and could not set the read-only account up: no live queries. */
+export const gcpLiveQueriesMissing = (
+	connector: ConnectorFields,
+	nowMs: number,
+	metricsAvailable: boolean,
+): boolean => gcpAccessState(connector, nowMs, metricsAvailable) === "missing"
+
+/**
+ * What still waits on a re-run of the setup script, for a connection whose configuration disagrees
+ * with what a run reported: a sentence each, saying what goes on until then. What no run has
+ * reported on is not in the list: that is setup, and while a first run is under way its sections
+ * report one after the other.
+ */
+export const gcpPendingChanges = (
+	connector: ConnectorFields,
+	nowMs: number,
+	metricsAvailable: boolean,
+): ReadonlyArray<string> => {
 	const log = gcpLogState(connector, nowMs)
-	const metrics = gcpMetricsState(connector, nowMs)
 	return [
 		log.kind === "setup-pending" && connector.applied_logs_enabled === false
 			? "Log forwarding starts once the script has created the log sink."
@@ -193,11 +230,9 @@ export const gcpPendingChanges = (connector: ConnectorFields, nowMs: number): Re
 		log.kind === "off" && log.stillSetUp
 			? "Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink."
 			: null,
-		metrics.kind === "setup-pending" && connector.applied_metrics_enabled === false
-			? "Metrics and resources start once the script has created the read-only service account."
-			: null,
-		metrics.kind === "off" && metrics.stillSetUp
-			? "The read-only service account stays in Google Cloud until the script has removed it."
+		gcpAccessState(connector, nowMs, metricsAvailable) === "setup-pending" &&
+		connector.applied_metrics_enabled === false
+			? `Live metric queries${connector.metrics_enabled ? " and key metrics" : ""} start once the script has created the read-only service account.`
 			: null,
 	].filter((line) => line !== null)
 }
@@ -212,28 +247,37 @@ type GcpConnectionState = "attention" | "changes-pending" | "setup-pending" | "w
 export function gcpScriptNeeded(
 	connector: ConnectorFields,
 	nowMs: number,
+	metricsAvailable: boolean,
 ): "changes-pending" | "setup-pending" | null {
-	if (gcpPendingChanges(connector, nowMs).length > 0) return "changes-pending"
+	if (gcpPendingChanges(connector, nowMs, metricsAvailable).length > 0) return "changes-pending"
 	const pending =
 		gcpLogState(connector, nowMs).kind === "setup-pending" ||
-		gcpMetricsState(connector, nowMs).kind === "setup-pending"
+		gcpAccessState(connector, nowMs, metricsAvailable) === "setup-pending"
 	return pending ? "setup-pending" : null
 }
 
-/** A run reported on one capability and not yet on the other: the script is still working. */
-export const gcpSetupRunning = (connector: ConnectorFields, nowMs: number): boolean =>
+/** A run reported on one section and not yet on the other: the script is still working. */
+export const gcpSetupRunning = (
+	connector: ConnectorFields,
+	nowMs: number,
+	metricsAvailable: boolean,
+): boolean =>
 	gcpLogState(connector, nowMs).kind === "setup-running" ||
-	gcpMetricsState(connector, nowMs).kind === "setup-running"
+	gcpAccessState(connector, nowMs, metricsAvailable) === "setup-running"
 
-export function gcpConnectionState(connector: ConnectorFields, nowMs: number): GcpConnectionState {
+export function gcpConnectionState(
+	connector: ConnectorFields,
+	nowMs: number,
+	metricsAvailable: boolean,
+): GcpConnectionState {
 	const log = gcpLogState(connector, nowMs).kind
 	const metrics = gcpMetricsState(connector, nowMs).kind
 	if (log === "failing" || metrics === "failing" || metrics === "incomplete" || metrics === "stalled") {
 		return "attention"
 	}
 	return (
-		gcpScriptNeeded(connector, nowMs) ??
-		(log === "waiting" || metrics === "waiting" || gcpSetupRunning(connector, nowMs)
+		gcpScriptNeeded(connector, nowMs, metricsAvailable) ??
+		(log === "waiting" || metrics === "waiting" || gcpSetupRunning(connector, nowMs, metricsAvailable)
 			? "waiting"
 			: "healthy")
 	)
@@ -296,8 +340,11 @@ export type GcpFlags = Pick<V2GcpConnector, "logs_enabled" | "metrics_enabled">
 
 export type GcpCapability = "logs" | "metrics"
 
-/** Why a capability cannot be changed: it is the last one on, or the deployment cannot read metrics. */
-export type GcpCollectLock = "last-on" | "metrics-unavailable"
+/**
+ * Why a capability cannot be changed, on a deployment that cannot read Google Cloud metrics: a
+ * connection there forwards logs, and collects no key metrics.
+ */
+export type GcpCollectLock = "logs-required" | "metrics-unavailable"
 
 /** The API refuses both of these, so the configuration disables the choice and says why. */
 export function gcpCollectLock(
@@ -305,16 +352,16 @@ export function gcpCollectLock(
 	capability: GcpCapability,
 	metricsAvailable: boolean,
 ): GcpCollectLock | null {
-	const on = capability === "logs" ? flags.logs_enabled : flags.metrics_enabled
-	const otherOn = capability === "logs" ? flags.metrics_enabled : flags.logs_enabled
-	if (on) return otherOn ? null : "last-on"
-	return capability === "metrics" && !metricsAvailable ? "metrics-unavailable" : null
+	if (metricsAvailable) return null
+	if (capability === "logs") return flags.logs_enabled ? "logs-required" : null
+	return flags.metrics_enabled ? null : "metrics-unavailable"
 }
 
 /**
- * What saving a choice does, and when. Turning a capability off acts in Maple at once and in
- * Google Cloud when the script runs; turning it on does nothing until the script has run, unless
- * what it needs is still there from before.
+ * What saving a choice does, and when. Turning a capability off acts in Maple at once; a log sink
+ * stays in Google Cloud until the script runs, while the read-only service account behind key
+ * metrics stays for good. Turning one on does nothing until the script has run, unless what it
+ * needs is in place.
  */
 export type GcpDraftEffect = "starts-after-script" | "resumes-now" | "stops-now" | "removed-by-script"
 
@@ -330,8 +377,15 @@ export function gcpDraftEffect(
 	// Data that arrived stands in for a report that never reached Maple.
 	const setUp = applied === true || (applied === null && lastAt !== null)
 	if (draft) return setUp ? (wanted ? null : "resumes-now") : "starts-after-script"
-	return setUp ? (wanted ? "stops-now" : "removed-by-script") : null
+	if (!setUp) return null
+	return wanted ? "stops-now" : logs ? "removed-by-script" : null
 }
+
+/** Whether the script has something to do about a saved choice: of the two, only a sink is its to remove. */
+export const gcpEffectNeedsScript = (capability: GcpCapability, effect: GcpDraftEffect | null): boolean =>
+	effect === "starts-after-script" ||
+	effect === "removed-by-script" ||
+	(effect === "stops-now" && capability === "logs")
 
 /** One line of the apply step's recap: what the script does about a capability. */
 export const gcpApplyLine = (wanted: boolean, applied: boolean | null): string =>
@@ -370,14 +424,19 @@ export const gcpScopeLabel = (connector: Pick<V2GcpConnector, "scope_type" | "sc
 
 /**
  * The roles the person running the script needs on a folder or organization, next to Owner on
- * the host project. A project needs Owner alone. Mirrors the script's own permission check.
+ * the host project: the sink's with log forwarding on, and the read-only grants' while the
+ * deployment can read metrics. A project needs Owner alone. Mirrors the script's permission check.
  */
-export const gcpScopeRoles = (scopeType: GcpScopeType, flags: GcpFlags): ReadonlyArray<string> =>
+export const gcpScopeRoles = (
+	scopeType: GcpScopeType,
+	logsEnabled: boolean,
+	metricsAvailable: boolean,
+): ReadonlyArray<string> =>
 	scopeType === "project"
 		? []
 		: [
-				flags.logs_enabled ? "Logs Configuration Writer" : null,
-				flags.metrics_enabled
+				logsEnabled ? "Logs Configuration Writer" : null,
+				metricsAvailable
 					? scopeType === "folder"
 						? "Folder IAM Admin"
 						: "Organization Administrator"
@@ -413,12 +472,8 @@ export interface GcpConnectorDraft {
 
 const decodeCreateRequest = Schema.decodeUnknownOption(V2GcpCreateConnectorRequest)
 
-/**
- * The create request for a draft, decoded with the API's own schema; none while a field is wrong.
- * The schema allows both opt-ins off and the API then refuses, so that case is none here too.
- */
+/** The create request for a draft, decoded with the API's own schema; none while a field is wrong. */
 export const gcpCreateRequest = (draft: GcpConnectorDraft): Option.Option<V2GcpCreateConnectorRequest> => {
-	if (!draft.logsEnabled && !draft.metricsEnabled) return Option.none()
 	const optIns = { logs_enabled: draft.logsEnabled, metrics_enabled: draft.metricsEnabled }
 	return decodeCreateRequest(
 		draft.scopeType === "project"

@@ -578,7 +578,9 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			const connectors = status.connectors
 			if (connectors.length === 0) return SET_UP
 			const now = Date.now()
-			const states = connectors.map((connector) => gcpConnectionState(connector, now))
+			const states = connectors.map((connector) =>
+				gcpConnectionState(connector, now, status.metrics_available),
+			)
 			const count = (state: (typeof states)[number]) => states.filter((entry) => entry === state).length
 			const worst = gcpWorstState(states)
 			return {
@@ -590,14 +592,14 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 						? gcpScopeLabel(connectors[0])
 						: countLabel(connectors.length, "connection"),
 				// What the connections collect: true in every state, unlike a count of healthy ones.
-				stat: [
-					connectors.some((connector) => connector.logs_enabled) ? "Logs" : null,
-					connectors.some((connector) => connector.metrics_enabled)
-						? "Metrics and resources"
-						: null,
-				]
-					.filter((part) => part !== null)
-					.join(" · "),
+				// Connections that collect nothing still serve live metric queries.
+				stat:
+					[
+						connectors.some((connector) => connector.logs_enabled) ? "Logs" : null,
+						connectors.some((connector) => connector.metrics_enabled) ? "Key metrics" : null,
+					]
+						.filter((part) => part !== null)
+						.join(" · ") || "Live metric queries",
 				// Not next to "Waiting for data": the two would contradict each other.
 				lastSyncLabel:
 					worst === "waiting"

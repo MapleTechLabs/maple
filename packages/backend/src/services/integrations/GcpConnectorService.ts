@@ -27,6 +27,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
+import { renderGcpTerraform } from "./gcp/terraform"
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId
@@ -36,7 +37,7 @@ export interface GcpConnector {
 	/** The host project, where Maple's own resources live. Equals `scopeId` for a project scope. */
 	readonly projectId: GcpProjectId
 	readonly logsEnabled: boolean
-	/** Covers metrics and resource collection. */
+	/** The 5-minute key-metrics poller and the hourly resource sync. Live queries don't depend on it. */
 	readonly metricsEnabled: boolean
 	readonly createdAt: number
 	/** Last log push the ingest gateway accepted from this connector. Null until the first one. */
@@ -44,6 +45,7 @@ export interface GcpConnector {
 	readonly lastLogError: string | null
 	/** What the latest setup script run reported it set up in Google Cloud. Null until one reports. */
 	readonly appliedLogsEnabled: boolean | null
+	/** Whether the read-only service account that live queries and the poller sign in as is in place. */
 	readonly appliedMetricsEnabled: boolean | null
 	readonly setupReportedAt: number | null
 	/** Last poll that read the scope's metrics. Null until the first one. */
@@ -82,7 +84,7 @@ export interface GcpResourceInventory {
 export interface GcpConnectorServiceApi {
 	readonly status: (orgId: OrgId) => Effect.Effect<
 		{
-			/** False when this deployment has no Google identity to read metrics with. */
+			/** False when this deployment has no Google identity: no live queries, no poller. */
 			readonly metricsAvailable: boolean
 			readonly connectors: ReadonlyArray<GcpConnector>
 		},
@@ -96,7 +98,10 @@ export interface GcpConnectorServiceApi {
 		GcpConnector,
 		GcpScopeAlreadyConnectedError | GcpCapabilityError | IntegrationsPersistenceError
 	>
-	/** Omitted flags are unchanged. Google Cloud only follows once the setup script is re-run. */
+	/**
+	 * Omitted flags are unchanged. The metrics switch acts in Maple at once; Google Cloud follows a
+	 * log forwarding change once the setup script is re-run.
+	 */
 	readonly update: (
 		orgId: OrgId,
 		connectorId: GcpConnectorId,
@@ -110,7 +115,7 @@ export interface GcpConnectorServiceApi {
 		connectorId: GcpConnectorId,
 		options: { readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null },
 	) => Effect.Effect<
-		{ readonly setupScript: string; readonly cleanupScript: string },
+		{ readonly setupScript: string; readonly cleanupScript: string; readonly terraform: string },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
 	/** What the latest inventory syncs of the org's connectors found. */
@@ -177,22 +182,24 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			const mapleUrl = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/integrations?integration=gcp`
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
 
+			// Every connection offers live metric queries, with both flags off too. Without a Google
+			// identity there are none, and no poller: a connection there forwards logs.
 			const capabilityError = (
-				flags: { readonly logsEnabled: boolean; readonly metricsEnabled: boolean },
+				logsEnabled: boolean,
 				turningMetricsOn: boolean,
 			): GcpCapabilityError | undefined => {
-				if (!flags.logsEnabled && !flags.metricsEnabled) {
-					return new IntegrationsValidationError({
-						message:
-							"At least one of logs_enabled and metrics_enabled must be on. Delete the connector to disconnect.",
-					})
-				}
-				if (turningMetricsOn && mapleServiceAccountEmail === undefined) {
+				if (mapleServiceAccountEmail !== undefined) return undefined
+				if (turningMetricsOn) {
 					return new GcpMetricsUnavailableError({
-						message: "Metrics and resource collection is not available on this Maple deployment.",
+						message: "Key-metrics collection is not available on this Maple deployment.",
 					})
 				}
-				return undefined
+				return logsEnabled
+					? undefined
+					: new IntegrationsValidationError({
+							message:
+								"This Maple deployment can't read Google Cloud metrics, so logs_enabled must stay on. Delete the connector to disconnect.",
+						})
 			}
 
 			const selectRow = (orgId: OrgId, connectorId: GcpConnectorId) =>
@@ -355,7 +362,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					"maple.gcp.scope_type": input.scopeType,
 					"maple.gcp.scope_id": input.scopeId,
 				})
-				const invalid = capabilityError(input, input.metricsEnabled)
+				const invalid = capabilityError(input.logsEnabled, input.metricsEnabled)
 				if (invalid !== undefined) return yield* Effect.fail(invalid)
 				const id = GcpConnectorId.make(randomUUID())
 				const secret = `maple_gcp_${randomBytes(24).toString("base64url")}`
@@ -408,7 +415,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				const outcome = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							// The row lock keeps one capability on when two updates race.
+							// The row lock keeps two racing updates from passing the check on stale flags.
 							const [current] = yield* db.run(
 								PG.from(GcpConnectors)
 									.select()
@@ -421,9 +428,9 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 								logsEnabled: patch.logsEnabled ?? current.logsEnabled,
 								metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
 							}
-							const invalid = capabilityError(flags, patch.metricsEnabled === true)
-							// Switched back on, a capability has nothing set up in Google Cloud until the
-							// script is re-run: what it last reported no longer describes the connection.
+							const invalid = capabilityError(flags.logsEnabled, patch.metricsEnabled === true)
+							// Switched back on, a capability's last data and error no longer describe it: a
+							// log sink waits on the script, the poller on its next read.
 							const changes = {
 								...flags,
 								...(flags.logsEnabled && !current.logsEnabled
@@ -467,23 +474,27 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						}),
 					secretAad(row.id),
 				)
+				// Pub/Sub signs each push as the connection's push account, so the subscription carries
+				// no secret. Only the scripts' own reports, which no Google identity signs, use it.
+				const pushEndpoint = `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}`
 				const target = {
 					connectorId,
 					scopeType: row.scopeType,
 					scopeId: row.scopeId,
 					projectId: row.projectId,
 					mapleUrl,
-					pushEndpoint: `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}?secret=${secret}`,
+					reportEndpoint: `${pushEndpoint}?secret=${secret}`,
+				}
+				const configuration = {
+					mapleServiceAccountEmail,
+					logsEnabled: row.logsEnabled,
+					applicationLogs: options.applicationLogs,
+					pushEndpoint,
 				}
 				return {
-					setupScript: yield* renderGcpSetupScript({
-						...target,
-						mapleServiceAccountEmail,
-						logsEnabled: row.logsEnabled,
-						metricsEnabled: row.metricsEnabled,
-						applicationLogs: options.applicationLogs,
-					}),
+					setupScript: yield* renderGcpSetupScript({ ...target, ...configuration }),
 					cleanupScript: yield* renderGcpCleanupScript(target),
+					terraform: renderGcpTerraform({ ...target, ...configuration }),
 				}
 			})
 
@@ -509,7 +520,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						scopeId: row.scopeId,
 						projectId: row.projectId,
 						mapleUrl,
-						pushEndpoint: undefined,
+						reportEndpoint: undefined,
 					}),
 				}
 			})
