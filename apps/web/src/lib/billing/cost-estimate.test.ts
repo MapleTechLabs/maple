@@ -31,7 +31,7 @@ function buildCustomer(
 }
 
 // Mirrors apps/api/autumn.config.ts: $39/mo base, 100 GB included per signal at
-// $0.30/GB overage, 5000 sessions at $0.002/session, 1M events at $0.05/1,000.
+// $0.30/GB overage, 5000 sessions at $0.002/session, 1M events at $0.005/1,000.
 const startupPlan = {
 	id: "startup",
 	name: "Startup",
@@ -42,7 +42,7 @@ const startupPlan = {
 		{ featureId: "traces", included: 100, price: { amount: 0.3, billingUnits: 1 } },
 		{ featureId: "metrics", included: 100, price: { amount: 0.3, billingUnits: 1 } },
 		{ featureId: "browser_sessions", included: 5000, price: { amount: 0.002, billingUnits: 1 } },
-		{ featureId: "product_events", included: 1_000_000, price: { amount: 0.05, billingUnits: 1000 } },
+		{ featureId: "product_events", included: 1_000_000, price: { amount: 0.005, billingUnits: 1000 } },
 	],
 } as Plan
 
@@ -107,19 +107,19 @@ describe("estimateCycleCost", () => {
 		expect(metrics!.detail).toContain("279.75 GB over included")
 	})
 
-	it("bills product events per 1,000-event block and says so in the detail", () => {
+	it("bills product events per 1,000-event block but quotes the rate per million", () => {
 		const estimate = estimateCycleCost({
 			customer: buildCustomer([buildSubscription()], { product_events: { granted: 1_000_000 } }),
 			plans: [startupPlan],
 			usage: usage({ product_events: 1_250_500 }),
 		})
 		const events = estimate!.lines.find((l) => l.key === "overage:product_events")
-		// 250,500 over → ceil(250.5) = 251 blocks × $0.05
+		// 250,500 over → ceil(250.5) = 251 blocks × $0.005
 		expect(events).toMatchObject({
 			label: "Product Events overage",
-			detail: "250,500 events over included × $0.05 / 1,000 events",
+			detail: "250,500 events over included × $5.00 / 1M events",
 		})
-		expect(events!.amount).toBeCloseTo(12.55)
+		expect(events!.amount).toBeCloseTo(1.255)
 	})
 
 	it("rounds overage up per billingUnits block", () => {

@@ -131,7 +131,7 @@ const ENGINE_NOTES: ReadonlyMap<string, string> = new Map([
 	],
 	[
 		"ReplacingMergeTree",
-		"ReplacingMergeTree: superseded versions of a row may still be present; read with `FINAL` or take `argMax(col, Version)` per key.",
+		"ReplacingMergeTree: superseded versions of a row may still be present; take `argMax(col, Version)` per key. `FINAL` is refused on the managed warehouse, which reads every table through a per-org subquery.",
 	],
 ])
 

@@ -112,6 +112,7 @@ export const makeSpanDetailRows = (): ReadonlyArray<Record<string, unknown>> => 
 		// the compiled query's schema now, so a partial one is a decode failure.
 		parentSpanId: "",
 		spanName: "POST /api/checkout",
+		rawSpanName: "POST",
 		serviceName: FIXTURES.service,
 		spanKind: "Server",
 		durationMs: 120,
@@ -168,6 +169,7 @@ export const makeAiSpanDetailRows = (
 		spanId,
 		parentSpanId: "",
 		spanName: "chat gpt-5",
+		rawSpanName: "chat gpt-5",
 		serviceName: FIXTURES.service,
 		spanKind: "Client",
 		durationMs: 1_200,

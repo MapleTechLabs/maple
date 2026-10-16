@@ -8,7 +8,7 @@ import { IdentityAvatar } from "@/components/errors/actor-chip"
 import { ErrorSignalRow } from "@/components/errors/error-signal-row"
 import { IssueOccurrencesTable } from "@/components/errors/issue-occurrences-table"
 import { useIssueMutations } from "@/components/errors/use-issue-mutations"
-import { RulesOverviewTable } from "@/components/alerts/overview/rules-overview-table"
+import { RulesTab } from "@/components/alerts/overview/rules-tab"
 import { VerdictCard } from "@/components/investigations/verdict-card"
 import { LogsTableView } from "@/components/logs/logs-table"
 import { ReleaseComparison } from "@/components/releases/release-detail-panels"
@@ -95,20 +95,27 @@ export function TablesSection({ mode }: { mode: WorstCaseMode }) {
 	const [nowMs] = useState(() => Date.now())
 	return (
 		<WcSection id="wc-tables" title="Tables: alert rules, release comparison">
-			<div className="rounded-md border">
-				<RulesOverviewTable
-					rules={rules}
-					groups={null}
-					grouped={false}
-					destinationsById={new Map()}
-					derivedByRuleId={derived}
-					statesByRule={states}
-					incidentsByRuleId={new Map()}
-					timelineRange={{ min: nowMs - 24 * 60 * 60 * 1000, max: nowMs }}
-					isAdmin
-					onToggle={() => undefined}
-				/>
-			</div>
+			<RulesTab
+				data={{
+					phase: "ready",
+					rules,
+					incidents: [],
+					openIncidents: [],
+					statesByRule: states,
+					incidentsByRule: new Map(),
+					derivedByRuleId: derived,
+					healthCounts: { firing: 0, attention: 0, healthy: 0, disabled: 0 },
+					timelineRange: { min: nowMs - 24 * 60 * 60 * 1000, max: nowMs },
+				}}
+				destinations={[]}
+				isAdmin
+				serviceName={undefined}
+				status={undefined}
+				onStatusChange={() => undefined}
+				isToggling={false}
+				toggleFailed={false}
+				onToggleRule={() => undefined}
+			/>
 			<Narrow width={420}>
 				<ReleaseComparison impact={releaseImpact(mode)} />
 			</Narrow>

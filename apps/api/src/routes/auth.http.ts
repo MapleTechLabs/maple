@@ -13,6 +13,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
+import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
 
 const bearerToken = (header: string | undefined) => {
 	if (!header) return undefined
@@ -24,6 +25,7 @@ export const HttpAuthPublicLive = HttpApiBuilder.group(MapleApi, "authPublic", (
 	Effect.gen(function* () {
 		const authService = yield* AuthService
 		const cliAuth = yield* CliDeviceAuthService
+		const previewSignIn = yield* PreviewSignInService
 		return handlers
 			.handle("login", ({ payload }) => authService.loginSelfHosted(payload.password))
 			.handle("cliDeviceStart", ({ payload }) =>
@@ -35,6 +37,8 @@ export const HttpAuthPublicLive = HttpApiBuilder.group(MapleApi, "authPublic", (
 				}),
 			)
 			.handle("cliDevicePoll", ({ payload }) => cliAuth.poll(payload.deviceCode))
+			.handle("previewSignInStatus", () => previewSignIn.status())
+			.handle("previewSignIn", ({ payload }) => previewSignIn.signIn(payload.key))
 	}),
 )
 

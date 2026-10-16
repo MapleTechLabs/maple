@@ -114,7 +114,8 @@ jobs:
                   AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
               run: bun run alchemy:deploy:pr
 
-            # Seeds demo telemetry as the dev test user, then fails on any 5xx from a read path.
+            # Provisions the preview reviewer, seeds demo telemetry into its org, then fails on any
+            # 5xx from a read path.
             - name: Seed and smoke-test the preview
               id: smoke
               if: ${{ env.TEARDOWN != 'true' && steps.deploy.outcome == 'success' }}
@@ -207,6 +208,8 @@ jobs:
                         failure) echo "Smoke test: failed (see the workflow run)" ;;
                         *) printf 'Smoke test: %s\n' "${SMOKE_OUTCOME:-not run}" ;;
                       esac
+                      echo
+                      echo 'Sign in with the **PR preview** form on the sign-in page and the preview access key (`PREVIEW_SIGNIN_KEY` in Infisical), or run `bun run preview:signin '"$PR_NUMBER"'` for a signed-in link.'
                       echo
                       printf 'Deployed from [`%s`](%s) · [View workflow run](%s)\n' "$short_sha" "$COMMIT_URL" "$RUN_URL"
                     else

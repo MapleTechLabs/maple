@@ -168,22 +168,55 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 	}
 }
 
-/**
- * Threshold unit conversion at the form↔domain boundary.
- *
- * The domain stores `error_rate` thresholds as a 0–1 ratio (matching the query
- * engine's `countIf(Error)/count()` and the evaluation comparison). The form
- * lets users enter a percent (e.g. `5` = 5%), so we divide by 100 on submit and
- * multiply by 100 on load. All other signals pass through unchanged.
- */
-export function formThresholdToDomain(signalType: AlertSignalType, value: string): number {
-	const n = Number(value)
-	return signalType === "error_rate" ? n / 100 : n
+/** What decides a threshold's unit: the signal, and for builder rules the aggregation. */
+export type ThresholdSubject = {
+	readonly signalType: AlertSignalType
+	readonly queryBuilderDraft?: { readonly dataSource: string; readonly aggregation: string }
 }
 
-export function domainThresholdToForm(signalType: AlertSignalType, value: number): string {
+const isPercentSignal = (subject: ThresholdSubject): boolean =>
+	subject.signalType === "error_rate" ||
+	(subject.signalType === "builder_query" &&
+		subject.queryBuilderDraft?.dataSource === "traces" &&
+		subject.queryBuilderDraft.aggregation === "error_rate")
+
+const BUILDER_LATENCY_AGGREGATIONS = new Set(["avg_duration", "p50_duration", "p95_duration", "p99_duration"])
+
+/**
+ * The signal a rule's values read as, for formatting. A builder query over
+ * `error_rate` or a duration percentile reads like the matching built-in, so
+ * the chart, the threshold and the input all speak one unit.
+ */
+export function displaySignalType(subject: ThresholdSubject): AlertSignalType {
+	if (subject.signalType !== "builder_query" || subject.queryBuilderDraft?.dataSource !== "traces") {
+		return subject.signalType
+	}
+	if (isPercentSignal(subject)) return "error_rate"
+	if (BUILDER_LATENCY_AGGREGATIONS.has(subject.queryBuilderDraft.aggregation)) return "p95_latency"
+	return "builder_query"
+}
+
+/** The suffix the threshold input shows: `%` for error rates, `ms` for latencies. */
+export function thresholdUnitLabel(subject: ThresholdSubject): string | null {
+	const display = displaySignalType(subject)
+	if (display === "error_rate") return "%"
+	if (display === "p95_latency" || display === "p99_latency") return "ms"
+	return null
+}
+
+/**
+ * Threshold unit conversion at the form↔domain boundary, the one place it
+ * happens. The domain stores error rates as a 0–1 ratio (built-in and builder
+ * `error_rate` alike); the form takes a percent, so `5` means 5% in every mode.
+ */
+export function formThresholdToDomain(subject: ThresholdSubject, value: string): number {
+	const n = Number(value)
+	return isPercentSignal(subject) ? n / 100 : n
+}
+
+export function domainThresholdToForm(subject: ThresholdSubject, value: number): string {
 	// toPrecision(12) drops float noise: 0.07 * 100 is 7.000000000000001.
-	return signalType === "error_rate" ? String(Number((value * 100).toPrecision(12))) : String(value)
+	return isPercentSignal(subject) ? String(Number((value * 100).toPrecision(12))) : String(value)
 }
 
 function parsePositiveNumber(value: string, fallback: number): number {
@@ -276,6 +309,7 @@ export function ruleFormIsGrouped(form: RuleFormState): boolean {
 
 export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 	const queryBuilderDraft = normalizeRuleQueryDraft(rule.queryBuilderDraft)
+	const unitSubject = { signalType: rule.signalType, queryBuilderDraft }
 	return {
 		name: rule.name,
 		notes: rule.notes ?? "",
@@ -288,9 +322,9 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 		groupBy: rule.groupBy ? [...rule.groupBy] : [],
 		signalType: rule.signalType,
 		comparator: rule.comparator,
-		threshold: domainThresholdToForm(rule.signalType, rule.threshold),
+		threshold: domainThresholdToForm(unitSubject, rule.threshold),
 		thresholdUpper:
-			rule.thresholdUpper == null ? "" : domainThresholdToForm(rule.signalType, rule.thresholdUpper),
+			rule.thresholdUpper == null ? "" : domainThresholdToForm(unitSubject, rule.thresholdUpper),
 		windowMinutes: String(rule.windowMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
 		alertOnNoData: rule.noDataBehavior === "alert",
@@ -368,10 +402,10 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 		group_by: queryOwnsScope ? null : form.groupBy.length > 0 ? form.groupBy : null,
 		signal_type: signalType,
 		comparator: form.comparator,
-		threshold: formThresholdToDomain(signalType, form.threshold),
+		threshold: formThresholdToDomain(form, form.threshold),
 		threshold_upper: isRangeComparator(form.comparator)
 			? Number.isFinite(Number(form.thresholdUpper))
-				? formThresholdToDomain(signalType, form.thresholdUpper)
+				? formThresholdToDomain(form, form.thresholdUpper)
 				: null
 			: null,
 		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
