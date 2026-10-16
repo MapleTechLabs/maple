@@ -6,7 +6,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { cn } from "@maple/ui/lib/utils"
 
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import {
 	billingCustomerAtom,
 	billingDailySpendAtom,
@@ -29,6 +29,7 @@ import { PlanOffer } from "./plan-offer"
 import { CostBreakdown, CostBreakdownSkeleton } from "./cost-breakdown"
 import { InvoicesSection } from "./invoices-section"
 import { BillingDetailsSection } from "./billing-details-section"
+import { ErrorState } from "@/components/common/error-state"
 
 /**
  * Billing, spend-first.
@@ -126,6 +127,7 @@ function SubscriptionStrip({
 
 export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 	const customerResult = useAtomValue(billingCustomerAtom)
+	const refreshCustomer = useAtomRefresh(billingCustomerAtom)
 	const plansResult = useAtomValue(billingPlansAtom)
 	const usageResult = useAtomValue(billingUsageAtom)
 	const dailySpendResult = useAtomValue(billingDailySpendAtom)
@@ -176,6 +178,36 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 		]),
 	)
 
+	const billingDetails = (
+		<SettingsSection title="Billing details" description="Printed on every invoice" framed={false}>
+			<BillingDetailsSection canEdit={isAdmin} />
+		</SettingsSection>
+	)
+	const invoices = (
+		<SettingsSection title="Invoices" framed={false}>
+			<InvoicesSection
+				onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
+			/>
+		</SettingsSection>
+	)
+
+	// Every spend view is derived from the customer, so a failed read would otherwise
+	// leave them all on skeletons forever. Details and invoices load on their own.
+	if (Result.isFailure(customerResult)) {
+		return (
+			<SettingsSections>
+				<ErrorState
+					variant="row"
+					error={customerResult.cause}
+					title="Couldn't load your billing account"
+					onRetry={refreshCustomer}
+				/>
+				{billingDetails}
+				{invoices}
+			</SettingsSections>
+		)
+	}
+
 	return (
 		<SettingsSections>
 			<SubscriptionStrip
@@ -218,9 +250,7 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 				)}
 			</SettingsSection>
 
-			<SettingsSection title="Billing details" description="Printed on every invoice" framed={false}>
-				<BillingDetailsSection canEdit={isAdmin} />
-			</SettingsSection>
+			{billingDetails}
 
 			{(isCostLoading || costEstimate !== null) && (
 				<SettingsSection title="Estimated costs" description={billingPeriodLabel} framed={false}>
@@ -232,11 +262,7 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 				</SettingsSection>
 			)}
 
-			<SettingsSection title="Invoices" framed={false}>
-				<InvoicesSection
-					onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
-				/>
-			</SettingsSection>
+			{invoices}
 
 			<SettingsSection
 				title="Plans"
