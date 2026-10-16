@@ -36,8 +36,8 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 	const connected = connection.status === "connected"
 
 	const [handleSendTest, sending] = useAsyncAction(() => {
-		if (!connection.apiKey) return Promise.resolve()
-		return sendTestEvent(connection.apiKey).then(
+		if (!connection.publicKey) return Promise.resolve()
+		return sendTestEvent(connection.publicKey).then(
 			() => {
 				toastManager.add({
 					title: "Test event sent. Watch for it to land in traces.",
@@ -95,7 +95,7 @@ function StatusBanner({ connection }: { connection: IngestConnection }) {
 					className="shrink-0 gap-2"
 					onClick={() => void handleSendTest()}
 					loading={sending}
-					disabled={!connection.apiKey}
+					disabled={!connection.publicKey}
 				>
 					<PaperPlaneIcon />
 					Send test event
@@ -189,9 +189,7 @@ function CredentialRow({
 						label={isVisible ? "Hide key" : "Reveal key"}
 						disabled={isDisabled}
 					>
-						<EyeIcon
-							className={isVisible ? "text-foreground" : "text-muted-foreground"}
-						/>
+						<EyeIcon className={isVisible ? "text-foreground" : "text-muted-foreground"} />
 					</IconButton>
 				)}
 				<IconButton variant="outline" onClick={onCopy} label={`Copy ${label}`} disabled={isDisabled}>
@@ -325,7 +323,7 @@ export function IngestionSection() {
 				>
 					<ConnectInstructions
 						framework={framework}
-						apiKey={connection.apiKey}
+						apiKey={connection.privateKey}
 						apiKeyStatus={connection.apiKeyStatus}
 						variant="flush"
 					/>

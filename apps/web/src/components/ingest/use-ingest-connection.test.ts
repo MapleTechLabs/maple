@@ -2,7 +2,9 @@ import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { sendTestEventEffect } from "./use-ingest-connection"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
+import { Cause } from "effect"
+import { readIngestKeys, sendTestEventEffect } from "./use-ingest-connection"
 
 interface RecordedRequest {
 	readonly url: string
@@ -69,4 +71,34 @@ describe("sendTestEventEffect", () => {
 			assert.strictEqual(error.status, 401)
 		}),
 	)
+})
+
+describe("readIngestKeys", () => {
+	const keys = {
+		object: "ingest_keys" as const,
+		public_key: "maple_pk_public",
+		private_key: "maple_sk_private",
+		public_rotated_at: "2026-10-01T00:00:00.000Z",
+		private_rotated_at: "2026-10-01T00:00:00.000Z",
+	}
+
+	it("hands the server snippets the private key and the browser test event the public one", () => {
+		assert.deepStrictEqual(readIngestKeys(AsyncResult.success(keys)), {
+			publicKey: "maple_pk_public",
+			privateKey: "maple_sk_private",
+			status: "ready",
+		})
+	})
+
+	it("exposes neither key when the admin-only read is denied", () => {
+		assert.deepStrictEqual(readIngestKeys(AsyncResult.failure(Cause.fail("forbidden"))), {
+			publicKey: "",
+			privateKey: "",
+			status: "failed",
+		})
+	})
+
+	it("reports loading before the read settles", () => {
+		assert.strictEqual(readIngestKeys(AsyncResult.initial(true)).status, "loading")
+	})
 })

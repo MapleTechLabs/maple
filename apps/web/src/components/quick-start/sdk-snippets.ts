@@ -9,6 +9,7 @@ export interface SdkSnippet {
 	instrument: string
 }
 
+// Every snippet configures a server-side sender, so `{{API_KEY}}` is the private ingest key.
 export const sdkSnippets: SdkSnippet[] = [
 	{
 		language: "nextjs",
