@@ -1,6 +1,8 @@
 import type { CustomIngestKeyId, IngestKeyAttributeMode, IngestKeySignal } from "@maple/domain/http"
 import { CustomIngestKeyPublicId, type V2CustomIngestKey } from "@maple/domain/http/v2"
-import { Option, Schema } from "effect"
+import { Schema } from "effect"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import { customIngestKeysListAtom } from "@/lib/services/atoms/ingestion-atoms"
 
 export const SIGNALS: ReadonlyArray<{ value: IngestKeySignal; label: string; hint: string }> = [
 	{ value: "traces", label: "Traces", hint: "/v1/traces" },
@@ -29,8 +31,7 @@ export const attributeCountLabel = (count: number) =>
 
 // The API decodes `ingk_` ids into raw UUIDs; URLs and the gateway's stamp use the public form.
 export const toPublicKeyId = Schema.encodeSync(CustomIngestKeyPublicId)
-const decodePublicKeyId = Schema.decodeUnknownOption(CustomIngestKeyPublicId)
-export const fromPublicKeyId = (value: string): Option.Option<CustomIngestKeyId> => decodePublicKeyId(value)
+export const fromPublicKeyId = Schema.decodeUnknownOption(CustomIngestKeyPublicId)
 
 /** The one-time secret from a create or roll, held in memory until the key page is left. */
 export interface RevealedSecret {
@@ -68,3 +69,18 @@ export const pausedLabel = (key: V2CustomIngestKey) =>
 				hour: "numeric",
 				minute: "2-digit",
 			})}`
+
+export type CustomIngestKeyLookup =
+	| { readonly _tag: "loading" }
+	| { readonly _tag: "failed" }
+	| { readonly _tag: "missing" }
+	| { readonly _tag: "found"; readonly key: V2CustomIngestKey }
+
+/** One key from the shared list, which every key page reads. */
+export function useCustomIngestKey(keyId: CustomIngestKeyId): CustomIngestKeyLookup {
+	const listResult = useAtomValue(customIngestKeysListAtom)
+	if (Result.isInitial(listResult)) return { _tag: "loading" }
+	if (!Result.isSuccess(listResult)) return { _tag: "failed" }
+	const key = listResult.value.data.find((candidate) => candidate.id === keyId)
+	return key === undefined ? { _tag: "missing" } : { _tag: "found", key }
+}

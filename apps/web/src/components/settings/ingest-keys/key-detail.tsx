@@ -1,9 +1,11 @@
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
+import { INGEST_KEY_ID_ATTRIBUTE } from "@maple/domain/http"
 import type { V2CustomIngestKey, V2CustomIngestKeyUsage } from "@maple/domain/http/v2"
 import { Link } from "@tanstack/react-router"
 import type * as React from "react"
 import { useState } from "react"
 
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
@@ -38,6 +40,7 @@ import {
 	type RevealedSecret,
 	signalsSummary,
 	toPublicKeyId,
+	useCustomIngestKey,
 } from "./shared"
 
 const HOUR_MS = 3_600_000
@@ -104,27 +107,17 @@ function Banner({
 	description,
 	action,
 }: {
-	tone: "ok" | "warn" | "muted"
+	tone: "ok" | "warn" | "default"
 	title: string
 	description?: string
 	action?: React.ReactNode
 }) {
 	return (
-		<div
-			role="status"
-			className={cn(
-				"flex items-center gap-3 rounded-md border px-4 py-3",
-				tone === "ok" && "border-severity-info/35 bg-severity-info/10",
-				tone === "warn" && "border-severity-warn/35 bg-severity-warn/10",
-				tone === "muted" && "bg-muted/40",
-			)}
-		>
-			<div className="min-w-0 flex-1 space-y-0.5">
-				<p className="text-sm">{title}</p>
-				{description && <p className="text-muted-foreground text-xs">{description}</p>}
-			</div>
-			{action}
-		</div>
+		<Alert variant={tone}>
+			<AlertTitle>{title}</AlertTitle>
+			{description && <AlertDescription className="text-xs">{description}</AlertDescription>}
+			{action && <AlertAction>{action}</AlertAction>}
+		</Alert>
 	)
 }
 
@@ -220,7 +213,7 @@ export function IngestKeyDetail({
 	onConfigure: () => void
 	onDeleted: () => void
 }) {
-	const listResult = useAtomValue(customIngestKeysListAtom)
+	const lookup = useCustomIngestKey(keyId)
 	const refreshKeys = useAtomRefresh(customIngestKeysListAtom)
 	const usageResult = useAtomValue(retainedQueryV2("ingestKeys", "usageCustom", { params: { id: keyId } }))
 
@@ -279,7 +272,7 @@ export function IngestKeyDetail({
 		return ok
 	}
 
-	if (Result.isInitial(listResult)) {
+	if (lookup._tag === "loading") {
 		return (
 			<div className="flex w-full max-w-4xl flex-col gap-3">
 				<Skeleton className="h-10 w-72" />
@@ -288,18 +281,24 @@ export function IngestKeyDetail({
 			</div>
 		)
 	}
-	const key = Result.builder(listResult)
-		.onSuccess((response) => response.data.find((candidate) => candidate.id === keyId) ?? null)
-		.orElse(() => null)
-	if (key === null) {
+	if (lookup._tag !== "found") {
 		return (
 			<Banner
-				tone="muted"
-				title="This ingest key no longer exists."
-				description="It may have been deleted by someone else."
+				tone="default"
+				title={
+					lookup._tag === "failed"
+						? "Couldn't load this ingest key."
+						: "This ingest key no longer exists."
+				}
+				description={
+					lookup._tag === "failed"
+						? "Try again in a moment."
+						: "It may have been deleted by someone else."
+				}
 			/>
 		)
 	}
+	const { key } = lookup
 
 	const now = Date.now()
 	const activity = keyActivity(key, now)
@@ -344,13 +343,13 @@ export function IngestKeyDetail({
 								to="/traces"
 								search={{
 									resourceAttributeFilters: [
-										{ key: "maple_ingest_key_id", value: publicId },
+										{ key: INGEST_KEY_ID_ATTRIBUTE, value: publicId },
 									],
 								}}
 							/>
 						}
 					>
-						View data
+						View traces
 					</Button>
 					{activity === "paused" ? (
 						<Button
@@ -446,7 +445,7 @@ export function IngestKeyDetail({
 			)}
 			{activity === "expired" && key.expires_at !== null && (
 				<Banner
-					tone="muted"
+					tone="default"
 					title={`Expired ${formatRelativeTime(key.expires_at, now)}. Senders are rejected with 401.`}
 					description="Configure a new expiry to accept it again."
 				/>

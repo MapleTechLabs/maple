@@ -1,5 +1,7 @@
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { CUSTOM_INGEST_KEY_LIMITS } from "@maple/domain/http"
 import type { V2CustomIngestKey } from "@maple/domain/http/v2"
+import type * as React from "react"
 import { useState } from "react"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -26,7 +28,20 @@ import {
 	toPublicKeyId,
 } from "./shared"
 
-const MAX_KEYS = 50
+const MAX_KEYS = CUSTOM_INGEST_KEY_LIMITS.maxKeysPerOrg
+
+// Rows open on click and on Enter or Space, so the table works from the keyboard.
+const rowActivation = (open: () => void) => ({
+	tabIndex: 0,
+	role: "link",
+	onClick: open,
+	onKeyDown: (event: React.KeyboardEvent) => {
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault()
+			open()
+		}
+	},
+})
 
 // Short enough for the key column; the key's page carries the long form.
 const SUBTITLE_LABELS = {
@@ -47,7 +62,7 @@ function DefaultKeyRow({
 	onOpen: () => void
 }) {
 	return (
-		<TableRow className="cursor-pointer" onClick={onOpen}>
+		<TableRow className="cursor-pointer" {...rowActivation(onOpen)} aria-label={`${label}, default key`}>
 			<TableCell>
 				<div className="flex min-w-0 items-center gap-3">
 					<StatusDot tone="ok" size="lg" />
@@ -161,6 +176,12 @@ export function IngestKeysTable() {
 								/>
 							</TableCell>
 						</TableRow>
+					) : needle.length > 0 && visible.length === 0 ? (
+						<TableRow>
+							<TableCell colSpan={6} className="text-muted-foreground py-6 text-center">
+								No keys match "{filter.trim()}"
+							</TableCell>
+						</TableRow>
 					) : (
 						visible.map((key) => {
 							const activity = keyActivity(key, now)
@@ -169,7 +190,8 @@ export function IngestKeysTable() {
 								<TableRow
 									key={key.id}
 									className="cursor-pointer"
-									onClick={() => nav.openKey(toPublicKeyId(key.id))}
+									aria-label={key.name}
+									{...rowActivation(() => nav.openKey(toPublicKeyId(key.id)))}
 								>
 									<TableCell>
 										<div className="flex min-w-0 items-center gap-3">

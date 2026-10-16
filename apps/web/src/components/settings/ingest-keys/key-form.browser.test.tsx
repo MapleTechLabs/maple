@@ -59,7 +59,7 @@ describe("IngestKeyForm", () => {
 	it("previews how each attribute lands, blocks reserved keys, and hands the one-time secret on", async () => {
 		createMutation.mockResolvedValue(Exit.succeed(created))
 		const onCreated = vi.fn()
-		render(<IngestKeyForm existing={null} onCreated={onCreated} onSaved={vi.fn()} onCancel={vi.fn()} />)
+		render(<IngestKeyForm mode={{ _tag: "create", onCreated }} onCancel={vi.fn()} />)
 
 		typeInto(screen.getByLabelText("Name"), "Mobile app")
 		const [, value] = [screen.getByLabelText("Attribute key"), screen.getByLabelText("Attribute value")]

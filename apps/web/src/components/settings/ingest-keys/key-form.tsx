@@ -1,5 +1,9 @@
 import { useAtomRefresh, useAtomSet } from "@/lib/effect-atom"
-import type { IngestKeyAttributeMode, IngestKeySignal } from "@maple/domain/http"
+import {
+	CUSTOM_INGEST_KEY_LIMITS,
+	type IngestKeyAttributeMode,
+	type IngestKeySignal,
+} from "@maple/domain/http"
 import type { V2CustomIngestKey } from "@maple/domain/http/v2"
 import type * as React from "react"
 import { useState } from "react"
@@ -25,7 +29,8 @@ import { customIngestKeysListAtom } from "@/lib/services/atoms/ingestion-atoms"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { MODE_LABELS, type RevealedSecret, SIGNALS } from "./shared"
 
-const MAX_ATTRIBUTES = 20
+const { maxResourceAttributes: MAX_ATTRIBUTES, maxRateLimitRps: MAX_RATE_LIMIT_RPS } =
+	CUSTOM_INGEST_KEY_LIMITS
 
 // An array, not an object: numeric-looking object keys would sort ahead of "never".
 const EXPIRY_CHOICES = [
@@ -114,18 +119,20 @@ function AttributePreview({ attributes }: { attributes: ReadonlyArray<AttributeD
 	)
 }
 
-/** Full-page form to create a key, or to configure `existing`. */
-export function IngestKeyForm({
-	existing,
-	onCreated,
-	onSaved,
-	onCancel,
-}: {
-	existing: V2CustomIngestKey | null
-	onCreated: (key: V2CustomIngestKey, revealed: RevealedSecret) => void
-	onSaved: (key: V2CustomIngestKey) => void
-	onCancel: () => void
-}) {
+export type IngestKeyFormMode =
+	| {
+			readonly _tag: "create"
+			readonly onCreated: (key: V2CustomIngestKey, revealed: RevealedSecret) => void
+	  }
+	| {
+			readonly _tag: "configure"
+			readonly existing: V2CustomIngestKey
+			readonly onSaved: (key: V2CustomIngestKey) => void
+	  }
+
+/** Full-page form to create a key, or to configure an existing one. */
+export function IngestKeyForm({ mode, onCancel }: { mode: IngestKeyFormMode; onCancel: () => void }) {
+	const existing = mode._tag === "configure" ? mode.existing : null
 	const refreshKeys = useAtomRefresh(customIngestKeysListAtom)
 	const createMutation = useAtomSet(MapleApiV2AtomClient.mutation("ingestKeys", "createCustom"), {
 		mode: "promiseExit",
@@ -154,7 +161,8 @@ export function IngestKeyForm({
 	const trimmedRate = rateLimitText.trim()
 	const rateLimit = trimmedRate.length === 0 ? null : Number(trimmedRate)
 	const rateLimitValid =
-		rateLimit === null || (Number.isInteger(rateLimit) && rateLimit >= 1 && rateLimit <= 100_000)
+		rateLimit === null ||
+		(Number.isInteger(rateLimit) && rateLimit >= 1 && rateLimit <= MAX_RATE_LIMIT_RPS)
 	const filled = attributes.filter((attribute) => attribute.key.trim().length > 0)
 	const attributeKeys = filled.map((attribute) => attribute.key.trim())
 	const reservedAttribute = attributeKeys.find((key) => {
@@ -197,9 +205,9 @@ export function IngestKeyForm({
 					? null
 					: new Date(Date.now() + Number(expiry) * 86_400_000).toISOString()
 
-		if (existing !== null) {
+		if (mode._tag === "configure") {
 			const result = await updateMutation({
-				params: { id: existing.id },
+				params: { id: mode.existing.id },
 				payload: expiresAt === undefined ? payload : { ...payload, expires_at: expiresAt },
 			})
 			if (
@@ -210,7 +218,7 @@ export function IngestKeyForm({
 			)
 				return
 			refreshKeys()
-			if (result._tag === "Success") onSaved(result.value)
+			if (result._tag === "Success") mode.onSaved(result.value)
 			return
 		}
 		const result = await createMutation({ payload: { ...payload, expires_at: expiresAt ?? null } })
@@ -218,7 +226,7 @@ export function IngestKeyForm({
 		refreshKeys()
 		if (result._tag === "Success") {
 			const { secret, ...key } = result.value
-			onCreated(key, { keyId: key.id, secret, rolled: false })
+			mode.onCreated(key, { keyId: key.id, secret, rolled: false })
 		}
 	})
 
@@ -339,7 +347,7 @@ export function IngestKeyForm({
 					<FieldDescription>
 						{rateLimitValid
 							? "Split across the ingest servers, so short bursts can run a little over."
-							: "Enter a whole number between 1 and 100000, or leave it empty."}
+							: `Enter a whole number between 1 and ${MAX_RATE_LIMIT_RPS}, or leave it empty.`}
 					</FieldDescription>
 				</Field>
 				<Field>

@@ -1,10 +1,12 @@
 import { useNavigate } from "@tanstack/react-router"
+import { Schema } from "effect"
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
 import { customIngestKeysListAtom } from "@/lib/services/atoms/ingestion-atoms"
 import { toPublicKeyId } from "./shared"
 
 export const ingestionViews = ["setup", "keys", "mappings"] as const
 export type IngestionView = (typeof ingestionViews)[number]
+export const isIngestionView = Schema.is(Schema.Literals(ingestionViews))
 
 /** `/settings?tab=ingestion&view=keys&key=<ingk_…|new>&keyView=configure` */
 export function useIngestionNavigation() {
@@ -13,7 +15,6 @@ export function useIngestionNavigation() {
 		navigate({ search: { tab: "ingestion", ...search } })
 	return {
 		openView: (view: IngestionView) => go({ view }),
-		openKeys: () => go({ view: "keys" }),
 		openNewKey: () => go({ view: "keys", key: "new" }),
 		openKey: (publicId: string) => go({ view: "keys", key: publicId }),
 		configureKey: (publicId: string) => go({ view: "keys", key: publicId, keyView: "configure" }),

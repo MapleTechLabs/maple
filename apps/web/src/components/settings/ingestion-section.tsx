@@ -27,13 +27,18 @@ import {
 } from "@/components/ingest/use-ingest-connection"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
 import { Option } from "effect"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { IngestKeyDetail } from "./ingest-keys/key-detail"
 import { IngestKeyForm } from "./ingest-keys/key-form"
 import { IngestKeysTable } from "./ingest-keys/keys-table"
-import { type IngestionView, useIngestionNavigation } from "./ingest-keys/navigation"
-import { fromPublicKeyId, type RevealedSecret, toPublicKeyId } from "./ingest-keys/shared"
-import { customIngestKeysListAtom } from "@/lib/services/atoms/ingestion-atoms"
+import {
+	type IngestionView,
+	ingestionViews,
+	isIngestionView,
+	useIngestionNavigation,
+} from "./ingest-keys/navigation"
+import { fromPublicKeyId, type RevealedSecret, toPublicKeyId, useCustomIngestKey } from "./ingest-keys/shared"
+import type { CustomIngestKeyId } from "@maple/domain/http"
 import { SettingsSection, SettingsSections } from "./settings-section"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
@@ -258,22 +263,15 @@ export function IngestionSection({
 
 	return (
 		<div className="flex w-full max-w-4xl flex-col gap-6">
-			<ToggleGroup
-				variant="outline"
-				size="sm"
-				aria-label="Ingestion"
-				value={[view]}
-				onValueChange={(values) => {
-					const next = values.find((value) => value !== view)
-					if (next === "setup" || next === "keys" || next === "mappings") nav.openView(next)
-				}}
-			>
-				{Object.entries(VIEW_LABELS).map(([id, label]) => (
-					<ToggleGroupItem key={id} value={id}>
-						{label}
-					</ToggleGroupItem>
-				))}
-			</ToggleGroup>
+			<Tabs value={view} onValueChange={(next) => isIngestionView(next) && nav.openView(next)}>
+				<TabsList aria-label="Ingestion">
+					{ingestionViews.map((id) => (
+						<TabsTrigger key={id} value={id}>
+							{VIEW_LABELS[id]}
+						</TabsTrigger>
+					))}
+				</TabsList>
+			</Tabs>
 			{view === "keys" ? (
 				<IngestKeysTable />
 			) : view === "mappings" ? (
@@ -300,18 +298,18 @@ function IngestKeyPage({
 	onRevealed: (revealed: RevealedSecret | null) => void
 }) {
 	const nav = useIngestionNavigation()
-	const listResult = useAtomValue(customIngestKeysListAtom)
 
 	if (keyParam === "new") {
 		return (
 			<IngestKeyForm
-				existing={null}
-				onCancel={nav.openKeys}
-				onSaved={() => nav.openKeys()}
-				onCreated={(key, secret) => {
-					onRevealed(secret)
-					nav.openKey(toPublicKeyId(key.id))
+				mode={{
+					_tag: "create",
+					onCreated: (key, secret) => {
+						onRevealed(secret)
+						nav.openKey(toPublicKeyId(key.id))
+					},
 				}}
+				onCancel={() => nav.openView("keys")}
 			/>
 		)
 	}
@@ -319,27 +317,7 @@ function IngestKeyPage({
 	if (Option.isNone(keyId)) {
 		return <p className="text-muted-foreground text-sm">That is not an ingest key id.</p>
 	}
-	if (configure) {
-		const existing = Result.builder(listResult)
-			.onSuccess((response) => response.data.find((key) => key.id === keyId.value) ?? null)
-			.orElse(() => null)
-		if (existing === null) {
-			return Result.isInitial(listResult) ? (
-				<Skeleton className="h-64 w-full max-w-4xl" />
-			) : (
-				<p className="text-muted-foreground text-sm">This ingest key no longer exists.</p>
-			)
-		}
-		return (
-			<IngestKeyForm
-				key={existing.id}
-				existing={existing}
-				onCancel={() => nav.openKey(keyParam)}
-				onSaved={() => nav.openKey(keyParam)}
-				onCreated={() => nav.openKey(keyParam)}
-			/>
-		)
-	}
+	if (configure) return <ConfigureKey keyParam={keyParam} keyId={keyId.value} />
 	return (
 		<IngestKeyDetail
 			keyId={keyId.value}
@@ -348,8 +326,30 @@ function IngestKeyPage({
 			onConfigure={() => nav.configureKey(keyParam)}
 			onDeleted={() => {
 				onRevealed(null)
-				nav.openKeys()
+				nav.openView("keys")
 			}}
+		/>
+	)
+}
+
+function ConfigureKey({ keyParam, keyId }: { keyParam: string; keyId: CustomIngestKeyId }) {
+	const nav = useIngestionNavigation()
+	const lookup = useCustomIngestKey(keyId)
+	if (lookup._tag === "loading") return <Skeleton className="h-64 w-full max-w-4xl" />
+	if (lookup._tag !== "found") {
+		return (
+			<p className="text-muted-foreground text-sm">
+				{lookup._tag === "failed"
+					? "Couldn't load this ingest key."
+					: "This ingest key no longer exists."}
+			</p>
+		)
+	}
+	return (
+		<IngestKeyForm
+			key={lookup.key.id}
+			mode={{ _tag: "configure", existing: lookup.key, onSaved: () => nav.openKey(keyParam) }}
+			onCancel={() => nav.openKey(keyParam)}
 		/>
 	)
 }
