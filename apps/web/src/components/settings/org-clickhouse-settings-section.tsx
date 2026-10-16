@@ -35,6 +35,7 @@ import { SettingsSection, SettingsSections } from "@/components/settings/setting
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { ErrorState } from "@/components/common/error-state"
+import { schemaApplyPlan } from "@/components/settings/schema-apply-plan"
 
 interface OrgClickHouseSettingsSectionProps {
 	isAdmin: boolean
@@ -48,6 +49,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 	const [chDatabase, setChDatabase] = useState("default")
 	const [isStarting, setIsStarting] = useState(false)
 	const [disableOpen, setDisableOpen] = useState(false)
+	const [applyConfirmOpen, setApplyConfirmOpen] = useState(false)
 	const { effectiveTimezone } = useTimezonePreference()
 	const [expandedDrifts, setExpandedDrifts] = useState<ReadonlySet<string>>(new Set())
 
@@ -189,7 +191,10 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 		return counts
 	}, [diff])
 
+	const applyPlan = useMemo(() => (diff ? schemaApplyPlan(diff.entries) : null), [diff])
+
 	async function handleApply() {
+		setApplyConfirmOpen(false)
 		// Apply now runs in a background workflow (heavy backfill migrations can't
 		// fit one request). Kick it off, then the status poll drives progress.
 		setIsStarting(true)
@@ -461,7 +466,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 									disabled={isBusy}
 								/>
 								<Button
-									onClick={() => void handleApply()}
+									onClick={() => setApplyConfirmOpen(true)}
 									loading={isApplying}
 									disabled={
 										isBusy ||
@@ -469,9 +474,7 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 										(diffSummary?.missing === 0 && diffSummary?.drifted === 0)
 									}
 								>
-									{diffSummary && diffSummary.missing > 0
-										? `Apply schema (${diffSummary.missing} missing${diffSummary.drifted > 0 ? `, ${diffSummary.drifted} skipped` : ""})`
-										: "Apply schema"}
+									Apply schema
 								</Button>
 							</div>
 							{runActive && (
@@ -495,10 +498,29 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 			</SettingsSections>
 
 			<ConfirmDialog
-				open={disableOpen}
-				onOpenChange={setDisableOpen}
+				open={applyConfirmOpen}
+				onOpenChange={setApplyConfirmOpen}
 				tone="default"
 				icon={<AlertWarningIcon className="text-severity-warn" size={20} />}
+				title="Apply the schema to your ClickHouse?"
+				description={
+					<>
+						This runs DDL against{" "}
+						<span className="font-mono">{settings?.chDatabase ?? chDatabase}</span> on your
+						cluster. Pending Maple migrations run first and can rebuild Maple&apos;s own views and
+						backfill data. The snapshot pass below then only adds objects and columns.
+					</>
+				}
+				confirmLabel="Apply schema"
+				onConfirm={() => void handleApply()}
+				pending={isStarting}
+			>
+				{applyPlan !== null && <SchemaApplyPlanList plan={applyPlan} />}
+			</ConfirmDialog>
+
+			<ConfirmDialog
+				open={disableOpen}
+				onOpenChange={setDisableOpen}
 				title="Disable BYO ClickHouse?"
 				description={
 					<>
@@ -511,5 +533,36 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 				pending={isDisabling}
 			/>
 		</>
+	)
+}
+
+function SchemaApplyPlanList({ plan }: { plan: ReturnType<typeof schemaApplyPlan> }) {
+	const groups = [
+		{ label: "Create", items: plan.create },
+		{
+			label: "Add columns",
+			items: plan.addColumns.map((table) => `${table.name}: ${table.columns.join(", ")}`),
+		},
+		{ label: "Left as is (resolve manually)", items: plan.leftAlone },
+	].filter((group) => group.items.length > 0)
+
+	if (groups.length === 0) return null
+	return (
+		<div className="max-h-56 space-y-3 overflow-y-auto text-xs">
+			{groups.map((group) => (
+				<div key={group.label} className="space-y-1">
+					<p className="text-muted-foreground">
+						{group.label} ({group.items.length})
+					</p>
+					<ul className="space-y-0.5 font-mono">
+						{group.items.map((item) => (
+							<li key={item} className="break-all">
+								{item}
+							</li>
+						))}
+					</ul>
+				</div>
+			))}
+		</div>
 	)
 }

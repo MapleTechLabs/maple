@@ -44,6 +44,7 @@ export function AiProviderSection() {
 
 	const [draft, setDraft] = useState("")
 	const [confirmRemove, setConfirmRemove] = useState(false)
+	const [confirmAddOn, setConfirmAddOn] = useState(false)
 
 	const [saveKey, isSaving] = useAsyncAction(async (apiKey: string) => {
 		const exit = await setMutation({
@@ -172,12 +173,24 @@ export function AiProviderSection() {
 								label={`Add-on, ${ADD_ON_PRICE}`}
 								description="Billed with your plan. Cancel any time from billing, and Maple's own key takes over again."
 								control={
-									<Button disabled={isAttaching} onClick={() => addOn()}>
-										{isAttaching ? "Opening checkout..." : "Add to plan"}
+									<Button disabled={isAttaching} onClick={() => setConfirmAddOn(true)}>
+										Add to plan
 									</Button>
 								}
 							/>
 						)}
+
+						{/* With a card on file the attach charges at once and no checkout page follows. */}
+						<ConfirmDialog
+							open={confirmAddOn}
+							onOpenChange={setConfirmAddOn}
+							tone="default"
+							title={`Add the OpenRouter add-on for ${ADD_ON_PRICE}?`}
+							description="If your organization has a payment method on file, the add-on is attached right away and billed with your plan. Otherwise you continue to checkout."
+							confirmLabel="Add to plan"
+							pending={isAttaching}
+							onConfirm={() => addOn()}
+						/>
 
 						<ConfirmDialog
 							open={confirmRemove}
