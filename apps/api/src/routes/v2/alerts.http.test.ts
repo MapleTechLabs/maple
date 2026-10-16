@@ -614,6 +614,11 @@ describe("v2 alerts over HTTP", () => {
 		expect(echoed.status, JSON.stringify(echoed.body)).toBe(200)
 		expect(echoed.body.name).toBe("Echoed")
 		expect(echoed.body.thresholds).toEqual(tiers)
+		expect(echoed.body.severity).toBe(created.body.severity)
+		expect(echoed.body.threshold).toBe(created.body.threshold)
+		expect(echoed.body.threshold_upper).toBe(created.body.threshold_upper)
+		expect(echoed.body.breaches_out_of).toBe(5)
+		expect(echoed.body.destination_ids).toEqual(created.body.destination_ids)
 
 		await harness.dispose()
 	})
