@@ -551,7 +551,8 @@ export function CustomIngestKeysSection() {
 					</Select>
 					{editing !== null && editing.expires_at !== null && formExpiry === "keep" && (
 						<FieldDescription>
-							Currently {formatRelativeTime(editing.expires_at)}.
+							{isExpired(editing, now) ? "Expired" : "Expires"}{" "}
+							{formatRelativeTime(editing.expires_at)}.
 						</FieldDescription>
 					)}
 				</Field>
