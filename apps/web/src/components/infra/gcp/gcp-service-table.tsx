@@ -12,6 +12,7 @@ import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { MetaLine } from "../primitives/meta-line"
 import { BAR_VALUE_TONE } from "../severity-tokens"
 import { GcpHealthDot, type GcpBandSpec } from "./gcp-bands"
+import { GcpServiceIcon } from "./gcp-service-icon"
 import { GCP_WORKLOAD_RULES, rowHealth, type GcpWorkloadRow, type GcpWorkloadScope } from "./list-model"
 import { GCP_INFRA_COLUMNS, formatGcpValue, gcpWorkloadId, gcpWorkloadSearch, type GcpColumn } from "./tabs"
 
@@ -39,9 +40,12 @@ export function GcpServiceTableLoading({ service }: { service: GcpInfraServiceId
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={5}>
 				<div className="w-2 shrink-0" />
-				<div className={NAME_WIDTH}>
-					<Skeleton className="h-4 w-40" />
-					<Skeleton className="mt-1.5 h-3 w-28" />
+				<div className={cn(NAME_WIDTH, "flex items-center gap-3")}>
+					<Skeleton className="size-7 shrink-0 rounded-md" />
+					<div>
+						<Skeleton className="h-4 w-40" />
+						<Skeleton className="mt-1.5 h-3 w-28" />
+					</div>
 				</div>
 				{GCP_INFRA_COLUMNS[service].map((spec) => (
 					<Skeleton key={spec.label} className={cn("h-3", VALUE_WIDTH)} />
@@ -96,17 +100,20 @@ export function GcpServiceTable({
 					className={ROW_LINK_CLASS}
 				>
 					<GcpHealthDot spec={spec} health={rowHealth(GCP_WORKLOAD_RULES, row)} />
-					<div className={NAME_WIDTH}>
-						<div className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
-							{row.name}
+					<div className={cn(NAME_WIDTH, "flex items-center gap-3")}>
+						<GcpServiceIcon service={service} />
+						<div className="min-w-0 flex-1">
+							<div className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
+								{row.name}
+							</div>
+							<MetaLine
+								items={row.keys.slice(1)}
+								title={identity
+									.slice(1)
+									.map(([label], index) => `${label}: ${row.keys[index + 1]}`)
+									.join(" · ")}
+							/>
 						</div>
-						<MetaLine
-							items={row.keys.slice(1)}
-							title={identity
-								.slice(1)
-								.map(([label], index) => `${label}: ${row.keys[index + 1]}`)
-								.join(" · ")}
-						/>
 					</div>
 					{columns.map((column, index) => (
 						<div

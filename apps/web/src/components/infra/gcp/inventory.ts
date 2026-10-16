@@ -125,31 +125,111 @@ export function gcpResourceWorkload(
 const consoleUrl = (path: string, query: string, id: string) =>
 	`https://console.cloud.google.com/${path}?${query}=${encodeURIComponent(id)}`
 
-/**
- * The Google Cloud console page that lists a resource type, as Google's documentation links it.
- * The console's per-resource addresses are not documented, so none is built.
- */
-const CONSOLE_PAGES: Record<string, readonly [label: string, path: string]> = {
-	[RUN_SERVICE]: ["Cloud Run services", "run/services"],
-	// The 1st gen documentation sends a function's owner to the Cloud Run page, which lists both.
-	[FUNCTION]: ["Cloud Run functions", "run/services"],
-	[CLUSTER]: ["Kubernetes clusters", "kubernetes/list"],
-	[INSTANCE]: ["VM instances", "compute/instances"],
-	[SQL_INSTANCE]: ["Cloud SQL instances", "sql"],
-	[SUBSCRIPTION]: ["Pub/Sub subscriptions", "cloudpubsub/subscription"],
-	[URL_MAP]: ["Load balancing", "net-services/loadbalancing/list"],
-} satisfies Record<string, readonly [label: string, path: string]>
+/** A workload's console pages: its own, and its log entries in the Logs Explorer. */
+export interface GcpConsoleLinks {
+	readonly page: { readonly label: string; readonly href: string }
+	readonly logs: string
+}
 
-/** The console page that lists a resource's type, opened on the resource's project. */
-export function gcpConsolePage(
-	resource: GcpResource,
-): { readonly label: string; readonly href: string } | undefined {
-	const page = CONSOLE_PAGES[resource.assetType]
-	if (page === undefined) return undefined
-	const [label, path] = page
-	return {
-		label,
-		href: consoleUrl(path, "project", resource.projectId),
+const resourceFilter = (resourceType: string, labels: ReadonlyArray<readonly [string, string]>) =>
+	[`resource.type="${resourceType}"`, ...labels.map(([label, value]) => `${label}="${value}"`)].join("\n")
+
+/**
+ * A workload's console pages, from its identity alone: Cloud Run, Cloud Functions, Compute Engine,
+ * Cloud SQL and Pub/Sub open the resource's own page, a GKE container its cluster's, and a load
+ * balancer the list, whose detail address depends on the load balancer's kind.
+ */
+export function gcpConsoleLinks(service: GcpInfraServiceId, keys: ReadonlyArray<string>): GcpConsoleLinks {
+	const project = gcpWorkloadProject(service, keys)
+	const at = (path: string) => consoleUrl(path, "project", project)
+	const segment = encodeURIComponent
+	const [name = ""] = keys
+	const logs = (filter: string) => at(`logs/query;query=${segment(filter)}`)
+	switch (service) {
+		case "cloudRun": {
+			const region = keys[2] ?? ""
+			return {
+				page: {
+					label: "Cloud Run service",
+					href: at(`run/detail/${segment(region)}/${segment(name)}/metrics`),
+				},
+				logs: logs(
+					resourceFilter("cloud_run_revision", [
+						["resource.labels.service_name", name],
+						["resource.labels.location", region],
+					]),
+				),
+			}
+		}
+		case "cloudFunctions": {
+			const region = keys[2] ?? ""
+			return {
+				page: {
+					label: "Cloud Function",
+					href: at(`functions/details/${segment(region)}/${segment(name)}`),
+				},
+				logs: logs(
+					resourceFilter("cloud_function", [
+						["resource.labels.function_name", name],
+						["resource.labels.region", region],
+					]),
+				),
+			}
+		}
+		case "gke": {
+			const [, namespace = "", cluster = "", , location = ""] = keys
+			return {
+				page: {
+					label: `Cluster ${cluster}`,
+					href: at(`kubernetes/clusters/details/${segment(location)}/${segment(cluster)}/details`),
+				},
+				logs: logs(
+					resourceFilter("k8s_container", [
+						["resource.labels.cluster_name", cluster],
+						["resource.labels.namespace_name", namespace],
+						["resource.labels.container_name", name],
+					]),
+				),
+			}
+		}
+		case "computeEngine": {
+			const zone = keys[2] ?? ""
+			return {
+				page: {
+					label: "VM instance",
+					href: at(`compute/instancesDetail/zones/${segment(zone)}/instances/${segment(name)}`),
+				},
+				logs: logs(
+					resourceFilter("gce_instance", [['labels."compute.googleapis.com/resource_name"', name]]),
+				),
+			}
+		}
+		case "cloudSql": {
+			// The instance's id is `project:instance`.
+			const instance = name.slice(name.indexOf(":") + 1)
+			return {
+				page: {
+					label: "Cloud SQL instance",
+					href: at(`sql/instances/${segment(instance)}/overview`),
+				},
+				logs: logs(resourceFilter("cloudsql_database", [["resource.labels.database_id", name]])),
+			}
+		}
+		case "pubsub":
+			return {
+				page: {
+					label: "Pub/Sub subscription",
+					href: at(`cloudpubsub/subscription/detail/${segment(name)}`),
+				},
+				logs: logs(
+					resourceFilter("pubsub_subscription", [["resource.labels.subscription_id", name]]),
+				),
+			}
+		case "loadBalancing":
+			return {
+				page: { label: "Load balancers", href: at("net-services/loadbalancing/list/loadBalancers") },
+				logs: logs(resourceFilter("http_load_balancer", [["resource.labels.url_map_name", name]])),
+			}
 	}
 }
 

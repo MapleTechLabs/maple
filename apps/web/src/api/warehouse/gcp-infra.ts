@@ -168,6 +168,45 @@ export const getGcpCloudSqlTopQueries = Effect.fn("QueryEngine.getGcpCloudSqlTop
 	return { statements: result.data }
 })
 
+const DatabaseInstancesInputSchema = Schema.Struct({
+	...WindowInputSchema.fields,
+	/** A `db.namespace` the traces query. */
+	database: Schema.String,
+	/** The identity values of each Cloud SQL instance to look in. */
+	instances: Schema.Array(Schema.Array(Schema.String)),
+})
+
+/**
+ * The PostgreSQL instances that hold a database of the traces' name, from the connections the
+ * poller stored per database. An instance whose read fails is left out.
+ */
+export const getGcpCloudSqlInstancesOfDatabase = Effect.fn("QueryEngine.getGcpCloudSqlInstancesOfDatabase")(
+	function* ({ data }: { data: (typeof DatabaseInstancesInputSchema)["Encoded"] }) {
+		const { database, instances, ...window } = yield* decodeInput(
+			DatabaseInstancesInputSchema,
+			data,
+			"getGcpCloudSqlInstancesOfDatabase",
+		)
+		const owners = yield* Effect.forEach(
+			instances,
+			(keys) =>
+				runWarehouseQuery("gcpCloudSqlDatabases", () =>
+					Effect.gen(function* () {
+						const client = yield* MapleInternalAtomClient
+						return yield* client.queryEngine.gcpCloudSqlDatabases({
+							payload: new GcpCloudSqlInstanceRequest({ ...window, keys }),
+						})
+					}),
+				).pipe(
+					Effect.map((result) => (result.databases.includes(database) ? [keys] : [])),
+					Effect.orElseSucceed(() => []),
+				),
+			{ concurrency: 4 },
+		)
+		return { instances: owners.flat() }
+	},
+)
+
 /** Cloud SQL's own databases, and PostgreSQL's templates: no application queries them. */
 const SYSTEM_DATABASES = new Set(["cloudsqladmin", "template0", "template1", "postgres"])
 

@@ -456,8 +456,8 @@ const FILTER_MODES = [
 ] as const
 
 const STEPS = ["Scope", "Data", "Run setup"] as const
-/** The step the flow is on. 3: every step is done. */
-type StepIndex = 0 | 1 | 2 | 3
+/** The step the flow is on. */
+type StepIndex = 0 | 1 | 2
 
 /** Where the flow is: done steps are checked, the current one is filled, later ones are outlined. */
 function Stepper({ current }: { current: StepIndex }) {
@@ -515,7 +515,8 @@ function Stepper({ current }: { current: StepIndex }) {
 	)
 }
 
-function ConfigureHeader({ title, step }: { title: React.ReactNode; step: StepIndex }) {
+/** `step` is undefined once every step is done: the finished flow shows no stepper. */
+function ConfigureHeader({ title, step }: { title: React.ReactNode; step?: StepIndex }) {
 	return (
 		<DialogHeader className="gap-5">
 			<DialogTitle className="flex items-center gap-3 pr-8">
@@ -524,7 +525,7 @@ function ConfigureHeader({ title, step }: { title: React.ReactNode; step: StepIn
 				</span>
 				<span className="min-w-0">{title}</span>
 			</DialogTitle>
-			<Stepper current={step} />
+			{step === undefined ? null : <Stepper current={step} />}
 		</DialogHeader>
 	)
 }
@@ -1841,7 +1842,7 @@ export function GcpApplyView({
 	if (confirmed) {
 		return (
 			<>
-				<ConfigureHeader title={title} step={3} />
+				<ConfigureHeader title={title} />
 				<DialogPanel>
 					<Applied connector={connector} created={created} nowMs={nowMs} />
 				</DialogPanel>
