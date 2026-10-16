@@ -2,6 +2,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { GcpPromQlService } from "@maple/backend/services/integrations/GcpPromQlService"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
 import type { SandboxError } from "@yielded/agent/sandbox"
@@ -299,6 +300,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	ErrorIssueWorkflowService.layer,
 	ErrorPolicyService.layer,
 	ErrorsService.layer,
+	GcpPromQlService.layer,
 	IntegrationInventoryService.layer,
 	IssueFixVerificationService.layer,
 	QueryEngineService.layer,
