@@ -80,7 +80,7 @@ const customIngestKeyExample = {
 
 const allowedSignalsField = Schema.NullOr(Schema.Array(IngestKeySignal)).annotate({
 	description:
-		"Signals the key may send: `traces`, `logs`, `metrics`, `sessions` (session replays and session events) and `events` (product events). `null` allows every signal; other signals are rejected with 403.",
+		"Signals the key may send: `traces`, `logs`, `metrics`, `sessions` (session replays and automatic session events) and `events` (product events, including browser `track()` calls sent with session events). `null` allows every signal; other signals are rejected with 403, and session-event rows of a disallowed kind are dropped.",
 	examples: [["traces", "logs"]],
 })
 
