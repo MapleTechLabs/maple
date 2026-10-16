@@ -87,7 +87,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/timeline",
 		title: "Trace timeline",
 		description:
-			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom.",
+			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom, with span event markers and the events panel.",
 		kind: "lab",
 		session: "none",
 	},
@@ -175,6 +175,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Errors list",
 		description:
 			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/alerts",
+		title: "Alerts",
+		description:
+			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation.",
 		kind: "lab",
 		session: "none",
 	},

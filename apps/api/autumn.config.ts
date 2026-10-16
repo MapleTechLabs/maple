@@ -128,14 +128,16 @@ export const startup = plan({
 			},
 		},
 		{
-			// BETA (2026-08-17): free and unlimited while product events are in
-			// beta. Usage is still metered by the gateway and tracked in Autumn so
-			// we know real volumes before pricing it. To start charging, replace
-			// `unlimited` with e.g. `included: 1_000_000` and a
-			// `price: { amount: 0.05, billingUnits: 1000, billingMethod:
-			// "usage_based", interval: "month" }` ($0.05 per 1,000 events).
+			// $5 per 1M events past 1M. Billed per 1,000 because Autumn rounds
+			// overage up to whole blocks; a 1M block would charge $5 for one event.
 			featureId: "product_events",
-			unlimited: true,
+			included: 1_000_000,
+			price: {
+				amount: 0.005,
+				billingUnits: 1000,
+				billingMethod: "usage_based",
+				interval: "month",
+			},
 		},
 		{
 			// One credit is one dollar of model spend after markup.

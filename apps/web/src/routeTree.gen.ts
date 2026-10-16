@@ -52,6 +52,7 @@ import { Route as LabIndexRouteImport } from './routes/lab/index'
 import { Route as LabAgentSessionRouteImport } from './routes/lab/agent-session'
 import { Route as LabAgentSessionsRouteImport } from './routes/lab/agent-sessions'
 import { Route as LabAgentToolsRouteImport } from './routes/lab/agent-tools'
+import { Route as LabAlertsRouteImport } from './routes/lab/alerts'
 import { Route as LabChartsRouteImport } from './routes/lab/charts'
 import { Route as LabChatRouteImport } from './routes/lab/chat'
 import { Route as LabCloudflareRouteImport } from './routes/lab/cloudflare'
@@ -333,6 +334,11 @@ const LabAgentSessionsRoute = LabAgentSessionsRouteImport.update({
 const LabAgentToolsRoute = LabAgentToolsRouteImport.update({
   id: '/agent-tools',
   path: '/agent-tools',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabAlertsRoute = LabAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => LabRouteRoute,
 } as any)
 const LabChartsRoute = LabChartsRouteImport.update({
@@ -719,6 +725,7 @@ export interface FileRoutesByFullPath {
   '/lab/agent-session': typeof LabAgentSessionRoute
   '/lab/agent-sessions': typeof LabAgentSessionsRoute
   '/lab/agent-tools': typeof LabAgentToolsRoute
+  '/lab/alerts': typeof LabAlertsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/chat': typeof LabChatRoute
   '/lab/cloudflare': typeof LabCloudflareRoute
@@ -830,6 +837,7 @@ export interface FileRoutesByTo {
   '/lab/agent-session': typeof LabAgentSessionRoute
   '/lab/agent-sessions': typeof LabAgentSessionsRoute
   '/lab/agent-tools': typeof LabAgentToolsRoute
+  '/lab/alerts': typeof LabAlertsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/chat': typeof LabChatRoute
   '/lab/cloudflare': typeof LabCloudflareRoute
@@ -943,6 +951,7 @@ export interface FileRoutesById {
   '/lab/agent-session': typeof LabAgentSessionRoute
   '/lab/agent-sessions': typeof LabAgentSessionsRoute
   '/lab/agent-tools': typeof LabAgentToolsRoute
+  '/lab/alerts': typeof LabAlertsRoute
   '/lab/charts': typeof LabChartsRoute
   '/lab/chat': typeof LabChatRoute
   '/lab/cloudflare': typeof LabCloudflareRoute
@@ -1057,6 +1066,7 @@ export interface FileRouteTypes {
     | '/lab/agent-session'
     | '/lab/agent-sessions'
     | '/lab/agent-tools'
+    | '/lab/alerts'
     | '/lab/charts'
     | '/lab/chat'
     | '/lab/cloudflare'
@@ -1168,6 +1178,7 @@ export interface FileRouteTypes {
     | '/lab/agent-session'
     | '/lab/agent-sessions'
     | '/lab/agent-tools'
+    | '/lab/alerts'
     | '/lab/charts'
     | '/lab/chat'
     | '/lab/cloudflare'
@@ -1280,6 +1291,7 @@ export interface FileRouteTypes {
     | '/lab/agent-session'
     | '/lab/agent-sessions'
     | '/lab/agent-tools'
+    | '/lab/alerts'
     | '/lab/charts'
     | '/lab/chat'
     | '/lab/cloudflare'
@@ -1742,6 +1754,13 @@ declare module '@tanstack/react-router' {
       path: '/agent-tools'
       fullPath: '/lab/agent-tools'
       preLoaderRoute: typeof LabAgentToolsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/alerts': {
+      id: '/lab/alerts'
+      path: '/alerts'
+      fullPath: '/lab/alerts'
+      preLoaderRoute: typeof LabAlertsRouteImport
       parentRoute: typeof LabRouteRoute
     }
     '/lab/charts': {
@@ -2220,6 +2239,7 @@ interface LabRouteRouteChildren {
   LabAgentSessionRoute: typeof LabAgentSessionRoute
   LabAgentSessionsRoute: typeof LabAgentSessionsRoute
   LabAgentToolsRoute: typeof LabAgentToolsRoute
+  LabAlertsRoute: typeof LabAlertsRoute
   LabChartsRoute: typeof LabChartsRoute
   LabChatRoute: typeof LabChatRoute
   LabCloudflareRoute: typeof LabCloudflareRoute
@@ -2254,6 +2274,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabAgentSessionRoute: LabAgentSessionRoute,
   LabAgentSessionsRoute: LabAgentSessionsRoute,
   LabAgentToolsRoute: LabAgentToolsRoute,
+  LabAlertsRoute: LabAlertsRoute,
   LabChartsRoute: LabChartsRoute,
   LabChatRoute: LabChatRoute,
   LabCloudflareRoute: LabCloudflareRoute,

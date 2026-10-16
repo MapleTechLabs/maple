@@ -9,7 +9,7 @@ import {
 	type FeatureUsagePricing,
 	type PlanLike,
 } from "@maple/domain/billing"
-import { formatCount } from "./usage"
+import { formatQuoteUnits, quoteUnits } from "./usage"
 
 /**
  * The billing page's spend model: one place that turns the Autumn snapshot plus
@@ -81,7 +81,7 @@ export const featureUnit = (featureId: string): "GB" | "sessions" | "events" => 
 
 /**
  * The overage rate as the catalog quotes it: per GB for the byte signals, per
- * unit for sessions, and per `billingUnits` for events ("$0.05/1,000 events") —
+ * unit for sessions, and per million for events ("$5/1M events"):
  * the per-event rate is a fraction of a cent and would read as "$0" if rendered
  * through the currency formatter.
  */
@@ -89,9 +89,10 @@ export const formatRateLabel = (feature: FeatureSpend): string | null => {
 	if (feature.ratePerUnit === null) return null
 	const unit = countUnitOf(feature.featureId)
 	if (unit === undefined) return `$${feature.ratePerUnit.toFixed(2)}/GB`
-	if (feature.billingUnits > 1) {
-		const perBlock = feature.ratePerUnit * feature.billingUnits
-		return `$${Number(perBlock.toPrecision(6))}/${formatCount(feature.billingUnits)} ${unit}s`
+	const block = quoteUnits(feature.featureId, feature.billingUnits)
+	if (block > 1) {
+		const perBlock = feature.ratePerUnit * block
+		return `$${Number(perBlock.toPrecision(6))}/${formatQuoteUnits(block)} ${unit}s`
 	}
 	return `$${feature.ratePerUnit}/${unit}`
 }

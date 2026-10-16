@@ -14,6 +14,7 @@ import { RULE_FORM_MAX_WIDTH } from "@/components/alerts/rule-form-layout"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
 import { defaultRuleForm, ruleToFormState, type RuleFormState } from "@/lib/alerts/form-utils"
+import { switchSignalKind } from "@/lib/alerts/rule-modes"
 import { ALERT_TEMPLATES, applyTemplate } from "@/lib/alerts/templates"
 import { decodeAlertChartFromSearchParam, type AlertChartContext } from "@/lib/alerts/widget-chart-param"
 import {
@@ -210,7 +211,8 @@ export function deriveRuleInitialization({
 		unknown
 	>
 }): RuleInitialization {
-	const base = defaultRuleForm(search.serviceName)
+	// New rules open in the query builder; the default error-rate signal carries over as a query.
+	const base = switchSignalKind(defaultRuleForm(search.serviceName), "builder_query").form
 
 	if (search.ruleId) {
 		// Terminal: the stream is gone, so "which rule is this?" has no answer

@@ -84,10 +84,9 @@ function queryToForm(
 		name: widgetAlertName(widget),
 		signalType: "builder_query",
 		queryBuilderDraft,
-		// Builder thresholds compare against the query's raw output. error_rate
-		// is a 0–1 ratio, so the blank-form default of "5" (tuned for the
-		// percent-entry error_rate signal) would mean a 500% error rate.
-		threshold: query.aggregation === "error_rate" ? "0.05" : base.threshold,
+		// error_rate is entered as a percent in every mode (see formThresholdToDomain),
+		// so the blank form's "5" carries over as 5%.
+		threshold: base.threshold,
 		groupBy: [],
 	}
 }
