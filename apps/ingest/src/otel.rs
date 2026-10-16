@@ -307,6 +307,7 @@ pub fn grpc_server_span(rpc_service: &'static str, signal_path: &'static str) ->
         "maple.signal" = signal_path,
         "maple.org_id" = Empty,
         "maple.ingest.key_type" = Empty,
+        "maple.ingest.custom_key_id" = Empty,
         "maple.ingest.destination" = Empty,
     )
 }
@@ -325,6 +326,7 @@ pub fn auth_internal_span() -> Span {
         "maple.ingest.cache_hit" = Empty,
         "maple.ingest.key_type" = Empty,
         "maple.ingest.key_id" = Empty,
+        "maple.ingest.custom_key_id" = Empty,
         "maple.org_id" = Empty,
         "maple.ingest.self_managed" = Empty,
         "maple.ingest.clickhouse_ready" = Empty,

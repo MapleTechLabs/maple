@@ -121,13 +121,13 @@ const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion, ena
 const PRD_ZONE = "maple.dev"
 
 /**
- * `INGEST_BLOCKED_KEYS`, comma-separated. Keys are `maple_pk_`/`maple_sk_` + base64url,
+ * `INGEST_BLOCKED_KEYS`, comma-separated. Keys are `maple_pk_`/`maple_sk_`/`maple_ik_` + base64url,
  * so a value can never break out of the WAF expression.
  */
 const blockedIngestKeys = Config.schema(
 	Schema.String.pipe(
 		Schema.decodeTo(
-			Schema.Array(Schema.String.check(Schema.isPattern(/^maple_(pk|sk)_[A-Za-z0-9_-]+$/))),
+			Schema.Array(Schema.String.check(Schema.isPattern(/^maple_(pk|sk|ik)_[A-Za-z0-9_-]+$/))),
 			SchemaTransformation.transform<ReadonlyArray<string>, string>({
 				decode: (raw) =>
 					raw
@@ -616,6 +616,9 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				...(yield* optionalPlain("INGEST_BATCH_MAX_WAIT_MS")),
 				...(yield* optionalPlain("INGEST_ORG_QUEUE_MAX_BYTES")),
 				...(yield* optionalPlain("INGEST_ORG_MAX_IN_FLIGHT")),
+				// Custom ingest key rps limits are split across this many tasks. The scaling
+				// floor, so a scaled-out fleet admits more rather than throttling below the limit.
+				INGEST_RATE_LIMIT_FLEET_SIZE: String(scaling?.min ?? desiredCount),
 				...(yield* optionalPlain("INGEST_REQUEST_TIMEOUT_SECS")),
 				...(yield* optionalPlain("INGEST_QUEUE_MAX_AGE_SECS")),
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),

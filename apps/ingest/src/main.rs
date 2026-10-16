@@ -11,6 +11,7 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod autumn;
+mod custom_keys;
 mod task_protection;
 
 use std::io::{Read, Write};
@@ -25,19 +26,22 @@ use autumn::{AutumnEntitlements, AutumnTracker};
 use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::MatchedPath;
-use axum::extract::Request;
 use axum::extract::Path;
 use axum::extract::Query;
+use axum::extract::Request;
 use axum::extract::State;
 use axum::http::header::{HeaderName, AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE, RETRY_AFTER};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
-use axum::response::{IntoResponse, Response};
 use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use chrono::DateTime;
+use custom_keys::{
+    CustomKeyConfigRow, CustomKeyPolicy, KeyRateLimiter, KeySignal, OverrideMode, CUSTOM_KEY_PREFIX,
+};
 use dashmap::DashMap;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -159,6 +163,8 @@ struct AppConfig {
     tinybird: TinybirdConfig,
     max_request_body_bytes: usize,
     org_max_in_flight: u64,
+    /// Gateway instances sharing each custom key's requests/second limit.
+    rate_limit_fleet_size: u32,
     /// Wall-clock deadline for one HTTP request, or `Duration::ZERO` to run
     /// without one. See `request_timeout_middleware`.
     request_timeout: Duration,
@@ -438,6 +444,8 @@ impl AppConfig {
         if org_max_in_flight == 0 {
             return Err("INGEST_ORG_MAX_IN_FLIGHT must be greater than 0".to_owned());
         }
+        let rate_limit_fleet_size =
+            parse_fleet_size(std::env::var("INGEST_RATE_LIMIT_FLEET_SIZE").ok())?;
 
         // 30s. Comfortably above a healthy p99 (single-digit ms) and below the
         // load balancer idle timeout, so the gateway answers rather than having
@@ -668,6 +676,7 @@ impl AppConfig {
             tinybird,
             max_request_body_bytes,
             org_max_in_flight,
+            rate_limit_fleet_size,
             request_timeout,
             require_tls,
             key_store_backend,
@@ -841,6 +850,10 @@ trait KeyStore: Send + Sync {
         hash_column: &'static str,
     ) -> Result<Option<KeyRow>, String>;
 
+    /// A `maple_ik_` key by hash. Disabled rows are `None`, like unknown keys.
+    async fn fetch_custom_ingest_key(&self, key_hash: &str)
+        -> Result<Option<CustomKeyRow>, String>;
+
     async fn fetch_connector(
         &self,
         connector_id: &str,
@@ -883,6 +896,13 @@ struct KeyRow {
 }
 
 #[derive(Clone, Debug)]
+struct CustomKeyRow {
+    key: KeyRow,
+    /// `None` when the store has no custom-key table (static backend).
+    config: Option<CustomKeyConfigRow>,
+}
+
+#[derive(Clone, Debug)]
 struct ConnectorRow {
     org_id: String,
     service_name: String,
@@ -912,6 +932,7 @@ struct IngestKeyIdentity {
     org_id: String,
     key_type: IngestKeyType,
     key_id: String,
+    custom: Option<Arc<CustomKeyPolicy>>,
 }
 
 impl IngestKeyIdentity {
@@ -922,6 +943,7 @@ impl IngestKeyIdentity {
             key_id: self.key_id,
             self_managed: routing.self_managed,
             clickhouse_ready: routing.clickhouse_ready,
+            custom: self.custom,
         }
     }
 }
@@ -1112,6 +1134,7 @@ struct AppState {
     key_store_ready: Arc<AtomicBool>,
     resolver: IngestKeyResolver,
     org_inflight_limiter: OrgInFlightLimiter,
+    key_rate_limiter: KeyRateLimiter,
     sampling_resolver: SamplingPolicyResolver,
     attribute_mapping_resolver: AttributeMappingResolver,
     cloudflare_resolver: CloudflareConnectorResolver,
@@ -1144,6 +1167,8 @@ struct ResolvedIngestKey {
     // version (SCHEMA_VERSION) — NOT the Tinybird-coupled PROJECT_REVISION, so a
     // Tinybird-only schema change can't silently un-ready a BYO-CH org.
     clickhouse_ready: bool,
+    /// Policy of a `maple_ik_` key; `None` for default keys and the static store.
+    custom: Option<Arc<CustomKeyPolicy>>,
 }
 
 #[derive(Clone)]
@@ -1165,6 +1190,7 @@ enum IngestKeyType {
     Public,
     Private,
     Connector,
+    Custom,
 }
 
 impl IngestKeyType {
@@ -1173,6 +1199,7 @@ impl IngestKeyType {
             Self::Public => "public",
             Self::Private => "private",
             Self::Connector => "connector",
+            Self::Custom => "custom",
         }
     }
 }
@@ -1190,6 +1217,14 @@ impl Signal {
             Self::Traces => "traces",
             Self::Logs => "logs",
             Self::Metrics => "metrics",
+        }
+    }
+
+    fn key_signal(self) -> KeySignal {
+        match self {
+            Self::Traces => KeySignal::Traces,
+            Self::Logs => KeySignal::Logs,
+            Self::Metrics => KeySignal::Metrics,
         }
     }
 }
@@ -1421,6 +1456,41 @@ static INGEST_RATE_LIMITED: FailureKind = FailureKind {
     tag: "@maple/ingest/RateLimited",
     code: "ingest_rate_limited",
     title: "Ingest rate limit reached",
+    recovery: "retry",
+    retryable: true,
+    error_kind: "throttle",
+    retry_after_seconds: Some(1),
+};
+
+/// A custom ingest key past its `expires_at`. Checked per request because the
+/// positive auth cache can outlive the deadline.
+static INGEST_KEY_EXPIRED: FailureKind = FailureKind {
+    tag: "@maple/ingest/IngestKeyExpired",
+    code: "ingest_key_expired",
+    title: "Ingest key expired",
+    recovery: "reauthenticate",
+    retryable: false,
+    error_kind: "auth",
+    retry_after_seconds: None,
+};
+
+/// A custom ingest key whose allow-list does not include this signal.
+static INGEST_SIGNAL_NOT_ALLOWED: FailureKind = FailureKind {
+    tag: "@maple/ingest/SignalNotAllowed",
+    code: "ingest_signal_not_allowed",
+    title: "Signal not allowed for this ingest key",
+    recovery: "fix_request",
+    retryable: false,
+    error_kind: "forbidden",
+    retry_after_seconds: None,
+};
+
+/// A custom ingest key over its requests/second limit. Buckets hold one second
+/// of burst, so a token is always back within a second.
+static INGEST_KEY_RATE_LIMITED: FailureKind = FailureKind {
+    tag: "@maple/ingest/IngestKeyRateLimited",
+    code: "ingest_key_rate_limited",
+    title: "Ingest key rate limit reached",
     recovery: "retry",
     retryable: true,
     error_kind: "throttle",
@@ -1756,6 +1826,9 @@ fn record_grpc_identity(resolved: &ResolvedIngestKey) {
     let span = Span::current();
     span.record("maple.org_id", resolved.org_id.as_str());
     span.record("maple.ingest.key_type", resolved.key_type.as_str());
+    if let Some(custom) = &resolved.custom {
+        span.record("maple.ingest.custom_key_id", custom.public_id.as_str());
+    }
 }
 
 /// Fill in the deferred outcome fields on a gRPC server span. tonic answers a
@@ -2404,6 +2477,7 @@ async fn main() {
             routing: Arc::clone(&org_routing_resolver),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
+        key_rate_limiter: KeyRateLimiter::new(config.rate_limit_fleet_size),
         sampling_resolver: SamplingPolicyResolver {
             store: Arc::clone(&store),
             cache: sampling_policy_cache,
@@ -2687,12 +2761,26 @@ async fn admit_grpc_export(
 ) -> Result<ResolvedIngestKey, tonic::Status> {
     let resolved = resolve_grpc_ingest_key(state, headers).await?;
     record_grpc_identity(&resolved);
+    authorize_custom_key(state, &resolved, signal.key_signal())
+        .await
+        .map_err(|error| grpc_status_for_key_rejection(&error))?;
     if resolved.org_id != SENTINEL_ORG_ID {
         if let Some(error) = entitlement_rejection(state, &resolved.org_id, signal.path()).await {
             return Err(tonic::Status::resource_exhausted(error.message));
         }
     }
     Ok(resolved)
+}
+
+/// gRPC code for an `authorize_custom_key` rejection.
+fn grpc_status_for_key_rejection(error: &ApiError) -> tonic::Status {
+    let message = error.message.clone();
+    match error.status {
+        StatusCode::UNAUTHORIZED => tonic::Status::unauthenticated(message),
+        StatusCode::FORBIDDEN => tonic::Status::permission_denied(message),
+        StatusCode::TOO_MANY_REQUESTS => tonic::Status::resource_exhausted(message),
+        _ => tonic::Status::unavailable(message),
+    }
 }
 
 /// The OTLP service and signal a gRPC request path exports to.
@@ -2913,6 +3001,7 @@ async fn resolve_grpc_ingest_key(
             key_id: "sentinel".to_owned(),
             self_managed: false,
             clickhouse_ready: false,
+            custom: None,
         });
     }
 
@@ -3107,7 +3196,11 @@ fn replay_gunzip_rejection(headers: &HeaderMap, body: &[u8], error: &std::io::Er
     if looks_like_gzip_member(body) {
         ApiError::bad_request(message)
     } else {
-        ApiError::tagged(StatusCode::BAD_REQUEST, &INGEST_REPLAY_BODY_NOT_GZIP, message)
+        ApiError::tagged(
+            StatusCode::BAD_REQUEST,
+            &INGEST_REPLAY_BODY_NOT_GZIP,
+            message,
+        )
     }
 }
 
@@ -3187,11 +3280,60 @@ fn derive_country(headers: &HeaderMap, trust_proxy_geo: bool) -> String {
     code
 }
 
+/// Per-request checks for a custom ingest key: expiry, signal allow-list and
+/// rate limit, in that order. A no-op for default keys.
+async fn authorize_custom_key(
+    state: &AppState,
+    resolved_key: &ResolvedIngestKey,
+    signal: KeySignal,
+) -> Result<(), ApiError> {
+    let Some(custom) = &resolved_key.custom else {
+        return Ok(());
+    };
+    if custom.is_expired(current_time_millis()) {
+        warn!(key_id = %custom.public_id, "Custom ingest key expired");
+        return Err(ApiError::tagged(
+            StatusCode::UNAUTHORIZED,
+            &INGEST_KEY_EXPIRED,
+            "Ingest key expired",
+        ));
+    }
+    if !custom.allows(signal) {
+        warn!(
+            key_id = %custom.public_id,
+            signal = signal.as_str(),
+            "Custom ingest key denied for signal"
+        );
+        return Err(ApiError::tagged(
+            StatusCode::FORBIDDEN,
+            &INGEST_SIGNAL_NOT_ALLOWED,
+            format!("This ingest key is not allowed to send {}", signal.as_str()),
+        ));
+    }
+    if let Some(rps) = custom.rate_limit_rps {
+        if !state.key_rate_limiter.try_acquire(&custom.id, rps).await {
+            metrics::org_throttled(&resolved_key.org_id, "key_rate_limit");
+            warn!(
+                key_id = %custom.public_id,
+                rate_limit_rps = rps,
+                "Custom ingest key rate limit exceeded"
+            );
+            return Err(ApiError::tagged(
+                StatusCode::TOO_MANY_REQUESTS,
+                &INGEST_KEY_RATE_LIMITED,
+                format!("Ingest key rate limit of {rps} requests per second exceeded"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Auth shared by both replay endpoints. `Ok(None)` is the sentinel token —
 /// silently dropped like the OTLP path.
 async fn resolve_replay_key(
     state: &AppState,
     headers: &HeaderMap,
+    signal: KeySignal,
 ) -> Result<Option<ResolvedIngestKey>, ApiError> {
     let ingest_key =
         extract_ingest_key(headers).ok_or_else(|| ApiError::unauthorized("Missing ingest key"))?;
@@ -3204,6 +3346,7 @@ async fn resolve_replay_key(
         .await
         .map_err(|_| ApiError::service_unavailable("Ingest authentication unavailable"))?
         .ok_or_else(|| ApiError::unauthorized(state.config.invalid_key_message))?;
+    authorize_custom_key(state, &resolved, signal).await?;
     Ok(Some(resolved))
 }
 
@@ -3269,7 +3412,7 @@ async fn handle_replay_meta_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers).await? else {
+    let Some(resolved_key) = resolve_replay_key(state, headers, KeySignal::Sessions).await? else {
         return Ok(0);
     };
     let org_id = resolved_key.org_id.clone();
@@ -3281,13 +3424,14 @@ async fn handle_replay_meta_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&org_id)
-        .ok_or_else(|| {
-            warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
-            ApiError::too_many_requests("Per-org ingest limit exceeded")
-        })?;
+    let _org_inflight_permit =
+        state
+            .org_inflight_limiter
+            .try_acquire(&org_id)
+            .ok_or_else(|| {
+                warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
+                ApiError::too_many_requests("Per-org ingest limit exceeded")
+            })?;
 
     let pipeline = native_rows_pipeline_for(
         state,
@@ -3451,7 +3595,7 @@ async fn handle_session_events_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers).await? else {
+    let Some(resolved_key) = resolve_replay_key(state, headers, KeySignal::Sessions).await? else {
         return Ok(0);
     };
     let org_id = resolved_key.org_id.clone();
@@ -3463,13 +3607,14 @@ async fn handle_session_events_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&org_id)
-        .ok_or_else(|| {
-            warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
-            ApiError::too_many_requests("Per-org ingest limit exceeded")
-        })?;
+    let _org_inflight_permit =
+        state
+            .org_inflight_limiter
+            .try_acquire(&org_id)
+            .ok_or_else(|| {
+                warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
+                ApiError::too_many_requests("Per-org ingest limit exceeded")
+            })?;
 
     // Same Autumn gate as the metadata endpoint. Automatic session events
     // (clicks, navigations, errors, ...) are not separately metered —
@@ -3635,7 +3780,7 @@ async fn handle_product_events_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let resolved_key = match resolve_replay_key(state, headers).await? {
+    let resolved_key = match resolve_replay_key(state, headers, KeySignal::Events).await? {
         Some(resolved_key) => resolved_key,
         None => return Ok(0),
     };
@@ -3648,13 +3793,14 @@ async fn handle_product_events_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&org_id)
-        .ok_or_else(|| {
-            warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
-            ApiError::too_many_requests("Per-org ingest limit exceeded")
-        })?;
+    let _org_inflight_permit =
+        state
+            .org_inflight_limiter
+            .try_acquire(&org_id)
+            .ok_or_else(|| {
+                warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
+                ApiError::too_many_requests("Per-org ingest limit exceeded")
+            })?;
 
     // Product events are their own metered feature, but they are NOT gated on
     // it — same reasoning as the `type == "custom"` rows on `/v1/sessionEvents`.
@@ -3832,7 +3978,7 @@ async fn handle_replay_blob_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<(), ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers).await? else {
+    let Some(resolved_key) = resolve_replay_key(state, headers, KeySignal::Sessions).await? else {
         return Ok(());
     };
     let org_id = resolved_key.org_id.clone();
@@ -3844,13 +3990,14 @@ async fn handle_replay_blob_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&org_id)
-        .ok_or_else(|| {
-            warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
-            ApiError::too_many_requests("Per-org ingest limit exceeded")
-        })?;
+    let _org_inflight_permit =
+        state
+            .org_inflight_limiter
+            .try_acquire(&org_id)
+            .ok_or_else(|| {
+                warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
+                ApiError::too_many_requests("Per-org ingest limit exceeded")
+            })?;
 
     let pipeline = native_rows_pipeline_for(
         state,
@@ -4111,6 +4258,7 @@ async fn handle_signal(
         "maple.signal" = signal.path(),
         "maple.org_id" = tracing::field::Empty,
         "maple.ingest.key_type" = tracing::field::Empty,
+        "maple.ingest.custom_key_id" = tracing::field::Empty,
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
@@ -4320,10 +4468,21 @@ async fn handle_signal_inner(
         "maple.ingest.clickhouse_ready",
         resolved_key.clickhouse_ready,
     );
+    if let Some(custom) = &resolved_key.custom {
+        auth_span_handle.record("maple.ingest.custom_key_id", custom.public_id.as_str());
+        Span::current().record("maple.ingest.custom_key_id", custom.public_id.as_str());
+    }
     debug!(
         resolve_ms = duration_millis(key_resolve_start.elapsed()),
         "Authenticated"
     );
+
+    authorize_custom_key(state, &resolved_key, signal.key_signal())
+        .await
+        .map_err(|error| {
+            let error_kind = error.error_kind();
+            (error, error_kind)
+        })?;
 
     let _org_inflight_permit = state
         .org_inflight_limiter
@@ -4624,6 +4783,7 @@ async fn handle_cloudflare_logpush_inner(
                 key_id: resolved.secret_key_id.clone(),
                 self_managed: resolved.self_managed,
                 clickhouse_ready: resolved.clickhouse_ready,
+                custom: None,
             };
             let decoded = DecodedPayload::Logs(request);
             let response = match process_decoded_payload(
@@ -5201,6 +5361,11 @@ fn enrich_resource_attributes(attributes: &mut Vec<KeyValue>, resolved_key: &Res
         key != "org_id" && key != "maple_org_id"
     });
 
+    // Overrides go first so the maple_* stamps below always win.
+    if let Some(custom) = &resolved_key.custom {
+        apply_resource_attribute_overrides(attributes, custom);
+    }
+
     upsert_string_attribute(attributes, "maple_org_id", &resolved_key.org_id);
     upsert_string_attribute(
         attributes,
@@ -5208,6 +5373,31 @@ fn enrich_resource_attributes(attributes: &mut Vec<KeyValue>, resolved_key: &Res
         resolved_key.key_type.as_str(),
     );
     upsert_string_attribute(attributes, "maple_ingest_source", INGEST_SOURCE);
+    if let Some(custom) = &resolved_key.custom {
+        upsert_string_attribute(attributes, "maple_ingest_key_id", &custom.public_id);
+    }
+}
+
+fn apply_resource_attribute_overrides(attributes: &mut Vec<KeyValue>, policy: &CustomKeyPolicy) {
+    for attribute in &policy.resource_attributes {
+        // Parsing already drops these; checked again since it guards tenancy.
+        if custom_keys::is_protected_attribute(&attribute.key) {
+            continue;
+        }
+        match attribute.mode {
+            OverrideMode::Set => {
+                upsert_string_attribute(attributes, &attribute.key, &attribute.value);
+            }
+            OverrideMode::Default => {
+                if !attributes
+                    .iter()
+                    .any(|existing| existing.key == attribute.key)
+                {
+                    upsert_string_attribute(attributes, &attribute.key, &attribute.value);
+                }
+            }
+        }
+    }
 }
 
 fn upsert_string_attribute(attributes: &mut Vec<KeyValue>, key: &str, value: &str) {
@@ -5579,17 +5769,31 @@ impl IngestKeyResolver {
         };
 
         let key_hash = hash_ingest_key(raw_key, &self.lookup_hmac_key)?;
-        let hash_column = match key_type {
-            IngestKeyType::Public => "public_key_hash",
-            IngestKeyType::Private => "private_key_hash",
-            IngestKeyType::Connector => return Ok(None),
-        };
 
         // LEFT JOIN against org_clickhouse_settings so the initial routing state
         // is resolved in the same roundtrip as org_id. Warm auth-cache hits keep
         // the key identity cached while the separate org-routing cache refreshes
         // ClickHouse readiness on its own TTL.
-        let Some(row) = self.store.fetch_ingest_key(&key_hash, hash_column).await? else {
+        let found = match key_type {
+            IngestKeyType::Public | IngestKeyType::Private => {
+                let hash_column = if matches!(key_type, IngestKeyType::Public) {
+                    "public_key_hash"
+                } else {
+                    "private_key_hash"
+                };
+                self.store
+                    .fetch_ingest_key(&key_hash, hash_column)
+                    .await?
+                    .map(|row| (row, None))
+            }
+            IngestKeyType::Custom => self
+                .store
+                .fetch_custom_ingest_key(&key_hash)
+                .await?
+                .map(|row| (row.key, row.config)),
+            IngestKeyType::Connector => return Ok(None),
+        };
+        let Some((row, custom_config)) = found else {
             // Only a genuine "no row" is cached — store errors surface above and
             // must stay retryable.
             self.negative_cache.insert(raw_key.to_owned(), ()).await;
@@ -5601,6 +5805,9 @@ impl IngestKeyResolver {
             org_id: row.org_id.clone(),
             key_type,
             key_id: key_hash.chars().take(16).collect(),
+            custom: custom_config
+                .as_ref()
+                .map(|config| Arc::new(CustomKeyPolicy::from_row(config))),
         };
 
         self.cache
@@ -6068,6 +6275,66 @@ impl KeyStore for PostgresKeyStore {
         }))
     }
 
+    async fn fetch_custom_ingest_key(
+        &self,
+        key_hash: &str,
+    ) -> Result<Option<CustomKeyRow>, String> {
+        // jsonb read as text: tokio-postgres here has no serde feature.
+        let revision = required_schema_revision();
+        let sql = format!(
+            "SELECT k.id, k.org_id, \
+                    k.allowed_signals::text AS allowed_signals, \
+                    k.rate_limit_rps, \
+                    k.resource_attributes::text AS resource_attributes, \
+                    (EXTRACT(EPOCH FROM k.expires_at) * 1000)::bigint AS expires_at_ms, \
+                    COALESCE(s.sync_status = 'connected', false) AS self_managed, \
+                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
+             FROM org_ingest_custom_keys k \
+             LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
+             WHERE k.key_hash = $2 AND k.enabled = true LIMIT 1"
+        );
+        let client = self.client().await?;
+        let rows = client
+            .query(&sql, &[&revision, &key_hash])
+            .instrument(postgres_client_span(
+                "fetch_custom_ingest_key",
+                "SELECT",
+                "org_ingest_custom_keys",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| {
+                format!(
+                    "postgres fetch_custom_ingest_key failed: {}",
+                    error_chain(&error)
+                )
+            })?;
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        let decode_error = |error: tokio_postgres::Error| {
+            format!("postgres custom key row decode failed: {error}")
+        };
+        let config = CustomKeyConfigRow {
+            id: row.try_get("id").map_err(decode_error)?,
+            allowed_signals_json: row.try_get("allowed_signals").map_err(decode_error)?,
+            rate_limit_rps: row.try_get("rate_limit_rps").map_err(decode_error)?,
+            resource_attributes_json: row
+                .try_get::<_, Option<String>>("resource_attributes")
+                .map_err(decode_error)?
+                .unwrap_or_default(),
+            expires_at_ms: row.try_get("expires_at_ms").map_err(decode_error)?,
+        };
+        Ok(Some(CustomKeyRow {
+            key: KeyRow {
+                org_id: row.try_get("org_id").map_err(decode_error)?,
+                self_managed: row.try_get("self_managed").map_err(decode_error)?,
+                clickhouse_ready: row.try_get("clickhouse_ready").map_err(decode_error)?,
+            },
+            config: Some(config),
+        }))
+    }
+
     async fn fetch_connector(
         &self,
         connector_id: &str,
@@ -6304,6 +6571,20 @@ impl KeyStore for StaticKeyStore {
         }))
     }
 
+    async fn fetch_custom_ingest_key(
+        &self,
+        _key_hash: &str,
+    ) -> Result<Option<CustomKeyRow>, String> {
+        Ok(Some(CustomKeyRow {
+            key: KeyRow {
+                org_id: self.org_id.clone(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+            config: None,
+        }))
+    }
+
     async fn fetch_connector(
         &self,
         _connector_id: &str,
@@ -6362,6 +6643,10 @@ fn infer_ingest_key_type(raw_key: &str) -> Option<IngestKeyType> {
 
     if raw_key.starts_with("maple_sk_") {
         return Some(IngestKeyType::Private);
+    }
+
+    if raw_key.starts_with(CUSTOM_KEY_PREFIX) {
+        return Some(IngestKeyType::Custom);
     }
 
     None
@@ -6659,6 +6944,14 @@ fn parse_usize(name: &str, raw: Option<String>, default: usize) -> Result<usize,
     value
         .parse::<usize>()
         .map_err(|_| format!("{name} must be a positive integer"))
+}
+
+fn parse_fleet_size(raw: Option<String>) -> Result<u32, String> {
+    let fleet_size = parse_u64("INGEST_RATE_LIMIT_FLEET_SIZE", raw, 1)?;
+    match u32::try_from(fleet_size) {
+        Ok(fleet_size) if fleet_size > 0 => Ok(fleet_size),
+        _ => Err("INGEST_RATE_LIMIT_FLEET_SIZE must be a positive integer".to_owned()),
+    }
 }
 
 #[cfg(test)]
@@ -7004,6 +7297,7 @@ mod tests {
             key_id: "abc".to_owned(),
             self_managed: false,
             clickhouse_ready: false,
+            custom: None,
         };
 
         enrich_resource_attributes(&mut attributes, &resolved);
@@ -7037,6 +7331,7 @@ mod tests {
             key_id: "abc".to_owned(),
             self_managed: false,
             clickhouse_ready: false,
+            custom: None,
         }
     }
 
@@ -7189,12 +7484,15 @@ mod tests {
         };
         let attributes = &request.resource_spans[0].scope_spans[0].spans[0].attributes;
         let value = |key: &str| {
-            attributes.iter().find(|a| a.key == key).map(|a| match &a.value {
-                Some(AnyValue {
-                    value: Some(any_value::Value::StringValue(v)),
-                }) => v.clone(),
-                other => panic!("expected string value for {key}, got {other:?}"),
-            })
+            attributes
+                .iter()
+                .find(|a| a.key == key)
+                .map(|a| match &a.value {
+                    Some(AnyValue {
+                        value: Some(any_value::Value::StringValue(v)),
+                    }) => v.clone(),
+                    other => panic!("expected string value for {key}, got {other:?}"),
+                })
         };
         assert_eq!(value("maple_ai.vendor.id").as_deref(), Some("mastra"));
         assert_eq!(value("maple_ai.vendor.version").as_deref(), Some("0"));
@@ -7440,6 +7738,8 @@ mod tests {
     #[derive(Default)]
     struct FakeKeyStore {
         keys: std::sync::Mutex<std::collections::HashMap<(String, &'static str), KeyRow>>,
+        /// Custom keys by hash, with their `enabled` flag (the SQL filters on it).
+        custom_keys: std::sync::Mutex<std::collections::HashMap<String, (CustomKeyRow, bool)>>,
         connectors: std::sync::Mutex<std::collections::HashMap<(String, String), ConnectorRow>>,
         routings: std::sync::Mutex<std::collections::HashMap<String, OrgRouting>>,
         targets: std::sync::Mutex<std::collections::HashMap<String, ClickHouseTargetRow>>,
@@ -7464,6 +7764,15 @@ mod tests {
                 .lock()
                 .unwrap()
                 .insert((hash, "private_key_hash"), row);
+        }
+
+        fn insert_custom(&self, raw_key: &str, row: CustomKeyRow, enabled: bool) {
+            let hash = hash_ingest_key(raw_key, "test-hmac-key").unwrap();
+            self.set_org_routing(&row.key.org_id, OrgRouting::from_key_row(&row.key));
+            self.custom_keys
+                .lock()
+                .unwrap()
+                .insert(hash, (row, enabled));
         }
 
         fn insert_connector(&self, connector_id: &str, raw_secret: &str, row: ConnectorRow) {
@@ -7507,6 +7816,19 @@ mod tests {
                 .unwrap()
                 .get(&(key_hash.to_owned(), hash_column))
                 .cloned())
+        }
+        async fn fetch_custom_ingest_key(
+            &self,
+            key_hash: &str,
+        ) -> Result<Option<CustomKeyRow>, String> {
+            self.ingest_key_fetches.fetch_add(1, Ordering::Relaxed);
+            Ok(self
+                .custom_keys
+                .lock()
+                .unwrap()
+                .get(key_hash)
+                .filter(|(_, enabled)| *enabled)
+                .map(|(row, _)| row.clone()))
         }
         async fn fetch_connector(
             &self,
@@ -7763,8 +8085,11 @@ mod tests {
         let tinybird = test_tinybird_config(queue_dir);
         let key_store: Arc<dyn KeyStore> = Arc::<FakeKeyStore>::clone(&store);
         let routing = make_routing_resolver(Arc::clone(&store), routing_ttl);
-        let clickhouse_targets =
-            Arc::new(ClickHouseTargetResolver::new(Arc::clone(&key_store), None, 16));
+        let clickhouse_targets = Arc::new(ClickHouseTargetResolver::new(
+            Arc::clone(&key_store),
+            None,
+            16,
+        ));
         let http_client = Client::builder()
             .timeout(Duration::from_secs(5))
             .build()
@@ -7791,6 +8116,7 @@ mod tests {
                 tinybird,
                 max_request_body_bytes: 1024 * 1024,
                 org_max_in_flight: 100,
+                rate_limit_fleet_size: 1,
                 request_timeout: Duration::from_secs(30),
                 require_tls: false,
                 key_store_backend: KeyStoreBackend::Static {
@@ -7809,7 +8135,7 @@ mod tests {
                 replay_blob_store: None,
                 trust_proxy_geo: false,
                 shutdown_drain_secs: 1,
-            wal_store: None,
+                wal_store: None,
                 invalid_key_message: "Invalid ingest key",
             },
             #[expect(
@@ -7833,6 +8159,7 @@ mod tests {
                 routing: Arc::clone(&routing),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
+            key_rate_limiter: KeyRateLimiter::new(1),
             sampling_resolver: SamplingPolicyResolver {
                 store: Arc::clone(&key_store),
                 cache: Cache::builder()
@@ -8568,7 +8895,9 @@ mod tests {
                 request_timeout_middleware,
             ));
 
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -9864,10 +10193,14 @@ mod tests {
             },
         );
 
-        let resolver = ClickHouseTargetResolver::new(store, Some(
+        let resolver = ClickHouseTargetResolver::new(
+            store,
+            Some(
                 parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
                     .unwrap(),
-            ), 16);
+            ),
+            16,
+        );
 
         let target = resolver
             .resolve_clickhouse_target("org_ready")
@@ -9896,10 +10229,14 @@ mod tests {
             },
         );
 
-        let resolver = ClickHouseTargetResolver::new(store, Some(
+        let resolver = ClickHouseTargetResolver::new(
+            store,
+            Some(
                 parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
                     .unwrap(),
-            ), 16);
+            ),
+            16,
+        );
 
         let error = resolver
             .resolve_clickhouse_target("org_insecure")
@@ -9936,5 +10273,374 @@ mod tests {
             assert!(resolved.is_none());
         }
         assert_eq!(store.ingest_key_fetches.load(Ordering::Relaxed), 1);
+    }
+
+    /// The error of a result whose success type has no `Debug`.
+    fn rejected<T, E>(result: Result<T, E>, context: &str) -> E {
+        match result {
+            Ok(_) => panic!("{context}"),
+            Err(error) => error,
+        }
+    }
+
+    const CUSTOM_KEY_UUID: &str = "0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b";
+    const CUSTOM_KEY_PUBLIC_ID: &str = "ingk_aXunrkWtzvXSkw9Z2smcft";
+
+    fn custom_key_row(org_id: &str, config: CustomKeyConfigRow) -> CustomKeyRow {
+        CustomKeyRow {
+            key: KeyRow {
+                org_id: org_id.to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+            config: Some(config),
+        }
+    }
+
+    fn custom_key_config(
+        allowed_signals: Option<&str>,
+        rate_limit_rps: Option<i32>,
+        resource_attributes: &str,
+    ) -> CustomKeyConfigRow {
+        CustomKeyConfigRow {
+            id: CUSTOM_KEY_UUID.to_owned(),
+            allowed_signals_json: allowed_signals.map(str::to_owned),
+            rate_limit_rps,
+            resource_attributes_json: resource_attributes.to_owned(),
+            expires_at_ms: None,
+        }
+    }
+
+    fn string_attributes(attributes: &[KeyValue]) -> std::collections::HashMap<String, String> {
+        attributes
+            .iter()
+            .filter_map(|attribute| match &attribute.value {
+                Some(AnyValue {
+                    value: Some(any_value::Value::StringValue(value)),
+                }) => Some((attribute.key.clone(), value.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn string_attribute(key: &str, value: &str) -> KeyValue {
+        KeyValue {
+            key: key.to_owned(),
+            key_strindex: 0,
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValue(value.to_owned())),
+            }),
+        }
+    }
+
+    #[test]
+    fn custom_key_prefix_infers_the_custom_type() {
+        assert!(matches!(
+            infer_ingest_key_type("maple_ik_abcdefghijklmnopqrstuvwxyz012345"),
+            Some(IngestKeyType::Custom)
+        ));
+        assert_eq!(IngestKeyType::Custom.as_str(), "custom");
+        assert!(infer_ingest_key_type("maple_xk_abc").is_none());
+    }
+
+    #[test]
+    fn custom_key_overrides_apply_before_the_maple_stamps() {
+        let policy = CustomKeyPolicy::from_row(&custom_key_config(
+            None,
+            None,
+            r#"[{"key":"service.name","value":"checkout","mode":"set"},
+                {"key":"deployment.environment","value":"prod","mode":"default"},
+                {"key":"team","value":"payments","mode":"default"},
+                {"key":"maple_ingest_source","value":"spoofed","mode":"set"},
+                {"key":"maple_org_id","value":"org_evil","mode":"set"}]"#,
+        ));
+        let resolved = ResolvedIngestKey {
+            org_id: "org_real".to_owned(),
+            key_type: IngestKeyType::Custom,
+            key_id: "abc".to_owned(),
+            self_managed: false,
+            clickhouse_ready: false,
+            custom: Some(Arc::new(policy)),
+        };
+        let mut attributes = vec![
+            string_attribute("service.name", "from-sdk"),
+            string_attribute("deployment.environment", "staging"),
+            string_attribute("maple_ingest_key_id", "spoofed"),
+        ];
+
+        enrich_resource_attributes(&mut attributes, &resolved);
+        let values = string_attributes(&attributes);
+
+        assert_eq!(values["service.name"], "checkout");
+        assert_eq!(values["deployment.environment"], "staging");
+        assert_eq!(values["team"], "payments");
+        assert_eq!(values["maple_org_id"], "org_real");
+        assert_eq!(values["maple_ingest_key_type"], "custom");
+        assert_eq!(values["maple_ingest_source"], INGEST_SOURCE);
+        assert_eq!(values["maple_ingest_key_id"], CUSTOM_KEY_PUBLIC_ID);
+        assert_eq!(
+            attributes
+                .iter()
+                .filter(|attribute| attribute.key == "service.name")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn default_keys_get_no_key_id_stamp_or_overrides() {
+        let mut attributes = vec![string_attribute("service.name", "from-sdk")];
+        enrich_resource_attributes(&mut attributes, &test_key());
+        let values = string_attributes(&attributes);
+        assert_eq!(values["service.name"], "from-sdk");
+        assert_eq!(values["maple_ingest_key_type"], "private");
+        assert!(!values.contains_key("maple_ingest_key_id"));
+    }
+
+    #[tokio::test]
+    async fn custom_key_resolves_from_its_own_table_with_policy() {
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_ik_resolves_from_custom_table_0000000";
+        store.insert_custom(
+            raw_key,
+            custom_key_row(
+                "org_custom",
+                custom_key_config(Some(r#"["logs"]"#), Some(10), "[]"),
+            ),
+            true,
+        );
+        let resolver = make_resolver(Arc::clone(&store));
+
+        let resolved = resolver
+            .resolve_ingest_key(raw_key)
+            .await
+            .expect("resolution should not fail")
+            .expect("an enabled custom key resolves");
+        assert_eq!(resolved.org_id, "org_custom");
+        assert!(matches!(resolved.key_type, IngestKeyType::Custom));
+        let custom = resolved.custom.expect("custom keys carry their policy");
+        assert_eq!(custom.public_id, CUSTOM_KEY_PUBLIC_ID);
+        assert_eq!(custom.rate_limit_rps, Some(10));
+        assert!(custom.allows(KeySignal::Logs));
+        assert!(!custom.allows(KeySignal::Traces));
+
+        // A custom-prefixed key never falls through to the default key table.
+        store.insert_private(
+            "maple_ik_only_in_default_table_000000000000",
+            KeyRow {
+                org_id: "org_wrong_table".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        assert!(resolver
+            .resolve_ingest_key("maple_ik_only_in_default_table_000000000000")
+            .await
+            .expect("resolution should not fail")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn disabled_and_expired_custom_keys_are_refused_with_401() {
+        let queue_dir = unique_main_test_dir("custom-key-401");
+        let store = Arc::new(FakeKeyStore::default());
+        let disabled = "maple_ik_disabled_key_000000000000000000000";
+        let expired = "maple_ik_expired_key_0000000000000000000000";
+        store.insert_custom(
+            disabled,
+            custom_key_row("org_custom", custom_key_config(None, None, "[]")),
+            false,
+        );
+        let mut expired_config = custom_key_config(None, None, "[]");
+        expired_config.expires_at_ms = Some(current_time_millis() - 1_000);
+        store.insert_custom(expired, custom_key_row("org_custom", expired_config), true);
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        let body = Bytes::from(test_log_request("refused").encode_to_vec());
+
+        let (error, error_kind) =
+            handle_signal_inner(&state, &test_headers(disabled), body.clone(), Signal::Logs)
+                .await
+                .expect_err("a disabled key is unknown");
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(error_kind, "auth");
+
+        let (error, error_kind) =
+            handle_signal_inner(&state, &test_headers(expired), body, Signal::Logs)
+                .await
+                .expect_err("an expired key is refused");
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(error.message, "Ingest key expired");
+        assert_eq!(error_kind, "auth");
+
+        let replay = rejected(
+            resolve_replay_key(&state, &bearer_headers(expired), KeySignal::Events).await,
+            "the replay paths check expiry too",
+        );
+        assert_eq!(replay.status, StatusCode::UNAUTHORIZED);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn static_store_resolves_custom_keys_without_a_policy() {
+        let store: Arc<dyn KeyStore> = Arc::new(StaticKeyStore {
+            org_id: "org_static".to_owned(),
+        });
+        let resolver = IngestKeyResolver {
+            store: Arc::clone(&store),
+            lookup_hmac_key: "test-hmac-key".to_owned(),
+            cache: Cache::builder().max_capacity(16).build(),
+            negative_cache: Cache::builder().max_capacity(16).build(),
+            routing: Arc::new(OrgRoutingResolver {
+                store,
+                cache: Cache::builder().max_capacity(16).build(),
+                last_known: DashMap::new(),
+            }),
+        };
+        let resolved = resolver
+            .resolve_ingest_key("maple_ik_static_backend_key_0000000000000")
+            .await
+            .expect("resolution should not fail")
+            .expect("the static store accepts any well-formed key");
+        assert_eq!(resolved.org_id, "org_static");
+        assert!(matches!(resolved.key_type, IngestKeyType::Custom));
+        assert!(resolved.custom.is_none());
+    }
+
+    /// A forward collector that keeps each `/v1/logs` body.
+    async fn spawn_capturing_logs_collector(
+    ) -> (String, tokio::sync::mpsc::UnboundedReceiver<Bytes>) {
+        async fn capture(
+            State(tx): State<tokio::sync::mpsc::UnboundedSender<Bytes>>,
+            body: Bytes,
+        ) -> StatusCode {
+            drop(tx.send(body));
+            StatusCode::OK
+        }
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/v1/logs", post(capture))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (format!("http://{addr}"), rx)
+    }
+
+    #[tokio::test]
+    async fn custom_key_end_to_end_overrides_denies_and_rate_limits() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("custom-key-e2e");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_ik_end_to_end_key_00000000000000000000";
+        store.insert_custom(
+            raw_key,
+            custom_key_row(
+                "org_custom_e2e",
+                custom_key_config(
+                    Some(r#"["logs"]"#),
+                    Some(2),
+                    r#"[{"key":"service.name","value":"checkout","mode":"set"}]"#,
+                ),
+            ),
+            true,
+        );
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let body = Bytes::from(test_log_request("custom key").encode_to_vec());
+
+        // Request 1: accepted, with the override in the forwarded payload.
+        let (response, _, org_id, _) =
+            handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Logs)
+                .await
+                .expect("an allowed signal is accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(org_id, "org_custom_e2e");
+        let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("the export is forwarded")
+            .expect("forward channel should stay open");
+        let forwarded = ExportLogsServiceRequest::decode(forwarded).expect("forwarded protobuf");
+        let resource = forwarded.resource_logs[0]
+            .resource
+            .as_ref()
+            .expect("resource");
+        let values = string_attributes(&resource.attributes);
+        assert_eq!(values["service.name"], "checkout");
+        assert_eq!(values["maple_org_id"], "org_custom_e2e");
+        assert_eq!(values["maple_ingest_key_type"], "custom");
+        assert_eq!(values["maple_ingest_key_id"], CUSTOM_KEY_PUBLIC_ID);
+
+        // A signal outside the allow-list is 403 on every transport.
+        let (error, error_kind) =
+            handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Traces)
+                .await
+                .expect_err("traces are not allowed");
+        assert_eq!(error.status, StatusCode::FORBIDDEN);
+        assert_eq!(
+            error.message,
+            "This ingest key is not allowed to send traces"
+        );
+        assert_eq!(error_kind, "forbidden");
+        let error = rejected(
+            resolve_replay_key(&state, &bearer_headers(raw_key), KeySignal::Events).await,
+            "product events are not allowed",
+        );
+        assert_eq!(error.status, StatusCode::FORBIDDEN);
+        let status = rejected(
+            admit_grpc_export(&state, &bearer_headers(raw_key), Signal::Metrics).await,
+            "metrics over gRPC are not allowed",
+        );
+        assert_eq!(status.code(), tonic::Code::PermissionDenied);
+
+        // Request 2 spends the last token of the 2 rps burst; request 3 is 429.
+        handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Logs)
+            .await
+            .expect("the second request fits the burst");
+        let (error, error_kind) =
+            handle_signal_inner(&state, &test_headers(raw_key), body, Signal::Logs)
+                .await
+                .expect_err("the third request is over the limit");
+        assert_eq!(error.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(error_kind, "throttle");
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            response
+                .headers()
+                .get(RETRY_AFTER)
+                .and_then(|value| value.to_str().ok()),
+            Some("1")
+        );
+        let status = rejected(
+            admit_grpc_export(&state, &bearer_headers(raw_key), Signal::Logs).await,
+            "gRPC shares the key's bucket",
+        );
+        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn fleet_size_defaults_to_one_and_refuses_zero() {
+        assert_eq!(parse_fleet_size(None), Ok(1));
+        assert_eq!(parse_fleet_size(Some("4".to_owned())), Ok(4));
+        assert!(parse_fleet_size(Some("0".to_owned())).is_err());
+        assert!(parse_fleet_size(Some("many".to_owned())).is_err());
     }
 }
