@@ -18,6 +18,7 @@ import {
 	GCP_CLOUD_SQL_INVENTORY_QUERY,
 	gcpCloudSqlInstances,
 	gcpWorkloadTelemetry,
+	type GcpCloudSqlInstance,
 } from "@/components/infra/gcp/inventory"
 import {
 	GCP_INFRA_COLUMNS,
@@ -198,6 +199,7 @@ function GcpCloudSqlSectionData({
 }
 
 const NO_WORKLOADS: ReadonlyArray<GcpWorkload> = []
+const NO_INSTANCES: ReadonlyArray<GcpCloudSqlInstance> = []
 
 function GcpCloudSqlMatches({
 	database,
@@ -223,7 +225,7 @@ function GcpCloudSqlMatches({
 	// PostgreSQL instances (or those of an engine the inventory doesn't know) instead, as such.
 	const instances = Result.builder(inventoryResult)
 		.onSuccess((inventory) => gcpCloudSqlInstances(inventory.resources))
-		.orElse(() => [])
+		.orElse(() => NO_INSTANCES)
 	const matches =
 		matched.length > 0
 			? matched
