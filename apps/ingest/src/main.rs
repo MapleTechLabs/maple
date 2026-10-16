@@ -5895,7 +5895,7 @@ fn enrich_metrics_request(
 fn enrich_resource_attributes(attributes: &mut Vec<KeyValue>, resolved_key: &ResolvedIngestKey) {
     attributes.retain(|attribute| {
         let key = attribute.key.as_str();
-        key != "org_id" && key != "maple_org_id"
+        key != "org_id" && key != "maple_org_id" && key != "maple_ingest_key_id"
     });
 
     // Overrides go first so the maple_* stamps below always win.
@@ -11807,7 +11807,11 @@ mod tests {
 
     #[test]
     fn default_keys_get_no_key_id_stamp_or_overrides() {
-        let mut attributes = vec![string_attribute("service.name", "from-sdk")];
+        // A sender-supplied key id is gateway-owned and must not survive a default key.
+        let mut attributes = vec![
+            string_attribute("service.name", "from-sdk"),
+            string_attribute("maple_ingest_key_id", "ingk_spoofed"),
+        ];
         enrich_resource_attributes(&mut attributes, &test_key());
         let values = string_attributes(&attributes);
         assert_eq!(values["service.name"], "from-sdk");
