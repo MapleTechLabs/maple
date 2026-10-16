@@ -136,6 +136,11 @@ describe("severity tiers", () => {
 		])
 	})
 
+	it("does not count a recovery-band check as healthy in the audit counters", () => {
+		const { plans } = replay([warnAt(10, 8)], [12, 12, 9, 7], { n: 2, r: 2 })
+		expect(plans.map((p) => p.state.consecutiveHealthy)).toEqual([0, 0, 0, 1])
+	})
+
 	it("does not re-open from inside the recovery band", () => {
 		const { plans } = replay([warnAt(10, 8)], [9, 9, 9], { n: 1, r: 1 })
 		expect(plans.every((p) => p.transition === "none")).toBe(true)

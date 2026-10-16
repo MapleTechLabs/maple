@@ -23,6 +23,14 @@ const criticalHasOwnKey = (context: Pick<DispatchContext, "ruleSeverities">): bo
 
 const criticalDedupKey = (dedupeKey: string): string => `${dedupeKey}:critical`
 
+/**
+ * The tier a delivery's key is chosen from: the queued event's, unless the
+ * incident has since fallen below it. A critical trigger retried after a
+ * de-escalation must not re-open (and re-page) the alert it closed.
+ */
+const keySeverity = (context: Pick<DispatchContext, "severity" | "incidentSeverity">): AlertSeverity =>
+	context.severity === "critical" && context.incidentSeverity === "warning" ? "warning" : context.severity
+
 export const pagerDutyDedupKey = (
 	context: Pick<DispatchContext, "dedupeKey" | "ruleSeverities">,
 	severity: AlertSeverity,
@@ -66,7 +74,7 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 				// in `followUps`.
 				dedup_key: pagerDutyDedupKey(
 					context,
-					context.eventType === "resolve" ? "warning" : context.severity,
+					context.eventType === "resolve" ? "warning" : keySeverity(context),
 				),
 				payload: {
 					summary: truncate(templated?.title ?? `${context.ruleName} ${context.eventType}`, 1024),
@@ -99,16 +107,18 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 	followUps: (input) => {
 		const { context } = input
 		const mayHoldCriticalKey = criticalHasOwnKey(context) || context.incidentPeakSeverity === "critical"
+		// Judged by where the incident is now, not by the queued event: a warning
+		// reminder delivered after an escalation must leave the critical page open.
 		const closesCritical =
 			context.eventType === "resolve" ||
-			(context.eventType !== "test" && context.severity === "warning")
+			(context.eventType !== "test" && (context.incidentSeverity ?? context.severity) === "warning")
 		return mayHoldCriticalKey && closesCritical
 			? [resolveRequest(input.config.integrationKey, criticalDedupKey(context.dedupeKey))]
 			: []
 	},
 	ack: (input) => ({
 		providerMessage: "Delivered to PagerDuty",
-		providerReference: pagerDutyDedupKey(input.context, input.context.severity),
+		providerReference: pagerDutyDedupKey(input.context, keySeverity(input.context)),
 	}),
 }
 

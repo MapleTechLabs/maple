@@ -2017,6 +2017,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							severity: decodeAlertSeveritySync(
 								payloadRule?.severity ?? incidentRow?.severity ?? "warning",
 							),
+							...(incidentRow?.status === "open"
+								? { incidentSeverity: decodeAlertSeveritySync(incidentRow.severity) }
+								: undefined),
 							...dispatchTierFields(
 								payloadRule?.severities,
 								payload.peakSeverity ?? null,

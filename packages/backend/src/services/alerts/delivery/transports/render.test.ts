@@ -320,6 +320,20 @@ describe("pagerduty dedup keys across severity tiers", () => {
 		)
 	})
 
+	it("leaves the critical page open when a warning event is delivered after an escalation", () => {
+		assert.deepStrictEqual(
+			pd({ ...tiered, severity: "warning", eventType: "renotify", incidentSeverity: "critical" }),
+			["trigger org_1:rule_1:checkout"],
+		)
+	})
+
+	it("does not re-open the critical alert when a critical event is retried after a de-escalation", () => {
+		assert.deepStrictEqual(pd({ ...tiered, severity: "critical", incidentSeverity: "warning" }), [
+			"trigger org_1:rule_1:checkout",
+			"resolve org_1:rule_1:checkout:critical",
+		])
+	})
+
 	it("closes the critical alert on de-escalation and both alerts on resolve", () => {
 		assert.deepStrictEqual(pd({ ...tiered, severity: "warning", eventType: "renotify" }), [
 			"trigger org_1:rule_1:checkout",

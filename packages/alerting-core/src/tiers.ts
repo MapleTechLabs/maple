@@ -135,16 +135,17 @@ export const resolveActiveSeverity = (
 	return null
 }
 
+/** Every tier past its recovery value: a tick in the recovery band is not healthy yet. */
+const allClear = (code: number) =>
+	tierStatusAt(code, "warning") === "clear" && tierStatusAt(code, "critical") === "clear"
+
 /** The breach / healthy run lengths the audit trail and old readers expect. */
 export const countersFromHistory = (
 	history: ReadonlyArray<number>,
 	policy: TieredHysteresisPolicy,
 ): { readonly consecutiveBreaches: number; readonly consecutiveHealthy: number } => ({
 	consecutiveBreaches: Math.min(trailingRun(history, anyBreach), policy.breachesToOpen),
-	consecutiveHealthy: Math.min(
-		trailingRun(history, (code) => !anyBreach(code)),
-		policy.healthyToResolve,
-	),
+	consecutiveHealthy: Math.min(trailingRun(history, allClear), policy.healthyToResolve),
 })
 
 /**
