@@ -118,5 +118,81 @@ export const logsPageArea: AreaModule = {
 			await stream(page).getByRole("button", { name: "Expand log" }).first().click()
 			await page.mouse.move(5, 5)
 		}),
+		logs("search-text", "typing a body search (debounced into the URL)", async (page) => {
+			await page.getByPlaceholder("Text or trace id").fill("pool")
+			await page.getByText("matching", { exact: false }).last().waitFor()
+			await page.mouse.move(5, 5)
+		}),
+		logs("search-trace", "pasting a trace id scopes the stream", async (page) => {
+			await page.getByPlaceholder("Text or trace id").fill("0eab694ff33721d5a836ce7444afadcc")
+			await page.getByText("Trace", { exact: true }).first().waitFor()
+			await page.mouse.move(5, 5)
+		}),
+		logs(
+			"chip-remove",
+			"removing a filter chip",
+			async (page) => {
+				await page.getByRole("button", { name: /^Remove filter: Severity/ }).click()
+				await page.getByRole("log").waitFor()
+				await page.mouse.move(5, 5)
+			},
+			"/logs?severities=%5B%22WARN%22%5D",
+		),
+		logs("service-only", "Only one service, from the sidebar", async (page) => {
+			await page.getByText("auth-svc", { exact: true }).first().hover()
+			await page.getByRole("button", { name: "Show only auth-svc" }).click()
+			await page.getByText("Service is", { exact: false }).waitFor()
+			await page.mouse.move(5, 5)
+		}),
+		logs("service-exclude", "a service excluded, from the sidebar", async (page) => {
+			await page.getByText("storefront", { exact: true }).first().hover()
+			await page.getByRole("button", { name: "Exclude storefront" }).click()
+			await page.getByText("Service is not", { exact: false }).waitFor()
+			await page.mouse.move(5, 5)
+		}),
+		logs("time-range", "last 1 day from the time range picker", async (page) => {
+			await page.getByRole("button", { name: "Last 12 hours" }).click()
+			await page.getByRole("dialog").getByRole("button", { name: "Last 1 day" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
+			await page.mouse.move(5, 5)
+		}),
+		logs("reload", "Reload re-reads the window", async (page) => {
+			await page.getByRole("button", { name: "Reload", exact: true }).click()
+			await page.waitForTimeout(800)
+			await page.mouse.move(5, 5)
+		}),
+		logs("refresh-interval", "a 30s live tail picked from the menu", async (page) => {
+			await page.getByRole("button", { name: "Auto-refresh off" }).click()
+			await page.getByRole("menuitemradio", { name: "30s" }).click()
+			await page.keyboard.press("Escape")
+			await page.getByRole("button", { name: "Auto-refresh every 30s" }).waitFor()
+			await page.mouse.move(5, 5)
+		}),
+		logs("column-pinned", "http.route pinned from the Columns picker", async (page) => {
+			await page.getByRole("button", { name: "Pin attributes as columns" }).click()
+			await page.getByRole("checkbox", { name: "http.route", exact: true }).click()
+			await page.keyboard.press("Escape")
+			await page.mouse.move(5, 5)
+		}),
+		logs("paginated", "scrolling the stream loads a later page", async (page) => {
+			await stream(page).hover({ position: { x: 120, y: 120 } })
+			await page.mouse.wheel(0, 14000)
+			await page.waitForTimeout(800)
+			await page.mouse.move(5, 5)
+		}),
+		logs("detail-raw", "the detail sheet's Raw tab", async (page) => {
+			await stream(page).getByRole("listitem").first().click()
+			await page.getByRole("tab", { name: "Raw" }).click()
+			await page.getByText("JSON Payload", { exact: true }).waitFor()
+		}),
+		logs("detail-filter", "filtering by an attribute from the detail sheet", async (page) => {
+			await stream(page).getByRole("listitem").first().click()
+			await page
+				.getByRole("dialog")
+				.getByRole("button", { name: /^Filter by http\.route/ })
+				.click()
+			await page.getByText("http.route", { exact: true }).first().waitFor()
+			await page.mouse.move(5, 5)
+		}),
 	],
 }

@@ -151,7 +151,17 @@ const keyed = <A, E>(
 	})
 
 /** Every query the page reads, keyed like apps/web's atoms, for the resolved window. */
-const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
+/**
+ * Reload refreshes only the stream (`useRefreshableAtomValue`); the other reads refetch only when
+ * their key moves. `facetsMode` is the sidebar's own retry.
+ */
+const requestAll = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	mode: RequestMode,
+	facetsMode: RequestMode = "Load",
+): Return => {
 	const org = context.orgId
 	const pin = context.pinnedNamespace
 	const { search } = model
@@ -174,7 +184,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 				step,
 				(m) => m.facets,
 				requestKey(org, "getLogsFacets", facetsInput),
-				mode,
+				facetsMode,
 				(m, facets) => ({ ...m, facets }),
 				(key) => FetchFacets({ key, ...facetsInput }),
 			),
@@ -183,7 +193,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 				step,
 				(m) => m.volume,
 				requestKey(org, "getCustomChartTimeSeries", volumeInput(search, window, bucketSeconds, pin)),
-				mode,
+				"Load",
 				(m, volume) => ({ ...m, volume }),
 				(key) => FetchVolume({ key, ...listArgs, bucketSeconds }),
 			),
@@ -192,7 +202,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 				step,
 				(m) => m.attributeKeys,
 				requestKey(org, "getLogAttributeKeys", window),
-				mode,
+				"Load",
 				(m, attributeKeys) => ({ ...m, attributeKeys }),
 				(key) => FetchAttributeKeys({ key, window }),
 			),
@@ -511,7 +521,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryFacets: () =>
 			model.window === null || model.facets.key === null
 				? { model }
-				: requestAll(model, context, model.window, "Refresh"),
+				: requestAll(model, context, model.window, "Load", "Refresh"),
 		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
 			navigate(model, { ...model.search, [facet]: [name], [EXCLUDED_OF[facet]]: undefined }),
