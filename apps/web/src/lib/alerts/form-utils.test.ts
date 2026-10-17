@@ -62,6 +62,13 @@ describe("threshold unit conversion", () => {
 		expect(domainThresholdToForm({ signalType: "error_rate" }, 0.29)).toBe("29")
 	})
 
+	it("round-trips a percent the form read back to the stored ratio", () => {
+		for (const ratio of [0.007, 0.011, 0.0029, 0.333]) {
+			const form = domainThresholdToForm({ signalType: "error_rate" }, ratio)
+			expect(formThresholdToDomain({ signalType: "error_rate" }, form)).toBe(ratio)
+		}
+	})
+
 	it("keeps precision for error rates below 0.01%", () => {
 		expect(formatSignalValue("error_rate", 0.00005)).toBe("0.0050%")
 		expect(formatSignalValue("error_rate", 0.05)).toBe(formatErrorRate(0.05))

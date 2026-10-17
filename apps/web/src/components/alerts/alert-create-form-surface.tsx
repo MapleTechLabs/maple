@@ -36,6 +36,8 @@ import {
 	buildRuleCreateParamsV2,
 	buildRuleTestParamsV2,
 	deriveRuleQueryIssues,
+	deriveTierIssues,
+	isFilledNumber,
 	isRangeComparator,
 	isRulePreviewReady,
 	pickDefaultDestination,
@@ -226,7 +228,7 @@ export function AlertCreateFormSurface({
 	// Drop the verdict as soon as the user edits anything it depended on.
 	const currentPreviewKey = previewIdentityKey(ruleForm)
 	const freshPreviewResult = previewResult?.key === currentPreviewKey ? previewResult : null
-	const thresholdMissing = !Number.isFinite(Number(ruleForm.threshold)) || ruleForm.threshold.trim() === ""
+	const thresholdMissing = !isFilledNumber(ruleForm.threshold)
 
 	return (
 		<>
@@ -260,28 +262,30 @@ export function AlertCreateFormSurface({
 						status={thresholdMissing ? "missing" : "done"}
 					>
 						<div className="space-y-4">
-						<RuleLiveChartHero
-							form={ruleForm}
-							preview={preview}
-							previewLoading={previewLoading}
-							previewError={previewError}
-							onTestRule={() => void previewRule()}
-							testing={previewingRule}
-							previewResult={freshPreviewResult}
-							range={previewRange}
-							timeRange={previewTimeRange}
-							onTimeRangeChange={setPreviewTimeRange}
-							comparison={
-								savedForm !== null && changes.length > 0
-									? {
-											savedPreview: evaluationChanged ? savedReplay.preview : preview,
-											savedLoading: evaluationChanged && savedReplay.previewLoading,
-											changes,
-											clearedIncidents,
-										}
-									: null
-							}
-						/>
+							<RuleLiveChartHero
+								form={ruleForm}
+								preview={preview}
+								previewLoading={previewLoading}
+								previewError={previewError}
+								onTestRule={() => void previewRule()}
+								testing={previewingRule}
+								previewResult={freshPreviewResult}
+								range={previewRange}
+								timeRange={previewTimeRange}
+								onTimeRangeChange={setPreviewTimeRange}
+								comparison={
+									savedForm !== null && changes.length > 0
+										? {
+												savedPreview: evaluationChanged
+													? savedReplay.preview
+													: preview,
+												savedLoading: evaluationChanged && savedReplay.previewLoading,
+												changes,
+												clearedIncidents,
+											}
+										: null
+								}
+							/>
 							<RuleConditionFields form={ruleForm} onChange={setRuleForm} saved={savedForm} />
 							<RuleNoiseSection form={ruleForm} onChange={setRuleForm} />
 						</div>
@@ -291,7 +295,12 @@ export function AlertCreateFormSurface({
 							number={3}
 							divider={false}
 							title="Who gets notified"
-							status={ruleForm.destinationIds.length === 0 ? "missing" : "done"}
+							status={
+								ruleForm.destinationIds.length === 0 ||
+								deriveTierIssues(ruleForm).includes("Critical destinations")
+									? "missing"
+									: "done"
+							}
 						>
 							<NotificationsSection
 								form={ruleForm}
@@ -373,8 +382,8 @@ export function AlertCreateFormSurface({
 function deriveValidationIssues(form: RuleFormState): string[] {
 	const issues: string[] = []
 	if (form.name.trim().length === 0) issues.push("Rule name")
-	if (!Number.isFinite(Number(form.threshold))) issues.push("Threshold")
-	if (isRangeComparator(form.comparator) && !Number.isFinite(Number(form.thresholdUpper))) {
+	if (!isFilledNumber(form.threshold)) issues.push("Threshold")
+	if (isRangeComparator(form.comparator) && !isFilledNumber(form.thresholdUpper)) {
 		issues.push("Upper threshold")
 	}
 	// The timing fields silently fall back to a default when they don't parse
@@ -400,6 +409,7 @@ function deriveValidationIssues(form: RuleFormState): string[] {
 		}
 	}
 	for (const issue of deriveRuleQueryIssues(form)) issues.push(issue)
+	for (const issue of deriveTierIssues(form)) issues.push(issue)
 	if (form.destinationIds.length === 0) issues.push("Who gets notified")
 	return issues
 }
@@ -418,9 +428,11 @@ function previewIdentityKey(form: RuleFormState): string {
 		destination_ids: _destinationIds,
 		notification_template: _notificationTemplate,
 		enabled: _enabled,
+		thresholds,
 		...evaluated
 	} = buildRuleCreateParamsV2(form)
-	return JSON.stringify(evaluated)
+	const tiers = thresholds?.map(({ destination_ids: _ids, ...tier }) => tier)
+	return JSON.stringify({ ...evaluated, tiers })
 }
 
 function makeSuggestedName(form: RuleFormState): string | null {
