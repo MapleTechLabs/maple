@@ -26,6 +26,7 @@ import { loadingGrid, previewGrid } from "./view-grid"
 import { loadingTable, metricsTable } from "./view-table"
 
 // `MetricsPage` (routes/metrics/index.tsx): `MetricsBrowseFilters`, `MetricsViewToggle`, `MetricsBrowse`.
+// TODO(session-range): `sessionTimeRangeSearchMiddleware` (the window carried across pages) is not ported.
 
 type H = HtmlBuilder<Message>
 

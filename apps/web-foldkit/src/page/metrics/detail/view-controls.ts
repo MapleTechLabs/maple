@@ -71,7 +71,9 @@ export const graduationActions = (h: H, model: Model): Html =>
 const toAggregation = (message: Select.Message) => Message.GotAggregationSelectMessage({ message })
 const toGroupBy = (message: Combobox.Message) => Message.GotGroupByComboboxMessage({ message })
 
-/** `WhereClauseEditor`: the textarea with its syntax-highlight overlay (suggestions are not ported). */
+// TODO(where-suggestions): `useWhereClauseAutocomplete`'s suggestion list (keys, values, Tab/arrow
+// keys) is not ported; the lookups it reads are already fetched into `model.autocomplete`.
+/** `WhereClauseEditor`: the textarea with its syntax-highlight overlay. */
 const whereEditor = (h: H, model: Model): Html => {
 	const isHighlighting = model.whereInput.length > 0
 	const textareaClassName = "min-h-8 resize-y text-xs"
