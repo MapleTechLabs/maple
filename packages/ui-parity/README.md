@@ -207,6 +207,12 @@ them per prefix. Electric shapes and raw routes are not covered.
   scenario injects and does not fail the variant (scenario-level `failures` only).
 - Examples: `services-loading` and `services-error` in `src/scenarios/services-page.ts`.
 
+### Tests
+
+`bun run test` runs the pure suites (call log, faults, behavior diff) and is what CI runs.
+`bun run test:backend` starts the fixture backend (needs `~/.maple/bin/libchdb.so` and `apps/api`
+installed) and checks every endpoint family; run it locally after backend or fixture changes.
+
 ## Output
 
 `.parity/` (gitignored by its own `.gitignore`):
