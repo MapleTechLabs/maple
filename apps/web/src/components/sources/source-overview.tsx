@@ -30,6 +30,9 @@ function ConfigRow({ label, children }: { label: string; children: React.ReactNo
 	)
 }
 
+/** Integrations that only send metrics, which the usage counts do not cover yet. */
+const METRICS_ONLY = new Set<V2Source["platform"]>(["prometheus", "cloudflare", "railway", "planetscale"])
+
 export function SourceOverview({ source }: { source: V2Source }) {
 	const usageResult = useAtomValue(retainedQueryV2("sources", "usage", { params: { id: source.id } }))
 	const now = Date.now()
@@ -88,38 +91,46 @@ export function SourceOverview({ source }: { source: V2Source }) {
 							: "Last successful collection"
 					}
 				/>
-				<StatCard
-					label="Last 24h"
-					value={
-						Result.isFailure(usageResult) ? (
-							<span className="text-muted-foreground">Unavailable</span>
-						) : totals === undefined ? (
-							<Skeleton className="h-5 w-32" />
-						) : (
-							`${formatNumber(totals.spans)} spans · ${formatNumber(totals.logs)} logs`
-						)
-					}
-					hint="Stored from this source"
-				/>
+				{!METRICS_ONLY.has(source.platform) && (
+					<StatCard
+						label="Last 24h"
+						value={
+							Result.isFailure(usageResult) ? (
+								<span className="text-muted-foreground">Unavailable</span>
+							) : totals === undefined ? (
+								<Skeleton className="h-5 w-32" />
+							) : (
+								`${formatNumber(totals.spans)} spans · ${formatNumber(totals.logs)} logs`
+							)
+						}
+						hint="Stored from this source"
+					/>
+				)}
 			</div>
-			<Panel padded className="gap-3">
-				<span className="text-sm font-medium">Volume, last 24 hours</span>
-				{usage === null ? (
-					Result.isFailure(usageResult) ? (
-						<p className="text-muted-foreground py-6 text-center text-xs">
-							Volume is unavailable right now.
+			{METRICS_ONLY.has(source.platform) ? (
+				<p className="text-muted-foreground text-xs">
+					This source sends metrics. Per-source metric volume is not counted yet.
+				</p>
+			) : (
+				<Panel padded className="gap-3">
+					<span className="text-sm font-medium">Volume, last 24 hours</span>
+					{usage === null ? (
+						Result.isFailure(usageResult) ? (
+							<p className="text-muted-foreground py-6 text-center text-xs">
+								Volume is unavailable right now.
+							</p>
+						) : (
+							<Skeleton className="h-48 w-full" />
+						)
+					) : usage.buckets.length === 0 ? (
+						<p className="text-muted-foreground py-8 text-center text-xs">
+							No spans or logs from this source in the last 24 hours.
 						</p>
 					) : (
-						<Skeleton className="h-48 w-full" />
-					)
-				) : usage.buckets.length === 0 ? (
-					<p className="text-muted-foreground py-8 text-center text-xs">
-						No spans or logs from this source in the last 24 hours.
-					</p>
-				) : (
-					<UsageChart usage={usage} />
-				)}
-			</Panel>
+						<UsageChart usage={usage} />
+					)}
+				</Panel>
+			)}
 			{hasToken(source) && <RulesSummary source={source} now={now} />}
 		</div>
 	)
