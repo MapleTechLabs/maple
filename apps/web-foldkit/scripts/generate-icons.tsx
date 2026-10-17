@@ -114,6 +114,15 @@ const NAMES = [
 	"UiLayersIcon",
 	"UserIcon",
 	"XmarkIcon",
+	"ArrowDownIcon",
+	"AspectRatioIcon",
+	"ChartBarTrendUpIcon",
+	"IdBadgeIcon",
+	"MenuIcon",
+	"SquareMinusIcon",
+	"SquarePlusIcon",
+	"BracketsCurlyIcon",
+	"SparkleIcon",
 ] as const
 
 /** Names both icon sets export with different markup: which one the Foldkit callers mean. */

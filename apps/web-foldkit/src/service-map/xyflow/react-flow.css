@@ -526,9 +526,8 @@ svg.react-flow__connectionline {
 .react-flow__controls-button:disabled svg {
 	fill-opacity: 0.4;
 }
-.react-flow__controls-button:last-child {
-	border-bottom: none;
-}
+/* `.react-flow__controls-button:last-child { border-bottom: none }` is left out: in one bundle with
+   tokens.css the minifier merges it with tokens.css's `!important` twin and drops the `!important`. */
 .react-flow__controls.horizontal .react-flow__controls-button {
 	border-bottom: none;
 	border-right: 1px solid

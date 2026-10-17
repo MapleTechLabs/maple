@@ -24,7 +24,11 @@ export interface TabsViewInputs {
 	readonly variant?: TabsVariant
 	/** One label per `model.values` entry. */
 	readonly labels: ReadonlyArray<string>
+	/** A tab's children when it has more than its label (an icon before it). */
+	readonly tabContent?: (value: string, label: string) => ReadonlyArray<Html | string>
 	readonly className?: string
+	/** `<TabsList className>`. */
+	readonly listClassName?: string
 	readonly panelClassName?: string
 	/** Panel content for a value; values without one render no panel (Base UI unmounts it). */
 	readonly panel: (value: string) => ReadonlyArray<Html | string> | undefined
@@ -52,7 +56,14 @@ const isTabKey = Schema.is(TabKey)
 const toTabKey = (key: string): Option.Option<Message> =>
 	isTabKey(key) ? Option.some(Message.PressedTabKey({ key })) : Option.none()
 
-const tab = (h: H, model: Model, index: number, label: string, hasPanel: boolean): Html => {
+const tab = (
+	h: H,
+	model: Model,
+	index: number,
+	label: string,
+	hasPanel: boolean,
+	content: TabsViewInputs["tabContent"],
+): Html => {
 	const value = model.values[index]
 	const isActive = value === model.selected
 	const isHighlighted = index === model.highlightedIndex
@@ -73,7 +84,7 @@ const tab = (h: H, model: Model, index: number, label: string, hasPanel: boolean
 			h.OnClick(Message.ClickedTab({ index })),
 			h.OnKeyDownPreventDefault(toTabKey),
 		],
-		[label],
+		content === undefined || value === undefined ? [label] : content(value, label),
 	)
 }
 
@@ -103,6 +114,7 @@ const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: Readon
 					tabsListStyles,
 					tabsListVerticalStyles,
 					variant === "default" ? tabsListDefaultStyles : tabsListUnderlineStyles,
+					inputs.listClassName,
 				),
 			),
 			...stateAttributes(h, model),
@@ -112,7 +124,14 @@ const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: Readon
 		],
 		[
 			...model.values.map((value, index) =>
-				tab(h, model, index, inputs.labels[index] ?? value, panelValues.includes(value)),
+				tab(
+					h,
+					model,
+					index,
+					inputs.labels[index] ?? value,
+					panelValues.includes(value),
+					inputs.tabContent,
+				),
 			),
 			indicator(h, model, variant),
 		],
@@ -141,8 +160,11 @@ const tabPanel = (
 	)
 
 export const view = defineView<Model, Message, TabsViewInputs>((model, inputs, h) => {
-	const panelValues = model.values.filter((value) => inputs.panel(value) !== undefined)
+	// Each panel is built once: a panel holding a Submodel may only render it once per pass.
 	const content = inputs.panel(model.selected)
+	const panelValues = model.values.filter((value) =>
+		value === model.selected ? content !== undefined : inputs.panel(value) !== undefined,
+	)
 	return h.div(
 		[
 			h.Class(cn(tabsStyles, inputs.className)),
