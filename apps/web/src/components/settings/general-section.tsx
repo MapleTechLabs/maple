@@ -127,7 +127,7 @@ export function GeneralSection() {
 				success: "Organization renamed",
 				error: "Failed to rename organization",
 			})
-			if (ok) nameDraft.commit()
+			if (ok) nameDraft.commit(trimmedName)
 			return ok
 		})
 	}
