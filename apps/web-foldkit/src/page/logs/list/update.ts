@@ -16,6 +16,7 @@ import * as LogsStream from "../../../ui/logs/logs-stream"
 import { listFooterText } from "../../../ui/logs/viewer"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
@@ -24,6 +25,7 @@ import {
 	FetchFirstPage,
 	FetchNextPage,
 	FetchVolume,
+	LoadSignalPresence,
 	ReadPreferences,
 	ResolveWindow,
 	SavePreferences,
@@ -316,6 +318,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		locale: "en-US",
 		isInspecting: false,
 		isScrolledAway: false,
+		presence: SignalPresenceData.Idle(),
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("logs-time-range"),
 		chartRuntime: { _tag: "Loading" },
@@ -462,6 +465,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		// `useSignalPresence` mounts with the empty state, so its "unknown" copy paints first.
+		PaintedEmptyState: () =>
+			AsyncData.isIdle(model.presence)
+				? {
+						model: { ...model, presence: SignalPresenceData.Loading() },
+						commands: [LoadSignalPresence()],
+					}
+				: { model },
+		CompletedLoadSignalPresence: ({ result }) => ({
+			model: { ...model, presence: AsyncData.settle(model.presence, result) },
+		}),
 		ClickedReload: () => reload(model, context),
 		TickedAutoRefresh: () => reload(model, context),
 		ClickedJumpToLatest: () => {
@@ -493,6 +507,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				withoutChips(
 					model.search,
 					logFilterChips(model.search).filter((chip) => chipId(chip) === id),
+				),
+			),
+		ClickedClearExclusions: () =>
+			navigate(
+				model,
+				withoutChips(
+					model.search,
+					logFilterChips(model.search).filter((chip) => chip.negated),
 				),
 			),
 		ClickedClearFilterChips: () =>

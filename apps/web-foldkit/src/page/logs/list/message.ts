@@ -6,6 +6,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as LogsStream from "../../../ui/logs/logs-stream"
+import { SignalPresences } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { AttributeKey, Density, LogsFacets, LogsPage, VolumeBucket } from "./model"
 
@@ -34,6 +35,8 @@ export const Message = defineMessageUnion({
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
+	PaintedEmptyState: {},
+	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	TickedAutoRefresh: {},
@@ -45,6 +48,7 @@ export const Message = defineMessageUnion({
 	ClickedClearAllFilters: {},
 	RemovedFilterChip: { chipId: Schema.String },
 	ClickedClearFilterChips: {},
+	ClickedClearExclusions: {},
 	ChangedSearchText: { text: Schema.String },
 	ElapsedSearchDebounce: { generation: Schema.Number },
 	ClickedWrap: {},

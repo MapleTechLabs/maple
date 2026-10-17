@@ -61,6 +61,26 @@ export const hasNextPage = (firstPage: LogsPage | undefined, pagination: Paginat
 	!pagination.isStopped &&
 	lastCursor(firstPage, pagination) !== null
 
+// copied: `canWidenTimeRange` (apps/web/src/components/time-range-picker/search.ts pulls an `@/` type).
+const WIDE_TIME_PRESETS = new Set([
+	"7d",
+	"1w",
+	"10d",
+	"14d",
+	"2w",
+	"30d",
+	"6w",
+	"1mo",
+	"2mo",
+	"3mo",
+	"6mo",
+	"12mo",
+])
+
+/** Widening only helps from a short relative preset (`LogsTable` passes `""` as the default). */
+export const canWidenRange = (search: Search): boolean =>
+	search.startTime === undefined && !WIDE_TIME_PRESETS.has(search.timePreset ?? "")
+
 // FILTER CHIPS
 // copied: apps/web/src/lib/logs/log-filter-chips.ts (its `@/` type import cannot be typechecked here).
 

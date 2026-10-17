@@ -20,6 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET, footerText } from "./update"
 import { filtersRail } from "./view-filters"
+import { emptyState } from "./view-empty"
 import { toolbar } from "./view-toolbar"
 import { VOLUME_THEME_TOKENS, volumeChart } from "./view-volume"
 
@@ -89,8 +90,7 @@ const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs
 		onFailure: (failure) => errorState(h, { failure }),
 		onData: (page) =>
 			page.logs.length === 0
-				? // TODO(empty-state): `SignalEmptyState` / the search and trace empties.
-					h.div([h.Class("flex-1 min-h-0 flex flex-col gap-4")], [toolbar(h, model)])
+				? emptyState(h, model)
 				: streamArea(h, model, inputs, AsyncData.isRefreshing(model.firstPage.data)),
 	})
 

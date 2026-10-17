@@ -3,10 +3,11 @@ import { logAttributeQueryFilters } from "@maple/web/lib/logs/log-attribute-filt
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
-import { Command } from "foldkit"
+import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
+import { loadSignalPresences } from "../../kit/signal-presence"
 import { listInput, PAGE_SIZE, toVolumeBuckets, volumeInput } from "./derive"
 import { Message, RequestMode } from "./message"
 import { Density, type LogRowSchema, type LogsPage } from "./model"
@@ -168,4 +169,22 @@ export const WaitSearchDebounce = Command.define("WaitLogsSearchDebounce", {
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
 		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+})
+
+/** The empty state is on screen: resolves after the frame that painted it. */
+export const MountEmptyState = Mount.define("MountLogsEmptyState", {
+	messages: [Message.PaintedEmptyState],
+	execute: () =>
+		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
+			const handle = requestAnimationFrame(() =>
+				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
+			)
+			return Effect.sync(() => cancelAnimationFrame(handle))
+		}),
+})
+
+/** `useSignalPresence`, sent when the empty state mounts (never with the data). */
+export const LoadSignalPresence = Command.define("LoadLogsSignalPresence", {
+	messages: [Message.CompletedLoadSignalPresence],
+	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
 })

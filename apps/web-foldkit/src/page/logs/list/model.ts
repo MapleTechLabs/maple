@@ -9,6 +9,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as LogsStream from "../../../ui/logs/logs-stream"
+import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The `/logs` stream (apps/web/src/routes/logs/index.tsx and components/logs/).
@@ -91,6 +92,8 @@ export const Model = Schema.Struct({
 	/** `LogsInspectState`: holds the live tail while the reader inspects. */
 	isInspecting: Schema.Boolean,
 	isScrolledAway: Schema.Boolean,
+	/** `useSignalPresence("logs")`: asked once the empty state painted. */
+	presence: SignalPresenceData.schema,
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,
 	chartRuntime: ChartRuntime,
