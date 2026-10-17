@@ -63,6 +63,7 @@ const pieSpikeTooltip = (
 			),
 		NumericBin: () => Option.none(),
 		CategoricalBin: () => Option.none(),
+		Bucket: () => Option.none(),
 	})
 
 /** `PieSpike` = `PieFigure` with no legend, so `activeName` is never wired. */
@@ -139,6 +140,7 @@ export const histogramSpikeView = Submodel.defineView<Model, Message, HistogramS
 							),
 						CategoricalBin: () => Option.none(),
 						PieSlice: () => Option.none(),
+						Bucket: () => Option.none(),
 					}),
 				),
 		})

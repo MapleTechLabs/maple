@@ -11,6 +11,7 @@ import {
 	buildCategoricalHistogram,
 	buildNumericHistogram,
 } from "./definitions/histogram"
+import { buildFixedMetric } from "./definitions/fixed-metric"
 import { buildPie, buildPieSpike } from "./definitions/pie"
 import { buildSparkline } from "./definitions/sparkline"
 
@@ -130,4 +131,6 @@ export const createChartHost = (
 			hostFor(container, sparkline, height, variant("Sparkline"), buildSparkline, options),
 		BinnedHistogram: (histogram) =>
 			hostFor(container, histogram, height, variant("BinnedHistogram"), buildBinnedHistogram, options),
+		FixedMetric: (metric) =>
+			hostFor(container, metric, height, variant("FixedMetric"), buildFixedMetric, options),
 	})

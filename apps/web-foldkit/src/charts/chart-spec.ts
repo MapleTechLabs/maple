@@ -25,6 +25,13 @@ export type NumericBin = typeof NumericBin.Type
 export const CategoricalBin = Schema.Struct({ name: Schema.String, value: Schema.Number })
 export type CategoricalBin = typeof CategoricalBin.Type
 
+/** One bucket of a fixed-metric chart: the bucket plus its primitive columns. */
+export const FixedMetricRow = Schema.Record(
+	Schema.String,
+	Schema.Union([Schema.Number, Schema.String, Schema.Boolean, Schema.Null]),
+)
+export type FixedMetricRow = typeof FixedMetricRow.Type
+
 export const ChartSpec = defineTaggedUnion({
 	/** `QueryBuilderPieChart`. */
 	Pie: {
@@ -76,6 +83,19 @@ export const ChartSpec = defineTaggedUnion({
 		color: Schema.String,
 		logScaleY: Schema.Boolean,
 	},
+	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
+	FixedMetric: {
+		chart: Schema.Literals(["Throughput", "ErrorRate", "Latency"]),
+		rows: Schema.Array(FixedMetricRow),
+		/** Resolved series colours by series key; `border`/`background` are the chrome. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		perSecond: Schema.Boolean,
+		timeZone: Nullable(Schema.String),
+		/** The render-time clock the in-flight split reads (`Date.now()` in legacy). */
+		nowMs: Schema.Number,
+		gradientPrefix: Schema.String,
+		showTooltip: Schema.Boolean,
+	},
 })
 export type ChartSpec = typeof ChartSpec.Type
 
@@ -95,6 +115,18 @@ export const ChartTooltip = defineTaggedUnion({
 	},
 	NumericBin: { x1: Schema.Number, x2: Schema.Number, value: Schema.Number },
 	CategoricalBin: { name: Schema.String, value: Schema.Number },
+	/** `PlotTooltipBody` for a fixed-metric chart: the bucket heading and one formatted row per series. */
+	Bucket: {
+		heading: Schema.String,
+		rows: Schema.Array(
+			Schema.Struct({
+				label: Schema.String,
+				color: Schema.String,
+				dashed: Schema.Boolean,
+				value: Schema.String,
+			}),
+		),
+	},
 })
 export type ChartTooltip = typeof ChartTooltip.Type
 
