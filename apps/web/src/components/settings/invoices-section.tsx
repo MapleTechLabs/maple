@@ -155,7 +155,9 @@ export function InvoicesSection({
 					)}
 				</div>
 			) : invoices.length === 0 ? (
-				<EmptyMessage dashed>Your first invoice appears after your first billing cycle closes.</EmptyMessage>
+				<EmptyMessage dashed>
+					Your first invoice appears after your first billing cycle closes.
+				</EmptyMessage>
 			) : (
 				<Panel>
 					<Table>

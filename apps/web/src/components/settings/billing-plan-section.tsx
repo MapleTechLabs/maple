@@ -57,7 +57,12 @@ function PlanRow({ model, plans }: { model: SpendModel; plans: ReadonlyArray<Cat
 			{(model.addOns.length > 0 || available.length > 0) && (
 				<div className="flex flex-wrap items-center gap-1.5">
 					{model.addOns.map((addOn) => (
-						<Badge key={addOn.id ?? addOn.name} size="sm" pill className="bg-primary/15 text-primary">
+						<Badge
+							key={addOn.id ?? addOn.name}
+							size="sm"
+							pill
+							className="bg-primary/15 text-primary"
+						>
 							{sentenceCasePlanName(addOn.name ?? "Add-on")}
 						</Badge>
 					))}
@@ -99,7 +104,12 @@ export function BillingPlanSection({
 			framed={false}
 			actions={
 				canManage ? (
-					<Button variant="link" size="sm" className="text-primary" onClick={() => setComparing(true)}>
+					<Button
+						variant="link"
+						size="sm"
+						className="text-primary"
+						onClick={() => setComparing(true)}
+					>
 						Compare plans
 						<ArrowRightIcon aria-hidden className="size-3" />
 					</Button>

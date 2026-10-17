@@ -272,7 +272,6 @@ export function PlanOffer({
 					</Panel>
 				)
 			})}
-
 		</div>
 	)
 }

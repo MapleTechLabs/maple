@@ -33,7 +33,9 @@ import { formatFeatureUsage } from "./format-feature-usage"
 
 /** A volume with its unit: "164.00 GB", "3,412 sessions". */
 const withUnit = (featureId: string, value: number) =>
-	featureUnit(featureId) === "GB" ? formatFeatureUsage(featureId, value) : `${formatCount(value)} ${featureUnit(featureId)}`
+	featureUnit(featureId) === "GB"
+		? formatFeatureUsage(featureId, value)
+		: `${formatCount(value)} ${featureUnit(featureId)}`
 
 /** "164.00 GB of 100.00 GB": usage against the allotment, or what stands in for one. */
 function usageLine(feature: FeatureSpend): string {

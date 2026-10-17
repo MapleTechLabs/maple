@@ -47,7 +47,11 @@ export function CheckoutTimedOutNotice({
 	className?: string
 }) {
 	return (
-		<Panel role="status" tone="muted" className={cn("px-4 py-3 text-sm text-muted-foreground", className)}>
+		<Panel
+			role="status"
+			tone="muted"
+			className={cn("px-4 py-3 text-sm text-muted-foreground", className)}
+		>
 			We haven't heard back from Stripe yet. If you completed checkout, your plan will appear here
 			shortly; there's no need to subscribe again. If you left checkout, {pickPlan}.
 		</Panel>

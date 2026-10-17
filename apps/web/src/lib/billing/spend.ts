@@ -309,7 +309,9 @@ export interface CostLine {
 const joinFeatureLabels = (labels: ReadonlyArray<string>): string => {
 	const lower = labels.map((label) => label.toLowerCase())
 	const phrase =
-		lower.length <= 1 ? (lower[0] ?? "") : `${lower.slice(0, -1).join(", ")} and ${lower[lower.length - 1]}`
+		lower.length <= 1
+			? (lower[0] ?? "")
+			: `${lower.slice(0, -1).join(", ")} and ${lower[lower.length - 1]}`
 	return phrase.charAt(0).toUpperCase() + phrase.slice(1)
 }
 

@@ -120,7 +120,9 @@ export function BillingCyclePanel({
 				<Figure
 					label="Spent so far"
 					value={dollars(model.spendCents, model.currency)}
-					note={model.partial ? "At least; some items aren't itemized" : "Excludes taxes and credits"}
+					note={
+						model.partial ? "At least; some items aren't itemized" : "Excludes taxes and credits"
+					}
 				/>
 				<Figure
 					label="Projected"
@@ -142,7 +144,9 @@ export function BillingCyclePanel({
 							"Some items can't be priced"
 						) : (
 							<span className="flex flex-wrap items-center gap-x-1.5">
-								{uncappedCount === 1 ? "1 feature has no cap" : `${uncappedCount} features have no cap`}
+								{uncappedCount === 1
+									? "1 feature has no cap"
+									: `${uncappedCount} features have no cap`}
 								{onSetCaps && (
 									<button
 										type="button"

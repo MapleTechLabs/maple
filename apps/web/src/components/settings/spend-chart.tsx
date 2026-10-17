@@ -274,7 +274,9 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 	return (
 		<div className="flex flex-col">
 			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 pt-3">
-				<span className="text-2xs font-medium text-muted-foreground">Cumulative spend by feature</span>
+				<span className="text-2xs font-medium text-muted-foreground">
+					Cumulative spend by feature
+				</span>
 				{/* Colors only: the amounts live in the figures and the cost breakdown. */}
 				<SeriesLegend
 					className="gap-x-4"
@@ -285,7 +287,14 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 							color: chartConfig[band].color,
 						})),
 						...(hasFuture
-							? [{ key: PROJECTED, label: "Projection", color: primary, swatch: "dashed" as const }]
+							? [
+									{
+										key: PROJECTED,
+										label: "Projection",
+										color: primary,
+										swatch: "dashed" as const,
+									},
+								]
 							: []),
 					]}
 				/>
