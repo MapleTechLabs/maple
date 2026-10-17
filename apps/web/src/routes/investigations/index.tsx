@@ -414,7 +414,7 @@ function BudgetExhaustedNotice({
 					<Button
 						size="sm"
 						variant="ghost"
-						render={<Link to="/settings" search={{ tab: "automation" }} />}
+						render={<Link to="/settings" search={{ tab: "ai" }} />}
 					>
 						Raise the limit
 					</Button>

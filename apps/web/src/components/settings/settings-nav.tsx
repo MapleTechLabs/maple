@@ -188,7 +188,7 @@ const navSections: SettingsNavSection[] = [
 		id: "alerting",
 		title: "Alerting",
 		items: [
-			// Temporary home for escalation and AI triage until the alerts routing redesign ships.
+			// Temporary home for escalation until the alerts routing redesign ships.
 			{ id: "automation", label: settingsTabLabels.automation, icon: ShieldIcon },
 		],
 	},
