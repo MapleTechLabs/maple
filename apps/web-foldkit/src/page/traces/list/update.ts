@@ -93,8 +93,14 @@ const freshPagination = (key: string | null): Pagination => ({
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const facetsKey = requestKey(context.orgId, "getTracesFacets", { data: window })
 	const listKey = firstPageKey(model, context, window)
-	const facets = Keyed.request(model.facets, facetsKey, mode)
-	const firstPage = Keyed.request(model.firstPage, listKey, mode)
+	// Reload refreshes the table (`useTableRefreshTimeRange`); the facet atom is not refreshed.
+	const facets = Keyed.request(model.facets, facetsKey, "Load")
+	const cached =
+		mode === "Load" && model.firstPage.key !== listKey ? model.firstPageCache[listKey] : undefined
+	const firstPage =
+		cached === undefined
+			? Keyed.request(model.firstPage, listKey, mode)
+			: Option.none<Model["firstPage"]>()
 	const commands: ReadonlyArray<Cmd> = [
 		...(Option.isSome(facets) ? [FetchFacets({ key: facetsKey, window })] : []),
 		...(Option.isSome(firstPage)
@@ -113,7 +119,10 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			...model,
 			window,
 			facets: Option.getOrElse(facets, () => model.facets),
-			firstPage: Option.getOrElse(firstPage, () => model.firstPage),
+			firstPage:
+				cached === undefined
+					? Option.getOrElse(firstPage, () => model.firstPage)
+					: { key: listKey, data: AsyncData.Success({ data: cached }) },
 			pagination: model.pagination.key === listKey ? model.pagination : freshPagination(listKey),
 		},
 		commands,
@@ -166,6 +175,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		facets: Keyed.idle(),
 		firstPage: Keyed.idle(),
 		pagination: freshPagination(null),
+		firstPageCache: {},
 		virtualRows: [],
 		totalSize: 0,
 		presence: SignalPresenceData.Idle(),
@@ -232,8 +242,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchFacets: ({ key, result }) => ({
 			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
 		}),
-		CompletedFetchFirstPage: ({ key, result }) =>
-			settled({ ...model, firstPage: Keyed.accept(model.firstPage, key, result) }, context),
+		CompletedFetchFirstPage: ({ key, result }) => {
+			const firstPage = Keyed.accept(model.firstPage, key, result)
+			const firstPageCache = Result.match(result, {
+				onSuccess: (page) =>
+					firstPage === model.firstPage
+						? model.firstPageCache
+						: { ...model.firstPageCache, [key]: page },
+				onFailure: () => model.firstPageCache,
+			})
+			return settled({ ...model, firstPage, firstPageCache }, context)
+		},
 		CompletedFetchNextPage: ({ key, result }) => {
 			if (key !== model.pagination.key) return { model }
 			const pagination: Pagination = Result.match(result, {

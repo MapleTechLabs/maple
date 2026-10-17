@@ -75,6 +75,8 @@ export const Model = Schema.Struct({
 	facets: KeyedSchema(TracesFacets, LoadFailure),
 	firstPage: KeyedSchema(TracesPage, LoadFailure),
 	pagination: Pagination,
+	/** Settled first pages by key: an atom revisited in the same visit answers from its cache. */
+	firstPageCache: Schema.Record(Schema.String, TracesPage),
 	/** The virtualizer's window over the loaded rows, as the scroller Mount reports it. */
 	virtualRows: Schema.Array(VirtualRow),
 	totalSize: Schema.Number,

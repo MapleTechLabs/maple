@@ -7,7 +7,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { FetchFacets, FetchFirstPage, FetchNextPage, LoadSignalPresence, MountEmptyState } from "./command"
 import { Message } from "./message"
 import type { Model, TraceRow, TracesFacets, TracesPage } from "./model"
-import { allRows, init, update } from "./update"
+import { allRows, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 import { VirtualizeTraces } from "./virtualize"
 
@@ -113,6 +113,27 @@ describe("traces list", () => {
 		expect(names(near.commands)).toEqual([FetchNextPage.name])
 		const again = pageUpdate(near.model, windowOver(61, 86))
 		expect(names(again.commands)).toEqual([])
+	})
+
+	test("Reload refreshes the list, not the facets; a revisited filter answers from its cached page", () => {
+		const model = loaded(page(3))
+		const reloaded = pageUpdate(
+			model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
+		)
+		expect(names(reloaded.commands)).toEqual([FetchFirstPage.name])
+		const filtered = routeChanged(model, { search: { hasError: true } }, context).model
+		const away = pageUpdate(
+			filtered,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		)
+		const back = routeChanged(away.model, { search: {} }, context).model
+		const returned = pageUpdate(
+			back,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		)
+		expect(names(returned.commands)).toEqual([])
+		expect(allRows(returned.model)).toHaveLength(3)
 	})
 
 	test("a short first page has no next page, and a failed next page stops pagination", () => {
