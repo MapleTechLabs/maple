@@ -64,3 +64,24 @@ export function validateSamplingDraft(draft: SamplingDraft): SamplingDraftResult
 		},
 	}
 }
+
+export type SamplingPayload = Extract<SamplingDraftResult, { ok: true }>["payload"]
+
+export interface SamplingPatch {
+	readonly trace_sample_ratio?: number
+	readonly always_keep_slow_spans_ms?: number | null
+}
+
+/**
+ * Only the fields that differ from `saved`, so a save never reverts a field changed elsewhere.
+ * Compared as displayed, so float noise in the stored ratio does not count as an edit.
+ */
+export function samplingPatch(payload: SamplingPayload, saved: SamplingDraft): SamplingPatch {
+	const next = samplingDraftFromPolicy(payload)
+	return {
+		...(next.keepPercent === saved.keepPercent ? {} : { trace_sample_ratio: payload.trace_sample_ratio }),
+		...(next.slowMs === saved.slowMs
+			? {}
+			: { always_keep_slow_spans_ms: payload.always_keep_slow_spans_ms }),
+	}
+}

@@ -14,7 +14,12 @@ import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { toastExit } from "@/lib/error-toast"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { samplingDraftFromPolicy, validateSamplingDraft, type SamplingDraft } from "./sampling-draft"
+import {
+	samplingDraftFromPolicy,
+	samplingPatch,
+	validateSamplingDraft,
+	type SamplingDraft,
+} from "./sampling-draft"
 import { useSettingsDraft } from "./settings-draft"
 import { SettingsSaveBar } from "./settings-save-bar"
 import { SettingsSection } from "./settings-section"
@@ -41,9 +46,13 @@ export function useSamplingSettings() {
 
 	const [save, saving] = useAsyncAction(async () => {
 		if (!validation.ok) return
-		const exit = await update({ payload: validation.payload })
+		// Unsent fields keep their saved value, so the parsed draft is still what the server holds.
+		const sent = samplingDraftFromPolicy(validation.payload)
+		const patch = samplingPatch(validation.payload, saved)
+		if (Object.keys(patch).length === 0) return form.commit(sent)
+		const exit = await update({ payload: patch })
 		if (toastExit(exit, { success: "Sampling saved", error: "Failed to save sampling" })) {
-			form.commit(samplingDraftFromPolicy(validation.payload))
+			form.commit(sent)
 			refresh()
 		}
 	})
