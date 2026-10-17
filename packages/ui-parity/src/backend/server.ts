@@ -7,6 +7,7 @@ import {
 import { createHash } from "node:crypto"
 import { CAPTURE_HEADER, DATASET_HEADER, type DatasetSummary, type StartBackend } from "../contract.ts"
 import type { Dataset, EndpointHandler } from "../fixtures/dataset.ts"
+import { fixtureAreaEndpoints, withFixtureAreas } from "../fixtures/areas.ts"
 import { DATASETS, DEFAULT_DATASET } from "../fixtures/datasets/index.ts"
 import { defaultDataset } from "../fixtures/datasets/default.ts"
 import { acceptsBearer } from "./auth.ts"
@@ -95,7 +96,7 @@ export interface StartFixtureBackendOptions {
 }
 
 export const startFixtureBackend = async (options: StartFixtureBackendOptions) => {
-	const datasets = options.datasets ?? DATASETS
+	const datasets = options.datasets ?? withFixtureAreas(DATASETS)
 	const byName = new Map(datasets.map((dataset) => [dataset.name, dataset]))
 	const fallback = byName.get(DEFAULT_DATASET) ?? datasets[0] ?? defaultDataset
 	const datasetNamed = (name: string | null) => (name === null ? fallback : byName.get(name))
@@ -110,7 +111,7 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 	)
 	const warehouse = makeFixtureWarehouse(chdb)
 	const calls = makeCallLog()
-	const builtIn = new Map([...defaultHandlers, ...warehouseEndpoints(warehouse)])
+	const builtIn = new Map([...defaultHandlers, ...warehouseEndpoints(warehouse), ...fixtureAreaEndpoints(warehouse)])
 		.set("queryEngine.executeBatch", executeBatch(warehouse))
 		.set("telemetrySignals.retrieve", telemetrySignalsEndpoint(warehouse))
 	const api = makeApiWebHandler({
