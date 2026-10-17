@@ -9,6 +9,27 @@ Acceptance test: `packages/ui-parity`. A screen is ported when every scenario fo
 `identical` (or `pass` with 0 perceptual px), with 0 behavior diffs, no console errors and no
 unmocked endpoints.
 
+## Status (2026-10-17, branch `fk/parity-harness`)
+
+Phase 0 done, go. Decision records: [S1 skeleton](foldkit-decisions/s1-skeleton.md),
+[S2 bundle](foldkit-decisions/s2-bundle.md) (one program at about 1.5 MB gzip startup, under
+conditions), [S3 charts](foldkit-decisions/s3-charts.md), [S4 tables](foldkit-decisions/s4-tables.md)
+(Foldkit scroll script 316 ms vs legacy 429), [S5 service map](foldkit-decisions/s5-service-map.md)
+(`@xyflow/system` in a Mount), [S6 data](foldkit-decisions/s6-data.md),
+[S7 overlays](foldkit-decisions/s7-overlays.md).
+
+| Piece | State |
+| --- | --- |
+| Harness | Fixture backend on the real HttpApi + chDB warehouse + Electric; full-page captures with inner scrollers grown; behavior diff; discovered scenario and fixture areas |
+| Foundations | `@maple/ui` `*.styles.ts` (76 modules), `@maple/web-data` (warehouse queries and collection schemas, React-free), one generated icon set |
+| Kit | buttons, forms, display, content, overlays identical; tooltip, dropdown-menu item, navigation in progress |
+| Shell | identical (12 scenarios, Clerk-mode menus not ported) |
+| Pages | sign-in identical; `/services` in progress as the page template |
+| Coverage | 34/81 routes on the branch, about 80 with the infra and admin branch |
+
+Legacy bug found by the harness: the infra service lens fires `workloadInfraTimeseries` once
+with an empty workload name before the workload resolves (excluded via `pageCalls`).
+
 ## 1. Starting point (inventoried 2026-10-17)
 
 | | |
