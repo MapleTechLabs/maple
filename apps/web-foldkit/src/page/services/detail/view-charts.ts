@@ -18,6 +18,7 @@ import {
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { widgetShell } from "../../overview/view-widget"
 import { commitMarkers, markerLayout } from "./derive-markers"
+import { MountLinkedCursor } from "./linked-cursor"
 import { markersOverlay } from "./view-markers"
 import { Message } from "./message"
 import type { DetailPoint, Model } from "./model"
@@ -140,7 +141,7 @@ const headerChips = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, co
 				error: resolveColor(context.theme, "--chart-error"),
 			})
 
-/** `LinkedCursorOverlay`. TODO(linked-cursor): pointer tracking is not ported; the cursor stays hidden. */
+/** `LinkedCursorOverlay`: positioned and shown by `MountLinkedCursor`. */
 const linkedCursorOverlay = (h: HtmlBuilder<Message>, id: string): Html =>
 	h.div(
 		[
@@ -215,6 +216,7 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 	return h.div(
 		[
 			h.DataAttribute("metrics-grid", ""),
+			h.OnMount(MountLinkedCursor()),
 			...(state.isWaiting ? [h.AriaBusy(true)] : []),
 			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(state.isWaiting))),
 			h.Style({ "--linked-cursor-ratio": "0", "--linked-cursor-visible": "0" }),

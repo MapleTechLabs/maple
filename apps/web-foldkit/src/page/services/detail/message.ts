@@ -6,7 +6,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ServiceTab } from "./derive"
-import { DependencyBundle, Operation } from "./model-tabs"
+import { DependencyBundle, Endpoint, Operation, SortTable } from "./model-tabs"
 import { Commit, CommitFailure, Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
 
 /** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
@@ -27,11 +27,13 @@ export const Message = defineMessageUnion({
 	CompletedFetchOverview: result(OverviewData),
 	CompletedFetchRefinement: result(Schema.Array(RefinementPoint)),
 	CompletedFetchOperations: result(Schema.Array(Operation)),
+	CompletedFetchEndpoints: result(Schema.Array(Endpoint)),
 	CompletedFetchIssues: result(Schema.Array(Issue)),
 	CompletedFetchUsage: result(Usage),
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
 	CompletedFetchDependencies: result(DependencyBundle),
 	CompletedFetchCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },
+	AttachedLinkedCursor: {},
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
@@ -41,6 +43,13 @@ export const Message = defineMessageUnion({
 	ClickedResetTimeRange: {},
 	ClickedTab: { tab: ServiceTab },
 	ClickedToggleDeploys: {},
+	ClickedSort: { table: SortTable, key: Schema.String },
+	/** An Operations or API row: the span name's spans in /traces. */
+	ClickedOperation: { spanName: Schema.String },
+	/** A Dependencies row: the service's spans to that target in /traces. */
+	ClickedDependency: { whereClause: Schema.String },
+	/** "Show anyway" / "Hide" on a collapsed API group. */
+	ClickedToggleEndpointGroup: { kind: Schema.String },
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },

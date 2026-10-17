@@ -23,6 +23,7 @@ const NAMES = [
 	"ArrowRotateAnticlockwiseIcon",
 	"ArrowRightIcon",
 	"ArrowRotateClockwiseIcon",
+	"ArrowUpDownIcon",
 	"ArrowTrendDownIcon",
 	"ArrowTrendUpIcon",
 	"ArrowUpIcon",

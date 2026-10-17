@@ -9,7 +9,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { ServiceSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { DependencyBundle, Operation } from "./model-tabs"
+import { DependencyBundle, Endpoint, Operation, SortState } from "./model-tabs"
 
 // The service detail page (apps/web/src/routes/services/$serviceName.tsx and components/services/).
 
@@ -107,6 +107,9 @@ export const Model = Schema.Struct({
 	overview: KeyedSchema(OverviewData, LoadFailure),
 	refinement: KeyedSchema(Schema.Array(RefinementPoint), LoadFailure),
 	operations: KeyedSchema(Schema.Array(Operation), LoadFailure),
+	endpoints: KeyedSchema(Schema.Array(Endpoint), LoadFailure),
+	/** The API tab's collapsed groups ("unrouted", "probes") the user opened. */
+	expandedEndpointGroups: Schema.Array(Schema.String),
 	issues: KeyedSchema(Schema.Array(Issue), LoadFailure),
 	usage: KeyedSchema(Usage, LoadFailure),
 	workloads: KeyedSchema(Schema.Array(Workload), LoadFailure),
@@ -115,6 +118,8 @@ export const Model = Schema.Struct({
 	commits: Schema.Record(Schema.String, CommitData.schema),
 	/** `ServiceRecentDeploys`' "Show all" toggle. */
 	isDeploysExpanded: Schema.Boolean,
+	/** Each tab table's `useTableSort` state. */
+	sorts: Schema.Struct({ operations: SortState, endpoints: SortState, dependencies: SortState }),
 	environmentSelect: Select.Model,
 	timePicker: TimeRangePicker.Model,
 	/** One chart Submodel per card and per operation sparkline, by id. */

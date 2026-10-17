@@ -17,6 +17,9 @@ import { ALL_ENVIRONMENTS, DEFAULT_PRESET, environmentsOf, SERVICE_TABS, tabOf }
 import { Message } from "./message"
 import type { Model } from "./model"
 import { searchHref, tabSearch } from "./update"
+import { apiTab } from "./view-api-tab"
+import { dependenciesTab } from "./view-dependencies"
+import { operationsTab } from "./view-operations"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
 
 // `ServiceDetailPage` (apps/web/src/routes/services/$serviceName.tsx).
@@ -134,10 +137,12 @@ const body = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<Html> =
 	switch (tabOf(model.search)) {
 		case "overview":
 			return [overviewTab(h, model, inputs.context)]
-		case "api":
 		case "operations":
+			return [operationsTab(h, model, model.themeColors)]
+		case "api":
+			return [apiTab(h, model)]
 		case "dependencies":
-			return []
+			return [dependenciesTab(h, model)]
 	}
 }
 

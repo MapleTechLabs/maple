@@ -1,4 +1,5 @@
 import { getServiceDetailOverview, getServiceDetailThroughputRefinement } from "@maple/web-data/warehouse/custom-charts"
+import { getServiceEndpoints } from "@maple/web-data/warehouse/service-endpoints"
 import { getServiceOperations } from "@maple/web-data/warehouse/service-operations"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
@@ -120,7 +121,23 @@ export const FetchOperations = Command.define("FetchServiceOperations", {
 		),
 })
 
-export const FetchUsage = Command.define("FetchServiceDetailUsage", {
+export const EndpointsInput = Schema.Struct({ ...DetailInput.fields, limit: Schema.Number })
+export type EndpointsInput = typeof EndpointsInput.Type
+
+/** `getServiceEndpointsResultAtom`: the API tab's endpoints, the busiest `ENDPOINTS_LIMIT`. */
+export const FetchEndpoints = Command.define("FetchServiceEndpoints", {
+	args: { key: Schema.String, input: EndpointsInput },
+	messages: [Message.CompletedFetchEndpoints],
+	execute: ({ key, input }) =>
+		getServiceEndpoints({ data: input }).pipe(
+			Effect.map((response) => response.endpoints),
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchEndpoints({ key, result })),
+		),
+})
+
+export const FetchUsage =Command.define("FetchServiceDetailUsage", {
 	args: { key: Schema.String, input: UsageInput },
 	messages: [Message.CompletedFetchUsage],
 	execute: ({ key, input }) =>

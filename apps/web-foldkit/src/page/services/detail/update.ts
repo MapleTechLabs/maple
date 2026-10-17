@@ -1,3 +1,4 @@
+import { ENDPOINTS_LIMIT } from "@maple/web/components/services/service-endpoints"
 import { buildServiceOpenIssuesQuery } from "@maple/web/lib/services/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Option, type Result } from "effect"
@@ -18,6 +19,7 @@ import {
 	ResolveClock,
 	FetchCommit,
 	FetchDependencies,
+	FetchEndpoints,
 	FetchIssues,
 	FetchOperations,
 	FetchOverview,
@@ -36,8 +38,10 @@ import {
 	type ServiceTab,
 	singleDeploymentEnv,
 	tabOf,
+	windowSeconds,
 } from "./derive"
 import { commitMarkers, markerShas } from "./derive-markers"
+import { initialSort, nextSort, operationTraceSearch, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
 import { deriveDeploys, isResolvableSha } from "./derive-panels"
 import { Message, type RequestMode } from "./message"
 import type { Commit, CommitFailure, Model } from "./model"
@@ -219,10 +223,11 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 	operationsStep(context, window, mode),
 	(model) => {
 		const query = issuesQuery(model, window)
+		// A plain `useAtomValue`: Reload re-requests it only when its key moved (an environment's window).
 		return keyed(
 			model.issues,
 			requestKey(context.orgId, "errorIssues.list", { query }),
-			mode,
+			"Load",
 			(issues) => ({ issues }),
 			(key) => FetchIssues({ key, query }),
 		)
@@ -256,7 +261,8 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 			: keyed(
 					model.refinement,
 					requestKey(context.orgId, "getServiceDetailThroughputRefinement", { data: input }),
-					mode,
+					// `useAtomValue` too: only a moved key re-requests it.
+					"Load",
 					(refinement) => ({ refinement }),
 					(key) => FetchRefinement({ key, input }),
 				)
@@ -273,7 +279,18 @@ const tabSteps = (model: Model, context: PageContext, window: TimeWindow, mode: 
 		case "dependencies":
 			return [dependenciesStep(context, window, mode)]
 		case "api":
-			return []
+			return [
+				(current) => {
+					const input = { ...detailInput(current, window), limit: ENDPOINTS_LIMIT }
+					return keyed(
+						current.endpoints,
+						requestKey(context.orgId, "getServiceEndpoints", { data: input }),
+						mode,
+						(endpoints) => ({ endpoints }),
+						(key) => FetchEndpoints({ key, input }),
+					)
+				},
+			]
 	}
 }
 
@@ -324,12 +341,19 @@ export const init = (
 		overview: Keyed.idle(),
 		refinement: Keyed.idle(),
 		operations: Keyed.idle(),
+		endpoints: Keyed.idle(),
+		expandedEndpointGroups: [],
 		issues: Keyed.idle(),
 		usage: Keyed.idle(),
 		workloads: Keyed.idle(),
 		dependencies: Keyed.idle(),
 		commits: {},
 		isDeploysExpanded: false,
+		sorts: {
+			operations: initialSort("operations"),
+			endpoints: initialSort("endpoints"),
+			dependencies: initialSort("dependencies"),
+		},
 		environmentSelect: Select.init("service-environment", { value: ALL_ENVIRONMENTS, selectedIndex: 0 }),
 		timePicker: TimeRangePicker.init("service-time-range"),
 		charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
@@ -415,7 +439,30 @@ const withChart = (model: Model, chartId: string, message: Chart.Message): Retur
 	}
 }
 
-const settleCommit = (model: Model, sha: string, result: Result.Result<Commit, CommitFailure>): Model => ({
+/** A drill-down's window: the raw URL window, or its last 30 days when it is longer. */
+const traceWindow = (model: Model) => {
+	const window = model.window
+	return window !== null && windowSeconds(window) > TRACE_DETAIL_LIMIT_SECONDS
+		? {
+				startTime: new Date(
+					parseWarehouseDateTime(window.endTime) - TRACE_DETAIL_LIMIT_SECONDS * 1000,
+				).toISOString(),
+				endTime: window.endTime,
+				timePreset: undefined,
+			}
+		: { startTime: model.search.startTime, endTime: model.search.endTime, timePreset: model.search.timePreset }
+}
+
+/** `handleRowClick` on an operation or endpoint. */
+export const traceSearch = (model: Model, spanName: string) =>
+	operationTraceSearch({
+		serviceName: model.serviceName,
+		spanName,
+		environments: environmentsOf(model.search),
+		...traceWindow(model),
+	})
+
+const settleCommit =(model: Model, sha: string, result: Result.Result<Commit, CommitFailure>): Model => ({
 	...model,
 	commits: {
 		...model.commits,
@@ -434,6 +481,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchOperations: ({ key, result }) => ({
 			model: { ...model, operations: Keyed.accept(model.operations, key, result) },
 		}),
+		ClickedDependency: ({ whereClause }) => {
+			const window = traceWindow(model)
+			return {
+				model,
+				outMessage: PageOutMessage.RequestedNavigation({
+					url: hrefOf(
+						AppRoute.Traces({ search: { services: [model.serviceName], whereClause, ...window } }),
+					),
+					isReplace: false,
+				}),
+			}
+		},
+		CompletedFetchEndpoints: ({ key, result }) => ({
+			model: { ...model, endpoints: Keyed.accept(model.endpoints, key, result) },
+		}),
+		ClickedToggleEndpointGroup: ({ kind }) => ({
+			model: {
+				...model,
+				expandedEndpointGroups: model.expandedEndpointGroups.includes(kind)
+					? model.expandedEndpointGroups.filter((open) => open !== kind)
+					: [...model.expandedEndpointGroups, kind],
+			},
+		}),
 		CompletedFetchIssues: ({ key, result }) => ({
 			model: { ...model, issues: Keyed.accept(model.issues, key, result) },
 		}),
@@ -447,6 +517,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, dependencies: Keyed.accept(model.dependencies, key, result) },
 		}),
 		CompletedFetchCommit: ({ sha, result }) => ({ model: settleCommit(model, sha, result) }),
+		AttachedLinkedCursor: () => ({ model }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
@@ -471,6 +542,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedTab: ({ tab }) => navigate(model, tabSearch(model.search, tab), true),
 		ClickedToggleDeploys: () =>
 			sync({ ...model, isDeploysExpanded: !model.isDeploysExpanded }, context, "Load"),
+		ClickedSort: ({ table, key }) => ({
+			model: { ...model, sorts: { ...model.sorts, [table]: nextSort(table, model.sorts[table], key) } },
+		}),
+		ClickedOperation: ({ spanName }) => ({
+			model,
+			outMessage: PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.Traces({ search: traceSearch(model, spanName) })),
+				isReplace: false,
+			}),
+		}),
 		GotEnvironmentSelectMessage: ({ message: inner }) => withEnvironmentSelect(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => withPicker(model, inner),
 		GotChartMessage: ({ chartId, message: inner }) => withChart(model, chartId, inner),

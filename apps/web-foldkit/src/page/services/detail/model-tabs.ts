@@ -2,6 +2,17 @@ import { Schema } from "effect"
 
 // Row schemas of the Operations, API and Dependencies data (mirroring the web-data types).
 
+export const SortDir = Schema.Literals(["asc", "desc"])
+export type SortDir = typeof SortDir.Type
+
+/** `useSortState`: the sorted column (`null` = source order) and its direction. */
+export const SortState = Schema.Struct({ key: Schema.NullOr(Schema.String), dir: SortDir })
+export type SortState = typeof SortState.Type
+
+/** The three sortable tables of the tabs. */
+export const SortTable = Schema.Literals(["operations", "endpoints", "dependencies"])
+export type SortTable = typeof SortTable.Type
+
 /** `ServiceOperation` (@maple/web-data/warehouse/service-operations). */
 export const Operation = Schema.Struct({
 	spanName: Schema.String,
@@ -16,6 +27,23 @@ export const Operation = Schema.Struct({
 	sparkline: Schema.Array(Schema.Struct({ bucket: Schema.String, count: Schema.Number })),
 })
 export type Operation = typeof Operation.Type
+
+/** `ServiceEndpoint` (@maple/web-data/warehouse/service-endpoints). */
+export const Endpoint = Schema.Struct({
+	spanName: Schema.String,
+	method: Schema.String,
+	route: Schema.String,
+	spanCount: Schema.Number,
+	estimatedSpanCount: Schema.Number,
+	errorCount: Schema.Number,
+	estimatedErrorCount: Schema.Number,
+	errorRate: Schema.Number,
+	avgDurationMs: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	p99DurationMs: Schema.Number,
+})
+export type Endpoint = typeof Endpoint.Type
 
 const EdgeStats = {
 	callCount: Schema.Number,
