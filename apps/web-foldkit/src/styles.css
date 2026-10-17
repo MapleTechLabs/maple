@@ -6,3 +6,11 @@
    same rules, plus this app's views. */
 @source "../../web/src";
 @source "./";
+
+/* Base UI injects this rule at runtime for `ScrollArea` viewports (`utils/styles.mjs`). */
+.base-ui-disable-scrollbar {
+	scrollbar-width: none;
+}
+.base-ui-disable-scrollbar::-webkit-scrollbar {
+	display: none;
+}
