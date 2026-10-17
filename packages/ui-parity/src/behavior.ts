@@ -99,10 +99,12 @@ const unmatched = (baseline: ReadonlyArray<string>, candidate: ReadonlyArray<str
 export const diffCallLogs = (
 	baseline: ReadonlyArray<CallLogEntry>,
 	candidate: ReadonlyArray<CallLogEntry>,
-	options: { readonly ignoreBackground?: boolean } = {},
+	options: { readonly ignoreBackground?: boolean; readonly ignore?: ReadonlyArray<string> } = {},
 ): string[] => {
-	const base = groupCalls(baseline, options.ignoreBackground ?? false)
-	const cand = groupCalls(candidate, options.ignoreBackground ?? false)
+	const ignore = options.ignore ?? []
+	const kept = (calls: ReadonlyArray<CallLogEntry>) => calls.filter((call) => !matches(ignore, call.tag))
+	const base = groupCalls(kept(baseline), options.ignoreBackground ?? false)
+	const cand = groupCalls(kept(candidate), options.ignoreBackground ?? false)
 	const lines: string[] = []
 	for (const key of [...new Set([...base.keys(), ...cand.keys()])].sort()) {
 		const a = base.get(key) ?? []
