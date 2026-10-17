@@ -1,0 +1,70 @@
+import { Schema } from "effect"
+import { defineMessageUnion } from "foldkit/message"
+import { LoadFailure } from "../../../data/load-failure"
+import { TimeWindow } from "../../../data/time-range"
+import * as FilterSections from "../../../ui/filters/filter-sections"
+import { SignalPresences } from "../../kit/signal-presence"
+import * as TimeRangePicker from "../../kit/time-range-picker"
+import { TracesFacets, TracesPage, VirtualRow } from "./model"
+
+/** `Load` on entry or a search change; `Refresh` from Reload (unsnapped window, revalidate). */
+export const RequestMode = Schema.Literals(["Load", "Refresh"])
+export type RequestMode = typeof RequestMode.Type
+
+/** The sidebar's facets, by their include param. */
+export const Facet = Schema.Literals([
+	"deploymentEnvs",
+	"namespaces",
+	"services",
+	"spanNames",
+	"httpMethods",
+	"httpStatusCodes",
+])
+export type Facet = typeof Facet.Type
+
+export const ChipId = Schema.String
+
+export const SortKey = Schema.Literals(["timestamp", "durationMs"])
+export type SortKey = typeof SortKey.Type
+
+const result = <A extends Schema.Top>(schema: A) => ({
+	key: Schema.String,
+	result: Schema.Result(schema, LoadFailure),
+})
+
+export const Message = defineMessageUnion({
+	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedFetchFacets: result(TracesFacets),
+	CompletedFetchFirstPage: result(TracesPage),
+	/** A later page; `key` is the first page's key it continues. */
+	CompletedFetchNextPage: result(TracesPage),
+	ChangedVirtualWindow: { rows: Schema.Array(VirtualRow), totalSize: Schema.Number },
+	PaintedEmptyState: {},
+	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
+	ClickedReload: {},
+	CompletedReloadSpin: { version: Schema.Number },
+	ClickedResetTimeRange: {},
+	ClickedClearNamespacePin: {},
+	ToggledHasError: {},
+	ToggledRootOnly: {},
+	ToggledHideNoise: {},
+	ToggledFacetOption: { facet: Facet, name: Schema.String },
+	ClickedOnlyFacetOption: { facet: Facet, name: Schema.String },
+	ClickedExcludeFacetOption: { facet: Facet, name: Schema.String },
+	ClickedClearSidebarFilters: {},
+	ChangedDurationDraft: { min: Schema.String, max: Schema.String },
+	ElapsedDurationDebounce: { version: Schema.Number },
+	CommittedDurationDraft: {},
+	AppliedDurationRange: { min: Schema.UndefinedOr(Schema.Number), max: Schema.UndefinedOr(Schema.Number) },
+	RemovedFilterChip: { id: ChipId },
+	ClickedClearAllChips: {},
+	ClickedClearWhereClause: {},
+	ClickedSort: { key: SortKey },
+	ClickedShowNoise: {},
+	ClickedClearExclusions: {},
+	ClickedClearFilters: {},
+	ClickedWidenRange: {},
+	GotFilterSectionsMessage: { message: FilterSections.Message },
+	GotTimePickerMessage: { message: TimeRangePicker.Message },
+})
+export type Message = typeof Message.Type
