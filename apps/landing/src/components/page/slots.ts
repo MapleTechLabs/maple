@@ -23,11 +23,14 @@ import LiveLogStream from "../live/LiveLogStream.astro"
 import LiveMcpTranscript from "../live/LiveMcpTranscript.astro"
 import LiveServiceMap from "../live/LiveServiceMap.astro"
 import LogsVolume from "./artifacts/LogsVolume.astro"
+import PrReview from "./artifacts/PrReview.astro"
 import TraceExplorer from "./artifacts/TraceExplorer.astro"
 import K8sConsole from "./sections/K8sConsole.astro"
 import K8sCorrelation from "./sections/K8sCorrelation.astro"
 import K8sInstall from "./sections/K8sInstall.astro"
 import K8sViews from "./sections/K8sViews.astro"
+import GitHubAfterMerge from "./sections/GitHubAfterMerge.astro"
+import GitHubCi from "./sections/GitHubCi.astro"
 import ProductEventsSources from "./sections/ProductEventsSources.astro"
 
 /**
@@ -46,6 +49,7 @@ export const ARTIFACTS = {
 	"k8s-heatmap": LiveK8sHeatmap,
 	"alert-firing": LiveAlertFiring,
 	funnel: LiveFunnel,
+	"pr-review": PrReview,
 } satisfies Record<ArtifactId, unknown>
 
 export const EXTRA_SECTIONS = {
@@ -54,4 +58,6 @@ export const EXTRA_SECTIONS = {
 	"k8s-correlation": K8sCorrelation,
 	"k8s-install": K8sInstall,
 	"product-events-sources": ProductEventsSources,
+	"github-ci": GitHubCi,
+	"github-after-merge": GitHubAfterMerge,
 } satisfies Record<SectionId, unknown>

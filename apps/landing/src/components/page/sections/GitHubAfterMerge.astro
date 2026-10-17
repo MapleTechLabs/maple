@@ -1,0 +1,42 @@
+---
+/**
+ * GitHub · after merge. The post-merge comment on the left, the three things that
+ * tie code to production on the right; media-left so it alternates with the CI section.
+ */
+import * as m from "../../../paraglide/messages.js";
+import PostMergeComment from "../../github/PostMergeComment.astro";
+
+const rules = [
+	{ title: m.gh_after_rule_1_title(), body: m.gh_after_rule_1_body() },
+	{ title: m.gh_after_rule_2_title(), body: m.gh_after_rule_2_body() },
+	{ title: m.gh_after_rule_3_title(), body: m.gh_after_rule_3_body() },
+];
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-32">
+		<div class="grid gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:gap-20">
+			<PostMergeComment class="min-w-0 self-start" />
+
+			<div class="flex min-w-0 flex-col">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.gh_after_eyebrow()}</p>
+				<h2
+					class="mt-4 max-w-[16ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.gh_after_title()}
+				</h2>
+				<p class="mt-5 max-w-[52ch] text-sm leading-relaxed text-fg-muted">{m.gh_after_lede()}</p>
+				<dl class="mt-auto pt-8">
+					{
+						rules.map((rule) => (
+							<div class="border-t border-border py-4">
+								<dt class="text-[13px] font-medium text-fg">{rule.title}</dt>
+								<dd class="mt-1.5 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted">{rule.body}</dd>
+							</div>
+						))
+					}
+				</dl>
+			</div>
+		</div>
+	</div>
+</section>
