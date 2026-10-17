@@ -53,12 +53,18 @@ const NAMES = [
 type Element = DefaultTreeAdapterMap["element"]
 type SvgNode = readonly [tag: string, attributes: ReadonlyArray<readonly [string, string]>, children: ReadonlyArray<SvgNode>]
 
-const SVG_CASE: Record<string, string> = { lineargradient: "linearGradient", radialgradient: "radialGradient", clippath: "clipPath" }
+const SVG_CASE = new Map([
+	["lineargradient", "linearGradient"],
+	["radialgradient", "radialGradient"],
+	["clippath", "clipPath"],
+])
+
+const isElement = (node: DefaultTreeAdapterMap["childNode"]): node is Element => "tagName" in node
 
 const toNode = (element: Element): SvgNode => [
-	SVG_CASE[element.tagName] ?? element.tagName,
-	element.attrs.map((attr) => [attr.name, attr.value] as const),
-	element.childNodes.flatMap((child) => ("tagName" in child ? [toNode(child as Element)] : [])),
+	SVG_CASE.get(element.tagName) ?? element.tagName,
+	element.attrs.map((attr): readonly [string, string] => [attr.name, attr.value]),
+	element.childNodes.filter(isElement).map(toNode),
 ]
 
 const root = resolve(import.meta.dirname, "../../..")
@@ -66,10 +72,12 @@ const react = await import(resolve(root, "packages/ui/node_modules/react/index.j
 const server = await import(resolve(root, "packages/ui/node_modules/react-dom/server.node.js"))
 const icons: Record<string, unknown> = await import(resolve(root, "packages/ui/src/components/icons/index.ts"))
 
-const entries = NAMES.map((name) => {
+const entries = NAMES.flatMap((name) => {
 	const markup: string = server.renderToStaticMarkup(react.createElement(icons[name]))
-	const svg = parseFragment(markup).childNodes[0] as Element
-	return `\t${name}: ${JSON.stringify(toNode(svg))},`
+	return parseFragment(markup)
+		.childNodes.filter(isElement)
+		.slice(0, 1)
+		.map((svg) => `\t${name}: ${JSON.stringify(toNode(svg))},`)
 })
 
 writeFileSync(

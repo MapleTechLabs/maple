@@ -24,7 +24,7 @@ export interface SpanCategory {
 	readonly accent: SpanCategoryAccent
 }
 
-const ACCENTS: Record<SpanCategoryId, SpanCategoryAccent> = {
+const ACCENTS = {
 	server: { rail: "bg-chart-1", text: "text-chart-1", soft: "bg-chart-1/15" },
 	http: { rail: "bg-chart-2", text: "text-chart-2", soft: "bg-chart-2/15" },
 	db: { rail: "bg-chart-3", text: "text-chart-3", soft: "bg-chart-3/15" },
@@ -33,9 +33,9 @@ const ACCENTS: Record<SpanCategoryId, SpanCategoryAccent> = {
 	messaging: { rail: "bg-chart-throughput", text: "text-chart-throughput", soft: "bg-chart-throughput/15" },
 	platform: { rail: "bg-chart-p95", text: "text-chart-p95", soft: "bg-chart-p95/15" },
 	internal: { rail: "bg-severity-trace", text: "text-severity-trace", soft: "bg-severity-trace/15" },
-}
+} satisfies Record<SpanCategoryId, SpanCategoryAccent>
 
-/** Ordered legend entries — default label/icon per category. */
+/** Ordered legend entries: default label and icon per category. */
 export const SPAN_CATEGORIES: ReadonlyArray<SpanCategory> = [
 	{ id: "server", label: "Server", icon: "PulseIcon", accent: ACCENTS.server },
 	{ id: "http", label: "HTTP", icon: "GlobePointerIcon", accent: ACCENTS.http },

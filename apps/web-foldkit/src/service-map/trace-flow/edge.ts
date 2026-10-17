@@ -61,7 +61,7 @@ export const traceFlowEdge = <M>(
 	const label = labelContent(h, data, hovered)
 	return [
 		h.path([
-			...(data.isMissing ? [] : [h.Class("react-flow__edge-path")]),
+			h.Class(cn(!data.isMissing && "react-flow__edge-path")),
 			h.Attribute("d", path),
 			h.Attribute("fill", "none"),
 			h.Attribute("stroke", data.isError ? "var(--severity-error)" : "var(--flow-edge, var(--border))"),

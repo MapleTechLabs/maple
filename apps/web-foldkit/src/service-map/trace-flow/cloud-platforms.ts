@@ -13,7 +13,8 @@ export interface CloudPlatformInfo {
 	readonly outcome: { readonly value: string; readonly bad: boolean } | null
 }
 
-const DB_SYSTEM_LABELS: Record<string, string> = {
+const DB_SYSTEM_LABELS = new Map(
+	Object.entries({
 	postgresql: "PostgreSQL",
 	mysql: "MySQL",
 	mariadb: "MariaDB",
@@ -45,10 +46,11 @@ const DB_SYSTEM_LABELS: Record<string, string> = {
 	presto: "Presto",
 	hive: "Hive",
 	spanner: "Spanner",
-}
+	}),
+)
 
 function humanizeDbSystem(system: string): string {
-	const known = DB_SYSTEM_LABELS[system.toLowerCase()]
+	const known = DB_SYSTEM_LABELS.get(system.toLowerCase())
 	if (known) return known
 	const tail = system.split(".").pop() ?? system
 	return tail

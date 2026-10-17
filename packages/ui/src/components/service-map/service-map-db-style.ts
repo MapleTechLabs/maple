@@ -117,9 +117,9 @@ export function getDbStyle(system: string | undefined): DbStyle {
 
 /** Everything a DB node / detail-panel header needs to render, brand included. */
 export interface DbNodeStyle {
-	/** Node title — the database identity, or "Hyperdrive" for the collapsed proxy node. */
+	/** Node title: the database identity, or "Hyperdrive" for the collapsed proxy node. */
 	title: string
-	/** Small uppercase badge — the underlying system, or the coarse category. */
+	/** Small uppercase badge: the underlying system, or the coarse category. */
 	badge: string
 	icon: DbIconKey
 	color: string

@@ -37,7 +37,7 @@ export {
 // The colors, labels and categories live in `service-map-db-style.ts`; this module
 // resolves their icon keys to React icon components and 3D mark artwork.
 
-const ICONS: Record<DbIconKey, IconComponent> = {
+const ICONS = {
 	postgres: PostgresIcon,
 	mysql: MysqlIcon,
 	clickhouse: ClickhouseIcon,
@@ -49,15 +49,15 @@ const ICONS: Record<DbIconKey, IconComponent> = {
 	magnifier: MagnifierIcon,
 	cloudflare: CloudflareBrandIcon,
 	planetscale: PlanetScaleIcon,
-}
+} satisfies Record<DbIconKey, IconComponent>
 
-const MARK_PATHS: Partial<Record<DbIconKey, string>> = {
-	postgres: POSTGRES_MARK_PATH,
-	mysql: MYSQL_MARK_PATH,
-	clickhouse: CLICKHOUSE_MARK_PATH,
-	mongodb: MONGODB_MARK_PATH,
-	redis: REDIS_MARK_PATH,
-}
+const MARK_PATHS = new Map<DbIconKey, string>([
+	["postgres", POSTGRES_MARK_PATH],
+	["mysql", MYSQL_MARK_PATH],
+	["clickhouse", CLICKHOUSE_MARK_PATH],
+	["mongodb", MONGODB_MARK_PATH],
+	["redis", REDIS_MARK_PATH],
+])
 
 export interface DbDescriptor extends Omit<DbStyle, "icon"> {
 	/** Branded icon when the system is recognised, otherwise a generic category icon. */
@@ -69,7 +69,7 @@ export interface DbDescriptor extends Omit<DbStyle, "icon"> {
 /** {@link getDbStyle} with the icon component and 3D mark resolved. */
 export function getDbDescriptor(system: string | undefined): DbDescriptor {
 	const { icon, ...style } = getDbStyle(system)
-	const markPath = MARK_PATHS[icon]
+	const markPath = MARK_PATHS.get(icon)
 	return markPath === undefined ? { ...style, Icon: ICONS[icon] } : { ...style, Icon: ICONS[icon], markPath }
 }
 

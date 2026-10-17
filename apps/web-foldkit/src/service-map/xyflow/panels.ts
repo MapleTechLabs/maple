@@ -42,7 +42,7 @@ export const controls = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message
 	)
 
 /** Read once: React Flow picks the minimap's shape rendering from the browser. */
-const SHAPE_RENDERING = typeof window !== "undefined" && "chrome" in window ? "crispEdges" : "geometricPrecision"
+const MINIMAP_NODE_RENDERING = typeof window !== "undefined" && "chrome" in window ? "crispEdges" : "geometricPrecision"
 
 const MINIMAP_WIDTH = 200
 const MINIMAP_HEIGHT = 150
@@ -111,7 +111,7 @@ export const miniMap = <M>(
 										h.Attribute("width", String(node.measured.width)),
 										h.Attribute("height", String(node.measured.height)),
 										h.Style({ fill: options.nodeColor(node.id) }),
-										h.Attribute("shape-rendering", SHAPE_RENDERING),
+										h.Attribute("shape-rendering", MINIMAP_NODE_RENDERING),
 									]),
 								],
 					),

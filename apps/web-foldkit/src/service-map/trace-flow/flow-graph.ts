@@ -34,7 +34,7 @@ export interface FlowNodeData extends Record<string, unknown> {
 	count: number
 	combinedSpans: SpanNode[]
 	aggregatedDuration: AggregatedDuration
-	/** Total trace duration — drives the per-card cost rail. */
+	/** Total trace duration; drives the per-card cost rail. */
 	totalDurationMs: number
 }
 
@@ -51,7 +51,7 @@ export interface FlowEdgeData extends Record<string, unknown> {
 	/**
 	 * Gap between parent start and earliest child start, ms. Omitted when a
 	 * timestamp is unparseable, either span is missing, or the gap is negative
-	 * (clock skew) — never show a misleading offset.
+	 * (clock skew); never show a misleading offset.
 	 */
 	startOffsetMs?: number
 	isError: boolean

@@ -32,7 +32,16 @@ const handles = <M>(h: HtmlBuilder<M>, id: string): ReadonlyArray<Html> => [
 	flowHandle(h, id, "source", "right", HANDLE_CLASSES),
 ]
 
-const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
+/** The brand-tinted card of database and collapsed-namespace nodes; the selection adds a halo. */
+const tintedCard = (color: string, tint: number, border: number, selected: boolean | undefined) => {
+	const base = {
+		"background-image": `linear-gradient(${withAlpha(color, tint)}, ${withAlpha(color, tint)})`,
+		"border-color": selected ? color : withAlpha(color, border),
+	}
+	return selected ? { ...base, "box-shadow": `0 0 0 3px ${withAlpha(color, 0.16)}` } : base
+}
+
+const podsCell =<M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 	h.div(
 		[h.Class("ml-auto flex flex-col items-end gap-px")],
 		[
@@ -138,11 +147,7 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 				h.Class(
 					"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
 				),
-				h.Style({
-					"background-image": `linear-gradient(${withAlpha(color, 0.12)}, ${withAlpha(color, 0.12)})`,
-					"border-color": selected ? color : withAlpha(color, 0.4),
-					...(selected ? { "box-shadow": `0 0 0 3px ${withAlpha(color, 0.16)}` } : {}),
-				}),
+				h.Style(tintedCard(color, 0.12, 0.4, selected)),
 			],
 			[
 				h.div([h.Class("w-[3px] shrink-0"), h.Style({ "background-color": color })]),
@@ -157,7 +162,7 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 									nucleoIcon(h, DB_ICON[style.icon], {
 										size: 12,
 										className: "shrink-0",
-										...(branded ? {} : { style: { color } }),
+										style: branded ? undefined : { color },
 									}),
 								]),
 								h.span([h.Class("truncate text-xs font-medium text-foreground"), h.Title(title)], [title]),
@@ -194,11 +199,7 @@ const namespaceAggregateNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceN
 				h.Class(
 					"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-[border-color,box-shadow] duration-150",
 				),
-				h.Style({
-					"background-image": `linear-gradient(${withAlpha(color, 0.1)}, ${withAlpha(color, 0.1)})`,
-					"border-color": selected ? color : withAlpha(color, 0.55),
-					...(selected ? { "box-shadow": `0 0 0 3px ${withAlpha(color, 0.16)}` } : {}),
-				}),
+				h.Style(tintedCard(color, 0.1, 0.55, selected)),
 				h.Title("Collapsed namespace — click to expand"),
 			],
 			[

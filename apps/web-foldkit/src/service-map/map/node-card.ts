@@ -14,10 +14,13 @@ import { eyebrow } from "../../ui/status"
 
 export const HANDLE_CLASSES = "!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0"
 
-export const PLATFORM_ICON: Record<
-	ServicePlatform | "none",
-	{ readonly icon: NucleoIconName; readonly label: string; readonly branded: boolean }
-> = {
+interface PlatformGlyph {
+	readonly icon: NucleoIconName
+	readonly label: string
+	readonly branded: boolean
+}
+
+export const PLATFORM_ICON = {
 	kubernetes: { icon: "KubernetesIcon", label: "Kubernetes", branded: true },
 	cloudflare: { icon: "CloudflareBrandIcon", label: "Cloudflare Workers", branded: true },
 	gcp: { icon: "GoogleCloudIcon", label: "Google Cloud", branded: true },
@@ -25,9 +28,9 @@ export const PLATFORM_ICON: Record<
 	web: { icon: "GlobeIcon", label: "Web (browser)", branded: false },
 	unknown: { icon: "ServerIcon", label: "Unknown runtime", branded: false },
 	none: { icon: "ServerIcon", label: "Unknown runtime", branded: false },
-}
+} satisfies Record<ServicePlatform | "none", PlatformGlyph>
 
-export const DB_ICON: Record<DbIconKey, NucleoIconName> = {
+export const DB_ICON = {
 	postgres: "PostgresIcon",
 	mysql: "MysqlIcon",
 	clickhouse: "ClickhouseIcon",
@@ -39,21 +42,21 @@ export const DB_ICON: Record<DbIconKey, NucleoIconName> = {
 	magnifier: "MagnifierIcon",
 	cloudflare: "CloudflareBrandIcon",
 	planetscale: "PlanetScaleIcon",
-}
+} satisfies Record<DbIconKey, NucleoIconName>
 
-export const UTILIZATION_TEXT: Record<UtilizationLevel, string | undefined> = {
+export const UTILIZATION_TEXT = {
 	crit: TONE_TEXT.crit,
 	warn: TONE_TEXT.warn,
 	ok: undefined,
-}
+} satisfies Record<UtilizationLevel, string | undefined>
 
-export const HEALTH_TONE: Record<ErrorRateLevel, Tone> = { crit: "crit", warn: "warn", neutral: "ok" }
+export const HEALTH_TONE = { crit: "crit", warn: "warn", neutral: "ok" } satisfies Record<ErrorRateLevel, Tone>
 
-const SELECTED_BORDER_CLASS: Record<ErrorRateLevel, string> = {
+const SELECTED_BORDER_CLASS = {
 	crit: "border-severity-error ring-[3px] ring-severity-error/15",
 	warn: "border-severity-warn ring-[3px] ring-severity-warn/15",
 	neutral: "border-border-active ring-[3px] ring-foreground/15",
-}
+} satisfies Record<ErrorRateLevel, string>
 
 export const selectedBorderClass = (errorRate: number): string => SELECTED_BORDER_CLASS[errorRateLevel(errorRate)]
 

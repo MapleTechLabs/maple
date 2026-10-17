@@ -16,7 +16,7 @@ const graph = TraceFlow.buildFlowGraph({
 	services: FLOW_LAB_TRACE.services,
 })
 
-const update = TraceFlow.update(graph)
+export const update = TraceFlow.update(graph)
 
 const selectedName = (model: TraceFlow.Model): string =>
 	Option.match(model.selectedSpanId, {
@@ -26,7 +26,7 @@ const selectedName = (model: TraceFlow.Model): string =>
 
 const toSelf = (message: TraceFlow.Message): TraceFlow.Message => message
 
-const view = (model: TraceFlow.Model, h: HtmlBuilder<TraceFlow.Message>): Html =>
+export const view = (model: TraceFlow.Model, h: HtmlBuilder<TraceFlow.Message>): Html =>
 	dashboardShell(
 		h,
 		"Flow Lab",

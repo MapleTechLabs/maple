@@ -11,8 +11,13 @@ export const MEASURE_EPOCH_ATTRIBUTE = "data-measure-epoch"
 
 export const viewportAttribute =(viewport: Viewport): string => `${viewport.x},${viewport.y},${viewport.zoom}`
 
-const readViewport = (element: Element): Viewport | undefined => {
-	const parts = (element.getAttribute(VIEWPORT_ATTRIBUTE) ?? "").split(",").map(Number)
+/**
+ * The Model's camera, written on the empty `.react-flow__viewport-portal` leaf: an attribute that
+ * changes every pan frame on an ancestor of the nodes costs a ~30 ms style recalc per frame.
+ */
+export const readViewport = (renderer: Element): Viewport | undefined => {
+	const leaf = renderer.querySelector(".react-flow__viewport-portal")
+	const parts = (leaf?.getAttribute(VIEWPORT_ATTRIBUTE) ?? "").split(",").map(Number)
 	return parts.length === 3 && parts.every(Number.isFinite) ? { x: parts[0], y: parts[1], zoom: parts[2] } : undefined
 }
 

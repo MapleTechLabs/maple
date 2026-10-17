@@ -1,6 +1,7 @@
 import { Effect, Queue, Stream } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { readViewport } from "../xyflow/attach"
 import { Viewport } from "../xyflow/geometry"
 
 // `window.__smBench` for the Foldkit bench, the frame-timing half of apps/web's `BenchDriver`
@@ -22,10 +23,7 @@ interface Camera {
 const percentile = (sorted: ReadonlyArray<number>, p: number): number =>
 	sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((p / 100) * (sorted.length - 1))))]
 
-const readCamera = (root: Element): Camera => {
-	const parts = (root.querySelector(".react-flow__renderer")?.getAttribute("data-viewport") ?? "0,0,1").split(",").map(Number)
-	return { x: parts[0] ?? 0, y: parts[1] ?? 0, zoom: parts[2] || 1 }
-}
+const readCamera = (root: Element): Camera => readViewport(root) ?? { x: 0, y: 0, zoom: 1 }
 
 const isReady = (root: Element) => {
 	const nodes = root.querySelectorAll<HTMLElement>(".react-flow__node")
@@ -37,8 +35,20 @@ const isReady = (root: Element) => {
 	)
 }
 
+/** What one run reports: frame pacing and main-thread blocking, as apps/web's `BenchMetrics`. */
+export interface FrameReport {
+	readonly durationMs: number
+	readonly frames: number
+	readonly fps: number
+	readonly frameP50: number
+	readonly frameP95: number
+	readonly droppedFrames: number
+	readonly longTasks: number
+	readonly totalBlockingMs: number
+}
+
 const runFrames = (root: Element, emit: (message: HarnessMessage) => void, durationMs: number, pan: boolean) =>
-	new Promise((resolve) => {
+	new Promise<FrameReport>((resolve) => {
 		const longTasks: PerformanceEntry[] = []
 		const observer = new PerformanceObserver((list) => longTasks.push(...list.getEntries()))
 		observer.observe({ entryTypes: ["longtask"] })
@@ -81,7 +91,7 @@ const runFrames = (root: Element, emit: (message: HarnessMessage) => void, durat
 interface SmBench {
 	ready: boolean
 	readyMs: number | null
-	run: (options?: { durationMs?: number; pan?: boolean }) => Promise<unknown>
+	run: (options?: { durationMs?: number; pan?: boolean }) => Promise<FrameReport>
 	setCamera: (viewport: Camera) => void
 	fitCamera: () => void
 	getCamera: () => Camera

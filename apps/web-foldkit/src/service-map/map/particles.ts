@@ -2,7 +2,7 @@ import { Effect, Option, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { VIEWPORT_ATTRIBUTE } from "../xyflow/attach"
+import { readViewport } from "../xyflow/attach"
 import { compileTracks, type EdgeParticleSpec, MAX_TOTAL_PARTICLES, type Track } from "./particle-tracks"
 
 // `ServiceMapParticleCanvas`: one canvas, one rAF loop, a global particle budget. The edges
@@ -27,10 +27,7 @@ const decodeSpecs = Schema.decodeUnknownOption(
 	),
 )
 
-const readCamera = (renderer: Element | null) => {
-	const parts = (renderer?.getAttribute(VIEWPORT_ATTRIBUTE) ?? "0,0,1").split(",").map(Number)
-	return { x: parts[0] ?? 0, y: parts[1] ?? 0, zoom: parts[2] || 1 }
-}
+const readCamera = (renderer: Element | null) => (renderer === null ? undefined : readViewport(renderer)) ?? { x: 0, y: 0, zoom: 1 }
 
 const drawFrame = (
 	ctx: CanvasRenderingContext2D,
