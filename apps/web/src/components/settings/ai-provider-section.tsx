@@ -176,7 +176,8 @@ function OpenRouterKeyPanel({
 }) {
 	const [replacing, setReplacing] = useState(false)
 
-	if (!current.entitled) return <AddOnUpsell current={current} onAttached={onAddOnAttached} />
+	if (!current.entitled)
+		return <AddOnUpsell current={current} onAttached={onAddOnAttached} onRemove={onRemove} busy={busy} />
 
 	if (current.configured && !replacing) {
 		return (
@@ -275,7 +276,17 @@ function OpenRouterKeyForm({
 	)
 }
 
-function AddOnUpsell({ current, onAttached }: { current: OpenRouterKeyDocument; onAttached: () => void }) {
+function AddOnUpsell({
+	current,
+	onAttached,
+	onRemove,
+	busy,
+}: {
+	current: OpenRouterKeyDocument
+	onAttached: () => void
+	onRemove: () => void
+	busy: boolean
+}) {
 	const [confirmAddOn, setConfirmAddOn] = useState(false)
 	const { attach } = useBillingActions()
 
@@ -299,9 +310,21 @@ function AddOnUpsell({ current, onAttached }: { current: OpenRouterKeyDocument; 
 	return (
 		<div className="flex flex-col gap-3">
 			{current.configured ? (
-				<p className="text-xs leading-relaxed text-muted-foreground">
-					Your saved key (sk-or-...{current.keyHint}) is not in use because the add-on has lapsed.
-				</p>
+				<div className="flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5">
+					<p className="text-xs leading-relaxed text-muted-foreground">
+						Your saved key (sk-or-...{current.keyHint}) is not in use because the add-on has
+						lapsed.
+					</p>
+					<Button
+						variant="ghost"
+						size="sm"
+						className="shrink-0 text-destructive-foreground"
+						disabled={busy}
+						onClick={onRemove}
+					>
+						Remove
+					</Button>
+				</div>
 			) : null}
 			<p className="text-xs leading-relaxed text-muted-foreground">
 				Needs the OpenRouter add-on, {ADD_ON_PRICE}, billed with your plan. Cancel any time from
