@@ -8,6 +8,7 @@ import { ClerkPhase, type Model, Session } from "./model"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { readSessionToken } from "./platform/auth-api"
+import * as Toast from "./ui/toast"
 import { urlToAppRoute } from "./route"
 import * as Shell from "./shell"
 import { settle } from "./update"
@@ -41,7 +42,12 @@ export const flags: Effect.Effect<Flags> = Effect.all({
 
 export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resources> = (flags, url: Url) => {
 	const route = urlToAppRoute(url)
-	const base = { route, signIn: SignIn.init(), shell: Shell.init(flags.shell) }
+	const base = {
+		route,
+		signIn: SignIn.init(),
+		shell: Shell.init(flags.shell),
+		toasts: Toast.init("toasts"),
+	}
 
 	if (isClerkAuthEnabled) {
 		return {

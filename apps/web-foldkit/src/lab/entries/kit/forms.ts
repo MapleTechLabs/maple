@@ -3,7 +3,6 @@ import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import * as Autocomplete from "../../../ui/autocomplete"
 import * as Checkbox from "../../../ui/checkbox"
 import * as Combobox from "../../../ui/combobox"
 import * as Field from "../../../ui/field"
@@ -25,17 +24,21 @@ import * as Switch from "../../../ui/switch"
 import { textarea } from "../../../ui/textarea"
 import { defineLab } from "../../define"
 import { kitPage, kitRow, kitSection } from "../../kit/kit-layout"
+import {
+	initKitAutocomplete,
+	initKitCombobox,
+	initKitComboboxChips,
+	initKitSelect,
+	kitAutocomplete,
+	kitCombobox,
+	kitComboboxChips,
+	kitSelect,
+} from "../../kit/pickers"
 
 // Port of `/lab/kit/forms` (apps/web/src/lab/kit/forms.tsx, pickers.tsx). Ids are the `useId`s
 // Base UI gives each control in apps/web, so the two DOMs diff clean.
 
 const INPUT_SIZES = ["sm", "default", "lg"] as const
-const SERVICES = ["api-gateway", "checkout-svc", "payment-svc", "inventory-svc", "notification-svc"]
-const ENVIRONMENTS: ReadonlyArray<Select.SelectOption> = [
-	{ value: "production", label: "Production" },
-	{ value: "staging", label: "Staging" },
-	{ value: "development", label: "Development" },
-]
 const CHECKBOXES = [
 	{ key: "unchecked", id: "base-ui-_r_j_", inputId: "base-ui-_r_k_", text: "Unchecked" },
 	{ key: "checked", id: "base-ui-_r_m_", inputId: "base-ui-_r_n_", text: "Checked" },
@@ -73,7 +76,9 @@ const Model = Schema.Struct({
 	switches: Schema.Record(Schema.String, Switch.Model),
 	radioGroup: RadioGroup.Model,
 	select: Select.Model,
-	comboboxes: Schema.Record(Schema.String, Combobox.Model),
+	combobox: Combobox.Model,
+	comboboxChips: Combobox.Model,
+	autocomplete: Combobox.Model,
 	otpField: OtpField.Model,
 })
 type Model = typeof Model.Type
@@ -84,16 +89,10 @@ const init = (): Update.Return<Model, Message> => ({
 		checkboxes: Object.fromEntries(CHECKBOXES.map(({ key }) => [key, Checkbox.init(key === "checked")])),
 		switches: Object.fromEntries(SWITCHES.map(({ key }) => [key, Switch.init(key === "on")])),
 		radioGroup: RadioGroup.init("p95"),
-		select: Select.init({ values: ENVIRONMENTS.map((option) => option.value), value: "staging" }),
-		comboboxes: {
-			service: Combobox.init({ mode: "single", items: SERVICES, selected: ["payment-svc"] }),
-			services: Combobox.init({
-				mode: "multiple",
-				items: SERVICES,
-				selected: ["checkout-svc", "payment-svc"],
-			}),
-			search: Combobox.init({ mode: "autocomplete", items: SERVICES }),
-		},
+		select: initKitSelect("kit-forms-select"),
+		combobox: initKitCombobox("kit-forms-combobox"),
+		comboboxChips: initKitComboboxChips("kit-forms-combobox-chips"),
+		autocomplete: initKitAutocomplete("kit-forms-autocomplete"),
 		otpField: OtpField.init({ id: "base-ui-_r_22_", length: 6, value: "482" }),
 	},
 })
@@ -106,7 +105,9 @@ const Message = defineMessageUnion({
 	GotSwitchMessage: { key: Schema.String, message: Switch.Message },
 	GotRadioGroupMessage: { message: RadioGroup.Message },
 	GotSelectMessage: { message: Select.Message },
-	GotComboboxMessage: { key: Schema.String, message: Combobox.Message },
+	GotComboboxMessage: { message: Combobox.Message },
+	GotComboboxChipsMessage: { message: Combobox.Message },
+	GotAutocompleteMessage: { message: Combobox.Message },
 	GotOtpFieldMessage: { message: OtpField.Message },
 	ClickedClearSearch: {},
 })
@@ -135,12 +136,26 @@ const foldSwitch = Update.foldChildAt({
 	toParentMessage: (key, message) => Message.GotSwitchMessage({ key, message }),
 })
 
-const foldCombobox = Update.foldChildAt({
-	update: Combobox.update,
-	readAt: (model: Model, key: string) => Option.fromNullishOr(model.comboboxes[key]),
-	writeAt: (model, key, next) => modifyFields(model, { comboboxes: (all) => ({ ...all, [key]: next }) }),
-	toParentMessage: (key, message) => Message.GotComboboxMessage({ key, message }),
-})
+/** The page shows the pickers closed: a picked value needs no reaction. */
+const comboboxFold = (
+	field: "combobox" | "comboboxChips" | "autocomplete",
+	toParentMessage: (message: Combobox.Message) => Message,
+) =>
+	Update.foldChild({
+		update: Combobox.update,
+		read: (model: Model) => Option.some(model[field]),
+		write: (model: Model, next: Combobox.Model): Model => ({ ...model, [field]: next }),
+		toParentMessage,
+		foldOutMessage: (_outMessage: Combobox.OutMessage) => (model: Model) => ({ model }),
+	})
+
+const foldCombobox = comboboxFold("combobox", (message) => Message.GotComboboxMessage({ message }))
+const foldComboboxChips = comboboxFold("comboboxChips", (message) =>
+	Message.GotComboboxChipsMessage({ message }),
+)
+const foldAutocomplete = comboboxFold("autocomplete", (message) =>
+	Message.GotAutocompleteMessage({ message }),
+)
 
 const foldRadioGroup = Update.foldChild({
 	update: RadioGroup.update,
@@ -154,6 +169,7 @@ const foldSelect = Update.foldChild({
 	read: (model: Model) => Option.some(model.select),
 	write: (model, next) => modifyFields(model, { select: () => next }),
 	toParentMessage: (message: Select.Message) => Message.GotSelectMessage({ message }),
+	foldOutMessage: (_outMessage: Select.OutMessage) => (model: Model) => ({ model }),
 })
 
 const foldOtpField = Update.foldChild({
@@ -170,7 +186,9 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		GotSwitchMessage: ({ key, message }) => foldSwitch(model, key, message),
 		GotRadioGroupMessage: ({ message }) => foldRadioGroup(model, message),
 		GotSelectMessage: ({ message }) => foldSelect(model, message),
-		GotComboboxMessage: ({ key, message }) => foldCombobox(model, key, message),
+		GotComboboxMessage: ({ message }) => foldCombobox(model, message),
+		GotComboboxChipsMessage: ({ message }) => foldComboboxChips(model, message),
+		GotAutocompleteMessage: ({ message }) => foldAutocomplete(model, message),
 		GotOtpFieldMessage: ({ message }) => foldOtpField(model, message),
 		// The legacy clear button has no handler either.
 		ClickedClearSearch: () => ({ model }),
@@ -389,75 +407,31 @@ const nativeSelects = (h: HtmlBuilder<Message>): Html =>
 		),
 	])
 
-const comboboxConfig = (model: Model, key: string) =>
-	Option.map(Option.fromNullishOr(model.comboboxes[key]), (combobox) => ({
-		model: combobox,
-		toParentMessage: (message: Combobox.Message) => Message.GotComboboxMessage({ key, message }),
-	}))
-
-const w64 = (h: HtmlBuilder<Message>) => (group: Html) => h.div([h.Class("w-64")], [group])
-
+/** Select, combobox and autocomplete side by side (each nests the next for its siblings), then chips. */
 const pickers = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
-	kitRow(h, undefined, [
-		...Select.view(h, {
-			model: model.select,
-			toParentMessage: (message) => Message.GotSelectMessage({ message }),
-			id: "base-ui-_r_1l_",
-			label: "Environment",
-			className: "w-56",
-			entries: [
-				{
-					_tag: "Group",
-					label: "Deployed",
-					labelId: "base-ui-_r_1n_",
-					options: ENVIRONMENTS.slice(0, 2),
-				},
-				{ _tag: "Separator" },
-				...ENVIRONMENTS.slice(2).map((option) => ({ _tag: "Option" as const, option })),
-			],
-		}),
-		...Option.match(comboboxConfig(model, "service"), {
-			onNone: () => [],
-			onSome: (config) =>
-				Combobox.view(h, {
-					...config,
-					id: "base-ui-_r_1o_",
-					label: "Service",
-					placeholder: "Pick a service",
-					emptyText: "No services found.",
-					startAddon: icon(h, "MagnifierIcon"),
-					wrap: w64(h),
-				}),
-		}),
-		...Option.match(comboboxConfig(model, "search"), {
-			onNone: () => [],
-			onSome: (config) =>
-				Autocomplete.view(h, {
-					...config,
-					id: "base-ui-_r_1s_",
-					label: "Search services",
-					placeholder: "Search services",
-					emptyText: "No matches.",
-					startAddon: icon(h, "MagnifierIcon"),
-					wrap: w64(h),
-				}),
-		}),
-	]),
-	kitRow(
+	kitSelect(
 		h,
-		undefined,
-		Option.match(comboboxConfig(model, "services"), {
-			onNone: () => [],
-			onSome: (config) =>
-				Combobox.chipsView(h, {
-					...config,
-					id: "base-ui-_r_1v_",
-					label: "Services",
-					placeholder: "Add a service",
-					emptyText: "No services found.",
-					className: "w-96",
-				}),
-		}),
+		model.select,
+		(message) => Message.GotSelectMessage({ message }),
+		(select) =>
+			kitCombobox(
+				h,
+				model.combobox,
+				(message) => Message.GotComboboxMessage({ message }),
+				(combobox) =>
+					kitAutocomplete(
+						h,
+						model.autocomplete,
+						(message) => Message.GotAutocompleteMessage({ message }),
+						(autocomplete) => kitRow(h, undefined, [...select, ...combobox, ...autocomplete]),
+					),
+			),
+	),
+	kitComboboxChips(
+		h,
+		model.comboboxChips,
+		(message) => Message.GotComboboxChipsMessage({ message }),
+		(chips) => kitRow(h, undefined, chips),
 	),
 ]
 

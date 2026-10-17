@@ -23,6 +23,7 @@ import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
 import * as Shell from "./shell"
+import * as Toast from "./ui/toast"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 type Step = Update.Step<Model, Message, Resources>
@@ -34,7 +35,10 @@ const foldSignInOutMessage = SignIn.OutMessage.match<Step>({
 		({ token }) =>
 		(model) => ({
 			model: modifyFields(model, { session: () => Session.Resolving() }),
-			commands: [SaveSessionToken({ token }), NavigateInternal({ url: targetAfterSignIn(model.route) })],
+			commands: [
+				SaveSessionToken({ token }),
+				NavigateInternal({ url: targetAfterSignIn(model.route) }),
+			],
 		}),
 })
 
@@ -62,25 +66,44 @@ const foldShellStep = (
 	) => Update.ReturnWithOutMessage<Shell.Model, Shell.Message, Shell.OutMessage, Resources>,
 ) => Update.foldChildStep({ update: step, ...shellFoldConfig })
 
+/** App-wide toasts; pages add one with `Toast.add` through this fold. */
+const foldToasts = Update.foldChild({
+	update: Toast.update,
+	read: (model: Model) => Option.some(model.toasts),
+	write: (model, toasts) => modifyFields(model, { toasts: () => toasts }),
+	toParentMessage: (message: Toast.Message) => Message.GotToastMessage({ message }),
+})
+
 // ROUTING
 
 /** apps/web's `redirectToDashboard`: same-origin `redirect_url`, else `/`. */
 const targetAfterSignIn = (route: AppRoute): string =>
-	AppRoute.matchOrElse(route, { SignIn: ({ search }) => validateInternalRedirect(search.redirect_url) ?? "/" }, () => "/")
+	AppRoute.matchOrElse(
+		route,
+		{ SignIn: ({ search }) => validateInternalRedirect(search.redirect_url) ?? "/" },
+		() => "/",
+	)
 
 /** Clerk's reverse redirects (`ClerkReverseRedirects` in `__root.tsx`): signed in, leave the auth pages. */
 const clerkReverseRedirect = (route: AppRoute, maybeOrgId: Option.Option<unknown>): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,
 		{
-			SignIn: ({ search }) => Option.some({ url: validateInternalRedirect(search.redirect_url) ?? "/", isReplace: true }),
+			SignIn: ({ search }) =>
+				Option.some({ url: validateInternalRedirect(search.redirect_url) ?? "/", isReplace: true }),
 			SignUp: ({ search }) => {
 				const target = validateInternalRedirect(search.redirect_url)
-				return Option.some({ url: target === null || target === "/" ? "/quick-start" : target, isReplace: true })
+				return Option.some({
+					url: target === null || target === "/" ? "/quick-start" : target,
+					isReplace: true,
+				})
 			},
 			OrgRequired: ({ search }) =>
 				Option.isSome(maybeOrgId)
-					? Option.some({ url: validateInternalRedirect(search.redirect_url) ?? "/", isReplace: true })
+					? Option.some({
+							url: validateInternalRedirect(search.redirect_url) ?? "/",
+							isReplace: true,
+						})
 					: Option.none(),
 		},
 		() => Option.none(),
@@ -93,7 +116,10 @@ const sessionRedirect = (model: Model): Option.Option<Redirect> =>
 		SignedOut: () =>
 			isPublicRoute(model.route)
 				? Option.none()
-				: Option.some({ url: hrefOf(AppRoute.SignIn({ search: { redirect_url: hrefOf(model.route) } })), isReplace: true }),
+				: Option.some({
+						url: hrefOf(AppRoute.SignIn({ search: { redirect_url: hrefOf(model.route) } })),
+						isReplace: true,
+					}),
 		SignedIn: ({ maybeOrgId }) => {
 			if (isPublicRoute(model.route)) {
 				return isClerkAuthEnabled ? clerkReverseRedirect(model.route, maybeOrgId) : Option.none()
@@ -140,7 +166,8 @@ export const settle: Step = Update.combine([followRedirects, loadRoute])
 
 const signedIn =
 	(maybeOrgId: Option.Option<OrgId>): Step =>
-	(model) => settle(modifyFields(model, { session: () => Session.SignedIn({ maybeOrgId }) }))
+	(model) =>
+		settle(modifyFields(model, { session: () => Session.SignedIn({ maybeOrgId }) }))
 
 const signedOut: Step = (model) => settle(modifyFields(model, { session: () => Session.SignedOut() }))
 
@@ -187,11 +214,13 @@ export const update = (model: Model, message: Message) =>
 		CompletedSaveSessionToken: () => ({ model, commands: [CheckSession()] }),
 		CompletedLoadClerk: ({ snapshot }) =>
 			appliedClerkSnapshot(snapshot, true)(modifyFields(model, { clerk: () => ClerkPhase.Loaded() })),
-		FailedLoadClerk: ({ message }) => signedOut(modifyFields(model, { clerk: () => ClerkPhase.Failed({ message }) })),
+		FailedLoadClerk: ({ message }) =>
+			signedOut(modifyFields(model, { clerk: () => ClerkPhase.Failed({ message }) })),
 		ChangedClerkSession: ({ snapshot }) => appliedClerkSnapshot(snapshot, false)(model),
 		CompletedWaitForAuthSettle: () => (model.session._tag === "Resolving" ? signedOut(model) : { model }),
 		CompletedMountClerkSignIn: () => ({ model }),
 		FailedMountClerkSignIn: () => ({ model }),
 		GotSignInMessage: ({ message }) => foldSignIn(model, message),
 		GotShellMessage: ({ message }) => foldShell(model, message),
+		GotToastMessage: ({ message }) => foldToasts(model, message),
 	})

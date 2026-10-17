@@ -1,78 +1,133 @@
 import { cn } from "@maple/ui/lib/utils"
+import * as A from "@maple/ui/styles/ui/autocomplete"
 import {
-	autocompleteEmptyStyles,
-	autocompleteInputDefaultStyles,
-	autocompleteInputGroupStyles,
-	autocompleteInputStartAddonStyles,
-	autocompleteItemStyles,
-	autocompleteListStyles,
-	autocompletePopupStyles,
-	autocompletePopupSurfaceStyles,
-	autocompletePositionerStyles,
-	autocompleteStartAddonStyles,
-} from "@maple/ui/styles/ui/autocomplete"
-import { inputControlChromeStyles, inputControlLayoutStyles } from "@maple/ui/styles/ui/input"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import { hiddenInput } from "./choice"
-import * as Combobox from "./combobox"
-import { inputControlClassName } from "./input"
+	inputControlChromeStyles,
+	inputControlLayoutStyles,
+	inputLgStyles,
+	inputStyles,
+} from "@maple/ui/styles/ui/input"
+import { Submodel } from "foldkit"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { inputId, Message, type Model } from "./combobox"
+import { dismissButton, hiddenInput, inputAttributes, listPopup } from "./combobox-view"
+import { icon } from "./icon"
+import { isMounted } from "./overlay/transition"
 
 /**
- * `<Autocomplete>` with `<AutocompleteInput startAddon>`: a free-text input that suggests items.
- * State is a Combobox Submodel in `autocomplete` mode (`Combobox.init({ mode: "autocomplete" })`).
+ * Base UI `Autocomplete` (`@maple/ui/autocomplete`) on the Combobox Submodel in "autocomplete"
+ * mode: `AutocompleteInput` (input group, start addon, `Input` control) and its popup.
  */
+export { init, Message, type Model, OutMessage, update } from "./combobox"
 
-const AUTOCOMPLETE_SLOTS: Combobox.PopupSlots = {
-	prefix: "autocomplete",
-	positionerClassName: autocompletePositionerStyles,
-	frameClassName: autocompletePopupSurfaceStyles,
-	popupClassName: autocompletePopupStyles,
-	emptyClassName: cn(autocompleteEmptyStyles),
-	listClassName: cn(autocompleteListStyles),
-	itemClassName: cn(autocompleteItemStyles),
-}
+export type FieldOptions = Readonly<{
+	items: ReadonlyArray<string>
+	ariaLabel?: string
+	placeholder?: string
+	size?: "default" | "lg"
+	/** `className` of `AutocompleteInput`, on the `Input` control (the command palette's). */
+	className?: string
+	/** The command palette's inline list: no dismiss button, list-empty markers. */
+	isInline?: boolean
+	isListEmpty?: boolean
+}>
 
-export const view = <P>(h: HtmlBuilder<P>, config: Combobox.ComboboxViewConfig<P>): ReadonlyArray<Html> => {
-	const wrap = config.wrap ?? ((group: Html) => group)
-	const hasAddon = config.startAddon !== undefined
-	const controlClassName = cn(hasAddon && autocompleteInputStartAddonStyles, autocompleteInputDefaultStyles)
-	const group = h.div(
+/** `AutocompleteInput` with a magnifier start addon. */
+export const autocompleteField = <M>(
+	h: HtmlBuilder<M>,
+	model: Model,
+	options: FieldOptions,
+	toMessage: (message: Message) => M,
+): Html => {
+	const size = options.size ?? "default"
+	const listEmpty: ReadonlyArray<Attribute<M>> =
+		options.isListEmpty === true ? [h.DataAttribute("list-empty", "")] : []
+	const popupState: ReadonlyArray<Attribute<M>> = model.isOpen
+		? [
+				h.DataAttribute("popup-open", ""),
+				...(options.isInline === true ? [] : [h.DataAttribute("popup-side", model.side)]),
+				h.DataAttribute("pressed", ""),
+			]
+		: []
+	return h.div(
 		[
-			h.Class(autocompleteInputGroupStyles),
+			h.Key("input-group"),
+			h.Class(A.autocompleteInputGroupStyles),
+			...listEmpty,
+			...popupState,
 			h.DataAttribute("slot", "autocomplete-input-group"),
 			h.Role("group"),
 		],
 		[
-			...(config.startAddon === undefined
-				? []
-				: [
-						h.div(
-							[
-								h.AriaHidden(true),
-								h.Class(autocompleteStartAddonStyles),
-								h.DataAttribute("slot", "autocomplete-start-addon"),
-							],
-							[config.startAddon],
-						),
-					]),
+			h.div(
+				[
+					h.AriaHidden(true),
+					h.Class(A.autocompleteStartAddonStyles),
+					h.DataAttribute("slot", "autocomplete-start-addon"),
+				],
+				[icon(h, "MagnifierIcon")],
+			),
+			...(options.isInline === true ? [] : [dismissButton(h)]),
 			h.span(
 				[
-					h.Class(cn(inputControlLayoutStyles, inputControlChromeStyles, controlClassName)),
-					h.DataAttribute("size", "default"),
+					h.Class(
+						cn(
+							inputControlLayoutStyles,
+							inputControlChromeStyles,
+							A.autocompleteInputStartAddonStyles,
+							A.autocompleteInputDefaultStyles,
+							options.className,
+						),
+					),
+					h.DataAttribute("size", size),
 					h.DataAttribute("slot", "input-control"),
 				],
 				[
 					h.input([
-						...Combobox.comboboxInputAttributes(h, config, "autocomplete-input"),
-						h.Class(inputControlClassName("default")),
+						h.Class(cn(inputStyles, size === "lg" && inputLgStyles)),
+						...listEmpty,
+						...inputAttributes(
+							h,
+							model,
+							{
+								slot: "autocomplete-input",
+								ariaLabel: options.ariaLabel,
+								placeholder: options.placeholder,
+								items: options.items,
+								isInline: options.isInline,
+							},
+							toMessage,
+						),
 					]),
 				],
 			),
 		],
 	)
-	return [
-		wrap(group),
-		...(config.model.isOpen ? [Combobox.popup(h, config, AUTOCOMPLETE_SLOTS)] : []),
-		hiddenInput(h, { id: `${config.id}-hidden-input`, value: config.model.inputValue }),
-	]
 }
+
+export type ViewInputs = Readonly<{
+	items: ReadonlyArray<string>
+	ariaLabel: string
+	placeholder: string
+	emptyText: string
+	/** Wraps the field (`<div className="w-64">`) and places it with the hidden input and portal. */
+	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html
+}>
+
+export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
+	inputs.toView({
+		field: autocompleteField(h, model, inputs, (message) => message),
+		rest: [
+			hiddenInput(h, model),
+			...(isMounted(model.isOpen, model.animation)
+				? [
+						listPopup(h, model, {
+							slot: "autocomplete",
+							items: inputs.items,
+							emptyText: inputs.emptyText,
+							anchorSelector: `[data-slot=autocomplete-input-group]:has(#${inputId(model.id)})`,
+						}),
+					]
+				: []),
+		],
+	}),
+)

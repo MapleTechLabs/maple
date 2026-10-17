@@ -1,108 +1,145 @@
-import type { Html, HtmlBuilder } from "foldkit/html"
-import { click, expect, given, keydown, role, scene, selector, type } from "foldkit/scene"
+import * as Animation from "@foldkit/ui/animation"
+import { inertHtml as ih } from "foldkit/html"
+import {
+	all,
+	click,
+	Command,
+	expect,
+	expectAll,
+	expectOutMessage,
+	first,
+	given,
+	keydown,
+	Mount,
+	role,
+	scene,
+	type,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, test } from "vitest"
-import * as Combobox from "./combobox"
+import * as Autocomplete from "./autocomplete"
+import { init, itemId, Message, MountCombobox, OutMessage, update, WaitForComboboxExit } from "./combobox"
+import { chipsView } from "./combobox-view"
 
-const SERVICES = ["api-gateway", "checkout-svc", "payment-svc"]
+/** Combobox (chips, multiple) and Autocomplete: typing filters, arrows move the active option. */
+const SERVICES = ["api-gateway", "checkout-svc", "payment-svc", "inventory-svc", "notification-svc"]
 
-const config = (model: Combobox.Model) => ({
-	model,
-	toParentMessage: (message: Combobox.Message) => message,
-	id: "svc",
-	label: "Service",
-	placeholder: "Pick a service",
-	emptyText: "No services found.",
-})
+const chips = {
+	update,
+	view: withViewInputs(chipsView, {
+		items: SERVICES,
+		ariaLabel: "Services",
+		placeholder: "Add a service",
+		emptyText: "No services found.",
+		toView: (parts) => ih.main([], parts),
+	})(),
+}
 
-const singleView = (model: Combobox.Model, h: HtmlBuilder<Combobox.Message>): Html =>
-	h.div([], Combobox.view(h, config(model)))
+const autocomplete = {
+	update,
+	view: withViewInputs(Autocomplete.view, {
+		items: SERVICES,
+		ariaLabel: "Search services",
+		placeholder: "Search services",
+		emptyText: "No matches.",
+		toView: ({ field, rest }) => ih.main([], [field, ...rest]),
+	})(),
+}
 
-const chipsView = (model: Combobox.Model, h: HtmlBuilder<Combobox.Message>): Html =>
-	h.div([], Combobox.chipsView(h, config(model)))
-
-const input = role("combobox", { name: "Service" })
-const listbox = role("listbox")
+const input = (name: string) => role("combobox", { name })
 const option = (name: string) => role("option", { name })
+const options = all.role("option")
 
-describe("combobox", () => {
-	test("typing opens the list filtered to the query", () => {
+const opened = () => [
+	Mount.resolve(MountCombobox, Message.CompletedMountCombobox()),
+	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
+	Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+]
+
+const exited = (id: string, generation: number) => [
+	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation })),
+	Command.resolve(
+		WaitForComboboxExit({ id, generation }),
+		Animation.Message.EndedAnimation({ generation }),
+	),
+	Mount.expectEnded(MountCombobox),
+	expect(role("listbox")).toBeAbsent(),
+]
+
+describe("combobox scene (chips)", () => {
+	test("the selection shows as chips and as selected options", () => {
 		scene(
-			{ update: Combobox.update, view: singleView },
-			given(Combobox.init({ mode: "single", items: SERVICES, selected: ["payment-svc"] })),
-			expect(input).toHaveValue("payment-svc"),
-			expect(listbox).toBeAbsent(),
-			type(input, "check"),
-			expect(input).toHaveAttr("aria-expanded", "true"),
-			expect(option("checkout-svc")).toExist(),
-			expect(option("api-gateway")).toBeAbsent(),
+			chips,
+			given(init("services", "multiple", { selected: ["checkout-svc", "payment-svc"], isOpen: true })),
+			Mount.resolve(MountCombobox, Message.CompletedMountCombobox()),
+			expectAll(all.role("button", { name: "Remove" })).toHaveCount(2),
+			expect(option("checkout-svc")).toHaveAttr("aria-selected", "true"),
+			expect(option("api-gateway")).toHaveAttr("aria-selected", "false"),
+			expect(role("listbox")).toHaveAttr("aria-multiselectable", "true"),
 		)
 	})
 
-	test("a query with no match shows the empty text", () => {
+	test("typing opens and filters the list; arrows set the active descendant; Enter toggles it", () => {
 		scene(
-			{ update: Combobox.update, view: singleView },
-			given(Combobox.init({ mode: "single", items: SERVICES })),
-			type(input, "zzz"),
-			expect(selector('[data-slot="combobox-empty"]')).toHaveText("No services found."),
-		)
-	})
-
-	test("picking an item selects it, closes the list and fills the input", () => {
-		scene(
-			{ update: Combobox.update, view: singleView },
-			given(Combobox.init({ mode: "single", items: SERVICES, selected: ["payment-svc"] })),
-			click(role("button")),
+			chips,
+			given(init("services", "multiple", { selected: ["checkout-svc"] })),
+			type(input("Services"), "svc"),
+			...opened(),
+			expectAll(options).toHaveCount(4),
+			keydown(input("Services"), "ArrowDown"),
+			expect(input("Services")).toHaveAttr("aria-activedescendant", itemId("services", 0)),
+			expect(option("checkout-svc")).toHaveAttr("data-highlighted", ""),
+			keydown(input("Services"), "ArrowDown"),
+			keydown(input("Services"), "Enter"),
+			expectOutMessage(OutMessage.ChangedSelection({ selected: ["checkout-svc", "payment-svc"] })),
 			expect(option("payment-svc")).toHaveAttr("aria-selected", "true"),
-			click(option("api-gateway")),
-			expect(listbox).toBeAbsent(),
-			expect(input).toHaveValue("api-gateway"),
-			expect(selector("#svc-hidden-input")).toHaveValue("api-gateway"),
 		)
 	})
 
-	test("Escape closes the list and restores the selected value", () => {
+	test("a chip's remove button drops it from the selection", () => {
 		scene(
-			{ update: Combobox.update, view: singleView },
-			given(Combobox.init({ mode: "single", items: SERVICES, selected: ["payment-svc"] })),
-			type(input, "api"),
-			keydown(input, "ArrowDown"),
-			expect(option("api-gateway")).toHaveAttr("data-highlighted", ""),
-			keydown(input, "Escape"),
-			expect(listbox).toBeAbsent(),
-			expect(input).toHaveValue("payment-svc"),
+			chips,
+			given(init("services", "multiple", { selected: ["checkout-svc", "payment-svc"] })),
+			click(first(all.role("button", { name: "Remove" }))),
+			expectOutMessage(OutMessage.ChangedSelection({ selected: ["payment-svc"] })),
+		)
+	})
+
+	test("no match shows the empty status; Escape closes", () => {
+		scene(
+			chips,
+			given(init("services", "multiple")),
+			type(input("Services"), "zzz"),
+			...opened(),
+			expect(role("status")).toHaveText("No services found."),
+			keydown(input("Services"), "Escape"),
+			...exited("services", 2),
 		)
 	})
 })
 
-describe("combobox chips (multiple)", () => {
-	const initial = Combobox.init({ mode: "multiple", items: SERVICES, selected: ["checkout-svc"] })
-
-	test("Enter on a highlighted item adds a chip and keeps the list open", () => {
+describe("autocomplete scene", () => {
+	test("Enter on the active option fills the input and closes the list", () => {
 		scene(
-			{ update: Combobox.update, view: chipsView },
-			given(initial),
-			keydown(input, "ArrowDown"),
-			keydown(input, "Enter"),
-			expect(selector('[title="api-gateway"]')).toExist(),
-			expect(listbox).toExist(),
-			expect(input).toHaveValue(""),
+			autocomplete,
+			given(init("search", "autocomplete")),
+			type(input("Search services"), "pay"),
+			...opened(),
+			keydown(input("Search services"), "ArrowDown"),
+			keydown(input("Search services"), "Enter"),
+			expectOutMessage(OutMessage.ChangedValue({ value: "payment-svc" })),
+			...exited("search", 2),
+			expect(input("Search services")).toHaveValue("payment-svc"),
 		)
 	})
 
-	test("a chip's remove button and Backspace on an empty input drop chips", () => {
+	test("a press outside closes the list", () => {
 		scene(
-			{ update: Combobox.update, view: chipsView },
-			given(
-				Combobox.init({
-					mode: "multiple",
-					items: SERVICES,
-					selected: ["checkout-svc", "payment-svc"],
-				}),
-			),
-			click(role("button", { name: "Remove" })),
-			expect(selector('[title="checkout-svc"]')).toBeAbsent(),
-			keydown(input, "Backspace"),
-			expect(selector('[data-slot="combobox-chip"]')).toBeAbsent(),
+			autocomplete,
+			given(init("search", "autocomplete", { isOpen: true })),
+			Mount.resolve(MountCombobox, Message.PressedOutside()),
+			expect(input("Search services")).toHaveAttr("aria-expanded", "false"),
+			...exited("search", 1),
 		)
 	})
 })

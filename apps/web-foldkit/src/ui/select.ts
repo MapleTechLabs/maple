@@ -1,287 +1,208 @@
-import { cn } from "@maple/ui/lib/utils"
-import {
-	selectGroupLabelStyles,
-	selectItemIndicatorIconStyles,
-	selectItemIndicatorStyles,
-	selectItemStyles,
-	selectItemTextStyles,
-	selectListStyles,
-	selectPopupStyles,
-	selectPopupSurfaceStyles,
-	selectPositionerStyles,
-	selectSeparatorStyles,
-	selectTriggerIconClassName,
-	selectTriggerVariants,
-	selectValueStyles,
-} from "@maple/ui/styles/ui/select"
-import { Option, Schema } from "effect"
-import type { Update } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import * as Animation from "@foldkit/ui/animation"
+import { Array, Effect, Option, Schema, Stream } from "effect"
+import { Command, Dom, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { modifyFields } from "foldkit/struct"
-import { hiddenInput } from "./choice"
-import { icon } from "./icon"
+import { anchoredPopup } from "./overlay/anchored"
+import { initPopup, makeTransition, PopupState, triggerId } from "./overlay/popup-state"
+import { Align, positionDefaults, Side } from "./overlay/position"
+import { isRovingKey, nextIndex } from "./overlay/roving"
+import { alignItemWithTrigger } from "./overlay/select-align"
 
 /**
- * Base UI `Select`: the selected value, whether the popup is open, and the highlighted option.
- * Opening highlights the selected option; arrows move the highlight, Enter or a click selects
- * and closes, Escape closes and keeps the value.
+ * Base UI `Select` (`@maple/ui/select`): the popup opens over the trigger with the selected item
+ * on the trigger's value (`alignItemWithTrigger`), or below it when that does not fit. Arrows
+ * move the highlight, Enter or a click selects, Escape and a press outside close it.
  */
 
 // MODEL
 
 export const Model = Schema.Struct({
-	/** Option values in list order, for keyboard navigation. */
-	values: Schema.Array(Schema.String),
+	...PopupState.fields,
 	value: Schema.String,
-	isOpen: Schema.Boolean,
-	maybeHighlighted: Schema.Option(Schema.String),
+	highlighted: Schema.NullOr(Schema.Number),
+	isAlignedWithTrigger: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
-export const init = (config: { values: ReadonlyArray<string>; value: string; isOpen?: boolean }): Model => ({
-	values: config.values,
-	value: config.value,
-	isOpen: config.isOpen ?? false,
-	maybeHighlighted: config.isOpen === true ? Option.some(config.value) : Option.none(),
+export const listId = (id: string): string => `${id}-list`
+export const itemId = (id: string, index: number): string => `${id}-item-${index}`
+
+/** `<Select defaultValue defaultOpen>`; `selectedIndex` is the value's index among the items. */
+export const init = (
+	id: string,
+	options: Readonly<{ value: string; selectedIndex: number | null; isOpen?: boolean }>,
+): Model => ({
+	...initPopup(id, { isOpen: options.isOpen ?? false, side: "bottom", align: "start" }),
+	value: options.value,
+	highlighted: options.isOpen === true ? options.selectedIndex : null,
+	isAlignedWithTrigger: true,
 })
 
 // MESSAGE
 
 export const Message = defineMessageUnion({
-	ClickedTrigger: {},
-	PressedTriggerKey: { key: Schema.String },
-	PressedListKey: { key: Schema.String },
-	HoveredOption: { value: Schema.String },
-	ClickedOption: { value: Schema.String },
-	ClickedOutside: {},
+	ClickedTrigger: { selectedIndex: Schema.NullOr(Schema.Number) },
+	PressedEscape: {},
+	PressedOutside: {},
+	PressedTriggerKey: { key: Schema.String, selectedIndex: Schema.NullOr(Schema.Number) },
+	PressedListKey: { key: Schema.String, values: Schema.Array(Schema.String) },
+	HoveredItem: { index: Schema.Number },
+	SelectedItem: { index: Schema.Number, value: Schema.String },
+	CompletedFocusSelectItem: {},
+	CompletedMountSelect: {},
+	ChangedPlacement: { side: Side, align: Align, isAlignedWithTrigger: Schema.Boolean },
+	GotAnimationMessage: { message: Animation.Message },
 })
 export type Message = typeof Message.Type
 
+export const OutMessage = defineMessageUnion({ ChangedValue: { value: Schema.String } })
+export type OutMessage = typeof OutMessage.Type
+
 // UPDATE
 
-const opened = (model: Model): Model =>
-	modifyFields(model, { isOpen: () => true, maybeHighlighted: () => Option.some(model.value) })
+export const FocusSelectItem = Command.define("FocusSelectItem", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocusSelectItem],
+	execute: ({ id }) =>
+		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusSelectItem())),
+})
 
-const closed = (model: Model): Model =>
-	modifyFields(model, { isOpen: () => false, maybeHighlighted: () => Option.none() })
+const transition = makeTransition<Model, Message>(
+	(message) => Message.GotAnimationMessage({ message }),
+	"WaitForSelectExit",
+)
+export const WaitForSelectExit = transition.WaitForExit
 
-const moved = (model: Model, step: number): Model => {
-	const current = Option.match(model.maybeHighlighted, {
-		onNone: () => -1,
-		onSome: (value) => model.values.indexOf(value),
-	})
-	const next = Math.max(0, Math.min(model.values.length - 1, current + step))
-	return modifyFields(model, { maybeHighlighted: () => Option.fromNullishOr(model.values[next]) })
-}
+type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
-const selected = (model: Model, value: string): Model => closed(modifyFields(model, { value: () => value }))
+/** The highlight moves in `update`, from the current Model, with focus following it. */
+const highlight = (model: Model, index: number): UpdateReturn => ({
+	model: { ...model, highlighted: index },
+	commands: [FocusSelectItem({ id: itemId(model.id, index) })],
+})
 
-export const OPEN_KEYS: ReadonlyArray<string> = ["ArrowDown", "ArrowUp", "Enter", " "]
-export const LIST_KEYS: ReadonlyArray<string> = [
-	"ArrowDown",
-	"ArrowUp",
-	"Home",
-	"End",
-	"Enter",
-	" ",
-	"Escape",
-]
+const select = (model: Model, value: string): UpdateReturn => ({
+	...transition.close({ ...model, value }),
+	outMessage: OutMessage.ChangedValue({ value }),
+})
 
-export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
-	Message.match<Update.Return<Model, Message>>(message, {
-		ClickedTrigger: () => ({ model: model.isOpen ? closed(model) : opened(model) }),
-		PressedTriggerKey: ({ key }) => ({
-			model: OPEN_KEYS.includes(key) && !model.isOpen ? opened(model) : model,
-		}),
-		PressedListKey: ({ key }) => {
-			if (!model.isOpen) return { model }
-			if (key === "ArrowDown") return { model: moved(model, 1) }
-			if (key === "ArrowUp") return { model: moved(model, -1) }
-			if (key === "Home") return { model: moved(model, -model.values.length) }
-			if (key === "End") return { model: moved(model, model.values.length) }
-			if (key === "Enter" || key === " ") {
-				return {
-					model: Option.match(model.maybeHighlighted, {
-						onNone: () => closed(model),
-						onSome: (value) => selected(model, value),
-					}),
-				}
+const open = (model: Model, selectedIndex: number | null): UpdateReturn =>
+	transition.open({ ...model, highlighted: selectedIndex, isAlignedWithTrigger: true })
+
+export const update = (model: Model, message: Message): UpdateReturn =>
+	Message.match<UpdateReturn>(message, {
+		ClickedTrigger: ({ selectedIndex }) =>
+			model.isOpen ? transition.close(model) : open(model, selectedIndex),
+		PressedEscape: () => transition.close(model),
+		PressedOutside: () => transition.close(model),
+		PressedTriggerKey: ({ selectedIndex }) => (model.isOpen ? { model } : open(model, selectedIndex)),
+		PressedListKey: ({ key, values }) => {
+			if (key === "Escape") return transition.close(model)
+			if (isRovingKey(key)) {
+				return Option.match(
+					nextIndex(
+						values.map(() => true),
+						model.highlighted,
+						key,
+					),
+					{ onNone: () => ({ model }), onSome: (index) => highlight(model, index) },
+				)
 			}
-			return { model: key === "Escape" ? closed(model) : model }
+			return Option.match(
+				Option.flatMap(Option.fromNullishOr(model.highlighted), (index) => Array.get(values, index)),
+				{
+					onNone: () => ({ model }),
+					onSome: (value) => select(model, value),
+				},
+			)
 		},
-		HoveredOption: ({ value }) => ({
-			model: modifyFields(model, { maybeHighlighted: () => Option.some(value) }),
+		HoveredItem: ({ index }) => (model.highlighted === index ? { model } : highlight(model, index)),
+		SelectedItem: ({ value }) => select(model, value),
+		CompletedFocusSelectItem: () => ({ model }),
+		CompletedMountSelect: () => ({ model }),
+		ChangedPlacement: ({ side, align, isAlignedWithTrigger }) => ({
+			model: { ...model, side, align, isAlignedWithTrigger },
 		}),
-		ClickedOption: ({ value }) => ({ model: selected(model, value) }),
-		ClickedOutside: () => ({ model: closed(model) }),
+		GotAnimationMessage: ({ message: animationMessage }) =>
+			transition.foldAnimation(model, animationMessage),
 	})
 
-// VIEW
+// MOUNT
 
-export type SelectOption = Readonly<{ value: string; label: string }>
-export type SelectEntry =
-	| Readonly<{ _tag: "Option"; option: SelectOption }>
-	| Readonly<{ _tag: "Group"; label: string; labelId: string; options: ReadonlyArray<SelectOption> }>
-	| Readonly<{ _tag: "Separator" }>
+const htmlOrNull = (element: Element | null): HTMLElement | null =>
+	element instanceof HTMLElement ? element : null
 
-export type SelectViewConfig<ParentMessage> = Readonly<{
-	model: Model
-	toParentMessage: (message: Message) => ParentMessage
-	/** Base UI's `useId` on the trigger; the list and hidden input derive from it. */
-	id: string
-	label: string
-	entries: ReadonlyArray<SelectEntry>
-	size?: "sm" | "default" | "lg"
-	className?: string
-}>
-
-const optionsOf = (entries: ReadonlyArray<SelectEntry>): ReadonlyArray<SelectOption> =>
-	entries.flatMap((entry) =>
-		entry._tag === "Option" ? [entry.option] : entry._tag === "Group" ? entry.options : [],
-	)
-
-const optionView = <P>(h: HtmlBuilder<P>, config: SelectViewConfig<P>, option: SelectOption): Html => {
-	const isSelected = option.value === config.model.value
-	const isHighlighted = Option.contains(config.model.maybeHighlighted, option.value)
-	return h.div(
-		[
-			h.AriaSelected(isSelected),
-			h.Class(cn(selectItemStyles)),
-			...(isHighlighted ? [h.DataAttribute("highlighted", "")] : []),
-			...(isSelected ? [h.DataAttribute("selected", "")] : []),
-			h.DataAttribute("slot", "select-item"),
-			h.Role("option"),
-			h.Tabindex(isHighlighted ? 0 : -1),
-			h.OnMouseEnter(config.toParentMessage(Message.HoveredOption({ value: option.value }))),
-			h.OnClick(config.toParentMessage(Message.ClickedOption({ value: option.value }))),
-		],
-		[
-			...(isSelected
-				? [
-						h.span(
-							[
-								h.AriaHidden(true),
-								h.Class(selectItemIndicatorStyles),
-								h.DataAttribute("selected", ""),
-							],
-							[icon(h, "CheckIcon", { className: selectItemIndicatorIconStyles })],
-						),
-					]
-				: []),
-			h.div([h.Class(selectItemTextStyles)], [option.label]),
-		],
-	)
-}
-
-const entryView = <P>(h: HtmlBuilder<P>, config: SelectViewConfig<P>, entry: SelectEntry): Html => {
-	if (entry._tag === "Option") return optionView(h, config, entry.option)
-	if (entry._tag === "Separator") {
-		return h.div([
-			h.Class(cn(selectSeparatorStyles)),
-			h.DataAttribute("orientation", "horizontal"),
-			h.DataAttribute("slot", "select-separator"),
-			h.Role("presentation"),
-		])
-	}
-	return h.div(
-		[h.AriaLabelledBy(entry.labelId), h.DataAttribute("slot", "select-group"), h.Role("group")],
-		[
-			h.div(
-				[
-					h.AriaHidden(true),
-					h.Class(selectGroupLabelStyles),
-					h.DataAttribute("slot", "select-group-label"),
-					h.Id(entry.labelId),
-				],
-				[entry.label],
-			),
-			...entry.options.map((option) => optionView(h, config, option)),
-		],
-	)
+/** `InternalBackdrop`'s cutout: the backdrop catches outside presses everywhere but the trigger. */
+const cutOutTrigger = (backdrop: Element | null, trigger: HTMLElement | null) => {
+	if (!(backdrop instanceof HTMLElement) || trigger === null) return
+	const { left, top, right, bottom } = trigger.getBoundingClientRect()
+	backdrop.style.clipPath = `polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, ${left}px ${top}px, ${left}px ${bottom}px, ${right}px ${bottom}px, ${right}px ${top}px, ${left}px ${top}px)`
 }
 
 /**
- * The open popup. TODO(overlay): Base UI portals it to `<body>` and aligns the selected option
- * with the trigger (`alignItemWithTrigger`); here it sits after the trigger, absolutely placed.
+ * Portal, inert marker, scroll lock, focus on the selected item, and the first placement over
+ * the trigger (`alignItemWithTrigger`); later updates keep it there, or anchor below on fallback.
  */
-const popup = <P>(h: HtmlBuilder<P>, config: SelectViewConfig<P>): Html =>
-	h.div(
-		[
-			h.Class(selectPositionerStyles),
-			h.DataAttribute("open", ""),
-			h.DataAttribute("slot", "select-positioner"),
-			h.Role("presentation"),
-			h.Style({ position: "absolute" }),
-		],
-		[
-			h.div(
-				[
-					h.Class(selectPopupStyles),
-					h.DataAttribute("open", ""),
-					h.DataAttribute("slot", "select-popup"),
-				],
-				[
-					h.div(
-						[h.Class(selectPopupSurfaceStyles)],
-						[
-							h.div(
-								[
-									h.Class(cn(selectListStyles)),
-									h.DataAttribute("slot", "select-list"),
-									h.Id(`${config.id}-list`),
-									h.Role("listbox"),
-								],
-								config.entries.map((entry) => entryView(h, config, entry)),
+export const MountSelect = Mount.defineStream("MountSelect", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedMountSelect, Message.ChangedPlacement, Message.PressedOutside],
+	execute: ({ element, id }) => {
+		const alignment = { isFirst: true, isAligned: false }
+		return anchoredPopup(element, {
+			positionerSelector: "[data-slot=select-positioner]",
+			popupSelector: "[data-slot=select-popup]",
+			config: {
+				...positionDefaults,
+				anchor: { _tag: "Element", id: triggerId(id) },
+				side: "bottom",
+				align: "start",
+				sideOffset: 4,
+				fallbackAxisSide: "none",
+			},
+			insideSelectors: [`#${CSS.escape(triggerId(id))}`],
+			markOutside: Option.some({ mark: true, ariaHidden: false }),
+			lockScroll: true,
+			focus: Option.some({ returnFocusId: Option.some(triggerId(id)), initialFocus: "first-tabbable" }),
+			afterPlace: () =>
+				cutOutTrigger(element.firstElementChild, document.getElementById(triggerId(id))),
+			placeInstead: (positioner, popup) => {
+				if (alignment.isFirst) {
+					alignment.isFirst = false
+					const trigger = document.getElementById(triggerId(id))
+					const scroller = document.getElementById(listId(id))
+					positioner.style.position = "fixed"
+					alignment.isAligned =
+						trigger !== null &&
+						scroller !== null &&
+						alignItemWithTrigger({
+							trigger,
+							positioner,
+							popup,
+							scroller,
+							value: htmlOrNull(trigger.querySelector("[data-slot=select-value]")),
+							text: htmlOrNull(
+								popup.querySelector("[role=option][data-selected]")?.lastElementChild ?? null,
 							),
-						],
-					),
-				],
-			),
-		],
-	)
-
-/** `<Select>` with `<SelectTrigger><SelectValue /></SelectTrigger>`, then the hidden input. */
-export const view = <P>(h: HtmlBuilder<P>, config: SelectViewConfig<P>): ReadonlyArray<Html> => {
-	const { model, toParentMessage } = config
-	const label =
-		optionsOf(config.entries).find((option) => option.value === model.value)?.label ?? model.value
-	const openAttributes = model.isOpen ? [h.DataAttribute("popup-open", "")] : []
-	// Open, the trigger keeps focus and drives the list; other keys (Tab) keep their default.
-	const keyMessage = (key: string) =>
-		model.isOpen
-			? LIST_KEYS.includes(key)
-				? Option.some(toParentMessage(Message.PressedListKey({ key })))
-				: Option.none()
-			: OPEN_KEYS.includes(key)
-				? Option.some(toParentMessage(Message.PressedTriggerKey({ key })))
-				: Option.none()
-	return [
-		h.button(
-			[
-				...(model.isOpen ? [h.AriaControls(`${config.id}-list`)] : []),
-				h.AriaExpanded(model.isOpen),
-				h.AriaHasPopup("listbox"),
-				h.AriaLabel(config.label),
-				h.Class(cn(selectTriggerVariants({ size: config.size }), config.className)),
-				...openAttributes,
-				h.DataAttribute("slot", "select-trigger"),
-				h.Id(config.id),
-				h.Role("combobox"),
-				h.Tabindex(0),
-				h.Type("button"),
-				h.OnClick(toParentMessage(Message.ClickedTrigger())),
-				h.OnKeyDownPreventDefault(keyMessage),
-			],
-			[
-				h.span([h.Class(cn(selectValueStyles)), h.DataAttribute("slot", "select-value")], [label]),
-				h.span(
-					[h.AriaHidden(true), ...openAttributes, h.DataAttribute("slot", "select-icon")],
-					[icon(h, "ChevronExpandYIcon", { className: selectTriggerIconClassName })],
-				),
-			],
-		),
-		...(model.isOpen ? [popup(h, config)] : []),
-		hiddenInput(h, { id: `${config.id}-hidden-input`, value: model.value }),
-	]
-}
+						})
+					if (!alignment.isAligned) positioner.style.position = "absolute"
+				}
+				return alignment.isAligned
+			},
+		}).pipe(
+			Stream.map((event) => {
+				switch (event._tag) {
+					case "Mounted":
+						return Message.CompletedMountSelect()
+					case "Placed":
+						return Message.ChangedPlacement({
+							side: event.placed.side,
+							align: event.placed.align,
+							isAlignedWithTrigger: event.placed.isPlacedInstead,
+						})
+					case "PressedOutside":
+						return Message.PressedOutside()
+				}
+			}),
+		)
+	},
+})

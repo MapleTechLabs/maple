@@ -7,7 +7,7 @@
 @source "../../web/src";
 @source "./";
 
-/* Base UI injects this rule at runtime for `ScrollArea` viewports (`utils/styles.mjs`). */
+/* Base UI injects this rule from `utils/styles.mjs` for scroll area viewports and select lists. */
 .base-ui-disable-scrollbar {
 	scrollbar-width: none;
 }

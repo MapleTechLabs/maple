@@ -2,6 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
 import * as SignIn from "./page/sign-in"
+import * as Toast from "./ui/toast"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
 
@@ -29,5 +30,7 @@ export const Model = Schema.Struct({
 	signIn: SignIn.Model,
 	/** Sidebar, menus and boot data: survives navigation like the rest of the root Model. */
 	shell: Shell.Model,
+	/** The app-wide toasts (`ToastProvider` at the root in apps/web). */
+	toasts: Toast.Model,
 })
 export type Model = typeof Model.Type

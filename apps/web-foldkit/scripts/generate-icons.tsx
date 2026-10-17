@@ -19,6 +19,7 @@ type Icon = ComponentType<{ size?: string; className?: string }>
  * re-exports `CloudflareBrandIcon as CloudflareIcon`; here `CloudflareIcon` is @maple/ui's mono one.
  */
 const NAMES = [
+	"AlertWarningIcon",
 	"ArrowRotateAnticlockwiseIcon",
 	"ArrowRotateClockwiseIcon",
 	"ArrowUpIcon",
@@ -34,9 +35,11 @@ const NAMES = [
 	"ChevronExpandYIcon",
 	"ChevronLeftIcon",
 	"ChevronRightIcon",
+	"CircleCheckIcon",
 	"CircleInfoIcon",
 	"CircleQuestionIcon",
 	"CircleWarningIcon",
+	"CircleXmarkIcon",
 	"ClickhouseIcon",
 	"CloudflareBrandIcon",
 	"CloudflareIcon",

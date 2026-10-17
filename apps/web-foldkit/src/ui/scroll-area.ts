@@ -3,6 +3,7 @@ import {
 	scrollAreaStyles,
 	scrollAreaThumbStyles,
 	scrollAreaViewportFadeStyles,
+	scrollAreaViewportGutterStyles,
 	scrollAreaViewportStyles,
 	scrollBarStyles,
 } from "@maple/ui/styles/ui/scroll-area"
@@ -17,6 +18,7 @@ export type ScrollAreaOverflowY = Readonly<{ endPx: number; thumbHeightPx: numbe
 export type ScrollAreaOptions = Readonly<{
 	className?: string
 	scrollFade?: boolean
+	scrollbarGutter?: boolean
 	/** Base UI's `data-id` is `<root id>-viewport`. */
 	idPrefix: string
 	/** Renders the vertical scrollbar Base UI shows once content overflows. */
@@ -92,7 +94,11 @@ export const scrollArea = <Message>(
 			h.div(
 				[
 					h.Class(
-						`${cn(scrollAreaViewportStyles, options.scrollFade === true && scrollAreaViewportFadeStyles)} ${DISABLE_SCROLLBAR}`,
+						`${cn(
+							scrollAreaViewportStyles,
+							options.scrollFade === true && scrollAreaViewportFadeStyles,
+							options.scrollbarGutter === true && scrollAreaViewportGutterStyles,
+						)} ${DISABLE_SCROLLBAR}`,
 					),
 					...state,
 					h.DataAttribute("id", `${options.idPrefix}-viewport`),
