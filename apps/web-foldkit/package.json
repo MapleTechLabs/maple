@@ -19,6 +19,7 @@
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"@tanstack/db": "0.11.3",
+		"@tanstack/virtual-core": "3.17.11",
 		"effect": "catalog:effect",
 		"foldkit": "0.168.0",
 		"class-variance-authority": "catalog:ui",

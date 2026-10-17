@@ -16,6 +16,32 @@ export const defineLab = <Model, Message extends { _tag: string }>(
 ): LabEntry => ({
 	title,
 	start: (container) => {
-		Runtime.run(Runtime.makeElement<Model, Message, Resources>({ ...program, container, resources: ResourcesLive }))
+		Runtime.run(
+			Runtime.makeElement<Model, Message, Resources>({
+				...program,
+				container,
+				resources: ResourcesLive,
+			}),
+		)
+	},
+})
+
+/** `defineLab` for a program that reads the browser (timezone, locale) through Flags before init. */
+export const defineLabWithFlags = <Model, Message extends { _tag: string }, Flags>(
+	title: string,
+	program: Omit<
+		Runtime.ElementConfigWithFlags<Model, Message, Flags, Resources>,
+		"container" | "resources"
+	>,
+): LabEntry => ({
+	title,
+	start: (container) => {
+		Runtime.run(
+			Runtime.makeElement<Model, Message, Flags, Resources>({
+				...program,
+				container,
+				resources: ResourcesLive,
+			}),
+		)
 	},
 })
