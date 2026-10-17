@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { UrlRequest } from "foldkit/navigation"
 import { Url } from "foldkit/url"
+import { PageMessage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { ClerkSnapshot } from "./platform/clerk"
 import * as Shell from "./shell"
@@ -31,5 +32,6 @@ export const Message = defineMessageUnion({
 	GotSignInMessage: { message: SignIn.Message },
 	GotShellMessage: { message: Shell.Message },
 	GotToastMessage: { message: Toast.Message },
+	GotPageMessage: { message: PageMessage },
 })
 export type Message = typeof Message.Type
