@@ -437,6 +437,14 @@ describe("SourcesService", () => {
 
 			const broken = first.find((source) => source.name === "broken")
 			if (broken === undefined) return
+			// A rename answers with the integration's health, not push health.
+			const renamed = yield* keys.update(
+				orgA,
+				user,
+				broken.id,
+				new UpdateSourceRequest({ name: "scraper" }),
+			)
+			assert.deepStrictEqual([renamed.name, renamed.health.status], ["scraper", "failing"])
 			const refused = yield* keys.delete(orgA, broken.id).pipe(Effect.flip)
 			assert.strictEqual(refused._tag, "@maple/http/errors/SourceValidationError")
 

@@ -155,7 +155,7 @@ export const readIntegrationLinks = Effect.fnUntraced(function* (db: MapleDb, or
 			),
 			github: db.run(
 				PG.from(VcsInstallations)
-					.select("id", "accountLogin")
+					.select("id", "accountLogin", "status")
 					.where(($) => [$.orgId.eq(orgId), $.provider.eq("github")]),
 			),
 		},
@@ -203,7 +203,15 @@ export const readIntegrationLinks = Effect.fnUntraced(function* (db: MapleDb, or
 			platform: "github" as const,
 			integrationId: installation.id,
 			name: integrationSourceName.github(installation),
-			health: providerHealth("github"),
+			// Installations come and go one by one; a suspended or removed one is its own problem.
+			health: (inventory: IntegrationInventory | null) =>
+				installation.status === "active"
+					? providerHealth("github")(inventory)
+					: {
+							status: "disconnected" as const,
+							lastDataAt: null,
+							problem: `The GitHub installation is ${installation.status}`,
+						},
 		})),
 	]
 	return links

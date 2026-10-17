@@ -467,7 +467,8 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 						? undefined
 						: yield* normalizeExpiry(request.expiresAtMs, now, existing.expiresAt),
 			})
-			return rowToSource(row, now)
+			// Integration sources take their health from the integration, as `get` reads it.
+			return row.integrationId === null ? rowToSource(row, now) : yield* get(orgId, sourceId)
 		})
 
 		// `untilMs` null pauses until resumed.
