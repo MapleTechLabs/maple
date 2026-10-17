@@ -7,7 +7,7 @@ import {
 	EnvelopeIcon,
 	SlackIcon,
 	GearIcon,
-	GridIcon,
+	ConnectionIcon,
 	GridSquareCirclePlusIcon,
 	KeyboardIcon,
 	LogoutIcon,
@@ -535,9 +535,9 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
  * "account settings" when it is org- and project-wide. They stay in the footer so
  * they never scroll away behind a long Pinned list.
  *
- * Integrations sits here rather than only inside Settings: connecting a provider
- * is how most data arrives, and a page you can only find through Settings is one
- * nobody finds.
+ * Sources sits here rather than only inside Settings: connecting a sender or a
+ * provider is how data arrives, and a page you can only find through Settings is
+ * one nobody finds. Integrations open from the Sources picker.
  */
 function FooterNavRows({ currentPath }: { currentPath: string }) {
 	return (
@@ -545,12 +545,14 @@ function FooterNavRows({ currentPath }: { currentPath: string }) {
 			<SidebarMenuItem>
 				<SidebarMenuButton
 					className={ACTIVE_RAIL}
-					isActive={isPathActive(currentPath, "/integrations")}
-					render={<Link to="/integrations" />}
-					tooltip="Integrations"
+					isActive={
+						isPathActive(currentPath, "/sources") || isPathActive(currentPath, "/integrations")
+					}
+					render={<Link to="/sources" />}
+					tooltip="Sources"
 				>
-					<GridIcon size={18} />
-					<span>Integrations</span>
+					<ConnectionIcon size={18} />
+					<span>Sources</span>
 				</SidebarMenuButton>
 			</SidebarMenuItem>
 			<SidebarMenuItem>

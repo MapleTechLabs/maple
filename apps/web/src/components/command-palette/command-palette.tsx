@@ -19,6 +19,7 @@ import { Kbd } from "@maple/ui/components/ui/kbd"
 import {
 	ChatBubbleSparkleIcon,
 	GearIcon,
+	ConnectionIcon,
 	GridIcon,
 	GridSquareCirclePlusIcon,
 	KeyboardIcon,
@@ -165,6 +166,14 @@ function PaletteContent({
 				icon: item.icon,
 				href: item.href,
 			})),
+			{
+				id: "nav:/sources",
+				title: "Sources",
+				group: "Navigation",
+				keywords: "go to sources connect sdk collector ingest tokens",
+				icon: ConnectionIcon,
+				href: "/sources",
+			},
 			{
 				id: "nav:/integrations",
 				title: "Integrations",

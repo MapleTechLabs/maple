@@ -6,7 +6,14 @@ import { Button } from "@maple/ui/components/ui/button"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
-import { ArrowRightIcon, ChevronRightIcon, KeyIcon, PaperPlaneIcon, PulseIcon } from "@/components/icons"
+import {
+	ArrowRightIcon,
+	ChevronRightIcon,
+	ConnectionIcon,
+	KeyIcon,
+	PaperPlaneIcon,
+	PulseIcon,
+} from "@/components/icons"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { docsUrl } from "@/lib/docs"
@@ -126,6 +133,17 @@ function EndpointSection() {
 					</Eyebrow>
 					<span className="min-w-0 grow truncate font-mono text-xs">{ingestUrl}</span>
 					<CopyButton value={ingestUrl} label="OTLP endpoint" variant="outline" size="icon-sm" />
+				</div>
+				<div className="text-muted-foreground flex items-center gap-2 px-4 py-2.5 text-xs">
+					<ConnectionIcon size={12} className="shrink-0" />
+					<span className="grow">Give each sender its own token, rules and pause switch.</span>
+					<Link
+						to="/sources"
+						className="text-foreground inline-flex items-center gap-1 hover:underline underline-offset-2"
+					>
+						Manage sources
+						<ChevronRightIcon size={12} />
+					</Link>
 				</div>
 				<div className="text-muted-foreground flex items-center gap-2 px-4 py-2.5 text-xs">
 					<KeyIcon size={12} className="shrink-0" />
