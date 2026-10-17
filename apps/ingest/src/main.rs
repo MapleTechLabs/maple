@@ -11,6 +11,7 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod autumn;
+mod sources;
 mod task_protection;
 
 use std::io::{Read, Write};
@@ -25,14 +26,14 @@ use autumn::{AutumnEntitlements, AutumnTracker};
 use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::MatchedPath;
-use axum::extract::Request;
 use axum::extract::Path;
 use axum::extract::Query;
+use axum::extract::Request;
 use axum::extract::State;
 use axum::http::header::{HeaderName, AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE, RETRY_AFTER};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
-use axum::response::{IntoResponse, Response};
 use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
@@ -94,6 +95,10 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use sha2::Sha256;
+use sources::{
+    OverrideMode, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef, SourceSignal,
+    SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
+};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::Instrument;
 use tracing::{debug, error, info, warn, Span};
@@ -161,6 +166,8 @@ struct AppConfig {
     tinybird: TinybirdConfig,
     max_request_body_bytes: usize,
     org_max_in_flight: u64,
+    /// Gateway instances sharing each source's requests/second limit.
+    rate_limit_fleet_size: u32,
     /// Per-org cap on concurrent GCP Pub/Sub pushes, inside `org_max_in_flight`.
     gcp_org_max_in_flight: u64,
     /// Wall-clock deadline for one HTTP request, or `Duration::ZERO` to run
@@ -442,6 +449,8 @@ impl AppConfig {
         if org_max_in_flight == 0 {
             return Err("INGEST_ORG_MAX_IN_FLIGHT must be greater than 0".to_owned());
         }
+        let rate_limit_fleet_size =
+            parse_fleet_size(std::env::var("INGEST_RATE_LIMIT_FLEET_SIZE").ok())?;
         // Pub/Sub pushes one log entry per request, and every request is its own
         // WAL fsync on the org's lane. This bounds how deep one org's pushes can
         // queue on that lane, ahead of every other request sharing it. Pub/Sub
@@ -684,6 +693,7 @@ impl AppConfig {
             tinybird,
             max_request_body_bytes,
             org_max_in_flight,
+            rate_limit_fleet_size,
             gcp_org_max_in_flight,
             request_timeout,
             require_tls,
@@ -780,6 +790,28 @@ struct IngestKeyResolver {
     // here instead of amplifying into a Postgres lookup per request.
     negative_cache: Cache<String, ()>,
     routing: Arc<OrgRoutingResolver>,
+    /// Source ids whose `last_used_at` was written within `SOURCE_USE_WRITE_INTERVAL`.
+    recent_key_uses: Cache<String, ()>,
+    /// (org id, source uuid) to whether that source is the org's, for `maple_source_id`
+    /// values sent with the default keys.
+    source_claims: Cache<(String, String), bool>,
+}
+
+/// How often one source's `last_used_at` is rewritten per gateway instance.
+const SOURCE_USE_WRITE_INTERVAL: Duration = Duration::from_mins(1);
+
+fn source_claims_cache(ttl: Duration) -> Cache<(String, String), bool> {
+    Cache::builder()
+        .time_to_live(ttl)
+        .max_capacity(50_000)
+        .build()
+}
+
+fn recent_key_uses_cache() -> Cache<String, ()> {
+    Cache::builder()
+        .time_to_live(SOURCE_USE_WRITE_INTERVAL)
+        .max_capacity(50_000)
+        .build()
 }
 
 struct CloudflareConnectorResolver {
@@ -791,6 +823,8 @@ struct CloudflareConnectorResolver {
 
 const CLOUDFLARE_CONNECTORS_TABLE: &str = "cloudflare_logpush_connectors";
 const GCP_CONNECTORS_TABLE: &str = "gcp_connectors";
+/// `sources.platform` of a GCP connector's integration source.
+const GCP_SOURCE_PLATFORM: &str = "gcp";
 
 /// How often one connector's health columns are rewritten per outcome. Pub/Sub
 /// pushes one log entry per request, so an unthrottled write is one UPDATE per
@@ -891,6 +925,27 @@ trait KeyStore: Send + Sync {
         hash_column: &'static str,
     ) -> Result<Option<KeyRow>, String>;
 
+    /// A `maple_src_` key by hash, paused or not; unknown keys are `None`.
+    async fn fetch_source_by_token_hash(&self, key_hash: &str)
+        -> Result<Option<SourceRow>, String>;
+
+    /// Stamps `last_used_at` on a source whose data the gateway just accepted.
+    async fn record_source_used(&self, key_id: &str, now_ms: i64) -> Result<(), String>;
+
+    /// The org's default source (its public/private keys); `None` if it has none.
+    async fn fetch_default_source_id(&self, org_id: &str) -> Result<Option<String>, String>;
+
+    /// The source created for one integration; `None` until the API creates it.
+    async fn fetch_integration_source_id(
+        &self,
+        org_id: &str,
+        platform: &'static str,
+        integration_id: &str,
+    ) -> Result<Option<String>, String>;
+
+    /// Whether `source_id` (a uuid) is one of the org's sources.
+    async fn source_belongs_to_org(&self, org_id: &str, source_id: &str) -> Result<bool, String>;
+
     async fn fetch_connector(
         &self,
         connector_id: &str,
@@ -959,6 +1014,13 @@ struct KeyRow {
 }
 
 #[derive(Clone, Debug)]
+struct SourceRow {
+    key: KeyRow,
+    /// `None` when the store has no sources table (static backend).
+    config: Option<SourceConfigRow>,
+}
+
+#[derive(Clone, Debug)]
 struct ConnectorRow {
     org_id: String,
     service_name: String,
@@ -1000,6 +1062,8 @@ struct IngestKeyIdentity {
     org_id: String,
     key_type: IngestKeyType,
     key_id: String,
+    source: Option<Arc<SourcePolicy>>,
+    default_source: Option<SourceRef>,
 }
 
 impl IngestKeyIdentity {
@@ -1010,6 +1074,8 @@ impl IngestKeyIdentity {
             key_id: self.key_id,
             self_managed: routing.self_managed,
             clickhouse_ready: routing.clickhouse_ready,
+            source: self.source,
+            default_source: self.default_source,
         }
     }
 }
@@ -1045,6 +1111,8 @@ struct GcpConnectorIdentity {
     secret_key_id: String,
     logs_enabled: bool,
     confirms_log_forwarding: bool,
+    /// The connector's integration source, stamped on its logs.
+    source: Option<SourceRef>,
 }
 
 impl GcpConnectorIdentity {
@@ -1058,6 +1126,8 @@ impl GcpConnectorIdentity {
                 key_id: self.secret_key_id,
                 self_managed: routing.self_managed,
                 clickhouse_ready: routing.clickhouse_ready,
+                source: None,
+                default_source: self.source,
             },
         }
     }
@@ -1224,6 +1294,7 @@ struct AppState {
     key_store_ready: Arc<AtomicBool>,
     resolver: IngestKeyResolver,
     org_inflight_limiter: OrgInFlightLimiter,
+    key_rate_limiter: SourceRateLimiter,
     /// GCP pushes only, taken before `org_inflight_limiter`.
     gcp_inflight_limiter: OrgInFlightLimiter,
     sampling_resolver: SamplingPolicyResolver,
@@ -1259,6 +1330,46 @@ struct ResolvedIngestKey {
     // version (SCHEMA_VERSION) — NOT the Tinybird-coupled PROJECT_REVISION, so a
     // Tinybird-only schema change can't silently un-ready a BYO-CH org.
     clickhouse_ready: bool,
+    /// Policy of a `maple_src_` key; `None` for default keys and the static store.
+    source: Option<Arc<SourcePolicy>>,
+    /// Stamped when no token source applies: the org's default source for its
+    /// public/private keys, or a connector's integration source.
+    default_source: Option<SourceRef>,
+}
+
+impl ResolvedIngestKey {
+    /// The `sources.id` this request counts against: its token source, else the default.
+    fn source_row_id(&self) -> Option<&str> {
+        self.source
+            .as_ref()
+            .map(|source| source.id.as_str())
+            .or_else(|| {
+                self.default_source
+                    .as_ref()
+                    .map(|source| source.id.as_str())
+            })
+    }
+
+    /// The `src_` id stamped when the sender names no verified source of its own.
+    fn source_public_id(&self) -> Option<&str> {
+        self.source
+            .as_ref()
+            .map(|source| source.public_id.as_str())
+            .or_else(|| {
+                self.default_source
+                    .as_ref()
+                    .map(|source| source.public_id.as_str())
+            })
+    }
+
+    /// Default public/private key traffic may name its own source; a token never can.
+    fn accepts_source_claims(&self) -> bool {
+        self.source.is_none()
+            && matches!(
+                self.key_type,
+                IngestKeyType::Public | IngestKeyType::Private
+            )
+    }
 }
 
 #[derive(Clone)]
@@ -1302,6 +1413,7 @@ enum IngestKeyType {
     Public,
     Private,
     Connector,
+    Source,
 }
 
 impl IngestKeyType {
@@ -1310,6 +1422,7 @@ impl IngestKeyType {
             Self::Public => "public",
             Self::Private => "private",
             Self::Connector => "connector",
+            Self::Source => "source",
         }
     }
 }
@@ -1327,6 +1440,14 @@ impl Signal {
             Self::Traces => "traces",
             Self::Logs => "logs",
             Self::Metrics => "metrics",
+        }
+    }
+
+    fn source_signal(self) -> SourceSignal {
+        match self {
+            Self::Traces => SourceSignal::Traces,
+            Self::Logs => SourceSignal::Logs,
+            Self::Metrics => SourceSignal::Metrics,
         }
     }
 }
@@ -1579,6 +1700,41 @@ static INGEST_RATE_LIMITED: FailureKind = FailureKind {
     tag: "@maple/ingest/RateLimited",
     code: "ingest_rate_limited",
     title: "Ingest rate limit reached",
+    recovery: "retry",
+    retryable: true,
+    error_kind: "throttle",
+    retry_after_seconds: Some(1),
+};
+
+/// A source past its `expires_at`. Checked per request because the
+/// positive auth cache can outlive the deadline.
+static INGEST_KEY_EXPIRED: FailureKind = FailureKind {
+    tag: "@maple/ingest/IngestKeyExpired",
+    code: "ingest_key_expired",
+    title: "Ingest key expired",
+    recovery: "reauthenticate",
+    retryable: false,
+    error_kind: "auth",
+    retry_after_seconds: None,
+};
+
+/// A source whose allow-list does not include this signal.
+static INGEST_SIGNAL_NOT_ALLOWED: FailureKind = FailureKind {
+    tag: "@maple/ingest/SignalNotAllowed",
+    code: "ingest_signal_not_allowed",
+    title: "Signal not allowed for this ingest key",
+    recovery: "fix_request",
+    retryable: false,
+    error_kind: "forbidden",
+    retry_after_seconds: None,
+};
+
+/// A source over its requests/second limit. Buckets hold one second
+/// of burst, so a token is always back within a second.
+static INGEST_KEY_RATE_LIMITED: FailureKind = FailureKind {
+    tag: "@maple/ingest/IngestKeyRateLimited",
+    code: "ingest_key_rate_limited",
+    title: "Ingest key rate limit reached",
     recovery: "retry",
     retryable: true,
     error_kind: "throttle",
@@ -1914,6 +2070,9 @@ fn record_grpc_identity(resolved: &ResolvedIngestKey) {
     let span = Span::current();
     span.record("maple.org_id", resolved.org_id.as_str());
     span.record("maple.ingest.key_type", resolved.key_type.as_str());
+    if let Some(source_id) = resolved.source_public_id() {
+        span.record("maple.source.id", source_id);
+    }
 }
 
 /// Fill in the deferred outcome fields on a gRPC server span. tonic answers a
@@ -2560,8 +2719,13 @@ async fn main() {
             cache: ingest_key_cache,
             negative_cache: ingest_key_negative_cache,
             routing: Arc::clone(&org_routing_resolver),
+            recent_key_uses: recent_key_uses_cache(),
+            source_claims: source_claims_cache(Duration::from_secs(
+                config.ingest_key_cache_ttl_secs,
+            )),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
+        key_rate_limiter: SourceRateLimiter::new(config.rate_limit_fleet_size),
         gcp_inflight_limiter: OrgInFlightLimiter::for_route(
             config.gcp_org_max_in_flight,
             "gcp_in_flight",
@@ -2837,8 +3001,9 @@ async fn grpc_admission(
     let response = async move {
         let admitted = admit_grpc_export(&state, request.headers(), signal).await;
         match admitted {
-            Ok(resolved) => {
+            Ok((resolved, admission)) => {
                 request.extensions_mut().insert(resolved);
+                request.extensions_mut().insert(admission);
                 next.run(request).await
             }
             Err(status) => status.into_http(),
@@ -2854,15 +3019,29 @@ async fn admit_grpc_export(
     state: &AppState,
     headers: &HeaderMap,
     signal: Signal,
-) -> Result<ResolvedIngestKey, tonic::Status> {
+) -> Result<(ResolvedIngestKey, KeyAdmission), tonic::Status> {
     let resolved = resolve_grpc_ingest_key(state, headers).await?;
     record_grpc_identity(&resolved);
-    if resolved.org_id != SENTINEL_ORG_ID {
+    let admission = authorize_source(state, &resolved, &[signal.source_signal()])
+        .await
+        .map_err(|error| grpc_status_for_key_rejection(&error))?;
+    if admission == KeyAdmission::Ingest && resolved.org_id != SENTINEL_ORG_ID {
         if let Some(error) = entitlement_rejection(state, &resolved.org_id, signal.path()).await {
             return Err(tonic::Status::resource_exhausted(error.message));
         }
     }
-    Ok(resolved)
+    Ok((resolved, admission))
+}
+
+/// gRPC code for an `authorize_source` rejection.
+fn grpc_status_for_key_rejection(error: &ApiError) -> tonic::Status {
+    let message = error.message.clone();
+    match error.status {
+        StatusCode::UNAUTHORIZED => tonic::Status::unauthenticated(message),
+        StatusCode::FORBIDDEN => tonic::Status::permission_denied(message),
+        StatusCode::TOO_MANY_REQUESTS => tonic::Status::resource_exhausted(message),
+        _ => tonic::Status::unavailable(message),
+    }
 }
 
 /// The OTLP service and signal a gRPC request path exports to.
@@ -2880,11 +3059,15 @@ fn grpc_export_route(path: &str) -> Option<(&'static str, Signal)> {
 /// The key `grpc_admission` resolved for this request.
 fn grpc_admitted_key<T>(
     request: &mut tonic::Request<T>,
-) -> Result<ResolvedIngestKey, tonic::Status> {
-    request
-        .extensions_mut()
+) -> Result<(ResolvedIngestKey, KeyAdmission), tonic::Status> {
+    let extensions = request.extensions_mut();
+    let resolved = extensions
         .remove::<ResolvedIngestKey>()
-        .ok_or_else(|| tonic::Status::internal("Internal error"))
+        .ok_or_else(|| tonic::Status::internal("Internal error"))?;
+    let admission = extensions
+        .remove::<KeyAdmission>()
+        .unwrap_or(KeyAdmission::Ingest);
+    Ok((resolved, admission))
 }
 
 #[derive(Clone)]
@@ -2915,18 +3098,20 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
         >,
         tonic::Status,
     > {
-        let resolved = grpc_admitted_key(&mut request)?;
-        let mut inner = request.into_inner();
+        let (resolved, admission) = grpc_admitted_key(&mut request)?;
+        let inner = request.into_inner();
         // Sized before enrichment injects resource attributes, so this is the
         // client's own payload size — the same basis as the HTTP path's
         // `decoded_payload.len()`.
         let decoded_bytes = inner.encoded_len();
-        enrich_trace_request(&mut inner, &resolved);
+        let mut decoded = DecodedPayload::Traces(inner);
+        verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Traces,
-            DecodedPayload::Traces(inner),
+            decoded,
             &resolved,
+            admission,
             decoded_bytes,
         )
         .await?;
@@ -2949,15 +3134,17 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
         tonic::Response<opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse>,
         tonic::Status,
     > {
-        let resolved = grpc_admitted_key(&mut request)?;
-        let mut inner = request.into_inner();
+        let (resolved, admission) = grpc_admitted_key(&mut request)?;
+        let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
-        enrich_logs_request(&mut inner, &resolved);
+        let mut decoded = DecodedPayload::Logs(inner);
+        verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Logs,
-            DecodedPayload::Logs(inner),
+            decoded,
             &resolved,
+            admission,
             decoded_bytes,
         )
         .await?;
@@ -2982,15 +3169,17 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
         >,
         tonic::Status,
     > {
-        let resolved = grpc_admitted_key(&mut request)?;
-        let mut inner = request.into_inner();
+        let (resolved, admission) = grpc_admitted_key(&mut request)?;
+        let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
-        enrich_metrics_request(&mut inner, &resolved);
+        let mut decoded = DecodedPayload::Metrics(inner);
+        verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Metrics,
-            DecodedPayload::Metrics(inner),
+            decoded,
             &resolved,
+            admission,
             decoded_bytes,
         )
         .await?;
@@ -3009,6 +3198,7 @@ async fn accept_grpc_decoded(
     signal: Signal,
     decoded: DecodedPayload,
     resolved: &ResolvedIngestKey,
+    admission: KeyAdmission,
     decoded_bytes: usize,
 ) -> Result<(), tonic::Status> {
     // The sentinel token is a PUBLIC constant, so anything it carries is
@@ -3019,6 +3209,10 @@ async fn accept_grpc_decoded(
         metrics::sentinel(signal.path());
         Span::current().record("maple.ingest.key_type", "sentinel");
         debug!("Sentinel token; skipping forward");
+        return Ok(());
+    }
+    // A paused key, decided at admission so a pause ending mid-upload cannot bill it.
+    if admission == KeyAdmission::Drop {
         return Ok(());
     }
 
@@ -3040,6 +3234,7 @@ async fn accept_grpc_decoded(
 
     match result {
         Ok(_) => {
+            state.resolver.note_source_use(resolved);
             if resolved.org_id != SENTINEL_ORG_ID {
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(
@@ -3083,6 +3278,8 @@ async fn resolve_grpc_ingest_key(
             key_id: "sentinel".to_owned(),
             self_managed: false,
             clickhouse_ready: false,
+            source: None,
+            default_source: None,
         });
     }
 
@@ -3124,9 +3321,9 @@ async fn ready(State(state): State<Arc<AppState>>) -> Response {
 // are deliberately not `#[hotpath::measure]`d: wrapping their futures pushed the
 // fully-inlined request state machine over the 2 MB tokio worker stack
 // (release overflowed at the axum handlers, debug one level down). The stages
-// underneath — `resolve_ingest_key`, `decode_and_enrich_payload`,
+// underneath (`resolve_ingest_key`, `decode_otlp_payload`,
 // `process_decoded_payload`, `forward_to_collector`, and the pipeline in
-// `telemetry.rs` — are measured and add up to the same work.
+// `telemetry.rs`) are measured and add up to the same work.
 async fn handle_traces(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -3277,7 +3474,11 @@ fn replay_gunzip_rejection(headers: &HeaderMap, body: &[u8], error: &std::io::Er
     if looks_like_gzip_member(body) {
         ApiError::bad_request(message)
     } else {
-        ApiError::tagged(StatusCode::BAD_REQUEST, &INGEST_REPLAY_BODY_NOT_GZIP, message)
+        ApiError::tagged(
+            StatusCode::BAD_REQUEST,
+            &INGEST_REPLAY_BODY_NOT_GZIP,
+            message,
+        )
     }
 }
 
@@ -3357,11 +3558,82 @@ fn derive_country(headers: &HeaderMap, trust_proxy_geo: bool) -> String {
     code
 }
 
-/// Auth shared by both replay endpoints. `Ok(None)` is the sentinel token —
-/// silently dropped like the OTLP path.
+/// What happens to an admitted request's data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KeyAdmission {
+    Ingest,
+    /// A paused source: answer with success, store and bill nothing.
+    Drop,
+}
+
+/// Per-request checks for a source: expiry, signal allow-list, pause
+/// and rate limit, in that order. Admits default keys unchanged.
+/// `signals` is any-of: the key must allow at least one of them.
+async fn authorize_source(
+    state: &AppState,
+    resolved_key: &ResolvedIngestKey,
+    signals: &[SourceSignal],
+) -> Result<KeyAdmission, ApiError> {
+    let Some(source) = &resolved_key.source else {
+        return Ok(KeyAdmission::Ingest);
+    };
+    let now_ms = current_time_millis();
+    if source.is_expired(now_ms) {
+        warn!(key_id = %source.public_id, "Source expired");
+        return Err(ApiError::tagged(
+            StatusCode::UNAUTHORIZED,
+            &INGEST_KEY_EXPIRED,
+            "Ingest key expired",
+        ));
+    }
+    if !signals.iter().any(|signal| source.allows(*signal)) {
+        let names = signals
+            .iter()
+            .map(|signal| signal.as_str())
+            .collect::<Vec<_>>()
+            .join(" or ");
+        warn!(
+            key_id = %source.public_id,
+            signal = names.as_str(),
+            "Source denied for signal"
+        );
+        return Err(ApiError::tagged(
+            StatusCode::FORBIDDEN,
+            &INGEST_SIGNAL_NOT_ALLOWED,
+            format!("This ingest key is not allowed to send {names}"),
+        ));
+    }
+    if source.is_paused(now_ms) {
+        let signal = signals.first().map_or("unknown", |signal| signal.as_str());
+        metrics::source_paused_drop(&resolved_key.org_id, signal);
+        Span::current().record("maple.ingest.reject_reason", "source_paused");
+        debug!(key_id = %source.public_id, "Source paused; dropping");
+        return Ok(KeyAdmission::Drop);
+    }
+    if let Some(rps) = source.rate_limit_rps {
+        if !state.key_rate_limiter.try_acquire(&source.id, rps).await {
+            metrics::org_throttled(&resolved_key.org_id, "key_rate_limit");
+            warn!(
+                key_id = %source.public_id,
+                rate_limit_rps = rps,
+                "Source rate limit exceeded"
+            );
+            return Err(ApiError::tagged(
+                StatusCode::TOO_MANY_REQUESTS,
+                &INGEST_KEY_RATE_LIMITED,
+                format!("Ingest key rate limit of {rps} requests per second exceeded"),
+            ));
+        }
+    }
+    Ok(KeyAdmission::Ingest)
+}
+
+/// Auth shared by the replay and session endpoints. `Ok(None)` is the sentinel
+/// token or a paused key: silently dropped like the OTLP path.
 async fn resolve_replay_key(
     state: &AppState,
     headers: &HeaderMap,
+    signals: &[SourceSignal],
 ) -> Result<Option<ResolvedIngestKey>, ApiError> {
     let ingest_key =
         extract_ingest_key(headers).ok_or_else(|| ApiError::unauthorized("Missing ingest key"))?;
@@ -3374,7 +3646,10 @@ async fn resolve_replay_key(
         .await
         .map_err(|_| ApiError::service_unavailable("Ingest authentication unavailable"))?
         .ok_or_else(|| ApiError::unauthorized(state.config.invalid_key_message))?;
-    Ok(Some(resolved))
+    match authorize_source(state, &resolved, signals).await? {
+        KeyAdmission::Ingest => Ok(Some(resolved)),
+        KeyAdmission::Drop => Ok(None),
+    }
 }
 
 async fn handle_replay_meta(
@@ -3439,7 +3714,8 @@ async fn handle_replay_meta_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers).await? else {
+    let Some(resolved_key) = resolve_replay_key(state, headers, &[SourceSignal::Sessions]).await?
+    else {
         return Ok(0);
     };
     let org_id = resolved_key.org_id.clone();
@@ -3451,13 +3727,14 @@ async fn handle_replay_meta_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&org_id)
-        .ok_or_else(|| {
-            warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
-            ApiError::too_many_requests("Per-org ingest limit exceeded")
-        })?;
+    let _org_inflight_permit =
+        state
+            .org_inflight_limiter
+            .try_acquire(&org_id)
+            .ok_or_else(|| {
+                warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
+                ApiError::too_many_requests("Per-org ingest limit exceeded")
+            })?;
 
     let pipeline = native_rows_pipeline_for(
         state,
@@ -3559,6 +3836,7 @@ async fn handle_replay_meta_inner(
     )
     .await?;
 
+    state.resolver.note_source_use(&resolved_key);
     Ok(count)
 }
 
@@ -3586,6 +3864,7 @@ async fn handle_session_events(
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
         "maple.session_events.dropped" = tracing::field::Empty,
+        "maple.session_events.denied" = tracing::field::Empty,
         "maple.product_events.metered" = tracing::field::Empty,
         "maple.sdk" = tracing::field::Empty,
         "user_agent.original" = tracing::field::Empty,
@@ -3621,9 +3900,25 @@ async fn handle_session_events_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers).await? else {
+    // `custom` rows are browser `track()` product events, so a source token needs
+    // `events` for those and `sessions` for the rest; disallowed rows are dropped.
+    let Some(resolved_key) = resolve_replay_key(
+        state,
+        headers,
+        &[SourceSignal::Sessions, SourceSignal::Events],
+    )
+    .await?
+    else {
         return Ok(0);
     };
+    let allows = |signal| {
+        resolved_key
+            .source
+            .as_ref()
+            .is_none_or(|source| source.allows(signal))
+    };
+    let (allow_sessions, allow_events) =
+        (allows(SourceSignal::Sessions), allows(SourceSignal::Events));
     let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
     Span::current().record(
@@ -3633,13 +3928,14 @@ async fn handle_session_events_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&org_id)
-        .ok_or_else(|| {
-            warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
-            ApiError::too_many_requests("Per-org ingest limit exceeded")
-        })?;
+    let _org_inflight_permit =
+        state
+            .org_inflight_limiter
+            .try_acquire(&org_id)
+            .ok_or_else(|| {
+                warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
+                ApiError::too_many_requests("Per-org ingest limit exceeded")
+            })?;
 
     // Same Autumn gate as the metadata endpoint. Automatic session events
     // (clicks, navigations, errors, ...) are not separately metered —
@@ -3670,6 +3966,7 @@ async fn handle_session_events_inner(
     let mut rows: Vec<Vec<u8>> = Vec::new();
     let mut dropped: u64 = 0;
     let mut custom_events: u64 = 0;
+    let mut denied: u64 = 0;
     for line in body.split(|&b| b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
@@ -3687,7 +3984,16 @@ async fn handle_session_events_inner(
             dropped += 1;
             continue;
         }
-        if obj.get("type").and_then(|v| v.as_str()) == Some("custom") {
+        let is_custom = obj.get("type").and_then(|v| v.as_str()) == Some("custom");
+        if !(if is_custom {
+            allow_events
+        } else {
+            allow_sessions
+        }) {
+            denied += 1;
+            continue;
+        }
+        if is_custom {
             custom_events += 1;
         }
         obj.insert(
@@ -3700,6 +4006,9 @@ async fn handle_session_events_inner(
         );
     }
 
+    if denied > 0 {
+        Span::current().record("maple.session_events.denied", denied);
+    }
     if dropped > 0 {
         Span::current().record("maple.session_events.dropped", dropped);
         warn!(
@@ -3740,6 +4049,7 @@ async fn handle_session_events_inner(
         },
     )
     .await?;
+    state.resolver.note_source_use(&resolved_key);
     Ok(count)
 }
 
@@ -3805,7 +4115,7 @@ async fn handle_product_events_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let resolved_key = match resolve_replay_key(state, headers).await? {
+    let resolved_key = match resolve_replay_key(state, headers, &[SourceSignal::Events]).await? {
         Some(resolved_key) => resolved_key,
         None => return Ok(0),
     };
@@ -3818,13 +4128,14 @@ async fn handle_product_events_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&org_id)
-        .ok_or_else(|| {
-            warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
-            ApiError::too_many_requests("Per-org ingest limit exceeded")
-        })?;
+    let _org_inflight_permit =
+        state
+            .org_inflight_limiter
+            .try_acquire(&org_id)
+            .ok_or_else(|| {
+                warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
+                ApiError::too_many_requests("Per-org ingest limit exceeded")
+            })?;
 
     // Product events are their own metered feature, but they are NOT gated on
     // it — same reasoning as the `type == "custom"` rows on `/v1/sessionEvents`.
@@ -3915,6 +4226,7 @@ async fn handle_product_events_inner(
         },
     )
     .await?;
+    state.resolver.note_source_use(&resolved_key);
     Ok(count)
 }
 
@@ -4002,7 +4314,8 @@ async fn handle_replay_blob_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<(), ApiError> {
-    let Some(resolved_key) = resolve_replay_key(state, headers).await? else {
+    let Some(resolved_key) = resolve_replay_key(state, headers, &[SourceSignal::Sessions]).await?
+    else {
         return Ok(());
     };
     let org_id = resolved_key.org_id.clone();
@@ -4014,13 +4327,14 @@ async fn handle_replay_blob_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&org_id)
-        .ok_or_else(|| {
-            warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
-            ApiError::too_many_requests("Per-org ingest limit exceeded")
-        })?;
+    let _org_inflight_permit =
+        state
+            .org_inflight_limiter
+            .try_acquire(&org_id)
+            .ok_or_else(|| {
+                warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
+                ApiError::too_many_requests("Per-org ingest limit exceeded")
+            })?;
 
     let pipeline = native_rows_pipeline_for(
         state,
@@ -4229,6 +4543,7 @@ async fn handle_replay_blob_inner(
             warn!(org_id = %org_id, error = %e, "session replay blob enqueue rejected");
             api_error_from_pipeline(&e)
         })?;
+    state.resolver.note_source_use(&resolved_key);
     Ok(())
 }
 
@@ -4281,6 +4596,7 @@ async fn handle_signal(
         "maple.signal" = signal.path(),
         "maple.org_id" = tracing::field::Empty,
         "maple.ingest.key_type" = tracing::field::Empty,
+        "maple.source.id" = tracing::field::Empty,
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
@@ -4307,8 +4623,8 @@ async fn handle_signal(
             metrics::request_completed(signal.path(), "ok", "none", duration.as_secs_f64());
             // Usage and billing are emitted together, from one value, behind one
             // guard — they must never drift. `signal.path()` is both the Autumn
-            // feature id and the metric's `signal` dimension.
-            if org_id != SENTINEL_ORG_ID {
+            // feature id and the metric's `signal` dimension. A paused key reports 0 bytes.
+            if org_id != SENTINEL_ORG_ID && decoded_bytes > 0 {
                 let feature_id = signal.path();
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(&org_id, feature_id, decoded_bytes as u64, item_count as u64);
@@ -4490,10 +4806,29 @@ async fn handle_signal_inner(
         "maple.ingest.clickhouse_ready",
         resolved_key.clickhouse_ready,
     );
+    if let Some(source_id) = resolved_key.source_public_id() {
+        auth_span_handle.record("maple.source.id", source_id);
+        Span::current().record("maple.source.id", source_id);
+    }
     debug!(
         resolve_ms = duration_millis(key_resolve_start.elapsed()),
         "Authenticated"
     );
+
+    let admission = authorize_source(state, &resolved_key, &[signal.source_signal()])
+        .await
+        .map_err(|error| {
+            let error_kind = error.error_kind();
+            (error, error_kind)
+        })?;
+    if admission == KeyAdmission::Drop {
+        return Ok((
+            StatusCode::OK.into_response(),
+            0,
+            resolved_key.org_id.clone(),
+            0,
+        ));
+    }
 
     let _org_inflight_permit = state
         .org_inflight_limiter
@@ -4578,30 +4913,30 @@ async fn handle_signal_inner(
     );
     metrics::decoded_body_bytes(signal.path(), decoded_payload.len() as u64);
 
-    let decoded = {
+    let mut decoded = {
         let parse_span = parse_internal_span(payload_format.label(), signal.path());
         let _guard = parse_span.enter();
         let decoded =
-            decode_and_enrich_payload(signal, payload_format, &decoded_payload, &resolved_key)
-                .map_err(|e| {
-                    warn!(
-                        format = payload_format.label(),
-                        signal = signal.path(),
-                        org_id = resolved_key.org_id.as_str(),
-                        key_type = resolved_key.key_type.as_str(),
-                        decoded_bytes = decoded_payload.len(),
-                        reason = %e.message,
-                        "Invalid OTLP payload"
-                    );
-                    // The reason previously only reached the log; on the span it
-                    // is what tells you *why* a customer's SDK is being rejected.
-                    record_stage_error(&parse_span, "enrich", &e.message, false);
-                    metrics::org_data_loss(&resolved_key.org_id, signal.path(), "enrich");
-                    (e, "enrich")
-                })?;
+            decode_otlp_payload(signal, payload_format, &decoded_payload).map_err(|e| {
+                warn!(
+                    format = payload_format.label(),
+                    signal = signal.path(),
+                    org_id = resolved_key.org_id.as_str(),
+                    key_type = resolved_key.key_type.as_str(),
+                    decoded_bytes = decoded_payload.len(),
+                    reason = %e.message,
+                    "Invalid OTLP payload"
+                );
+                // The reason previously only reached the log; on the span it
+                // is what tells you *why* a customer's SDK is being rejected.
+                record_stage_error(&parse_span, "enrich", &e.message, false);
+                metrics::org_data_loss(&resolved_key.org_id, signal.path(), "enrich");
+                (e, "enrich")
+            })?;
         parse_span.record("maple.ingest.item_count", decoded.item_count());
         decoded
     };
+    verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
     let item_count = decoded.item_count();
 
     Span::current().record("maple.ingest.item_count", item_count);
@@ -4621,6 +4956,9 @@ async fn handle_signal_inner(
     .await;
 
     let response = response_result.map_err(|error| (error, "forward"))?;
+    if response.status().is_success() {
+        state.resolver.note_source_use(&resolved_key);
+    }
 
     Ok((
         response,
@@ -4794,6 +5132,8 @@ async fn handle_cloudflare_logpush_inner(
                 key_id: resolved.secret_key_id.clone(),
                 self_managed: resolved.self_managed,
                 clickhouse_ready: resolved.clickhouse_ready,
+                source: None,
+                default_source: None,
             };
             let decoded = DecodedPayload::Logs(request);
             let response = match process_decoded_payload(
@@ -5129,6 +5469,7 @@ async fn handle_gcp_logpush_inner(
         &gcp_logging::Connector {
             id: connector_id,
             org_id,
+            source_id: resolved.key.source_public_id(),
         },
         current_time_unix_nano(),
     );
@@ -5152,6 +5493,7 @@ async fn handle_gcp_logpush_inner(
         }
     };
     state.gcp_resolver.record_health(connector_id, None).await;
+    state.resolver.note_source_use(&resolved.key);
 
     if let Some(usage) = &state.usage_metrics {
         usage.record(org_id, Signal::Logs.path(), body.len() as u64, 1);
@@ -5566,48 +5908,79 @@ fn encode_payload(payload: &[u8], content_encoding: Option<&str>) -> Result<Vec<
 }
 
 #[hotpath::measure]
-fn decode_and_enrich_payload(
+fn decode_otlp_payload(
     signal: Signal,
     payload_format: PayloadFormat,
     payload: &[u8],
-    resolved_key: &ResolvedIngestKey,
 ) -> Result<DecodedPayload, ApiError> {
     match (signal, payload_format) {
         (Signal::Traces, PayloadFormat::Protobuf) => {
-            let mut request = ExportTraceServiceRequest::decode(payload)
+            let request = ExportTraceServiceRequest::decode(payload)
                 .map_err(|e| invalid_payload("traces", "protobuf", e))?;
-            enrich_trace_request(&mut request, resolved_key);
             Ok(DecodedPayload::Traces(request))
         }
         (Signal::Logs, PayloadFormat::Protobuf) => {
-            let mut request = ExportLogsServiceRequest::decode(payload)
+            let request = ExportLogsServiceRequest::decode(payload)
                 .map_err(|e| invalid_payload("logs", "protobuf", e))?;
-            enrich_logs_request(&mut request, resolved_key);
             Ok(DecodedPayload::Logs(request))
         }
         (Signal::Metrics, PayloadFormat::Protobuf) => {
-            let mut request = ExportMetricsServiceRequest::decode(payload)
+            let request = ExportMetricsServiceRequest::decode(payload)
                 .map_err(|e| invalid_payload("metrics", "protobuf", e))?;
-            enrich_metrics_request(&mut request, resolved_key);
             Ok(DecodedPayload::Metrics(request))
         }
         (Signal::Traces, PayloadFormat::Json) => {
-            let mut request: ExportTraceServiceRequest =
+            let request: ExportTraceServiceRequest =
                 decode_otlp_json(payload, "traces", "resourceSpans")?;
-            enrich_trace_request(&mut request, resolved_key);
             Ok(DecodedPayload::Traces(request))
         }
         (Signal::Logs, PayloadFormat::Json) => {
-            let mut request: ExportLogsServiceRequest =
+            let request: ExportLogsServiceRequest =
                 decode_otlp_json(payload, "logs", "resourceLogs")?;
-            enrich_logs_request(&mut request, resolved_key);
             Ok(DecodedPayload::Logs(request))
         }
         (Signal::Metrics, PayloadFormat::Json) => {
-            let mut request: ExportMetricsServiceRequest =
+            let request: ExportMetricsServiceRequest =
                 decode_otlp_json(payload, "metrics", "resourceMetrics")?;
-            enrich_metrics_request(&mut request, resolved_key);
             Ok(DecodedPayload::Metrics(request))
+        }
+    }
+}
+
+/// Checks the sender's own `maple_source_id` values against the org, then enriches.
+async fn verify_claims_and_enrich(
+    state: &AppState,
+    decoded: &mut DecodedPayload,
+    resolved_key: &ResolvedIngestKey,
+) {
+    let claims = claimed_source_ids(decoded, resolved_key);
+    let verified_claims = if claims.is_empty() {
+        Vec::new()
+    } else {
+        state
+            .resolver
+            .verify_source_claims(&resolved_key.org_id, claims)
+            .await
+    };
+    enrich_decoded_payload(decoded, resolved_key, &verified_claims);
+}
+
+/// Stamps the tenant and source onto a decoded payload. `verified_claims` are the
+/// sender's own `maple_source_id` values `verify_source_claims` accepted.
+fn enrich_decoded_payload(
+    decoded: &mut DecodedPayload,
+    resolved_key: &ResolvedIngestKey,
+    verified_claims: &[String],
+) {
+    match decoded {
+        DecodedPayload::Traces(request) => {
+            enrich_trace_request(request, resolved_key, verified_claims)
+        }
+        DecodedPayload::Logs(request) => {
+            enrich_logs_request(request, resolved_key, verified_claims)
+        }
+        DecodedPayload::Metrics(request) => {
+            enrich_metrics_request(request, resolved_key, verified_claims);
         }
     }
 }
@@ -5677,38 +6050,112 @@ fn count_metric_items(request: &ExportMetricsServiceRequest) -> usize {
         .sum()
 }
 
-fn enrich_trace_request(request: &mut ExportTraceServiceRequest, resolved_key: &ResolvedIngestKey) {
+fn enrich_trace_request(
+    request: &mut ExportTraceServiceRequest,
+    resolved_key: &ResolvedIngestKey,
+    verified_claims: &[String],
+) {
     for resource_span in &mut request.resource_spans {
         let resource = resource_span.resource.get_or_insert_with(Resource::default);
-        enrich_resource_attributes(&mut resource.attributes, resolved_key);
+        enrich_resource_attributes(&mut resource.attributes, resolved_key, verified_claims);
     }
     ai_session::stamp_trace_request(request);
 }
 
-fn enrich_logs_request(request: &mut ExportLogsServiceRequest, resolved_key: &ResolvedIngestKey) {
+fn enrich_logs_request(
+    request: &mut ExportLogsServiceRequest,
+    resolved_key: &ResolvedIngestKey,
+    verified_claims: &[String],
+) {
     for resource_log in &mut request.resource_logs {
         let resource = resource_log.resource.get_or_insert_with(Resource::default);
-        enrich_resource_attributes(&mut resource.attributes, resolved_key);
+        enrich_resource_attributes(&mut resource.attributes, resolved_key, verified_claims);
     }
 }
 
 fn enrich_metrics_request(
     request: &mut ExportMetricsServiceRequest,
     resolved_key: &ResolvedIngestKey,
+    verified_claims: &[String],
 ) {
     for resource_metric in &mut request.resource_metrics {
         let resource = resource_metric
             .resource
             .get_or_insert_with(Resource::default);
-        enrich_resource_attributes(&mut resource.attributes, resolved_key);
+        enrich_resource_attributes(&mut resource.attributes, resolved_key, verified_claims);
     }
 }
 
-fn enrich_resource_attributes(attributes: &mut Vec<KeyValue>, resolved_key: &ResolvedIngestKey) {
+/// A resource's `maple_source_id`, when it is a string.
+fn source_id_claim(attributes: &[KeyValue]) -> Option<&str> {
+    let value = attributes
+        .iter()
+        .find(|attribute| attribute.key == SOURCE_ID_ATTRIBUTE)?
+        .value
+        .as_ref()?;
+    match value.value.as_ref()? {
+        any_value::Value::StringValue(claim) => Some(claim.as_str()),
+        _ => None,
+    }
+}
+
+/// Distinct `maple_source_id` values a default-key sender put on its resources
+/// (Maple's integration pollers name their own source). Empty for other keys.
+fn claimed_source_ids(decoded: &DecodedPayload, resolved_key: &ResolvedIngestKey) -> Vec<String> {
+    if !resolved_key.accepts_source_claims() {
+        return Vec::new();
+    }
+    let resources: Vec<Option<&Resource>> = match decoded {
+        DecodedPayload::Traces(request) => request
+            .resource_spans
+            .iter()
+            .map(|r| r.resource.as_ref())
+            .collect(),
+        DecodedPayload::Logs(request) => request
+            .resource_logs
+            .iter()
+            .map(|r| r.resource.as_ref())
+            .collect(),
+        DecodedPayload::Metrics(request) => request
+            .resource_metrics
+            .iter()
+            .map(|r| r.resource.as_ref())
+            .collect(),
+    };
+    let mut claims: Vec<String> = Vec::new();
+    for claim in resources
+        .into_iter()
+        .flatten()
+        .filter_map(|resource| source_id_claim(&resource.attributes))
+    {
+        if !claims.iter().any(|seen| seen == claim) {
+            claims.push(claim.to_owned());
+        }
+    }
+    claims
+}
+
+fn enrich_resource_attributes(
+    attributes: &mut Vec<KeyValue>,
+    resolved_key: &ResolvedIngestKey,
+    verified_claims: &[String],
+) {
+    // A default-key sender keeps its own source id only once verified as the org's.
+    let kept_claim = source_id_claim(attributes)
+        .filter(|claim| {
+            resolved_key.accepts_source_claims()
+                && verified_claims.iter().any(|verified| verified == claim)
+        })
+        .map(str::to_owned);
     attributes.retain(|attribute| {
         let key = attribute.key.as_str();
-        key != "org_id" && key != "maple_org_id"
+        key != "org_id" && key != "maple_org_id" && key != SOURCE_ID_ATTRIBUTE
     });
+
+    // Overrides go first so the maple_* stamps below always win.
+    if let Some(source) = &resolved_key.source {
+        apply_resource_attribute_overrides(attributes, source);
+    }
 
     upsert_string_attribute(attributes, "maple_org_id", &resolved_key.org_id);
     upsert_string_attribute(
@@ -5717,6 +6164,34 @@ fn enrich_resource_attributes(attributes: &mut Vec<KeyValue>, resolved_key: &Res
         resolved_key.key_type.as_str(),
     );
     upsert_string_attribute(attributes, "maple_ingest_source", INGEST_SOURCE);
+    if let Some(source_id) = kept_claim
+        .as_deref()
+        .or_else(|| resolved_key.source_public_id())
+    {
+        upsert_string_attribute(attributes, SOURCE_ID_ATTRIBUTE, source_id);
+    }
+}
+
+fn apply_resource_attribute_overrides(attributes: &mut Vec<KeyValue>, policy: &SourcePolicy) {
+    for attribute in &policy.resource_attributes {
+        // Parsing already drops these; checked again since it guards tenancy.
+        if sources::is_protected_attribute(&attribute.key) {
+            continue;
+        }
+        match attribute.mode {
+            OverrideMode::Set => {
+                upsert_string_attribute(attributes, &attribute.key, &attribute.value);
+            }
+            OverrideMode::Default => {
+                if !attributes
+                    .iter()
+                    .any(|existing| existing.key == attribute.key)
+                {
+                    upsert_string_attribute(attributes, &attribute.key, &attribute.value);
+                }
+            }
+        }
+    }
 }
 
 fn upsert_string_attribute(attributes: &mut Vec<KeyValue>, key: &str, value: &str) {
@@ -6067,6 +6542,71 @@ impl OrgRoutingResolver {
 }
 
 impl IngestKeyResolver {
+    /// The claimed `src_` ids that name one of the org's sources. Positive and
+    /// negative answers are cached; a store error leaves the claim unverified.
+    async fn verify_source_claims(&self, org_id: &str, claims: Vec<String>) -> Vec<String> {
+        let mut verified = Vec::new();
+        for claim in claims {
+            let Some(uuid) = sources::source_uuid_from_public_id(&claim) else {
+                continue;
+            };
+            let cache_key = (org_id.to_owned(), uuid);
+            let belongs = if let Some(cached) = self.source_claims.get(&cache_key).await {
+                cached
+            } else {
+                match self.store.source_belongs_to_org(org_id, &cache_key.1).await {
+                    Ok(belongs) => {
+                        self.source_claims.insert(cache_key, belongs).await;
+                        belongs
+                    }
+                    Err(error) => {
+                        warn!(
+                            org_id,
+                            error, "Source claim lookup failed; replacing the claim"
+                        );
+                        false
+                    }
+                }
+            };
+            if belongs {
+                verified.push(claim);
+            }
+        }
+        verified
+    }
+
+    /// Stamps `last_used_at` for the source whose data was accepted (token or
+    /// default), at most once per `SOURCE_USE_WRITE_INTERVAL` and off the request path.
+    fn note_source_use(&self, resolved: &ResolvedIngestKey) {
+        let Some(source_id) = resolved.source_row_id() else {
+            return;
+        };
+        // Most requests land inside the window; skip them without spawning.
+        if self.recent_key_uses.contains_key(source_id) {
+            return;
+        }
+        let store = Arc::clone(&self.store);
+        let recent = self.recent_key_uses.clone();
+        let key_id = source_id.to_owned();
+        // Its own root span, so the request span does not wait on this write.
+        let span = tracing::info_span!(parent: None, "record_source_use");
+        span.follows_from(Span::current().id());
+        tokio::spawn(
+            async move {
+                if !recent.entry(key_id.clone()).or_insert(()).await.is_fresh() {
+                    return;
+                }
+                if let Err(error) = store
+                    .record_source_used(&key_id, current_time_millis())
+                    .await
+                {
+                    debug!(key_id, error, "Failed to record source use");
+                }
+            }
+            .instrument(span),
+        );
+    }
+
     #[hotpath::measure]
     async fn resolve_ingest_key(&self, raw_key: &str) -> Result<Option<ResolvedIngestKey>, String> {
         // Recorded on `ingest.authenticate` when this runs under the HTTP path;
@@ -6088,17 +6628,31 @@ impl IngestKeyResolver {
         };
 
         let key_hash = hash_ingest_key(raw_key, &self.lookup_hmac_key)?;
-        let hash_column = match key_type {
-            IngestKeyType::Public => "public_key_hash",
-            IngestKeyType::Private => "private_key_hash",
-            IngestKeyType::Connector => return Ok(None),
-        };
 
         // LEFT JOIN against org_clickhouse_settings so the initial routing state
         // is resolved in the same roundtrip as org_id. Warm auth-cache hits keep
         // the key identity cached while the separate org-routing cache refreshes
         // ClickHouse readiness on its own TTL.
-        let Some(row) = self.store.fetch_ingest_key(&key_hash, hash_column).await? else {
+        let found = match key_type {
+            IngestKeyType::Public | IngestKeyType::Private => {
+                let hash_column = if matches!(key_type, IngestKeyType::Public) {
+                    "public_key_hash"
+                } else {
+                    "private_key_hash"
+                };
+                self.store
+                    .fetch_ingest_key(&key_hash, hash_column)
+                    .await?
+                    .map(|row| (row, None))
+            }
+            IngestKeyType::Source => self
+                .store
+                .fetch_source_by_token_hash(&key_hash)
+                .await?
+                .map(|row| (row.key, row.config)),
+            IngestKeyType::Connector => return Ok(None),
+        };
+        let Some((row, source_config_row)) = found else {
             // Only a genuine "no row" is cached — store errors surface above and
             // must stay retryable.
             self.negative_cache.insert(raw_key.to_owned(), ()).await;
@@ -6106,10 +6660,23 @@ impl IngestKeyResolver {
         };
 
         let routing = OrgRouting::from_key_row(&row);
+        // Resolved with the key and cached with it; a missing row stamps nothing.
+        let default_source = match key_type {
+            IngestKeyType::Public | IngestKeyType::Private => self
+                .store
+                .fetch_default_source_id(&row.org_id)
+                .await?
+                .and_then(SourceRef::from_id),
+            IngestKeyType::Source | IngestKeyType::Connector => None,
+        };
         let identity = IngestKeyIdentity {
             org_id: row.org_id.clone(),
             key_type,
             key_id: key_hash.chars().take(16).collect(),
+            source: source_config_row
+                .as_ref()
+                .map(|config| Arc::new(SourcePolicy::from_row(config))),
+            default_source,
         };
 
         self.cache
@@ -6229,6 +6796,20 @@ impl GcpConnectorResolver {
     }
 
     /// Whether this connector may write another setup report in this window.
+    /// The connector's integration source, cached with the connector identity.
+    /// `None` until the API creates it; the gateway never creates source rows.
+    async fn integration_source(
+        &self,
+        org_id: &str,
+        connector_id: &str,
+    ) -> Result<Option<SourceRef>, String> {
+        Ok(self
+            .store
+            .fetch_integration_source_id(org_id, GCP_SOURCE_PLATFORM, connector_id)
+            .await?
+            .and_then(SourceRef::from_id))
+    }
+
     async fn take_setup_report_slot(&self, connector_id: &str) -> bool {
         let count = self
             .recent_setup_reports
@@ -6265,11 +6846,13 @@ impl GcpConnectorResolver {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
         };
+        let source = self.integration_source(&row.org_id, connector_id).await?;
         let identity = GcpConnectorIdentity {
             org_id: row.org_id,
             secret_key_id: cache_key.1.chars().take(16).collect(),
             logs_enabled: row.logs_enabled,
             confirms_log_forwarding: false,
+            source,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -6325,6 +6908,7 @@ impl GcpConnectorResolver {
             return Ok(None);
         };
 
+        let source = self.integration_source(&row.org_id, connector_id).await?;
         let routing = OrgRouting {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
@@ -6335,6 +6919,7 @@ impl GcpConnectorResolver {
             secret_key_id: push.email.chars().take(16).collect(),
             logs_enabled: row.logs_enabled,
             confirms_log_forwarding: row.applied_logs_enabled.is_none(),
+            source,
         };
         self.cache.insert(cache_key, identity.clone()).await;
         self.routing
@@ -6824,6 +7409,69 @@ impl KeyStore for PostgresKeyStore {
         }))
     }
 
+    async fn fetch_source_by_token_hash(
+        &self,
+        key_hash: &str,
+    ) -> Result<Option<SourceRow>, String> {
+        // jsonb read as text: tokio-postgres here has no serde feature.
+        let revision = required_schema_revision();
+        let sql = format!(
+            "SELECT k.id, k.org_id, \
+                    k.allowed_signals::text AS allowed_signals, \
+                    k.rate_limit_rps, \
+                    k.resource_attributes::text AS resource_attributes, \
+                    (EXTRACT(EPOCH FROM k.expires_at) * 1000)::bigint AS expires_at_ms, \
+                    (EXTRACT(EPOCH FROM k.paused_at) * 1000)::bigint AS paused_at_ms, \
+                    (EXTRACT(EPOCH FROM k.paused_until) * 1000)::bigint AS paused_until_ms, \
+                    COALESCE(s.sync_status = 'connected', false) AS self_managed, \
+                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
+             FROM sources k \
+             LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
+             WHERE k.key_hash = $2 AND k.key_hash IS NOT NULL LIMIT 1"
+        );
+        let client = self.client().await?;
+        let rows = client
+            .query(&sql, &[&revision, &key_hash])
+            .instrument(postgres_client_span(
+                "fetch_source_by_token_hash",
+                "SELECT",
+                "sources",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| {
+                format!(
+                    "postgres fetch_source_by_token_hash failed: {}",
+                    error_chain(&error)
+                )
+            })?;
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        let decode_error =
+            |error: tokio_postgres::Error| format!("postgres source row decode failed: {error}");
+        let config = SourceConfigRow {
+            id: row.try_get("id").map_err(decode_error)?,
+            allowed_signals_json: row.try_get("allowed_signals").map_err(decode_error)?,
+            rate_limit_rps: row.try_get("rate_limit_rps").map_err(decode_error)?,
+            resource_attributes_json: row
+                .try_get::<_, Option<String>>("resource_attributes")
+                .map_err(decode_error)?
+                .unwrap_or_default(),
+            expires_at_ms: row.try_get("expires_at_ms").map_err(decode_error)?,
+            paused_at_ms: row.try_get("paused_at_ms").map_err(decode_error)?,
+            paused_until_ms: row.try_get("paused_until_ms").map_err(decode_error)?,
+        };
+        Ok(Some(SourceRow {
+            key: KeyRow {
+                org_id: row.try_get("org_id").map_err(decode_error)?,
+                self_managed: row.try_get("self_managed").map_err(decode_error)?,
+                clickhouse_ready: row.try_get("clickhouse_ready").map_err(decode_error)?,
+            },
+            config: Some(config),
+        }))
+    }
+
     async fn fetch_connector(
         &self,
         connector_id: &str,
@@ -7041,6 +7689,86 @@ impl KeyStore for PostgresKeyStore {
         }))
     }
 
+    async fn record_source_used(&self, key_id: &str, now_ms: i64) -> Result<(), String> {
+        let client = self.client().await?;
+        client
+            .execute(
+                "UPDATE sources \
+                 SET last_used_at = to_timestamp($1::bigint / 1000.0) \
+                 WHERE id = $2",
+                &[&now_ms, &key_id],
+            )
+            .instrument(postgres_client_span(
+                "record_source_used",
+                "UPDATE",
+                "sources",
+                &self.target,
+            ))
+            .await
+            .map(|_| ())
+            .map_err(|error| format!("postgres record_source_used failed: {error}"))
+    }
+
+    async fn fetch_default_source_id(&self, org_id: &str) -> Result<Option<String>, String> {
+        let client = self.client().await?;
+        let rows = client
+            .query(
+                "SELECT id FROM sources WHERE org_id = $1 AND is_default LIMIT 1",
+                &[&org_id],
+            )
+            .instrument(postgres_client_span(
+                "fetch_default_source_id",
+                "SELECT",
+                "sources",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_default_source_id failed: {error}"))?;
+        Ok(rows.first().map(|row| row.get("id")))
+    }
+
+    async fn fetch_integration_source_id(
+        &self,
+        org_id: &str,
+        platform: &'static str,
+        integration_id: &str,
+    ) -> Result<Option<String>, String> {
+        let client = self.client().await?;
+        let rows = client
+            .query(
+                "SELECT id FROM sources \
+                 WHERE org_id = $1 AND platform = $2 AND integration_id = $3 LIMIT 1",
+                &[&org_id, &platform, &integration_id],
+            )
+            .instrument(postgres_client_span(
+                "fetch_integration_source_id",
+                "SELECT",
+                "sources",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_integration_source_id failed: {error}"))?;
+        Ok(rows.first().map(|row| row.get("id")))
+    }
+
+    async fn source_belongs_to_org(&self, org_id: &str, source_id: &str) -> Result<bool, String> {
+        let client = self.client().await?;
+        let rows = client
+            .query(
+                "SELECT 1 FROM sources WHERE org_id = $1 AND id = $2 LIMIT 1",
+                &[&org_id, &source_id],
+            )
+            .instrument(postgres_client_span(
+                "source_belongs_to_org",
+                "SELECT",
+                "sources",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres source_belongs_to_org failed: {error}"))?;
+        Ok(!rows.is_empty())
+    }
+
     async fn record_connector_success(
         &self,
         table: &'static str,
@@ -7151,6 +7879,20 @@ impl KeyStore for StaticKeyStore {
         }))
     }
 
+    async fn fetch_source_by_token_hash(
+        &self,
+        _key_hash: &str,
+    ) -> Result<Option<SourceRow>, String> {
+        Ok(Some(SourceRow {
+            key: KeyRow {
+                org_id: self.org_id.clone(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+            config: None,
+        }))
+    }
+
     async fn fetch_connector(
         &self,
         _connector_id: &str,
@@ -7199,6 +7941,27 @@ impl KeyStore for StaticKeyStore {
         Ok(None)
     }
 
+    async fn record_source_used(&self, _key_id: &str, _now_ms: i64) -> Result<(), String> {
+        Ok(())
+    }
+
+    async fn fetch_default_source_id(&self, _org_id: &str) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
+    async fn fetch_integration_source_id(
+        &self,
+        _org_id: &str,
+        _platform: &'static str,
+        _integration_id: &str,
+    ) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
+    async fn source_belongs_to_org(&self, _org_id: &str, _source_id: &str) -> Result<bool, String> {
+        Ok(false)
+    }
+
     async fn record_connector_success(
         &self,
         _table: &'static str,
@@ -7235,6 +7998,10 @@ fn infer_ingest_key_type(raw_key: &str) -> Option<IngestKeyType> {
 
     if raw_key.starts_with("maple_sk_") {
         return Some(IngestKeyType::Private);
+    }
+
+    if raw_key.starts_with(SOURCE_TOKEN_PREFIX) {
+        return Some(IngestKeyType::Source);
     }
 
     None
@@ -7532,6 +8299,14 @@ fn parse_usize(name: &str, raw: Option<String>, default: usize) -> Result<usize,
     value
         .parse::<usize>()
         .map_err(|_| format!("{name} must be a positive integer"))
+}
+
+fn parse_fleet_size(raw: Option<String>) -> Result<u32, String> {
+    let fleet_size = parse_u64("INGEST_RATE_LIMIT_FLEET_SIZE", raw, 1)?;
+    match u32::try_from(fleet_size) {
+        Ok(fleet_size) if fleet_size > 0 => Ok(fleet_size),
+        _ => Err("INGEST_RATE_LIMIT_FLEET_SIZE must be a positive integer".to_owned()),
+    }
 }
 
 #[cfg(test)]
@@ -7877,9 +8652,11 @@ mod tests {
             key_id: "abc".to_owned(),
             self_managed: false,
             clickhouse_ready: false,
+            source: None,
+            default_source: None,
         };
 
-        enrich_resource_attributes(&mut attributes, &resolved);
+        enrich_resource_attributes(&mut attributes, &resolved, &[]);
 
         let mut values = std::collections::HashMap::new();
         for attribute in &attributes {
@@ -7910,11 +8687,16 @@ mod tests {
             key_id: "abc".to_owned(),
             self_managed: false,
             clickhouse_ready: false,
+            source: None,
+            default_source: None,
         }
     }
 
     fn decode_json(signal: Signal, payload: &str) -> Result<DecodedPayload, ApiError> {
-        decode_and_enrich_payload(signal, PayloadFormat::Json, payload.as_bytes(), &test_key())
+        decode_otlp_payload(signal, PayloadFormat::Json, payload.as_bytes()).map(|mut decoded| {
+            enrich_decoded_payload(&mut decoded, &test_key(), &[]);
+            decoded
+        })
     }
 
     /// Spec-legal encodings the generated types refuse: nanosecond timestamps as
@@ -8062,12 +8844,15 @@ mod tests {
         };
         let attributes = &request.resource_spans[0].scope_spans[0].spans[0].attributes;
         let value = |key: &str| {
-            attributes.iter().find(|a| a.key == key).map(|a| match &a.value {
-                Some(AnyValue {
-                    value: Some(any_value::Value::StringValue(v)),
-                }) => v.clone(),
-                other => panic!("expected string value for {key}, got {other:?}"),
-            })
+            attributes
+                .iter()
+                .find(|a| a.key == key)
+                .map(|a| match &a.value {
+                    Some(AnyValue {
+                        value: Some(any_value::Value::StringValue(v)),
+                    }) => v.clone(),
+                    other => panic!("expected string value for {key}, got {other:?}"),
+                })
         };
         assert_eq!(value("maple_ai.vendor.id").as_deref(), Some("mastra"));
         assert_eq!(value("maple_ai.vendor.version").as_deref(), Some("0"));
@@ -8313,6 +9098,12 @@ mod tests {
     #[derive(Default)]
     struct FakeKeyStore {
         keys: std::sync::Mutex<std::collections::HashMap<(String, &'static str), KeyRow>>,
+        sources: std::sync::Mutex<std::collections::HashMap<String, SourceRow>>,
+        /// Key id of every `record_source_used` call.
+        source_uses: std::sync::Mutex<Vec<String>>,
+        /// `sources` rows that are not token sources: (org id, id, is_default, integration).
+        source_rows: std::sync::Mutex<Vec<(String, String, bool, Option<(&'static str, String)>)>>,
+        source_row_fetches: AtomicU64,
         connectors: std::sync::Mutex<std::collections::HashMap<(String, String), ConnectorRow>>,
         gcp_connectors:
             std::sync::Mutex<std::collections::HashMap<(String, String), GcpConnectorRow>>,
@@ -8344,6 +9135,12 @@ mod tests {
                 .lock()
                 .unwrap()
                 .insert((hash, "private_key_hash"), row);
+        }
+
+        fn insert_source(&self, raw_key: &str, row: SourceRow) {
+            let hash = hash_ingest_key(raw_key, "test-hmac-key").unwrap();
+            self.set_org_routing(&row.key.org_id, OrgRouting::from_key_row(&row.key));
+            self.sources.lock().unwrap().insert(hash, row);
         }
 
         fn insert_connector(&self, connector_id: &str, raw_secret: &str, row: ConnectorRow) {
@@ -8402,6 +9199,61 @@ mod tests {
                 .unwrap()
                 .get(&(key_hash.to_owned(), hash_column))
                 .cloned())
+        }
+        async fn fetch_source_by_token_hash(
+            &self,
+            key_hash: &str,
+        ) -> Result<Option<SourceRow>, String> {
+            self.ingest_key_fetches.fetch_add(1, Ordering::Relaxed);
+            Ok(self.sources.lock().unwrap().get(key_hash).cloned())
+        }
+        async fn record_source_used(&self, key_id: &str, _now_ms: i64) -> Result<(), String> {
+            self.source_uses.lock().unwrap().push(key_id.to_owned());
+            Ok(())
+        }
+        async fn fetch_default_source_id(&self, org_id: &str) -> Result<Option<String>, String> {
+            self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
+            Ok(self
+                .source_rows
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|row| row.0 == org_id && row.2)
+                .map(|row| row.1.clone()))
+        }
+        async fn fetch_integration_source_id(
+            &self,
+            org_id: &str,
+            platform: &'static str,
+            integration_id: &str,
+        ) -> Result<Option<String>, String> {
+            self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
+            Ok(self
+                .source_rows
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|row| {
+                    row.0 == org_id
+                        && row
+                            .3
+                            .as_ref()
+                            .is_some_and(|(p, id)| *p == platform && id == integration_id)
+                })
+                .map(|row| row.1.clone()))
+        }
+        async fn source_belongs_to_org(
+            &self,
+            org_id: &str,
+            source_id: &str,
+        ) -> Result<bool, String> {
+            self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
+            Ok(self
+                .source_rows
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|row| row.0 == org_id && row.1 == source_id))
         }
         async fn fetch_connector(
             &self,
@@ -8533,6 +9385,8 @@ mod tests {
                 .max_capacity(16)
                 .build(),
             routing,
+            recent_key_uses: recent_key_uses_cache(),
+            source_claims: source_claims_cache(Duration::from_mins(1)),
         }
     }
 
@@ -8701,8 +9555,11 @@ mod tests {
         let tinybird = test_tinybird_config(queue_dir);
         let key_store: Arc<dyn KeyStore> = Arc::<FakeKeyStore>::clone(&store);
         let routing = make_routing_resolver(Arc::clone(&store), routing_ttl);
-        let clickhouse_targets =
-            Arc::new(ClickHouseTargetResolver::new(Arc::clone(&key_store), None, 16));
+        let clickhouse_targets = Arc::new(ClickHouseTargetResolver::new(
+            Arc::clone(&key_store),
+            None,
+            16,
+        ));
         let http_client = Client::builder()
             .timeout(Duration::from_secs(5))
             .build()
@@ -8729,6 +9586,7 @@ mod tests {
                 tinybird,
                 max_request_body_bytes: 1024 * 1024,
                 org_max_in_flight: 100,
+                rate_limit_fleet_size: 1,
                 gcp_org_max_in_flight: 100,
                 request_timeout: Duration::from_secs(30),
                 require_tls: false,
@@ -8748,7 +9606,7 @@ mod tests {
                 replay_blob_store: None,
                 trust_proxy_geo: false,
                 shutdown_drain_secs: 1,
-            wal_store: None,
+                wal_store: None,
                 invalid_key_message: "Invalid ingest key",
             },
             #[expect(
@@ -8770,8 +9628,11 @@ mod tests {
                     .max_capacity(16)
                     .build(),
                 routing: Arc::clone(&routing),
+                recent_key_uses: recent_key_uses_cache(),
+                source_claims: source_claims_cache(Duration::from_mins(1)),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
+            key_rate_limiter: SourceRateLimiter::new(1),
             gcp_inflight_limiter: OrgInFlightLimiter::for_route(100, "gcp_in_flight"),
             sampling_resolver: SamplingPolicyResolver {
                 store: Arc::clone(&key_store),
@@ -9515,7 +10376,9 @@ mod tests {
                 request_timeout_middleware,
             ));
 
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -10473,6 +11336,7 @@ mod tests {
             Signal::Logs,
             DecodedPayload::Logs(payload),
             &sentinel,
+            KeyAdmission::Ingest,
             decoded_bytes,
         )
         .await
@@ -10500,6 +11364,7 @@ mod tests {
             Signal::Logs,
             DecodedPayload::Logs(real),
             &resolved,
+            KeyAdmission::Ingest,
             real_bytes,
         )
         .await
@@ -11254,10 +12119,14 @@ mod tests {
             },
         );
 
-        let resolver = ClickHouseTargetResolver::new(store, Some(
+        let resolver = ClickHouseTargetResolver::new(
+            store,
+            Some(
                 parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
                     .unwrap(),
-            ), 16);
+            ),
+            16,
+        );
 
         let target = resolver
             .resolve_clickhouse_target("org_ready")
@@ -11286,10 +12155,14 @@ mod tests {
             },
         );
 
-        let resolver = ClickHouseTargetResolver::new(store, Some(
+        let resolver = ClickHouseTargetResolver::new(
+            store,
+            Some(
                 parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
                     .unwrap(),
-            ), 16);
+            ),
+            16,
+        );
 
         let error = resolver
             .resolve_clickhouse_target("org_insecure")
@@ -11326,5 +12199,881 @@ mod tests {
             assert!(resolved.is_none());
         }
         assert_eq!(store.ingest_key_fetches.load(Ordering::Relaxed), 1);
+    }
+
+    /// The error of a result whose success type has no `Debug`.
+    fn rejected<T, E>(result: Result<T, E>, context: &str) -> E {
+        match result {
+            Ok(_) => panic!("{context}"),
+            Err(error) => error,
+        }
+    }
+
+    const SOURCE_UUID: &str = "0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b";
+    const SOURCE_PUBLIC_ID: &str = "src_aXunrkWtzvXSkw9Z2smcft";
+
+    fn source_row(org_id: &str, config: SourceConfigRow) -> SourceRow {
+        SourceRow {
+            key: KeyRow {
+                org_id: org_id.to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+            config: Some(config),
+        }
+    }
+
+    fn source_config(
+        allowed_signals: Option<&str>,
+        rate_limit_rps: Option<i32>,
+        resource_attributes: &str,
+    ) -> SourceConfigRow {
+        SourceConfigRow {
+            id: SOURCE_UUID.to_owned(),
+            allowed_signals_json: allowed_signals.map(str::to_owned),
+            rate_limit_rps,
+            resource_attributes_json: resource_attributes.to_owned(),
+            expires_at_ms: None,
+            paused_at_ms: None,
+            paused_until_ms: None,
+        }
+    }
+
+    fn string_attributes(attributes: &[KeyValue]) -> std::collections::HashMap<String, String> {
+        attributes
+            .iter()
+            .filter_map(|attribute| match &attribute.value {
+                Some(AnyValue {
+                    value: Some(any_value::Value::StringValue(value)),
+                }) => Some((attribute.key.clone(), value.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn string_attribute(key: &str, value: &str) -> KeyValue {
+        KeyValue {
+            key: key.to_owned(),
+            key_strindex: 0,
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValue(value.to_owned())),
+            }),
+        }
+    }
+
+    #[test]
+    fn source_token_prefix_infers_the_source_type() {
+        assert!(matches!(
+            infer_ingest_key_type("maple_src_abcdefghijklmnopqrstuvwxyz012345"),
+            Some(IngestKeyType::Source)
+        ));
+        assert_eq!(IngestKeyType::Source.as_str(), "source");
+        assert!(infer_ingest_key_type("maple_xk_abc").is_none());
+    }
+
+    #[test]
+    fn source_overrides_apply_before_the_maple_stamps() {
+        let policy = SourcePolicy::from_row(&source_config(
+            None,
+            None,
+            r#"[{"key":"service.name","value":"checkout","mode":"set"},
+                {"key":"deployment.environment","value":"prod","mode":"default"},
+                {"key":"team","value":"payments","mode":"default"},
+                {"key":"maple_ingest_source","value":"spoofed","mode":"set"},
+                {"key":"maple_org_id","value":"org_evil","mode":"set"}]"#,
+        ));
+        let resolved = ResolvedIngestKey {
+            org_id: "org_real".to_owned(),
+            key_type: IngestKeyType::Source,
+            key_id: "abc".to_owned(),
+            self_managed: false,
+            clickhouse_ready: false,
+            source: Some(Arc::new(policy)),
+            default_source: None,
+        };
+        let mut attributes = vec![
+            string_attribute("service.name", "from-sdk"),
+            string_attribute("deployment.environment", "staging"),
+            string_attribute("maple_source_id", "spoofed"),
+        ];
+
+        enrich_resource_attributes(&mut attributes, &resolved, &[]);
+        let values = string_attributes(&attributes);
+
+        assert_eq!(values["service.name"], "checkout");
+        assert_eq!(values["deployment.environment"], "staging");
+        assert_eq!(values["team"], "payments");
+        assert_eq!(values["maple_org_id"], "org_real");
+        assert_eq!(values["maple_ingest_key_type"], "source");
+        assert_eq!(values["maple_ingest_source"], INGEST_SOURCE);
+        assert_eq!(values["maple_source_id"], SOURCE_PUBLIC_ID);
+        assert_eq!(
+            attributes
+                .iter()
+                .filter(|attribute| attribute.key == "service.name")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn default_keys_without_a_default_source_strip_the_source_stamp() {
+        // A sender-supplied source id that is not verified must not survive a default key.
+        let mut attributes = vec![
+            string_attribute("service.name", "from-sdk"),
+            string_attribute("maple_source_id", "src_spoofed"),
+        ];
+        enrich_resource_attributes(&mut attributes, &test_key(), &[]);
+        let values = string_attributes(&attributes);
+        assert_eq!(values["service.name"], "from-sdk");
+        assert_eq!(values["maple_ingest_key_type"], "private");
+        assert!(!values.contains_key("maple_source_id"));
+    }
+
+    const DEFAULT_SOURCE_UUID: &str = "5b1d3c7e-9a2f-4b6d-8e0c-1f2a3b4c5d6e";
+    const INTEGRATION_SOURCE_UUID: &str = "7c2e4d8f-0b3a-4c7e-9f1d-2a3b4c5d6e7f";
+
+    fn public_id(uuid: &str) -> String {
+        sources::public_source_id(uuid).expect("a uuid")
+    }
+
+    fn default_key_with_source() -> ResolvedIngestKey {
+        ResolvedIngestKey {
+            default_source: SourceRef::from_id(DEFAULT_SOURCE_UUID.to_owned()),
+            ..test_key()
+        }
+    }
+
+    fn stamped_source_id(
+        claim: Option<&str>,
+        resolved: &ResolvedIngestKey,
+        verified: &[String],
+    ) -> Option<String> {
+        let mut attributes = vec![string_attribute("service.name", "from-sdk")];
+        if let Some(claim) = claim {
+            attributes.push(string_attribute("maple_source_id", claim));
+        }
+        enrich_resource_attributes(&mut attributes, resolved, verified);
+        assert_eq!(
+            attributes
+                .iter()
+                .filter(|attribute| attribute.key == "maple_source_id")
+                .count(),
+            usize::from(string_attributes(&attributes).contains_key("maple_source_id")),
+        );
+        string_attributes(&attributes).remove("maple_source_id")
+    }
+
+    #[test]
+    fn default_keys_stamp_the_default_source_unless_a_verified_claim_names_another() {
+        let resolved = default_key_with_source();
+        let default_id = public_id(DEFAULT_SOURCE_UUID);
+        let integration_id = public_id(INTEGRATION_SOURCE_UUID);
+        let verified = vec![integration_id.clone()];
+
+        assert_eq!(
+            stamped_source_id(None, &resolved, &verified),
+            Some(default_id.clone())
+        );
+        // An integration poller's own source, verified as this org's, is kept.
+        assert_eq!(
+            stamped_source_id(Some(&integration_id), &resolved, &verified),
+            Some(integration_id.clone())
+        );
+        // Unknown or foreign ids and undecodable values give way to the default.
+        let foreign = public_id(SOURCE_UUID);
+        assert_eq!(
+            stamped_source_id(Some(&foreign), &resolved, &verified),
+            Some(default_id.clone())
+        );
+        assert_eq!(
+            stamped_source_id(Some("src_not-base58!"), &resolved, &verified),
+            Some(default_id)
+        );
+        // With no default source an unverified claim is removed.
+        assert_eq!(
+            stamped_source_id(Some(&foreign), &test_key(), &verified),
+            None
+        );
+        assert_eq!(
+            stamped_source_id(Some(&integration_id), &test_key(), &verified),
+            Some(integration_id)
+        );
+    }
+
+    #[test]
+    fn source_tokens_always_overwrite_the_sender_source_id() {
+        let resolved = ResolvedIngestKey {
+            key_type: IngestKeyType::Source,
+            source: Some(Arc::new(SourcePolicy::from_row(&source_config(
+                None, None, "[]",
+            )))),
+            ..test_key()
+        };
+        let claimed = public_id(INTEGRATION_SOURCE_UUID);
+        // Even a claim some caller verified never wins over the token's own source.
+        assert_eq!(
+            stamped_source_id(Some(&claimed), &resolved, std::slice::from_ref(&claimed)),
+            Some(SOURCE_PUBLIC_ID.to_owned())
+        );
+        assert!(!resolved.accepts_source_claims());
+    }
+
+    #[test]
+    fn claims_are_collected_once_and_only_for_default_keys() {
+        let claimed = public_id(INTEGRATION_SOURCE_UUID);
+        let mut request = test_log_request("claims");
+        request.resource_logs[0]
+            .resource
+            .as_mut()
+            .expect("resource")
+            .attributes
+            .push(string_attribute("maple_source_id", &claimed));
+        let duplicate = request.resource_logs[0].clone();
+        request.resource_logs.push(duplicate);
+        let decoded = DecodedPayload::Logs(request);
+
+        assert_eq!(claimed_source_ids(&decoded, &test_key()), vec![claimed]);
+        let token = ResolvedIngestKey {
+            key_type: IngestKeyType::Source,
+            ..test_key()
+        };
+        assert!(claimed_source_ids(&decoded, &token).is_empty());
+    }
+
+    #[tokio::test]
+    async fn session_event_rows_follow_the_source_signals() {
+        let queue_dir = unique_main_test_dir("session-events-source-signals");
+        let store = Arc::new(FakeKeyStore::default());
+        // Routed to ClickHouse: the forward-mode fixture has no Tinybird pipeline.
+        let routed = |allowed: &str| SourceRow {
+            key: KeyRow {
+                org_id: "org_se_custom".to_owned(),
+                self_managed: true,
+                clickhouse_ready: true,
+            },
+            config: Some(source_config(Some(allowed), None, "[]")),
+        };
+        let sessions_only = "maple_src_session_events_sessions_only_000000";
+        let events_only = "maple_src_session_events_events_only_0000000";
+        let traces_only = "maple_src_session_events_traces_only_0000000";
+        store.insert_source(sessions_only, routed(r#"["sessions"]"#));
+        store.insert_source(events_only, routed(r#"["events"]"#));
+        store.insert_source(traces_only, routed(r#"["traces"]"#));
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+
+        let body = concat!(
+            r#"{"type":"custom","message":"signup_completed"}"#,
+            "\n",
+            r#"{"type":"click","message":"button#buy"}"#,
+            "\n",
+            r#"{"type":"custom","message":"plan_selected"}"#,
+            "\n",
+        );
+        let send = |key: &'static str| {
+            let state = &state;
+            async move {
+                handle_session_events_inner(
+                    state,
+                    &bearer_headers(key),
+                    Bytes::from_static(body.as_bytes()),
+                )
+                .await
+            }
+        };
+
+        assert_eq!(
+            send(sessions_only).await.expect("sessions key is admitted"),
+            1
+        );
+        assert_eq!(send(events_only).await.expect("events key is admitted"), 2);
+        let denied = send(traces_only)
+            .await
+            .expect_err("traces-only key is refused");
+        assert_eq!(denied.status, StatusCode::FORBIDDEN);
+
+        let _ = std::fs::remove_dir_all(&queue_dir);
+    }
+
+    #[tokio::test]
+    async fn source_token_resolves_from_sources_with_policy() {
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_src_resolves_from_custom_table_0000000";
+        store.insert_source(
+            raw_key,
+            source_row(
+                "org_custom",
+                source_config(Some(r#"["logs"]"#), Some(10), "[]"),
+            ),
+        );
+        let resolver = make_resolver(Arc::clone(&store));
+
+        let resolved = resolver
+            .resolve_ingest_key(raw_key)
+            .await
+            .expect("resolution should not fail")
+            .expect("an enabled source resolves");
+        assert_eq!(resolved.org_id, "org_custom");
+        assert!(matches!(resolved.key_type, IngestKeyType::Source));
+        let source = resolved.source.expect("source tokens carry their policy");
+        assert_eq!(source.public_id, SOURCE_PUBLIC_ID);
+        assert_eq!(source.rate_limit_rps, Some(10));
+        assert!(source.allows(SourceSignal::Logs));
+        assert!(!source.allows(SourceSignal::Traces));
+
+        // A source token never falls through to the default key table.
+        store.insert_private(
+            "maple_src_only_in_default_table_000000000000",
+            KeyRow {
+                org_id: "org_wrong_table".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        assert!(resolver
+            .resolve_ingest_key("maple_src_only_in_default_table_000000000000")
+            .await
+            .expect("resolution should not fail")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn expired_sources_are_refused_and_paused_ones_dropped_with_success() {
+        let queue_dir = unique_main_test_dir("source-401");
+        let store = Arc::new(FakeKeyStore::default());
+        let paused = "maple_src_paused_key_00000000000000000000000";
+        let expired = "maple_src_expired_key_0000000000000000000000";
+        let mut paused_config = source_config(None, None, "[]");
+        paused_config.id = "1f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b".to_owned();
+        paused_config.paused_at_ms = Some(current_time_millis() - 1_000);
+        store.insert_source(paused, source_row("org_custom", paused_config));
+        let mut expired_config = source_config(None, None, "[]");
+        expired_config.expires_at_ms = Some(current_time_millis() - 1_000);
+        store.insert_source(expired, source_row("org_custom", expired_config));
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        let body = Bytes::from(test_log_request("refused").encode_to_vec());
+
+        let (response, decoded_bytes, org_id, items) =
+            handle_signal_inner(&state, &test_headers(paused), body.clone(), Signal::Logs)
+                .await
+                .expect("a paused key is answered with success");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            (decoded_bytes, org_id.as_str(), items),
+            (0, "org_custom", 0)
+        );
+        assert!(
+            resolve_replay_key(&state, &bearer_headers(paused), &[SourceSignal::Events])
+                .await
+                .expect("the replay paths accept a paused key")
+                .is_none(),
+            "and drop what it sends"
+        );
+        assert!(
+            store.source_uses.lock().unwrap().is_empty(),
+            "dropped data does not count as use"
+        );
+
+        let (error, error_kind) =
+            handle_signal_inner(&state, &test_headers(expired), body, Signal::Logs)
+                .await
+                .expect_err("an expired key is refused");
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(error.message, "Ingest key expired");
+        assert_eq!(error_kind, "auth");
+
+        let replay = rejected(
+            resolve_replay_key(&state, &bearer_headers(expired), &[SourceSignal::Events]).await,
+            "the replay paths check expiry too",
+        );
+        assert_eq!(replay.status, StatusCode::UNAUTHORIZED);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn accepted_source_data_records_its_use_once_per_interval() {
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_src_records_use_000000000000000000000";
+        store.insert_source(
+            raw_key,
+            source_row("org_custom", source_config(None, None, "[]")),
+        );
+        let resolver = make_resolver(Arc::clone(&store));
+        let resolved = resolver
+            .resolve_ingest_key(raw_key)
+            .await
+            .expect("resolution should not fail")
+            .expect("the key resolves");
+
+        for _ in 0..3 {
+            resolver.note_source_use(&resolved);
+        }
+        // The writes run on spawned tasks; give them a moment to land.
+        for _ in 0..50 {
+            if !store.source_uses.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            *store.source_uses.lock().unwrap(),
+            vec![SOURCE_UUID.to_owned()]
+        );
+    }
+
+    #[tokio::test]
+    async fn static_store_resolves_source_tokens_without_a_policy() {
+        let store: Arc<dyn KeyStore> = Arc::new(StaticKeyStore {
+            org_id: "org_static".to_owned(),
+        });
+        let resolver = IngestKeyResolver {
+            store: Arc::clone(&store),
+            lookup_hmac_key: "test-hmac-key".to_owned(),
+            cache: Cache::builder().max_capacity(16).build(),
+            negative_cache: Cache::builder().max_capacity(16).build(),
+            routing: Arc::new(OrgRoutingResolver {
+                store,
+                cache: Cache::builder().max_capacity(16).build(),
+                last_known: DashMap::new(),
+            }),
+            recent_key_uses: recent_key_uses_cache(),
+            source_claims: source_claims_cache(Duration::from_mins(1)),
+        };
+        let resolved = resolver
+            .resolve_ingest_key("maple_src_static_backend_key_0000000000000")
+            .await
+            .expect("resolution should not fail")
+            .expect("the static store accepts any well-formed key");
+        assert_eq!(resolved.org_id, "org_static");
+        assert!(matches!(resolved.key_type, IngestKeyType::Source));
+        assert!(resolved.source.is_none());
+    }
+
+    /// A forward collector that keeps each `/v1/logs` body.
+    async fn spawn_capturing_logs_collector(
+    ) -> (String, tokio::sync::mpsc::UnboundedReceiver<Bytes>) {
+        async fn capture(
+            State(tx): State<tokio::sync::mpsc::UnboundedSender<Bytes>>,
+            body: Bytes,
+        ) -> StatusCode {
+            drop(tx.send(body));
+            StatusCode::OK
+        }
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/v1/logs", post(capture))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (format!("http://{addr}"), rx)
+    }
+
+    /// A `/v1/logs` collector that refuses every batch with `status`.
+    async fn spawn_refusing_logs_collector(status: StatusCode) -> String {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().route("/v1/logs", post(move || async move { status }));
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{addr}")
+    }
+
+    /// Waits for the spawned `last_used_at` writes to settle, then reads them.
+    async fn recorded_key_uses(store: &FakeKeyStore) -> Vec<String> {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        store.source_uses.lock().unwrap().clone()
+    }
+
+    #[tokio::test]
+    async fn a_batch_the_collector_refuses_does_not_count_as_key_use() {
+        let forward_url = spawn_refusing_logs_collector(StatusCode::BAD_REQUEST).await;
+        let queue_dir = unique_main_test_dir("source-refused");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_src_refused_by_collector_000000000000";
+        store.insert_source(
+            raw_key,
+            source_row("org_custom", source_config(None, None, "[]")),
+        );
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let body = Bytes::from(test_log_request("refused").encode_to_vec());
+
+        let (response, ..) =
+            handle_signal_inner(&state, &test_headers(raw_key), body, Signal::Logs)
+                .await
+                .expect("a collector 4xx is relayed, not raised");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(recorded_key_uses(&store).await.is_empty());
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn source_token_end_to_end_overrides_denies_and_rate_limits() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("source-e2e");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_src_end_to_end_key_00000000000000000000";
+        store.insert_source(
+            raw_key,
+            source_row(
+                "org_custom_e2e",
+                source_config(
+                    Some(r#"["logs"]"#),
+                    Some(2),
+                    r#"[{"key":"service.name","value":"checkout","mode":"set"}]"#,
+                ),
+            ),
+        );
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let body = Bytes::from(test_log_request("source").encode_to_vec());
+
+        // Request 1: accepted, with the override in the forwarded payload.
+        let (response, _, org_id, _) =
+            handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Logs)
+                .await
+                .expect("an allowed signal is accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(org_id, "org_custom_e2e");
+        let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("the export is forwarded")
+            .expect("forward channel should stay open");
+        let forwarded = ExportLogsServiceRequest::decode(forwarded).expect("forwarded protobuf");
+        let resource = forwarded.resource_logs[0]
+            .resource
+            .as_ref()
+            .expect("resource");
+        let values = string_attributes(&resource.attributes);
+        assert_eq!(values["service.name"], "checkout");
+        assert_eq!(values["maple_org_id"], "org_custom_e2e");
+        assert_eq!(values["maple_ingest_key_type"], "source");
+        assert_eq!(values["maple_source_id"], SOURCE_PUBLIC_ID);
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![SOURCE_UUID.to_owned()]
+        );
+
+        // A signal outside the allow-list is 403 on every transport.
+        let (error, error_kind) =
+            handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Traces)
+                .await
+                .expect_err("traces are not allowed");
+        assert_eq!(error.status, StatusCode::FORBIDDEN);
+        assert_eq!(
+            error.message,
+            "This ingest key is not allowed to send traces"
+        );
+        assert_eq!(error_kind, "forbidden");
+        let error = rejected(
+            resolve_replay_key(&state, &bearer_headers(raw_key), &[SourceSignal::Events]).await,
+            "product events are not allowed",
+        );
+        assert_eq!(error.status, StatusCode::FORBIDDEN);
+        let status = rejected(
+            admit_grpc_export(&state, &bearer_headers(raw_key), Signal::Metrics).await,
+            "metrics over gRPC are not allowed",
+        );
+        assert_eq!(status.code(), tonic::Code::PermissionDenied);
+
+        // Request 2 spends the last token of the 2 rps burst; request 3 is 429.
+        handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Logs)
+            .await
+            .expect("the second request fits the burst");
+        let (error, error_kind) =
+            handle_signal_inner(&state, &test_headers(raw_key), body, Signal::Logs)
+                .await
+                .expect_err("the third request is over the limit");
+        assert_eq!(error.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(error_kind, "throttle");
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            response
+                .headers()
+                .get(RETRY_AFTER)
+                .and_then(|value| value.to_str().ok()),
+            Some("1")
+        );
+        let status = rejected(
+            admit_grpc_export(&state, &bearer_headers(raw_key), Signal::Logs).await,
+            "gRPC shares the key's bucket",
+        );
+        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    impl FakeKeyStore {
+        fn insert_source_row(
+            &self,
+            org_id: &str,
+            id: &str,
+            is_default: bool,
+            integration: Option<(&'static str, &str)>,
+        ) {
+            self.source_rows.lock().unwrap().push((
+                org_id.to_owned(),
+                id.to_owned(),
+                is_default,
+                integration.map(|(platform, id)| (platform, id.to_owned())),
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn default_keys_resolve_the_org_default_source_with_the_key() {
+        let store = Arc::new(FakeKeyStore::default());
+        let org_key = KeyRow {
+            org_id: "org_with_default".to_owned(),
+            self_managed: false,
+            clickhouse_ready: false,
+        };
+        store.insert_private("maple_sk_with_default", org_key.clone());
+        store.insert_private(
+            "maple_sk_without_default",
+            KeyRow {
+                org_id: "org_without_default".to_owned(),
+                ..org_key
+            },
+        );
+        store.insert_source_row("org_with_default", DEFAULT_SOURCE_UUID, true, None);
+        store.insert_source_row("org_with_default", INTEGRATION_SOURCE_UUID, false, None);
+        let resolver = make_resolver(Arc::clone(&store));
+
+        for _ in 0..3 {
+            let resolved = resolver
+                .resolve_ingest_key("maple_sk_with_default")
+                .await
+                .unwrap()
+                .expect("key resolves");
+            assert_eq!(
+                resolved.source_public_id(),
+                Some(public_id(DEFAULT_SOURCE_UUID).as_str())
+            );
+            assert_eq!(resolved.source_row_id(), Some(DEFAULT_SOURCE_UUID));
+        }
+        // Cached with the key: one lookup for three requests.
+        assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 1);
+
+        let without = resolver
+            .resolve_ingest_key("maple_sk_without_default")
+            .await
+            .unwrap()
+            .expect("key resolves");
+        assert_eq!(without.default_source, None);
+        assert_eq!(without.source_public_id(), None);
+    }
+
+    #[tokio::test]
+    async fn source_claims_verify_against_the_org_and_cache_both_answers() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_source_row(
+            "org_a",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("railway", "rw_1")),
+        );
+        store.insert_source_row("org_b", SOURCE_UUID, false, None);
+        let resolver = make_resolver(Arc::clone(&store));
+        let own = public_id(INTEGRATION_SOURCE_UUID);
+        let foreign = public_id(SOURCE_UUID);
+        let claims = vec![
+            own.clone(),
+            foreign.clone(),
+            "src_garbage!".to_owned(),
+            "not-a-source".to_owned(),
+        ];
+
+        for _ in 0..2 {
+            assert_eq!(
+                resolver.verify_source_claims("org_a", claims.clone()).await,
+                vec![own.clone()]
+            );
+        }
+        // Two decodable claims looked up once each; undecodable ones never reach the store.
+        assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            resolver
+                .verify_source_claims("org_b", vec![foreign.clone()])
+                .await,
+            vec![foreign]
+        );
+    }
+
+    #[tokio::test]
+    async fn gcp_connectors_carry_their_integration_source_when_it_exists() {
+        let (state, store, queue_dir) =
+            gcp_logpush_state("gcp-integration-source", "http://127.0.0.1:1").await;
+        store.insert_source_row(
+            "org_gcp",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("gcp", "gcp_conn_1")),
+        );
+        // Same integration id under another platform or org must not match.
+        store.insert_source_row(
+            "org_gcp",
+            SOURCE_UUID,
+            false,
+            Some(("railway", "gcp_conn_off")),
+        );
+        store.insert_source_row(
+            "org_other",
+            DEFAULT_SOURCE_UUID,
+            false,
+            Some(("gcp", "gcp_conn_off")),
+        );
+
+        let with_source = state
+            .gcp_resolver
+            .resolve_connector("gcp_conn_1", "gcp-secret")
+            .await
+            .unwrap()
+            .expect("connector resolves");
+        assert_eq!(
+            with_source.key.source_public_id(),
+            Some(public_id(INTEGRATION_SOURCE_UUID).as_str())
+        );
+        assert!(!with_source.key.accepts_source_claims());
+        let without = state
+            .gcp_resolver
+            .resolve_connector("gcp_conn_off", "gcp-secret-off")
+            .await
+            .unwrap()
+            .expect("connector resolves");
+        assert_eq!(without.key.source_public_id(), None);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn default_key_end_to_end_keeps_verified_claims_and_records_default_use() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("default-source-e2e");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_default_source_e2e";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_default_e2e".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.insert_source_row("org_default_e2e", DEFAULT_SOURCE_UUID, true, None);
+        store.insert_source_row(
+            "org_default_e2e",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("railway", "rw_1")),
+        );
+        store.insert_source_row("org_someone_else", SOURCE_UUID, false, None);
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let mut request = test_log_request("claims");
+        let template = request.resource_logs[0].clone();
+        request.resource_logs.clear();
+        let claims = [
+            Some(public_id(INTEGRATION_SOURCE_UUID)),
+            Some(public_id(SOURCE_UUID)),
+            Some("src_garbage!".to_owned()),
+            None,
+        ];
+        for claim in &claims {
+            let mut resource_logs = template.clone();
+            if let Some(claim) = claim {
+                let resource = resource_logs.resource.as_mut().expect("resource");
+                resource
+                    .attributes
+                    .push(string_attribute("maple_source_id", claim));
+            }
+            request.resource_logs.push(resource_logs);
+        }
+
+        let (response, ..) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            Bytes::from(request.encode_to_vec()),
+            Signal::Logs,
+        )
+        .await
+        .expect("default key traffic is accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("the export is forwarded")
+            .expect("forward channel should stay open");
+        let forwarded = ExportLogsServiceRequest::decode(forwarded).expect("forwarded protobuf");
+        let stamped: Vec<String> = forwarded
+            .resource_logs
+            .iter()
+            .map(|resource_logs| {
+                let resource = resource_logs.resource.as_ref().expect("resource");
+                string_attributes(&resource.attributes)["maple_source_id"].clone()
+            })
+            .collect();
+        let default_id = public_id(DEFAULT_SOURCE_UUID);
+        assert_eq!(
+            stamped,
+            vec![
+                public_id(INTEGRATION_SOURCE_UUID),
+                default_id.clone(),
+                default_id.clone(),
+                default_id,
+            ]
+        );
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![DEFAULT_SOURCE_UUID.to_owned()]
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn fleet_size_defaults_to_one_and_refuses_zero() {
+        assert_eq!(parse_fleet_size(None), Ok(1));
+        assert_eq!(parse_fleet_size(Some("4".to_owned())), Ok(4));
+        assert!(parse_fleet_size(Some("0".to_owned())).is_err());
+        assert!(parse_fleet_size(Some("many".to_owned())).is_err());
     }
 }
