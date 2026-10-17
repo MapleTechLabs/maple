@@ -277,22 +277,32 @@ export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
 ): ((...args: Args) => Promise<void>) => {
 	let tail: Promise<void> = Promise.resolve()
 	return (...args) => {
-		const next = tail.then(() => run(...args))
-		// The timer starts when this drain does, so queued calls stay one at a time.
-		tail = tail.then(() => settledWithin(next, FLUSH_LINK_TIMEOUT_MS))
+		const start = tail
+		const next = start.then(() => run(...args))
+		tail = settledWithin(start, next, FLUSH_LINK_TIMEOUT_MS)
 		return next
 	}
 }
 
-/** Resolves when `promise` settles or after `ms`, whichever is first. Never rejects. */
-const settledWithin = (promise: Promise<unknown>, ms: number): Promise<void> =>
+/**
+ * Resolves when `promise` settles or `ms` after `start` resolves, whichever is
+ * first. The timer starts with the drain, so queued calls stay one at a time.
+ * Never rejects.
+ */
+const settledWithin = (start: Promise<void>, promise: Promise<unknown>, ms: number): Promise<void> =>
 	new Promise<void>((resolve) => {
-		const timer = setTimeout(resolve, ms)
+		let timer: ReturnType<typeof setTimeout> | undefined
+		let settled = false
 		const done = () => {
+			settled = true
 			clearTimeout(timer)
 			resolve()
 		}
+		// Registered now, so the timer is gone before the caller's `await` resumes.
 		promise.then(done, done)
+		void start.then(() => {
+			if (!settled) timer = setTimeout(resolve, ms)
+		})
 	})
 
 /**
