@@ -1,16 +1,24 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
-import { Effect, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { SELF_HOSTED_AUTH_EVENT } from "./platform/auth-api"
 import { rendersShell } from "./page/chrome"
+import { pageSubscriptions } from "./page/registry"
+import { pageContextOf } from "./update"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
 
 const selfHostedAuthTarget: Dom.TypedEventTarget<{ [SELF_HOSTED_AUTH_EVENT]: Event }> = window
 
-export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
+/** Every page's Subscriptions, lifted onto the root (`page/registry.ts`). */
+const pages = Subscription.lift(pageSubscriptions)<Model, Message>({
+	read: (model) => Option.some({ page: model.page, context: Option.getOrNull(pageContextOf(model)) }),
+	toParentMessage: (message) => Message.GotPageMessage({ message }),
+})
+
+const root = Subscription.make<Model, Message>()((entry) => ({
 	/** `subscribeSelfHostedAuthChanges`: a renewal elsewhere ended or replaced the session. */
 	selfHostedSession: entry(
 		{ isSelfHosted: Schema.Boolean },
@@ -55,7 +63,10 @@ export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 		{ isPolling: Schema.Boolean },
 		{
 			modelToDependencies: (model) => ({
-				isPolling: Shell.BUILT_COMMIT.length > 0 && !model.shell.isAppOutdated && model.session._tag === "SignedIn",
+				isPolling:
+					Shell.BUILT_COMMIT.length > 0 &&
+					!model.shell.isAppOutdated &&
+					model.session._tag === "SignedIn",
 			}),
 			dependenciesToStream: ({ isPolling }) =>
 				Stream.when(
@@ -77,3 +88,5 @@ export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 		},
 	),
 }))
+
+export const subscriptions = Subscription.aggregate(root, pages)

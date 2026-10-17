@@ -2,7 +2,7 @@ import type { OrgId } from "@maple/domain"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Option } from "effect"
-import { Update } from "foldkit"
+import { Command, Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
 import { Transition } from "foldkit/route"
 import { modifyFields } from "foldkit/struct"
@@ -18,6 +18,8 @@ import {
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
+import { type PageContext, PageOutMessage } from "./page/contract"
+import { changeContext, enterRoute, type PageTransition, updatePage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
@@ -54,8 +56,14 @@ const shellFoldConfig = {
 	read: (model: Model) => Option.some(model.shell),
 	write: (model: Model, nextShell: Shell.Model) => modifyFields(model, { shell: () => nextShell }),
 	toParentMessage: (message: Shell.Message) => Message.GotShellMessage({ message }),
-	// Pages are placeholders, so nothing rebuilds under a new namespace pin yet.
-	foldOutMessage: Shell.OutMessage.match<Step>({ ChangedGlobalNamespace: () => (model) => ({ model }) }),
+	// Pages rebuild their queries under the new pin.
+	foldOutMessage: Shell.OutMessage.match<Step>({
+		ChangedGlobalNamespace: () => (model) =>
+			Option.match(pageContextOf(model), {
+				onNone: () => ({ model }),
+				onSome: (context) => applyPage(changeContext(model.page, context))(model),
+			}),
+	}),
 }
 
 const foldShell = Update.foldChild({ update: Shell.update, ...shellFoldConfig })
@@ -73,6 +81,73 @@ const foldToasts = Update.foldChild({
 	write: (model, toasts) => modifyFields(model, { toasts: () => toasts }),
 	toParentMessage: (message: Toast.Message) => Message.GotToastMessage({ message }),
 })
+
+// PAGES
+
+/** What every page reads from the root: a signed-in org on a shell route. */
+export const pageContextOf = (model: Model): Option.Option<PageContext> =>
+	Session.match(model.session, {
+		Resolving: () => Option.none(),
+		SignedOut: () => Option.none(),
+		SignedIn: ({ maybeOrgId }) =>
+			Option.filter(maybeOrgId, () => rendersShell(model.route)).pipe(
+				Option.map((orgId) => ({
+					orgId,
+					pinnedNamespace: model.shell.pinnedNamespaces[orgId] ?? null,
+					timeZone: model.timeZone,
+				})),
+			),
+	})
+
+/** Writes the page slot, lifts its Commands and follows its navigation and pin requests. */
+const applyPage =
+	(transition: PageTransition): Step =>
+	(model) =>
+		Option.match(
+			Option.filter(transition.outMessage, (out) => out._tag === "RequestedNamespacePin"),
+			{
+				onNone: () => writePage(transition)(model),
+				onSome: (out) =>
+					Update.combine([
+						writePage(transition),
+						(next: Model) =>
+							foldShell(
+								next,
+								Shell.Message.ClickedNamespace({
+									maybeNamespace:
+										out._tag === "RequestedNamespacePin"
+											? out.maybeNamespace
+											: Option.none(),
+								}),
+							),
+					])(model),
+			},
+		)
+
+const writePage =
+	(transition: PageTransition): Step =>
+	(model) => ({
+		model: modifyFields(model, { page: () => transition.slot }),
+		commands: [
+			...transition.commands.map(Command.mapMessage((message) => Message.GotPageMessage({ message }))),
+			...Option.match(transition.outMessage, {
+				onNone: () => [],
+				onSome: PageOutMessage.match({
+					RequestedNavigation: ({ url, isReplace }) => [
+						isReplace ? ReplaceUrl({ url }) : NavigateInternal({ url }),
+					],
+					RequestedNamespacePin: () => [],
+				}),
+			}),
+		],
+	})
+
+/** Route entry or leave: the route's page is built, kept (same key) or dropped. */
+const loadPage: Step = (model) =>
+	Option.match(pageContextOf(model), {
+		onNone: () => ({ model: model.page === null ? model : modifyFields(model, { page: () => null }) }),
+		onSome: (context) => applyPage(enterRoute(model.page, model.route, context))(model),
+	})
 
 // ROUTING
 
@@ -160,7 +235,7 @@ const loadRoute: Step = (model) =>
 	})
 
 /** Everything that reads the route or the session. */
-export const settle: Step = Update.combine([followRedirects, loadRoute])
+export const settle: Step = Update.combine([followRedirects, loadRoute, loadPage])
 
 // SESSION
 
@@ -223,4 +298,9 @@ export const update = (model: Model, message: Message) =>
 		GotSignInMessage: ({ message }) => foldSignIn(model, message),
 		GotShellMessage: ({ message }) => foldShell(model, message),
 		GotToastMessage: ({ message }) => foldToasts(model, message),
+		GotPageMessage: ({ message }) =>
+			Option.match(pageContextOf(model), {
+				onNone: () => ({ model }),
+				onSome: (context) => applyPage(updatePage(model.page, message, context))(model),
+			}),
 	})

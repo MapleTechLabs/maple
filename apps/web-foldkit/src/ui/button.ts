@@ -58,3 +58,27 @@ export const button = <Message>(
 		],
 	)
 }
+
+/** `<Button render={<Link to=... />}>`: the button classes on an anchor, which the router follows. */
+export const linkButton = <Message>(
+	h: HtmlBuilder<Message>,
+	options: Omit<ButtonOptions<Message>, "type" | "isLoading" | "isDisabled"> & Readonly<{ href: string }>,
+	children: ReadonlyArray<Html | string>,
+): Html =>
+	h.a(
+		[
+			h.Class(
+				cn(
+					buttonVariants({
+						className: options.className,
+						size: options.size,
+						variant: options.variant,
+					}),
+				),
+			),
+			h.DataAttribute("slot", options.slot ?? "button"),
+			h.Href(options.href),
+			...(options.attributes ?? []),
+		],
+		children,
+	)

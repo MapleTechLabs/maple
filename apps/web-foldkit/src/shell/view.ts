@@ -1,4 +1,4 @@
-import { pageBodyStyles, pageLayoutStyles } from "@maple/ui/styles/ui/page-layout"
+import { pageLayoutStyles } from "@maple/ui/styles/ui/page-layout"
 import {
 	sidebarMobileHeaderStyles,
 	sidebarMobileInnerStyles,
@@ -76,8 +76,8 @@ const desktopSidebar = (h: HtmlBuilder<Message>, model: Model, currentPath: stri
 export type FrameInputs = Readonly<{
 	currentPath: string
 	breadcrumbs: ReadonlyArray<BreadcrumbEntry>
-	/** `PageLayout.Body`'s children: the page's filters, content and right rail. */
-	page: () => ReadonlyArray<Html>
+	/** `PageLayout.Body` itself (`page/kit/dashboard-page.ts`): the page's filters, content and right rail. */
+	page: () => Html
 }>
 
 /** `AppUpdateBanner`: not dismissible, a stale bundle may not read what the new build writes. */
@@ -117,7 +117,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 					[
 						topbar(h, model, inputs.breadcrumbs),
 						...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
-						h.div([h.Class(pageBodyStyles), h.DataAttribute("slot", "page-body")], inputs.page()),
+						inputs.page(),
 					],
 				),
 			]),

@@ -2,6 +2,7 @@ import { pageContentStyles } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import { pageBody } from "./kit/dashboard-page"
 
 /**
  * Signed-in routes legacy renders without `DashboardLayout`: onboarding and auth handoffs with
@@ -28,6 +29,9 @@ export const breadcrumbsOf = (route: AppRoute): ReadonlyArray<BreadcrumbEntry> =
 
 /** `PageLayout.Content` holding a not-yet-ported page: its route tag on the page background. */
 export const placeholderContent = <Message>(h: HtmlBuilder<Message>, route: AppRoute): Html =>
+	pageBody(h, [placeholderMain(h, route)])
+
+const placeholderMain = <Message>(h: HtmlBuilder<Message>, route: AppRoute): Html =>
 	h.main(
 		[h.Class(pageContentStyles), h.DataAttribute("slot", "page-content"), h.Id("main-content")],
 		[

@@ -7,7 +7,7 @@ export { eyebrowVariants }
 
 export interface EyebrowOptions<Message> {
 	readonly variant?: VariantProps<typeof eyebrowVariants>["variant"]
-	readonly as?: "span" | "div" | "h2"
+	readonly as?: "span" | "div" | "h2" | "h3"
 	readonly className?: string
 	readonly attributes?: ReadonlyArray<Attribute<Message>>
 }
@@ -26,6 +26,8 @@ export const eyebrow = <Message>(
 	switch (options.as) {
 		case "h2":
 			return h.h2(attributes, children)
+		case "h3":
+			return h.h3(attributes, children)
 		case "div":
 			return h.div(attributes, children)
 		default:

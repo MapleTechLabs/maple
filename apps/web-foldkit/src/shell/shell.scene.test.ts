@@ -42,7 +42,7 @@ const shellAt = (currentPath: string) => {
 	const frame = withViewInputs(frameView, {
 		currentPath,
 		breadcrumbs: [{ label: "Overview" }],
-		page: () => [],
+		page: () => null,
 	})()
 	const sheet = withViewInputs(sheetLayerView, { currentPath })()
 	const menu = withViewInputs(menuLayerView, { currentPath })()

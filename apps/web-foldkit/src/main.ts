@@ -8,6 +8,7 @@ import { ClerkPhase, type Model, Session } from "./model"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { readSessionToken } from "./platform/auth-api"
+import { readEffectiveTimeZone } from "./platform/time-zone"
 import * as Toast from "./ui/toast"
 import { urlToAppRoute } from "./route"
 import * as Shell from "./shell"
@@ -24,6 +25,7 @@ export { view } from "./view"
 /** Read before the first render, so a signed-out visit paints the page, not the boot splash. */
 export const Flags = Schema.Struct({
 	hasStoredSession: Schema.Boolean,
+	timeZone: Schema.String,
 	shell: Schema.Struct({
 		isMobile: Schema.Boolean,
 		theme: Shell.Theme,
@@ -35,6 +37,7 @@ export type Flags = typeof Flags.Type
 
 export const flags: Effect.Effect<Flags> = Effect.all({
 	hasStoredSession: Effect.map(readSessionToken, Option.isSome),
+	timeZone: readEffectiveTimeZone,
 	shell: Shell.readShellFlags,
 })
 
@@ -47,6 +50,8 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		signIn: SignIn.init(),
 		shell: Shell.init(flags.shell),
 		toasts: Toast.init("toasts"),
+		page: null,
+		timeZone: flags.timeZone,
 	}
 
 	if (isClerkAuthEnabled) {

@@ -29,6 +29,7 @@ export const table = <M>(
 		readonly size?: TableSize
 		readonly scroll?: boolean
 		readonly className?: string
+		readonly ariaLabel?: string
 	},
 	children: ReadonlyArray<Html>,
 ): Html =>
@@ -39,7 +40,16 @@ export const table = <M>(
 			h.DataAttribute("variant", options.variant ?? "default"),
 			h.DataAttribute("size", options.size ?? "default"),
 		],
-		[h.table([h.Class(cn(tableStyles, options.className)), h.DataAttribute("slot", "table")], children)],
+		[
+			h.table(
+				[
+					...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
+					h.Class(cn(tableStyles, options.className)),
+					h.DataAttribute("slot", "table"),
+				],
+				children,
+			),
+		],
 	)
 
 export const tableHeader = <M>(

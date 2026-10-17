@@ -41,6 +41,8 @@ export type CheckboxViewConfig<ParentMessage> = Readonly<{
 	isIndeterminate?: boolean
 	isDisabled?: boolean
 	className?: string
+	/** `aria-label`, next to the label's `aria-labelledby`. */
+	ariaLabel?: string
 }>
 
 /** The id Base UI gives a wrapping `<Label>`, which names the checkbox through `aria-labelledby`. */
@@ -92,6 +94,7 @@ export const view = <ParentMessage>(
 				h.Id(config.id),
 				h.Role("checkbox"),
 				h.AriaChecked(isIndeterminate ? "mixed" : isChecked),
+				...(config.ariaLabel === undefined ? [] : [h.AriaLabel(config.ariaLabel)]),
 				h.AriaLabelledBy(labelIdOf(config.inputId)),
 				...(isDisabled ? [h.AriaDisabled(true), h.DataAttribute("disabled", "")] : []),
 				h.Class(cn(checkboxStyles, config.className)),

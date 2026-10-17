@@ -5,8 +5,10 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
 import { type Model, Session } from "./model"
+import { pageContextOf } from "./update"
 import * as ClerkSignIn from "./page/clerk-sign-in"
 import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
+import { type PageMessage, pageBreadcrumbs, viewPage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
@@ -45,6 +47,16 @@ const signInView = (model: Model, h: HtmlBuilder<Message>, redirectUrl: string |
 
 const toShellMessage = (message: Shell.Message) => Message.GotShellMessage({ message })
 
+const toPageMessage = (message: PageMessage) => Message.GotPageMessage({ message })
+
+/** The routed page, or the placeholder while the route has no ported page. */
+const pageView = (model: Model, h: HtmlBuilder<Message>): Html => {
+	const maybeContext = pageContextOf(model)
+	return model.page !== null && Option.isSome(maybeContext)
+		? viewPage(h, model.page, { context: maybeContext.value }, toPageMessage)
+		: placeholderContent(h, model.route)
+}
+
 /** A signed-in page inside the shell: the frame around the page, then the shell's overlay layers. */
 const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
 	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
@@ -56,8 +68,8 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 			toParentMessage: toShellMessage,
 			viewInputs: {
 				currentPath,
-				breadcrumbs: breadcrumbsOf(model.route),
-				page: () => [placeholderContent(h, model.route)],
+				breadcrumbs: model.page === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(model.page),
+				page: () => pageView(model, h),
 			},
 		}),
 		h.submodel({
