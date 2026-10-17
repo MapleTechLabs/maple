@@ -119,7 +119,10 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // settings on the inventory schema, and two lab registry entries. The pages stay in their
 // route chunks.
 // 706.5 KB with main's 1 KB from #1494, #1500, #1502 merged up the stack.
-const maxGzipBytes = 706.5 * 1024
+// 710 KB for the Foldkit migration foundations (fk/parity-harness, 2026-10-17): 3.8 KB over
+// main's 705.9 — the six /lab/kit gallery route shells in the route tree (2.4 KB of index) and
+// the `@maple/web-data` service layer the warehouse queries now require. Lab pages stay lazy.
+const maxGzipBytes = 710 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
