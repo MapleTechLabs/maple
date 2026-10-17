@@ -1,20 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { V2GcpConnector, V2GcpManualSetup } from "@maple/domain/http/v2"
+import { gcpSetupPlan } from "@maple/domain/gcp"
+import { V2GcpConnector } from "@maple/domain/http/v2"
 
 import { GCP_SETUP_FIXTURES } from "@/lab/gcp-setup-fixtures"
 
-import {
-	gcpAgentPrompt,
-	gcpAlchemyUnavailable,
-	gcpManualSteps,
-	gcpPendingSetupSteps,
-	gcpRemovalSteps,
-	gcpSetupChecks,
-} from "./gcp-setup-steps"
-
-const manual = (fixture: keyof typeof GCP_SETUP_FIXTURES) =>
-	Schema.decodeUnknownSync(V2GcpManualSetup)(GCP_SETUP_FIXTURES[fixture].manual)
+import { gcpAgentPrompt, gcpAlchemyUnavailable, gcpManualSteps, gcpRemovalList } from "./gcp-setup-steps"
 
 const connector = (over: Record<string, unknown> = {}) =>
 	Schema.decodeUnknownSync(V2GcpConnector)({
@@ -44,125 +35,98 @@ const ORGANIZATION = {
 	project_id: "acme-observability",
 }
 
-const values = (steps: ReturnType<typeof gcpManualSteps>, id: string) =>
-	steps.find((step) => step.id === id)?.fields.map((field) => field.value)
-
-describe("gcpManualSteps", () => {
-	it("lists what the connection collects, in the order Google needs it", () => {
-		expect(gcpManualSteps(manual("project")).map((step) => step.id)).toEqual([
-			"apis",
-			"topic",
-			"push_account",
-			"subscription",
-			"sink",
-			"sink_grants",
-			"test_message",
-			"reader_account",
-			"reader_roles",
-			"reader_token_creator",
-		])
-		expect(gcpManualSteps(manual("organization")).map((step) => step.id)).not.toContain("reader_account")
-		expect(gcpManualSteps(manual("organizationMetrics")).map((step) => step.id)).toEqual([
-			"apis",
-			"reader_account",
-			"reader_roles",
-			"reader_token_creator",
-		])
+/** What the dialog renders from: the connector and the setup_scripts response. */
+const plan = (of: V2GcpConnector) =>
+	gcpSetupPlan({
+		connectorId: of.id,
+		scopeType: of.scope_type,
+		scopeId: of.scope_id,
+		projectId: of.project_id,
+		pushEndpoint: GCP_SETUP_FIXTURES.project.push_endpoint,
+		mapleServiceAccountEmail: GCP_SETUP_FIXTURES.project.maple_service_account_email,
+		logsEnabled: of.logs_enabled,
+		metricsEnabled: of.metrics_enabled,
+		logFilter: GCP_SETUP_FIXTURES.project.log_filter,
 	})
 
-	it("hands over the exact names, endpoint and filter the backend generated", () => {
-		const setup = manual("project")
-		const steps = gcpManualSteps(setup)
-		expect(values(steps, "subscription")).toEqual(
+const titles = (of: V2GcpConnector) => gcpManualSteps(plan(of)).map((step) => step.title)
+const values = (of: V2GcpConnector, title: string) =>
+	gcpManualSteps(plan(of))
+		.find((step) => step.title === title)
+		?.fields.map((field) => field.value)
+
+describe("gcpManualSteps", () => {
+	it("lists what the connection collects, Maple's grant before the read-only roles", () => {
+		expect(titles(connector())).toEqual([
+			"Enable the APIs",
+			"Create the Pub/Sub topic",
+			"Create the push service account",
+			"Create the push subscription",
+			"Create the Log Router sink",
+			"Let the sink publish to the topic",
+			"Send a test message",
+			"Create the read-only service account",
+			"Let Maple use the read-only account",
+			"Grant the read-only roles",
+		])
+		expect(titles(connector({ metrics_enabled: false }))).not.toContain("Grant the read-only roles")
+		expect(titles(connector({ logs_enabled: false }))).not.toContain("Create the Pub/Sub topic")
+	})
+
+	it("hands over the exact endpoint, filter and push account, and no Logs Writer grant", () => {
+		const fixture = GCP_SETUP_FIXTURES.project
+		expect(values(connector(), "Create the push subscription")).toEqual(
 			expect.arrayContaining([
-				setup.logs?.subscription,
-				setup.logs?.push_endpoint,
-				setup.logs?.push_service_account_email,
+				fixture.push_endpoint,
+				"maple-push-018f2b3c4d5e6f70819@acme-prod.iam.gserviceaccount.com",
 			]),
 		)
-		expect(values(steps, "sink")).toContain(setup.logs?.log_filter)
+		expect(values(connector(), "Create the Log Router sink")).toContain(fixture.log_filter)
+		expect(values(connector(), "Let the sink publish to the topic")).toEqual(["Pub/Sub Publisher"])
 		// A published setup report confirms log forwarding through the signed push.
-		expect(JSON.parse(String(values(steps, "test_message")?.[0]))).toEqual({
+		expect(JSON.parse(String(values(connector(), "Send a test message")?.[0]))).toEqual({
 			logName: "projects/acme-prod/logs/maple-setup",
 			jsonPayload: { logs: true },
 		})
 	})
 
-	it("routes a folder or organization sink to the topic by its full path, children included", () => {
-		const setup = manual("organization")
-		const sink = gcpManualSteps(setup).find((step) => step.id === "sink")
+	it("routes an organization's sink to the topic by its full path", () => {
+		const org = connector(ORGANIZATION)
+		const sink = gcpManualSteps(plan(org)).find((step) =>
+			step.title.startsWith("Create the Log Router sink"),
+		)
+		expect(sink?.title).toBe("Create the Log Router sink on the organization")
 		expect(sink?.fields.map((field) => field.value)).toEqual(
-			expect.arrayContaining(["Other resource", setup.logs?.sink_destination]),
+			expect.arrayContaining([
+				"Other resource",
+				"pubsub.googleapis.com/projects/acme-observability/topics/maple-018f2b3c4d5e6f708192a3b4",
+			]),
 		)
 		expect(sink?.consoleUrl).toContain("organizationId=123456789012")
-		const roles = gcpManualSteps(manual("organizationMetrics")).find((step) => step.id === "reader_roles")
-		expect(roles?.fields.map((field) => field.label)).toEqual([
-			"Principal",
-			"Roles on the organization",
-			"Roles on project acme-observability",
-		])
 	})
 })
 
-describe("gcpPendingSetupSteps", () => {
-	it("leaves out what Google Cloud already has, and the APIs alone", () => {
-		const setup = manual("project")
-		expect(
-			gcpPendingSetupSteps(setup, connector({ applied_logs_enabled: true })).map((step) => step.id),
-		).toEqual(["apis", "reader_account", "reader_roles", "reader_token_creator"])
-		expect(
-			gcpPendingSetupSteps(
-				setup,
-				connector({ applied_logs_enabled: true, applied_metrics_enabled: true }),
-			),
-		).toEqual([])
-	})
-})
-
-describe("gcpRemovalSteps", () => {
-	it("removes the sink first, and only what was set up and is now off", () => {
+describe("gcpRemovalList", () => {
+	it("deletes the sink first and only what was set up and is now off", () => {
 		const off = connector({
 			...ORGANIZATION,
 			logs_enabled: false,
 			applied_logs_enabled: true,
 			applied_metrics_enabled: true,
 		})
-		expect(gcpRemovalSteps(off).map((step) => [step.id, step.summary])).toEqual([
-			["sink", "maple-018f2b3c4d5e6f708192a3b4"],
-			["subscription", "maple-018f2b3c4d5e6f708192a3b4"],
-			["topic", "maple-018f2b3c4d5e6f708192a3b4"],
-			["push_account", "maple-push-018f2b3c4d5e6f70819@acme-observability.iam.gserviceaccount.com"],
+		expect(gcpRemovalList(off).map((item) => item.name)).toEqual([
+			"maple-018f2b3c4d5e6f708192a3b4",
+			"maple-018f2b3c4d5e6f708192a3b4",
+			"maple-018f2b3c4d5e6f708192a3b4",
+			"maple-push-018f2b3c4d5e6f70819@acme-observability.iam.gserviceaccount.com",
 		])
-		expect(gcpRemovalSteps(connector({ logs_enabled: false, applied_logs_enabled: null }))).toEqual([])
+		expect(gcpRemovalList(off)[0]?.what).toContain("then wait two minutes")
+		expect(gcpRemovalList(connector({ logs_enabled: false, applied_logs_enabled: null }))).toEqual([])
 		expect(
-			gcpRemovalSteps(connector({ metrics_enabled: false, applied_metrics_enabled: true })).map(
-				(step) => step.id,
+			gcpRemovalList(connector({ metrics_enabled: false, applied_metrics_enabled: true })).map(
+				(item) => item.what,
 			),
-		).toEqual(["reader_roles", "reader_account"])
-	})
-})
-
-describe("gcpSetupChecks", () => {
-	it("waits on what is on until confirmed, and on a removal until it is checked", () => {
-		const fresh = gcpSetupChecks(connector(), "manual")
-		expect(fresh.map((check) => [check.title, check.done, check.checkable])).toEqual([
-			["Log forwarding", false, false],
-			["Read-only access", false, true],
-		])
-		const removing = gcpSetupChecks(
-			connector({ logs_enabled: false, applied_logs_enabled: true, applied_metrics_enabled: true }),
-			"terraform",
-		)
-		expect(removing.map((check) => [check.title, check.done, check.checkable])).toEqual([
-			["Log sink removed", false, true],
-			["Read-only access", true, false],
-		])
-		expect(
-			gcpSetupChecks(
-				connector({ applied_logs_enabled: true, applied_metrics_enabled: true }),
-				"alchemy",
-			).every((check) => check.done),
-		).toBe(true)
+		).toEqual(["The read-only account's roles on the project and acme-prod", "Read-only service account"])
 	})
 })
 
@@ -182,26 +146,33 @@ describe("gcpAgentPrompt", () => {
 		const prompt = gcpAgentPrompt({
 			flavour: "terraform",
 			config,
-			manual: manual("project"),
+			plan: plan(connector()),
 			connector: connector(),
 		})
 		expect(prompt).toContain("Run terraform plan and show me the plan. Apply only after I approve it.")
 		expect(prompt).toContain(
 			"gcloud pubsub subscriptions describe maple-018f2b3c4d5e6f708192a3b4 --project=acme-prod",
 		)
-		expect(prompt).toContain("click Check access")
+		expect(prompt).toContain("Maple's first metrics read confirms read-only access")
 		expect(prompt.endsWith(`--- maple.tf ---\n${config.trimEnd()}\n`)).toBe(true)
 	})
 
-	it("says what applying a regenerated file removes", () => {
+	it("says what it takes over and what applying a regenerated file removes", () => {
+		const removing = connector({
+			...ORGANIZATION,
+			logs_enabled: false,
+			applied_logs_enabled: true,
+			applied_metrics_enabled: true,
+		})
 		const prompt = gcpAgentPrompt({
 			flavour: "alchemy",
 			config: "// stack",
-			manual: manual("organizationMetrics"),
-			connector: connector({ ...ORGANIZATION, logs_enabled: false, applied_logs_enabled: true }),
+			plan: plan(removing),
+			connector: removing,
 		})
-		expect(prompt).toContain("applying it removes the log sink, the Pub/Sub topic and subscription")
-		expect(prompt).toContain("bunx alchemy deploy maple.ts --stage maple")
+		expect(prompt).toContain("deploys with --adopt to take them over")
+		expect(prompt).toContain("applying it removes what that version created")
+		expect(prompt).toContain("to click I've removed them")
 		expect(prompt).not.toContain("PROJECT_NUMBER")
 	})
 })

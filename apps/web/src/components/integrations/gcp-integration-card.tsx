@@ -35,18 +35,15 @@ import { retainedQuery } from "@/lib/services/common/atom-client"
 import { getActiveOrgId } from "@/lib/services/common/auth-headers"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
-	GCP_LINK,
 	GCP_REACTIVITY_KEYS,
 	GCP_SETTLING_REFRESH_MS,
-	GCP_TITLE,
-	GcpCommand,
 	GcpConfigure,
 	GcpCopyScriptButton,
 	GcpDisconnectDialog,
-	GcpExternalLink,
 	GcpOpenCloudShellButton,
 	type GcpConfigureTarget,
 } from "./gcp-configure"
+import { GCP_LINK, GCP_TITLE, GcpCommand, GcpExternalLink } from "./gcp-primitives"
 import {
 	GCP_CONNECTION_LABEL,
 	GCP_LOG_STATUS,
