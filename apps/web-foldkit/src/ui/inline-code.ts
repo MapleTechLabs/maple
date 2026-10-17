@@ -1,13 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
+import { inlineCodeChipStyles, inlineCodePlainStyles, inlineCodeStyles } from "@maple/ui/styles/ui/inline-code"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// styles: packages/ui/src/components/ui/inline-code.tsx (class composition copied; that module imports React)
 export const inlineCodeClassName = (variant: "chip" | "plain", className?: string): string =>
-	cn(
-		"font-mono text-[0.9em]",
-		variant === "chip" ? "rounded bg-muted px-1 py-px text-foreground" : "text-muted-foreground",
-		className,
-	)
+	cn(inlineCodeStyles, variant === "chip" ? inlineCodeChipStyles : inlineCodePlainStyles, className)
 
 /** `InlineCode`: inline monospace for identifiers and commands inside prose. */
 export const inlineCode = <Message>(
