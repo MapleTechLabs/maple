@@ -2,6 +2,8 @@ import {
 	DEFAULT_TRACE_SAMPLING_POLICY,
 	IsoDateTimeString,
 	TraceSamplingPersistenceError,
+	TRACE_SAMPLE_RATIO_MAX,
+	TRACE_SAMPLE_RATIO_MIN,
 	TraceSamplingPolicyDocument,
 	type TraceSamplingPolicyUpdateRequest,
 	type OrgId,
@@ -19,14 +21,22 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"Trace sampling policy persistence failure",
 )
 
+/** Reads a stored ratio the way the gateway applies it, so an out-of-range row stays repairable. */
+const storedRatio = (ratio: number) =>
+	Number.isFinite(ratio)
+		? Math.min(TRACE_SAMPLE_RATIO_MAX, Math.max(TRACE_SAMPLE_RATIO_MIN, ratio))
+		: TRACE_SAMPLE_RATIO_MAX
+
+const storedSlowSpansMs = (ms: number | null) => (ms === null || ms <= 0 ? null : ms)
+
 const toDocument = (row: Option.Option<OrgIngestSamplingPolicyRow>) =>
 	Option.match(row, {
 		onNone: () => new TraceSamplingPolicyDocument({ ...DEFAULT_TRACE_SAMPLING_POLICY, updatedAt: null }),
 		onSome: (r) =>
 			new TraceSamplingPolicyDocument({
-				traceSampleRatio: r.traceSampleRatio,
+				traceSampleRatio: storedRatio(r.traceSampleRatio),
 				alwaysKeepErrorSpans: r.alwaysKeepErrorSpans,
-				alwaysKeepSlowSpansMs: r.alwaysKeepSlowSpansMs,
+				alwaysKeepSlowSpansMs: storedSlowSpansMs(r.alwaysKeepSlowSpansMs),
 				updatedAt: decodeIso(new Date(r.updatedAt).toISOString()),
 			}),
 	})

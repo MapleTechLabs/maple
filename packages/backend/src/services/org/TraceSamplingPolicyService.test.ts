@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
 import { OrgId, TraceSamplingPolicyUpdateRequest } from "@maple/domain/http"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { TraceSamplingPolicyService } from "./TraceSamplingPolicyService"
 
 const trackedDbs: TestDb[] = []
@@ -73,5 +73,32 @@ describe("TraceSamplingPolicyService", () => {
 			assert.strictEqual(other.traceSampleRatio, 1)
 			assert.isNull(other.updatedAt)
 		}).pipe(Effect.provide(makeLayer(createTestDb(trackedDbs)))),
+	)
+
+	it.effect(
+		"reads an out-of-range stored row the way the gateway applies it and lets it be repaired",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"INSERT INTO org_ingest_sampling_policies (org_id, trace_sample_ratio, always_keep_error_spans, always_keep_slow_spans_ms) VALUES ($1, 0, true, -5)",
+						[ORG],
+					),
+				)
+				const sampling = yield* TraceSamplingPolicyService
+				const policy = yield* sampling.get(ORG)
+
+				assert.strictEqual(policy.traceSampleRatio, 0.000001)
+				assert.isNull(policy.alwaysKeepSlowSpansMs)
+
+				const { after } = yield* sampling.update(
+					ORG,
+					new TraceSamplingPolicyUpdateRequest({ traceSampleRatio: 0.5 }),
+				)
+				assert.strictEqual(after.traceSampleRatio, 0.5)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
 	)
 })
