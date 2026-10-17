@@ -40,7 +40,7 @@ export const Sources = PG.table("sources", {
 		// Paused sources are accepted but their data is dropped. paused_until null = until resumed.
 		pausedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "paused_at" }),
 		pausedUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "paused_until" }),
-		// Written by the gateway at most once a minute per source and instance.
+		// Written by the gateway at most once a minute per source and instance (5 minutes for the default source).
 		lastUsedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_used_at" }),
 		rolledAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "rolled_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
