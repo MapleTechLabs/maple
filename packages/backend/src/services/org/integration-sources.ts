@@ -89,11 +89,20 @@ export const stampableSourceId = <E extends { readonly message: string }, R>(
 
 /** A connected integration row as the source it stands for. */
 export interface IntegrationLink extends PullSourceRef {
-	readonly health: (inventory: IntegrationInventory, now: number) => SourceHealthResult
+	/** `inventory` is null when it could not be read. */
+	readonly health: (inventory: IntegrationInventory | null, now: number) => SourceHealthResult
 }
 
-const providerHealth = (provider: IntegrationProvider) => (inventory: IntegrationInventory) =>
-	integrationSourceHealth(inventory.integrations.find((entry) => entry.provider === provider))
+const HEALTH_UNAVAILABLE: SourceHealthResult = {
+	status: "pending",
+	lastDataAt: null,
+	problem: "Integration health is unavailable right now",
+}
+
+const providerHealth = (provider: IntegrationProvider) => (inventory: IntegrationInventory | null) =>
+	inventory === null
+		? HEALTH_UNAVAILABLE
+		: integrationSourceHealth(inventory.integrations.find((entry) => entry.provider === provider))
 
 /** Every integration row that should have a source. Narrow projections: no secret is selected. */
 export const readIntegrationLinks = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
@@ -157,7 +166,7 @@ export const readIntegrationLinks = Effect.fnUntraced(function* (db: MapleDb, or
 			platform: "prometheus" as const,
 			integrationId: target.id,
 			name: integrationSourceName.prometheus(target),
-			health: (_: IntegrationInventory, now: number): SourceHealthResult =>
+			health: (_: IntegrationInventory | null, now: number): SourceHealthResult =>
 				target.enabled
 					? scrapeTargetSourceHealth(target, now)
 					: {
@@ -170,7 +179,7 @@ export const readIntegrationLinks = Effect.fnUntraced(function* (db: MapleDb, or
 			platform: "gcp" as const,
 			integrationId: connector.id,
 			name: integrationSourceName.gcp(connector),
-			health: (_: IntegrationInventory, now: number) => gcpSourceHealth(connector, now),
+			health: (_: IntegrationInventory | null, now: number) => gcpSourceHealth(connector, now),
 		})),
 		...rows.railway.map((connection) => ({
 			platform: "railway" as const,
