@@ -1,8 +1,7 @@
 import { useMemo } from "react"
 import { useOptionalPageRefreshContext } from "@/components/time-range-picker/page-refresh-context"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { getEffectiveTimezone } from "@/atoms/timezone-preference-atoms"
-import { resolveTimeRangeAt } from "@maple/web-data/lib/time-range"
+import { resolveTimeRangeNow } from "@/lib/time-utils"
 
 interface TimeRange {
 	startTime: string
@@ -41,10 +40,7 @@ export function resolveEffectiveTimeRange(
 	defaultRange: string = "12h",
 	options?: ResolveEffectiveTimeRangeOptions,
 ): TimeRange {
-	return resolveTimeRangeAt(Date.now(), startTime, endTime, defaultRange, {
-		timeZone: options?.timeZone ?? getEffectiveTimezone(),
-		snap: options?.snap,
-	})
+	return resolveTimeRangeNow(startTime, endTime, defaultRange, options)
 }
 
 /**

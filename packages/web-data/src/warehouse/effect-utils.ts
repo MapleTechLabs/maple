@@ -206,14 +206,17 @@ export const normalizeWarehouseError = (
 		: new WarehouseQueryError({ operation, message, cause })
 }
 
+/** Whether `ApiReachability` says the API is inside a network blip right now. */
+const isApiBlipping: Effect.Effect<boolean> = Effect.flatMap(ApiReachability, (reachability) =>
+	Effect.map(Clock.currentTimeMillis, reachability.isBlipping),
+)
+
 /** `normalizeWarehouseError` against the live `ApiReachability`, as a failure. */
 const failNormalized =
 	(operation: string) =>
 	(cause: unknown): Effect.Effect<never, WarehouseApiError | BackendError> =>
-		Effect.flatMap(
-			Effect.zip(Effect.service(ApiReachability), Clock.currentTimeMillis),
-			([reachability, nowMs]) =>
-				Effect.fail(normalizeWarehouseError(operation, cause, reachability.isBlipping(nowMs))),
+		Effect.flatMap(isApiBlipping, (blipping) =>
+			Effect.fail(normalizeWarehouseError(operation, cause, blipping)),
 		)
 
 export function decodeInput<S extends Schema.Top & { readonly DecodingServices: never }>(
@@ -279,12 +282,9 @@ export function querySetFailure(
 	message: string,
 ): Effect.Effect<never, WarehouseInvalidInputError | WarehouseUnreachableError> {
 	return Effect.flatMap(
-		Effect.zip(Effect.service(ApiReachability), Clock.currentTimeMillis),
-		([reachability, nowMs]): Effect.Effect<
-			never,
-			WarehouseInvalidInputError | WarehouseUnreachableError
-		> =>
-			reachability.isBlipping(nowMs)
+		isApiBlipping,
+		(blipping): Effect.Effect<never, WarehouseInvalidInputError | WarehouseUnreachableError> =>
+			blipping
 				? Effect.fail(new WarehouseUnreachableError({ operation, message }))
 				: invalidWarehouseInput(operation, message),
 	)

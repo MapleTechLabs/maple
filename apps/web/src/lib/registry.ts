@@ -84,12 +84,8 @@ export const warehouseServicesLayer: Layer.Layer<WarehouseServices> = Layer.merg
 		enqueue: (payload) =>
 			Effect.tryPromise({ try: () => executeBatcher.enqueue(payload), catch: (cause) => cause }),
 	}),
-	Layer.effect(MapleInternalHttp, Effect.service(MapleInternalAtomClient)).pipe(
-		Layer.provide(mapleInternalClientLayer),
-	),
-	Layer.effect(MapleApiV2Http, Effect.service(MapleApiV2AtomClient)).pipe(
-		Layer.provide(mapleApiV2ClientLayer),
-	),
+	Layer.effect(MapleInternalHttp, MapleInternalAtomClient).pipe(Layer.provide(mapleInternalClientLayer)),
+	Layer.effect(MapleApiV2Http, MapleApiV2AtomClient).pipe(Layer.provide(mapleApiV2ClientLayer)),
 	Layer.succeed(ApiReachability, { isBlipping: (nowMs) => isBlipping(originOf(apiBaseUrl), nowMs) }),
 )
 

@@ -1,5 +1,6 @@
 import { formatWarehouseDateTime, resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { getEffectiveTimezone } from "@/atoms/timezone-preference-atoms"
+import { resolveTimeRangeAt } from "@maple/web-data/lib/time-range"
 import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
 
 /**
@@ -13,6 +14,19 @@ import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezo
  * instant they actually chose.
  */
 export { snapRangeForCache } from "@maple/query-engine"
+
+/** `resolveTimeRangeAt` against the clock, in the selected zone unless one is given. */
+export function resolveTimeRangeNow(
+	startTime: string | undefined,
+	endTime: string | undefined,
+	defaultRange: string,
+	options?: { readonly timeZone?: string | undefined; readonly snap?: boolean | undefined },
+): { startTime: string; endTime: string } {
+	return resolveTimeRangeAt(Date.now(), startTime, endTime, defaultRange, {
+		timeZone: options?.timeZone ?? getEffectiveTimezone(),
+		snap: options?.snap,
+	})
+}
 
 /**
  * Format a Date as the ClickHouse/Tinybird `YYYY-MM-DD HH:mm:ss` shape.

@@ -23,7 +23,7 @@ export type QuerySetExecuteError = WarehouseApiError | BackendError
 export const makeWarehouseExecutor = (
 	operation: string,
 ): Effect.Effect<QuerySetExecutor<QuerySetExecuteError>, never, WarehouseExecutor> =>
-	Effect.map(Effect.service(WarehouseExecutor), (warehouse) => ({
+	Effect.map(Effect.context<WarehouseExecutor>(), (context) => ({
 		execute: (request) =>
 			Effect.gen(function* () {
 				const decoded = yield* decodeInput(
@@ -33,6 +33,6 @@ export const makeWarehouseExecutor = (
 				)
 				const response = yield* executeQueryEngine(operation, decoded)
 				return response.result
-			}).pipe(Effect.provideService(WarehouseExecutor, warehouse)),
+			}).pipe(Effect.provide(context)),
 		describeError: (error) => displayError(error).message,
 	}))
