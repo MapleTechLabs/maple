@@ -103,6 +103,11 @@ export class TraceSamplingPolicyService extends Context.Service<
 				changed.alwaysKeepErrorSpans = request.alwaysKeepErrorSpans
 			if (request.alwaysKeepSlowSpansMs !== undefined)
 				changed.alwaysKeepSlowSpansMs = request.alwaysKeepSlowSpansMs
+			// An empty PATCH writes nothing, so `updated_at` stays null while the org runs on defaults.
+			if (Object.keys(changed).length === 1) {
+				const current = yield* get(orgId)
+				return { before: current, after: current }
+			}
 			return yield* dbExecute((db) => {
 				const lockRow = db
 					.run(selectRow(orgId).forUpdate())
