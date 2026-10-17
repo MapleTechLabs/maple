@@ -1,6 +1,7 @@
 import type { Dataset, SyncedRow } from "../dataset.ts"
 import { acmeAdmin, DAY, FROZEN_NOW, fixtureUuid, HOUR, isoBefore, MINUTE } from "../identity.ts"
 import { acmeShopTelemetry } from "../telemetry/acme-shop.ts"
+import { acmeGithubEndpoints } from "./acme-github.ts"
 
 /**
  * Acme Shop: six services over the last 24 h with the payment-svc 3.5.0 pool-exhaustion incident,
@@ -164,7 +165,7 @@ export const defaultDataset: Dataset = {
 	now: FROZEN_NOW,
 	identity: acmeAdmin,
 	auth: "self_hosted",
-	endpoints: {},
+	endpoints: acmeGithubEndpoints,
 	synced: {
 		dashboards: [
 			dashboard(1, "Checkout health", 20 * DAY),

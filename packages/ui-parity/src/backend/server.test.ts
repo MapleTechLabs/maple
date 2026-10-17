@@ -116,7 +116,7 @@ describe("execute-batch on the fixture warehouse", () => {
 describe("unmocked requests", () => {
 	it("reports an endpoint without a fixture handler and answers 501", async () => {
 		const token = await login("default")
-		const response = await fetch(`${api}/internal/query-engine/service-overview`, {
+		const response = await fetch(`${api}/internal/query-engine/list-nodes`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
@@ -127,7 +127,7 @@ describe("unmocked requests", () => {
 		})
 		expect(response.status).toBe(501)
 		const { unmocked } = await takeCalls("unmocked-endpoint")
-		expect(unmocked).toEqual(["queryEngine.serviceOverview (POST /internal/query-engine/service-overview)"])
+		expect(unmocked).toEqual(["queryEngine.listNodes (POST /internal/query-engine/list-nodes)"])
 	})
 
 	it("reports a path no API declares", async () => {

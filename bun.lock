@@ -972,6 +972,7 @@
     "packages/ui-parity": {
       "name": "@maple/ui-parity",
       "dependencies": {
+        "@maple/backend": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "effect": "catalog:effect",

@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import { SelfHostedAuthDisabledError, SelfHostedInvalidPasswordError, UnauthorizedError } from "@maple/domain/http"
 import type { Dataset, EndpointHandler } from "../fixtures/dataset.ts"
+import { DAY } from "../fixtures/identity.ts"
 import { fixtureSession } from "./auth.ts"
 
 /**
@@ -82,6 +83,23 @@ const disconnectedPlanetScale = {
 	expires_at: null,
 }
 
+/** A Startup subscription, so plan-gated settings render their unlocked state. */
+const billingCustomer: EndpointHandler = ({ dataset }) =>
+	Effect.succeed({
+		id: dataset.identity?.orgId ?? "org_parity_signed_out",
+		subscriptions: [{ planId: "startup", status: "active", currentPeriodStart: Date.parse(dataset.now) - 10 * DAY, currentPeriodEnd: Date.parse(dataset.now) + 20 * DAY }],
+	})
+
+/** Fixed fake keys: the settings page shows them masked, and they must not change run to run. */
+const ingestKeys: EndpointHandler = ({ dataset }) =>
+	Effect.succeed({
+		object: "ingest_keys",
+		public_key: `maple_pk_parity_${dataset.name}`,
+		private_key: `maple_sk_parity_${dataset.name}`,
+		public_rotated_at: new Date(Date.parse(dataset.now) - 30 * DAY).toISOString(),
+		private_rotated_at: new Date(Date.parse(dataset.now) - 30 * DAY).toISOString(),
+	})
+
 const constant =
 	(value: unknown): EndpointHandler =>
 	() =>
@@ -98,13 +116,36 @@ export const defaultHandlers = new Map<string, EndpointHandler>(
 	"integrations.railwayStatus": constant(disconnectedRailway),
 	"planetscaleIntegration.status": constant(disconnectedPlanetScale),
 	"gcpIntegration.status": constant({ object: "gcp_integration", metrics_available: false, connectors: [] }),
-	"queryEngine.infraPresence": constant({ surfaces: [] }),
 	"anomalies.serviceCounts": constant(emptyList),
-	"errorIssues.list": constant(emptyList),
-	"errorIssues.serviceCounts": constant(emptyList),
 	"investigations.list": constant(emptyList),
 	"alertDeliveries.list": constant(emptyList),
 	"sessionReplays.forTrace": constant(emptyList),
 	"dashboards.listShares": constant([]),
+	"billing.getCustomer": billingCustomer,
+	"integrations.githubStatus": constant({
+		connected: false,
+		state: "not_connected",
+		accountLogin: null,
+		accountType: null,
+		repositorySelection: null,
+		ciTracesEnabled: true,
+		repositories: [],
+	}),
+	"integrations.vcsCommitDetails": constant({ commits: [] }),
+	"integrations.cloudflareHyperdrives": constant({ configs: [] }),
+	"attributeMappings.list": constant(emptyList),
+	"anomalies.listIncidents": constant(emptyList),
+	// A seeded issue has no history beyond its warehouse occurrences.
+	"errors.listIssueEvents": constant({ events: [] }),
+	"errors.listIssuePullRequests": constant({ pullRequests: [], suggestedRepository: null }),
+	"errors.listIssueVerifications": constant({ verifications: [] }),
+	"errors.listIssueEscalations": constant({ attempts: [] }),
+	"ingestKeys.retrieve": ingestKeys,
+	"instrumentationRecommendations.list": constant(emptyList),
+	"planetscaleIntegration.databases": constant({
+		object: "planetscale_integration.database_list",
+		databases: [],
+		last_inventory_at: null,
+	}),
 	} satisfies Readonly<Record<string, EndpointHandler>>),
 )

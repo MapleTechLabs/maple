@@ -12,6 +12,8 @@ import { defaultDataset } from "../fixtures/datasets/default.ts"
 import { acceptsBearer } from "./auth.ts"
 import { makeCallLog, normalizePayload } from "./call-log.ts"
 import { defaultHandlers } from "./defaults.ts"
+import { warehouseEndpoints } from "./endpoints/index.ts"
+import { telemetrySignalsEndpoint } from "./endpoints/signal-presence.ts"
 import { electricCorsHeaders, handleSyncRequest } from "./electric.ts"
 import { makeApiWebHandler } from "./http-api.ts"
 import { makeFixtureWarehouse, parityOrgId, seedWarehouse, type FixtureWarehouse } from "./warehouse.ts"
@@ -99,12 +101,18 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 	const datasetNamed = (name: string | null) => (name === null ? fallback : byName.get(name))
 	const chdb = await Effect.runPromise(
 		seedWarehouse(
-			datasets.map((dataset) => ({ orgId: dataset.identity?.orgId ?? `dataset:${dataset.name}`, rows: dataset.telemetry })),
+			datasets.map((dataset) => ({
+				orgId: dataset.identity?.orgId ?? `dataset:${dataset.name}`,
+				rows: dataset.telemetry,
+				now: dataset.now,
+			})),
 		),
 	)
 	const warehouse = makeFixtureWarehouse(chdb)
 	const calls = makeCallLog()
-	const builtIn = new Map(defaultHandlers).set("queryEngine.executeBatch", executeBatch(warehouse))
+	const builtIn = new Map([...defaultHandlers, ...warehouseEndpoints(warehouse)])
+		.set("queryEngine.executeBatch", executeBatch(warehouse))
+		.set("telemetrySignals.retrieve", telemetrySignalsEndpoint(warehouse))
 	const api = makeApiWebHandler({
 		// Unknown names were already refused in `fetch` below, so this never falls back silently.
 		datasetOf: (request) => datasetNamed(request.headers[DATASET_HEADER] ?? null) ?? fallback,
@@ -156,6 +164,8 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 		close: async () => {
 			await Promise.all([apiServer.stop(true), electricServer.stop(true)])
 			await api.dispose()
+			// The chDB connection is per process; closing it here keeps libchdb from crashing at exit.
+			await Effect.runPromise(chdb.close)
 		},
 	}
 }

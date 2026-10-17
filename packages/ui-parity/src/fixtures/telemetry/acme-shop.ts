@@ -327,14 +327,28 @@ interface Resource {
 	readonly attributes: Readonly<Record<string, string>>
 }
 
-/** Pods and commit shas are derived from the service and rollout, so they never vary between runs. */
-const resourceFor = (service: ServiceSpec, pod: number, deployed: boolean): Resource => {
-	const version = deployed && service.deploy !== undefined ? service.deploy.version : service.version
-	const sha = Array.from(`${service.name}@${version}`)
+/** A release's 40-hex commit sha, derived from service and version so it never varies between runs. */
+export const commitShaFor = (service: string, version: string): string =>
+	Array.from(`${service}@${version}`)
 		.reduce((acc, char) => (Math.imul(acc, 31) + char.charCodeAt(0)) >>> 0, 7)
 		.toString(16)
 		.padStart(8, "0")
 		.repeat(5)
+
+/** Every release the dataset emits, with its sha (what `vcs.ref.head.revision` carries). */
+export const ACME_RELEASES = ACME_SERVICES.flatMap((service) =>
+	[service.version, ...(service.deploy === undefined ? [] : [service.deploy.version])].map((version) => ({
+		service: service.name,
+		version,
+		sha: commitShaFor(service.name, version),
+		minutesBeforeNow: version === service.deploy?.version ? service.deploy.minutesBeforeNow : undefined,
+	})),
+)
+
+/** Pods and commit shas are derived from the service and rollout, so they never vary between runs. */
+const resourceFor = (service: ServiceSpec, pod: number, deployed: boolean): Resource => {
+	const version = deployed && service.deploy !== undefined ? service.deploy.version : service.version
+	const sha = commitShaFor(service.name, version)
 	return {
 		service,
 		attributes: {
@@ -668,5 +682,47 @@ const metricRows = (options: AcmeShopOptions, rng: Prng, http: ReadonlyMap<strin
 			AggregationTemporality: 1,
 		}
 	})
-	return { metrics_gauge: gauge, metrics_sum: sum, metrics_histogram: histogram }
+	return { metrics_gauge: [...gauge, ...hostGauges(options, times)], metrics_sum: sum, metrics_histogram: histogram }
+}
+
+/**
+ * The collector's hostmetrics receiver on each node: busy share as `1 - idle`, used memory and
+ * root filesystem, 15m load. Own PRNG, so adding hosts never shifts the service rows above.
+ */
+const hostGauges = (options: AcmeShopOptions, times: ReadonlyArray<number>) => {
+	const rng = makePrng(options.seed + 1)
+	return times.flatMap((micros) =>
+		NODES.flatMap((node, index) => {
+			const busy = 0.2 + index * 0.12 + rng.next() * 0.1
+			const point = (name: string, unit: string, value: number, attributes: Record<string, string>) => ({
+				OrgId: options.orgId,
+				ResourceAttributes: { "host.name": node, "os.type": "linux", "host.arch": "amd64", "cloud.provider": "aws", "cloud.region": "us-east-1" },
+				ResourceSchemaUrl: "",
+				ScopeName: "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/hostmetricsreceiver",
+				ScopeVersion: "0.120.0",
+				ScopeAttributes: {},
+				ScopeSchemaUrl: "",
+				ServiceName: "",
+				MetricName: name,
+				MetricDescription: "",
+				MetricUnit: unit,
+				StartTimeUnix: formatMicros(micros - FIVE_MINUTES_MICROS),
+				TimeUnix: formatMicros(micros),
+				ExemplarsTraceId: [],
+				ExemplarsSpanId: [],
+				ExemplarsTimestamp: [],
+				ExemplarsValue: [],
+				ExemplarsFilteredAttributes: [],
+				Attributes: attributes,
+				Value: value,
+				Flags: 0,
+			})
+			return [
+				point("system.cpu.utilization", "1", 1 - busy, { state: "idle", cpu: "cpu0" }),
+				point("system.memory.utilization", "1", 0.45 + index * 0.08 + rng.next() * 0.05, { state: "used" }),
+				point("system.filesystem.utilization", "1", 0.31 + index * 0.11, { state: "used", type: "ext4", device: "/dev/nvme0n1p1", mountpoint: "/" }),
+				point("system.cpu.load_average.15m", "{thread}", 0.6 + index * 0.5 + rng.next() * 0.2, {}),
+			]
+		}),
+	)
 }

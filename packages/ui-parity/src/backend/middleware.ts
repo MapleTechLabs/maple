@@ -28,7 +28,7 @@ export type DatasetOf = (request: HttpServerRequest.HttpServerRequest) => Datase
 /** Reports a response that failed its own schema: the fixture is wrong, so the variant must fail. */
 export type ReportInvalidFixture = (request: HttpServerRequest.HttpServerRequest, description: string) => void
 
-const tenantFor = (dataset: Dataset): CurrentTenant.TenantSchema | undefined => {
+export const tenantFor = (dataset: Dataset): CurrentTenant.TenantSchema | undefined => {
 	const identity = dataset.identity
 	if (identity === null) return undefined
 	const roles =

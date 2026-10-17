@@ -3,7 +3,7 @@
 // chDB allows one connection per process, so the backend opens it once and every dataset shares
 // it, separated by OrgId (which every compiled query filters on).
 import { CString, dlopen, FFIType, type Pointer, ptr, read, toArrayBuffer } from "bun:ffi"
-import { Effect, Schema } from "effect"
+import { Effect, Ref, Schema } from "effect"
 import { existsSync, mkdtempSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
@@ -43,6 +43,8 @@ export interface Chdb {
 	/** Run read SQL and parse its JSONEachRow output. */
 	readonly rows: (sql: string) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, ParityChdbError>
 	readonly dataDir: string
+	/** Closes the connection once; later calls are no-ops. libchdb crashes at exit if left open. */
+	readonly close: Effect.Effect<void>
 }
 
 const runWith =
@@ -97,7 +99,13 @@ const open = Effect.gen(function* () {
 	if (conn === null || conn === 0)
 		return yield* new ParityChdbError({ message: `chdb_connect failed for ${dataDir}` })
 	// SAFETY: `read.ptr` returns the connection address the C API hands back; non-null was checked above.
-	const run = runWith(symbols, conn as Pointer)
+	const isOpen = yield* Ref.make(true)
+	const runOpen = runWith(symbols, conn as Pointer)
+	// A query on a closed connection is a use-after-free in libchdb, so it fails instead.
+	const run = (sql: string, format?: string) =>
+		Effect.flatMap(Ref.get(isOpen), (stillOpen) =>
+			stillOpen ? runOpen(sql, format) : Effect.fail(new ParityChdbError({ message: "chDB is closed", sql })),
+		)
 	yield* Effect.forEach(SESSION_SETTINGS, (sql) => run(sql), { discard: true })
 	const rows = (sql: string) =>
 		run(sql, "JSONEachRow").pipe(
@@ -111,7 +119,10 @@ const open = Effect.gen(function* () {
 				),
 			),
 		)
-	const chdb: Chdb = { run, rows, dataDir }
+	const close = Effect.flatMap(Ref.getAndSet(isOpen, false), (wasOpen) =>
+		wasOpen ? Effect.sync(() => symbols.chdb_close_conn(connPtr)) : Effect.void,
+	)
+	const chdb: Chdb = { run, rows, dataDir, close }
 	return chdb
 })
 
