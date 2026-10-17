@@ -24,6 +24,11 @@ describe("sourceUsageQuery", () => {
 			expect(branch).toMatch(/ResourceAttributes\['maple_source_id'\] = 'src_aXunrkWtzvXSkw9Z2smcft'/)
 			expect(branch).toContain("GROUP BY hour")
 		}
+		// Half-open windows: a record at endTime belongs to the next window, not both.
+		expect(branches[0]).toMatch(/Timestamp < /)
+		expect(branches[0]).not.toMatch(/Timestamp <= /)
+		expect(branches[1]).toMatch(/TimestampTime < /)
+		expect(branches[1]).not.toMatch(/TimestampTime <= /)
 		// Logs must bound the partition column or the read spans every partition.
 		expect(branches[1]).toMatch(/logs\.TimestampTime >=/)
 	})
