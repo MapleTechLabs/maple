@@ -108,7 +108,10 @@ function DigestPreferences({
 	const enabled = saved?.enabled ?? true
 	const webAnalyticsEnabled = saved?.webAnalyticsEnabled ?? true
 	const baseline = savedDraft(saved)
-	const { draft, isDirty, updateDraft, discard, commit } = useSettingsDraft(baseline, sameDigestDraft)
+	const { draft, isDirty, updateDraft, discard, commit, submit, abort } = useSettingsDraft(
+		baseline,
+		sameDigestDraft,
+	)
 	// The first write records the prefilled zone, so a toggle alone does not leave the row on UTC.
 	const firstWrite = saved === null ? { timezone: baseline.timezone } : {}
 
@@ -148,7 +151,7 @@ function DigestPreferences({
 		),
 	)
 	const [save, isSaving] = useAsyncAction(async () => {
-		const submitted = draft
+		const submitted = submit()
 		const ok = await upsert(
 			{
 				dayOfWeek: draft.dayOfWeek,
@@ -161,6 +164,7 @@ function DigestPreferences({
 			{ success: "Email preferences saved", error: "Failed to save email preferences" },
 		)
 		if (ok) commit({ submitted })
+		else abort()
 	})
 
 	const busy = isTogglingOps || isTogglingWeb || isSaving
