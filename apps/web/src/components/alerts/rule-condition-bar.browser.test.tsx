@@ -22,14 +22,11 @@ describe("RuleConditionFields tiers", () => {
 		render(<Harness initial={defaultRuleForm()} />)
 
 		fireEvent.click(screen.getByRole("button", { name: "Add critical tier" }))
-		expect(screen.getByLabelText("Threshold", { selector: "#rule-critical-threshold" })).toHaveProperty(
-			"value",
-			"10",
-		)
+		expect(screen.getByLabelText("Critical threshold")).toHaveProperty("value", "10")
 		expect(screen.getByRole("status").textContent).toContain("critical above 10%")
 
 		fireEvent.click(screen.getByRole("button", { name: "Remove" }))
-		expect(screen.queryByLabelText("Threshold", { selector: "#rule-critical-threshold" })).toBeNull()
+		expect(screen.queryByLabelText("Critical threshold")).toBeNull()
 		expect(screen.getByRole("button", { name: "Add critical tier" })).toBeTruthy()
 	})
 

@@ -230,6 +230,7 @@ export function RuleConditionFields({ form, onChange, saved }: RuleConditionFiel
 						<NumberField
 							id="rule-critical-threshold"
 							label="Threshold"
+							ariaLabel="Critical threshold"
 							value={escalation.threshold}
 							unit={unit}
 							previous={was((f) => f.escalation?.threshold ?? "")}
@@ -238,6 +239,7 @@ export function RuleConditionFields({ form, onChange, saved }: RuleConditionFiel
 						<NumberField
 							id="rule-critical-recovery"
 							label={recoveryLabel(form.comparator)}
+							ariaLabel={`Critical ${recoveryLabel(form.comparator).toLowerCase()}`}
 							placeholder="Threshold"
 							description="A critical that recovers drops back to warning."
 							value={escalation.recoveryValue}
@@ -397,6 +399,7 @@ function NumberField({
 	label,
 	description,
 	placeholder,
+	ariaLabel,
 	value,
 	unit,
 	previous,
@@ -406,6 +409,8 @@ function NumberField({
 	label: string
 	description?: string
 	placeholder?: string
+	/** Names the input apart from its visible label, where two rows share one. */
+	ariaLabel?: string
 	value: string
 	unit: string | null
 	/** The saved value when it differs. */
@@ -422,6 +427,7 @@ function NumberField({
 					inputMode="decimal"
 					value={value}
 					placeholder={placeholder}
+					aria-label={ariaLabel}
 					onChange={(event) => onChange(event.target.value)}
 					controlClassName={NUMERIC_CONTROL_CLASS}
 				/>
