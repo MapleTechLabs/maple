@@ -1,7 +1,7 @@
 import { AlertRuleDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
+import type { AlertRuleStateRow } from "../collections/alerts"
 import { deriveRuleStatus, needsAttention, staleThresholdMs, worstState } from "./rule-status"
 
 const decodeRuleDoc = Schema.decodeUnknownSync(AlertRuleDocument)

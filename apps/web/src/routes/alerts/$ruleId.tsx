@@ -23,9 +23,9 @@ import {
 	normalizeTimestampInput,
 	formatTimeInTimezone,
 	formatTimestampInTimezone,
-} from "@/lib/timezone-format"
+} from "@maple/web-data/lib/timezone-format"
 import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
-import { SIGNAL_SOURCE_LABEL, type SignalSource } from "@/lib/alerts/chart-series"
+import { SIGNAL_SOURCE_LABEL, type SignalSource } from "@maple/web-data/alerts/chart-series"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"
@@ -43,7 +43,7 @@ import {
 	computeIncidentStats,
 	v2CheckToDocument,
 	v2DeliveryToDocument,
-} from "@/lib/alerts/form-utils"
+} from "@maple/web-data/alerts/form-utils"
 import { toastExit } from "@/lib/error-toast"
 import { RuleDiagnosisPanel } from "@/components/alerts/rule-detail/rule-diagnosis-panel"
 import { useAlertRuleStates } from "@/hooks/use-alert-rule-states"

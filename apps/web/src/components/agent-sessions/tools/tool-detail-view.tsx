@@ -7,7 +7,7 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { PageLayout } from "@maple/ui/components/ui/page-layout"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import {
 	formatToolCount,
 	scopeSummary,

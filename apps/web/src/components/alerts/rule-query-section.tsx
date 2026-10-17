@@ -36,8 +36,8 @@ import { QueryPanel } from "@/components/dashboard-builder/config/query-panel"
 import { RawSqlEditorPanel } from "@/components/dashboard-builder/config/raw-sql-editor-panel"
 import { GroupByMultiSelect } from "@/components/query-builder/group-by-multi-select"
 import type { AutocompleteValuesContextType } from "@/hooks/use-autocomplete-values"
-import { RAW_QUERY_REDUCER_LABELS, type RuleFormState } from "@/lib/alerts/form-utils"
-import { signalTypeToKind, switchSignalKind, type SignalKind } from "@/lib/alerts/rule-modes"
+import { RAW_QUERY_REDUCER_LABELS, type RuleFormState } from "@maple/web-data/alerts/form-utils"
+import { signalTypeToKind, switchSignalKind, type SignalKind } from "@maple/web-data/alerts/rule-modes"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	resetAggregationForMetricType,

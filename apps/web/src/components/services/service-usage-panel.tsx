@@ -5,7 +5,7 @@ import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { ServiceUsageTotals } from "@maple/web-data/warehouse/service-usage"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { SectionCard } from "./section-card"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"

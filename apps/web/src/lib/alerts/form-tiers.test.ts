@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { AlertDestinationId, AlertRuleDocument } from "@maple/domain/http"
 import { describeRuleCondition } from "@/components/alerts/rule-condition-bar"
-import { buildRuleCreateParamsV2, defaultRuleForm, deriveTierIssues, ruleToFormState } from "./form-utils"
-import { diffRuleForms } from "./preview-insights"
+import { buildRuleCreateParamsV2, defaultRuleForm, deriveTierIssues, ruleToFormState } from "@maple/web-data/alerts/form-utils"
+import { diffRuleForms } from "@maple/web-data/alerts/preview-insights"
 
 const slack = AlertDestinationId.make("4f6c6b1e-7a11-4c2e-9f40-1c3b2d9a0001")
 const pager = AlertDestinationId.make("4f6c6b1e-7a11-4c2e-9f40-1c3b2d9a0002")

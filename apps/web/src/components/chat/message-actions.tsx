@@ -2,7 +2,7 @@ import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import type { UIMessage } from "@/components/ai-elements/types"
 import { LinkIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 
 /** The visible text of a message, with tool calls and markers left out. */
 export function messageText(message: UIMessage): string {

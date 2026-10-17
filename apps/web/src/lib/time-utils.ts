@@ -1,7 +1,7 @@
 import { formatWarehouseDateTime, resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { getEffectiveTimezone } from "@/atoms/timezone-preference-atoms"
 import { resolveTimeRangeAt } from "@maple/web-data/lib/time-range"
-import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimestampInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 
 /**
  * Floor a resolved range to the cache-key snap grid, scaled to the window

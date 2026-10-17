@@ -6,7 +6,7 @@ import {
 	FireIcon,
 	PulseIcon,
 } from "@/components/icons"
-import type { RuleFormState } from "@/lib/alerts/form-utils"
+import type { RuleFormState } from "@maple/web-data/alerts/form-utils"
 
 /**
  * Quick-start alert presets shown in the first-touch overlay on /alerts/create.

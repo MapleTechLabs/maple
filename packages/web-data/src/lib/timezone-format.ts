@@ -1,6 +1,6 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import { getBrowserTimeZone, isValidIanaTimeZone } from "@/atoms/timezone-preference-atoms"
+import { getBrowserTimeZone, isValidIanaTimeZone } from "./timezone"
 
 type TimezoneFormatInput = string | number | Date
 

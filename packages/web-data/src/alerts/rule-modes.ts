@@ -2,7 +2,7 @@ import type { AlertSignalType } from "@maple/domain/http"
 import { normalizeKey, parseWhereClause, quoteWhereValue, splitCsv } from "@maple/domain/where-clause"
 import { createQueryDraft, type QueryBuilderQueryDraft } from "@maple/query-engine/query-builder"
 
-import { domainThresholdToForm, formThresholdToDomain, type RuleFormState } from "@/lib/alerts/form-utils"
+import { domainThresholdToForm, formThresholdToDomain, type RuleFormState } from "./form-utils"
 
 /** The three ways to write a rule's query. Built-in covers the five canned trace signals. */
 export type SignalKind = "builtin" | "builder_query" | "raw_query"

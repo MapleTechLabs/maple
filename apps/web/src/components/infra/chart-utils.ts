@@ -15,7 +15,7 @@ import {
 	formatRate,
 	formatThroughput,
 } from "@maple/ui/lib/format"
-import { formatTimeInTimezone } from "@/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 
 /**
  * Bucket width for the timeseries charts: aim for ~100 points, floored at the

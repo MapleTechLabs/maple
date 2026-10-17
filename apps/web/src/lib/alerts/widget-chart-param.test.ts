@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { makeQueryDataSource, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 
-import { defaultRuleForm } from "@/lib/alerts/form-utils"
+import { defaultRuleForm } from "@maple/web-data/alerts/form-utils"
 import { toBase64Url } from "@/lib/base64url"
 import {
 	decodeAlertChartFromSearchParam,

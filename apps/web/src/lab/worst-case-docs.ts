@@ -8,7 +8,7 @@ import { Schema } from "effect"
 
 import { resolveActorIdentity, type ActorIdentity } from "@/components/errors/actor-chip"
 import type { ActorDirectory, DirectoryPerson } from "@/hooks/use-actor-directory"
-import type { DerivedRuleStatus } from "@/lib/alerts/rule-status"
+import type { DerivedRuleStatus } from "@maple/web-data/alerts/rule-status"
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { ErrorSignal } from "@/lib/models/error-signal"
 import { VERDICT_LAB_CASES } from "@/lab/verdict-fixture"

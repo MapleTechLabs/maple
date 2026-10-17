@@ -30,7 +30,7 @@ import {
 	v2DeliveryToDocument,
 	suggestedDestinationName,
 	type DestinationFormState,
-} from "@/lib/alerts/form-utils"
+} from "@maple/web-data/alerts/form-utils"
 import { toastExit } from "@/lib/error-toast"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"

@@ -26,7 +26,7 @@ import {
 	thresholdUnitLabel,
 	type EscalationTierForm,
 	type RuleFormState,
-} from "@/lib/alerts/form-utils"
+} from "@maple/web-data/alerts/form-utils"
 
 const NUMERIC_CONTROL_CLASS =
 	"font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"

@@ -44,8 +44,8 @@ import {
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
 import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { getBrowserTimeZone } from "@/atoms/timezone-preference-atoms"
-import { formatDateInTimezone, formatTimeInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
+import { getBrowserTimeZone } from "../lib/timezone"
+import { formatDateInTimezone, formatTimeInTimezone, formatTimestampInTimezone } from "../lib/timezone-format"
 import type { Tone } from "@maple/ui/lib/tone"
 
 const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)

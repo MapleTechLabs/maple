@@ -36,7 +36,7 @@ import { RelativeTime } from "@/components/common/relative-time"
 import { ChevronRightIcon, HistoryIcon } from "@/components/icons"
 import { SettingsSection } from "@/components/settings/settings-section"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { ErrorState } from "@/components/common/error-state"
 import { initialsFrom } from "@maple/ui/lib/initials"
 

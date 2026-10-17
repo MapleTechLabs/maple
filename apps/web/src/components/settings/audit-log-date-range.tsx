@@ -7,7 +7,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { ClockIcon } from "@/components/icons"
 import { CustomRangePicker } from "@/components/time-range-picker/custom-range-picker"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimestampInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 
 import { AUDIT_RANGE_PRESETS, type AuditDateRange } from "./audit-log-filters"
 

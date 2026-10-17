@@ -18,8 +18,8 @@ import {
 import { V2Investigation } from "@maple/domain/http/v2"
 
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
-import { type AlertsOverviewReady, deriveOverview } from "@/lib/models/alerts-overview-model"
-import { VERDICT_LAB_CASES } from "@/lab/verdict-fixture"
+import { type AlertsOverviewReady, deriveOverview } from "@maple/web-data/alerts/overview"
+import { VERDICT_LAB_CASES } from "./verdict-fixture"
 
 const decodeRule = Schema.decodeUnknownSync(AlertRuleDocument)
 const decodeIncident = Schema.decodeUnknownSync(AlertIncidentDocument)

@@ -47,7 +47,7 @@ import {
 	type SpendModel,
 } from "@/lib/billing/spend"
 import type { DailySpendResponse } from "@maple/domain/http"
-import { formatDateInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 
 /**
  * Cumulative spend for the cycle, stacked by what's driving it.

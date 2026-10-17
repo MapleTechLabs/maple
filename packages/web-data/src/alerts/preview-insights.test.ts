@@ -2,7 +2,7 @@ import { AlertIncidentDocument, AlertRulePreviewResponse } from "@maple/domain/h
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { defaultRuleForm } from "@/lib/alerts/form-utils"
+import { defaultRuleForm } from "./form-utils"
 import {
 	countSkippedWindows,
 	diffRuleForms,

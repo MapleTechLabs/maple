@@ -5,7 +5,7 @@ import type {
 	AlertRulePreviewPoint,
 } from "@maple/domain/http"
 import { Array as Arr, Option } from "effect"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "../lib/timezone-format"
 
 /**
  * Everything the alert rule chart *decides* before it draws anything: which

@@ -24,7 +24,7 @@ import { getCustomChartTimeSeriesResultAtom } from "@/lib/services/atoms/warehou
 import { computeBucketSeconds } from "@maple/web-data/warehouse/timeseries-utils"
 import { formatBucketLabel, formatNumber, inferBucketSeconds } from "@maple/ui/lib/format"
 import { formatForTinybird } from "@/lib/time-utils"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import type { LogsSearchParams } from "@/routes/logs"
 import { logAttributeQueryFilters } from "@/lib/logs/log-attribute-filters"
 import { SEVERITY_COLORS, SEVERITY_ORDER } from "@maple/ui/lib/severity"

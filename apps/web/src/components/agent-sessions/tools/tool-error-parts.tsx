@@ -6,7 +6,7 @@ import { formatErrorRate } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
-import { formatDateInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { ErrorPathPart, ErrorTextToken, FailureStatus } from "@/lib/agent-sessions/tool-error-display"
 
 // The pieces the Errors table and the error group modal both draw a failure

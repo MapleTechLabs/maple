@@ -9,7 +9,7 @@ import {
 	chatDestinationForm,
 	MAX_EMAIL_MEMBER_RECIPIENTS,
 	suggestedDestinationName,
-} from "@/lib/alerts/form-utils"
+} from "@maple/web-data/alerts/form-utils"
 import {
 	chatDestinationProvider,
 	destinationProvider,

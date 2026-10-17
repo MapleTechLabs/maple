@@ -33,7 +33,7 @@ import {
 	serviceOperationsQueryInput,
 	windowSeconds,
 } from "./service-operations"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 
 interface ServiceOperationsTabProps {
 	serviceName: string

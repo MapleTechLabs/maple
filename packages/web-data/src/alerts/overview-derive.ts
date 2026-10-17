@@ -6,8 +6,8 @@ import {
 	formatSignalValue,
 	isRangeComparator,
 	signalLabels,
-} from "@/lib/alerts/form-utils"
-import { type DerivedRuleStatus, needsAttention } from "@/lib/alerts/rule-status"
+} from "./form-utils"
+import { type DerivedRuleStatus, needsAttention } from "./rule-status"
 
 /** The four mutually exclusive buckets the Rules tab filters by. */
 export type RuleBucket = "firing" | "blind" | "healthy" | "disabled"

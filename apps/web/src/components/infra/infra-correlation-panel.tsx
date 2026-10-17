@@ -7,7 +7,7 @@ import { Link } from "@tanstack/react-router"
 import { DocsLink } from "@/components/common/docs-link"
 import { ExternalLinkIcon } from "@/components/icons"
 import { formatForTinybird, relativeToAbsolute, snapRangeForCache } from "@/lib/time-utils"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 
 import { NodeDetailChart, PodDetailChart } from "./k8s-detail-chart"
 import { ContainerDetailChart } from "./container-detail-chart"

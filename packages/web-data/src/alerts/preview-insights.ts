@@ -18,7 +18,7 @@ import {
 	RAW_QUERY_REDUCER_LABELS,
 	signalLabels,
 	type RuleFormState,
-} from "@/lib/alerts/form-utils"
+} from "./form-utils"
 
 /** How many groups the editor's preview chart draws before collapsing the rest into "N more". */
 export const PREVIEW_GROUP_LIMIT = 3

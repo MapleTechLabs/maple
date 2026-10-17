@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import { buildRuleCreateParamsV2, defaultRuleForm, type RuleFormState } from "@/lib/alerts/form-utils"
-import { builtinToQueryDraft, queryDraftToBuiltin, switchSignalKind } from "@/lib/alerts/rule-modes"
+import { buildRuleCreateParamsV2, defaultRuleForm, type RuleFormState } from "./form-utils"
+import { builtinToQueryDraft, queryDraftToBuiltin, switchSignalKind } from "./rule-modes"
 
 const builtin = (overrides: Partial<RuleFormState> = {}): RuleFormState => ({
 	...defaultRuleForm(),

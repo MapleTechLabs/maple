@@ -11,7 +11,7 @@ import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeShort } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
-import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimestampInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { zonedDateParts } from "@maple/query-engine/datetime"
 import type { ErrorSignal, InvestigationSummary } from "@/lib/models/error-signal"
