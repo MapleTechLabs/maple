@@ -2,7 +2,6 @@ import { V2Source } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { sourceSnippets } from "./snippets"
-import { sourceStatus } from "./source-status"
 import { orderSources } from "./sources-table"
 
 const decodeSource = Schema.decodeUnknownSync(V2Source)
@@ -26,21 +25,9 @@ const source = (overrides: Record<string, unknown>) =>
 		rolled_at: null,
 		created_at: "2026-07-01T12:00:00.000Z",
 		updated_at: "2026-07-01T12:00:00.000Z",
+		health: { status: "pending", last_data_at: null, problem: null },
 		...overrides,
 	})
-
-describe("sourceStatus", () => {
-	it("waits until the first request, then receives; paused and expired win over last data", () => {
-		expect(sourceStatus(source({})).status).toBe("pending")
-		expect(sourceStatus(source({ last_used_at: "2026-07-02T12:00:00.000Z" }))).toEqual({
-			status: "healthy",
-			lastDataAt: "2026-07-02T12:00:00.000Z",
-		})
-		const lastUsed = { last_used_at: "2026-07-02T12:00:00.000Z" }
-		expect(sourceStatus(source({ ...lastUsed, status: "paused" })).status).toBe("paused")
-		expect(sourceStatus(source({ ...lastUsed, status: "expired" })).status).toBe("expired")
-	})
-})
 
 describe("orderSources", () => {
 	it("pins the default source first and keeps the rest in API order", () => {

@@ -6,7 +6,8 @@ import { Link } from "@tanstack/react-router"
 import { DetailHeader } from "@/components/common/detail-header"
 import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { PlatformTile, platformMeta } from "./platforms"
-import { type RevealedToken, toPublicSourceId } from "./shared"
+import { hasToken, type RevealedToken, toPublicSourceId } from "./shared"
+import { isPushSourcePlatform } from "@maple/domain/primitives"
 import { SourceActions } from "./source-actions"
 import { SourceSetup } from "./source-setup"
 import { SourceStatusBadge, sourceStatus } from "./source-status"
@@ -41,9 +42,9 @@ export function SourceHeader({
 				</>
 			}
 			actions={
-				source.is_default ? undefined : (
+				hasToken(source) ? (
 					<SourceActions source={source} onRevealed={onRevealed} onDeleted={onDeleted} />
-				)
+				) : undefined
 			}
 		/>
 	)
@@ -98,6 +99,22 @@ export function SourceSetupTab({ source, revealed }: { source: V2Source; reveale
 					Ingestion
 				</Link>{" "}
 				page.
+			</p>
+		)
+	}
+	if (!isPushSourcePlatform(source.platform)) {
+		return (
+			<p className="text-muted-foreground text-sm">
+				Maple collects this source through the {platformMeta(source.platform).label} integration.
+				Connection settings are on the{" "}
+				<Link
+					to="/integrations"
+					search={{ integration: source.platform }}
+					className="text-foreground underline underline-offset-2"
+				>
+					integration page
+				</Link>
+				.
 			</p>
 		)
 	}

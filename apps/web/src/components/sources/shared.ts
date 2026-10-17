@@ -62,3 +62,6 @@ export function useSource(sourceId: SourceId): SourceLookup {
 	const source = listResult.value.data.find((candidate) => candidate.id === sourceId)
 	return source === undefined ? { _tag: "missing" } : { _tag: "found", source }
 }
+
+/** Token sources take rules and actions; the default source and integrations have no token. */
+export const hasToken = (source: V2Source) => source.key_prefix !== null

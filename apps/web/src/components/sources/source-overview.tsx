@@ -7,8 +7,8 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type * as React from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { MODE_LABELS, pausedLabel, rateLimitLabel, signalsSummary } from "./shared"
-import { SourceStatusBadge, sourceStatus } from "./source-status"
+import { hasToken, MODE_LABELS, pausedLabel, rateLimitLabel, signalsSummary } from "./shared"
+import { SourceStatusBadge, sourceStatus, sourceStatusLabel } from "./source-status"
 import { UsageChart } from "./usage-chart"
 
 function StatCard({ label, value, hint }: { label: string; value: React.ReactNode; hint: string }) {
@@ -59,22 +59,34 @@ export function SourceOverview({ source }: { source: V2Source }) {
 					</AlertDescription>
 				</Alert>
 			)}
+			{source.health.problem !== null && source.status !== "paused" && source.status !== "expired" && (
+				<Alert variant={source.health.status === "stale" ? "warn" : "crit"}>
+					<AlertTitle>{sourceStatusLabel(source.health.status)}</AlertTitle>
+					<AlertDescription className="text-xs">{source.health.problem}</AlertDescription>
+				</Alert>
+			)}
 			<div className="grid gap-3 sm:grid-cols-3">
 				<StatCard
 					label="Status"
 					value={<SourceStatusBadge value={sourceStatus(source)} now={now} showTime={false} />}
 					hint={
-						source.last_used_at === null
-							? "Updates once the first request lands"
+						source.health.last_data_at === null
+							? "Updates once the first data lands"
 							: "Updated at most once a minute"
 					}
 				/>
 				<StatCard
 					label="Last data"
 					value={
-						source.last_used_at === null ? "Never" : formatRelativeTime(source.last_used_at, now)
+						source.health.last_data_at === null
+							? "Never"
+							: formatRelativeTime(source.health.last_data_at, now)
 					}
-					hint="Last request the gateway accepted"
+					hint={
+						hasToken(source) || source.is_default
+							? "Last request the gateway accepted"
+							: "Last successful collection"
+					}
 				/>
 				<StatCard
 					label="Last 24h"
@@ -108,7 +120,7 @@ export function SourceOverview({ source }: { source: V2Source }) {
 					<UsageChart usage={usage} />
 				)}
 			</Panel>
-			{!source.is_default && <RulesSummary source={source} now={now} />}
+			{hasToken(source) && <RulesSummary source={source} now={now} />}
 		</div>
 	)
 }

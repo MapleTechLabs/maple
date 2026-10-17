@@ -3,28 +3,18 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
-/**
- * What the badge shows. Mirrors the planned `health.status` values so the badge can switch
- * to the API's health object without changing its callers.
- */
-export type SourceStatus = "pending" | "healthy" | "stale" | "failing" | "paused" | "disconnected" | "expired"
+export type SourceStatus = V2Source["health"]["status"]
 
 export interface SourceStatusValue {
 	readonly status: SourceStatus
 	readonly lastDataAt: string | null
+	readonly problem?: string | null
 }
 
-/** Derived until the API sends `health`: lifecycle from `status`, then whether data ever arrived. */
 export const sourceStatus = (source: V2Source): SourceStatusValue => ({
-	status:
-		source.status === "paused"
-			? "paused"
-			: source.status === "expired"
-				? "expired"
-				: source.last_used_at === null
-					? "pending"
-					: "healthy",
-	lastDataAt: source.last_used_at,
+	status: source.health.status,
+	lastDataAt: source.health.last_data_at,
+	problem: source.health.problem,
 })
 
 const TONE = {
@@ -34,7 +24,6 @@ const TONE = {
 	failing: "crit",
 	paused: "warn",
 	disconnected: "crit",
-	expired: "neutral",
 } as const satisfies Record<SourceStatus, "neutral" | "ok" | "warn" | "crit">
 
 const LABEL = {
@@ -44,7 +33,6 @@ const LABEL = {
 	failing: "Failing",
 	paused: "Paused",
 	disconnected: "Disconnected",
-	expired: "Expired",
 } satisfies Record<SourceStatus, string>
 
 export const sourceStatusLabel = (status: SourceStatus) => LABEL[status]

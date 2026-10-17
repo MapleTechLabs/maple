@@ -41,6 +41,7 @@ const created = Schema.decodeUnknownSync(V2SourceWithSecret)({
 	rolled_at: "2026-07-01T12:00:00.000Z",
 	created_at: "2026-07-01T12:00:00.000Z",
 	updated_at: "2026-07-01T12:00:00.000Z",
+	health: { status: "pending", last_data_at: null, problem: null },
 	secret: SECRET,
 })
 

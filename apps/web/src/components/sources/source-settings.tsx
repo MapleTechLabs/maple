@@ -13,6 +13,7 @@ import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { useRulesDraft } from "./rules-draft"
 import { RulesFields } from "./rules-fields"
 import { rulesOutcome } from "./rules-payload"
+import { hasToken } from "./shared"
 
 /** Name, description and rules. The default source only takes a name and description. */
 export function SourceSettings({ source }: { source: V2Source }) {
@@ -22,7 +23,7 @@ export function SourceSettings({ source }: { source: V2Source }) {
 	const [description, setDescription] = useState(source.description ?? "")
 	const draft = useRulesDraft(source)
 	const rules = rulesOutcome(draft)
-	const valid = name.trim().length > 0 && (source.is_default || rules.valid)
+	const valid = name.trim().length > 0 && (!hasToken(source) || rules.valid)
 
 	const [save, saving] = useAsyncAction(async () => {
 		if (!valid) return
@@ -31,7 +32,7 @@ export function SourceSettings({ source }: { source: V2Source }) {
 			description: description.trim().length > 0 ? description.trim() : null,
 		}
 		const withRules: V2SourceUpdateParams = { ...basics, ...rules.payload }
-		const payload: V2SourceUpdateParams = source.is_default
+		const payload: V2SourceUpdateParams = !hasToken(source)
 			? basics
 			: rules.expiresAt === undefined
 				? withRules
@@ -84,10 +85,12 @@ export function SourceSettings({ source }: { source: V2Source }) {
 					description={
 						source.is_default
 							? "The default source stands for your organization's ingest keys and has no rules. Create a source to limit signals, cap the rate or stamp attributes."
-							: "Applied by the ingest gateway to everything this source sends."
+							: hasToken(source)
+								? "Applied by the ingest gateway to everything this source sends."
+								: "Integrations are collected by Maple and take no rules."
 					}
 				>
-					<RulesFields draft={draft} disabled={source.is_default} />
+					<RulesFields draft={draft} disabled={!hasToken(source)} />
 				</SettingsSection>
 				<div className="flex justify-end">
 					<Button type="submit" disabled={!valid} loading={saving}>
