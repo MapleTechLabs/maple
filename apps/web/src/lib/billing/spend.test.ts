@@ -14,6 +14,7 @@ import {
 	featureUnit,
 	formatRateLabel,
 	rateCaption,
+	usageMeter,
 } from "./spend"
 
 // Mock builders construct only the consumed subset of each domain schema.
@@ -544,5 +545,32 @@ describe("buildCumulativeSeries", () => {
 		const spendModel = model()
 		if (spendModel === null) throw new Error("expected a model")
 		expect(buildCumulativeSeries({ daily: undefined, model: spendModel })).toEqual([])
+	})
+})
+
+describe("usageMeter", () => {
+	const meters = (balances: Record<string, Partial<BillingBalance>>, total: BillingUsage["total"]) => {
+		const result = buildSpendModel({
+			customer: buildCustomer({ balances }),
+			plans: [startupPlan],
+			usage: total,
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+		return Object.fromEntries(result.features.map((feature) => [feature.featureId, usageMeter(feature)]))
+	}
+
+	it("leaves an unlimited feature's bar empty instead of full", () => {
+		const result = meters({ logs: { granted: 100 }, product_events: { unlimited: true } }, {
+			logs: { sum: 50 },
+			product_events: { sum: 2_000_000 },
+		} as BillingUsage["total"])
+		expect(result.product_events).toEqual({ included: 0, overage: 0 })
+		expect(result.logs).toEqual({ included: 50, overage: 0 })
+	})
+
+	it("splits the bar at the allotment once usage runs past it", () => {
+		const result = meters({ logs: { granted: 100 } }, { logs: { sum: 400 } } as BillingUsage["total"])
+		expect(result.logs).toEqual({ included: 25, overage: 75 })
 	})
 })
