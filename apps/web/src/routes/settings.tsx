@@ -14,7 +14,7 @@ import { McpSection } from "@/components/settings/mcp-section"
 import { AiProviderSection } from "@/components/settings/ai-provider-section"
 import { AutomationSection } from "@/components/settings/automation-section"
 import { OrgClickHouseSettingsSection } from "@/components/settings/org-clickhouse-settings-section"
-import { OrganizationSection } from "@/components/settings/organization-section"
+import { GeneralSection } from "@/components/settings/general-section"
 import { SetupAuditSection } from "@/components/settings/setup-audit-section"
 import {
 	legacySettingsTabValues,
@@ -101,7 +101,7 @@ function SettingsPage() {
 				<EmptyMessage>No settings are available for the current account.</EmptyMessage>
 			) : (
 				<>
-					{activeTab === "general" && <OrganizationSection />}
+					{activeTab === "general" && <GeneralSection />}
 					{activeTab === "members" && <MembersSection />}
 					{activeTab === "audit-log" && <AuditLogSection />}
 					{activeTab === "setup-health" && <SetupAuditSection />}

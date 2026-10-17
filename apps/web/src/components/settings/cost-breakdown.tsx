@@ -1,65 +1,50 @@
-import type { CycleCostEstimate } from "@/lib/billing/cost-estimate"
-
 import { formatCurrency } from "@maple/domain/format"
-import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@maple/ui/components/ui/collapsible"
 
-export function CostBreakdownSkeleton() {
-	return (
-		<SkeletonList
-			rows={3}
-			className="gap-0 divide-y divide-border/60"
-			renderRow={() => (
-				<div className="flex items-center justify-between py-2.5">
-					<div className="flex flex-col gap-1.5">
-						<Skeleton className="h-3.5 w-28" />
-						<Skeleton className="h-3 w-44" />
-					</div>
-					<Skeleton className="h-3.5 w-14" />
-				</div>
-			)}
-		/>
-	)
-}
+import { ChevronRightIcon } from "@/components/icons"
+import { costBreakdown, type SpendModel } from "@/lib/billing/spend"
 
 /**
- * Line-item breakdown of the current cycle's estimated cost: base plan price(s)
- * plus per-feature overage, ending in an estimated total. Purely presentational
- * — the math lives in lib/billing/cost-estimate.ts.
+ * What makes up "Spent so far": the plan, each add-on and one usage overage line.
+ * The lines come from the spend model, so they sum to the figure above them.
  */
-export function CostBreakdown({ estimate }: { estimate: CycleCostEstimate }) {
+export function CostBreakdown({ model }: { model: SpendModel }) {
+	const lines = costBreakdown(model)
+
 	return (
-		<div>
-			<div className="divide-y divide-border/60">
-				{estimate.lines.map((line) => (
-					<div key={line.key} className="flex items-baseline justify-between gap-4 py-2.5">
-						<div className="min-w-0">
-							<p className="text-sm">{line.label}</p>
-							{line.detail && (
-								<p className="text-muted-foreground/70 mt-0.5 text-2xs tabular-nums">
-									{line.detail}
-								</p>
-							)}
+		<Collapsible>
+			<CollapsibleTrigger className="group flex w-full items-center gap-2 px-4 py-2.5 text-left outline-none focus-visible:bg-muted/40">
+				<ChevronRightIcon
+					aria-hidden
+					className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90 motion-reduce:transition-none"
+				/>
+				<span className="text-xs font-medium">Cost breakdown</span>
+				<span className="truncate text-2xs text-muted-foreground">
+					What makes up the amount spent so far
+				</span>
+			</CollapsibleTrigger>
+			<CollapsiblePanel className="px-4 pb-2">
+				<div className="divide-y divide-border/60">
+					{lines.map((line) => (
+						<div key={line.key} className="flex items-baseline justify-between gap-4 py-2">
+							<div className="min-w-0">
+								<p className="text-sm">{line.label}</p>
+								<p className="text-2xs text-muted-foreground">{line.detail}</p>
+							</div>
+							<span className="shrink-0 font-mono text-sm tabular-nums">
+								{line.cents === null
+									? "Not itemized"
+									: formatCurrency(line.cents / 100, model.currency)}
+							</span>
 						</div>
-						<span className="text-sm tabular-nums">
-							{formatCurrency(line.amount, estimate.currency)}
-						</span>
-					</div>
-				))}
-				<div className="flex items-baseline justify-between gap-4 py-2.5">
-					<p className="text-sm font-medium">Estimated total</p>
-					<span className="text-sm font-semibold tabular-nums">
-						{estimate.partial && (
-							<span className="text-muted-foreground font-normal">at least </span>
-						)}
-						{formatCurrency(estimate.total, estimate.currency)}
-					</span>
+					))}
 				</div>
-			</div>
-			<p className="text-muted-foreground/70 mt-2 text-2xs">
-				So far this cycle · excludes taxes &amp; credits
-				{estimate.partial &&
-					" · some items are on legacy pricing we can't itemize; see your invoice for the exact amount"}
-			</p>
-		</div>
+				{model.partial && (
+					<p className="pt-1 text-2xs text-muted-foreground">
+						Some items are on pricing we can't itemize; your invoice has the exact amount.
+					</p>
+				)}
+			</CollapsiblePanel>
+		</Collapsible>
 	)
 }

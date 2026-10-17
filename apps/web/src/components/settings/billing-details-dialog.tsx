@@ -17,6 +17,7 @@ import { useMutationAction } from "@/hooks/use-mutation-action"
 import { fieldOrNull } from "@/lib/billing/billing-profile"
 import { countryName, sortedCountryCodes } from "@/lib/billing/countries"
 import { BILLING_PROFILE_KEY, updateBillingProfileMutation } from "@/lib/services/atoms/billing-atoms"
+import { BillingTaxIdsEditor } from "./billing-tax-ids-editor"
 
 const COUNTRIES = sortedCountryCodes()
 
@@ -170,9 +171,11 @@ export function BillingDetailsDialog({
 			</div>
 
 			<p className="text-2xs leading-4 text-muted-foreground">
-				Stored on your Stripe customer and printed on every invoice from the next one on. Add your VAT
-				or tax ID separately below the details.
+				Name and address are stored on your Stripe customer and printed on every invoice from the next
+				one on.
 			</p>
+
+			<BillingTaxIdsEditor profile={profile} />
 		</FormDialog>
 	)
 }
