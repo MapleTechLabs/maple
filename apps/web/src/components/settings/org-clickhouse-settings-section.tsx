@@ -148,7 +148,7 @@ function ConnectionPanel({
 		user: settings.chUser ?? "default",
 		database: settings.chDatabase ?? "default",
 	}
-	const { draft, isDirty, updateDraft, discard } = useSettingsDraft(saved)
+	const { draft, isDirty, updateDraft, discard, commit } = useSettingsDraft(saved)
 	const [password, setPassword] = useState("")
 	const [disconnectOpen, setDisconnectOpen] = useState(false)
 	const dirty = isDirty || password !== ""
@@ -172,7 +172,7 @@ function ConnectionPanel({
 		if (!toastExit(result, { success: "Connection saved and tested", error: "Connection test failed" }))
 			return
 		setPassword("")
-		discard()
+		commit()
 		onChanged()
 	})
 
