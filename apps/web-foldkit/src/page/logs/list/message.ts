@@ -66,6 +66,7 @@ export const Message = defineMessageUnion({
 	GotRefreshMenuMessage: { message: Menu.Message },
 	GotToolbarTooltipMessage: { message: Tooltip.Message },
 	GotColumnsPopoverMessage: { message: Popover.Message },
+	GotSearchHelpMessage: { message: Popover.Message },
 	ToggledColumn: { key: Schema.String },
 	GotVolumeChartMessage: { message: Chart.Message },
 })

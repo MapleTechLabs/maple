@@ -48,6 +48,7 @@ import {
 	volumeInput,
 	withoutChips,
 } from "./derive"
+import { initSearchHelp } from "./view-search-help"
 import { type Facet, Message, type RequestMode } from "./message"
 import type { LogsPage, Model, Pagination } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -327,6 +328,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		refreshMenu: Menu.init("logs-refresh-menu"),
 		toolbarTooltip: Tooltip.init("logs-toolbar-tooltip", { openDelayMs: 250 }),
 		columnsPopover: Popover.init("logs-columns-popover", { align: "end" }),
+		searchHelp: initSearchHelp(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		refreshVersion: 0,
@@ -586,6 +588,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = Popover.update(model.columnsPopover, inner)
 			return liftChild({ ...model, columnsPopover: next.model }, next.commands, (m) =>
 				Message.GotColumnsPopoverMessage({ message: m }),
+			)
+		},
+		GotSearchHelpMessage: ({ message: inner }) => {
+			const next = Popover.update(model.searchHelp, inner)
+			return liftChild({ ...model, searchHelp: next.model }, next.commands, (m) =>
+				Message.GotSearchHelpMessage({ message: m }),
 			)
 		},
 		// `setColumns`: the picked keys in `?columns`, none leaves the URL.

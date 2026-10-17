@@ -93,6 +93,7 @@ export const Model = Schema.Struct({
 	/** The toolbar's three tooltips, one Tooltip shared by its triggers. */
 	toolbarTooltip: Tooltip.Model,
 	columnsPopover: Popover.Model,
+	searchHelp: Popover.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */

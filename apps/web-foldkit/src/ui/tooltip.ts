@@ -132,7 +132,11 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 /** Base UI's adaptive origin: the popup sticks to the positioner edge facing the trigger. */
 const pinPopup = (positioner: HTMLElement, popup: HTMLElement, side: Side): void => {
 	// The fractional box, as Base UI measures it: a rounded width would shift the centred popup.
+	// Measured from the origin, so a popup placed near the viewport edge is not shrunk to fit.
+	const placedLeft = positioner.style.left
+	positioner.style.left = "0px"
 	const box = popup.getBoundingClientRect()
+	positioner.style.left = placedLeft
 	positioner.style.setProperty("--positioner-width", `${box.width}px`)
 	positioner.style.setProperty("--positioner-height", `${box.height}px`)
 	popup.style.position = "absolute"

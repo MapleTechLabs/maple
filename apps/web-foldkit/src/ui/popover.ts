@@ -8,8 +8,8 @@ import {
 	popoverViewportScrollStyles,
 	popoverViewportStyles,
 } from "@maple/ui/styles/ui/popover"
-import { Option, Schema, Stream } from "effect"
-import { Mount, Submodel, type Update } from "foldkit"
+import { Duration, Effect, Option, Schema, Stream } from "effect"
+import { Command, Mount, Submodel, type Update } from "foldkit"
 import { type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
@@ -24,15 +24,30 @@ import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay
 
 // MODEL
 
-export const Model = PopupState
-export type Model = PopupState
+export const Model = Schema.Struct({
+	...PopupState.fields,
+	/** `openOnHover`: the delay before a hover opens it, 0 for click only. */
+	hoverDelayMs: Schema.Number,
+	hoverGeneration: Schema.Number,
+})
+export type Model = typeof Model.Type
 
 export const titleId = (id: string): string => `${id}-title`
 export const descriptionId = (id: string): string => `${id}-description`
 
-/** `align` is `PopoverContent`'s (center by default). */
-export const init = (id: string, options: Readonly<{ isOpen?: boolean; align?: Align }> = {}): Model =>
-	initPopup(id, { isOpen: options.isOpen, side: "bottom", align: options.align ?? "center" })
+/** `align` and `side` are `PopoverContent`'s; `hoverDelayMs` is the trigger's `openOnHover` delay. */
+export const init = (
+	id: string,
+	options: Readonly<{ isOpen?: boolean; align?: Align; side?: Side; hoverDelayMs?: number }> = {},
+): Model => ({
+	...initPopup(id, {
+		isOpen: options.isOpen,
+		side: options.side ?? "bottom",
+		align: options.align ?? "center",
+	}),
+	hoverDelayMs: options.hoverDelayMs ?? 0,
+	hoverGeneration: 0,
+})
 
 // MESSAGE
 
@@ -44,8 +59,32 @@ export const Message = defineMessageUnion({
 	CompletedMountPopover: {},
 	ChangedPlacement: { side: Side, align: Align },
 	GotAnimationMessage: { message: Animation.Message },
+	EnteredTrigger: {},
+	LeftHoverArea: {},
+	EnteredPopup: {},
+	ElapsedHoverDelay: { generation: Schema.Number, isOpening: Schema.Boolean },
 })
 export type Message = typeof Message.Type
+
+/** The hover open delay, or the grace period for crossing from the trigger into the popup. */
+export const WaitHoverDelay = Command.define("WaitPopoverHoverDelay", {
+	args: { generation: Schema.Number, millis: Schema.Number, isOpening: Schema.Boolean },
+	messages: [Message.ElapsedHoverDelay],
+	execute: ({ generation, millis, isOpening }) =>
+		Effect.sleep(Duration.millis(millis)).pipe(
+			Effect.as(Message.ElapsedHoverDelay({ generation, isOpening })),
+		),
+})
+
+const HOVER_CLOSE_GRACE_MS = 100
+
+const waitHover = (model: Model, millis: number, isOpening: boolean): Update.Return<Model, Message> => {
+	const generation = model.hoverGeneration + 1
+	return {
+		model: { ...model, hoverGeneration: generation },
+		commands: [WaitHoverDelay({ generation, millis, isOpening })],
+	}
+}
 
 // UPDATE
 
@@ -67,22 +106,37 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		ChangedPlacement: ({ side, align }) => ({ model: { ...model, side, align } }),
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
+		EnteredTrigger: () =>
+			model.hoverDelayMs === 0 || model.isOpen
+				? { model: { ...model, hoverGeneration: model.hoverGeneration + 1 } }
+				: waitHover(model, model.hoverDelayMs, true),
+		EnteredPopup: () => ({ model: { ...model, hoverGeneration: model.hoverGeneration + 1 } }),
+		LeftHoverArea: () =>
+			model.hoverDelayMs === 0 ? { model } : waitHover(model, HOVER_CLOSE_GRACE_MS, false),
+		ElapsedHoverDelay: ({ generation, isOpening }) =>
+			generation !== model.hoverGeneration
+				? { model }
+				: isOpening
+					? open(model)
+					: model.isOpen
+						? close(model)
+						: { model },
 	})
 
 // MOUNT
 
 /** Portal, marker on the page outside, placement under the trigger and outside presses. */
 export const MountPopover = Mount.defineStream("MountPopover", {
-	args: { id: Schema.String, align: Align },
+	args: { id: Schema.String, align: Align, side: Side },
 	messages: [Message.CompletedMountPopover, Message.ChangedPlacement, Message.PressedOutside],
-	execute: ({ element, id, align }) =>
+	execute: ({ element, id, align, side }) =>
 		anchoredPopup(element, {
 			positionerSelector: "[data-slot=popover-positioner]",
 			popupSelector: `#${CSS.escape(popupId(id))}`,
 			config: {
 				...positionDefaults,
 				anchor: { _tag: "Element", id: triggerId(id) },
-				side: "bottom",
+				side,
 				align,
 				sideOffset: 4,
 				adaptiveOrigin: true,
@@ -144,13 +198,16 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		h.Id(triggerId(model.id)),
 		h.Tabindex(0),
 		h.OnClick(Message.ClickedTrigger()),
+		...(model.hoverDelayMs > 0
+			? [h.OnMouseEnter(Message.EnteredTrigger()), h.OnMouseLeave(Message.LeftHoverArea())]
+			: []),
 	])
 	const portal = h.div(
 		[
 			h.Key(portalId(model.id)),
 			h.DataAttribute("base-ui-portal", ""),
 			h.Id(portalId(model.id)),
-			h.OnMount(MountPopover({ id: model.id, align: model.align })),
+			h.OnMount(MountPopover({ id: model.id, align: model.align, side: model.side })),
 			h.OnKeyDownPreventDefault((key) =>
 				key === "Escape" ? Option.some(Message.PressedEscape()) : Option.none(),
 			),
@@ -179,6 +236,12 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							h.DataAttribute("slot", "popover-popup"),
 							h.Id(popupId(model.id)),
 							h.Role("dialog"),
+							...(model.hoverDelayMs > 0
+								? [
+										h.OnMouseEnter(Message.EnteredPopup()),
+										h.OnMouseLeave(Message.LeftHoverArea()),
+									]
+								: []),
 							h.Style({ "--popup-width": "auto", "--popup-height": "auto" }),
 							h.Tabindex(-1),
 						],

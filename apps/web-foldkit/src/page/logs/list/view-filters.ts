@@ -17,6 +17,8 @@ import {
 import { icon } from "../../../ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
 import { button } from "../../../ui/button"
+import type * as Popover from "../../../ui/popover"
+import { searchHelp } from "./view-search-help"
 import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
 import type { Search } from "./derive"
 import { type Facet, Message } from "./message"
@@ -70,33 +72,14 @@ export const hasActiveFilters = (search: Search): boolean =>
 	!!search.search ||
 	!!search.traceId
 
-// TODO(search-help): `LogSearchHelp`'s hover popover (the lookups table); the trigger renders closed.
-const searchHelpTrigger = (h: HtmlBuilder<Message>): Html =>
-	h.button(
-		[
-			h.AriaExpanded(false),
-			h.AriaHasPopup("dialog"),
-			h.AriaLabel("What you can search for"),
-			h.Class(
-				"cursor-pointer rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:text-foreground",
-			),
-			h.DataAttribute("base-ui-click-trigger", ""),
-			h.DataAttribute("slot", "popover-trigger"),
-			h.Id("logs-search-help-trigger"),
-			h.Tabindex(0),
-			h.Type("button"),
-		],
-		[icon(h, "CircleInfoIcon", { size: 12 })],
-	)
-
 /** `LogSearchInput`: one box for text and trace ids (`parseLogSearch`), `/` focuses it. */
-const logSearchInput = (h: HtmlBuilder<Message>, value: string): Html =>
+const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Model): Html =>
 	h.div(
 		[h.Class("pb-3")],
 		[
 			h.div(
 				[h.Class("flex items-center gap-1")],
-				[eyebrow(h, { variant: "label" }, ["Search"]), searchHelpTrigger(h)],
+				[eyebrow(h, { variant: "label" }, ["Search"]), searchHelp(h, help)],
 			),
 			inputGroup(h, { className: "mt-2" }, [
 				inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
@@ -148,7 +131,7 @@ const loadedRail = (
 	return filterSidebarFrame(h, { isWaiting: AsyncData.isRefreshing(model.facets.data) }, [
 		filterSidebarHeader(h, isFiltered ? { onClear: Message.ClickedClearAllFilters() } : {}),
 		...filterSidebarBody(h, "logs-filters", [
-			logSearchInput(h, model.searchText),
+			logSearchInput(h, model.searchText, model.searchHelp),
 			facetSection(h, model, "Severity", "severities", facets.severities, {
 				colorMap: SEVERITY_COLORS,
 			}),

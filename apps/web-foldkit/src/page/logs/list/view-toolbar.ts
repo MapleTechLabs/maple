@@ -7,6 +7,7 @@ import { badge } from "../../../ui/display"
 import { filterSection } from "../../../ui/filters/filter-section"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import { icon } from "../../../ui/icon"
+import { triggerId } from "../../../ui/overlay/popup-state"
 import * as Popover from "../../../ui/popover"
 import { togglePrimitive } from "../../../ui/toggle"
 import * as Tooltip from "../../../ui/tooltip"
@@ -16,7 +17,8 @@ import type { Model } from "./model"
 // `LogsTableToolbar` (apps/web/src/components/logs/logs-table-toolbar.tsx): the Columns picker,
 // wrap and density, under one `TooltipProvider delay={250}`. Pinned columns live in `?columns`.
 
-export const COLUMNS_TRIGGER = "logs-columns-trigger"
+// The popover anchors to its trigger by id, so the tooltip shares the popover's trigger id.
+export const COLUMNS_TRIGGER = triggerId("logs-columns-popover")
 export const WRAP_TRIGGER = "logs-wrap-trigger"
 export const DENSITY_TRIGGER = "logs-density-trigger"
 
