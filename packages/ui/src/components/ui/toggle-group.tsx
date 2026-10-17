@@ -5,6 +5,15 @@ import { ToggleGroup as ToggleGroupPrimitive } from "@base-ui/react/toggle-group
 import type { VariantProps } from "class-variance-authority"
 import * as React from "react"
 import { cn } from "../../lib/utils"
+import {
+	toggleGroupConnectedStyles,
+	toggleGroupHorizontalStyles,
+	toggleGroupStandaloneStyles,
+	toggleGroupStyles,
+	toggleGroupTrackStyles,
+	toggleGroupVerticalFlexStyles,
+	toggleGroupVerticalStyles,
+} from "./toggle-group.styles"
 import { Toggle as ToggleComponent, type toggleVariants } from "./toggle"
 
 export const ToggleGroupContext: React.Context<
@@ -14,17 +23,6 @@ export const ToggleGroupContext: React.Context<
 	size: "default",
 	variant: "default",
 })
-
-/**
- * The recessed track a connected group draws around its segments.
- *
- * `bg-black/…` rather than a surface token on purpose: a segmented control sits
- * on cards, toolbars, and dialogs of different shades, and a fixed surface color
- * reads as raised on the darker ones. Darkening whatever is behind it keeps the
- * track recessed everywhere.
- */
-const trackClass =
-	"w-fit items-center gap-0.5 rounded-lg border border-input bg-black/[0.04] p-0.5 dark:bg-black/25"
 
 export function ToggleGroup({
 	className,
@@ -54,12 +52,14 @@ export function ToggleGroup({
 	return (
 		<ToggleGroupPrimitive
 			className={cn(
-				"flex *:focus-visible:z-10",
-				orientation === "horizontal"
-					? "*:pointer-coarse:after:min-w-auto"
-					: "*:pointer-coarse:after:min-h-auto",
-				orientation === "vertical" && "flex-col",
-				segmented ? trackClass : connected ? "w-fit gap-0.5" : "flex-wrap gap-2",
+				toggleGroupStyles,
+				orientation === "horizontal" ? toggleGroupHorizontalStyles : toggleGroupVerticalStyles,
+				orientation === "vertical" && toggleGroupVerticalFlexStyles,
+				segmented
+					? toggleGroupTrackStyles
+					: connected
+						? toggleGroupConnectedStyles
+						: toggleGroupStandaloneStyles,
 				className,
 			)}
 			data-size={size}

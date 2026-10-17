@@ -4,6 +4,7 @@ import type React from "react"
 import { Button, type ButtonProps } from "./button"
 import { Kbd } from "./kbd"
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip"
+import { iconButtonTooltipStyles } from "./icon-button.styles"
 
 type IconSize = "icon" | "icon-2xs" | "icon-xs" | "icon-sm" | "icon-lg" | "icon-xl"
 
@@ -33,7 +34,7 @@ export function IconButton({
 	return (
 		<Tooltip>
 			<TooltipTrigger render={button} />
-			<TooltipContent className="flex items-center gap-1.5">
+			<TooltipContent className={iconButtonTooltipStyles}>
 				{label}
 				{shortcut != null ? <Kbd>{shortcut}</Kbd> : null}
 			</TooltipContent>
