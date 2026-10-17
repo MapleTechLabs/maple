@@ -4,16 +4,21 @@
  * the GitHub App installed gets CI traces with no setup. Everything goes through the ingest gateway
  * with the org's public key, so it is metered and routed like any other telemetry.
  */
+import type { WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
 import { type OrgId, UserId } from "@maple/domain/primitives"
-import { Duration, Effect, Layer, Schedule, Schema, Stream } from "effect"
+import { VcsInstallations } from "@maple/db/tables"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { Clock, Duration, Effect, Layer, Schedule, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	WorkflowEventSink,
 	type WorkflowEventSinkApi,
 } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { ensureIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
 import { isIngestRefusal, summarizeUpstreamBody } from "../upstream-body"
 import { jobLogRecords, type OtlpLogsPayload, workflowJobLogsToOtlp } from "./logs"
 import { type OtlpTracesPayload, workflowJobToOtlp, workflowRunToOtlp } from "./otlp"
@@ -39,6 +44,7 @@ const make = Effect.gen(function* () {
 	const env = yield* Env
 	const httpClient = yield* HttpClient.HttpClient
 	const ingestKeys = yield* OrgIngestKeysService
+	const database = yield* Database
 	const ingestBaseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
 
 	const post = (ingestKey: string, payload: OtlpTracesPayload | OtlpLogsPayload) => {
@@ -75,10 +81,59 @@ const make = Effect.gen(function* () {
 		)
 	}
 
+	// The installation's pull source as its `src_` id. Never fails: without it the spans go unstamped.
+	const resolveSourceId = (
+		orgId: OrgId,
+		job: { readonly provider: string; readonly externalInstallationId: string },
+	) =>
+		Effect.gen(function* () {
+			if (job.provider !== "github") return undefined
+			const now = yield* Clock.currentTimeMillis
+			const id = yield* database.execute((db) =>
+				Effect.gen(function* () {
+					const [installation] = yield* db.run(
+						PG.from(VcsInstallations)
+							.select("id", "accountLogin")
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.provider.eq("github"),
+								$.externalInstallationId.eq(job.externalInstallationId),
+							])
+							.limit(1),
+					)
+					if (installation === undefined) return undefined
+					return yield* ensureIntegrationSource(db, {
+						orgId,
+						platform: "github",
+						integrationId: installation.id,
+						name: `GitHub ${installation.accountLogin}`,
+						now,
+					})
+				}),
+			)
+			if (id === undefined) return undefined
+			const sourceId = publicSourceId(id)
+			yield* Effect.annotateCurrentSpan("maple.source.id", sourceId)
+			return sourceId
+		}).pipe(
+			Effect.catchCause((cause) =>
+				Effect.logWarning("[CI traces] source unavailable").pipe(
+					Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+					Effect.as(undefined),
+				),
+			),
+		)
+
 	// Total by contract: a lost CI span is logged, never a failed webhook job. The failure is
 	// swallowed outside the span, so the span itself still ends as Error.
-	const emit = (orgId: OrgId, kind: "run" | "job", payload: OtlpTracesPayload) =>
+	const emit = (
+		orgId: OrgId,
+		kind: "run" | "job",
+		job: WorkflowRunJob | WorkflowJobJob,
+		toPayload: (sourceId: string | undefined) => OtlpTracesPayload,
+	) =>
 		Effect.gen(function* () {
+			const payload = toPayload(yield* resolveSourceId(orgId, job))
 			const spanCount = payload.resourceSpans[0]?.scopeSpans[0]?.spans.length ?? 0
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cicd.span_count": spanCount })
 			const keys = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID)
@@ -106,12 +161,13 @@ const make = Effect.gen(function* () {
 	) =>
 		Effect.gen(function* () {
 			const keys = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID)
+			const sourceId = yield* resolveSourceId(orgId, job)
 			const sent = yield* jobLogRecords(job, lines).pipe(
 				Stream.grouped(LOG_BATCH_SIZE),
 				Stream.runFoldEffect(
 					() => 0,
 					(count, batch) =>
-						post(keys.publicKey, workflowJobLogsToOtlp(job, batch)).pipe(
+						post(keys.publicKey, workflowJobLogsToOtlp(job, batch, sourceId)).pipe(
 							Effect.as(count + batch.length),
 						),
 				),
@@ -135,8 +191,10 @@ const make = Effect.gen(function* () {
 		)
 
 	return {
-		onWorkflowRun: (orgId, job) => emit(orgId, "run", workflowRunToOtlp(job)),
-		onWorkflowJob: (orgId, job, annotations) => emit(orgId, "job", workflowJobToOtlp(job, annotations)),
+		onWorkflowRun: (orgId, job) =>
+			emit(orgId, "run", job, (sourceId) => workflowRunToOtlp(job, sourceId)),
+		onWorkflowJob: (orgId, job, annotations) =>
+			emit(orgId, "job", job, (sourceId) => workflowJobToOtlp(job, annotations, sourceId)),
 		onWorkflowJobLog: emitLog,
 	} satisfies WorkflowEventSinkApi
 })

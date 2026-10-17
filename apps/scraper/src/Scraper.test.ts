@@ -55,10 +55,10 @@ const scraperLayer = (harness: Harness) =>
 		),
 	)
 
-const scrape = (harness: Harness) =>
+const scrape = (harness: Harness, target: InternalScrapeTarget = TARGET) =>
 	Effect.gen(function* () {
 		const scraper = yield* Scraper
-		return yield* scraper.scrape(TARGET)
+		return yield* scraper.scrape(target)
 	}).pipe(Effect.provide(scraperLayer(harness)))
 
 describe("Scraper", () => {
@@ -81,6 +81,20 @@ describe("Scraper", () => {
 				maple_scrape_target_name: "Node Exporter",
 			})
 			assert.strictEqual(resource.scopeMetrics[0]!.scope.name, "maple-prometheus-scraper")
+		}),
+	)
+
+	it.effect("stamps the target's pull source as maple_source_id", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			yield* scrape(harness, decodeTarget({ ...TARGET, sourceId: "src_abc" }))
+			const attrs = Object.fromEntries(
+				harness.sent[0]!.request.resourceMetrics[0]!.resource.attributes.map((attr) => [
+					attr.key,
+					attr.value.stringValue,
+				]),
+			)
+			assert.strictEqual(attrs.maple_source_id, "src_abc")
 		}),
 	)
 

@@ -82,6 +82,20 @@ describe("metricRowsToOtlp", () => {
 		assert.strictEqual(gauge.gauge!.dataPoints[0]!.asDouble, 180)
 	})
 
+	it("stamps the poller's source id on every resource", () => {
+		const payload = metricRowsToOtlp(
+			[baseSum({})],
+			[baseGauge({ resource_attributes: { "service.name": "other" } })],
+			{ sourceId: "src_cf" },
+		)
+		assert.strictEqual(payload.resourceMetrics.length, 2)
+		const stamped = payload.resourceMetrics.map(
+			(resource) =>
+				resource.resource.attributes.find((a) => a.key === "maple_source_id")?.value.stringValue,
+		)
+		assert.deepStrictEqual(stamped, ["src_cf", "src_cf"])
+	})
+
 	it("converts the DateTime64 literal to a unix-nanosecond string", () => {
 		const payload = metricRowsToOtlp(
 			[],

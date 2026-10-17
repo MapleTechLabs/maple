@@ -393,6 +393,7 @@ export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 		recordScrapeResults: die,
 		listChecks: die,
 		probe: die,
+		sourceIds: die,
 	}),
 	Phase1ResourceStubsLayer,
 	WarehouseServiceStubLayer,

@@ -43,6 +43,11 @@ const toV2Source = (source: Source): V2Source => ({
 	rolled_at: timestampOrNull(source.rolledAt),
 	created_at: timestamp(source.createdAt),
 	updated_at: timestamp(source.updatedAt),
+	health: {
+		status: source.health.status,
+		last_data_at: timestampOrNull(source.health.lastDataAt),
+		problem: source.health.problem,
+	},
 })
 
 /** Optional wire fields shared by create and update, mapped to the service request. */
