@@ -300,6 +300,12 @@ export const PushSourcePlatform = Schema.Literals(PUSH_SOURCE_PLATFORMS).annotat
 })
 export type PushSourcePlatform = Schema.Schema.Type<typeof PushSourcePlatform>
 
+export const PullSourcePlatform = Schema.Literals(PULL_SOURCE_PLATFORMS).annotate({
+	identifier: "@maple/PullSourcePlatform",
+	title: "Pull Source Platform",
+})
+export type PullSourcePlatform = Schema.Schema.Type<typeof PullSourcePlatform>
+
 export const SourcePlatform = Schema.Literals([...PUSH_SOURCE_PLATFORMS, ...PULL_SOURCE_PLATFORMS]).annotate({
 	identifier: "@maple/SourcePlatform",
 	title: "Source Platform",

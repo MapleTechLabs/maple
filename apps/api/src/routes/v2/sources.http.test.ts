@@ -167,6 +167,11 @@ describe("v2 sources", () => {
 			expect(listed.status).toBe(200)
 			expect(listed.body.data).toHaveLength(2)
 			expect(listed.body.data[0]).toMatchObject({ is_default: true, key_prefix: null, name: "Default" })
+			expect(listed.body.data[0].health).toEqual({
+				status: "pending",
+				last_data_at: null,
+				problem: null,
+			})
 			expect(listed.body.data[1].id).toBe(id)
 			expect(listed.body.data[1]).not.toHaveProperty("secret")
 
@@ -187,6 +192,7 @@ describe("v2 sources", () => {
 			})
 			expect(paused.status).toBe(200)
 			expect(paused.body.status).toBe("paused")
+			expect(paused.body.health.status).toBe("paused")
 			expect(paused.body.paused_until).toBe(until)
 			const pastPause = await harness.request("POST", `/v2/sources/${id}/pause`, token, {
 				until: "2020-01-01T00:00:00.000Z",

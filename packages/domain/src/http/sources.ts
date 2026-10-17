@@ -23,6 +23,23 @@ export const SOURCE_LIMITS = {
 export const SourceTokenStatus = Schema.Literals(["active", "paused", "expired"])
 export type SourceTokenStatus = Schema.Schema.Type<typeof SourceTokenStatus>
 
+/** Worst first; mirrors `SOURCE_HEALTH_STATUSES` in `../source-health`. */
+export const SourceHealthStatus = Schema.Literals([
+	"disconnected",
+	"failing",
+	"stale",
+	"paused",
+	"pending",
+	"healthy",
+])
+export type SourceHealthStatus = Schema.Schema.Type<typeof SourceHealthStatus>
+
+export class SourceHealth extends Schema.Class<SourceHealth>("SourceHealth")({
+	status: SourceHealthStatus,
+	lastDataAt: Schema.NullOr(IsoDateTimeString),
+	problem: Schema.NullOr(Schema.String),
+}) {}
+
 export class Source extends Schema.Class<Source>("Source")({
 	id: SourceId,
 	name: Schema.String,
@@ -42,6 +59,7 @@ export class Source extends Schema.Class<Source>("Source")({
 	rolledAt: Schema.NullOr(IsoDateTimeString),
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,
+	health: SourceHealth,
 }) {}
 
 /** Returned only by create and roll: the one time the raw token is visible. */

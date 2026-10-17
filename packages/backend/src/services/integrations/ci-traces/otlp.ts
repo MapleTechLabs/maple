@@ -7,7 +7,13 @@
  * provider's own ids rather than generated, and both halves land in the same trace.
  */
 import { createHash } from "node:crypto"
-import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob, WorkflowStep } from "@maple/domain/http"
+import {
+	SOURCE_ID_ATTRIBUTE,
+	type WorkflowJobAnnotation,
+	type WorkflowJobJob,
+	type WorkflowRunJob,
+	type WorkflowStep,
+} from "@maple/domain/http"
 
 export const CI_SERVICE_NAME = "github-actions"
 export const SCOPE_NAME = "@maple/ci-traces"
@@ -182,7 +188,8 @@ const repositoryUrlOf = (url: string) => {
 	return actions === -1 ? undefined : url.slice(0, actions)
 }
 
-export const resourceOf = (repoFullName: string, url: string) => {
+/** `sourceId` is the installation's pull source, stamped as `maple_source_id` when known. */
+export const resourceOf = (repoFullName: string, url: string, sourceId?: string) => {
 	const slash = repoFullName.indexOf("/")
 	return attrs({
 		"service.name": CI_SERVICE_NAME,
@@ -190,13 +197,19 @@ export const resourceOf = (repoFullName: string, url: string) => {
 		"vcs.owner.name": slash === -1 ? undefined : repoFullName.slice(0, slash),
 		"vcs.repository.name": slash === -1 ? repoFullName : repoFullName.slice(slash + 1),
 		"vcs.repository.url.full": repositoryUrlOf(url),
+		[SOURCE_ID_ATTRIBUTE]: sourceId,
 	})
 }
 
-const payloadOf = (repoFullName: string, url: string, spans: ReadonlyArray<OtlpSpan>): OtlpTracesPayload => ({
+const payloadOf = (
+	repoFullName: string,
+	url: string,
+	sourceId: string | undefined,
+	spans: ReadonlyArray<OtlpSpan>,
+): OtlpTracesPayload => ({
 	resourceSpans: [
 		{
-			resource: { attributes: resourceOf(repoFullName, url) },
+			resource: { attributes: resourceOf(repoFullName, url, sourceId) },
 			scopeSpans: [{ scope: { name: SCOPE_NAME }, spans }],
 		},
 	],
@@ -207,8 +220,8 @@ const refAttrs = (headBranch: string | null, headSha: string | null) => ({
 	"vcs.ref.head.revision": headSha,
 })
 
-export const workflowRunToOtlp = (run: WorkflowRunJob): OtlpTracesPayload =>
-	payloadOf(run.repoFullName, run.url, [
+export const workflowRunToOtlp = (run: WorkflowRunJob, sourceId?: string): OtlpTracesPayload =>
+	payloadOf(run.repoFullName, run.url, sourceId, [
 		{
 			traceId: ciTraceId(run),
 			spanId: ciRunSpanId(run),
@@ -241,6 +254,7 @@ export const workflowRunToOtlp = (run: WorkflowRunJob): OtlpTracesPayload =>
 export const workflowJobToOtlp = (
 	job: WorkflowJobJob,
 	annotations: ReadonlyArray<WorkflowJobAnnotation>,
+	sourceId?: string,
 ): OtlpTracesPayload => {
 	const traceId = ciTraceId(job)
 	const jobSpan = jobSpanId(job)
@@ -316,7 +330,7 @@ export const workflowJobToOtlp = (
 				"code.line.number": annotation.startLine,
 			}),
 		}))
-	return payloadOf(job.repoFullName, job.url, [
+	return payloadOf(job.repoFullName, job.url, sourceId, [
 		{
 			traceId,
 			spanId: jobSpan,

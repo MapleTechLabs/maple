@@ -5,7 +5,13 @@ import { CreateSourceRequest, OrgId, UpdateSourceRequest, UserId } from "@maple/
 import { SourceId } from "@maple/domain/primitives"
 import { hashIngestKey } from "@maple/db"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { SourcesService } from "./SourcesService"
 
 const trackedDbs: TestDb[] = []
@@ -381,6 +387,73 @@ describe("SourcesService", () => {
 				Array(4).fill("@maple/http/errors/SourceValidationError"),
 			)
 			assert.strictEqual((yield* keys.list(orgA)).length, 1)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("gives each scrape target a source with its scrape health and drops it with the target", () => {
+		const testDb = createTestDb(trackedDbs)
+		const insertTarget = (id: string, name: string, lastScrapeAt: number | null, error: string | null) =>
+			Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO scrape_targets (id, org_id, name, url, scrape_interval_seconds, last_scrape_at, last_scrape_error, created_at, updated_at)
+					 VALUES ($1, $2, $3, 'http://node:9100/metrics', 15, $4, $5, now(), now())`,
+					[
+						id,
+						orgA,
+						name,
+						lastScrapeAt === null ? null : new Date(lastScrapeAt).toISOString(),
+						error,
+					],
+				),
+			)
+
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			yield* TestClock.adjust("1 hour")
+			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000001", "node", 3_600_000 - 30_000, null)
+			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000002", "broken", null, "connection refused")
+
+			const first = yield* ownSources(keys, orgA)
+			assert.deepStrictEqual(
+				first
+					.map((source) => [source.name, source.platform, source.health.status, source.keyPrefix])
+					.sort(),
+				[
+					["broken", "prometheus", "failing", null],
+					["node", "prometheus", "healthy", null],
+				],
+			)
+			assert.strictEqual(
+				first.find((source) => source.name === "broken")?.health.problem,
+				"connection refused",
+			)
+			// Listing again keeps the same ids instead of minting new sources.
+			const again = yield* ownSources(keys, orgA)
+			assert.deepStrictEqual(
+				again.map((source) => source.id).sort(),
+				first.map((source) => source.id).sort(),
+			)
+
+			const broken = first.find((source) => source.name === "broken")
+			if (broken === undefined) return
+			const refused = yield* keys.delete(orgA, broken.id).pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/http/errors/SourceValidationError")
+
+			yield* Effect.promise(() =>
+				executeSql(testDb, "DELETE FROM scrape_targets WHERE id = $1", [
+					"9d1e2f3a-0000-4000-8000-000000000002",
+				]),
+			)
+			assert.deepStrictEqual(
+				(yield* ownSources(keys, orgA)).map((source) => source.name),
+				["node"],
+			)
+			const fetched = yield* keys.get(
+				orgA,
+				first.find((source) => source.name === "node")?.id ?? broken.id,
+			)
+			assert.strictEqual(fetched.health.status, "healthy")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })
