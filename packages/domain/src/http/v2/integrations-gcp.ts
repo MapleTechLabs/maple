@@ -12,6 +12,7 @@ import {
 	GcpScopeAlreadyConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
+	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 } from "../integrations"
 import { AuthorizationV2 } from "./auth"
@@ -236,6 +237,113 @@ export type V2GcpSetupScriptsRequest = Schema.Schema.Type<typeof V2GcpSetupScrip
 const SCRIPT_EXAMPLE =
 	" { …\nbash /dev/fd/3 3<<'MAPLE_SETUP_SCRIPT'\n#!/usr/bin/env bash\n…\nMAPLE_SETUP_SCRIPT\n}\n"
 
+const MANUAL_EXAMPLE = {
+	scope_type: "project",
+	scope_id: "acme-prod",
+	project_id: "acme-prod",
+	apis: [
+		"cloudresourcemanager.googleapis.com",
+		"iam.googleapis.com",
+		"logging.googleapis.com",
+		"pubsub.googleapis.com",
+	],
+	logs: {
+		topic: "maple-018f2b3c4d5e4f708192a3b4",
+		subscription: "maple-018f2b3c4d5e4f708192a3b4",
+		sink: "maple-018f2b3c4d5e4f708192a3b4",
+		sink_destination: "pubsub.googleapis.com/projects/acme-prod/topics/maple-018f2b3c4d5e4f708192a3b4",
+		log_filter: 'NOT log_id("cloudaudit.googleapis.com/data_access") AND …',
+		include_children: false,
+		push_endpoint: "https://ingest.maple.dev/v1/logpush/gcp/018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+		push_service_account_id: "maple-push-018f2b3c4d5e4f70819",
+		push_service_account_email: "maple-push-018f2b3c4d5e4f70819@acme-prod.iam.gserviceaccount.com",
+		ack_deadline_seconds: 30,
+		message_retention_seconds: 86400,
+		min_retry_delay_seconds: 10,
+		max_retry_delay_seconds: 600,
+	},
+	reader: null,
+} as const
+const TERRAFORM_EXAMPLE =
+	'# Maple connection for Google Cloud project acme-prod\n…\nresource "google_pubsub_topic" "maple" {\n  …\n}\n'
+const ALCHEMY_EXAMPLE =
+	'// Maple connection for Google Cloud project acme-prod\nimport * as Alchemy from "alchemy"\n…\n'
+
+const nameField = (description: string) => Schema.String.annotate({ description })
+
+export const V2GcpManualSetup = Schema.Struct({
+	scope_type: GcpScopeType,
+	scope_id: Schema.String.annotate({
+		description: "The project ID, or the numeric folder or organization ID.",
+	}),
+	project_id: Schema.String.annotate({
+		description: "The host project, which holds the topic, the subscription and the service accounts.",
+	}),
+	apis: Schema.Array(Schema.String).annotate({
+		description: "The APIs to switch on in the host project, by service name.",
+	}),
+	logs: Schema.NullOr(
+		Schema.Struct({
+			topic: nameField("The Pub/Sub topic in the host project."),
+			subscription: nameField("The push subscription on the topic."),
+			sink: nameField("The Log Router sink on the scope."),
+			sink_destination: nameField("The sink's destination: the topic, as Cloud Logging names it."),
+			log_filter: nameField(
+				"The sink's inclusion filter: what the setup script sets for the same `application_logs`. Omitted `application_logs` gives the filter a new sink gets.",
+			),
+			include_children: Schema.Boolean.annotate({
+				description:
+					"Whether the sink also routes the logs of every project under the folder or organization.",
+			}),
+			push_endpoint: nameField(
+				"The subscription's push endpoint, which is also the audience of its push tokens. It carries no secret.",
+			),
+			push_service_account_id: nameField("The service account the subscription signs its pushes as."),
+			push_service_account_email: nameField(
+				"Its email. Maple accepts a push only when it is signed as this account.",
+			),
+			ack_deadline_seconds: Schema.Number.annotate({
+				description: "The subscription's acknowledgement deadline.",
+			}),
+			message_retention_seconds: Schema.Number.annotate({
+				description:
+					"How long the subscription keeps unacknowledged messages. It never expires while idle.",
+			}),
+			min_retry_delay_seconds: Schema.Number.annotate({
+				description: "The shortest wait of the exponential backoff retry policy.",
+			}),
+			max_retry_delay_seconds: Schema.Number.annotate({
+				description: "The longest wait of the exponential backoff retry policy.",
+			}),
+		}),
+	).annotate({ description: "Log forwarding, or `null` while `logs_enabled` is `false`." }),
+	reader: Schema.NullOr(
+		Schema.Struct({
+			service_account_id: nameField("The read-only service account in the host project."),
+			service_account_email: nameField("Its email."),
+			maple_service_account_email: nameField(
+				"Maple's own service account, which gets Service Account Token Creator on the read-only account.",
+			),
+			scope_roles: Schema.Array(Schema.String).annotate({
+				description: "The roles the read-only account gets on the scope.",
+			}),
+			project_roles: Schema.Array(Schema.String).annotate({
+				description: "The roles it gets on the host project, which its reads are billed to.",
+			}),
+		}),
+	).annotate({
+		description:
+			"Read-only access for metrics and resources, or `null` while `metrics_enabled` is `false` or the deployment has no Google identity.",
+	}),
+}).annotate({
+	identifier: "GcpManualSetup",
+	title: "Google Cloud setup without the script",
+	description:
+		"What a console or infrastructure-as-code setup creates. Names match the setup script's, but the push subscription signs its pushes as a push service account instead of carrying a secret.",
+	examples: [wireExample(MANUAL_EXAMPLE)],
+})
+export type V2GcpManualSetup = Schema.Schema.Type<typeof V2GcpManualSetup>
+
 export const V2GcpSetupScripts = Schema.Struct({
 	object: Schema.Literal("gcp_connector.setup_scripts").annotate({
 		description: 'The object type — always `"gcp_connector.setup_scripts"`.',
@@ -250,19 +358,53 @@ export const V2GcpSetupScripts = Schema.Struct({
 			"Text to paste into Cloud Shell that removes everything the setup script created and tells Maple that it ran. It embeds the connector's push secret: treat it as a credential.",
 		examples: [SCRIPT_EXAMPLE],
 	}),
+	manual: V2GcpManualSetup,
+	terraform: Schema.String.annotate({
+		description:
+			"`manual` as a self-contained Terraform file for the `google` provider: every resource inline, IAM grants additive. `terraform destroy` removes what it created. It holds no secret.",
+		examples: [TERRAFORM_EXAMPLE],
+	}),
+	alchemy: Schema.NullOr(Schema.String).annotate({
+		description:
+			"`manual` as a self-contained Alchemy stack (`alchemy/GCP`). It holds no secret. `null` for a folder or organization with read-only access: Alchemy can't grant roles on a folder or organization.",
+		examples: [ALCHEMY_EXAMPLE],
+	}),
 }).annotate({
 	identifier: "GcpSetupScripts",
 	title: "Google Cloud setup scripts",
-	description: "The scripts that connect and disconnect one Google Cloud project, folder or organization.",
+	description:
+		"The ways to connect one Google Cloud project, folder or organization: the setup and cleanup scripts, or the same resources set up by hand or as code. Without a script nothing reports to Maple: log forwarding shows as set up once the first signed push arrives, and `check_access` confirms the read-only access.",
 	examples: [
 		wireExample({
 			object: "gcp_connector.setup_scripts",
 			setup_script: SCRIPT_EXAMPLE,
 			cleanup_script: SCRIPT_EXAMPLE,
+			manual: MANUAL_EXAMPLE,
+			terraform: TERRAFORM_EXAMPLE,
+			alchemy: ALCHEMY_EXAMPLE,
 		}),
 	],
 })
 export type V2GcpSetupScripts = Schema.Schema.Type<typeof V2GcpSetupScripts>
+
+export const V2GcpAccessCheck = Schema.Struct({
+	object: Schema.Literal("gcp_connector.access_check").annotate({
+		description: 'The object type — always `"gcp_connector.access_check"`.',
+	}),
+	ok: Schema.Boolean.annotate({
+		description:
+			"Whether Maple could read the scope as the connector's read-only account. `true` records the account as in place, as a setup script's report would.",
+	}),
+	message: Schema.NullOr(Schema.String).annotate({
+		description: "Why the check failed and what to do about it. `null` when `ok` is `true`.",
+	}),
+}).annotate({
+	identifier: "GcpAccessCheck",
+	title: "Google Cloud access check",
+	description: "The outcome of Maple reading a connector's scope as its read-only account.",
+	examples: [wireExample({ object: "gcp_connector.access_check", ok: true, message: null })],
+})
+export type V2GcpAccessCheck = Schema.Schema.Type<typeof V2GcpAccessCheck>
 
 export const V2GcpConnectorDeleteResponse = Schema.Struct({
 	id: GcpConnectorPublicId,
@@ -292,14 +434,21 @@ export const V2GcpConnectorDeleteResponse = Schema.Struct({
 })
 export type V2GcpConnectorDeleteResponse = Schema.Schema.Type<typeof V2GcpConnectorDeleteResponse>
 
-const [scopeAlreadyConnected, metricsUnavailable, validation, connectorNotFound, integrationPersistence] =
-	publicErrors(
-		GcpScopeAlreadyConnectedError,
-		GcpMetricsUnavailableError,
-		IntegrationsValidationError,
-		IntegrationsNotFoundError,
-		IntegrationsPersistenceError,
-	)
+const [
+	scopeAlreadyConnected,
+	metricsUnavailable,
+	validation,
+	connectorNotFound,
+	integrationPersistence,
+	integrationUpstream,
+] = publicErrors(
+	GcpScopeAlreadyConnectedError,
+	GcpMetricsUnavailableError,
+	IntegrationsValidationError,
+	IntegrationsNotFoundError,
+	IntegrationsPersistenceError,
+	IntegrationsUpstreamError,
+)
 
 export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration")
 	.add(
@@ -367,7 +516,28 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "renderGcpConnectorSetupScripts",
 				summary: "Render a connector's setup and cleanup scripts",
 				description:
-					"Returns the `gcloud` scripts for one connector. Rendering changes nothing, but both scripts carry the connector's push secret, so this requires an org-admin role and the `integrations:write` scope.",
+					"Returns the `gcloud` scripts for one connector, and the same setup for the Google Cloud console, Terraform and Alchemy. Rendering changes nothing, but both scripts carry the connector's push secret, so this requires an org-admin role and the `integrations:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("checkAccess", "/connectors/:id/check_access", {
+			params: { id: GcpConnectorPublicId },
+			success: V2GcpAccessCheck,
+			error: [
+				V2InsufficientPermissions.schema,
+				connectorNotFound,
+				metricsUnavailable,
+				validation,
+				integrationUpstream,
+				integrationPersistence,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "checkGcpConnectorAccess",
+				summary: "Check a connector's read-only access",
+				description:
+					"Signs in as the connector's read-only service account and lists one page of the scope's projects. On success Maple records the account as in place. Use it after a setup in the console or as code, which sends Maple no report. Rejected while `metrics_enabled` is `false`. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)

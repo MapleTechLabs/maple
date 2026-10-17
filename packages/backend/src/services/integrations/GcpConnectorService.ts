@@ -10,6 +10,7 @@ import {
 	GcpScopeAlreadyConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
+	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 } from "@maple/domain/http"
 import {
@@ -22,11 +23,22 @@ import {
 	type UserId,
 } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { renderGcpAlchemy } from "./gcp/alchemy"
+import {
+	fetchMapleAccessToken,
+	type GcpApiError,
+	importServiceAccountKey,
+	impersonateReader,
+	searchOneProject,
+} from "./gcp/api"
+import { gcpReaderPlan, gcpSetupPlan, type GcpReaderPlan, type GcpSetupPlan } from "./gcp/setup-plan"
 import { renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
+import { renderGcpTerraform } from "./gcp/terraform"
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId
@@ -110,8 +122,30 @@ export interface GcpConnectorServiceApi {
 		connectorId: GcpConnectorId,
 		options: { readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null },
 	) => Effect.Effect<
-		{ readonly setupScript: string; readonly cleanupScript: string },
+		{
+			readonly setupScript: string
+			readonly cleanupScript: string
+			/** The same setup without a script, and as Terraform and Alchemy. */
+			readonly plan: GcpSetupPlan
+			readonly terraform: string
+			readonly alchemy: string | null
+		},
 		IntegrationsNotFoundError | IntegrationsPersistenceError
+	>
+	/**
+	 * Reads one project of the scope as the read-only account. Success records the account as in
+	 * place, as a script's report does: a setup without the script sends none.
+	 */
+	readonly checkAccess: (
+		orgId: OrgId,
+		connectorId: GcpConnectorId,
+	) => Effect.Effect<
+		{ readonly ok: boolean; readonly message: string | null },
+		| IntegrationsNotFoundError
+		| IntegrationsValidationError
+		| GcpMetricsUnavailableError
+		| IntegrationsUpstreamError
+		| IntegrationsPersistenceError
 	>
 	/** What the latest inventory syncs of the org's connectors found. */
 	readonly resources: (
@@ -157,6 +191,24 @@ const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConne
 
 const notFound = () => new IntegrationsNotFoundError({ message: "No such Google Cloud connector." })
 
+/** Why the access check failed and what to do about it, however the setup was made. */
+const explainAccessError = (error: GcpApiError, row: GcpConnectorRow, reader: GcpReaderPlan) => {
+	const host = `${row.scopeType === "project" ? "project" : "host project"} ${row.projectId}`
+	if (error.api === "IAM Credentials" && (error.kind === "denied" || error.kind === "not_found")) {
+		return `Maple can't sign in as ${reader.serviceAccountEmail}: the account does not exist, or ${reader.mapleServiceAccountEmail} lacks Service Account Token Creator on it. Google can take a few minutes to accept a new grant.`
+	}
+	if (error.reason === "BILLING_DISABLED") {
+		return `The ${host} has no active billing account. Link one: https://console.cloud.google.com/billing/linkedaccount?project=${row.projectId}`
+	}
+	if (error.reason === "SERVICE_DISABLED") {
+		return `The ${error.api} API is switched off in the ${host}. Switch it on and check again.`
+	}
+	if (error.kind === "denied" || error.kind === "not_found") {
+		return `Google denied the read of ${row.scopeType} ${row.scopeId} as ${reader.serviceAccountEmail}. It needs ${reader.scopeRoles.join(" and ")} on the ${row.scopeType}, and ${reader.projectRoles.join(" and ")} on the ${host}. A new grant can take a few minutes.`
+	}
+	return `Google's ${error.api} API did not answer. Try again in a minute.`
+}
+
 export class GcpConnectorService extends Context.Service<GcpConnectorService, GcpConnectorServiceApi>()(
 	"@maple/api/services/GcpConnectorService",
 	{
@@ -174,6 +226,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 			)
 			const ingestBaseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
 			const mapleServiceAccountEmail = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_EMAIL)
+			const httpClient = yield* HttpClient.HttpClient
 			const mapleUrl = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/integrations?integration=gcp`
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
 
@@ -467,24 +520,83 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						}),
 					secretAad(row.id),
 				)
+				const pushEndpoint = `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}`
 				const target = {
 					connectorId,
 					scopeType: row.scopeType,
 					scopeId: row.scopeId,
 					projectId: row.projectId,
 					mapleUrl,
-					pushEndpoint: `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}?secret=${secret}`,
+					pushEndpoint: `${pushEndpoint}?secret=${secret}`,
 				}
+				const flags = {
+					mapleServiceAccountEmail,
+					logsEnabled: row.logsEnabled,
+					metricsEnabled: row.metricsEnabled,
+					applicationLogs: options.applicationLogs,
+				}
+				// Without the script Pub/Sub signs each push instead, so the endpoint carries no secret.
+				const plan = gcpSetupPlan({ ...target, ...flags, pushEndpoint })
 				return {
-					setupScript: yield* renderGcpSetupScript({
-						...target,
-						mapleServiceAccountEmail,
-						logsEnabled: row.logsEnabled,
-						metricsEnabled: row.metricsEnabled,
-						applicationLogs: options.applicationLogs,
-					}),
+					setupScript: yield* renderGcpSetupScript({ ...target, ...flags }),
 					cleanupScript: yield* renderGcpCleanupScript(target),
+					plan,
+					terraform: renderGcpTerraform(plan),
+					alchemy: renderGcpAlchemy(plan),
 				}
+			})
+
+			const checkAccess = Effect.fn("GcpConnectorService.checkAccess")(function* (
+				orgId: OrgId,
+				connectorId: GcpConnectorId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
+				const row = yield* selectRow(orgId, connectorId)
+				if (!row.metricsEnabled) {
+					return yield* new IntegrationsValidationError({
+						message:
+							"Metrics and resources are off for this connection, so it has no read-only account to check.",
+					})
+				}
+				const key = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_KEY)
+				if (mapleServiceAccountEmail === undefined || key === undefined) {
+					return yield* new GcpMetricsUnavailableError({
+						message: "Metrics and resource collection is not available on this Maple deployment.",
+					})
+				}
+				const reader = gcpReaderPlan(row.id, row.projectId, mapleServiceAccountEmail)
+				const now = yield* Clock.currentTimeMillis
+				// Maple's own sign-in failing is no fault of the connection.
+				const mapleToken = yield* importServiceAccountKey(key).pipe(
+					Effect.flatMap((signer) => fetchMapleAccessToken(httpClient, signer, now)),
+					Effect.tapError((error) =>
+						Effect.logError("gcp sign-in as Maple failed", { error: error.message }),
+					),
+					Effect.mapError(
+						() =>
+							new IntegrationsUpstreamError({
+								message: "Maple could not sign in to Google Cloud",
+							}),
+					),
+				)
+				// The id is validated when the connector is created; encoding keeps it inside the path.
+				const scope = `${row.scopeType}s/${encodeURIComponent(row.scopeId)}`
+				const failure = yield* impersonateReader(httpClient, mapleToken, row).pipe(
+					Effect.flatMap((signedIn) => searchOneProject(httpClient, signedIn, scope)),
+					Effect.as(null),
+					Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
+						Effect.succeed(`${explainAccessError(error, row, reader)} (${error.message})`),
+					),
+				)
+				if (failure !== null) return { ok: false, message: failure }
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(GcpConnectors)
+							.set({ appliedMetricsEnabled: true, setupReportedAt: now, updatedAt: now })
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)]),
+					),
+				)
+				return { ok: true, message: null }
 			})
 
 			const deleteConnector = Effect.fn("GcpConnectorService.delete")(function* (
@@ -520,10 +632,11 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				create,
 				update,
 				scripts,
+				checkAccess,
 				delete: deleteConnector,
 			} satisfies GcpConnectorServiceApi
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }

@@ -1,5 +1,6 @@
-import { afterEach, assert, describe, it } from "@effect/vitest"
+import { afterEach, assert, beforeAll, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { hashIngestKey } from "@maple/db"
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import { GcpProjectId, GcpResourceNumber, OrgId, UserId } from "@maple/domain/primitives"
@@ -19,9 +20,18 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const LOOKUP_HMAC_KEY = "maple-test-lookup-secret"
 const MAPLE_ACCOUNT = "collector@maple-prod.iam.gserviceaccount.com"
 
+// Answers every Google call with a 500: only the access check tests call Google.
+const unreachable: typeof fetch = async () => new Response(null, { status: 500 })
+
 // A fresh layer per call: one test builds the service twice, under two configurations.
-const makeLayer = (testDb: TestDb, mapleServiceAccount?: string) =>
+const makeLayer = (
+	testDb: TestDb,
+	mapleServiceAccount?: string,
+	google: { readonly key?: string; readonly fetch: typeof fetch } = { fetch: unreachable },
+) =>
 	Layer.effect(GcpConnectorService, GcpConnectorService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
+		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, google.fetch)),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(
@@ -40,6 +50,7 @@ const makeLayer = (testDb: TestDb, mapleServiceAccount?: string) =>
 					...(mapleServiceAccount === undefined
 						? undefined
 						: { MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: mapleServiceAccount }),
+					...(google.key === undefined ? undefined : { MAPLE_GCP_SERVICE_ACCOUNT_KEY: google.key }),
 				}),
 			),
 		),
@@ -69,6 +80,52 @@ const organizationScope: CreateGcpConnectorInput = {
 }
 
 const scriptOptions = { applicationLogs: null }
+
+// A key file for Maple's own service account; Google's token endpoint is stubbed.
+let encodedKey = ""
+beforeAll(async () => {
+	const pair = await crypto.subtle.generateKey(
+		{
+			name: "RSASSA-PKCS1-v1_5",
+			modulusLength: 2048,
+			publicExponent: new Uint8Array([1, 0, 1]),
+			hash: "SHA-256",
+		},
+		true,
+		["sign", "verify"],
+	)
+	const pkcs8 = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64")
+	encodedKey = Buffer.from(
+		JSON.stringify({
+			private_key_id: "key-1",
+			private_key: `-----BEGIN PRIVATE KEY-----\n${pkcs8}\n-----END PRIVATE KEY-----\n`,
+			client_email: MAPLE_ACCOUNT,
+		}),
+	).toString("base64")
+})
+
+const json = (status: number, body: unknown) =>
+	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+
+/** Google, with the reader's sign-in and read answered as given. Records the reads it answers. */
+const fakeGoogle = (answers: { readonly signIn: number; readonly read: number }) => {
+	const reads: Array<{ readonly url: URL; readonly quotaProject: string | null }> = []
+	const fetch: typeof globalThis.fetch = async (input, init) => {
+		const request = new Request(input, init)
+		const url = new URL(request.url)
+		if (url.hostname === "oauth2.googleapis.com") return json(200, { access_token: "ya29.maple" })
+		if (url.hostname === "iamcredentials.googleapis.com") {
+			return answers.signIn === 200
+				? json(200, { accessToken: "ya29.reader" })
+				: json(answers.signIn, { error: { status: "PERMISSION_DENIED" } })
+		}
+		reads.push({ url, quotaProject: request.headers.get("x-goog-user-project") })
+		return answers.read === 200
+			? json(200, { results: [] })
+			: json(answers.read, { error: { status: "PERMISSION_DENIED" } })
+	}
+	return { fetch, reads }
+}
 
 interface StoredConnector {
 	readonly secret_ciphertext: string
@@ -499,6 +556,101 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("renders the setup without a script: signed pushes, the script's filter, no secret", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, organizationScope)
+			const scripts = yield* gcp.scripts(orgId, connector.id, { applicationLogs: ["cloud_run"] })
+			const names = gcpConnectorResourceNames(connector.id)
+			const pushEndpoint = `https://ingest.test/v1/logpush/gcp/${connector.id}`
+			assert.strictEqual(scripts.plan.logs?.pushEndpoint, pushEndpoint)
+			// The account the ingest gateway accepts this connector's pushes from.
+			assert.strictEqual(
+				scripts.plan.logs?.pushServiceAccountEmail,
+				`${names.pushServiceAccountId}@acme-host.iam.gserviceaccount.com`,
+			)
+			const scriptFilter = /^LOG_FILTER='(.*)'$/m.exec(scripts.setupScript)?.[1]
+			assert.strictEqual(scripts.plan.logs?.logFilter, scriptFilter)
+			assert.strictEqual(scripts.plan.reader?.mapleServiceAccountEmail, MAPLE_ACCOUNT)
+			assert.match(scripts.terraform, new RegExp(`^  push_endpoint += "${pushEndpoint}"$`, "m"))
+			assert.notMatch(scripts.terraform, /maple_gcp_|secret=/)
+			// Alchemy can't grant roles on an organization.
+			assert.isNull(scripts.alchemy)
+
+			const logsOnly = yield* gcp.update(orgId, connector.id, { metricsEnabled: false })
+			const withoutReader = yield* gcp.scripts(orgId, logsOnly.id, scriptOptions)
+			assert.isNull(withoutReader.plan.reader)
+			assert.notMatch(withoutReader.alchemy ?? "", /maple_gcp_|secret=/)
+			assert.include(withoutReader.alchemy ?? "", `const PUSH_ENDPOINT = "${pushEndpoint}"`)
+		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+	})
+
+	it.effect("checks access as the read-only account and records it once Google answers", () => {
+		const testDb = createTestDb(trackedDbs)
+		const google = fakeGoogle({ signIn: 200, read: 200 })
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, organizationScope)
+			assert.deepStrictEqual(yield* gcp.checkAccess(orgId, connector.id), { ok: true, message: null })
+			assert.deepStrictEqual(
+				google.reads.map(({ url, quotaProject }) => [url.pathname, quotaProject]),
+				[["/v1/organizations/123456789012:searchAllResources", "acme-host"]],
+			)
+			const [checked] = (yield* gcp.status(orgId)).connectors
+			assert.isTrue(checked?.appliedMetricsEnabled)
+			assert.isNotNull(checked?.setupReportedAt)
+		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT, { key: encodedKey, fetch: google.fetch })))
+	})
+
+	it.effect("says what is missing when Google refuses the read-only account", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Each Google answer is its own deployment over the same database: layers are built once
+		// per provide, and a nested one would share the outer one's.
+		const deployment = (answers: { readonly signIn: number; readonly read: number }) =>
+			makeLayer(testDb, MAPLE_ACCOUNT, { key: encodedKey, fetch: fakeGoogle(answers).fetch })
+		return Effect.gen(function* () {
+			const connector = yield* GcpConnectorService.use((gcp) =>
+				gcp.create(orgId, userId, organizationScope),
+			).pipe(Effect.provide(deployment({ signIn: 200, read: 200 })))
+			const reader = `${gcpConnectorResourceNames(connector.id).serviceAccountId}@acme-host.iam.gserviceaccount.com`
+			const check = (answers: { readonly signIn: number; readonly read: number }) =>
+				GcpConnectorService.use((gcp) => gcp.checkAccess(orgId, connector.id)).pipe(
+					Effect.provide(deployment(answers)),
+				)
+
+			const signIn = yield* check({ signIn: 403, read: 200 })
+			assert.isFalse(signIn.ok)
+			assert.include(signIn.message, `Maple can't sign in as ${reader}`)
+
+			const read = yield* check({ signIn: 200, read: 403 })
+			assert.isFalse(read.ok)
+			assert.include(
+				read.message,
+				"roles/monitoring.viewer and roles/cloudasset.viewer on the organization",
+			)
+			// Nothing is recorded for a check that failed.
+			const [stored] = yield* GcpConnectorService.use((gcp) => gcp.status(orgId)).pipe(
+				Effect.provide(deployment({ signIn: 200, read: 200 })),
+				Effect.map((status) => status.connectors),
+			)
+			assert.isNull(stored?.appliedMetricsEnabled)
+		})
+	})
+
+	it.effect("refuses the access check without metrics, or without Maple's own key", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, organizationScope)
+			const noKey = yield* Effect.flip(gcp.checkAccess(orgId, connector.id))
+			assert.strictEqual(noKey._tag, "@maple/http/errors/GcpMetricsUnavailableError")
+			yield* gcp.update(orgId, connector.id, { metricsEnabled: false })
+			const metricsOff = yield* Effect.flip(gcp.checkAccess(orgId, connector.id))
+			assert.strictEqual(metricsOff._tag, "@maple/http/errors/IntegrationsValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+	})
+
 	it.effect("scopes updates, scripts and deletion to the owning organization", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -513,6 +665,8 @@ describe("GcpConnectorService", () => {
 				const error = yield* Effect.flip(foreign)
 				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotFoundError")
 			}
+			const check = yield* Effect.flip(gcp.checkAccess(otherOrgId, connector.id))
+			assert.strictEqual(check._tag, "@maple/http/errors/IntegrationsNotFoundError")
 
 			const deleted = yield* gcp.delete(orgId, connector.id)
 			assert.deepStrictEqual(deleted.connector, connector)
