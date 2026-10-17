@@ -72,13 +72,15 @@ export interface SamplingPatch {
 	readonly always_keep_slow_spans_ms?: number | null
 }
 
+type MutableSamplingPatch = { -readonly [K in keyof SamplingPatch]: SamplingPatch[K] }
+
 /**
  * Only the fields that differ from `saved`, so a save never reverts a field changed elsewhere.
  * Compared as displayed, so float noise in the stored ratio does not count as an edit.
  */
 export function samplingPatch(payload: SamplingPayload, saved: SamplingDraft): SamplingPatch {
 	const next = samplingDraftFromPolicy(payload)
-	const patch: { trace_sample_ratio?: number; always_keep_slow_spans_ms?: number | null } = {}
+	const patch: MutableSamplingPatch = {}
 	if (next.keepPercent !== saved.keepPercent) patch.trace_sample_ratio = payload.trace_sample_ratio
 	if (next.slowMs !== saved.slowMs) patch.always_keep_slow_spans_ms = payload.always_keep_slow_spans_ms
 	return patch
