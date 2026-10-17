@@ -69,7 +69,7 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
-import { Database } from "@maple/backend/platform/DatabaseLive"
+import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
@@ -6542,6 +6542,84 @@ describe("AlertsService post-evaluation writes", () => {
 			)
 			assert.deepStrictEqual(stored, { groups: GROUPS, healthy: GROUPS })
 		}).pipe(Effect.provide(makeLayer(slowDb(testDb), stub, { fetch: okFetch })))
+	})
+
+	it.live("retries a state flush that failed on a transient error", () => {
+		const testDb = createTestDb(trackedDbs)
+		const services = ["svc-a", "svc-b", "svc-c"]
+		const stub = makeWarehouseStub({
+			tracesAggregateRows: services.map((groupName) =>
+				tracesRow({ groupName, count: 200, errorRate: 0.5, estimatedSpanCount: 200 }),
+			),
+		})
+		const flushFailures = Ref.makeUnsafe(1)
+		// The flush's first transaction fails like a dropped connection, which
+		// the contention retry inside dbExecute does not cover.
+		const flakyFlushDb: TestDb = {
+			...testDb,
+			layer: Layer.effect(
+				Database,
+				Effect.gen(function* () {
+					const inner = yield* Database
+					return Database.of({
+						execute: (fn) =>
+							Effect.gen(function* () {
+								const span = yield* Effect.currentSpan.pipe(Effect.orElseSucceed(() => null))
+								const fail =
+									span?.name === "AlertsService.flushRuleStates" &&
+									(yield* Ref.modify(flushFailures, (left) => [
+										left > 0,
+										Math.max(0, left - 1),
+									]))
+								if (fail) {
+									return yield* new DatabaseError({
+										message: "Connection terminated unexpectedly",
+										cause: null,
+									})
+								}
+								return yield* inner.execute(fn)
+							}),
+					})
+				}),
+			).pipe(Layer.provide(testDb.layer)),
+		}
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_state_batch_retry")
+			const userId = asUserId("user_state_batch_retry")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Grouped error rate",
+					severity: "warning",
+					enabled: true,
+					groupBy: ["service.name"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					destinationIds: [destination.id],
+				}),
+			)
+
+			yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(yield* Ref.get(flushFailures), 0, "the flush failed once")
+			const stored = yield* Effect.promise(() =>
+				queryFirstRow<{ healthy: number }>(
+					testDb,
+					`select count(*) filter (where last_status = 'healthy')::int as "healthy"
+					   from alert_rule_states where rule_id = $1`,
+					[rule.id],
+				),
+			)
+			assert.deepStrictEqual(stored, { healthy: services.length })
+		}).pipe(Effect.provide(makeLayer(flakyFlushDb, stub, { fetch: okFetch })))
 	})
 
 	it.effect("a rule edited before its flush keeps neither the buffered states nor their checks", () => {

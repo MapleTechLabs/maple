@@ -705,6 +705,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							),
 						{ discard: true },
 					),
+				).pipe(
+					// One write now carries every deferred group, so a transient failure
+					// would drop the whole rule's progress. The upsert is idempotent and
+					// re-fenced, so retry once; a lost claim or an edit stays final.
+					Effect.retry({
+						times: 1,
+						while: (error) => !(error instanceof AlertRuleClaimLostError),
+					}),
 				)
 				// Only now do the checks count: a failed flush must not report
 				// evaluations whose state never reached Postgres.
