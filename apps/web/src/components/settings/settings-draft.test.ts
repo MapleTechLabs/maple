@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { commitEdits, isSameDraft } from "./settings-draft"
+import { commitEdits, divergesFromSave, isSameDraft, isSaveSettled } from "./settings-draft"
 
 describe("isSameDraft", () => {
 	it("compares nested plain data by value, ignoring key order", () => {
@@ -49,5 +49,28 @@ describe("commitEdits", () => {
 
 	it("has nothing to settle when the edits were already dropped", () => {
 		expect(commitEdits(null, { submitted: { rate: 50 } }, { rate: 10 }, isSameDraft)).toBeNull()
+	})
+})
+
+describe("in-flight save", () => {
+	const save = { submitted: { rate: 50 }, base: { rate: 10 } }
+
+	it("counts a revert to the saved value as unsaved while the save will store something else", () => {
+		expect(divergesFromSave({ rate: 10 }, save, isSameDraft)).toBe(true)
+		expect(divergesFromSave({ rate: 50 }, save, isSameDraft)).toBe(false)
+	})
+
+	it("accepts either the submitted or the normalized sent value as matching", () => {
+		const normalized = { submitted: { rate: 25.5 }, sent: { rate: 25 } }
+		expect(divergesFromSave({ rate: 25.5 }, normalized, isSameDraft)).toBe(false)
+		expect(divergesFromSave({ rate: 25 }, normalized, isSameDraft)).toBe(false)
+		expect(divergesFromSave({ rate: 10 }, normalized, isSameDraft)).toBe(true)
+	})
+
+	it("settles once the saved value moves off the base or reaches the stored value", () => {
+		expect(isSaveSettled(save, { rate: 10 }, isSameDraft)).toBe(false)
+		expect(isSaveSettled(save, { rate: 50 }, isSameDraft)).toBe(true)
+		expect(isSaveSettled(save, { rate: 70 }, isSameDraft)).toBe(true)
+		expect(isSaveSettled({ ...save, sent: { rate: 25 } }, { rate: 25 }, isSameDraft)).toBe(true)
 	})
 })

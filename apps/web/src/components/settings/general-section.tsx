@@ -122,14 +122,15 @@ export function GeneralSection() {
 
 	function handleSaveName() {
 		if (!organization || trimmedName.length === 0) return
-		const submitted = nameDraft.draft
 		const sent = trimmedName
 		return withSavingName(async () => {
+			const submitted = nameDraft.submit()
 			const ok = await settleClerk(organization.update({ name: sent }), {
 				success: "Organization renamed",
 				error: "Failed to rename organization",
 			})
 			if (ok) nameDraft.commit({ submitted, sent })
+			else nameDraft.abort()
 			return ok
 		})
 	}
