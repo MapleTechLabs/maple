@@ -25,7 +25,6 @@ import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { AdminOnlyNotice } from "./admin-only-notice"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
 import { RecommendedMappingsSection } from "./recommended-mappings-section"
-import { SamplingSaveBar, SamplingSection, useSamplingSettings } from "./sampling-section"
 import { SettingsSection, SettingsSections } from "./settings-section"
 
 /** Live ingest-health strip: green once telemetry lands, amber pulse while waiting. */
@@ -191,18 +190,15 @@ function AddServiceSection({ connection }: { connection: IngestConnection }) {
 
 export function IngestionSection() {
 	const connection = useIngestConnection()
-	const sampling = useSamplingSettings()
 
 	return (
 		<SettingsSections>
 			<AdminOnlyNotice subject="ingestion settings" />
 			<StatusBanner connection={connection} />
 			<EndpointSection />
-			<SamplingSection sampling={sampling} />
 			<AddServiceSection connection={connection} />
 			<RecommendedMappingsSection />
 			<AttributeMappingsSection />
-			<SamplingSaveBar sampling={sampling} />
 		</SettingsSections>
 	)
 }

@@ -17,7 +17,6 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { TraceSamplingPolicyService } from "@maple/backend/services/org/TraceSamplingPolicyService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
@@ -51,7 +50,6 @@ import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
 import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
 import { HttpV2AgentFeedbackLive } from "./agent-feedback.http"
-import { HttpV2TraceSamplingLive } from "./trace-sampling.http"
 import { HttpV2OnboardingChecklistLive } from "./onboarding-checklist.http"
 import { HttpV2SupportChannelLive } from "./support-channel.http"
 import { HttpV2OrganizationLive } from "./organization.http"
@@ -159,7 +157,6 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 			Layer.provide(Layer.mergeAll(MobileDevicesService.layer, LiveActivitiesService.layer)),
 		),
 		HttpV2AgentFeedbackLive.pipe(Layer.provide(AgentFeedbackService.layer)),
-		HttpV2TraceSamplingLive.pipe(Layer.provide(TraceSamplingPolicyService.layer)),
 		// Same, plus the Env every harness provides as well.
 		HttpV2GcpIntegrationsLive.pipe(Layer.provide(GcpConnectorService.layer)),
 		// Real reads over whichever `WarehouseQueryService` stub the test provides.
