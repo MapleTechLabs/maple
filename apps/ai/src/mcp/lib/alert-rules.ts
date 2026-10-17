@@ -108,17 +108,20 @@ export const parseRuleId = (ruleId: string) =>
 	})
 
 /**
- * An invalid rule as the model reads it: each detail once. The domain error
- * also folds its details into `message` for HTTP callers, so listing both
- * would repeat every one.
+ * An invalid rule as the model reads it: the message and each detail once. A
+ * message that already folds in every detail is dropped as a repeat; any other
+ * message names the failure the details only qualify, so it stays.
  */
-export const invalidRuleInput = (error: AlertValidationError) =>
-	new McpInvalidInputError({
-		message:
-			error.details.length === 0
-				? `Invalid alert rule: ${error.message}`
-				: ["Invalid alert rule:", ...error.details.map((detail) => `- ${detail}`)].join("\n"),
+export const invalidRuleInput = (error: AlertValidationError) => {
+	const repeatsDetails =
+		error.details.length > 0 && error.details.every((detail) => error.message.includes(detail))
+	return new McpInvalidInputError({
+		message: [
+			repeatsDetails ? "Invalid alert rule:" : `Invalid alert rule: ${error.message}`,
+			...error.details.map((detail) => `- ${detail}`),
+		].join("\n"),
 	})
+}
 
 /** The write failures that are the caller's to fix, as input errors naming the parameter. */
 export const ruleWriteInputErrors = {

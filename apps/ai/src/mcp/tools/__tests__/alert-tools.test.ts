@@ -712,6 +712,17 @@ describe("alert tools", () => {
 		}
 	})
 
+	it("keeps an invalid-rule message that names a failure its details only qualify", () => {
+		const message = invalidRuleInput(
+			new AlertValidationError({
+				message: "Unsupported traces metric: p95",
+				details: ["Traces filter http.status_code supports only =; ignoring !="],
+			}),
+		).message
+		expect(message).toContain("Unsupported traces metric: p95")
+		expect(message).toContain("ignoring !=")
+	})
+
 	it("delete_alert_rule requires confirm and maps not-found to rule_id", async () => {
 		const unconfirmed = await run("delete_alert_rule", { rule_id: RULE_ID, confirm: false })
 		expect(unconfirmed._tag === "Failure" && unconfirmed.failure.parameter).toBe("confirm")
