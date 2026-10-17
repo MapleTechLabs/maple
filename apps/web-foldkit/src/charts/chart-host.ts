@@ -12,6 +12,7 @@ import {
 	buildNumericHistogram,
 } from "./definitions/histogram"
 import { buildPie, buildPieSpike } from "./definitions/pie"
+import { buildSparkline } from "./definitions/sparkline"
 
 /**
  * What `RendererChartImplementation` (`@tanstack/charts/react`) does with a `CanvasChart` or SVG
@@ -125,6 +126,8 @@ export const createChartHost = (
 				buildCategoricalHistogram,
 				options,
 			),
+		Sparkline: (sparkline) =>
+			hostFor(container, sparkline, height, variant("Sparkline"), buildSparkline, options),
 		BinnedHistogram: (histogram) =>
 			hostFor(container, histogram, height, variant("BinnedHistogram"), buildBinnedHistogram, options),
 	})

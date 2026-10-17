@@ -60,6 +60,16 @@ export const ChartSpec = defineTaggedUnion({
 		useLogY: Schema.Boolean,
 		showTooltip: Schema.Boolean,
 	},
+	/** `PlotSparkline`: the services table's trend line. */
+	Sparkline: {
+		values: Schema.Array(Schema.Number),
+		color: Schema.String,
+		gradientId: Schema.String,
+		fillStart: Schema.Number,
+		fillEnd: Schema.Number,
+		/** Bumped when the data arrives again: React rebuilds the definition on every new result. */
+		revision: Schema.Number,
+	},
 	/** `HistogramSpike` (binX over raw observations) in apps/web/src/lab/charts/histogram-spike.tsx. */
 	BinnedHistogram: {
 		values: Schema.Array(Schema.Number),

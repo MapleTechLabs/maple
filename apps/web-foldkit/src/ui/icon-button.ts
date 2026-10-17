@@ -7,6 +7,7 @@ export type IconButtonOptions<Message> = Readonly<{
 	size?: "icon" | "icon-2xs" | "icon-xs" | "icon-sm" | "icon-lg" | "icon-xl"
 	variant?: "default" | "secondary" | "outline" | "ghost" | "destructive" | "destructive-outline" | "link"
 	isDisabled?: boolean
+	className?: string
 	/** Base UI's `useId` on the tooltip trigger (`base-ui-_r_N_`). */
 	triggerId?: string
 	/** `false` keeps the aria-label but drops the tooltip trigger. */
@@ -30,6 +31,7 @@ export const iconButton = <Message>(
 			size: options.size ?? "icon-sm",
 			variant: options.variant ?? "ghost",
 			isDisabled: options.isDisabled ?? false,
+			className: options.className,
 			slot: "icon-button",
 			attributes: [
 				h.AriaLabel(options.label),
