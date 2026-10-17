@@ -12,6 +12,7 @@ import {
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -46,6 +47,13 @@ const warehouse = Layer.succeed(
 	}),
 )
 
+const ORG_CREATED_AT = Date.UTC(2025, 0, 1)
+
+const organizations = Layer.succeed(OrganizationService, {
+	retrieve: (orgId) =>
+		Effect.succeed({ id: orgId, name: null, slug: null, imageUrl: null, createdAtMs: ORG_CREATED_AT }),
+})
+
 const makeLayer = (testDb: TestDb, tracesStatus: "present" | "absent") =>
 	Layer.effect(SetupAuditService, SetupAuditService.make).pipe(
 		Layer.provide(
@@ -53,6 +61,7 @@ const makeLayer = (testDb: TestDb, tracesStatus: "present" | "absent") =>
 				warehouse,
 				signalPresence(tracesStatus),
 				OnboardingService.layer,
+				organizations,
 				IntegrationInventoryService.layer,
 			),
 		),
@@ -61,9 +70,9 @@ const makeLayer = (testDb: TestDb, tracesStatus: "present" | "absent") =>
 
 const firstDataInDb = (testDb: TestDb) =>
 	Effect.promise(() =>
-		queryFirstRow<{ first_data_received_at: Date | null }>(
+		queryFirstRow<{ first_data_received_at: Date | null; created_at: Date }>(
 			testDb,
-			`SELECT first_data_received_at FROM org_onboarding_state WHERE org_id = $1`,
+			`SELECT first_data_received_at, created_at FROM org_onboarding_state WHERE org_id = $1`,
 			[ORG],
 		),
 	)
@@ -91,13 +100,14 @@ describe("SetupAuditService first-data stamping", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, "present")))
 	})
 
-	it.effect("creates and stamps the row when the org has no onboarding state at all", () => {
+	it.effect("creates the row dated by the org's creation time when the org has no onboarding state", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
 			assert.strictEqual(report.dataStatus, "ok")
 			const row = yield* firstDataInDb(testDb)
 			assert.isNotNull(row?.first_data_received_at ?? null)
+			assert.strictEqual(row?.created_at.getTime(), ORG_CREATED_AT)
 		}).pipe(Effect.provide(makeLayer(testDb, "present")))
 	})
 

@@ -148,7 +148,7 @@ function ConnectionPanel({
 		user: settings.chUser ?? "default",
 		database: settings.chDatabase ?? "default",
 	}
-	const { draft, isDirty, updateDraft, discard, commit } = useSettingsDraft(saved)
+	const { draft, isDirty, updateDraft, discard, commit, submit, abort } = useSettingsDraft(saved)
 	const [password, setPassword] = useState("")
 	const [disconnectOpen, setDisconnectOpen] = useState(false)
 	const dirty = isDirty || password !== ""
@@ -161,7 +161,7 @@ function ConnectionPanel({
 	})
 
 	const [handleSave, isSaving] = useAsyncAction(async () => {
-		const submitted = draft
+		const submitted = submit()
 		const sent = { url: draft.url.trim(), user: draft.user.trim(), database: draft.database.trim() }
 		const result = await upsertMutation({
 			payload: new OrgClickHouseSettingsUpsertRequest({
@@ -169,8 +169,10 @@ function ConnectionPanel({
 				...(password !== "" ? { password } : undefined),
 			}),
 		})
-		if (!toastExit(result, { success: "Connection saved and tested", error: "Connection test failed" }))
+		if (!toastExit(result, { success: "Connection saved and tested", error: "Connection test failed" })) {
+			abort()
 			return
+		}
 		setPassword("")
 		commit({ submitted, sent })
 		onChanged()
