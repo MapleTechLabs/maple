@@ -1,5 +1,11 @@
-import { Effect } from "effect"
-import { SelfHostedAuthDisabledError, SelfHostedInvalidPasswordError, UnauthorizedError } from "@maple/domain/http"
+import { detectAiModel } from "@maple/ai-model-catalog"
+import { Effect, Schema } from "effect"
+import {
+	DetectAiModelsRequest,
+	SelfHostedAuthDisabledError,
+	SelfHostedInvalidPasswordError,
+	UnauthorizedError,
+} from "@maple/domain/http"
 import type { Dataset, EndpointHandler } from "../fixtures/dataset.ts"
 import { DAY } from "../fixtures/identity.ts"
 import { fixtureSession } from "./auth.ts"
@@ -100,6 +106,12 @@ const ingestKeys: EndpointHandler = ({ dataset }) =>
 		private_rotated_at: new Date(Date.parse(dataset.now) - 30 * DAY).toISOString(),
 	})
 
+
+// The real catalog lookup the API runs (`apps/api/src/routes/internal/ai-models.http.ts`).
+const detectAiModels: EndpointHandler = ({ payload }) =>
+	Effect.map(Schema.decodeUnknownEffect(DetectAiModelsRequest)(payload), (request) =>
+		request.models.map((model) => detectAiModel(model)),
+	)
 const constant =
 	(value: unknown): EndpointHandler =>
 	() =>
@@ -112,6 +124,7 @@ export const defaultHandlers = new Map<string, EndpointHandler>(
 	"authPublic.previewSignInStatus": constant({ enabled: false }),
 	"auth.session": ({ dataset }) => Effect.succeed(session(dataset)),
 	"auth.sessionRefresh": sessionRefresh,
+	"aiModelsInternal.detectMany": detectAiModels,
 	"integrations.cloudflareStatus": constant(disconnectedCloudflare),
 	"integrations.railwayStatus": constant(disconnectedRailway),
 	"planetscaleIntegration.status": constant(disconnectedPlanetScale),

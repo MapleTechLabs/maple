@@ -8,6 +8,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@maple/ai-model-catalog": "workspace:*",
 		"@maple/backend": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",

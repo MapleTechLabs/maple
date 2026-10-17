@@ -5,7 +5,7 @@ import { LEGACY_BASELINE_REF, repoRoot } from "../config.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 
 /**
- * Every sessionless page in `apps/web/src/lab/registry.ts`, plus the `/lab` index, at desktop in
+ * Every page in `apps/web/src/lab/registry.ts`, plus the `/lab` index, at desktop in
  * light and dark. Read from the registry source so a new lab page is covered without editing this
  * file; once `apps/web` is gone it is read from the pinned baseline instead.
  */
@@ -43,14 +43,14 @@ const scenario = (path: string, title: string): Scenario => ({
 	viewports: ["desktop"],
 	themes: ["light", "dark"],
 	area: "lab",
+	// Signed in: the root shell still calls the API on lab pages, and some pages need a session.
+	dataset: "default",
 })
 
 export const labArea: AreaModule = {
 	area: "lab",
 	scenarios: [
 		scenario("/lab", "Index"),
-		...labRegistry()
-			.filter((entry) => entry.session === "none")
-			.map((entry) => scenario(entry.path, entry.title)),
+		...labRegistry().map((entry) => scenario(entry.path, entry.title)),
 	],
 }
