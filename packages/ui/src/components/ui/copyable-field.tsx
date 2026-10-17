@@ -5,6 +5,12 @@ import * as React from "react"
 import { EyeIcon } from "../icons"
 import { CopyButton } from "./copy-button"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "./input-group"
+import {
+	copyableFieldInputStyles,
+	copyableFieldLabelStyles,
+	copyableFieldRevealVisibleStyles,
+	copyableFieldStyles,
+} from "./copyable-field.styles"
 
 /** Mask a secret, keeping the readable prefix + last four characters. */
 export function maskKey(key: string): string {
@@ -35,13 +41,13 @@ export function CopyableField({ value, label, copyLabel, masked }: CopyableField
 	const [isVisible, setIsVisible] = React.useState(false)
 
 	return (
-		<div className="space-y-1">
-			{label && <label className="text-xs text-muted-foreground">{label}</label>}
+		<div className={copyableFieldStyles}>
+			{label && <label className={copyableFieldLabelStyles}>{label}</label>}
 			<InputGroup>
 				<InputGroupInput
 					readOnly
 					value={masked && !isVisible ? maskKey(value) : value}
-					className="select-all font-mono text-xs tracking-wide"
+					className={copyableFieldInputStyles}
 				/>
 				<InputGroupAddon align="inline-end">
 					{masked && (
@@ -49,7 +55,10 @@ export function CopyableField({ value, label, copyLabel, masked }: CopyableField
 							onClick={() => setIsVisible((v) => !v)}
 							aria-label={isVisible ? "Hide key" : "Reveal key"}
 						>
-							<EyeIcon size={14} className={isVisible ? "text-foreground" : undefined} />
+							<EyeIcon
+								size={14}
+								className={isVisible ? copyableFieldRevealVisibleStyles : undefined}
+							/>
 						</InputGroupButton>
 					)}
 					<CopyButton

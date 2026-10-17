@@ -1,5 +1,19 @@
 import type * as React from "react"
 import { cn } from "../../lib/utils"
+import {
+	tableBodyStyles,
+	tableCaptionStyles,
+	tableCellStyles,
+	tableContainerScrollStyles,
+	tableContainerStyles,
+	tableFooterStyles,
+	tableHeadStyles,
+	tableHeaderStickyStyles,
+	tableHeaderStyles,
+	tableRowStyles,
+	tableStyles,
+	truncatedCellStyles,
+} from "./table.styles"
 
 export type TableVariant = "default" | "card" | "bare"
 /** Row density. `sm` is the dense text-xs table; `xs` the 11px inline table (chat renderers, previews). */
@@ -22,19 +36,12 @@ export function Table({
 }): React.ReactElement {
 	return (
 		<div
-			className={cn("relative w-full", scroll && "overflow-x-auto")}
+			className={cn(tableContainerStyles, scroll && tableContainerScrollStyles)}
 			data-slot="table-container"
 			data-variant={variant}
 			data-size={size}
 		>
-			<table
-				className={cn(
-					"w-full caption-bottom in-data-[variant=card]:border-separate in-data-[variant=card]:border-spacing-0 text-sm",
-					className,
-				)}
-				data-slot="table"
-				{...props}
-			/>
+			<table className={cn(tableStyles, className)} data-slot="table" {...props} />
 		</div>
 	)
 }
@@ -49,12 +56,7 @@ export function TableHeader({
 }): React.ReactElement {
 	return (
 		<thead
-			className={cn(
-				// Header rows never take the body's hover tint (descendant selector out-specifies it).
-				"[&_tr]:border-b [&_tr]:hover:bg-transparent in-data-[variant=bare]:[&_tr]:border-0",
-				sticky && "sticky top-0 z-10 bg-background",
-				className,
-			)}
+			className={cn(tableHeaderStyles, sticky && tableHeaderStickyStyles, className)}
 			data-slot="table-header"
 			{...props}
 		/>
@@ -62,68 +64,23 @@ export function TableHeader({
 }
 
 export function TableBody({ className, ...props }: React.ComponentProps<"tbody">): React.ReactElement {
-	return (
-		<tbody
-			className={cn(
-				"relative in-data-[variant=card]:rounded-xl in-data-[variant=card]:shadow-xs/5 before:pointer-events-none before:absolute before:inset-px not-in-data-[variant=card]:before:hidden before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/8%)] [&_tr:last-child]:border-0 in-data-[variant=card]:*:[tr]:border-0 in-data-[variant=card]:*:[tr]:*:[td]:border-b in-data-[variant=card]:*:[tr]:*:[td]:bg-card in-data-[variant=card]:*:[tr]:first:*:[td]:first:rounded-ss-xl in-data-[variant=card]:*:[tr]:*:[td]:first:border-s in-data-[variant=card]:*:[tr]:first:*:[td]:border-t in-data-[variant=card]:*:[tr]:last:*:[td]:last:rounded-ee-xl in-data-[variant=card]:*:[tr]:*:[td]:last:border-e in-data-[variant=card]:*:[tr]:first:*:[td]:last:rounded-se-xl in-data-[variant=card]:*:[tr]:last:*:[td]:first:rounded-es-xl in-data-[variant=card]:*:[tr]:hover:*:[td]:bg-[color-mix(in_srgb,var(--card),var(--color-black)_2%)] in-data-[variant=card]:*:[tr]:data-[state=selected]:*:[td]:bg-[color-mix(in_srgb,var(--card),var(--color-black)_4%)] dark:in-data-[variant=card]:*:[tr]:data-[state=selected]:*:[td]:bg-[color-mix(in_srgb,var(--card),var(--color-white)_4%)] dark:in-data-[variant=card]:*:[tr]:hover:*:[td]:bg-[color-mix(in_srgb,var(--card),var(--color-white)_2%)]",
-				className,
-			)}
-			data-slot="table-body"
-			{...props}
-		/>
-	)
+	return <tbody className={cn(tableBodyStyles, className)} data-slot="table-body" {...props} />
 }
 
 export function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">): React.ReactElement {
-	return (
-		<tfoot
-			className={cn(
-				"border-t in-data-[variant=card]:border-none bg-transparent not-in-data-[variant=card]:bg-[color-mix(in_srgb,var(--card),var(--color-black)_2%)] font-medium dark:not-in-data-[variant=card]:bg-[color-mix(in_srgb,var(--card),var(--color-white)_2%)] [&>tr]:last:border-b-0",
-				className,
-			)}
-			data-slot="table-footer"
-			{...props}
-		/>
-	)
+	return <tfoot className={cn(tableFooterStyles, className)} data-slot="table-footer" {...props} />
 }
 
 export function TableRow({ className, ...props }: React.ComponentProps<"tr">): React.ReactElement {
-	return (
-		<tr
-			className={cn(
-				"relative border-b in-data-[variant=bare]:border-0 in-data-[variant=bare]:hover:bg-transparent not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-black)_2%)] not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] dark:not-in-data-[variant=card]:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] dark:not-in-data-[variant=card]:hover:bg-[color-mix(in_srgb,var(--background),var(--color-white)_2%)]",
-				className,
-			)}
-			data-slot="table-row"
-			{...props}
-		/>
-	)
+	return <tr className={cn(tableRowStyles, className)} data-slot="table-row" {...props} />
 }
 
 export function TableHead({ className, ...props }: React.ComponentProps<"th">): React.ReactElement {
-	return (
-		<th
-			className={cn(
-				"h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted-foreground leading-none in-data-[size=sm]:h-8 in-data-[size=sm]:px-2 in-data-[size=sm]:text-xs in-data-[size=xs]:h-auto in-data-[size=xs]:px-0 in-data-[size=xs]:pr-2 in-data-[size=xs]:pb-1 in-data-[size=xs]:text-2xs has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
-				className,
-			)}
-			data-slot="table-head"
-			{...props}
-		/>
-	)
+	return <th className={cn(tableHeadStyles, className)} data-slot="table-head" {...props} />
 }
 
 export function TableCell({ className, ...props }: React.ComponentProps<"td">): React.ReactElement {
-	return (
-		<td
-			className={cn(
-				"whitespace-nowrap bg-clip-padding p-2.5 in-data-[slot=table-footer]:py-3.5 align-middle leading-none in-data-[size=sm]:px-2 in-data-[size=sm]:py-1.5 in-data-[size=sm]:text-xs in-data-[size=xs]:px-0 in-data-[size=xs]:py-0.5 in-data-[size=xs]:pr-2 in-data-[size=xs]:text-2xs in-data-[variant=card]:first:ps-[calc(--spacing(2.5)-1px)] in-data-[variant=card]:last:pe-[calc(--spacing(2.5)-1px)] has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0",
-				className,
-			)}
-			data-slot="table-cell"
-			{...props}
-		/>
-	)
+	return <td className={cn(tableCellStyles, className)} data-slot="table-cell" {...props} />
 }
 
 /**
@@ -132,15 +89,9 @@ export function TableCell({ className, ...props }: React.ComponentProps<"td">): 
  * content); `max-w-0 w-full` makes this column take the leftover width.
  */
 export function TruncatedCell({ className, ...props }: React.ComponentProps<"td">): React.ReactElement {
-	return <TableCell className={cn("w-full max-w-0", className)} {...props} />
+	return <TableCell className={cn(truncatedCellStyles, className)} {...props} />
 }
 
 export function TableCaption({ className, ...props }: React.ComponentProps<"caption">): React.ReactElement {
-	return (
-		<caption
-			className={cn("in-data-[variant=card]:my-4 mt-4 text-muted-foreground text-sm", className)}
-			data-slot="table-caption"
-			{...props}
-		/>
-	)
+	return <caption className={cn(tableCaptionStyles, className)} data-slot="table-caption" {...props} />
 }

@@ -7,6 +7,7 @@
 	],
 	"exports": {
 		"./styles/tokens.css": "./src/styles/tokens.css",
+		"./styles/ui/*": "./src/components/ui/*.styles.ts",
 		"./lib/cloud-platforms": "./src/lib/cloud-platforms/index.ts",
 		"./components/plot": "./src/components/plot/index.ts",
 		"./*": "./src/*"
