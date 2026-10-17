@@ -111,7 +111,10 @@ function recoveryLabel(comparator: AlertComparator): string {
 function suggestCriticalThreshold(form: RuleFormState): string {
 	const warning = Number(form.threshold)
 	if (form.threshold.trim().length === 0 || !Number.isFinite(warning)) return ""
-	const worse = form.comparator === "gt" || form.comparator === "gte" ? warning * 2 : warning / 2
+	// One step of the warning's own size (1 at zero) in the breaching direction,
+	// so the suggestion is always worse than the warning, whatever its sign.
+	const step = Math.abs(warning) || 1
+	const worse = form.comparator === "gt" || form.comparator === "gte" ? warning + step : warning - step
 	return String(Number(worse.toPrecision(12)))
 }
 

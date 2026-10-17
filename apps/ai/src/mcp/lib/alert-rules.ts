@@ -107,14 +107,23 @@ export const parseRuleId = (ruleId: string) =>
 		onSome: (id) => Effect.succeed(id),
 	})
 
+/**
+ * An invalid rule as the model reads it: each detail once. The domain error
+ * also folds its details into `message` for HTTP callers, so listing both
+ * would repeat every one.
+ */
+export const invalidRuleInput = (error: AlertValidationError) =>
+	new McpInvalidInputError({
+		message:
+			error.details.length === 0
+				? `Invalid alert rule: ${error.message}`
+				: ["Invalid alert rule:", ...error.details.map((detail) => `- ${detail}`)].join("\n"),
+	})
+
 /** The write failures that are the caller's to fix, as input errors naming the parameter. */
 export const ruleWriteInputErrors = {
 	"@maple/http/errors/AlertValidationError": (error: AlertValidationError) =>
-		Effect.fail(
-			new McpInvalidInputError({
-				message: [`Invalid alert rule: ${error.message}`, ...error.details].join("\n"),
-			}),
-		),
+		Effect.fail(invalidRuleInput(error)),
 	"@maple/http/errors/AlertRuleDestinationNotFoundError": (error: AlertRuleDestinationNotFoundError) =>
 		Effect.fail(
 			new McpInvalidInputError({

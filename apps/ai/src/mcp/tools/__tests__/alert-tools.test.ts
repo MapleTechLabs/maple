@@ -14,6 +14,7 @@ import {
 	AlertRulePreviewResponse,
 	AlertRulesListResponse,
 	AlertRuleUpsertRequest,
+	AlertValidationError,
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
@@ -33,6 +34,7 @@ import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertRead
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
+import { invalidRuleInput } from "../../lib/alert-rules"
 import type { McpToolResult } from "../types"
 
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
@@ -698,6 +700,16 @@ describe("alert tools", () => {
 
 		const collapsing = Effect.runSync(Effect.flip(buildUpdatedRequest(tiered, { threshold: 0.1 })))
 		expect(collapsing.parameter).toBe("threshold")
+	})
+
+	it("names each invalid-rule detail once, though the domain message already carries them", () => {
+		const details = ["threshold must be a finite number", "at least one destination must be selected"]
+		const message = invalidRuleInput(
+			new AlertValidationError({ message: `Invalid alert rule: ${details.join("; ")}`, details }),
+		).message
+		for (const detail of details) {
+			expect(message.split(detail)).toHaveLength(2)
+		}
 	})
 
 	it("delete_alert_rule requires confirm and maps not-found to rule_id", async () => {
