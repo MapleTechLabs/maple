@@ -24,8 +24,8 @@ describe("schemaApplyPlan", () => {
 
 		expect(plan.create).toEqual(["traces_mv"])
 		expect(plan.addColumns).toEqual([{ name: "traces", columns: ["SpanKind"] }])
-		// The type mismatch on the same table is not something Apply resolves.
-		expect(plan.leftAlone).toEqual(["traces"])
+		// The column is added, but the type mismatch on the same table stays for a human.
+		expect(plan.unresolved).toEqual([{ name: "traces", reason: "type mismatch on Duration" }])
 	})
 
 	it("leaves wrong-kind objects and drifted views untouched", () => {
@@ -41,6 +41,9 @@ describe("schemaApplyPlan", () => {
 
 		expect(plan.create).toEqual([])
 		expect(plan.addColumns).toEqual([])
-		expect(plan.leftAlone).toEqual(["errors_mv", "metrics_mv"])
+		expect(plan.unresolved).toEqual([
+			{ name: "errors_mv", reason: "exists as a table" },
+			{ name: "metrics_mv", reason: "view definition drifted" },
+		])
 	})
 })

@@ -543,7 +543,10 @@ function SchemaApplyPlanList({ plan }: { plan: ReturnType<typeof schemaApplyPlan
 			label: "Add columns",
 			items: plan.addColumns.map((table) => `${table.name}: ${table.columns.join(", ")}`),
 		},
-		{ label: "Left as is (resolve manually)", items: plan.leftAlone },
+		{
+			label: "Not resolved by Apply (fix manually)",
+			items: plan.unresolved.map((entry) => `${entry.name}: ${entry.reason}`),
+		},
 	].filter((group) => group.items.length > 0)
 
 	if (groups.length === 0) return null
