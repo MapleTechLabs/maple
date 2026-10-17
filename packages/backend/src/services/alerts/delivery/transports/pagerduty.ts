@@ -79,7 +79,8 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 				payload: {
 					summary: truncate(templated?.title ?? `${context.ruleName} ${context.eventType}`, 1024),
 					source: displayGroupKey(context.groupKey) ?? "maple-alerts",
-					severity: context.severity === "critical" ? "critical" : "warning",
+					// The tier the key was chosen for, so a stale critical event cannot raise the warning alert.
+					severity: keySeverity(context) === "critical" ? "critical" : "warning",
 					custom_details: {
 						...(templated ? { message: templated.body } : undefined),
 						ruleName: context.ruleName,

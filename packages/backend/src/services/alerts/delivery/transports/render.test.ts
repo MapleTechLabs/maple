@@ -332,6 +332,14 @@ describe("pagerduty dedup keys across severity tiers", () => {
 			"trigger org_1:rule_1:checkout",
 			"resolve org_1:rule_1:checkout:critical",
 		])
+		// The warning alert it lands on is not raised to critical either.
+		const spec = pagerDutyTransport.render(
+			inputFor(
+				{ type: "pagerduty", integrationKey: "k" },
+				{ context: { ...context, ...tiered, severity: "critical", incidentSeverity: "warning" } },
+			),
+		)
+		assert.strictEqual(JSON.parse(spec.body).payload.severity, "warning")
 	})
 
 	it("closes the critical alert on de-escalation and both alerts on resolve", () => {
