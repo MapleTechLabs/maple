@@ -157,7 +157,9 @@ describe("BillingUsageTable", () => {
 
 		pending.resolve(Exit.succeed(new BillingControls({})))
 		await waitFor(() =>
-			expect(screen.getByRole("button", { name: "Edit Logs cap" }).hasAttribute("disabled")).toBe(false),
+			expect(screen.getByRole("button", { name: "Edit Logs cap" }).hasAttribute("disabled")).toBe(
+				false,
+			),
 		)
 	})
 
@@ -176,7 +178,9 @@ describe("BillingUsageTable", () => {
 
 		// The save has settled once the other rows unlock.
 		await waitFor(() =>
-			expect(screen.getByRole("button", { name: "Edit Traces cap" }).hasAttribute("disabled")).toBe(false),
+			expect(screen.getByRole("button", { name: "Edit Traces cap" }).hasAttribute("disabled")).toBe(
+				false,
+			),
 		)
 		expect(screen.getByRole("spinbutton", { name: "Logs paid overage cap" })).toBeTruthy()
 	})
