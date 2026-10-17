@@ -3,6 +3,10 @@
 import * as React from "react"
 import { AlertWarningIcon } from "../icons"
 import { cn } from "../../lib/utils"
+import {
+	confirmDialogIconDestructiveStyles,
+	confirmDialogMediaDestructiveStyles,
+} from "./confirm-dialog.styles"
 import { Button } from "./button"
 import {
 	AlertDialog,
@@ -79,8 +83,12 @@ export function ConfirmDialog({
 
 	const media =
 		icon === null ? null : (
-			<AlertDialogMedia className={cn(tone === "destructive" && "bg-destructive/10")}>
-				{icon ?? <AlertWarningIcon className={cn(tone === "destructive" && "text-destructive")} />}
+			<AlertDialogMedia className={cn(tone === "destructive" && confirmDialogMediaDestructiveStyles)}>
+				{icon ?? (
+					<AlertWarningIcon
+						className={cn(tone === "destructive" && confirmDialogIconDestructiveStyles)}
+					/>
+				)}
 			</AlertDialogMedia>
 		)
 
@@ -97,7 +105,11 @@ export function ConfirmDialog({
 				<AlertDialogFooter>
 					<AlertDialogCancel disabled={pending}>{cancelLabel}</AlertDialogCancel>
 					{secondaryAction ? (
-						<Button variant="outline" disabled={pending} onClick={() => run(secondaryAction.onClick)}>
+						<Button
+							variant="outline"
+							disabled={pending}
+							onClick={() => run(secondaryAction.onClick)}
+						>
 							{secondaryAction.label}
 						</Button>
 					) : null}

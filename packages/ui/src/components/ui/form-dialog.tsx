@@ -2,6 +2,11 @@
 
 import * as React from "react"
 import { cn } from "../../lib/utils"
+import {
+	formDialogFooterStartStyles,
+	formDialogFormStyles,
+	formDialogPanelStyles,
+} from "./form-dialog.styles"
 import { Button } from "./button"
 import {
 	Dialog,
@@ -60,7 +65,7 @@ export function FormDialog({
 		<Dialog open={open} onOpenChange={(next) => (pending ? undefined : onOpenChange(next))}>
 			<DialogContent className={className}>
 				<form
-					className="contents"
+					className={formDialogFormStyles}
 					onSubmit={(event) => {
 						event.preventDefault()
 						if (!pending && !submitDisabled) onSubmit()
@@ -70,9 +75,15 @@ export function FormDialog({
 						<DialogTitle>{title}</DialogTitle>
 						{description ? <DialogDescription>{description}</DialogDescription> : null}
 					</DialogHeader>
-					{children ? <DialogPanel className={cn("space-y-4", panelClassName)}>{children}</DialogPanel> : null}
+					{children ? (
+						<DialogPanel className={cn(formDialogPanelStyles, panelClassName)}>
+							{children}
+						</DialogPanel>
+					) : null}
 					<DialogFooter>
-						{footerStart ? <div className="me-auto flex items-center">{footerStart}</div> : null}
+						{footerStart ? (
+							<div className={formDialogFooterStartStyles}>{footerStart}</div>
+						) : null}
 						<DialogClose render={<Button variant="outline" type="button" />} disabled={pending}>
 							{cancelLabel}
 						</DialogClose>
