@@ -59,6 +59,9 @@ function SettingsPage() {
 		isLoading,
 	} = useVisibleSettingsSections()
 
+	// Before the redirects below, so every render calls the same hooks.
+	const keyCrumbs = useIngestKeyCrumbs(search.tab === "ingestion" ? search.key : undefined, search.keyView)
+
 	// Pre-hub deep links: these tabs moved to the Integrations hub.
 	if (search.tab === "connectors" || search.tab === "integrations") {
 		return <Navigate to="/integrations" replace />
@@ -72,7 +75,6 @@ function SettingsPage() {
 	}
 
 	const activeTab = resolveActiveSettingsTab(search.tab, visibleItems)
-	const keyCrumbs = useIngestKeyCrumbs(activeTab === "ingestion" ? search.key : undefined, search.keyView)
 
 	function handleTabSelect(tab: SettingsTab) {
 		navigate({ search: { tab } })
