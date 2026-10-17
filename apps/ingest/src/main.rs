@@ -12195,6 +12195,54 @@ mod tests {
         (format!("http://{addr}"), rx)
     }
 
+    /// A `/v1/logs` collector that refuses every batch with `status`.
+    async fn spawn_refusing_logs_collector(status: StatusCode) -> String {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().route("/v1/logs", post(move || async move { status }));
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{addr}")
+    }
+
+    /// Waits for the spawned `last_used_at` writes to settle, then reads them.
+    async fn recorded_key_uses(store: &FakeKeyStore) -> Vec<String> {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        store.custom_key_uses.lock().unwrap().clone()
+    }
+
+    #[tokio::test]
+    async fn a_batch_the_collector_refuses_does_not_count_as_key_use() {
+        let forward_url = spawn_refusing_logs_collector(StatusCode::BAD_REQUEST).await;
+        let queue_dir = unique_main_test_dir("custom-key-refused");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_ik_refused_by_collector_000000000000";
+        store.insert_custom(
+            raw_key,
+            custom_key_row("org_custom", custom_key_config(None, None, "[]")),
+        );
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let body = Bytes::from(test_log_request("refused").encode_to_vec());
+
+        let (response, ..) =
+            handle_signal_inner(&state, &test_headers(raw_key), body, Signal::Logs)
+                .await
+                .expect("a collector 4xx is relayed, not raised");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(recorded_key_uses(&store).await.is_empty());
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     #[tokio::test]
     async fn custom_key_end_to_end_overrides_denies_and_rate_limits() {
         let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
@@ -12213,7 +12261,7 @@ mod tests {
             ),
         );
         let state = test_app_state(
-            store,
+            Arc::clone(&store),
             queue_dir.clone(),
             forward_url,
             Duration::from_secs(30),
@@ -12242,6 +12290,10 @@ mod tests {
         assert_eq!(values["maple_org_id"], "org_custom_e2e");
         assert_eq!(values["maple_ingest_key_type"], "custom");
         assert_eq!(values["maple_ingest_key_id"], CUSTOM_KEY_PUBLIC_ID);
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![CUSTOM_KEY_UUID.to_owned()]
+        );
 
         // A signal outside the allow-list is 403 on every transport.
         let (error, error_kind) =
