@@ -8,6 +8,7 @@
 		".": "./src/index.ts",
 		"./ai-traffic": "./src/ai-traffic.ts",
 		"./anticipated-errors": "./src/anticipated-errors.ts",
+		"./audit-actions": "./src/audit-actions.ts",
 		"./billing": "./src/billing.ts",
 		"./billing-tax-ids": "./src/billing-tax-ids.ts",
 		"./format": "./src/format.ts",

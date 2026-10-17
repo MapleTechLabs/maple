@@ -11,22 +11,25 @@ const OUTCOMES: ReadonlyArray<AuditOutcome> = ["allowed", "denied"]
 export interface AuditLogPageInput {
 	readonly cursor?: string
 	readonly actorType?: AuditActorType
+	readonly actorId?: string
 	readonly outcome?: AuditOutcome
+	/** Lower bound on `occurred_at`, from the date range filter. */
+	readonly since?: string
 	/**
-	 * Upper bound on `occurred_at`, pinned by the caller when it takes the first
-	 * page. Pagination here is offset-based over a newest-first, append-only
-	 * table, so an entry written mid-scroll shifts every later row down by one:
-	 * without a frozen ceiling the next page repeats a row and skips another.
+	 * Upper bound on `occurred_at`: the date range's end, or the ceiling the caller pins when it
+	 * takes the first page. Pagination here is offset-based over a newest-first, append-only
+	 * table, so an entry written mid-scroll would otherwise repeat a row and skip another.
 	 */
 	readonly until?: string
 }
 
-// Actor types and outcomes never contain "|", nor does an ISO timestamp, and the
-// cursor is the trailing segment — so splitting on the first three separators
-// stays unambiguous even for exotic cursors.
+// None of the filter values contain "|" (actor types, outcomes, `user_…`/`key_…` ids, ISO
+// timestamps), and the cursor is the trailing segment, so splitting on the first five
+// separators stays unambiguous even for exotic cursors.
 const family = Atom.family((key: string) => {
-	const [actorRaw = "", outcomeRaw = "", until = ""] = key.split("|", 3)
-	const cursor = key.slice(actorRaw.length + outcomeRaw.length + until.length + 3)
+	const parts = key.split("|", 5)
+	const [actorRaw = "", outcomeRaw = "", actorId = "", since = "", until = ""] = parts
+	const cursor = key.slice(parts.reduce((length, part) => length + part.length + 1, 0))
 	const actorType = ACTOR_TYPES.find((type) => type === actorRaw)
 	const outcome = OUTCOMES.find((value) => value === outcomeRaw)
 
@@ -38,7 +41,9 @@ const family = Atom.family((key: string) => {
 					limit: AUDIT_LOG_PAGE_LIMIT,
 					...(cursor !== "" ? { cursor } : undefined),
 					...(actorType !== undefined ? { actor_type: actorType } : undefined),
+					...(actorId !== "" ? { actor_id: actorId } : undefined),
 					...(outcome !== undefined ? { outcome } : undefined),
+					...(since !== "" ? { since } : undefined),
 					...(until !== "" ? { until } : undefined),
 				},
 			})
@@ -48,4 +53,13 @@ const family = Atom.family((key: string) => {
 
 /** One page of the org's audit log, keyed by cursor + filters + the pinned ceiling. */
 export const auditLogPageAtom = (input: AuditLogPageInput) =>
-	family(`${input.actorType ?? ""}|${input.outcome ?? ""}|${input.until ?? ""}|${input.cursor ?? ""}`)
+	family(
+		[
+			input.actorType ?? "",
+			input.outcome ?? "",
+			input.actorId ?? "",
+			input.since ?? "",
+			input.until ?? "",
+			input.cursor ?? "",
+		].join("|"),
+	)

@@ -42,6 +42,7 @@ import { HttpV2AlertDestinationsLive } from "@/routes/v2/alert-destinations.http
 import { HttpV2AlertIncidentsLive } from "@/routes/v2/alert-incidents.http"
 import { HttpV2AlertRulesLive } from "@/routes/v2/alert-rules.http"
 import { HttpV2AnomaliesLive } from "@/routes/v2/anomalies.http"
+import { HttpV2TraceSamplingLive } from "@/routes/v2/trace-sampling.http"
 import { HttpV2ApiKeysLive } from "@/routes/v2/api-keys.http"
 import { HttpV2AttributeMappingsLive } from "@/routes/v2/attribute-mappings.http"
 import { HttpV2DashboardsLive } from "@/routes/v2/dashboards.http"
@@ -53,6 +54,7 @@ import { HttpV2GcpIntegrationsLive } from "@/routes/v2/integrations-gcp.http"
 import { HttpV2PlanetScaleIntegrationsLive } from "@/routes/v2/integrations.http"
 import { HttpV2InvestigationsLive } from "@/routes/v2/investigations.http"
 import { HttpV2AgentFeedbackLive } from "@/routes/v2/agent-feedback.http"
+import { HttpV2McpConnectionsLive } from "@/routes/v2/mcp-connections.http"
 import { HttpV2MobileDevicesLive } from "@/routes/v2/mobile-devices.http"
 import { HttpV2OrganizationLive } from "@/routes/v2/organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "@/routes/v2/recommendations.http"
@@ -177,8 +179,10 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2SharePublicLive,
 			HttpV2InvestigationsLive,
 			HttpV2AnomaliesLive,
+			HttpV2TraceSamplingLive,
 			HttpV2OrganizationLive,
 			HttpV2MobileDevicesLive,
+			HttpV2McpConnectionsLive,
 			HttpV2AgentFeedbackLive,
 			HttpV2SessionReplaysLive,
 			HttpV2TracesLive,

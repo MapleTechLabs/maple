@@ -1,4 +1,5 @@
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
+import { auditActionLabel, auditResourceLabel } from "@maple/domain/audit-actions"
 import type { AuditActorType, AuditLogSource, AuditOutcome } from "@maple/domain/http"
 import {
 	encodePublicId,
@@ -6,6 +7,7 @@ import {
 	type V2AuditChanges,
 	type V2AuditLogEntry,
 } from "@maple/domain/http/v2"
+import { Link, useNavigate, useSearch } from "@tanstack/react-router"
 import { Option } from "effect"
 import { useState } from "react"
 
@@ -38,6 +40,17 @@ import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { ErrorState } from "@/components/common/error-state"
 import { initialsFrom } from "@maple/ui/lib/initials"
 
+import { AuditLogDateRange } from "./audit-log-date-range"
+import {
+	type AuditLogFilters,
+	auditLogSearchFrom,
+	hasAuditLogFilters,
+	parseAuditLogSearch,
+	resolveAuditDateRange,
+} from "./audit-log-filters"
+import { AuditLogPersonFilter } from "./audit-log-person-filter"
+import { auditResourceDisplay } from "./audit-log-resource"
+
 type ActorFilter = AuditActorType | "all"
 type OutcomeFilter = AuditOutcome | "all"
 
@@ -55,33 +68,31 @@ const OUTCOME_FILTERS: ReadonlyArray<{ value: OutcomeFilter; label: string }> = 
 	{ value: "denied", label: "Denied" },
 ]
 
-/** Sources read as they are stored, bar the underscore in a two-word one (`chat_platform`). */
-const sourceLabel = (source: AuditLogSource): string => source.replace("_", " ")
+const SOURCE_LABELS = {
+	dashboard: "Dashboard",
+	api: "API",
+	mcp: "MCP",
+	chat_platform: "Chat",
+	system: "System",
+} satisfies Record<AuditLogSource, string>
 
-const ACTOR_BADGES: Record<
-	AuditActorType,
-	{ label: string; variant: "secondary" | "ok" | "info" | "outline" }
-> = {
+const ACTOR_BADGES = {
 	user: { label: "User", variant: "secondary" },
 	api_key: { label: "API key", variant: "ok" },
 	agent: { label: "Agent", variant: "info" },
 	system: { label: "System", variant: "outline" },
 } satisfies Record<AuditActorType, { label: string; variant: "secondary" | "ok" | "info" | "outline" }>
 
-// Shared column lanes so the header row and entry rows stay aligned. Resource and
-// source collapse when the card is narrow; time + actor + action always stay
-// visible, and action is the lane that absorbs the remaining width. The card,
-// not the viewport, is what the breakpoints measure: the settings column caps it
-// at 48rem (766px inside its border), so every threshold must sit below that.
-// Below `@md` a row wraps: time + actor on the first line, the action on its own
-// line beneath, indented past the chevron.
+// Shared column lanes so the header row and entry rows stay aligned. The panel, not the
+// viewport, is what the breakpoints measure: resource, source and outcome fold away as it
+// narrows, and below `@md` a row wraps with the action on its own line.
 const COL = {
-	time: "flex w-[112px] shrink-0 items-center gap-2",
-	actor: "min-w-0 flex-1 @md:w-[160px] @md:flex-none",
+	time: "flex w-22 shrink-0 items-center gap-2",
+	actor: "min-w-0 flex-1 @md:w-38 @md:flex-none",
 	action: "min-w-0 basis-full pl-5 @md:basis-0 @md:flex-1 @md:pl-0",
-	resource: "hidden w-[176px] min-w-0 shrink-0 @2xl:block",
-	// 46rem: only a full-width settings column (736px+) leaves the action lane room for source too.
-	source: "hidden w-[88px] shrink-0 @min-[46rem]:block",
+	resource: "hidden w-56 min-w-0 shrink-0 @3xl:block",
+	source: "hidden w-20 shrink-0 @2xl:block",
+	outcome: "hidden w-15 shrink-0 @md:block",
 }
 
 /**
@@ -98,7 +109,7 @@ function initialsOf(label: string): string {
 /**
  * `user_3BfcmIS3bUNV6BfAEkR2WzFOCvu` → `user_…FOCvu`. The prefix says what kind
  * of id it is and the tail is what someone compares against a copied value;
- * the middle is noise in a 200px lane. The full id stays in the detail panel.
+ * the middle is noise in a narrow lane. The full id stays in the detail panel.
  */
 function abbreviateId(id: string): string {
 	const prefixEnd = id.indexOf("_")
@@ -117,7 +128,7 @@ function isPlaceholder(value: unknown): value is string {
 	return typeof value === "string" && /^<[a-z]+>$/.test(value)
 }
 
-// JSON.stringify(undefined) is undefined — surface it as text.
+// JSON.stringify(undefined) is undefined; surface it as text.
 function formatScalar(value: unknown): string {
 	if (typeof value === "string") return value
 	return JSON.stringify(value) ?? "undefined"
@@ -166,24 +177,44 @@ interface AuditLogView {
 }
 
 export function AuditLogSection() {
-	const [actorFilter, setActorFilter] = useState<ActorFilter>("all")
-	const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>("all")
+	const search = useSearch({ from: "/settings" })
+	const navigate = useNavigate({ from: "/settings" })
+	const filters = parseAuditLogSearch(search)
+
+	// Rolling presets resolve against the moment they were picked (or refreshed), so the
+	// page atom's key stays stable instead of moving with the clock on every render.
+	const [resolvedAt, setResolvedAt] = useState(() => Date.now())
+	const bounds = resolveAuditDateRange(filters.range, resolvedAt)
+
+	const filterInput = {
+		...(filters.actorType !== undefined ? { actorType: filters.actorType } : undefined),
+		...(filters.actorId !== undefined ? { actorId: filters.actorId } : undefined),
+		...(filters.outcome !== undefined ? { outcome: filters.outcome } : undefined),
+		...(bounds.since !== undefined ? { since: bounds.since } : undefined),
+		...(bounds.until !== undefined ? { until: bounds.until } : undefined),
+	}
+
 	const [cursor, setCursor] = useState<string | undefined>(undefined)
 	// Frozen on the first Load more, and cleared whenever the list restarts. The
 	// log is append-only and paginated by offset, so entries written mid-scroll
 	// would otherwise shift later pages and make them repeat and skip rows.
-	const [until, setUntil] = useState<string | undefined>(undefined)
+	const [pinnedUntil, setPinnedUntil] = useState<string | undefined>(undefined)
 
-	const filterInput = {
-		...(actorFilter !== "all" ? { actorType: actorFilter } : undefined),
-		...(outcomeFilter !== "all" ? { outcome: outcomeFilter } : undefined),
+	// A filter change (from the toolbar, a shared link or back/forward) restarts the list.
+	const listKey = JSON.stringify(filterInput)
+	const [shownKey, setShownKey] = useState(listKey)
+	if (shownKey !== listKey) {
+		setShownKey(listKey)
+		setCursor(undefined)
+		setPinnedUntil(undefined)
 	}
+
 	const pageAtom = auditLogPageAtom({
 		...filterInput,
 		...(cursor !== undefined ? { cursor } : undefined),
-		...(until !== undefined ? { until } : undefined),
+		...(pinnedUntil !== undefined ? { until: pinnedUntil } : undefined),
 	})
-	// The first page for the current filters — what Refresh re-fetches. Without
+	// The first page for the current filters: what Refresh re-fetches. Without
 	// the refresh the page family would hand back its cached copy from before.
 	const firstPageAtom = auditLogPageAtom(filterInput)
 	const pageResult = useAtomValue(pageAtom)
@@ -206,69 +237,71 @@ export function AuditLogSection() {
 		})
 	}
 
-	function restartList() {
-		setCursor(undefined)
-		setUntil(undefined)
-	}
-
-	function handleFilterSelect(value: ActorFilter) {
-		if (value === actorFilter) return
-		setActorFilter(value)
-		restartList()
-	}
-
-	function handleOutcomeSelect(value: OutcomeFilter) {
-		if (value === outcomeFilter) return
-		setOutcomeFilter(value)
-		restartList()
-	}
-
-	function clearFilters() {
-		setActorFilter("all")
-		setOutcomeFilter("all")
-		restartList()
+	function setFilters(next: AuditLogFilters) {
+		setResolvedAt(Date.now())
+		void navigate({ search: (prev) => ({ ...prev, ...auditLogSearchFrom(next) }), replace: true })
 	}
 
 	function handleRefresh() {
-		restartList()
-		refreshFirstPage()
+		setCursor(undefined)
+		setPinnedUntil(undefined)
+		// A rolling window moves forward on refresh; a fixed one re-fetches as is.
+		if (filters.range.kind === "preset") setResolvedAt(Date.now())
+		else refreshFirstPage()
 	}
 
 	// A failed page is settled, not loading: dimming the list and spinning the footer
 	// on it would never end. Only a retry (which sets `waiting`) puts it back in flight.
 	const failed = Result.isFailure(pageResult)
 	const waiting = failed ? pageResult.waiting : !Result.isSuccess(pageResult) || pageResult.waiting
-	const filtered = actorFilter !== "all" || outcomeFilter !== "all"
+	const filtered = hasAuditLogFilters(filters)
 
 	return (
 		<SettingsSection
 			title="Audit log"
-			description="Changes, refused attempts, and every read of telemetry or session replays from the dashboard, API, and MCP. Select an entry for its full record."
+			description="Every change, refused attempt and data read from the dashboard, API, MCP and chat. Select an entry for its full record."
 			framed={false}
+			width="wide"
 		>
-			<div className="flex flex-wrap items-center gap-3">
-				<SegmentedSelect
-					size="sm"
-					aria-label="Actor type"
-					value={actorFilter}
-					onChange={handleFilterSelect}
-					options={ACTOR_FILTERS}
-				/>
-				<SegmentedSelect
-					size="sm"
-					aria-label="Outcome"
-					value={outcomeFilter}
-					onChange={handleOutcomeSelect}
-					options={OUTCOME_FILTERS}
-				/>
-				<div className="flex-1" />
-				<RefreshButton
-					iconOnly
-					variant="ghost"
-					label="Refresh audit log"
-					pending={waiting}
-					onRefresh={handleRefresh}
-				/>
+			<div className="flex flex-col gap-2">
+				<div className="flex flex-wrap items-center gap-2">
+					<AuditLogDateRange
+						value={filters.range}
+						onChange={(range) => setFilters({ ...filters, range })}
+					/>
+					<AuditLogPersonFilter
+						value={filters.actorId}
+						onChange={(actorId) => setFilters({ ...filters, actorId })}
+					/>
+				</div>
+				<div className="flex flex-wrap items-center gap-3">
+					<SegmentedSelect
+						size="sm"
+						aria-label="Actor type"
+						value={filters.actorType ?? "all"}
+						onChange={(value: ActorFilter) =>
+							setFilters({ ...filters, actorType: value === "all" ? undefined : value })
+						}
+						options={ACTOR_FILTERS}
+					/>
+					<SegmentedSelect
+						size="sm"
+						aria-label="Outcome"
+						value={filters.outcome ?? "all"}
+						onChange={(value: OutcomeFilter) =>
+							setFilters({ ...filters, outcome: value === "all" ? undefined : value })
+						}
+						options={OUTCOME_FILTERS}
+					/>
+					<div className="flex-1" />
+					<RefreshButton
+						iconOnly
+						variant="ghost"
+						label="Refresh audit log"
+						pending={waiting}
+						onRefresh={handleRefresh}
+					/>
+				</div>
 			</div>
 
 			<Panel
@@ -292,10 +325,14 @@ export function AuditLogSection() {
 							</EmptyMedia>
 							<EmptyTitle>No entries match these filters</EmptyTitle>
 							<EmptyDescription>
-								Nothing recorded for this actor type and outcome.
+								Nothing recorded for this range, person, actor type and outcome.
 							</EmptyDescription>
 						</EmptyHeader>
-						<Button variant="outline" size="sm" onClick={clearFilters}>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => setFilters({ range: { kind: "all" } })}
+						>
 							Clear filters
 						</Button>
 					</Empty>
@@ -331,6 +368,9 @@ export function AuditLogSection() {
 							<Eyebrow variant="mono" className={COL.source}>
 								Source
 							</Eyebrow>
+							<Eyebrow variant="mono" className={COL.outcome}>
+								Outcome
+							</Eyebrow>
 						</div>
 						{view.entries.map((entry) => (
 							<AuditLogRow key={entry.id} entry={entry} />
@@ -363,9 +403,9 @@ export function AuditLogSection() {
 						// Pin the window to the newest entry already on screen before
 						// the first Load more, so later offsets address a list that
 						// cannot grow underneath them.
-						if (until === undefined) {
+						if (pinnedUntil === undefined) {
 							const newest = view.entries[0]
-							if (newest !== undefined) setUntil(newest.occurred_at)
+							if (newest !== undefined) setPinnedUntil(newest.occurred_at)
 						}
 						setCursor(view.nextCursor)
 					}}
@@ -381,12 +421,8 @@ function ActorCell({ entry }: { entry: V2AuditLogEntry }) {
 
 	return (
 		<div className={cn(COL.actor, "flex items-center gap-1.5")}>
-			{/* A person is shown as a face, not as the word "User" — the avatar
-			    already says which kind of actor this is, and the name says who.
-			    Keys, agents and system entries have no face and keep their badge.
-			    The face is never lent to a key or an agent: those rows carry the
-			    minting user's id too, and wearing it would credit a human for
-			    something they may not have done. */}
+			{/* A person is shown as a face; keys, agents and system entries keep their badge.
+			    The face is never lent to a key or an agent, which carry the minting user's id. */}
 			{entry.actor_type === "user" ? (
 				<Avatar className="size-4 shrink-0 text-4xs">
 					{entry.actor_avatar_url !== null && <AvatarImage src={entry.actor_avatar_url} alt="" />}
@@ -413,15 +449,23 @@ function ActorCell({ entry }: { entry: V2AuditLogEntry }) {
 	)
 }
 
-/** `alert_rule.updated` with the verb carrying the weight — it is what a scan of the column is for. */
+/** The readable sentence, with the raw `<resource>.<verb>` kept beneath it for search and support. */
 function ActionLabel({ action }: { action: string }) {
-	const dot = action.indexOf(".")
-	if (dot === -1) return <span className="truncate font-mono text-xs">{action}</span>
+	const label = auditActionLabel(action)
+	if (label === null) return <TruncatedText mono text={action} className="text-xs" />
 	return (
-		<TruncatedText mono text={action} className="text-xs">
-			<span className="text-muted-foreground">{action.slice(0, dot + 1)}</span>
-			<span className="text-foreground">{action.slice(dot + 1)}</span>
-		</TruncatedText>
+		<>
+			<TruncatedText text={label} className="text-xs text-foreground" />
+			<TruncatedText mono text={action} className="text-3xs text-muted-foreground" />
+		</>
+	)
+}
+
+function DeniedBadge() {
+	return (
+		<Badge variant="crit" size="sm" className="shrink-0">
+			Denied
+		</Badge>
 	)
 }
 
@@ -429,19 +473,20 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 	const [expanded, setExpanded] = useState(false)
 	const detailId = `audit-entry-${entry.id}`
 	const denied = entry.outcome === "denied"
+	const label = auditActionLabel(entry.action) ?? entry.action
 
 	return (
 		<div className={cn(expanded && "bg-muted/10")}>
-			<button
-				type="button"
-				aria-expanded={expanded}
-				aria-controls={detailId}
-				onClick={() => setExpanded((open) => !open)}
-				className={cn(
-					"hover:bg-muted/20 flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-left transition-colors @md:flex-nowrap",
-					"focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset",
-				)}
-			>
+			<div className="hover:bg-muted/20 relative flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors @md:flex-nowrap">
+				{/* The whole row toggles the detail; the resource link sits above this layer. */}
+				<button
+					type="button"
+					aria-expanded={expanded}
+					aria-controls={detailId}
+					aria-label={`${expanded ? "Hide" : "Show"} details: ${label}`}
+					onClick={() => setExpanded((open) => !open)}
+					className="focus-visible:ring-ring absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset"
+				/>
 				<span className={cn(COL.time, "text-muted-foreground text-xs")}>
 					<ChevronRightIcon
 						size={12}
@@ -453,13 +498,15 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 					<RelativeTime value={entry.occurred_at} tooltip="title" />
 				</span>
 				<ActorCell entry={entry} />
-				<div className={cn(COL.action, "min-w-0")}>
+				<div className={cn(COL.action, "flex min-w-0 flex-col")}>
 					<div className="flex min-w-0 items-center gap-1.5">
-						<ActionLabel action={entry.action} />
+						<div className="flex min-w-0 flex-col">
+							<ActionLabel action={entry.action} />
+						</div>
 						{denied && (
-							<Badge variant="crit" size="sm" className="shrink-0">
-								Denied
-							</Badge>
+							<span className="@md:hidden">
+								<DeniedBadge />
+							</span>
 						)}
 					</div>
 					{denied && entry.denial_reason !== null && (
@@ -467,22 +514,17 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 							{entry.denial_reason}
 						</TruncatedText>
 					)}
-					{entry.changes !== null && entry.changes.fields.length > 0 && (
-						<p className="text-muted-foreground truncate font-mono text-2xs">
-							{entry.changes.fields.join(", ")}
-						</p>
-					)}
 				</div>
-				<div className={cn(COL.resource, "min-w-0")}>
+				<div className={COL.resource}>
 					<ResourceCell entry={entry} />
 				</div>
-				<span className={cn(COL.source, "text-muted-foreground truncate text-xs")}>
-					{sourceLabel(entry.source)}
-					{entry.origin_country !== null && (
-						<span className="text-muted-foreground/60"> · {entry.origin_country}</span>
-					)}
+				<span className={COL.source}>
+					<Badge variant="outline" size="sm">
+						{SOURCE_LABELS[entry.source]}
+					</Badge>
 				</span>
-			</button>
+				<span className={COL.outcome}>{denied && <DeniedBadge />}</span>
+			</div>
 			{expanded && (
 				<div id={detailId}>
 					<AuditLogDetail entry={entry} />
@@ -493,27 +535,19 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 }
 
 function ResourceCell({ entry }: { entry: V2AuditLogEntry }) {
-	// Membership changes act on a person: the affected user is the resource.
-	const id = entry.resource_id ?? entry.affected_user
-	if (entry.resource_type === null && id === null) {
-		return <span className="text-muted-foreground text-xs">{EMPTY_VALUE}</span>
-	}
+	const display = auditResourceDisplay(entry)
+	if (display === null) return <span className="text-muted-foreground text-xs">{EMPTY_VALUE}</span>
+	if (display.link === null) return <TruncatedText text={display.text} className="text-xs" />
 	return (
-		<div className="flex min-w-0 items-center gap-1.5">
-			{entry.resource_type !== null && (
-				<Badge variant="outline" size="sm" className="shrink-0">
-					{entry.resource_type}
-				</Badge>
-			)}
-			{id !== null && (
-				<TruncatedText mono className="text-muted-foreground text-2xs">
-					{id}
-				</TruncatedText>
-			)}
-		</div>
+		<Link
+			{...display.link}
+			className="relative z-10 block truncate text-xs text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
+			title={display.text}
+		>
+			{display.text}
+		</Link>
 	)
 }
-
 /** An identifier with its copy affordance; the one place the full value is shown untruncated. */
 function Identifier({ value, label }: { value: string; label: string }) {
 	return (
@@ -619,7 +653,7 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 					</span>
 				</KeyValue>
 				<KeyValue wrap label="Source">
-					<span>{sourceLabel(entry.source)}</span>
+					<span>{SOURCE_LABELS[entry.source]}</span>
 					{(entry.origin_ip !== null || entry.origin_country !== null) && (
 						<span className="text-muted-foreground">
 							{" · "}
@@ -630,6 +664,9 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 				</KeyValue>
 				<KeyValue wrap label="Action">
 					<span className="flex flex-wrap items-center gap-1.5">
+						{auditActionLabel(entry.action) !== null && (
+							<span>{auditActionLabel(entry.action)}</span>
+						)}
 						<InlineCode variant="plain" className="text-2xs text-foreground">
 							{entry.action}
 						</InlineCode>
@@ -653,9 +690,7 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 					) : (
 						<span className="flex min-w-0 flex-wrap items-center gap-1.5">
 							{entry.resource_type !== null && (
-								<Badge variant="outline" size="sm">
-									{entry.resource_type}
-								</Badge>
+								<span>{auditResourceLabel(entry.resource_type) ?? entry.resource_type}</span>
 							)}
 							{entry.resource_id !== null && (
 								<Identifier value={entry.resource_id} label="Resource id" />

@@ -627,3 +627,92 @@ describe("v2 unexpected-error envelope", () => {
 		await harness.dispose()
 	})
 })
+
+describe("v2 trace_sampling over HTTP", () => {
+	it("returns the defaults, applies a patch, and audits what moved", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+
+		const initial = await harness.request("GET", "/v2/trace_sampling", { token: key.secret })
+		expect(initial.status).toBe(200)
+		expect(initial.body).toEqual({
+			object: "trace_sampling_policy",
+			trace_sample_ratio: 1,
+			always_keep_error_spans: true,
+			always_keep_slow_spans_ms: null,
+			updated_at: null,
+		})
+
+		const updated = await harness.request("PATCH", "/v2/trace_sampling", {
+			token: key.secret,
+			body: { trace_sample_ratio: 0.25, always_keep_slow_spans_ms: 2000 },
+		})
+		expect(updated.status).toBe(200)
+		expect(updated.body.trace_sample_ratio).toBe(0.25)
+		expect(updated.body.always_keep_error_spans).toBe(true)
+		expect(updated.body.always_keep_slow_spans_ms).toBe(2000)
+		expect(typeof updated.body.updated_at).toBe("string")
+
+		const audit = await harness.request("GET", "/v2/audit_log?action=trace_sampling.updated", {
+			token: key.secret,
+		})
+		expect(audit.status).toBe(200)
+		expect(audit.body.data).toHaveLength(1)
+		expect(audit.body.data[0].changes).toEqual({
+			fields: ["trace_sample_ratio", "always_keep_slow_spans_ms"],
+			before: { trace_sample_ratio: 1, always_keep_slow_spans_ms: null },
+			after: { trace_sample_ratio: 0.25, always_keep_slow_spans_ms: 2000 },
+		})
+		await harness.dispose()
+	})
+
+	it("rejects out-of-range values as a bad request", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+
+		const zero = await harness.request("PATCH", "/v2/trace_sampling", {
+			token: key.secret,
+			body: { trace_sample_ratio: 0 },
+		})
+		expect(zero.status).toBe(400)
+		expect(zero.body.error.param).toBe("trace_sample_ratio")
+
+		const fractionalMs = await harness.request("PATCH", "/v2/trace_sampling", {
+			token: key.secret,
+			body: { always_keep_slow_spans_ms: 1.5 },
+		})
+		expect(fractionalMs.status).toBe(400)
+		await harness.dispose()
+	})
+
+	it("lets members read the policy but not change it", async () => {
+		const harness = makeHarness()
+		const member = await harness.bootstrapMemberKey()
+
+		const read = await harness.request("GET", "/v2/trace_sampling", { token: member.secret })
+		expect(read.status).toBe(200)
+
+		const write = await harness.request("PATCH", "/v2/trace_sampling", {
+			token: member.secret,
+			body: { trace_sample_ratio: 0.5 },
+		})
+		expect(write.status).toBe(403)
+		expect(write.body.error.code).toBe("insufficient_permissions")
+		await harness.dispose()
+	})
+
+	it("enforces the trace_sampling scope family", async () => {
+		const harness = makeHarness()
+		const reader = await harness.bootstrapKey(["trace_sampling:read"])
+
+		const read = await harness.request("GET", "/v2/trace_sampling", { token: reader.secret })
+		expect(read.status).toBe(200)
+		const write = await harness.request("PATCH", "/v2/trace_sampling", {
+			token: reader.secret,
+			body: { always_keep_error_spans: false },
+		})
+		expect(write.status).toBe(403)
+		expect(write.body.error.code).toBe("insufficient_scope")
+		await harness.dispose()
+	})
+})
