@@ -27,6 +27,7 @@ export function SettingsSection({
 	className,
 	footer,
 	width = "standard",
+	anchorId,
 	children,
 }: {
 	title: string
@@ -40,11 +41,17 @@ export function SettingsSection({
 	/** Below the content, e.g. an `AdminOnlyNote` explaining controls a member cannot use. */
 	footer?: React.ReactNode
 	width?: SettingsWidth
+	/** Fragment target for deep links like `?tab=ingestion#sampling`. */
+	anchorId?: string
 	children: React.ReactNode
 }) {
 	const id = React.useId()
 	return (
-		<section aria-labelledby={id} className={cn("flex flex-col gap-3", widthClass(width), className)}>
+		<section
+			id={anchorId}
+			aria-labelledby={id}
+			className={cn("flex scroll-mt-6 flex-col gap-3", widthClass(width), className)}
+		>
 			<div className="space-y-1">
 				<SectionHeading id={id} title={title} actions={actions} />
 				{description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
