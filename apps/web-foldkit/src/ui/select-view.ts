@@ -22,7 +22,8 @@ import { portalId, triggerId } from "./overlay/popup-state"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { itemId, listId, Message, type Model, MountSelect } from "./select"
 
-export type SelectOption = Readonly<{ value: string; label: string }>
+/** `content` replaces the label inside the list item (`<SelectItem>` children); the trigger shows `label`. */
+export type SelectOption = Readonly<{ value: string; label: string; content?: Html }>
 
 /** What the list shows: groups with a label, separators and loose items, in order. */
 export type SelectEntry =
@@ -81,7 +82,7 @@ const option = (h: H, model: Model, item: SelectOption, index: number): Html => 
 						),
 					]
 				: []),
-			h.div([h.Class(selectItemTextStyles)], [item.label]),
+			h.div([h.Class(selectItemTextStyles)], [item.content ?? item.label]),
 		],
 	)
 }

@@ -76,6 +76,28 @@ export const ChartSpec = defineTaggedUnion({
 		fillEnd: Schema.Number,
 		/** Bumped when the data arrives again: React rebuilds the definition on every new result. */
 		revision: Schema.Number,
+		/** `PlotSparkline`'s `curve`; absent is linear. */
+		curve: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
+	},
+	/**
+	 * `QueryBuilderAreaChart` (unstacked, linear): the query's rows as returned, the resolved colour
+	 * per series key (`s1..sN`), and the clock that decides the in-flight tail.
+	 */
+	QueryBuilderArea: {
+		data: Schema.Array(
+			Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
+		),
+		colors: Schema.Record(Schema.String, Schema.String),
+		/** Series keys the legend hid: not painted, and not on the y axis. */
+		hidden: Schema.Array(Schema.String),
+		fallbackColor: Schema.String,
+		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
+		unit: Nullable(Schema.String),
+		timeZone: Nullable(Schema.String),
+		nowMs: Schema.Number,
+		containerWidth: Schema.Number,
+		gradientPrefix: Schema.String,
+		showTooltip: Schema.Boolean,
 	},
 	/** `HistogramSpike` (binX over raw observations) in apps/web/src/lab/charts/histogram-spike.tsx. */
 	BinnedHistogram: {

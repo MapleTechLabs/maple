@@ -15,6 +15,9 @@ export interface SparklineInputs {
 	readonly className?: string
 	/** Changes with every fetched result, so the chart redraws like `useMemo` on new data. */
 	readonly revision: number
+	/** `PlotSparkline`'s `curve` and `fillOpacity` (the stat widget's monotone, `[0.35, 0]`). */
+	readonly curve?: "linear" | "monotone"
+	readonly fillOpacity?: readonly [start: number, end: number]
 }
 
 export const view = Submodel.defineView<Model, Message, SparklineInputs>((_model, inputs, h) =>
@@ -28,9 +31,10 @@ export const view = Submodel.defineView<Model, Message, SparklineInputs>((_model
 					values: inputs.values,
 					color: inputs.color,
 					gradientId: `spark-${inputs.chartId}`,
-					fillStart: 0.5,
-					fillEnd: 0.1,
+					fillStart: inputs.fillOpacity?.[0] ?? 0.5,
+					fillEnd: inputs.fillOpacity?.[1] ?? 0.1,
 					revision: inputs.revision,
+					curve: inputs.curve ?? "linear",
 				}),
 				tooltipBody: () => Option.none(),
 			}),

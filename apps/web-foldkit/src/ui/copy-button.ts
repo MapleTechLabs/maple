@@ -19,7 +19,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { button } from "./button"
-import { icon } from "./icon"
+import { icon, type IconName } from "./icon"
 
 /**
  * `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout,
@@ -124,7 +124,7 @@ const strokePath = <M>(h: HtmlBuilder<M>, d: string, extra: ReadonlyArray<Attrib
 /** `<CopyIndicator>`: idle glyph, a self-drawing check and an X, stacked in one grid cell. */
 export const copyIndicator = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ status: CopyStatus; iconSize?: number; className?: string }>,
+	options: Readonly<{ status: CopyStatus; iconSize?: number; className?: string; idleIcon?: IconName }>,
 ): Html => {
 	const iconSize = options.iconSize ?? 14
 	const size = String(iconSize)
@@ -138,7 +138,7 @@ export const copyIndicator = <M>(
 		[
 			h.span(
 				[h.Class(cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.idle))],
-				[icon(h, "CopyIcon", { size: iconSize })],
+				[icon(h, options.idleIcon ?? "CopyIcon", { size: iconSize })],
 			),
 			h.span(
 				[
@@ -182,6 +182,8 @@ export type CopyButtonOptions<M> = Readonly<{
 	onClick?: M
 	/** Turns the animated text label on. */
 	idleLabel?: string
+	/** The resting glyph (`CopyIcon` unless the call site passes one). */
+	idleIcon?: IconName
 	copiedLabel?: string
 	errorLabel?: string
 	iconSize?: number
@@ -219,7 +221,7 @@ export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>):
 			],
 		},
 		[
-			copyIndicator(h, { status, iconSize: options.iconSize }),
+			copyIndicator(h, { status, iconSize: options.iconSize, idleIcon: options.idleIcon }),
 			...(labels.length === 0
 				? []
 				: [

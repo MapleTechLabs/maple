@@ -84,6 +84,7 @@ const NAMES = [
 	"MapleMark",
 	"MaximizeIcon",
 	"MediaPauseIcon",
+	"MenuIcon",
 	"MessagesIcon",
 	"MinimizeIcon",
 	"MinusIcon",

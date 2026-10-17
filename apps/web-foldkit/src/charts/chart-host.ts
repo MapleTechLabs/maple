@@ -5,6 +5,7 @@ import { renderChartSvg } from "@tanstack/charts/svg"
 import { createSvgChartRenderer } from "@tanstack/charts/svg/renderer"
 import { Option } from "effect"
 import { ChartSpec, type ChartTooltip } from "./chart-spec"
+import { buildQueryBuilderArea } from "./definitions/area"
 import type { BuiltChart } from "./definitions/built-chart"
 import {
 	buildBinnedHistogram,
@@ -129,6 +130,8 @@ export const createChartHost = (
 			),
 		Sparkline: (sparkline) =>
 			hostFor(container, sparkline, height, variant("Sparkline"), buildSparkline, options),
+		QueryBuilderArea: (area) =>
+			hostFor(container, area, height, variant("QueryBuilderArea"), buildQueryBuilderArea, options),
 		BinnedHistogram: (histogram) =>
 			hostFor(container, histogram, height, variant("BinnedHistogram"), buildBinnedHistogram, options),
 		FixedMetric: (metric) =>
